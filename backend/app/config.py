@@ -37,6 +37,11 @@ class Settings:
     # to ANTHROPIC_API_KEY. Empty key = stub reply (offline-demoable).
     gateway_anthropic_base: str = os.getenv("GATEWAY_ANTHROPIC_BASE", "https://api.anthropic.com")
     gateway_anthropic_key: str = os.getenv("GATEWAY_ANTHROPIC_KEY", "")
+    # Gemini generateContent upstream for /v1beta/models/{model}:generateContent
+    # (google-genai SDK, Gemini CLI). Key falls back to GEMINI_API_KEY. Empty = stub.
+    gateway_gemini_base: str = os.getenv("GATEWAY_GEMINI_BASE", "https://generativelanguage.googleapis.com")
+    gateway_gemini_key: str = os.getenv("GATEWAY_GEMINI_KEY", "")
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
 
     # --- Shadow-AI governance ---
     # Static token the browser extension / egress proxy present on /api/ingest/ai-usage.
