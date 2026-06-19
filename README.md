@@ -145,6 +145,10 @@ tenant** — one organization can never see another's findings. Users have a rol
 security team) have accounts; the employees being *governed* are never enrolled —
 they're attributed as an `actor` from your SSO / API key.
 
+> For the full token model — what each secret is, who holds it, how many you need, and
+> when to issue per-user keys — see
+> [tokens & identity](docs/tokens-and-identity.md).
+
 **Self-serve onboarding** — create an org + first admin from the login screen, or:
 
 ```bash
@@ -465,6 +469,7 @@ deploy/               # systemd unit (api) + env example
 extension/            # MV3 browser extension — shadow-AI capture (browser)
 proxy/                # mitmproxy addon — shadow-AI capture (desktop apps / network)
 docs/claude-deployment.md  # step-by-step: deploy for browser + Claude Code + desktop
+docs/tokens-and-identity.md  # auth-model reference: tokens, attribution, per-user keys
 frontend/
   src/
     components/       # Dashboard, AnalyzeForm, FindingsList, FindingDetail
