@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Warden — Shadow-AI Guard",
+  "version": "0.2.0",
+  "description": "Inspects prompts sent to external AI tools for secrets, PII, and proprietary data, and warns or blocks before they leave.",
+  "permissions": ["storage"],
+  "storage": { "managed_schema": "managed_schema.json" },
+  "host_permissions": [
+    "https://claude.ai/*",
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://gemini.google.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_title": "Warden — Shadow-AI Guard" },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://claude.ai/*",
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://gemini.google.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["injected.js"],
+      "matches": [
+        "https://claude.ai/*",
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://gemini.google.com/*"
+      ]
+    }
+  ]
+}

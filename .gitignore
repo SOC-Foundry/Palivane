@@ -1,0 +1,19 @@
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+*.db
+backend/_*.db
+
+# Secrets & local env (commit the *.example templates, never the real .env)
+.env
+backend/.env
+*.pem
+
+# Node / build artifacts
+frontend/node_modules/
+frontend/dist/
+extension/*.zip
+
+# Misc
+.DS_Store

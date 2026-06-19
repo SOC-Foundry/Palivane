@@ -1,0 +1,57 @@
+# Local hosted stack: Postgres + backend (FastAPI) + web (nginx-served frontend).
+#   cp .env.docker.example .env   # then edit secrets
+#   docker compose up --build
+# Then open http://localhost:8080  (login: admin@demo.local / changeme123 when seeded).
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aithreat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aithreat}
+      POSTGRES_DB: ${POSTGRES_DB:-aithreat}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aithreat}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-aithreat}:${POSTGRES_PASSWORD:-aithreat}@db:5432/${POSTGRES_DB:-aithreat}
+      WARDEN_SECRET_KEY: ${WARDEN_SECRET_KEY:-dev-insecure-change-me}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      SEED_ON_START: ${SEED_ON_START:-true}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@demo.local}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-changeme123}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GATEWAY_ENFORCE: ${GATEWAY_ENFORCE:-false}
+      GATEWAY_BLOCK_SEVERITY: ${GATEWAY_BLOCK_SEVERITY:-high}
+      GATEWAY_UPSTREAM_BASE: ${GATEWAY_UPSTREAM_BASE:-}
+      GATEWAY_UPSTREAM_KEY: ${GATEWAY_UPSTREAM_KEY:-}
+      EXTENSION_INGEST_TOKEN: ${EXTENSION_INGEST_TOKEN:-}
+      INGEST_TENANT: ${INGEST_TENANT:-demo}
+    expose:
+      - "8088"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8088/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  web:
+    build: ./frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+volumes:
+  pgdata:
