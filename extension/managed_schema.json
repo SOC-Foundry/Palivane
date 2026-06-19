@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "properties": {
+    "backendUrl": {
+      "title": "Warden backend URL",
+      "type": "string"
+    },
+    "token": {
+      "title": "Ingest token (EXTENSION_INGEST_TOKEN)",
+      "type": "string"
+    },
+    "user": {
+      "title": "End-user identity (optional; usually injected from SSO)",
+      "type": "string"
+    },
+    "enforce": {
+      "title": "Block risky prompts (vs warn only)",
+      "type": "boolean"
+    }
+  }
+}
