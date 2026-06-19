@@ -12,10 +12,10 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
 
 - **Two fronts, one engine** — *Protect our AI* (`llm_io`: injection / jailbreak /
   exfiltration) and *Shadow-AI governance* (`ai_usage`: secrets / PII / source code).
-- **Automatic capture, no manual paste** — an **OpenAI- & Anthropic-compatible gateway**
-  (`/v1/chat/completions`, `/v1/messages` — works with Claude Code), a **browser
-  extension** for claude.ai/ChatGPT/Gemini, and a **mitmproxy egress addon** for desktop
-  apps / IDEs / CLIs.
+- **Automatic capture, no manual paste** — an **OpenAI-, Anthropic- & Gemini-compatible
+  gateway** (`/v1/chat/completions`, `/v1/messages` — works with Claude Code —
+  `/v1beta/models/{model}:generateContent`), a **browser extension** for
+  claude.ai/ChatGPT/Gemini, and a **mitmproxy egress addon** for desktop apps / IDEs / CLIs.
 - **Monitor or enforce** — record findings, or block risky prompts/data **before** they
   leave, inline.
 - **Runs offline** — fast regex/heuristic detectors need no API key; add an Anthropic key
@@ -129,6 +129,7 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `GATEWAY_BLOCK_SEVERITY` | `high`                | Block when a prompt's verdict severity is at/above this. |
 | `GATEWAY_UPSTREAM_BASE` / `GATEWAY_UPSTREAM_KEY` | *(unset)* | OpenAI-compatible upstream for allowed calls (empty = stub reply). |
 | `GATEWAY_ANTHROPIC_BASE` / `GATEWAY_ANTHROPIC_KEY` | `api.anthropic.com` / `ANTHROPIC_API_KEY` | Upstream for `/v1/messages` (Claude Code); empty key = stub. |
+| `GATEWAY_GEMINI_BASE` / `GATEWAY_GEMINI_KEY` | `generativelanguage.googleapis.com` / `GEMINI_API_KEY` | Upstream for `/v1beta/models/{model}:generateContent` (google-genai SDK, Gemini CLI); empty key = stub. |
 | `GATEWAY_TOOL_SUPPRESS` | *(defaults)*           | Per-tool category suppression, e.g. `claude-code:source_code_leak;cursor:source_code_leak`. |
 | `EXTENSION_INGEST_TOKEN` | *(unset)*             | Shared token the browser extension presents to `/api/ingest/ai-usage` (empty = endpoint disabled). |
 | `WARDEN_SECRET_KEY` | *(dev fallback)*         | **Set in production.** Signs JWT session tokens; unset → insecure dev key + a startup warning. |
@@ -212,6 +213,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/v1/chat/completions`   | OpenAI-compatible LLM gateway — scans/records every prompt (`llm_io`), blocks in enforce mode. |
 | POST   | `/v1/messages`           | Anthropic-compatible gateway (Claude Code / Anthropic SDK) — same capture + enforce. |
 | POST   | `/v1/messages/count_tokens` | Claude Code token-counting pre-flight — authenticated passthrough (no finding). |
+| POST   | `/v1beta/models/{model}:generateContent` | Gemini-compatible gateway (google-genai SDK / Gemini CLI) — same capture + enforce. `:streamGenerateContent` also supported. |
 
 To run the API as a service, see [`deploy/`](deploy/) — a systemd unit plus an
 annotated env file.
@@ -273,6 +275,26 @@ precedence, users can't override), e.g. on Linux `/etc/claude-code/managed-setti
   "ANTHROPIC_AUTH_TOKEN": "ak_<Warden API key>"
 } }
 ```
+
+### Gemini clients
+
+The gateway also speaks the **Gemini API** at `/v1beta/models/{model}:generateContent`
+(and `:streamGenerateContent`), so the `google-genai` SDK and the Gemini CLI route through
+it by repointing the base URL:
+
+```python
+from google import genai
+client = genai.Client(api_key="<Warden token>",
+                      http_options={"base_url": "http://localhost:8080"})
+client.models.generate_content(model="gemini-2.5-flash", contents="…")
+```
+
+It authenticates via `x-goog-api-key` or a `?key=` query param (Gemini style) — or
+`Authorization: Bearer` — and the real Gemini key stays server-side
+(`GATEWAY_GEMINI_KEY`, falling back to `GEMINI_API_KEY`). Allowed calls forward to
+Google (or a stub when no key is set), passing through query params like `?alt=sse` so
+streaming works. The prompt is read from `contents[].parts[].text` plus any
+`systemInstruction`; a block returns Google's `{error:{code,status,message}}` envelope.
 
 **Per-tool policy.** A coding assistant sends source code every turn, so Warden
 suppresses `source_code_leak` for sanctioned coding tools (`claude-code`, `cursor`,
@@ -422,7 +444,7 @@ backend/
     detectors/        # prompt-threats (llm_io), shadow-ai (ai_usage), Claude judge
     security.py       # password hashing (PBKDF2) + HS256 JWTs + API keys
     auth.py           # auth dependencies + /api/auth + /api/users + /api/apikeys
-    gateway.py        # LLM gateway: /v1/chat/completions (OpenAI) + /v1/messages (Anthropic)
+    gateway.py        # LLM gateway: /v1/chat/completions (OpenAI) + /v1/messages (Anthropic) + /v1beta (Gemini)
     policy.py         # per-tool category suppression (e.g. code from Claude Code)
     users.py          # CLI: create tenants / users
     service.py        # shared analyze-and-store (API + extension/proxy ingest)

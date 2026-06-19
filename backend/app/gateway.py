@@ -1,9 +1,10 @@
 """LLM gateway — automatic capture & enforcement for first-party AI calls.
 
-Two OpenAI/Anthropic-compatible entry points so apps just repoint their client:
+Three provider-compatible entry points so apps just repoint their client:
 
-  POST /v1/chat/completions   — OpenAI shape (OpenAI SDK, OpenAI-compatible tools)
-  POST /v1/messages           — Anthropic shape (Claude Code, Anthropic SDK)
+  POST /v1/chat/completions                      — OpenAI shape (OpenAI SDK, OpenAI-compatible tools)
+  POST /v1/messages                              — Anthropic shape (Claude Code, Anthropic SDK)
+  POST /v1beta/models/{model}:generateContent    — Gemini shape (google-genai SDK, Gemini CLI)
 
 Each scans the prompt on the `llm_io` surface, records a finding, blocks at/above
 `GATEWAY_BLOCK_SEVERITY` in enforce mode, and forwards allowed calls to the configured
@@ -20,7 +21,7 @@ from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -62,12 +63,15 @@ def _resolve_api_key(token: str, db: Session) -> Principal:
 
 def get_gateway_principal(request: Request, db: Session = Depends(get_db)) -> Principal:
     """Authenticate a gateway call by a long-lived API key (`ak_…`) or a user JWT, from
-    `x-api-key` (Anthropic clients) or `Authorization: Bearer` (OpenAI clients)."""
-    token = request.headers.get("x-api-key") or ""
+    `x-api-key` (Anthropic clients), `Authorization: Bearer` (OpenAI clients), or
+    `x-goog-api-key` / `?key=` (Gemini clients)."""
+    token = request.headers.get("x-api-key") or request.headers.get("x-goog-api-key") or ""
     if not token:
         scheme, _, rest = request.headers.get("authorization", "").partition(" ")
         if scheme.lower() == "bearer":
             token = rest
+    if not token:
+        token = request.query_params.get("key") or ""
     if not token:
         raise HTTPException(status_code=401, detail="missing API key",
                             headers={"WWW-Authenticate": "Bearer"})
@@ -231,3 +235,96 @@ async def count_tokens(request: Request, principal: Principal = Depends(get_gate
     if _anthropic_key():
         return _forward_anthropic("/v1/messages/count_tokens", payload, request)
     return JSONResponse(content={"input_tokens": 0})
+
+
+# --- Gemini shape (google-genai SDK, Gemini CLI) --------------------------------------
+#
+# Gemini diverges from OpenAI/Anthropic: the model and action live in the path
+# (`/v1beta/models/{model}:generateContent`), the prompt is under `contents[].parts[].text`
+# with an optional `systemInstruction`, and the error envelope is Google's `{error:{code,
+# message,status}}`. Its own router because the path prefix is `/v1beta`, not `/v1`.
+
+gemini_router = APIRouter(prefix="/v1beta", tags=["gateway"])
+
+
+def _scan_gemini(contents: list, system_instruction=None) -> str:
+    """Pull user-authored text from a Gemini request (contents[].parts[].text)."""
+    def _parts_text(node) -> str:
+        parts = node.get("parts") if isinstance(node, dict) else None
+        if not isinstance(parts, list):
+            return ""
+        return "\n".join(p.get("text", "") for p in parts
+                         if isinstance(p, dict) and isinstance(p.get("text"), str))
+
+    chunks = []
+    if system_instruction:
+        chunks.append(_parts_text(system_instruction))
+    for c in contents or []:
+        if not isinstance(c, dict):
+            continue
+        if c.get("role") in (None, "user", "system"):   # skip prior "model" turns
+            chunks.append(_parts_text(c))
+    return "\n".join(p for p in chunks if p).strip()
+
+
+def _gemini_error(verdict: dict) -> JSONResponse:
+    sigs = ", ".join(s["category"] for s in verdict.get("signals", [])[:4]) or "policy violation"
+    return JSONResponse(status_code=403, content={"error": {
+        "code": 403, "status": "PERMISSION_DENIED",
+        "message": f"Blocked by Warden: {sigs} (risk {verdict['risk_score']}/{verdict['severity']}).",
+    }})
+
+
+def _gemini_stub(model: str, verdict: dict) -> dict:
+    return {
+        "candidates": [{"content": {"role": "model", "parts": [
+            {"text": "[Warden gateway: no upstream configured — prompt passed inspection.]"}]},
+            "finishReason": "STOP", "index": 0}],
+        "usageMetadata": {"promptTokenCount": 0, "candidatesTokenCount": 0, "totalTokenCount": 0},
+        "modelVersion": model,
+        "warden": {"risk_score": verdict["risk_score"], "severity": verdict["severity"]},
+    }
+
+
+def _gemini_key() -> str:
+    return settings.gateway_gemini_key or settings.gemini_api_key
+
+
+def _forward_gemini(model: str, method: str, payload: dict, request: Request) -> Response:
+    """Passthrough to Gemini, preserving query params (e.g. ?alt=sse) but swapping in our
+    upstream key. Returns the upstream bytes verbatim so both JSON and streaming work."""
+    url = f"{settings.gateway_gemini_base.rstrip('/')}/v1beta/models/{model}:{method}"
+    params = {k: v for k, v in request.query_params.items() if k != "key"}
+    headers = {"Content-Type": "application/json", "x-goog-api-key": _gemini_key()}
+    with httpx.Client(timeout=120) as c:
+        r = c.post(url, json=payload, params=params, headers=headers)
+    return Response(content=r.content, status_code=r.status_code,
+                    media_type=r.headers.get("content-type", "application/json"))
+
+
+async def _gemini_entry(model: str, method: str, request: Request,
+                        principal: Principal, db: Session) -> Response:
+    payload = await request.json()
+    tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
+    prompt = _scan_gemini(payload.get("contents", []), payload.get("systemInstruction") or payload.get("system_instruction"))
+    verdict = _capture(prompt, model, tool, principal, db)
+
+    if settings.gateway_enforce and _blocked(verdict):
+        return _gemini_error(verdict)
+    if _gemini_key():
+        return _forward_gemini(model, method, payload, request)
+    return JSONResponse(content=_gemini_stub(model, verdict))
+
+
+@gemini_router.post("/models/{model}:generateContent")
+async def gemini_generate(model: str, request: Request,
+                          principal: Principal = Depends(get_gateway_principal),
+                          db: Session = Depends(get_db)):
+    return await _gemini_entry(model, "generateContent", request, principal, db)
+
+
+@gemini_router.post("/models/{model}:streamGenerateContent")
+async def gemini_stream_generate(model: str, request: Request,
+                                 principal: Principal = Depends(get_gateway_principal),
+                                 db: Session = Depends(get_db)):
+    return await _gemini_entry(model, "streamGenerateContent", request, principal, db)
