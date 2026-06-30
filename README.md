@@ -1,4 +1,10 @@
-<h1>◆ Warden — AI Security Gateway</h1>
+<p align="center">
+  <img src="assets/warden-logo.png" alt="Warden" width="180" />
+</p>
+
+<h1 align="center">Warden — AI Security Gateway</h1>
+
+<p align="center"><em>DETECT · BLOCK · PROTECT</em></p>
 
 **Govern how your organization uses AI.** Warden stops attacks on your own LLMs
 (prompt injection, jailbreaks, system-prompt/secret exfiltration) **and** stops sensitive
@@ -159,9 +165,14 @@ curl -s -X POST localhost:8088/api/auth/signup -H 'content-type: application/jso
   -d '{"org_name":"Acme Corp","email":"soc@acme.com","password":"..."}'   # -> token, role=admin
 ```
 
-(Disable with `WARDEN_ALLOW_SIGNUP=false` for a locked-down single-org deploy.) Or
-bootstrap from the CLI: `python -m app.users create-tenant` / `create-user`. The admin
-then invites analysts via `/api/users`.
+(Disable with `WARDEN_ALLOW_SIGNUP=false` for a locked-down single-org deploy — the login
+screen then hides org creation, so only users an admin adds can sign in.) Or bootstrap
+from the CLI: `python -m app.users create-tenant` / `create-user`.
+
+Admins manage the team from the console's **Users** page (or the API): add a member as
+**admin** or **analyst**, promote/demote a role, and enable/disable login — with
+guardrails so you can't lock yourself out or remove the last admin. The relevant
+endpoints are `POST /api/users` (create) and `PATCH /api/users/{id}` (role / active).
 
 The console's **Connect** page mints a per-org capture key and generates the copy-paste
 install config for every source (extension, Claude Code, proxy):
@@ -204,7 +215,8 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/auth/login`        | Email + password → access token (public). |
 | GET    | `/api/auth/me`           | Current user + tenant.                   |
 | GET    | `/api/users`             | List tenant users (admin).               |
-| POST   | `/api/users`             | Create a user in the tenant (admin).     |
+| POST   | `/api/users`             | Create a user in the tenant — `role` `admin`/`analyst` (admin). |
+| PATCH  | `/api/users/{id}`        | Change a user's role or enable/disable login; protects against last-admin / self-lockout (admin). |
 | POST   | `/api/apikeys`           | Mint a long-lived machine API key; plaintext returned once (admin). |
 | GET    | `/api/apikeys`           | List the tenant's API keys (no secrets) (admin). |
 | DELETE | `/api/apikeys/{id}`      | Revoke an API key (admin).                |

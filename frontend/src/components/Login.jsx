@@ -1,13 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, setToken } from "../api.js";
 
-export default function Login({ onAuthed }) {
+export default function Login({ onAuthed, onBack }) {
   const [mode, setMode] = useState("signin");   // "signin" | "signup"
   const [org, setOrg] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [allowSignup, setAllowSignup] = useState(false);
+
+  // Only offer self-serve org creation when the server permits it.
+  useEffect(() => {
+    api.health().then((h) => setAllowSignup(!!h.allow_signup)).catch(() => setAllowSignup(false));
+  }, []);
 
   const signup = mode === "signup";
 
@@ -36,6 +42,7 @@ export default function Login({ onAuthed }) {
   return (
     <div className="login-screen">
       <form className="login-card" onSubmit={submit}>
+        <img className="login-logo" src="/warden-logo.png" alt="Warden" width="76" height="76" />
         <div className="brand"><span className="logo">◆</span> Warden</div>
         <p className="login-sub">
           {signup ? "Create your organization" : "Sign in to your security workspace"}
@@ -52,10 +59,17 @@ export default function Login({ onAuthed }) {
         <button className="primary-btn" disabled={busy || !email || !password || (signup && !org)}>
           {busy ? "…" : signup ? "Create organization" : "Sign in"}
         </button>
-        <button type="button" className="link-btn" style={{ marginTop: 10 }}
-                onClick={() => { setErr(null); setMode(signup ? "signin" : "signup"); }}>
-          {signup ? "← Back to sign in" : "Create a new organization →"}
-        </button>
+        {(allowSignup || signup) && (
+          <button type="button" className="link-btn" style={{ marginTop: 10 }}
+                  onClick={() => { setErr(null); setMode(signup ? "signin" : "signup"); }}>
+            {signup ? "← Back to sign in" : "Create a new organization →"}
+          </button>
+        )}
+        {onBack && !signup && (
+          <button type="button" className="link-btn link-muted" onClick={onBack}>
+            ← Back to home
+          </button>
+        )}
       </form>
     </div>
   );

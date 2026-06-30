@@ -28,6 +28,7 @@ services:
       WARDEN_SECRET_KEY: ${WARDEN_SECRET_KEY:-dev-insecure-change-me}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
       SEED_ON_START: ${SEED_ON_START:-true}
+      WARDEN_ALLOW_SIGNUP: ${WARDEN_ALLOW_SIGNUP:-true}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@demo.local}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-changeme123}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

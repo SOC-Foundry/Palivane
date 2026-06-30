@@ -94,3 +94,71 @@ def test_new_user_can_log_in(db_factory):
     c.post("/api/users", headers=_auth(admin),
            json={"email": "new@acme.com", "password": "password123", "role": "analyst"})
     assert _login(c, "new@acme.com", "password123").status_code == 200
+
+
+def _uid(c, admin, email):
+    users = c.get("/api/users", headers=_auth(admin)).json()["users"]
+    return next(u["id"] for u in users if u["email"] == email)
+
+
+def test_admin_can_promote_and_demote(db_factory):
+    _seed_two_tenants(db_factory)
+    c = TestClient(app)
+    admin = c.post("/api/auth/login", json={"email": "admin@acme.com", "password": "password123"}).json()["access_token"]
+    aid = _uid(c, admin, "analyst@acme.com")
+
+    # Promote analyst -> admin, then demote back.
+    r = c.patch(f"/api/users/{aid}", headers=_auth(admin), json={"role": "admin"})
+    assert r.status_code == 200 and r.json()["role"] == "admin"
+    r = c.patch(f"/api/users/{aid}", headers=_auth(admin), json={"role": "analyst"})
+    assert r.status_code == 200 and r.json()["role"] == "analyst"
+
+
+def test_disable_login_blocks_then_reenable(db_factory):
+    _seed_two_tenants(db_factory)
+    c = TestClient(app)
+    admin = c.post("/api/auth/login", json={"email": "admin@acme.com", "password": "password123"}).json()["access_token"]
+    aid = _uid(c, admin, "analyst@acme.com")
+
+    assert c.patch(f"/api/users/{aid}", headers=_auth(admin), json={"active": False}).status_code == 200
+    assert _login(c, "analyst@acme.com", "password123").status_code == 401
+    assert c.patch(f"/api/users/{aid}", headers=_auth(admin), json={"active": True}).status_code == 200
+    assert _login(c, "analyst@acme.com", "password123").status_code == 200
+
+
+def test_cannot_demote_or_disable_self(db_factory):
+    _seed_two_tenants(db_factory)
+    c = TestClient(app)
+    admin = c.post("/api/auth/login", json={"email": "admin@acme.com", "password": "password123"}).json()["access_token"]
+    me = _uid(c, admin, "admin@acme.com")
+    assert c.patch(f"/api/users/{me}", headers=_auth(admin), json={"role": "analyst"}).status_code == 400
+    assert c.patch(f"/api/users/{me}", headers=_auth(admin), json={"active": False}).status_code == 400
+
+
+def test_cannot_remove_last_admin(db_factory):
+    _seed_two_tenants(db_factory)
+    c = TestClient(app)
+    # globex has exactly one admin and no other users.
+    admin = c.post("/api/auth/login", json={"email": "admin@globex.com", "password": "password123"}).json()["access_token"]
+    me = _uid(c, admin, "admin@globex.com")
+    # Even via a second admin, demoting the only remaining admin is blocked.
+    assert c.patch(f"/api/users/{me}", headers=_auth(admin), json={"role": "analyst"}).status_code == 400
+
+
+def test_user_management_is_tenant_scoped(db_factory):
+    _seed_two_tenants(db_factory)
+    c = TestClient(app)
+    acme = c.post("/api/auth/login", json={"email": "admin@acme.com", "password": "password123"}).json()["access_token"]
+    globex = c.post("/api/auth/login", json={"email": "admin@globex.com", "password": "password123"}).json()["access_token"]
+    globex_uid = _uid(c, globex, "admin@globex.com")
+    # Acme admin can't touch a Globex user.
+    assert c.patch(f"/api/users/{globex_uid}", headers=_auth(acme), json={"role": "analyst"}).status_code == 404
+
+
+def test_analyst_cannot_patch_users(db_factory):
+    _seed_two_tenants(db_factory)
+    c = TestClient(app)
+    admin = c.post("/api/auth/login", json={"email": "admin@acme.com", "password": "password123"}).json()["access_token"]
+    analyst = c.post("/api/auth/login", json={"email": "analyst@acme.com", "password": "password123"}).json()["access_token"]
+    aid = _uid(c, admin, "analyst@acme.com")
+    assert c.patch(f"/api/users/{aid}", headers=_auth(analyst), json={"role": "admin"}).status_code == 403

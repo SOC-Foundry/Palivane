@@ -18,6 +18,58 @@ Once it's up, jump to [first sign-in](#3-first-sign-in), then
 
 ---
 
+## Architecture — where everything runs
+
+Warden is **self-hosted**: you run it on your own infrastructure, and findings stay in
+your database. There's no Warden cloud. It's two layers — **one server you host**, and
+**capture planes at the edge** that feed it.
+
+```
+  EDGE — where AI is used                          YOUR SERVER (one host you control)
+ ┌──────────────────────────────┐                ┌──────────────────────────────────────┐
+ │ First-party apps / Claude     │   /v1   ─────► │  ┌──────────────┐   ┌──────────────┐  │
+ │ Code / OpenAI·Gemini SDKs     │  (config)      │  │ web (nginx)  │   │   backend    │  │
+ ├──────────────────────────────┤                │  │ React console│◄─►│  (FastAPI)   │  │
+ │ Browser (claude.ai, ChatGPT)  │                │  │  :8080       │   │   :8088      │  │
+ │  └ extension (MDM-pushed) ────┼── /api/ingest ►│  └──────────────┘   │ • detection  │  │
+ ├──────────────────────────────┤                │                     │   engine     │  │
+ │ Desktop apps / IDEs / CLIs    │                │                     │ • LLM gateway│  │
+ │  └ egress proxy (mitmproxy) ──┼── /api/ingest ►│                     └──────┬───────┘  │
+ └──────────────────────────────┘                │                     ┌──────▼───────┐  │
+   security team's browser ──────── console ─────►│                     │ Postgres :5432│  │
+                                                  │                     │  (findings)  │  │
+   optional ─► Anthropic (Claude judge)           │                     └──────────────┘  │
+   gateway  ─► your upstream LLM provider         └──────────────────────────────────────┘
+```
+
+- **The server** is the three `docker-compose` services on one host you choose (a VM,
+  on-prem box, or your own cloud): `db` (Postgres), `backend` (FastAPI — the API, the
+  **detection engine**, and the LLM gateway), and `web` (nginx serving the console). Or
+  run `backend` as a systemd service — see [`deploy/`](../deploy/).
+- **The detection compute runs inside `backend`** — local CPU work (see
+  [how detection works](../README.md#how-detection-works)). The only outbound calls are
+  *optional*: the Claude judge, and the gateway forwarding allowed calls to your upstream.
+- **Capture planes** sit where AI is actually used and call back to the server's API.
+
+### What runs on each end-user's machine?
+
+**Nothing requires a manual, per-user install.** What (if anything) lands on an endpoint
+depends on how that person reaches AI — and it's all admin-deployed and zero-touch:
+
+| AI is used via… | On the end-user machine | How it's deployed | User action |
+| --- | --- | --- | --- |
+| First-party apps, Claude Code, OpenAI/Gemini SDKs | **Nothing installed** — just a base-URL config pointing at Warden | Env var, or Claude Code `managed-settings.json` pushed by MDM | None |
+| Browser AI (claude.ai, ChatGPT, Gemini) | A browser **extension** in Chrome/Edge | **Force-installed** via MDM / group policy (`ExtensionInstallForcelist`) + managed config | None |
+| Desktop apps, IDE assistants, CLIs | **No app** — a system-proxy setting + your corporate **root CA** (usually already trusted on managed fleets) | Pushed via MDM / PAC file; the proxy itself runs as a service near egress, not on each machine | None |
+
+All three **fail open** — if Warden is unreachable, the user's tools keep working. The
+catch is reach: these cover **managed / on-network devices**. Unmanaged or personal
+devices can't be captured this way — you find that gap with
+[coverage reconciliation](../README.md#coverage-reconciliation-finding-the-gap) (compare
+your IdP/CASB "who used AI" list against who Warden actually captured).
+
+---
+
 ## Prerequisites
 
 | Path | You need |
