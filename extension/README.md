@@ -56,6 +56,11 @@ Publish the `build.sh` zip to the **Chrome Web Store** (or **Edge Add-ons**) as 
 - users click **Add to Chrome** (one click), or
 - you **force-install** it so it appears automatically — no user action.
 
+> **Full store-submission walkthrough** — listing copy, the permission/privacy review
+> answers, and the step-by-step upload — is in [`STORE.md`](./STORE.md), with a hostable
+> privacy policy in [`PRIVACY.md`](./PRIVACY.md). The package now ships the required
+> icons (`icons/`), so `./build.sh` produces a store-ready zip.
+
 ## Enterprise rollout — zero-touch (force-install + managed config)
 
 Push via your MDM / Google Admin / group policy:
