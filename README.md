@@ -21,7 +21,14 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
 - **Automatic capture, no manual paste** — an **OpenAI-, Anthropic- & Gemini-compatible
   gateway** (`/v1/chat/completions`, `/v1/messages` — works with Claude Code —
   `/v1beta/models/{model}:generateContent`), a **browser extension** for
-  claude.ai/ChatGPT/Gemini, and a **mitmproxy egress addon** for desktop apps / IDEs / CLIs.
+  claude.ai/ChatGPT/Gemini/Microsoft Copilot, and a **mitmproxy egress addon** for desktop
+  apps / IDEs / CLIs (incl. GitHub Copilot).
+- **Keeps secrets out of repos too** — a **pre-commit hook + GitHub Action**
+  ([`git/`](git/)) scan commits/PRs for secrets & PII via the same engine, complementing
+  GitHub's native push protection.
+- **Deep secret detection** — known formats (OpenAI/Anthropic/AWS/GitHub incl.
+  fine-grained PATs, GitLab, Stripe, Google, Slack, npm/PyPI, SendGrid, Twilio, PEM keys,
+  JWTs) hard-block; a high-entropy heuristic catches novel/unlabeled tokens at warn-level.
 - **Monitor or enforce** — record findings, or block risky prompts/data **before** they
   leave, inline.
 - **Runs offline** — fast regex/heuristic detectors need no API key; add an Anthropic key
@@ -337,13 +344,15 @@ Different usage routes need different capture points — all feed the one engine
 | AI is used via… | Capture plane | Status |
 | --- | --- | --- |
 | Your own apps / CLIs / Claude Code (you control the client) | LLM gateway `/v1` → `llm_io` | ✅ |
-| **Browser** web UI (claude.ai, chatgpt.com) | Browser extension → `ai_usage` | ✅ |
-| **Desktop apps, IDE assistants, 3rd-party CLIs** | Egress proxy → `ai_usage` | ✅ |
+| **Browser** web UI (claude.ai, chatgpt.com, Microsoft Copilot) | Browser extension → `ai_usage` | ✅ |
+| **Desktop apps, IDE assistants, 3rd-party CLIs** (incl. GitHub Copilot) | Egress proxy → `ai_usage` | ✅ |
+| **Source code committed to a Git repo** | Pre-commit hook + GitHub Action → `/api/scan/code` | ✅ |
 
 The browser extension covers what's typed into a *browser*; the **egress proxy** covers
 everything else on a managed device — including the **Claude/ChatGPT desktop apps**,
 Cursor, IDE Copilots, and command-line tools, which make their own HTTPS calls and never
-touch the browser.
+touch the browser. The **git plane** ([`git/`](git/)) is a different boundary — secrets/PII
+reaching repos via `git commit` — caught at commit time and in CI.
 
 > **Deploying for Claude specifically** (browser extension, Claude Code, Claude desktop)?
 > See the step-by-step guide: [`docs/claude-deployment.md`](docs/claude-deployment.md).

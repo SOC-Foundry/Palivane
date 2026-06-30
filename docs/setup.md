@@ -185,8 +185,9 @@ install config for each source. Pick whichever matches how your org uses AI:
 | AI is used via… | Capture plane | Setup |
 | --- | --- | --- |
 | Your own apps / CLIs / Claude Code | **LLM gateway** (`/v1`) | Point the client's base URL at Warden — see below. |
-| Browser web UIs (claude.ai, chatgpt.com) | **Browser extension** | [`extension/README.md`](../extension/README.md) |
-| Desktop apps, IDE assistants, 3rd-party CLIs | **Egress proxy** | [`proxy/README.md`](../proxy/README.md) |
+| Browser web UIs (claude.ai, chatgpt.com, Microsoft Copilot) | **Browser extension** | [`extension/README.md`](../extension/README.md) |
+| Desktop apps, IDE assistants, 3rd-party CLIs (incl. GitHub Copilot) | **Egress proxy** | [`proxy/README.md`](../proxy/README.md) |
+| Secrets/PII reaching a **Git repo** (commit / PR) | **Pre-commit hook + GitHub Action** | [`git/README.md`](../git/README.md) |
 
 **Quick smoke test of the gateway** (monitor mode, no upstream needed — returns a stub):
 
