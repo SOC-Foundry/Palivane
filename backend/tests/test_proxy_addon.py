@@ -39,6 +39,19 @@ def test_detect_tool_copilot():
     assert addon.detect_tool("github-copilot/1.0") == "copilot"
 
 
+def test_is_ai_host_cursor():
+    # Cursor routes model calls through its own backend.
+    assert addon.is_ai_host("api2.cursor.sh")
+    assert addon.is_ai_host("api3.cursor.sh")
+    assert addon.is_ai_host("repo42.cursor.sh")
+    assert addon.is_ai_host("api.cursor.com")
+    assert not addon.is_ai_host("notcursor.example.com")
+
+
+def test_detect_tool_cursor():
+    assert addon.detect_tool("Cursor/0.42 (darwin)") == "cursor"
+
+
 def test_extract_openai_chat():
     body = json.dumps({"messages": [
         {"role": "system", "content": "be helpful"},

@@ -345,7 +345,7 @@ Different usage routes need different capture points — all feed the one engine
 | --- | --- | --- |
 | Your own apps / CLIs / Claude Code (you control the client) | LLM gateway `/v1` → `llm_io` | ✅ |
 | **Browser** web UI (claude.ai, chatgpt.com, Microsoft Copilot) | Browser extension → `ai_usage` | ✅ |
-| **Desktop apps, IDE assistants, 3rd-party CLIs** (incl. GitHub Copilot) | Egress proxy → `ai_usage` | ✅ |
+| **Desktop apps, IDE assistants, 3rd-party CLIs** (incl. GitHub Copilot, Cursor) | Egress proxy → `ai_usage` | ✅ |
 | **Source code committed to a Git repo** | Pre-commit hook + GitHub Action → `/api/scan/code` | ✅ |
 
 The browser extension covers what's typed into a *browser*; the **egress proxy** covers
