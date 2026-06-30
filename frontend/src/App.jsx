@@ -4,11 +4,14 @@ import Dashboard from "./components/Dashboard.jsx";
 import FindingsList from "./components/FindingsList.jsx";
 import FindingDetail from "./components/FindingDetail.jsx";
 import Connect from "./components/Connect.jsx";
+import Users from "./components/Users.jsx";
 import Login from "./components/Login.jsx";
-import { IconList, IconPlug, IconShield, IconRefresh, IconLogout } from "./components/icons.jsx";
+import Landing from "./components/Landing.jsx";
+import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers } from "./components/icons.jsx";
 
 export default function App() {
   const [auth, setAuth] = useState(null);        // { user, tenant }
+  const [showLogin, setShowLogin] = useState(false);
   const [booting, setBooting] = useState(true);
   const [health, setHealth] = useState(null);
   const [stats, setStats] = useState(null);
@@ -73,7 +76,11 @@ export default function App() {
   }
 
   if (booting) return <div className="login-screen"><div className="login-sub">Loading…</div></div>;
-  if (!auth) return <Login onAuthed={() => api.me().then(setAuth)} />;
+  if (!auth) {
+    return showLogin
+      ? <Login onAuthed={() => api.me().then(setAuth)} onBack={() => setShowLogin(false)} />
+      : <Landing onSignIn={() => setShowLogin(true)} />;
+  }
 
   const isAdmin = auth.user?.role === "admin";
 
@@ -97,6 +104,12 @@ export default function App() {
             <button type="button" className={`nav-item ${view === "connect" ? "nav-on" : ""}`}
                     onClick={() => setView("connect")}>
               <IconPlug /> <span>Connect</span>
+            </button>
+          )}
+          {isAdmin && (
+            <button type="button" className={`nav-item ${view === "users" ? "nav-on" : ""}`}
+                    onClick={() => setView("users")}>
+              <IconUsers /> <span>Users</span>
             </button>
           )}
         </nav>
@@ -123,6 +136,8 @@ export default function App() {
       <main className="content">
         {view === "connect" ? (
           <Connect tenant={auth.tenant} />
+        ) : view === "users" ? (
+          <Users currentUser={auth.user} />
         ) : (
           <>
             <div className="content-head">

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
 from .models import ApiKey, Tenant, User
-from .schemas import ApiKeyCreate, LoginRequest, SignupRequest, UserCreate
+from .schemas import ApiKeyCreate, LoginRequest, SignupRequest, UserCreate, UserUpdate
 from .security import (
     TokenError,
     create_token,
@@ -141,6 +141,46 @@ def create_user(body: UserCreate, current: User = Depends(require_admin), db: Se
         password_hash=hash_password(body.password), role=body.role,
     )
     db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user.to_dict()
+
+
+def _active_admin_count(db: Session, tenant_id: int) -> int:
+    return (
+        db.query(User)
+        .filter(User.tenant_id == tenant_id, User.role == "admin", User.active.is_(True))
+        .count()
+    )
+
+
+@router.patch("/users/{user_id}")
+def update_user(user_id: int, body: UserUpdate, current: User = Depends(require_admin),
+                db: Session = Depends(get_db)):
+    """Change a user's role (promote/demote) or login access (active). Admin only,
+    same-tenant only. Guards against locking yourself out or removing the last admin."""
+    user = db.get(User, user_id)
+    if user is None or user.tenant_id != current.tenant_id:
+        raise HTTPException(status_code=404, detail="user not found")
+
+    demoting = body.role is not None and body.role != "admin" and user.role == "admin"
+    deactivating = body.active is False and user.active
+
+    # You can't strip your own access — someone else must do it.
+    if user.id == current.id:
+        if demoting:
+            raise HTTPException(status_code=400, detail="you cannot remove your own admin role")
+        if deactivating:
+            raise HTTPException(status_code=400, detail="you cannot deactivate your own account")
+
+    # Never leave the tenant with zero active admins.
+    if (demoting or (deactivating and user.role == "admin")) and _active_admin_count(db, current.tenant_id) <= 1:
+        raise HTTPException(status_code=400, detail="cannot remove the last active admin")
+
+    if body.role is not None:
+        user.role = body.role
+    if body.active is not None:
+        user.active = body.active
     db.commit()
     db.refresh(user)
     return user.to_dict()

@@ -39,6 +39,11 @@ export const api = {
   signup: (org_name, email, password) =>
     req("/auth/signup", { method: "POST", body: JSON.stringify({ org_name, email, password }) }),
   me: () => req("/auth/me"),
+  users: () => req("/users"),
+  createUser: (payload) =>
+    req("/users", { method: "POST", body: JSON.stringify(payload) }),
+  updateUser: (id, payload) =>
+    req(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   createApiKey: (payload) =>
     req("/apikeys", { method: "POST", body: JSON.stringify(payload) }),
   stats: () => req("/stats"),

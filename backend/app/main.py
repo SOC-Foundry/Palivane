@@ -74,6 +74,7 @@ def health():
         "status": "ok",
         "judge_enabled": engine.judge_enabled,
         "judge_model": settings.judge_model if engine.judge_enabled else None,
+        "allow_signup": settings.allow_signup,
     }
 
 

@@ -54,6 +54,12 @@ class UserCreate(BaseModel):
     role: Literal["admin", "analyst"] = "analyst"
 
 
+class UserUpdate(BaseModel):
+    # Both optional — change role (promote/demote), toggle login access, or both.
+    role: Literal["admin", "analyst"] | None = None
+    active: bool | None = None
+
+
 class ApiKeyCreate(BaseModel):
     label: str = ""
     actor: str = ""               # identity to attribute this key's traffic to
