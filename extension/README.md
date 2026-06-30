@@ -1,9 +1,17 @@
 # Warden — Shadow-AI Guard (browser extension)
 
 A Manifest V3 extension that catches **secrets, PII, and proprietary data being pasted
-into external AI tools** (ChatGPT, Claude, Gemini) — and warns or blocks **before the
-prompt is sent**. It's the Module C (`ai_usage`) capture client; all detection happens
-in the Warden backend (`POST /api/ingest/ai-usage`).
+into external AI tools** (ChatGPT, Claude, Gemini, Microsoft Copilot) — and warns or
+blocks **before the prompt is sent**. It's the Module C (`ai_usage`) capture client; all
+detection happens in the Warden backend (`POST /api/ingest/ai-usage`).
+
+> **Microsoft Copilot note.** `copilot.microsoft.com` is in the extension's matched
+> hosts, and the backend already labels it as a destination. Reliable browser capture
+> still needs a site-specific request-shape match in `injected.js` (`SEND_PATTERNS` +
+> `extractPrompt`) once that shape is confirmed — and the consumer client uses a
+> WebSocket transport that fetch-wrapping can't see. The **egress proxy** is the
+> dependable capture plane for Copilot (it inspects the GitHub Copilot IDE domains and
+> `copilot.microsoft.com` directly).
 
 ## How it works
 

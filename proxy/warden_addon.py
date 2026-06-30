@@ -31,6 +31,11 @@ AI_HOST_SUFFIXES = (
     "api.anthropic.com", "claude.ai",
     "generativelanguage.googleapis.com", "gemini.google.com",
     "api.cohere.ai", "api.mistral.ai", "api.perplexity.ai",
+    # GitHub Copilot (IDE assistants): chat + completions. The suffix
+    # "githubcopilot.com" covers api / api.business / api.individual variants.
+    "githubcopilot.com", "copilot-proxy.githubusercontent.com",
+    # Microsoft Copilot (consumer web / desktop).
+    "copilot.microsoft.com",
 )
 
 _ACTION_RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}

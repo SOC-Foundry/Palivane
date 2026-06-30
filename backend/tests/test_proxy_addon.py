@@ -21,6 +21,24 @@ def test_is_ai_host():
     assert not addon.is_ai_host("")
 
 
+def test_is_ai_host_copilot():
+    # GitHub Copilot (IDE) — api + business/individual variants share the suffix.
+    assert addon.is_ai_host("api.githubcopilot.com")
+    assert addon.is_ai_host("api.business.githubcopilot.com")
+    assert addon.is_ai_host("api.individual.githubcopilot.com")
+    assert addon.is_ai_host("copilot-proxy.githubusercontent.com")
+    # Microsoft Copilot (web / desktop).
+    assert addon.is_ai_host("copilot.microsoft.com")
+    # A lookalike that isn't actually Copilot must not match.
+    assert not addon.is_ai_host("notgithubcopilot.example.com")
+
+
+def test_detect_tool_copilot():
+    # GitHub Copilot's IDE clients identify themselves in the User-Agent.
+    assert addon.detect_tool("GitHubCopilotChat/0.12 VSCode") == "copilot"
+    assert addon.detect_tool("github-copilot/1.0") == "copilot"
+
+
 def test_extract_openai_chat():
     body = json.dumps({"messages": [
         {"role": "system", "content": "be helpful"},
