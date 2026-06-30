@@ -51,6 +51,9 @@ fully on the offline detectors with **no API key**; add a key to enrich with Cla
 
 ## Run the whole stack locally (Docker)
 
+> New here? The **[setup guide](docs/setup.md)** walks through both install paths
+> (Docker and from-source), first sign-in, and connecting your first capture source.
+
 The fastest way to a real, hosted-locally deployment — Postgres + backend + an
 nginx-served frontend, one command:
 
@@ -468,6 +471,7 @@ docker-compose.yml    # db + backend + web (local hosted stack)
 deploy/               # systemd unit (api) + env example
 extension/            # MV3 browser extension — shadow-AI capture (browser)
 proxy/                # mitmproxy addon — shadow-AI capture (desktop apps / network)
+docs/setup.md              # getting started: install (Docker/source), first sign-in, connect a source
 docs/claude-deployment.md  # step-by-step: deploy for browser + Claude Code + desktop
 docs/tokens-and-identity.md  # auth-model reference: tokens, attribution, per-user keys
 frontend/

@@ -5,6 +5,7 @@ import FindingsList from "./components/FindingsList.jsx";
 import FindingDetail from "./components/FindingDetail.jsx";
 import Connect from "./components/Connect.jsx";
 import Login from "./components/Login.jsx";
+import { IconList, IconPlug, IconShield, IconRefresh, IconLogout } from "./components/icons.jsx";
 
 export default function App() {
   const [auth, setAuth] = useState(null);        // { user, tenant }
@@ -74,70 +75,100 @@ export default function App() {
   if (booting) return <div className="login-screen"><div className="login-sub">Loading…</div></div>;
   if (!auth) return <Login onAuthed={() => api.me().then(setAuth)} />;
 
-  return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <span className="logo">◆</span> Warden
-          <span className="subtitle">AI Security Gateway</span>
-        </div>
-        <div className="health">
-          {health && (
-            <span className={`pill ${health.judge_enabled ? "pill-on" : "pill-off"}`}>
-              {health.judge_enabled
-                ? `Claude judge: ${health.judge_model}`
-                : "Offline detection (no API key)"}
-            </span>
-          )}
-          <span className="user-box">
-            <button type="button" className={`tab ${view === "findings" ? "tab-on" : ""}`}
-                    onClick={() => setView("findings")}>Findings</button>
-            {auth.user?.role === "admin" && (
-              <button type="button" className={`tab ${view === "connect" ? "tab-on" : ""}`}
-                      onClick={() => setView("connect")}>Connect</button>
-            )}
-            <span className="user-email">{auth.tenant?.name || auth.tenant?.slug} · {auth.user?.email}</span>
-            {view === "findings" && <button type="button" className="link-btn" onClick={refresh}>refresh</button>}
-            <button type="button" className="link-btn" onClick={logout}>sign out</button>
-          </span>
-        </div>
-      </header>
+  const isAdmin = auth.user?.role === "admin";
 
-      {view === "connect" ? (
-        <Connect tenant={auth.tenant} />
-      ) : (
-        <>
-          <Dashboard stats={stats} />
-          <div className="main-grid">
-            <div className="left-col">
-              <FindingsList
-                findings={findings}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                filter={filter}
-                onFilter={setFilter}
-              />
-            </div>
-            <div className="right-col">
-              {selected ? (
-                <FindingDetail
-                  finding={selected}
-                  onClose={() => setSelectedId(null)}
-                  onStatusChange={async () => {
-                    await refresh();
-                    if (selectedId) api.finding(selectedId).then(setSelected);
-                  }}
-                />
-              ) : (
-                <div className="placeholder">
-                  <p>Findings stream in from the gateway, browser extension, and egress proxy.
-                     Select one to inspect its risk signals.</p>
-                </div>
-              )}
-            </div>
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <span className="logo">◆</span>
+          <div>
+            <div className="brand-name">Warden</div>
+            <div className="brand-sub">AI Security Gateway</div>
           </div>
-        </>
-      )}
+        </div>
+
+        <nav className="nav">
+          <button type="button" className={`nav-item ${view === "findings" ? "nav-on" : ""}`}
+                  onClick={() => setView("findings")}>
+            <IconList /> <span>Findings</span>
+          </button>
+          {isAdmin && (
+            <button type="button" className={`nav-item ${view === "connect" ? "nav-on" : ""}`}
+                    onClick={() => setView("connect")}>
+              <IconPlug /> <span>Connect</span>
+            </button>
+          )}
+        </nav>
+
+        <div className="sidebar-foot">
+          {health && (
+            <div className={`judge-status ${health.judge_enabled ? "judge-on" : "judge-off"}`}>
+              <span className="judge-dot" />
+              <span>{health.judge_enabled
+                ? `Claude judge · ${health.judge_model}`
+                : "Offline detection"}</span>
+            </div>
+          )}
+          <div className="account">
+            <div className="account-org">{auth.tenant?.name || auth.tenant?.slug}</div>
+            <div className="account-email">{auth.user?.email}</div>
+          </div>
+          <button type="button" className="signout" onClick={logout}>
+            <IconLogout /> <span>Sign out</span>
+          </button>
+        </div>
+      </aside>
+
+      <main className="content">
+        {view === "connect" ? (
+          <Connect tenant={auth.tenant} />
+        ) : (
+          <>
+            <div className="content-head">
+              <div>
+                <h1 className="page-title">Findings</h1>
+                <p className="page-sub">Live risk verdicts from the gateway, browser extension, and egress proxy.</p>
+              </div>
+              <button type="button" className="ghost-btn" onClick={refresh}>
+                <IconRefresh /> <span>Refresh</span>
+              </button>
+            </div>
+
+            <Dashboard stats={stats} />
+            <div className="main-grid">
+              <div className="left-col">
+                <FindingsList
+                  findings={findings}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                  filter={filter}
+                  onFilter={setFilter}
+                />
+              </div>
+              <div className="right-col">
+                {selected ? (
+                  <FindingDetail
+                    finding={selected}
+                    onClose={() => setSelectedId(null)}
+                    onStatusChange={async () => {
+                      await refresh();
+                      if (selectedId) api.finding(selectedId).then(setSelected);
+                    }}
+                  />
+                ) : (
+                  <div className="placeholder">
+                    <IconShield width={28} height={28} />
+                    <h3>Select a finding</h3>
+                    <p>Pick a finding from the list to inspect its risk signals,
+                       evidence, and recommended action.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </main>
     </div>
   );
 }
