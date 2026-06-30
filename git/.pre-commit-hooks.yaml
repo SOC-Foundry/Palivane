@@ -1,0 +1,7 @@
+- id: warden-secret-scan
+  name: Warden secret & PII scan
+  description: Block commits that contain secrets or PII (scanned via your Warden backend).
+  entry: git/warden_git_scan.py --staged
+  language: python
+  pass_filenames: false
+  always_run: true

@@ -227,6 +227,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/analyze`           | Analyze one item; returns verdict + signals. Set `surface` (`llm_io`/`ai_usage`); pass `destination` for `ai_usage`. |
 | POST   | `/api/analyze/batch`     | Analyze up to 500 items in one call. |
 | POST   | `/api/ingest/ai-usage`   | Score content captured by the browser extension / proxy (`ai_usage`); returns allow/warn/block. Token-gated. |
+| POST   | `/api/scan/code`         | Scan changed files (pre-commit hook / CI) for secrets & PII before they reach a repo; ignores `source_code_leak`. Returns a per-file allow/warn/block. Token-gated. |
 | GET    | `/api/findings`          | List the tenant's findings (filter by `severity`, `status`). |
 | GET    | `/api/findings/{id}`     | Full finding detail with signal breakdown. |
 | PATCH  | `/api/findings/{id}`     | Set status (`open` / `triaged` / `dismissed`). |
@@ -418,6 +419,37 @@ transparent. It **fails open** (Warden down → traffic flows). Caveat: needs TL
 inspection, so certificate-pinned clients bypass rather than being inspected. Details
 and deploy steps in [`proxy/README.md`](proxy/README.md).
 
+## Keeping secrets & PII out of repos (git)
+
+The AI-tool boundary isn't the only way secrets leak — they also land in code via
+`git commit`. The **git capture plane** ([`git/`](git/)) reuses the same detection engine
+to stop that, through `POST /api/scan/code` (which keeps secrets + PII but **ignores
+`source_code_leak`** — a repo is meant to hold code):
+
+- a **pre-commit hook** that blocks a commit containing a secret/PII finding, and
+- a **GitHub Action** that fails a PR check (the enforceable gate; pair with branch
+  protection).
+
+One stdlib-only scanner serves both. Use it alongside GitHub's native Secret Scanning
+push protection — that's the primary secrets gate; Warden adds custom org patterns, PII
+coverage, and one console/policy across AI egress *and* commits. Setup in
+[`git/README.md`](git/README.md).
+
+```yaml
+# .github/workflows/warden-secret-scan.yml — fail a PR that adds secrets/PII
+on: pull_request
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: TachTech-Engineering/Warden/git@main
+        with:
+          warden-url: https://warden.corp.example.com
+          warden-token: ${{ secrets.WARDEN_TOKEN }}
+```
+
 ## Evaluation & detection quality
 
 Detection quality is measurable, not vibes. A labeled corpus
@@ -487,6 +519,7 @@ docker-compose.yml    # db + backend + web (local hosted stack)
 deploy/               # systemd unit (api) + env example
 extension/            # MV3 browser extension — shadow-AI capture (browser)
 proxy/                # mitmproxy addon — shadow-AI capture (desktop apps / network)
+git/                  # pre-commit hook + GitHub Action — secrets/PII out of repos
 docs/setup.md              # getting started: install (Docker/source), first sign-in, connect a source
 docs/claude-deployment.md  # step-by-step: deploy for browser + Claude Code + desktop
 docs/tokens-and-identity.md  # auth-model reference: tokens, attribution, per-user keys

@@ -30,6 +30,17 @@ class AIUsageIngest(BaseModel):
     tool: str = ""          # capturing tool id (e.g. "claude-code") for per-tool policy
 
 
+class CodeFile(BaseModel):
+    path: str = ""
+    content: str
+
+
+class CodeScanRequest(BaseModel):
+    # A pre-commit hook / CI step sends the changed files; we scan each for secrets & PII.
+    files: list[CodeFile] = Field(default_factory=list)
+    record: bool = False          # persist non-clean files as findings (off by default)
+
+
 class StatusUpdate(BaseModel):
     status: Literal["open", "triaged", "dismissed"]
 
