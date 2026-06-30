@@ -7,11 +7,12 @@ addon that inspects outbound POSTs to AI domains, scores the prompt through Ward
 records a finding, and blocks (HTTP 403) on a block verdict.
 
 Inspected destinations include OpenAI, Anthropic, Gemini, Cohere/Mistral/Perplexity,
-**GitHub Copilot** (`*.githubcopilot.com`, `copilot-proxy.githubusercontent.com`), and
-**Microsoft Copilot** (`copilot.microsoft.com`) — see `AI_HOST_SUFFIXES` in
-`warden_addon.py`. The tool is identified from the User-Agent (`detect_tool`), so the
-backend's per-tool policy suppresses routine `source_code_leak` for `copilot` while
-still catching secrets and PII.
+**GitHub Copilot** (`*.githubcopilot.com`, `copilot-proxy.githubusercontent.com`),
+**Microsoft Copilot** (`copilot.microsoft.com`), and **Cursor** (`*.cursor.sh`,
+`cursor.com`) — see `AI_HOST_SUFFIXES` in `warden_addon.py`. The tool is identified from
+the User-Agent (`detect_tool`), so the backend's per-tool policy suppresses routine
+`source_code_leak` for coding tools (`claude-code`, `cursor`, `copilot`) while still
+catching secrets and PII.
 
 ## Run
 
@@ -64,5 +65,9 @@ curl -x http://localhost:8081 https://api.openai.com/v1/chat/completions \
   to the raw body; new providers may need a parser tweak in `extract_prompt`. GitHub
   Copilot Chat uses a `messages` body (covered) and inline completion uses a `prompt`
   field (covered by the fallback).
-- **Verify Copilot TLS interception on your fleet** before relying on enforcement — some
-  IDE Copilot builds pin certs; where they do, they bypass rather than being inspected.
+- **Cursor** routes through its own backend with a proprietary (non-OpenAI) request
+  format, so `extract_prompt` falls back to scanning the **raw body** — secrets/PII still
+  match as plaintext substrings, but extraction isn't structured. Confirm on your build,
+  and add a parser to `extract_prompt` if you want clean prompt text.
+- **Verify TLS interception per IDE** (Copilot, Cursor) before relying on enforcement —
+  some builds pin certs; where they do, they bypass rather than being inspected.

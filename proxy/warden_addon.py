@@ -36,6 +36,9 @@ AI_HOST_SUFFIXES = (
     "githubcopilot.com", "copilot-proxy.githubusercontent.com",
     # Microsoft Copilot (consumer web / desktop).
     "copilot.microsoft.com",
+    # Cursor (AI IDE): model calls route through Cursor's backend (api2/api3.cursor.sh,
+    # newer cursor.com). detect_tool() tags these "cursor".
+    "cursor.sh", "cursor.com",
 )
 
 _ACTION_RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}
