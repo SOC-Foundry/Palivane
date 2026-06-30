@@ -26,6 +26,7 @@ from .schemas import (
     AIUsageIngest,
     AnalyzeRequest,
     BatchAnalyzeRequest,
+    CodeScanRequest,
     CoverageRequest,
     StatusUpdate,
 )
@@ -116,6 +117,27 @@ def _ingest_tenant_id(db: Session) -> int | None:
 _ACTION_RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}
 
 
+def _action_for(severity: str) -> str:
+    rank = _ACTION_RANK.get(severity, 0)
+    return "block" if rank >= 3 else ("warn" if rank >= 2 else "allow")
+
+
+def _ingest_auth(x_warden_token: str, db: Session) -> tuple[int | None, str]:
+    """Resolve (tenant_id, default_actor) from a per-tenant API key (`ak_…`) or the
+    shared EXTENSION_INGEST_TOKEN. Used by the token-gated ingest & scan endpoints, which
+    are deployed via policy/CI and so authenticate with a capture token, not a user JWT."""
+    from .security import looks_like_api_key
+
+    if looks_like_api_key(x_warden_token):
+        from .gateway import _resolve_api_key
+        principal = _resolve_api_key(x_warden_token, db)   # 401s on bad/expired key
+        return principal.tenant_id, principal.actor
+    token = settings.extension_ingest_token
+    if not token or not hmac.compare_digest(x_warden_token, token):
+        raise HTTPException(status_code=401, detail="invalid or missing ingest token")
+    return _ingest_tenant_id(db), ""
+
+
 @app.post("/api/ingest/ai-usage")
 def ingest_ai_usage(
     body: AIUsageIngest,
@@ -127,19 +149,8 @@ def ingest_ai_usage(
     Authenticated by a per-tenant API key (`ak_…`, minted in the console) or the shared
     static EXTENSION_INGEST_TOKEN — not a user JWT — so it can be deployed via policy.
     Returns an action the client enforces: allow / warn / block."""
-    from .security import looks_like_api_key
-
-    actor = body.user
-    if looks_like_api_key(x_warden_token):
-        from .gateway import _resolve_api_key
-        principal = _resolve_api_key(x_warden_token, db)   # 401s on bad/expired key
-        tenant_id = principal.tenant_id
-        actor = body.user or principal.actor
-    else:
-        token = settings.extension_ingest_token
-        if not token or not hmac.compare_digest(x_warden_token, token):
-            raise HTTPException(status_code=401, detail="invalid or missing ingest token")
-        tenant_id = _ingest_tenant_id(db)
+    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    actor = body.user or default_actor
 
     item = AnalysisInput(
         content=body.content, sender=actor, channel=body.tool or "ai_tool",
@@ -149,15 +160,57 @@ def ingest_ai_usage(
     from .policy import detect_tool, signal_filter_for
     sig_filter = signal_filter_for(detect_tool(explicit=body.tool))
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id, signal_filter=sig_filter)
-    rank = _ACTION_RANK.get(result["severity"], 0)
-    action = "block" if rank >= 3 else ("warn" if rank >= 2 else "allow")
     return {
-        "action": action,
+        "action": _action_for(result["severity"]),
         "risk_score": result["risk_score"],
         "severity": result["severity"],
         "signals": result["signals"],
         "finding_id": result["finding_id"],
     }
+
+
+# Categories that matter for a repo commit: a repo is *expected* to contain code, so
+# drop source_code_leak; there's no external destination, so drop unsanctioned_ai.
+_VCS_KEEP = {"secret_leak", "pii_exposure"}
+
+
+def _vcs_filter(signals: list) -> list:
+    return [s for s in signals if s.category.value in _VCS_KEEP]
+
+
+@app.post("/api/scan/code")
+def scan_code(
+    body: CodeScanRequest,
+    x_warden_token: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Scan code/diffs (pre-commit hook, CI) for secrets & PII before they reach a repo.
+
+    Reuses the detection engine but keeps only data-loss categories — a repo is meant to
+    hold code, so source_code_leak is ignored. Token-gated like the ingest endpoint.
+    Returns an overall action plus per-file detail for files that aren't clean."""
+    tenant_id, _ = _ingest_auth(x_warden_token, db)
+
+    flagged: list[dict] = []
+    worst = 0
+    for f in body.files[:1000]:
+        item = AnalysisInput(content=f.content, subject=f.path, channel="git",
+                             surface=Surface.AI_USAGE)
+        result = run_analysis(item, persist=False, db=db, tenant_id=tenant_id,
+                              signal_filter=_vcs_filter)
+        action = _action_for(result["severity"])
+        worst = max(worst, _ACTION_RANK.get(result["severity"], 0))
+        if action != "allow":
+            flagged.append({
+                "path": f.path, "action": action, "severity": result["severity"],
+                "risk_score": result["risk_score"], "signals": result["signals"],
+            })
+            if body.record and tenant_id is not None:
+                run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
+                             signal_filter=_vcs_filter)
+
+    overall = "block" if worst >= 3 else ("warn" if worst >= 2 else "allow")
+    return {"action": overall, "scanned": len(body.files[:1000]), "files": flagged}
 
 
 @app.get("/api/findings")
