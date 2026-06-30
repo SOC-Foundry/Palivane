@@ -47,7 +47,11 @@ the signals into one risk verdict:
    payment cards, contact lists), proprietary source code / confidentiality-marked
    material, and an *unsanctioned destination* (a consumer AI tool not on your
    `SANCTIONED_AI_TOOLS` allowlist). On the gateway it also flags PII leaving to your
-   own LLMs.
+   own LLMs. Secret detection is two-tier: **known formats** (OpenAI/Anthropic/AWS/
+   GitHub incl. fine-grained PATs, GitLab, Stripe, Google OAuth, Slack, npm/PyPI,
+   SendGrid, Twilio, PEM private keys, JWTs, labeled `key=value`) hard-block, and a
+   **high-entropy heuristic** catches novel/unlabeled tokens at warn-level (suppressed
+   for sanctioned coding tools, where random-looking strings are routine).
 3. **Claude judge** (optional, all surfaces) — `claude-opus-4-8` reads the content like
    an analyst and returns a structured verdict for the novel cases the rules miss.
 
