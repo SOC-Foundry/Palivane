@@ -10,6 +10,7 @@
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
     "https://gemini.google.com/*",
+    "https://copilot.microsoft.com/*",
     "http://localhost/*",
     "http://127.0.0.1/*"
   ],
@@ -22,7 +23,8 @@
         "https://claude.ai/*",
         "https://chatgpt.com/*",
         "https://chat.openai.com/*",
-        "https://gemini.google.com/*"
+        "https://gemini.google.com/*",
+        "https://copilot.microsoft.com/*"
       ],
       "js": ["content.js"],
       "run_at": "document_start"
@@ -35,7 +37,8 @@
         "https://claude.ai/*",
         "https://chatgpt.com/*",
         "https://chat.openai.com/*",
-        "https://gemini.google.com/*"
+        "https://gemini.google.com/*",
+        "https://copilot.microsoft.com/*"
       ]
     }
   ]
