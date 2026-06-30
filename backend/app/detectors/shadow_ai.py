@@ -19,7 +19,7 @@ import re
 
 from ..config import settings
 from .base import AnalysisInput, Category, Signal, Surface
-from .patterns import find_secrets
+from .patterns import find_high_entropy_tokens, find_secrets
 
 # --- PII --------------------------------------------------------------------------------
 
@@ -92,6 +92,7 @@ class ShadowAIDetector:
         # detector, and sending code to your *own* LLM app is expected, not a leak.
         if item.surface == Surface.AI_USAGE:
             signals.extend(self._scan_secrets(text))
+            signals.extend(self._scan_high_entropy(text, item.channel))
             signals.extend(self._scan_proprietary(text))
             signals.extend(self._scan_destination(item))
         return signals
@@ -106,6 +107,30 @@ class ShadowAIDetector:
             detail="API keys, tokens, or private keys are about to leave for an AI tool.",
             weight=0.9, confidence=0.85, detector=self.name,
             evidence=", ".join(secrets[:4]),
+        )]
+
+    def _scan_high_entropy(self, text: str, tool: str) -> list[Signal]:
+        """Tier-2 generic secret heuristic: a long, high-entropy token with no recognized
+        format. Lower weight so it *warns* on its own and only blocks when it combines
+        with another signal (e.g. an unsanctioned destination)."""
+        # Coding assistants stream high-entropy code/hashes by design — the same per-tool
+        # policy that suppresses source_code_leak suppresses this heuristic for them.
+        from ..policy import suppressions_for
+        if "source_code_leak" in suppressions_for(tool or ""):
+            return []
+        # Don't double-flag what a Tier-1 pattern already caught as a definite secret.
+        if find_secrets(text):
+            return []
+        tokens = find_high_entropy_tokens(text)
+        if not tokens:
+            return []
+        return [Signal(
+            category=Category.SECRET_LEAK,
+            title="Possible secret (high-entropy token)",
+            detail="A long, random-looking token with no recognized format is about to "
+                   "leave for an AI tool — it may be an API key or credential.",
+            weight=0.7, confidence=0.7, detector=self.name,
+            evidence=", ".join(tokens[:4]),
         )]
 
     def _scan_pii(self, text: str) -> list[Signal]:
