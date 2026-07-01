@@ -17,9 +17,10 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .crypto import encrypt
 from .database import get_db
-from .models import ApiKey, LoginAttempt, Tenant, TenantUpstream, User
+from .models import ApiKey, Finding, LoginAttempt, Tenant, TenantUpstream, User
 from .schemas import (
-    ApiKeyCreate, LoginRequest, SignupRequest, UpstreamConfig, UserCreate, UserUpdate,
+    ApiKeyCreate, LoginRequest, SignupRequest, TenantDelete, TenantUpdate,
+    UpstreamConfig, UserCreate, UserUpdate,
 )
 from .upstreams import PROVIDERS, resolve as resolve_upstream
 from .security import (
@@ -325,3 +326,47 @@ def delete_upstream(provider: str, current: User = Depends(require_admin),
         db.delete(row)
         db.commit()
     return {"provider": provider, "effective": "global"}
+
+
+# --- tenant settings & lifecycle (data control) --------------------------------------
+
+_JUDGE = {"on": True, "off": False, "inherit": None}
+
+
+@router.patch("/tenant")
+def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
+                  db: Session = Depends(get_db)):
+    """Org settings: display name, Claude-judge consent, and findings retention."""
+    tenant = db.get(Tenant, current.tenant_id)
+    if body.name is not None:
+        tenant.name = body.name.strip() or tenant.name
+    if body.judge is not None:
+        tenant.judge_enabled = _JUDGE[body.judge]
+    if body.retention_days is not None:
+        if body.retention_days < 0:
+            raise HTTPException(status_code=400, detail="retention_days must be >= 0")
+        tenant.retention_days = body.retention_days
+    db.commit()
+    db.refresh(tenant)
+    return tenant.to_dict()
+
+
+@router.delete("/tenant")
+def delete_tenant(body: TenantDelete, current: User = Depends(require_admin),
+                  db: Session = Depends(get_db)):
+    """Delete this organization and ALL its data (GDPR "delete my org"). Irreversible —
+    the caller must pass the tenant slug as `confirm`."""
+    tenant = db.get(Tenant, current.tenant_id)
+    if body.confirm != tenant.slug:
+        raise HTTPException(status_code=400,
+                            detail=f"to confirm deletion, pass confirm=\"{tenant.slug}\"")
+    tid = tenant.id
+    counts = {
+        "findings": db.query(Finding).filter(Finding.tenant_id == tid).delete(),
+        "users": db.query(User).filter(User.tenant_id == tid).delete(),
+        "api_keys": db.query(ApiKey).filter(ApiKey.tenant_id == tid).delete(),
+        "upstreams": db.query(TenantUpstream).filter(TenantUpstream.tenant_id == tid).delete(),
+    }
+    db.delete(tenant)
+    db.commit()
+    return {"deleted_tenant": tenant.slug, "deleted": counts}

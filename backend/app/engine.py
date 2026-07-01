@@ -34,9 +34,11 @@ class Engine:
         surfaces = getattr(detector, "surfaces", set())
         return not surfaces or surface in surfaces
 
-    def analyze(self, item: AnalysisInput) -> Verdict:
+    def analyze(self, item: AnalysisInput, include_judge: bool = True) -> Verdict:
         signals = []
         for detector in self.detectors:
+            if detector is self.judge and not include_judge:
+                continue  # tenant opted out of the Claude judge (data-residency)
             if not self._applies(detector, item.surface):
                 continue
             try:

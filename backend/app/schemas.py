@@ -74,6 +74,18 @@ class UserUpdate(BaseModel):
     active: bool | None = None
 
 
+class TenantUpdate(BaseModel):
+    name: str | None = None
+    # Claude judge for this org: "on"/"off" force it; "inherit" follows the global key.
+    # None (field omitted) = leave unchanged.
+    judge: Literal["on", "off", "inherit"] | None = None
+    retention_days: int | None = None   # 0 = keep findings forever
+
+
+class TenantDelete(BaseModel):
+    confirm: str = ""   # must equal the tenant slug — guards against accidental deletion
+
+
 class UpstreamConfig(BaseModel):
     base_url: str = ""
     # Write-only: the provider API key. Stored encrypted, never returned. Leave empty on

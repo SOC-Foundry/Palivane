@@ -250,6 +250,9 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/users`             | Create a user in the tenant — `role` `admin`/`analyst` (admin). |
 | PATCH  | `/api/users/{id}`        | Change a user's role or enable/disable login; protects against last-admin / self-lockout (admin). |
 | GET/PUT/DELETE | `/api/upstreams[/{provider}]` | Per-tenant gateway provider config (openai/anthropic/gemini) — base URL + key (stored encrypted, never returned); the gateway forwards with the tenant's own account (admin). |
+| PATCH  | `/api/tenant`            | Org settings: name, Claude-judge consent (`judge`: on/off/inherit), findings `retention_days` (admin). |
+| DELETE | `/api/tenant`            | Delete the org and all its data (findings/users/keys/upstreams); slug-confirmed. GDPR "delete my org" (admin). |
+| POST   | `/api/findings/purge`    | Delete this tenant's findings older than `retention_days` (scheduler-friendly) (admin). |
 | POST   | `/api/apikeys`           | Mint a long-lived machine API key; plaintext returned once (admin). |
 | GET    | `/api/apikeys`           | List the tenant's API keys (no secrets) (admin). |
 | DELETE | `/api/apikeys/{id}`      | Revoke an API key (admin).                |
