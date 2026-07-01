@@ -22,17 +22,18 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   gateway resolves the calling tenant's config per request and forwards allowed calls with
   *its* key — so gateway traffic bills to each org's own provider account, not one shared
   account. Falls back to the global env config when a tenant hasn't set one.
+- **Data controls per tenant.** Claude-judge **opt-out** (`PATCH /api/tenant` `judge`:
+  on/off/inherit — the judge ships content to Anthropic), **retention** (`retention_days`
+  + `POST /api/findings/purge`, scheduler-friendly), and **delete-my-org**
+  (`DELETE /api/tenant`, slug-confirmed, cascades findings/users/keys/upstreams). Stored
+  finding content is already redacted at rest (`WARDEN_REDACT_FINDINGS`).
 
 ## Next tracks
 
-### 1. Data security & compliance
-- **Encryption at rest** for finding content and per-tenant secrets (e.g. app-level
-  envelope encryption, ideally per-tenant keys).
-- **Retention + hard delete** per tenant (scheduled purge; "delete my organization" for
-  GDPR/CCPA).
-- **Claude judge opt-in per tenant** — the judge ships content to Anthropic, so it needs
-  per-tenant consent and a DPA rather than a single global `ANTHROPIC_API_KEY`.
-- **Per-tenant data export** (self-serve).
+### 1. Data security & compliance (remaining)
+- **Full encryption at rest** for finding *content* (beyond redaction — envelope
+  encryption, ideally per-tenant keys) and **self-serve data export** per tenant.
+- **DPA / consent record** to accompany the judge opt-in.
 
 ### 2. Auth for SaaS
 - **argon2id** password hashing and a **vetted JWT library** (replace the stdlib

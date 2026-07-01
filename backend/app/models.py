@@ -32,9 +32,15 @@ class Tenant(Base):
     slug = Column(String(64), unique=True, index=True, nullable=False)
     name = Column(String(256), default="")
     created_at = Column(DateTime, default=_utcnow)
+    # Per-tenant Claude-judge consent: None = inherit global, True/False = force on/off.
+    # The judge ships content to Anthropic, so an org can opt out for data-residency.
+    judge_enabled = Column(Boolean, nullable=True, default=None)
+    # Delete this tenant's findings older than N days (0 = keep forever).
+    retention_days = Column(Integer, default=0)
 
     def to_dict(self) -> dict:
-        return {"id": self.id, "slug": self.slug, "name": self.name}
+        return {"id": self.id, "slug": self.slug, "name": self.name,
+                "judge_enabled": self.judge_enabled, "retention_days": self.retention_days}
 
 
 class User(Base):

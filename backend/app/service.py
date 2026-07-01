@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .detectors import AnalysisInput
 from .engine import engine
-from .models import Finding
+from .models import Finding, Tenant
 from .redaction import redact_text
 
 
@@ -22,7 +22,13 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     `tenant_id` attributes the stored finding to an organization (data isolation).
     `signal_filter` (list[Signal] -> list[Signal]) lets a per-tool policy drop expected
     categories before scoring (e.g. source code from a sanctioned coding assistant)."""
-    verdict = engine.analyze(item)
+    # A tenant can opt out of the Claude judge (it ships content to Anthropic).
+    include_judge = True
+    if tenant_id is not None:
+        tenant = db.get(Tenant, tenant_id)
+        if tenant is not None and tenant.judge_enabled is False:
+            include_judge = False
+    verdict = engine.analyze(item, include_judge=include_judge)
     if signal_filter is not None:
         from .scoring import score
         verdict = score(signal_filter(list(verdict.signals)))

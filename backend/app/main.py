@@ -250,6 +250,23 @@ def update_status(finding_id: int, body: StatusUpdate,
     return {"id": finding_id, "status": row.status}
 
 
+@app.post("/api/findings/purge")
+def purge_findings(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Delete this tenant's findings older than its retention window (0 = keep forever).
+    Idempotent; run it from a scheduler for ongoing enforcement."""
+    from datetime import datetime, timedelta, timezone
+    tenant = db.get(Tenant, current.tenant_id)
+    days = tenant.retention_days if tenant else 0
+    if not days:
+        return {"deleted": 0, "retention_days": 0}
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+    n = (db.query(Finding)
+         .filter(Finding.tenant_id == current.tenant_id, Finding.created_at < cutoff)
+         .delete())
+    db.commit()
+    return {"deleted": n, "retention_days": days}
+
+
 @app.get("/api/corpus/export")
 def export_corpus(current: User = Depends(require_admin), db: Session = Depends(get_db)):
     """Export this tenant's triaged/dismissed findings as eval-corpus JSONL.
