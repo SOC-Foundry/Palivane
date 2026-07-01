@@ -189,6 +189,12 @@ install config for each source. Pick whichever matches how your org uses AI:
 | Desktop apps, IDE assistants, 3rd-party CLIs (incl. GitHub Copilot) | **Egress proxy** | [`proxy/README.md`](../proxy/README.md) |
 | Secrets/PII reaching a **Git repo** (commit / PR) | **Pre-commit hook + GitHub Action** | [`git/README.md`](../git/README.md) |
 
+> **Cursor (AI IDE).** Cursor's model/chat endpoint (`api2.cursor.sh`) **pins its
+> certificate**, so a TLS-inspecting egress proxy can't read its prompts (measured —
+> the handshake is rejected even with a trusted CA). For Cursor, rely on the **git plane**
+> (secrets/PII in the code it commits) and the **gateway** for first-party AI. See the
+> [`proxy/README.md`](../proxy/README.md) Cursor caveat.
+
 **Quick smoke test of the gateway** (monitor mode, no upstream needed — returns a stub):
 
 ```bash
