@@ -49,8 +49,27 @@ def is_ai_host(host: str) -> bool:
     return any(host == s or host.endswith("." + s) or host.endswith(s) for s in AI_HOST_SUFFIXES)
 
 
+def _harvest_strings(obj, out: list[str]) -> None:
+    """Recursively collect string *values* from an arbitrary JSON structure (dict keys
+    are ignored). Lets us scan unknown request shapes — e.g. Cursor's proprietary body —
+    for secrets/PII without a per-vendor parser."""
+    if isinstance(obj, str):
+        if len(obj) >= 2:
+            out.append(obj)
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            _harvest_strings(v, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _harvest_strings(v, out)
+
+
 def extract_prompt(body: bytes | str) -> str:
-    """Pull the user-authored text from an OpenAI/Anthropic/Gemini request body."""
+    """Pull the user-authored text from a request body.
+
+    Recognizes OpenAI/Anthropic/Gemini shapes; for any other JSON body (e.g. an IDE's
+    proprietary protocol) it falls back to harvesting all string values so secrets/PII
+    are still scanned. Non-JSON bodies fall back to the raw text."""
     if isinstance(body, bytes):
         body = body.decode("utf-8", "replace")
     if not body:
@@ -96,7 +115,15 @@ def extract_prompt(body: bytes | str) -> str:
             if isinstance(v, str):
                 parts.append(v)
 
-    return "\n".join(p for p in parts if p).strip() or body[:8000]
+    structured = "\n".join(p for p in parts if p).strip()
+    if structured:
+        return structured
+
+    # Unknown JSON shape (e.g. Cursor): harvest every string value so a secret/PII still
+    # gets scanned even without a per-vendor parser. Fall back to the raw text otherwise.
+    harvested: list[str] = []
+    _harvest_strings(j, harvested)
+    return "\n".join(harvested)[:20000] if harvested else body[:8000]
 
 
 def detect_tool(user_agent: str) -> str:

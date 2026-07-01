@@ -61,13 +61,11 @@ curl -x http://localhost:8081 https://api.openai.com/v1/chat/completions \
   Off-network personal devices need an endpoint agent (out of scope here).
 - **Fails open**: if Warden is unreachable the request is allowed through, so the
   proxy never becomes a single point of failure for the company's AI access.
-- Prompt extraction handles OpenAI / Anthropic / Gemini request shapes and falls back
-  to the raw body; new providers may need a parser tweak in `extract_prompt`. GitHub
-  Copilot Chat uses a `messages` body (covered) and inline completion uses a `prompt`
-  field (covered by the fallback).
-- **Cursor** routes through its own backend with a proprietary (non-OpenAI) request
-  format, so `extract_prompt` falls back to scanning the **raw body** — secrets/PII still
-  match as plaintext substrings, but extraction isn't structured. Confirm on your build,
-  and add a parser to `extract_prompt` if you want clean prompt text.
+- Prompt extraction recognizes OpenAI / Anthropic / Gemini shapes; for **any other JSON
+  body** (e.g. **Cursor**'s proprietary protocol) it harvests all string values so
+  secrets/PII are still scanned without a per-vendor parser, and falls back to the raw
+  text for non-JSON (e.g. protobuf/binary) bodies. For clean, structured prompt text from
+  a specific vendor, add a shape to `extract_prompt`. GitHub Copilot Chat uses a
+  `messages` body (covered) and inline completion uses a `prompt` field (covered).
 - **Verify TLS interception per IDE** (Copilot, Cursor) before relying on enforcement —
   some builds pin certs; where they do, they bypass rather than being inspected.
