@@ -304,6 +304,12 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 .login-card .brand { font-size: 22px; font-weight: 800; }
 .link-muted { color: var(--muted-2); margin-top: 2px; }
 .link-muted:hover { color: var(--muted); }
+.sso-btn {
+  width: 100%; margin-top: 10px; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 9px; padding: 10px; font-weight: 600;
+  font-size: 13.5px; cursor: pointer; transition: border-color 0.12s;
+}
+.sso-btn:hover { border-color: var(--accent); }
 .login-card .brand .logo { color: var(--accent); margin-right: 6px; filter: drop-shadow(0 0 10px rgba(77,163,255,0.5)); }
 .login-sub { color: var(--muted); font-size: 13px; margin: 0 0 6px; }
 .login-card input {

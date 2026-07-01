@@ -74,6 +74,15 @@ class UserUpdate(BaseModel):
     active: bool | None = None
 
 
+class OIDCConfig(BaseModel):
+    issuer: str = ""
+    client_id: str = ""
+    client_secret: str = ""            # write-only; stored encrypted, never returned
+    enabled: bool | None = None        # None = leave unchanged
+    auto_provision: bool | None = None
+    allowed_domain: str | None = None
+
+
 class TenantUpdate(BaseModel):
     name: str | None = None
     # Claude judge for this org: "on"/"off" force it; "inherit" follows the global key.

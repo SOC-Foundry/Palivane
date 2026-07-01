@@ -9,17 +9,20 @@ queries to `current_user.tenant_id`.
 from __future__ import annotations
 
 import re
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
+from . import oidc
 from .config import settings
-from .crypto import encrypt
+from .crypto import decrypt, encrypt
 from .database import get_db
-from .models import ApiKey, Finding, LoginAttempt, Tenant, TenantUpstream, User
+from .models import ApiKey, Finding, LoginAttempt, Tenant, TenantOIDC, TenantUpstream, User
 from .schemas import (
-    ApiKeyCreate, LoginRequest, SignupRequest, TenantDelete, TenantUpdate,
+    ApiKeyCreate, LoginRequest, OIDCConfig, SignupRequest, TenantDelete, TenantUpdate,
     UpstreamConfig, UserCreate, UserUpdate,
 )
 from .upstreams import PROVIDERS, resolve as resolve_upstream
@@ -387,3 +390,128 @@ def delete_tenant(body: TenantDelete, current: User = Depends(require_admin),
     db.delete(tenant)
     db.commit()
     return {"deleted_tenant": tenant.slug, "deleted": counts}
+
+
+# --- per-tenant OIDC / SSO -----------------------------------------------------------
+
+def _oidc_state(tenant_id: int, db: Session) -> dict:
+    row = db.query(TenantOIDC).filter(TenantOIDC.tenant_id == tenant_id).first()
+    if row is None:
+        return {"configured": False, "enabled": False}
+    return {
+        "configured": True,
+        "issuer": row.issuer,
+        "client_id": row.client_id,
+        "secret_set": bool(row.client_secret_encrypted),   # never return the secret
+        "enabled": row.enabled,
+        "auto_provision": row.auto_provision,
+        "allowed_domain": row.allowed_domain,
+    }
+
+
+@router.get("/oidc")
+def get_oidc(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """This org's SSO config (issuer/client_id/flags; the secret is never returned)."""
+    return _oidc_state(current.tenant_id, db)
+
+
+@router.put("/oidc")
+def set_oidc(body: OIDCConfig, current: User = Depends(require_admin),
+             db: Session = Depends(get_db)):
+    """Configure OpenID Connect SSO for this org. Empty client_secret keeps the existing
+    one. Fields left unset (None) are unchanged."""
+    row = db.query(TenantOIDC).filter(TenantOIDC.tenant_id == current.tenant_id).first()
+    if row is None:
+        row = TenantOIDC(tenant_id=current.tenant_id)
+        db.add(row)
+    row.issuer = body.issuer.strip() or row.issuer
+    row.client_id = body.client_id.strip() or row.client_id
+    if body.client_secret:
+        row.client_secret_encrypted = encrypt(body.client_secret)
+    if body.enabled is not None:
+        row.enabled = body.enabled
+    if body.auto_provision is not None:
+        row.auto_provision = body.auto_provision
+    if body.allowed_domain is not None:
+        row.allowed_domain = body.allowed_domain.strip().lower()
+    db.commit()
+    return _oidc_state(current.tenant_id, db)
+
+
+@router.delete("/oidc")
+def delete_oidc(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    row = db.query(TenantOIDC).filter(TenantOIDC.tenant_id == current.tenant_id).first()
+    if row is not None:
+        db.delete(row)
+        db.commit()
+    return {"configured": False, "enabled": False}
+
+
+def _enabled_oidc(org: str, db: Session) -> tuple[Tenant, TenantOIDC]:
+    tenant = db.query(Tenant).filter(Tenant.slug == org.strip().lower()).first()
+    row = (db.query(TenantOIDC).filter(TenantOIDC.tenant_id == tenant.id).first()
+           if tenant else None)
+    if row is None or not row.enabled or not (row.issuer and row.client_id):
+        raise HTTPException(status_code=404, detail="SSO is not configured for this organization")
+    return tenant, row
+
+
+@router.get("/auth/oidc/{org}/login")
+def oidc_login(org: str, request: Request, db: Session = Depends(get_db)):
+    """Begin the SSO auth-code flow: redirect the browser to the tenant's IdP."""
+    tenant, row = _enabled_oidc(org, db)
+    meta = oidc.discover(row.issuer)   # raises OIDCError -> 500-ish; acceptable for misconfig
+    nonce = secrets.token_urlsafe(16)
+    # Signed, self-expiring state — no server-side session store needed (multi-worker safe).
+    state = create_token({"typ": "oidc_state", "org": tenant.slug, "nonce": nonce}, ttl=600)
+    base = str(request.base_url).rstrip("/")
+    redirect_uri = f"{base}/api/auth/oidc/{tenant.slug}/callback"
+    return RedirectResponse(oidc.authorize_url(meta, row.client_id, redirect_uri, state, nonce),
+                            status_code=307)
+
+
+@router.get("/auth/oidc/{org}/callback")
+def oidc_callback(org: str, request: Request, code: str = "", state: str = "",
+                  db: Session = Depends(get_db)):
+    """IdP redirect target: validate state, exchange the code, validate the ID token,
+    map/provision the user, and hand a Warden session back to the console (URL fragment)."""
+    try:
+        payload = decode_token(state)
+    except TokenError:
+        raise HTTPException(status_code=400, detail="invalid or expired SSO state")
+    if payload.get("typ") != "oidc_state" or payload.get("org") != org.strip().lower():
+        raise HTTPException(status_code=400, detail="SSO state mismatch")
+
+    tenant, row = _enabled_oidc(org, db)
+    base = str(request.base_url).rstrip("/")
+    redirect_uri = f"{base}/api/auth/oidc/{tenant.slug}/callback"
+    secret = decrypt(row.client_secret_encrypted)
+    try:
+        meta = oidc.discover(row.issuer)
+        tokens = oidc.exchange_code(meta, row.client_id, secret, code, redirect_uri)
+        claims = oidc.validate_id_token(meta, row.issuer, row.client_id,
+                                        tokens.get("id_token", ""), payload.get("nonce", ""))
+    except oidc.OIDCError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+    email = claims["email"].lower().strip()
+    if row.allowed_domain and not email.endswith("@" + row.allowed_domain):
+        raise HTTPException(status_code=403, detail="email domain not permitted for this org")
+
+    user = (db.query(User)
+            .filter(User.tenant_id == tenant.id, User.email == email).first())
+    if user is None:
+        if not row.auto_provision:
+            raise HTTPException(status_code=403, detail="no account for this email — ask an admin")
+        user = User(tenant_id=tenant.id, email=email,
+                    password_hash=hash_password(secrets.token_urlsafe(32)), role="analyst")
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    elif not user.active:
+        raise HTTPException(status_code=403, detail="account is disabled")
+
+    token = create_token({"sub": str(user.id), "tenant_id": user.tenant_id,
+                          "role": user.role, "tv": user.token_version})
+    # Hand the session to the SPA via URL fragment (not query — keeps it out of logs).
+    return RedirectResponse(f"{base}/#sso_token={token}", status_code=303)
