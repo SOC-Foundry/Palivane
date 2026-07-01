@@ -247,5 +247,3 @@ high-volume triage).
 - **[Claude deployment guide](./claude-deployment.md)** — surface-by-surface rollout for Claude.
 - **[Tokens & identity](./tokens-and-identity.md)** — the auth model and what to provision.
 - **Service deployment** — [`deploy/`](../deploy/) has a systemd unit + annotated env file.
-</content>
-</invoke>

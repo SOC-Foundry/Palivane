@@ -155,7 +155,7 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `EXTENSION_INGEST_TOKEN` | *(unset)*             | Shared token the browser extension presents to `/api/ingest/ai-usage` (empty = endpoint disabled). |
 | `WARDEN_SECRET_KEY` | *(dev fallback)*         | **Set in production.** Signs JWT session tokens; unset → insecure dev key + a startup warning. |
 | `AUTH_TOKEN_TTL`    | `43200`                    | Session-token lifetime in seconds (12h).           |
-| `WARDEN_LOGIN_MAX_FAILS` / `WARDEN_LOGIN_WINDOW` | `5` / `300` | Brute-force throttle: refuse logins (HTTP 429) after N failures for an email within the window (seconds). |
+| `WARDEN_LOGIN_MAX_FAILS` / `WARDEN_LOGIN_IP_MAX_FAILS` / `WARDEN_LOGIN_WINDOW` | `5` / `20` / `300` | Brute-force throttle (DB-backed, holds across workers): refuse logins (HTTP 429) after N failures for an email — or M for an IP — within the window (seconds). |
 | `WARDEN_REDACT_FINDINGS` | `true`                | Mask secrets/PII in **stored** finding content (detection still runs on raw). Set `false` to keep raw content for full forensics. |
 | `WARDEN_ALLOW_SIGNUP` | `true`                   | Self-serve org signup. Set `false` to lock down a single-org deployment. |
 | `INGEST_TENANT`     | *(unset)*                  | Tenant slug/id the extension & proxy attribute their findings to. |
@@ -201,6 +201,12 @@ TOKEN=$(curl -s -X POST localhost:8088/api/auth/login \
   -d '{"email":"soc@acme.com","password":"..."}' | jq -r .access_token)
 curl -s localhost:8088/api/stats -H "Authorization: Bearer $TOKEN"
 ```
+
+Email is unique *within* an org, so if the same address belongs to more than one org
+(multi-tenant hosting) the login must name it — add `"org":"acme"` (the tenant slug);
+Warden refuses (409) rather than guessing a tenant. Single-org/demo login omits it.
+Hosting Warden as a shared SaaS? See the
+[multi-tenant hardening roadmap](docs/multi-tenant-hardening.md).
 
 > Tokens are HS256 JWTs and passwords are PBKDF2-HMAC-SHA256, implemented with the
 > standard library to keep dependencies minimal. Login is **rate-limited** (HTTP 429

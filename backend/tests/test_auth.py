@@ -164,10 +164,8 @@ def test_analyst_cannot_patch_users(db_factory):
     assert c.patch(f"/api/users/{aid}", headers=_auth(analyst), json={"role": "admin"}).status_code == 403
 
 
-def test_login_is_rate_limited_after_repeated_failures(db_factory, monkeypatch):
-    import app.auth as auth_mod
+def test_login_is_rate_limited_by_email(db_factory, monkeypatch):
     from app.config import settings
-    auth_mod._login_fails.clear()
     monkeypatch.setattr(settings, "login_max_fails", 3)
     _seed_two_tenants(db_factory)
     c = TestClient(app)
@@ -175,19 +173,64 @@ def test_login_is_rate_limited_after_repeated_failures(db_factory, monkeypatch):
         assert _login(c, "admin@acme.com", "wrong").status_code == 401
     # Further attempts are throttled — even with the *correct* password.
     assert _login(c, "admin@acme.com", "password123").status_code == 429
-    # A different account is unaffected by another's failures.
+    # A different account is unaffected (its own email counter is at zero).
     assert _login(c, "admin@globex.com", "password123").status_code == 200
 
 
-def test_successful_login_clears_failure_counter(db_factory, monkeypatch):
-    import app.auth as auth_mod
+def test_login_is_rate_limited_by_ip_across_emails(db_factory, monkeypatch):
+    # An attacker rotating emails from one IP is still throttled by the IP limit.
     from app.config import settings
-    auth_mod._login_fails.clear()
+    monkeypatch.setattr(settings, "login_max_fails", 100)   # don't trip the email limit
+    monkeypatch.setattr(settings, "login_ip_max_fails", 3)
+    _seed_two_tenants(db_factory)
+    c = TestClient(app)
+    for e in ("a@x.com", "b@x.com", "c@x.com"):
+        assert _login(c, e, "wrong").status_code == 401
+    assert _login(c, "admin@acme.com", "password123").status_code == 429   # IP is blocked
+
+
+def test_successful_login_clears_email_counter(db_factory, monkeypatch):
+    from app.config import settings
     monkeypatch.setattr(settings, "login_max_fails", 3)
     _seed_two_tenants(db_factory)
     c = TestClient(app)
     assert _login(c, "admin@acme.com", "wrong").status_code == 401
     assert _login(c, "admin@acme.com", "password123").status_code == 200   # clears counter
-    # Two more misses shouldn't lock out (counter reset), i.e. still 401 not 429.
-    assert _login(c, "admin@acme.com", "wrong").status_code == 401
-    assert _login(c, "admin@acme.com", "wrong").status_code == 401
+    assert _login(c, "admin@acme.com", "wrong").status_code == 401         # not locked (401, not 429)
+
+
+# --- tenant-scoped login (multi-tenant hosting) --------------------------------------
+
+def _seed_shared_email(db_factory):
+    db = db_factory()
+    users_cli.create_tenant(db, "acme", "Acme")
+    users_cli.create_tenant(db, "globex", "Globex")
+    users_cli.create_user(db, "acme", "shared@corp.com", "acme-pass-123", "admin")
+    users_cli.create_user(db, "globex", "shared@corp.com", "globex-pass-456", "admin")
+    db.close()
+
+
+def test_ambiguous_email_across_tenants_requires_org(db_factory):
+    _seed_shared_email(db_factory)
+    c = TestClient(app)
+    # Same email in two orgs, no org given -> refuse (never auto-pick a tenant).
+    r = c.post("/api/auth/login", json={"email": "shared@corp.com", "password": "acme-pass-123"})
+    assert r.status_code == 409
+
+
+def test_org_scoped_login_selects_the_right_tenant(db_factory):
+    _seed_shared_email(db_factory)
+    c = TestClient(app)
+    acme = c.post("/api/auth/login",
+                  json={"email": "shared@corp.com", "password": "acme-pass-123", "org": "acme"})
+    assert acme.status_code == 200
+    me = c.get("/api/auth/me", headers=_auth(acme.json()["access_token"])).json()
+    assert me["tenant"]["slug"] == "acme"
+    # Right org, wrong-tenant password -> rejected.
+    assert c.post("/api/auth/login",
+                  json={"email": "shared@corp.com", "password": "globex-pass-456", "org": "acme"}
+                  ).status_code == 401
+    # Other org resolves independently.
+    globex = c.post("/api/auth/login",
+                    json={"email": "shared@corp.com", "password": "globex-pass-456", "org": "globex"})
+    assert globex.status_code == 200

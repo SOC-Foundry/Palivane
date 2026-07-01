@@ -50,6 +50,9 @@ class StatusUpdate(BaseModel):
 class LoginRequest(BaseModel):
     email: str = Field(min_length=3)
     password: str = Field(min_length=1)
+    # Optional tenant (org slug). Required only to disambiguate an email that exists in
+    # more than one org (multi-tenant hosting); single-tenant/demo login omits it.
+    org: str = ""
 
 
 class SignupRequest(BaseModel):

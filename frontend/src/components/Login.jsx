@@ -24,7 +24,7 @@ export default function Login({ onAuthed, onBack }) {
     try {
       const res = signup
         ? await api.signup(org.trim(), email.trim(), password)
-        : await api.login(email.trim(), password);
+        : await api.login(email.trim(), password, org.trim());
       setToken(res.access_token);
       onAuthed(res.user);
     } catch (e) {
@@ -32,6 +32,8 @@ export default function Login({ onAuthed, onBack }) {
       setErr(
         msg.includes("401") ? "Invalid email or password." :
         msg.includes("403") ? "Self-serve signup is disabled here." :
+        msg.includes("409") ? "This email belongs to more than one organization — enter your organization." :
+        msg.includes("429") ? "Too many attempts. Please wait a few minutes and try again." :
         msg
       );
     } finally {
@@ -47,10 +49,10 @@ export default function Login({ onAuthed, onBack }) {
         <p className="login-sub">
           {signup ? "Create your organization" : "Sign in to your security workspace"}
         </p>
-        {signup && (
-          <input placeholder="organization name" value={org}
-                 onChange={(e) => setOrg(e.target.value)} autoFocus required />
-        )}
+        <input placeholder={signup ? "organization name" : "organization (only if required)"}
+               value={org} onChange={(e) => setOrg(e.target.value)}
+               autoFocus={signup} required={signup} />
+
         <input type="email" placeholder="email" value={email}
                onChange={(e) => setEmail(e.target.value)} autoFocus={!signup} required />
         <input type="password" placeholder={signup ? "password (min 8 chars)" : "password"}

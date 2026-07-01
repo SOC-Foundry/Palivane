@@ -87,6 +87,18 @@ class ApiKey(Base):
         }
 
 
+class LoginAttempt(Base):
+    """A failed login, for brute-force throttling. DB-backed so the limit holds across
+    workers/replicas (multi-tenant SaaS). Rows are pruned past the throttle window."""
+
+    __tablename__ = "login_attempts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(320), index=True, nullable=False)
+    ip = Column(String(64), index=True, default="")
+    created_at = Column(DateTime, default=_utcnow, index=True)
+
+
 class Finding(Base):
     __tablename__ = "findings"
 
