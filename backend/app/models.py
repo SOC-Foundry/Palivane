@@ -87,6 +87,23 @@ class ApiKey(Base):
         }
 
 
+class TenantUpstream(Base):
+    """Per-tenant LLM provider config for the gateway — so each org's allowed calls
+    forward with *its own* provider account/key (billing isolation in multi-tenant SaaS).
+    The key is stored encrypted; falls back to the global env config when absent."""
+
+    __tablename__ = "tenant_upstreams"
+    __table_args__ = (UniqueConstraint("tenant_id", "provider", name="uq_upstream_tenant_provider"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    provider = Column(String(32), nullable=False)   # openai | anthropic | gemini
+    base_url = Column(String(512), default="")
+    key_encrypted = Column(Text, default="")
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 class LoginAttempt(Base):
     """A failed login, for brute-force throttling. DB-backed so the limit holds across
     workers/replicas (multi-tenant SaaS). Rows are pruned past the throttle window."""

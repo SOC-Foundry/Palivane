@@ -15,9 +15,13 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from .config import settings
+from .crypto import encrypt
 from .database import get_db
-from .models import ApiKey, LoginAttempt, Tenant, User
-from .schemas import ApiKeyCreate, LoginRequest, SignupRequest, UserCreate, UserUpdate
+from .models import ApiKey, LoginAttempt, Tenant, TenantUpstream, User
+from .schemas import (
+    ApiKeyCreate, LoginRequest, SignupRequest, UpstreamConfig, UserCreate, UserUpdate,
+)
+from .upstreams import PROVIDERS, resolve as resolve_upstream
 from .security import (
     TokenError,
     create_token,
@@ -265,3 +269,59 @@ def revoke_api_key(key_id: int, current: User = Depends(require_admin),
     key.active = False
     db.commit()
     return {"id": key_id, "active": False}
+
+
+# --- per-tenant upstream provider config (gateway billing isolation) -----------------
+
+def _upstream_state(provider: str, tenant_id: int, db: Session) -> dict:
+    row = (db.query(TenantUpstream)
+           .filter(TenantUpstream.tenant_id == tenant_id, TenantUpstream.provider == provider)
+           .first())
+    eff_base, eff_key = resolve_upstream(provider, tenant_id, db)
+    return {
+        "provider": provider,
+        "base_url": row.base_url if row else "",
+        "key_set": bool(row and row.key_encrypted),   # never return the key itself
+        "effective": "tenant" if row and (row.base_url or row.key_encrypted) else "global",
+        "forwards": bool(eff_base if provider == "openai" else eff_key),
+    }
+
+
+@router.get("/upstreams")
+def list_upstreams(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Per-tenant gateway upstreams. Shows base URL and whether a key is set (never the
+    key), and whether the provider will forward (tenant config or global fallback)."""
+    return {"upstreams": [_upstream_state(p, current.tenant_id, db) for p in PROVIDERS]}
+
+
+@router.put("/upstreams/{provider}")
+def set_upstream(provider: str, body: UpstreamConfig, current: User = Depends(require_admin),
+                 db: Session = Depends(get_db)):
+    """Set this org's own provider account for gateway forwarding (key stored encrypted).
+    An empty `key` leaves the existing key untouched (e.g. to change only base_url)."""
+    if provider not in PROVIDERS:
+        raise HTTPException(status_code=404, detail=f"unknown provider (expected one of {', '.join(PROVIDERS)})")
+    row = (db.query(TenantUpstream)
+           .filter(TenantUpstream.tenant_id == current.tenant_id, TenantUpstream.provider == provider)
+           .first())
+    if row is None:
+        row = TenantUpstream(tenant_id=current.tenant_id, provider=provider)
+        db.add(row)
+    row.base_url = body.base_url.strip()
+    if body.key:
+        row.key_encrypted = encrypt(body.key)
+    db.commit()
+    return _upstream_state(provider, current.tenant_id, db)
+
+
+@router.delete("/upstreams/{provider}")
+def delete_upstream(provider: str, current: User = Depends(require_admin),
+                    db: Session = Depends(get_db)):
+    """Remove this org's provider config; the gateway falls back to the global default."""
+    row = (db.query(TenantUpstream)
+           .filter(TenantUpstream.tenant_id == current.tenant_id, TenantUpstream.provider == provider)
+           .first())
+    if row is not None:
+        db.delete(row)
+        db.commit()
+    return {"provider": provider, "effective": "global"}

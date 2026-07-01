@@ -31,6 +31,7 @@ from .models import ApiKey, User
 from .policy import detect_tool, signal_filter_for
 from .security import TokenError, decode_token, hash_token, looks_like_api_key
 from .service import run_analysis
+from .upstreams import resolve as resolve_upstream
 
 router = APIRouter(prefix="/v1", tags=["gateway"])
 
@@ -154,11 +155,12 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
 
     if settings.gateway_enforce and _blocked(verdict):
         return _openai_error(verdict)
-    if settings.gateway_upstream_base:
-        url = settings.gateway_upstream_base.rstrip("/") + "/chat/completions"
+    base, key = resolve_upstream("openai", principal.tenant_id, db)
+    if base:
+        url = base.rstrip("/") + "/chat/completions"
         headers = {"Content-Type": "application/json"}
-        if settings.gateway_upstream_key:
-            headers["Authorization"] = f"Bearer {settings.gateway_upstream_key}"
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
         with httpx.Client(timeout=60) as c:
             r = c.post(url, json=payload, headers=headers)
         return JSONResponse(status_code=r.status_code, content=r.json())
@@ -196,21 +198,18 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
     if settings.gateway_enforce and _blocked(verdict):
         return _anthropic_error(verdict)
 
-    if _anthropic_key():
-        return _forward_anthropic("/v1/messages", payload, request)
+    base, key = resolve_upstream("anthropic", principal.tenant_id, db)
+    if key:
+        return _forward_anthropic("/v1/messages", payload, request, base, key)
     return JSONResponse(content=_anthropic_stub(model, verdict))
 
 
-def _anthropic_key() -> str:
-    return settings.gateway_anthropic_key or settings.anthropic_api_key
-
-
-def _anthropic_headers(request: Request) -> dict:
+def _anthropic_headers(request: Request, key: str) -> dict:
     """Headers for forwarding to Anthropic — preserve version AND beta (Claude Code
     relies on both; dropping anthropic-beta breaks beta features)."""
     headers = {
         "Content-Type": "application/json",
-        "x-api-key": _anthropic_key(),
+        "x-api-key": key,
         "anthropic-version": request.headers.get("anthropic-version", "2023-06-01"),
     }
     beta = request.headers.get("anthropic-beta")
@@ -219,21 +218,23 @@ def _anthropic_headers(request: Request) -> dict:
     return headers
 
 
-def _forward_anthropic(path: str, payload: dict, request: Request) -> JSONResponse:
-    url = settings.gateway_anthropic_base.rstrip("/") + path
+def _forward_anthropic(path: str, payload: dict, request: Request, base: str, key: str) -> JSONResponse:
+    url = base.rstrip("/") + path
     with httpx.Client(timeout=120) as c:
-        r = c.post(url, json=payload, headers=_anthropic_headers(request))
+        r = c.post(url, json=payload, headers=_anthropic_headers(request, key))
     return JSONResponse(status_code=r.status_code, content=r.json())
 
 
 @router.post("/messages/count_tokens")
-async def count_tokens(request: Request, principal: Principal = Depends(get_gateway_principal)):
+async def count_tokens(request: Request, principal: Principal = Depends(get_gateway_principal),
+                       db: Session = Depends(get_db)):
     """Token-counting pre-flight Claude Code issues before a turn. Authenticated
     passthrough to Anthropic (or a stub offline); no finding — the paired /v1/messages
     call is where capture and enforcement happen."""
     payload = await request.json()
-    if _anthropic_key():
-        return _forward_anthropic("/v1/messages/count_tokens", payload, request)
+    base, key = resolve_upstream("anthropic", principal.tenant_id, db)
+    if key:
+        return _forward_anthropic("/v1/messages/count_tokens", payload, request, base, key)
     return JSONResponse(content={"input_tokens": 0})
 
 
@@ -286,16 +287,13 @@ def _gemini_stub(model: str, verdict: dict) -> dict:
     }
 
 
-def _gemini_key() -> str:
-    return settings.gateway_gemini_key or settings.gemini_api_key
-
-
-def _forward_gemini(model: str, method: str, payload: dict, request: Request) -> Response:
+def _forward_gemini(model: str, method: str, payload: dict, request: Request,
+                    base: str, key: str) -> Response:
     """Passthrough to Gemini, preserving query params (e.g. ?alt=sse) but swapping in our
     upstream key. Returns the upstream bytes verbatim so both JSON and streaming work."""
-    url = f"{settings.gateway_gemini_base.rstrip('/')}/v1beta/models/{model}:{method}"
+    url = f"{base.rstrip('/')}/v1beta/models/{model}:{method}"
     params = {k: v for k, v in request.query_params.items() if k != "key"}
-    headers = {"Content-Type": "application/json", "x-goog-api-key": _gemini_key()}
+    headers = {"Content-Type": "application/json", "x-goog-api-key": key}
     with httpx.Client(timeout=120) as c:
         r = c.post(url, json=payload, params=params, headers=headers)
     return Response(content=r.content, status_code=r.status_code,
@@ -311,8 +309,9 @@ async def _gemini_entry(model: str, method: str, request: Request,
 
     if settings.gateway_enforce and _blocked(verdict):
         return _gemini_error(verdict)
-    if _gemini_key():
-        return _forward_gemini(model, method, payload, request)
+    base, key = resolve_upstream("gemini", principal.tenant_id, db)
+    if key:
+        return _forward_gemini(model, method, payload, request, base, key)
     return JSONResponse(content=_gemini_stub(model, verdict))
 
 

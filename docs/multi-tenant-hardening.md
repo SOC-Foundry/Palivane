@@ -16,16 +16,16 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   plaintext-secret honeypot (`WARDEN_REDACT_FINDINGS`).
 - **Tenant isolation.** Data endpoints scope to the caller's tenant; API keys are
   tenant-scoped; cross-tenant access returns 404. Covered by tests.
+- **Per-tenant upstream provider keys.** Each org can set its own OpenAI / Anthropic /
+  Gemini base URL + key (`PUT /api/upstreams/{provider}`), stored **encrypted at rest**
+  (`crypto.py`, Fernet keyed from `WARDEN_ENCRYPTION_KEY`/`WARDEN_SECRET_KEY`). The
+  gateway resolves the calling tenant's config per request and forwards allowed calls with
+  *its* key — so gateway traffic bills to each org's own provider account, not one shared
+  account. Falls back to the global env config when a tenant hasn't set one.
 
 ## Next tracks
 
-### 1. Per-tenant upstream provider keys (blocker for real SaaS)
-Today `GATEWAY_ANTHROPIC_KEY` / `GATEWAY_GEMINI_KEY` / `GATEWAY_UPSTREAM_KEY` are **global
-env** — every org's gateway traffic would bill to one provider account. Add per-tenant
-upstream config (each org's own key + base URL), stored **encrypted**, resolved by the
-authenticated tenant on each gateway call.
-
-### 2. Data security & compliance
+### 1. Data security & compliance
 - **Encryption at rest** for finding content and per-tenant secrets (e.g. app-level
   envelope encryption, ideally per-tenant keys).
 - **Retention + hard delete** per tenant (scheduled purge; "delete my organization" for
@@ -34,7 +34,7 @@ authenticated tenant on each gateway call.
   per-tenant consent and a DPA rather than a single global `ANTHROPIC_API_KEY`.
 - **Per-tenant data export** (self-serve).
 
-### 3. Auth for SaaS
+### 2. Auth for SaaS
 - **argon2id** password hashing and a **vetted JWT library** (replace the stdlib
   PBKDF2/HS256 minimal-deps implementation).
 - **Token revocation** (logout-all / compromised key) — currently JWTs are valid until
@@ -42,11 +42,11 @@ authenticated tenant on each gateway call.
 - **SSO / SAML / OIDC per tenant** and **MFA**.
 - Per-tenant signup/onboarding controls (the global `WARDEN_ALLOW_SIGNUP` isn't enough).
 
-### 4. Abuse, quotas & metering
+### 3. Abuse, quotas & metering
 - **Per-tenant rate limits** on the gateway/ingest (noisy-neighbor isolation).
 - **Usage metering** for billing and quota enforcement.
 
-### 5. Operational
+### 4. Operational
 - Back the login throttle prune with an index-friendly job (or TTL) at high volume.
 - Per-tenant **audit log** of admin actions (user/role/key changes).
 - Metrics (Prometheus) + `/readyz`, and horizontal-scale runbook (all state is in

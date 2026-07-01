@@ -154,6 +154,8 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `CUSTOM_SECRET_PATTERNS` | *(empty)*             | Org-specific secret formats — one `label=regex` per line; merged into detection. |
 | `EXTENSION_INGEST_TOKEN` | *(unset)*             | Shared token the browser extension presents to `/api/ingest/ai-usage` (empty = endpoint disabled). |
 | `WARDEN_SECRET_KEY` | *(dev fallback)*         | **Set in production.** Signs JWT session tokens; unset → insecure dev key + a startup warning. |
+| `WARDEN_ENCRYPTION_KEY` | *(derives from `WARDEN_SECRET_KEY`)* | Encrypts per-tenant upstream provider keys at rest. Set to rotate independently of the JWT secret. |
+| `GATEWAY_*` keys (global) | *(unset)*             | Fallback upstream keys used when a tenant hasn't set its **own** via `/api/upstreams` (per-tenant keys take precedence). |
 | `AUTH_TOKEN_TTL`    | `43200`                    | Session-token lifetime in seconds (12h).           |
 | `WARDEN_LOGIN_MAX_FAILS` / `WARDEN_LOGIN_IP_MAX_FAILS` / `WARDEN_LOGIN_WINDOW` | `5` / `20` / `300` | Brute-force throttle (DB-backed, holds across workers): refuse logins (HTTP 429) after N failures for an email — or M for an IP — within the window (seconds). |
 | `WARDEN_REDACT_FINDINGS` | `true`                | Mask secrets/PII in **stored** finding content (detection still runs on raw). Set `false` to keep raw content for full forensics. |
@@ -247,6 +249,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | GET    | `/api/users`             | List tenant users (admin).               |
 | POST   | `/api/users`             | Create a user in the tenant — `role` `admin`/`analyst` (admin). |
 | PATCH  | `/api/users/{id}`        | Change a user's role or enable/disable login; protects against last-admin / self-lockout (admin). |
+| GET/PUT/DELETE | `/api/upstreams[/{provider}]` | Per-tenant gateway provider config (openai/anthropic/gemini) — base URL + key (stored encrypted, never returned); the gateway forwards with the tenant's own account (admin). |
 | POST   | `/api/apikeys`           | Mint a long-lived machine API key; plaintext returned once (admin). |
 | GET    | `/api/apikeys`           | List the tenant's API keys (no secrets) (admin). |
 | DELETE | `/api/apikeys/{id}`      | Revoke an API key (admin).                |
@@ -286,6 +289,10 @@ client.chat.completions.create(model="gpt-4o", messages=[...])
   inline (HTTP 403, OpenAI-error shape) — real prevention, not just detection.
 - allowed calls forward to a configured `GATEWAY_UPSTREAM_BASE` (any OpenAI-compatible
   provider), or return a stub when none is set (so it's demoable offline).
+- **per-tenant upstreams**: each org can set its own provider base URL + key via
+  `PUT /api/upstreams/{provider}` (stored encrypted); the gateway forwards that tenant's
+  calls with *its* key, so in multi-tenant hosting traffic bills to each org's own
+  account. The global `GATEWAY_*` keys are the fallback when a tenant hasn't set one.
 
 Every gateway call gets **both** attack detection (Module B — prompt injection,
 jailbreak, system-prompt/secret exfiltration) **and** data-loss detection (PII — SSN,
