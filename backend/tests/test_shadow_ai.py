@@ -81,6 +81,18 @@ def test_find_secrets_shared_helper():
     assert find_secrets("nothing sensitive here") == []
 
 
+def test_custom_secret_patterns_from_env(monkeypatch):
+    monkeypatch.setenv("CUSTOM_SECRET_PATTERNS", "Acme token=ACME-[0-9A-Z]{8}")
+    assert "Acme token" in find_secrets("here is ACME-AB12CD34 in the config")
+    assert find_secrets("here is acme-lowercase-nope") == []
+
+
+def test_invalid_custom_pattern_is_skipped(monkeypatch):
+    # A broken regex must not crash detection — the line is ignored.
+    monkeypatch.setenv("CUSTOM_SECRET_PATTERNS", "Bad=([unclosed\nGood=ZZ-[0-9]{4}")
+    assert find_secrets("code ZZ-1234 here") == ["Good"]
+
+
 # --- Tier 1: expanded known-prefix secret formats ------------------------------------
 
 def test_tier1_additional_secret_prefixes():

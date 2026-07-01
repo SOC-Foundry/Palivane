@@ -16,6 +16,7 @@ import binascii
 import re
 
 from .base import AnalysisInput, Category, Signal, Surface
+from .normalize import normalize_for_match
 from .patterns import find_secrets
 
 # --- Prompt injection: hijacking the model's instructions -----------------------------
@@ -98,7 +99,10 @@ class PromptThreatDetector:
 
     def analyze(self, item: AnalysisInput) -> list[Signal]:
         text = f"{item.subject}\n{item.content}".strip()
-        low = text.lower()
+        # Match keywords against a normalized view (folds homoglyphs / fullwidth /
+        # zero-width / spacing evasion); keep `text` for zero-width & base64 signals.
+        norm = normalize_for_match(text)
+        low = norm.lower()
         signals: list[Signal] = []
 
         inj = _hits(low, INJECTION_TERMS)
@@ -122,7 +126,7 @@ class PromptThreatDetector:
             ))
 
         exfil = _hits(low, EXFIL_TERMS)
-        exfil_re = EXFIL_RE.search(text)
+        exfil_re = EXFIL_RE.search(norm)
         if exfil or exfil_re:
             evidence = ", ".join(exfil[:5]) or (exfil_re.group(0)[:60] if exfil_re else "")
             confidence = min(1.0, 0.5 + 0.15 * len(exfil)) if exfil else 0.65

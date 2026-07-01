@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from .config import settings
 from .detectors import AnalysisInput
 from .engine import engine
 from .models import Finding
+from .redaction import redact_text
 
 
 def run_analysis(item: AnalysisInput, persist: bool, db: Session,
@@ -33,7 +35,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             surface=item.surface.value,
             sender=item.sender,
             subject=item.subject,
-            content=item.content,
+            content=redact_text(item.content) if settings.redact_findings else item.content,
             risk_score=verdict.risk_score,
             severity=verdict.severity,
             recommended_action=verdict.recommended_action,

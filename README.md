@@ -151,9 +151,12 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `GATEWAY_ANTHROPIC_BASE` / `GATEWAY_ANTHROPIC_KEY` | `api.anthropic.com` / `ANTHROPIC_API_KEY` | Upstream for `/v1/messages` (Claude Code); empty key = stub. |
 | `GATEWAY_GEMINI_BASE` / `GATEWAY_GEMINI_KEY` | `generativelanguage.googleapis.com` / `GEMINI_API_KEY` | Upstream for `/v1beta/models/{model}:generateContent` (google-genai SDK, Gemini CLI); empty key = stub. |
 | `GATEWAY_TOOL_SUPPRESS` | *(defaults)*           | Per-tool category suppression, e.g. `claude-code:source_code_leak;cursor:source_code_leak`. |
+| `CUSTOM_SECRET_PATTERNS` | *(empty)*             | Org-specific secret formats — one `label=regex` per line; merged into detection. |
 | `EXTENSION_INGEST_TOKEN` | *(unset)*             | Shared token the browser extension presents to `/api/ingest/ai-usage` (empty = endpoint disabled). |
 | `WARDEN_SECRET_KEY` | *(dev fallback)*         | **Set in production.** Signs JWT session tokens; unset → insecure dev key + a startup warning. |
 | `AUTH_TOKEN_TTL`    | `43200`                    | Session-token lifetime in seconds (12h).           |
+| `WARDEN_LOGIN_MAX_FAILS` / `WARDEN_LOGIN_WINDOW` | `5` / `300` | Brute-force throttle: refuse logins (HTTP 429) after N failures for an email within the window (seconds). |
+| `WARDEN_REDACT_FINDINGS` | `true`                | Mask secrets/PII in **stored** finding content (detection still runs on raw). Set `false` to keep raw content for full forensics. |
 | `WARDEN_ALLOW_SIGNUP` | `true`                   | Self-serve org signup. Set `false` to lock down a single-org deployment. |
 | `INGEST_TENANT`     | *(unset)*                  | Tenant slug/id the extension & proxy attribute their findings to. |
 
@@ -200,8 +203,18 @@ curl -s localhost:8088/api/stats -H "Authorization: Bearer $TOKEN"
 ```
 
 > Tokens are HS256 JWTs and passwords are PBKDF2-HMAC-SHA256, implemented with the
-> standard library to keep dependencies minimal. For a hardened deployment, set
-> `WARDEN_SECRET_KEY` and consider swapping in argon2id / a vetted JWT library.
+> standard library to keep dependencies minimal. Login is **rate-limited** (HTTP 429
+> after repeated failures — `WARDEN_LOGIN_MAX_FAILS`), and stored finding content is
+> **redacted** so the DB isn't a plaintext-secret honeypot (`WARDEN_REDACT_FINDINGS`;
+> detection still runs on the raw content). For a hardened deployment, set
+> `WARDEN_SECRET_KEY`, back the login throttle with a shared store for multi-worker
+> setups, and consider swapping in argon2id / a vetted JWT library.
+
+**Evasion-resistant detection.** Keyword rules match against a **normalized** view of the
+text — Unicode NFKC, homoglyph folding (Cyrillic/Greek lookalikes → Latin), zero-width
+stripping, and whitespace collapse — so `Ignоre previous instructions` (Cyrillic `о`),
+fullwidth text, and zero-width-wedged keywords are still caught. Add org-specific token
+formats with `CUSTOM_SECRET_PATTERNS` without touching code.
 
 **API keys for machine clients.** User JWTs expire (12h) — wrong for a gateway client or
 a long-running Claude Code session. Mint a **long-lived API key** instead (admin):

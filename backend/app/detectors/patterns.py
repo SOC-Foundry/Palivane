@@ -8,6 +8,7 @@ patterns live here once rather than being duplicated per detector.
 from __future__ import annotations
 
 import math
+import os
 import re
 from collections import Counter
 
@@ -39,9 +40,26 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
 ]
 
 
+def custom_patterns() -> list[tuple[str, re.Pattern]]:
+    """Org-specific secret patterns from CUSTOM_SECRET_PATTERNS — one `label=regex` per
+    line. Read at call time so deployments can add their own token formats without a code
+    change. Invalid regexes are skipped (a bad pattern must not break detection)."""
+    out: list[tuple[str, re.Pattern]] = []
+    for line in os.getenv("CUSTOM_SECRET_PATTERNS", "").splitlines():
+        line = line.strip()
+        if not line or "=" not in line:
+            continue
+        label, _, rx = line.partition("=")
+        try:
+            out.append((label.strip() or "Custom secret", re.compile(rx.strip())))
+        except re.error:
+            continue
+    return out
+
+
 def find_secrets(text: str) -> list[str]:
-    """Return the labels of every Tier-1 secret pattern that matches `text`."""
-    return [label for label, rx in SECRET_PATTERNS if rx.search(text)]
+    """Return the labels of every built-in or custom secret pattern that matches `text`."""
+    return [label for label, rx in SECRET_PATTERNS + custom_patterns() if rx.search(text)]
 
 
 # Tier 2: generic high-entropy token heuristic — catches novel/vendor tokens with no

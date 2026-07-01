@@ -162,3 +162,32 @@ def test_analyst_cannot_patch_users(db_factory):
     analyst = c.post("/api/auth/login", json={"email": "analyst@acme.com", "password": "password123"}).json()["access_token"]
     aid = _uid(c, admin, "analyst@acme.com")
     assert c.patch(f"/api/users/{aid}", headers=_auth(analyst), json={"role": "admin"}).status_code == 403
+
+
+def test_login_is_rate_limited_after_repeated_failures(db_factory, monkeypatch):
+    import app.auth as auth_mod
+    from app.config import settings
+    auth_mod._login_fails.clear()
+    monkeypatch.setattr(settings, "login_max_fails", 3)
+    _seed_two_tenants(db_factory)
+    c = TestClient(app)
+    for _ in range(3):
+        assert _login(c, "admin@acme.com", "wrong").status_code == 401
+    # Further attempts are throttled — even with the *correct* password.
+    assert _login(c, "admin@acme.com", "password123").status_code == 429
+    # A different account is unaffected by another's failures.
+    assert _login(c, "admin@globex.com", "password123").status_code == 200
+
+
+def test_successful_login_clears_failure_counter(db_factory, monkeypatch):
+    import app.auth as auth_mod
+    from app.config import settings
+    auth_mod._login_fails.clear()
+    monkeypatch.setattr(settings, "login_max_fails", 3)
+    _seed_two_tenants(db_factory)
+    c = TestClient(app)
+    assert _login(c, "admin@acme.com", "wrong").status_code == 401
+    assert _login(c, "admin@acme.com", "password123").status_code == 200   # clears counter
+    # Two more misses shouldn't lock out (counter reset), i.e. still 401 not 429.
+    assert _login(c, "admin@acme.com", "wrong").status_code == 401
+    assert _login(c, "admin@acme.com", "wrong").status_code == 401
