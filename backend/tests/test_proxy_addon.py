@@ -88,6 +88,19 @@ def test_extract_legacy_and_nonjson():
     assert addon.extract_prompt(b"") == ""
 
 
+def test_extract_unknown_json_shape_harvests_strings():
+    # A Cursor-like proprietary body with no recognized field — harvest still finds the
+    # secret so it gets scanned, and ignores dict keys.
+    body = json.dumps({
+        "request": {"editor": "cursor",
+                    "blocks": [{"kind": "user", "value": "deploy with AKIAABCDEFGHIJKLMNOP"}]},
+        "meta": {"v": 3},
+    })
+    out = addon.extract_prompt(body)
+    assert "AKIAABCDEFGHIJKLMNOP" in out
+    assert "request" not in out      # dict keys aren't harvested, only values
+
+
 def test_should_block():
     assert addon.should_block({"action": "block"}, enforce=True)
     assert not addon.should_block({"action": "block"}, enforce=False)
