@@ -24,11 +24,13 @@ from .schemas import (
 )
 from .upstreams import PROVIDERS, resolve as resolve_upstream
 from .security import (
+    DUMMY_PASSWORD_HASH,
     TokenError,
     create_token,
     decode_token,
     generate_api_key,
     hash_password,
+    needs_rehash,
     verify_password,
 )
 
@@ -50,7 +52,8 @@ def _unique_slug(db: Session, base: str) -> str:
 
 
 def _session_payload(user: User, tenant: Tenant) -> dict:
-    token = create_token({"sub": str(user.id), "tenant_id": user.tenant_id, "role": user.role})
+    token = create_token({"sub": str(user.id), "tenant_id": user.tenant_id,
+                          "role": user.role, "tv": user.token_version})
     return {"access_token": token, "token_type": "bearer",
             "user": user.to_dict(), "tenant": tenant.to_dict()}
 
@@ -73,6 +76,8 @@ def get_current_user(
     user = db.get(User, int(payload.get("sub", 0)))
     if user is None or not user.active:
         raise HTTPException(status_code=401, detail="user not found or inactive")
+    if int(payload.get("tv", 0)) != user.token_version:
+        raise HTTPException(status_code=401, detail="session revoked — please sign in again")
     return user
 
 
@@ -149,8 +154,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     ambiguous = len(matches) > 1
 
     # Verify even on miss to keep timing uniform; never reveal which factor failed.
-    placeholder = "pbkdf2_sha256$200000$" + "00" * 16 + "$" + "00" * 32
-    ok = verify_password(body.password, user.password_hash if user else placeholder)
+    ok = verify_password(body.password, user.password_hash if user else DUMMY_PASSWORD_HASH)
     if ambiguous:
         raise HTTPException(status_code=409,
                             detail="multiple organizations use this email — specify your org")
@@ -161,8 +165,12 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
     # Successful login clears this email's recent failures.
     db.query(LoginAttempt).filter(LoginAttempt.email == email).delete()
+    # Transparently upgrade legacy (PBKDF2) hashes to argon2id on successful login.
+    if needs_rehash(user.password_hash):
+        user.password_hash = hash_password(body.password)
     db.commit()
-    token = create_token({"sub": str(user.id), "tenant_id": user.tenant_id, "role": user.role})
+    token = create_token({"sub": str(user.id), "tenant_id": user.tenant_id,
+                          "role": user.role, "tv": user.token_version})
     return {"access_token": token, "token_type": "bearer", "user": user.to_dict()}
 
 
@@ -170,6 +178,15 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
 def me(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
     tenant = db.get(Tenant, current.tenant_id)
     return {"user": current.to_dict(), "tenant": tenant.to_dict() if tenant else None}
+
+
+@router.post("/auth/logout-all")
+def logout_all(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Revoke every existing session token for the current user (e.g. after a suspected
+    compromise). Bumps token_version so all previously issued JWTs stop validating."""
+    current.token_version = (current.token_version or 0) + 1
+    db.commit()
+    return {"revoked": True, "token_version": current.token_version}
 
 
 @router.get("/users")

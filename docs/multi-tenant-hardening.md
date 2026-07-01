@@ -27,6 +27,9 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   + `POST /api/findings/purge`, scheduler-friendly), and **delete-my-org**
   (`DELETE /api/tenant`, slug-confirmed, cascades findings/users/keys/upstreams). Stored
   finding content is already redacted at rest (`WARDEN_REDACT_FINDINGS`).
+- **Password hashing & session revocation.** Passwords use **argon2id** (legacy PBKDF2
+  hashes still verified and auto-upgraded on login). Sessions carry a `token_version`;
+  `POST /api/auth/logout-all` bumps it to revoke all of a user's existing JWTs.
 
 ## Next tracks
 
@@ -35,13 +38,10 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   encryption, ideally per-tenant keys) and **self-serve data export** per tenant.
 - **DPA / consent record** to accompany the judge opt-in.
 
-### 2. Auth for SaaS
-- **argon2id** password hashing and a **vetted JWT library** (replace the stdlib
-  PBKDF2/HS256 minimal-deps implementation).
-- **Token revocation** (logout-all / compromised key) — currently JWTs are valid until
-  expiry.
-- **SSO / SAML / OIDC per tenant** and **MFA**.
+### 2. Auth for SaaS (remaining)
+- **SSO / OIDC per tenant** (then SAML) and **MFA** (TOTP + recovery codes).
 - Per-tenant signup/onboarding controls (the global `WARDEN_ALLOW_SIGNUP` isn't enough).
+- Optional: swap the hardened stdlib HS256 JWT for a vetted library (PyJWT).
 
 ### 3. Abuse, quotas & metering
 - **Per-tenant rate limits** on the gateway/ingest (noisy-neighbor isolation).

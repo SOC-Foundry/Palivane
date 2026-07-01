@@ -210,8 +210,9 @@ Warden refuses (409) rather than guessing a tenant. Single-org/demo login omits 
 Hosting Warden as a shared SaaS? See the
 [multi-tenant hardening roadmap](docs/multi-tenant-hardening.md).
 
-> Tokens are HS256 JWTs and passwords are PBKDF2-HMAC-SHA256, implemented with the
-> standard library to keep dependencies minimal. Login is **rate-limited** (HTTP 429
+> Passwords use **argon2id** (legacy PBKDF2 hashes still verify and auto-upgrade on
+> login); sessions are hardened HS256 JWTs with a `token_version` so `POST
+> /api/auth/logout-all` revokes all of a user's tokens. Login is **rate-limited** (HTTP 429
 > after repeated failures — `WARDEN_LOGIN_MAX_FAILS`), and stored finding content is
 > **redacted** so the DB isn't a plaintext-secret honeypot (`WARDEN_REDACT_FINDINGS`;
 > detection still runs on the raw content). For a hardened deployment, set
@@ -246,6 +247,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/auth/signup`       | Self-serve onboarding: create an org + first admin, returns a token (public; `WARDEN_ALLOW_SIGNUP`). |
 | POST   | `/api/auth/login`        | Email + password → access token (public). |
 | GET    | `/api/auth/me`           | Current user + tenant.                   |
+| POST   | `/api/auth/logout-all`   | Revoke all of the current user's session tokens (bumps `token_version`). |
 | GET    | `/api/users`             | List tenant users (admin).               |
 | POST   | `/api/users`             | Create a user in the tenant — `role` `admin`/`analyst` (admin). |
 | PATCH  | `/api/users/{id}`        | Change a user's role or enable/disable login; protects against last-admin / self-lockout (admin). |

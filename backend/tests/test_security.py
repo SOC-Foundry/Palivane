@@ -11,9 +11,20 @@ from app import security
 
 def test_password_hash_roundtrip():
     h = security.hash_password("correct horse battery staple")
-    assert h.startswith("pbkdf2_sha256$")
+    assert h.startswith("$argon2")
     assert security.verify_password("correct horse battery staple", h)
     assert not security.verify_password("wrong", h)
+
+
+def test_legacy_pbkdf2_still_verifies_and_flags_rehash():
+    import hashlib
+    salt = b"0123456789abcdef"
+    dk = hashlib.pbkdf2_hmac("sha256", b"pw", salt, 200000)
+    legacy = f"pbkdf2_sha256$200000${salt.hex()}${dk.hex()}"
+    assert security.verify_password("pw", legacy)          # backward compatible
+    assert not security.verify_password("nope", legacy)
+    assert security.needs_rehash(legacy)                   # should upgrade on login
+    assert not security.needs_rehash(security.hash_password("pw"))
 
 
 def test_password_hash_is_salted():
