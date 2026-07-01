@@ -126,4 +126,3 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "x-goog-api-version: 2" \
 Same zip. [Edge Partner Center](https://partner.microsoft.com/dashboard/microsoftedge) →
 **New extension** → upload → fill listing + privacy → submit. Edge also has a
 [publish API](https://learn.microsoft.com/microsoft-edge/extensions-chromium/publish/api/using-addons-api).
-</content>

@@ -44,4 +44,3 @@ sent to the AI tool untouched and no data is captured.
 ## Contact
 
 Questions about this policy: **<your-security-team@example.com>**.
-</content>

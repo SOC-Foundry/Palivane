@@ -22,6 +22,9 @@ class Settings:
     # Brute-force protection: after this many failed logins for an email within the
     # window (seconds), further attempts are refused (HTTP 429) until it elapses.
     login_max_fails: int = int(os.getenv("WARDEN_LOGIN_MAX_FAILS", "5"))
+    # A single IP hammering many emails is blocked at a higher threshold (a shared office
+    # NAT has several legit users, so it's looser than the per-email limit).
+    login_ip_max_fails: int = int(os.getenv("WARDEN_LOGIN_IP_MAX_FAILS", "20"))
     login_window: int = int(os.getenv("WARDEN_LOGIN_WINDOW", "300"))
     # Redact secrets/PII from stored finding content so Warden's own DB isn't a
     # plaintext-secret honeypot. Detection still runs on the raw content.
