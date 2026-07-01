@@ -201,6 +201,39 @@ def test_successful_login_clears_email_counter(db_factory, monkeypatch):
 
 # --- tenant-scoped login (multi-tenant hosting) --------------------------------------
 
+def test_logout_all_revokes_existing_tokens(client):
+    assert client.get("/api/auth/me").status_code == 200
+    assert client.post("/api/auth/logout-all").status_code == 200
+    # The bearer token the client still holds is now revoked (token_version bumped).
+    assert client.get("/api/auth/me").status_code == 401
+
+
+def _legacy_pbkdf2(pw: str) -> str:
+    import hashlib
+    salt = b"0123456789abcdef"
+    dk = hashlib.pbkdf2_hmac("sha256", pw.encode(), salt, 200000)
+    return f"pbkdf2_sha256$200000${salt.hex()}${dk.hex()}"
+
+
+def test_legacy_pbkdf2_hash_logs_in_and_upgrades_to_argon2(db_factory):
+    from app.models import Tenant, User
+    db = db_factory()
+    users_cli.create_tenant(db, "acme", "Acme")
+    tid = db.query(Tenant).filter(Tenant.slug == "acme").first().id
+    db.add(User(tenant_id=tid, email="legacy@acme.com",
+                password_hash=_legacy_pbkdf2("password123"), role="admin"))
+    db.commit()
+    db.close()
+
+    c = TestClient(app)
+    assert _login(c, "legacy@acme.com", "password123").status_code == 200
+
+    db2 = db_factory()
+    u = db2.query(User).filter(User.email == "legacy@acme.com").first()
+    assert u.password_hash.startswith("$argon2")   # transparently upgraded on login
+    db2.close()
+
+
 def _seed_shared_email(db_factory):
     db = db_factory()
     users_cli.create_tenant(db, "acme", "Acme")

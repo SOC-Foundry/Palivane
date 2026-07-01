@@ -1,14 +1,13 @@
 """Auth crypto primitives — password hashing and signed tokens.
 
-Stdlib only: PBKDF2-HMAC-SHA256 for passwords and a minimal, hardened HS256 JWT for
-session tokens. This keeps the dependency surface small and the whole thing offline-
-testable. For a high-security production deployment you may prefer argon2id (passwords)
-and a vetted JWT library (PyJWT) — the call sites here are isolated so swapping is easy.
+Passwords use **argon2id** (argon2-cffi); legacy PBKDF2-HMAC-SHA256 hashes are still
+verified and transparently upgraded on next login. Session tokens are a minimal, hardened
+HS256 JWT (a vetted lib like PyJWT is a drop-in if preferred — the call sites are isolated).
 
 Hardening notes for the token code:
 - Only the `HS256` algorithm is accepted on verify; `none` and asymmetric algs are
   rejected, closing the classic alg-confusion / alg=none bypasses.
-- Signatures and password hashes are compared with `hmac.compare_digest`.
+- Signatures and legacy password hashes are compared with `hmac.compare_digest`.
 """
 
 from __future__ import annotations
@@ -17,24 +16,33 @@ import base64
 import hashlib
 import hmac
 import json
-import os
 import secrets
 import time
+
+from argon2 import PasswordHasher
+from argon2.exceptions import Argon2Error
 
 from .config import settings
 
 # --- passwords ------------------------------------------------------------------------
 
-_PBKDF2_ITERATIONS = 200_000
+_ph = PasswordHasher()   # argon2id with sensible defaults
+# Precomputed argon2 hash to verify against on a user-miss, so a wrong email costs the
+# same time as a wrong password (no user-enumeration via timing).
+DUMMY_PASSWORD_HASH = _ph.hash("warden-timing-placeholder")
 
 
 def hash_password(password: str) -> str:
-    salt = os.urandom(16)
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, _PBKDF2_ITERATIONS)
-    return f"pbkdf2_sha256${_PBKDF2_ITERATIONS}${salt.hex()}${dk.hex()}"
+    return _ph.hash(password)
 
 
 def verify_password(password: str, stored: str) -> bool:
+    if stored.startswith("$argon2"):
+        try:
+            return _ph.verify(stored, password)
+        except Argon2Error:
+            return False
+    # Legacy PBKDF2 hashes (pre-argon2) — still accepted; upgraded on login.
     try:
         algo, iters, salt_hex, hash_hex = stored.split("$")
         if algo != "pbkdf2_sha256":
@@ -43,6 +51,16 @@ def verify_password(password: str, stored: str) -> bool:
     except (ValueError, TypeError):
         return False
     return hmac.compare_digest(dk.hex(), hash_hex)
+
+
+def needs_rehash(stored: str) -> bool:
+    """True if the stored hash isn't current argon2id (legacy or outdated params)."""
+    if not stored.startswith("$argon2"):
+        return True
+    try:
+        return _ph.check_needs_rehash(stored)
+    except Argon2Error:
+        return True
 
 
 # --- API keys (long-lived machine credentials) ----------------------------------------

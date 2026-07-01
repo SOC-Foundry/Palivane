@@ -6,6 +6,7 @@ anthropic>=0.40
 alembic>=1.13           # schema migrations
 psycopg2-binary>=2.9    # PostgreSQL driver
 cryptography>=42        # encrypt per-tenant upstream provider keys at rest
+argon2-cffi>=23         # argon2id password hashing (legacy PBKDF2 still verified)
 
 # --- dev / test ---
 pytest>=8.0

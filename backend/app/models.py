@@ -55,6 +55,8 @@ class User(Base):
     password_hash = Column(String(256), nullable=False)
     role = Column(String(32), default="analyst")  # admin | analyst
     active = Column(Boolean, default=True)
+    # Bumped to revoke all of this user's existing session tokens ("log out everywhere").
+    token_version = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
 
     def to_dict(self) -> dict:
