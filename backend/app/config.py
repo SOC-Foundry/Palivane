@@ -19,6 +19,13 @@ class Settings:
     # dev fallback is used and the API logs a warning at startup.
     auth_secret_key: str = os.getenv("WARDEN_SECRET_KEY", "")
     auth_token_ttl: int = int(os.getenv("AUTH_TOKEN_TTL", "43200"))  # seconds (12h)
+    # Brute-force protection: after this many failed logins for an email within the
+    # window (seconds), further attempts are refused (HTTP 429) until it elapses.
+    login_max_fails: int = int(os.getenv("WARDEN_LOGIN_MAX_FAILS", "5"))
+    login_window: int = int(os.getenv("WARDEN_LOGIN_WINDOW", "300"))
+    # Redact secrets/PII from stored finding content so Warden's own DB isn't a
+    # plaintext-secret honeypot. Detection still runs on the raw content.
+    redact_findings: bool = os.getenv("WARDEN_REDACT_FINDINGS", "true").lower() in ("1", "true", "yes")
     # Self-serve signup: anyone can create a new org (tenant). Set false on a
     # single-org self-hosted deployment to lock it down after bootstrapping.
     allow_signup: bool = os.getenv("WARDEN_ALLOW_SIGNUP", "true").lower() in ("1", "true", "yes")

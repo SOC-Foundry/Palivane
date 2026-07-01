@@ -9,6 +9,7 @@ queries to `current_user.tenant_id`.
 from __future__ import annotations
 
 import re
+import time
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -98,18 +99,42 @@ def signup(body: SignupRequest, db: Session = Depends(get_db)):
     return _session_payload(user, tenant)
 
 
+# In-memory failed-login tracker for brute-force throttling. Keyed by email; holds
+# recent failure timestamps. Per-process (fine for single-instance self-host); a
+# multi-worker deployment should back this with a shared store (Redis) — see README.
+_login_fails: dict[str, list[float]] = {}
+
+
+def _recent_fails(key: str, now: float) -> list[float]:
+    fails = [t for t in _login_fails.get(key, []) if now - t < settings.login_window]
+    if fails:
+        _login_fails[key] = fails
+    else:
+        _login_fails.pop(key, None)
+    return fails
+
+
 @router.post("/auth/login")
 def login(body: LoginRequest, db: Session = Depends(get_db)):
+    key = body.email.lower().strip()
+    now = time.time()
+    if len(_recent_fails(key, now)) >= settings.login_max_fails:
+        raise HTTPException(status_code=429,
+                            detail="too many failed attempts — try again later")
+
     user = (
         db.query(User)
-        .filter(User.email == body.email.lower().strip(), User.active.is_(True))
+        .filter(User.email == key, User.active.is_(True))
         .first()
     )
     # Verify even on miss to keep timing uniform; never reveal which factor failed.
     placeholder = "pbkdf2_sha256$200000$" + "00" * 16 + "$" + "00" * 32
     ok = verify_password(body.password, user.password_hash if user else placeholder)
     if not user or not ok:
+        _login_fails.setdefault(key, []).append(now)
         raise HTTPException(status_code=401, detail="invalid credentials")
+
+    _login_fails.pop(key, None)   # successful login clears the counter
     token = create_token({"sub": str(user.id), "tenant_id": user.tenant_id, "role": user.role})
     return {"access_token": token, "token_type": "bearer", "user": user.to_dict()}
 
