@@ -14,6 +14,14 @@ the User-Agent (`detect_tool`), so the backend's per-tool policy suppresses rout
 `source_code_leak` for coding tools (`claude-code`, `cursor`, `copilot`) while still
 catching secrets and PII.
 
+> **Cursor caveat (measured).** Cursor's model/chat endpoint (`api2.cursor.sh`) **pins
+> its certificate** — a TLS-inspecting proxy is rejected (`tlsv1 alert unknown ca`) even
+> with a trusted CA, so **chat prompts can't be intercepted** this way. The proxy can
+> still see Cursor's codebase-index uploads (`aiserver.v1.CodebaseSnapshotService`,
+> protobuf) and telemetry, but those aren't the prompt. For Cursor, prefer the **git
+> plane** (secrets/PII in the code it commits) and the **gateway** (for first-party AI);
+> treat proxy prompt-capture as best-effort pending an enterprise/un-pinned config.
+
 ## Run
 
 ```bash
@@ -62,10 +70,11 @@ curl -x http://localhost:8081 https://api.openai.com/v1/chat/completions \
 - **Fails open**: if Warden is unreachable the request is allowed through, so the
   proxy never becomes a single point of failure for the company's AI access.
 - Prompt extraction recognizes OpenAI / Anthropic / Gemini shapes; for **any other JSON
-  body** (e.g. **Cursor**'s proprietary protocol) it harvests all string values so
-  secrets/PII are still scanned without a per-vendor parser, and falls back to the raw
-  text for non-JSON (e.g. protobuf/binary) bodies. For clean, structured prompt text from
-  a specific vendor, add a shape to `extract_prompt`. GitHub Copilot Chat uses a
-  `messages` body (covered) and inline completion uses a `prompt` field (covered).
-- **Verify TLS interception per IDE** (Copilot, Cursor) before relying on enforcement —
-  some builds pin certs; where they do, they bypass rather than being inspected.
+  body** it harvests all string values so secrets/PII are still scanned without a
+  per-vendor parser, and falls back to the raw text for non-JSON (e.g. protobuf/binary)
+  bodies. GitHub Copilot Chat uses a `messages` body (covered) and inline completion uses
+  a `prompt` field (covered). Note Cursor uses **protobuf** (`application/proto`), not
+  JSON — and its chat endpoint pins certs anyway (see the Cursor caveat above).
+- **Verify TLS interception per IDE before relying on enforcement.** Some builds pin
+  certs (Cursor's chat endpoint does — measured); where they do, the client bypasses or
+  fails rather than being inspected.
