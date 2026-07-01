@@ -26,6 +26,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // SSO (OIDC) hands the session back in the URL fragment — pick it up, then clean the URL.
+    const m = window.location.hash.match(/sso_token=([^&]+)/);
+    if (m) {
+      setToken(decodeURIComponent(m[1]));
+      window.history.replaceState(null, "", window.location.pathname);
+    }
     if (!getToken()) {
       setBooting(false);
       return;

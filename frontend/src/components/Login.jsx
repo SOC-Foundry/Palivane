@@ -41,6 +41,11 @@ export default function Login({ onAuthed, onBack }) {
     }
   }
 
+  function ssoLogin() {
+    if (!org.trim()) { setErr("Enter your organization to sign in with SSO."); return; }
+    window.location.href = `/api/auth/oidc/${encodeURIComponent(org.trim())}/login`;
+  }
+
   return (
     <div className="login-screen">
       <form className="login-card" onSubmit={submit}>
@@ -61,6 +66,11 @@ export default function Login({ onAuthed, onBack }) {
         <button className="primary-btn" disabled={busy || !email || !password || (signup && !org)}>
           {busy ? "…" : signup ? "Create organization" : "Sign in"}
         </button>
+        {!signup && (
+          <button type="button" className="sso-btn" onClick={ssoLogin}>
+            Sign in with SSO
+          </button>
+        )}
         {(allowSignup || signup) && (
           <button type="button" className="link-btn" style={{ marginTop: 10 }}
                   onClick={() => { setErr(null); setMode(signup ? "signin" : "signup"); }}>

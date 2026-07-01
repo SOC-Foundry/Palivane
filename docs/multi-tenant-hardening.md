@@ -30,6 +30,11 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
 - **Password hashing & session revocation.** Passwords use **argon2id** (legacy PBKDF2
   hashes still verified and auto-upgraded on login). Sessions carry a `token_version`;
   `POST /api/auth/logout-all` bumps it to revoke all of a user's existing JWTs.
+- **OIDC SSO per tenant.** Each org configures its IdP (`PUT /api/oidc`: issuer/client_id/
+  secret encrypted, `auto_provision`, `allowed_domain`). Auth-code flow at
+  `/api/auth/oidc/{org}/login` → `/callback` validates the ID token (JWKS signature, iss/
+  aud/exp/nonce via authlib), maps/provisions the user, and hands a session to the console.
+  State is a signed, self-expiring token (no server session store → multi-worker safe).
 
 ## Next tracks
 
@@ -39,7 +44,7 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
 - **DPA / consent record** to accompany the judge opt-in.
 
 ### 2. Auth for SaaS (remaining)
-- **SSO / OIDC per tenant** (then SAML) and **MFA** (TOTP + recovery codes).
+- **SAML** SSO (OIDC shipped) and **MFA** (TOTP + recovery codes).
 - Per-tenant signup/onboarding controls (the global `WARDEN_ALLOW_SIGNUP` isn't enough).
 - Optional: swap the hardened stdlib HS256 JWT for a vetted library (PyJWT).
 

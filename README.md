@@ -210,6 +210,14 @@ Warden refuses (409) rather than guessing a tenant. Single-org/demo login omits 
 Hosting Warden as a shared SaaS? See the
 [multi-tenant hardening roadmap](docs/multi-tenant-hardening.md).
 
+**SSO (OIDC).** An admin configures the org's identity provider (`PUT /api/oidc` —
+issuer, client ID, client secret stored encrypted, plus `auto_provision` and an optional
+`allowed_domain`). Users then click **Sign in with SSO**, which runs the OIDC auth-code
+flow (`/api/auth/oidc/{org}/login` → `/callback`); Warden validates the ID token against
+the IdP's JWKS (iss/aud/exp/nonce), maps the email to a user (auto-provisioning an analyst
+if enabled), and returns a session. The callback hands the session to the console via URL
+fragment, so it assumes the console and API share an origin (the bundled nginx setup).
+
 > Passwords use **argon2id** (legacy PBKDF2 hashes still verify and auto-upgrade on
 > login); sessions are hardened HS256 JWTs with a `token_version` so `POST
 > /api/auth/logout-all` revokes all of a user's tokens. Login is **rate-limited** (HTTP 429
@@ -248,6 +256,8 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/auth/login`        | Email + password → access token (public). |
 | GET    | `/api/auth/me`           | Current user + tenant.                   |
 | POST   | `/api/auth/logout-all`   | Revoke all of the current user's session tokens (bumps `token_version`). |
+| GET/PUT/DELETE | `/api/oidc`      | Per-tenant OIDC SSO config — issuer/client_id/secret (encrypted, never returned), `auto_provision`, `allowed_domain` (admin). |
+| GET    | `/api/auth/oidc/{org}/login` · `/callback` | OIDC auth-code flow (public): redirect to the org's IdP, then validate the ID token and hand a session to the console. |
 | GET    | `/api/users`             | List tenant users (admin).               |
 | POST   | `/api/users`             | Create a user in the tenant — `role` `admin`/`analyst` (admin). |
 | PATCH  | `/api/users/{id}`        | Change a user's role or enable/disable login; protects against last-admin / self-lockout (admin). |
