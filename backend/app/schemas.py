@@ -74,6 +74,13 @@ class UserUpdate(BaseModel):
     active: bool | None = None
 
 
+class UpstreamConfig(BaseModel):
+    base_url: str = ""
+    # Write-only: the provider API key. Stored encrypted, never returned. Leave empty on
+    # an update to keep the existing key (e.g. when only changing base_url).
+    key: str = ""
+
+
 class ApiKeyCreate(BaseModel):
     label: str = ""
     actor: str = ""               # identity to attribute this key's traffic to

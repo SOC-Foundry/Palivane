@@ -219,8 +219,8 @@ def test_anthropic_headers_forward_version_and_beta():
     from types import SimpleNamespace
     from app import gateway
     req = SimpleNamespace(headers={"anthropic-version": "2024-10-01", "anthropic-beta": "token-counting-2024-11-01"})
-    h = gateway._anthropic_headers(req)
+    h = gateway._anthropic_headers(req, "sk-ant-upstream")
     assert h["anthropic-version"] == "2024-10-01"
     assert h["anthropic-beta"] == "token-counting-2024-11-01"   # must be preserved
-    assert "x-api-key" in h
+    assert h["x-api-key"] == "sk-ant-upstream"
 
