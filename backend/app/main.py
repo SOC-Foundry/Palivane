@@ -29,6 +29,7 @@ from .schemas import (
     BatchAnalyzeRequest,
     CodeScanRequest,
     CoverageRequest,
+    ProvisionRequest,
     StatusUpdate,
 )
 from .security import using_insecure_key
@@ -370,6 +371,34 @@ def usage(current: User = Depends(require_admin), db: Session = Depends(get_db))
     and the effective per-minute limit (metering + quota visibility)."""
     from .metering import usage_summary
     return usage_summary(db, current.tenant_id)
+
+
+@app.post("/api/provision")
+def provision(body: ProvisionRequest, current: User = Depends(require_admin),
+              db: Session = Depends(get_db)):
+    """Mint a capture key and return prefilled device-setup script(s) for this tenant.
+
+    One artifact per OS the admin (or their MDM) runs on a device to configure Claude
+    Code + the browser extension policy (+ optional desktop proxy) — no manual steps.
+    The key is returned inline in the script and shown only once."""
+    from datetime import datetime, timezone
+
+    from . import provision as prov
+    from .models import ApiKey
+    from .security import generate_api_key
+
+    token, prefix, token_hash = generate_api_key()
+    key = ApiKey(tenant_id=current.tenant_id, label=body.label,
+                 actor=body.actor, prefix=prefix, token_hash=token_hash,
+                 created_at=datetime.now(timezone.utc).replace(tzinfo=None))
+    db.add(key)
+    db.commit()
+
+    platforms = ["macos", "windows"] if body.platform == "both" else [body.platform]
+    scripts = {p: prov.render(p, body.base_url, token, body.extension_id, body.proxy_host)
+               for p in platforms}
+    return {"key_prefix": prefix, "actor": body.actor, "scripts": scripts,
+            "note": "The embedded key is shown once. Distribute over a trusted channel."}
 
 
 @app.get("/api/stats")
