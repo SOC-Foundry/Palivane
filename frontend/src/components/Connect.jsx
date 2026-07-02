@@ -13,10 +13,19 @@ function Block({ text }) {
   );
 }
 
+function download(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export default function Connect({ tenant }) {
   const [key, setKey] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [provBusy, setProvBusy] = useState("");
   const origin = window.location.origin;
 
   async function mint() {
@@ -26,6 +35,17 @@ export default function Connect({ tenant }) {
       setKey(res.token);
     } catch (e) { setErr(String(e.message || e)); }
     finally { setBusy(false); }
+  }
+
+  // Mint a key + download a prefilled per-OS device installer.
+  async function getInstaller(platform) {
+    setProvBusy(platform); setErr(null);
+    try {
+      const res = await api.provision({ platform, base_url: origin, actor: "" });
+      const ext = platform === "windows" ? "ps1" : "sh";
+      download(`warden-install-${platform}.${ext}`, res.scripts[platform]);
+    } catch (e) { setErr(String(e.message || e)); }
+    finally { setProvBusy(""); }
   }
 
   const K = key || "ak_<generate a key above>";
@@ -77,6 +97,25 @@ export default function Connect({ tenant }) {
         <p className="muted">Run the proxy near your egress and route managed devices through it
            (system proxy + corporate CA via MDM).</p>
         <Block text={proxyCmd} />
+      </div>
+
+      <div className="connect-card">
+        <h3>④ One-run device installer</h3>
+        <p className="muted">Download a prefilled setup script (a fresh capture key is minted and
+           baked in) that configures Claude Code + the browser extension policy in one run — hand
+           it to a user or push it via MDM.</p>
+        <div className="form-row" style={{ gap: 10 }}>
+          <button className="primary-btn slim" disabled={!!provBusy}
+                  onClick={() => getInstaller("macos")}>
+            {provBusy === "macos" ? "…" : "Download macOS installer (.sh)"}
+          </button>
+          <button className="primary-btn slim" disabled={!!provBusy}
+                  onClick={() => getInstaller("windows")}>
+            {provBusy === "windows" ? "…" : "Download Windows installer (.ps1)"}
+          </button>
+        </div>
+        <p className="muted" style={{ marginTop: 8 }}>Each download mints a new key — treat the file
+           as a secret and distribute over a trusted channel.</p>
       </div>
     </div>
   );

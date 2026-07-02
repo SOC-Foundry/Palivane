@@ -1,0 +1,64 @@
+"""Device enrollment: admin mints enrollment tokens; devices self-register for a key."""
+
+from __future__ import annotations
+
+
+def _mint_enroll(client, **body):
+    r = client.post("/api/enroll/tokens", json={"label": "fleet", **body})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_device_enrolls_and_gets_usable_key(client, raw_client):
+    et = _mint_enroll(client)["token"]
+    assert et.startswith("et_")
+    # Device self-registers (no user auth — the enrollment token is the credential).
+    r = raw_client.post("/api/enroll", json={"token": et, "device": "laptop-01@acme.com"})
+    assert r.status_code == 200, r.text
+    key = r.json()["token"]
+    assert key.startswith("ak_")
+    # The device key works on the gateway and is attributed to the device.
+    g = raw_client.post("/v1/chat/completions",
+                        json={"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]},
+                        headers={"Authorization": f"Bearer {key}"})
+    assert g.status_code == 200
+    # Listed as an api key for the tenant, attributed to the device.
+    keys = client.get("/api/apikeys").json()["api_keys"]
+    assert any(k["actor"] == "laptop-01@acme.com" for k in keys)
+
+
+def test_bad_enrollment_token_rejected(raw_client, db_factory):
+    r = raw_client.post("/api/enroll", json={"token": "et_made-up-token-000", "device": "x"})
+    assert r.status_code == 401
+
+
+def test_max_uses_enforced(client, raw_client):
+    et = _mint_enroll(client, max_uses=1)["token"]
+    assert raw_client.post("/api/enroll", json={"token": et, "device": "a"}).status_code == 200
+    # Second use exceeds the cap.
+    assert raw_client.post("/api/enroll", json={"token": et, "device": "b"}).status_code == 401
+
+
+def test_revoked_token_rejected(client, raw_client):
+    created = _mint_enroll(client)
+    client.delete(f"/api/enroll/tokens/{created['id']}")
+    assert raw_client.post("/api/enroll", json={"token": created["token"], "device": "a"}).status_code == 401
+
+
+def test_enroll_token_mgmt_is_admin_only(client, db_factory):
+    from app import users as users_cli
+    db = db_factory()
+    users_cli.create_user(db, "acme", "analyst@acme.com", "password123", "analyst")
+    db.close()
+    at = client.post("/api/auth/login", json={"email": "analyst@acme.com", "password": "password123"}).json()["access_token"]
+    assert client.post("/api/enroll/tokens", json={"label": "x"},
+                       headers={"Authorization": f"Bearer {at}"}).status_code == 403
+
+
+def test_enrolled_devices_are_tenant_scoped(client, db_factory, raw_client):
+    # Enroll a device under acme; its key must not see another tenant's data (implicit via
+    # tenant binding). Here we just confirm the key's tenant = the token's tenant by listing.
+    et = _mint_enroll(client)["token"]
+    raw_client.post("/api/enroll", json={"token": et, "device": "dev@acme.com"})
+    actors = {k["actor"] for k in client.get("/api/apikeys").json()["api_keys"]}
+    assert "dev@acme.com" in actors

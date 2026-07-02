@@ -127,6 +127,17 @@ class ApiKeyCreate(BaseModel):
     expires_in_days: int | None = None
 
 
+class EnrollmentTokenCreate(BaseModel):
+    label: str = ""
+    max_uses: int | None = None       # None = unlimited
+    expires_in_days: int | None = None
+
+
+class EnrollRequest(BaseModel):
+    token: str = Field(min_length=8, description="the enrollment token (et_…)")
+    device: str = Field(min_length=1, description="device / user identity for attribution")
+
+
 class ProvisionRequest(BaseModel):
     platform: Literal["macos", "windows", "both"] = "both"
     base_url: str = Field(min_length=1, description="public Warden URL devices reach, e.g. https://warden.corp")
