@@ -22,7 +22,7 @@ const CAPTURE = [
 const STEPS = [
   { n: "1", title: "Prompt-threat detector", body: "Instruction-override & injection, jailbreak personas, system-prompt/secret exfiltration, and smuggled payloads — fully offline, no API key." },
   { n: "2", title: "Shadow-AI detector", body: "Credentials & keys, PII (SSN, Luhn-valid cards, contact lists), proprietary source code, and unsanctioned destinations." },
-  { n: "3", title: "Claude judge (optional)", body: "Add an Anthropic key and claude-opus-4-8 reads the content like an analyst for the novel cases the rules miss." },
+  { n: "3", title: "LLM judge (optional)", body: "Connect a frontier model — Claude, GPT, or Gemini — and it reads the content like an analyst for the novel cases the rules miss." },
 ];
 
 export default function Landing({ onSignIn }) {
@@ -37,7 +37,7 @@ export default function Landing({ onSignIn }) {
       </header>
 
       <section className="lp-hero">
-        <img className="lp-hero-logo" src="/warden-logo.png" alt="Warden" width="180" height="180" />
+        <img className="lp-hero-logo" src="/warden-logo.png" alt="Warden" width="240" height="240" />
         <div className="lp-tagline">DETECT · BLOCK · PROTECT</div>
         <h1>Govern how your organization uses AI.</h1>
         <p className="lp-lead">
@@ -106,7 +106,10 @@ export default function Landing({ onSignIn }) {
 
       <footer className="lp-foot">
         <span>◆ Warden — AI Security Gateway</span>
-        <span className="lp-foot-muted">Multi-tenant · role-based console · deployable with one command</span>
+        <span className="lp-foot-links">
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+        </span>
       </footer>
     </div>
   );

@@ -103,7 +103,7 @@ class SAMLConfig(BaseModel):
 
 class TenantUpdate(BaseModel):
     name: str | None = None
-    # Claude judge for this org: "on"/"off" force it; "inherit" follows the global key.
+    # LLM judge for this org: "on"/"off" force it; "inherit" follows the global key.
     # None (field omitted) = leave unchanged.
     judge: Literal["on", "off", "inherit"] | None = None
     retention_days: int | None = None   # 0 = keep findings forever

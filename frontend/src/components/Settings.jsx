@@ -142,11 +142,11 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         <h2>Organization</h2>
         <div className="field-grid">
           <label>Name<input value={org.name} onChange={setField("name")} /></label>
-          <label>Claude judge
+          <label>LLM judge
             <select value={org.judge} onChange={setField("judge")}>
               <option value="inherit">Inherit (global)</option>
               <option value="on">On</option>
-              <option value="off">Off (no content to Anthropic)</option>
+              <option value="off">Off (no content sent to the LLM provider)</option>
             </select>
           </label>
           <label>Findings retention (days, 0 = forever)

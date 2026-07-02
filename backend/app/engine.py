@@ -38,7 +38,7 @@ class Engine:
         signals = []
         for detector in self.detectors:
             if detector is self.judge and not include_judge:
-                continue  # tenant opted out of the Claude judge (data-residency)
+                continue  # tenant opted out of the LLM judge (data-residency)
             if not self._applies(detector, item.surface):
                 continue
             try:

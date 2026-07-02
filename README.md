@@ -31,8 +31,8 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
   JWTs) hard-block; a high-entropy heuristic catches novel/unlabeled tokens at warn-level.
 - **Monitor or enforce** — record findings, or block risky prompts/data **before** they
   leave, inline.
-- **Runs offline** — fast regex/heuristic detectors need no API key; add an Anthropic key
-  to enrich with a Claude judge.
+- **Runs offline** — fast regex/heuristic detectors need no API key; add an LLM key
+  (Claude, GPT, or Gemini) to enrich with an LLM judge.
 - **Multi-tenant + self-serve** — org signup, role-based console (admin/analyst), per-org
   API keys, and a **Connect** page that generates copy-paste install config for every
   source.
@@ -59,12 +59,14 @@ the signals into one risk verdict:
    SendGrid, Twilio, PEM private keys, JWTs, labeled `key=value`) hard-block, and a
    **high-entropy heuristic** catches novel/unlabeled tokens at warn-level (suppressed
    for sanctioned coding tools, where random-looking strings are routine).
-3. **Claude judge** (optional, all surfaces) — `claude-opus-4-8` reads the content like
-   an analyst and returns a structured verdict for the novel cases the rules miss.
+3. **LLM judge** (optional, all surfaces) — a frontier model reads the content like an
+   analyst and returns a structured verdict for the novel cases the rules miss.
+   **Provider-agnostic**: Claude, GPT, or Gemini, chosen by `JUDGE_PROVIDER` (`auto`
+   picks whichever key is set).
 
 The scoring engine treats the attack/data-loss signal as the base risk and saturates so
 many weak signals can't trivially max it while a few strong ones reliably do. It runs
-fully on the offline detectors with **no API key**; add a key to enrich with Claude.
+fully on the offline detectors with **no API key**; add an LLM key to enrich with the judge.
 
 ## Run the whole stack locally (Docker)
 
@@ -100,8 +102,8 @@ cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Optional: enrich detection with Claude
-cp .env.example .env          # then set ANTHROPIC_API_KEY
+# Optional: enrich detection with an LLM judge (Claude, GPT, or Gemini)
+cp .env.example .env          # then set ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY
 # (the app works without it — heuristics only)
 
 python -m app.seed            # demo tenant + admin user + sample findings (optional)
@@ -140,8 +142,11 @@ Backend reads these from the environment (see `backend/.env.example`):
 
 | Variable            | Default                    | Notes                                              |
 | ------------------- | -------------------------- | -------------------------------------------------- |
-| `ANTHROPIC_API_KEY` | *(unset)*                  | When set, enables the Claude judge.                |
-| `JUDGE_MODEL`       | `claude-opus-4-8`          | Switch to `claude-haiku-4-5` for cheap high-volume triage. |
+| `JUDGE_PROVIDER`    | `auto`                     | LLM judge backend: `auto` picks whichever key is set (anthropic → openai → gemini); force `anthropic`/`openai`/`gemini`, or `none` to disable. |
+| `ANTHROPIC_API_KEY` | *(unset)*                  | Judge key for the Claude backend (separate from the gateway-proxy key).             |
+| `OPENAI_API_KEY`    | *(unset)*                  | Judge key for the GPT backend.                     |
+| `GEMINI_API_KEY`    | *(unset)*                  | Judge key for the Gemini backend (also the gateway Gemini fallback). |
+| `JUDGE_MODEL`       | *(per-provider default)*   | Override the model (defaults: `claude-opus-4-8` / `gpt-4o` / `gemini-2.5-pro`). Use a smaller one for cheap high-volume triage. |
 | `DATABASE_URL`      | `sqlite:///./warden.db`  | Any SQLAlchemy URL.                                |
 | `CORS_ORIGINS`      | `http://localhost:5173`    | Comma-separated.                                   |
 | `SANCTIONED_AI_TOOLS` | *(empty)*                | Allowlist — comma-separated AI tools/domains the org approves (e.g. `claude.ai,copilot.microsoft.com`). |
@@ -257,7 +262,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 
 | Method | Path                     | Purpose                                  |
 | ------ | ------------------------ | ---------------------------------------- |
-| GET    | `/api/health`            | Status + whether the Claude judge is on (public). |
+| GET    | `/api/health`            | Status + whether the LLM judge is on, and its provider/model (public). |
 | GET    | `/livez` · `/readyz`     | Liveness / readiness (DB check → 503 if down) probes (public). |
 | GET    | `/metrics`               | Prometheus HTTP metrics; optionally gated by `WARDEN_METRICS_TOKEN`. |
 | POST   | `/api/auth/signup`       | Self-serve onboarding: create an org + first admin, returns a token (public; `WARDEN_ALLOW_SIGNUP`). |
@@ -275,7 +280,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/users`             | Create a user in the tenant — `role` `admin`/`analyst` (admin). |
 | PATCH  | `/api/users/{id}`        | Change a user's role or enable/disable login; protects against last-admin / self-lockout (admin). |
 | GET/PUT/DELETE | `/api/upstreams[/{provider}]` | Per-tenant gateway provider config (openai/anthropic/gemini) — base URL + key (stored encrypted, never returned); the gateway forwards with the tenant's own account (admin). |
-| PATCH  | `/api/tenant`            | Org settings: name, Claude-judge consent (`judge`: on/off/inherit), findings `retention_days`, gateway `rate_limit`/min (admin). |
+| PATCH  | `/api/tenant`            | Org settings: name, LLM-judge consent (`judge`: on/off/inherit), findings `retention_days`, gateway `rate_limit`/min (admin). |
 | GET    | `/api/usage`             | Gateway usage for the tenant: current-minute count, last-24h, per-day totals, effective limit (admin). |
 | GET    | `/api/audit`             | The tenant's admin audit trail (who did what, when); filterable by `action` (admin). |
 | DELETE | `/api/tenant`            | Delete the org and all its data (findings/users/keys/upstreams); slug-confirmed. GDPR "delete my org" (admin). |
@@ -562,7 +567,7 @@ detection to *their* traffic — the core of a design-partner pilot.
 ```
 backend/
   app/
-    detectors/        # prompt-threats (llm_io), shadow-ai (ai_usage), Claude judge
+    detectors/        # prompt-threats (llm_io), shadow-ai (ai_usage), LLM judge (Claude/GPT/Gemini)
     security.py       # password hashing (PBKDF2) + HS256 JWTs + API keys
     auth.py           # auth dependencies + /api/auth + /api/users + /api/apikeys
     gateway.py        # LLM gateway: /v1/chat/completions (OpenAI) + /v1/messages (Anthropic) + /v1beta (Gemini)
@@ -591,9 +596,14 @@ docs/claude-deployment.md  # step-by-step: deploy for browser + Claude Code + de
 docs/tokens-and-identity.md  # auth-model reference: tokens, attribution, per-user keys
 frontend/
   src/
-    components/       # Dashboard, AnalyzeForm, FindingsList, FindingDetail
-    App.jsx
+    components/       # Dashboard, FindingsList, FindingDetail, Connect, Settings, Users,
+                      #   Landing (public marketing page), Login, Legal (privacy/terms)
+    App.jsx           # routes: public Landing + /privacy + /terms, else Login → console
 ```
+
+The frontend serves a **public marketing landing page** (the app root, pre-login) plus
+public **`/privacy`** and **`/terms`** pages (no auth) — the privacy URL the browser
+extension needs for the Chrome Web Store / Edge Add-ons listing.
 
 ## Next steps
 

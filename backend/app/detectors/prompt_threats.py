@@ -6,7 +6,7 @@ human?", Module B asks "is this input attacking our model?" — trying to overri
 its instructions, defeat its guardrails, or extract its system prompt and secrets.
 
 Fast, free, offline. The same scoring backbone fuses these signals; the optional
-Claude judge adds coverage for novel attacks that dodge these patterns.
+The LLM judge adds coverage for novel attacks that dodge these patterns.
 """
 
 from __future__ import annotations

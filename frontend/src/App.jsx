@@ -9,6 +9,7 @@ import Settings from "./components/Settings.jsx";
 import Audit from "./components/Audit.jsx";
 import Login from "./components/Login.jsx";
 import Landing from "./components/Landing.jsx";
+import Legal from "./components/Legal.jsx";
 import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard } from "./components/icons.jsx";
 
 export default function App() {
@@ -83,6 +84,13 @@ export default function App() {
     setSelectedId(null);
   }
 
+  // Public legal pages — reachable without auth (Chrome Web Store needs a public
+  // privacy-policy URL). Checked after hooks so rules-of-hooks hold.
+  const legalPath = window.location.pathname.replace(/\/+$/, "");
+  if (legalPath === "/privacy" || legalPath === "/terms") {
+    return <Legal page={legalPath === "/terms" ? "terms" : "privacy"} />;
+  }
+
   if (booting) return <div className="login-screen"><div className="login-sub">Loading…</div></div>;
   if (!auth) {
     return showLogin
@@ -139,7 +147,7 @@ export default function App() {
             <div className={`judge-status ${health.judge_enabled ? "judge-on" : "judge-off"}`}>
               <span className="judge-dot" />
               <span>{health.judge_enabled
-                ? `Claude judge · ${health.judge_model}`
+                ? `LLM judge · ${health.judge_model}`
                 : "Offline detection"}</span>
             </div>
           )}

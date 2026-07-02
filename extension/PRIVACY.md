@@ -1,18 +1,17 @@
 # Warden — Shadow-AI Guard · Privacy Policy
 
-_Last updated: 2026-06-30_
+_Last updated: 2026-07-02_
 
 Warden — Shadow-AI Guard ("the extension") is an organizational data-loss-prevention
 tool. It is deployed by an administrator and connected to a **Warden backend that your
-organization operates**. Host this policy at a public URL and reference it in the store
-listing. Replace the contact line with your details.
+organization operates**.
 
 ## What the extension does
 
 On the supported AI tools (claude.ai, chatgpt.com, chat.openai.com, gemini.google.com,
-copilot.microsoft.com), the extension reads the text of a prompt **before it is sent** so
-that it can be scanned for secrets, credentials, personal data, and proprietary content,
-and then **warns or blocks** risky submissions.
+copilot.microsoft.com, m365.cloud.microsoft, www.bing.com), the extension reads the text
+of a prompt **before it is sent** so that it can be scanned for secrets, credentials,
+personal data, and proprietary content, and then **warns or blocks** risky submissions.
 
 ## What data is processed
 
@@ -43,4 +42,4 @@ sent to the AI tool untouched and no data is captured.
 
 ## Contact
 
-Questions about this policy: **<your-security-team@example.com>**.
+Questions about this policy: **privacy@tachtech.net**.

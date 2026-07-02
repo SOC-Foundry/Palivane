@@ -1,13 +1,15 @@
-"""Claude-as-judge detector.
+"""LLM-as-judge detector (multi-provider).
 
 The pattern detectors catch known signatures; the LLM judge catches the novel,
 well-crafted cases that don't trip them — a cleverly obfuscated prompt injection, or
-sensitive data phrased in a way the regexes miss. Claude reads the content like an
-analyst and returns a structured verdict: an attack on the model (injection / jailbreak
-/ exfiltration) or sensitive data leaving for an AI tool.
+sensitive data phrased in a way the regexes miss. A frontier model reads the content
+like an analyst and returns a structured verdict: an attack on the model (injection /
+jailbreak / exfiltration) or sensitive data leaving for an AI tool.
 
-Degrades gracefully: if no ANTHROPIC_API_KEY is configured, this detector is a
-no-op and the platform runs on the offline detectors alone.
+Provider-agnostic: works with Anthropic (Claude), OpenAI (GPT), or Google (Gemini),
+selected by JUDGE_PROVIDER (default "auto" — whichever API key is configured). Degrades
+gracefully: if no key/SDK is available the detector is a no-op and the platform runs on
+the offline detectors alone.
 """
 
 from __future__ import annotations
@@ -27,6 +29,14 @@ _CATEGORY_MAP = {
     "source_code_leak": Category.SOURCE_CODE_LEAK,
     "unsanctioned_ai": Category.UNSANCTIONED_AI,
 }
+
+# Per-provider default model when JUDGE_MODEL is unset. Override with JUDGE_MODEL.
+_DEFAULT_MODELS = {
+    "anthropic": "claude-opus-4-8",
+    "openai": "gpt-4o",
+    "gemini": "gemini-2.5-pro",
+}
+_PROVIDER_LABELS = {"anthropic": "Claude", "openai": "GPT", "gemini": "Gemini"}
 
 SYSTEM_PROMPT = """You are a senior AI-security analyst. You review content flowing \
 through an organization's AI usage for two intertwined risks: (1) attacks on the \
@@ -55,25 +65,120 @@ class JudgeVerdict(BaseModel):
     recommended_action: str = Field(description="one of: allow, monitor, quarantine, block")
 
 
+# --- Provider backends -------------------------------------------------------
+# Each backend takes the resolved model + api key and returns a JudgeVerdict for
+# (system_prompt, user_content), or raises. Constructed only when its key/SDK is present.
+
+
+class _AnthropicBackend:
+    def __init__(self, api_key: str, model: str) -> None:
+        import anthropic
+        self._client = anthropic.Anthropic(api_key=api_key)
+        self.model = model
+
+    def run(self, system: str, user: str) -> JudgeVerdict | None:
+        resp = self._client.messages.parse(
+            model=self.model,
+            max_tokens=2048,
+            thinking={"type": "adaptive"},
+            system=system,
+            messages=[{"role": "user", "content": user}],
+            output_format=JudgeVerdict,
+        )
+        return resp.parsed_output
+
+
+class _OpenAIBackend:
+    def __init__(self, api_key: str, model: str, base_url: str = "") -> None:
+        from openai import OpenAI
+        self._client = OpenAI(api_key=api_key, **({"base_url": base_url} if base_url else {}))
+        self.model = model
+
+    def run(self, system: str, user: str) -> JudgeVerdict | None:
+        completion = self._client.beta.chat.completions.parse(
+            model=self.model,
+            max_tokens=2048,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            response_format=JudgeVerdict,
+        )
+        return completion.choices[0].message.parsed
+
+
+class _GeminiBackend:
+    def __init__(self, api_key: str, model: str) -> None:
+        from google import genai
+        self._genai = genai
+        self._client = genai.Client(api_key=api_key)
+        self.model = model
+
+    def run(self, system: str, user: str) -> JudgeVerdict | None:
+        resp = self._client.models.generate_content(
+            model=self.model,
+            contents=user,
+            config=self._genai.types.GenerateContentConfig(
+                system_instruction=system,
+                response_mime_type="application/json",
+                response_schema=JudgeVerdict,
+                max_output_tokens=2048,
+            ),
+        )
+        return resp.parsed
+
+
+def _resolve_key(provider: str) -> str:
+    """Dedicated judge API key for a provider. Kept separate from the gateway-proxy
+    keys so enabling the judge (which sends content to that provider) is explicit."""
+    if provider == "anthropic":
+        return settings.anthropic_api_key
+    if provider == "openai":
+        return settings.openai_api_key
+    if provider == "gemini":
+        return settings.gemini_api_key
+    return ""
+
+
+def _build_backend():
+    """Pick a provider per JUDGE_PROVIDER and build its backend, or (None, None, None)."""
+    want = (settings.judge_provider or "auto").strip().lower()
+    if want == "none":
+        return None, None, None
+
+    order = [want] if want in _DEFAULT_MODELS else ["anthropic", "openai", "gemini"]
+    ctors = {"anthropic": _AnthropicBackend, "openai": _OpenAIBackend, "gemini": _GeminiBackend}
+
+    for provider in order:
+        key = _resolve_key(provider)
+        if not key:
+            continue
+        model = settings.judge_model or _DEFAULT_MODELS[provider]
+        try:
+            backend = ctors[provider](key, model)
+        except Exception:  # SDK missing / bad key — try the next candidate
+            continue
+        return provider, backend, model
+    return None, None, None
+
+
 class LLMJudgeDetector:
     name = "llm_judge"
     surfaces: set[Surface] = set()  # the analyst reads everything, every surface
 
     def __init__(self) -> None:
-        self._client = None
-        if settings.anthropic_api_key:
-            try:
-                import anthropic
-                self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-            except Exception:  # SDK missing or bad key — stay a no-op
-                self._client = None
+        self.provider, self._backend, self.model = _build_backend()
 
     @property
     def enabled(self) -> bool:
-        return self._client is not None
+        return self._backend is not None
+
+    @property
+    def label(self) -> str:
+        return _PROVIDER_LABELS.get(self.provider, "LLM judge")
 
     def analyze(self, item: AnalysisInput) -> list[Signal]:
-        if not self._client:
+        if not self._backend:
             return []
 
         user_content = (
@@ -83,33 +188,26 @@ class LLMJudgeDetector:
             f"---\n{item.content}"
         )
         try:
-            resp = self._client.messages.parse(
-                model=settings.judge_model,
-                max_tokens=2048,
-                thinking={"type": "adaptive"},
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_content}],
-                output_format=JudgeVerdict,
-            )
+            verdict = self._backend.run(SYSTEM_PROMPT, user_content)
         except Exception as exc:  # network/auth/parse failure — don't sink the request
             return [Signal(
                 category=Category.AI_GENERATED,
                 title="LLM judge unavailable",
-                detail=f"Claude analysis skipped: {type(exc).__name__}",
+                detail=f"{self.label} analysis skipped: {type(exc).__name__}",
                 weight=0.0, confidence=0.0, detector=self.name,
             )]
 
-        verdict = resp.parsed_output
         if verdict is None:
             return []
 
         signals: list[Signal] = []
+        label = self.label
 
         # Headline AI-generation signal from the judge.
         if verdict.ai_generated_likelihood > 0.0:
             signals.append(Signal(
                 category=Category.AI_GENERATED,
-                title="Claude: AI-generation assessment",
+                title=f"{label}: AI-generation assessment",
                 detail=verdict.summary,
                 weight=0.5, confidence=verdict.ai_generated_likelihood,
                 detector=self.name,
@@ -120,7 +218,7 @@ class LLMJudgeDetector:
         if verdict.malicious_likelihood > 0.0:
             signals.append(Signal(
                 category=Category.DATA_EXFILTRATION,
-                title="Claude: malicious-intent assessment",
+                title=f"{label}: malicious-intent assessment",
                 detail=f"{verdict.summary} (recommended: {verdict.recommended_action})",
                 weight=0.9, confidence=verdict.malicious_likelihood,
                 detector=self.name,
@@ -132,7 +230,7 @@ class LLMJudgeDetector:
             cat = _CATEGORY_MAP.get(ind.category.lower(), Category.DATA_EXFILTRATION)
             signals.append(Signal(
                 category=cat,
-                title=f"Claude indicator: {ind.category}",
+                title=f"{label} indicator: {ind.category}",
                 detail=ind.description,
                 weight=0.4, confidence=ind.confidence, detector=self.name,
             ))

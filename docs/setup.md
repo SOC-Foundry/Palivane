@@ -38,7 +38,7 @@ your database. There's no Warden cloud. It's two layers — **one server you hos
  └──────────────────────────────┘                │                     ┌──────▼───────┐  │
    security team's browser ──────── console ─────►│                     │ Postgres :5432│  │
                                                   │                     │  (findings)  │  │
-   optional ─► Anthropic (Claude judge)           │                     └──────────────┘  │
+   optional ─► LLM judge (Claude/GPT/Gemini)      │                     └──────────────┘  │
    gateway  ─► your upstream LLM provider         └──────────────────────────────────────┘
 ```
 
@@ -48,7 +48,7 @@ your database. There's no Warden cloud. It's two layers — **one server you hos
   run `backend` as a systemd service — see [`deploy/`](../deploy/).
 - **The detection compute runs inside `backend`** — local CPU work (see
   [how detection works](../README.md#how-detection-works)). The only outbound calls are
-  *optional*: the Claude judge, and the gateway forwarding allowed calls to your upstream.
+  *optional*: the LLM judge, and the gateway forwarding allowed calls to your upstream.
 - **Capture planes** sit where AI is actually used and call back to the server's API.
 
 ### What runs on each end-user's machine?
@@ -77,9 +77,9 @@ your IdP/CASB "who used AI" list against who Warden actually captured).
 | Docker | Docker Engine + the Compose plugin (`docker compose version`). |
 | From source | Python 3.11+ and Node 18+ (`python3 --version`, `node --version`). |
 
-An **Anthropic API key is optional** — Warden runs fully on its offline
-regex/heuristic detectors with no key. Add a key later to enrich detection with the
-Claude judge.
+An **LLM API key is optional** — Warden runs fully on its offline regex/heuristic
+detectors with no key. Add a key later (Claude, GPT, or Gemini) to enrich detection with
+the LLM judge.
 
 ---
 
@@ -103,7 +103,7 @@ first boot.
 | `WARDEN_SECRET_KEY` | **Required for real use.** Signs auth tokens. Generate: `openssl rand -hex 32`. Left at the default, the API boots with an insecure dev key and logs a warning. |
 | `WEB_PORT` | Host port for the console (default `8080`). |
 | `SEED_ON_START` | Seed a demo tenant + admin + sample findings on first boot. Set `false` once you've created your real org. |
-| `ANTHROPIC_API_KEY` | Optional — turns on the Claude judge. |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` | Optional — turns on the LLM judge (Claude / GPT / Gemini; `JUDGE_PROVIDER=auto` selects). |
 
 Everything else (`POSTGRES_*`, `CORS_ORIGINS`, gateway/ingest settings) has a working
 default in `.env.docker.example`.
@@ -124,7 +124,7 @@ cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-cp .env.example .env          # optional — set ANTHROPIC_API_KEY to enable the judge
+cp .env.example .env          # optional — set ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY for the judge
 python -m app.seed            # optional — demo tenant + admin + sample findings
 uvicorn app.main:app --reload --port 8088
 ```
@@ -214,16 +214,18 @@ through. Set `GATEWAY_ENFORCE=true` (and `GATEWAY_BLOCK_SEVERITY`, default `high
 
 ---
 
-## 5. (Optional) Enable the Claude judge
+## 5. (Optional) Enable the LLM judge
 
 The offline detectors need no API key. To add the LLM judge for the novel cases the
-rules miss, set `ANTHROPIC_API_KEY` and restart the backend:
+rules miss, set one provider key and restart the backend. `JUDGE_PROVIDER=auto` (default)
+picks whichever key is set — Claude, GPT, or Gemini:
 
-- **Docker:** add `ANTHROPIC_API_KEY=sk-ant-...` to `.env`, then `docker compose up -d`.
+- **Docker:** add `ANTHROPIC_API_KEY=sk-ant-...` (or `OPENAI_API_KEY` / `GEMINI_API_KEY`)
+  to `.env`, then `docker compose up -d`.
 - **From source:** add it to `backend/.env`, then restart `uvicorn`.
 
-Confirm with `curl .../api/health` — `judge_enabled` flips to `true` and `judge_model`
-shows the model. Switch models with `JUDGE_MODEL` (e.g. `claude-haiku-4-5` for cheap
+Confirm with `curl .../api/health` — `judge_enabled` flips to `true`, and `judge_provider`
+/ `judge_model` show the selection. Switch models with `JUDGE_MODEL` (e.g. `claude-haiku-4-5` for cheap
 high-volume triage).
 
 ---
@@ -236,7 +238,7 @@ high-volume triage).
 | Console loads but API calls fail / CORS errors | `CORS_ORIGINS` must match the URL you open the console at (`http://localhost:8080` for Docker, `http://localhost:5173` for dev). |
 | Frontend can't reach the backend in dev | The Vite proxy targets `:8088`. Make sure the backend is on that port, or update `frontend/vite.config.js`. |
 | Startup warns about an **insecure dev key** | `WARDEN_SECRET_KEY` is unset. Fine for local dev; set it (`openssl rand -hex 32`) before any real deployment. |
-| `judge_enabled` is `false` | No `ANTHROPIC_API_KEY` set. Expected — detection still runs on the offline detectors. |
+| `judge_enabled` is `false` | No judge key set (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`). Expected — detection still runs on the offline detectors. |
 | Gateway returns a **stub** reply | No upstream configured. Set `GATEWAY_UPSTREAM_*` / `GATEWAY_ANTHROPIC_*` / `GATEWAY_GEMINI_*` to forward allowed calls to a real provider. |
 
 ---

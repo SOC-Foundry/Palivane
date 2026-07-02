@@ -9,10 +9,14 @@ from dataclasses import dataclass
 @dataclass
 class Settings:
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
-    # Default to the most capable model for the judgment call. For high-volume
-    # production triage you may switch to claude-haiku-4-5 or claude-sonnet-4-6
-    # to trade some accuracy for cost/latency — set JUDGE_MODEL to override.
-    judge_model: str = os.getenv("JUDGE_MODEL", "claude-opus-4-8")
+    # OpenAI key for the LLM judge (also falls back to the gateway upstream key).
+    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    # LLM judge provider: "auto" picks whichever key is configured (anthropic > openai >
+    # gemini); force one with "anthropic" | "openai" | "gemini", or "none" to disable.
+    judge_provider: str = os.getenv("JUDGE_PROVIDER", "auto")
+    # Model for the judgment call. Empty = a sensible per-provider default. Override for
+    # cost/latency (e.g. claude-haiku-4-5, gpt-4o-mini, gemini-2.5-flash) via JUDGE_MODEL.
+    judge_model: str = os.getenv("JUDGE_MODEL", "")
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./warden.db")
     cors_origins: str = os.getenv("CORS_ORIGINS", "http://localhost:5173")
     # Auth. Set WARDEN_SECRET_KEY in production (signs JWTs). Empty => an insecure
