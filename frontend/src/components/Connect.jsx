@@ -101,9 +101,10 @@ export default function Connect({ tenant }) {
 
       <div className="connect-card">
         <h3>④ One-run device installer</h3>
-        <p className="muted">Download a prefilled setup script (a fresh capture key is minted and
-           baked in) that configures Claude Code + the browser extension policy in one run — hand
-           it to a user or push it via MDM.</p>
+        <p className="muted">Download a prefilled setup script (carries a reusable enrollment
+           token) — run it on any number of devices; each self-enrolls for its own per-device
+           key, then configures Claude Code + the browser extension policy. Hand to a user or
+           push via MDM.</p>
         <div className="form-row" style={{ gap: 10 }}>
           <button className="primary-btn slim" disabled={!!provBusy}
                   onClick={() => getInstaller("macos")}>
@@ -114,8 +115,8 @@ export default function Connect({ tenant }) {
             {provBusy === "windows" ? "…" : "Download Windows installer (.ps1)"}
           </button>
         </div>
-        <p className="muted" style={{ marginTop: 8 }}>Each download mints a new key — treat the file
-           as a secret and distribute over a trusted channel.</p>
+        <p className="muted" style={{ marginTop: 8 }}>Each download mints a new enrollment token —
+           treat the file as a secret; revoke it anytime under enrollment tokens.</p>
       </div>
     </div>
   );
