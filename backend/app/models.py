@@ -103,6 +103,32 @@ class ApiKey(Base):
         }
 
 
+class EnrollmentToken(Base):
+    """A tenant-scoped token a device presents once to self-register and receive its own
+    per-device API key. Only the hash is stored; supports expiry and a max-use cap."""
+
+    __tablename__ = "enrollment_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    label = Column(String(128), default="")
+    prefix = Column(String(16), index=True, nullable=False)
+    token_hash = Column(String(64), nullable=False)
+    active = Column(Boolean, default=True)
+    max_uses = Column(Integer, nullable=True)   # None = unlimited
+    uses = Column(Integer, default=0)
+    created_at = Column(DateTime, default=_utcnow)
+    expires_at = Column(DateTime, nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id, "label": self.label, "prefix": self.prefix,
+            "active": self.active, "max_uses": self.max_uses, "uses": self.uses,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+        }
+
+
 class TenantUpstream(Base):
     """Per-tenant LLM provider config for the gateway — so each org's allowed calls
     forward with *its own* provider account/key (billing isolation in multi-tenant SaaS).

@@ -51,6 +51,8 @@ export const api = {
     req(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   createApiKey: (payload) =>
     req("/apikeys", { method: "POST", body: JSON.stringify(payload) }),
+  provision: (payload) =>
+    req("/provision", { method: "POST", body: JSON.stringify(payload) }),
   stats: () => req("/stats"),
   analyze: (payload) =>
     req("/analyze", { method: "POST", body: JSON.stringify(payload) }),

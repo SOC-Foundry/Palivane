@@ -8,6 +8,7 @@ queries to `current_user.tenant_id`.
 
 from __future__ import annotations
 
+import hmac
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -21,11 +22,13 @@ from .config import settings
 from .crypto import decrypt, encrypt
 from .database import get_db
 from .models import (
-    ApiKey, Finding, LoginAttempt, Tenant, TenantOIDC, TenantSAML, TenantUpstream, User,
+    ApiKey, EnrollmentToken, Finding, LoginAttempt, Tenant, TenantOIDC, TenantSAML,
+    TenantUpstream, User,
 )
 from .schemas import (
-    ApiKeyCreate, LoginRequest, MFACode, MFAVerify, OIDCConfig, SAMLConfig, SignupRequest,
-    TenantDelete, TenantUpdate, UpstreamConfig, UserCreate, UserUpdate,
+    ApiKeyCreate, EnrollmentTokenCreate, EnrollRequest, LoginRequest, MFACode, MFAVerify,
+    OIDCConfig, SAMLConfig, SignupRequest, TenantDelete, TenantUpdate, UpstreamConfig,
+    UserCreate, UserUpdate,
 )
 from .upstreams import PROVIDERS, resolve as resolve_upstream
 from .security import (
@@ -34,7 +37,9 @@ from .security import (
     create_token,
     decode_token,
     generate_api_key,
+    generate_enrollment_token,
     hash_password,
+    hash_token,
     needs_rehash,
     verify_password,
 )
@@ -399,6 +404,69 @@ def revoke_api_key(key_id: int, current: User = Depends(require_admin),
     audit_log.record(db, current.tenant_id, current.email, "apikey.revoke",
                      target=key.label or str(key_id))
     return {"id": key_id, "active": False}
+
+
+# --- device enrollment (per-device self-registration) --------------------------------
+
+@router.post("/enroll/tokens")
+def create_enrollment_token(body: EnrollmentTokenCreate, current: User = Depends(require_admin),
+                            db: Session = Depends(get_db)):
+    """Mint an enrollment token. A device presents it once to POST /api/enroll and gets
+    its own per-device API key — so machines self-register without embedding a shared key."""
+    token, prefix, token_hash = generate_enrollment_token()
+    expires_at = _naive_utc() + timedelta(days=body.expires_in_days) if body.expires_in_days else None
+    et = EnrollmentToken(tenant_id=current.tenant_id, label=body.label, prefix=prefix,
+                         token_hash=token_hash, max_uses=body.max_uses, expires_at=expires_at)
+    db.add(et)
+    db.commit()
+    db.refresh(et)
+    audit_log.record(db, current.tenant_id, current.email, "enroll_token.create", target=body.label)
+    return {**et.to_dict(), "token": token}
+
+
+@router.get("/enroll/tokens")
+def list_enrollment_tokens(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    rows = db.query(EnrollmentToken).filter(EnrollmentToken.tenant_id == current.tenant_id).all()
+    return {"enrollment_tokens": [t.to_dict() for t in rows]}
+
+
+@router.delete("/enroll/tokens/{token_id}")
+def revoke_enrollment_token(token_id: int, current: User = Depends(require_admin),
+                            db: Session = Depends(get_db)):
+    et = db.get(EnrollmentToken, token_id)
+    if et is None or et.tenant_id != current.tenant_id:
+        raise HTTPException(status_code=404, detail="enrollment token not found")
+    et.active = False
+    db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "enroll_token.revoke", target=str(token_id))
+    return {"id": token_id, "active": False}
+
+
+@router.post("/enroll")
+def enroll(body: EnrollRequest, db: Session = Depends(get_db)):
+    """Device self-registration: present an enrollment token, receive a per-device API key.
+    Public (no user auth) — the enrollment token is the credential. Returns an `ak_` key
+    bound to the token's tenant and attributed to the device identity."""
+    et = (
+        db.query(EnrollmentToken)
+        .filter(EnrollmentToken.prefix == body.token[:11], EnrollmentToken.active.is_(True))
+        .first()
+    )
+    if et is None or not hmac.compare_digest(et.token_hash, hash_token(body.token)):
+        raise HTTPException(status_code=401, detail="invalid enrollment token")
+    if et.expires_at and et.expires_at < _naive_utc():
+        raise HTTPException(status_code=401, detail="enrollment token expired")
+    if et.max_uses is not None and et.uses >= et.max_uses:
+        raise HTTPException(status_code=401, detail="enrollment token exhausted")
+
+    token, prefix, token_hash = generate_api_key()
+    key = ApiKey(tenant_id=et.tenant_id, label=f"device:{body.device}", actor=body.device,
+                 prefix=prefix, token_hash=token_hash)
+    et.uses = (et.uses or 0) + 1
+    db.add(key)
+    db.commit()
+    audit_log.record(db, et.tenant_id, body.device, "device.enroll", target=body.device)
+    return {"token": token, "actor": body.device, "base_url_hint": "/v1"}
 
 
 # --- per-tenant upstream provider config (gateway billing isolation) -----------------

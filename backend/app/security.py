@@ -83,6 +83,15 @@ def looks_like_api_key(token: str) -> bool:
     return token.startswith(API_KEY_PREFIX)
 
 
+ENROLL_TOKEN_PREFIX = "et_"
+
+
+def generate_enrollment_token() -> tuple[str, str, str]:
+    """Return (plaintext, lookup_prefix, sha256_hash) for a device-enrollment token."""
+    token = ENROLL_TOKEN_PREFIX + secrets.token_urlsafe(32)
+    return token, token[:_PREFIX_LEN], hash_token(token)
+
+
 # --- tokens (HS256 JWT) ---------------------------------------------------------------
 
 _DEV_FALLBACK_KEY = "dev-insecure-key-change-me"
