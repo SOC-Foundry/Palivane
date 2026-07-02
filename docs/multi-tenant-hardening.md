@@ -52,6 +52,10 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   OIDC, tenant settings, MFA, session revoke, findings purge) are recorded per tenant
   (`audit_log`) and shown in a console **Audit** view; readable at `GET /api/audit`
   (admin, filterable by action).
+- **Content encryption at rest.** Opt-in (`WARDEN_ENCRYPT_FINDINGS`): stored finding
+  content is sealed with Fernet (`crypto.seal`, tagged `enc:v1:`) and decrypted on read for
+  authorized admins (`to_detail`, corpus export). Composes with redaction (redact → encrypt);
+  a tagged wrapper lets a column hold mixed plaintext/ciphertext rows.
 - **Observability.** `/livez` (liveness), `/readyz` (DB-reachability, 503 if down), and a
   Prometheus `/metrics` endpoint — HTTP request counts + latency histogram labelled by
   route template (bounded cardinality), via middleware. `/metrics` is optionally gated by
@@ -60,8 +64,8 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
 ## Next tracks
 
 ### 1. Data security & compliance (remaining)
-- **Full encryption at rest** for finding *content* (beyond redaction — envelope
-  encryption, ideally per-tenant keys) and **self-serve data export** per tenant.
+- **Self-serve data export** per tenant; optional **per-tenant encryption keys** (content
+  encryption today uses one deployment key).
 - **DPA / consent record** to accompany the judge opt-in.
 
 ### 2. Auth for SaaS (remaining)

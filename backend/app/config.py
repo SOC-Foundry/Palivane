@@ -29,6 +29,9 @@ class Settings:
     # Redact secrets/PII from stored finding content so Warden's own DB isn't a
     # plaintext-secret honeypot. Detection still runs on the raw content.
     redact_findings: bool = os.getenv("WARDEN_REDACT_FINDINGS", "true").lower() in ("1", "true", "yes")
+    # Encrypt stored finding content at rest (decrypted on read for authorized admins).
+    # Opt-in: requires a durable WARDEN_ENCRYPTION_KEY/WARDEN_SECRET_KEY (key loss = data loss).
+    encrypt_findings: bool = os.getenv("WARDEN_ENCRYPT_FINDINGS", "").lower() in ("1", "true", "yes")
     # Self-serve signup: anyone can create a new org (tenant). Set false on a
     # single-org self-hosted deployment to lock it down after bootstrapping.
     allow_signup: bool = os.getenv("WARDEN_ALLOW_SIGNUP", "true").lower() in ("1", "true", "yes")

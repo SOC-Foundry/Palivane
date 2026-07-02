@@ -234,7 +234,8 @@ class Finding(Base):
         }
 
     def to_detail(self) -> dict:
+        from .crypto import unseal
         d = self.to_summary()
-        d["content"] = self.content
+        d["content"] = unseal(self.content)   # decrypt if stored encrypted
         d["signals"] = self.signals or []
         return d

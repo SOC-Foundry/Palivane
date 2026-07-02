@@ -12,7 +12,14 @@ from .config import settings
 from .detectors import AnalysisInput
 from .engine import engine
 from .models import Finding, Tenant
+from .crypto import seal
 from .redaction import redact_text
+
+
+def _stored_content(content: str) -> str:
+    """Redact secrets/PII (if enabled), then encrypt at rest (if enabled), for storage."""
+    out = redact_text(content) if settings.redact_findings else content
+    return seal(out) if settings.encrypt_findings else out
 
 
 def run_analysis(item: AnalysisInput, persist: bool, db: Session,
@@ -41,7 +48,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             surface=item.surface.value,
             sender=item.sender,
             subject=item.subject,
-            content=redact_text(item.content) if settings.redact_findings else item.content,
+            content=_stored_content(item.content),
             risk_score=verdict.risk_score,
             severity=verdict.severity,
             recommended_action=verdict.recommended_action,

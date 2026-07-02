@@ -17,6 +17,7 @@ import argparse
 import json
 import sys
 
+from ..crypto import unseal
 from ..database import SessionLocal
 from ..models import Finding, Tenant
 
@@ -35,7 +36,7 @@ def finding_to_example(f: Finding) -> dict | None:
         "label": label,
         "sender": f.sender or "",
         "subject": f.subject or "",
-        "content": f.content or "",
+        "content": unseal(f.content) or "",
         "note": f"analyst {f.status}",
     }
 
