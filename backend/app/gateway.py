@@ -122,16 +122,21 @@ def _text_from_content(c) -> str:
 
 
 def _scan_messages(messages: list, system=None) -> str:
-    parts = []
-    if system:
-        parts.append(_text_from_content(system))
-    for m in messages or []:
+    """Scan only the *current* outbound user turn — the last user-role message's text.
+
+    Agents (e.g. Claude Code) resend the whole conversation history and large system
+    prompts / tool results on every request. Scanning all of that means one secret
+    anywhere in the history poisons every later turn (cascading false positives), and
+    re-flags the same content repeatedly. We only inspect what the user is sending now:
+    the text of the latest user message (text blocks only — tool-result/file-context
+    blocks are excluded)."""
+    for m in reversed(messages or []):
         if not isinstance(m, dict):
             continue
         role = (m.get("author") or {}).get("role") if isinstance(m.get("author"), dict) else m.get("role")
-        if role in (None, "user", "system"):
-            parts.append(_text_from_content(m.get("content")))
-    return "\n".join(p for p in parts if p).strip()
+        if role == "user":
+            return _text_from_content(m.get("content")).strip()
+    return ""
 
 
 def _capture(prompt: str, model: str, tool: str, principal: Principal, db: Session) -> dict:
@@ -193,9 +198,13 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
 
 def _anthropic_error(verdict: dict) -> JSONResponse:
     sigs = ", ".join(s["category"] for s in verdict.get("signals", [])[:4]) or "policy violation"
-    return JSONResponse(status_code=403, content={"type": "error", "error": {
-        "type": "permission_error",
-        "message": f"Blocked by Warden: {sigs} (risk {verdict['risk_score']}/{verdict['severity']}).",
+    # Use 400/invalid_request_error, not 403/permission_error: clients (e.g. Claude Code)
+    # treat 403 as an auth failure and prompt re-login, hiding our reason. A 400 surfaces
+    # the message directly. 403 stays reserved for genuine auth problems (bad/missing key).
+    return JSONResponse(status_code=400, content={"type": "error", "error": {
+        "type": "invalid_request_error",
+        "message": (f"Blocked by Warden: {sigs} (risk {verdict['risk_score']}/{verdict['severity']}). "
+                    f"Remove the secret/PII — run /clear to reset the conversation."),
     }})
 
 
