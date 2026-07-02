@@ -166,6 +166,16 @@ def _action_for(severity: str) -> str:
     return "block" if rank >= 3 else ("warn" if rank >= 2 else "allow")
 
 
+def _enforce_rate(db: Session, tenant_id: int | None) -> None:
+    """Count one capture request against the tenant's per-minute quota; 429 if over.
+    Shares the gateway counter, so `rate_limit` bounds all capture (gateway + ingest)."""
+    from .metering import record_and_check
+    allowed, _count, limit = record_and_check(db, tenant_id)
+    if not allowed:
+        raise HTTPException(status_code=429, detail=f"rate limit exceeded ({limit}/min)",
+                            headers={"Retry-After": "60"})
+
+
 def _ingest_auth(x_warden_token: str, db: Session) -> tuple[int | None, str]:
     """Resolve (tenant_id, default_actor) from a per-tenant API key (`ak_…`) or the
     shared EXTENSION_INGEST_TOKEN. Used by the token-gated ingest & scan endpoints, which
@@ -194,6 +204,7 @@ def ingest_ai_usage(
     static EXTENSION_INGEST_TOKEN — not a user JWT — so it can be deployed via policy.
     Returns an action the client enforces: allow / warn / block."""
     tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    _enforce_rate(db, tenant_id)
     actor = body.user or default_actor
 
     item = AnalysisInput(
@@ -234,6 +245,7 @@ def scan_code(
     hold code, so source_code_leak is ignored. Token-gated like the ingest endpoint.
     Returns an overall action plus per-file detail for files that aren't clean."""
     tenant_id, _ = _ingest_auth(x_warden_token, db)
+    _enforce_rate(db, tenant_id)
 
     flagged: list[dict] = []
     worst = 0

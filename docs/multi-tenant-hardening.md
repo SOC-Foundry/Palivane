@@ -35,11 +35,12 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   `/api/auth/oidc/{org}/login` → `/callback` validates the ID token (JWKS signature, iss/
   aud/exp/nonce via authlib), maps/provisions the user, and hands a session to the console.
   State is a signed, self-expiring token (no server session store → multi-worker safe).
-- **Gateway quotas + usage metering.** A DB-backed per-minute counter per tenant
-  (`gateway_usage`) rate-limits gateway calls (per-tenant `rate_limit`, else global
-  `GATEWAY_RATE_LIMIT`; 0 = unlimited) — over-limit returns a provider-shaped **429** with
-  `Retry-After`. The same counter is the metering source: `GET /api/usage` reports the
-  current window, last-24h, and per-day totals.
+- **Capture quotas + usage metering.** A DB-backed per-minute counter per tenant
+  (`gateway_usage`) enforces one `rate_limit` (per-tenant, else global `GATEWAY_RATE_LIMIT`;
+  0 = unlimited) across **all capture** — the gateway (provider-shaped **429**) *and* the
+  ingest/scan endpoints (`/api/ingest/ai-usage`, `/api/scan/code` → 429 + `Retry-After`).
+  The same counter is the metering source: `GET /api/usage` reports the current window,
+  last-24h, and per-day totals.
 - **Admin console (Settings page).** A self-serve UI for all of the above: org settings
   (name, judge consent, retention, rate limit), a usage panel, per-provider upstream keys,
   OIDC SSO config, and "log out everywhere" — previously API-only.
@@ -69,8 +70,7 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
 - Optional: swap the hardened stdlib HS256 JWT for a vetted library (PyJWT).
 
 ### 3. Abuse, quotas & metering (remaining)
-- Extend rate limiting to the **ingest** endpoints (extension/proxy), and wire usage
-  into a **billing** provider.
+- Wire usage into a **billing** provider (metering + per-tenant quotas already in place).
 
 ### 4. Operational (remaining)
 - Back the login-throttle / usage-metering prune with an index-friendly job (or TTL) at
