@@ -376,29 +376,31 @@ def usage(current: User = Depends(require_admin), db: Session = Depends(get_db))
 @app.post("/api/provision")
 def provision(body: ProvisionRequest, current: User = Depends(require_admin),
               db: Session = Depends(get_db)):
-    """Mint a capture key and return prefilled device-setup script(s) for this tenant.
+    """Mint a reusable enrollment token and return prefilled device-setup script(s).
 
-    One artifact per OS the admin (or their MDM) runs on a device to configure Claude
-    Code + the browser extension policy (+ optional desktop proxy) — no manual steps.
-    The key is returned inline in the script and shown only once."""
+    One artifact per OS, runnable on the whole fleet: at runtime each machine self-enrolls
+    (POST /api/enroll) for its own per-device key, then configures Claude Code + the browser
+    extension policy (+ optional desktop proxy). Per-device keys mean per-device attribution
+    and independent revocation — no shared credential baked in."""
     from datetime import datetime, timezone
 
     from . import provision as prov
-    from .models import ApiKey
-    from .security import generate_api_key
+    from .models import EnrollmentToken
+    from .security import generate_enrollment_token
 
-    token, prefix, token_hash = generate_api_key()
-    key = ApiKey(tenant_id=current.tenant_id, label=body.label,
-                 actor=body.actor, prefix=prefix, token_hash=token_hash,
-                 created_at=datetime.now(timezone.utc).replace(tzinfo=None))
-    db.add(key)
+    token, prefix, token_hash = generate_enrollment_token()
+    et = EnrollmentToken(tenant_id=current.tenant_id, label=body.label, prefix=prefix,
+                         token_hash=token_hash,
+                         created_at=datetime.now(timezone.utc).replace(tzinfo=None))
+    db.add(et)
     db.commit()
 
     platforms = ["macos", "windows"] if body.platform == "both" else [body.platform]
     scripts = {p: prov.render(p, body.base_url, token, body.extension_id, body.proxy_host)
                for p in platforms}
-    return {"key_prefix": prefix, "actor": body.actor, "scripts": scripts,
-            "note": "The embedded key is shown once. Distribute over a trusted channel."}
+    return {"enroll_token_prefix": prefix, "scripts": scripts,
+            "note": "Contains a reusable enrollment token; each device self-enrolls for its "
+                    "own key. Distribute over a trusted channel; revoke via /api/enroll/tokens."}
 
 
 @app.get("/api/stats")

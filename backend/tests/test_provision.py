@@ -1,4 +1,4 @@
-"""Bootstrap-installer generator + /api/provision endpoint."""
+"""Bootstrap-installer generator + /api/provision endpoint (self-enrolling)."""
 
 from __future__ import annotations
 
@@ -7,43 +7,54 @@ import pytest
 from app import provision
 
 
-def test_macos_script_bakes_in_url_and_token():
-    s = provision.render("macos", "https://warden.corp/", "ak_secret123", extension_id="abc123")
-    assert "ANTHROPIC_BASE_URL" in s and "https://warden.corp/v1" in s   # trailing slash normalized
-    assert "ak_secret123" in s
-    assert "managed-settings.json" in s
-    assert "abc123" in s                                                  # extension id in policy block
+def test_macos_script_self_enrolls():
+    s = provision.render("macos", "https://warden.corp/", "et_secret123", extension_id="abc123")
     assert s.startswith("#!/usr/bin/env bash")
+    assert "et_secret123" in s                    # carries the enrollment token
+    assert "/api/enroll" in s                      # self-enrolls at runtime
+    assert "ANTHROPIC_BASE_URL" in s and "$WARDEN_URL/v1" in s
+    assert "managed-settings.json" in s
+    assert "abc123" in s                           # extension id in policy block
 
 
-def test_windows_script_sets_claude_code_and_browser_policy():
-    s = provision.render("windows", "https://warden.corp", "ak_win", extension_id="xyz")
-    assert "ANTHROPIC_BASE_URL" in s and "https://warden.corp/v1" in s
-    assert "ak_win" in s
+def test_windows_script_self_enrolls():
+    s = provision.render("windows", "https://warden.corp", "et_win", extension_id="xyz")
+    assert "et_win" in s
+    assert "/api/enroll" in s
     assert "ClaudeCode" in s and "managed-settings.json" in s
-    assert "3rdparty\\extensions\\xyz\\policy" in s                       # browser managed policy
+    assert "3rdparty\\extensions\\xyz\\policy" in s
     assert "Google\\Chrome" in s and "Microsoft\\Edge" in s
 
 
 def test_unknown_platform_rejected():
     with pytest.raises(ValueError):
-        provision.render("android", "https://x", "ak_")
+        provision.render("android", "https://x", "et_")
 
 
-def test_provision_endpoint_mints_key_and_returns_scripts(client):
+def test_provision_endpoint_mints_enroll_token_and_returns_scripts(client):
     r = client.post("/api/provision", json={
-        "platform": "both", "base_url": "https://warden.corp",
-        "actor": "alice@acme.com", "extension_id": "myextid"})
+        "platform": "both", "base_url": "https://warden.corp", "extension_id": "myextid"})
     assert r.status_code == 200, r.text
     body = r.json()
     assert set(body["scripts"]) == {"macos", "windows"}
-    assert body["key_prefix"].startswith("ak_")
-    # The minted key appears in the scripts and is a real ak_ key.
-    assert "ak_" in body["scripts"]["macos"]
+    assert body["enroll_token_prefix"].startswith("et_")
+    assert "et_" in body["scripts"]["macos"] and "/api/enroll" in body["scripts"]["macos"]
     assert "myextid" in body["scripts"]["windows"]
-    # The key is now listed for the tenant (created), without exposing the secret again.
-    keys = client.get("/api/apikeys").json()["api_keys"]
-    assert any(k["prefix"] == body["key_prefix"] and k["actor"] == "alice@acme.com" for k in keys)
+    # The enrollment token is now listed for the tenant.
+    toks = client.get("/api/enroll/tokens").json()["enrollment_tokens"]
+    assert any(t["prefix"] == body["enroll_token_prefix"] for t in toks)
+
+
+def test_provisioned_installer_enrolls_a_device_end_to_end(client, raw_client):
+    # Generate an installer, extract its embedded enrollment token, and use it as a device
+    # would — confirming the whole loop yields a working per-device key.
+    body = client.post("/api/provision", json={"platform": "macos", "base_url": "https://warden.corp"}).json()
+    import re
+    et = re.search(r'ENROLL_TOKEN="(et_[^"]+)"', body["scripts"]["macos"]).group(1)
+    r = raw_client.post("/api/enroll", json={"token": et, "device": "mac-42@acme.com"})
+    assert r.status_code == 200
+    assert r.json()["token"].startswith("ak_")
+    assert any(k["actor"] == "mac-42@acme.com" for k in client.get("/api/apikeys").json()["api_keys"])
 
 
 def test_provision_is_admin_only(client, db_factory):

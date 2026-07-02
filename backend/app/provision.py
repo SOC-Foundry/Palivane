@@ -1,100 +1,107 @@
 """Bootstrap-installer generator.
 
-Renders a single, prefilled setup script per OS that configures the endpoints Warden
-governs — Claude Code (managed-settings.json), the browser extension (managed policy),
-and optionally the desktop egress proxy (system proxy + CA) — with the tenant's base URL
-and an API key baked in. The console mints a key and hands the user (or their MDM) one
-artifact to run, instead of a page of manual steps.
+Renders a single, prefilled setup script per OS. The script carries a **reusable
+enrollment token** (not a device key): at runtime each machine self-enrolls
+(`POST /api/enroll` with its hostname/user) and receives its **own** per-device API key,
+then configures the endpoints Warden governs — Claude Code (managed-settings.json), the
+browser extension (managed policy), and optionally the desktop proxy. So one installer
+artifact serves the whole fleet, and every device gets an independently-revocable,
+attributed key.
 
-Pure string templating (no I/O) so it's unit-testable; the API layer mints the key and
-serves the result.
+Pure string templating (no I/O) so it's unit-testable; the API layer mints the
+enrollment token and serves the result.
 """
 
 from __future__ import annotations
 
 # Chrome/Edge extension id once the extension is published (Web Store / self-hosted CRX).
-# Until then the browser-policy block is emitted with this placeholder + a warning.
 DEFAULT_EXTENSION_ID = "REPLACE_WITH_PUBLISHED_EXTENSION_ID"
 
 
-def _v1(base_url: str) -> str:
-    return base_url.rstrip("/") + "/v1"
+def _base(base_url: str) -> str:
+    return base_url.rstrip("/")
 
 
-def render_macos(base_url: str, token: str, extension_id: str, proxy_host: str = "") -> str:
+def render_macos(base_url: str, enroll_token: str, extension_id: str, proxy_host: str = "") -> str:
     ext = extension_id or DEFAULT_EXTENSION_ID
-    proxy_block = f'''
-# --- 3. Desktop app (egress proxy) — optional; needs the Warden CA + admin ---
-# Requires the mitmproxy/corporate CA trusted and the system proxy pointed at Warden.
-# Uncomment and set PROXY_HOST; distribute the CA to $HOME/warden-ca.pem first.
-# PROXY_HOST="{proxy_host or 'warden-proxy.corp:8081'}"
-# sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$HOME/warden-ca.pem"
-# networksetup -setsecurewebproxy "Wi-Fi" ${{PROXY_HOST%%:*}} ${{PROXY_HOST##*:}}
-''' if True else ""
+    b = _base(base_url)
     return f'''#!/usr/bin/env bash
-# Warden device setup (macOS). Generated for this org — contains a capture key; treat as secret.
+# Warden device setup (macOS). Carries an ENROLLMENT token; each machine self-enrolls
+# for its own per-device key. Safe to run on many machines; treat the file as a secret.
 set -euo pipefail
-WARDEN_URL="{base_url.rstrip('/')}"
-WARDEN_TOKEN="{token}"
+WARDEN_URL="{b}"
+ENROLL_TOKEN="{enroll_token}"
+DEVICE="$(whoami)@$(hostname -s 2>/dev/null || hostname)"
 
-echo "Configuring Claude Code..."
+echo "Enrolling this device with Warden as $DEVICE ..."
+RESP=$(curl -fsS -X POST "$WARDEN_URL/api/enroll" -H 'content-type: application/json' \\
+  -d "{{\\"token\\":\\"$ENROLL_TOKEN\\",\\"device\\":\\"$DEVICE\\"}}")
+KEY=$(printf '%s' "$RESP" | sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
+if [ -z "$KEY" ]; then echo "Enrollment failed: $RESP" >&2; exit 1; fi
+echo "  device key issued."
+
+echo "Configuring Claude Code ..."
 CC_DIR="/Library/Application Support/ClaudeCode"
 sudo mkdir -p "$CC_DIR"
 sudo tee "$CC_DIR/managed-settings.json" >/dev/null <<JSON
-{{ "env": {{ "ANTHROPIC_BASE_URL": "{_v1(base_url)}", "ANTHROPIC_AUTH_TOKEN": "$WARDEN_TOKEN" }} }}
+{{ "env": {{ "ANTHROPIC_BASE_URL": "$WARDEN_URL/v1", "ANTHROPIC_AUTH_TOKEN": "$KEY" }} }}
 JSON
 echo "  Claude Code -> $CC_DIR/managed-settings.json"
 
-# --- 2. Browser extension config (Chrome/Edge) ---
-# On macOS the extension is force-installed + configured via an MDM configuration profile
-# (managed storage), not a file drop. Push this managed policy for extension id {ext}:
+# Browser extension (Chrome/Edge): on macOS push this managed policy via MDM
+# (managed storage) for extension id {ext}:
 cat <<POLICY
-  {{ "backendUrl": {{"Value": "$WARDEN_URL"}}, "token": {{"Value": "$WARDEN_TOKEN"}}, "enforce": {{"Value": true}} }}
+  {{ "backendUrl": {{"Value": "$WARDEN_URL"}}, "token": {{"Value": "$KEY"}}, "enforce": {{"Value": true}} }}
 POLICY
-{proxy_block}
+
+# Desktop app (egress proxy) — optional; needs the Warden CA + admin. See docs.
 echo "Done. Restart Claude Code and your browser to apply."
 '''
 
 
-def render_windows(base_url: str, token: str, extension_id: str, proxy_host: str = "") -> str:
+def render_windows(base_url: str, enroll_token: str, extension_id: str, proxy_host: str = "") -> str:
     ext = extension_id or DEFAULT_EXTENSION_ID
-    return f'''# Warden device setup (Windows, run as Administrator in PowerShell).
-# Generated for this org — contains a capture key; treat as secret.
+    b = _base(base_url)
+    return f'''# Warden device setup (Windows, run as Administrator in PowerShell). Carries an
+# ENROLLMENT token; each machine self-enrolls for its own per-device key.
 $ErrorActionPreference = "Stop"
-$WardenUrl   = "{base_url.rstrip('/')}"
-$WardenToken = "{token}"
+$WardenUrl   = "{b}"
+$EnrollToken = "{enroll_token}"
+$Device      = "$env:USERNAME@$env:COMPUTERNAME"
 
-Write-Host "Configuring Claude Code..."
+Write-Host "Enrolling this device with Warden as $Device ..."
+$resp = Invoke-RestMethod -Method Post -Uri "$WardenUrl/api/enroll" -ContentType 'application/json' `
+  -Body (@{{ token = $EnrollToken; device = $Device }} | ConvertTo-Json)
+$Key = $resp.token
+if (-not $Key) {{ throw "Enrollment failed" }}
+Write-Host "  device key issued."
+
+Write-Host "Configuring Claude Code ..."
 $ccDir = "C:\\Program Files\\ClaudeCode"
 New-Item -ItemType Directory -Force -Path $ccDir | Out-Null
-$cc = @{{ env = @{{ ANTHROPIC_BASE_URL = "{_v1(base_url)}"; ANTHROPIC_AUTH_TOKEN = $WardenToken }} }}
+$cc = @{{ env = @{{ ANTHROPIC_BASE_URL = "$WardenUrl/v1"; ANTHROPIC_AUTH_TOKEN = $Key }} }}
 $cc | ConvertTo-Json -Depth 5 | Set-Content -Path "$ccDir\\managed-settings.json" -Encoding UTF8
 Write-Host "  Claude Code -> $ccDir\\managed-settings.json"
 
-Write-Host "Configuring browser extension managed policy (Chrome + Edge)..."
+Write-Host "Configuring browser extension managed policy (Chrome + Edge) ..."
 foreach ($vendor in @("Google\\Chrome", "Microsoft\\Edge")) {{
-  $key = "HKLM:\\Software\\Policies\\$vendor\\3rdparty\\extensions\\{ext}\\policy"
-  New-Item -Path $key -Force | Out-Null
-  Set-ItemProperty -Path $key -Name "backendUrl" -Value $WardenUrl
-  Set-ItemProperty -Path $key -Name "token"      -Value $WardenToken
-  Set-ItemProperty -Path $key -Name "enforce"    -Value 1
+  $regkey = "HKLM:\\Software\\Policies\\$vendor\\3rdparty\\extensions\\{ext}\\policy"
+  New-Item -Path $regkey -Force | Out-Null
+  Set-ItemProperty -Path $regkey -Name "backendUrl" -Value $WardenUrl
+  Set-ItemProperty -Path $regkey -Name "token"      -Value $Key
+  Set-ItemProperty -Path $regkey -Name "enforce"    -Value 1
 }}
 Write-Host "  Browser policy set for extension {ext}"
 
-# --- Desktop app (egress proxy) — optional; needs the Warden CA + admin ---
-# Import-Certificate -FilePath warden-ca.pem -CertStoreLocation Cert:\\LocalMachine\\Root
-# $p = "{proxy_host or 'warden-proxy.corp:8081'}"
-# Set-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings' ProxyServer $p
-# Set-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings' ProxyEnable 1
-
+# Desktop app (egress proxy) — optional; needs the Warden CA + admin. See docs.
 Write-Host "Done. Restart Claude Code and your browser to apply."
 '''
 
 
-def render(platform: str, base_url: str, token: str,
+def render(platform: str, base_url: str, enroll_token: str,
            extension_id: str = "", proxy_host: str = "") -> str:
     if platform == "macos":
-        return render_macos(base_url, token, extension_id, proxy_host)
+        return render_macos(base_url, enroll_token, extension_id, proxy_host)
     if platform == "windows":
-        return render_windows(base_url, token, extension_id, proxy_host)
+        return render_windows(base_url, enroll_token, extension_id, proxy_host)
     raise ValueError(f"unknown platform: {platform!r}")
