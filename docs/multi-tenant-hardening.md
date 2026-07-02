@@ -40,6 +40,9 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   `GATEWAY_RATE_LIMIT`; 0 = unlimited) — over-limit returns a provider-shaped **429** with
   `Retry-After`. The same counter is the metering source: `GET /api/usage` reports the
   current window, last-24h, and per-day totals.
+- **Admin console (Settings page).** A self-serve UI for all of the above: org settings
+  (name, judge consent, retention, rate limit), a usage panel, per-provider upstream keys,
+  OIDC SSO config, and "log out everywhere" — previously API-only.
 
 ## Next tracks
 
