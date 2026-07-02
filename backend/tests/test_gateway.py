@@ -83,8 +83,11 @@ def test_messages_enforce_blocks(client, monkeypatch):
     monkeypatch.setattr(gateway.settings, "gateway_enforce", True)
     r = client.post("/v1/messages", json=ANTHROPIC_INJECTION,
                     headers={"x-api-key": _token(client), "Authorization": ""})
-    assert r.status_code == 403
-    assert r.json()["error"]["type"] == "permission_error"  # Anthropic error shape
+    # Blocks return 400/invalid_request_error (not 403/permission_error) so clients like
+    # Claude Code surface the reason instead of prompting re-login.
+    assert r.status_code == 400
+    assert r.json()["error"]["type"] == "invalid_request_error"
+    assert "Blocked by Warden" in r.json()["error"]["message"]
 
 
 def test_messages_allows_benign(client, monkeypatch):
