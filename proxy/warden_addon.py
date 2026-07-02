@@ -180,11 +180,12 @@ class WardenGuard:
         if should_block(verdict, self.enforce):
             sigs = ", ".join(s.get("category", "") for s in verdict.get("signals", [])[:4])
             flow.response = http.Response.make(
-                403,
-                json.dumps({"error": {
+                400,
+                json.dumps({"type": "error", "error": {
+                    "type": "invalid_request_error",
                     "message": f"Blocked by Warden: sensitive data ({sigs}) "
-                               f"— risk {verdict.get('risk_score')}/{verdict.get('severity')}.",
-                    "type": "warden_blocked",
+                               f"— risk {verdict.get('risk_score')}/{verdict.get('severity')}. "
+                               f"Remove the secret/PII and start a new chat to continue.",
                 }}).encode(),
                 {"Content-Type": "application/json"},
             )
