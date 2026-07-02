@@ -5,9 +5,10 @@ import FindingsList from "./components/FindingsList.jsx";
 import FindingDetail from "./components/FindingDetail.jsx";
 import Connect from "./components/Connect.jsx";
 import Users from "./components/Users.jsx";
+import Settings from "./components/Settings.jsx";
 import Login from "./components/Login.jsx";
 import Landing from "./components/Landing.jsx";
-import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers } from "./components/icons.jsx";
+import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear } from "./components/icons.jsx";
 
 export default function App() {
   const [auth, setAuth] = useState(null);        // { user, tenant }
@@ -118,6 +119,12 @@ export default function App() {
               <IconUsers /> <span>Users</span>
             </button>
           )}
+          {isAdmin && (
+            <button type="button" className={`nav-item ${view === "settings" ? "nav-on" : ""}`}
+                    onClick={() => setView("settings")}>
+              <IconGear /> <span>Settings</span>
+            </button>
+          )}
         </nav>
 
         <div className="sidebar-foot">
@@ -144,6 +151,12 @@ export default function App() {
           <Connect tenant={auth.tenant} />
         ) : view === "users" ? (
           <Users currentUser={auth.user} />
+        ) : view === "settings" ? (
+          <Settings
+            tenant={auth.tenant}
+            onTenant={(t) => setAuth((a) => ({ ...a, tenant: t }))}
+            onLogout={logout}
+          />
         ) : (
           <>
             <div className="content-head">

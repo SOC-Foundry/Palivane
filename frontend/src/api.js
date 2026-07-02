@@ -58,4 +58,17 @@ export const api = {
   finding: (id) => req(`/findings/${id}`),
   setStatus: (id, status) =>
     req(`/findings/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  // --- admin settings ---
+  updateTenant: (payload) =>
+    req("/tenant", { method: "PATCH", body: JSON.stringify(payload) }),
+  usage: () => req("/usage"),
+  upstreams: () => req("/upstreams"),
+  setUpstream: (provider, payload) =>
+    req(`/upstreams/${provider}`, { method: "PUT", body: JSON.stringify(payload) }),
+  deleteUpstream: (provider) => req(`/upstreams/${provider}`, { method: "DELETE" }),
+  oidc: () => req("/oidc"),
+  setOidc: (payload) => req("/oidc", { method: "PUT", body: JSON.stringify(payload) }),
+  deleteOidc: () => req("/oidc", { method: "DELETE" }),
+  logoutAll: () => req("/auth/logout-all", { method: "POST" }),
 };
