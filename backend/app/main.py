@@ -395,8 +395,9 @@ def provision(body: ProvisionRequest, current: User = Depends(require_admin),
     db.add(et)
     db.commit()
 
+    ext_id = body.extension_id or settings.extension_id   # default to the configured published id
     platforms = ["macos", "windows"] if body.platform == "both" else [body.platform]
-    scripts = {p: prov.render(p, body.base_url, token, body.extension_id, body.proxy_host)
+    scripts = {p: prov.render(p, body.base_url, token, ext_id, body.proxy_host)
                for p in platforms}
     return {"enroll_token_prefix": prefix, "scripts": scripts,
             "note": "Contains a reusable enrollment token; each device self-enrolls for its "
