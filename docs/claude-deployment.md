@@ -144,13 +144,21 @@ Claude Code honors both. This catches Claude Code *and* everything else on the d
 
 ---
 
-## 3. Claude desktop app
+## 3. Claude Desktop app (macOS & Windows)
 
-The desktop app makes its own HTTPS calls and can't host the browser extension or be
-pointed at a custom gateway, so it's captured at the **network egress** with the
-[`proxy/`](../proxy/) mitmproxy addon.
+The desktop app makes its own HTTPS calls to `api.anthropic.com` and has **no
+custom-base-URL setting**, so it can't use the gateway (Section 2) — it's captured at the
+**network egress** with the [`proxy/`](../proxy/) mitmproxy addon. This section is for the
+**official macOS/Windows** app (it's Electron, and on those OSes it uses the **system
+proxy** and the **OS certificate store** natively — which is what makes this work cleanly
+and MDM-deployable). Linux community builds are out of scope.
 
-### Run the proxy
+> Scope note: this is the awkward surface. Prefer governing Claude via the **gateway**
+> (Claude Code / SDKs) and the **browser extension** — those cooperate at the app layer.
+> Use the desktop proxy only where you must, and lean on your **existing corporate
+> proxy/SWG** if you already run one rather than standing up a per-device Warden proxy.
+
+### Run the proxy (once, near your egress)
 ```bash
 pip install mitmproxy
 WARDEN_URL=https://warden.corp.example.com \
@@ -158,21 +166,52 @@ WARDEN_TOKEN=$EXTENSION_INGEST_TOKEN \
 WARDEN_PROXY_ENFORCE=true \
 mitmdump -s proxy/warden_addon.py --listen-port 8081
 ```
-(`WARDEN_TOKEN` is the same `EXTENSION_INGEST_TOKEN` from prerequisites.)
+(`WARDEN_TOKEN` is the `EXTENSION_INGEST_TOKEN` from prerequisites, or a per-tenant
+`ak_…` key. Run it as a service and scale horizontally — the addon is stateless.)
 
-### Route devices through it (managed fleet)
-1. **System proxy** — push the proxy address via MDM (or a PAC file) so device traffic
-   routes through it.
-2. **TLS inspection** — install your corporate root CA (the one mitmproxy uses) in the
-   device OS trust store via MDM, so HTTPS bodies are inspectable. Electron apps like
-   Claude desktop use the OS proxy + OS cert store, so this works transparently.
-3. Run `mitmdump` as a service (systemd) near the egress, scaled horizontally — the
-   addon is stateless.
+### Single machine (pilot / testing)
 
-**Caveat:** TLS inspection is required to read request bodies; an app that
-**certificate-pins** will refuse the inspected cert and bypass rather than be inspected.
-Verify per app. The proxy **fails open** (if Warden is down, traffic flows) so it never
-blocks the company's AI access on an outage.
+**macOS**
+1. Copy `~/.mitmproxy/mitmproxy-ca-cert.pem` from the proxy host to the Mac, then trust it:
+   ```bash
+   sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain mitmproxy-ca-cert.pem
+   ```
+2. Point the system HTTPS proxy at the proxy host: **System Settings → Network → (interface)
+   → Details → Proxies → Secure Web Proxy (HTTPS)** = `PROXY_HOST:8081`.
+3. Fully quit and reopen Claude Desktop → send a fake secret (`SSN 123-45-6789
+   AKIAABCDEFGHIJKLMNOP`) → it should be blocked; the request shows in the proxy log and a
+   finding appears in Warden.
+
+**Windows**
+1. Import the CA to Trusted Root:
+   ```powershell
+   Import-Certificate -FilePath mitmproxy-ca-cert.pem -CertStoreLocation Cert:\LocalMachine\Root
+   ```
+2. **Settings → Network & internet → Proxy → Manual proxy** = `PROXY_HOST:8081` (HTTPS).
+3. Restart Claude Desktop and test as above.
+
+### Fleet rollout (MDM — the real deployment)
+Don't configure machines by hand; push both via MDM (Intune / Jamf / GPO):
+1. **CA** — deploy the mitmproxy/corporate root CA to the device **system trust store**
+   (Intune *Trusted Certificate* profile; Jamf *Certificate* payload; GPO *Trusted Root*).
+2. **Proxy** — push a system proxy or **PAC file** scoped to AI domains
+   (Intune/Jamf network-proxy profile; GPO WinHTTP/WinINET). Claude Desktop inherits it.
+
+On managed devices this is transparent — the app already trusts the CA and uses the system
+proxy, so no per-app config.
+
+### Caveats (read these)
+- **Certificate pinning is the wildcard.** The proxy needs TLS inspection; if Claude
+  Desktop pins `api.anthropic.com`, it refuses the inspected cert and either errors or
+  bypasses — unfixable at the network layer. **Confirm with the single-machine test before
+  committing to a fleet rollout.** If a chat *works but Warden sees nothing*, the app is
+  bypassing the proxy (routing/config); if it *fails to connect after the CA is trusted*,
+  it's pinning.
+- **Fail-open:** if Warden is unreachable the proxy lets traffic through, so an outage
+  never blocks the company's AI access.
+- **Hard-deny posture:** the proxy scans the full transcript, so a secret can't slip
+  through on a later replayed turn; the user starts a new chat to clear it (blocks return
+  `400` with a "start a new chat" message).
 
 ---
 
