@@ -127,6 +127,15 @@ class ApiKeyCreate(BaseModel):
     expires_in_days: int | None = None
 
 
+class ProvisionRequest(BaseModel):
+    platform: Literal["macos", "windows", "both"] = "both"
+    base_url: str = Field(min_length=1, description="public Warden URL devices reach, e.g. https://warden.corp")
+    label: str = "device-provision"
+    actor: str = ""               # per-user/device identity for attribution
+    extension_id: str = ""        # published Chrome/Edge extension id (optional)
+    proxy_host: str = ""          # host:port of the egress proxy (optional, desktop app)
+
+
 class AccessEvent(BaseModel):
     actor: str                    # user identity from the IdP/CASB record
     tool: str = ""                # AI tool/domain they accessed
