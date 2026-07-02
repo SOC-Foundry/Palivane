@@ -34,6 +34,9 @@ class Settings:
     allow_signup: bool = os.getenv("WARDEN_ALLOW_SIGNUP", "true").lower() in ("1", "true", "yes")
     # Tenant that capture clients (extension/proxy) attribute findings to (slug or id).
     ingest_tenant: str = os.getenv("INGEST_TENANT", "")
+    # Default gateway requests-per-minute limit per tenant (0 = unlimited). A tenant's own
+    # rate_limit overrides this. Enforced as a fixed 60s window; also the metering source.
+    gateway_rate_limit: int = int(os.getenv("GATEWAY_RATE_LIMIT", "0"))
 
     # --- LLM gateway (protect our AI) ---
     # enforce=block risky prompts; otherwise monitor (observe + record only). Block when

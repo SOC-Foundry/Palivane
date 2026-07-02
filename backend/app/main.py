@@ -305,6 +305,14 @@ def coverage_reconcile(body: CoverageRequest, current: User = Depends(require_ad
     return reconcile(body.events, covered)
 
 
+@app.get("/api/usage")
+def usage(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Gateway usage for this tenant: current-minute count, last-24h total, per-day totals,
+    and the effective per-minute limit (metering + quota visibility)."""
+    from .metering import usage_summary
+    return usage_summary(db, current.tenant_id)
+
+
 @app.get("/api/stats")
 def stats(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
     scoped = db.query(Finding).filter(Finding.tenant_id == current.tenant_id)

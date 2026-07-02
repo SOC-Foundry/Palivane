@@ -151,6 +151,7 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `GATEWAY_ANTHROPIC_BASE` / `GATEWAY_ANTHROPIC_KEY` | `api.anthropic.com` / `ANTHROPIC_API_KEY` | Upstream for `/v1/messages` (Claude Code); empty key = stub. |
 | `GATEWAY_GEMINI_BASE` / `GATEWAY_GEMINI_KEY` | `generativelanguage.googleapis.com` / `GEMINI_API_KEY` | Upstream for `/v1beta/models/{model}:generateContent` (google-genai SDK, Gemini CLI); empty key = stub. |
 | `GATEWAY_TOOL_SUPPRESS` | *(defaults)*           | Per-tool category suppression, e.g. `claude-code:source_code_leak;cursor:source_code_leak`. |
+| `GATEWAY_RATE_LIMIT` | `0` (unlimited)            | Default gateway requests/min per tenant; a tenant's own `rate_limit` overrides. Over-limit → HTTP 429. |
 | `CUSTOM_SECRET_PATTERNS` | *(empty)*             | Org-specific secret formats — one `label=regex` per line; merged into detection. |
 | `EXTENSION_INGEST_TOKEN` | *(unset)*             | Shared token the browser extension presents to `/api/ingest/ai-usage` (empty = endpoint disabled). |
 | `WARDEN_SECRET_KEY` | *(dev fallback)*         | **Set in production.** Signs JWT session tokens; unset → insecure dev key + a startup warning. |
@@ -262,7 +263,8 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/users`             | Create a user in the tenant — `role` `admin`/`analyst` (admin). |
 | PATCH  | `/api/users/{id}`        | Change a user's role or enable/disable login; protects against last-admin / self-lockout (admin). |
 | GET/PUT/DELETE | `/api/upstreams[/{provider}]` | Per-tenant gateway provider config (openai/anthropic/gemini) — base URL + key (stored encrypted, never returned); the gateway forwards with the tenant's own account (admin). |
-| PATCH  | `/api/tenant`            | Org settings: name, Claude-judge consent (`judge`: on/off/inherit), findings `retention_days` (admin). |
+| PATCH  | `/api/tenant`            | Org settings: name, Claude-judge consent (`judge`: on/off/inherit), findings `retention_days`, gateway `rate_limit`/min (admin). |
+| GET    | `/api/usage`             | Gateway usage for the tenant: current-minute count, last-24h, per-day totals, effective limit (admin). |
 | DELETE | `/api/tenant`            | Delete the org and all its data (findings/users/keys/upstreams); slug-confirmed. GDPR "delete my org" (admin). |
 | POST   | `/api/findings/purge`    | Delete this tenant's findings older than `retention_days` (scheduler-friendly) (admin). |
 | POST   | `/api/apikeys`           | Mint a long-lived machine API key; plaintext returned once (admin). |

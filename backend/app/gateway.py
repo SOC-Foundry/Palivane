@@ -30,6 +30,7 @@ from .detectors import AnalysisInput, Surface
 from .models import ApiKey, User
 from .policy import detect_tool, signal_filter_for
 from .security import TokenError, decode_token, hash_token, looks_like_api_key
+from .metering import record_and_check
 from .service import run_analysis
 from .upstreams import resolve as resolve_upstream
 
@@ -92,6 +93,24 @@ def _blocked(verdict: dict) -> int:
     return _SEVERITY_RANK.get(verdict["severity"], 0) >= _SEVERITY_RANK.get(settings.gateway_block_severity, 3)
 
 
+_RETRY_HEADER = {"Retry-After": "60"}
+
+
+def _rate_limited(db: Session, principal: "Principal", shape: str) -> JSONResponse | None:
+    """Count this request; return a provider-shaped 429 if the tenant is over its limit."""
+    allowed, count, limit = record_and_check(db, principal.tenant_id)
+    if allowed:
+        return None
+    msg = f"Warden rate limit exceeded ({limit}/min)."
+    if shape == "anthropic":
+        body = {"type": "error", "error": {"type": "rate_limit_error", "message": msg}}
+    elif shape == "gemini":
+        body = {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "message": msg}}
+    else:
+        body = {"error": {"message": msg, "type": "rate_limited", "code": "rate_limited"}}
+    return JSONResponse(status_code=429, content=body, headers=_RETRY_HEADER)
+
+
 def _text_from_content(c) -> str:
     if isinstance(c, str):
         return c
@@ -148,6 +167,9 @@ def _openai_stub(model: str, verdict: dict) -> dict:
 @router.post("/chat/completions")
 async def chat_completions(request: Request, principal: Principal = Depends(get_gateway_principal),
                            db: Session = Depends(get_db)):
+    limited = _rate_limited(db, principal, "openai")
+    if limited:
+        return limited
     payload = await request.json()
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
@@ -189,6 +211,9 @@ def _anthropic_stub(model: str, verdict: dict) -> dict:
 @router.post("/messages")
 async def messages(request: Request, principal: Principal = Depends(get_gateway_principal),
                    db: Session = Depends(get_db)):
+    limited = _rate_limited(db, principal, "anthropic")
+    if limited:
+        return limited
     payload = await request.json()
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
@@ -302,6 +327,9 @@ def _forward_gemini(model: str, method: str, payload: dict, request: Request,
 
 async def _gemini_entry(model: str, method: str, request: Request,
                         principal: Principal, db: Session) -> Response:
+    limited = _rate_limited(db, principal, "gemini")
+    if limited:
+        return limited
     payload = await request.json()
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
     prompt = _scan_gemini(payload.get("contents", []), payload.get("systemInstruction") or payload.get("system_instruction"))

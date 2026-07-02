@@ -37,10 +37,13 @@ class Tenant(Base):
     judge_enabled = Column(Boolean, nullable=True, default=None)
     # Delete this tenant's findings older than N days (0 = keep forever).
     retention_days = Column(Integer, default=0)
+    # Gateway requests allowed per minute for this org (0 = inherit global default).
+    rate_limit = Column(Integer, default=0)
 
     def to_dict(self) -> dict:
         return {"id": self.id, "slug": self.slug, "name": self.name,
-                "judge_enabled": self.judge_enabled, "retention_days": self.retention_days}
+                "judge_enabled": self.judge_enabled, "retention_days": self.retention_days,
+                "rate_limit": self.rate_limit}
 
 
 class User(Base):
@@ -110,6 +113,20 @@ class TenantUpstream(Base):
     key_encrypted = Column(Text, default="")
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class GatewayUsage(Base):
+    """Per-tenant, per-minute gateway request counter. Doubles as the rate-limit window
+    (count in the current minute vs the tenant's limit) and the metering source (sum over
+    a period). One row per tenant per minute; old rows pruned."""
+
+    __tablename__ = "gateway_usage"
+    __table_args__ = (UniqueConstraint("tenant_id", "window_start", name="uq_usage_tenant_window"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    window_start = Column(DateTime, index=True, nullable=False)  # minute-truncated
+    count = Column(Integer, default=0, nullable=False)
 
 
 class TenantOIDC(Base):
