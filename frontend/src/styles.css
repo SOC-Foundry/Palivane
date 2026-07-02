@@ -468,6 +468,10 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
   border-radius: 8px; padding: 9px 11px; font-size: 13px; width: 160px;
 }
 .mfa-confirm-row input:focus { outline: none; border-color: var(--accent); }
+.audit-table { font-size: 12.5px; }
+.audit-when { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.audit-detail { color: var(--muted); font-size: 12px; }
+
 .recovery-codes {
   list-style: none; margin: 10px 0 0; padding: 12px; display: grid;
   grid-template-columns: repeat(2, 1fr); gap: 6px 18px;

@@ -6,9 +6,10 @@ import FindingDetail from "./components/FindingDetail.jsx";
 import Connect from "./components/Connect.jsx";
 import Users from "./components/Users.jsx";
 import Settings from "./components/Settings.jsx";
+import Audit from "./components/Audit.jsx";
 import Login from "./components/Login.jsx";
 import Landing from "./components/Landing.jsx";
-import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear } from "./components/icons.jsx";
+import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard } from "./components/icons.jsx";
 
 export default function App() {
   const [auth, setAuth] = useState(null);        // { user, tenant }
@@ -125,6 +126,12 @@ export default function App() {
               <IconGear /> <span>Settings</span>
             </button>
           )}
+          {isAdmin && (
+            <button type="button" className={`nav-item ${view === "audit" ? "nav-on" : ""}`}
+                    onClick={() => setView("audit")}>
+              <IconClipboard /> <span>Audit</span>
+            </button>
+          )}
         </nav>
 
         <div className="sidebar-foot">
@@ -158,6 +165,8 @@ export default function App() {
             onTenant={(t) => setAuth((a) => ({ ...a, tenant: t }))}
             onLogout={logout}
           />
+        ) : view === "audit" ? (
+          <Audit />
         ) : (
           <>
             <div className="content-head">

@@ -264,6 +264,9 @@ def purge_findings(current: User = Depends(require_admin), db: Session = Depends
          .filter(Finding.tenant_id == current.tenant_id, Finding.created_at < cutoff)
          .delete())
     db.commit()
+    from . import audit_log
+    audit_log.record(db, current.tenant_id, current.email, "findings.purge",
+                     detail={"deleted": n, "retention_days": days})
     return {"deleted": n, "retention_days": days}
 
 

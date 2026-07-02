@@ -68,6 +68,10 @@ export const api = {
   updateTenant: (payload) =>
     req("/tenant", { method: "PATCH", body: JSON.stringify(payload) }),
   usage: () => req("/usage"),
+  audit: (params = {}) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return req("/audit" + (q ? `?${q}` : ""));
+  },
   upstreams: () => req("/upstreams"),
   setUpstream: (provider, payload) =>
     req(`/upstreams/${provider}`, { method: "PUT", body: JSON.stringify(payload) }),

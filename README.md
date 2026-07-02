@@ -268,6 +268,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | GET/PUT/DELETE | `/api/upstreams[/{provider}]` | Per-tenant gateway provider config (openai/anthropic/gemini) — base URL + key (stored encrypted, never returned); the gateway forwards with the tenant's own account (admin). |
 | PATCH  | `/api/tenant`            | Org settings: name, Claude-judge consent (`judge`: on/off/inherit), findings `retention_days`, gateway `rate_limit`/min (admin). |
 | GET    | `/api/usage`             | Gateway usage for the tenant: current-minute count, last-24h, per-day totals, effective limit (admin). |
+| GET    | `/api/audit`             | The tenant's admin audit trail (who did what, when); filterable by `action` (admin). |
 | DELETE | `/api/tenant`            | Delete the org and all its data (findings/users/keys/upstreams); slug-confirmed. GDPR "delete my org" (admin). |
 | POST   | `/api/findings/purge`    | Delete this tenant's findings older than `retention_days` (scheduler-friendly) (admin). |
 | POST   | `/api/apikeys`           | Mint a long-lived machine API key; plaintext returned once (admin). |
