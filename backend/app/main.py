@@ -10,8 +10,9 @@ from __future__ import annotations
 import hmac
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -69,6 +70,17 @@ app.include_router(gateway_router)
 app.include_router(gemini_router)
 
 
+@app.middleware("http")
+async def _metrics_middleware(request, call_next):
+    import time
+    from . import metrics
+    start = time.perf_counter()
+    response = await call_next(request)
+    metrics.observe(request.method, metrics.route_template(request),
+                    response.status_code, time.perf_counter() - start)
+    return response
+
+
 @app.get("/api/health")
 def health():
     return {
@@ -77,6 +89,38 @@ def health():
         "judge_model": settings.judge_model if engine.judge_enabled else None,
         "allow_signup": settings.allow_signup,
     }
+
+
+@app.get("/livez")
+def livez():
+    """Liveness: the process is up (no dependencies checked)."""
+    return {"status": "live"}
+
+
+@app.get("/readyz")
+def readyz(db: Session = Depends(get_db)):
+    """Readiness: the database is reachable — for load-balancer / k8s gating."""
+    from sqlalchemy import text
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ready"}
+    except Exception:
+        return JSONResponse(status_code=503, content={"status": "not-ready"})
+
+
+@app.get("/metrics")
+def metrics_endpoint(request: Request):
+    """Prometheus exposition. If WARDEN_METRICS_TOKEN is set, require it (Bearer or ?token=)."""
+    from fastapi.responses import Response as _Resp
+    from . import metrics
+    tok = settings.metrics_token
+    if tok:
+        scheme, _, bearer = request.headers.get("authorization", "").partition(" ")
+        provided = bearer if scheme.lower() == "bearer" else request.query_params.get("token", "")
+        if not hmac.compare_digest(provided, tok):
+            raise HTTPException(status_code=401, detail="metrics token required")
+    body, content_type = metrics.exposition()
+    return _Resp(content=body, media_type=content_type)
 
 
 def _input_from_request(req: AnalyzeRequest) -> AnalysisInput:
