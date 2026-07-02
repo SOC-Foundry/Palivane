@@ -151,7 +151,7 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `GATEWAY_ANTHROPIC_BASE` / `GATEWAY_ANTHROPIC_KEY` | `api.anthropic.com` / `ANTHROPIC_API_KEY` | Upstream for `/v1/messages` (Claude Code); empty key = stub. |
 | `GATEWAY_GEMINI_BASE` / `GATEWAY_GEMINI_KEY` | `generativelanguage.googleapis.com` / `GEMINI_API_KEY` | Upstream for `/v1beta/models/{model}:generateContent` (google-genai SDK, Gemini CLI); empty key = stub. |
 | `GATEWAY_TOOL_SUPPRESS` | *(defaults)*           | Per-tool category suppression, e.g. `claude-code:source_code_leak;cursor:source_code_leak`. |
-| `GATEWAY_RATE_LIMIT` | `0` (unlimited)            | Default gateway requests/min per tenant; a tenant's own `rate_limit` overrides. Over-limit → HTTP 429. |
+| `GATEWAY_RATE_LIMIT` | `0` (unlimited)            | Default capture requests/min per tenant (gateway **and** ingest/scan); a tenant's own `rate_limit` overrides. Over-limit → HTTP 429. |
 | `WARDEN_METRICS_TOKEN` | *(empty = open)*         | If set, `/metrics` requires it (Bearer or `?token=`); scrape it privately otherwise. |
 | `CUSTOM_SECRET_PATTERNS` | *(empty)*             | Org-specific secret formats — one `label=regex` per line; merged into detection. |
 | `EXTENSION_INGEST_TOKEN` | *(unset)*             | Shared token the browser extension presents to `/api/ingest/ai-usage` (empty = endpoint disabled). |

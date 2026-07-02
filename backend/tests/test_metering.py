@@ -45,3 +45,23 @@ def test_global_default_limit_applies_without_tenant_override(client, monkeypatc
     monkeypatch.setattr(gateway.settings, "gateway_rate_limit", 1)   # global 1/min, no tenant override
     assert client.post("/v1/chat/completions", json=BENIGN).status_code == 200
     assert client.post("/v1/chat/completions", json=BENIGN).status_code == 429
+
+
+def test_ingest_shares_the_tenant_rate_limit(client, raw_client):
+    key = client.post("/api/apikeys", json={"label": "i", "actor": "x"}).json()["token"]
+    client.patch("/api/tenant", json={"rate_limit": 1})
+    body = {"content": "hello there", "destination": "https://chat.openai.com/"}
+    h = {"X-Warden-Token": key}
+    r1 = raw_client.post("/api/ingest/ai-usage", json=body, headers=h)
+    r2 = raw_client.post("/api/ingest/ai-usage", json=body, headers=h)
+    assert r1.status_code == 200 and r2.status_code == 429
+    assert r2.headers.get("retry-after") == "60"
+
+
+def test_scan_code_is_rate_limited(client, raw_client):
+    key = client.post("/api/apikeys", json={"label": "g", "actor": "ci"}).json()["token"]
+    client.patch("/api/tenant", json={"rate_limit": 1})
+    body = {"files": [{"path": "a.py", "content": "print(1)"}]}
+    h = {"X-Warden-Token": key}
+    assert raw_client.post("/api/scan/code", json=body, headers=h).status_code == 200
+    assert raw_client.post("/api/scan/code", json=body, headers=h).status_code == 429
