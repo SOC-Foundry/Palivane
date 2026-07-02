@@ -18,7 +18,7 @@ class Surface(str, Enum):
 
     The engine routes each submission to the detectors that declare its surface, so
     prompt-attack rules and data-loss rules apply where they belong. A detector with
-    no declared surface runs on everything (e.g. the Claude judge)."""
+    no declared surface runs on everything (e.g. the LLM judge)."""
 
     LLM_IO = "llm_io"     # Protect our AI — prompts/responses on the org's own LLMs
     AI_USAGE = "ai_usage" # Shadow-AI governance — content sent to external AI tools

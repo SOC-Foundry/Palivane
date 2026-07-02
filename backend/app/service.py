@@ -29,7 +29,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     `tenant_id` attributes the stored finding to an organization (data isolation).
     `signal_filter` (list[Signal] -> list[Signal]) lets a per-tool policy drop expected
     categories before scoring (e.g. source code from a sanctioned coding assistant)."""
-    # A tenant can opt out of the Claude judge (it ships content to Anthropic).
+    # A tenant can opt out of the LLM judge (it ships content to the judge provider).
     include_judge = True
     if tenant_id is not None:
         tenant = db.get(Tenant, tenant_id)
