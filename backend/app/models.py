@@ -176,6 +176,23 @@ class TenantOIDC(Base):
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class TenantSAML(Base):
+    """Per-tenant SAML 2.0 SSO config (we're the SP). One IdP per tenant."""
+
+    __tablename__ = "tenant_saml"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), unique=True, index=True, nullable=False)
+    idp_entity_id = Column(String(512), default="")
+    idp_sso_url = Column(String(512), default="")
+    idp_x509_cert = Column(Text, default="")     # IdP signing cert (public; not a secret)
+    enabled = Column(Boolean, default=False)
+    auto_provision = Column(Boolean, default=True)
+    allowed_domain = Column(String(256), default="")
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 class LoginAttempt(Base):
     """A failed login, for brute-force throttling. DB-backed so the limit holds across
     workers/replicas (multi-tenant SaaS). Rows are pruned past the throttle window."""

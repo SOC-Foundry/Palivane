@@ -16,13 +16,15 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from . import audit_log, oidc, totp
+from . import audit_log, oidc, saml, totp
 from .config import settings
 from .crypto import decrypt, encrypt
 from .database import get_db
-from .models import ApiKey, Finding, LoginAttempt, Tenant, TenantOIDC, TenantUpstream, User
+from .models import (
+    ApiKey, Finding, LoginAttempt, Tenant, TenantOIDC, TenantSAML, TenantUpstream, User,
+)
 from .schemas import (
-    ApiKeyCreate, LoginRequest, MFACode, MFAVerify, OIDCConfig, SignupRequest,
+    ApiKeyCreate, LoginRequest, MFACode, MFAVerify, OIDCConfig, SAMLConfig, SignupRequest,
     TenantDelete, TenantUpdate, UpstreamConfig, UserCreate, UserUpdate,
 )
 from .upstreams import PROVIDERS, resolve as resolve_upstream
@@ -612,14 +614,22 @@ def oidc_callback(org: str, request: Request, code: str = "", state: str = "",
     except oidc.OIDCError as e:
         raise HTTPException(status_code=401, detail=str(e))
 
-    email = claims["email"].lower().strip()
-    if row.allowed_domain and not email.endswith("@" + row.allowed_domain):
+    return _sso_complete(db, tenant, claims["email"], row.auto_provision,
+                         row.allowed_domain, base)
+
+
+def _sso_complete(db: Session, tenant: Tenant, email: str, auto_provision: bool,
+                  allowed_domain: str, base: str) -> RedirectResponse:
+    """Shared SSO tail (OIDC + SAML): enforce domain, map/provision the user, mint a
+    session, and hand it to the console via URL fragment."""
+    email = (email or "").lower().strip()
+    if allowed_domain and not email.endswith("@" + allowed_domain):
         raise HTTPException(status_code=403, detail="email domain not permitted for this org")
 
     user = (db.query(User)
             .filter(User.tenant_id == tenant.id, User.email == email).first())
     if user is None:
-        if not row.auto_provision:
+        if not auto_provision:
             raise HTTPException(status_code=403, detail="no account for this email — ask an admin")
         user = User(tenant_id=tenant.id, email=email,
                     password_hash=hash_password(secrets.token_urlsafe(32)), role="analyst")
@@ -633,3 +643,136 @@ def oidc_callback(org: str, request: Request, code: str = "", state: str = "",
                           "role": user.role, "tv": user.token_version})
     # Hand the session to the SPA via URL fragment (not query — keeps it out of logs).
     return RedirectResponse(f"{base}/#sso_token={token}", status_code=303)
+
+
+# --- per-tenant SAML SSO -------------------------------------------------------------
+
+def _saml_state(tenant_id: int, db: Session) -> dict:
+    row = db.query(TenantSAML).filter(TenantSAML.tenant_id == tenant_id).first()
+    if row is None:
+        return {"configured": False, "enabled": False}
+    return {
+        "configured": True, "idp_entity_id": row.idp_entity_id, "idp_sso_url": row.idp_sso_url,
+        "cert_set": bool(row.idp_x509_cert), "enabled": row.enabled,
+        "auto_provision": row.auto_provision, "allowed_domain": row.allowed_domain,
+    }
+
+
+@router.get("/saml")
+def get_saml(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return _saml_state(current.tenant_id, db)
+
+
+@router.put("/saml")
+def set_saml(body: SAMLConfig, current: User = Depends(require_admin),
+             db: Session = Depends(get_db)):
+    """Configure SAML SSO for this org (we're the SP). The IdP cert is public, not a secret."""
+    row = db.query(TenantSAML).filter(TenantSAML.tenant_id == current.tenant_id).first()
+    if row is None:
+        row = TenantSAML(tenant_id=current.tenant_id)
+        db.add(row)
+    row.idp_entity_id = body.idp_entity_id.strip() or row.idp_entity_id
+    row.idp_sso_url = body.idp_sso_url.strip() or row.idp_sso_url
+    if body.idp_x509_cert:
+        row.idp_x509_cert = body.idp_x509_cert.strip()
+    if body.enabled is not None:
+        row.enabled = body.enabled
+    if body.auto_provision is not None:
+        row.auto_provision = body.auto_provision
+    if body.allowed_domain is not None:
+        row.allowed_domain = body.allowed_domain.strip().lower()
+    db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "saml.update",
+                     detail={"enabled": row.enabled})
+    return _saml_state(current.tenant_id, db)
+
+
+@router.delete("/saml")
+def delete_saml(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    row = db.query(TenantSAML).filter(TenantSAML.tenant_id == current.tenant_id).first()
+    if row is not None:
+        db.delete(row)
+        db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "saml.delete")
+    return {"configured": False, "enabled": False}
+
+
+def _enabled_saml(org: str, db: Session):
+    tenant = db.query(Tenant).filter(Tenant.slug == org.strip().lower()).first()
+    row = (db.query(TenantSAML).filter(TenantSAML.tenant_id == tenant.id).first()
+           if tenant else None)
+    if row is None or not row.enabled or not (row.idp_entity_id and row.idp_sso_url and row.idp_x509_cert):
+        raise HTTPException(status_code=404, detail="SAML is not configured for this organization")
+    return tenant, row
+
+
+def _saml_req(request: Request, post_data: dict | None = None) -> dict:
+    url = request.url
+    host = url.hostname or ""
+    if url.port and url.port not in (80, 443):
+        host = f"{host}:{url.port}"
+    return {
+        "https": "on" if url.scheme == "https" else "off",
+        "http_host": host,
+        "script_name": url.path,
+        "get_data": dict(request.query_params),
+        "post_data": post_data or {},
+    }
+
+
+def _saml_sp(base: str, slug: str) -> tuple[str, str]:
+    return f"{base}/api/auth/saml/{slug}/metadata", f"{base}/api/auth/saml/{slug}/acs"
+
+
+@router.get("/auth/saml/{org}/login")
+def saml_login(org: str, request: Request, db: Session = Depends(get_db)):
+    tenant, cfg = _enabled_saml(org, db)
+    base = str(request.base_url).rstrip("/")
+    sp_entity, acs = _saml_sp(base, tenant.slug)
+    try:
+        url = saml.login_url(_saml_req(request), cfg, sp_entity, acs, relay_state=base)
+    except saml.SAMLError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return RedirectResponse(url, status_code=302)
+
+
+@router.post("/auth/saml/{org}/acs")
+async def saml_acs(org: str, request: Request, db: Session = Depends(get_db)):
+    tenant, cfg = _enabled_saml(org, db)
+    base = str(request.base_url).rstrip("/")
+    sp_entity, acs = _saml_sp(base, tenant.slug)
+    form = await request.form()
+    req = _saml_req(request, post_data={k: v for k, v in form.items()})
+    try:
+        result = saml.process_acs(req, cfg, sp_entity, acs)
+    except saml.SAMLError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    return _sso_complete(db, tenant, result["email"], cfg.auto_provision, cfg.allowed_domain, base)
+
+
+@router.get("/auth/saml/{org}/metadata")
+def saml_metadata(org: str, request: Request, db: Session = Depends(get_db)):
+    from fastapi.responses import Response as _Resp
+    tenant, cfg = _enabled_saml(org, db)
+    base = str(request.base_url).rstrip("/")
+    sp_entity, acs = _saml_sp(base, tenant.slug)
+    try:
+        xml = saml.sp_metadata(cfg, sp_entity, acs)
+    except saml.SAMLError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return _Resp(content=xml, media_type="application/xml")
+
+
+@router.get("/auth/sso/{org}/login")
+def sso_login(org: str, request: Request, db: Session = Depends(get_db)):
+    """Unified SSO entry: redirect to whichever protocol the org has enabled."""
+    base = str(request.base_url).rstrip("/")
+    tenant = db.query(Tenant).filter(Tenant.slug == org.strip().lower()).first()
+    if tenant:
+        o = db.query(TenantOIDC).filter(TenantOIDC.tenant_id == tenant.id).first()
+        if o and o.enabled:
+            return RedirectResponse(f"{base}/api/auth/oidc/{tenant.slug}/login", status_code=307)
+        s = db.query(TenantSAML).filter(TenantSAML.tenant_id == tenant.id).first()
+        if s and s.enabled:
+            return RedirectResponse(f"{base}/api/auth/saml/{tenant.slug}/login", status_code=307)
+    raise HTTPException(status_code=404, detail="SSO is not configured for this organization")

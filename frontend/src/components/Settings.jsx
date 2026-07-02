@@ -74,6 +74,26 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     try { await api.deleteOidc(); await loadOidc(); flash("SSO removed."); } catch (e) { err(e); }
   }
 
+  // --- SAML SSO ---
+  const [saml, setSamlState] = useState(null);
+  const [samlDraft, setSamlDraft] = useState({ idp_entity_id: "", idp_sso_url: "", idp_x509_cert: "", allowed_domain: "" });
+  const loadSaml = useCallback(() => api.saml().then((s) => {
+    setSamlState(s);
+    setSamlDraft((d) => ({ ...d, idp_entity_id: s.idp_entity_id || "",
+      idp_sso_url: s.idp_sso_url || "", allowed_domain: s.allowed_domain || "" }));
+  }).catch(() => {}), []);
+
+  async function saveSaml(patch) {
+    try {
+      const s = await api.setSaml({ ...samlDraft, ...patch });
+      setSamlState(s); setSamlDraft((d) => ({ ...d, idp_x509_cert: "" }));
+      flash("SAML settings saved.");
+    } catch (e) { err(e); }
+  }
+  async function disableSaml() {
+    try { await api.deleteSaml(); await loadSaml(); flash("SAML removed."); } catch (e) { err(e); }
+  }
+
   // --- MFA (TOTP) ---
   const [mfaOn, setMfaOn] = useState(!!currentUser?.mfa_enabled);
   const [enroll, setEnroll] = useState(null);        // { secret, otpauth_uri }
@@ -99,7 +119,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     } catch (e) { err(e); }
   }
 
-  useEffect(() => { loadUsage(); loadUps(); loadOidc(); }, [loadUsage, loadUps, loadOidc]);
+  useEffect(() => { loadUsage(); loadUps(); loadOidc(); loadSaml(); },
+    [loadUsage, loadUps, loadOidc, loadSaml]);
 
   async function logoutEverywhere() {
     try { await api.logoutAll(); } catch { /* ignore */ }
@@ -206,6 +227,35 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <button type="button" className="mini-btn" onClick={() => saveOidc({ enabled: true })}>Save &amp; enable</button>
           <button type="button" className="mini-btn" onClick={() => saveOidc({ enabled: false })}>Save (disabled)</button>
           <button type="button" className="mini-btn danger" onClick={disableOidc}>Remove SSO</button>
+        </div>
+      </div>
+
+      {/* SSO / SAML */}
+      <div className="panel settings-card">
+        <div className="settings-head"><h2>Single sign-on (SAML)</h2>
+          {saml?.enabled && <span className="chip chip-on">enabled</span>}</div>
+        <p className="muted">We're the SP. Give your IdP the ACS URL
+          <code> /api/auth/saml/{tenant?.slug}/acs</code> (SP metadata:
+          <a href={`/api/auth/saml/${tenant?.slug}/metadata`} target="_blank" rel="noreferrer"> /metadata</a>).</p>
+        <div className="field-grid">
+          <label>IdP Entity ID
+            <input value={samlDraft.idp_entity_id}
+                   onChange={(e) => setSamlDraft((d) => ({ ...d, idp_entity_id: e.target.value }))} /></label>
+          <label>IdP SSO URL
+            <input placeholder="https://idp/sso" value={samlDraft.idp_sso_url}
+                   onChange={(e) => setSamlDraft((d) => ({ ...d, idp_sso_url: e.target.value }))} /></label>
+          <label>Allowed email domain (optional)
+            <input placeholder="acme.com" value={samlDraft.allowed_domain}
+                   onChange={(e) => setSamlDraft((d) => ({ ...d, allowed_domain: e.target.value }))} /></label>
+          <label>IdP signing certificate (X.509)
+            <input placeholder={saml?.cert_set ? "cert set — paste to replace" : "MIIC…"}
+                   value={samlDraft.idp_x509_cert}
+                   onChange={(e) => setSamlDraft((d) => ({ ...d, idp_x509_cert: e.target.value }))} /></label>
+        </div>
+        <div className="detail-actions">
+          <button type="button" className="mini-btn" onClick={() => saveSaml({ enabled: true })}>Save &amp; enable</button>
+          <button type="button" className="mini-btn" onClick={() => saveSaml({ enabled: false })}>Save (disabled)</button>
+          <button type="button" className="mini-btn danger" onClick={disableSaml}>Remove SAML</button>
         </div>
       </div>
 

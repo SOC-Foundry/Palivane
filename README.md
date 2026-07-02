@@ -213,13 +213,15 @@ Warden refuses (409) rather than guessing a tenant. Single-org/demo login omits 
 Hosting Warden as a shared SaaS? See the
 [multi-tenant hardening roadmap](docs/multi-tenant-hardening.md).
 
-**SSO (OIDC).** An admin configures the org's identity provider (`PUT /api/oidc` —
-issuer, client ID, client secret stored encrypted, plus `auto_provision` and an optional
-`allowed_domain`). Users then click **Sign in with SSO**, which runs the OIDC auth-code
-flow (`/api/auth/oidc/{org}/login` → `/callback`); Warden validates the ID token against
-the IdP's JWKS (iss/aud/exp/nonce), maps the email to a user (auto-provisioning an analyst
-if enabled), and returns a session. The callback hands the session to the console via URL
-fragment, so it assumes the console and API share an origin (the bundled nginx setup).
+**SSO (OIDC & SAML).** An admin configures the org's identity provider — **OIDC**
+(`PUT /api/oidc`: issuer, client ID, client secret stored encrypted) or **SAML 2.0**
+(`PUT /api/saml`: IdP entity id, SSO URL, signing cert; SP metadata at
+`/api/auth/saml/{org}/metadata`), each with `auto_provision` and an optional
+`allowed_domain`. Users click **Sign in with SSO** → `/api/auth/sso/{org}/login`, which
+dispatches to whichever protocol is enabled. Warden validates the response (OIDC: ID token
+vs JWKS, iss/aud/exp/nonce; SAML: signed assertion, strict), maps the email to a user
+(auto-provisioning an analyst if enabled), and hands a session to the console via URL
+fragment — so it assumes the console and API share an origin (the bundled nginx setup).
 
 > Passwords use **argon2id** (legacy PBKDF2 hashes still verify and auto-upgrade on
 > login); optional **TOTP MFA** (with recovery codes) adds a second factor at sign-in.
@@ -266,6 +268,9 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/auth/mfa/verify`   | Exchange the login MFA challenge + a TOTP or recovery code for a session (public). |
 | GET/PUT/DELETE | `/api/oidc`      | Per-tenant OIDC SSO config — issuer/client_id/secret (encrypted, never returned), `auto_provision`, `allowed_domain` (admin). |
 | GET    | `/api/auth/oidc/{org}/login` · `/callback` | OIDC auth-code flow (public): redirect to the org's IdP, then validate the ID token and hand a session to the console. |
+| —      | `/api/auth/saml/{org}/login` · `/acs` · `/metadata` | SP-initiated SAML 2.0 (public): redirect to the IdP, validate the signed assertion at the ACS, serve SP metadata. |
+| GET/PUT/DELETE | `/api/saml`      | Per-tenant SAML SSO config — IdP entity/SSO URL/signing cert (admin). |
+| GET    | `/api/auth/sso/{org}/login` | Unified SSO entry — redirects to whichever protocol (OIDC/SAML) the org has enabled. |
 | GET    | `/api/users`             | List tenant users (admin).               |
 | POST   | `/api/users`             | Create a user in the tenant — `role` `admin`/`analyst` (admin). |
 | PATCH  | `/api/users/{id}`        | Change a user's role or enable/disable login; protects against last-admin / self-lockout (admin). |
