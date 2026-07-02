@@ -89,6 +89,7 @@ class TenantUpdate(BaseModel):
     # None (field omitted) = leave unchanged.
     judge: Literal["on", "off", "inherit"] | None = None
     retention_days: int | None = None   # 0 = keep findings forever
+    rate_limit: int | None = None       # gateway requests/min (0 = inherit global default)
 
 
 class TenantDelete(BaseModel):

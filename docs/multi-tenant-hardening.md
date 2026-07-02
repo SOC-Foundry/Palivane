@@ -35,6 +35,11 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   `/api/auth/oidc/{org}/login` → `/callback` validates the ID token (JWKS signature, iss/
   aud/exp/nonce via authlib), maps/provisions the user, and hands a session to the console.
   State is a signed, self-expiring token (no server session store → multi-worker safe).
+- **Gateway quotas + usage metering.** A DB-backed per-minute counter per tenant
+  (`gateway_usage`) rate-limits gateway calls (per-tenant `rate_limit`, else global
+  `GATEWAY_RATE_LIMIT`; 0 = unlimited) — over-limit returns a provider-shaped **429** with
+  `Retry-After`. The same counter is the metering source: `GET /api/usage` reports the
+  current window, last-24h, and per-day totals.
 
 ## Next tracks
 
@@ -48,9 +53,9 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
 - Per-tenant signup/onboarding controls (the global `WARDEN_ALLOW_SIGNUP` isn't enough).
 - Optional: swap the hardened stdlib HS256 JWT for a vetted library (PyJWT).
 
-### 3. Abuse, quotas & metering
-- **Per-tenant rate limits** on the gateway/ingest (noisy-neighbor isolation).
-- **Usage metering** for billing and quota enforcement.
+### 3. Abuse, quotas & metering (remaining)
+- Extend rate limiting to the **ingest** endpoints (extension/proxy), and wire usage
+  into a **billing** provider.
 
 ### 4. Operational
 - Back the login throttle prune with an index-friendly job (or TTL) at high volume.

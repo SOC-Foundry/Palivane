@@ -366,6 +366,10 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         if body.retention_days < 0:
             raise HTTPException(status_code=400, detail="retention_days must be >= 0")
         tenant.retention_days = body.retention_days
+    if body.rate_limit is not None:
+        if body.rate_limit < 0:
+            raise HTTPException(status_code=400, detail="rate_limit must be >= 0")
+        tenant.rate_limit = body.rate_limit
     db.commit()
     db.refresh(tenant)
     return tenant.to_dict()
