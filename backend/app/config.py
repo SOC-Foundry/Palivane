@@ -70,6 +70,9 @@ class Settings:
     sanctioned_ai_tools: str = os.getenv("SANCTIONED_AI_TOOLS", "")
     # Per-tool category suppression, e.g. "claude-code:source_code_leak;cursor:source_code_leak".
     gateway_tool_suppress: str = os.getenv("GATEWAY_TOOL_SUPPRESS", "")
+    # Published Chrome/Edge extension id — set once the extension is on the store so
+    # generated installers write the browser managed policy under the right id.
+    extension_id: str = os.getenv("WARDEN_EXTENSION_ID", "")
 
 
 settings = Settings()

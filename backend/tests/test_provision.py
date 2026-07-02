@@ -57,6 +57,17 @@ def test_provisioned_installer_enrolls_a_device_end_to_end(client, raw_client):
     assert any(k["actor"] == "mac-42@acme.com" for k in client.get("/api/apikeys").json()["api_keys"])
 
 
+def test_provision_uses_configured_extension_id_by_default(client, monkeypatch):
+    import app.main as main
+    monkeypatch.setattr(main.settings, "extension_id", "storeassignedid123")
+    r = client.post("/api/provision", json={"platform": "windows", "base_url": "https://warden.corp"})
+    assert "storeassignedid123" in r.json()["scripts"]["windows"]   # no explicit id passed
+    # explicit id in the request still overrides the configured default
+    r2 = client.post("/api/provision", json={"platform": "windows", "base_url": "https://warden.corp",
+                                             "extension_id": "override99"})
+    assert "override99" in r2.json()["scripts"]["windows"]
+
+
 def test_provision_is_admin_only(client, db_factory):
     from app import users as users_cli
     db = db_factory()

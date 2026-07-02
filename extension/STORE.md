@@ -126,3 +126,35 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "x-goog-api-version: 2" \
 Same zip. [Edge Partner Center](https://partner.microsoft.com/dashboard/microsoftedge) →
 **New extension** → upload → fill listing + privacy → submit. Edge also has a
 [publish API](https://learn.microsoft.com/microsoft-edge/extensions-chromium/publish/api/using-addons-api).
+
+## After upload: wire the extension ID into your fleet
+
+The store assigns a **permanent extension ID** on first upload (visible in the dashboard
+item URL — you don't have to publish to see it). That ID connects publishing to the rest
+of the deploy pipeline:
+
+1. **Tell Warden the ID** so generated installers write the browser managed policy under
+   the right key. Set it once on the backend and every `/api/provision` installer + the
+   Connect page uses it automatically:
+   ```
+   WARDEN_EXTENSION_ID=<the store item id>
+   ```
+   (env var; passed through `docker-compose.yml`). Restart the backend.
+
+2. **Force-install policy** (MDM / Google Admin / GPO) — Chrome `ExtensionInstallForcelist`:
+   ```
+   <extension-id>;https://clients2.google.com/service/update2/crx
+   ```
+   Edge uses the same policy name with the Edge Add-ons update URL. Installs the extension
+   automatically on managed devices.
+
+3. **Managed config** is keyed by the ID — push to
+   `3rdparty/extensions/<extension-id>/policy` (backendUrl + token + enforce). The
+   provisioner emits exactly this block, prefilled.
+
+### Alternative: self-hosted CRX (you control the ID)
+To fix the ID *before* any store upload (e.g. to pre-stage all policy), pack a CRX with
+your own signing key — the ID is derived deterministically from that key — and
+force-install with **your** `update_url`. No store account needed, but you host the CRX +
+`update.xml` and manage updates; Chrome also requires the extension be allow-listed by
+enterprise policy to load off-store.
