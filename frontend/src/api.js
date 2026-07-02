@@ -79,5 +79,8 @@ export const api = {
   oidc: () => req("/oidc"),
   setOidc: (payload) => req("/oidc", { method: "PUT", body: JSON.stringify(payload) }),
   deleteOidc: () => req("/oidc", { method: "DELETE" }),
+  saml: () => req("/saml"),
+  setSaml: (payload) => req("/saml", { method: "PUT", body: JSON.stringify(payload) }),
+  deleteSaml: () => req("/saml", { method: "DELETE" }),
   logoutAll: () => req("/auth/logout-all", { method: "POST" }),
 };

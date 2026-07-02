@@ -44,6 +44,11 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
 - **Admin console (Settings page).** A self-serve UI for all of the above: org settings
   (name, judge consent, retention, rate limit), a usage panel, per-provider upstream keys,
   OIDC SSO config, and "log out everywhere" — previously API-only.
+- **SAML SSO per tenant.** SP-initiated SAML 2.0 (python3-saml/xmlsec): per-tenant IdP
+  config (`PUT /api/saml`: entity id, SSO URL, signing cert), `/api/auth/saml/{org}/login`
+  → IdP → `/acs` validates the signed assertion (strict, `wantAssertionsSigned`), maps/
+  provisions the user, and returns a session; `/metadata` serves SP metadata. A unified
+  `/api/auth/sso/{org}/login` dispatches to OIDC or SAML, whichever the org enabled.
 - **MFA (TOTP).** Stdlib TOTP (RFC 6238) + one-time recovery codes. Enroll from Settings
   (`/api/auth/mfa/setup|confirm`); login returns a short-lived challenge when MFA is on,
   exchanged for a session via `/api/auth/mfa/verify` (TOTP or recovery code, throttled).
@@ -69,9 +74,9 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
 - **DPA / consent record** to accompany the judge opt-in.
 
 ### 2. Auth for SaaS (remaining)
-- **SAML** SSO (OIDC + MFA shipped).
 - Per-tenant signup/onboarding controls (the global `WARDEN_ALLOW_SIGNUP` isn't enough).
-- Optional: swap the hardened stdlib HS256 JWT for a vetted library (PyJWT).
+- Optional: swap the hardened stdlib HS256 JWT for a vetted library (PyJWT); sign SP
+  AuthnRequests + validate SAML `InResponseTo` (needs a per-request store).
 
 ### 3. Abuse, quotas & metering (remaining)
 - Wire usage into a **billing** provider (metering + per-tenant quotas already in place).

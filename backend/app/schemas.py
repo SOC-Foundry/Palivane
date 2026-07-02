@@ -92,6 +92,15 @@ class OIDCConfig(BaseModel):
     allowed_domain: str | None = None
 
 
+class SAMLConfig(BaseModel):
+    idp_entity_id: str = ""
+    idp_sso_url: str = ""
+    idp_x509_cert: str = ""
+    enabled: bool | None = None
+    auto_provision: bool | None = None
+    allowed_domain: str | None = None
+
+
 class TenantUpdate(BaseModel):
     name: str | None = None
     # Claude judge for this org: "on"/"off" force it; "inherit" follows the global key.

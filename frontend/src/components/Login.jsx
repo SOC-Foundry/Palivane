@@ -46,7 +46,7 @@ export default function Login({ onAuthed, onBack }) {
 
   function ssoLogin() {
     if (!org.trim()) { setErr("Enter your organization to sign in with SSO."); return; }
-    window.location.href = `/api/auth/oidc/${encodeURIComponent(org.trim())}/login`;
+    window.location.href = `/api/auth/sso/${encodeURIComponent(org.trim())}/login`;
   }
 
   async function submitMfa(e) {

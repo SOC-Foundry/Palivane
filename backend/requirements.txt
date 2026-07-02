@@ -9,6 +9,8 @@ cryptography>=42        # encrypt per-tenant upstream provider keys at rest
 argon2-cffi>=23         # argon2id password hashing (legacy PBKDF2 still verified)
 authlib>=1.3,<2         # OIDC ID-token / JWKS validation for per-tenant SSO
 prometheus-client>=0.20 # /metrics exposition
+python3-saml>=1.16      # per-tenant SAML SSO (pulls lxml + xmlsec manylinux wheels)
+python-multipart>=0.0.9 # form parsing for the SAML ACS (IdP POSTs form-encoded)
 
 # --- dev / test ---
 pytest>=8.0
