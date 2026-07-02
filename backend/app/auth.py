@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from . import oidc, totp
+from . import audit_log, oidc, totp
 from .config import settings
 from .crypto import decrypt, encrypt
 from .database import get_db
@@ -233,6 +233,7 @@ def logout_all(current: User = Depends(get_current_user), db: Session = Depends(
     compromise). Bumps token_version so all previously issued JWTs stop validating."""
     current.token_version = (current.token_version or 0) + 1
     db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "session.revoke_all")
     return {"revoked": True, "token_version": current.token_version}
 
 
@@ -261,6 +262,7 @@ def mfa_confirm(body: MFACode, current: User = Depends(get_current_user),
     current.mfa_recovery = [totp.hash_code(c) for c in codes]
     current.mfa_enabled = True
     db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "mfa.enable")
     return {"mfa_enabled": True, "recovery_codes": codes}
 
 
@@ -278,6 +280,7 @@ def mfa_disable(body: MFACode, current: User = Depends(get_current_user),
     current.mfa_secret = ""
     current.mfa_recovery = []
     db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "mfa.disable")
     return {"mfa_enabled": False}
 
 
@@ -285,6 +288,13 @@ def mfa_disable(body: MFACode, current: User = Depends(get_current_user),
 def list_users(current: User = Depends(require_admin), db: Session = Depends(get_db)):
     rows = db.query(User).filter(User.tenant_id == current.tenant_id).all()
     return {"users": [u.to_dict() for u in rows]}
+
+
+@router.get("/audit")
+def list_audit(current: User = Depends(require_admin), db: Session = Depends(get_db),
+               limit: int = 100, action: str | None = None):
+    """The tenant's admin audit trail (newest first). Optional `action` filter."""
+    return {"entries": audit_log.recent(db, current.tenant_id, limit=limit, action=action)}
 
 
 @router.post("/users")
@@ -304,6 +314,8 @@ def create_user(body: UserCreate, current: User = Depends(require_admin), db: Se
     db.add(user)
     db.commit()
     db.refresh(user)
+    audit_log.record(db, current.tenant_id, current.email, "user.create",
+                     target=email, detail={"role": body.role})
     return user.to_dict()
 
 
@@ -344,6 +356,8 @@ def update_user(user_id: int, body: UserUpdate, current: User = Depends(require_
         user.active = body.active
     db.commit()
     db.refresh(user)
+    audit_log.record(db, current.tenant_id, current.email, "user.update",
+                     target=user.email, detail={"role": user.role, "active": user.active})
     return user.to_dict()
 
 
@@ -361,6 +375,8 @@ def create_api_key(body: ApiKeyCreate, current: User = Depends(require_admin),
     db.add(key)
     db.commit()
     db.refresh(key)
+    audit_log.record(db, current.tenant_id, current.email, "apikey.create",
+                     target=body.label or body.actor)
     return {**key.to_dict(), "token": token}
 
 
@@ -378,6 +394,8 @@ def revoke_api_key(key_id: int, current: User = Depends(require_admin),
         raise HTTPException(status_code=404, detail="api key not found")
     key.active = False
     db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "apikey.revoke",
+                     target=key.label or str(key_id))
     return {"id": key_id, "active": False}
 
 
@@ -421,6 +439,7 @@ def set_upstream(provider: str, body: UpstreamConfig, current: User = Depends(re
     if body.key:
         row.key_encrypted = encrypt(body.key)
     db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "upstream.set", target=provider)
     return _upstream_state(provider, current.tenant_id, db)
 
 
@@ -434,6 +453,7 @@ def delete_upstream(provider: str, current: User = Depends(require_admin),
     if row is not None:
         db.delete(row)
         db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "upstream.delete", target=provider)
     return {"provider": provider, "effective": "global"}
 
 
@@ -461,6 +481,8 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.rate_limit = body.rate_limit
     db.commit()
     db.refresh(tenant)
+    changed = body.model_dump(exclude_none=True)
+    audit_log.record(db, current.tenant_id, current.email, "tenant.update", detail=changed)
     return tenant.to_dict()
 
 
@@ -528,6 +550,8 @@ def set_oidc(body: OIDCConfig, current: User = Depends(require_admin),
     if body.allowed_domain is not None:
         row.allowed_domain = body.allowed_domain.strip().lower()
     db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "oidc.update",
+                     detail={"enabled": row.enabled})
     return _oidc_state(current.tenant_id, db)
 
 
@@ -537,6 +561,7 @@ def delete_oidc(current: User = Depends(require_admin), db: Session = Depends(ge
     if row is not None:
         db.delete(row)
         db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "oidc.delete")
     return {"configured": False, "enabled": False}
 
 

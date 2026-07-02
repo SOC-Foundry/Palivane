@@ -47,6 +47,10 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   (`/api/auth/mfa/setup|confirm`); login returns a short-lived challenge when MFA is on,
   exchanged for a session via `/api/auth/mfa/verify` (TOTP or recovery code, throttled).
   The secret is encrypted at rest; recovery codes stored as hashes.
+- **Admin audit log.** Security-relevant admin actions (user/role, API keys, upstreams,
+  OIDC, tenant settings, MFA, session revoke, findings purge) are recorded per tenant
+  (`audit_log`) and shown in a console **Audit** view; readable at `GET /api/audit`
+  (admin, filterable by action).
 
 ## Next tracks
 
@@ -64,8 +68,7 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
 - Extend rate limiting to the **ingest** endpoints (extension/proxy), and wire usage
   into a **billing** provider.
 
-### 4. Operational
+### 4. Operational (remaining)
 - Back the login throttle prune with an index-friendly job (or TTL) at high volume.
-- Per-tenant **audit log** of admin actions (user/role/key changes).
 - Metrics (Prometheus) + `/readyz`, and horizontal-scale runbook (all state is in
   Postgres today — keep it that way; no per-process state).

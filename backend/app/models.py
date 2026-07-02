@@ -120,6 +120,29 @@ class TenantUpstream(Base):
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class AuditLog(Base):
+    """A security-relevant admin action, for the per-tenant audit trail (who did what,
+    when). Append-only; scoped to a tenant."""
+
+    __tablename__ = "audit_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, index=True)
+    actor = Column(String(320), default="")     # who performed it (user email)
+    action = Column(String(64), default="")      # e.g. user.create, oidc.update
+    target = Column(String(320), default="")     # what it affected (email/provider/label)
+    detail = Column(JSON, default=dict)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "actor": self.actor, "action": self.action,
+            "target": self.target, "detail": self.detail or {},
+        }
+
+
 class GatewayUsage(Base):
     """Per-tenant, per-minute gateway request counter. Doubles as the rate-limit window
     (count in the current minute vs the tenant's limit) and the metering source (sum over
