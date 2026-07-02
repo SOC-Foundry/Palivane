@@ -456,6 +456,25 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 .chip-on { background: var(--accent-soft); color: var(--accent); }
 .chip-off { background: var(--panel-2); color: var(--muted-2); border: 1px solid var(--border); }
 
+.mfa-secret {
+  font-family: ui-monospace, monospace; font-size: 18px; letter-spacing: 2px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px; text-align: center; margin-bottom: 8px; user-select: all;
+}
+.mfa-uri { font-size: 11px; color: var(--muted-2); word-break: break-all; margin-bottom: 12px; }
+.mfa-confirm-row { display: flex; gap: 8px; align-items: center; }
+.mfa-confirm-row input {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 9px 11px; font-size: 13px; width: 160px;
+}
+.mfa-confirm-row input:focus { outline: none; border-color: var(--accent); }
+.recovery-codes {
+  list-style: none; margin: 10px 0 0; padding: 12px; display: grid;
+  grid-template-columns: repeat(2, 1fr); gap: 6px 18px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  font-family: ui-monospace, monospace; font-size: 13px; color: var(--text);
+}
+
 @media (max-width: 720px) {
   .field-grid { grid-template-columns: 1fr; }
   .upstream-row { grid-template-columns: 1fr 1fr; }

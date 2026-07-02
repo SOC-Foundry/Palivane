@@ -60,6 +60,10 @@ class User(Base):
     active = Column(Boolean, default=True)
     # Bumped to revoke all of this user's existing session tokens ("log out everywhere").
     token_version = Column(Integer, default=0, nullable=False)
+    # MFA (TOTP): secret is encrypted at rest; recovery codes stored as sha256 hashes.
+    mfa_enabled = Column(Boolean, default=False, nullable=False)
+    mfa_secret = Column(Text, default="")
+    mfa_recovery = Column(JSON, default=list)
     created_at = Column(DateTime, default=_utcnow)
 
     def to_dict(self) -> dict:
@@ -69,6 +73,7 @@ class User(Base):
             "email": self.email,
             "role": self.role,
             "active": self.active,
+            "mfa_enabled": self.mfa_enabled,
         }
 
 

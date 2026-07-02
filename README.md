@@ -220,7 +220,8 @@ if enabled), and returns a session. The callback hands the session to the consol
 fragment, so it assumes the console and API share an origin (the bundled nginx setup).
 
 > Passwords use **argon2id** (legacy PBKDF2 hashes still verify and auto-upgrade on
-> login); sessions are hardened HS256 JWTs with a `token_version` so `POST
+> login); optional **TOTP MFA** (with recovery codes) adds a second factor at sign-in.
+> Sessions are hardened HS256 JWTs with a `token_version` so `POST
 > /api/auth/logout-all` revokes all of a user's tokens. Login is **rate-limited** (HTTP 429
 > after repeated failures — `WARDEN_LOGIN_MAX_FAILS`), and stored finding content is
 > **redacted** so the DB isn't a plaintext-secret honeypot (`WARDEN_REDACT_FINDINGS`;
@@ -257,6 +258,8 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/auth/login`        | Email + password → access token (public). |
 | GET    | `/api/auth/me`           | Current user + tenant.                   |
 | POST   | `/api/auth/logout-all`   | Revoke all of the current user's session tokens (bumps `token_version`). |
+| POST   | `/api/auth/mfa/setup` · `/confirm` · `/disable` | Enroll / activate / turn off TOTP MFA (returns recovery codes on confirm). |
+| POST   | `/api/auth/mfa/verify`   | Exchange the login MFA challenge + a TOTP or recovery code for a session (public). |
 | GET/PUT/DELETE | `/api/oidc`      | Per-tenant OIDC SSO config — issuer/client_id/secret (encrypted, never returned), `auto_provision`, `allowed_domain` (admin). |
 | GET    | `/api/auth/oidc/{org}/login` · `/callback` | OIDC auth-code flow (public): redirect to the org's IdP, then validate the ID token and hand a session to the console. |
 | GET    | `/api/users`             | List tenant users (admin).               |

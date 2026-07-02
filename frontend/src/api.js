@@ -36,6 +36,11 @@ export const api = {
   health: () => req("/health"),
   login: (email, password, org = "") =>
     req("/auth/login", { method: "POST", body: JSON.stringify({ email, password, org }) }),
+  mfaVerify: (challenge, code) =>
+    req("/auth/mfa/verify", { method: "POST", body: JSON.stringify({ challenge, code }) }),
+  mfaSetup: () => req("/auth/mfa/setup", { method: "POST" }),
+  mfaConfirm: (code) => req("/auth/mfa/confirm", { method: "POST", body: JSON.stringify({ code }) }),
+  mfaDisable: (code) => req("/auth/mfa/disable", { method: "POST", body: JSON.stringify({ code }) }),
   signup: (org_name, email, password) =>
     req("/auth/signup", { method: "POST", body: JSON.stringify({ org_name, email, password }) }),
   me: () => req("/auth/me"),

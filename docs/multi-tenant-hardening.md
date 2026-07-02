@@ -43,6 +43,10 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
 - **Admin console (Settings page).** A self-serve UI for all of the above: org settings
   (name, judge consent, retention, rate limit), a usage panel, per-provider upstream keys,
   OIDC SSO config, and "log out everywhere" — previously API-only.
+- **MFA (TOTP).** Stdlib TOTP (RFC 6238) + one-time recovery codes. Enroll from Settings
+  (`/api/auth/mfa/setup|confirm`); login returns a short-lived challenge when MFA is on,
+  exchanged for a session via `/api/auth/mfa/verify` (TOTP or recovery code, throttled).
+  The secret is encrypted at rest; recovery codes stored as hashes.
 
 ## Next tracks
 
@@ -52,7 +56,7 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
 - **DPA / consent record** to accompany the judge opt-in.
 
 ### 2. Auth for SaaS (remaining)
-- **SAML** SSO (OIDC shipped) and **MFA** (TOTP + recovery codes).
+- **SAML** SSO (OIDC + MFA shipped).
 - Per-tenant signup/onboarding controls (the global `WARDEN_ALLOW_SIGNUP` isn't enough).
 - Optional: swap the hardened stdlib HS256 JWT for a vetted library (PyJWT).
 

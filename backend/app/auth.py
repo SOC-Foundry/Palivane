@@ -16,14 +16,14 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from . import oidc
+from . import oidc, totp
 from .config import settings
 from .crypto import decrypt, encrypt
 from .database import get_db
 from .models import ApiKey, Finding, LoginAttempt, Tenant, TenantOIDC, TenantUpstream, User
 from .schemas import (
-    ApiKeyCreate, LoginRequest, OIDCConfig, SignupRequest, TenantDelete, TenantUpdate,
-    UpstreamConfig, UserCreate, UserUpdate,
+    ApiKeyCreate, LoginRequest, MFACode, MFAVerify, OIDCConfig, SignupRequest,
+    TenantDelete, TenantUpdate, UpstreamConfig, UserCreate, UserUpdate,
 )
 from .upstreams import PROVIDERS, resolve as resolve_upstream
 from .security import (
@@ -172,9 +172,53 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     if needs_rehash(user.password_hash):
         user.password_hash = hash_password(body.password)
     db.commit()
+
+    if user.mfa_enabled:
+        # Password verified, but MFA is on — issue a short-lived challenge, not a session.
+        challenge = create_token({"typ": "mfa", "sub": str(user.id), "tv": user.token_version},
+                                 ttl=300)
+        return {"mfa_required": True, "challenge": challenge}
+
+    return _session_response(user)
+
+
+def _session_response(user: User) -> dict:
     token = create_token({"sub": str(user.id), "tenant_id": user.tenant_id,
                           "role": user.role, "tv": user.token_version})
     return {"access_token": token, "token_type": "bearer", "user": user.to_dict()}
+
+
+@router.post("/auth/mfa/verify")
+def mfa_verify(body: MFAVerify, request: Request, db: Session = Depends(get_db)):
+    """Second factor: exchange the login MFA challenge + a TOTP/recovery code for a session."""
+    try:
+        payload = decode_token(body.challenge)
+    except TokenError:
+        raise HTTPException(status_code=400, detail="invalid or expired MFA challenge")
+    if payload.get("typ") != "mfa":
+        raise HTTPException(status_code=400, detail="invalid MFA challenge")
+    user = db.get(User, int(payload.get("sub", 0)))
+    if user is None or not user.active or not user.mfa_enabled:
+        raise HTTPException(status_code=401, detail="invalid credentials")
+
+    ip = _client_ip(request)
+    if _throttled(db, user.email, ip):
+        raise HTTPException(status_code=429, detail="too many attempts — try again later")
+
+    ok = totp.verify(decrypt(user.mfa_secret), body.code)
+    if not ok:
+        remaining = totp.consume_recovery(user.mfa_recovery or [], body.code)
+        if remaining is not None:
+            user.mfa_recovery = remaining   # one-time use
+            ok = True
+    if not ok:
+        db.add(LoginAttempt(email=user.email, ip=ip))
+        db.commit()
+        raise HTTPException(status_code=401, detail="invalid code")
+
+    db.query(LoginAttempt).filter(LoginAttempt.email == user.email).delete()
+    db.commit()
+    return _session_response(user)
 
 
 @router.get("/auth/me")
@@ -190,6 +234,51 @@ def logout_all(current: User = Depends(get_current_user), db: Session = Depends(
     current.token_version = (current.token_version or 0) + 1
     db.commit()
     return {"revoked": True, "token_version": current.token_version}
+
+
+@router.post("/auth/mfa/setup")
+def mfa_setup(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Begin TOTP enrollment: store a fresh secret (not yet active) and return it + the
+    otpauth:// URI to add to an authenticator app. Confirm with a code to activate."""
+    if current.mfa_enabled:
+        raise HTTPException(status_code=400, detail="MFA is already enabled")
+    secret = totp.generate_secret()
+    current.mfa_secret = encrypt(secret)
+    db.commit()
+    return {"secret": secret, "otpauth_uri": totp.provisioning_uri(secret, current.email)}
+
+
+@router.post("/auth/mfa/confirm")
+def mfa_confirm(body: MFACode, current: User = Depends(get_current_user),
+                db: Session = Depends(get_db)):
+    """Activate MFA by proving a code from the enrolled secret. Returns recovery codes ONCE."""
+    secret = decrypt(current.mfa_secret)
+    if not secret:
+        raise HTTPException(status_code=400, detail="run MFA setup first")
+    if not totp.verify(secret, body.code):
+        raise HTTPException(status_code=400, detail="invalid code")
+    codes = totp.generate_recovery_codes()
+    current.mfa_recovery = [totp.hash_code(c) for c in codes]
+    current.mfa_enabled = True
+    db.commit()
+    return {"mfa_enabled": True, "recovery_codes": codes}
+
+
+@router.post("/auth/mfa/disable")
+def mfa_disable(body: MFACode, current: User = Depends(get_current_user),
+                db: Session = Depends(get_db)):
+    """Turn off MFA — requires a current TOTP or an unused recovery code."""
+    if not current.mfa_enabled:
+        raise HTTPException(status_code=400, detail="MFA is not enabled")
+    ok = totp.verify(decrypt(current.mfa_secret), body.code) or \
+        totp.consume_recovery(current.mfa_recovery or [], body.code) is not None
+    if not ok:
+        raise HTTPException(status_code=400, detail="invalid code")
+    current.mfa_enabled = False
+    current.mfa_secret = ""
+    current.mfa_recovery = []
+    db.commit()
+    return {"mfa_enabled": False}
 
 
 @router.get("/users")
