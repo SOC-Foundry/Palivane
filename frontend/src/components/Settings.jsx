@@ -7,7 +7,7 @@ function judgeValue(t) {
   return t?.judge_enabled === true ? "on" : t?.judge_enabled === false ? "off" : "inherit";
 }
 
-export default function Settings({ tenant, onTenant, onLogout }) {
+export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   const [msg, setMsg] = useState(null);       // { ok, text }
   const flash = (text, ok = true) => { setMsg({ ok, text }); setTimeout(() => setMsg(null), 3000); };
   const err = (e) => flash(String(e.message || e).replace(/^\d+:\s*/, ""), false);
@@ -72,6 +72,31 @@ export default function Settings({ tenant, onTenant, onLogout }) {
   }
   async function disableOidc() {
     try { await api.deleteOidc(); await loadOidc(); flash("SSO removed."); } catch (e) { err(e); }
+  }
+
+  // --- MFA (TOTP) ---
+  const [mfaOn, setMfaOn] = useState(!!currentUser?.mfa_enabled);
+  const [enroll, setEnroll] = useState(null);        // { secret, otpauth_uri }
+  const [mfaCode, setMfaCode] = useState("");
+  const [recovery, setRecovery] = useState(null);    // shown once after confirm
+  const [disableCode, setDisableCode] = useState("");
+
+  async function startMfa() {
+    try { setEnroll(await api.mfaSetup()); setRecovery(null); } catch (e) { err(e); }
+  }
+  async function confirmMfa() {
+    try {
+      const r = await api.mfaConfirm(mfaCode.trim());
+      setRecovery(r.recovery_codes); setMfaOn(true); setEnroll(null); setMfaCode("");
+      flash("Two-factor enabled.");
+    } catch (e) { err(e); }
+  }
+  async function disableMfa() {
+    try {
+      await api.mfaDisable(disableCode.trim());
+      setMfaOn(false); setRecovery(null); setDisableCode("");
+      flash("Two-factor disabled.");
+    } catch (e) { err(e); }
   }
 
   useEffect(() => { loadUsage(); loadUps(); loadOidc(); }, [loadUsage, loadUps, loadOidc]);
@@ -182,6 +207,49 @@ export default function Settings({ tenant, onTenant, onLogout }) {
           <button type="button" className="mini-btn" onClick={() => saveOidc({ enabled: false })}>Save (disabled)</button>
           <button type="button" className="mini-btn danger" onClick={disableOidc}>Remove SSO</button>
         </div>
+      </div>
+
+      {/* Two-factor */}
+      <div className="panel settings-card">
+        <div className="settings-head"><h2>Two-factor authentication</h2>
+          {mfaOn && !recovery && <span className="chip chip-on">on</span>}</div>
+
+        {recovery && (
+          <div className="mfa-recovery">
+            <p className="muted">Two-factor is on. Save these one-time recovery codes now — they
+              won't be shown again.</p>
+            <ul className="recovery-codes">{recovery.map((c) => <li key={c}>{c}</li>)}</ul>
+          </div>
+        )}
+
+        {!mfaOn && !enroll && (
+          <>
+            <p className="muted">Require a time-based code (TOTP) at sign-in, in addition to your password.</p>
+            <button type="button" className="mini-btn" onClick={startMfa}>Enable 2FA</button>
+          </>
+        )}
+
+        {enroll && (
+          <div className="mfa-enroll">
+            <p className="muted">Add this secret to your authenticator app, then enter a code to confirm.</p>
+            <div className="mfa-secret">{enroll.secret}</div>
+            <div className="mfa-uri">{enroll.otpauth_uri}</div>
+            <div className="mfa-confirm-row">
+              <input inputMode="numeric" placeholder="123456" value={mfaCode}
+                     onChange={(e) => setMfaCode(e.target.value)} />
+              <button type="button" className="mini-btn" onClick={confirmMfa}>Confirm</button>
+              <button type="button" className="mini-btn" onClick={() => { setEnroll(null); setMfaCode(""); }}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {mfaOn && !recovery && (
+          <div className="mfa-confirm-row">
+            <input inputMode="numeric" placeholder="code to disable" value={disableCode}
+                   onChange={(e) => setDisableCode(e.target.value)} />
+            <button type="button" className="mini-btn danger" onClick={disableMfa}>Disable 2FA</button>
+          </div>
+        )}
       </div>
 
       {/* Session */}

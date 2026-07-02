@@ -154,6 +154,7 @@ export default function App() {
         ) : view === "settings" ? (
           <Settings
             tenant={auth.tenant}
+            currentUser={auth.user}
             onTenant={(t) => setAuth((a) => ({ ...a, tenant: t }))}
             onLogout={logout}
           />

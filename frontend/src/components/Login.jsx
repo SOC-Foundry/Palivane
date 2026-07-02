@@ -9,6 +9,8 @@ export default function Login({ onAuthed, onBack }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [allowSignup, setAllowSignup] = useState(false);
+  const [mfaChallenge, setMfaChallenge] = useState(null);   // set when login needs a 2nd factor
+  const [mfaCode, setMfaCode] = useState("");
 
   // Only offer self-serve org creation when the server permits it.
   useEffect(() => {
@@ -25,6 +27,7 @@ export default function Login({ onAuthed, onBack }) {
       const res = signup
         ? await api.signup(org.trim(), email.trim(), password)
         : await api.login(email.trim(), password, org.trim());
+      if (res.mfa_required) { setMfaChallenge(res.challenge); return; }   // second-factor step
       setToken(res.access_token);
       onAuthed(res.user);
     } catch (e) {
@@ -44,6 +47,40 @@ export default function Login({ onAuthed, onBack }) {
   function ssoLogin() {
     if (!org.trim()) { setErr("Enter your organization to sign in with SSO."); return; }
     window.location.href = `/api/auth/oidc/${encodeURIComponent(org.trim())}/login`;
+  }
+
+  async function submitMfa(e) {
+    e.preventDefault();
+    setBusy(true); setErr(null);
+    try {
+      const res = await api.mfaVerify(mfaChallenge, mfaCode.trim());
+      setToken(res.access_token);
+      onAuthed(res.user);
+    } catch (e) {
+      const msg = String(e.message || e);
+      setErr(msg.includes("429") ? "Too many attempts. Please wait and try again." :
+             "Invalid code. Try again, or use a recovery code.");
+    } finally { setBusy(false); }
+  }
+
+  if (mfaChallenge) {
+    return (
+      <div className="login-screen">
+        <form className="login-card" onSubmit={submitMfa}>
+          <img className="login-logo" src="/warden-logo.png" alt="Warden" width="76" height="76" />
+          <div className="brand"><span className="logo">◆</span> Warden</div>
+          <p className="login-sub">Enter the 6-digit code from your authenticator app (or a recovery code).</p>
+          <input autoFocus inputMode="numeric" placeholder="123456" value={mfaCode}
+                 onChange={(e) => setMfaCode(e.target.value)} required />
+          {err && <div className="error">{err}</div>}
+          <button className="primary-btn" disabled={busy || !mfaCode}>{busy ? "…" : "Verify"}</button>
+          <button type="button" className="link-btn link-muted"
+                  onClick={() => { setMfaChallenge(null); setMfaCode(""); setErr(null); }}>
+            ← Back
+          </button>
+        </form>
+      </div>
+    );
   }
 
   return (

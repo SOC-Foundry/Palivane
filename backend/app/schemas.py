@@ -74,6 +74,15 @@ class UserUpdate(BaseModel):
     active: bool | None = None
 
 
+class MFACode(BaseModel):
+    code: str = ""            # a 6-digit TOTP or a recovery code
+
+
+class MFAVerify(BaseModel):
+    challenge: str            # the short-lived token returned by login when MFA is on
+    code: str = ""
+
+
 class OIDCConfig(BaseModel):
     issuer: str = ""
     client_id: str = ""
