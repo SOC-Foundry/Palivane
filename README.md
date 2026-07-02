@@ -161,6 +161,7 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `AUTH_TOKEN_TTL`    | `43200`                    | Session-token lifetime in seconds (12h).           |
 | `WARDEN_LOGIN_MAX_FAILS` / `WARDEN_LOGIN_IP_MAX_FAILS` / `WARDEN_LOGIN_WINDOW` | `5` / `20` / `300` | Brute-force throttle (DB-backed, holds across workers): refuse logins (HTTP 429) after N failures for an email — or M for an IP — within the window (seconds). |
 | `WARDEN_REDACT_FINDINGS` | `true`                | Mask secrets/PII in **stored** finding content (detection still runs on raw). Set `false` to keep raw content for full forensics. |
+| `WARDEN_ENCRYPT_FINDINGS` | `false`               | Encrypt stored finding content at rest (decrypted on read). Needs a durable `WARDEN_ENCRYPTION_KEY` — key loss = unreadable content. |
 | `WARDEN_ALLOW_SIGNUP` | `true`                   | Self-serve org signup. Set `false` to lock down a single-org deployment. |
 | `INGEST_TENANT`     | *(unset)*                  | Tenant slug/id the extension & proxy attribute their findings to. |
 
