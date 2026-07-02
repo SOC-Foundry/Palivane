@@ -51,6 +51,10 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   OIDC, tenant settings, MFA, session revoke, findings purge) are recorded per tenant
   (`audit_log`) and shown in a console **Audit** view; readable at `GET /api/audit`
   (admin, filterable by action).
+- **Observability.** `/livez` (liveness), `/readyz` (DB-reachability, 503 if down), and a
+  Prometheus `/metrics` endpoint — HTTP request counts + latency histogram labelled by
+  route template (bounded cardinality), via middleware. `/metrics` is optionally gated by
+  `WARDEN_METRICS_TOKEN`.
 
 ## Next tracks
 
@@ -69,6 +73,7 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   into a **billing** provider.
 
 ### 4. Operational (remaining)
-- Back the login throttle prune with an index-friendly job (or TTL) at high volume.
-- Metrics (Prometheus) + `/readyz`, and horizontal-scale runbook (all state is in
-  Postgres today — keep it that way; no per-process state).
+- Back the login-throttle / usage-metering prune with an index-friendly job (or TTL) at
+  high volume.
+- A horizontal-scale runbook (all state is in Postgres today — keep it that way; no
+  per-process state).

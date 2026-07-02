@@ -37,6 +37,9 @@ class Settings:
     # Default gateway requests-per-minute limit per tenant (0 = unlimited). A tenant's own
     # rate_limit overrides this. Enforced as a fixed 60s window; also the metering source.
     gateway_rate_limit: int = int(os.getenv("GATEWAY_RATE_LIMIT", "0"))
+    # If set, /metrics requires this token (Bearer or ?token=); empty = open (bind it to
+    # an internal network / scrape it privately).
+    metrics_token: str = os.getenv("WARDEN_METRICS_TOKEN", "")
 
     # --- LLM gateway (protect our AI) ---
     # enforce=block risky prompts; otherwise monitor (observe + record only). Block when

@@ -8,6 +8,7 @@ psycopg2-binary>=2.9    # PostgreSQL driver
 cryptography>=42        # encrypt per-tenant upstream provider keys at rest
 argon2-cffi>=23         # argon2id password hashing (legacy PBKDF2 still verified)
 authlib>=1.3,<2         # OIDC ID-token / JWKS validation for per-tenant SSO
+prometheus-client>=0.20 # /metrics exposition
 
 # --- dev / test ---
 pytest>=8.0
