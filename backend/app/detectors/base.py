@@ -22,6 +22,7 @@ class Surface(str, Enum):
 
     LLM_IO = "llm_io"     # Protect our AI — prompts/responses on the org's own LLMs
     AI_USAGE = "ai_usage" # Shadow-AI governance — content sent to external AI tools
+    MCP = "mcp"           # Agentic tool-use — MCP calls from AI coding assistants
 
 
 class Category(str, Enum):
@@ -37,6 +38,11 @@ class Category(str, Enum):
     PII_EXPOSURE = "pii_exposure"              # personal data leaving for an AI tool
     SOURCE_CODE_LEAK = "source_code_leak"      # proprietary code/IP leaving for an AI tool
     UNSANCTIONED_AI = "unsanctioned_ai"        # destination is an unapproved AI service
+    # --- Agentic tool-use (mcp) ---
+    MCP_UNTRUSTED_SERVER = "mcp_untrusted_server"      # MCP server not on the allowlist
+    SENSITIVE_RESOURCE_ACCESS = "sensitive_resource_access"  # tool/resource touches .env, keys, etc.
+    DANGEROUS_COMMAND = "dangerous_command"            # tool call runs a high-risk shell command
+    TOOL_POISONING = "tool_poisoning"                  # injected instructions in a tool description
 
 
 @dataclass(frozen=True)

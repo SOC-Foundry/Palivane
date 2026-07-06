@@ -30,6 +30,18 @@ class AIUsageIngest(BaseModel):
     tool: str = ""          # capturing tool id (e.g. "claude-code") for per-tool policy
 
 
+class MCPIngest(BaseModel):
+    """A normalized MCP JSON-RPC activity the egress proxy captured (agentic tool-use)."""
+    method: str = ""                                   # tools/call, resources/read, initialize, tools/list.result
+    server: str = ""                                   # MCP server host
+    tool: str = ""                                     # tool name for tools/call
+    args_text: str = ""                                # joined string values of the tool arguments
+    resource: str = ""                                 # URI/path for resources/read
+    tool_descriptions: list[str] = Field(default_factory=list)  # for tools/list.result / advertised tools
+    transport: str = "http"                            # http | stdio | via-llm-api
+    user: str = ""                                     # end-user identity
+
+
 class CodeFile(BaseModel):
     path: str = ""
     content: str

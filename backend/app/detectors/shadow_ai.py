@@ -79,8 +79,9 @@ def _sanctioned() -> set[str]:
 class ShadowAIDetector:
     name = "shadow_ai"
     # Also runs on the gateway's llm_io surface so first-party LLM calls get data-loss
-    # detection on top of Module B attack detection.
-    surfaces = {Surface.AI_USAGE, Surface.LLM_IO}
+    # detection on top of Module B attack detection, and on the mcp surface so secrets/PII
+    # in an agent's tool-call arguments are caught alongside the MCP-guard action checks.
+    surfaces = {Surface.AI_USAGE, Surface.LLM_IO, Surface.MCP}
 
     def analyze(self, item: AnalysisInput) -> list[Signal]:
         text = f"{item.subject}\n{item.content}"
@@ -95,6 +96,12 @@ class ShadowAIDetector:
             signals.extend(self._scan_high_entropy(text, item.channel))
             signals.extend(self._scan_proprietary(text))
             signals.extend(self._scan_destination(item))
+        elif item.surface == Surface.MCP:
+            # An agent's tool-call arguments can carry credentials — secrets are data-loss
+            # here too. Proprietary code / destination don't apply (handling code is normal
+            # for an agent, and MCP has no external AI destination).
+            signals.extend(self._scan_secrets(text))
+            signals.extend(self._scan_high_entropy(text, item.channel))
         return signals
 
     def _scan_secrets(self, text: str) -> list[Signal]:

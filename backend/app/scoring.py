@@ -57,6 +57,11 @@ _ATTACK_CATEGORIES = {
     Category.PII_EXPOSURE,
     Category.SOURCE_CODE_LEAK,
     Category.UNSANCTIONED_AI,
+    # Agentic tool-use — a risky MCP action / poisoned tool is itself the threat.
+    Category.MCP_UNTRUSTED_SERVER,
+    Category.SENSITIVE_RESOURCE_ACCESS,
+    Category.DANGEROUS_COMMAND,
+    Category.TOOL_POISONING,
 }
 
 

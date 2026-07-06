@@ -78,5 +78,14 @@ class Settings:
     # generated installers write the browser managed policy under the right id.
     extension_id: str = os.getenv("WARDEN_EXTENSION_ID", "")
 
+    # --- MCP inspection (agentic tool-use, via the egress proxy) ---
+    # enforce=block risky MCP calls; otherwise monitor. Block when severity >= block_severity.
+    mcp_enforce: bool = os.getenv("MCP_ENFORCE", "").lower() in ("1", "true", "yes")
+    mcp_block_severity: str = os.getenv("MCP_BLOCK_SEVERITY", "high")
+    # Allowlist of approved (inspectable, remote) MCP server hosts — comma-separated, e.g.
+    # "mcp.githubcopilot.com,mcp.acme.com". Empty = don't flag on server identity. A call to
+    # a server not on a non-empty list is flagged (policy-flag stance for shadow MCP).
+    mcp_allowed_servers: str = os.getenv("MCP_ALLOWED_SERVERS", "")
+
 
 settings = Settings()

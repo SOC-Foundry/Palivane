@@ -7,7 +7,15 @@ proxy + corporate root cert are pushed via MDM, so it's transparent to the user.
 
 For each outbound POST to a known AI domain it extracts the prompt, scores it through
 Warden (`POST /api/ingest/ai-usage`), records a finding, and — in enforce mode —
-**blocks** the request with a 403 before it reaches the provider.
+**blocks** the request with a 400 before it reaches the provider.
+
+It also inspects **MCP** (Model Context Protocol) traffic — the JSON-RPC an AI coding
+agent uses to call tools and read resources. Remote/Streamable-HTTP MCP servers flow
+through this proxy, so their tool calls, resource reads, and tool listings are scored via
+`POST /api/ingest/mcp` and blocked (JSON-RPC error) on a block verdict — agentlessly.
+Local *stdio* MCP servers never touch the network; those are governed by policy (a server
+allowlist) and surfaced via the tool definitions the agent sends to the LLM API, which we
+*can* see here.
 
 Run:
     pip install mitmproxy
@@ -160,6 +168,142 @@ def should_block(verdict: dict, enforce: bool) -> bool:
     return enforce and verdict.get("action") == "block"
 
 
+# --- MCP inspection (agentic tool-use) -----------------------------------------------
+# MCP is JSON-RPC 2.0. Remote/Streamable-HTTP servers flow through this proxy, so we can
+# inspect and block them agentlessly. Local stdio servers never touch the network — those
+# are governed by policy (the allowlist) and surfaced via the tool definitions the agent
+# sends to the LLM API (extract_tool_defs), which we *can* see here.
+
+_MCP_INSPECT_METHODS = ("tools/call", "resources/read", "initialize")
+
+
+def is_mcp(body: bytes | str) -> bool:
+    """Cheap content sniff: a JSON-RPC 2.0 message (MCP rides JSON-RPC)."""
+    if isinstance(body, bytes):
+        body = body[:400].decode("utf-8", "replace")
+    head = body[:400]
+    return '"jsonrpc"' in head and ('"method"' in head or '"result"' in head)
+
+
+def _json_objects(body: str) -> list:
+    """Parse JSON from a body that's raw JSON *or* SSE (Streamable-HTTP `data:` frames)."""
+    body = body.strip()
+    if body[:1] in ("{", "["):
+        try:
+            return [json.loads(body)]
+        except (ValueError, TypeError):
+            return []
+    objs = []
+    for line in body.splitlines():
+        line = line.strip()
+        if line.startswith("data:"):
+            payload = line[5:].strip()
+            if payload and payload != "[DONE]":
+                try:
+                    objs.append(json.loads(payload))
+                except (ValueError, TypeError):
+                    pass
+    return objs
+
+
+def extract_mcp_activity(body: bytes | str) -> dict | None:
+    """Normalize an MCP JSON-RPC request/response into a scannable activity dict.
+
+    Recognizes tool calls, resource reads, the initialize handshake (request), and the
+    tools/list result (response, where tool-poisoning lives). Returns None for anything
+    that isn't an inspectable MCP message."""
+    if isinstance(body, bytes):
+        body = body.decode("utf-8", "replace")
+    for j in _json_objects(body):
+        if not isinstance(j, dict):
+            continue
+        method = j.get("method", "")
+        params = j.get("params") if isinstance(j.get("params"), dict) else {}
+        if method == "tools/call":
+            harvested: list[str] = []
+            _harvest_strings(params.get("arguments", {}), harvested)
+            return {"method": method, "tool": params.get("name", ""),
+                    "args_text": "\n".join(harvested)[:20000]}
+        if method == "resources/read":
+            return {"method": method, "resource": str(params.get("uri", ""))}
+        if method == "initialize":
+            return {"method": method}
+        result = j.get("result")
+        if isinstance(result, dict) and isinstance(result.get("tools"), list):
+            descs = [t.get("description", "") for t in result["tools"]
+                     if isinstance(t, dict) and t.get("description")]
+            if descs:
+                return {"method": "tools/list.result", "tool_descriptions": descs}
+    return None
+
+
+def extract_tool_defs(body: bytes | str) -> list[dict]:
+    """Pull advertised tool definitions from an LLM API request (Anthropic/OpenAI `tools`).
+
+    An agent using *local* MCP servers still sends those tools' definitions to the model —
+    so this is the agentless handle on local MCP: we can vet the tool descriptions for
+    poisoning even though the stdio traffic never hits the network."""
+    if isinstance(body, bytes):
+        body = body.decode("utf-8", "replace")
+    try:
+        j = json.loads(body)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(j, dict) or not isinstance(j.get("tools"), list):
+        return []
+    out = []
+    for t in j["tools"]:
+        if not isinstance(t, dict):
+            continue
+        if isinstance(t.get("description"), str):                     # Anthropic shape
+            out.append({"name": t.get("name", ""), "description": t["description"]})
+        fn = t.get("function")                                        # OpenAI shape
+        if isinstance(fn, dict) and isinstance(fn.get("description"), str):
+            out.append({"name": fn.get("name", ""), "description": fn["description"]})
+    return out
+
+
+def scan_mcp(activity: dict, server: str = "", transport: str = "http",
+             url: str | None = None, token: str | None = None, timeout: float = 8.0) -> dict:
+    """Call the Warden MCP ingest endpoint; fail open (action=allow) on any error."""
+    base = (url or os.getenv("WARDEN_URL", "http://localhost:8090")).rstrip("/")
+    tok = token if token is not None else os.getenv("WARDEN_TOKEN", "")
+    payload = {"server": server, "transport": transport,
+               "user": os.getenv("WARDEN_PROXY_USER", ""), **activity}
+    try:
+        req = urllib.request.Request(
+            base + "/api/ingest/mcp", method="POST",
+            data=json.dumps(payload).encode(),
+            headers={"content-type": "application/json", "X-Warden-Token": tok},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    except Exception:
+        return {"action": "allow", "reason": "scan-failed"}
+
+
+def _sig_summary(verdict: dict) -> str:
+    return ", ".join(s.get("category", "") for s in verdict.get("signals", [])[:4])
+
+
+def ai_block_body(verdict: dict) -> bytes:
+    return json.dumps({"type": "error", "error": {
+        "type": "invalid_request_error",
+        "message": f"Blocked by Warden: sensitive data ({_sig_summary(verdict)}) "
+                   f"— risk {verdict.get('risk_score')}/{verdict.get('severity')}. "
+                   f"Remove the secret/PII and start a new chat to continue.",
+    }}).encode()
+
+
+def mcp_block_body(verdict: dict) -> bytes:
+    """JSON-RPC error envelope so the agent surfaces the block cleanly."""
+    return json.dumps({"jsonrpc": "2.0", "id": None, "error": {
+        "code": -32001,
+        "message": f"Blocked by Warden: risky MCP activity ({_sig_summary(verdict)}) "
+                   f"— risk {verdict.get('risk_score')}/{verdict.get('severity')}.",
+    }}).encode()
+
+
 # --- mitmproxy hook (thin wrapper around the functions above) -------------------------
 
 class WardenGuard:
@@ -170,25 +314,57 @@ class WardenGuard:
         from mitmproxy import http  # imported lazily so unit tests need no mitmproxy
 
         req = flow.request
-        if req.method != "POST" or not is_ai_host(req.pretty_host):
+        if req.method != "POST":
             return
-        prompt = extract_prompt(req.raw_content or b"")
-        if not prompt.strip():
+        raw = req.raw_content or b""
+
+        if is_ai_host(req.pretty_host):
+            # 1) Prompt content scan (shadow-AI / data-loss).
+            prompt = extract_prompt(raw)
+            if prompt.strip():
+                tool = detect_tool(req.headers.get("user-agent", ""))
+                verdict = scan(prompt, f"https://{req.pretty_host}", tool=tool)
+                if should_block(verdict, self.enforce):
+                    flow.response = http.Response.make(
+                        400, ai_block_body(verdict), {"Content-Type": "application/json"})
+                    return
+            # 2) Policy-flag for MCP tools the agent advertises to the model — the
+            #    agentless handle on local (stdio) MCP servers we can't otherwise see.
+            defs = extract_tool_defs(raw)
+            if defs:
+                v = scan_mcp({"method": "tools/advertised",
+                              "tool_descriptions": [d["description"] for d in defs]},
+                             transport="via-llm-api")
+                if should_block(v, self.enforce):
+                    flow.response = http.Response.make(
+                        400, ai_block_body(v), {"Content-Type": "application/json"})
             return
-        tool = detect_tool(req.headers.get("user-agent", ""))
-        verdict = scan(prompt, f"https://{req.pretty_host}", tool=tool)
-        if should_block(verdict, self.enforce):
-            sigs = ", ".join(s.get("category", "") for s in verdict.get("signals", [])[:4])
-            flow.response = http.Response.make(
-                400,
-                json.dumps({"type": "error", "error": {
-                    "type": "invalid_request_error",
-                    "message": f"Blocked by Warden: sensitive data ({sigs}) "
-                               f"— risk {verdict.get('risk_score')}/{verdict.get('severity')}. "
-                               f"Remove the secret/PII and start a new chat to continue.",
-                }}).encode(),
-                {"Content-Type": "application/json"},
-            )
+
+        # 3) MCP over HTTP to any server (remote/Streamable-HTTP) — inspect the call.
+        if is_mcp(raw):
+            activity = extract_mcp_activity(raw)
+            if activity:
+                verdict = scan_mcp(activity, server=req.pretty_host, transport="http")
+                if should_block(verdict, self.enforce):
+                    flow.response = http.Response.make(
+                        200, mcp_block_body(verdict), {"Content-Type": "application/json"})
+
+    def response(self, flow) -> None:
+        # Tool poisoning lives in the server's tools/list *response* — vet it, and in
+        # enforce mode replace a poisoned listing so those tools never reach the agent.
+        req, resp = flow.request, flow.response
+        if req.method != "POST" or resp is None or is_ai_host(req.pretty_host):
+            return
+        body = resp.raw_content or b""
+        if not is_mcp(body):
+            return
+        activity = extract_mcp_activity(body)
+        if activity and activity.get("method") == "tools/list.result":
+            verdict = scan_mcp(activity, server=req.pretty_host, transport="http")
+            if should_block(verdict, self.enforce):
+                resp.status_code = 200
+                resp.content = mcp_block_body(verdict)
+                resp.headers["Content-Type"] = "application/json"
 
 
 addons = [WardenGuard()]
