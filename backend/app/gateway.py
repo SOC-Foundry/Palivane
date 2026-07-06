@@ -10,6 +10,12 @@ Each scans the prompt on the `llm_io` surface, records a finding, blocks at/abov
 `GATEWAY_BLOCK_SEVERITY` in enforce mode, and forwards allowed calls to the configured
 upstream (or returns a stub when none is set). A per-tool policy (policy.py) suppresses
 categories that are expected for a sanctioned tool — e.g. source code from Claude Code.
+
+It also inspects **agentic tool-use** on the `mcp` surface: an AI coding agent's tool
+calls, their arguments, and their results all round-trip the model, so they're visible in
+this LLM traffic even when the tool is a *local* stdio MCP server — letting Warden catch
+sensitive-file access, dangerous commands, tool poisoning, and secrets-in-results with no
+endpoint agent.
 """
 
 from __future__ import annotations
@@ -146,6 +152,117 @@ def _capture(prompt: str, model: str, tool: str, principal: Principal, db: Sessi
                         signal_filter=signal_filter_for(tool))
 
 
+# --- Agentic tool-use inspection (agentless MCP over the LLM API) ----------------------
+# An AI coding agent's tool calls, their arguments, and their results all round-trip the
+# model — so they're visible right here in the LLM API traffic, even when the tool is a
+# *local* stdio MCP server. We inspect the current turn's tool activity on the `mcp`
+# surface (sensitive-file access, dangerous commands, tool poisoning, secrets in results)
+# with no endpoint agent. Only the latest tool_use/tool_result pair is scanned, so each
+# action is inspected exactly once (cascade-safe, like _scan_messages).
+
+_MCP_DROP = {"source_code_leak", "unsanctioned_ai"}  # code is normal for an agent; no ext destination
+
+
+def _mcp_sig_filter(signals: list) -> list:
+    return [s for s in signals if s.category.value not in _MCP_DROP]
+
+
+def _harvest_strings(obj, out: list) -> None:
+    if isinstance(obj, str):
+        if len(obj) >= 2:
+            out.append(obj)
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            _harvest_strings(v, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _harvest_strings(v, out)
+
+
+def _agentic_activity(payload: dict) -> dict | None:
+    """Extract the current-turn agentic tool activity from an OpenAI/Anthropic request:
+    advertised tool descriptions, the latest tool_use (name + args), and its tool_result
+    output. Returns a normalized mcp-activity dict, or None if there's no tool activity."""
+    descs: list[str] = []
+    for t in payload.get("tools") or []:
+        if not isinstance(t, dict):
+            continue
+        if isinstance(t.get("description"), str):                     # Anthropic tool
+            descs.append(t["description"])
+        fn = t.get("function")                                        # OpenAI tool
+        if isinstance(fn, dict) and isinstance(fn.get("description"), str):
+            descs.append(fn["description"])
+
+    messages = payload.get("messages") or []
+    tool_name, args_parts, result_parts = "", [], []
+
+    # Latest assistant tool_use — Anthropic content blocks or OpenAI tool_calls.
+    for m in reversed(messages):
+        if not isinstance(m, dict) or m.get("role") != "assistant":
+            continue
+        content = m.get("content")
+        if isinstance(content, list):
+            for b in content:
+                if isinstance(b, dict) and b.get("type") == "tool_use":
+                    tool_name = tool_name or b.get("name", "")
+                    _harvest_strings(b.get("input", {}), args_parts)
+        for tc in m.get("tool_calls") or []:
+            fn = tc.get("function") if isinstance(tc, dict) else None
+            if isinstance(fn, dict):
+                tool_name = tool_name or fn.get("name", "")
+                if isinstance(fn.get("arguments"), str):
+                    args_parts.append(fn["arguments"])
+        if tool_name or args_parts:
+            break
+
+    # Latest tool_result — Anthropic user tool_result blocks or OpenAI role=tool message.
+    for m in reversed(messages):
+        if not isinstance(m, dict):
+            continue
+        if m.get("role") == "tool":                                   # OpenAI
+            if isinstance(m.get("content"), str):
+                result_parts.append(m["content"])
+            break
+        content = m.get("content")
+        if isinstance(content, list):
+            trs = [b for b in content if isinstance(b, dict) and b.get("type") == "tool_result"]
+            if trs:
+                for b in trs:
+                    rc = b.get("content")
+                    if isinstance(rc, str):
+                        result_parts.append(rc)
+                    elif isinstance(rc, list):
+                        result_parts.extend(x.get("text", "") for x in rc if isinstance(x, dict))
+                break
+
+    if not (descs or tool_name or args_parts or result_parts):
+        return None
+    method = "tools/call" if (tool_name or args_parts) else (
+        "tools/advertised" if descs else "tool_result")
+    return {"method": method, "tool": tool_name,
+            "args_text": "\n".join(args_parts)[:20000],
+            "result_text": "\n".join(p for p in result_parts if p)[:20000],
+            "tool_descriptions": descs}
+
+
+def _capture_agentic(payload: dict, tool: str, principal: Principal, db: Session) -> dict | None:
+    act = _agentic_activity(payload)
+    if not act:
+        return None
+    content = "\n".join(p for p in [act["args_text"], act["result_text"],
+                                    "\n".join(act["tool_descriptions"])] if p)
+    if not content:
+        return None
+    item = AnalysisInput(
+        content=content, subject=f"agent {act['method']}".strip(), sender=principal.actor,
+        channel=tool or "agent", surface=Surface.MCP,
+        metadata={"method": act["method"], "tool": act["tool"],
+                  "args_text": act["args_text"], "tool_descriptions": act["tool_descriptions"]},
+    )
+    return run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
+                        signal_filter=_mcp_sig_filter)
+
+
 # --- OpenAI shape ---------------------------------------------------------------------
 
 def _openai_error(verdict: dict) -> JSONResponse:
@@ -182,6 +299,10 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
 
     if settings.gateway_enforce and _blocked(verdict):
         return _openai_error(verdict)
+    # Agentic tool-use inspection (agentless MCP over the LLM API).
+    agentic = _capture_agentic(payload, tool, principal, db)
+    if settings.gateway_enforce and agentic and _blocked(agentic):
+        return _openai_error(agentic)
     base, key = resolve_upstream("openai", principal.tenant_id, db)
     if base:
         url = base.rstrip("/") + "/chat/completions"
@@ -231,6 +352,10 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
 
     if settings.gateway_enforce and _blocked(verdict):
         return _anthropic_error(verdict)
+    # Agentic tool-use inspection (agentless MCP over the LLM API).
+    agentic = _capture_agentic(payload, tool, principal, db)
+    if settings.gateway_enforce and agentic and _blocked(agentic):
+        return _anthropic_error(agentic)
 
     base, key = resolve_upstream("anthropic", principal.tenant_id, db)
     if key:
