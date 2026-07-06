@@ -73,6 +73,7 @@ AI tools — scans prompts and warns or blocks before they're sent.
 | Permission | Why it's needed |
 | --- | --- |
 | `storage` | Store the admin's configuration (backend URL, ingest token, enforce flag) and read enterprise **managed** policy. |
+| `identity` | Self-serve sign-in: `chrome.identity.launchWebAuthFlow` opens the organization's Warden console so the user authenticates (login/SSO) and the extension receives a per-user, tenant-scoped token. No Google account data is read; it's only the OAuth-style redirect back to the extension. |
 | `host_permissions` — `claude.ai`, `chatgpt.com`, `chat.openai.com`, `gemini.google.com`, `copilot.microsoft.com` | Run the content/injected script on these AI tools to read the prompt text before submission so it can be scanned. The extension acts **only** on these AI hosts. |
 | `host_permissions` — `localhost` / `127.0.0.1` | Allow talking to a Warden backend running locally during evaluation. Remove these two from `manifest.json` before a public listing if you only use a hosted backend. |
 

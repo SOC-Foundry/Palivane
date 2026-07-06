@@ -368,6 +368,24 @@ def update_user(user_id: int, body: UserUpdate, current: User = Depends(require_
     return user.to_dict()
 
 
+@router.post("/extension/token")
+def extension_token(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Mint a per-user, tenant-scoped capture key for the browser extension (self-serve /
+    BYOD sign-in via the console). Any authenticated user can bind their own extension;
+    attributed to their email for per-user findings, and revocable in the console like any
+    API key. The console's /extension-connect page calls this after login/SSO and hands the
+    token back to the extension via the OAuth redirect."""
+    token, prefix, token_hash = generate_api_key()
+    key = ApiKey(tenant_id=current.tenant_id, label="browser-extension",
+                 actor=current.email, prefix=prefix, token_hash=token_hash)
+    db.add(key)
+    db.commit()
+    db.refresh(key)
+    audit_log.record(db, current.tenant_id, current.email, "extension.connect",
+                     target=current.email)
+    return {"token": token, "actor": current.email, "tenant": current.tenant_id}
+
+
 @router.post("/apikeys")
 def create_api_key(body: ApiKeyCreate, current: User = Depends(require_admin),
                    db: Session = Depends(get_db)):

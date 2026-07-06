@@ -69,6 +69,7 @@ export const api = {
   // --- admin settings ---
   updateTenant: (payload) =>
     req("/tenant", { method: "PATCH", body: JSON.stringify(payload) }),
+  extensionToken: () => req("/extension/token", { method: "POST" }),
   usage: () => req("/usage"),
   audit: (params = {}) => {
     const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
