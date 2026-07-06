@@ -30,14 +30,14 @@ export default function Landing({ onSignIn }) {
     <div className="landing">
       <header className="lp-nav">
         <div className="lp-brand">
-          <img src="/warden-logo.png" alt="Warden" width="34" height="34" />
+          <img src="/warden-emblem.png" alt="Warden" className="lp-brand-emblem" />
           <span>Warden</span>
         </div>
         <button className="primary-btn slim" onClick={onSignIn}>Sign in</button>
       </header>
 
       <section className="lp-hero">
-        <img className="lp-hero-logo" src="/warden-logo.png" alt="Warden" width="240" height="240" />
+        <img className="lp-hero-logo" src="/warden-emblem.png" alt="Warden" />
         <div className="lp-tagline">DETECT · BLOCK · PROTECT</div>
         <h1>Govern how your organization uses AI.</h1>
         <p className="lp-lead">
