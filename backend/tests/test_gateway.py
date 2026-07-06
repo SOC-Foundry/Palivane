@@ -167,6 +167,46 @@ def test_agentic_benign_tool_use_passes(client, monkeypatch):
     assert r.status_code == 200
 
 
+def test_response_activity_shapes():
+    from app import gateway
+    a = gateway._response_activity({"content": [
+        {"type": "tool_use", "name": "read_file", "input": {"path": "/x/.env"}}]})
+    assert a["tool"] == "read_file" and "/x/.env" in a["args_text"]
+    o = gateway._response_activity({"choices": [{"message": {"tool_calls": [
+        {"function": {"name": "run", "arguments": '{"command":"rm -rf /"}'}}]}}]})
+    assert o["tool"] == "run" and "rm -rf" in o["args_text"]
+    assert gateway._response_activity({"content": [{"type": "text", "text": "hi"}]}) is None
+
+
+def test_response_side_blocks_dangerous_tool_use(client, monkeypatch):
+    """The model's response requests a dangerous tool_use — blocked before the client runs it."""
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", True)
+    monkeypatch.setattr(gateway, "resolve_upstream", lambda *a, **k: ("https://up", "key"))
+    monkeypatch.setattr(gateway, "_post_upstream_anthropic", lambda *a, **k: (200, {
+        "type": "message", "role": "assistant", "content": [
+            {"type": "tool_use", "id": "t", "name": "run_shell",
+             "input": {"command": "rm -rf / --no-preserve-root"}}]}))
+    r = client.post("/v1/messages", json={"model": "claude-opus-4-8",
+                    "messages": [{"role": "user", "content": "clean up temp files"}]},
+                    headers={"x-api-key": _token(client), "Authorization": ""})
+    assert r.status_code == 400
+    assert "dangerous_command" in r.json()["error"]["message"]
+
+
+def test_response_side_allows_benign_tool_use(client, monkeypatch):
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", True)
+    monkeypatch.setattr(gateway, "resolve_upstream", lambda *a, **k: ("https://up", "key"))
+    monkeypatch.setattr(gateway, "_post_upstream_anthropic", lambda *a, **k: (200, {
+        "type": "message", "role": "assistant", "content": [
+            {"type": "tool_use", "id": "t", "name": "list_files", "input": {"path": "./src"}}]}))
+    r = client.post("/v1/messages", json={"model": "claude-opus-4-8",
+                    "messages": [{"role": "user", "content": "list files"}]},
+                    headers={"x-api-key": _token(client), "Authorization": ""})
+    assert r.status_code == 200
+
+
 # --- Gemini /v1beta/models/{model}:generateContent (google-genai SDK path) ---
 
 GEMINI_PATH = "/v1beta/models/gemini-2.5-flash:generateContent"
