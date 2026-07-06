@@ -491,14 +491,13 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
   padding: 18px 0; position: sticky; top: 0; z-index: 5;
   background: linear-gradient(180deg, var(--bg) 70%, transparent);
 }
-.lp-brand { display: flex; align-items: center; gap: 11px; font-size: 19px; font-weight: 800; }
-.lp-brand img { border-radius: 9px; }
+.lp-brand { display: flex; align-items: center; gap: 9px; font-size: 19px; font-weight: 800; }
+.lp-brand-emblem { height: 30px; width: auto; display: block; }
 
 .lp-hero { text-align: center; padding: 36px 0 56px; display: flex; flex-direction: column; align-items: center; }
 .lp-hero-logo {
-  border-radius: 28px; border: 1px solid var(--border);
-  box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 80px rgba(77,163,255,0.12);
-  margin-bottom: 26px;
+  width: 340px; max-width: 82%; height: auto; margin-bottom: 22px;
+  filter: drop-shadow(0 0 55px rgba(77,163,255,0.12));
 }
 .lp-tagline {
   font-size: 12px; font-weight: 700; letter-spacing: 3px; color: var(--accent);
