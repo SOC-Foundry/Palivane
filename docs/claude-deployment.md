@@ -90,6 +90,12 @@ proxy (Section 3) or surfaced by [coverage reconciliation](#verify-coverage).
 Two routes. The **gateway** is recommended (no certificates, one config block); the
 **proxy** is the fallback when you can't repoint the base URL.
 
+> **Self-serve (BYOD / pilots):** a user can connect their own Claude Code without an admin
+> distributing tokens — run **`warden connect https://app.warden.io`** (see
+> [`cli/README.md`](../cli/README.md)). It signs them in via the console (login/SSO), mints
+> a per-user tenant-scoped key, and writes `~/.claude/settings.json`. On **managed fleets**,
+> prefer the zero-touch `managed-settings.json` below (it takes precedence over the user file).
+
 ### Route A — gateway (recommended)
 
 **Backend** `.env`:
@@ -148,7 +154,9 @@ Claude Code honors both. This catches Claude Code *and* everything else on the d
 
 The desktop app makes its own HTTPS calls to `api.anthropic.com` and has **no
 custom-base-URL setting**, so it can't use the gateway (Section 2) — it's captured at the
-**network egress** with the [`proxy/`](../proxy/) mitmproxy addon. This section is for the
+**network egress** with the [`proxy/`](../proxy/) mitmproxy addon. For the same reason there
+is **no per-user `warden connect` sign-in for Desktop**: capture is at the proxy (system
+proxy + CA), an admin/MDM setup — not an in-app login. This section is for the
 **official macOS/Windows** app (it's Electron, and on those OSes it uses the **system
 proxy** and the **OS certificate store** natively — which is what makes this work cleanly
 and MDM-deployable). Linux community builds are out of scope.

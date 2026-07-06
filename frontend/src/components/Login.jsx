@@ -87,6 +87,7 @@ export default function Login({ onAuthed, onBack }) {
     <div className="login-screen">
       <form className="login-card" onSubmit={submit}>
         <img className="login-logo" src="/warden-emblem.png" alt="Warden" />
+        <div className="login-wordmark">WARDEN</div>
         <p className="login-sub">
           {signup ? "Create your organization" : "Sign in to your security workspace"}
         </p>

@@ -7,13 +7,16 @@ import { useEffect, useState } from "react";
 import { api, getToken } from "../api.js";
 import Login from "./Login.jsx";
 
-// Only ever redirect the token to a Chrome extension's own callback origin.
-function isExtensionRedirect(uri) {
+// Only ever redirect the token to a Chrome extension's callback (chromiumapp.org) or a
+// loopback address (the `warden connect` CLI's local server, for Claude Code onboarding).
+function redirectKind(uri) {
   try {
     const u = new URL(uri);
-    return u.protocol === "https:" && u.hostname.endsWith(".chromiumapp.org");
+    if (u.protocol === "https:" && u.hostname.endsWith(".chromiumapp.org")) return "fragment";
+    if ((u.hostname === "127.0.0.1" || u.hostname === "localhost")) return "query";
+    return null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -27,20 +30,23 @@ export default function ExtensionConnect() {
 
   useEffect(() => {
     if (!authed) return;
-    if (!isExtensionRedirect(redirectUri)) {
-      setStatus("error"); setDetail("Invalid or missing extension redirect URL.");
+    const kind = redirectKind(redirectUri);
+    if (!kind) {
+      setStatus("error"); setDetail("Invalid or missing redirect URL.");
       return;
     }
     setStatus("connecting");
     api.extensionToken()
       .then((r) => {
         const u = new URL(redirectUri);
-        u.hash = `token=${encodeURIComponent(r.token)}` +
-                 `&backend=${encodeURIComponent(window.location.origin)}` +
-                 `&user=${encodeURIComponent(r.actor)}` +
-                 `&state=${encodeURIComponent(state)}`;
+        const params = `token=${encodeURIComponent(r.token)}` +
+                       `&backend=${encodeURIComponent(window.location.origin)}` +
+                       `&user=${encodeURIComponent(r.actor)}` +
+                       `&state=${encodeURIComponent(state)}`;
+        if (kind === "fragment") u.hash = params;   // extension (launchWebAuthFlow)
+        else u.search = params;                     // CLI loopback server reads query
         setStatus("done"); setDetail(r.actor);
-        window.location.href = u.toString();   // captured by launchWebAuthFlow
+        window.location.href = u.toString();
       })
       .catch((e) => { setStatus("error"); setDetail(String(e.message || e)); });
   }, [authed]);

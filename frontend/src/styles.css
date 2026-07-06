@@ -298,8 +298,12 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
   box-shadow: var(--shadow);
 }
 .login-logo {
-  align-self: center; width: 200px; max-width: 72%; height: auto; margin-bottom: 6px;
+  align-self: center; width: 200px; max-width: 72%; height: auto; margin-bottom: 2px;
   filter: drop-shadow(0 0 40px rgba(77,163,255,0.12));
+}
+.login-wordmark {
+  text-align: center; font-weight: 800; letter-spacing: 0.34em; font-size: 20px;
+  color: var(--text); margin: 0 0 10px; padding-left: 0.34em;
 }
 .link-muted { color: var(--muted-2); margin-top: 2px; }
 .link-muted:hover { color: var(--muted); }
