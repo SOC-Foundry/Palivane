@@ -410,6 +410,37 @@ def scan_code(
     return {"action": overall, "scanned": len(body.files[:1000]), "files": flagged}
 
 
+@app.post("/api/scan/deps")
+def scan_deps(
+    body: CodeScanRequest,
+    x_warden_token: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Vet dependency manifests (package.json, requirements.txt) for supply-chain risk in
+    CI / the git plane — install-script abuse, non-registry sources, and known-bad packages.
+
+    Heuristic risk scan (no external advisory feed). Token-gated; returns an overall action
+    plus per-file detail for manifests that aren't clean."""
+    tenant_id, _ = _ingest_auth(x_warden_token, db)
+    _enforce_rate(db, tenant_id)
+
+    flagged: list[dict] = []
+    worst = 0
+    for f in body.files[:1000]:
+        item = AnalysisInput(content=f.content, subject=f.path, channel="deps",
+                             surface=Surface.DEPS)
+        result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
+                              db=db, tenant_id=tenant_id)
+        action = _action_for(result["severity"])
+        worst = max(worst, _ACTION_RANK.get(result["severity"], 0))
+        if action != "allow":
+            flagged.append({"path": f.path, "action": action, "severity": result["severity"],
+                            "risk_score": result["risk_score"], "signals": result["signals"]})
+
+    overall = "block" if worst >= 3 else ("warn" if worst >= 2 else "allow")
+    return {"action": overall, "scanned": len(body.files[:1000]), "files": flagged}
+
+
 @app.get("/api/findings")
 def list_findings(
     current: User = Depends(get_current_user),

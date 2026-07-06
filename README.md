@@ -171,7 +171,8 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `INGEST_TENANT`     | *(unset)*                  | Tenant slug/id the extension & proxy attribute their findings to. |
 | `MCP_ENFORCE`       | `false`                    | MCP inspection: `true` blocks risky agentic tool-use inline (JSON-RPC error); otherwise monitor-only. |
 | `MCP_BLOCK_SEVERITY`| `high`                     | Block an MCP action when its verdict severity is at/above this. |
-| `MCP_ALLOWED_SERVERS` | *(empty)*                | Allowlist of approved MCP server hosts (comma-separated). Empty = don't flag on server identity; set it to flag calls to unapproved/shadow MCP servers. |
+| `MCP_ALLOWED_SERVERS` | *(empty)*                | Global allowlist of approved MCP server hosts (comma-separated); a tenant's own list (Settings) overrides. Empty = don't flag on server identity. |
+| `DEP_DENYLIST`      | *(empty)*                  | Extra known-bad dependency names to flag in manifests (comma-separated), merged with a small built-in denylist. |
 
 ## Authentication & multi-tenancy
 
@@ -296,6 +297,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/ingest/ai-usage`   | Score content captured by the browser extension / proxy (`ai_usage`); returns allow/warn/block. Token-gated. |
 | POST   | `/api/ingest/mcp`        | Score an MCP tool call / resource read / tool listing captured by the proxy (`mcp`) — sensitive-resource access, dangerous commands, untrusted servers, tool poisoning. Returns allow/warn/block. Token-gated. |
 | POST   | `/api/scan/mcp-config`   | Vet an MCP config file (`.mcp.json`, Cursor/VS Code) in CI/console — enumerates declared servers (incl. local stdio) and flags unapproved servers, dangerous launch commands, and secrets in config. Token-gated. |
+| POST   | `/api/scan/deps`         | Vet dependency manifests (`package.json`, `requirements.txt`) for supply-chain risk — install-script abuse, non-registry sources, known-bad packages. Heuristic (no CVE feed). Token-gated. |
 | POST   | `/api/scan/code`         | Scan changed files (pre-commit hook / CI) for secrets & PII before they reach a repo; ignores `source_code_leak`. Returns a per-file allow/warn/block. Token-gated. |
 | GET    | `/api/findings`          | List the tenant's findings (filter by `severity`, `status`). |
 | GET    | `/api/findings/{id}`     | Full finding detail with signal breakdown. |
@@ -553,6 +555,12 @@ One stdlib-only scanner serves both. Use it alongside GitHub's native Secret Sca
 push protection — that's the primary secrets gate; Warden adds custom org patterns, PII
 coverage, and one console/policy across AI egress *and* commits. Setup in
 [`git/README.md`](git/README.md).
+
+The same CI/git boundary also carries two **agentless supply-chain checks** for AI coding
+setups: `POST /api/scan/mcp-config` (shadow/malicious MCP servers declared in `.mcp.json`)
+and `POST /api/scan/deps` (install-script abuse, non-registry sources, known-bad packages
+in `package.json`/`requirements.txt`) — so a repo can't introduce a rogue MCP server or a
+malicious dependency without a failing check.
 
 ```yaml
 # .github/workflows/warden-secret-scan.yml — fail a PR that adds secrets/PII

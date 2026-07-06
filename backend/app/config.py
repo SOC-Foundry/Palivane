@@ -86,6 +86,9 @@ class Settings:
     # "mcp.githubcopilot.com,mcp.acme.com". Empty = don't flag on server identity. A call to
     # a server not on a non-empty list is flagged (policy-flag stance for shadow MCP).
     mcp_allowed_servers: str = os.getenv("MCP_ALLOWED_SERVERS", "")
+    # Extra known-bad dependency names to flag in manifests (comma-separated), merged with
+    # a small built-in denylist. This is a heuristic risk scan, not a CVE/advisory feed.
+    dep_denylist: str = os.getenv("DEP_DENYLIST", "")
 
 
 settings = Settings()
