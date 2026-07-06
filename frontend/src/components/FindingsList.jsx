@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 function RiskBadge({ severity, score }) {
   return (
     <span className={`badge sev-${severity}`}>
@@ -19,27 +21,40 @@ function timeAgo(iso) {
 const SURFACE = {
   llm_io: { label: "protect-ai", cls: "atk" },
   ai_usage: { label: "shadow-ai", cls: "ai" },
+  mcp: { label: "mcp", cls: "atk" },
+  deps: { label: "deps", cls: "ai" },
+  ide: { label: "ide", cls: "ai" },
 };
 
 export default function FindingsList({ findings, selectedId, onSelect, filter, onFilter }) {
   const severities = ["", "critical", "high", "suspicious", "low", "benign"];
+  const surfaces = ["", "llm_io", "ai_usage", "mcp", "deps", "ide"];
+  const [surface, setSurface] = useState("");
+  const shown = surface ? findings.filter((f) => f.surface === surface) : findings;
   return (
     <div className="findings panel">
       <div className="findings-head">
-        <h2>Findings <span className="count-pill">{findings.length}</span></h2>
-        <select value={filter} onChange={(e) => onFilter(e.target.value)}>
-          {severities.map((s) => (
-            <option key={s} value={s}>
-              {s === "" ? "all severities" : s}
-            </option>
-          ))}
-        </select>
+        <h2>Findings <span className="count-pill">{shown.length}</span></h2>
+        <div className="findings-filters">
+          <select value={surface} onChange={(e) => setSurface(e.target.value)}>
+            {surfaces.map((s) => (
+              <option key={s} value={s}>{s === "" ? "all surfaces" : (SURFACE[s]?.label || s)}</option>
+            ))}
+          </select>
+          <select value={filter} onChange={(e) => onFilter(e.target.value)}>
+            {severities.map((s) => (
+              <option key={s} value={s}>
+                {s === "" ? "all severities" : s}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
-      {findings.length === 0 && (
+      {shown.length === 0 && (
         <div className="empty">No findings match this filter yet.</div>
       )}
       <ul className="finding-rows">
-        {findings.map((f) => {
+        {shown.map((f) => {
           const surf = SURFACE[f.surface];
           return (
             <li

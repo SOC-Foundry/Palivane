@@ -54,7 +54,8 @@ class ExtGuardDetector:
         if not ids:
             return []
         m = item.metadata or {}
-        deny = _BUILTIN_DENYLIST | _csv(settings.ide_ext_denylist)
+        # Prefer per-tenant lists passed in metadata; else the global env defaults.
+        deny = _BUILTIN_DENYLIST | (_csv(m["denylist"]) if "denylist" in m else _csv(settings.ide_ext_denylist))
         allow = _csv(m["allowed"]) if "allowed" in m else _csv(settings.ide_ext_allowed)
         signals: list[Signal] = []
         for eid in ids:

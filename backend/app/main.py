@@ -96,6 +96,28 @@ def health():
     }
 
 
+@app.get("/api/setup-status")
+def setup_status(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Per-plane activity (findings in the last 24h) + enforcement/judge state, for the
+    console's onboarding/health card — 'is each capture plane actually reporting?'"""
+    from datetime import datetime, timedelta
+    since = datetime.utcnow() - timedelta(hours=24)
+    rows = (db.query(Finding.surface, func.count(Finding.id))
+            .filter(Finding.tenant_id == current.tenant_id, Finding.created_at >= since)
+            .group_by(Finding.surface).all())
+    by_surface = {s: c for s, c in rows}
+    return {
+        "planes": {
+            "gateway": by_surface.get("llm_io", 0),      # first-party LLM (gateway)
+            "shadow_ai": by_surface.get("ai_usage", 0),  # extension / proxy
+            "mcp": by_surface.get("mcp", 0),             # agentic tool-use
+        },
+        "judge_enabled": engine.judge_enabled,
+        "gateway_enforce": settings.gateway_enforce,
+        "mcp_enforce": settings.mcp_enforce,
+    }
+
+
 @app.get("/livez")
 def livez():
     """Liveness: the process is up (no dependencies checked)."""
@@ -239,13 +261,18 @@ def _mcp_filter(signals: list) -> list:
     return [s for s in signals if s.category.value not in _MCP_DROP]
 
 
-def _tenant_mcp_allow(tenant_id: int | None, db: Session) -> str:
-    """Effective MCP server allowlist for a tenant: its own list, else the global default."""
+def _tenant_or_global(tenant_id: int | None, db: Session, attr: str, global_value: str) -> str:
+    """A tenant's own list for `attr` if set, else the global env default."""
     if tenant_id is not None:
         t = db.get(Tenant, tenant_id)
-        if t and (t.mcp_allowed_servers or "").strip():
-            return t.mcp_allowed_servers.strip()
-    return settings.mcp_allowed_servers
+        if t and (getattr(t, attr, "") or "").strip():
+            return getattr(t, attr).strip()
+    return global_value
+
+
+def _tenant_mcp_allow(tenant_id: int | None, db: Session) -> str:
+    """Effective MCP server allowlist for a tenant: its own list, else the global default."""
+    return _tenant_or_global(tenant_id, db, "mcp_allowed_servers", settings.mcp_allowed_servers)
 
 
 @app.post("/api/ingest/mcp")
@@ -429,6 +456,7 @@ def scan_deps(
     _enforce_rate(db, tenant_id)
 
     files = body.files[:1000]
+    dep_deny = _tenant_or_global(tenant_id, db, "dep_denylist", settings.dep_denylist)
 
     # Optional OSV advisory lookup — batch every pinned dep across all files in one call.
     vulns: dict = {}
@@ -442,7 +470,8 @@ def scan_deps(
     worst = 0
     for f in files:
         item = AnalysisInput(content=f.content, subject=f.path, channel="deps",
-                             surface=Surface.DEPS)
+                             surface=Surface.DEPS,
+                             metadata={"dep_denylist": dep_deny})
         result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
                               db=db, tenant_id=tenant_id)
         signals = list(result["signals"])
@@ -481,7 +510,11 @@ def scan_ide_extensions(
     _enforce_rate(db, tenant_id)
     content = body.content or "\n".join(body.extensions)
     item = AnalysisInput(content=content, subject="ide-extensions", channel="ide",
-                         surface=Surface.IDE)
+                         surface=Surface.IDE,
+                         metadata={
+                             "allowed": _tenant_or_global(tenant_id, db, "ide_ext_allowed", settings.ide_ext_allowed),
+                             "denylist": _tenant_or_global(tenant_id, db, "ide_ext_denylist", settings.ide_ext_denylist),
+                         })
     result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
                           db=db, tenant_id=tenant_id)
     return {
@@ -520,6 +553,7 @@ def list_findings(
     db: Session = Depends(get_db),
     severity: str | None = None,
     status: str | None = None,
+    surface: str | None = None,
     limit: int = 100,
 ):
     q = db.query(Finding).filter(Finding.tenant_id == current.tenant_id)
@@ -527,6 +561,8 @@ def list_findings(
         q = q.filter(Finding.severity == severity)
     if status:
         q = q.filter(Finding.status == status)
+    if surface:
+        q = q.filter(Finding.surface == surface)
     rows = q.order_by(Finding.created_at.desc()).limit(min(limit, 500)).all()
     return {"findings": [r.to_summary() for r in rows]}
 

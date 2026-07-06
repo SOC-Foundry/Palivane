@@ -43,11 +43,6 @@ _NPM_INSTALL_KEYS = ("preinstall", "install", "postinstall", "prepare", "prepubl
 _NONREGISTRY = re.compile(r"^(?:git\+|git:|https?:|file:|link:|github:|bitbucket:|gitlab:|/|\.\.?/)", re.I)
 
 
-def _denylist() -> set[str]:
-    extra = {s.strip().lower() for s in settings.dep_denylist.split(",") if s.strip()}
-    return _BUILTIN_DENYLIST | extra
-
-
 _EXACT_VERSION = re.compile(r"^\d+\.\d+")
 _REQ_PIN = re.compile(r"^([A-Za-z0-9._-]+)==([0-9][\w.\-]*)")
 
@@ -85,15 +80,19 @@ class DepGuardDetector:
     def analyze(self, item: AnalysisInput) -> list[Signal]:
         fname = (item.subject or "").lower()
         content = item.content or ""
+        m = item.metadata or {}
+        # Per-tenant denylist (metadata) over the global default, always plus the built-in.
+        extra = m["dep_denylist"] if "dep_denylist" in m else settings.dep_denylist
+        deny = _BUILTIN_DENYLIST | {s.strip().lower() for s in str(extra or "").split(",") if s.strip()}
         if fname.endswith(".json") or content.lstrip().startswith("{"):
-            return self._scan_package_json(content)
-        return self._scan_requirements(content)
+            return self._scan_package_json(content, deny)
+        return self._scan_requirements(content, deny)
 
     def _sig(self, title: str, detail: str, evidence: str, weight: float, conf: float) -> Signal:
         return Signal(category=Category.DEPENDENCY_RISK, title=title, detail=detail,
                       weight=weight, confidence=conf, detector=self.name, evidence=evidence)
 
-    def _scan_package_json(self, content: str) -> list[Signal]:
+    def _scan_package_json(self, content: str, deny: set) -> list[Signal]:
         try:
             j = json.loads(content)
         except (ValueError, TypeError):
@@ -101,9 +100,8 @@ class DepGuardDetector:
         if not isinstance(j, dict):
             return []
         signals: list[Signal] = []
-        deny = self._denylist_signals(
-            {**(j.get("dependencies") or {}), **(j.get("devDependencies") or {})}.items())
-        signals.extend(deny)
+        signals.extend(self._denylist_signals(
+            {**(j.get("dependencies") or {}), **(j.get("devDependencies") or {})}.items(), deny))
 
         scripts = j.get("scripts") or {}
         if isinstance(scripts, dict):
@@ -126,7 +124,7 @@ class DepGuardDetector:
                     f"{name}={spec[:60]}", 0.55, 0.8))
         return signals
 
-    def _scan_requirements(self, content: str) -> list[Signal]:
+    def _scan_requirements(self, content: str, deny: set) -> list[Signal]:
         signals: list[Signal] = []
         names = []
         for raw in content.splitlines():
@@ -140,11 +138,10 @@ class DepGuardDetector:
                     line[:80], 0.55, 0.8))
                 continue
             names.append(re.split(r"[<>=!~\[ ]", line, 1)[0].strip())
-        signals.extend(self._denylist_signals((n, "") for n in names if n))
+        signals.extend(self._denylist_signals(((n, "") for n in names if n), deny))
         return signals
 
-    def _denylist_signals(self, items) -> list[Signal]:
-        deny = _denylist()
+    def _denylist_signals(self, items, deny: set) -> list[Signal]:
         out = []
         for name, _spec in items:
             if isinstance(name, str) and name.strip().lower() in deny:

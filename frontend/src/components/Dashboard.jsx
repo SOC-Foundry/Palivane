@@ -1,4 +1,39 @@
+import { useEffect, useState } from "react";
+import { api } from "../api.js";
 import { IconInbox, IconList, IconAlert, IconTarget } from "./icons.jsx";
+
+function SetupHealth() {
+  const [s, setS] = useState(null);
+  useEffect(() => { api.setupStatus().then(setS).catch(() => {}); }, []);
+  if (!s) return null;
+  const planes = [
+    ["Gateway — your LLMs", s.planes.gateway],
+    ["Shadow-AI — extension / proxy", s.planes.shadow_ai],
+    ["Agentic — MCP", s.planes.mcp],
+  ];
+  return (
+    <div className="panel chart-panel">
+      <h2>Coverage &amp; enforcement</h2>
+      <ul className="plane-list">
+        {planes.map(([label, n]) => (
+          <li key={label} className="plane-row">
+            <span className={`plane-dot ${n > 0 ? "on" : "off"}`} />
+            <span className="plane-label">{label}</span>
+            <span className="plane-count">{n > 0 ? `${n} in 24h` : "no activity"}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="plane-flags">
+        <span className={`chip ${s.gateway_enforce ? "chip-on" : "chip-off"}`}>
+          {s.gateway_enforce ? "Enforcing" : "Monitor only"}</span>
+        <span className={`chip ${s.mcp_enforce ? "chip-on" : "chip-off"}`}>
+          {s.mcp_enforce ? "MCP enforce" : "MCP monitor"}</span>
+        <span className={`chip ${s.judge_enabled ? "chip-on" : "chip-off"}`}>
+          {s.judge_enabled ? "LLM judge on" : "Offline detection"}</span>
+      </div>
+    </div>
+  );
+}
 
 const SEV_ORDER = ["critical", "high", "suspicious", "low", "benign"];
 const SEV_LABEL = {
@@ -96,6 +131,7 @@ export default function Dashboard({ stats }) {
       <div className="charts-grid">
         <RiskDistribution bySeverity={stats.by_severity} total={stats.total} />
         <SurfaceSplit bySurface={stats.by_surface} />
+        <SetupHealth />
       </div>
     </>
   );

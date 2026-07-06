@@ -42,12 +42,19 @@ class Tenant(Base):
     # Approved MCP server hosts for this org (comma-separated). Empty = inherit the global
     # MCP_ALLOWED_SERVERS; a non-empty list flags MCP activity to any server not on it.
     mcp_allowed_servers = Column(String(1024), default="")
+    # Supply-chain allow/deny lists (comma-separated). Empty = inherit the global env default.
+    ide_ext_allowed = Column(String(2048), default="")
+    ide_ext_denylist = Column(String(2048), default="")
+    dep_denylist = Column(String(2048), default="")
 
     def to_dict(self) -> dict:
         return {"id": self.id, "slug": self.slug, "name": self.name,
                 "judge_enabled": self.judge_enabled, "retention_days": self.retention_days,
                 "rate_limit": self.rate_limit,
-                "mcp_allowed_servers": self.mcp_allowed_servers or ""}
+                "mcp_allowed_servers": self.mcp_allowed_servers or "",
+                "ide_ext_allowed": self.ide_ext_allowed or "",
+                "ide_ext_denylist": self.ide_ext_denylist or "",
+                "dep_denylist": self.dep_denylist or ""}
 
 
 class User(Base):

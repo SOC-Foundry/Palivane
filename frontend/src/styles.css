@@ -391,6 +391,18 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 }
 .data-table td { padding: 9px 10px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
 .data-table tr:last-child td { border-bottom: none; }
+.findings-filters { display: flex; gap: 8px; }
+.plane-list { list-style: none; margin: 0 0 12px; padding: 0; }
+.plane-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; }
+.plane-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.plane-dot.on { background: var(--benign); box-shadow: 0 0 8px rgba(70,201,139,0.5); }
+.plane-dot.off { background: var(--muted-2); }
+.plane-label { flex: 1; }
+.plane-count { color: var(--muted); font-size: 12px; }
+.plane-flags { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); }
+.chip-on { color: var(--benign); border-color: rgba(70,201,139,0.4); }
+.chip-off { color: var(--muted-2); }
 .ta-right { text-align: right; }
 .ut-email { font-weight: 600; }
 .row-inactive .ut-email, .row-inactive td { color: var(--muted); }
