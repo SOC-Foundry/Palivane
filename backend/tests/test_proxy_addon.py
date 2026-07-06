@@ -160,6 +160,34 @@ def test_extract_tool_defs_anthropic_and_openai():
     assert addon.extract_tool_defs(json.dumps({"messages": []})) == []
 
 
+def test_extract_agentic_tool_use_and_result():
+    body = json.dumps({"model": "claude", "messages": [
+        {"role": "user", "content": "go"},
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "t1", "name": "read_file", "input": {"path": "/x/.env"}}]},
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "t1", "content": "AKIAABCDEFGHIJKLMNOP"}]},
+    ]})
+    act = addon.extract_agentic(body)
+    assert act["method"] == "tools/call" and act["tool"] == "read_file"
+    assert "/x/.env" in act["args_text"] and "AKIAABCDEFGHIJKLMNOP" in act["args_text"]
+
+
+def test_extract_agentic_openai_shape():
+    body = json.dumps({"messages": [
+        {"role": "assistant", "tool_calls": [
+            {"function": {"name": "run", "arguments": '{"command":"rm -rf /"}'}}]},
+        {"role": "tool", "content": "done"},
+    ]})
+    act = addon.extract_agentic(body)
+    assert act["tool"] == "run" and "rm -rf /" in act["args_text"]
+
+
+def test_extract_agentic_none_when_no_tools():
+    assert addon.extract_agentic(json.dumps({"messages": [
+        {"role": "user", "content": "hi"}]})) is None
+
+
 def test_mcp_block_body_is_jsonrpc_error():
     payload = json.loads(addon.mcp_block_body(
         {"signals": [{"category": "dangerous_command"}], "risk_score": 90, "severity": "critical"}))

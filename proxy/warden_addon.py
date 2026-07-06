@@ -263,6 +263,65 @@ def extract_tool_defs(body: bytes | str) -> list[dict]:
     return out
 
 
+def extract_agentic(body: bytes | str) -> dict | None:
+    """Extract current-turn agentic tool activity from an LLM API request body
+    (OpenAI/Anthropic): the latest tool_use (name + args) and its tool_result output.
+
+    This is the agentless handle on an agent's *behavior* — the tool it's running and the
+    data coming back — even for local stdio MCP, because it all round-trips the model.
+    Returns an mcp-activity dict (transport=via-llm-api) or None."""
+    if isinstance(body, bytes):
+        body = body.decode("utf-8", "replace")
+    try:
+        j = json.loads(body)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(j, dict):
+        return None
+    messages = j.get("messages") or []
+    tool_name, args_parts, result_parts = "", [], []
+    for m in reversed(messages):
+        if not isinstance(m, dict) or m.get("role") != "assistant":
+            continue
+        content = m.get("content")
+        if isinstance(content, list):
+            for b in content:
+                if isinstance(b, dict) and b.get("type") == "tool_use":
+                    tool_name = tool_name or b.get("name", "")
+                    _harvest_strings(b.get("input", {}), args_parts)
+        for tc in m.get("tool_calls") or []:
+            fn = tc.get("function") if isinstance(tc, dict) else None
+            if isinstance(fn, dict):
+                tool_name = tool_name or fn.get("name", "")
+                if isinstance(fn.get("arguments"), str):
+                    args_parts.append(fn["arguments"])
+        if tool_name or args_parts:
+            break
+    for m in reversed(messages):
+        if not isinstance(m, dict):
+            continue
+        if m.get("role") == "tool":
+            if isinstance(m.get("content"), str):
+                result_parts.append(m["content"])
+            break
+        content = m.get("content")
+        if isinstance(content, list):
+            trs = [b for b in content if isinstance(b, dict) and b.get("type") == "tool_result"]
+            if trs:
+                for b in trs:
+                    rc = b.get("content")
+                    if isinstance(rc, str):
+                        result_parts.append(rc)
+                    elif isinstance(rc, list):
+                        result_parts.extend(x.get("text", "") for x in rc if isinstance(x, dict))
+                break
+    if not (tool_name or args_parts or result_parts):
+        return None
+    return {"method": "tools/call" if (tool_name or args_parts) else "tool_result",
+            "tool": tool_name,
+            "args_text": ("\n".join(args_parts) + "\n" + "\n".join(result_parts))[:20000]}
+
+
 def scan_mcp(activity: dict, server: str = "", transport: str = "http",
              url: str | None = None, token: str | None = None, timeout: float = 8.0) -> dict:
     """Call the Warden MCP ingest endpoint; fail open (action=allow) on any error."""
@@ -328,7 +387,16 @@ class WardenGuard:
                     flow.response = http.Response.make(
                         400, ai_block_body(verdict), {"Content-Type": "application/json"})
                     return
-            # 2) Policy-flag for MCP tools the agent advertises to the model — the
+            # 2) Agentic behavior — the tool the agent is running + its result, visible in
+            #    the LLM traffic even for local stdio MCP (agentless).
+            act = extract_agentic(raw)
+            if act:
+                va = scan_mcp(act, transport="via-llm-api")
+                if should_block(va, self.enforce):
+                    flow.response = http.Response.make(
+                        400, ai_block_body(va), {"Content-Type": "application/json"})
+                    return
+            # 3) Policy-flag for MCP tools the agent advertises to the model — the
             #    agentless handle on local (stdio) MCP servers we can't otherwise see.
             defs = extract_tool_defs(raw)
             if defs:
@@ -340,7 +408,7 @@ class WardenGuard:
                         400, ai_block_body(v), {"Content-Type": "application/json"})
             return
 
-        # 3) MCP over HTTP to any server (remote/Streamable-HTTP) — inspect the call.
+        # 4) MCP over HTTP to any server (remote/Streamable-HTTP) — inspect the call.
         if is_mcp(raw):
             activity = extract_mcp_activity(raw)
             if activity:

@@ -411,7 +411,7 @@ Different usage routes need different capture points — all feed the one engine
 | Your own apps / CLIs / Claude Code (you control the client) | LLM gateway `/v1` → `llm_io` | ✅ |
 | **Browser** web UI (claude.ai, chatgpt.com, Microsoft Copilot) | Browser extension → `ai_usage` | ✅ |
 | **Desktop apps, IDE assistants, 3rd-party CLIs** (incl. GitHub Copilot) | Egress proxy → `ai_usage` | ✅ |
-| **AI coding agents over MCP** (tool calls, resource reads, tool listings) | Egress proxy → `mcp` (remote/HTTP servers; local stdio governed by policy) | ✅ |
+| **AI coding agents over MCP** (tool calls, resource reads, tool listings) | Egress proxy → `mcp` (remote/HTTP servers) **and** gateway/proxy `tool_use` inspection (covers local stdio MCP agentlessly) | ✅ |
 | **Cursor** (AI IDE) | Egress proxy (codebase/telemetry) | ⚠️ chat endpoint pins certs — see [`proxy/README.md`](proxy/README.md) |
 | **Source code committed to a Git repo** | Pre-commit hook + GitHub Action → `/api/scan/code` | ✅ |
 
@@ -512,13 +512,23 @@ a JSON-RPC error so the agent surfaces it cleanly):
 - **untrusted server** — a call to an MCP server not on `MCP_ALLOWED_SERVERS`;
 - plus **secrets/PII** in tool-call arguments (via the shadow-AI detector).
 
-**Transport boundary (agentless, honestly scoped):** remote / Streamable-HTTP MCP servers
-flow through the proxy and are fully inspected and blockable. **Local stdio** MCP servers
-never touch the network, so they can't be inspected agentlessly — they're governed by
-**policy** (`MCP_ALLOWED_SERVERS`) and surfaced via the tool definitions the agent sends
-to the LLM API (which the proxy *can* see, so tool-poisoning is still caught). Full
-per-process inspection of local stdio MCP would require a local shim (a future,
-opt-in agent) — deliberately out of scope for the agentless deployment.
+**Agentic behavior over the LLM traffic (agentless, covers local stdio MCP).** An AI
+coding agent's tool calls, their arguments, and their results all round-trip the model — so
+they're visible in the LLM API traffic Warden already intercepts (the gateway for Claude
+Code, or the proxy for other clients), **even when the tool is a local stdio MCP server the
+network can't see.** The gateway/proxy inspects the current turn's `tool_use` (the action +
+args) and `tool_result` (the output) on the `mcp` surface and blocks in enforce mode — so
+`read_file(.env)`, `run_shell("curl … | sh")`, or an AWS key in a tool result is caught
+with **no endpoint agent**. Only the latest tool_use/tool_result pair is scanned, so each
+action is inspected exactly once (cascade-safe).
+
+**Transport boundary (honestly scoped):** remote / Streamable-HTTP MCP servers flow through
+the proxy and are fully inspected and blockable directly; **local stdio** MCP servers never
+touch the network, but their *actions* are still caught via the LLM-traffic `tool_use`
+inspection above, and their *server identity* is governed by policy (`MCP_ALLOWED_SERVERS`).
+The one residue that truly needs a local presence is real-time per-device inventory and any
+purely-local activity that never round-trips the model — a local shim (a future, opt-in
+agent) would close that, deliberately out of scope for the agentless deployment.
 
 ## Keeping secrets & PII out of repos (git)
 
