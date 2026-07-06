@@ -10,6 +10,7 @@ import Audit from "./components/Audit.jsx";
 import Login from "./components/Login.jsx";
 import Landing from "./components/Landing.jsx";
 import Legal from "./components/Legal.jsx";
+import ExtensionConnect from "./components/ExtensionConnect.jsx";
 import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard } from "./components/icons.jsx";
 
 export default function App() {
@@ -89,6 +90,10 @@ export default function App() {
   const legalPath = window.location.pathname.replace(/\/+$/, "");
   if (legalPath === "/privacy" || legalPath === "/terms") {
     return <Legal page={legalPath === "/terms" ? "terms" : "privacy"} />;
+  }
+  // Browser-extension sign-in landing (OAuth-style; opened by the extension).
+  if (legalPath === "/extension-connect") {
+    return <ExtensionConnect />;
   }
 
   if (booting) return <div className="login-screen"><div className="login-sub">Loading…</div></div>;

@@ -19,8 +19,40 @@ function render(state) {
     `<div class="muted" style="margin-top:4px;font-size:11px;">${when}</div>`;
 }
 
+function renderConn(s) {
+  const el = $("conn");
+  if (s && s.configured) {
+    el.className = "conn";
+    el.innerHTML = `<div>Connected${s.user ? ' as <span class="who">' + s.user + "</span>" : ""}` +
+      `${s.managed ? " (managed by your organization)" : ""}.</div>`;
+  } else {
+    el.className = "conn muted";
+    el.innerHTML = `<div>Not connected to Warden.</div>` +
+      (s && s.managed ? "" : `<button id="signin">Sign in to Warden</button>`);
+  }
+}
+
+function bindSignin() {
+  const btn = $("signin");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    btn.textContent = "Opening sign-in…"; btn.disabled = true;
+    const r = await chrome.runtime.sendMessage({ type: "signIn" });
+    if (r && r.ok) { loadConn(); return; }
+    $("conn").innerHTML = `<div class="err">Sign-in failed: ${(r && r.error) || "unknown"}</div>` +
+      `<button id="signin">Try again</button>`;
+    bindSignin();
+  });
+}
+
+async function loadConn() {
+  renderConn(await chrome.runtime.sendMessage({ type: "status" }));
+  bindSignin();
+}
+
 async function load() {
   render(await chrome.storage.local.get({ blockCount: 0, lastVerdict: null }));
+  loadConn();
 }
 
 document.addEventListener("DOMContentLoaded", load);

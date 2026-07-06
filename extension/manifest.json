@@ -3,7 +3,7 @@
   "name": "Warden — Shadow-AI Guard",
   "version": "0.5.0",
   "description": "Inspects prompts sent to external AI tools for secrets, PII, and proprietary data, and warns or blocks before they leave.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "identity"],
   "storage": { "managed_schema": "managed_schema.json" },
   "icons": {
     "16": "icons/icon-16.png",

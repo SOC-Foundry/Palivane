@@ -73,3 +73,20 @@ def test_api_key_attributes_actor_on_findings(client, monkeypatch):
     findings = client.get("/api/findings").json()["findings"]
     llm = [f for f in findings if f["surface"] == "llm_io"]
     assert llm and llm[0]["sender"] == "svc-bot@acme.com"
+
+
+def test_extension_token_self_serve(client, raw_client):
+    # Any authenticated console user can mint their own extension capture key.
+    r = client.post("/api/extension/token")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["token"].startswith("ak_") and "@" in body["actor"]
+    # The minted key works as an ingest token (bound to the caller's tenant).
+    ing = raw_client.post("/api/ingest/ai-usage",
+                          json={"content": "hello world", "destination": "https://claude.ai/"},
+                          headers={"X-Warden-Token": body["token"]})
+    assert ing.status_code == 200
+
+
+def test_extension_token_requires_auth(raw_client):
+    assert raw_client.post("/api/extension/token").status_code == 401
