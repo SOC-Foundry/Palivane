@@ -492,6 +492,28 @@ def scan_ide_extensions(
     }
 
 
+@app.get("/api/policy-pack")
+def policy_pack(
+    base_url: str = "https://warden.example.com",
+    proxy_host: str = "",
+    proxy_port: int = 8081,
+    current: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Generate the MDM policy pack (agentless enforcement config): VS Code extension
+    allowlist, system-proxy profiles, browser force-install, and a CA-deployment note.
+
+    Applied by the org's MDM (Jamf/Intune/GPO) — no Warden agent on the device. The
+    extension allow/deny lists come from the org's IDE-vetting config."""
+    from . import policy_pack as pp
+    allowed = [x.strip() for x in settings.ide_ext_allowed.split(",") if x.strip()]
+    denied = [x.strip() for x in settings.ide_ext_denylist.split(",") if x.strip()]
+    artifacts = pp.render_pack(base_url=base_url, extension_id=settings.extension_id,
+                               proxy_host=proxy_host, proxy_port=proxy_port,
+                               allowed_exts=allowed, denied_exts=denied)
+    return {"artifacts": artifacts}
+
+
 @app.get("/api/findings")
 def list_findings(
     current: User = Depends(get_current_user),
