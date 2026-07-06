@@ -17,6 +17,9 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     name: tenant?.name || "", judge: judgeValue(tenant),
     retention_days: tenant?.retention_days ?? 0, rate_limit: tenant?.rate_limit ?? 0,
     mcp_allowed_servers: tenant?.mcp_allowed_servers || "",
+    ide_ext_allowed: tenant?.ide_ext_allowed || "",
+    ide_ext_denylist: tenant?.ide_ext_denylist || "",
+    dep_denylist: tenant?.dep_denylist || "",
   });
   const setField = (k) => (e) => setOrgState((o) => ({ ...o, [k]: e.target.value }));
 
@@ -27,6 +30,9 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         name: org.name, judge: org.judge,
         retention_days: Number(org.retention_days), rate_limit: Number(org.rate_limit),
         mcp_allowed_servers: org.mcp_allowed_servers,
+        ide_ext_allowed: org.ide_ext_allowed,
+        ide_ext_denylist: org.ide_ext_denylist,
+        dep_denylist: org.dep_denylist,
       });
       onTenant?.(t);
       flash("Organization settings saved.");
@@ -158,7 +164,19 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <label className="field-wide">Approved MCP servers (comma-separated hosts; empty = don't flag)
             <input placeholder="mcp.githubcopilot.com, mcp.acme.com"
                    value={org.mcp_allowed_servers} onChange={setField("mcp_allowed_servers")} /></label>
+          <label className="field-wide">Approved IDE extensions (allowlist; empty = allow all)
+            <input placeholder="ms-python.python, esbenp.prettier-vscode"
+                   value={org.ide_ext_allowed} onChange={setField("ide_ext_allowed")} /></label>
+          <label className="field-wide">Blocked IDE extensions (denylist)
+            <input placeholder="publisher.badext"
+                   value={org.ide_ext_denylist} onChange={setField("ide_ext_denylist")} /></label>
+          <label className="field-wide">Blocked dependencies (denylist)
+            <input placeholder="crossenv, colourama"
+                   value={org.dep_denylist} onChange={setField("dep_denylist")} /></label>
         </div>
+        <p className="muted" style={{ margin: "0 0 12px", fontSize: 12 }}>Supply-chain lists apply to
+           the CI scans (<code>/api/scan/ide-extensions</code>, <code>/api/scan/deps</code>) and the
+           MDM policy pack. Empty = inherit the global default.</p>
         <button className="primary-btn slim">Save organization</button>
       </form>
 

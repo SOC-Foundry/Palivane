@@ -135,6 +135,9 @@ class TenantUpdate(BaseModel):
     retention_days: int | None = None   # 0 = keep findings forever
     rate_limit: int | None = None       # gateway requests/min (0 = inherit global default)
     mcp_allowed_servers: str | None = None  # comma-separated approved MCP server hosts
+    ide_ext_allowed: str | None = None      # approved IDE extension ids
+    ide_ext_denylist: str | None = None     # blocked IDE extension ids
+    dep_denylist: str | None = None         # known-bad dependency names
 
 
 class TenantDelete(BaseModel):

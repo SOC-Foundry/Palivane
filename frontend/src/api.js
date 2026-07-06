@@ -63,6 +63,7 @@ export const api = {
   coverageReconcile: (events) =>
     req("/coverage/reconcile", { method: "POST", body: JSON.stringify({ events }) }),
   stats: () => req("/stats"),
+  setupStatus: () => req("/setup-status"),
   analyze: (payload) =>
     req("/analyze", { method: "POST", body: JSON.stringify(payload) }),
   findings: (params = {}) => {

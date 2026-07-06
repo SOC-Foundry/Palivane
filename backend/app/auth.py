@@ -569,6 +569,12 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.rate_limit = body.rate_limit
     if body.mcp_allowed_servers is not None:
         tenant.mcp_allowed_servers = body.mcp_allowed_servers.strip()
+    if body.ide_ext_allowed is not None:
+        tenant.ide_ext_allowed = body.ide_ext_allowed.strip()
+    if body.ide_ext_denylist is not None:
+        tenant.ide_ext_denylist = body.ide_ext_denylist.strip()
+    if body.dep_denylist is not None:
+        tenant.dep_denylist = body.dep_denylist.strip()
     db.commit()
     db.refresh(tenant)
     changed = body.model_dump(exclude_none=True)
