@@ -384,6 +384,13 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 }
 .users-table td { padding: 12px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
 .users-table tr:last-child td { border-bottom: none; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+.data-table th {
+  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px;
+  color: var(--muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border);
+}
+.data-table td { padding: 9px 10px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+.data-table tr:last-child td { border-bottom: none; }
 .ta-right { text-align: right; }
 .ut-email { font-weight: 600; }
 .row-inactive .ut-email, .row-inactive td { color: var(--muted); }

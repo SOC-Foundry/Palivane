@@ -51,8 +51,17 @@ export const api = {
     req(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   createApiKey: (payload) =>
     req("/apikeys", { method: "POST", body: JSON.stringify(payload) }),
+  apiKeys: () => req("/apikeys"),
+  deleteApiKey: (id) => req(`/apikeys/${id}`, { method: "DELETE" }),
+  enrollTokens: () => req("/enroll/tokens"),
   provision: (payload) =>
     req("/provision", { method: "POST", body: JSON.stringify(payload) }),
+  policyPack: (params = {}) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return req("/policy-pack" + (q ? `?${q}` : ""));
+  },
+  coverageReconcile: (events) =>
+    req("/coverage/reconcile", { method: "POST", body: JSON.stringify({ events }) }),
   stats: () => req("/stats"),
   analyze: (payload) =>
     req("/analyze", { method: "POST", body: JSON.stringify(payload) }),

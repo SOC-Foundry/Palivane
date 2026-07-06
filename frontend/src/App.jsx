@@ -11,7 +11,9 @@ import Login from "./components/Login.jsx";
 import Landing from "./components/Landing.jsx";
 import Legal from "./components/Legal.jsx";
 import ExtensionConnect from "./components/ExtensionConnect.jsx";
-import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard } from "./components/icons.jsx";
+import Connections from "./components/Connections.jsx";
+import Coverage from "./components/Coverage.jsx";
+import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard, IconInbox, IconTarget } from "./components/icons.jsx";
 
 export default function App() {
   const [auth, setAuth] = useState(null);        // { user, tenant }
@@ -128,6 +130,18 @@ export default function App() {
             </button>
           )}
           {isAdmin && (
+            <button type="button" className={`nav-item ${view === "connections" ? "nav-on" : ""}`}
+                    onClick={() => setView("connections")}>
+              <IconInbox /> <span>Connections</span>
+            </button>
+          )}
+          {isAdmin && (
+            <button type="button" className={`nav-item ${view === "coverage" ? "nav-on" : ""}`}
+                    onClick={() => setView("coverage")}>
+              <IconTarget /> <span>Coverage</span>
+            </button>
+          )}
+          {isAdmin && (
             <button type="button" className={`nav-item ${view === "users" ? "nav-on" : ""}`}
                     onClick={() => setView("users")}>
               <IconUsers /> <span>Users</span>
@@ -169,6 +183,10 @@ export default function App() {
       <main className="content">
         {view === "connect" ? (
           <Connect tenant={auth.tenant} />
+        ) : view === "connections" ? (
+          <Connections />
+        ) : view === "coverage" ? (
+          <Coverage />
         ) : view === "users" ? (
           <Users currentUser={auth.user} />
         ) : view === "settings" ? (
