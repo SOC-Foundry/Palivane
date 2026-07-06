@@ -62,15 +62,40 @@ The script builds the image (`deploy/cloudrun/Dockerfile`), pushes it, and deplo
 service with the Cloud SQL socket, secrets, and env. On start the container waits for the DB
 and runs `alembic upgrade head` (migrations), then serves. It prints the service URL.
 
-## Custom domain + TLS
+## Custom domain + TLS (Cloud Run domain mapping)
+
+Single-origin, streaming-safe, free — no load balancer, no Firebase (Firebase Hosting's CDN
+can buffer the gateway's SSE streaming). Run the helper, or the steps by hand:
 
 ```bash
-gcloud run domain-mappings create --service warden --domain app.warden.io --region "$REGION"
+PROJECT_ID=my-proj REGION=us-central1 DOMAIN=app.warden.io ./deploy/cloudrun/map-domain.sh
 ```
-Add the DNS record it prints; Google provisions the TLS cert automatically. Then redeploy
-(or update env) so `CORS_ORIGINS=https://app.warden.io`. Because SPA + API share this one
-origin, that's the only origin you need — and it's what the extension/CLI sign-in hands back
-as the backend.
+
+By hand:
+```bash
+# 1. Verify domain ownership (one-time) — opens Search Console; add the TXT record it gives.
+gcloud domains verify tachtech.net
+gcloud domains list-user-verified                 # confirm it appears
+
+# 2. Map the domain to the service (auto-provisions a managed TLS cert).
+gcloud beta run domain-mappings create --service warden --domain app.warden.io --region "$REGION"
+
+# 3. Add the DNS records it prints at your registrar (A/AAAA or CNAME to ghs.googlehosted.com).
+gcloud beta run domain-mappings describe --domain app.warden.io --region "$REGION" \
+  --format='table(status.resourceRecords[].name, status.resourceRecords[].type, status.resourceRecords[].rrdata)'
+
+# 4. Wait for DNS + cert (~15-60 min); watch:
+gcloud beta run domain-mappings describe --domain app.warden.io --region "$REGION" \
+  --format='value(status.conditions[].type, status.conditions[].status)'
+```
+
+Then redeploy so `CORS_ORIGINS=https://app.warden.io` (the `deploy.sh` `DOMAIN` var sets it).
+Because SPA + API share this one origin, that's the only origin you need — and it's what the
+extension/CLI sign-in hands back as the backend.
+
+> Domain mapping isn't available in every region. If yours is unsupported (or you later want
+> Cloud Armor / a static IP / multi-region), front the service with a **global external HTTPS
+> Load Balancer** instead — same container, no app changes.
 
 ## Wire the clients to this domain
 - **Extension (prod build):** `WARDEN_SAAS_URL=https://app.warden.io ./extension/build.sh`
