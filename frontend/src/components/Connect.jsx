@@ -90,6 +90,9 @@ export default function Connect({ tenant }) {
         <p className="muted">Push as Claude Code <code>managed-settings.json</code> (Linux
            <code>/etc/claude-code/</code>, macOS <code>/Library/Application Support/ClaudeCode/</code>).</p>
         <Block text={claudeCode} />
+        <p className="muted" style={{ marginTop: 10 }}>Or self-serve (BYOD / pilots) — the user
+           runs <code>warden-connect {origin}</code> to sign in and configure their own Claude
+           Code. No token distribution.</p>
       </div>
 
       <div className="connect-card">
