@@ -301,7 +301,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/scan/mcp-config`   | Vet an MCP config file (`.mcp.json`, Cursor/VS Code) in CI/console — enumerates declared servers (incl. local stdio) and flags unapproved servers, dangerous launch commands, and secrets in config. Token-gated. |
 | POST   | `/api/scan/deps`         | Vet dependency manifests (`package.json`, `requirements.txt`) for supply-chain risk — install-script abuse, non-registry sources, known-bad packages, and (opt-in) known CVEs for pinned deps via OSV. Token-gated. |
 | POST   | `/api/scan/ide-extensions` | Vet a list of IDE extensions (`.vscode/extensions.json` in CI, or MDM inventory) for known-bad / unapproved editor plugins. Token-gated. |
-| GET    | `/api/policy-pack`       | Generate the MDM policy pack (agentless enforcement config): VS Code extension allowlist, system-proxy profiles (macOS/Windows), browser force-install, CA-deployment note (admin). |
+| GET    | `/api/policy-pack`       | Generate the MDM policy pack (agentless enforcement config): VS Code extension allowlist, system-proxy profiles (macOS/Windows), browser force-install, CA-deployment note (admin). Runbook: [`docs/mdm-policy-pack.md`](docs/mdm-policy-pack.md). |
 | POST   | `/api/scan/code`         | Scan changed files (pre-commit hook / CI) for secrets & PII before they reach a repo; ignores `source_code_leak`. Returns a per-file allow/warn/block. Token-gated. |
 | GET    | `/api/findings`          | List the tenant's findings (filter by `severity`, `status`). |
 | GET    | `/api/findings/{id}`     | Full finding detail with signal breakdown. |
@@ -567,6 +567,9 @@ opt-in OSV CVE lookup for pinned deps in `package.json`/`requirements.txt`), and
 `POST /api/scan/ide-extensions` (known-bad / unapproved editor plugins from
 `.vscode/extensions.json` or MDM inventory) — so a repo or workstation can't introduce a
 rogue MCP server, a malicious dependency, or a banned extension without a failing check.
+The **enforcement** side is config, not an agent: `GET /api/policy-pack` generates the
+MDM artifacts (editor allowlist, system proxy, browser force-install, CA) — see the
+[MDM policy-pack runbook](docs/mdm-policy-pack.md).
 
 ```yaml
 # .github/workflows/warden-secret-scan.yml — fail a PR that adds secrets/PII
