@@ -1,0 +1,14 @@
+# Keep the Cloud Build upload small; the image rebuilds SPA + deps from source.
+.git
+.gitignore
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.venv
+**/.pytest_cache
+frontend/dist
+extension/*.zip
+*.db
+.env
+*.env
+!*.env.example

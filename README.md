@@ -49,8 +49,10 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
   source.
 - **Measurable** — a labeled-corpus eval harness (`python -m app.eval`) reports
   precision/recall/F1; analyst triage feeds back as labels.
-- **Deployable** — `docker compose up` (Postgres + API + web), Alembic migrations,
-  systemd unit, and a step-by-step [Claude deployment guide](docs/claude-deployment.md).
+- **Deployable** — `docker compose up` (Postgres + API + web) locally; **Cloud Run + Cloud
+  SQL** for production (single-origin container serving SPA + API — see
+  [`deploy/cloudrun/`](deploy/cloudrun/)); Alembic migrations, systemd unit, and a
+  step-by-step [Claude deployment guide](docs/claude-deployment.md).
 
 ## How detection works
 
