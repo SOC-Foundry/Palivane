@@ -295,6 +295,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/analyze/batch`     | Analyze up to 500 items in one call. |
 | POST   | `/api/ingest/ai-usage`   | Score content captured by the browser extension / proxy (`ai_usage`); returns allow/warn/block. Token-gated. |
 | POST   | `/api/ingest/mcp`        | Score an MCP tool call / resource read / tool listing captured by the proxy (`mcp`) — sensitive-resource access, dangerous commands, untrusted servers, tool poisoning. Returns allow/warn/block. Token-gated. |
+| POST   | `/api/scan/mcp-config`   | Vet an MCP config file (`.mcp.json`, Cursor/VS Code) in CI/console — enumerates declared servers (incl. local stdio) and flags unapproved servers, dangerous launch commands, and secrets in config. Token-gated. |
 | POST   | `/api/scan/code`         | Scan changed files (pre-commit hook / CI) for secrets & PII before they reach a repo; ignores `source_code_leak`. Returns a per-file allow/warn/block. Token-gated. |
 | GET    | `/api/findings`          | List the tenant's findings (filter by `severity`, `status`). |
 | GET    | `/api/findings/{id}`     | Full finding detail with signal breakdown. |
@@ -529,6 +530,13 @@ inspection above, and their *server identity* is governed by policy (`MCP_ALLOWE
 The one residue that truly needs a local presence is real-time per-device inventory and any
 purely-local activity that never round-trips the model — a local shim (a future, opt-in
 agent) would close that, deliberately out of scope for the agentless deployment.
+
+**Config-level vetting (CI, agentless).** `POST /api/scan/mcp-config` reads an MCP config
+file (`.mcp.json`, Cursor/VS Code) and enumerates the declared servers — **including local
+stdio ones** — flagging unapproved servers (`MCP_ALLOWED_SERVERS`), dangerous launch
+commands (`bash -c "curl … | sh"`), and secrets committed in the config. Wire it into the
+[git plane](git/) / CI so a repo can't introduce a shadow or malicious MCP server without a
+failing check — the config-level counterpart to the runtime inspection above.
 
 ## Keeping secrets & PII out of repos (git)
 
