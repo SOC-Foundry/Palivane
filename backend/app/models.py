@@ -46,6 +46,9 @@ class Tenant(Base):
     ide_ext_allowed = Column(String(2048), default="")
     ide_ext_denylist = Column(String(2048), default="")
     dep_denylist = Column(String(2048), default="")
+    # Alerting: POST high/critical findings to this webhook (Slack-compatible {"text":…}).
+    alert_webhook = Column(String(1024), default="")
+    alert_min_severity = Column(String(16), default="high")
 
     def to_dict(self) -> dict:
         return {"id": self.id, "slug": self.slug, "name": self.name,
@@ -54,7 +57,9 @@ class Tenant(Base):
                 "mcp_allowed_servers": self.mcp_allowed_servers or "",
                 "ide_ext_allowed": self.ide_ext_allowed or "",
                 "ide_ext_denylist": self.ide_ext_denylist or "",
-                "dep_denylist": self.dep_denylist or ""}
+                "dep_denylist": self.dep_denylist or "",
+                "alert_webhook": self.alert_webhook or "",
+                "alert_min_severity": self.alert_min_severity or "high"}
 
 
 class User(Base):

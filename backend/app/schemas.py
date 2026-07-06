@@ -138,6 +138,8 @@ class TenantUpdate(BaseModel):
     ide_ext_allowed: str | None = None      # approved IDE extension ids
     ide_ext_denylist: str | None = None     # blocked IDE extension ids
     dep_denylist: str | None = None         # known-bad dependency names
+    alert_webhook: str | None = None        # Slack-compatible webhook for high/critical alerts
+    alert_min_severity: str | None = None   # minimum severity to alert on
 
 
 class TenantDelete(BaseModel):
