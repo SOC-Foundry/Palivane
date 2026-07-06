@@ -96,8 +96,16 @@ AI tools — scans prompts and warns or blocks before they're sent.
 ## Submit — Chrome Web Store
 
 ```bash
-cd extension && ./build.sh          # -> warden-shadow-ai-guard-<version>.zip
+cd extension && ./build.sh          # -> warden-shadow-ai-guard-<version>.zip  (dev: localhost)
+
+# PROD build for hosted SaaS — bakes your console/ingest URL and drops localhost:
+WARDEN_SAAS_URL=https://app.warden.io ./build.sh   # -> ...-<version>-prod.zip
 ```
+
+The prod build sets the extension's default `backendUrl` + `consoleUrl` to your SaaS URL
+(so a fresh BYOD install signs in against *your* console) and removes `localhost`/`127.0.0.1`
+from `host_permissions`, adding your SaaS origin. Upload the **`-prod.zip`** to the store.
+Managed-policy deployments still override these defaults per tenant.
 
 1. [Dev dashboard](https://chrome.google.com/webstore/devconsole) → **Add new item** →
    upload the zip.
