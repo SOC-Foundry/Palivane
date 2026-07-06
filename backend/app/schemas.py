@@ -42,6 +42,13 @@ class MCPIngest(BaseModel):
     user: str = ""                                     # end-user identity
 
 
+class MCPConfigScan(BaseModel):
+    """An MCP configuration file (.mcp.json, Cursor/VS Code) to vet in CI or the console."""
+    content: str = Field(min_length=1)
+    path: str = ""
+    record: bool = False   # persist non-clean servers as findings (off by default)
+
+
 class CodeFile(BaseModel):
     path: str = ""
     content: str

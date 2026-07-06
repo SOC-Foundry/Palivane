@@ -29,6 +29,7 @@ from .schemas import (
     BatchAnalyzeRequest,
     CodeScanRequest,
     CoverageRequest,
+    MCPConfigScan,
     MCPIngest,
     ProvisionRequest,
     StatusUpdate,
@@ -277,6 +278,79 @@ def ingest_mcp(
         "signals": result["signals"],
         "finding_id": result["finding_id"],
     }
+
+
+def _parse_mcp_servers(content: str) -> list[dict]:
+    """Pull the server map from an MCP config file — Claude Code/Desktop & Cursor
+    (`mcpServers`) or VS Code (`servers` / `mcp.servers`). Returns [{name, ...spec}]."""
+    import json as _json
+    try:
+        j = _json.loads(content)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(j, dict):
+        return []
+    servers = j.get("mcpServers")
+    if not isinstance(servers, dict):
+        servers = j.get("servers")
+    if not isinstance(servers, dict):
+        mcp = j.get("mcp")
+        servers = mcp.get("servers") if isinstance(mcp, dict) else None
+    if not isinstance(servers, dict):
+        return []
+    return [{"name": name, **spec} for name, spec in servers.items() if isinstance(spec, dict)]
+
+
+@app.post("/api/scan/mcp-config")
+def scan_mcp_config(
+    body: MCPConfigScan,
+    x_warden_token: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Vet an MCP configuration file (in CI, via the git plane, or the console).
+
+    Enumerates the declared MCP servers — including **local stdio** ones the network can't
+    see — and flags unapproved servers (`MCP_ALLOWED_SERVERS`), dangerous launch commands,
+    sensitive paths, and secrets committed in the config. Agentless: it reads config, not
+    a running process. Token-gated; returns an overall action + per-server detail."""
+    from urllib.parse import urlparse
+    tenant_id, _ = _ingest_auth(x_warden_token, db)
+    _enforce_rate(db, tenant_id)
+
+    flagged: list[dict] = []
+    worst = 0
+    servers = _parse_mcp_servers(body.content)
+    for s in servers:
+        name = s.get("name", "")
+        url = s.get("url") or s.get("serverUrl") or ""
+        command = s.get("command", "")
+        args = s.get("args") or []
+        env = s.get("env") or {}
+        if url:
+            server_host = urlparse(url).hostname or url
+            transport = "http"
+        else:
+            server_host = name          # local stdio has no host — key it by name
+            transport = "stdio"
+        args_text = " ".join([str(command)] + [str(a) for a in args]
+                             + [str(v) for v in (env.values() if isinstance(env, dict) else [])])
+        item = AnalysisInput(
+            content=args_text or name, subject=f"mcp-config: {name}", channel="mcp-config",
+            surface=Surface.MCP,
+            metadata={"method": "initialize", "server": server_host, "tool": name,
+                      "args_text": args_text, "transport": transport},
+        )
+        result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
+                              db=db, tenant_id=tenant_id, signal_filter=_mcp_filter)
+        action = _action_for(result["severity"])
+        worst = max(worst, _ACTION_RANK.get(result["severity"], 0))
+        if action != "allow":
+            flagged.append({"name": name, "transport": transport, "action": action,
+                            "severity": result["severity"], "risk_score": result["risk_score"],
+                            "signals": result["signals"]})
+
+    overall = "block" if worst >= 3 else ("warn" if worst >= 2 else "allow")
+    return {"action": overall, "scanned": len(servers), "servers": flagged}
 
 
 # Categories that matter for a repo commit: a repo is *expected* to contain code, so
