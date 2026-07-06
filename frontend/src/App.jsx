@@ -109,7 +109,7 @@ export default function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span className="logo">◆</span>
+          <img className="sidebar-emblem" src="/warden-emblem.png" alt="Warden" />
           <div>
             <div className="brand-name">Warden</div>
             <div className="brand-sub">AI Security Gateway</div>

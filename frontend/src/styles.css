@@ -45,10 +45,10 @@ body {
   padding: 22px 16px;
   position: sticky; top: 0; height: 100vh;
 }
-.sidebar-brand { display: flex; align-items: center; gap: 12px; padding: 4px 8px 22px; }
-.sidebar-brand .logo {
-  color: var(--accent); font-size: 26px; line-height: 1;
-  filter: drop-shadow(0 0 10px rgba(77,163,255,0.5));
+.sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 22px; }
+.sidebar-emblem {
+  height: 34px; width: auto; flex: none;
+  filter: drop-shadow(0 0 12px rgba(77,163,255,0.25));
 }
 .brand-name { font-size: 18px; font-weight: 800; letter-spacing: 0.2px; }
 .brand-sub {
