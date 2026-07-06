@@ -30,11 +30,8 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     `signal_filter` (list[Signal] -> list[Signal]) lets a per-tool policy drop expected
     categories before scoring (e.g. source code from a sanctioned coding assistant)."""
     # A tenant can opt out of the LLM judge (it ships content to the judge provider).
-    include_judge = True
-    if tenant_id is not None:
-        tenant = db.get(Tenant, tenant_id)
-        if tenant is not None and tenant.judge_enabled is False:
-            include_judge = False
+    tenant = db.get(Tenant, tenant_id) if tenant_id is not None else None
+    include_judge = not (tenant is not None and tenant.judge_enabled is False)
     verdict = engine.analyze(item, include_judge=include_judge)
     if signal_filter is not None:
         from .scoring import score
@@ -61,4 +58,10 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         db.commit()
         db.refresh(finding)
         finding_id = finding.id
+        # Fire an alert (non-blocking) if the tenant configured a webhook.
+        if tenant is not None and (tenant.alert_webhook or "").strip():
+            from . import alerts
+            alerts.notify(tenant.alert_webhook.strip(), tenant.alert_min_severity,
+                          {**result, "finding_id": finding_id},
+                          subject=item.subject, actor=item.sender, surface=item.surface.value)
     return {"finding_id": finding_id, "judge_used": engine.judge_enabled, **result}

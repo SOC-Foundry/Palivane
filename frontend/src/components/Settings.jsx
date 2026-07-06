@@ -39,6 +39,30 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     } catch (e) { err(e); }
   }
 
+  // --- Alerts & integrations ---
+  const [alertCfg, setAlertCfg] = useState({
+    webhook: tenant?.alert_webhook || "", min: tenant?.alert_min_severity || "high",
+  });
+  async function saveAlerts() {
+    try {
+      const t = await api.updateTenant({ alert_webhook: alertCfg.webhook, alert_min_severity: alertCfg.min });
+      onTenant?.(t); flash("Alerts saved.");
+    } catch (e) { err(e); }
+  }
+  async function testAlert() {
+    try { const r = await api.testAlert(); flash(r.ok ? "Test alert sent." : "Webhook unreachable.", !!r.ok); }
+    catch (e) { err(e); }
+  }
+  async function exportFindings() {
+    try {
+      const text = await api.exportFindings();
+      const url = URL.createObjectURL(new Blob([text], { type: "application/x-ndjson" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = "warden-findings.jsonl";
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    } catch (e) { err(e); }
+  }
+
   // --- Usage ---
   const [usage, setUsage] = useState(null);
   const loadUsage = useCallback(() => api.usage().then(setUsage).catch(() => {}), []);
@@ -179,6 +203,30 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
            MDM policy pack. Empty = inherit the global default.</p>
         <button className="primary-btn slim">Save organization</button>
       </form>
+
+      {/* Alerts & integrations */}
+      <div className="panel settings-card">
+        <h2>Alerts &amp; integrations</h2>
+        <div className="field-grid">
+          <label className="field-wide">Webhook URL (Slack-compatible — posts high/critical findings)
+            <input placeholder="https://hooks.slack.com/services/…"
+                   value={alertCfg.webhook} onChange={(e) => setAlertCfg((a) => ({ ...a, webhook: e.target.value }))} /></label>
+          <label>Alert on severity ≥
+            <select value={alertCfg.min} onChange={(e) => setAlertCfg((a) => ({ ...a, min: e.target.value }))}>
+              <option value="low">low</option>
+              <option value="suspicious">suspicious</option>
+              <option value="high">high</option>
+              <option value="critical">critical</option>
+            </select></label>
+        </div>
+        <div className="form-row" style={{ gap: 10 }}>
+          <button type="button" className="primary-btn slim" onClick={saveAlerts}>Save alerts</button>
+          <button type="button" className="mini-btn" onClick={testAlert}>Send test</button>
+          <button type="button" className="mini-btn" onClick={exportFindings}>Export findings (JSONL)</button>
+        </div>
+        <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Findings export is for SIEM ingest.
+           Alerts fire asynchronously and fail open — a down webhook never blocks capture.</p>
+      </div>
 
       {/* Usage */}
       <div className="panel settings-card">

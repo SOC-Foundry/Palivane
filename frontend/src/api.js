@@ -80,6 +80,14 @@ export const api = {
   updateTenant: (payload) =>
     req("/tenant", { method: "PATCH", body: JSON.stringify(payload) }),
   extensionToken: () => req("/extension/token", { method: "POST" }),
+  testAlert: () => req("/alerts/test", { method: "POST" }),
+  exportFindings: async () => {
+    const token = getToken();
+    const res = await fetch(BASE + "/export/findings",
+      { headers: token ? { authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) throw new Error(`${res.status}`);
+    return res.text();
+  },
   usage: () => req("/usage"),
   audit: (params = {}) => {
     const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();

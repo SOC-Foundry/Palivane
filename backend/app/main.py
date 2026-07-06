@@ -118,6 +118,38 @@ def setup_status(current: User = Depends(get_current_user), db: Session = Depend
     }
 
 
+@app.post("/api/alerts/test")
+def test_alert(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Send a sample alert to the tenant's configured webhook (Settings → Alerts)."""
+    from . import alerts
+    t = db.get(Tenant, current.tenant_id)
+    if not t or not (t.alert_webhook or "").strip():
+        raise HTTPException(status_code=400, detail="no alert webhook configured")
+    ok = alerts.send_sync(t.alert_webhook.strip(), {
+        "text": ":shield: Warden test alert — your webhook is connected.",
+        "warden": {"test": True, "org": t.slug}})
+    return {"ok": ok}
+
+
+@app.get("/api/export/findings")
+def export_findings(
+    current: User = Depends(require_admin), db: Session = Depends(get_db),
+    severity: str | None = None, surface: str | None = None, limit: int = 5000,
+):
+    """Export findings as JSONL (SIEM ingest). Admin; filterable by severity/surface."""
+    import json as _json
+    from fastapi.responses import Response as _Resp
+    q = db.query(Finding).filter(Finding.tenant_id == current.tenant_id)
+    if severity:
+        q = q.filter(Finding.severity == severity)
+    if surface:
+        q = q.filter(Finding.surface == surface)
+    rows = q.order_by(Finding.created_at.desc()).limit(min(limit, 20000)).all()
+    body = "\n".join(_json.dumps(r.to_summary()) for r in rows)
+    return _Resp(content=body, media_type="application/x-ndjson",
+                 headers={"Content-Disposition": "attachment; filename=warden-findings.jsonl"})
+
+
 @app.get("/livez")
 def livez():
     """Liveness: the process is up (no dependencies checked)."""

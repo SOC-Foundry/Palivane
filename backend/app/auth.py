@@ -575,6 +575,12 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.ide_ext_denylist = body.ide_ext_denylist.strip()
     if body.dep_denylist is not None:
         tenant.dep_denylist = body.dep_denylist.strip()
+    if body.alert_webhook is not None:
+        tenant.alert_webhook = body.alert_webhook.strip()
+    if body.alert_min_severity is not None:
+        if body.alert_min_severity not in ("low", "suspicious", "high", "critical"):
+            raise HTTPException(status_code=400, detail="invalid alert_min_severity")
+        tenant.alert_min_severity = body.alert_min_severity
     db.commit()
     db.refresh(tenant)
     changed = body.model_dump(exclude_none=True)
