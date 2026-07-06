@@ -23,6 +23,17 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
   `/v1beta/models/{model}:generateContent`), a **browser extension** for
   claude.ai/ChatGPT/Gemini/Microsoft Copilot, and a **mitmproxy egress addon** for desktop
   apps / IDEs / CLIs (incl. GitHub Copilot).
+- **Agentic (MCP) security** — inspects an AI coding agent's tool-use on the `mcp` surface
+  (sensitive-file access, dangerous commands, tool poisoning, untrusted servers) — over the
+  egress proxy *and* the LLM traffic (so **local stdio MCP** is covered), blocking on the
+  request, the response, and mid-stream, all **agentless**.
+- **Supply-chain checks (CI)** — vet MCP configs (`/api/scan/mcp-config`), dependency
+  manifests (`/api/scan/deps`, with opt-in OSV/CVE lookup), and IDE extensions
+  (`/api/scan/ide-extensions`) — plus an **MDM policy pack** (`/api/policy-pack`) that
+  generates the enforcement config (editor allowlist, system proxy, force-install, CA).
+- **Self-serve onboarding** — users bind to their tenant by signing in (login/SSO): the
+  **browser extension** sign-in and **`warden connect`** for Claude Code mint a per-user,
+  revocable key — no admin token distribution. Managed policy still wins on fleets.
 - **Keeps secrets out of repos too** — a **pre-commit hook + GitHub Action**
   ([`git/`](git/)) scan commits/PRs for secrets & PII via the same engine, complementing
   GitHub's native push protection.
@@ -294,6 +305,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/apikeys`           | Mint a long-lived machine API key; plaintext returned once (admin). |
 | GET    | `/api/apikeys`           | List the tenant's API keys (no secrets) (admin). |
 | DELETE | `/api/apikeys/{id}`      | Revoke an API key (admin).                |
+| POST   | `/api/auth/extension/token` | Mint a per-user, tenant-scoped capture key for self-serve sign-in (browser extension / `warden connect`); attributed to the caller, revocable. |
 | POST   | `/api/analyze`           | Analyze one item; returns verdict + signals. Set `surface` (`llm_io`/`ai_usage`); pass `destination` for `ai_usage`. |
 | POST   | `/api/analyze/batch`     | Analyze up to 500 items in one call. |
 | POST   | `/api/ingest/ai-usage`   | Score content captured by the browser extension / proxy (`ai_usage`); returns allow/warn/block. Token-gated. |
@@ -445,6 +457,14 @@ Each source authenticates with a **per-tenant API key** (`ak_…`, minted in the
 the copy-paste install config for the extension, Claude Code, and the proxy — prefilled
 with the org's URL + key.
 
+**Onboarding — managed or self-serve.** On managed fleets, MDM pushes the extension's
+config (backend URL + token) via enterprise policy, keyed by the extension id — zero-touch.
+For BYOD / pilots, a user clicks **Sign in to Warden** in the extension (or runs
+**`warden connect`** for Claude Code) and authenticates via the console (login/SSO); Warden
+mints a **per-user, tenant-scoped** key (`POST /api/auth/extension/token`) and hands it back
+over an OAuth-style redirect — no token distribution, and per-user attribution. Managed
+policy always overrides. See [`cli/README.md`](cli/README.md).
+
 ```
 EXTENSION_INGEST_TOKEN=<random>   # shared-token fallback for single-org self-host
 INGEST_TENANT=<tenant slug>       # which org those findings belong to
@@ -527,7 +547,11 @@ network can't see.** The gateway/proxy inspects the current turn's `tool_use` (t
 args) and `tool_result` (the output) on the `mcp` surface and blocks in enforce mode — so
 `read_file(.env)`, `run_shell("curl … | sh")`, or an AWS key in a tool result is caught
 with **no endpoint agent**. Only the latest tool_use/tool_result pair is scanned, so each
-action is inspected exactly once (cascade-safe).
+action is inspected exactly once (cascade-safe). Enforcement runs on the **request** (the
+tool_use already in history), the **response** (the tool_use the model just requested —
+blocked before the client executes it), and **streamed (SSE)** responses (monitor streams
+through live; enforce buffers the turn, inspects the assembled tool_use, then blocks or
+replays it verbatim).
 
 **Transport boundary (honestly scoped):** remote / Streamable-HTTP MCP servers flow through
 the proxy and are fully inspected and blockable directly; **local stdio** MCP servers never
@@ -632,38 +656,44 @@ detection to *their* traffic — the core of a design-partner pilot.
 ```
 backend/
   app/
-    detectors/        # prompt-threats (llm_io), shadow-ai (ai_usage), mcp-guard (mcp), LLM judge (Claude/GPT/Gemini)
+    detectors/        # prompt-threats (llm_io), shadow-ai (ai_usage), mcp-guard (mcp),
+                      #   dep-guard + ext-guard (deps/ide supply chain), LLM judge (Claude/GPT/Gemini)
     security.py       # password hashing (PBKDF2) + HS256 JWTs + API keys
-    auth.py           # auth dependencies + /api/auth + /api/users + /api/apikeys
-    gateway.py        # LLM gateway: /v1/chat/completions (OpenAI) + /v1/messages (Anthropic) + /v1beta (Gemini)
+    auth.py           # auth deps + /api/auth (+ /extension/token) + /api/users + /api/apikeys
+    gateway.py        # LLM gateway: OpenAI/Anthropic/Gemini + agentic tool_use enforcement (req/resp/stream)
+    osv.py            # OSV.dev advisory lookup for pinned deps (opt-in CVE scan)
     policy.py         # per-tool category suppression (e.g. code from Claude Code)
+    policy_pack.py    # MDM enforcement-config generator (/api/policy-pack)
+    provision.py      # per-device bootstrap installers (self-enrolling)
     users.py          # CLI: create tenants / users
     service.py        # shared analyze-and-store (API + extension/proxy ingest)
     coverage.py       # reconcile IdP/CASB AI-usage vs captured findings (the gap)
     eval/             # labeled corpus + metrics + `python -m app.eval`; export.py = triage→corpus
     engine.py         # routes an item to its surface's detectors, then scores
     scoring.py        # fuses signals → risk verdict
-    models.py         # Tenant / User / ApiKey / Finding ORM
-    main.py           # FastAPI routes
+    models.py         # Tenant / User / ApiKey / EnrollmentToken / Finding ORM
+    main.py           # FastAPI routes (ingest/mcp, scan/{code,deps,mcp-config,ide-extensions}, policy-pack, …)
     seed.py           # demo tenant + sample data
-  migrations/         # Alembic schema migrations (initial + api_keys)
+  migrations/         # Alembic schema migrations (api_keys, enrollment_tokens, tenant mcp allowlist)
   Dockerfile          # backend image (+ docker-entrypoint.sh: wait-db, migrate, seed)
-  tests/              # pytest: detectors, scoring, engine, api, security, auth, eval,
-                      #         export, gateway, ai-usage, policy, apikeys, coverage,
-                      #         proxy-addon, smoke-ui, extension-intercept (105 tests)
+  tests/              # pytest: detectors, scoring, engine, gateway (+ agentic/stream), mcp-guard,
+                      #         dep-guard, ext-guard, mcp/deps/config scans, policy-pack, auth, eval… (287 tests)
 docker-compose.yml    # db + backend + web (local hosted stack)
 deploy/               # systemd unit (api) + env example
-extension/            # MV3 browser extension — shadow-AI capture (browser)
-proxy/                # mitmproxy addon — shadow-AI capture (desktop apps / network)
+cli/                  # warden-connect — self-serve Claude Code onboarding (login/SSO → config)
+extension/            # MV3 browser extension — shadow-AI capture + self-serve sign-in
+proxy/                # mitmproxy addon — shadow-AI + MCP capture (desktop apps / network)
 git/                  # pre-commit hook + GitHub Action — secrets/PII out of repos
-docs/setup.md              # getting started: install (Docker/source), first sign-in, connect a source
-docs/claude-deployment.md  # step-by-step: deploy for browser + Claude Code + desktop
-docs/tokens-and-identity.md  # auth-model reference: tokens, attribution, per-user keys
+docs/setup.md               # getting started: install (Docker/source), first sign-in, connect a source
+docs/claude-deployment.md   # step-by-step: deploy for browser + Claude Code + desktop
+docs/mdm-policy-pack.md     # agentless MDM enforcement (extension allowlist, proxy, CA)
+docs/tokens-and-identity.md # auth-model reference: tokens, attribution, per-user keys
 frontend/
   src/
     components/       # Dashboard, FindingsList, FindingDetail, Connect, Settings, Users,
-                      #   Landing (public marketing page), Login, Legal (privacy/terms)
-    App.jsx           # routes: public Landing + /privacy + /terms, else Login → console
+                      #   Landing, Login (emblem + wordmark), Legal (privacy/terms), ExtensionConnect
+    App.jsx           # routes: public Landing + /privacy + /terms + /extension-connect, else Login → console
+public/warden-emblem.png  # knight+shield emblem (landing/nav/login); warden-logo.png = full app icon
 ```
 
 The frontend serves a **public marketing landing page** (the app root, pre-login) plus
