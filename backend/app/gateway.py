@@ -15,7 +15,10 @@ It also inspects **agentic tool-use** on the `mcp` surface: an AI coding agent's
 calls, their arguments, and their results all round-trip the model, so they're visible in
 this LLM traffic even when the tool is a *local* stdio MCP server — letting Warden catch
 sensitive-file access, dangerous commands, tool poisoning, and secrets-in-results with no
-endpoint agent.
+endpoint agent. This runs on the **request** (the tool_use/tool_result already in history)
+*and* on the **response** (the tool_use the model just requested) — so a dangerous action
+can be blocked before the client executes it. (Response-side covers non-streaming
+responses; SSE streaming inspection is a separate follow-up.)
 """
 
 from __future__ import annotations
@@ -263,6 +266,42 @@ def _capture_agentic(payload: dict, tool: str, principal: Principal, db: Session
                         signal_filter=_mcp_sig_filter)
 
 
+def _response_activity(resp: dict) -> dict | None:
+    """Extract the tool_use the model just requested from an upstream response — Anthropic
+    `content[].tool_use` or OpenAI `choices[].message.tool_calls`. Inspecting this lets the
+    gateway block a dangerous action *before* the client executes it (non-streaming path)."""
+    if not isinstance(resp, dict):
+        return None
+    tool_name, args = "", []
+    for b in resp.get("content") or []:                       # Anthropic
+        if isinstance(b, dict) and b.get("type") == "tool_use":
+            tool_name = tool_name or b.get("name", "")
+            _harvest_strings(b.get("input", {}), args)
+    for ch in resp.get("choices") or []:                      # OpenAI
+        msg = ch.get("message") if isinstance(ch, dict) else None
+        for tc in (msg or {}).get("tool_calls") or []:
+            fn = tc.get("function") if isinstance(tc, dict) else None
+            if isinstance(fn, dict):
+                tool_name = tool_name or fn.get("name", "")
+                if isinstance(fn.get("arguments"), str):
+                    args.append(fn["arguments"])
+    if not args:
+        return None
+    return {"method": "tools/call", "tool": tool_name, "args_text": "\n".join(args)[:20000]}
+
+
+def _capture_response_agentic(resp: dict, tool: str, principal: Principal, db: Session) -> dict | None:
+    act = _response_activity(resp)
+    if not act:
+        return None
+    item = AnalysisInput(
+        content=act["args_text"], subject=f"agent {act['tool']}".strip(), sender=principal.actor,
+        channel=tool or "agent", surface=Surface.MCP,
+        metadata={"method": act["method"], "tool": act["tool"], "args_text": act["args_text"]})
+    return run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
+                        signal_filter=_mcp_sig_filter)
+
+
 # --- OpenAI shape ---------------------------------------------------------------------
 
 def _openai_error(verdict: dict) -> JSONResponse:
@@ -311,7 +350,12 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
             headers["Authorization"] = f"Bearer {key}"
         with httpx.Client(timeout=60) as c:
             r = c.post(url, json=payload, headers=headers)
-        return JSONResponse(status_code=r.status_code, content=r.json())
+        data = r.json()
+        if settings.gateway_enforce:
+            ragentic = _capture_response_agentic(data, tool, principal, db)
+            if ragentic and _blocked(ragentic):
+                return _openai_error(ragentic)
+        return JSONResponse(status_code=r.status_code, content=data)
     return JSONResponse(content=_openai_stub(model, verdict))
 
 
@@ -359,7 +403,14 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
 
     base, key = resolve_upstream("anthropic", principal.tenant_id, db)
     if key:
-        return _forward_anthropic("/v1/messages", payload, request, base, key)
+        status, data = _post_upstream_anthropic("/v1/messages", payload, request, base, key)
+        # Response-side: block a dangerous tool_use the model just requested, before the
+        # client executes it (non-streaming responses).
+        if settings.gateway_enforce:
+            ragentic = _capture_response_agentic(data, tool, principal, db)
+            if ragentic and _blocked(ragentic):
+                return _anthropic_error(ragentic)
+        return JSONResponse(status_code=status, content=data)
     return JSONResponse(content=_anthropic_stub(model, verdict))
 
 
@@ -377,11 +428,17 @@ def _anthropic_headers(request: Request, key: str) -> dict:
     return headers
 
 
-def _forward_anthropic(path: str, payload: dict, request: Request, base: str, key: str) -> JSONResponse:
+def _post_upstream_anthropic(path: str, payload: dict, request: Request,
+                             base: str, key: str) -> tuple[int, dict]:
     url = base.rstrip("/") + path
     with httpx.Client(timeout=120) as c:
         r = c.post(url, json=payload, headers=_anthropic_headers(request, key))
-    return JSONResponse(status_code=r.status_code, content=r.json())
+    return r.status_code, r.json()
+
+
+def _forward_anthropic(path: str, payload: dict, request: Request, base: str, key: str) -> JSONResponse:
+    status, data = _post_upstream_anthropic(path, payload, request, base, key)
+    return JSONResponse(status_code=status, content=data)
 
 
 @router.post("/messages/count_tokens")
