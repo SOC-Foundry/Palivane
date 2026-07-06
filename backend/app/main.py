@@ -29,6 +29,7 @@ from .schemas import (
     BatchAnalyzeRequest,
     CodeScanRequest,
     CoverageRequest,
+    MCPIngest,
     ProvisionRequest,
     StatusUpdate,
 )
@@ -217,6 +218,58 @@ def ingest_ai_usage(
     from .policy import detect_tool, signal_filter_for
     sig_filter = signal_filter_for(detect_tool(explicit=body.tool))
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id, signal_filter=sig_filter)
+    return {
+        "action": _action_for(result["severity"]),
+        "risk_score": result["risk_score"],
+        "severity": result["severity"],
+        "signals": result["signals"],
+        "finding_id": result["finding_id"],
+    }
+
+
+# An agent reading code is normal, and MCP has no external AI destination — so on the
+# mcp surface drop source_code_leak / unsanctioned_ai and keep the agentic-action +
+# secret/PII signals.
+_MCP_DROP = {"source_code_leak", "unsanctioned_ai"}
+
+
+def _mcp_filter(signals: list) -> list:
+    return [s for s in signals if s.category.value not in _MCP_DROP]
+
+
+@app.post("/api/ingest/mcp")
+def ingest_mcp(
+    body: MCPIngest,
+    x_warden_token: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Score an MCP JSON-RPC activity the egress proxy captured (agentic tool-use).
+
+    The proxy normalizes each MCP message (tool call, resource read, server handshake,
+    advertised tool descriptions) and posts it here. Token-gated like the other ingest
+    endpoints. Returns an action the proxy enforces on the `mcp` surface: allow/warn/block."""
+    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    _enforce_rate(db, tenant_id)
+    actor = body.user or default_actor
+
+    # Synthesize the scannable text: tool arguments, resource URI, and advertised tool
+    # descriptions — so shadow-AI catches secrets/PII in args and the finding has context.
+    content = "\n".join(p for p in [
+        body.args_text, body.resource, "\n".join(body.tool_descriptions),
+    ] if p) or f"MCP {body.method} {body.tool or body.server}".strip()
+
+    item = AnalysisInput(
+        content=content, sender=actor, channel=body.tool or "mcp",
+        subject=f"MCP {body.method}".strip(),
+        surface=Surface.MCP,
+        metadata={
+            "method": body.method, "server": body.server, "tool": body.tool,
+            "args_text": body.args_text, "resource": body.resource,
+            "tool_descriptions": body.tool_descriptions, "transport": body.transport,
+        },
+    )
+    result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
+                          signal_filter=_mcp_filter)
     return {
         "action": _action_for(result["severity"]),
         "risk_score": result["risk_score"],

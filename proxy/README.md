@@ -4,7 +4,7 @@ Catches AI usage the browser extension can't: **desktop apps** (Claude/ChatGPT
 desktop), **IDE assistants** (Cursor, GitHub Copilot), **CLIs**, and anything else that
 makes its own HTTPS calls to an AI provider. It's a [mitmproxy](https://mitmproxy.org/)
 addon that inspects outbound POSTs to AI domains, scores the prompt through Warden,
-records a finding, and blocks (HTTP 403) on a block verdict.
+records a finding, and blocks (HTTP 400, provider-error shape) on a block verdict.
 
 Inspected destinations include OpenAI, Anthropic, Gemini, Cohere/Mistral/Perplexity,
 **GitHub Copilot** (`*.githubcopilot.com`, `copilot-proxy.githubusercontent.com`),
@@ -13,6 +13,31 @@ Inspected destinations include OpenAI, Anthropic, Gemini, Cohere/Mistral/Perplex
 the User-Agent (`detect_tool`), so the backend's per-tool policy suppresses routine
 `source_code_leak` for coding tools (`claude-code`, `cursor`, `copilot`) while still
 catching secrets and PII.
+
+## MCP inspection (agentic tool-use)
+
+Beyond prompt capture, the addon inspects **MCP** (Model Context Protocol) — the JSON-RPC
+an AI coding agent uses to call tools and read resources. It's **content-sniffed** (any
+POST whose body is JSON-RPC 2.0), so it works for MCP servers on any host, and posts a
+normalized activity to `POST /api/ingest/mcp` on the **`mcp`** surface. A block verdict
+returns a **JSON-RPC error** so the agent surfaces it cleanly. It flags:
+
+- **sensitive resource access** (tool/resource touching `.env`, private keys, cloud creds…)
+- **dangerous commands** (`curl … | sh`, `rm -rf /`, reverse shells…)
+- **tool poisoning** (injected instructions in a server's advertised tool descriptions —
+  caught in the `tools/list` response *and* in the tool defs the agent sends to the LLM API)
+- **untrusted servers** (not on `MCP_ALLOWED_SERVERS`)
+- **secrets/PII** in tool-call arguments
+
+> **Transport boundary (agentless).** Remote / Streamable-HTTP MCP servers flow through
+> the proxy and are fully inspected + blockable. **Local stdio** MCP servers never touch
+> the network — they can't be inspected agentlessly, so they're governed by *policy*
+> (`MCP_ALLOWED_SERVERS`) and surfaced via the tool definitions the agent sends to the
+> model (so tool-poisoning is still caught). Per-process inspection of local stdio would
+> need a local shim (a future, opt-in agent), deliberately out of scope here.
+
+MCP env vars are read by the **backend** (`MCP_ENFORCE`, `MCP_BLOCK_SEVERITY`,
+`MCP_ALLOWED_SERVERS`), not the proxy — the proxy just relays; the backend decides.
 
 > **Cursor caveat (measured).** Cursor's model/chat endpoint (`api2.cursor.sh`) **pins
 > its certificate** — a TLS-inspecting proxy is rejected (`tlsv1 alert unknown ca`) even
@@ -39,7 +64,7 @@ Point a client at it and watch a sensitive prompt get blocked:
 curl -x http://localhost:8081 https://api.openai.com/v1/chat/completions \
   -H "authorization: Bearer $OPENAI_KEY" \
   -d '{"model":"gpt-4o","messages":[{"role":"user","content":"SSN 123-45-6789, AWS key AKIA..."}]}'
-# -> 403 {"error":{"type":"warden_blocked", "message":"Blocked by Warden: sensitive data (...)"}}
+# -> 400 {"error":{"type":"invalid_request_error", "message":"Blocked by Warden: sensitive data (...)"}}
 ```
 
 | Env | Purpose |

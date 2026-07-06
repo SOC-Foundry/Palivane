@@ -169,6 +169,9 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `WARDEN_ENCRYPT_FINDINGS` | `false`               | Encrypt stored finding content at rest (decrypted on read). Needs a durable `WARDEN_ENCRYPTION_KEY` — key loss = unreadable content. |
 | `WARDEN_ALLOW_SIGNUP` | `true`                   | Self-serve org signup. Set `false` to lock down a single-org deployment. |
 | `INGEST_TENANT`     | *(unset)*                  | Tenant slug/id the extension & proxy attribute their findings to. |
+| `MCP_ENFORCE`       | `false`                    | MCP inspection: `true` blocks risky agentic tool-use inline (JSON-RPC error); otherwise monitor-only. |
+| `MCP_BLOCK_SEVERITY`| `high`                     | Block an MCP action when its verdict severity is at/above this. |
+| `MCP_ALLOWED_SERVERS` | *(empty)*                | Allowlist of approved MCP server hosts (comma-separated). Empty = don't flag on server identity; set it to flag calls to unapproved/shadow MCP servers. |
 
 ## Authentication & multi-tenancy
 
@@ -291,6 +294,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/analyze`           | Analyze one item; returns verdict + signals. Set `surface` (`llm_io`/`ai_usage`); pass `destination` for `ai_usage`. |
 | POST   | `/api/analyze/batch`     | Analyze up to 500 items in one call. |
 | POST   | `/api/ingest/ai-usage`   | Score content captured by the browser extension / proxy (`ai_usage`); returns allow/warn/block. Token-gated. |
+| POST   | `/api/ingest/mcp`        | Score an MCP tool call / resource read / tool listing captured by the proxy (`mcp`) — sensitive-resource access, dangerous commands, untrusted servers, tool poisoning. Returns allow/warn/block. Token-gated. |
 | POST   | `/api/scan/code`         | Scan changed files (pre-commit hook / CI) for secrets & PII before they reach a repo; ignores `source_code_leak`. Returns a per-file allow/warn/block. Token-gated. |
 | GET    | `/api/findings`          | List the tenant's findings (filter by `severity`, `status`). |
 | GET    | `/api/findings/{id}`     | Full finding detail with signal breakdown. |
@@ -407,6 +411,7 @@ Different usage routes need different capture points — all feed the one engine
 | Your own apps / CLIs / Claude Code (you control the client) | LLM gateway `/v1` → `llm_io` | ✅ |
 | **Browser** web UI (claude.ai, chatgpt.com, Microsoft Copilot) | Browser extension → `ai_usage` | ✅ |
 | **Desktop apps, IDE assistants, 3rd-party CLIs** (incl. GitHub Copilot) | Egress proxy → `ai_usage` | ✅ |
+| **AI coding agents over MCP** (tool calls, resource reads, tool listings) | Egress proxy → `mcp` (remote/HTTP servers; local stdio governed by policy) | ✅ |
 | **Cursor** (AI IDE) | Egress proxy (codebase/telemetry) | ⚠️ chat endpoint pins certs — see [`proxy/README.md`](proxy/README.md) |
 | **Source code committed to a Git repo** | Pre-commit hook + GitHub Action → `/api/scan/code` | ✅ |
 
@@ -490,6 +495,31 @@ transparent. It **fails open** (Warden down → traffic flows). Caveat: needs TL
 inspection, so certificate-pinned clients bypass rather than being inspected. Details
 and deploy steps in [`proxy/README.md`](proxy/README.md).
 
+### Agentic tool-use (MCP inspection)
+
+AI coding agents (Claude Code, Cursor, Copilot) act through **MCP** — JSON-RPC to call
+tools, read resources, and connect to MCP servers. The same egress proxy inspects that
+traffic on the **`mcp`** surface, **agentlessly**, and blocks on a block verdict (returning
+a JSON-RPC error so the agent surfaces it cleanly):
+
+- **sensitive resource access** — a tool/resource call touching `.env`, private keys,
+  cloud/kube/npm credentials, `/etc/shadow`, etc.
+- **dangerous command** — a run-command tool executing `curl … | sh`, `rm -rf /`, a
+  reverse shell, disabling security tooling, and similar;
+- **tool poisoning** — injected instructions hidden in an MCP server's advertised tool
+  *descriptions* (caught in the `tools/list` response, and in the tool defs the agent
+  sends to the model);
+- **untrusted server** — a call to an MCP server not on `MCP_ALLOWED_SERVERS`;
+- plus **secrets/PII** in tool-call arguments (via the shadow-AI detector).
+
+**Transport boundary (agentless, honestly scoped):** remote / Streamable-HTTP MCP servers
+flow through the proxy and are fully inspected and blockable. **Local stdio** MCP servers
+never touch the network, so they can't be inspected agentlessly — they're governed by
+**policy** (`MCP_ALLOWED_SERVERS`) and surfaced via the tool definitions the agent sends
+to the LLM API (which the proxy *can* see, so tool-poisoning is still caught). Full
+per-process inspection of local stdio MCP would require a local shim (a future,
+opt-in agent) — deliberately out of scope for the agentless deployment.
+
 ## Keeping secrets & PII out of repos (git)
 
 The AI-tool boundary isn't the only way secrets leak — they also land in code via
@@ -567,7 +597,7 @@ detection to *their* traffic — the core of a design-partner pilot.
 ```
 backend/
   app/
-    detectors/        # prompt-threats (llm_io), shadow-ai (ai_usage), LLM judge (Claude/GPT/Gemini)
+    detectors/        # prompt-threats (llm_io), shadow-ai (ai_usage), mcp-guard (mcp), LLM judge (Claude/GPT/Gemini)
     security.py       # password hashing (PBKDF2) + HS256 JWTs + API keys
     auth.py           # auth dependencies + /api/auth + /api/users + /api/apikeys
     gateway.py        # LLM gateway: /v1/chat/completions (OpenAI) + /v1/messages (Anthropic) + /v1beta (Gemini)
