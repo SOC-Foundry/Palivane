@@ -298,8 +298,8 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
   box-shadow: var(--shadow);
 }
 .login-logo {
-  align-self: center; border-radius: 24px; margin-bottom: 10px;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.45); border: 1px solid var(--border);
+  align-self: center; width: 200px; max-width: 72%; height: auto; margin-bottom: 6px;
+  filter: drop-shadow(0 0 40px rgba(77,163,255,0.12));
 }
 .link-muted { color: var(--muted-2); margin-top: 2px; }
 .link-muted:hover { color: var(--muted); }
