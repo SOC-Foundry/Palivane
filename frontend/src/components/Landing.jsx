@@ -62,7 +62,7 @@ export default function Landing({ onSignIn }) {
         </p>
         <div className="lp-cta">
           <button className="primary-btn slim" onClick={onSignIn}>Open the console →</button>
-          <span className="lp-cta-note">Runs offline · no API key required</span>
+          <span className="lp-cta-note">Core detection runs offline · no API key required</span>
         </div>
       </section>
 
