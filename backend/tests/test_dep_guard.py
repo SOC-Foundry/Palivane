@@ -51,6 +51,41 @@ def test_clean_manifest():
     assert _scan(pkg) == []
 
 
+def test_extract_pinned():
+    from app.detectors.dep_guard import extract_pinned
+    npm = extract_pinned('{"dependencies":{"a":"1.2.3","b":"^2.0.0"}}', "package.json")
+    assert ("npm", "a", "1.2.3") in npm and all(n != "b" for _e, n, _v in npm)   # range skipped
+    py = extract_pinned("django==3.2.1\nflask>=2\n# c\n", "requirements.txt")
+    assert ("PyPI", "django", "3.2.1") in py and all(n != "flask" for _e, n, _v in py)
+
+
+def test_osv_advisory_flagged(client, raw_client, monkeypatch):
+    import app.main as main
+    import app.osv as osv
+    monkeypatch.setattr(main.settings, "dep_osv_enabled", True)
+    monkeypatch.setattr(osv, "query",
+                        lambda pins: {("PyPI", "django", "1.0"): ["GHSA-xxxx", "CVE-2020-0001"]})
+    key = client.post("/api/apikeys", json={"label": "osv", "actor": "ci@acme.com"}).json()["token"]
+    r = raw_client.post("/api/scan/deps", headers={"X-Warden-Token": key}, json={"files": [
+        {"path": "requirements.txt", "content": "django==1.0\nrequests==2.31.0"}]})
+    body = r.json()
+    assert body["action"] == "block"
+    titles = [s["title"] for f in body["files"] for s in f["signals"]]
+    assert any("OSV" in t for t in titles)
+
+
+def test_osv_disabled_by_default(client, raw_client, monkeypatch):
+    # With OSV off, no network call happens (query would raise if invoked here).
+    import app.osv as osv
+    def _boom(_pins):
+        raise AssertionError("OSV should not be queried when disabled")
+    monkeypatch.setattr(osv, "query", _boom)
+    key = client.post("/api/apikeys", json={"label": "osv2", "actor": "ci@acme.com"}).json()["token"]
+    r = raw_client.post("/api/scan/deps", headers={"X-Warden-Token": key}, json={"files": [
+        {"path": "requirements.txt", "content": "django==1.0"}]})
+    assert r.status_code == 200
+
+
 def test_scan_deps_endpoint(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "deps", "actor": "ci@acme.com"}).json()["token"]
     r = raw_client.post("/api/scan/deps", headers={"X-Warden-Token": key}, json={"files": [

@@ -87,8 +87,16 @@ class Settings:
     # a server not on a non-empty list is flagged (policy-flag stance for shadow MCP).
     mcp_allowed_servers: str = os.getenv("MCP_ALLOWED_SERVERS", "")
     # Extra known-bad dependency names to flag in manifests (comma-separated), merged with
-    # a small built-in denylist. This is a heuristic risk scan, not a CVE/advisory feed.
+    # a small built-in denylist.
     dep_denylist: str = os.getenv("DEP_DENYLIST", "")
+    # Opt-in CVE/advisory lookup for pinned dependencies via the OSV.dev batch API. Makes an
+    # outbound call at scan time (agentless / CI-shaped); fails open if unreachable.
+    dep_osv_enabled: bool = os.getenv("DEP_OSV_ENABLED", "").lower() in ("1", "true", "yes")
+    dep_osv_url: str = os.getenv("DEP_OSV_URL", "https://api.osv.dev/v1/querybatch")
+    # IDE-extension vetting: known-bad extension ids (comma-separated) merged with a small
+    # built-in denylist, and an optional approved-extension allowlist (empty = allow all).
+    ide_ext_denylist: str = os.getenv("IDE_EXT_DENYLIST", "")
+    ide_ext_allowed: str = os.getenv("IDE_EXT_ALLOWED", "")
 
 
 settings = Settings()

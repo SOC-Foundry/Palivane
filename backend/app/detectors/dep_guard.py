@@ -48,6 +48,36 @@ def _denylist() -> set[str]:
     return _BUILTIN_DENYLIST | extra
 
 
+_EXACT_VERSION = re.compile(r"^\d+\.\d+")
+_REQ_PIN = re.compile(r"^([A-Za-z0-9._-]+)==([0-9][\w.\-]*)")
+
+
+def extract_pinned(content: str, subject: str = "") -> list[tuple[str, str, str]]:
+    """Extract (ecosystem, name, version) for dependencies pinned to a concrete version —
+    the only ones an advisory feed (OSV) can resolve. Ranges (^, ~, >=) are skipped."""
+    fname = (subject or "").lower()
+    pins: list[tuple[str, str, str]] = []
+    if fname.endswith(".json") or content.lstrip().startswith("{"):
+        try:
+            j = json.loads(content)
+        except (ValueError, TypeError):
+            return []
+        if not isinstance(j, dict):
+            return []
+        for sect in ("dependencies", "devDependencies"):
+            for name, spec in (j.get(sect) or {}).items():
+                if isinstance(spec, str):
+                    s = spec.strip().lstrip("=v")
+                    if _EXACT_VERSION.match(s):
+                        pins.append(("npm", name, s))
+    else:
+        for raw in content.splitlines():
+            m = _REQ_PIN.match(raw.strip())
+            if m:
+                pins.append(("PyPI", m.group(1), m.group(2)))
+    return pins
+
+
 class DepGuardDetector:
     name = "dep_guard"
     surfaces: set[Surface] = {Surface.DEPS}

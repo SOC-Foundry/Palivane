@@ -24,6 +24,7 @@ class Surface(str, Enum):
     AI_USAGE = "ai_usage" # Shadow-AI governance — content sent to external AI tools
     MCP = "mcp"           # Agentic tool-use — MCP calls from AI coding assistants
     DEPS = "deps"         # Dependency manifests — supply-chain risk in package files
+    IDE = "ide"           # IDE extensions — known-bad / unapproved editor plugins
 
 
 class Category(str, Enum):

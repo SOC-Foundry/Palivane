@@ -29,6 +29,7 @@ from .schemas import (
     BatchAnalyzeRequest,
     CodeScanRequest,
     CoverageRequest,
+    IDEExtScan,
     MCPConfigScan,
     MCPIngest,
     ProvisionRequest,
@@ -419,26 +420,76 @@ def scan_deps(
     """Vet dependency manifests (package.json, requirements.txt) for supply-chain risk in
     CI / the git plane — install-script abuse, non-registry sources, and known-bad packages.
 
-    Heuristic risk scan (no external advisory feed). Token-gated; returns an overall action
-    plus per-file detail for manifests that aren't clean."""
+    Heuristic checks always run; when DEP_OSV_ENABLED is set, pinned dependencies are also
+    checked against the OSV.dev advisory feed for known CVEs (fails open on outage).
+    Token-gated; returns an overall action plus per-file detail for manifests that aren't clean."""
+    from .detectors.dep_guard import extract_pinned
+    from . import osv
     tenant_id, _ = _ingest_auth(x_warden_token, db)
     _enforce_rate(db, tenant_id)
 
+    files = body.files[:1000]
+
+    # Optional OSV advisory lookup — batch every pinned dep across all files in one call.
+    vulns: dict = {}
+    if settings.dep_osv_enabled:
+        all_pins: list = []
+        for f in files:
+            all_pins.extend(extract_pinned(f.content, f.path))
+        vulns = osv.query(list(dict.fromkeys(all_pins)))
+
     flagged: list[dict] = []
     worst = 0
-    for f in body.files[:1000]:
+    for f in files:
         item = AnalysisInput(content=f.content, subject=f.path, channel="deps",
                              surface=Surface.DEPS)
         result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
                               db=db, tenant_id=tenant_id)
-        action = _action_for(result["severity"])
-        worst = max(worst, _ACTION_RANK.get(result["severity"], 0))
+        signals = list(result["signals"])
+        # Merge OSV advisories for this file's pinned deps.
+        for (eco, name, ver) in extract_pinned(f.content, f.path):
+            ids = vulns.get((eco, name, ver))
+            if ids:
+                signals.append({
+                    "category": "dependency_risk", "title": "Known vulnerability (OSV)",
+                    "detail": f"{name}@{ver} has {len(ids)} known advisory(ies): "
+                              f"{', '.join(ids[:4])}.",
+                    "weight": 0.9, "confidence": 0.95, "detector": "osv",
+                    "evidence": ", ".join(ids[:4]),
+                })
+        severity = "critical" if any(s["detector"] == "osv" for s in signals) else result["severity"]
+        action = _action_for(severity)
+        worst = max(worst, _ACTION_RANK.get(severity, 0))
         if action != "allow":
-            flagged.append({"path": f.path, "action": action, "severity": result["severity"],
-                            "risk_score": result["risk_score"], "signals": result["signals"]})
+            flagged.append({"path": f.path, "action": action, "severity": severity,
+                            "risk_score": result["risk_score"], "signals": signals})
 
     overall = "block" if worst >= 3 else ("warn" if worst >= 2 else "allow")
-    return {"action": overall, "scanned": len(body.files[:1000]), "files": flagged}
+    return {"action": overall, "scanned": len(files), "files": flagged}
+
+
+@app.post("/api/scan/ide-extensions")
+def scan_ide_extensions(
+    body: IDEExtScan,
+    x_warden_token: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Vet a list of IDE extensions (from `.vscode/extensions.json` in CI, or an MDM software
+    inventory) for known-bad / unapproved editor plugins. Agentless — reads a list, not a
+    running IDE. Token-gated; returns an action plus the flagged extensions."""
+    tenant_id, _ = _ingest_auth(x_warden_token, db)
+    _enforce_rate(db, tenant_id)
+    content = body.content or "\n".join(body.extensions)
+    item = AnalysisInput(content=content, subject="ide-extensions", channel="ide",
+                         surface=Surface.IDE)
+    result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
+                          db=db, tenant_id=tenant_id)
+    return {
+        "action": _action_for(result["severity"]),
+        "severity": result["severity"],
+        "risk_score": result["risk_score"],
+        "extensions": result["signals"],
+    }
 
 
 @app.get("/api/findings")
