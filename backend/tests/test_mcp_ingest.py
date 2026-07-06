@@ -59,6 +59,16 @@ def test_untrusted_server_flagged_with_allowlist(client, raw_client, monkeypatch
     assert "mcp_untrusted_server" in {s["category"] for s in body["signals"]}
 
 
+def test_per_tenant_allowlist(client, raw_client):
+    # No global allowlist — an admin sets a per-tenant one via the console (PATCH /tenant).
+    client.patch("/api/tenant", json={"mcp_allowed_servers": "mcp.acme.com"})
+    key = _key(client)
+    off = _post(raw_client, key, method="initialize", server="mcp.random.dev").json()
+    assert "mcp_untrusted_server" in {s["category"] for s in off["signals"]}
+    on = _post(raw_client, key, method="initialize", server="mcp.acme.com").json()
+    assert "mcp_untrusted_server" not in {s["category"] for s in on["signals"]}
+
+
 def test_benign_call_allowed(client, raw_client):
     key = _key(client)
     body = _post(raw_client, key, method="tools/call", tool="list_files",

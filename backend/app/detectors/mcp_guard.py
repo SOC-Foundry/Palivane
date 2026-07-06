@@ -62,8 +62,9 @@ _TOOL_POISON = re.compile(
 )
 
 
-def _allowed_servers() -> set[str]:
-    return {s.strip().lower() for s in settings.mcp_allowed_servers.split(",") if s.strip()}
+def _parse_allow(value) -> set[str]:
+    items = value if isinstance(value, (list, tuple, set)) else str(value or "").split(",")
+    return {str(s).strip().lower() for s in items if str(s).strip()}
 
 
 def _server_allowed(server: str, allow: set[str]) -> bool:
@@ -87,7 +88,9 @@ class MCPGuardDetector:
         signals: list[Signal] = []
 
         # 1) Untrusted MCP server (policy-flag). Only when an allowlist is configured.
-        allow = _allowed_servers()
+        # Prefer the per-tenant allowlist passed in metadata; else the global default.
+        allow = _parse_allow(m["allowed_servers"]) if "allowed_servers" in m \
+            else _parse_allow(settings.mcp_allowed_servers)
         if server and allow and not _server_allowed(server, allow):
             local = transport in ("stdio", "via-llm-api")
             signals.append(Signal(

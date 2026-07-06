@@ -16,6 +16,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   const [org, setOrgState] = useState({
     name: tenant?.name || "", judge: judgeValue(tenant),
     retention_days: tenant?.retention_days ?? 0, rate_limit: tenant?.rate_limit ?? 0,
+    mcp_allowed_servers: tenant?.mcp_allowed_servers || "",
   });
   const setField = (k) => (e) => setOrgState((o) => ({ ...o, [k]: e.target.value }));
 
@@ -25,6 +26,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
       const t = await api.updateTenant({
         name: org.name, judge: org.judge,
         retention_days: Number(org.retention_days), rate_limit: Number(org.rate_limit),
+        mcp_allowed_servers: org.mcp_allowed_servers,
       });
       onTenant?.(t);
       flash("Organization settings saved.");
@@ -153,6 +155,9 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
             <input type="number" min="0" value={org.retention_days} onChange={setField("retention_days")} /></label>
           <label>Gateway rate limit (req/min, 0 = unlimited)
             <input type="number" min="0" value={org.rate_limit} onChange={setField("rate_limit")} /></label>
+          <label className="field-wide">Approved MCP servers (comma-separated hosts; empty = don't flag)
+            <input placeholder="mcp.githubcopilot.com, mcp.acme.com"
+                   value={org.mcp_allowed_servers} onChange={setField("mcp_allowed_servers")} /></label>
         </div>
         <button className="primary-btn slim">Save organization</button>
       </form>

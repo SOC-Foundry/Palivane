@@ -238,6 +238,15 @@ def _mcp_filter(signals: list) -> list:
     return [s for s in signals if s.category.value not in _MCP_DROP]
 
 
+def _tenant_mcp_allow(tenant_id: int | None, db: Session) -> str:
+    """Effective MCP server allowlist for a tenant: its own list, else the global default."""
+    if tenant_id is not None:
+        t = db.get(Tenant, tenant_id)
+        if t and (t.mcp_allowed_servers or "").strip():
+            return t.mcp_allowed_servers.strip()
+    return settings.mcp_allowed_servers
+
+
 @app.post("/api/ingest/mcp")
 def ingest_mcp(
     body: MCPIngest,
@@ -267,6 +276,7 @@ def ingest_mcp(
             "method": body.method, "server": body.server, "tool": body.tool,
             "args_text": body.args_text, "resource": body.resource,
             "tool_descriptions": body.tool_descriptions, "transport": body.transport,
+            "allowed_servers": _tenant_mcp_allow(tenant_id, db),
         },
     )
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
@@ -319,6 +329,7 @@ def scan_mcp_config(
 
     flagged: list[dict] = []
     worst = 0
+    allowed = _tenant_mcp_allow(tenant_id, db)
     servers = _parse_mcp_servers(body.content)
     for s in servers:
         name = s.get("name", "")
@@ -338,7 +349,8 @@ def scan_mcp_config(
             content=args_text or name, subject=f"mcp-config: {name}", channel="mcp-config",
             surface=Surface.MCP,
             metadata={"method": "initialize", "server": server_host, "tool": name,
-                      "args_text": args_text, "transport": transport},
+                      "args_text": args_text, "transport": transport,
+                      "allowed_servers": allowed},
         )
         result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
                               db=db, tenant_id=tenant_id, signal_filter=_mcp_filter)
