@@ -207,6 +207,80 @@ def test_response_side_allows_benign_tool_use(client, monkeypatch):
     assert r.status_code == 200
 
 
+# --- Streaming (SSE) tool_use inspection ------------------------------------------
+
+_ANTHROPIC_SSE = (
+    'event: content_block_start\n'
+    'data: {"type":"content_block_start","index":0,"content_block":'
+    '{"type":"tool_use","id":"t","name":"run_shell","input":{}}}\n\n'
+    'event: content_block_delta\n'
+    'data: {"type":"content_block_delta","index":0,"delta":'
+    '{"type":"input_json_delta","partial_json":"{\\"command\\":\\"rm -rf / "}}\n\n'
+    'event: content_block_delta\n'
+    'data: {"type":"content_block_delta","index":0,"delta":'
+    '{"type":"input_json_delta","partial_json":"--no-preserve-root\\"}"}}\n\n'
+    'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+)
+
+
+def test_stream_tool_use_parsers():
+    from app import gateway
+    a = gateway._stream_tool_use_anthropic(_ANTHROPIC_SSE)
+    assert a["tool"] == "run_shell" and "rm -rf /" in a["args_text"]
+    openai_sse = (
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":'
+        '{"name":"run","arguments":"{\\"command\\":\\"rm -rf "}}]}}]}\n\n'
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":'
+        '{"arguments":"/\\"}"}}]}}]}\n\ndata: [DONE]\n\n'
+    )
+    o = gateway._stream_tool_use_openai(openai_sse)
+    assert o["tool"] == "run" and "rm -rf" in o["args_text"]
+
+
+def test_stream_enforce_blocks_dangerous_tool_use(client, monkeypatch):
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", True)
+    monkeypatch.setattr(gateway, "resolve_upstream", lambda *a, **k: ("https://up", "key"))
+    monkeypatch.setattr(gateway, "_read_stream",
+                        lambda url, payload, headers: (200, "text/event-stream", _ANTHROPIC_SSE.encode()))
+    r = client.post("/v1/messages", json={"model": "claude-opus-4-8", "stream": True,
+                    "messages": [{"role": "user", "content": "clean up temp files"}]},
+                    headers={"x-api-key": _token(client), "Authorization": ""})
+    assert r.status_code == 400
+    assert "dangerous_command" in r.json()["error"]["message"]
+
+
+def test_stream_enforce_replays_benign(client, monkeypatch):
+    from app import gateway
+    benign = ('event: content_block_start\n'
+              'data: {"type":"content_block_start","index":0,"content_block":'
+              '{"type":"tool_use","id":"t","name":"list_files","input":{}}}\n\n'
+              'event: message_stop\ndata: {"type":"message_stop"}\n\n')
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", True)
+    monkeypatch.setattr(gateway, "resolve_upstream", lambda *a, **k: ("https://up", "key"))
+    monkeypatch.setattr(gateway, "_read_stream",
+                        lambda url, payload, headers: (200, "text/event-stream", benign.encode()))
+    r = client.post("/v1/messages", json={"model": "claude-opus-4-8", "stream": True,
+                    "messages": [{"role": "user", "content": "list files"}]},
+                    headers={"x-api-key": _token(client), "Authorization": ""})
+    assert r.status_code == 200
+    assert b"content_block_start" in r.content   # SSE replayed verbatim
+
+
+def test_stream_monitor_passthrough(client, monkeypatch):
+    from app import gateway
+    from fastapi.responses import Response as _Resp
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
+    monkeypatch.setattr(gateway, "resolve_upstream", lambda *a, **k: ("https://up", "key"))
+    monkeypatch.setattr(gateway, "_passthrough_stream",
+                        lambda url, payload, headers: _Resp(content=b"live-stream",
+                                                            media_type="text/event-stream"))
+    r = client.post("/v1/messages", json={"model": "claude-opus-4-8", "stream": True,
+                    "messages": [{"role": "user", "content": "hello"}]},
+                    headers={"x-api-key": _token(client), "Authorization": ""})
+    assert r.status_code == 200 and r.content == b"live-stream"
+
+
 # --- Gemini /v1beta/models/{model}:generateContent (google-genai SDK path) ---
 
 GEMINI_PATH = "/v1beta/models/gemini-2.5-flash:generateContent"
