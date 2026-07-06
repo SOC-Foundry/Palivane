@@ -39,11 +39,15 @@ class Tenant(Base):
     retention_days = Column(Integer, default=0)
     # Gateway requests allowed per minute for this org (0 = inherit global default).
     rate_limit = Column(Integer, default=0)
+    # Approved MCP server hosts for this org (comma-separated). Empty = inherit the global
+    # MCP_ALLOWED_SERVERS; a non-empty list flags MCP activity to any server not on it.
+    mcp_allowed_servers = Column(String(1024), default="")
 
     def to_dict(self) -> dict:
         return {"id": self.id, "slug": self.slug, "name": self.name,
                 "judge_enabled": self.judge_enabled, "retention_days": self.retention_days,
-                "rate_limit": self.rate_limit}
+                "rate_limit": self.rate_limit,
+                "mcp_allowed_servers": self.mcp_allowed_servers or ""}
 
 
 class User(Base):

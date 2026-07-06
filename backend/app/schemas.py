@@ -127,6 +127,7 @@ class TenantUpdate(BaseModel):
     judge: Literal["on", "off", "inherit"] | None = None
     retention_days: int | None = None   # 0 = keep findings forever
     rate_limit: int | None = None       # gateway requests/min (0 = inherit global default)
+    mcp_allowed_servers: str | None = None  # comma-separated approved MCP server hosts
 
 
 class TenantDelete(BaseModel):
