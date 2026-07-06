@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Build + deploy Warden to Cloud Run (single-origin: SPA + API), connected to Cloud SQL.
+# Prereqs (once): see deploy/cloudrun/README.md — APIs enabled, Artifact Registry repo,
+# a Cloud SQL Postgres instance, and Secret Manager secrets created.
+#
+#   PROJECT_ID=my-proj REGION=us-central1 \
+#   SQL_CONNECTION=my-proj:us-central1:warden-db \
+#   DOMAIN=app.warden.io \
+#   ./deploy/cloudrun/deploy.sh
+set -euo pipefail
+
+: "${PROJECT_ID:?set PROJECT_ID}"
+REGION="${REGION:-us-central1}"
+SERVICE="${SERVICE:-warden}"
+REPO="${REPO:-warden}"
+IMAGE_NAME="${IMAGE_NAME:-warden}"
+: "${SQL_CONNECTION:?set SQL_CONNECTION (project:region:instance)}"
+DOMAIN="${DOMAIN:-}"
+TAG="$(git rev-parse --short HEAD 2>/dev/null || echo latest)"
+IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${IMAGE_NAME}:${TAG}"
+
+echo "==> Building & pushing $IMAGE"
+gcloud builds submit --project "$PROJECT_ID" \
+  --config deploy/cloudrun/cloudbuild.yaml \
+  --substitutions "_REGION=${REGION},_REPO=${REPO},_IMAGE=${IMAGE_NAME},_TAG=${TAG}" .
+
+# Non-secret runtime config. Secrets (DATABASE_URL, WARDEN_SECRET_KEY, provider keys) come
+# from Secret Manager via --set-secrets below.
+ENV_VARS="GATEWAY_ENFORCE=${GATEWAY_ENFORCE:-true}"
+ENV_VARS+=",GATEWAY_BLOCK_SEVERITY=${GATEWAY_BLOCK_SEVERITY:-high}"
+ENV_VARS+=",GATEWAY_ANTHROPIC_BASE=${GATEWAY_ANTHROPIC_BASE:-https://api.anthropic.com}"
+ENV_VARS+=",JUDGE_PROVIDER=${JUDGE_PROVIDER:-auto}"
+ENV_VARS+=",WARDEN_ALLOW_SIGNUP=${WARDEN_ALLOW_SIGNUP:-true}"
+ENV_VARS+=",SEED_ON_START=${SEED_ON_START:-false}"
+[ -n "$DOMAIN" ] && ENV_VARS+=",CORS_ORIGINS=https://${DOMAIN}"
+[ -n "${INGEST_TENANT:-}" ] && ENV_VARS+=",INGEST_TENANT=${INGEST_TENANT}"
+[ -n "${WARDEN_EXTENSION_ID:-}" ] && ENV_VARS+=",WARDEN_EXTENSION_ID=${WARDEN_EXTENSION_ID}"
+
+# Secrets — must exist in Secret Manager (see README). Optional ones are added if present.
+SECRETS="WARDEN_SECRET_KEY=warden-secret-key:latest,DATABASE_URL=warden-database-url:latest"
+for pair in \
+  "GATEWAY_ANTHROPIC_KEY=gateway-anthropic-key" \
+  "OPENAI_API_KEY=openai-api-key" \
+  "GEMINI_API_KEY=gemini-api-key" \
+  "EXTENSION_INGEST_TOKEN=extension-ingest-token"; do
+  name="${pair##*=}"
+  if gcloud secrets describe "$name" --project "$PROJECT_ID" >/dev/null 2>&1; then
+    SECRETS+=",${pair}:latest"
+  fi
+done
+
+echo "==> Deploying Cloud Run service '$SERVICE'"
+gcloud run deploy "$SERVICE" --project "$PROJECT_ID" --region "$REGION" \
+  --image "$IMAGE" \
+  --add-cloudsql-instances "$SQL_CONNECTION" \
+  --set-env-vars "$ENV_VARS" \
+  --set-secrets "$SECRETS" \
+  --allow-unauthenticated \
+  --port 8080 \
+  --cpu 1 --memory 512Mi \
+  --min-instances "${MIN_INSTANCES:-0}" --max-instances "${MAX_INSTANCES:-4}" \
+  --cpu-boost --timeout 300
+
+echo "==> Done. Service URL:"
+gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" \
+  --format 'value(status.url)'
+[ -n "$DOMAIN" ] && echo "Map your domain: gcloud run domain-mappings create --service $SERVICE --domain $DOMAIN --region $REGION"

@@ -676,3 +676,31 @@ def stats(current: User = Depends(get_current_user), db: Session = Depends(get_d
         "by_surface": by_surface,
         "judge_enabled": engine.judge_enabled,
     }
+
+
+# --- Single-origin SPA serving (Cloud Run / any single-container deploy) --------------
+# When WARDEN_STATIC_DIR points at a built frontend (dist), serve it from this same app so
+# the SPA + API share one origin (no nginx). No-op in dev/tests (var unset). Registered
+# last so it never shadows the API routers/routes above.
+import os as _os  # noqa: E402
+
+_STATIC_DIR = _os.getenv("WARDEN_STATIC_DIR", "")
+if _STATIC_DIR and _os.path.isdir(_STATIC_DIR):
+    from fastapi.responses import FileResponse  # noqa: E402
+    from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+    _assets = _os.path.join(_STATIC_DIR, "assets")
+    if _os.path.isdir(_assets):
+        app.mount("/assets", StaticFiles(directory=_assets), name="assets")
+
+    _API_PREFIXES = ("api/", "v1/", "v1beta/", "livez", "readyz", "metrics", "assets/")
+
+    @app.get("/{full_path:path}")
+    def _spa(full_path: str):
+        # Let API/probe paths 404 through the app instead of returning index.html.
+        if full_path.startswith(_API_PREFIXES):
+            raise HTTPException(status_code=404, detail="not found")
+        candidate = _os.path.join(_STATIC_DIR, full_path)
+        if full_path and _os.path.isfile(candidate):
+            return FileResponse(candidate)               # real file (logo, favicon, …)
+        return FileResponse(_os.path.join(_STATIC_DIR, "index.html"))  # SPA routes
