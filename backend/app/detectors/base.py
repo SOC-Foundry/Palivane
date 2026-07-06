@@ -23,6 +23,7 @@ class Surface(str, Enum):
     LLM_IO = "llm_io"     # Protect our AI — prompts/responses on the org's own LLMs
     AI_USAGE = "ai_usage" # Shadow-AI governance — content sent to external AI tools
     MCP = "mcp"           # Agentic tool-use — MCP calls from AI coding assistants
+    DEPS = "deps"         # Dependency manifests — supply-chain risk in package files
 
 
 class Category(str, Enum):
@@ -43,6 +44,8 @@ class Category(str, Enum):
     SENSITIVE_RESOURCE_ACCESS = "sensitive_resource_access"  # tool/resource touches .env, keys, etc.
     DANGEROUS_COMMAND = "dangerous_command"            # tool call runs a high-risk shell command
     TOOL_POISONING = "tool_poisoning"                  # injected instructions in a tool description
+    # --- Supply chain (deps) ---
+    DEPENDENCY_RISK = "dependency_risk"                # risky/malicious dependency in a manifest
 
 
 @dataclass(frozen=True)

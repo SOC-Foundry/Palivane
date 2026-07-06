@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from .detectors import (
     AnalysisInput,
+    DepGuardDetector,
     LLMJudgeDetector,
     MCPGuardDetector,
     PromptThreatDetector,
@@ -25,8 +26,10 @@ class Engine:
         self.prompt_threats = PromptThreatDetector()
         self.shadow_ai = ShadowAIDetector()
         self.mcp_guard = MCPGuardDetector()
+        self.dep_guard = DepGuardDetector()
         self.judge = LLMJudgeDetector()
-        self.detectors = [self.prompt_threats, self.shadow_ai, self.mcp_guard, self.judge]
+        self.detectors = [self.prompt_threats, self.shadow_ai, self.mcp_guard,
+                          self.dep_guard, self.judge]
 
     @property
     def judge_enabled(self) -> bool:

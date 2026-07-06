@@ -1,0 +1,125 @@
+"""Dependency-manifest supply-chain risk (surface=deps).
+
+Vets a dependency manifest (package.json, requirements.txt, pyproject) for the
+supply-chain risks that don't need an external advisory feed — so it runs agentlessly in
+CI / the git plane:
+
+- **install-script abuse** — npm lifecycle scripts (preinstall/install/postinstall) that
+  run shell payloads (`curl … | sh`, `node -e`, `base64 -d | sh`) — the classic malicious
+  package vector;
+- **non-registry sources** — deps pointing at a git URL, http tarball, or local path,
+  which bypass registry review;
+- **known-bad names** — a small built-in denylist plus `DEP_DENYLIST` additions.
+
+This is a heuristic *risk* scan, not a CVE/advisory (OSV) vulnerability feed — that's a
+separate, feed-backed add-on. The manifest kind is taken from the filename in `subject`.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+
+from ..config import settings
+from .base import AnalysisInput, Category, Signal, Surface
+
+# Publicly-documented malicious/typosquat package names (illustrative, extend via DEP_DENYLIST).
+_BUILTIN_DENYLIST = {
+    "crossenv", "cross-env.js", "event-stream-flatmap", "electron-native-notify",
+    "colourama", "python3-dateutil", "jeIlyfish", "reqiests", "urllib3-secure",
+}
+
+# Shell payloads inside an install/lifecycle script.
+_INSTALL_PAYLOAD = re.compile(
+    r"(?:curl|wget)\s+[^\n|;&]*\|\s*(?:ba)?sh"
+    r"|base64\s+-d[^\n|]*\|\s*(?:ba)?sh"
+    r"|node\s+-e\s+['\"].*(?:require\(|https?://|child_process)"
+    r"|python\s+-c\s+['\"].*(?:urllib|requests|socket|exec)"
+    r"|/dev/tcp/|eval\s*\(|powershell\s+-e(?:nc)?\b",
+    re.IGNORECASE,
+)
+_NPM_INSTALL_KEYS = ("preinstall", "install", "postinstall", "prepare", "prepublish")
+# A non-registry source in a version spec (git/url/tarball/local path).
+_NONREGISTRY = re.compile(r"^(?:git\+|git:|https?:|file:|link:|github:|bitbucket:|gitlab:|/|\.\.?/)", re.I)
+
+
+def _denylist() -> set[str]:
+    extra = {s.strip().lower() for s in settings.dep_denylist.split(",") if s.strip()}
+    return _BUILTIN_DENYLIST | extra
+
+
+class DepGuardDetector:
+    name = "dep_guard"
+    surfaces: set[Surface] = {Surface.DEPS}
+
+    def analyze(self, item: AnalysisInput) -> list[Signal]:
+        fname = (item.subject or "").lower()
+        content = item.content or ""
+        if fname.endswith(".json") or content.lstrip().startswith("{"):
+            return self._scan_package_json(content)
+        return self._scan_requirements(content)
+
+    def _sig(self, title: str, detail: str, evidence: str, weight: float, conf: float) -> Signal:
+        return Signal(category=Category.DEPENDENCY_RISK, title=title, detail=detail,
+                      weight=weight, confidence=conf, detector=self.name, evidence=evidence)
+
+    def _scan_package_json(self, content: str) -> list[Signal]:
+        try:
+            j = json.loads(content)
+        except (ValueError, TypeError):
+            return []
+        if not isinstance(j, dict):
+            return []
+        signals: list[Signal] = []
+        deny = self._denylist_signals(
+            {**(j.get("dependencies") or {}), **(j.get("devDependencies") or {})}.items())
+        signals.extend(deny)
+
+        scripts = j.get("scripts") or {}
+        if isinstance(scripts, dict):
+            for k in _NPM_INSTALL_KEYS:
+                v = scripts.get(k)
+                if isinstance(v, str) and _INSTALL_PAYLOAD.search(v):
+                    signals.append(self._sig(
+                        "Malicious install script",
+                        f"The '{k}' lifecycle script runs a shell payload on install — the "
+                        f"classic malicious-package vector.",
+                        f"{k}: {v[:100]}", 0.95, 0.9))
+
+        for name, spec in {**(j.get("dependencies") or {}),
+                           **(j.get("devDependencies") or {})}.items():
+            if isinstance(spec, str) and _NONREGISTRY.search(spec.strip()):
+                signals.append(self._sig(
+                    "Non-registry dependency source",
+                    f"Dependency '{name}' resolves from a non-registry source "
+                    f"({spec[:60]}), bypassing registry review.",
+                    f"{name}={spec[:60]}", 0.55, 0.8))
+        return signals
+
+    def _scan_requirements(self, content: str) -> list[Signal]:
+        signals: list[Signal] = []
+        names = []
+        for raw in content.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if _NONREGISTRY.search(line) or line.startswith(("-e ", "--")):
+                signals.append(self._sig(
+                    "Non-registry dependency source",
+                    "A requirement resolves from a URL / VCS / local path, bypassing index review.",
+                    line[:80], 0.55, 0.8))
+                continue
+            names.append(re.split(r"[<>=!~\[ ]", line, 1)[0].strip())
+        signals.extend(self._denylist_signals((n, "") for n in names if n))
+        return signals
+
+    def _denylist_signals(self, items) -> list[Signal]:
+        deny = _denylist()
+        out = []
+        for name, _spec in items:
+            if isinstance(name, str) and name.strip().lower() in deny:
+                out.append(self._sig(
+                    "Known-bad dependency",
+                    f"Dependency '{name}' is on the malicious/typosquat denylist.",
+                    name, 0.95, 0.9))
+        return out
