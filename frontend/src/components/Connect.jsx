@@ -26,7 +26,18 @@ export default function Connect({ tenant }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [provBusy, setProvBusy] = useState("");
+  const [proxyHost, setProxyHost] = useState("");
+  const [packBusy, setPackBusy] = useState(false);
   const origin = window.location.origin;
+
+  async function getPolicyPack() {
+    setPackBusy(true); setErr(null);
+    try {
+      const res = await api.policyPack({ base_url: origin, proxy_host: proxyHost });
+      Object.entries(res.artifacts).forEach(([name, content]) => download(name, content));
+    } catch (e) { setErr(String(e.message || e)); }
+    finally { setPackBusy(false); }
+  }
 
   async function mint() {
     setBusy(true); setErr(null);
@@ -120,6 +131,21 @@ export default function Connect({ tenant }) {
         </div>
         <p className="muted" style={{ marginTop: 8 }}>Each download mints a new enrollment token —
            treat the file as a secret; revoke it anytime under enrollment tokens.</p>
+      </div>
+
+      <div className="connect-card">
+        <h3>⑤ MDM policy pack (agentless enforcement)</h3>
+        <p className="muted">Download the config your MDM (Jamf / Intune / GPO) pushes to enforce
+           policy with no Warden agent: VS Code extension allowlist, system-proxy profiles
+           (macOS/Windows), browser force-install, and a CA note. Uses this org's approved-extension
+           lists. See <code>docs/mdm-policy-pack.md</code>.</p>
+        <div className="form-row" style={{ gap: 10 }}>
+          <input placeholder="egress proxy host (e.g. proxy.corp.com)"
+                 value={proxyHost} onChange={(e) => setProxyHost(e.target.value)} />
+          <button className="primary-btn slim" disabled={packBusy} onClick={getPolicyPack}>
+            {packBusy ? "…" : "Download policy pack"}
+          </button>
+        </div>
       </div>
     </div>
   );
