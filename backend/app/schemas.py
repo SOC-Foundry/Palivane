@@ -49,6 +49,13 @@ class MCPConfigScan(BaseModel):
     record: bool = False   # persist non-clean servers as findings (off by default)
 
 
+class IDEExtScan(BaseModel):
+    """IDE extensions to vet — a list of ids, or a `.vscode/extensions.json` file content."""
+    extensions: list[str] = Field(default_factory=list)
+    content: str = ""       # e.g. .vscode/extensions.json (recommendations)
+    record: bool = False
+
+
 class CodeFile(BaseModel):
     path: str = ""
     content: str

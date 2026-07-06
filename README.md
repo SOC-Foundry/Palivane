@@ -173,6 +173,8 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `MCP_BLOCK_SEVERITY`| `high`                     | Block an MCP action when its verdict severity is at/above this. |
 | `MCP_ALLOWED_SERVERS` | *(empty)*                | Global allowlist of approved MCP server hosts (comma-separated); a tenant's own list (Settings) overrides. Empty = don't flag on server identity. |
 | `DEP_DENYLIST`      | *(empty)*                  | Extra known-bad dependency names to flag in manifests (comma-separated), merged with a small built-in denylist. |
+| `DEP_OSV_ENABLED`   | `false`                    | Opt-in: check pinned dependencies against the OSV.dev advisory feed for known CVEs (outbound call at scan time; fails open). |
+| `IDE_EXT_DENYLIST` / `IDE_EXT_ALLOWED` | *(empty)*     | Known-bad IDE extension ids to flag (merged with a built-in denylist) / an approved-extension allowlist (empty = allow all). |
 
 ## Authentication & multi-tenancy
 
@@ -297,7 +299,8 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/ingest/ai-usage`   | Score content captured by the browser extension / proxy (`ai_usage`); returns allow/warn/block. Token-gated. |
 | POST   | `/api/ingest/mcp`        | Score an MCP tool call / resource read / tool listing captured by the proxy (`mcp`) — sensitive-resource access, dangerous commands, untrusted servers, tool poisoning. Returns allow/warn/block. Token-gated. |
 | POST   | `/api/scan/mcp-config`   | Vet an MCP config file (`.mcp.json`, Cursor/VS Code) in CI/console — enumerates declared servers (incl. local stdio) and flags unapproved servers, dangerous launch commands, and secrets in config. Token-gated. |
-| POST   | `/api/scan/deps`         | Vet dependency manifests (`package.json`, `requirements.txt`) for supply-chain risk — install-script abuse, non-registry sources, known-bad packages. Heuristic (no CVE feed). Token-gated. |
+| POST   | `/api/scan/deps`         | Vet dependency manifests (`package.json`, `requirements.txt`) for supply-chain risk — install-script abuse, non-registry sources, known-bad packages, and (opt-in) known CVEs for pinned deps via OSV. Token-gated. |
+| POST   | `/api/scan/ide-extensions` | Vet a list of IDE extensions (`.vscode/extensions.json` in CI, or MDM inventory) for known-bad / unapproved editor plugins. Token-gated. |
 | POST   | `/api/scan/code`         | Scan changed files (pre-commit hook / CI) for secrets & PII before they reach a repo; ignores `source_code_leak`. Returns a per-file allow/warn/block. Token-gated. |
 | GET    | `/api/findings`          | List the tenant's findings (filter by `severity`, `status`). |
 | GET    | `/api/findings/{id}`     | Full finding detail with signal breakdown. |
@@ -556,11 +559,13 @@ push protection — that's the primary secrets gate; Warden adds custom org patt
 coverage, and one console/policy across AI egress *and* commits. Setup in
 [`git/README.md`](git/README.md).
 
-The same CI/git boundary also carries two **agentless supply-chain checks** for AI coding
-setups: `POST /api/scan/mcp-config` (shadow/malicious MCP servers declared in `.mcp.json`)
-and `POST /api/scan/deps` (install-script abuse, non-registry sources, known-bad packages
-in `package.json`/`requirements.txt`) — so a repo can't introduce a rogue MCP server or a
-malicious dependency without a failing check.
+The same CI/git boundary also carries **agentless supply-chain checks** for AI coding
+setups: `POST /api/scan/mcp-config` (shadow/malicious MCP servers declared in `.mcp.json`),
+`POST /api/scan/deps` (install-script abuse, non-registry sources, known-bad packages, and
+opt-in OSV CVE lookup for pinned deps in `package.json`/`requirements.txt`), and
+`POST /api/scan/ide-extensions` (known-bad / unapproved editor plugins from
+`.vscode/extensions.json` or MDM inventory) — so a repo or workstation can't introduce a
+rogue MCP server, a malicious dependency, or a banned extension without a failing check.
 
 ```yaml
 # .github/workflows/warden-secret-scan.yml — fail a PR that adds secrets/PII
