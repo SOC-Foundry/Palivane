@@ -17,20 +17,22 @@ this LLM traffic even when the tool is a *local* stdio MCP server — letting Wa
 sensitive-file access, dangerous commands, tool poisoning, and secrets-in-results with no
 endpoint agent. This runs on the **request** (the tool_use/tool_result already in history)
 *and* on the **response** (the tool_use the model just requested) — so a dangerous action
-can be blocked before the client executes it. (Response-side covers non-streaming
-responses; SSE streaming inspection is a separate follow-up.)
+can be blocked before the client executes it. **Streaming (SSE)** is handled too: monitor
+mode streams through live (recorded request-side next turn), enforce mode buffers the turn,
+inspects the assembled tool_use, and blocks or replays it verbatim.
 """
 
 from __future__ import annotations
 
 import hmac
+import json
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -290,16 +292,113 @@ def _response_activity(resp: dict) -> dict | None:
     return {"method": "tools/call", "tool": tool_name, "args_text": "\n".join(args)[:20000]}
 
 
+def _capture_tool_activity(tool_name: str, args_text: str, tool: str,
+                           principal: Principal, db: Session) -> dict | None:
+    """Analyze one assembled tool call on the mcp surface (shared by the response-side and
+    streaming paths)."""
+    if not args_text:
+        return None
+    item = AnalysisInput(
+        content=args_text, subject=f"agent {tool_name}".strip(), sender=principal.actor,
+        channel=tool or "agent", surface=Surface.MCP,
+        metadata={"method": "tools/call", "tool": tool_name, "args_text": args_text})
+    return run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
+                        signal_filter=_mcp_sig_filter)
+
+
 def _capture_response_agentic(resp: dict, tool: str, principal: Principal, db: Session) -> dict | None:
     act = _response_activity(resp)
     if not act:
         return None
-    item = AnalysisInput(
-        content=act["args_text"], subject=f"agent {act['tool']}".strip(), sender=principal.actor,
-        channel=tool or "agent", surface=Surface.MCP,
-        metadata={"method": act["method"], "tool": act["tool"], "args_text": act["args_text"]})
-    return run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
-                        signal_filter=_mcp_sig_filter)
+    return _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
+
+
+# --- Streaming (SSE) tool_use inspection ----------------------------------------------
+
+def _sse_json(text: str):
+    """Yield parsed JSON objects from SSE `data:` lines."""
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("data:"):
+            payload = line[5:].strip()
+            if payload and payload != "[DONE]":
+                try:
+                    yield json.loads(payload)
+                except (ValueError, TypeError):
+                    pass
+
+
+def _stream_tool_use_anthropic(text: str) -> dict | None:
+    """Assemble tool_use (name + input) from an Anthropic streamed response — content_block_start
+    carries the tool name, input_json_delta fragments accumulate the input JSON."""
+    idx_name, idx_json = {}, {}
+    for evt in _sse_json(text):
+        t = evt.get("type")
+        if t == "content_block_start":
+            cb = evt.get("content_block") or {}
+            if cb.get("type") == "tool_use":
+                idx_name[evt.get("index")] = cb.get("name", "")
+                idx_json.setdefault(evt.get("index"), "")
+        elif t == "content_block_delta":
+            d = evt.get("delta") or {}
+            if d.get("type") == "input_json_delta" and evt.get("index") in idx_json:
+                idx_json[evt.get("index")] += d.get("partial_json", "")
+    return _assemble_tool_use(idx_name, idx_json)
+
+
+def _stream_tool_use_openai(text: str) -> dict | None:
+    """Assemble tool_use from an OpenAI streamed response — choices[].delta.tool_calls[]
+    with a name (first fragment) and accumulating function.arguments."""
+    idx_name, idx_json = {}, {}
+    for evt in _sse_json(text):
+        for ch in evt.get("choices") or []:
+            for tc in (ch.get("delta") or {}).get("tool_calls") or []:
+                i = tc.get("index", 0)
+                fn = tc.get("function") or {}
+                if fn.get("name"):
+                    idx_name[i] = fn["name"]
+                    idx_json.setdefault(i, "")
+                if isinstance(fn.get("arguments"), str):
+                    idx_json[i] = idx_json.get(i, "") + fn["arguments"]
+    return _assemble_tool_use(idx_name, idx_json)
+
+
+def _assemble_tool_use(idx_name: dict, idx_json: dict) -> dict | None:
+    if not idx_name:
+        return None
+    names, args = [], []
+    for i, name in idx_name.items():
+        names.append(name)
+        raw = idx_json.get(i, "")
+        try:
+            _harvest_strings(json.loads(raw), args)
+        except (ValueError, TypeError):
+            if raw:
+                args.append(raw)
+    return {"tool": names[0], "args_text": "\n".join(args)[:20000]}
+
+
+def _read_stream(url: str, payload: dict, headers: dict) -> tuple[int, str, bytes]:
+    """Buffer a streamed upstream response (enforce mode needs the whole turn to inspect
+    the tool_use before it reaches the client). Factored out so tests can stub it."""
+    chunks: list[bytes] = []
+    with httpx.Client(timeout=120) as c:
+        with c.stream("POST", url, json=payload, headers=headers) as r:
+            status, ctype = r.status_code, r.headers.get("content-type", "text/event-stream")
+            for b in r.iter_bytes():
+                chunks.append(b)
+    return status, ctype, b"".join(chunks)
+
+
+def _passthrough_stream(url: str, payload: dict, headers: dict) -> StreamingResponse:
+    """True pass-through streaming (monitor mode) — forward chunks as they arrive so the
+    client keeps live output. The action is still recorded request-side on the next turn."""
+    def gen():
+        with httpx.Client(timeout=120) as c:
+            with c.stream("POST", url, json=payload, headers=headers) as r:
+                for b in r.iter_bytes():
+                    yield b
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 # --- OpenAI shape ---------------------------------------------------------------------
@@ -348,6 +447,16 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
         headers = {"Content-Type": "application/json"}
         if key:
             headers["Authorization"] = f"Bearer {key}"
+        if payload.get("stream"):
+            if not settings.gateway_enforce:
+                return _passthrough_stream(url, payload, headers)   # monitor: live output
+            status, ctype, raw = _read_stream(url, payload, headers)
+            act = _stream_tool_use_openai(raw.decode("utf-8", "replace"))
+            if act:
+                v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
+                if v and _blocked(v):
+                    return _openai_error(v)
+            return Response(content=raw, status_code=status, media_type=ctype)
         with httpx.Client(timeout=60) as c:
             r = c.post(url, json=payload, headers=headers)
         data = r.json()
@@ -403,6 +512,19 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
 
     base, key = resolve_upstream("anthropic", principal.tenant_id, db)
     if key:
+        if payload.get("stream"):
+            url = base.rstrip("/") + "/v1/messages"
+            headers = _anthropic_headers(request, key)
+            if not settings.gateway_enforce:
+                return _passthrough_stream(url, payload, headers)   # monitor: live output
+            # enforce: buffer, inspect the assembled tool_use, block or replay verbatim.
+            status, ctype, raw = _read_stream(url, payload, headers)
+            act = _stream_tool_use_anthropic(raw.decode("utf-8", "replace"))
+            if act:
+                v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
+                if v and _blocked(v):
+                    return _anthropic_error(v)
+            return Response(content=raw, status_code=status, media_type=ctype)
         status, data = _post_upstream_anthropic("/v1/messages", payload, request, base, key)
         # Response-side: block a dangerous tool_use the model just requested, before the
         # client executes it (non-streaming responses).
