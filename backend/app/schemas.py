@@ -42,6 +42,12 @@ class MCPIngest(BaseModel):
     user: str = ""                                     # end-user identity
 
 
+class MCPBatchIngest(BaseModel):
+    """A batch of MCP activities from a long-lived capture client (warden-mcp), so many
+    tool calls cost one request against the tenant's ingest quota."""
+    items: list[MCPIngest] = Field(min_length=1, max_length=200)
+
+
 class MCPConfigScan(BaseModel):
     """An MCP configuration file (.mcp.json, Cursor/VS Code) to vet in CI or the console."""
     content: str = Field(min_length=1)
@@ -134,6 +140,7 @@ class TenantUpdate(BaseModel):
     judge: Literal["on", "off", "inherit"] | None = None
     retention_days: int | None = None   # 0 = keep findings forever
     rate_limit: int | None = None       # gateway requests/min (0 = inherit global default)
+    ingest_rate_limit: int | None = None  # sensor/ingest requests/min (0 = inherit global)
     mcp_allowed_servers: str | None = None  # comma-separated approved MCP server hosts
     ide_ext_allowed: str | None = None      # approved IDE extension ids
     ide_ext_denylist: str | None = None     # blocked IDE extension ids

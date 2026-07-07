@@ -22,13 +22,19 @@ def _stored_content(content: str) -> str:
     return seal(out) if settings.encrypt_findings else out
 
 
+_ALLOW_LEVEL = {"benign", "low"}  # verdicts below the warn threshold
+
+
 def run_analysis(item: AnalysisInput, persist: bool, db: Session,
-                 tenant_id: int | None = None, signal_filter=None) -> dict:
+                 tenant_id: int | None = None, signal_filter=None,
+                 persist_benign: bool = True) -> dict:
     """Analyze one item, optionally persist a Finding, return the API payload.
 
     `tenant_id` attributes the stored finding to an organization (data isolation).
     `signal_filter` (list[Signal] -> list[Signal]) lets a per-tool policy drop expected
-    categories before scoring (e.g. source code from a sanctioned coding assistant)."""
+    categories before scoring (e.g. source code from a sanctioned coding assistant).
+    `persist_benign=False` skips storing allow-level (benign/low) verdicts — used for
+    high-volume sensor capture where benign tool calls are noise, not findings."""
     # A tenant can opt out of the LLM judge (it ships content to the judge provider).
     tenant = db.get(Tenant, tenant_id) if tenant_id is not None else None
     include_judge = not (tenant is not None and tenant.judge_enabled is False)
@@ -38,6 +44,8 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         verdict = score(signal_filter(list(verdict.signals)))
     result = verdict.to_dict()
     finding_id = None
+    if persist and not persist_benign and verdict.severity in _ALLOW_LEVEL:
+        persist = False  # drop benign sensor noise
     if persist:
         finding = Finding(
             tenant_id=tenant_id,

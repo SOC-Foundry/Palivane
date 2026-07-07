@@ -39,6 +39,9 @@ class Tenant(Base):
     retention_days = Column(Integer, default=0)
     # Gateway requests allowed per minute for this org (0 = inherit global default).
     rate_limit = Column(Integer, default=0)
+    # Sensor/ingest requests per minute (capture planes), counted separately from the
+    # gateway so agentic tool-call volume can't starve real LLM traffic (0 = inherit global).
+    ingest_rate_limit = Column(Integer, default=0)
     # Approved MCP server hosts for this org (comma-separated). Empty = inherit the global
     # MCP_ALLOWED_SERVERS; a non-empty list flags MCP activity to any server not on it.
     mcp_allowed_servers = Column(String(1024), default="")
@@ -63,7 +66,7 @@ class Tenant(Base):
     def to_dict(self) -> dict:
         return {"id": self.id, "slug": self.slug, "name": self.name,
                 "judge_enabled": self.judge_enabled, "retention_days": self.retention_days,
-                "rate_limit": self.rate_limit,
+                "rate_limit": self.rate_limit, "ingest_rate_limit": self.ingest_rate_limit or 0,
                 "mcp_allowed_servers": self.mcp_allowed_servers or "",
                 "ide_ext_allowed": self.ide_ext_allowed or "",
                 "ide_ext_denylist": self.ide_ext_denylist or "",
@@ -201,16 +204,19 @@ class AuditLog(Base):
 
 
 class GatewayUsage(Base):
-    """Per-tenant, per-minute gateway request counter. Doubles as the rate-limit window
-    (count in the current minute vs the tenant's limit) and the metering source (sum over
-    a period). One row per tenant per minute; old rows pruned."""
+    """Per-tenant, per-minute request counter, split by `kind` (gateway vs sensor ingest)
+    so high-volume agentic capture never starves the gateway budget. Doubles as the
+    rate-limit window (count this minute vs the tenant's limit for that kind) and the
+    metering source. One row per tenant per minute per kind; old rows pruned."""
 
     __tablename__ = "gateway_usage"
-    __table_args__ = (UniqueConstraint("tenant_id", "window_start", name="uq_usage_tenant_window"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "window_start", "kind",
+                                       name="uq_usage_tenant_window_kind"),)
 
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
     window_start = Column(DateTime, index=True, nullable=False)  # minute-truncated
+    kind = Column(String(16), default="gateway", nullable=False)  # "gateway" | "ingest"
     count = Column(Integer, default=0, nullable=False)
 
 

@@ -25,25 +25,37 @@ def _minute(dt: datetime) -> datetime:
 
 
 def effective_limit(tenant: Tenant | None) -> int:
-    """Requests/minute for this tenant: its own limit, else the global default (0 = off)."""
+    """Gateway requests/minute for this tenant: its own limit, else the global (0 = off)."""
     if tenant is not None and tenant.rate_limit:
         return tenant.rate_limit
     return settings.gateway_rate_limit
 
 
-def record_and_check(db: Session, tenant_id: int | None) -> tuple[bool, int, int]:
-    """Count one gateway request in the current minute and report whether it's allowed.
-    Returns (allowed, count_this_minute, limit). limit==0 means unlimited (always allowed)."""
+def effective_ingest_limit(tenant: Tenant | None) -> int:
+    """Sensor/ingest requests/minute: this tenant's own limit, else the global (0 = off).
+    Separate from the gateway budget so agentic capture can't starve LLM traffic."""
+    if tenant is not None and getattr(tenant, "ingest_rate_limit", 0):
+        return tenant.ingest_rate_limit
+    return settings.ingest_rate_limit
+
+
+def record_and_check(db: Session, tenant_id: int | None, kind: str = "gateway",
+                     limit: int | None = None) -> tuple[bool, int, int]:
+    """Count one request in the current minute for `kind` and report whether it's allowed.
+    Returns (allowed, count_this_minute, limit). limit==0 means unlimited (always allowed).
+    `kind` separates the gateway and sensor-ingest budgets; `limit` overrides the tenant's."""
     if tenant_id is None:
         return True, 0, 0
     tenant = db.get(Tenant, tenant_id)
-    limit = effective_limit(tenant)
+    if limit is None:
+        limit = effective_ingest_limit(tenant) if kind == "ingest" else effective_limit(tenant)
     window = _minute(_now())
     row = (db.query(GatewayUsage)
-           .filter(GatewayUsage.tenant_id == tenant_id, GatewayUsage.window_start == window)
+           .filter(GatewayUsage.tenant_id == tenant_id, GatewayUsage.window_start == window,
+                   GatewayUsage.kind == kind)
            .first())
     if row is None:
-        row = GatewayUsage(tenant_id=tenant_id, window_start=window, count=0)
+        row = GatewayUsage(tenant_id=tenant_id, window_start=window, kind=kind, count=0)
         db.add(row)
     row.count += 1
     db.commit()
@@ -52,24 +64,30 @@ def record_and_check(db: Session, tenant_id: int | None) -> tuple[bool, int, int
 
 
 def usage_summary(db: Session, tenant_id: int, days: int = 7) -> dict:
-    """Metering view for a tenant: current-window count, last-24h total, and per-day totals."""
+    """Metering view for a tenant. The headline fields are gateway traffic (LLM calls);
+    sensor/ingest counts are reported separately (`ingest_*`)."""
     now = _now()
     since = now - timedelta(days=days)
     rows = (db.query(GatewayUsage)
             .filter(GatewayUsage.tenant_id == tenant_id, GatewayUsage.window_start >= since)
             .all())
     day_totals: dict[str, int] = {}
-    last_24h = 0
     cur_window = _minute(now)
-    current = 0
     h24 = now - timedelta(hours=24)
+    current = last_24h = ingest_current = ingest_24h = 0
     for r in rows:
-        day_totals[r.window_start.date().isoformat()] = day_totals.get(
-            r.window_start.date().isoformat(), 0) + r.count
-        if r.window_start >= h24:
-            last_24h += r.count
-        if r.window_start == cur_window:
-            current = r.count
+        if r.kind == "gateway":
+            day_totals[r.window_start.date().isoformat()] = day_totals.get(
+                r.window_start.date().isoformat(), 0) + r.count
+            if r.window_start >= h24:
+                last_24h += r.count
+            if r.window_start == cur_window:
+                current = r.count
+        elif r.kind == "ingest":
+            if r.window_start >= h24:
+                ingest_24h += r.count
+            if r.window_start == cur_window:
+                ingest_current = r.count
     tenant = db.get(Tenant, tenant_id)
     return {
         "window": "1m",
@@ -77,6 +95,9 @@ def usage_summary(db: Session, tenant_id: int, days: int = 7) -> dict:
         "current_window": current,
         "last_24h": last_24h,
         "by_day": dict(sorted(day_totals.items())),
+        "ingest_limit_per_min": effective_ingest_limit(tenant),
+        "ingest_current_window": ingest_current,
+        "ingest_last_24h": ingest_24h,
     }
 
 
