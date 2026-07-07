@@ -1,0 +1,254 @@
+#!/usr/bin/env python3
+"""warden-posture — device posture reporter: IDE extensions + MCP configs.
+
+The CI scan endpoints vet extension lists and MCP configs point-in-time; this script
+turns that into continuous *device* posture without an endpoint agent. It collects what
+is actually installed/configured on this machine and reports it through the existing
+scan APIs, so drift (a new rogue extension, a new unapproved MCP server) surfaces as a
+finding shortly after it happens:
+
+- installed VS Code extensions (`code --list-extensions`) → POST /api/scan/ide-extensions
+- MCP server configs → POST /api/scan/mcp-config, from: ~/.claude.json (Claude Code —
+  a minimal {"mcpServers": …} view is synthesized; the raw file holds unrelated user
+  state and is never posted), ./.mcp.json, VS Code and Cursor user configs.
+
+Runs are cheap and idempotent: a sha256 cache (~/.warden/posture-cache.json) skips the
+POST when nothing changed, so repeated runs don't spam findings. warden-connect installs
+a SessionStart hook that fires `warden-posture --async --quiet` whenever a Claude Code
+session starts; a cron/launchd job works too. Fails open: errors never block anything.
+
+    warden-posture [--force] [--dry-run] [--quiet] [--async]
+
+Config: WARDEN_URL + WARDEN_TOKEN (an ak_… key) from the environment, else from the
+`env` block of ~/.claude/settings.json (written by warden-connect). Stdlib only.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import urllib.request
+from datetime import datetime, timezone
+
+CACHE_PATH = "~/.warden/posture-cache.json"
+
+# MCP config files posted raw (path label → filesystem path).
+_RAW_MCP_CONFIGS = (
+    ("./.mcp.json", ".mcp.json"),
+    ("~/.config/Code/User/mcp.json", "~/.config/Code/User/mcp.json"),
+    ("~/.cursor/mcp.json", "~/.cursor/mcp.json"),
+)
+
+
+def _settings_env(path: str = "~/.claude/settings.json") -> dict:
+    try:
+        with open(os.path.expanduser(path)) as f:
+            env = json.load(f).get("env")
+        return env if isinstance(env, dict) else {}
+    except Exception:
+        return {}
+
+
+def read_config() -> dict:
+    """Backend URL/token: environment first, then ~/.claude/settings.json (the gateway
+    ak_ token doubles as the ingest credential, its base URL locates the backend)."""
+    senv = _settings_env()
+    url = os.getenv("WARDEN_URL") or senv.get("WARDEN_URL", "")
+    token = os.getenv("WARDEN_TOKEN") or senv.get("WARDEN_TOKEN", "")
+    if not token:
+        gw = senv.get("ANTHROPIC_AUTH_TOKEN", "")
+        if isinstance(gw, str) and gw.startswith("ak_"):
+            token = gw
+    if not url:
+        base = senv.get("ANTHROPIC_BASE_URL", "")
+        if isinstance(base, str) and base:
+            url = base.rstrip("/")
+            if url.endswith("/v1"):
+                url = url[: -len("/v1")]
+    return {"url": url.rstrip("/"), "token": token}
+
+
+# --- collection -------------------------------------------------------------------------
+
+def collect_ide_extensions() -> list[str] | None:
+    """Installed VS Code extension ids, or None when `code` isn't available."""
+    code = shutil.which("code")
+    if not code:
+        return None
+    try:
+        out = subprocess.run([code, "--list-extensions"], capture_output=True,
+                             text=True, timeout=5)
+        if out.returncode != 0:
+            return None
+        return sorted({ln.strip() for ln in out.stdout.splitlines() if ln.strip()})
+    except Exception:
+        return None
+
+
+def synthesize_claude_config(raw: str) -> str | None:
+    """A minimal {"mcpServers": …} document from ~/.claude.json — merges the top-level
+    servers with every project's, and carries nothing else from the file."""
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    servers: dict = {}
+    top = data.get("mcpServers")
+    if isinstance(top, dict):
+        servers.update(top)
+    projects = data.get("projects")
+    if isinstance(projects, dict):
+        for proj in projects.values():
+            if isinstance(proj, dict) and isinstance(proj.get("mcpServers"), dict):
+                for name, cfg in proj["mcpServers"].items():
+                    servers.setdefault(name, cfg)
+    if not servers:
+        return None
+    return json.dumps({"mcpServers": servers}, sort_keys=True)
+
+
+def find_mcp_configs(cwd: str = ".") -> list[tuple[str, str]]:
+    """(path-label, canonical content) pairs for every MCP config present on the device."""
+    found: list[tuple[str, str]] = []
+    claude_path = os.path.expanduser("~/.claude.json")
+    if os.path.exists(claude_path):
+        try:
+            synth = synthesize_claude_config(open(claude_path).read())
+            if synth:
+                found.append(("~/.claude.json", synth))
+        except OSError:
+            pass
+    for label, path in _RAW_MCP_CONFIGS:
+        p = os.path.join(cwd, ".mcp.json") if label == "./.mcp.json" else os.path.expanduser(path)
+        if os.path.exists(p):
+            try:
+                found.append((label, open(p).read()))
+            except OSError:
+                pass
+    return found
+
+
+# --- change-dedup cache -----------------------------------------------------------------
+
+def digest(content: str) -> str:
+    return hashlib.sha256(content.encode()).hexdigest()
+
+
+def load_cache(path: str) -> dict:
+    try:
+        with open(os.path.expanduser(path)) as f:
+            cache = json.load(f)
+        if isinstance(cache, dict) and isinstance(cache.get("entries"), dict):
+            return cache
+    except Exception:
+        pass
+    return {"version": 1, "backend": "", "entries": {}}
+
+
+def save_cache(path: str, cache: dict) -> None:
+    p = os.path.expanduser(path)
+    os.makedirs(os.path.dirname(p), mode=0o700, exist_ok=True)
+    with open(p, "w") as f:
+        json.dump(cache, f, indent=2)
+    os.chmod(p, 0o600)
+
+
+def should_post(cache: dict, backend: str, key: str, dig: str) -> bool:
+    """Post when the content changed since the last successful report — or when the
+    backend changed (a new backend has none of our earlier reports)."""
+    if cache.get("backend") != backend:
+        return True
+    entry = cache["entries"].get(key)
+    return not (isinstance(entry, dict) and entry.get("sha256") == dig)
+
+
+def _mark_posted(cache: dict, backend: str, key: str, dig: str) -> None:
+    if cache.get("backend") != backend:
+        cache["backend"] = backend
+        cache["entries"] = {}
+    cache["entries"][key] = {"sha256": dig,
+                             "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+
+
+# --- reporting --------------------------------------------------------------------------
+
+def _post(cfg: dict, api_path: str, body: dict, timeout: float = 10.0) -> bool:
+    """POST one report; True only on 2xx (so failures retry next run)."""
+    try:
+        req = urllib.request.Request(
+            cfg["url"] + api_path, method="POST", data=json.dumps(body).encode(),
+            headers={"content-type": "application/json", "X-Warden-Token": cfg["token"]},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return 200 <= r.status < 300
+    except Exception:
+        return False
+
+
+def run(cfg: dict, cache_path: str = CACHE_PATH, cwd: str = ".",
+        force: bool = False, dry_run: bool = False, quiet: bool = False) -> int:
+    say = (lambda *a: None) if quiet else print
+    cache = load_cache(cache_path)
+    reported = skipped = 0
+
+    items: list[tuple[str, str, dict, str]] = []  # (key, api_path, body, canonical)
+    exts = collect_ide_extensions()
+    if exts is not None:
+        canonical = "\n".join(exts)
+        items.append(("ide-extensions", "/api/scan/ide-extensions",
+                      {"extensions": exts, "record": True}, canonical))
+    for label, content in find_mcp_configs(cwd):
+        items.append((f"mcp:{label}", "/api/scan/mcp-config",
+                      {"content": content, "path": label, "record": True}, content))
+
+    for key, api_path, body, canonical in items:
+        dig = digest(canonical)
+        if not force and not should_post(cache, cfg["url"], key, dig):
+            skipped += 1
+            continue
+        if dry_run:
+            say(f"would post {key}")
+            reported += 1
+            continue
+        if _post(cfg, api_path, body):
+            _mark_posted(cache, cfg["url"], key, dig)
+            reported += 1
+            say(f"posted {key}")
+        else:
+            say(f"failed {key} (will retry next run)")
+
+    if not dry_run and reported:
+        save_cache(cache_path, cache)
+    say(f"warden-posture: {reported} reported, {skipped} unchanged")
+    return 0
+
+
+def main() -> int:
+    args = sys.argv[1:]
+    if "--async" in args:
+        # Detach and return immediately — the SessionStart-hook entrypoint.
+        rest = [a for a in args if a != "--async"]
+        subprocess.Popen([sys.executable, os.path.abspath(__file__), *rest, "--quiet"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+        return 0
+    cfg = read_config()
+    if not cfg["url"] or not cfg["token"]:
+        if "--quiet" not in args:
+            print("warden-posture: not connected (set WARDEN_URL/WARDEN_TOKEN or run warden-connect)")
+        return 0
+    return run(cfg, force="--force" in args, dry_run="--dry-run" in args,
+               quiet="--quiet" in args)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception:
+        sys.exit(0)  # fail open
