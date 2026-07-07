@@ -36,11 +36,13 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   aud/exp/nonce via authlib), maps/provisions the user, and hands a session to the console.
   State is a signed, self-expiring token (no server session store → multi-worker safe).
 - **Capture quotas + usage metering.** A DB-backed per-minute counter per tenant
-  (`gateway_usage`) enforces one `rate_limit` (per-tenant, else global `GATEWAY_RATE_LIMIT`;
-  0 = unlimited) across **all capture** — the gateway (provider-shaped **429**) *and* the
-  ingest/scan endpoints (`/api/ingest/ai-usage`, `/api/scan/code` → 429 + `Retry-After`).
-  The same counter is the metering source: `GET /api/usage` reports the current window,
-  last-24h, and per-day totals.
+  (`gateway_usage`), split by `kind`: the **gateway** budget (`rate_limit`, else global
+  `GATEWAY_RATE_LIMIT`) and a **separate sensor/ingest** budget (`ingest_rate_limit`, else
+  `INGEST_RATE_LIMIT`) for `/api/ingest/*` + `/api/scan/*` — so high-volume agentic capture
+  (warden-hook/warden-mcp) can't starve real LLM traffic. Over-limit → provider-shaped
+  **429** (gateway) or `429 + Retry-After` (ingest); 0 = unlimited. The same counter is the
+  metering source: `GET /api/usage` reports gateway current/24h/per-day plus `ingest_*`
+  totals. Benign MCP tool calls aren't persisted by default (`WARDEN_MCP_PERSIST_BENIGN`).
 - **Admin console (Settings page).** A self-serve UI for all of the above: org settings
   (name, judge consent, retention, rate limit), a usage panel, per-provider upstream keys,
   OIDC SSO config, and "log out everywhere" — previously API-only.

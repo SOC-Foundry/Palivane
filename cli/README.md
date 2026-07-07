@@ -85,6 +85,13 @@ lines and unknown methods pass straight through. `--name`/`WARDEN_MCP_SERVER` se
 server name checked against the org allowlist (else guessed from the command, upgraded
 by the server's own `initialize` response).
 
+Monitor mode **batches** its reports — one request per `WARDEN_MCP_BATCH` tool calls
+(default 20) or every `WARDEN_MCP_FLUSH_MS` (default 2000), whichever first — so a busy
+session doesn't hammer the backend; enforce mode scans each request inline. Server-side,
+the backend drops benign tool calls from storage and meters sensor ingest **separately**
+from the gateway (its own `INGEST_RATE_LIMIT` / per-tenant `ingest_rate_limit`), so this
+traffic never trips the gateway rate limit.
+
 ## `warden-posture` — device posture / drift
 
 Reports what's actually on the device through the existing scan endpoints, so drift (a
