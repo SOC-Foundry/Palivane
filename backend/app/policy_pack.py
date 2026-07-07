@@ -147,6 +147,58 @@ def gemini_config(base_url: str) -> str:
     )
 
 
+def cursor_hooks(hook_path: str) -> str:
+    """Cursor `hooks.json` registering warden-cursor-hook on the security-relevant agent
+    events. Push to the enterprise path via MDM (macOS /Library/Application Support/Cursor/,
+    Linux /etc/cursor/, Windows C:\\ProgramData\\Cursor\\) or drop in ~/.cursor/hooks.json.
+    Local + pre-execution, so it works despite Cursor's cert pinning."""
+    entry = [{"command": hook_path}]
+    return json.dumps({
+        "version": 1,
+        "hooks": {
+            "beforeSubmitPrompt": entry,     # prompt data-loss (the proxy can't see this)
+            "beforeShellExecution": entry,   # dangerous commands
+            "beforeMCPExecution": entry,     # MCP tool calls (server allowlist, poisoning)
+            "beforeReadFile": entry,         # secrets/PII pulled into context
+            "afterFileEdit": entry,          # secrets/PII written (monitor-only)
+        },
+    }, indent=2)
+
+
+def cursor_note(base_url: str, hook_path: str) -> str:
+    """How Warden covers Cursor — and the one thing it can't."""
+    b = base_url.rstrip("/")
+    return (
+        "Cursor coverage\n"
+        "===============\n"
+        "Cursor's model/chat endpoint (api2.cursor.sh) PINS its certificate, so the egress\n"
+        "proxy can't read its prompts, and Cursor ignores OPENAI_BASE_URL, so the gateway\n"
+        "can't be interposed. Warden covers Cursor with LOCAL planes instead, which are\n"
+        "immune to the pinning:\n\n"
+        "1. Cursor hooks (cursor-hooks.json in this pack) — warden-cursor-hook runs inside\n"
+        "   Cursor before each action and reports/blocks:\n"
+        "     - beforeSubmitPrompt   -> prompt data-loss (secrets/PII/shadow-AI)\n"
+        "     - beforeShellExecution -> dangerous commands\n"
+        "     - beforeMCPExecution   -> MCP tool calls (server allowlist, tool poisoning)\n"
+        "     - beforeReadFile       -> secrets/PII pulled into context\n"
+        "     - afterFileEdit        -> secrets/PII written (monitor-only)\n"
+        f"   Deploy warden-cursor-hook to {hook_path} and push cursor-hooks.json to Cursor's\n"
+        "   enterprise hooks path (or ~/.cursor/hooks.json). Monitor by default; set\n"
+        "   WARDEN_ENFORCE=true to block. Provide WARDEN_URL/WARDEN_TOKEN via machine env\n"
+        f"   (WARDEN_URL={b}) or ~/.cursor/warden.json.\n"
+        "2. MCP servers — wrap Cursor's .cursor/mcp.json stdio servers with warden-mcp for\n"
+        "   inline tool inspection (belt-and-suspenders with beforeMCPExecution).\n"
+        "3. Git plane — secrets/PII in the code Cursor commits (pre-commit hook + Action).\n"
+        "4. Gateway — for any first-party AI your org routes explicitly.\n\n"
+        "Optional (pilots): Cursor Settings -> Models -> Override OpenAI Base URL =\n"
+        f"  {b}/v1  (key = an ak_ Warden key). This routes Cursor's OpenAI-compatible calls\n"
+        "  through the gateway, but disables Agent/Composer/Tab — most orgs prefer the hooks.\n\n"
+        "What is NOT captured: nothing, once the hooks are installed — beforeSubmitPrompt\n"
+        "sees the prompt locally before it leaves. Without the hooks, Cursor's cloud chat is\n"
+        "opaque to the network planes.\n"
+    )
+
+
 def ca_note() -> str:
     return (
         "Deploy your egress-proxy / corporate root CA to the SYSTEM trust store via MDM so "
@@ -161,7 +213,8 @@ def ca_note() -> str:
 def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: int,
                 allowed_exts: list[str], denied_exts: list[str],
                 hook_path: str = "/usr/local/bin/warden-hook",
-                posture_path: str = "/usr/local/bin/warden-posture") -> dict[str, str]:
+                posture_path: str = "/usr/local/bin/warden-posture",
+                cursor_hook_path: str = "/usr/local/bin/warden-cursor-hook") -> dict[str, str]:
     b = base_url.rstrip("/")
     readme = (
         "Warden MDM policy pack — apply these with your MDM (Jamf/Intune/GPO). No Warden\n"
@@ -181,10 +234,15 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "6. openai.env -> environment variables that route OpenAI SDK/CLI clients through the\n"
         "   gateway (OPENAI_BASE_URL). Push as machine/user env via MDM; agentless, no CA needed.\n"
         "7. gemini.txt -> Gemini routing (SDK snippet + note). Gemini has no base-URL env var,\n"
-        "   so the system proxy above is its primary agentless capture path.\n\n"
+        "   so the system proxy above is its primary agentless capture path.\n"
+        "8. cursor-hooks.json -> Cursor hooks.json registering warden-cursor-hook (local,\n"
+        "   pinning-proof). Deploy warden-cursor-hook to the path it references\n"
+        f"   ({cursor_hook_path}); push to Cursor's enterprise hooks path or ~/.cursor/hooks.json.\n"
+        "   See cursor.txt for the full Cursor story (chat pins its cert; hooks close the gap).\n\n"
         "Coverage: browser UIs (claude.ai / chatgpt.com / gemini.google.com) via the extension;\n"
-        "OpenAI + Gemini + Anthropic API clients via the system proxy (needs the CA); and an\n"
-        "explicit gateway redirect for Claude Code (item 5) and OpenAI SDKs (item 6).\n"
+        "OpenAI + Gemini + Anthropic API clients via the system proxy (needs the CA); explicit\n"
+        "gateway redirect for Claude Code (item 5) and OpenAI SDKs (item 6); and Cursor via\n"
+        "local hooks (item 8) despite its cert pinning.\n"
     )
     return {
         "README.txt": readme,
@@ -195,5 +253,7 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "claude-managed-settings.json": claude_managed_settings(b, hook_path, posture_path),
         "openai.env": openai_env(b),
         "gemini.txt": gemini_config(b),
+        "cursor-hooks.json": cursor_hooks(cursor_hook_path),
+        "cursor.txt": cursor_note(b, cursor_hook_path),
         "ca-note.txt": ca_note(),
     }

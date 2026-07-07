@@ -47,9 +47,11 @@ MCP env vars are read by the **backend** (`MCP_ENFORCE`, `MCP_BLOCK_SEVERITY`,
 > its certificate** — a TLS-inspecting proxy is rejected (`tlsv1 alert unknown ca`) even
 > with a trusted CA, so **chat prompts can't be intercepted** this way. The proxy can
 > still see Cursor's codebase-index uploads (`aiserver.v1.CodebaseSnapshotService`,
-> protobuf) and telemetry, but those aren't the prompt. For Cursor, prefer the **git
-> plane** (secrets/PII in the code it commits) and the **gateway** (for first-party AI);
-> treat proxy prompt-capture as best-effort pending an enterprise/un-pinned config.
+> protobuf) and telemetry, but those aren't the prompt. **The fix isn't the proxy —
+> it's the local plane:** [`warden-cursor-hook`](../cli/README.md) uses Cursor's Hooks
+> API to inspect the prompt (`beforeSubmitPrompt`), shell/MCP calls, and file reads/edits
+> before they run, immune to the pinning. Pair with the **git plane** and the **gateway**
+> for first-party AI.
 
 ## Run
 

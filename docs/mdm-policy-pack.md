@@ -30,6 +30,8 @@ It returns these artifacts (write each to a file):
 | `claude-managed-settings.json` | Claude Code `managed-settings.json`: gateway routing + the Route C hooks (warden-hook, warden-posture) |
 | `openai.env` | Environment vars (`OPENAI_BASE_URL`) routing OpenAI SDK/CLI clients through the gateway — agentless, no CA needed |
 | `gemini.txt` | Gemini routing: SDK `http_options` snippet + note (Gemini has no base-URL env var, so the system proxy is its primary capture path) |
+| `cursor-hooks.json` | Cursor `hooks.json` registering `warden-cursor-hook` on the security events — local, pinning-proof capture of Cursor prompts + tool calls |
+| `cursor.txt` | The full Cursor story: why chat is proxy-opaque, and how the hooks + MCP wrap + git/gateway close it |
 | `ca-note.txt` | Where to deploy your root CA (required for TLS inspection) |
 
 The extension allow/deny lists come from this tenant's IDE-vetting config (its

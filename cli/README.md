@@ -1,6 +1,6 @@
 # Warden CLI — self-serve onboarding + local planes
 
-Four stdlib-only Python scripts (no install; drop them on PATH, e.g. `~/bin/`). Together
+Five stdlib-only Python scripts (no install; drop them on PATH, e.g. `~/bin/`). Together
 they give Warden **local, pre-execution visibility** — the surface the network planes
 can't reach (cert-pinned clients, stdio MCP servers, on-device drift) — without an
 endpoint agent: each is an app-scoped hook/shim that rides the existing ingest APIs.
@@ -9,6 +9,7 @@ endpoint agent: each is an app-scoped hook/shim that rides the existing ingest A
 | --- | --- | --- |
 | `warden-connect` | onboarding — wires up everything below | — |
 | `warden-hook` | Claude Code tool calls, **before execution** | `POST /api/ingest/mcp` |
+| `warden-cursor-hook` | **Cursor** prompts + tool calls, before execution | `POST /api/ingest/{mcp,ai-usage}` |
 | `warden-mcp` | local **stdio MCP servers**, inline | `POST /api/ingest/mcp` |
 | `warden-posture` | device drift: IDE extensions, MCP configs | `POST /api/scan/*` |
 
@@ -62,6 +63,43 @@ Installed by `warden-connect`, or manually in `~/.claude/settings.json` /
 
 Credentials: `WARDEN_URL` + `WARDEN_TOKEN` (an `ak_…` key) from the environment or the
 settings `env` block; the gateway token written by `warden-connect` doubles as both.
+
+## `warden-cursor-hook` — Cursor coverage despite cert pinning
+
+Cursor's chat endpoint pins its certificate (the proxy can't read it) and ignores
+`OPENAI_BASE_URL` (the gateway can't be interposed). This adapter uses **Cursor's Hooks
+API** (Cursor 1.7+) to inspect from *inside* Cursor — one script dispatched on
+`hook_event_name`:
+
+| Cursor event | Inspected | Reports to |
+| --- | --- | --- |
+| `beforeSubmitPrompt` | the prompt (+ attachments) — **data-loss the proxy can't see** | `/api/ingest/ai-usage` |
+| `beforeShellExecution` | shell command | `/api/ingest/mcp` |
+| `beforeMCPExecution` | MCP tool call (server/tool/args) | `/api/ingest/mcp` |
+| `beforeReadFile` | file content pulled into context | `/api/ingest/mcp` |
+| `afterFileEdit` | written content (secrets/PII) — monitor-only | `/api/ingest/mcp` |
+
+- **Monitor (default):** verdict recorded via a detached child; the action is explicitly
+  allowed with ~zero latency.
+- **Enforce (`WARDEN_ENFORCE=true`):** synchronous scan; blocks are returned as Cursor's
+  `permission: deny` (or `continue: false` for a prompt), with the reason shown to the
+  user and agent. `afterFileEdit` is always monitor (Cursor accepts no output there).
+
+Register in `~/.cursor/hooks.json`, `<project>/.cursor/hooks.json`, or the enterprise path
+(MDM). The policy pack emits a ready-to-push `cursor-hooks.json`:
+
+```json
+{ "version": 1, "hooks": {
+    "beforeSubmitPrompt":   [{ "command": "/usr/local/bin/warden-cursor-hook" }],
+    "beforeShellExecution": [{ "command": "/usr/local/bin/warden-cursor-hook" }],
+    "beforeMCPExecution":   [{ "command": "/usr/local/bin/warden-cursor-hook" }],
+    "beforeReadFile":       [{ "command": "/usr/local/bin/warden-cursor-hook" }],
+    "afterFileEdit":        [{ "command": "/usr/local/bin/warden-cursor-hook" }]}}
+```
+
+Credentials: `WARDEN_URL` + `WARDEN_TOKEN` from the environment, else `~/.cursor/warden.json`
+(`{"url","token","enforce"}`), else the gateway pair `warden-connect` wrote to
+`~/.claude/settings.json`.
 
 ## `warden-mcp` — inline inspection for local stdio MCP servers
 
