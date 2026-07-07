@@ -13,12 +13,14 @@ def _sig(cat):
 def test_detect_tool():
     assert policy.detect_tool(user_agent="claude-cli/1.2.3") == "claude-code"
     assert policy.detect_tool(user_agent="Cursor/0.4") == "cursor"
+    assert policy.detect_tool(user_agent="GeminiCLI/0.1.0") == "gemini-cli"
     assert policy.detect_tool(explicit="Claude-Code") == "claude-code"
     assert policy.detect_tool(user_agent="Mozilla/5.0") == "unknown"
 
 
 def test_suppressions_defaults():
     assert "source_code_leak" in policy.suppressions_for("claude-code")
+    assert "source_code_leak" in policy.suppressions_for("gemini-cli")
     assert policy.suppressions_for("unknown") == set()
 
 
