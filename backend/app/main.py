@@ -151,6 +151,27 @@ def export_findings(
                  headers={"Content-Disposition": "attachment; filename=warden-findings.jsonl"})
 
 
+@app.get("/api/export/tenant")
+def export_tenant(
+    current: User = Depends(require_admin), db: Session = Depends(get_db),
+    include_content: bool = False, limit: int = 50000,
+):
+    """Full self-serve data export for this org (security review / portability request):
+    tenant config, users, keys, findings, audit log, SSO/upstream config, DPA record — as
+    one JSON document. Secrets are never included; finding content only if requested."""
+    import json as _json
+    from fastapi.responses import Response as _Resp
+    from . import audit_log, data_export
+    tenant = db.get(Tenant, current.tenant_id)
+    doc = data_export.build_tenant_export(db, tenant, include_content=include_content, limit=limit)
+    audit_log.record(db, current.tenant_id, current.email, "tenant.export",
+                     detail={"include_content": bool(include_content),
+                             "findings": doc["counts"]["findings"]})
+    fname = f"warden-export-{tenant.slug}.json"
+    return _Resp(content=_json.dumps(doc, indent=2), media_type="application/json",
+                 headers={"Content-Disposition": f"attachment; filename={fname}"})
+
+
 @app.get("/livez")
 def livez():
     """Liveness: the process is up (no dependencies checked)."""

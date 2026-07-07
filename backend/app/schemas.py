@@ -160,6 +160,10 @@ class TenantDelete(BaseModel):
     confirm: str = ""   # must equal the tenant slug — guards against accidental deletion
 
 
+class DPAAccept(BaseModel):
+    version: str | None = None   # DPA version accepted; None = the current server version
+
+
 class UpstreamConfig(BaseModel):
     base_url: str = ""
     # Write-only: the provider API key. Stored encrypted, never returned. Leave empty on

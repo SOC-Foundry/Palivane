@@ -39,6 +39,9 @@ class Settings:
     # Self-serve signup: anyone can create a new org (tenant). Set false on a
     # single-org self-hosted deployment to lock it down after bootstrapping.
     allow_signup: bool = os.getenv("WARDEN_ALLOW_SIGNUP", "true").lower() in ("1", "true", "yes")
+    # Current data-processing-agreement version an org accepts (compliance record). Bump
+    # when the DPA text changes to prompt re-acceptance.
+    dpa_version: str = os.getenv("WARDEN_DPA_VERSION", "1.0")
     # Tenant that capture clients (extension/proxy) attribute findings to (slug or id).
     ingest_tenant: str = os.getenv("INGEST_TENANT", "")
     # Default gateway requests-per-minute limit per tenant (0 = unlimited). A tenant's own

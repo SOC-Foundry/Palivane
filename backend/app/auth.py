@@ -22,12 +22,12 @@ from .config import settings
 from .crypto import decrypt, encrypt
 from .database import get_db
 from .models import (
-    ApiKey, EnrollmentToken, Finding, LoginAttempt, Tenant, TenantOIDC, TenantSAML,
-    TenantUpstream, User,
+    ApiKey, AuditLog, EnrollmentToken, Finding, GatewayUsage, LoginAttempt, Tenant,
+    TenantOIDC, TenantSAML, TenantUpstream, User,
 )
 from .schemas import (
     ApiKeyCreate, EnrollmentTokenCreate, EnrollRequest, LoginRequest, MFACode, MFAVerify,
-    OIDCConfig, SAMLConfig, SignupRequest, TenantDelete, TenantUpdate, UpstreamConfig,
+    DPAAccept, OIDCConfig, SAMLConfig, SignupRequest, TenantDelete, TenantUpdate, UpstreamConfig,
     UserCreate, UserUpdate,
 )
 from .upstreams import PROVIDERS, resolve as resolve_upstream
@@ -618,15 +618,55 @@ def delete_tenant(body: TenantDelete, current: User = Depends(require_admin),
         raise HTTPException(status_code=400,
                             detail=f"to confirm deletion, pass confirm=\"{tenant.slug}\"")
     tid = tenant.id
+    slug = tenant.slug
+    # Delete every table that holds this tenant's data — a partial delete isn't a delete.
     counts = {
         "findings": db.query(Finding).filter(Finding.tenant_id == tid).delete(),
         "users": db.query(User).filter(User.tenant_id == tid).delete(),
         "api_keys": db.query(ApiKey).filter(ApiKey.tenant_id == tid).delete(),
+        "enrollment_tokens": db.query(EnrollmentToken).filter(EnrollmentToken.tenant_id == tid).delete(),
         "upstreams": db.query(TenantUpstream).filter(TenantUpstream.tenant_id == tid).delete(),
+        "audit_log": db.query(AuditLog).filter(AuditLog.tenant_id == tid).delete(),
+        "usage": db.query(GatewayUsage).filter(GatewayUsage.tenant_id == tid).delete(),
+        "oidc": db.query(TenantOIDC).filter(TenantOIDC.tenant_id == tid).delete(),
+        "saml": db.query(TenantSAML).filter(TenantSAML.tenant_id == tid).delete(),
     }
     db.delete(tenant)
     db.commit()
-    return {"deleted_tenant": tenant.slug, "deleted": counts}
+    return {"deleted_tenant": slug, "deleted": counts}
+
+
+# --- data-processing agreement (compliance record) -----------------------------------
+
+def _dpa_state(tenant: Tenant) -> dict:
+    return {
+        "current_version": settings.dpa_version,
+        "version": tenant.dpa_version or "",
+        "accepted_at": tenant.dpa_accepted_at.isoformat() if tenant.dpa_accepted_at else None,
+        "accepted_by": tenant.dpa_accepted_by or "",
+        "accepted": bool(tenant.dpa_accepted_at) and (tenant.dpa_version == settings.dpa_version),
+    }
+
+
+@router.get("/tenant/dpa")
+def get_dpa(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """The org's DPA acceptance record + the current version it should accept."""
+    return _dpa_state(db.get(Tenant, current.tenant_id))
+
+
+@router.post("/tenant/dpa")
+def accept_dpa(body: DPAAccept, current: User = Depends(require_admin),
+               db: Session = Depends(get_db)):
+    """Record that this admin accepted the data-processing agreement (compliance)."""
+    tenant = db.get(Tenant, current.tenant_id)
+    version = (body.version or settings.dpa_version).strip() or settings.dpa_version
+    tenant.dpa_version = version
+    tenant.dpa_accepted_at = _naive_utc()
+    tenant.dpa_accepted_by = current.email
+    db.commit()
+    db.refresh(tenant)
+    audit_log.record(db, current.tenant_id, current.email, "dpa.accept", detail={"version": version})
+    return _dpa_state(tenant)
 
 
 # --- per-tenant OIDC / SSO -----------------------------------------------------------

@@ -62,6 +62,10 @@ class Tenant(Base):
     sanctioned_ai_tools = Column(String(2048), default="")
     # Per-tool signal suppression ("tool:category;tool:category"). Empty = inherit global.
     tool_suppress = Column(String(2048), default="")
+    # Data-processing agreement acceptance (compliance record; history in the audit log).
+    dpa_version = Column(String(32), default="")
+    dpa_accepted_at = Column(DateTime, nullable=True)
+    dpa_accepted_by = Column(String(320), default="")
 
     def to_dict(self) -> dict:
         return {"id": self.id, "slug": self.slug, "name": self.name,
@@ -77,7 +81,10 @@ class Tenant(Base):
                 "gateway_block_severity": self.gateway_block_severity or "",
                 "mcp_block_severity": self.mcp_block_severity or "",
                 "sanctioned_ai_tools": self.sanctioned_ai_tools or "",
-                "tool_suppress": self.tool_suppress or ""}
+                "tool_suppress": self.tool_suppress or "",
+                "dpa_version": self.dpa_version or "",
+                "dpa_accepted_at": self.dpa_accepted_at.isoformat() if self.dpa_accepted_at else None,
+                "dpa_accepted_by": self.dpa_accepted_by or ""}
 
 
 class User(Base):
