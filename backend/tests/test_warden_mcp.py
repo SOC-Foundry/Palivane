@@ -156,3 +156,66 @@ def test_enforce_blocks_request_before_child():
     )
     assert p.returncode == 0
     assert p.stdout == frames
+
+
+# --- monitor-mode batch reporting -------------------------------------------------------
+
+def test_scan_mcp_batch_payload_shape(monkeypatch):
+    sent = {}
+
+    def fake_urlopen(req, timeout=None):
+        sent["url"] = req.full_url
+        sent["body"] = json.loads(req.data)
+        sent["token"] = req.headers.get("X-warden-token")
+        class _R:
+            def read(self): return b"{}"
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        return _R()
+
+    monkeypatch.setattr(wm.urllib.request, "urlopen", fake_urlopen)
+    wm.scan_mcp_batch([{"method": "tools/call", "tool": "t", "server": "s1"}],
+                      {"url": "https://w.io", "token": "ak_x", "user": "u@x", "timeout": 5})
+    assert sent["url"].endswith("/api/ingest/mcp/batch")
+    assert sent["token"] == "ak_x"
+    item = sent["body"]["items"][0]
+    assert item["tool"] == "t" and item["server"] == "s1" and item["transport"] == "stdio"
+    assert item["user"] == "u@x"
+
+
+def test_scan_mcp_batch_fail_open(monkeypatch):
+    def boom(*a, **k):
+        raise OSError("backend down")
+    monkeypatch.setattr(wm.urllib.request, "urlopen", boom)
+    # Must not raise — monitor telemetry is best-effort.
+    wm.scan_mcp_batch([{"method": "tools/call"}],
+                      {"url": "https://w.io", "token": "ak_x", "user": "", "timeout": 1})
+
+
+def test_reporter_batches_then_flushes(monkeypatch):
+    import threading
+    batches = []
+    ev = threading.Event()
+    monkeypatch.setattr(wm, "scan_mcp_batch",
+                        lambda items, cfg: (batches.append(list(items)), ev.set()))
+    cfg = {"url": "https://w.io", "token": "ak_x", "user": "", "timeout": 1}
+    monkeypatch.setenv("WARDEN_MCP_BATCH", "3")
+    monkeypatch.setenv("WARDEN_MCP_FLUSH_MS", "5000")
+    r = wm._Reporter(cfg)
+    for i in range(3):
+        r.enqueue({"method": "tools/call", "tool": f"t{i}"}, "srv")
+    assert ev.wait(2)                       # size-triggered flush at 3 items
+    assert len(batches[0]) == 3
+    assert [it["server"] for it in batches[0]] == ["srv", "srv", "srv"]
+    r.close()
+
+
+def test_reporter_flushes_remainder_on_close(monkeypatch):
+    batches = []
+    monkeypatch.setattr(wm, "scan_mcp_batch", lambda items, cfg: batches.append(list(items)))
+    monkeypatch.setenv("WARDEN_MCP_BATCH", "100")     # never size-triggers
+    monkeypatch.setenv("WARDEN_MCP_FLUSH_MS", "60000")
+    r = wm._Reporter({"url": "https://w.io", "token": "ak_x", "user": "", "timeout": 1})
+    r.enqueue({"method": "tools/call", "tool": "t"}, "srv")
+    r.close()                                # close must flush the partial batch
+    assert batches and len(batches[-1]) == 1
