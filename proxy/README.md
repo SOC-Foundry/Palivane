@@ -31,10 +31,10 @@ returns a **JSON-RPC error** so the agent surfaces it cleanly. It flags:
 
 > **Transport boundary (agentless).** Remote / Streamable-HTTP MCP servers flow through
 > the proxy and are fully inspected + blockable. **Local stdio** MCP servers never touch
-> the network — they can't be inspected agentlessly, so they're governed by *policy*
-> (`MCP_ALLOWED_SERVERS`) and surfaced via the tool definitions the agent sends to the
-> model (so tool-poisoning is still caught). Per-process inspection of local stdio would
-> need a local shim (a future, opt-in agent), deliberately out of scope here.
+> the network — agentlessly they're governed by *policy* (`MCP_ALLOWED_SERVERS`) and
+> surfaced via the tool definitions the agent sends to the model (so tool-poisoning is
+> still caught). For **inline** inspection of local stdio, wrap the server command with
+> [`cli/warden-mcp`](../cli/README.md) — an app-scoped shim, not an endpoint agent.
 
 MCP env vars are read by the **backend** (`MCP_ENFORCE`, `MCP_BLOCK_SEVERITY`,
 `MCP_ALLOWED_SERVERS`), not the proxy — the proxy just relays; the backend decides.
@@ -83,6 +83,24 @@ curl -x http://localhost:8081 https://api.openai.com/v1/chat/completions \
    On a managed fleet this cert is already trusted.
 3. Run `mitmdump` as a service (systemd) near the egress point; scale horizontally —
    the addon is stateless (it calls the Warden API).
+
+### Scoped TLS interception (recommended)
+
+Decrypting *all* TLS is a bigger ask — operationally (more cert-pinning breakage) and
+politically (privacy review, works councils) — than the proxy actually needs. Scope
+interception to the AI domains with mitmproxy's `--allow-hosts`: matching hosts are
+decrypted and inspected; **everything else is tunneled untouched, end-to-end encrypted**.
+
+```bash
+mitmdump -s proxy/warden_addon.py --listen-port 8081 --allow-hosts \
+  '(^|\.)(api\.openai\.com|chatgpt\.com|chat\.openai\.com|api\.anthropic\.com|claude\.ai|generativelanguage\.googleapis\.com|gemini\.google\.com|api\.cohere\.ai|api\.mistral\.ai|api\.perplexity\.ai|githubcopilot\.com|copilot-proxy\.githubusercontent\.com|copilot\.microsoft\.com|cursor\.sh|cursor\.com)(:443)?$'
+```
+
+Keep the regex in sync with `AI_HOST_SUFFIXES` in `warden_addon.py` (append your own
+MCP-server domains — content-sniffed MCP detection only sees hosts that are decrypted).
+Full interception remains the fallback when you need MCP inspection on arbitrary,
+unpredictable hosts; scoped is the right default everywhere else — the objection it
+answers changes from "you decrypt everything" to "we inspect a short list of AI domains".
 
 ## Honest limits
 

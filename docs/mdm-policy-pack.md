@@ -102,11 +102,23 @@ config (the `/api/provision` installer emits that block prefilled — see
 - **VS Code:** installing a non-approved extension is refused by the editor.
 - **Browser:** the Warden extension appears as *installed by your organization*.
 
+## Claude Code hooks (MDM-pushable, same model)
+
+Claude Code's `managed-settings.json` is itself an MDM-deployable policy artifact — and
+it can carry Warden's **local planes** alongside the gateway routing: a `PreToolUse`
+hook (`warden-hook` — pre-execution tool-call inspection) and a `SessionStart` hook
+(`warden-posture` — device drift). Push the two scripts to a fixed path with your MDM's
+file-deployment and include the `hooks` block shown in
+[`docs/claude-deployment.md`](claude-deployment.md) (Route C). Same philosophy as the
+rest of the pack: config the OS/app enforces, no resident Warden agent.
+
 ## What this does and doesn't cover
 
 - ✅ Enforces the proxy, the extension install, the editor allowlist, and CA trust — all by
   config, no Warden agent.
 - ⚠️ **Gathering** a live per-device inventory (what's installed/running right now) needs
   your MDM's inventory feed — Warden can *vet* that list (`/api/scan/ide-extensions`) but
-  doesn't collect it. Cert-pinned clients bypass TLS inspection. Both are inherent to the
-  agentless model.
+  doesn't collect it (on developer machines, [`warden-posture`](claude-deployment.md)
+  closes most of this gap by reporting installed IDE extensions and MCP configs).
+  Cert-pinned clients bypass TLS inspection — inherent to the network plane; the Claude
+  Code hooks above see local tool activity regardless of pinning.
