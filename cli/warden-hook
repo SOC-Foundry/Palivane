@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""warden-hook — Claude Code PreToolUse hook: local, pre-execution tool-call inspection.
+
+The egress proxy can't see agent actions that never touch the network (local stdio MCP
+servers, file access, shell commands), and cert-pinned clients bypass it entirely. This
+hook closes that gap from inside Claude Code itself: it receives every tool call *before
+execution*, maps it to Warden's MCP-activity shape, and reports it to the backend — the
+same detection pipeline (dangerous commands, sensitive resources, tool poisoning,
+secrets/PII in arguments) that inspects gateway and proxy traffic.
+
+Monitor by default: the verdict is recorded and the call proceeds with zero added latency
+(the report is posted by a detached child process). Set WARDEN_ENFORCE=true to block —
+the hook then scans synchronously and denies high-risk calls with the reason shown to the
+model. Fails open on any error: Warden being down never breaks the developer.
+
+Installed by `warden-connect` (PreToolUse entry in ~/.claude/settings.json), or manually:
+
+    {"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [
+        {"type": "command", "command": "/path/to/warden-hook", "timeout": 10}]}]}}
+
+Config: WARDEN_URL + WARDEN_TOKEN (an ak_… key) from the environment, else from the
+`env` block of ~/.claude/settings.json (where warden-connect writes them; the gateway
+token ANTHROPIC_AUTH_TOKEN doubles as the ingest credential). Stdlib only.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import urllib.request
+
+# Tool calls with no security surface — pure agent bookkeeping. Never reported.
+SKIP_TOOLS = {"TodoWrite", "Task", "ExitPlanMode", "AskUserQuestion"}
+
+_MAX_ARGS_TEXT = 20000
+
+
+def _harvest_strings(obj, out: list[str]) -> None:
+    """Recursively collect string *values* from an arbitrary JSON structure (dict keys
+    are ignored) — scans unknown tool-input shapes without a per-tool parser."""
+    if isinstance(obj, str):
+        if len(obj) >= 2:
+            out.append(obj)
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            _harvest_strings(v, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _harvest_strings(v, out)
+
+
+def _settings_env(path: str = "~/.claude/settings.json") -> dict:
+    """The `env` block of Claude Code's settings file ({} if unreadable)."""
+    try:
+        with open(os.path.expanduser(path)) as f:
+            env = json.load(f).get("env")
+        return env if isinstance(env, dict) else {}
+    except Exception:
+        return {}
+
+
+def read_config() -> dict:
+    """Resolve backend URL/token/mode: environment first, then ~/.claude/settings.json.
+
+    The settings fallback makes the hook independent of whether Claude Code exports the
+    settings `env` block to hook processes. warden-connect writes WARDEN_URL/WARDEN_TOKEN
+    there; the gateway credential (ANTHROPIC_AUTH_TOKEN, an ak_… key valid for ingest
+    too) and ANTHROPIC_BASE_URL (the gateway, minus /v1) serve as final fallbacks."""
+    senv = _settings_env()
+    url = os.getenv("WARDEN_URL") or senv.get("WARDEN_URL", "")
+    token = os.getenv("WARDEN_TOKEN") or senv.get("WARDEN_TOKEN", "")
+    if not token:
+        gw = senv.get("ANTHROPIC_AUTH_TOKEN", "")
+        if isinstance(gw, str) and gw.startswith("ak_"):
+            token = gw
+    if not url:
+        base = senv.get("ANTHROPIC_BASE_URL", "")
+        if isinstance(base, str) and base:
+            url = base.rstrip("/")
+            if url.endswith("/v1"):
+                url = url[: -len("/v1")]
+    enforce = (os.getenv("WARDEN_ENFORCE") or senv.get("WARDEN_ENFORCE") or "").lower() in ("1", "true", "yes")
+    try:
+        timeout = float(os.getenv("WARDEN_HOOK_TIMEOUT", "5"))
+    except ValueError:
+        timeout = 5.0
+    user = os.getenv("WARDEN_USER") or senv.get("WARDEN_USER", "")
+    return {"url": url, "token": token, "enforce": enforce, "timeout": timeout, "user": user}
+
+
+def build_activity(tool_name: str, tool_input: dict) -> dict | None:
+    """Map a Claude Code tool call onto Warden's MCP-activity shape (POST /api/ingest/mcp).
+
+    MCP tools (mcp__<server>__<tool>) carry their server name so the org allowlist
+    applies; built-in tools send server="" — they aren't MCP servers, so the
+    untrusted-server policy signal must not fire for them. transport=stdio matches how
+    the backend already keys local (non-network) agent activity."""
+    if not tool_name or tool_name in SKIP_TOOLS:
+        return None
+    if not isinstance(tool_input, dict):
+        tool_input = {}
+
+    activity = {"method": "tools/call", "server": "", "tool": tool_name,
+                "args_text": "", "resource": "", "transport": "stdio"}
+
+    if tool_name.startswith("mcp__"):
+        parts = tool_name.split("__", 2)  # mcp__<server>__<tool>; tool may contain __
+        activity["server"] = parts[1] if len(parts) > 1 else ""
+        activity["tool"] = parts[2] if len(parts) > 2 else ""
+        harvested: list[str] = []
+        _harvest_strings(tool_input, harvested)
+        activity["args_text"] = "\n".join(harvested)[:_MAX_ARGS_TEXT]
+    elif tool_name == "Bash":
+        cmd = tool_input.get("command", "")
+        desc = tool_input.get("description", "")
+        activity["args_text"] = "\n".join(p for p in (cmd, desc) if isinstance(p, str) and p)[:_MAX_ARGS_TEXT]
+    elif tool_name == "Read":
+        activity["method"] = "resources/read"
+        fp = tool_input.get("file_path", "")
+        activity["resource"] = fp if isinstance(fp, str) else ""
+    else:
+        # Write/Edit/WebFetch/… — harvest all string values (file paths land in
+        # args_text for the sensitive-path check; content is scanned for secrets/PII).
+        harvested = []
+        _harvest_strings(tool_input, harvested)
+        activity["args_text"] = "\n".join(harvested)[:_MAX_ARGS_TEXT]
+    return activity
+
+
+def scan_mcp(activity: dict, url: str, token: str, user: str = "", timeout: float = 5.0) -> dict:
+    """Call the Warden MCP ingest endpoint; fail open (action=allow) on any error."""
+    try:
+        payload = dict(activity)
+        payload["user"] = user
+        req = urllib.request.Request(
+            url.rstrip("/") + "/api/ingest/mcp", method="POST",
+            data=json.dumps(payload).encode(),
+            headers={"content-type": "application/json", "X-Warden-Token": token},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    except Exception:
+        return {"action": "allow", "reason": "scan-failed"}
+
+
+def deny_output(verdict: dict) -> dict:
+    """PreToolUse structured deny — the reason is fed back to the model."""
+    cats = ", ".join(dict.fromkeys(
+        s.get("category", "") for s in verdict.get("signals", []) if s.get("category")))
+    reason = (f"Blocked by Warden: risky tool call ({cats or 'policy'}) — "
+              f"risk {verdict.get('risk_score', 0)}/{verdict.get('severity', 'high')}.")
+    return {"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": reason,
+    }}
+
+
+def _send_detached(payload: dict, cfg: dict) -> None:
+    """Report in a detached child so the hook returns instantly (monitor mode)."""
+    p = subprocess.Popen(
+        [sys.executable, os.path.abspath(__file__), "--send"],
+        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    p.stdin.write(json.dumps({
+        "activity": payload, "url": cfg["url"], "token": cfg["token"],
+        "user": cfg["user"], "timeout": cfg["timeout"],
+    }).encode())
+    p.stdin.close()
+
+
+def main() -> int:
+    if "--send" in sys.argv[1:]:
+        # Worker mode (spawned by the monitor path): post the report and exit.
+        try:
+            job = json.load(sys.stdin)
+            scan_mcp(job["activity"], job["url"], job["token"],
+                     job.get("user", ""), float(job.get("timeout", 5)))
+        except Exception:
+            pass
+        return 0
+
+    try:
+        event = json.load(sys.stdin)
+    except Exception:
+        return 0
+    activity = build_activity(event.get("tool_name", ""), event.get("tool_input") or {})
+    if activity is None:
+        return 0
+
+    cfg = read_config()
+    if not cfg["url"] or not cfg["token"]:
+        return 0  # not connected to Warden — nothing to report to
+
+    if cfg["enforce"]:
+        verdict = scan_mcp(activity, cfg["url"], cfg["token"], cfg["user"], cfg["timeout"])
+        if verdict.get("action") == "block":
+            print(json.dumps(deny_output(verdict)))
+            return 0
+    else:
+        _send_detached(activity, cfg)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception:
+        sys.exit(0)  # fail open — never break the developer's session
