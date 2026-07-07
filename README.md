@@ -34,6 +34,13 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
 - **Self-serve onboarding** — users bind to their tenant by signing in (login/SSO): the
   **browser extension** sign-in and **`warden connect`** for Claude Code mint a per-user,
   revocable key — no admin token distribution. Managed policy still wins on fleets.
+- **Agentless by default, optional local sensors** — the core (gateway, extension, proxy,
+  CI) needs no endpoint agent. For deeper local coverage, opt-in sensors add it:
+  **`warden-mcp`** (stdio-MCP wrapper), **`warden-hook`** (Claude Code PreToolUse), and
+  **`warden-posture`** (IDE/MCP drift). Enforcement config is generated for your MDM.
+- **Per-tenant policy & compliance** — each org sets monitor/enforce, block severity,
+  sanctioned tools, and suppressions; plus a signed DPA, full data export, delete-my-org,
+  Slack alerts, and SIEM export.
 - **Keeps secrets out of repos too** — a **pre-commit hook + GitHub Action**
   ([`git/`](git/)) scan commits/PRs for secrets & PII via the same engine, complementing
   GitHub's native push protection.
@@ -175,7 +182,7 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `WARDEN_METRICS_TOKEN` | *(empty = open)*         | If set, `/metrics` requires it (Bearer or `?token=`); scrape it privately otherwise. |
 | `CUSTOM_SECRET_PATTERNS` | *(empty)*             | Org-specific secret formats — one `label=regex` per line; merged into detection. |
 | `EXTENSION_INGEST_TOKEN` | *(unset)*             | Shared token the browser extension presents to `/api/ingest/ai-usage` (empty = endpoint disabled). |
-| `WARDEN_SECRET_KEY` | *(dev fallback)*         | **Set in production.** Signs JWT session tokens; unset → insecure dev key + a startup warning. |
+| `WARDEN_SECRET_KEY` | *(dev fallback)*         | **Required in production.** Signs JWT session tokens; on a non-SQLite deployment the app **refuses to boot** if unset (a public dev key would let anyone forge admin tokens). Well-known weak values warn. |
 | `WARDEN_ENCRYPTION_KEY` | *(derives from `WARDEN_SECRET_KEY`)* | Encrypts per-tenant upstream provider keys at rest. Set to rotate independently of the JWT secret. |
 | `GATEWAY_*` keys (global) | *(unset)*             | Fallback upstream keys used when a tenant hasn't set its **own** via `/api/upstreams` (per-tenant keys take precedence). |
 | `AUTH_TOKEN_TTL`    | `43200`                    | Session-token lifetime in seconds (12h).           |
@@ -224,6 +231,13 @@ install config for every source (extension, Claude Code, proxy):
 
 ![Connect page](assets/connect.png)
 
+Other admin pages in the console: **Connections** (active capture keys + enrollment tokens,
+with one-click revoke), **Coverage** (paste an IdP/CASB `actor,tool` list → the unmanaged
+shadow set), and **Settings** — per-tenant **policy** (monitor/enforce, block severity,
+sanctioned tools, per-tool suppression), supply-chain allow/deny lists, **alerts** (Slack
+webhook + SIEM findings export), and **compliance** (DPA, full data export, delete-my-org).
+The dashboard shows a **Coverage & enforcement** health card (which planes reported in 24h).
+
 Then log in for a token and call the API:
 
 ```bash
@@ -256,8 +270,13 @@ fragment — so it assumes the console and API share an origin (the bundled ngin
 > after repeated failures — `WARDEN_LOGIN_MAX_FAILS`), and stored finding content is
 > **redacted** so the DB isn't a plaintext-secret honeypot (`WARDEN_REDACT_FINDINGS`;
 > detection still runs on the raw content). For a hardened deployment, set
-> `WARDEN_SECRET_KEY`, back the login throttle with a shared store for multi-worker
-> setups, and consider swapping in argon2id / a vetted JWT library.
+> `WARDEN_SECRET_KEY` (the app refuses to boot without it on Postgres) and back the login
+> throttle with a shared store for multi-worker setups.
+>
+> **SSRF-guarded.** User-supplied URLs the *server* fetches — the alert webhook and each
+> tenant's gateway upstream `base_url` — are validated: hosts resolving to private /
+> loopback / link-local / metadata addresses are rejected, so a tenant can't turn Warden
+> into an SSRF proxy into your cloud metadata or internal network.
 
 **Evasion-resistant detection.** Keyword rules match against a **normalized** view of the
 text — Unicode NFKC, homoglyph folding (Cyrillic/Greek lookalikes → Latin), zero-width
@@ -305,6 +324,9 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | GET    | `/api/usage`             | Gateway usage for the tenant: current-minute count, last-24h, per-day totals, effective limit (admin). |
 | GET    | `/api/audit`             | The tenant's admin audit trail (who did what, when); filterable by `action` (admin). |
 | GET    | `/api/export/tenant`     | Full self-serve data export (JSON): tenant config, users, keys, findings, audit log, SSO/upstream config, DPA record. Secrets excluded; `?include_content=true` decrypts finding content (admin). |
+| GET    | `/api/export/findings`   | Export findings as JSONL for SIEM ingest; filter by `severity`/`surface` (admin). |
+| GET    | `/api/setup-status`      | Per-plane activity (findings in last 24h) + enforce/judge state, for the console health card. |
+| POST   | `/api/alerts/test`       | Send a sample alert to the tenant's configured webhook (admin). |
 | GET/POST | `/api/tenant/dpa`      | Data-processing-agreement record: current vs accepted version, who/when. POST records acceptance (admin). |
 | DELETE | `/api/tenant`            | Delete the org and **all** its data (findings, users, keys, enrollment tokens, upstreams, audit log, usage, SSO); slug-confirmed. GDPR "delete my org" (admin). |
 | POST   | `/api/findings/purge`    | Delete this tenant's findings older than `retention_days` (scheduler-friendly) (admin). |
