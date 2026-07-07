@@ -23,7 +23,16 @@ from .patterns import find_high_entropy_tokens, find_secrets
 
 # --- PII --------------------------------------------------------------------------------
 
-SSN_RE = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+SSN_RE = re.compile(r"\b\d{3}[-\s]\d{2}[-\s]\d{4}\b")          # dashed or spaced
+SSN_NODASH_RE = re.compile(r"\b\d{9}\b")                        # unformatted 9-digit run
+SSN_CONTEXT_RE = re.compile(r"\b(ssn|social\s+security)\b", re.I)
+
+
+def _valid_ssn9(d: str) -> bool:
+    """SSA structural rules — cheaply rules out most 9-digit numbers that aren't SSNs:
+    area != 000/666 and not 900-999, group != 00, serial != 0000."""
+    area, group, serial = d[:3], d[3:5], d[5:9]
+    return area not in ("000", "666") and area[0] != "9" and group != "00" and serial != "0000"
 EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+\.[a-z]{2,}\b", re.IGNORECASE)
 PHONE_RE = re.compile(r"\b(?:\+?1[ .\-]?)?\(?\d{3}\)?[ .\-]\d{3}[ .\-]\d{4}\b")
 # 13–16 digit runs, possibly space/dash grouped — validated with Luhn to cut noise.
@@ -150,6 +159,18 @@ class ShadowAIDetector:
         if SSN_RE.search(text):
             found.append("SSN")
             weight = max(weight, 0.8)
+        else:
+            # Unformatted SSN (a bare 9-digit run passing SSA structure). Warn-level on its
+            # own — a raw 9-digit number is ambiguous — but block-level when SSN context
+            # words ("SSN", "social security") are present.
+            nodash = [m.group(0) for m in SSN_NODASH_RE.finditer(text) if _valid_ssn9(m.group(0))]
+            if nodash:
+                if SSN_CONTEXT_RE.search(text):
+                    found.append("SSN (unformatted)")
+                    weight = max(weight, 0.8)
+                else:
+                    found.append("possible SSN (9-digit)")
+                    weight = max(weight, 0.55)
 
         cards = [m.group(0) for m in CC_CANDIDATE_RE.finditer(text)
                  if _luhn_ok(re.sub(r"[ -]", "", m.group(0)))]
