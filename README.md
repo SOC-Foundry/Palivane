@@ -433,6 +433,9 @@ Different usage routes need different capture points — all feed the one engine
 | **Browser** web UI (claude.ai, chatgpt.com, Microsoft Copilot) | Browser extension → `ai_usage` | ✅ |
 | **Desktop apps, IDE assistants, 3rd-party CLIs** (incl. GitHub Copilot) | Egress proxy → `ai_usage` | ✅ |
 | **AI coding agents over MCP** (tool calls, resource reads, tool listings) | Egress proxy → `mcp` (remote/HTTP servers) **and** gateway/proxy `tool_use` inspection (covers local stdio MCP agentlessly) | ✅ |
+| **Claude Code tool calls** (shell, file access, MCP tools) — *before execution* | `warden-hook` PreToolUse hook → `mcp` ([`cli/`](cli/README.md)) | ✅ |
+| **Local stdio MCP servers** (inline inspect + block) | `warden-mcp` wrapper → `mcp` ([`cli/`](cli/README.md)) | ✅ |
+| **Device posture** (installed IDE extensions, MCP configs — drift) | `warden-posture` → `/api/scan/*` ([`cli/`](cli/README.md)) | ✅ |
 | **Cursor** (AI IDE) | Egress proxy (codebase/telemetry) | ⚠️ chat endpoint pins certs — see [`proxy/README.md`](proxy/README.md) |
 | **Source code committed to a Git repo** | Pre-commit hook + GitHub Action → `/api/scan/code` | ✅ |
 
@@ -682,7 +685,9 @@ backend/
                       #         dep-guard, ext-guard, mcp/deps/config scans, policy-pack, auth, eval… (287 tests)
 docker-compose.yml    # db + backend + web (local hosted stack)
 deploy/               # systemd unit (api) + env example
-cli/                  # warden-connect — self-serve Claude Code onboarding (login/SSO → config)
+cli/                  # warden-connect (self-serve onboarding) + local planes: warden-hook
+                      #   (pre-execution tool-call inspection), warden-mcp (stdio MCP wrapper),
+                      #   warden-posture (device drift: IDE extensions, MCP configs)
 extension/            # MV3 browser extension — shadow-AI capture + self-serve sign-in
 proxy/                # mitmproxy addon — shadow-AI + MCP capture (desktop apps / network)
 git/                  # pre-commit hook + GitHub Action — secrets/PII out of repos

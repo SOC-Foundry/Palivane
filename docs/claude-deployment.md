@@ -87,14 +87,17 @@ proxy (Section 3) or surfaced by [coverage reconciliation](#verify-coverage).
 
 ## 2. Claude Code
 
-Two routes. The **gateway** is recommended (no certificates, one config block); the
-**proxy** is the fallback when you can't repoint the base URL.
+Three routes, complementary. The **gateway** (Route A) is recommended for prompts — no
+certificates, one config block; the **proxy** (Route B) is the fallback when you can't
+repoint the base URL; the **hook** (Route C) adds what neither network route can see:
+the agent's local tool calls, before they execute. Run A + C together for full coverage.
 
 > **Self-serve (BYOD / pilots):** a user can connect their own Claude Code without an admin
 > distributing tokens — run **`warden connect https://app.warden.io`** (see
 > [`cli/README.md`](../cli/README.md)). It signs them in via the console (login/SSO), mints
-> a per-user tenant-scoped key, and writes `~/.claude/settings.json`. On **managed fleets**,
-> prefer the zero-touch `managed-settings.json` below (it takes precedence over the user file).
+> a per-user tenant-scoped key, writes `~/.claude/settings.json`, and installs the Route C
+> hooks automatically. On **managed fleets**, prefer the zero-touch `managed-settings.json`
+> below (it takes precedence over the user file).
 
 ### Route A — gateway (recommended)
 
@@ -147,6 +150,50 @@ Use the proxy (Section 3) and set, in the same `managed-settings.json`:
 } }
 ```
 Claude Code honors both. This catches Claude Code *and* everything else on the device.
+
+### Route C — local tool-call inspection (agentic actions)
+
+Routes A/B see the *prompts*; neither sees what the agent **does locally** — shell
+commands, file access, and stdio MCP servers never leave the device. Route C closes that
+with two app-scoped sensors from [`cli/`](../cli/README.md) (hooks and a shim — not an
+endpoint agent):
+
+**`warden-hook`** — a Claude Code **PreToolUse** hook. Every tool call (built-ins and
+MCP tools) is inspected *before execution* for dangerous commands, sensitive-resource
+access, secrets in arguments, and the org's MCP-server allowlist. Monitor by default
+(zero added latency); `WARDEN_ENFORCE=true` denies risky calls with the reason shown to
+the model. Installed by `warden-connect`, or fleet-wide in the same
+`managed-settings.json` as Route A:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://warden.corp.example.com/v1",
+    "ANTHROPIC_AUTH_TOKEN": "ak_<the developer's Warden key>",
+    "WARDEN_URL": "https://warden.corp.example.com",
+    "WARDEN_TOKEN": "ak_<the same key>"
+  },
+  "hooks": {
+    "PreToolUse":   [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/usr/local/bin/warden-hook", "timeout": 10 }]}],
+    "SessionStart": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/usr/local/bin/warden-posture --async --quiet" }]}]
+  }
+}
+```
+(Deploy the two scripts to a fixed path via MDM alongside the settings file. Verify the
+deployed Claude Code version honors `hooks` in managed settings.)
+
+**`warden-mcp`** — wraps any **local stdio MCP server** for inline inspection (tool
+calls, resource reads, tool-poisoning in descriptions); `WARDEN_MCP_ENFORCE=true` blocks
+with a JSON-RPC error. In `.mcp.json` / `~/.claude.json`:
+
+```json
+{ "mcpServers": { "github": {
+    "command": "warden-mcp",
+    "args": ["--", "npx", "-y", "@modelcontextprotocol/server-github"] }}}
+```
+
+The `SessionStart` entry above also runs **`warden-posture`** — device drift (installed
+IDE extensions, MCP configs) reported at session start, deduplicated client-side.
 
 ---
 

@@ -75,6 +75,18 @@ export default function Connect({ tenant }) {
     `WARDEN_URL=${origin} WARDEN_TOKEN=${K} WARDEN_PROXY_ENFORCE=true \\\n` +
     `  mitmdump -s proxy/warden_addon.py --listen-port 8081`;
 
+  const hooksSettings = JSON.stringify({
+    env: { WARDEN_URL: origin, WARDEN_TOKEN: K },
+    hooks: {
+      PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "/usr/local/bin/warden-hook", timeout: 10 }] }],
+      SessionStart: [{ matcher: "*", hooks: [{ type: "command", command: "/usr/local/bin/warden-posture --async --quiet" }] }],
+    },
+  }, null, 2);
+
+  const mcpWrap = JSON.stringify({
+    mcpServers: { github: { command: "warden-mcp", args: ["--", "npx", "-y", "@modelcontextprotocol/server-github"] } },
+  }, null, 2);
+
   return (
     <div className="connect">
       <div className="connect-head">
@@ -114,7 +126,22 @@ export default function Connect({ tenant }) {
       </div>
 
       <div className="connect-card">
-        <h3>④ One-run device installer</h3>
+        <h3>④ Claude Code tool calls &amp; local MCP servers (hooks)</h3>
+        <p className="muted">What the network planes can't see: the agent's <em>local</em> actions —
+           shell commands, file access, stdio MCP servers — inspected before execution. Merge into
+           <code> ~/.claude/settings.json</code> or the managed settings above (deploy
+           <code> warden-hook</code>/<code>warden-posture</code> from <code>cli/</code> to a fixed
+           path first). Monitor by default; <code>WARDEN_ENFORCE=true</code> blocks.</p>
+        <Block text={hooksSettings} />
+        <p className="muted" style={{ marginTop: 10 }}>Wrap any stdio MCP server with
+           <code> warden-mcp</code> for inline inspection (<code>WARDEN_MCP_ENFORCE=true</code> blocks):</p>
+        <Block text={mcpWrap} />
+        <p className="muted" style={{ marginTop: 8 }}>Self-serve: <code>warden-connect {origin}</code> installs
+           the hooks automatically alongside the gateway routing.</p>
+      </div>
+
+      <div className="connect-card">
+        <h3>⑤ One-run device installer</h3>
         <p className="muted">Download a prefilled setup script (carries a reusable enrollment
            token) — run it on any number of devices; each self-enrolls for its own per-device
            key, then configures Claude Code + the browser extension policy. Hand to a user or
@@ -134,7 +161,7 @@ export default function Connect({ tenant }) {
       </div>
 
       <div className="connect-card">
-        <h3>⑤ MDM policy pack (agentless enforcement)</h3>
+        <h3>⑥ MDM policy pack (agentless enforcement)</h3>
         <p className="muted">Download the config your MDM (Jamf / Intune / GPO) pushes to enforce
            policy with no Warden agent: VS Code extension allowlist, system-proxy profiles
            (macOS/Windows), browser force-install, and a CA note. Uses this org's approved-extension
