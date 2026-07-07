@@ -36,9 +36,13 @@ What happens:
    scripts are on PATH — a **PreToolUse** hook (`warden-hook`) and a **SessionStart**
    hook (`warden-posture --async --quiet`). Hook merging is idempotent and leaves your
    other hooks alone.
-4. Restart Claude Code — prompts route through the gateway, tool calls are inspected
-   locally, posture reports on session start; all attributed to you and revocable in the
-   console like any key.
+4. If **Cursor** is installed (`~/.cursor` present) and `warden-cursor-hook` is on PATH, it
+   also registers the hook for the five security events in `~/.cursor/hooks.json` and writes
+   the creds to `~/.cursor/warden.json` (Cursor doesn't pass env to hook processes). Skipped
+   silently if Cursor isn't present.
+5. Restart Claude Code / Cursor — prompts route through the gateway (or the Cursor hook),
+   tool calls are inspected locally, posture reports on session start; all attributed to
+   you and revocable in the console like any key.
 
 ## `warden-hook` — pre-execution tool-call inspection
 
