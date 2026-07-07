@@ -124,7 +124,7 @@ export default function Legal({ page }) {
     <div className="landing">
       <header className="lp-nav">
         <a className="lp-brand" href="/" style={{ color: "inherit", textDecoration: "none" }}>
-          <img src="/warden-logo.png" alt="Warden" width="34" height="34" />
+          <img src="/warden-emblem.png" alt="Warden" className="lp-brand-emblem" />
           <span>Warden</span>
         </a>
         <a className="primary-btn slim" href="/" style={{ textDecoration: "none" }}>← Home</a>
