@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""warden-mcp — inline inspection wrapper for local stdio MCP servers.
+
+Local stdio MCP servers never touch the network, so the egress proxy can't see them —
+until now their only governance was the config-level allowlist. This wrapper closes the
+gap: it sits between the MCP client (Claude Code, Cursor, VS Code) and the real server,
+pumping JSON-RPC through untouched while reporting each tool call, resource read, and
+advertised tool description to Warden — the same MCP-guard pipeline (dangerous commands,
+sensitive resources, tool poisoning, secrets in arguments) that inspects remote servers.
+
+Wrap any server by prefixing its command in the MCP config:
+
+    {"mcpServers": {"github": {
+        "command": "warden-mcp",
+        "args": ["--", "npx", "-y", "@modelcontextprotocol/server-github"]}}}
+
+Monitor by default (report only, zero interference). Set WARDEN_MCP_ENFORCE=true to
+block: a risky request is not forwarded — the client receives a JSON-RPC error naming
+the reason — and a poisoned tools/list result is replaced the same way. Fail-open: if
+the backend is down, everything passes through untouched. Framing is preserved exactly
+(original bytes are forwarded, never re-serialized); non-JSON lines pass through as-is.
+
+Config: WARDEN_URL + WARDEN_TOKEN (an ak_… key). Optional: --name / WARDEN_MCP_SERVER
+(server name for the org allowlist; else guessed from the command), WARDEN_USER,
+WARDEN_MCP_TIMEOUT. Stdlib only.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import threading
+import urllib.request
+
+_MAX_ARGS_TEXT = 20000
+
+
+def _harvest_strings(obj, out: list[str]) -> None:
+    """Recursively collect string *values* from an arbitrary JSON structure."""
+    if isinstance(obj, str):
+        if len(obj) >= 2:
+            out.append(obj)
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            _harvest_strings(v, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _harvest_strings(v, out)
+
+
+def parse_jsonrpc(line: bytes) -> dict | None:
+    """Decode one stdio frame; None for anything that isn't a JSON object."""
+    try:
+        obj = json.loads(line.decode("utf-8", "replace"))
+    except (ValueError, TypeError):
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def extract_request_activity(obj: dict) -> dict | None:
+    """Normalize a client→server JSON-RPC request into Warden's MCP-activity shape."""
+    method = obj.get("method", "")
+    params = obj.get("params") if isinstance(obj.get("params"), dict) else {}
+    if method == "tools/call":
+        harvested: list[str] = []
+        _harvest_strings(params.get("arguments"), harvested)
+        return {"method": "tools/call", "tool": str(params.get("name", "")),
+                "args_text": "\n".join(harvested)[:_MAX_ARGS_TEXT]}
+    if method == "resources/read":
+        uri = params.get("uri", "")
+        return {"method": "resources/read", "resource": uri if isinstance(uri, str) else ""}
+    if method == "initialize":
+        return {"method": "initialize"}
+    return None
+
+
+def extract_response_activity(obj: dict) -> dict | None:
+    """Normalize a server→client result: tools/list results carry the descriptions
+    scanned for tool poisoning. Other results aren't inspected."""
+    result = obj.get("result")
+    if not isinstance(result, dict) or "method" in obj:
+        return None
+    tools = result.get("tools")
+    if isinstance(tools, list):
+        descs = [t.get("description", "") for t in tools
+                 if isinstance(t, dict) and isinstance(t.get("description"), str)]
+        if descs:
+            return {"method": "tools/list.result", "tool_descriptions": descs}
+    return None
+
+
+def server_info_name(obj: dict) -> str | None:
+    """The server's self-declared name from an initialize result (upgrades the guess)."""
+    result = obj.get("result")
+    if isinstance(result, dict):
+        info = result.get("serverInfo")
+        if isinstance(info, dict) and isinstance(info.get("name"), str) and info["name"]:
+            return info["name"]
+    return None
+
+
+def guess_server_name(argv: list[str]) -> str:
+    """Best-effort server name from the wrapped command — the last non-flag token,
+    minus any path or npm scope (`npx -y @x/some-server` → `some-server`)."""
+    name = ""
+    for tok in argv:
+        if tok and not tok.startswith("-"):
+            name = tok
+    return name.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+
+
+def block_reply(req_id, verdict: dict) -> bytes:
+    """JSON-RPC error frame returned to the client instead of the risky request/result."""
+    cats = ", ".join(dict.fromkeys(
+        s.get("category", "") for s in verdict.get("signals", []) if s.get("category")))
+    msg = (f"Blocked by Warden: risky MCP activity ({cats or 'policy'}) — "
+           f"risk {verdict.get('risk_score', 0)}/{verdict.get('severity', 'high')}.")
+    return (json.dumps({"jsonrpc": "2.0", "id": req_id,
+                        "error": {"code": -32001, "message": msg}}) + "\n").encode()
+
+
+def scan_mcp(activity: dict, server: str, url: str, token: str,
+             user: str = "", timeout: float = 8.0) -> dict:
+    """Call the Warden MCP ingest endpoint; fail open (action=allow) on any error."""
+    try:
+        payload = {"method": "", "server": server, "tool": "", "args_text": "",
+                   "resource": "", "tool_descriptions": [], "transport": "stdio",
+                   "user": user}
+        payload.update(activity)
+        req = urllib.request.Request(
+            url.rstrip("/") + "/api/ingest/mcp", method="POST",
+            data=json.dumps(payload).encode(),
+            headers={"content-type": "application/json", "X-Warden-Token": token},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    except Exception:
+        return {"action": "allow", "reason": "scan-failed"}
+
+
+def _report_async(activity: dict, state: dict, cfg: dict) -> None:
+    """Monitor-mode report: fire-and-forget daemon thread (never delays the pipe)."""
+    threading.Thread(
+        target=scan_mcp,
+        args=(activity, state["server"], cfg["url"], cfg["token"], cfg["user"], cfg["timeout"]),
+        daemon=True,
+    ).start()
+
+
+def _pump_child_to_client(child, cfg: dict, state: dict, lock: threading.Lock) -> None:
+    """Forward server→client frames; inspect tools/list results (tool poisoning)."""
+    out = sys.stdout.buffer
+    for line in iter(child.stdout.readline, b""):
+        replaced = None
+        try:
+            obj = parse_jsonrpc(line)
+            if obj is not None:
+                name = server_info_name(obj)
+                if name:
+                    state["server"] = name
+                activity = extract_response_activity(obj)
+                if activity is not None:
+                    if cfg["enforce"] and cfg["url"] and cfg["token"]:
+                        v = scan_mcp(activity, state["server"], cfg["url"],
+                                     cfg["token"], cfg["user"], cfg["timeout"])
+                        if v.get("action") == "block":
+                            replaced = block_reply(obj.get("id"), v)
+                    elif cfg["url"] and cfg["token"]:
+                        _report_async(activity, state, cfg)
+        except Exception:
+            pass  # inspection must never break the pipe
+        with lock:
+            out.write(replaced if replaced is not None else line)
+            out.flush()
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    name_override = ""
+    while argv and argv[0] != "--":
+        if argv[0] == "--name" and len(argv) > 1:
+            name_override, argv = argv[1], argv[2:]
+        else:
+            sys.exit(f"warden-mcp: unknown argument {argv[0]!r} "
+                     "(usage: warden-mcp [--name NAME] -- <command> [args…])")
+    cmd = argv[1:]  # everything after "--"
+    if not cmd:
+        sys.exit("usage: warden-mcp [--name NAME] -- <command> [args…]")
+
+    cfg = {
+        "url": os.getenv("WARDEN_URL", "").rstrip("/"),
+        "token": os.getenv("WARDEN_TOKEN", ""),
+        "enforce": os.getenv("WARDEN_MCP_ENFORCE", "").lower() in ("1", "true", "yes"),
+        "user": os.getenv("WARDEN_USER", ""),
+        "timeout": float(os.getenv("WARDEN_MCP_TIMEOUT", "8")),
+    }
+    state = {"server": name_override or os.getenv("WARDEN_MCP_SERVER", "") or guess_server_name(cmd)}
+
+    child = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             bufsize=0)  # stderr inherited
+    lock = threading.Lock()
+    threading.Thread(target=_pump_child_to_client, args=(child, cfg, state, lock),
+                     daemon=True).start()
+
+    out = sys.stdout.buffer
+    try:
+        for line in iter(sys.stdin.buffer.readline, b""):
+            blocked = None
+            try:
+                obj = parse_jsonrpc(line)
+                if obj is not None:
+                    activity = extract_request_activity(obj)
+                    if activity is not None:
+                        if cfg["enforce"] and cfg["url"] and cfg["token"] and obj.get("id") is not None:
+                            v = scan_mcp(activity, state["server"], cfg["url"],
+                                         cfg["token"], cfg["user"], cfg["timeout"])
+                            if v.get("action") == "block":
+                                blocked = block_reply(obj.get("id"), v)
+                        elif cfg["url"] and cfg["token"]:
+                            _report_async(activity, state, cfg)
+            except Exception:
+                pass  # inspection must never break the pipe
+            if blocked is not None:
+                with lock:
+                    out.write(blocked)
+                    out.flush()
+                continue  # not forwarded to the server
+            child.stdin.write(line)
+            child.stdin.flush()
+    except (BrokenPipeError, OSError):
+        pass
+    finally:
+        try:
+            child.stdin.close()
+        except OSError:
+            pass
+    return child.wait()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
