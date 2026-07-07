@@ -520,10 +520,17 @@ def set_upstream(provider: str, body: UpstreamConfig, current: User = Depends(re
     row = (db.query(TenantUpstream)
            .filter(TenantUpstream.tenant_id == current.tenant_id, TenantUpstream.provider == provider)
            .first())
+    base = body.base_url.strip()
+    if base:
+        from .netguard import is_safe_url
+        if not is_safe_url(base):
+            raise HTTPException(status_code=400,
+                                detail="base_url must be an https(s) URL to a public host "
+                                       "(private/loopback/metadata addresses are blocked)")
     if row is None:
         row = TenantUpstream(tenant_id=current.tenant_id, provider=provider)
         db.add(row)
-    row.base_url = body.base_url.strip()
+    row.base_url = base
     if body.key:
         row.key_encrypted = encrypt(body.key)
     db.commit()

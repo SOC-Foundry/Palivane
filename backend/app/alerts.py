@@ -27,6 +27,9 @@ def _payload(verdict: dict, subject: str, actor: str, surface: str) -> dict:
 
 
 def send_sync(webhook: str, payload: dict, timeout: float = 8.0) -> bool:
+    from .netguard import is_safe_url
+    if not is_safe_url(webhook):   # SSRF guard: no internal/metadata targets
+        return False
     try:
         req = urllib.request.Request(
             webhook, method="POST", data=json.dumps(payload).encode(),
