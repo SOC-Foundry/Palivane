@@ -8,7 +8,10 @@ of the browser-extension sign-in, for the terminal.
 Flow: starts a loopback server, opens <console>/extension-connect pointed at it, the
 console mints a per-user tenant-scoped token after auth and redirects it back, then this
 writes ~/.claude/settings.json (ANTHROPIC_BASE_URL -> the Warden gateway, ANTHROPIC_AUTH_TOKEN
--> the token). Stdlib only.
+-> the token). Also wires the local planes when their sibling scripts are available:
+WARDEN_URL/WARDEN_TOKEN in the same env block, a PreToolUse hook (warden-hook — local
+pre-execution tool-call inspection) and a SessionStart hook (warden-posture — device
+posture on session start). Stdlib only.
 
     warden-connect https://app.warden.io       # or set WARDEN_URL
 """
@@ -19,6 +22,7 @@ import http.server
 import json
 import os
 import secrets
+import shutil
 import socketserver
 import sys
 import urllib.parse
@@ -75,7 +79,33 @@ def _capture_token(console: str) -> dict:
     return got
 
 
-def _write_claude_code(token: str, backend: str, user: str) -> str:
+def _resolve_script(name: str) -> str | None:
+    """Locate a sibling Warden script: on PATH, else next to this file."""
+    found = shutil.which(name)
+    if found:
+        return found
+    sibling = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+    return sibling if os.path.exists(sibling) else None
+
+
+def _merge_hook(data: dict, event: str, command: str, timeout: int | None = None) -> bool:
+    """Add a hook entry for `event` unless one already runs the same script
+    (idempotent across re-runs; a moved script path is treated as already installed)."""
+    script = os.path.basename(command.split()[0])
+    hooks = data.setdefault("hooks", {})
+    entries = hooks.setdefault(event, [])
+    for entry in entries:
+        for h in entry.get("hooks", []) if isinstance(entry, dict) else []:
+            if isinstance(h, dict) and script in str(h.get("command", "")):
+                return False
+    hook: dict = {"type": "command", "command": command}
+    if timeout is not None:
+        hook["timeout"] = timeout
+    entries.append({"matcher": "*", "hooks": [hook]})
+    return True
+
+
+def _write_claude_code(token: str, backend: str, user: str) -> tuple[str, list[str]]:
     path = os.path.expanduser("~/.claude/settings.json")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     data = {}
@@ -87,20 +117,41 @@ def _write_claude_code(token: str, backend: str, user: str) -> str:
     env = data.setdefault("env", {})
     env["ANTHROPIC_BASE_URL"] = backend.rstrip("/") + "/v1"
     env["ANTHROPIC_AUTH_TOKEN"] = token
+    # Same pair under Warden's own names — the hook/posture scripts read these, and it
+    # keeps working even if the gateway routing above is later pointed elsewhere.
+    env["WARDEN_URL"] = backend.rstrip("/")
+    env["WARDEN_TOKEN"] = token
+
+    installed: list[str] = []
+    hook = _resolve_script("warden-hook")
+    if hook:
+        if _merge_hook(data, "PreToolUse", hook, timeout=10):
+            installed.append("PreToolUse hook (warden-hook — tool-call inspection)")
+    else:
+        installed.append("warden-hook not found — skipped tool-call inspection hook")
+    posture = _resolve_script("warden-posture")
+    if posture:
+        if _merge_hook(data, "SessionStart", f"{posture} --async --quiet"):
+            installed.append("SessionStart hook (warden-posture — device posture)")
+    else:
+        installed.append("warden-posture not found — skipped posture hook")
+
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
     os.chmod(path, 0o600)
-    return path
+    return path, installed
 
 
 def main() -> None:
     console = _console_url(sys.argv)
     got = _capture_token(console)
     backend = got.get("backend") or console
-    path = _write_claude_code(got["token"], backend, got.get("user", ""))
+    path, installed = _write_claude_code(got["token"], backend, got.get("user", ""))
     who = got.get("user") or "you"
     print(f"✓ Claude Code connected as {who}")
     print(f"  routed through the Warden gateway: {backend.rstrip('/')}/v1")
+    for item in installed:
+        print(f"  {item}")
     print(f"  wrote {path}")
     print("  Start (or restart) Claude Code to apply.")
 
