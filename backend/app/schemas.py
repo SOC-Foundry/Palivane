@@ -140,6 +140,13 @@ class TenantUpdate(BaseModel):
     dep_denylist: str | None = None         # known-bad dependency names
     alert_webhook: str | None = None        # Slack-compatible webhook for high/critical alerts
     alert_min_severity: str | None = None   # minimum severity to alert on
+    # Policy posture (per-org monitor/enforce): "on"/"off" force it, "inherit" follows
+    # the global GATEWAY_ENFORCE. Severities: "" = inherit the global threshold.
+    gateway_enforce: Literal["on", "off", "inherit"] | None = None
+    gateway_block_severity: str | None = None  # ""|low|suspicious|high|critical
+    mcp_block_severity: str | None = None      # block threshold for capture-plane verdicts
+    sanctioned_ai_tools: str | None = None     # org-approved AI destinations (comma-separated)
+    tool_suppress: str | None = None           # "tool:category;tool:category" suppressions
 
 
 class TenantDelete(BaseModel):

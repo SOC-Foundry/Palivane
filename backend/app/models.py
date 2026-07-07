@@ -49,6 +49,16 @@ class Tenant(Base):
     # Alerting: POST high/critical findings to this webhook (Slack-compatible {"text":…}).
     alert_webhook = Column(String(1024), default="")
     alert_min_severity = Column(String(16), default="high")
+    # Per-tenant policy posture (each org picks its own monitor/enforce stance; empty/None
+    # = inherit the global env default, same tri-state pattern as judge_enabled).
+    gateway_enforce = Column(Boolean, nullable=True, default=None)
+    gateway_block_severity = Column(String(16), default="")
+    # Block threshold for capture-plane verdicts (/api/ingest/mcp action). Empty = global.
+    mcp_block_severity = Column(String(16), default="")
+    # Org-approved AI destinations (comma-separated hosts). Empty = inherit global.
+    sanctioned_ai_tools = Column(String(2048), default="")
+    # Per-tool signal suppression ("tool:category;tool:category"). Empty = inherit global.
+    tool_suppress = Column(String(2048), default="")
 
     def to_dict(self) -> dict:
         return {"id": self.id, "slug": self.slug, "name": self.name,
@@ -59,7 +69,12 @@ class Tenant(Base):
                 "ide_ext_denylist": self.ide_ext_denylist or "",
                 "dep_denylist": self.dep_denylist or "",
                 "alert_webhook": self.alert_webhook or "",
-                "alert_min_severity": self.alert_min_severity or "high"}
+                "alert_min_severity": self.alert_min_severity or "high",
+                "gateway_enforce": self.gateway_enforce,
+                "gateway_block_severity": self.gateway_block_severity or "",
+                "mcp_block_severity": self.mcp_block_severity or "",
+                "sanctioned_ai_tools": self.sanctioned_ai_tools or "",
+                "tool_suppress": self.tool_suppress or ""}
 
 
 class User(Base):
