@@ -52,6 +52,22 @@ def test_detect_tool_cursor():
     assert addon.detect_tool("Cursor/0.42 (darwin)") == "cursor"
 
 
+def test_is_ai_host_gemini_cli():
+    # Gemini CLI: API-key mode -> generativelanguage; OAuth mode -> Code Assist;
+    # Vertex mode -> aiplatform. All three must be inspected.
+    assert addon.is_ai_host("generativelanguage.googleapis.com")
+    assert addon.is_ai_host("cloudcode-pa.googleapis.com")
+    assert addon.is_ai_host("us-central1-aiplatform.googleapis.com")
+    assert addon.is_ai_host("aiplatform.googleapis.com")
+    # A different googleapis service must not be swept in.
+    assert not addon.is_ai_host("storage.googleapis.com")
+
+
+def test_detect_tool_gemini_cli():
+    assert addon.detect_tool("GeminiCLI/0.1.0") == "gemini-cli"
+    assert addon.detect_tool("google-gemini-cli/1.2") == "gemini-cli"
+
+
 def test_extract_openai_chat():
     body = json.dumps({"messages": [
         {"role": "system", "content": "be helpful"},

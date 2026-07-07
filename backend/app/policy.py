@@ -20,6 +20,7 @@ DEFAULT_SUPPRESSIONS: dict[str, set[str]] = {
     "cursor": {"source_code_leak"},
     "copilot": {"source_code_leak"},
     "codeium": {"source_code_leak"},
+    "gemini-cli": {"source_code_leak"},
 }
 
 
@@ -57,6 +58,8 @@ def detect_tool(user_agent: str = "", explicit: str = "") -> str:
         return "copilot"
     if "codeium" in ua:
         return "codeium"
+    if "gemini" in ua or "geminicli" in ua:
+        return "gemini-cli"
     return "unknown"
 
 

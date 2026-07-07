@@ -38,6 +38,10 @@ AI_HOST_SUFFIXES = (
     "api.openai.com", "chatgpt.com", "chat.openai.com",
     "api.anthropic.com", "claude.ai",
     "generativelanguage.googleapis.com", "gemini.google.com",
+    # Gemini CLI: API-key mode hits generativelanguage (above); the default OAuth
+    # "log in with Google" mode routes through Code Assist, and Vertex mode through
+    # aiplatform — both carry the same generateContent body shape.
+    "cloudcode-pa.googleapis.com", "aiplatform.googleapis.com",
     "api.cohere.ai", "api.mistral.ai", "api.perplexity.ai",
     # GitHub Copilot (IDE assistants): chat + completions. The suffix
     # "githubcopilot.com" covers api / api.business / api.individual variants.
@@ -143,6 +147,8 @@ def detect_tool(user_agent: str) -> str:
         return "cursor"
     if "copilot" in ua:
         return "copilot"
+    if "gemini" in ua or "geminicli" in ua:
+        return "gemini-cli"
     return ""
 
 

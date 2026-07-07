@@ -6,13 +6,17 @@ makes its own HTTPS calls to an AI provider. It's a [mitmproxy](https://mitmprox
 addon that inspects outbound POSTs to AI domains, scores the prompt through Warden,
 records a finding, and blocks (HTTP 400, provider-error shape) on a block verdict.
 
-Inspected destinations include OpenAI, Anthropic, Gemini, Cohere/Mistral/Perplexity,
-**GitHub Copilot** (`*.githubcopilot.com`, `copilot-proxy.githubusercontent.com`),
-**Microsoft Copilot** (`copilot.microsoft.com`), and **Cursor** (`*.cursor.sh`,
-`cursor.com`) — see `AI_HOST_SUFFIXES` in `warden_addon.py`. The tool is identified from
-the User-Agent (`detect_tool`), so the backend's per-tool policy suppresses routine
-`source_code_leak` for coding tools (`claude-code`, `cursor`, `copilot`) while still
-catching secrets and PII.
+Inspected destinations include OpenAI (incl. the `openai` CLI and Codex CLI via
+`api.openai.com`), Anthropic, and Gemini. The **Gemini CLI** is covered in all three of
+its modes: API-key (`generativelanguage.googleapis.com`), the default OAuth "log in with
+Google" / Code Assist (`cloudcode-pa.googleapis.com`), and Vertex
+(`aiplatform.googleapis.com`). Also Cohere/Mistral/Perplexity, **GitHub Copilot**
+(`*.githubcopilot.com`, `copilot-proxy.githubusercontent.com`), **Microsoft Copilot**
+(`copilot.microsoft.com`), and **Cursor** (`*.cursor.sh`, `cursor.com`) — see
+`AI_HOST_SUFFIXES` in `warden_addon.py`. The tool is identified from the User-Agent
+(`detect_tool`), so the backend's per-tool policy suppresses routine `source_code_leak`
+for coding tools (`claude-code`, `cursor`, `copilot`, `gemini-cli`) while still catching
+secrets and PII.
 
 ## MCP inspection (agentic tool-use)
 
