@@ -7,6 +7,12 @@ function judgeValue(t) {
   return t?.judge_enabled === true ? "on" : t?.judge_enabled === false ? "off" : "inherit";
 }
 
+function enforceValue(t) {
+  return t?.gateway_enforce === true ? "on" : t?.gateway_enforce === false ? "off" : "inherit";
+}
+
+const SEVERITIES = ["low", "suspicious", "high", "critical"];
+
 export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   const [msg, setMsg] = useState(null);       // { ok, text }
   const flash = (text, ok = true) => { setMsg({ ok, text }); setTimeout(() => setMsg(null), 3000); };
@@ -20,6 +26,11 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     ide_ext_allowed: tenant?.ide_ext_allowed || "",
     ide_ext_denylist: tenant?.ide_ext_denylist || "",
     dep_denylist: tenant?.dep_denylist || "",
+    gateway_enforce: enforceValue(tenant),
+    gateway_block_severity: tenant?.gateway_block_severity || "",
+    mcp_block_severity: tenant?.mcp_block_severity || "",
+    sanctioned_ai_tools: tenant?.sanctioned_ai_tools || "",
+    tool_suppress: tenant?.tool_suppress || "",
   });
   const setField = (k) => (e) => setOrgState((o) => ({ ...o, [k]: e.target.value }));
 
@@ -33,6 +44,11 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         ide_ext_allowed: org.ide_ext_allowed,
         ide_ext_denylist: org.ide_ext_denylist,
         dep_denylist: org.dep_denylist,
+        gateway_enforce: org.gateway_enforce,
+        gateway_block_severity: org.gateway_block_severity,
+        mcp_block_severity: org.mcp_block_severity,
+        sanctioned_ai_tools: org.sanctioned_ai_tools,
+        tool_suppress: org.tool_suppress,
       });
       onTenant?.(t);
       flash("Organization settings saved.");
@@ -201,6 +217,38 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         <p className="muted" style={{ margin: "0 0 12px", fontSize: 12 }}>Supply-chain lists apply to
            the CI scans (<code>/api/scan/ide-extensions</code>, <code>/api/scan/deps</code>) and the
            MDM policy pack. Empty = inherit the global default.</p>
+
+        <h3 style={{ margin: "4px 0 8px" }}>Policy</h3>
+        <div className="field-grid">
+          <label>Gateway mode
+            <select value={org.gateway_enforce} onChange={setField("gateway_enforce")}>
+              <option value="inherit">Inherit (global)</option>
+              <option value="on">Enforce (block risky calls)</option>
+              <option value="off">Monitor (record only)</option>
+            </select>
+          </label>
+          <label>Gateway block severity
+            <select value={org.gateway_block_severity} onChange={setField("gateway_block_severity")}>
+              <option value="">Inherit (global)</option>
+              {SEVERITIES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+          <label>MCP block severity
+            <select value={org.mcp_block_severity} onChange={setField("mcp_block_severity")}>
+              <option value="">Inherit (global)</option>
+              {SEVERITIES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+          <label className="field-wide">Sanctioned AI tools (comma-separated hosts; empty = inherit)
+            <input placeholder="chatgpt.com, claude.ai"
+                   value={org.sanctioned_ai_tools} onChange={setField("sanctioned_ai_tools")} /></label>
+          <label className="field-wide">Per-tool suppressions (tool:category;tool:category)
+            <input placeholder="claude-code:source_code_leak;cursor:pii_exposure"
+                   value={org.tool_suppress} onChange={setField("tool_suppress")} /></label>
+        </div>
+        <p className="muted" style={{ margin: "0 0 12px", fontSize: 12 }}>Block severity is the lowest
+           verdict that blocks (lower = stricter). Suppressions drop a category for a named capture
+           tool. Empty = inherit the global env default.</p>
         <button className="primary-btn slim">Save organization</button>
       </form>
 
