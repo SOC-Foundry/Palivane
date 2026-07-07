@@ -164,8 +164,9 @@ export default function Connect({ tenant }) {
         <h3>⑥ MDM policy pack (agentless enforcement)</h3>
         <p className="muted">Download the config your MDM (Jamf / Intune / GPO) pushes to enforce
            policy with no Warden agent: VS Code extension allowlist, system-proxy profiles
-           (macOS/Windows), browser force-install, and a CA note. Uses this org's approved-extension
-           lists. See <code>docs/mdm-policy-pack.md</code>.</p>
+           (macOS/Windows), browser force-install, a CA note, and the Claude Code
+           <code>managed-settings.json</code> (gateway routing + the Route C hooks). Uses this org's
+           approved-extension lists. See <code>docs/mdm-policy-pack.md</code>.</p>
         <div className="form-row" style={{ gap: 10 }}>
           <input placeholder="egress proxy host (e.g. proxy.corp.com)"
                  value={proxyHost} onChange={(e) => setProxyHost(e.target.value)} />

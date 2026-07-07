@@ -578,20 +578,26 @@ def policy_pack(
     base_url: str = "https://warden.example.com",
     proxy_host: str = "",
     proxy_port: int = 8081,
+    hook_path: str = "/usr/local/bin/warden-hook",
+    posture_path: str = "/usr/local/bin/warden-posture",
     current: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """Generate the MDM policy pack (agentless enforcement config): VS Code extension
-    allowlist, system-proxy profiles, browser force-install, and a CA-deployment note.
+    allowlist, system-proxy profiles, browser force-install, a CA-deployment note, and
+    the Claude Code managed-settings.json (gateway routing + local-plane hooks).
 
     Applied by the org's MDM (Jamf/Intune/GPO) — no Warden agent on the device. The
-    extension allow/deny lists come from the org's IDE-vetting config."""
+    extension allow/deny lists use this tenant's IDE-vetting config, else the global."""
     from . import policy_pack as pp
-    allowed = [x.strip() for x in settings.ide_ext_allowed.split(",") if x.strip()]
-    denied = [x.strip() for x in settings.ide_ext_denylist.split(",") if x.strip()]
+    allowed_raw = _tenant_or_global(current.tenant_id, db, "ide_ext_allowed", settings.ide_ext_allowed)
+    denied_raw = _tenant_or_global(current.tenant_id, db, "ide_ext_denylist", settings.ide_ext_denylist)
+    allowed = [x.strip() for x in allowed_raw.split(",") if x.strip()]
+    denied = [x.strip() for x in denied_raw.split(",") if x.strip()]
     artifacts = pp.render_pack(base_url=base_url, extension_id=settings.extension_id,
                                proxy_host=proxy_host, proxy_port=proxy_port,
-                               allowed_exts=allowed, denied_exts=denied)
+                               allowed_exts=allowed, denied_exts=denied,
+                               hook_path=hook_path, posture_path=posture_path)
     return {"artifacts": artifacts}
 
 

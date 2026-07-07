@@ -35,7 +35,38 @@ def test_forcelist_and_pack():
     pack = pp.render_pack("https://w.acme.com/", "abc123", "proxy.acme.com", 8081,
                           ["ms-python.python"], ["bad.ext"])
     assert set(pack) >= {"README.txt", "vscode-extensions.json", "macos-proxy.mobileconfig",
-                         "windows-proxy.reg", "chrome-edge-forcelist.txt", "ca-note.txt"}
+                         "windows-proxy.reg", "chrome-edge-forcelist.txt",
+                         "claude-managed-settings.json", "ca-note.txt"}
+
+
+def test_claude_managed_settings():
+    s = json.loads(pp.claude_managed_settings("https://w.acme.com/", "/opt/warden-hook",
+                                              "/opt/warden-posture"))
+    # Gateway routing + Warden credentials in env (the ak_ token doubles as ingest auth).
+    assert s["env"]["ANTHROPIC_BASE_URL"] == "https://w.acme.com/v1"
+    assert s["env"]["WARDEN_URL"] == "https://w.acme.com"
+    assert s["env"]["ANTHROPIC_AUTH_TOKEN"] == s["env"]["WARDEN_TOKEN"]
+    assert s["env"]["WARDEN_TOKEN"].startswith("ak_")
+    # Route C hooks at the deployed script paths.
+    pre = s["hooks"]["PreToolUse"][0]["hooks"][0]
+    assert pre["command"] == "/opt/warden-hook" and pre["timeout"] == 10
+    sess = s["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+    assert sess == "/opt/warden-posture --async --quiet"
+
+
+def test_pack_includes_claude_settings_from_endpoint(client):
+    r = client.get("/api/policy-pack?base_url=https://w.acme.com&hook_path=/opt/wh")
+    assert r.status_code == 200
+    s = json.loads(r.json()["artifacts"]["claude-managed-settings.json"])
+    assert s["env"]["ANTHROPIC_BASE_URL"] == "https://w.acme.com/v1"
+    assert s["hooks"]["PreToolUse"][0]["hooks"][0]["command"] == "/opt/wh"
+
+
+def test_pack_uses_per_tenant_ide_lists(client):
+    client.patch("/api/tenant", json={"ide_ext_denylist": "myorg.badext"})
+    r = client.get("/api/policy-pack")
+    vscode = json.loads(r.json()["artifacts"]["vscode-extensions.json"])
+    assert vscode["extensions.allowed"]["myorg.badext"] is False
 
 
 def test_endpoint_admin_only(client, db_factory):

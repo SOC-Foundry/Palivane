@@ -77,6 +77,33 @@ def chrome_forcelist(extension_id: str) -> str:
     return f"{eid};https://clients2.google.com/service/update2/crx"
 
 
+def claude_managed_settings(base_url: str, hook_path: str, posture_path: str) -> str:
+    """Claude Code enterprise `managed-settings.json` — routes prompts through the Warden
+    gateway AND installs the local planes (Route C) fleet-wide: a PreToolUse hook
+    (warden-hook, pre-execution tool-call inspection) and a SessionStart hook
+    (warden-posture, device drift). Managed settings take precedence over user settings.
+
+    The `ak_…` placeholder is one per-developer Warden key; for per-user attribution
+    without baking it in, use Claude Code's apiKeyHelper. The two scripts must be deployed
+    to `hook_path` / `posture_path` on the device (push via the same MDM)."""
+    b = base_url.rstrip("/")
+    token = "ak_REPLACE_WITH_PER_USER_WARDEN_KEY"
+    return json.dumps({
+        "env": {
+            "ANTHROPIC_BASE_URL": f"{b}/v1",
+            "ANTHROPIC_AUTH_TOKEN": token,
+            "WARDEN_URL": b,
+            "WARDEN_TOKEN": token,
+        },
+        "hooks": {
+            "PreToolUse": [{"matcher": "*", "hooks": [
+                {"type": "command", "command": hook_path, "timeout": 10}]}],
+            "SessionStart": [{"matcher": "*", "hooks": [
+                {"type": "command", "command": f"{posture_path} --async --quiet"}]}],
+        },
+    }, indent=2)
+
+
 def ca_note() -> str:
     return (
         "Deploy your egress-proxy / corporate root CA to the SYSTEM trust store via MDM so "
@@ -89,17 +116,25 @@ def ca_note() -> str:
 
 
 def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: int,
-                allowed_exts: list[str], denied_exts: list[str]) -> dict[str, str]:
+                allowed_exts: list[str], denied_exts: list[str],
+                hook_path: str = "/usr/local/bin/warden-hook",
+                posture_path: str = "/usr/local/bin/warden-posture") -> dict[str, str]:
     b = base_url.rstrip("/")
     readme = (
         "Warden MDM policy pack — apply these with your MDM (Jamf/Intune/GPO). No Warden\n"
-        "agent is installed; the OS/editor/browser enforce the policy.\n\n"
+        "agent is installed; the OS/editor/browser/Claude Code enforce the policy.\n\n"
         f"Warden backend: {b}\n"
         f"Egress proxy:   {proxy_host or '<set proxy_host>'}:{proxy_port}\n\n"
         "1. vscode-extensions.json  -> push as VS Code machine settings (locks extensions.allowed).\n"
         "2. macos-proxy.mobileconfig / windows-proxy.reg -> system proxy to the Warden proxy.\n"
         "3. chrome-edge-forcelist.txt -> ExtensionInstallForcelist (force-install the extension).\n"
         "4. ca-note.txt -> deploy your root CA to the system trust store (required for TLS inspection).\n"
+        "5. claude-managed-settings.json -> Claude Code managed-settings.json (gateway routing +\n"
+        "   the local-plane hooks). Deploy warden-hook/warden-posture to the paths it references\n"
+        f"   ({hook_path}, {posture_path}) and replace the ak_ placeholder with each dev's key\n"
+        "   (or use apiKeyHelper). Set WARDEN_ENFORCE=true in env to block locally; default monitors.\n"
+        "   Paths: macOS /Library/Application Support/ClaudeCode/, Linux /etc/claude-code/,\n"
+        "   Windows C:\\Program Files\\ClaudeCode\\.\n"
     )
     return {
         "README.txt": readme,
@@ -107,5 +142,6 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "macos-proxy.mobileconfig": macos_proxy_profile(proxy_host or "proxy.example.com", proxy_port),
         "windows-proxy.reg": windows_proxy_reg(proxy_host or "proxy.example.com", proxy_port),
         "chrome-edge-forcelist.txt": chrome_forcelist(extension_id),
+        "claude-managed-settings.json": claude_managed_settings(b, hook_path, posture_path),
         "ca-note.txt": ca_note(),
     }
