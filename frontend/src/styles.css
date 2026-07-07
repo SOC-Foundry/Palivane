@@ -336,6 +336,20 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 .copy-btn { position: absolute; top: 8px; right: 8px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); border-radius: 6px; font-size: 11px; padding: 4px 9px; cursor: pointer; }
 .copy-btn:hover { color: var(--text); border-color: var(--accent); }
 
+/* Quick start */
+.quickstart { background: var(--panel-2); border: 1px solid var(--accent); border-radius: 12px; padding: 16px 18px; margin: 14px 0 6px; }
+.quickstart h3 { font-size: 15px; margin: 0 0 4px; color: var(--text); }
+.qs-paths { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0 4px; }
+.qs-path { flex: 1; min-width: 230px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px 13px; }
+.qs-path h4 { margin: 0 0 4px; font-size: 13px; }
+.qs-path .muted { margin: 0 0 10px; }
+.readiness { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); font-size: 12px; }
+.plane-pill { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.plane-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.plane-pill.on { color: var(--text); }
+.plane-pill.on .dot { background: var(--benign); box-shadow: 0 0 6px var(--benign); }
+.connect-divider { margin-top: 24px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+
 /* ===== Responsive ===== */
 @media (max-width: 1080px) {
   .charts-grid { grid-template-columns: 1fr; }

@@ -180,7 +180,24 @@ console afterward. Lock down self-serve signup for a single-org deployment with
 
 A fresh org has no findings until you point a capture plane at it. Open the **Connect**
 tab (admin only) — it mints a per-org capture key (`ak_…`) and generates copy-paste
-install config for each source. Pick whichever matches how your org uses AI:
+install config for each source.
+
+**Fastest path — Quick start.** The top of the Connect tab covers the whole fleet in
+one step; most orgs don't need the per-source table below. Pick one:
+
+- **You use MDM (Jamf / Intune / GPO)** → *Download policy pack*. An agentless bundle your
+  MDM pushes: browser force-install, system-proxy profile, and Claude Code managed settings
+  + hooks — pre-filled with this org's key and approved-extension lists.
+- **You hand out a setup script** → *Download the macOS (`.sh`) or Windows (`.ps1`) installer*.
+  Run it on any number of devices; each self-enrolls for its own per-device key, then
+  configures every source.
+
+A **Reporting (last 24h)** strip on the same card lights up per plane (Browser · Claude
+Code/gateway · Agent tool-calls) as findings arrive, so you can confirm rollout worked
+without leaving the page.
+
+For pilots or hand-tuning, the per-source cards below (and the table here) let you wire up
+one plane at a time. Pick whichever matches how your org uses AI:
 
 | AI is used via… | Capture plane | Setup |
 | --- | --- | --- |
