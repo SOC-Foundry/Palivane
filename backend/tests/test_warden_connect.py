@@ -65,3 +65,53 @@ def test_write_claude_code_missing_scripts_noted(monkeypatch, tmp_path):
     assert "hooks" not in data or not data["hooks"]
     assert any("warden-hook not found" in i for i in installed)
     assert any("warden-posture not found" in i for i in installed)
+
+
+# --- Cursor wiring ---------------------------------------------------------------------
+
+def test_merge_cursor_hook_flat_shape_and_idempotent():
+    data: dict = {}
+    assert wc._merge_cursor_hook(data, "beforeSubmitPrompt", "/opt/warden/warden-cursor-hook") is True
+    assert data["hooks"]["beforeSubmitPrompt"][0] == {"command": "/opt/warden/warden-cursor-hook"}
+    # Re-run from a different path is a no-op (same script basename).
+    assert wc._merge_cursor_hook(data, "beforeSubmitPrompt", "/usr/local/bin/warden-cursor-hook") is False
+    assert len(data["hooks"]["beforeSubmitPrompt"]) == 1
+
+
+def test_write_cursor_installs_hooks_and_creds(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / ".cursor").mkdir()                      # Cursor "installed"
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    hpath, items = wc._write_cursor("ak_tok", "https://w.corp.io", "dev@acme.com")
+
+    hooks = json.load(open(hpath))
+    assert hooks["version"] == 1
+    assert set(hooks["hooks"]) == set(wc._CURSOR_EVENTS)
+    for ev in wc._CURSOR_EVENTS:
+        assert hooks["hooks"][ev][0]["command"] == "/opt/warden/warden-cursor-hook"
+    # Creds file the hook reads (Cursor doesn't pass env to hooks).
+    creds = json.load(open(tmp_path / ".cursor" / "warden.json"))
+    assert creds == {"url": "https://w.corp.io", "token": "ak_tok", "user": "dev@acme.com"}
+    assert oct(os.stat(tmp_path / ".cursor" / "warden.json").st_mode & 0o777) == "0o600"
+    assert any("installed" in i for i in items)
+
+    # Second run: idempotent.
+    wc._write_cursor("ak_tok", "https://w.corp.io", "dev@acme.com")
+    hooks = json.load(open(hpath))
+    assert len(hooks["hooks"]["beforeSubmitPrompt"]) == 1
+
+
+def test_write_cursor_skipped_when_cursor_absent(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))            # no ~/.cursor dir
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    hpath, items = wc._write_cursor("ak_tok", "https://w.io", "")
+    assert hpath is None
+    assert any("Cursor not detected" in i for i in items)
+    assert not (tmp_path / ".cursor").exists()           # nothing created
+
+
+def test_write_cursor_none_when_hook_missing(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / ".cursor").mkdir()
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: None)
+    assert wc._write_cursor("ak_tok", "https://w.io", "") is None

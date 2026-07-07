@@ -11,7 +11,9 @@ writes ~/.claude/settings.json (ANTHROPIC_BASE_URL -> the Warden gateway, ANTHRO
 -> the token). Also wires the local planes when their sibling scripts are available:
 WARDEN_URL/WARDEN_TOKEN in the same env block, a PreToolUse hook (warden-hook — local
 pre-execution tool-call inspection) and a SessionStart hook (warden-posture — device
-posture on session start). Stdlib only.
+posture on session start). If Cursor is installed (~/.cursor present), it also registers
+warden-cursor-hook in ~/.cursor/hooks.json and writes ~/.cursor/warden.json — covering
+Cursor's prompts + tool calls locally despite its cert pinning. Stdlib only.
 
     warden-connect https://app.warden.io       # or set WARDEN_URL
 """
@@ -142,6 +144,58 @@ def _write_claude_code(token: str, backend: str, user: str) -> tuple[str, list[s
     return path, installed
 
 
+# Cursor agent-hook events warden-cursor-hook handles (prompt data-loss + tool calls).
+_CURSOR_EVENTS = ["beforeSubmitPrompt", "beforeShellExecution", "beforeMCPExecution",
+                  "beforeReadFile", "afterFileEdit"]
+
+
+def _merge_cursor_hook(data: dict, event: str, command: str) -> bool:
+    """Add a Cursor hook entry for `event` unless one already runs the same script.
+    Cursor's hooks.json uses a flatter entry shape than Claude Code's: {"command": ...}."""
+    script = os.path.basename(command.split()[0])
+    entries = data.setdefault("hooks", {}).setdefault(event, [])
+    for entry in entries:
+        if isinstance(entry, dict) and script in str(entry.get("command", "")):
+            return False
+    entries.append({"command": command})
+    return True
+
+
+def _write_cursor(token: str, backend: str, user: str) -> tuple[str, list[str]] | None:
+    """Wire warden-cursor-hook into ~/.cursor/hooks.json + write the creds file it reads.
+    Only when Cursor is actually installed (~/.cursor exists) and the hook is available —
+    Cursor's chat pins its cert, so this local hook is how Warden sees it."""
+    hook = _resolve_script("warden-cursor-hook")
+    cdir = os.path.expanduser("~/.cursor")
+    if not hook:
+        return None
+    if not os.path.isdir(cdir):
+        return None, ["Cursor not detected (~/.cursor absent) — skipped Cursor hooks"]
+
+    # Cursor doesn't pass env to hook processes, so the hook reads creds from this file.
+    wj = os.path.join(cdir, "warden.json")
+    with open(wj, "w") as f:
+        json.dump({"url": backend.rstrip("/"), "token": token, "user": user}, f, indent=2)
+    os.chmod(wj, 0o600)
+
+    hpath = os.path.join(cdir, "hooks.json")
+    data = {}
+    if os.path.exists(hpath):
+        try:
+            data = json.load(open(hpath))
+        except (ValueError, OSError):
+            data = {}
+    if not isinstance(data.get("version"), int):
+        data["version"] = 1
+    added = sum(1 for ev in _CURSOR_EVENTS if _merge_cursor_hook(data, ev, hook))
+    with open(hpath, "w") as f:
+        json.dump(data, f, indent=2)
+    os.chmod(hpath, 0o600)
+    msg = f"Cursor hooks installed ({added} event{'s' if added != 1 else ''})" if added \
+        else "Cursor hooks already present"
+    return hpath, [msg]
+
+
 def main() -> None:
     console = _console_url(sys.argv)
     got = _capture_token(console)
@@ -153,7 +207,15 @@ def main() -> None:
     for item in installed:
         print(f"  {item}")
     print(f"  wrote {path}")
-    print("  Start (or restart) Claude Code to apply.")
+
+    cursor = _write_cursor(got["token"], backend, got.get("user", ""))
+    if cursor:
+        cpath, citems = cursor
+        for item in citems:
+            print(f"  {item}")
+        if cpath:
+            print(f"  wrote {cpath}")
+    print("  Start (or restart) Claude Code / Cursor to apply.")
 
 
 if __name__ == "__main__":
