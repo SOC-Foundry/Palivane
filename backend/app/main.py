@@ -45,14 +45,27 @@ if settings.database_url.startswith("sqlite"):
     Base.metadata.create_all(bind=db_engine)
 
 
+_WEAK_SECRET_KEYS = {"dev-insecure-change-me", "dev-insecure-key-change-me",
+                     "changeme", "change-me", "secret", "changeme123"}
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    import logging
+    log = logging.getLogger("uvicorn.error")
+    prod = not settings.database_url.startswith("sqlite")   # Postgres => a real deployment
     if using_insecure_key():
-        import logging
-        logging.getLogger("uvicorn.error").warning(
-            "WARDEN_SECRET_KEY is unset — using an insecure dev key. "
-            "Set it before any real deployment."
-        )
+        if prod:
+            # Refuse to boot with a forgeable JWT key on a production-shaped deployment.
+            raise RuntimeError(
+                "WARDEN_SECRET_KEY is unset. On a non-SQLite (production) deployment this "
+                "means JWTs are signed with a public dev key and anyone can forge an admin "
+                "session. Set WARDEN_SECRET_KEY to a strong random value and restart.")
+        log.warning("WARDEN_SECRET_KEY is unset — using an insecure dev key (SQLite dev only).")
+    elif settings.auth_secret_key in _WEAK_SECRET_KEYS:
+        # Warn (don't fail): the local Docker stack uses a well-known dev key on Postgres.
+        log.warning("WARDEN_SECRET_KEY is a well-known weak value — set a strong random "
+                    "key before production.")
     yield
 
 
