@@ -104,6 +104,46 @@ def claude_managed_settings(base_url: str, hook_path: str, posture_path: str) ->
     }, indent=2)
 
 
+def openai_env(base_url: str) -> str:
+    """Drop-in env for OpenAI SDK / CLI clients — routes them through the Warden gateway's
+    OpenAI-compatible endpoint (`/v1/chat/completions`) instead of api.openai.com. Covers
+    clients that pin certs or otherwise bypass the egress proxy. `OPENAI_BASE_URL` is the
+    current var; `OPENAI_API_BASE` is the legacy name older SDKs still read."""
+    b = base_url.rstrip("/")
+    return (
+        "# Route OpenAI SDK/CLI clients through the Warden gateway (agentless — no proxy CA\n"
+        "# needed). Push via MDM as machine/user environment variables. The ak_ value is a\n"
+        "# per-user Warden capture key and doubles as the gateway auth token.\n"
+        f'OPENAI_BASE_URL="{b}/v1"\n'
+        f'OPENAI_API_BASE="{b}/v1"\n'
+        'OPENAI_API_KEY="ak_REPLACE_WITH_PER_USER_WARDEN_KEY"\n'
+    )
+
+
+def gemini_config(base_url: str) -> str:
+    """Gemini routing note + SDK snippet. Google's google-genai SDK has no universal base-url
+    *env var*, so the reliable agentless path for Gemini is the system proxy (this pack's
+    proxy profile inspects generativelanguage.googleapis.com). Where a client can be code-
+    configured, point it at the gateway's `/v1beta` endpoint as shown."""
+    b = base_url.rstrip("/")
+    return (
+        "Gemini routing\n"
+        "==============\n"
+        "Gemini's official SDKs don't honor a standard base-URL environment variable, so the\n"
+        "primary agentless capture for Gemini is the SYSTEM PROXY in this pack (it inspects\n"
+        "generativelanguage.googleapis.com once your root CA is trusted — see ca-note.txt).\n\n"
+        "For clients you can configure in code, point the Python google-genai SDK at the\n"
+        "Warden gateway's Gemini-shaped endpoint:\n\n"
+        "  from google import genai\n"
+        "  from google.genai.types import HttpOptions\n"
+        f'  client = genai.Client(\n'
+        f'      api_key="ak_REPLACE_WITH_PER_USER_WARDEN_KEY",\n'
+        f'      http_options=HttpOptions(base_url="{b}"),  # SDK appends /v1beta/models/...\n'
+        "  )\n\n"
+        f"Gateway Gemini endpoint: {b}/v1beta/models/{{model}}:generateContent\n"
+    )
+
+
 def ca_note() -> str:
     return (
         "Deploy your egress-proxy / corporate root CA to the SYSTEM trust store via MDM so "
@@ -135,6 +175,13 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "   (or use apiKeyHelper). Set WARDEN_ENFORCE=true in env to block locally; default monitors.\n"
         "   Paths: macOS /Library/Application Support/ClaudeCode/, Linux /etc/claude-code/,\n"
         "   Windows C:\\Program Files\\ClaudeCode\\.\n"
+        "6. openai.env -> environment variables that route OpenAI SDK/CLI clients through the\n"
+        "   gateway (OPENAI_BASE_URL). Push as machine/user env via MDM; agentless, no CA needed.\n"
+        "7. gemini.txt -> Gemini routing (SDK snippet + note). Gemini has no base-URL env var,\n"
+        "   so the system proxy above is its primary agentless capture path.\n\n"
+        "Coverage: browser UIs (claude.ai / chatgpt.com / gemini.google.com) via the extension;\n"
+        "OpenAI + Gemini + Anthropic API clients via the system proxy (needs the CA); and an\n"
+        "explicit gateway redirect for Claude Code (item 5) and OpenAI SDKs (item 6).\n"
     )
     return {
         "README.txt": readme,
@@ -143,5 +190,7 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "windows-proxy.reg": windows_proxy_reg(proxy_host or "proxy.example.com", proxy_port),
         "chrome-edge-forcelist.txt": chrome_forcelist(extension_id),
         "claude-managed-settings.json": claude_managed_settings(b, hook_path, posture_path),
+        "openai.env": openai_env(b),
+        "gemini.txt": gemini_config(b),
         "ca-note.txt": ca_note(),
     }

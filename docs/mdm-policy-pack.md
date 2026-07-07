@@ -28,6 +28,8 @@ It returns these artifacts (write each to a file):
 | `windows-proxy.reg` | Windows system proxy → the Warden egress proxy |
 | `chrome-edge-forcelist.txt` | `ExtensionInstallForcelist` value for the browser extension |
 | `claude-managed-settings.json` | Claude Code `managed-settings.json`: gateway routing + the Route C hooks (warden-hook, warden-posture) |
+| `openai.env` | Environment vars (`OPENAI_BASE_URL`) routing OpenAI SDK/CLI clients through the gateway — agentless, no CA needed |
+| `gemini.txt` | Gemini routing: SDK `http_options` snippet + note (Gemini has no base-URL env var, so the system proxy is its primary capture path) |
 | `ca-note.txt` | Where to deploy your root CA (required for TLS inspection) |
 
 The extension allow/deny lists come from this tenant's IDE-vetting config (its
@@ -117,6 +119,21 @@ the `ak_` placeholder with each developer's key (or wire `apiKeyHelper`). See
 [`docs/claude-deployment.md`](claude-deployment.md) (Route C) for the field-by-field
 breakdown. Same philosophy as the rest of the pack: config the app enforces, no resident
 Warden agent.
+
+## OpenAI & Gemini clients (gateway redirect)
+
+The proxy profile already inspects `api.openai.com` and `generativelanguage.googleapis.com`
+(with the CA trusted), and the extension covers `chatgpt.com` / `gemini.google.com`. For
+API clients that pin certs or otherwise skip the proxy, the pack also ships an explicit
+gateway redirect:
+
+- **`openai.env`** — `OPENAI_BASE_URL` (and the legacy `OPENAI_API_BASE`) pointed at the
+  gateway's OpenAI-compatible `/v1/chat/completions`. Push as machine/user env via MDM;
+  agentless, no CA required. Set `OPENAI_API_KEY` to each user's `ak_` Warden key.
+- **`gemini.txt`** — Gemini's SDKs don't honor a standard base-URL env var, so the **system
+  proxy is Gemini's primary agentless capture**. Where a client is code-configurable, the
+  file gives the google-genai `http_options(base_url=…)` snippet pointing at the gateway's
+  `/v1beta/models/{model}:generateContent`.
 
 ## What this does and doesn't cover
 
