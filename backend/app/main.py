@@ -30,6 +30,7 @@ from .schemas import (
     CodeScanRequest,
     CoverageRequest,
     IDEExtScan,
+    MCPBatchIngest,
     MCPConfigScan,
     MCPIngest,
     ProvisionRequest,
@@ -232,12 +233,13 @@ def _action_for(severity: str, block_severity: str = "high") -> str:
 
 
 def _enforce_rate(db: Session, tenant_id: int | None) -> None:
-    """Count one capture request against the tenant's per-minute quota; 429 if over.
-    Shares the gateway counter, so `rate_limit` bounds all capture (gateway + ingest)."""
+    """Count one capture request against the tenant's sensor/ingest quota; 429 if over.
+    Uses the `ingest` counter — separate from the gateway budget — so agentic tool-call
+    volume can't starve real LLM traffic (bounded by `ingest_rate_limit`, default off)."""
     from .metering import record_and_check
-    allowed, _count, limit = record_and_check(db, tenant_id)
+    allowed, _count, limit = record_and_check(db, tenant_id, kind="ingest")
     if not allowed:
-        raise HTTPException(status_code=429, detail=f"rate limit exceeded ({limit}/min)",
+        raise HTTPException(status_code=429, detail=f"ingest rate limit exceeded ({limit}/min)",
                             headers={"Retry-After": "60"})
 
 
@@ -322,21 +324,14 @@ def _tenant_mcp_block_severity(tenant_id: int | None, db: Session) -> str:
                              settings.mcp_block_severity) or "high"
 
 
-@app.post("/api/ingest/mcp")
-def ingest_mcp(
-    body: MCPIngest,
-    x_warden_token: str = Header(default=""),
-    db: Session = Depends(get_db),
-):
-    """Score an MCP JSON-RPC activity the egress proxy captured (agentic tool-use).
+def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
+               allowed_servers: str, block_severity: str, db: Session) -> dict:
+    """Score one MCP activity on the `mcp` surface and return the client verdict.
 
-    The proxy normalizes each MCP message (tool call, resource read, server handshake,
-    advertised tool descriptions) and posts it here. Token-gated like the other ingest
-    endpoints. Returns an action the proxy enforces on the `mcp` surface: allow/warn/block."""
-    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
-    _enforce_rate(db, tenant_id)
+    Benign (allow-level) verdicts aren't persisted unless WARDEN_MCP_PERSIST_BENIGN is set
+    — most tool calls are benign noise, not findings. Shared by the single + batch endpoints
+    so their behavior can't drift."""
     actor = body.user or default_actor
-
     # Synthesize the scannable text: tool arguments, resource URI, and advertised tool
     # descriptions — so shadow-AI catches secrets/PII in args and the finding has context.
     content = "\n".join(p for p in [
@@ -351,18 +346,52 @@ def ingest_mcp(
             "method": body.method, "server": body.server, "tool": body.tool,
             "args_text": body.args_text, "resource": body.resource,
             "tool_descriptions": body.tool_descriptions, "transport": body.transport,
-            "allowed_servers": _tenant_mcp_allow(tenant_id, db),
+            "allowed_servers": allowed_servers,
         },
     )
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
-                          signal_filter=_mcp_filter)
+                          signal_filter=_mcp_filter,
+                          persist_benign=settings.mcp_persist_benign)
     return {
-        "action": _action_for(result["severity"], _tenant_mcp_block_severity(tenant_id, db)),
+        "action": _action_for(result["severity"], block_severity),
         "risk_score": result["risk_score"],
         "severity": result["severity"],
         "signals": result["signals"],
         "finding_id": result["finding_id"],
     }
+
+
+@app.post("/api/ingest/mcp")
+def ingest_mcp(
+    body: MCPIngest,
+    x_warden_token: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Score an MCP JSON-RPC activity a capture client (proxy, warden-hook, warden-mcp)
+    saw (agentic tool-use). Token-gated; returns an action the client enforces on the
+    `mcp` surface: allow/warn/block. Benign verdicts aren't persisted by default."""
+    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    _enforce_rate(db, tenant_id)
+    return _score_mcp(body, tenant_id, default_actor, _tenant_mcp_allow(tenant_id, db),
+                      _tenant_mcp_block_severity(tenant_id, db), db)
+
+
+@app.post("/api/ingest/mcp/batch")
+def ingest_mcp_batch(
+    body: MCPBatchIngest,
+    x_warden_token: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Score many MCP activities in one request — for long-lived capture clients
+    (warden-mcp) that would otherwise post per tool call. Counts as a single ingest
+    request against the tenant's sensor quota. Returns per-item verdicts, index-aligned."""
+    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    _enforce_rate(db, tenant_id)
+    allowed = _tenant_mcp_allow(tenant_id, db)
+    block = _tenant_mcp_block_severity(tenant_id, db)
+    results = [_score_mcp(item, tenant_id, default_actor, allowed, block, db)
+               for item in body.items]
+    return {"results": results}
 
 
 def _parse_mcp_servers(content: str) -> list[dict]:

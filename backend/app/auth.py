@@ -567,6 +567,10 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         if body.rate_limit < 0:
             raise HTTPException(status_code=400, detail="rate_limit must be >= 0")
         tenant.rate_limit = body.rate_limit
+    if body.ingest_rate_limit is not None:
+        if body.ingest_rate_limit < 0:
+            raise HTTPException(status_code=400, detail="ingest_rate_limit must be >= 0")
+        tenant.ingest_rate_limit = body.ingest_rate_limit
     if body.mcp_allowed_servers is not None:
         tenant.mcp_allowed_servers = body.mcp_allowed_servers.strip()
     if body.ide_ext_allowed is not None:

@@ -44,6 +44,13 @@ class Settings:
     # Default gateway requests-per-minute limit per tenant (0 = unlimited). A tenant's own
     # rate_limit overrides this. Enforced as a fixed 60s window; also the metering source.
     gateway_rate_limit: int = int(os.getenv("GATEWAY_RATE_LIMIT", "0"))
+    # Default sensor/ingest req/min per tenant (capture planes: /api/ingest/*, /api/scan/*),
+    # counted separately from the gateway so agentic volume can't starve LLM traffic
+    # (0 = unlimited). A tenant's own ingest_rate_limit overrides this.
+    ingest_rate_limit: int = int(os.getenv("INGEST_RATE_LIMIT", "0"))
+    # Persist benign MCP-surface findings (warden-hook/warden-mcp tool calls)? Default off:
+    # the vast majority of tool calls are benign noise; only warn+ verdicts are stored.
+    mcp_persist_benign: bool = os.getenv("WARDEN_MCP_PERSIST_BENIGN", "").lower() in ("1", "true", "yes")
     # If set, /metrics requires this token (Bearer or ?token=); empty = open (bind it to
     # an internal network / scrape it privately).
     metrics_token: str = os.getenv("WARDEN_METRICS_TOKEN", "")
