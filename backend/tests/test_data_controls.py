@@ -65,17 +65,63 @@ def test_retention_purge_deletes_only_old_findings(client, db_factory):
 def test_delete_my_org_requires_slug_and_cascades(client, db_factory):
     client.post("/api/apikeys", json={"label": "k", "actor": "a@acme.com"})
     client.post("/api/analyze", json={"content": "hi", "persist": True})
+    client.patch("/api/tenant", json={"name": "Acme"})   # writes an audit row
 
     # Wrong confirmation is refused.
     assert client.request("DELETE", "/api/tenant", json={"confirm": "wrong"}).status_code == 400
 
     r = client.request("DELETE", "/api/tenant", json={"confirm": "acme"})
     assert r.status_code == 200 and r.json()["deleted_tenant"] == "acme"
+    deleted = r.json()["deleted"]
+    assert deleted["api_keys"] >= 1 and deleted["audit_log"] >= 1   # not just findings/users
 
     # The admin user is gone too, so the session no longer authenticates.
     assert client.get("/api/upstreams").status_code == 401
-    # And the tenant's data is gone.
+    # And ALL the tenant's data is gone — a partial delete isn't a delete.
     db = db_factory()
+    from app.models import ApiKey, AuditLog
     assert db.query(Tenant).filter(Tenant.slug == "acme").first() is None
     assert db.query(Finding).count() == 0
+    assert db.query(ApiKey).count() == 0
+    assert db.query(AuditLog).count() == 0
     db.close()
+
+
+# --- DPA acceptance record ------------------------------------------------------------
+
+def test_dpa_accept_records_version_actor_and_audit(client):
+    before = client.get("/api/tenant/dpa").json()
+    assert before["accepted"] is False and before["current_version"]
+
+    r = client.post("/api/tenant/dpa", json={})   # defaults to the current version
+    assert r.status_code == 200
+    st = r.json()
+    assert st["accepted"] is True
+    assert st["version"] == st["current_version"]
+    assert st["accepted_by"] == "admin@acme.com" and st["accepted_at"]
+
+    # GET reflects it, and an audit entry was written.
+    assert client.get("/api/tenant/dpa").json()["accepted"] is True
+    actions = [e["action"] for e in client.get("/api/audit").json()["entries"]]
+    assert "dpa.accept" in actions
+
+
+def test_dpa_stale_when_version_bumped(client, monkeypatch):
+    import app.auth as auth_mod
+    monkeypatch.setattr(auth_mod.settings, "dpa_version", "1.0")
+    client.post("/api/tenant/dpa", json={})
+    assert client.get("/api/tenant/dpa").json()["accepted"] is True
+    # Bumping the canonical version makes the prior acceptance stale (re-accept required).
+    monkeypatch.setattr(auth_mod.settings, "dpa_version", "2.0")
+    st = client.get("/api/tenant/dpa").json()
+    assert st["accepted"] is False and st["version"] == "1.0" and st["current_version"] == "2.0"
+
+
+def test_dpa_requires_admin(client, db_factory):
+    db = db_factory()
+    from app import users as users_cli
+    users_cli.create_user(db, "acme", "analyst@acme.com", "password123", "analyst")
+    db.close()
+    tok = client.post("/api/auth/login",
+                      json={"email": "analyst@acme.com", "password": "password123"}).json()["access_token"]
+    assert client.get("/api/tenant/dpa", headers={"Authorization": f"Bearer {tok}"}).status_code == 403
