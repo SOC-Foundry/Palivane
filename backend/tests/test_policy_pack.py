@@ -36,7 +36,22 @@ def test_forcelist_and_pack():
                           ["ms-python.python"], ["bad.ext"])
     assert set(pack) >= {"README.txt", "vscode-extensions.json", "macos-proxy.mobileconfig",
                          "windows-proxy.reg", "chrome-edge-forcelist.txt",
-                         "claude-managed-settings.json", "ca-note.txt"}
+                         "claude-managed-settings.json", "openai.env", "gemini.txt",
+                         "ca-note.txt"}
+
+
+def test_openai_env_routes_to_gateway():
+    env = pp.openai_env("https://w.acme.com/")
+    assert 'OPENAI_BASE_URL="https://w.acme.com/v1"' in env
+    assert 'OPENAI_API_BASE="https://w.acme.com/v1"' in env       # legacy SDK var too
+    assert 'OPENAI_API_KEY="ak_' in env
+
+
+def test_gemini_config_points_at_v1beta():
+    cfg = pp.gemini_config("https://w.acme.com/")
+    assert "https://w.acme.com/v1beta/models/{model}:generateContent" in cfg
+    assert "generativelanguage.googleapis.com" in cfg             # notes the proxy path
+    assert 'base_url="https://w.acme.com"' in cfg                 # SDK http_options snippet
 
 
 def test_claude_managed_settings():
