@@ -20,9 +20,15 @@ the reason — and a poisoned tools/list result is replaced the same way. Fail-o
 the backend is down, everything passes through untouched. Framing is preserved exactly
 (original bytes are forwarded, never re-serialized); non-JSON lines pass through as-is.
 
+Monitor mode batches its reports (one request per WARDEN_MCP_BATCH tool calls or every
+WARDEN_MCP_FLUSH_MS) so a busy session doesn't hammer the backend; enforce mode scans
+each request inline. The backend also drops benign tool calls from storage and meters
+sensor ingest separately from the gateway, so this traffic can't starve real LLM calls.
+
 Config: WARDEN_URL + WARDEN_TOKEN (an ak_… key). Optional: --name / WARDEN_MCP_SERVER
 (server name for the org allowlist; else guessed from the command), WARDEN_USER,
-WARDEN_MCP_TIMEOUT. Stdlib only.
+WARDEN_MCP_TIMEOUT, WARDEN_MCP_BATCH (default 20), WARDEN_MCP_FLUSH_MS (default 2000).
+Stdlib only.
 """
 
 from __future__ import annotations
@@ -140,16 +146,66 @@ def scan_mcp(activity: dict, server: str, url: str, token: str,
         return {"action": "allow", "reason": "scan-failed"}
 
 
-def _report_async(activity: dict, state: dict, cfg: dict) -> None:
-    """Monitor-mode report: fire-and-forget daemon thread (never delays the pipe)."""
-    threading.Thread(
-        target=scan_mcp,
-        args=(activity, state["server"], cfg["url"], cfg["token"], cfg["user"], cfg["timeout"]),
-        daemon=True,
-    ).start()
+def scan_mcp_batch(items: list[dict], cfg: dict) -> None:
+    """Report a batch of activities to the batch ingest endpoint; fail open (silent)."""
+    try:
+        payload = {"items": [{"method": "", "server": "", "tool": "", "args_text": "",
+                              "resource": "", "tool_descriptions": [], "transport": "stdio",
+                              "user": cfg["user"], **it} for it in items]}
+        req = urllib.request.Request(
+            cfg["url"].rstrip("/") + "/api/ingest/mcp/batch", method="POST",
+            data=json.dumps(payload).encode(),
+            headers={"content-type": "application/json", "X-Warden-Token": cfg["token"]},
+        )
+        urllib.request.urlopen(req, timeout=cfg["timeout"]).read()
+    except Exception:
+        pass  # monitor telemetry — never affects the pipe
 
 
-def _pump_child_to_client(child, cfg: dict, state: dict, lock: threading.Lock) -> None:
+class _Reporter:
+    """Monitor-mode batcher: queues activities and flushes them to the batch endpoint
+    when the queue reaches WARDEN_MCP_BATCH items or WARDEN_MCP_FLUSH_MS elapses — one
+    request for many tool calls instead of one per call. Fully fail-open."""
+
+    def __init__(self, cfg: dict):
+        self.cfg = cfg
+        self.batch = max(1, int(os.getenv("WARDEN_MCP_BATCH", "20")))
+        self.flush_s = max(0.1, float(os.getenv("WARDEN_MCP_FLUSH_MS", "2000")) / 1000.0)
+        self.q: list[dict] = []
+        self.cv = threading.Condition()
+        self.stopped = False
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def enqueue(self, activity: dict, server: str) -> None:
+        item = dict(activity)
+        item["server"] = server
+        with self.cv:
+            self.q.append(item)
+            if len(self.q) >= self.batch:
+                self.cv.notify()
+
+    def _run(self) -> None:
+        while True:
+            with self.cv:
+                if not self.q and not self.stopped:
+                    self.cv.wait(self.flush_s)
+                items, self.q = self.q, []
+                done = self.stopped and not items
+            if items:
+                scan_mcp_batch(items, self.cfg)
+            if done:
+                return
+
+    def close(self) -> None:
+        with self.cv:
+            self.stopped = True
+            self.cv.notify()
+        self.thread.join(timeout=self.cfg["timeout"] + 1)
+
+
+def _pump_child_to_client(child, cfg: dict, state: dict, lock: threading.Lock,
+                          reporter: "_Reporter | None") -> None:
     """Forward server→client frames; inspect tools/list results (tool poisoning)."""
     out = sys.stdout.buffer
     for line in iter(child.stdout.readline, b""):
@@ -167,8 +223,8 @@ def _pump_child_to_client(child, cfg: dict, state: dict, lock: threading.Lock) -
                                      cfg["token"], cfg["user"], cfg["timeout"])
                         if v.get("action") == "block":
                             replaced = block_reply(obj.get("id"), v)
-                    elif cfg["url"] and cfg["token"]:
-                        _report_async(activity, state, cfg)
+                    elif reporter is not None:
+                        reporter.enqueue(activity, state["server"])
         except Exception:
             pass  # inspection must never break the pipe
         with lock:
@@ -201,7 +257,9 @@ def main() -> int:
     child = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                              bufsize=0)  # stderr inherited
     lock = threading.Lock()
-    threading.Thread(target=_pump_child_to_client, args=(child, cfg, state, lock),
+    # Monitor mode batches reports; enforce mode scans inline (needs the verdict now).
+    reporter = _Reporter(cfg) if (not cfg["enforce"] and cfg["url"] and cfg["token"]) else None
+    threading.Thread(target=_pump_child_to_client, args=(child, cfg, state, lock, reporter),
                      daemon=True).start()
 
     out = sys.stdout.buffer
@@ -218,8 +276,8 @@ def main() -> int:
                                          cfg["token"], cfg["user"], cfg["timeout"])
                             if v.get("action") == "block":
                                 blocked = block_reply(obj.get("id"), v)
-                        elif cfg["url"] and cfg["token"]:
-                            _report_async(activity, state, cfg)
+                        elif reporter is not None:
+                            reporter.enqueue(activity, state["server"])
             except Exception:
                 pass  # inspection must never break the pipe
             if blocked is not None:
@@ -236,6 +294,8 @@ def main() -> int:
             child.stdin.close()
         except OSError:
             pass
+        if reporter is not None:
+            reporter.close()  # flush any queued reports
     return child.wait()
 
 

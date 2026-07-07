@@ -22,6 +22,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   const [org, setOrgState] = useState({
     name: tenant?.name || "", judge: judgeValue(tenant),
     retention_days: tenant?.retention_days ?? 0, rate_limit: tenant?.rate_limit ?? 0,
+    ingest_rate_limit: tenant?.ingest_rate_limit ?? 0,
     mcp_allowed_servers: tenant?.mcp_allowed_servers || "",
     ide_ext_allowed: tenant?.ide_ext_allowed || "",
     ide_ext_denylist: tenant?.ide_ext_denylist || "",
@@ -40,6 +41,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
       const t = await api.updateTenant({
         name: org.name, judge: org.judge,
         retention_days: Number(org.retention_days), rate_limit: Number(org.rate_limit),
+        ingest_rate_limit: Number(org.ingest_rate_limit),
         mcp_allowed_servers: org.mcp_allowed_servers,
         ide_ext_allowed: org.ide_ext_allowed,
         ide_ext_denylist: org.ide_ext_denylist,
@@ -201,6 +203,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
             <input type="number" min="0" value={org.retention_days} onChange={setField("retention_days")} /></label>
           <label>Gateway rate limit (req/min, 0 = unlimited)
             <input type="number" min="0" value={org.rate_limit} onChange={setField("rate_limit")} /></label>
+          <label>Ingest rate limit (sensors, req/min, 0 = unlimited)
+            <input type="number" min="0" value={org.ingest_rate_limit} onChange={setField("ingest_rate_limit")} /></label>
           <label className="field-wide">Approved MCP servers (comma-separated hosts; empty = don't flag)
             <input placeholder="mcp.githubcopilot.com, mcp.acme.com"
                    value={org.mcp_allowed_servers} onChange={setField("mcp_allowed_servers")} /></label>
