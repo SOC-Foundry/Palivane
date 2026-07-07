@@ -304,7 +304,9 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | PATCH  | `/api/tenant`            | Org settings: name, LLM-judge consent (`judge`: on/off/inherit), findings `retention_days`, gateway `rate_limit`/min (admin). |
 | GET    | `/api/usage`             | Gateway usage for the tenant: current-minute count, last-24h, per-day totals, effective limit (admin). |
 | GET    | `/api/audit`             | The tenant's admin audit trail (who did what, when); filterable by `action` (admin). |
-| DELETE | `/api/tenant`            | Delete the org and all its data (findings/users/keys/upstreams); slug-confirmed. GDPR "delete my org" (admin). |
+| GET    | `/api/export/tenant`     | Full self-serve data export (JSON): tenant config, users, keys, findings, audit log, SSO/upstream config, DPA record. Secrets excluded; `?include_content=true` decrypts finding content (admin). |
+| GET/POST | `/api/tenant/dpa`      | Data-processing-agreement record: current vs accepted version, who/when. POST records acceptance (admin). |
+| DELETE | `/api/tenant`            | Delete the org and **all** its data (findings, users, keys, enrollment tokens, upstreams, audit log, usage, SSO); slug-confirmed. GDPR "delete my org" (admin). |
 | POST   | `/api/findings/purge`    | Delete this tenant's findings older than `retention_days` (scheduler-friendly) (admin). |
 | POST   | `/api/apikeys`           | Mint a long-lived machine API key; plaintext returned once (admin). |
 | GET    | `/api/apikeys`           | List the tenant's API keys (no secrets) (admin). |
