@@ -1,5 +1,34 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../api.js";
+
+// Live "is each plane actually reporting?" strip — turns setup from fire-and-hope into
+// fire-and-watch. Polls /api/setup-status (findings in the last 24h, per surface).
+function Readiness() {
+  const [s, setS] = useState(null);
+  useEffect(() => {
+    let live = true;
+    const load = () => api.setupStatus().then((r) => live && setS(r)).catch(() => {});
+    load();
+    const t = setInterval(load, 15000);
+    return () => { live = false; clearInterval(t); };
+  }, []);
+  if (!s) return null;
+  const planes = [
+    ["Browser", s.planes.shadow_ai],
+    ["Claude Code / gateway", s.planes.gateway],
+    ["Agent tool-calls", s.planes.mcp],
+  ];
+  return (
+    <div className="readiness">
+      <span className="muted">Reporting (last 24h):</span>
+      {planes.map(([label, n]) => (
+        <span key={label} className={`plane-pill ${n > 0 ? "on" : "off"}`}>
+          <span className="dot" /> {label}{n > 0 ? ` · ${n}` : " · waiting"}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 function Block({ text }) {
   const [copied, setCopied] = useState(false);
@@ -100,6 +129,48 @@ export default function Connect({ tenant }) {
       <p className="muted">Each source authenticates with this org's key and routes findings here
         (<code>{origin}</code>). Push the config below via your MDM, or paste it during setup.</p>
 
+      <div className="quickstart">
+        <h3>⚡ Quick start — cover your whole org in one step</h3>
+        <p className="muted">Most orgs don't need the per-source setup below. Pick how you deliver
+           software to your fleet — Warden generates everything (browser + Claude Code + agent
+           tool-calls) already pointed here and pre-configured with this org's policy.</p>
+        <div className="qs-paths">
+          <div className="qs-path">
+            <h4>You use MDM (Jamf · Intune · GPO)</h4>
+            <p className="muted">Agentless. One pack your MDM pushes: extension force-install,
+               system-proxy profile, and Claude Code managed settings + hooks.</p>
+            <div className="form-row" style={{ gap: 8 }}>
+              <input placeholder="egress proxy host (optional)" value={proxyHost}
+                     onChange={(e) => setProxyHost(e.target.value)} />
+              <button className="primary-btn slim" disabled={packBusy} onClick={getPolicyPack}>
+                {packBusy ? "…" : "Download policy pack"}
+              </button>
+            </div>
+          </div>
+          <div className="qs-path">
+            <h4>You hand out a setup script</h4>
+            <p className="muted">One installer per OS, run on any number of devices. Each
+               self-enrolls for its own per-device key, then configures every source.</p>
+            <div className="form-row" style={{ gap: 8 }}>
+              <button className="primary-btn slim" disabled={!!provBusy}
+                      onClick={() => getInstaller("macos")}>
+                {provBusy === "macos" ? "…" : "macOS (.sh)"}
+              </button>
+              <button className="primary-btn slim" disabled={!!provBusy}
+                      onClick={() => getInstaller("windows")}>
+                {provBusy === "windows" ? "…" : "Windows (.ps1)"}
+              </button>
+            </div>
+          </div>
+        </div>
+        <p className="muted" style={{ marginTop: 4 }}>Each download carries a reusable enrollment
+           token — treat the file as a secret; revoke it anytime under enrollment tokens. MDM
+           details: <code>docs/mdm-policy-pack.md</code>.</p>
+        <Readiness />
+      </div>
+
+      <div className="connect-divider">Per-source setup (pilots &amp; manual)</div>
+
       <div className="connect-card">
         <h3>① Browser (claude.ai, ChatGPT, Gemini)</h3>
         <p className="muted">Install the Warden extension, then push this managed-config policy
@@ -138,42 +209,6 @@ export default function Connect({ tenant }) {
         <Block text={mcpWrap} />
         <p className="muted" style={{ marginTop: 8 }}>Self-serve: <code>warden-connect {origin}</code> installs
            the hooks automatically alongside the gateway routing.</p>
-      </div>
-
-      <div className="connect-card">
-        <h3>⑤ One-run device installer</h3>
-        <p className="muted">Download a prefilled setup script (carries a reusable enrollment
-           token) — run it on any number of devices; each self-enrolls for its own per-device
-           key, then configures Claude Code + the browser extension policy. Hand to a user or
-           push via MDM.</p>
-        <div className="form-row" style={{ gap: 10 }}>
-          <button className="primary-btn slim" disabled={!!provBusy}
-                  onClick={() => getInstaller("macos")}>
-            {provBusy === "macos" ? "…" : "Download macOS installer (.sh)"}
-          </button>
-          <button className="primary-btn slim" disabled={!!provBusy}
-                  onClick={() => getInstaller("windows")}>
-            {provBusy === "windows" ? "…" : "Download Windows installer (.ps1)"}
-          </button>
-        </div>
-        <p className="muted" style={{ marginTop: 8 }}>Each download mints a new enrollment token —
-           treat the file as a secret; revoke it anytime under enrollment tokens.</p>
-      </div>
-
-      <div className="connect-card">
-        <h3>⑥ MDM policy pack (agentless enforcement)</h3>
-        <p className="muted">Download the config your MDM (Jamf / Intune / GPO) pushes to enforce
-           policy with no Warden agent: VS Code extension allowlist, system-proxy profiles
-           (macOS/Windows), browser force-install, a CA note, and the Claude Code
-           <code>managed-settings.json</code> (gateway routing + the Route C hooks). Uses this org's
-           approved-extension lists. See <code>docs/mdm-policy-pack.md</code>.</p>
-        <div className="form-row" style={{ gap: 10 }}>
-          <input placeholder="egress proxy host (e.g. proxy.corp.com)"
-                 value={proxyHost} onChange={(e) => setProxyHost(e.target.value)} />
-          <button className="primary-btn slim" disabled={packBusy} onClick={getPolicyPack}>
-            {packBusy ? "…" : "Download policy pack"}
-          </button>
-        </div>
       </div>
     </div>
   );
