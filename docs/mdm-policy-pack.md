@@ -27,11 +27,14 @@ It returns these artifacts (write each to a file):
 | `macos-proxy.mobileconfig` | macOS system proxy → the Warden egress proxy |
 | `windows-proxy.reg` | Windows system proxy → the Warden egress proxy |
 | `chrome-edge-forcelist.txt` | `ExtensionInstallForcelist` value for the browser extension |
+| `claude-managed-settings.json` | Claude Code `managed-settings.json`: gateway routing + the Route C hooks (warden-hook, warden-posture) |
 | `ca-note.txt` | Where to deploy your root CA (required for TLS inspection) |
 
-The extension allow/deny lists come from your org's IDE-vetting config
-(`IDE_EXT_ALLOWED` / `IDE_EXT_DENYLIST`); the browser extension id from
-`WARDEN_EXTENSION_ID`.
+The extension allow/deny lists come from this tenant's IDE-vetting config (its
+`ide_ext_allowed` / `ide_ext_denylist`, else the global `IDE_EXT_ALLOWED` /
+`IDE_EXT_DENYLIST`); the browser extension id from `WARDEN_EXTENSION_ID`. The hook script
+paths default to `/usr/local/bin/warden-hook` and `/usr/local/bin/warden-posture` —
+override with `&hook_path=…&posture_path=…`.
 
 Pull one artifact to a file:
 
@@ -104,13 +107,16 @@ config (the `/api/provision` installer emits that block prefilled — see
 
 ## Claude Code hooks (MDM-pushable, same model)
 
-Claude Code's `managed-settings.json` is itself an MDM-deployable policy artifact — and
-it can carry Warden's **local planes** alongside the gateway routing: a `PreToolUse`
-hook (`warden-hook` — pre-execution tool-call inspection) and a `SessionStart` hook
-(`warden-posture` — device drift). Push the two scripts to a fixed path with your MDM's
-file-deployment and include the `hooks` block shown in
-[`docs/claude-deployment.md`](claude-deployment.md) (Route C). Same philosophy as the
-rest of the pack: config the OS/app enforces, no resident Warden agent.
+The pack now generates this for you: **`claude-managed-settings.json`** carries the
+gateway routing plus Warden's **local planes** — a `PreToolUse` hook (`warden-hook` —
+pre-execution tool-call inspection) and a `SessionStart` hook (`warden-posture` — device
+drift). Deploy it to Claude Code's managed-settings path (macOS `/Library/Application
+Support/ClaudeCode/`, Linux `/etc/claude-code/`, Windows `C:\Program Files\ClaudeCode\`),
+push the two scripts to the referenced paths with your MDM's file-deployment, and replace
+the `ak_` placeholder with each developer's key (or wire `apiKeyHelper`). See
+[`docs/claude-deployment.md`](claude-deployment.md) (Route C) for the field-by-field
+breakdown. Same philosophy as the rest of the pack: config the app enforces, no resident
+Warden agent.
 
 ## What this does and doesn't cover
 
