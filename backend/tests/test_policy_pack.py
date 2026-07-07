@@ -37,7 +37,22 @@ def test_forcelist_and_pack():
     assert set(pack) >= {"README.txt", "vscode-extensions.json", "macos-proxy.mobileconfig",
                          "windows-proxy.reg", "chrome-edge-forcelist.txt",
                          "claude-managed-settings.json", "openai.env", "gemini.txt",
-                         "ca-note.txt"}
+                         "cursor-hooks.json", "cursor.txt", "ca-note.txt"}
+
+
+def test_cursor_hooks_registers_security_events():
+    h = json.loads(pp.cursor_hooks("/opt/warden-cursor-hook"))
+    assert h["version"] == 1
+    for ev in ("beforeSubmitPrompt", "beforeShellExecution", "beforeMCPExecution",
+               "beforeReadFile", "afterFileEdit"):
+        assert h["hooks"][ev][0]["command"] == "/opt/warden-cursor-hook"
+
+
+def test_cursor_note_explains_pinning_and_planes():
+    note = pp.cursor_note("https://w.acme.com/", "/opt/warden-cursor-hook")
+    assert "pins" in note.lower() and "beforeSubmitPrompt" in note
+    assert "warden-mcp" in note and "git" in note.lower()
+    assert "https://w.acme.com/v1" in note                        # optional override URL
 
 
 def test_openai_env_routes_to_gateway():
