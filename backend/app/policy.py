@@ -23,9 +23,9 @@ DEFAULT_SUPPRESSIONS: dict[str, set[str]] = {
 }
 
 
-def _env_suppressions() -> dict[str, set[str]]:
+def _parse_suppressions(spec: str) -> dict[str, set[str]]:
     out: dict[str, set[str]] = {}
-    for part in os.getenv("GATEWAY_TOOL_SUPPRESS", "").split(";"):
+    for part in (spec or "").split(";"):
         part = part.strip()
         if not part or ":" not in part:
             continue
@@ -34,10 +34,13 @@ def _env_suppressions() -> dict[str, set[str]]:
     return out
 
 
-def suppressions_for(tool: str) -> set[str]:
+def suppressions_for(tool: str, extra: str = "") -> set[str]:
+    """Suppressed categories for a tool: built-in defaults, overlaid with the global
+    GATEWAY_TOOL_SUPPRESS, then any per-tenant `extra` spec (same string format)."""
     merged = {k: set(v) for k, v in DEFAULT_SUPPRESSIONS.items()}
-    for k, v in _env_suppressions().items():
-        merged[k] = merged.get(k, set()) | v
+    for spec in (os.getenv("GATEWAY_TOOL_SUPPRESS", ""), extra):
+        for k, v in _parse_suppressions(spec).items():
+            merged[k] = merged.get(k, set()) | v
     return merged.get((tool or "").lower(), set())
 
 
@@ -57,9 +60,10 @@ def detect_tool(user_agent: str = "", explicit: str = "") -> str:
     return "unknown"
 
 
-def signal_filter_for(tool: str) -> Callable[[list], list] | None:
-    """Return a signal filter that drops this tool's suppressed categories, or None."""
-    supp = suppressions_for(tool)
+def signal_filter_for(tool: str, extra: str = "") -> Callable[[list], list] | None:
+    """Return a signal filter that drops this tool's suppressed categories, or None.
+    `extra` is an optional per-tenant suppression spec overlaid on the global config."""
+    supp = suppressions_for(tool, extra)
     if not supp:
         return None
     return lambda signals: [s for s in signals if s.category.value not in supp]

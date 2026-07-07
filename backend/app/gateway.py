@@ -38,7 +38,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
 from .detectors import AnalysisInput, Surface
-from .models import ApiKey, User
+from .models import ApiKey, Tenant, User
 from .policy import detect_tool, signal_filter_for
 from .security import TokenError, decode_token, hash_token, looks_like_api_key
 from .metering import record_and_check
@@ -100,8 +100,22 @@ def get_gateway_principal(request: Request, db: Session = Depends(get_db)) -> Pr
     return Principal(tenant_id=user.tenant_id, actor=user.email)
 
 
-def _blocked(verdict: dict) -> int:
-    return _SEVERITY_RANK.get(verdict["severity"], 0) >= _SEVERITY_RANK.get(settings.gateway_block_severity, 3)
+@dataclass
+class GatewayPolicy:
+    """A tenant's effective enforcement posture (its override, else the global default)."""
+    enforce: bool
+    block_severity: str
+
+
+def _tenant_policy(tenant_id: int | None, db: Session) -> GatewayPolicy:
+    t = db.get(Tenant, tenant_id) if tenant_id is not None else None
+    enforce = t.gateway_enforce if t and t.gateway_enforce is not None else settings.gateway_enforce
+    sev = (t.gateway_block_severity or "").strip() if t else ""
+    return GatewayPolicy(enforce=bool(enforce), block_severity=sev or settings.gateway_block_severity)
+
+
+def _blocked(verdict: dict, pol: GatewayPolicy) -> int:
+    return _SEVERITY_RANK.get(verdict["severity"], 0) >= _SEVERITY_RANK.get(pol.block_severity, 3)
 
 
 _RETRY_HEADER = {"Retry-After": "60"}
@@ -150,11 +164,18 @@ def _scan_messages(messages: list, system=None) -> str:
     return ""
 
 
+def _tenant_suppress(tenant_id: int | None, db: Session) -> str:
+    """The tenant's per-tool suppression spec, else the global GATEWAY_TOOL_SUPPRESS."""
+    t = db.get(Tenant, tenant_id) if tenant_id is not None else None
+    return (t.tool_suppress or "").strip() if t and (t.tool_suppress or "").strip() \
+        else settings.gateway_tool_suppress
+
+
 def _capture(prompt: str, model: str, tool: str, principal: Principal, db: Session) -> dict:
     item = AnalysisInput(content=prompt or "(empty)", subject=model, sender=principal.actor,
                          channel=tool, surface=Surface.LLM_IO)
     return run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
-                        signal_filter=signal_filter_for(tool))
+                        signal_filter=signal_filter_for(tool, _tenant_suppress(principal.tenant_id, db)))
 
 
 # --- Agentic tool-use inspection (agentless MCP over the LLM API) ----------------------
@@ -434,12 +455,13 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
     verdict = _capture(_scan_messages(payload.get("messages", [])), model, tool, principal, db)
+    pol = _tenant_policy(principal.tenant_id, db)
 
-    if settings.gateway_enforce and _blocked(verdict):
+    if pol.enforce and _blocked(verdict, pol):
         return _openai_error(verdict)
     # Agentic tool-use inspection (agentless MCP over the LLM API).
     agentic = _capture_agentic(payload, tool, principal, db)
-    if settings.gateway_enforce and agentic and _blocked(agentic):
+    if pol.enforce and agentic and _blocked(agentic, pol):
         return _openai_error(agentic)
     base, key = resolve_upstream("openai", principal.tenant_id, db)
     if base:
@@ -448,21 +470,21 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
         if key:
             headers["Authorization"] = f"Bearer {key}"
         if payload.get("stream"):
-            if not settings.gateway_enforce:
+            if not pol.enforce:
                 return _passthrough_stream(url, payload, headers)   # monitor: live output
             status, ctype, raw = _read_stream(url, payload, headers)
             act = _stream_tool_use_openai(raw.decode("utf-8", "replace"))
             if act:
                 v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
-                if v and _blocked(v):
+                if v and _blocked(v, pol):
                     return _openai_error(v)
             return Response(content=raw, status_code=status, media_type=ctype)
         with httpx.Client(timeout=60) as c:
             r = c.post(url, json=payload, headers=headers)
         data = r.json()
-        if settings.gateway_enforce:
+        if pol.enforce:
             ragentic = _capture_response_agentic(data, tool, principal, db)
-            if ragentic and _blocked(ragentic):
+            if ragentic and _blocked(ragentic, pol):
                 return _openai_error(ragentic)
         return JSONResponse(status_code=r.status_code, content=data)
     return JSONResponse(content=_openai_stub(model, verdict))
@@ -502,12 +524,13 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
     prompt = _scan_messages(payload.get("messages", []), payload.get("system"))
     verdict = _capture(prompt, model, tool, principal, db)
+    pol = _tenant_policy(principal.tenant_id, db)
 
-    if settings.gateway_enforce and _blocked(verdict):
+    if pol.enforce and _blocked(verdict, pol):
         return _anthropic_error(verdict)
     # Agentic tool-use inspection (agentless MCP over the LLM API).
     agentic = _capture_agentic(payload, tool, principal, db)
-    if settings.gateway_enforce and agentic and _blocked(agentic):
+    if pol.enforce and agentic and _blocked(agentic, pol):
         return _anthropic_error(agentic)
 
     base, key = resolve_upstream("anthropic", principal.tenant_id, db)
@@ -515,22 +538,22 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
         if payload.get("stream"):
             url = base.rstrip("/") + "/v1/messages"
             headers = _anthropic_headers(request, key)
-            if not settings.gateway_enforce:
+            if not pol.enforce:
                 return _passthrough_stream(url, payload, headers)   # monitor: live output
             # enforce: buffer, inspect the assembled tool_use, block or replay verbatim.
             status, ctype, raw = _read_stream(url, payload, headers)
             act = _stream_tool_use_anthropic(raw.decode("utf-8", "replace"))
             if act:
                 v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
-                if v and _blocked(v):
+                if v and _blocked(v, pol):
                     return _anthropic_error(v)
             return Response(content=raw, status_code=status, media_type=ctype)
         status, data = _post_upstream_anthropic("/v1/messages", payload, request, base, key)
         # Response-side: block a dangerous tool_use the model just requested, before the
         # client executes it (non-streaming responses).
-        if settings.gateway_enforce:
+        if pol.enforce:
             ragentic = _capture_response_agentic(data, tool, principal, db)
-            if ragentic and _blocked(ragentic):
+            if ragentic and _blocked(ragentic, pol):
                 return _anthropic_error(ragentic)
         return JSONResponse(status_code=status, content=data)
     return JSONResponse(content=_anthropic_stub(model, verdict))
@@ -647,8 +670,9 @@ async def _gemini_entry(model: str, method: str, request: Request,
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
     prompt = _scan_gemini(payload.get("contents", []), payload.get("systemInstruction") or payload.get("system_instruction"))
     verdict = _capture(prompt, model, tool, principal, db)
+    pol = _tenant_policy(principal.tenant_id, db)
 
-    if settings.gateway_enforce and _blocked(verdict):
+    if pol.enforce and _blocked(verdict, pol):
         return _gemini_error(verdict)
     base, key = resolve_upstream("gemini", principal.tenant_id, db)
     if key:

@@ -218,11 +218,17 @@ def _ingest_tenant_id(db: Session) -> int | None:
 
 
 _ACTION_RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}
+_SEV_BY_RANK = {v: k for k, v in _ACTION_RANK.items()}
 
 
-def _action_for(severity: str) -> str:
+def _action_for(severity: str, block_severity: str = "high") -> str:
+    """Map a verdict severity to allow/warn/block. Block at/above the block threshold;
+    warn at suspicious+ but never below the block line (a lower threshold escalates)."""
     rank = _ACTION_RANK.get(severity, 0)
-    return "block" if rank >= 3 else ("warn" if rank >= 2 else "allow")
+    block_at = _ACTION_RANK.get(block_severity, 3)
+    if rank >= block_at:
+        return "block"
+    return "warn" if rank >= 2 else "allow"
 
 
 def _enforce_rate(db: Session, tenant_id: int | None) -> None:
@@ -266,13 +272,16 @@ def ingest_ai_usage(
     _enforce_rate(db, tenant_id)
     actor = body.user or default_actor
 
+    meta: dict = {"destination": body.destination} if body.destination else {}
+    meta["sanctioned_tools"] = _tenant_or_global(
+        tenant_id, db, "sanctioned_ai_tools", settings.sanctioned_ai_tools)
     item = AnalysisInput(
         content=body.content, sender=actor, channel=body.tool or "ai_tool",
-        surface=Surface.AI_USAGE,
-        metadata={"destination": body.destination} if body.destination else {},
+        surface=Surface.AI_USAGE, metadata=meta,
     )
     from .policy import detect_tool, signal_filter_for
-    sig_filter = signal_filter_for(detect_tool(explicit=body.tool))
+    suppress = _tenant_or_global(tenant_id, db, "tool_suppress", settings.gateway_tool_suppress)
+    sig_filter = signal_filter_for(detect_tool(explicit=body.tool), extra=suppress)
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id, signal_filter=sig_filter)
     return {
         "action": _action_for(result["severity"]),
@@ -305,6 +314,12 @@ def _tenant_or_global(tenant_id: int | None, db: Session, attr: str, global_valu
 def _tenant_mcp_allow(tenant_id: int | None, db: Session) -> str:
     """Effective MCP server allowlist for a tenant: its own list, else the global default."""
     return _tenant_or_global(tenant_id, db, "mcp_allowed_servers", settings.mcp_allowed_servers)
+
+
+def _tenant_mcp_block_severity(tenant_id: int | None, db: Session) -> str:
+    """Effective block threshold for capture-plane MCP verdicts (tenant, else global)."""
+    return _tenant_or_global(tenant_id, db, "mcp_block_severity",
+                             settings.mcp_block_severity) or "high"
 
 
 @app.post("/api/ingest/mcp")
@@ -342,7 +357,7 @@ def ingest_mcp(
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
                           signal_filter=_mcp_filter)
     return {
-        "action": _action_for(result["severity"]),
+        "action": _action_for(result["severity"], _tenant_mcp_block_severity(tenant_id, db)),
         "risk_score": result["risk_score"],
         "severity": result["severity"],
         "signals": result["signals"],
@@ -390,6 +405,7 @@ def scan_mcp_config(
     flagged: list[dict] = []
     worst = 0
     allowed = _tenant_mcp_allow(tenant_id, db)
+    block_sev = _tenant_mcp_block_severity(tenant_id, db)
     servers = _parse_mcp_servers(body.content)
     for s in servers:
         name = s.get("name", "")
@@ -414,14 +430,14 @@ def scan_mcp_config(
         )
         result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
                               db=db, tenant_id=tenant_id, signal_filter=_mcp_filter)
-        action = _action_for(result["severity"])
+        action = _action_for(result["severity"], block_sev)
         worst = max(worst, _ACTION_RANK.get(result["severity"], 0))
         if action != "allow":
             flagged.append({"name": name, "transport": transport, "action": action,
                             "severity": result["severity"], "risk_score": result["risk_score"],
                             "signals": result["signals"]})
 
-    overall = "block" if worst >= 3 else ("warn" if worst >= 2 else "allow")
+    overall = _action_for(_SEV_BY_RANK[worst], block_sev)
     return {"action": overall, "scanned": len(servers), "servers": flagged}
 
 

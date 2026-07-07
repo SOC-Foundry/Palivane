@@ -72,8 +72,11 @@ def _luhn_ok(digits: str) -> bool:
     return total % 10 == 0
 
 
-def _sanctioned() -> set[str]:
-    return {t.strip().lower() for t in settings.sanctioned_ai_tools.split(",") if t.strip()}
+def _sanctioned(override: str | None = None) -> set[str]:
+    """Approved AI destinations — a per-tenant override when supplied (via metadata),
+    else the global SANCTIONED_AI_TOOLS."""
+    raw = override if override is not None else settings.sanctioned_ai_tools
+    return {t.strip().lower() for t in (raw or "").split(",") if t.strip()}
 
 
 class ShadowAIDetector:
@@ -206,7 +209,8 @@ class ShadowAIDetector:
         if not dest:
             return []
 
-        sanctioned = _sanctioned()
+        override = item.metadata.get("sanctioned_tools") if item.metadata else None
+        sanctioned = _sanctioned(override)
         matched = next(((dom, name) for dom, name in KNOWN_AI_TOOLS.items() if dom in dest), None)
 
         if matched:

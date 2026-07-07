@@ -581,6 +581,22 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         if body.alert_min_severity not in ("low", "suspicious", "high", "critical"):
             raise HTTPException(status_code=400, detail="invalid alert_min_severity")
         tenant.alert_min_severity = body.alert_min_severity
+    if body.gateway_enforce is not None:
+        tenant.gateway_enforce = _JUDGE[body.gateway_enforce]  # same tri-state mapping
+    for sev_field in ("gateway_block_severity", "mcp_block_severity"):
+        val = getattr(body, sev_field)
+        if val is not None:
+            if val not in ("", "low", "suspicious", "high", "critical"):
+                raise HTTPException(status_code=400, detail=f"invalid {sev_field}")
+            setattr(tenant, sev_field, val)  # "" clears the override -> inherit global
+    if body.sanctioned_ai_tools is not None:
+        tenant.sanctioned_ai_tools = body.sanctioned_ai_tools.strip()
+    if body.tool_suppress is not None:
+        cleaned = body.tool_suppress.strip()
+        if any(":" not in seg for seg in cleaned.split(";") if seg.strip()):
+            raise HTTPException(status_code=400,
+                                detail="tool_suppress must be tool:category;tool:category")
+        tenant.tool_suppress = cleaned
     db.commit()
     db.refresh(tenant)
     changed = body.model_dump(exclude_none=True)
