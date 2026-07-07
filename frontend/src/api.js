@@ -88,6 +88,16 @@ export const api = {
     if (!res.ok) throw new Error(`${res.status}`);
     return res.text();
   },
+  exportTenant: async (includeContent = false) => {
+    const token = getToken();
+    const res = await fetch(BASE + `/export/tenant?include_content=${includeContent ? "true" : "false"}`,
+      { headers: token ? { authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) throw new Error(`${res.status}`);
+    return res.text();
+  },
+  dpa: () => req("/tenant/dpa"),
+  acceptDpa: (version) => req("/tenant/dpa", { method: "POST", body: JSON.stringify({ version: version || null }) }),
+  deleteTenant: (confirm) => req("/tenant", { method: "DELETE", body: JSON.stringify({ confirm }) }),
   usage: () => req("/usage"),
   audit: (params = {}) => {
     const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();

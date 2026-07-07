@@ -71,13 +71,36 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     try { const r = await api.testAlert(); flash(r.ok ? "Test alert sent." : "Webhook unreachable.", !!r.ok); }
     catch (e) { err(e); }
   }
+  function _download(text, name, type) {
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  }
   async function exportFindings() {
+    try { _download(await api.exportFindings(), "warden-findings.jsonl", "application/x-ndjson"); }
+    catch (e) { err(e); }
+  }
+
+  // --- Data & compliance ---
+  const [dpa, setDpa] = useState(null);
+  const [inclContent, setInclContent] = useState(false);
+  const [delText, setDelText] = useState("");
+  const loadDpa = useCallback(() => api.dpa().then(setDpa).catch(() => {}), []);
+  async function acceptDpa() {
+    try { setDpa(await api.acceptDpa()); flash("DPA accepted and recorded."); } catch (e) { err(e); }
+  }
+  async function exportTenant() {
     try {
-      const text = await api.exportFindings();
-      const url = URL.createObjectURL(new Blob([text], { type: "application/x-ndjson" }));
-      const a = document.createElement("a");
-      a.href = url; a.download = "warden-findings.jsonl";
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      _download(await api.exportTenant(inclContent), `warden-export-${tenant?.slug || "org"}.json`,
+                "application/json");
+    } catch (e) { err(e); }
+  }
+  async function deleteOrg() {
+    try {
+      await api.deleteTenant(delText.trim());
+      flash("Organization deleted.");
+      onLogout?.();
     } catch (e) { err(e); }
   }
 
@@ -169,8 +192,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     } catch (e) { err(e); }
   }
 
-  useEffect(() => { loadUsage(); loadUps(); loadOidc(); loadSaml(); },
-    [loadUsage, loadUps, loadOidc, loadSaml]);
+  useEffect(() => { loadUsage(); loadUps(); loadOidc(); loadSaml(); loadDpa(); },
+    [loadUsage, loadUps, loadOidc, loadSaml, loadDpa]);
 
   async function logoutEverywhere() {
     try { await api.logoutAll(); } catch { /* ignore */ }
@@ -287,9 +310,10 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         {usage ? (
           <>
             <div className="usage-stats">
-              <div><span className="usage-n">{usage.current_window}</span><span className="usage-l">this minute</span></div>
-              <div><span className="usage-n">{usage.last_24h}</span><span className="usage-l">last 24h</span></div>
-              <div><span className="usage-n">{usage.limit_per_min || "∞"}</span><span className="usage-l">limit / min</span></div>
+              <div><span className="usage-n">{usage.current_window}</span><span className="usage-l">gateway / min</span></div>
+              <div><span className="usage-n">{usage.last_24h}</span><span className="usage-l">gateway 24h</span></div>
+              <div><span className="usage-n">{usage.ingest_last_24h ?? 0}</span><span className="usage-l">sensors 24h</span></div>
+              <div><span className="usage-n">{usage.limit_per_min || "∞"}</span><span className="usage-l">gateway limit</span></div>
             </div>
             {Object.keys(usage.by_day || {}).length > 0 && (
               <ul className="usage-days">
@@ -300,6 +324,55 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
             )}
           </>
         ) : <p className="muted">No usage yet.</p>}
+      </div>
+
+      {/* Data & compliance */}
+      <div className="panel settings-card">
+        <h2>Data &amp; compliance</h2>
+
+        <div className="settings-sub">
+          <h3 style={{ margin: "0 0 6px" }}>Data-processing agreement</h3>
+          {dpa ? (
+            dpa.accepted ? (
+              <p className="muted">Accepted <strong>v{dpa.version}</strong>
+                {dpa.accepted_at ? ` on ${dpa.accepted_at.slice(0, 10)}` : ""}
+                {dpa.accepted_by ? ` by ${dpa.accepted_by}` : ""}.</p>
+            ) : (
+              <p className="muted">Current version <strong>v{dpa.current_version}</strong> — not yet accepted
+                {dpa.version ? ` (last accepted v${dpa.version})` : ""}.</p>
+            )
+          ) : <p className="muted">…</p>}
+          <button type="button" className="primary-btn slim" onClick={acceptDpa}
+                  disabled={dpa?.accepted}>
+            {dpa?.accepted ? "DPA accepted" : "Accept DPA"}
+          </button>
+        </div>
+
+        <div className="settings-sub" style={{ marginTop: 16 }}>
+          <h3 style={{ margin: "0 0 6px" }}>Data export</h3>
+          <p className="muted" style={{ fontSize: 12 }}>A complete JSON export of this org — config, users,
+             keys, findings, audit log, SSO/upstream settings, DPA record. Secrets are never included.</p>
+          <label style={{ fontSize: 13 }}>
+            <input type="checkbox" checked={inclContent}
+                   onChange={(e) => setInclContent(e.target.checked)} /> include finding content (decrypted)
+          </label>
+          <div className="form-row" style={{ gap: 10, marginTop: 8 }}>
+            <button type="button" className="primary-btn slim" onClick={exportTenant}>Download full export (JSON)</button>
+            <button type="button" className="mini-btn" onClick={exportFindings}>Findings only (JSONL)</button>
+          </div>
+        </div>
+
+        <div className="settings-sub danger-zone" style={{ marginTop: 16 }}>
+          <h3 style={{ margin: "0 0 6px" }}>Delete organization</h3>
+          <p className="muted" style={{ fontSize: 12 }}>Permanently deletes this org and <strong>all</strong> its
+             data (findings, users, keys, audit log, everything). Irreversible. Type the org slug
+             <code> {tenant?.slug}</code> to confirm.</p>
+          <div className="form-row" style={{ gap: 10 }}>
+            <input placeholder={tenant?.slug} value={delText} onChange={(e) => setDelText(e.target.value)} />
+            <button type="button" className="mini-btn danger" onClick={deleteOrg}
+                    disabled={delText.trim() !== tenant?.slug}>Delete organization</button>
+          </div>
+        </div>
       </div>
 
       {/* Upstreams */}

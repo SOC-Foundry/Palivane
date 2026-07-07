@@ -25,8 +25,14 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
 - **Data controls per tenant.** Claude-judge **opt-out** (`PATCH /api/tenant` `judge`:
   on/off/inherit — the judge ships content to Anthropic), **retention** (`retention_days`
   + `POST /api/findings/purge`, scheduler-friendly), and **delete-my-org**
-  (`DELETE /api/tenant`, slug-confirmed, cascades findings/users/keys/upstreams). Stored
-  finding content is already redacted at rest (`WARDEN_REDACT_FINDINGS`).
+  (`DELETE /api/tenant`, slug-confirmed, cascades **everything**: findings, users, keys,
+  enrollment tokens, upstreams, audit log, usage, OIDC/SAML). Stored finding content is
+  already redacted at rest (`WARDEN_REDACT_FINDINGS`).
+- **Self-serve data export + DPA record.** `GET /api/export/tenant` returns the org's whole
+  footprint as one JSON doc (config, users, keys, findings, audit log, SSO/upstream config,
+  DPA record) — secrets excluded, finding content only with `?include_content=true`.
+  `GET/POST /api/tenant/dpa` records data-processing-agreement acceptance (version/who/when,
+  `WARDEN_DPA_VERSION`; stale on version bump), audit-logged. Both admin-only, in Settings.
 - **Password hashing & session revocation.** Passwords use **argon2id** (legacy PBKDF2
   hashes still verified and auto-upgraded on login). Sessions carry a `token_version`;
   `POST /api/auth/logout-all` bumps it to revoke all of a user's existing JWTs.
@@ -71,9 +77,8 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
 ## Next tracks
 
 ### 1. Data security & compliance (remaining)
-- **Self-serve data export** per tenant; optional **per-tenant encryption keys** (content
-  encryption today uses one deployment key).
-- **DPA / consent record** to accompany the judge opt-in.
+- Optional **per-tenant encryption keys** (content encryption today uses one deployment key).
+- (Done: self-serve data export + DPA/consent record — see above.)
 
 ### 2. Auth for SaaS (remaining)
 - Per-tenant signup/onboarding controls (the global `WARDEN_ALLOW_SIGNUP` isn't enough).
