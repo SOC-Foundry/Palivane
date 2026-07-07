@@ -35,8 +35,9 @@ const STEPS = [
 
 const ENTERPRISE = [
   { icon: <IconPlug />, title: "Self-serve or managed onboarding", body: "Users bind their tenant by signing in (SSO) from the extension or `warden connect` for Claude Code — or push config zero-touch to managed fleets via MDM." },
-  { icon: <IconShield />, title: "Agentless enforcement", body: "No endpoint agent: a generated MDM policy pack (editor allowlist, system proxy, force-install, CA) lets Jamf/Intune/GPO enforce it for you." },
-  { icon: <IconTarget />, title: "See your blind spots", body: "Coverage reconciliation compares your IdP/CASB AI-usage to what Warden captured — surfacing the unmanaged, shadow set. Alerts + SIEM export included." },
+  { icon: <IconShield />, title: "Agentless by default", body: "No endpoint agent for the core — an MDM policy pack (editor allowlist, system proxy, force-install, CA) lets Jamf/Intune/GPO enforce it. Opt-in local sensors add stdio-level MCP & pre-tool-use depth when you want it." },
+  { icon: <IconTarget />, title: "See your blind spots", body: "Coverage reconciliation compares your IdP/CASB AI-usage to what Warden captured — the unmanaged, shadow set. Alerts (Slack) + SIEM export included." },
+  { icon: <IconClipboard />, title: "Compliance & data control", body: "Per-tenant policy (monitor/enforce, block severity, sanctioned tools), a signed DPA, full self-serve data export, and one-click delete-my-org." },
 ];
 
 export default function Landing({ onSignIn }) {
@@ -58,7 +59,7 @@ export default function Landing({ onSignIn }) {
           Warden stops attacks on your own LLMs, stops sensitive data from leaking into AI tools,
           <strong> and</strong> governs AI coding agents (MCP) &amp; their supply chain — captured
           automatically at a gateway, browser extension, egress proxy, and CI, then recorded or
-          blocked inline. <strong>Agentless.</strong>
+          blocked inline. <strong>Agentless by default.</strong>
         </p>
         <div className="lp-cta">
           <button className="primary-btn slim" onClick={onSignIn}>Open the console →</button>
@@ -112,8 +113,9 @@ export default function Landing({ onSignIn }) {
 
       <section className="lp-section">
         <h2 className="lp-h2">Agentless, and enterprise-ready</h2>
-        <p className="lp-sub">Deploy in minutes without an agent on anyone's machine — bind tenants,
-           enforce via MDM, and find the coverage gaps.</p>
+        <p className="lp-sub">Deploy in minutes — agentless by default (optional local sensors for
+           stdio-level depth): bind tenants, enforce via MDM, find the coverage gaps, and stay
+           compliant.</p>
         <div className="lp-cards">
           {ENTERPRISE.map((c) => (
             <div key={c.title} className="lp-card">
