@@ -3,6 +3,7 @@
 Three provider-compatible entry points so apps just repoint their client:
 
   POST /v1/chat/completions                      — OpenAI shape (OpenAI SDK, OpenAI-compatible tools)
+  POST /v1/responses                             — OpenAI Responses API (Codex CLI, newer SDKs)
   POST /v1/messages                              — Anthropic shape (Claude Code, Anthropic SDK)
   POST /v1beta/models/{model}:generateContent    — Gemini shape (google-genai SDK, Gemini CLI)
 
@@ -271,8 +272,9 @@ def _agentic_activity(payload: dict) -> dict | None:
             "tool_descriptions": descs}
 
 
-def _capture_agentic(payload: dict, tool: str, principal: Principal, db: Session) -> dict | None:
-    act = _agentic_activity(payload)
+def _capture_activity_dict(act: dict | None, tool: str, principal: Principal, db: Session) -> dict | None:
+    """Analyze a normalized agentic-activity dict (advertised descs + latest tool_use/result)
+    on the mcp surface. Shared by the OpenAI/Anthropic and Responses-API request paths."""
     if not act:
         return None
     content = "\n".join(p for p in [act["args_text"], act["result_text"],
@@ -287,6 +289,10 @@ def _capture_agentic(payload: dict, tool: str, principal: Principal, db: Session
     )
     return run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
                         signal_filter=_mcp_sig_filter)
+
+
+def _capture_agentic(payload: dict, tool: str, principal: Principal, db: Session) -> dict | None:
+    return _capture_activity_dict(_agentic_activity(payload), tool, principal, db)
 
 
 def _response_activity(resp: dict) -> dict | None:
@@ -488,6 +494,169 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
                 return _openai_error(ragentic)
         return JSONResponse(status_code=r.status_code, content=data)
     return JSONResponse(content=_openai_stub(model, verdict))
+
+
+# --- OpenAI Responses API (Codex CLI, newer OpenAI SDKs) ------------------------------
+#
+# The Responses API replaces `messages` with `input` (a string, or a list of typed items:
+# messages, function_call, function_call_output) and returns an `output` array. Codex CLI
+# uses it by default. Same OpenAI upstream/base and error envelope as chat/completions.
+
+def _responses_text(c) -> str:
+    """Text from a Responses content value: a string, or a list of typed blocks each with
+    a `text` field (input_text / output_text / summary_text)."""
+    if isinstance(c, str):
+        return c
+    if isinstance(c, list):
+        return "\n".join(b.get("text", "") for b in c
+                         if isinstance(b, dict) and isinstance(b.get("text"), str))
+    return ""
+
+
+def _responses_user_text(inp) -> str:
+    """The current outbound user turn — mirrors _scan_messages (only the latest user item,
+    so resent history doesn't cascade). `input` may be a bare string or an item list."""
+    if isinstance(inp, str):
+        return inp.strip()
+    if isinstance(inp, list):
+        for item in reversed(inp):
+            if not isinstance(item, dict):
+                continue
+            role = (item.get("author") or {}).get("role") if isinstance(item.get("author"), dict) else item.get("role")
+            if role == "user":
+                return _responses_text(item.get("content")).strip()
+    return ""
+
+
+def _responses_agentic(payload: dict) -> dict | None:
+    """Current-turn agentic activity from a Responses request: advertised tool descriptions,
+    the latest function_call (name + args), and the latest function_call_output."""
+    descs = [t["description"] for t in (payload.get("tools") or [])
+             if isinstance(t, dict) and isinstance(t.get("description"), str)]
+    inp = payload.get("input")
+    tool_name, args_parts, result_parts = "", [], []
+    if isinstance(inp, list):
+        for item in reversed(inp):
+            if isinstance(item, dict) and item.get("type") == "function_call":
+                tool_name = item.get("name", "")
+                if isinstance(item.get("arguments"), str):
+                    args_parts.append(item["arguments"])
+                break
+        for item in reversed(inp):
+            if isinstance(item, dict) and item.get("type") == "function_call_output":
+                out = item.get("output")
+                if isinstance(out, str):
+                    result_parts.append(out)
+                elif out is not None:
+                    _harvest_strings(out, result_parts)
+                break
+    if not (descs or tool_name or args_parts or result_parts):
+        return None
+    method = "tools/call" if (tool_name or args_parts) else (
+        "tools/advertised" if descs else "tool_result")
+    return {"method": method, "tool": tool_name,
+            "args_text": "\n".join(args_parts)[:20000],
+            "result_text": "\n".join(p for p in result_parts if p)[:20000],
+            "tool_descriptions": descs}
+
+
+def _response_activity_responses(resp: dict) -> dict | None:
+    """The tool_use the model just requested in a Responses reply — output[].function_call."""
+    if not isinstance(resp, dict):
+        return None
+    tool_name, args = "", []
+    for item in resp.get("output") or []:
+        if isinstance(item, dict) and item.get("type") == "function_call":
+            tool_name = tool_name or item.get("name", "")
+            if isinstance(item.get("arguments"), str):
+                args.append(item["arguments"])
+    if not args:
+        return None
+    return {"method": "tools/call", "tool": tool_name, "args_text": "\n".join(args)[:20000]}
+
+
+def _stream_tool_use_responses(text: str) -> dict | None:
+    """Assemble a function_call from a streamed Responses reply — output_item.added carries
+    the name, function_call_arguments.delta fragments accumulate the arguments. Best-effort:
+    on any shape mismatch it returns None and the buffered stream is replayed verbatim."""
+    idx_name, idx_json = {}, {}
+    for evt in _sse_json(text):
+        t = evt.get("type")
+        if t == "response.output_item.added":
+            item = evt.get("item") or {}
+            if item.get("type") == "function_call":
+                oi = evt.get("output_index", 0)
+                idx_name[oi] = item.get("name", "")
+                idx_json.setdefault(oi, "")
+        elif t == "response.function_call_arguments.delta":
+            oi = evt.get("output_index", 0)
+            idx_json[oi] = idx_json.get(oi, "") + (evt.get("delta") or "")
+    return _assemble_tool_use(idx_name, idx_json)
+
+
+def _responses_stub(model: str, verdict: dict) -> dict:
+    now = int(time.time())
+    return {
+        "id": f"resp_warden_{now}", "object": "response", "created_at": now, "model": model,
+        "status": "completed",
+        "output": [{"type": "message", "role": "assistant", "status": "completed", "content": [
+            {"type": "output_text",
+             "text": "[Warden gateway: no upstream configured — prompt passed inspection.]"}]}],
+        "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        "warden": {"risk_score": verdict["risk_score"], "severity": verdict["severity"]},
+    }
+
+
+@router.post("/responses")
+async def responses(request: Request, principal: Principal = Depends(get_gateway_principal),
+                    db: Session = Depends(get_db)):
+    limited = _rate_limited(db, principal, "openai")
+    if limited:
+        return limited
+    payload = await request.json()
+    model = payload.get("model", "unknown")
+    tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
+    verdict = _capture(_responses_user_text(payload.get("input")), model, tool, principal, db)
+    pol = _tenant_policy(principal.tenant_id, db)
+
+    if pol.enforce and _blocked(verdict, pol):
+        return _openai_error(verdict)
+    agentic = _capture_activity_dict(_responses_agentic(payload), tool, principal, db)
+    if pol.enforce and agentic and _blocked(agentic, pol):
+        return _openai_error(agentic)
+    base, key = resolve_upstream("openai", principal.tenant_id, db)
+    if base:
+        url = base.rstrip("/") + "/responses"
+        headers = {"Content-Type": "application/json"}
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+        if payload.get("stream"):
+            if not pol.enforce:
+                return _passthrough_stream(url, payload, headers)   # monitor: live output
+            status, ctype, raw = _read_stream(url, payload, headers)
+            act = _stream_tool_use_responses(raw.decode("utf-8", "replace"))
+            if act:
+                v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
+                if v and _blocked(v, pol):
+                    return _openai_error(v)
+            return Response(content=raw, status_code=status, media_type=ctype)
+        with httpx.Client(timeout=120) as c:
+            r = c.post(url, json=payload, headers=headers)
+        data = r.json()
+        if pol.enforce:
+            ragentic = _capture_response_agentic(data, tool, principal, db) or \
+                _capture_response_agentic_responses(data, tool, principal, db)
+            if ragentic and _blocked(ragentic, pol):
+                return _openai_error(ragentic)
+        return JSONResponse(status_code=r.status_code, content=data)
+    return JSONResponse(content=_responses_stub(model, verdict))
+
+
+def _capture_response_agentic_responses(resp: dict, tool: str, principal: Principal, db: Session) -> dict | None:
+    act = _response_activity_responses(resp)
+    if not act:
+        return None
+    return _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
 
 
 # --- Anthropic shape (Claude Code, Anthropic SDK) -------------------------------------
