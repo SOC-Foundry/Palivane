@@ -81,6 +81,9 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
 - **Multi-tenant + self-serve** — org signup, role-based console (admin/analyst), per-org
   API keys, and a **Connect** page that generates copy-paste install config for every
   source.
+- **In-app guidance** — a built-in **Help** page explains the capture planes, how to
+  connect a source, how to read a finding (category glossary + severity scale), and
+  monitor-vs-enforce — so an admin never has to leave the console to get oriented.
 - **Measurable** — a labeled-corpus eval harness (`python -m app.eval`) reports
   precision/recall/F1; analyst triage feeds back as labels.
 - **Deployable** — `docker compose up` (Postgres + API + web) locally; **Cloud Run + Cloud
@@ -132,6 +135,11 @@ Warden is a **hosted, multi-tenant service — there's nothing to run.** As a cu
    lights up per plane as findings start arriving.
 3. Set **policy** in Settings — monitor vs. enforce, block severity, sanctioned tools,
    alerts, compliance (DPA, export) — all in the console.
+
+New to the console? The built-in **Help** page walks through the planes, connecting a
+source, reading a finding, and monitor-vs-enforce — no need to leave the app:
+
+![Help & documentation](assets/help.png)
 
 That's it. The rest of this document is for **local development, evaluation, or
 self-hosting** — a customer on the hosted service never touches Docker or the CLI below.
