@@ -32,9 +32,10 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
   manifests (`/api/scan/deps`, with opt-in OSV/CVE lookup), and IDE extensions
   (`/api/scan/ide-extensions`) — plus an **MDM policy pack** (`/api/policy-pack`) that
   generates the full enforcement config: editor allowlist, system proxy, browser
-  force-install, CA note, Claude Code managed settings, **OpenAI/Gemini gateway routing**,
-  **Cursor hooks**, and a **scheduled `warden-secrets` scan** (launchd/cron/Task Scheduler)
-  that drives **TruffleHog** by default (falls back to the built-in scan if not installed).
+  force-install (Chrome Web Store **or** a self-hosted CRX — no store submission needed),
+  CA note, Claude Code managed settings, **OpenAI/Gemini gateway routing**, **Cursor hooks**,
+  and a **scheduled `warden-secrets` scan** (launchd/cron/Task Scheduler) that drives
+  **TruffleHog** by default (falls back to the built-in scan if not installed).
 - **Cursor coverage despite cert pinning** — Cursor's chat pins its cert (proxy can't read
   it) and ignores `OPENAI_BASE_URL` (gateway can't interpose), so **`warden-cursor-hook`**
   uses Cursor's Hooks API to inspect the prompt, shell/MCP calls, and file reads/edits

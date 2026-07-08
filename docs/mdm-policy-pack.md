@@ -26,7 +26,8 @@ It returns these artifacts (write each to a file):
 | `vscode-extensions.json` | VS Code `extensions.allowed` — allow approved, block known-bad |
 | `macos-proxy.mobileconfig` | macOS system proxy → the Warden egress proxy |
 | `windows-proxy.reg` | Windows system proxy → the Warden egress proxy |
-| `chrome-edge-forcelist.txt` | `ExtensionInstallForcelist` value for the browser extension |
+| `chrome-edge-forcelist.txt` | `ExtensionInstallForcelist` value for the browser extension. Defaults to the **Chrome Web Store** (extension published there — Unlisted is fine). Pass `?ext_update_url=…` (+ `?ext_crx_url=…`) to `/api/policy-pack` for a **self-hosted CRX** with no Web Store submission (managed devices only) — that also emits `extension-updates.xml` below. |
+| `extension-updates.xml` | *(self-hosted only)* Omaha update manifest to host next to your signed `.crx`; the forcelist points at its URL. |
 | `claude-managed-settings.json` | Claude Code `managed-settings.json`: gateway routing + the Route C hooks (warden-hook, warden-posture) |
 | `openai.env` | Environment vars (`OPENAI_BASE_URL`) routing OpenAI SDK/CLI clients through the gateway — agentless, no CA needed |
 | `gemini.txt` | Gemini routing: SDK `http_options` snippet + note (Gemini has no base-URL env var, so the system proxy is its primary capture path) |
