@@ -78,6 +78,41 @@ jobs:
 The Action scans `base..head` of the PR and **fails closed** (a backend outage fails the
 check rather than letting a secret through).
 
+## Using your existing scanner in CI (TruffleHog / Gitleaks / GitGuardian)
+
+Already run TruffleHog, Gitleaks, or GitGuardian in CI? Keep them — pipe their JSON to
+[`warden-import`](../cli/README.md) and the findings land in the **same Warden console**,
+scored and deduped alongside every other plane, with alerts + SIEM export. The raw secret
+is masked at ingest (never persisted), and TruffleHog's **live verification** escalates a
+confirmed-working credential to critical. `warden-import` exits non-zero when any
+verified-live secret is found, so it fails the build:
+
+```yaml
+# .github/workflows/warden-scanner-import.yml
+name: Secret scan → Warden
+on: pull_request
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    env:
+      WARDEN_URL: https://warden.corp.example.com
+      WARDEN_TOKEN: ${{ secrets.WARDEN_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      # bring warden-import onto PATH (from this repo, or vendor cli/warden-import)
+      - run: curl -sSL https://raw.githubusercontent.com/TachTech-Engineering/Warden/main/cli/warden-import -o /usr/local/bin/warden-import && chmod +x /usr/local/bin/warden-import
+      - uses: trufflesecurity/trufflehog@main
+        with: { extra_args: --json }          # or run any scanner that emits JSON
+      # pipe the scanner's JSON to Warden (trufflehog | gitleaks | gitguardian)
+      - run: trufflehog git file://. --json | warden-import trufflehog
+```
+
+This is complementary to the native Action above: use `TachTech-Engineering/Warden/git@main`
+for a Warden-engine gate, and `warden-import` to fold in whatever scanners you already run.
+On endpoints (not CI), the same integration is `warden-secrets --engine trufflehog`, which
+the MDM pack schedules for you.
+
 ## Scanner CLI
 
 ```
