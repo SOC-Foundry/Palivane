@@ -37,7 +37,18 @@ def test_forcelist_and_pack():
     assert set(pack) >= {"README.txt", "vscode-extensions.json", "macos-proxy.mobileconfig",
                          "windows-proxy.reg", "chrome-edge-forcelist.txt",
                          "claude-managed-settings.json", "openai.env", "gemini.txt",
-                         "cursor-hooks.json", "cursor.txt", "ca-note.txt"}
+                         "cursor-hooks.json", "cursor.txt", "warden-secrets.plist",
+                         "warden-secrets.cron", "warden-secrets-task.xml", "ca-note.txt"}
+
+
+def test_secrets_schedule_artifacts():
+    plist = pp.secrets_launchd("https://w.acme.com/", "/opt/warden-secrets")
+    assert "net.tachtech.warden.secrets" in plist and "/opt/warden-secrets" in plist
+    assert "https://w.acme.com" in plist
+    cron = pp.secrets_cron("https://w.acme.com", "/opt/warden-secrets")
+    assert "0 3 * * *" in cron and "/opt/warden-secrets" in cron
+    xml = pp.secrets_win_task("https://w.acme.com", r"C:\Program Files\Warden\warden-secrets.exe")
+    assert "ScheduleByDay" in xml and "warden-secrets.exe" in xml
 
 
 def test_cursor_hooks_registers_security_events():

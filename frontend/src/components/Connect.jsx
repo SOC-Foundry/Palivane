@@ -17,6 +17,7 @@ function Readiness() {
     ["Browser", s.planes.shadow_ai],
     ["Claude Code / gateway", s.planes.gateway],
     ["Agent tool-calls", s.planes.mcp],
+    ["Credentials at rest", s.planes.secrets],
   ];
   return (
     <div className="readiness">

@@ -10,6 +10,7 @@ function SetupHealth() {
     ["Gateway — your LLMs", s.planes.gateway],
     ["Shadow-AI — extension / proxy", s.planes.shadow_ai],
     ["Agentic — MCP", s.planes.mcp],
+    ["Credentials at rest", s.planes.secrets],
   ];
   return (
     <div className="panel chart-panel">

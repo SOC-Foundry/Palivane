@@ -127,6 +127,7 @@ def setup_status(current: User = Depends(get_current_user), db: Session = Depend
             "gateway": by_surface.get("llm_io", 0),      # first-party LLM (gateway)
             "shadow_ai": by_surface.get("ai_usage", 0),  # extension / proxy
             "mcp": by_surface.get("mcp", 0),             # agentic tool-use
+            "secrets": by_surface.get("secrets", 0),     # credentials at rest (warden-secrets)
         },
         "judge_enabled": engine.judge_enabled,
         "gateway_enforce": settings.gateway_enforce,
