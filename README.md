@@ -33,7 +33,8 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
   (`/api/scan/ide-extensions`) — plus an **MDM policy pack** (`/api/policy-pack`) that
   generates the full enforcement config: editor allowlist, system proxy, browser
   force-install, CA note, Claude Code managed settings, **OpenAI/Gemini gateway routing**,
-  **Cursor hooks**, and a **scheduled `warden-secrets` scan** (launchd/cron/Task Scheduler).
+  **Cursor hooks**, and a **scheduled `warden-secrets` scan** (launchd/cron/Task Scheduler)
+  that drives **TruffleHog** by default (falls back to the built-in scan if not installed).
 - **Cursor coverage despite cert pinning** — Cursor's chat pins its cert (proxy can't read
   it) and ignores `OPENAI_BASE_URL` (gateway can't interpose), so **`warden-cursor-hook`**
   uses Cursor's Hooks API to inspect the prompt, shell/MCP calls, and file reads/edits
@@ -65,7 +66,8 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
   Slack alerts, and SIEM export.
 - **Keeps secrets out of repos too** — a **pre-commit hook + GitHub Action**
   ([`git/`](git/)) scan commits/PRs for secrets & PII via the same engine, complementing
-  GitHub's native push protection.
+  GitHub's native push protection; existing **TruffleHog/Gitleaks/GitGuardian** CI jobs can
+  pipe into the same console via `warden-import`.
 - **Deep secret detection** — known formats (OpenAI/Anthropic/AWS/GitHub incl.
   fine-grained PATs, GitLab, Stripe, Google, Slack, npm/PyPI, SendGrid, Twilio, PEM keys,
   JWTs) hard-block; a high-entropy heuristic catches novel/unlabeled tokens at warn-level.
@@ -383,7 +385,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/scan/ide-extensions` | Vet a list of IDE extensions (`.vscode/extensions.json` in CI, or MDM inventory) for known-bad / unapproved editor plugins. Token-gated. |
 | POST   | `/api/scan/secrets`      | Record credentials found **at rest** on a device by `warden-secrets` (SSH/RSA keys, tokens, `.env`) as `credential_at_rest` findings. Metadata-only (masked); returns a per-file remediation plan. Token-gated. |
 | POST   | `/api/scan/import`       | Normalize a third-party scanner's output (**TruffleHog / Gitleaks / GitGuardian**) into `credential_at_rest` findings. Secret masked at ingest (never persisted); `verified` escalates to critical. Token-gated. |
-| GET    | `/api/policy-pack`       | Generate the MDM policy pack (agentless enforcement config): editor allowlist, system-proxy profiles, browser force-install, CA note, Claude Code managed settings, OpenAI/Gemini gateway routing, Cursor hooks, and a scheduled `warden-secrets` scan (admin). Runbook: [`docs/mdm-policy-pack.md`](docs/mdm-policy-pack.md). |
+| GET    | `/api/policy-pack`       | Generate the MDM policy pack (agentless enforcement config): editor allowlist, system-proxy profiles, browser force-install, CA note, Claude Code managed settings, OpenAI/Gemini gateway routing, Cursor hooks, and a scheduled `warden-secrets` scan (TruffleHog by default; `?secrets_engine=`) (admin). Runbook: [`docs/mdm-policy-pack.md`](docs/mdm-policy-pack.md). |
 | POST   | `/api/scan/code`         | Scan changed files (pre-commit hook / CI) for secrets & PII before they reach a repo; ignores `source_code_leak`. Returns a per-file allow/warn/block. Token-gated. |
 | GET    | `/api/findings`          | List the tenant's findings (filter by `severity`, `status`). |
 | GET    | `/api/findings/{id}`     | Full finding detail with signal breakdown. |
@@ -764,6 +766,7 @@ cli/                  # warden-connect (self-serve onboarding: Claude Code + Cur
 extension/            # MV3 browser extension — shadow-AI capture + self-serve sign-in
 proxy/                # mitmproxy addon — shadow-AI + MCP capture (desktop apps / network)
 git/                  # pre-commit hook + GitHub Action — secrets/PII out of repos
+                      #   (+ CI import of TruffleHog/Gitleaks/GitGuardian via warden-import)
 docs/setup.md               # getting started: install (Docker/source), first sign-in, connect a source
 docs/claude-deployment.md   # step-by-step: deploy for browser + Claude Code + desktop
 docs/mdm-policy-pack.md     # agentless MDM enforcement (extension allowlist, proxy, CA)
