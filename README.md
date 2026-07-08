@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/warden-logo.png" alt="Warden" width="180" />
+  <img src="assets/warden-emblem.png" alt="Warden" width="200" />
 </p>
 
 <h1 align="center">Warden — AI Security Gateway</h1>
@@ -19,10 +19,11 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
 - **Two fronts, one engine** — *Protect our AI* (`llm_io`: injection / jailbreak /
   exfiltration) and *Shadow-AI governance* (`ai_usage`: secrets / PII / source code).
 - **Automatic capture, no manual paste** — an **OpenAI-, Anthropic- & Gemini-compatible
-  gateway** (`/v1/chat/completions`, `/v1/messages` — works with Claude Code —
-  `/v1beta/models/{model}:generateContent`), a **browser extension** for
-  claude.ai/ChatGPT/Gemini/Microsoft Copilot, and a **mitmproxy egress addon** for desktop
-  apps / IDEs / CLIs (incl. GitHub Copilot).
+  gateway** (`/v1/chat/completions`, `/v1/responses` — **Codex CLI** — `/v1/messages` —
+  works with Claude Code — `/v1beta/models/{model}:generateContent`), a **browser extension**
+  for claude.ai/ChatGPT/Gemini/Microsoft Copilot, and a **mitmproxy egress addon** for
+  desktop apps / IDEs / CLIs (incl. GitHub Copilot and the **Gemini CLI** in all three modes
+  — API-key, OAuth/Code Assist, Vertex).
 - **Agentic (MCP) security** — inspects an AI coding agent's tool-use on the `mcp` surface
   (sensitive-file access, dangerous commands, tool poisoning, untrusted servers) — over the
   egress proxy *and* the LLM traffic (so **local stdio MCP** is covered), blocking on the
@@ -30,14 +31,28 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
 - **Supply-chain checks (CI)** — vet MCP configs (`/api/scan/mcp-config`), dependency
   manifests (`/api/scan/deps`, with opt-in OSV/CVE lookup), and IDE extensions
   (`/api/scan/ide-extensions`) — plus an **MDM policy pack** (`/api/policy-pack`) that
-  generates the enforcement config (editor allowlist, system proxy, force-install, CA).
+  generates the full enforcement config: editor allowlist, system proxy, browser
+  force-install, CA note, Claude Code managed settings, **OpenAI/Gemini gateway routing**,
+  **Cursor hooks**, and a **scheduled `warden-secrets` scan** (launchd/cron/Task Scheduler).
+- **Cursor coverage despite cert pinning** — Cursor's chat pins its cert (proxy can't read
+  it) and ignores `OPENAI_BASE_URL` (gateway can't interpose), so **`warden-cursor-hook`**
+  uses Cursor's Hooks API to inspect the prompt, shell/MCP calls, and file reads/edits
+  **locally, before they run** — immune to the pinning. Auto-installed by `warden connect`.
+- **Endpoint credential hygiene** — **`warden-secrets`** scans where infostealers actually
+  look (SSH/RSA keys, `~/.aws/credentials`, `.git-credentials`, `.env`, tokens in shell
+  history) and reports credentials **at rest** as `credential_at_rest` findings. Privacy by
+  design: detection runs locally; only metadata (type, path, masked preview, permissions)
+  leaves the box — never the raw secret. Schedulable via the MDM pack.
 - **Self-serve onboarding** — users bind to their tenant by signing in (login/SSO): the
-  **browser extension** sign-in and **`warden connect`** for Claude Code mint a per-user,
-  revocable key — no admin token distribution. Managed policy still wins on fleets.
+  **browser extension** sign-in and **`warden connect`** (Claude Code **and Cursor**) mint a
+  per-user, revocable key — no admin token distribution. The **Connect** page leads with a
+  one-step **Quick Start** (MDM pack or per-OS installer) plus a live readiness strip.
+  Managed policy still wins on fleets.
 - **Agentless by default, optional local sensors** — the core (gateway, extension, proxy,
-  CI) needs no endpoint agent. For deeper local coverage, opt-in sensors add it:
-  **`warden-mcp`** (stdio-MCP wrapper), **`warden-hook`** (Claude Code PreToolUse), and
-  **`warden-posture`** (IDE/MCP drift). Enforcement config is generated for your MDM.
+  CI) needs no endpoint agent. For deeper local coverage, opt-in stdlib sensors add it:
+  **`warden-mcp`** (stdio-MCP wrapper), **`warden-hook`** (Claude Code PreToolUse),
+  **`warden-cursor-hook`** (Cursor), **`warden-posture`** (IDE/MCP drift), and
+  **`warden-secrets`** (credentials at rest). Enforcement config is generated for your MDM.
 - **Per-tenant policy & compliance** — each org sets monitor/enforce, block severity,
   sanctioned tools, and suppressions; plus a signed DPA, full data export, delete-my-org,
   Slack alerts, and SIEM export.
@@ -341,7 +356,8 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/scan/mcp-config`   | Vet an MCP config file (`.mcp.json`, Cursor/VS Code) in CI/console — enumerates declared servers (incl. local stdio) and flags unapproved servers, dangerous launch commands, and secrets in config. Token-gated. |
 | POST   | `/api/scan/deps`         | Vet dependency manifests (`package.json`, `requirements.txt`) for supply-chain risk — install-script abuse, non-registry sources, known-bad packages, and (opt-in) known CVEs for pinned deps via OSV. Token-gated. |
 | POST   | `/api/scan/ide-extensions` | Vet a list of IDE extensions (`.vscode/extensions.json` in CI, or MDM inventory) for known-bad / unapproved editor plugins. Token-gated. |
-| GET    | `/api/policy-pack`       | Generate the MDM policy pack (agentless enforcement config): VS Code extension allowlist, system-proxy profiles (macOS/Windows), browser force-install, CA-deployment note (admin). Runbook: [`docs/mdm-policy-pack.md`](docs/mdm-policy-pack.md). |
+| POST   | `/api/scan/secrets`      | Record credentials found **at rest** on a device by `warden-secrets` (SSH/RSA keys, tokens, `.env`) as `credential_at_rest` findings. Metadata-only (masked); returns a per-file remediation plan. Token-gated. |
+| GET    | `/api/policy-pack`       | Generate the MDM policy pack (agentless enforcement config): editor allowlist, system-proxy profiles, browser force-install, CA note, Claude Code managed settings, OpenAI/Gemini gateway routing, Cursor hooks, and a scheduled `warden-secrets` scan (admin). Runbook: [`docs/mdm-policy-pack.md`](docs/mdm-policy-pack.md). |
 | POST   | `/api/scan/code`         | Scan changed files (pre-commit hook / CI) for secrets & PII before they reach a repo; ignores `source_code_leak`. Returns a per-file allow/warn/block. Token-gated. |
 | GET    | `/api/findings`          | List the tenant's findings (filter by `severity`, `status`). |
 | GET    | `/api/findings/{id}`     | Full finding detail with signal breakdown. |
@@ -350,6 +366,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | GET    | `/api/corpus/export`     | Export the tenant's triaged/dismissed findings as eval-corpus JSONL (admin). |
 | POST   | `/api/coverage/reconcile`| Compare an IdP/CASB "who used AI" list to captured findings; returns the uncovered actors (admin). |
 | POST   | `/v1/chat/completions`   | OpenAI-compatible LLM gateway — scans/records every prompt (`llm_io`), blocks in enforce mode. |
+| POST   | `/v1/responses`          | OpenAI **Responses API** (Codex CLI / newer SDKs) — same capture + enforce, incl. streaming + tool-call inspection. |
 | POST   | `/v1/messages`           | Anthropic-compatible gateway (Claude Code / Anthropic SDK) — same capture + enforce. |
 | POST   | `/v1/messages/count_tokens` | Claude Code token-counting pre-flight — authenticated passthrough (no finding). |
 | POST   | `/v1beta/models/{model}:generateContent` | Gemini-compatible gateway (google-genai SDK / Gemini CLI) — same capture + enforce. `:streamGenerateContent` also supported. |
@@ -688,7 +705,8 @@ detection to *their* traffic — the core of a design-partner pilot.
 backend/
   app/
     detectors/        # prompt-threats (llm_io), shadow-ai (ai_usage), mcp-guard (mcp),
-                      #   dep-guard + ext-guard (deps/ide supply chain), LLM judge (Claude/GPT/Gemini)
+                      #   dep-guard + ext-guard (deps/ide supply chain), secrets-at-rest
+                      #   (secrets), LLM judge (Claude/GPT/Gemini)
     security.py       # password hashing (PBKDF2) + HS256 JWTs + API keys
     auth.py           # auth deps + /api/auth (+ /extension/token) + /api/users + /api/apikeys
     gateway.py        # LLM gateway: OpenAI/Anthropic/Gemini + agentic tool_use enforcement (req/resp/stream)
@@ -703,7 +721,7 @@ backend/
     engine.py         # routes an item to its surface's detectors, then scores
     scoring.py        # fuses signals → risk verdict
     models.py         # Tenant / User / ApiKey / EnrollmentToken / Finding ORM
-    main.py           # FastAPI routes (ingest/mcp, scan/{code,deps,mcp-config,ide-extensions}, policy-pack, …)
+    main.py           # FastAPI routes (ingest/mcp, scan/{code,deps,mcp-config,ide-extensions,secrets}, policy-pack, …)
     seed.py           # demo tenant + sample data
   migrations/         # Alembic schema migrations (api_keys, enrollment_tokens, tenant mcp allowlist)
   Dockerfile          # backend image (+ docker-entrypoint.sh: wait-db, migrate, seed)
@@ -711,9 +729,10 @@ backend/
                       #         dep-guard, ext-guard, mcp/deps/config scans, policy-pack, auth, eval… (287 tests)
 docker-compose.yml    # db + backend + web (local hosted stack)
 deploy/               # systemd unit (api) + env example
-cli/                  # warden-connect (self-serve onboarding) + local planes: warden-hook
-                      #   (pre-execution tool-call inspection), warden-mcp (stdio MCP wrapper),
-                      #   warden-posture (device drift: IDE extensions, MCP configs)
+cli/                  # warden-connect (self-serve onboarding: Claude Code + Cursor) + local
+                      #   planes: warden-hook (Claude Code tool calls), warden-cursor-hook
+                      #   (Cursor prompts + tool calls), warden-mcp (stdio MCP wrapper),
+                      #   warden-posture (IDE/MCP drift), warden-secrets (credentials at rest)
 extension/            # MV3 browser extension — shadow-AI capture + self-serve sign-in
 proxy/                # mitmproxy addon — shadow-AI + MCP capture (desktop apps / network)
 git/                  # pre-commit hook + GitHub Action — secrets/PII out of repos
