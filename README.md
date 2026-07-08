@@ -98,8 +98,10 @@ the signals into one risk verdict:
    exfiltration (incl. leaked API-key/JWT patterns), and smuggled payloads (long base64
    blobs, zero-width/Unicode tag characters).
 2. **Shadow-AI detector** (`ai_usage`, offline) — credentials/keys, PII (SSN, Luhn-valid
-   payment cards, contact lists), proprietary source code / confidentiality-marked
-   material, and an *unsanctioned destination* (a consumer AI tool not on your
+   payment cards, contact lists, **IBAN / UK NINO**, and keyword-confirmed **passport / EIN
+   / routing / SWIFT / NPI / Aadhaar**, plus **single-record** detection — a lone email/DOB
+   in a record — and **per-tenant custom PII/confidential patterns**), proprietary source
+   code / confidentiality-marked material, and an *unsanctioned destination* (a consumer AI tool not on your
    `SANCTIONED_AI_TOOLS` allowlist). On the gateway it also flags PII leaving to your
    own LLMs. Secret detection is two-tier: **known formats** (OpenAI/Anthropic/AWS/
    GitHub incl. fine-grained PATs, GitLab, Stripe, Google OAuth, Slack, npm/PyPI,
@@ -238,6 +240,7 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `WARDEN_MCP_PERSIST_BENIGN` | `false`           | Store benign MCP tool-call findings (warden-hook/warden-mcp)? Default off — only warn+ verdicts persist (most tool calls are benign noise). |
 | `WARDEN_METRICS_TOKEN` | *(empty = open)*         | If set, `/metrics` requires it (Bearer or `?token=`); scrape it privately otherwise. |
 | `CUSTOM_SECRET_PATTERNS` | *(empty)*             | Org-specific secret formats — one `label=regex` per line; merged into detection. |
+| `CUSTOM_PII_PATTERNS` | *(empty)*             | Org-specific PII/confidential formats (customer IDs, MRNs, codenames) — one `label=regex` per line. Per-tenant override in Settings. |
 | `EXTENSION_INGEST_TOKEN` | *(unset)*             | Shared token the browser extension presents to `/api/ingest/ai-usage` (empty = endpoint disabled). |
 | `WARDEN_SECRET_KEY` | *(dev fallback)*         | **Required in production.** Signs JWT session tokens; on a non-SQLite deployment the app **refuses to boot** if unset (a public dev key would let anyone forge admin tokens). Well-known weak values warn. |
 | `WARDEN_ENCRYPTION_KEY` | *(derives from `WARDEN_SECRET_KEY`)* | Encrypts per-tenant upstream provider keys at rest. Set to rotate independently of the JWT secret. |

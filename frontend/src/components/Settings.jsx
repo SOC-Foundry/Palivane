@@ -32,6 +32,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     mcp_block_severity: tenant?.mcp_block_severity || "",
     sanctioned_ai_tools: tenant?.sanctioned_ai_tools || "",
     tool_suppress: tenant?.tool_suppress || "",
+    custom_pii_patterns: tenant?.custom_pii_patterns || "",
   });
   const setField = (k) => (e) => setOrgState((o) => ({ ...o, [k]: e.target.value }));
 
@@ -51,6 +52,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         mcp_block_severity: org.mcp_block_severity,
         sanctioned_ai_tools: org.sanctioned_ai_tools,
         tool_suppress: org.tool_suppress,
+        custom_pii_patterns: org.custom_pii_patterns,
       });
       onTenant?.(t);
       flash("Organization settings saved.");
@@ -292,6 +294,9 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <label className="field-wide">Per-tool suppressions (tool:category;tool:category)
             <input placeholder="claude-code:source_code_leak;cursor:pii_exposure"
                    value={org.tool_suppress} onChange={setField("tool_suppress")} /></label>
+          <label className="field-wide">Custom PII / confidential patterns (one <code>label=regex</code> per line)
+            <textarea rows={3} placeholder={"Customer ID=CUST-\\d{8}\nMRN=MRN\\d{7}\nProject codename=(Bluebird|Falcon)"}
+                      value={org.custom_pii_patterns} onChange={setField("custom_pii_patterns")} /></label>
         </div>
         <p className="muted" style={{ margin: "0 0 12px", fontSize: 12 }}>Block severity is the lowest
            verdict that blocks (lower = stricter). Suppressions drop a category for a named capture

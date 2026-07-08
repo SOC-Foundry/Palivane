@@ -19,7 +19,7 @@ import re
 
 from ..config import settings
 from .base import AnalysisInput, Category, Signal, Surface
-from .patterns import find_high_entropy_tokens, find_secrets
+from .patterns import custom_pii_patterns, find_high_entropy_tokens, find_secrets
 
 # --- PII --------------------------------------------------------------------------------
 
@@ -37,6 +37,28 @@ EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+\.[a-z]{2,}\b", re.IGNORECASE)
 PHONE_RE = re.compile(r"\b(?:\+?1[ .\-]?)?\(?\d{3}\)?[ .\-]\d{3}[ .\-]\d{4}\b")
 # 13–16 digit runs, possibly space/dash grouped — validated with Luhn to cut noise.
 CC_CANDIDATE_RE = re.compile(r"\b(?:\d[ -]?){13,16}\b")
+
+# --- Broadened PII taxonomy (B) ---------------------------------------------------------
+# Distinctive identifiers safe to flag without context (format is self-identifying).
+_PII_STRONG = [
+    ("IBAN", re.compile(r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){11,30}\b"), 0.6),
+    ("UK National Insurance no.", re.compile(r"\b[A-CEGHJ-PR-TW-Z][A-CEGHJ-NPR-TW-Z]\d{6}[A-D]\b"), 0.6),
+]
+# Higher-false-positive formats — only flag when a nearby keyword confirms the type
+# (same context trick as the unformatted SSN). (label, context_re, value_re, weight)
+_PII_CONTEXT = [
+    ("passport number", re.compile(r"\bpassport\b", re.I), re.compile(r"\b[A-Z0-9]{6,9}\b"), 0.7),
+    ("employer ID (EIN)", re.compile(r"\b(ein|employer\s+id|tax\s+id)\b", re.I), re.compile(r"\b\d{2}-\d{7}\b"), 0.6),
+    ("bank routing number", re.compile(r"\b(routing|aba)\b", re.I), re.compile(r"\b\d{9}\b"), 0.6),
+    ("SWIFT/BIC", re.compile(r"\b(swift|bic)\b", re.I), re.compile(r"\b[A-Z]{6}[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b"), 0.6),
+    ("NPI (health provider)", re.compile(r"\b(npi|provider\s+id)\b", re.I), re.compile(r"\b\d{10}\b"), 0.6),
+    ("Aadhaar", re.compile(r"\baadhaar\b", re.I), re.compile(r"\b\d{4}\s?\d{4}\s?\d{4}\b"), 0.7),
+]
+# --- Single-record context (C): a lone email/phone/DOB is PII when it sits in a record ---
+_RECORD_CTX_RE = re.compile(
+    r"\b(full[ -]?name|first name|last name|d\.?o\.?b\.?|date of birth|patient|customer|"
+    r"member|home address|mailing address|nationality|policy number)\b", re.I)
+_DOB_RE = re.compile(r"\b(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4})\b")
 
 # --- Proprietary / source code ----------------------------------------------------------
 
@@ -99,7 +121,7 @@ class ShadowAIDetector:
         text = f"{item.subject}\n{item.content}"
         signals: list[Signal] = []
         # PII is data-loss regardless of where it's going — flag on every surface.
-        signals.extend(self._scan_pii(text))
+        signals.extend(self._scan_pii(text, item.metadata))
         # Secrets, proprietary code, and unsanctioned-destination are ai_usage concerns:
         # on the gateway (llm_io) secrets are already covered by the prompt-threat
         # detector, and sending code to your *own* LLM app is expected, not a leak.
@@ -152,7 +174,7 @@ class ShadowAIDetector:
             evidence=", ".join(tokens[:4]),
         )]
 
-    def _scan_pii(self, text: str) -> list[Signal]:
+    def _scan_pii(self, text: str, meta: dict | None = None) -> list[Signal]:
         found: list[str] = []
         weight = 0.0
 
@@ -186,6 +208,30 @@ class ShadowAIDetector:
         if len(phones) >= 3:
             found.append(f"{len(phones)} phone numbers")
             weight = max(weight, 0.5)
+
+        # (C) A lone email/phone/DOB is PII when it sits in an obvious personal record —
+        # the bulk (>=3) heuristic alone misses a single customer's record.
+        if _RECORD_CTX_RE.search(text) and (emails or phones or _DOB_RE.search(text)):
+            if not any(("email" in f or "phone" in f) for f in found):
+                found.append("personal record (contact/DOB in context)")
+                weight = max(weight, 0.55)
+
+        # (B) Broadened identifiers: distinctive formats, then keyword-confirmed ones.
+        for label, rx, w in _PII_STRONG:
+            if rx.search(text):
+                found.append(label)
+                weight = max(weight, w)
+        for label, ctx_re, val_re, w in _PII_CONTEXT:
+            if ctx_re.search(text) and val_re.search(text):
+                found.append(label)
+                weight = max(weight, w)
+
+        # (A) Org-specific PII / confidential patterns (global env + this tenant's list).
+        extra = (meta or {}).get("custom_pii", "")
+        for label, rx in custom_pii_patterns(extra):
+            if rx.search(text):
+                found.append(label)
+                weight = max(weight, 0.7)
 
         if not found:
             return []

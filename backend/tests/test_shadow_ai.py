@@ -75,6 +75,44 @@ def test_luhn():
     assert not _luhn_ok("4111111111111112")
 
 
+def test_broadened_pii_distinctive():
+    # IBAN + UK NINO flag without needing context words.
+    assert Category.PII_EXPOSURE in _cats("wire to GB29NWBK60161331926819 today")
+    assert Category.PII_EXPOSURE in _cats("his NI number is AB123456C")
+
+
+def test_broadened_pii_context_gated():
+    # These only fire WITH a nearby keyword (keeps false positives down).
+    assert Category.PII_EXPOSURE in _cats("EIN 12-3456789 for the vendor")
+    assert Category.PII_EXPOSURE in _cats("passport A1234567 issued 2020")
+    assert Category.PII_EXPOSURE in _cats("aadhaar 1234 5678 9012")
+    # …and DON'T fire on the bare number with no context word.
+    assert Category.PII_EXPOSURE not in _cats("order reference 12-3456789 shipped")
+    assert Category.PII_EXPOSURE not in _cats("build A1234567 completed")
+
+
+def test_single_record_context():
+    # A lone email/DOB is PII when it's clearly a personal record (bulk >=3 heuristic misses this).
+    assert Category.PII_EXPOSURE in _cats("customer full name: Jane Roe, email jane@x.com")
+    assert Category.PII_EXPOSURE in _cats("patient DOB 1985-04-12, member id 55")
+    # A single email in ordinary prose (no record context) is not flagged.
+    assert Category.PII_EXPOSURE not in _cats("email me at support@example.com if stuck")
+
+
+def test_custom_pii_patterns_env(monkeypatch):
+    monkeypatch.setenv("CUSTOM_PII_PATTERNS", "Customer ID=CUST-[0-9]{6}")
+    assert Category.PII_EXPOSURE in _cats("refund for CUST-004821 please")
+    assert Category.PII_EXPOSURE not in _cats("refund for order 4821 please")
+
+
+def test_custom_pii_patterns_per_tenant():
+    from app.detectors.shadow_ai import ShadowAIDetector
+    d = ShadowAIDetector()
+    item = AnalysisInput(content="record MRN1234567 for review", surface=Surface.AI_USAGE,
+                         metadata={"custom_pii": "MRN=MRN\\d{7}"})
+    assert Category.PII_EXPOSURE in {s.category for s in d.analyze(item)}
+
+
 def test_find_secrets_shared_helper():
     assert find_secrets("password = hunter2supersecret")
     assert find_secrets("token sk-ant-abcdefghijklmnopqrstuv")

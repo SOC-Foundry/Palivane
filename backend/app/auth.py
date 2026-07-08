@@ -625,6 +625,19 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
             raise HTTPException(status_code=400,
                                 detail="tool_suppress must be tool:category;tool:category")
         tenant.tool_suppress = cleaned
+    if body.custom_pii_patterns is not None:
+        # Validate each label=regex line compiles; reject a bad pattern rather than silently drop.
+        import re as _re
+        for line in body.custom_pii_patterns.replace(";", "\n").splitlines():
+            line = line.strip()
+            if not line or "=" not in line:
+                continue
+            try:
+                _re.compile(line.partition("=")[2].strip())
+            except _re.error:
+                raise HTTPException(status_code=400,
+                                    detail=f"invalid regex in custom_pii_patterns: {line[:60]}")
+        tenant.custom_pii_patterns = body.custom_pii_patterns.strip()
     db.commit()
     db.refresh(tenant)
     changed = body.model_dump(exclude_none=True)

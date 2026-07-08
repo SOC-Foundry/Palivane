@@ -197,6 +197,7 @@ class TenantUpdate(BaseModel):
     mcp_block_severity: str | None = None      # block threshold for capture-plane verdicts
     sanctioned_ai_tools: str | None = None     # org-approved AI destinations (comma-separated)
     tool_suppress: str | None = None           # "tool:category;tool:category" suppressions
+    custom_pii_patterns: str | None = None     # org PII/confidential "label=regex" per line
 
 
 class TenantDelete(BaseModel):
