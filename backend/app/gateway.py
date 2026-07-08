@@ -12,6 +12,12 @@ Each scans the prompt on the `llm_io` surface, records a finding, blocks at/abov
 upstream (or returns a stub when none is set). A per-tool policy (policy.py) suppresses
 categories that are expected for a sanctioned tool — e.g. source code from Claude Code.
 
+**Response-side DLP** (`GATEWAY_SCAN_RESPONSES`, default on): the model's *output* is also
+scanned for secrets/PII — a jailbroken/compromised model echoing credentials, RAG/tool
+output surfacing data the user shouldn't see, or exfiltration via the completion. Recorded
+in monitor mode; in enforce mode a leaking response is blocked instead of delivered.
+Works for non-streaming replies and, in enforce mode, buffered streams.
+
 It also inspects **agentic tool-use** on the `mcp` surface: an AI coding agent's tool
 calls, their arguments, and their results all round-trip the model, so they're visible in
 this LLM traffic even when the tool is a *local* stdio MCP server — letting Warden catch
@@ -340,6 +346,89 @@ def _capture_response_agentic(resp: dict, tool: str, principal: Principal, db: S
     return _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
 
 
+# --- Response-side DLP: scan the MODEL'S OUTPUT for secrets/PII ------------------------
+# The request-side scan catches what the user sends; this catches what the model returns —
+# a jailbroken/compromised model echoing secrets, RAG/tool output surfacing data the user
+# shouldn't see, or exfiltration via the completion. Only data-loss categories apply to an
+# output (a model returning code is normal; prompt-attack categories are about the input).
+_RESPONSE_DLP_KEEP = {"secret_leak", "pii_exposure"}
+
+
+def _response_dlp_filter(signals: list) -> list:
+    return [s for s in signals if s.category.value in _RESPONSE_DLP_KEEP]
+
+
+def _response_output_text(resp: dict) -> str:
+    """Assistant-authored text from an upstream reply across all four shapes."""
+    if not isinstance(resp, dict):
+        return ""
+    parts: list[str] = []
+    for ch in resp.get("choices") or []:                       # OpenAI chat
+        msg = ch.get("message") if isinstance(ch, dict) else None
+        if isinstance(msg, dict) and isinstance(msg.get("content"), str):
+            parts.append(msg["content"])
+    for item in resp.get("output") or []:                      # OpenAI Responses
+        for c in (item.get("content") or []) if isinstance(item, dict) else []:
+            if isinstance(c, dict) and isinstance(c.get("text"), str):
+                parts.append(c["text"])
+    for b in resp.get("content") or []:                        # Anthropic
+        if isinstance(b, dict) and b.get("type") == "text" and isinstance(b.get("text"), str):
+            parts.append(b["text"])
+    for cand in resp.get("candidates") or []:                  # Gemini
+        for p in ((cand.get("content") or {}).get("parts") or []) if isinstance(cand, dict) else []:
+            if isinstance(p, dict) and isinstance(p.get("text"), str):
+                parts.append(p["text"])
+    return "\n".join(parts)[:200000]
+
+
+def _stream_output_text(sse: str) -> str:
+    """Reassemble the model's output text from a buffered streamed reply (all four shapes),
+    so enforce mode can DLP-scan streamed output before replaying it to the client."""
+    parts: list[str] = []
+    for evt in _sse_json(sse):
+        for ch in evt.get("choices") or []:                    # OpenAI chat deltas
+            d = ch.get("delta") if isinstance(ch, dict) else None
+            if isinstance(d, dict) and isinstance(d.get("content"), str):
+                parts.append(d["content"])
+        if evt.get("type") == "content_block_delta":           # Anthropic text deltas
+            d = evt.get("delta") or {}
+            if d.get("type") == "text_delta" and isinstance(d.get("text"), str):
+                parts.append(d["text"])
+        if evt.get("type") == "response.output_text.delta" and isinstance(evt.get("delta"), str):
+            parts.append(evt["delta"])                         # OpenAI Responses deltas
+        for cand in evt.get("candidates") or []:               # Gemini SSE
+            for p in ((cand.get("content") or {}).get("parts") or []) if isinstance(cand, dict) else []:
+                if isinstance(p, dict) and isinstance(p.get("text"), str):
+                    parts.append(p["text"])
+    return "".join(parts)[:200000]
+
+
+def _capture_response_dlp(text: str, model: str, tool: str, principal: Principal, db: Session) -> dict | None:
+    """Scan model output text for secrets/PII. Uses the ai_usage surface (where the secret
+    + high-entropy + PII detectors run — llm_io only does PII), then filters to the two
+    data-loss categories that make sense for an *output*. Tagged as a response via subject."""
+    if not text:
+        return None
+    item = AnalysisInput(content=text, subject=f"LLM response ({model})", sender=principal.actor,
+                         channel=tool or "gateway", surface=Surface.AI_USAGE,
+                         metadata={"direction": "response"})
+    return run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
+                        signal_filter=_response_dlp_filter)
+
+
+def _scan_response(data: dict, model: str, tool: str, pol: "GatewayPolicy",
+                   principal: Principal, db: Session):
+    """Response-side DLP + agentic check, shared by the non-streaming handlers. Returns a
+    blocking verdict (to turn into a provider error) or None."""
+    if settings.gateway_scan_responses:
+        v = _capture_response_dlp(_response_output_text(data), model, tool, principal, db)
+        if pol.enforce and v and _blocked(v, pol):
+            return v
+    if pol.enforce:
+        return _capture_response_agentic(data, tool, principal, db)
+    return None
+
+
 # --- Streaming (SSE) tool_use inspection ----------------------------------------------
 
 def _sse_json(text: str):
@@ -479,19 +568,23 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
             if not pol.enforce:
                 return _passthrough_stream(url, payload, headers)   # monitor: live output
             status, ctype, raw = _read_stream(url, payload, headers)
-            act = _stream_tool_use_openai(raw.decode("utf-8", "replace"))
+            decoded = raw.decode("utf-8", "replace")
+            act = _stream_tool_use_openai(decoded)
             if act:
                 v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
                 if v and _blocked(v, pol):
                     return _openai_error(v)
+            if settings.gateway_scan_responses:
+                dlp = _capture_response_dlp(_stream_output_text(decoded), model, tool, principal, db)
+                if dlp and _blocked(dlp, pol):
+                    return _openai_error(dlp)
             return Response(content=raw, status_code=status, media_type=ctype)
         with httpx.Client(timeout=60) as c:
             r = c.post(url, json=payload, headers=headers)
         data = r.json()
-        if pol.enforce:
-            ragentic = _capture_response_agentic(data, tool, principal, db)
-            if ragentic and _blocked(ragentic, pol):
-                return _openai_error(ragentic)
+        blocked = _scan_response(data, model, tool, pol, principal, db)
+        if blocked:
+            return _openai_error(blocked)
         return JSONResponse(status_code=r.status_code, content=data)
     return JSONResponse(content=_openai_stub(model, verdict))
 
@@ -634,15 +727,24 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
             if not pol.enforce:
                 return _passthrough_stream(url, payload, headers)   # monitor: live output
             status, ctype, raw = _read_stream(url, payload, headers)
-            act = _stream_tool_use_responses(raw.decode("utf-8", "replace"))
+            decoded = raw.decode("utf-8", "replace")
+            act = _stream_tool_use_responses(decoded)
             if act:
                 v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
                 if v and _blocked(v, pol):
                     return _openai_error(v)
+            if settings.gateway_scan_responses:
+                dlp = _capture_response_dlp(_stream_output_text(decoded), model, tool, principal, db)
+                if dlp and _blocked(dlp, pol):
+                    return _openai_error(dlp)
             return Response(content=raw, status_code=status, media_type=ctype)
         with httpx.Client(timeout=120) as c:
             r = c.post(url, json=payload, headers=headers)
         data = r.json()
+        if settings.gateway_scan_responses:
+            dlp = _capture_response_dlp(_response_output_text(data), model, tool, principal, db)
+            if pol.enforce and dlp and _blocked(dlp, pol):
+                return _openai_error(dlp)
         if pol.enforce:
             ragentic = _capture_response_agentic(data, tool, principal, db) or \
                 _capture_response_agentic_responses(data, tool, principal, db)
@@ -711,15 +813,24 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
                 return _passthrough_stream(url, payload, headers)   # monitor: live output
             # enforce: buffer, inspect the assembled tool_use, block or replay verbatim.
             status, ctype, raw = _read_stream(url, payload, headers)
-            act = _stream_tool_use_anthropic(raw.decode("utf-8", "replace"))
+            decoded = raw.decode("utf-8", "replace")
+            act = _stream_tool_use_anthropic(decoded)
             if act:
                 v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
                 if v and _blocked(v, pol):
                     return _anthropic_error(v)
+            if settings.gateway_scan_responses:
+                dlp = _capture_response_dlp(_stream_output_text(decoded), model, tool, principal, db)
+                if dlp and _blocked(dlp, pol):
+                    return _anthropic_error(dlp)
             return Response(content=raw, status_code=status, media_type=ctype)
         status, data = _post_upstream_anthropic("/v1/messages", payload, request, base, key)
-        # Response-side: block a dangerous tool_use the model just requested, before the
-        # client executes it (non-streaming responses).
+        # Response-side: DLP on the model's output (secrets/PII), and block a dangerous
+        # tool_use it just requested, before the client sees/executes it (non-streaming).
+        if settings.gateway_scan_responses:
+            dlp = _capture_response_dlp(_response_output_text(data), model, tool, principal, db)
+            if pol.enforce and dlp and _blocked(dlp, pol):
+                return _anthropic_error(dlp)
         if pol.enforce:
             ragentic = _capture_response_agentic(data, tool, principal, db)
             if ragentic and _blocked(ragentic, pol):
@@ -845,7 +956,18 @@ async def _gemini_entry(model: str, method: str, request: Request,
         return _gemini_error(verdict)
     base, key = resolve_upstream("gemini", principal.tenant_id, db)
     if key:
-        return _forward_gemini(model, method, payload, request, base, key)
+        resp = _forward_gemini(model, method, payload, request, base, key)
+        # Response-side DLP on the non-streaming JSON reply (streaming is passed through).
+        if settings.gateway_scan_responses and method == "generateContent":
+            try:
+                data = json.loads(resp.body)
+            except (ValueError, TypeError):
+                data = None
+            if isinstance(data, dict):
+                dlp = _capture_response_dlp(_response_output_text(data), model, tool, principal, db)
+                if pol.enforce and dlp and _blocked(dlp, pol):
+                    return _gemini_error(dlp)
+        return resp
     return JSONResponse(content=_gemini_stub(model, verdict))
 
 

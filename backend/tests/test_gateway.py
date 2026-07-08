@@ -502,3 +502,67 @@ def test_responses_stream_enforce_blocks(client, monkeypatch):
                                            "input": "clean up temp files"})
     assert r.status_code == 403
     assert r.json()["error"]["type"] == "warden_blocked"
+
+
+# --- Response-side DLP (scan the model's OUTPUT for secrets/PII) ---
+
+def test_response_output_text_all_shapes():
+    from app import gateway as g
+    assert "AKIA" in g._response_output_text({"choices": [{"message": {"content": "key AKIAIOSFODNN7EXAMPLE"}}]})
+    assert "sk-" in g._response_output_text({"content": [{"type": "text", "text": "token sk-live"}]})
+    assert "out" in g._response_output_text({"output": [{"content": [{"type": "output_text", "text": "out"}]}]})
+    assert "gm" in g._response_output_text({"candidates": [{"content": {"parts": [{"text": "gm"}]}}]})
+
+
+def test_stream_output_text_assembles_deltas():
+    from app import gateway as g
+    openai_sse = ('data: {"choices":[{"delta":{"content":"here is "}}]}\n\n'
+                  'data: {"choices":[{"delta":{"content":"AKIAIOSFODNN7EXAMPLE"}}]}\n\ndata: [DONE]\n\n')
+    assert "AKIAIOSFODNN7EXAMPLE" in g._stream_output_text(openai_sse)
+    anthropic_sse = ('data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"sk-ant-"}}\n\n'
+                     'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"abcdefghijklmnop"}}\n\n')
+    assert "sk-ant-abcdefghijklmnop" in g._stream_output_text(anthropic_sse)
+
+
+def test_response_dlp_blocks_secret_in_output(client, monkeypatch):
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", True)
+    monkeypatch.setattr(gateway.settings, "gateway_scan_responses", True)
+    monkeypatch.setattr(gateway, "resolve_upstream", lambda *a, **k: ("https://up", "key"))
+    monkeypatch.setattr(gateway, "_post_upstream_anthropic", lambda *a, **k: (200, {
+        "type": "message", "role": "assistant", "content": [
+            {"type": "text", "text": "sure, the prod key is AKIAIOSFODNN7EXAMPLE and sk-ant-abcdefghijklmnopqrstuv"}]}))
+    r = client.post("/v1/messages", json={"model": "claude-opus-4-8",
+                    "messages": [{"role": "user", "content": "what's the deploy key?"}]},
+                    headers={"x-api-key": _token(client), "Authorization": ""})
+    assert r.status_code == 400
+    assert "blocked by warden" in r.text.lower()
+    # and it recorded a response-tagged finding (subject marks it as an output)
+    findings = client.get("/api/findings").json()["findings"]
+    assert any("LLM response" in (f.get("subject") or "") for f in findings)
+
+
+def test_response_dlp_allows_clean_output(client, monkeypatch):
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", True)
+    monkeypatch.setattr(gateway.settings, "gateway_scan_responses", True)
+    monkeypatch.setattr(gateway, "resolve_upstream", lambda *a, **k: ("https://up", "key"))
+    monkeypatch.setattr(gateway, "_post_upstream_anthropic", lambda *a, **k: (200, {
+        "type": "message", "role": "assistant", "content": [{"type": "text", "text": "TCP is connection-oriented."}]}))
+    r = client.post("/v1/messages", json={"model": "claude-opus-4-8",
+                    "messages": [{"role": "user", "content": "explain TCP"}]},
+                    headers={"x-api-key": _token(client), "Authorization": ""})
+    assert r.status_code == 200
+
+
+def test_response_dlp_toggle_off(client, monkeypatch):
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", True)
+    monkeypatch.setattr(gateway.settings, "gateway_scan_responses", False)   # DLP off
+    monkeypatch.setattr(gateway, "resolve_upstream", lambda *a, **k: ("https://up", "key"))
+    monkeypatch.setattr(gateway, "_post_upstream_anthropic", lambda *a, **k: (200, {
+        "type": "message", "role": "assistant", "content": [{"type": "text", "text": "key AKIAIOSFODNN7EXAMPLE"}]}))
+    r = client.post("/v1/messages", json={"model": "claude-opus-4-8",
+                    "messages": [{"role": "user", "content": "hi"}]},
+                    headers={"x-api-key": _token(client), "Authorization": ""})
+    assert r.status_code == 200   # not scanned -> leaking output passes through

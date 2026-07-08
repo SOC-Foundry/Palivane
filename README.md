@@ -231,6 +231,7 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `SANCTIONED_AI_TOOLS` | *(empty)*                | Allowlist — comma-separated AI tools/domains the org approves (e.g. `claude.ai,copilot.microsoft.com`). |
 | `GATEWAY_ENFORCE`   | `false`                    | LLM gateway: `true` blocks risky prompts inline; otherwise monitor-only. |
 | `GATEWAY_BLOCK_SEVERITY` | `high`                | Block when a prompt's verdict severity is at/above this. |
+| `GATEWAY_SCAN_RESPONSES` | `true`                | Response-side DLP: scan the model's output for secrets/PII (records; blocks in enforce). |
 | `GATEWAY_UPSTREAM_BASE` / `GATEWAY_UPSTREAM_KEY` | *(unset)* | OpenAI-compatible upstream for allowed calls (empty = stub reply). |
 | `GATEWAY_ANTHROPIC_BASE` / `GATEWAY_ANTHROPIC_KEY` | `api.anthropic.com` / `ANTHROPIC_API_KEY` | Upstream for `/v1/messages` (Claude Code); empty key = stub. |
 | `GATEWAY_GEMINI_BASE` / `GATEWAY_GEMINI_KEY` | `generativelanguage.googleapis.com` / `GEMINI_API_KEY` | Upstream for `/v1beta/models/{model}:generateContent` (google-genai SDK, Gemini CLI); empty key = stub. |
@@ -441,6 +442,10 @@ client.chat.completions.create(model="gpt-4o", messages=[...])
 - **monitor** mode (default) records every prompt as an `llm_io` finding and passes through.
 - **enforce** mode (`GATEWAY_ENFORCE=true`) blocks prompts at/above `GATEWAY_BLOCK_SEVERITY`
   inline (HTTP 403, OpenAI-error shape) — real prevention, not just detection.
+- **response-side DLP** (`GATEWAY_SCAN_RESPONSES`, default on) also scans the model's *output*
+  for secrets/PII — a jailbroken/compromised model echoing credentials, or RAG/tool output
+  surfacing data the user shouldn't see. Recorded in monitor; a leaking response is blocked
+  (not delivered) in enforce. Covers non-streaming replies and buffered streams.
 - allowed calls forward to a configured `GATEWAY_UPSTREAM_BASE` (any OpenAI-compatible
   provider), or return a stub when none is set (so it's demoable offline).
 - **per-tenant upstreams**: each org can set its own provider base URL + key via

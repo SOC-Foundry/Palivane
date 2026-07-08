@@ -65,6 +65,8 @@ class Settings:
     # verdict severity >= block_severity.
     gateway_enforce: bool = os.getenv("GATEWAY_ENFORCE", "").lower() in ("1", "true", "yes")
     gateway_block_severity: str = os.getenv("GATEWAY_BLOCK_SEVERITY", "high")
+    # Response-side DLP: scan the model's OUTPUT for secrets/PII (records; blocks in enforce).
+    gateway_scan_responses: bool = os.getenv("GATEWAY_SCAN_RESPONSES", "true").lower() in ("1", "true", "yes")
     # OpenAI-compatible upstream for /v1/chat/completions (empty = stub reply offline).
     gateway_upstream_base: str = os.getenv("GATEWAY_UPSTREAM_BASE", "")
     gateway_upstream_key: str = os.getenv("GATEWAY_UPSTREAM_KEY", "")
