@@ -81,6 +81,15 @@ class SecretScan(BaseModel):
     record: bool = True          # persist findings (on by default — this is the point)
 
 
+class ExceptionRequest(BaseModel):
+    """An end user asking their security team to allow a blocked send (from the extension)."""
+    finding_id: int | None = None
+    destination: str = ""
+    reason: str = ""
+    categories: list[str] = Field(default_factory=list)
+    user: str = ""
+
+
 class ScannerImport(BaseModel):
     """Raw output from a third-party secret scanner (TruffleHog / Gitleaks / GitGuardian)
     to normalize into Warden findings. `results` may be parsed JSON or the raw string the

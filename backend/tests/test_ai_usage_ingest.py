@@ -110,6 +110,31 @@ def test_bad_api_key_rejected(raw_client, db_factory):
     assert r.status_code == 401
 
 
+def test_verdict_offers_sanctioned_alternatives(client, raw_client):
+    # The org's approved AI tools ride the verdict so the block UI can offer them.
+    client.patch("/api/tenant", json={"sanctioned_ai_tools": "Acme-Internal GPT, claude.ai"})
+    key = client.post("/api/apikeys", json={"label": "ext", "actor": "e@acme.com"}).json()["token"]
+    r = raw_client.post("/api/ingest/ai-usage",
+                        json={"content": "SSN 123-45-6789 key AKIAABCDEFGHIJKLMNOP",
+                              "destination": "https://chatgpt.com/"},
+                        headers={"X-Warden-Token": key}).json()
+    tools = {t["label"]: t["url"] for t in r["sanctioned_tools"]}
+    assert tools["Acme-Internal GPT"] == ""            # a name -> no link
+    assert tools["claude.ai"] == "https://claude.ai"   # a domain -> clickable
+
+
+def test_exception_request_recorded_to_audit(client, raw_client):
+    key = client.post("/api/apikeys", json={"label": "ext", "actor": "e@acme.com"}).json()["token"]
+    r = raw_client.post("/api/exception-request",
+                        json={"finding_id": 1, "destination": "https://chatgpt.com/",
+                              "reason": "need it for a customer ticket",
+                              "categories": ["pii_exposure"], "user": "bob@acme.com"},
+                        headers={"X-Warden-Token": key})
+    assert r.status_code == 200 and r.json()["ok"] is True
+    entries = client.get("/api/audit").json()["entries"]
+    assert any(e["action"] == "exception_requested" for e in entries)
+
+
 def test_pii_and_secrets_blocked(raw_client, db_factory, monkeypatch):
     _seed_tenant(db_factory)
     monkeypatch.setattr(main.settings, "extension_ingest_token", "ext-secret")

@@ -31,6 +31,7 @@ from .schemas import (
     CoverageRequest,
     IDEExtScan,
     MCPBatchIngest,
+    ExceptionRequest,
     MCPConfigScan,
     MCPIngest,
     ProvisionRequest,
@@ -329,7 +330,43 @@ def ingest_ai_usage(
         "severity": result["severity"],
         "signals": result["signals"],
         "finding_id": result["finding_id"],
+        # Approved AI tools to offer the user instead of a hard "no" (shown in the block UI).
+        "sanctioned_tools": _sanctioned_list(meta["sanctioned_tools"]),
     }
+
+
+def _sanctioned_list(raw: str) -> list[dict]:
+    """Parse the tenant's sanctioned-AI-tools CSV into [{label, url}] for the extension to
+    offer as approved alternatives. Domain-like entries become clickable links."""
+    out = []
+    for entry in (raw or "").split(","):
+        e = entry.strip()
+        if not e:
+            continue
+        host = e.replace("https://", "").replace("http://", "").rstrip("/")
+        url = f"https://{host}" if ("." in host and " " not in host) else ""
+        out.append({"label": e, "url": url})
+    return out
+
+
+@app.post("/api/exception-request")
+def exception_request(
+    body: ExceptionRequest,
+    x_warden_token: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """A user asking their security team to allow a blocked send (from the extension's block
+    modal). Recorded to the audit log so an admin can review/act — turns a hard wall into a
+    request, which reduces shadow-AI workarounds. Token-gated (the extension's capture key)."""
+    from . import audit_log
+    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    _enforce_rate(db, tenant_id)
+    audit_log.record(
+        db, tenant_id, body.user or default_actor, "exception_requested",
+        target=body.destination or "",
+        detail={"finding_id": body.finding_id, "reason": body.reason[:500],
+                "categories": body.categories[:8]})
+    return {"ok": True}
 
 
 # An agent reading code is normal, and MCP has no external AI destination — so on the

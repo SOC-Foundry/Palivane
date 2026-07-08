@@ -21,7 +21,12 @@ worker for a verdict (which calls Warden), and:
 
 - **allow** → sends normally,
 - **warn** → sends, but shows an amber banner,
-- **block** → the request is **not sent**; a red banner explains why.
+- **block** → the request is **not sent**; a modal explains *why* and offers a **way
+  forward** — the org's **approved AI tools** to use instead (from the tenant's
+  sanctioned-tools list, returned with the verdict) and a **"Request exception"** button
+  that files the request to the security team's audit log (`POST /api/exception-request`).
+  This turns a hard wall into a redirect, which is what keeps users from finding a
+  workaround.
 
 It **fails open**: if the backend is slow, unreachable, or unconfigured, prompts go
 through untouched — the extension never breaks the user's tool.
