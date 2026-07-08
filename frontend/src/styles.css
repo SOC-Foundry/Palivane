@@ -251,6 +251,9 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 .cat-pii_exposure { background: rgba(255,138,61,0.13); color: var(--high); }
 .cat-source_code_leak { background: rgba(255,210,77,0.12); color: var(--susp); }
 .cat-unsanctioned_ai { background: rgba(72,187,120,0.14); color: #48bb78; }
+.cat-confidential_data { background: rgba(179,136,255,0.15); color: var(--ai); }
+.cat-credential_at_rest { background: rgba(255,77,94,0.13); color: var(--crit); }
+.cat-dangerous_command { background: rgba(255,138,61,0.13); color: var(--high); }
 .signal-detail { font-size: 12.5px; color: #c4ccdb; margin-top: 5px; }
 .signal-evidence {
   display: block; margin-top: 6px; font-size: 11.5px; color: var(--muted);
@@ -648,3 +651,9 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
   .lp-fronts, .lp-cards { grid-template-columns: 1fr; }
   .lp-banner { flex-direction: column; align-items: flex-start; }
 }
+
+/* Help / documentation page */
+.help-list { margin: 10px 0 0; padding-left: 20px; line-height: 1.6; color: var(--text); }
+.help-list li { margin: 6px 0; }
+.help-h3 { margin: 18px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.help-list .link-btn { font-size: inherit; padding: 0; vertical-align: baseline; }

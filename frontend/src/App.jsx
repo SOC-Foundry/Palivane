@@ -13,7 +13,8 @@ import Legal from "./components/Legal.jsx";
 import ExtensionConnect from "./components/ExtensionConnect.jsx";
 import Connections from "./components/Connections.jsx";
 import Coverage from "./components/Coverage.jsx";
-import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard, IconInbox, IconTarget } from "./components/icons.jsx";
+import Help from "./components/Help.jsx";
+import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard, IconInbox, IconTarget, IconBook } from "./components/icons.jsx";
 
 export default function App() {
   const [auth, setAuth] = useState(null);        // { user, tenant }
@@ -159,6 +160,10 @@ export default function App() {
               <IconClipboard /> <span>Audit</span>
             </button>
           )}
+          <button type="button" className={`nav-item ${view === "help" ? "nav-on" : ""}`}
+                  onClick={() => setView("help")}>
+            <IconBook /> <span>Help</span>
+          </button>
         </nav>
 
         <div className="sidebar-foot">
@@ -198,6 +203,8 @@ export default function App() {
           />
         ) : view === "audit" ? (
           <Audit />
+        ) : view === "help" ? (
+          <Help isAdmin={isAdmin} onNavigate={setView} />
         ) : (
           <>
             <div className="content-head">
