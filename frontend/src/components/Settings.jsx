@@ -73,6 +73,24 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     try { const r = await api.testAlert(); flash(r.ok ? "Test alert sent." : "Webhook unreachable.", !!r.ok); }
     catch (e) { err(e); }
   }
+
+  // --- SIEM forwarding ---
+  const [siemCfg, setSiemCfg] = useState({
+    url: tenant?.siem_url || "", token: "", min: tenant?.siem_min_severity || "high",
+    format: tenant?.siem_format || "json", tokenSet: !!tenant?.siem_token_set,
+  });
+  async function saveSiem() {
+    try {
+      const payload = { siem_url: siemCfg.url, siem_min_severity: siemCfg.min, siem_format: siemCfg.format };
+      if (siemCfg.token) payload.siem_token = siemCfg.token;   // write-only; only send if changed
+      const t = await api.updateTenant(payload);
+      onTenant?.(t); setSiemCfg((s) => ({ ...s, token: "", tokenSet: !!t.siem_token_set })); flash("SIEM saved.");
+    } catch (e) { err(e); }
+  }
+  async function testSiem() {
+    try { const r = await api.testSiem(); flash(r.ok ? "Test event sent to SIEM." : "SIEM endpoint unreachable.", !!r.ok); }
+    catch (e) { err(e); }
+  }
   function _download(text, name, type) {
     const url = URL.createObjectURL(new Blob([text], { type }));
     const a = document.createElement("a");
@@ -311,6 +329,42 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
            findings are batched into a rollup on the chosen cadence — <strong>critical findings
            still fire in real time</strong>. Findings export is for SIEM ingest. Alerts fail open
            — a down webhook never blocks capture.</p>
+      </div>
+
+      {/* SIEM forwarding */}
+      <div className="panel settings-card">
+        <h2>SIEM forwarding</h2>
+        <p className="muted" style={{ fontSize: 12 }}>Stream findings to your SIEM in real time
+           (complements the pull-based JSONL export above). Vendor-neutral — point it at any
+           HTTP collector.</p>
+        <div className="field-grid">
+          <label className="field-wide">Collector URL
+            <input placeholder="https://http-inputs.splunkcloud.com/services/collector"
+                   value={siemCfg.url} onChange={(e) => setSiemCfg((s) => ({ ...s, url: e.target.value }))} /></label>
+          <label className="field-wide">Token {siemCfg.tokenSet && <span className="muted">(set — leave blank to keep)</span>}
+            <input type="password" placeholder={siemCfg.tokenSet ? "••••••••" : "HEC / bearer token"}
+                   value={siemCfg.token} onChange={(e) => setSiemCfg((s) => ({ ...s, token: e.target.value }))} /></label>
+          <label>Format
+            <select value={siemCfg.format} onChange={(e) => setSiemCfg((s) => ({ ...s, format: e.target.value }))}>
+              <option value="json">JSON (generic / Sentinel / Elastic)</option>
+              <option value="splunk_hec">Splunk HEC</option>
+              <option value="cef">CEF (syslog)</option>
+            </select></label>
+          <label>Forward severity ≥
+            <select value={siemCfg.min} onChange={(e) => setSiemCfg((s) => ({ ...s, min: e.target.value }))}>
+              <option value="low">low</option>
+              <option value="suspicious">suspicious</option>
+              <option value="high">high</option>
+              <option value="critical">critical</option>
+            </select></label>
+        </div>
+        <div className="form-row" style={{ gap: 10 }}>
+          <button type="button" className="primary-btn slim" onClick={saveSiem}>Save SIEM</button>
+          <button type="button" className="mini-btn" onClick={testSiem}>Send test event</button>
+        </div>
+        <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Pushes each finding at/above
+           the threshold as it's captured; SSRF-guarded and fail-open (a down collector never
+           blocks capture). Internal/private endpoints are blocked — use a reachable collector.</p>
       </div>
 
       {/* Usage */}

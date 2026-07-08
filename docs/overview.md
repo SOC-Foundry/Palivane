@@ -274,8 +274,8 @@ The security-team UI provides:
 - **Settings** — org config (name, judge consent, retention, rate limits), **per-tenant
   policy** (monitor/enforce, block severity, sanctioned tools, suppression), supply-chain
   allow/deny lists, upstream keys, SSO, MFA, **alerts** (Slack real-time or hourly/daily
-  digests — criticals always real-time — + SIEM export), and **compliance** (DPA, data
-  export, delete-my-org).
+  digests — criticals always real-time), **SIEM** (JSONL export + real-time push forwarding
+  — Splunk HEC / JSON / CEF), and **compliance** (DPA, data export, delete-my-org).
 - **Audit** — the admin action log.
 - **Coverage** — compares "who used AI" from your IdP/CASB against captured findings to
   surface blind spots.

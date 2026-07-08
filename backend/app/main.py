@@ -175,6 +175,21 @@ def test_alert(current: User = Depends(require_admin), db: Session = Depends(get
     return {"ok": ok}
 
 
+@app.post("/api/siem/test")
+def test_siem(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Send a sample event to the tenant's configured SIEM collector (Settings → SIEM)."""
+    from . import siem
+    t = db.get(Tenant, current.tenant_id)
+    if not t or not (t.siem_url or "").strip():
+        raise HTTPException(status_code=400, detail="no SIEM endpoint configured")
+    fields = siem._fields(
+        {"severity": "high", "risk_score": 75, "finding_id": 0,
+         "signals": [{"category": "secret_leak"}]},
+        subject="Warden SIEM test event", actor="warden", surface="test", org=t.slug)
+    ok = siem.send_sync(t.siem_url.strip(), t.siem_token or "", t.siem_format or "json", fields)
+    return {"ok": ok}
+
+
 @app.post("/api/alerts/digest/run")
 def run_digest_now(current: User = Depends(require_admin), db: Session = Depends(get_db)):
     """Force-send this tenant's digest now if one is due (Settings → Alerts button, or a

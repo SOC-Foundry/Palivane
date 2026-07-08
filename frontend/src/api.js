@@ -81,6 +81,7 @@ export const api = {
     req("/tenant", { method: "PATCH", body: JSON.stringify(payload) }),
   extensionToken: () => req("/extension/token", { method: "POST" }),
   testAlert: () => req("/alerts/test", { method: "POST" }),
+  testSiem: () => req("/siem/test", { method: "POST" }),
   exportFindings: async () => {
     const token = getToken();
     const res = await fetch(BASE + "/export/findings",

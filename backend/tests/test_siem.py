@@ -1,0 +1,88 @@
+"""SIEM forwarding: format builders, severity gating, SSRF guard, config + test endpoint."""
+
+from __future__ import annotations
+
+import json
+
+from app import siem
+
+_VERDICT = {"severity": "high", "risk_score": 75, "finding_id": 7,
+            "signals": [{"category": "secret_leak"}, {"category": "pii_exposure"}]}
+
+
+def _fields():
+    return siem._fields(_VERDICT, subject="pasted into ChatGPT", actor="bob@acme.com",
+                        surface="ai_usage", org="acme")
+
+
+# --- format builders ------------------------------------------------------------------
+
+def test_json_format():
+    req = siem._request("https://collector/x", "tok", "json", _fields())
+    assert req.headers["Authorization"] == "Bearer tok"
+    body = json.loads(req.data)
+    assert body["product"] == "Warden" and body["severity"] == "high"
+    assert body["categories"] == ["secret_leak", "pii_exposure"] and body["org"] == "acme"
+
+
+def test_splunk_hec_format():
+    req = siem._request("https://hec/x", "hectoken", "splunk_hec", _fields())
+    assert req.headers["Authorization"] == "Splunk hectoken"    # HEC scheme
+    body = json.loads(req.data)
+    assert body["sourcetype"] == "warden:finding" and body["event"]["risk_score"] == 75
+
+
+def test_cef_format():
+    req = siem._request("https://collector/x", "", "cef", _fields())
+    assert req.get_header("Content-type") == "text/plain"
+    line = req.data.decode()
+    assert line.startswith("CEF:0|TachTech|Warden|1.0|")
+    assert "secret_leak" in line and "cn1=75" in line and "suser=bob@acme.com" in line
+
+
+# --- gating + SSRF --------------------------------------------------------------------
+
+def test_forward_gates_on_severity(monkeypatch):
+    sent = []
+    monkeypatch.setattr(siem, "send_sync", lambda *a, **k: sent.append(a) or True)
+    # below threshold -> not forwarded
+    siem.forward("https://c/x", "", "high", "json",
+                 {"severity": "suspicious", "risk_score": 40, "signals": []})
+    assert sent == []
+    # at threshold -> forwarded (send_sync runs in a daemon thread; join briefly)
+    import threading, time
+    before = threading.active_count()
+    siem.forward("https://c/x", "", "high", "json", _VERDICT)
+    time.sleep(0.1)
+    # the thread called our stub
+    assert sent, "expected a forward at/above threshold"
+
+
+def test_send_sync_ssrf_guard():
+    # internal / metadata targets are refused before any request
+    assert siem.send_sync("http://169.254.169.254/", "", "json", _fields()) is False
+    assert siem.send_sync("http://127.0.0.1:8088/x", "", "json", _fields()) is False
+    assert siem.send_sync("", "", "json", _fields()) is False
+
+
+# --- config + endpoint ----------------------------------------------------------------
+
+def test_siem_config_roundtrip_token_write_only(client):
+    t = client.patch("/api/tenant", json={"siem_url": "https://collector.acme.com/in",
+                                          "siem_token": "sekret", "siem_format": "splunk_hec",
+                                          "siem_min_severity": "suspicious"}).json()
+    assert t["siem_url"] == "https://collector.acme.com/in"
+    assert t["siem_format"] == "splunk_hec" and t["siem_min_severity"] == "suspicious"
+    assert t["siem_token_set"] is True
+    assert "siem_token" not in t                       # write-only, never returned
+
+
+def test_siem_invalid_format_rejected(client):
+    r = client.patch("/api/tenant", json={"siem_format": "logstash"})
+    assert r.status_code == 400
+
+
+def test_siem_test_endpoint_requires_config(client):
+    # no SIEM configured on a fresh tenant -> 400
+    r = client.post("/api/siem/test")
+    assert r.status_code == 400
