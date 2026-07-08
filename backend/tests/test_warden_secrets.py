@@ -106,6 +106,26 @@ def test_iter_target_files_covers_wellknown_and_env(tmp_path, monkeypatch):
     assert any(f.endswith("app/.env") for f in found)
 
 
+def test_engine_trufflehog_maps_masks_and_verifies(monkeypatch):
+    import json as _json
+    monkeypatch.setattr(ws.shutil, "which", lambda name: "/usr/bin/trufflehog")
+    monkeypatch.setattr(ws, "_run", lambda cmd: "\n".join([
+        _json.dumps({"DetectorName": "Github", "Verified": True, "Raw": "ghp_LIVEabcdefghij",
+                     "SourceMetadata": {"Data": {"Filesystem": {"file": "/r/.env", "line": 3}}}}),
+        _json.dumps({"DetectorName": "AWS", "Verified": False, "Raw": "AKIAIOSFODNN7EXAMPLE",
+                     "SourceMetadata": {"Data": {"Filesystem": {"file": "/r/tf", "line": 1}}}}),
+    ]))
+    out = ws._engine_findings("trufflehog", ["/r"])
+    assert out[0]["secret_types"] == ["GitHub token"] and out[0]["verified"] is True
+    assert out[0]["source"] == "trufflehog" and "LIVEabcdefghij" not in out[0]["masked"]
+    assert out[1]["secret_types"] == ["AWS access key id"] and out[1]["verified"] is False
+
+
+def test_engine_missing_binary_returns_none(monkeypatch):
+    monkeypatch.setattr(ws.shutil, "which", lambda name: None)
+    assert ws._engine_findings("trufflehog", ["/r"]) is None   # -> caller falls back
+
+
 def test_read_config_from_env(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("WARDEN_URL", "https://w.example.com")

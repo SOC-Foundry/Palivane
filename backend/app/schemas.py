@@ -70,6 +70,8 @@ class SecretAtRest(BaseModel):
     masked: str = ""             # e.g. "ghp_••••4f2a" — redacted preview, never the secret
     line: int = 0
     world_readable: bool = False
+    verified: bool = False       # a scanner confirmed the credential is live (TruffleHog)
+    source: str = ""             # detection engine: "warden" | "trufflehog" | "gitleaks" | …
 
 
 class SecretScan(BaseModel):
@@ -77,6 +79,16 @@ class SecretScan(BaseModel):
     items: list[SecretAtRest] = Field(default_factory=list)
     host: str = ""               # device identifier for attribution
     record: bool = True          # persist findings (on by default — this is the point)
+
+
+class ScannerImport(BaseModel):
+    """Raw output from a third-party secret scanner (TruffleHog / Gitleaks / GitGuardian)
+    to normalize into Warden findings. `results` may be parsed JSON or the raw string the
+    tool emits (JSON array or JSONL). The raw secret is masked at ingest, never persisted."""
+    tool: str = Field(min_length=1)
+    results: object = None
+    host: str = ""
+    record: bool = True
 
 
 class CodeFile(BaseModel):

@@ -43,6 +43,13 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
   history) and reports credentials **at rest** as `credential_at_rest` findings. Privacy by
   design: detection runs locally; only metadata (type, path, masked preview, permissions)
   leaves the box — never the raw secret. Schedulable via the MDM pack.
+- **Works with your existing scanners** — bring **TruffleHog / Gitleaks / GitGuardian** and
+  Warden becomes the system of record: drive them on endpoints (`warden-secrets --engine`)
+  or pipe CI output in (`warden-import` → `/api/scan/import`). Findings normalize into one
+  console with unified scoring/alerts/SIEM, secrets are **masked at ingest**, and TruffleHog's
+  **live verification** escalates a confirmed-working credential to critical.
+- **Separator-stripped keys (evasion)** — a token whose dash/underscore was deleted to dodge
+  DLP (`ghp…` for `ghp_…`) is still caught and flagged as a *likely bypass*.
 - **Self-serve onboarding** — users bind to their tenant by signing in (login/SSO): the
   **browser extension** sign-in and **`warden connect`** (Claude Code **and Cursor**) mint a
   per-user, revocable key — no admin token distribution. The **Connect** page leads with a
@@ -375,6 +382,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/scan/deps`         | Vet dependency manifests (`package.json`, `requirements.txt`) for supply-chain risk — install-script abuse, non-registry sources, known-bad packages, and (opt-in) known CVEs for pinned deps via OSV. Token-gated. |
 | POST   | `/api/scan/ide-extensions` | Vet a list of IDE extensions (`.vscode/extensions.json` in CI, or MDM inventory) for known-bad / unapproved editor plugins. Token-gated. |
 | POST   | `/api/scan/secrets`      | Record credentials found **at rest** on a device by `warden-secrets` (SSH/RSA keys, tokens, `.env`) as `credential_at_rest` findings. Metadata-only (masked); returns a per-file remediation plan. Token-gated. |
+| POST   | `/api/scan/import`       | Normalize a third-party scanner's output (**TruffleHog / Gitleaks / GitGuardian**) into `credential_at_rest` findings. Secret masked at ingest (never persisted); `verified` escalates to critical. Token-gated. |
 | GET    | `/api/policy-pack`       | Generate the MDM policy pack (agentless enforcement config): editor allowlist, system-proxy profiles, browser force-install, CA note, Claude Code managed settings, OpenAI/Gemini gateway routing, Cursor hooks, and a scheduled `warden-secrets` scan (admin). Runbook: [`docs/mdm-policy-pack.md`](docs/mdm-policy-pack.md). |
 | POST   | `/api/scan/code`         | Scan changed files (pre-commit hook / CI) for secrets & PII before they reach a repo; ignores `source_code_leak`. Returns a per-file allow/warn/block. Token-gated. |
 | GET    | `/api/findings`          | List the tenant's findings (filter by `severity`, `status`). |
@@ -729,6 +737,7 @@ backend/
     auth.py           # auth deps + /api/auth (+ /extension/token) + /api/users + /api/apikeys
     gateway.py        # LLM gateway: OpenAI/Anthropic/Gemini + agentic tool_use enforcement (req/resp/stream)
     osv.py            # OSV.dev advisory lookup for pinned deps (opt-in CVE scan)
+    scanner_import.py # normalize TruffleHog/Gitleaks/GitGuardian output into findings
     policy.py         # per-tool category suppression (e.g. code from Claude Code)
     policy_pack.py    # MDM enforcement-config generator (/api/policy-pack)
     provision.py      # per-device bootstrap installers (self-enrolling)
@@ -750,7 +759,8 @@ deploy/               # systemd unit (api) + env example
 cli/                  # warden-connect (self-serve onboarding: Claude Code + Cursor) + local
                       #   planes: warden-hook (Claude Code tool calls), warden-cursor-hook
                       #   (Cursor prompts + tool calls), warden-mcp (stdio MCP wrapper),
-                      #   warden-posture (IDE/MCP drift), warden-secrets (credentials at rest)
+                      #   warden-posture (IDE/MCP drift), warden-secrets (credentials at rest,
+                      #   incl. --engine trufflehog/gitleaks), warden-import (CI scanner ingest)
 extension/            # MV3 browser extension — shadow-AI capture + self-serve sign-in
 proxy/                # mitmproxy addon — shadow-AI + MCP capture (desktop apps / network)
 git/                  # pre-commit hook + GitHub Action — secrets/PII out of repos

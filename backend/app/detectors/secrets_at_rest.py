@@ -49,19 +49,30 @@ class SecretsAtRestDetector:
             return []
         path = str(m.get("path") or item.subject or "a file")
         world_readable = bool(m.get("world_readable"))
+        verified = bool(m.get("verified"))
+        source = str(m.get("source") or "").strip()
 
         weight = max(_base_weight(t) for t in types)
         if world_readable:
             weight = min(0.95, weight + 0.1)   # readable by other local users → worse
+        confidence = 0.9
+        if verified:
+            # A scanner (TruffleHog) confirmed the credential actually works — not just a
+            # well-formed string. That's a live, exploitable secret: escalate to critical.
+            weight = min(0.97, weight + 0.15)
+            confidence = 0.97
 
         kinds = ", ".join(dict.fromkeys(types))
         perm = " (world/group-readable)" if world_readable else ""
+        vtag = " — VERIFIED LIVE" if verified else ""
+        via = f" [via {source}]" if source and source != "warden" else ""
         return [Signal(
             category=Category.CREDENTIAL_AT_REST,
-            title=f"Credential at rest: {kinds}",
-            detail=(f"A live {kinds} is stored on the device at {path}{perm}. "
-                    "Rotate it, remove it from disk, and move it to a secret manager or "
-                    "OS keychain — this is exactly what an infostealer harvests."),
-            weight=weight, confidence=0.9, detector=self.name,
+            title=f"Credential at rest: {kinds}{vtag}",
+            detail=(f"A {'confirmed-live ' if verified else ''}{kinds} is stored on the "
+                    f"device at {path}{perm}{via}. Rotate it, remove it from disk, and move "
+                    "it to a secret manager or OS keychain — this is exactly what an "
+                    "infostealer harvests."),
+            weight=weight, confidence=confidence, detector=self.name,
             evidence=str(m.get("evidence") or path)[:200],
         )]
