@@ -185,6 +185,18 @@ Run the test suite (no API key needed — exercises the offline detectors and sc
 cd backend && pytest
 ```
 
+**End-to-end smoke test** — drives a *running* stack over HTTP + the local CLI sensors
+across every plane (all four gateway shapes, shadow-AI incl. dashless-SSN and
+separator-stripped keys, agentic MCP, secrets-at-rest, TruffleHog import, supply-chain, the
+MDM policy pack, and the `warden-cursor-hook`/`warden-hook`/`warden-import` sensors). Point
+it at any deployment; exits non-zero on any failure (CI-friendly):
+
+```bash
+python3 scripts/e2e.py                          # default http://localhost:8090 / demo creds
+WARDEN_E2E_URL=https://warden.corp.example.com \
+  WARDEN_E2E_EMAIL=admin@acme.com WARDEN_E2E_PASSWORD=… python3 scripts/e2e.py
+```
+
 > The Vite dev proxy targets port **8088**. If you change the backend port,
 > update `frontend/vite.config.js`.
 
@@ -768,6 +780,7 @@ extension/            # MV3 browser extension — shadow-AI capture + self-serve
 proxy/                # mitmproxy addon — shadow-AI + MCP capture (desktop apps / network)
 git/                  # pre-commit hook + GitHub Action — secrets/PII out of repos
                       #   (+ CI import of TruffleHog/Gitleaks/GitGuardian via warden-import)
+scripts/e2e.py        # end-to-end smoke test — drives a running stack across every plane
 docs/setup.md               # getting started: install (Docker/source), first sign-in, connect a source
 docs/claude-deployment.md   # step-by-step: deploy for browser + Claude Code + desktop
 docs/mdm-policy-pack.md     # agentless MDM enforcement (extension allowlist, proxy, CA)
