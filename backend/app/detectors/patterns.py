@@ -87,6 +87,25 @@ def find_secrets(text: str) -> list[str]:
             if rx.search(text)]
 
 
+def custom_pii_patterns(extra: str = "") -> list[tuple[str, re.Pattern]]:
+    """Org-specific PII / confidential-data patterns — `label=regex` per line (newline- or
+    `;`-separated). Sourced from the global CUSTOM_PII_PATTERNS env AND a per-tenant `extra`
+    string (so each org can add its own customer-ID / account-number / MRN / codename formats
+    without a code change). Read at call time; invalid regexes are skipped."""
+    out: list[tuple[str, re.Pattern]] = []
+    for src in (os.getenv("CUSTOM_PII_PATTERNS", ""), extra or ""):
+        for line in src.replace(";", "\n").splitlines():
+            line = line.strip()
+            if not line or "=" not in line:
+                continue
+            label, _, rx = line.partition("=")
+            try:
+                out.append((label.strip() or "Custom PII", re.compile(rx.strip())))
+            except re.error:
+                continue
+    return out
+
+
 # Tier 2: generic high-entropy token heuristic — catches novel/vendor tokens with no
 # recognized prefix (Stripe-likes, bare API keys). Lower-confidence by nature, so the
 # caller scores it at warn-level (not a hard block on its own). Candidates exclude `-`

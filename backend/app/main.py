@@ -365,6 +365,7 @@ def ingest_ai_usage(
     meta: dict = {"destination": body.destination} if body.destination else {}
     meta["sanctioned_tools"] = _tenant_or_global(
         tenant_id, db, "sanctioned_ai_tools", settings.sanctioned_ai_tools)
+    meta["custom_pii"] = _tenant_or_global(tenant_id, db, "custom_pii_patterns", "")
     item = AnalysisInput(
         content=body.content, sender=actor, channel=body.tool or "ai_tool",
         surface=Surface.AI_USAGE, metadata=meta,

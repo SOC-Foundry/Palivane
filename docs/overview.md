@@ -154,7 +154,8 @@ into a **verdict**.
   instructions"), jailbreak terms ("DAN mode"), exfiltration patterns ("reveal your
   system prompt"), and encoded smuggling (long base64, zero-width Unicode).
 - **ShadowAIDetector** (surface: `ai_usage`) — PII (SSNs incl. unformatted 9-digit, emails,
-  phones, Luhn-validated credit cards), known secret formats (`AKIA…`, `sk-…`, GitHub tokens)
+  phones, Luhn-validated credit cards, IBAN / UK NINO, keyword-confirmed passport / EIN /
+  routing / SWIFT / NPI / Aadhaar, single-record detection, and per-tenant custom patterns), known secret formats (`AKIA…`, `sk-…`, GitHub tokens)
   **plus separator-stripped variants** flagged as likely-bypass, high-entropy unlabeled
   credentials, source-code markers, confidentiality markers, and destination checks against
   the sanctioned-tool allowlist.

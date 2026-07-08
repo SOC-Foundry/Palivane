@@ -72,6 +72,9 @@ class Tenant(Base):
     sanctioned_ai_tools = Column(String(2048), default="")
     # Per-tool signal suppression ("tool:category;tool:category"). Empty = inherit global.
     tool_suppress = Column(String(2048), default="")
+    # Org-specific PII / confidential patterns ("label=regex" per line): customer IDs,
+    # account numbers, MRNs, project codenames. Applied on top of the built-in PII set.
+    custom_pii_patterns = Column(String(4096), default="")
     # Data-processing agreement acceptance (compliance record; history in the audit log).
     dpa_version = Column(String(32), default="")
     dpa_accepted_at = Column(DateTime, nullable=True)
@@ -97,6 +100,7 @@ class Tenant(Base):
                 "gateway_block_severity": self.gateway_block_severity or "",
                 "mcp_block_severity": self.mcp_block_severity or "",
                 "sanctioned_ai_tools": self.sanctioned_ai_tools or "",
+                "custom_pii_patterns": self.custom_pii_patterns or "",
                 "tool_suppress": self.tool_suppress or "",
                 "dpa_version": self.dpa_version or "",
                 "dpa_accepted_at": self.dpa_accepted_at.isoformat() if self.dpa_accepted_at else None,
