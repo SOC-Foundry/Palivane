@@ -273,8 +273,8 @@ def test_stream_monitor_passthrough(client, monkeypatch):
     monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
     monkeypatch.setattr(gateway, "resolve_upstream", lambda *a, **k: ("https://up", "key"))
     monkeypatch.setattr(gateway, "_passthrough_stream",
-                        lambda url, payload, headers: _Resp(content=b"live-stream",
-                                                            media_type="text/event-stream"))
+                        lambda url, payload, headers, *a, **k: _Resp(content=b"live-stream",
+                                                                     media_type="text/event-stream"))
     r = client.post("/v1/messages", json={"model": "claude-opus-4-8", "stream": True,
                     "messages": [{"role": "user", "content": "hello"}]},
                     headers={"x-api-key": _token(client), "Authorization": ""})
@@ -566,3 +566,80 @@ def test_response_dlp_toggle_off(client, monkeypatch):
                     "messages": [{"role": "user", "content": "hi"}]},
                     headers={"x-api-key": _token(client), "Authorization": ""})
     assert r.status_code == 200   # not scanned -> leaking output passes through
+
+
+# --- Response-DLP tee: monitor-mode streaming records after the stream ends ---
+
+def _drain(resp) -> list[bytes]:
+    """Drain a StreamingResponse's body_iterator (Starlette wraps a sync generator as an
+    async one) and return the chunks — running the generator's finally (the tee record)."""
+    import anyio
+    out: list[bytes] = []
+
+    async def _run():
+        async for c in resp.body_iterator:
+            out.append(c if isinstance(c, bytes) else c.encode())
+    anyio.run(_run)
+    return out
+
+def test_stream_tee_forwards_live_and_records(monkeypatch):
+    """The tee must (a) forward every chunk to the client live and (b) hand the assembled
+    output to the post-stream DLP recorder — no client-facing latency, full coverage."""
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_scan_responses", True)
+    recorded = {}
+    monkeypatch.setattr(gateway, "_record_stream_dlp",
+                        lambda raw, model, tool, principal: recorded.update(raw=raw, model=model))
+
+    class _Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def iter_bytes(self):
+            yield b'data: {"choices":[{"delta":{"content":"here: "}}]}\n\n'
+            yield b'data: {"choices":[{"delta":{"content":"AKIAIOSFODNN7EXAMPLE"}}]}\n\n'
+            yield b'data: [DONE]\n\n'
+
+    class _Client:
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def stream(self, *a, **k): return _Resp()
+
+    monkeypatch.setattr(gateway.httpx, "Client", lambda *a, **k: _Client())
+    resp = gateway._passthrough_stream("http://up", {}, {}, "gpt-4o", "", gateway.Principal(1, "x"))
+    live = b"".join(_drain(resp))                             # consuming runs the generator + finally
+    assert b"AKIAIOSFODNN7EXAMPLE" in live                    # (a) forwarded to the client
+    assert recorded and b"AKIAIOSFODNN7EXAMPLE" in recorded["raw"]   # (b) teed to the recorder
+
+
+def test_record_stream_dlp_scans_assembled_output(monkeypatch):
+    from app import gateway
+    seen = {}
+    monkeypatch.setattr(gateway, "_capture_response_dlp",
+                        lambda text, model, tool, principal, db: seen.update(text=text))
+    class _DB:
+        def close(self): pass
+    monkeypatch.setattr("app.database.SessionLocal", lambda: _DB())
+    sse = ('data: {"choices":[{"delta":{"content":"the key is "}}]}\n\n'
+           'data: {"choices":[{"delta":{"content":"AKIAIOSFODNN7EXAMPLE"}}]}\n\ndata: [DONE]\n\n')
+    gateway._record_stream_dlp(sse.encode(), "gpt-4o", "", gateway.Principal(1, "x"))
+    assert "AKIAIOSFODNN7EXAMPLE" in seen.get("text", "")
+
+
+def test_stream_tee_off_when_scanning_disabled(monkeypatch):
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_scan_responses", False)
+    called = []
+    monkeypatch.setattr(gateway, "_record_stream_dlp", lambda *a: called.append(a))
+
+    class _Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def iter_bytes(self): yield b'data: {"choices":[{"delta":{"content":"x"}}]}\n\n'
+    class _Client:
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def stream(self, *a, **k): return _Resp()
+    monkeypatch.setattr(gateway.httpx, "Client", lambda *a, **k: _Client())
+    resp = gateway._passthrough_stream("http://up", {}, {}, "gpt-4o", "", gateway.Principal(1, "x"))
+    _drain(resp)
+    assert called == []                                       # scanning off -> no tee record
