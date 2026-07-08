@@ -1,0 +1,94 @@
+"""SIEM forwarding — push findings to a collector in a format the SIEM parses natively.
+
+Vendor-neutral: one generic HTTP forwarder with three output shapes covers Splunk (HEC),
+Microsoft Sentinel / Elastic / Sumo / Datadog (generic JSON over HTTP), and anything that
+ingests CEF. The SIEM specifics (endpoint URL, token, index) are the customer's config, not
+per-vendor code here. Complements the pull-based JSONL export (/api/export/findings).
+
+Fire-and-forget on the request path (daemon thread, short timeout, SSRF-guarded) so a slow
+or down collector never adds latency or breaks capture.
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+import time
+import urllib.request
+
+_RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}
+# CEF severity is 0-10; map Warden's bands onto it.
+_CEF_SEV = {"benign": 0, "low": 3, "suspicious": 5, "high": 7, "critical": 9}
+FORMATS = ("json", "splunk_hec", "cef")
+
+
+def _fields(verdict: dict, subject: str, actor: str, surface: str, org: str) -> dict:
+    cats = [s.get("category", "") for s in verdict.get("signals", []) if s.get("category")]
+    return {
+        "vendor": "TachTech", "product": "Warden",
+        "event": "finding", "severity": verdict.get("severity"),
+        "risk_score": verdict.get("risk_score"), "categories": cats,
+        "surface": surface, "subject": subject, "actor": actor,
+        "finding_id": verdict.get("finding_id"), "org": org,
+        "ts": int(time.time()),
+    }
+
+
+def _cef(f: dict) -> str:
+    """A CEF line: CEF:0|Vendor|Product|Version|SignatureID|Name|Severity|Extensions."""
+    def esc(v):  # CEF extension values escape = and \
+        return str(v).replace("\\", "\\\\").replace("=", "\\=").replace("\n", " ")
+    sig = ",".join(f["categories"]) or "finding"
+    name = (f.get("subject") or "Warden finding")[:120]
+    header = f"CEF:0|TachTech|Warden|1.0|{sig}|{name}|{_CEF_SEV.get(f['severity'], 5)}"
+    ext = {
+        "cs1Label": "surface", "cs1": f.get("surface", ""),
+        "cs2Label": "categories", "cs2": ",".join(f["categories"]),
+        "suser": f.get("actor") or "", "cn1Label": "risk", "cn1": f.get("risk_score", 0),
+        "externalId": f.get("finding_id") or "", "cs3Label": "org", "cs3": f.get("org", ""),
+    }
+    return header + "|" + " ".join(f"{k}={esc(v)}" for k, v in ext.items())
+
+
+def _request(url: str, token: str, fmt: str, f: dict) -> urllib.request.Request:
+    """Build the HTTP request for the chosen format (body + headers)."""
+    headers = {}
+    if fmt == "cef":
+        body = _cef(f).encode()
+        headers["content-type"] = "text/plain"
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+    elif fmt == "splunk_hec":
+        body = json.dumps({"event": f, "sourcetype": "warden:finding", "source": "warden"}).encode()
+        headers["content-type"] = "application/json"
+        if token:
+            headers["Authorization"] = f"Splunk {token}"   # HEC scheme
+    else:  # json (default)
+        body = json.dumps(f).encode()
+        headers["content-type"] = "application/json"
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+    return urllib.request.Request(url, method="POST", data=body, headers=headers)
+
+
+def send_sync(url: str, token: str, fmt: str, fields: dict, timeout: float = 8.0) -> bool:
+    from .netguard import is_safe_url
+    if not url or not is_safe_url(url):     # SSRF guard: no internal/metadata targets
+        return False
+    try:
+        urllib.request.urlopen(_request(url, token, fmt if fmt in FORMATS else "json", fields),
+                               timeout=timeout)
+        return True
+    except Exception:
+        return False
+
+
+def forward(url: str, token: str, min_severity: str, fmt: str, verdict: dict,
+            subject: str = "", actor: str = "", surface: str = "", org: str = "") -> None:
+    """Push a finding to the tenant's SIEM if configured and severity >= min_severity. Non-blocking."""
+    if not url:
+        return
+    if _RANK.get(verdict.get("severity"), 0) < _RANK.get(min_severity or "high", 3):
+        return
+    fields = _fields(verdict, subject, actor, surface, org)
+    threading.Thread(target=send_sync, args=(url, token, fmt or "json", fields), daemon=True).start()

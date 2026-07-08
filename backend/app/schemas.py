@@ -186,6 +186,10 @@ class TenantUpdate(BaseModel):
     alert_webhook: str | None = None        # Slack-compatible webhook for high/critical alerts
     alert_min_severity: str | None = None   # minimum severity to alert on
     alert_digest: str | None = None         # off | hourly | daily (batch non-critical alerts)
+    siem_url: str | None = None             # SIEM collector endpoint (push findings)
+    siem_token: str | None = None           # bearer / Splunk-HEC token (write-only)
+    siem_min_severity: str | None = None    # minimum severity to forward
+    siem_format: str | None = None          # json | splunk_hec | cef
     # Policy posture (per-org monitor/enforce): "on"/"off" force it, "inherit" follows
     # the global GATEWAY_ENFORCE. Severities: "" = inherit the global threshold.
     gateway_enforce: Literal["on", "off", "inherit"] | None = None

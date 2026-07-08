@@ -73,4 +73,12 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                           {**result, "finding_id": finding_id},
                           subject=item.subject, actor=item.sender, surface=item.surface.value,
                           digest=tenant.alert_digest or "off")
+        # Stream to the tenant's SIEM (independent of the alert webhook).
+        if tenant is not None and (tenant.siem_url or "").strip():
+            from . import siem
+            siem.forward(tenant.siem_url.strip(), tenant.siem_token or "",
+                         tenant.siem_min_severity, tenant.siem_format,
+                         {**result, "finding_id": finding_id},
+                         subject=item.subject, actor=item.sender,
+                         surface=item.surface.value, org=tenant.slug)
     return {"finding_id": finding_id, "judge_used": engine.judge_enabled, **result}

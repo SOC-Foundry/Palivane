@@ -596,6 +596,19 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         if body.alert_digest not in ("off", "hourly", "daily"):
             raise HTTPException(status_code=400, detail="invalid alert_digest")
         tenant.alert_digest = body.alert_digest
+    # SIEM forwarding (URL is SSRF-guarded at send time, like the alert webhook).
+    if body.siem_url is not None:
+        tenant.siem_url = body.siem_url.strip()
+    if body.siem_token is not None:
+        tenant.siem_token = body.siem_token.strip()
+    if body.siem_min_severity is not None:
+        if body.siem_min_severity not in ("low", "suspicious", "high", "critical"):
+            raise HTTPException(status_code=400, detail="invalid siem_min_severity")
+        tenant.siem_min_severity = body.siem_min_severity
+    if body.siem_format is not None:
+        if body.siem_format not in ("json", "splunk_hec", "cef"):
+            raise HTTPException(status_code=400, detail="invalid siem_format")
+        tenant.siem_format = body.siem_format
     if body.gateway_enforce is not None:
         tenant.gateway_enforce = _JUDGE[body.gateway_enforce]  # same tri-state mapping
     for sev_field in ("gateway_block_severity", "mcp_block_severity"):

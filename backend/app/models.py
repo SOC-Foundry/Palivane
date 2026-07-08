@@ -56,6 +56,12 @@ class Tenant(Base):
     # into a rollup (criticals still fire real-time). alert_digest_last tracks the window.
     alert_digest = Column(String(16), default="off")
     alert_digest_last = Column(DateTime, nullable=True)
+    # SIEM forwarding: push findings >= siem_min_severity to a collector (Splunk HEC / generic
+    # HTTP / CEF). Vendor-neutral — the SIEM specifics are the customer's URL + token + format.
+    siem_url = Column(String(1024), default="")
+    siem_token = Column(String(1024), default="")     # bearer / HEC token (write-only via API)
+    siem_min_severity = Column(String(16), default="high")
+    siem_format = Column(String(16), default="json")  # json | splunk_hec | cef
     # Per-tenant policy posture (each org picks its own monitor/enforce stance; empty/None
     # = inherit the global env default, same tri-state pattern as judge_enabled).
     gateway_enforce = Column(Boolean, nullable=True, default=None)
@@ -82,6 +88,11 @@ class Tenant(Base):
                 "alert_webhook": self.alert_webhook or "",
                 "alert_min_severity": self.alert_min_severity or "high",
                 "alert_digest": self.alert_digest or "off",
+                # siem_token is write-only — never returned; expose whether one is set.
+                "siem_url": self.siem_url or "",
+                "siem_min_severity": self.siem_min_severity or "high",
+                "siem_format": self.siem_format or "json",
+                "siem_token_set": bool((self.siem_token or "").strip()),
                 "gateway_enforce": self.gateway_enforce,
                 "gateway_block_severity": self.gateway_block_severity or "",
                 "mcp_block_severity": self.mcp_block_severity or "",
