@@ -200,17 +200,26 @@ def cursor_note(base_url: str, hook_path: str) -> str:
     )
 
 
-def secrets_launchd(base_url: str, secrets_path: str) -> str:
+def _engine_args(engine: str) -> list[str]:
+    """['--engine', 'trufflehog'] when an external scanner is chosen, else []. warden-secrets
+    falls back to its built-in regex scan if the tool isn't installed, so this is safe to
+    ship fleet-wide even on devices that don't have TruffleHog/Gitleaks."""
+    e = (engine or "").strip().lower()
+    return ["--engine", e] if e in ("trufflehog", "gitleaks") else []
+
+
+def secrets_launchd(base_url: str, secrets_path: str, engine: str = "trufflehog") -> str:
     """macOS LaunchAgent — runs warden-secrets daily (3am) as the signed-in user, so it
     can read ~/.ssh etc. and the warden-connect creds. Push to ~/Library/LaunchAgents via MDM."""
     b = base_url.rstrip("/")
+    argv = "".join(f"<string>{a}</string>" for a in [secrets_path, *_engine_args(engine)])
     return f'''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key><string>net.tachtech.warden.secrets</string>
   <key>ProgramArguments</key>
-  <array><string>{secrets_path}</string></array>
+  <array>{argv}</array>
   <key>StartCalendarInterval</key>
   <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>
   <key>EnvironmentVariables</key>
@@ -221,20 +230,23 @@ def secrets_launchd(base_url: str, secrets_path: str) -> str:
 '''
 
 
-def secrets_cron(base_url: str, secrets_path: str) -> str:
+def secrets_cron(base_url: str, secrets_path: str, engine: str = "trufflehog") -> str:
     """Linux cron fragment (drop in /etc/cron.d/ or a user crontab) — daily at 03:00.
     WARDEN_TOKEN comes from the warden-connect creds file the scanner reads, or set it here."""
     b = base_url.rstrip("/")
+    cmd = " ".join([secrets_path, *_engine_args(engine)])
     return (f"# Warden endpoint credential scan — daily. Runs as the target user so it can\n"
             f"# read ~/.ssh etc. Token resolves from ~/.claude/settings.json / ~/.cursor/warden.json.\n"
             f"WARDEN_URL={b}\n"
-            f"0 3 * * * {os.getenv('USER', '<user>')} {secrets_path}\n")
+            f"0 3 * * * {os.getenv('USER', '<user>')} {cmd}\n")
 
 
-def secrets_win_task(base_url: str, secrets_path: str) -> str:
+def secrets_win_task(base_url: str, secrets_path: str, engine: str = "trufflehog") -> str:
     """Windows Task Scheduler XML — daily at 03:00. Import with schtasks /create /xml."""
     b = base_url.rstrip("/")
     win = secrets_path if "\\" in secrets_path else r"C:\Program Files\Warden\warden-secrets.exe"
+    args = _engine_args(engine)
+    args_xml = f"\n      <Arguments>{' '.join(args)}</Arguments>" if args else ""
     return f'''<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <Triggers>
@@ -247,7 +259,7 @@ def secrets_win_task(base_url: str, secrets_path: str) -> str:
   <Settings><Enabled>true</Enabled></Settings>
   <Actions>
     <Exec>
-      <Command>{win}</Command>
+      <Command>{win}</Command>{args_xml}
       <Environment><Variable name="WARDEN_URL">{b}</Variable></Environment>
     </Exec>
   </Actions>
@@ -271,7 +283,8 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
                 hook_path: str = "/usr/local/bin/warden-hook",
                 posture_path: str = "/usr/local/bin/warden-posture",
                 cursor_hook_path: str = "/usr/local/bin/warden-cursor-hook",
-                secrets_path: str = "/usr/local/bin/warden-secrets") -> dict[str, str]:
+                secrets_path: str = "/usr/local/bin/warden-secrets",
+                secrets_engine: str = "trufflehog") -> dict[str, str]:
     b = base_url.rstrip("/")
     readme = (
         "Warden MDM policy pack — apply these with your MDM (Jamf/Intune/GPO). No Warden\n"
@@ -297,9 +310,12 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         f"   ({cursor_hook_path}); push to Cursor's enterprise hooks path or ~/.cursor/hooks.json.\n"
         "   See cursor.txt for the full Cursor story (chat pins its cert; hooks close the gap).\n"
         "9. warden-secrets.plist / .cron / -task.xml -> schedule the endpoint credential scan\n"
-        f"   (warden-secrets at {secrets_path}) daily via launchd (macOS) / cron (Linux) /\n"
+        f"   (warden-secrets at {secrets_path}"
+        + (f" --engine {secrets_engine}" if secrets_engine in ("trufflehog", "gitleaks") else "")
+        + ") daily via launchd (macOS) / cron (Linux) /\n"
         "   Task Scheduler (Windows). Finds SSH/RSA keys, tokens, and .env secrets at rest\n"
-        "   before an infostealer does; reports metadata only.\n\n"
+        f"   before an infostealer does; reports metadata only. With --engine, drives\n"
+        f"   {secrets_engine or 'the built-in scan'} (falls back to built-in if not installed).\n\n"
         "Coverage: browser UIs (claude.ai / chatgpt.com / gemini.google.com) via the extension;\n"
         "OpenAI + Gemini + Anthropic API clients via the system proxy (needs the CA); explicit\n"
         "gateway redirect for Claude Code (item 5) and OpenAI SDKs (item 6); Cursor via local\n"
@@ -316,8 +332,8 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "gemini.txt": gemini_config(b),
         "cursor-hooks.json": cursor_hooks(cursor_hook_path),
         "cursor.txt": cursor_note(b, cursor_hook_path),
-        "warden-secrets.plist": secrets_launchd(b, secrets_path),
-        "warden-secrets.cron": secrets_cron(b, secrets_path),
-        "warden-secrets-task.xml": secrets_win_task(b, secrets_path),
+        "warden-secrets.plist": secrets_launchd(b, secrets_path, secrets_engine),
+        "warden-secrets.cron": secrets_cron(b, secrets_path, secrets_engine),
+        "warden-secrets-task.xml": secrets_win_task(b, secrets_path, secrets_engine),
         "ca-note.txt": ca_note(),
     }

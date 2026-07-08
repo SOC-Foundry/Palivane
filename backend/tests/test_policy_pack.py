@@ -41,14 +41,27 @@ def test_forcelist_and_pack():
                          "warden-secrets.cron", "warden-secrets-task.xml", "ca-note.txt"}
 
 
-def test_secrets_schedule_artifacts():
+def test_secrets_schedule_artifacts_default_to_trufflehog():
+    # Default engine drives TruffleHog on the scheduled run.
     plist = pp.secrets_launchd("https://w.acme.com/", "/opt/warden-secrets")
     assert "net.tachtech.warden.secrets" in plist and "/opt/warden-secrets" in plist
-    assert "https://w.acme.com" in plist
+    assert "<string>--engine</string><string>trufflehog</string>" in plist
     cron = pp.secrets_cron("https://w.acme.com", "/opt/warden-secrets")
-    assert "0 3 * * *" in cron and "/opt/warden-secrets" in cron
+    assert "0 3 * * *" in cron and "/opt/warden-secrets --engine trufflehog" in cron
     xml = pp.secrets_win_task("https://w.acme.com", r"C:\Program Files\Warden\warden-secrets.exe")
-    assert "ScheduleByDay" in xml and "warden-secrets.exe" in xml
+    assert "ScheduleByDay" in xml and "<Arguments>--engine trufflehog</Arguments>" in xml
+
+
+def test_secrets_schedule_engine_configurable():
+    assert "gitleaks" in pp.secrets_cron("https://w", "/opt/warden-secrets", "gitleaks")
+    # An unknown/empty engine emits the plain built-in command (no --engine).
+    assert "--engine" not in pp.secrets_cron("https://w", "/opt/warden-secrets", "")
+
+
+def test_policy_pack_endpoint_secrets_engine(client):
+    r = client.get("/api/policy-pack?secrets_engine=gitleaks")
+    assert r.status_code == 200
+    assert "gitleaks" in r.json()["artifacts"]["warden-secrets.cron"]
 
 
 def test_cursor_hooks_registers_security_events():
