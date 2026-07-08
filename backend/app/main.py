@@ -743,6 +743,7 @@ def policy_pack(
     proxy_port: int = 8081,
     hook_path: str = "/usr/local/bin/warden-hook",
     posture_path: str = "/usr/local/bin/warden-posture",
+    secrets_engine: str = "trufflehog",
     current: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -760,7 +761,8 @@ def policy_pack(
     artifacts = pp.render_pack(base_url=base_url, extension_id=settings.extension_id,
                                proxy_host=proxy_host, proxy_port=proxy_port,
                                allowed_exts=allowed, denied_exts=denied,
-                               hook_path=hook_path, posture_path=posture_path)
+                               hook_path=hook_path, posture_path=posture_path,
+                               secrets_engine=secrets_engine)
     return {"artifacts": artifacts}
 
 
