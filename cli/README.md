@@ -13,6 +13,7 @@ without an endpoint agent: each is an app-scoped hook/shim that rides the existi
 | `warden-mcp` | local **stdio MCP servers**, inline | `POST /api/ingest/mcp` |
 | `warden-posture` | device drift: IDE extensions, MCP configs | `POST /api/scan/*` |
 | `warden-secrets` | **credentials at rest** (SSH/RSA keys, tokens, `.env`) | `POST /api/scan/secrets` |
+| `warden-import` | pipe **TruffleHog / Gitleaks / GitGuardian** output into Warden | `POST /api/scan/import` |
 
 All of them are **monitor by default, fail-open always**: Warden being down or slow
 never blocks a developer. Enforcement is opt-in per plane (env vars below).
@@ -168,14 +169,33 @@ world/group-readable. The raw secret never leaves the device. Each file becomes 
 `credential_at_rest` finding (`POST /api/scan/secrets`) with a rotate/lock-down plan.
 
 ```bash
-warden-secrets                # scan + report to Warden
-warden-secrets --dry-run      # print findings locally, send nothing
-warden-secrets --root ~/work  # add a directory to the .env sweep
+warden-secrets                     # scan + report to Warden
+warden-secrets --dry-run           # print findings locally, send nothing
+warden-secrets --root ~/work       # add a directory to the .env sweep
+warden-secrets --engine trufflehog # drive TruffleHog (~800 detectors + live verify)
+warden-secrets --engine gitleaks   # drive Gitleaks instead of the built-in patterns
 ```
 
-Best scheduled (cron / launchd / Scheduled Task) or pushed via MDM — it's a filesystem
-walk, so it's opt-in rather than wired into every session. Config: `WARDEN_URL`/
-`WARDEN_TOKEN` from the env or the `warden-connect` credentials.
+With `--engine`, Warden runs the external scanner if it's on `PATH`, **masks its findings
+locally** (raw secrets never leave), and feeds the same pipeline — so you get TruffleHog's
+breadth and live-verification while Warden stays the system of record. Falls back to the
+built-in regex scan if the tool isn't installed. Best scheduled (cron / launchd / Scheduled
+Task) or pushed via MDM. Config: `WARDEN_URL`/`WARDEN_TOKEN` from the env or `warden-connect`.
+
+## `warden-import` — pipe existing scanner jobs into Warden (CI)
+
+Already run TruffleHog / Gitleaks / GitGuardian in CI? Pipe their JSON to `warden-import` and
+the findings become unified Warden `credential_at_rest` findings — one console, one scoring
+model, one alert/SIEM path across every scanner. The backend **masks the secret at ingest and
+never persists the raw value**; TruffleHog's `Verified` flag escalates a live credential to
+critical, and the command exits non-zero when any verified-live secret is found (so it can
+fail the build).
+
+```bash
+trufflehog git file://. --json                        | warden-import trufflehog
+gitleaks detect --report-format json -o /dev/stdout . | warden-import gitleaks
+ggshield secret scan path . --json                    | warden-import gitguardian
+```
 
 ## Managed fleets
 

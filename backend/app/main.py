@@ -34,6 +34,7 @@ from .schemas import (
     MCPConfigScan,
     MCPIngest,
     ProvisionRequest,
+    ScannerImport,
     SecretAtRest,
     SecretScan,
     StatusUpdate,
@@ -655,22 +656,62 @@ def scan_secrets(
     host = (body.host or "").strip()
     results = []
     for it in body.items:
-        item = AnalysisInput(
-            content=f"{it.path}\n{it.masked}", subject=it.path,
-            sender=actor, channel=host or "endpoint", surface=Surface.SECRETS,
-            metadata={"secret_types": it.secret_types, "path": it.path,
-                      "world_readable": it.world_readable, "evidence": it.masked or it.path},
-        )
-        r = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
-                         db=db, tenant_id=tenant_id)
-        results.append({
-            "path": it.path, "secret_types": it.secret_types, "line": it.line,
-            "severity": r["severity"], "risk_score": r["risk_score"],
-            "action": _action_for(r["severity"]),
-            "remediation": _secret_remediation(it),
-        })
+        results.append(_record_secret(it, host, actor, tenant_id, bool(body.record), db))
     flagged = [r for r in results if r["severity"] not in ("benign", "low")]
     return {"scanned": len(results), "flagged": len(flagged), "findings": results}
+
+
+def _record_secret(it: SecretAtRest, host: str, actor: str, tenant_id, record: bool,
+                   db: Session) -> dict:
+    """Score + (optionally) persist one at-rest credential finding; shared by the
+    warden-secrets scan and the third-party scanner importer."""
+    item = AnalysisInput(
+        content=f"{it.path}\n{it.masked}", subject=it.path,
+        sender=actor, channel=host or "endpoint", surface=Surface.SECRETS,
+        metadata={"secret_types": it.secret_types, "path": it.path,
+                  "world_readable": it.world_readable, "verified": it.verified,
+                  "source": it.source, "evidence": it.masked or it.path},
+    )
+    r = run_analysis(item, persist=record and tenant_id is not None, db=db, tenant_id=tenant_id)
+    return {
+        "path": it.path, "secret_types": it.secret_types, "line": it.line,
+        "verified": it.verified, "source": it.source,
+        "severity": r["severity"], "risk_score": r["risk_score"],
+        "action": _action_for(r["severity"]),
+        "remediation": _secret_remediation(it),
+    }
+
+
+@app.post("/api/scan/import")
+def scan_import(
+    body: ScannerImport,
+    x_warden_token: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Ingest a third-party secret scanner's output (TruffleHog / Gitleaks / GitGuardian)
+    and turn it into Warden `credential_at_rest` findings — one console, one scoring model,
+    one alert/SIEM path across every scanner. The raw secret is masked at ingest and never
+    persisted; TruffleHog's `Verified` flag escalates a finding to critical. Token-gated."""
+    from . import scanner_import
+    tenant_id, actor = _ingest_auth(x_warden_token, db)
+    _enforce_rate(db, tenant_id)
+    normalized = scanner_import.normalize(body.tool, body.results)
+    if not normalized:
+        raise HTTPException(status_code=400,
+                            detail=f"no findings parsed for tool '{body.tool}' "
+                                   "(supported: trufflehog, gitleaks, gitguardian)")
+    host = (body.host or "").strip()
+    results = [
+        _record_secret(
+            SecretAtRest(path=f["path"], secret_types=f["secret_types"], masked=f["masked"],
+                         line=f["line"], verified=f["verified"], source=f["source"]),
+            host, actor, tenant_id, bool(body.record), db)
+        for f in normalized
+    ]
+    flagged = [r for r in results if r["severity"] not in ("benign", "low")]
+    verified = [r for r in results if r["verified"]]
+    return {"tool": body.tool, "scanned": len(results), "flagged": len(flagged),
+            "verified_live": len(verified), "findings": results}
 
 
 def _secret_remediation(it: SecretAtRest) -> list[str]:
