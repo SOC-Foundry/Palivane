@@ -156,7 +156,9 @@ into a **verdict**.
   system prompt"), and encoded smuggling (long base64, zero-width Unicode).
 - **ShadowAIDetector** (surface: `ai_usage`) — PII (SSNs incl. unformatted 9-digit, emails,
   phones, Luhn-validated credit cards, IBAN / UK NINO, keyword-confirmed passport / EIN /
-  routing / SWIFT / NPI / Aadhaar, single-record detection, and per-tenant custom patterns), known secret formats (`AKIA…`, `sk-…`, GitHub tokens)
+  routing / SWIFT / NPI / Aadhaar, single-record detection, and per-tenant custom patterns),
+  **confidential business content** (`confidential_data`: marked/NDA material + Purview/MIP
+  & TLP sensitivity labels — its own category, so it isn't suppressed for coding tools), known secret formats (`AKIA…`, `sk-…`, GitHub tokens)
   **plus separator-stripped variants** flagged as likely-bypass, high-entropy unlabeled
   credentials, source-code markers, confidentiality markers, and destination checks against
   the sanctioned-tool allowlist.
@@ -173,7 +175,9 @@ into a **verdict**.
   escalates to critical.
 - **LLMJudgeDetector** (optional, all surfaces) — a frontier model reads the content like
   an analyst and returns a structured `JudgeVerdict` (AI-generated likelihood, malicious
-  likelihood, indicators, recommended action). Provider is pluggable
+  likelihood, indicators, recommended action). It's the semantic catch-all for what regex
+  can't classify — notably **unmarked confidential business content** (financials, contracts,
+  roadmaps, M&A) which it emits as `confidential_data`. Provider is pluggable
   (`JUDGE_PROVIDER=auto|anthropic|openai|gemini|none`).
 
 ### Scoring

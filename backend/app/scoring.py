@@ -56,6 +56,7 @@ _ATTACK_CATEGORIES = {
     Category.SECRET_LEAK,
     Category.PII_EXPOSURE,
     Category.SOURCE_CODE_LEAK,
+    Category.CONFIDENTIAL_DATA,
     Category.UNSANCTIONED_AI,
     # Agentic tool-use — a risky MCP action / poisoned tool is itself the threat.
     Category.MCP_UNTRUSTED_SERVER,

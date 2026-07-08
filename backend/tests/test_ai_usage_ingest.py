@@ -48,8 +48,11 @@ def test_benign_content_allowed(raw_client, db_factory, monkeypatch):
     assert r.json()["action"] == "allow"
 
 
-CONF_CODE = ("This module is CONFIDENTIAL.\n"
-             "def run(x):\n    import os\n    return os.system(x)")
+CONF_CODE = ("import os\n"
+             "class Runner:\n"
+             "    def run(self, x):\n"
+             "        rows = self.db.execute('SELECT id FROM users')\n"
+             "        return os.system(x)")
 
 
 def _post(raw_client, content, tool=""):

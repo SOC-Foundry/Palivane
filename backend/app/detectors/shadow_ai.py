@@ -60,12 +60,21 @@ _RECORD_CTX_RE = re.compile(
     r"member|home address|mailing address|nationality|policy number)\b", re.I)
 _DOB_RE = re.compile(r"\b(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4})\b")
 
-# --- Proprietary / source code ----------------------------------------------------------
+# --- Confidential / proprietary -------------------------------------------------------
 
 CONFIDENTIALITY_TERMS = [
     "confidential", "internal use only", "internal only", "do not distribute",
     "proprietary", "not for distribution", "company confidential", "trade secret",
     "attorney-client", "nda", "restricted",
+]
+# Sensitivity labels the enterprise already applies (Microsoft Purview/MIP, TLP, banners) —
+# honor them rather than re-classify. These + the terms above emit `confidential_data`.
+_LABEL_RES = [
+    re.compile(r"\bTLP[:\s-]?(RED|AMBER\+STRICT|AMBER|GREEN|CLEAR|WHITE)\b"),
+    re.compile(r"\b(classification|sensitivity|data\s+classification)\s*[:=]\s*"
+               r"(confidential|highly\s+confidential|restricted|secret|internal)\b", re.I),
+    re.compile(r"\[(INTERNAL|CONFIDENTIAL|RESTRICTED|SECRET|HIGHLY CONFIDENTIAL)\]", re.I),
+    re.compile(r"\b(MIP|Purview)\s+label\b", re.I),
 ]
 CODE_MARKERS = [
     re.compile(r"\bdef\s+\w+\s*\("),
@@ -247,14 +256,21 @@ class ShadowAIDetector:
         out: list[Signal] = []
         low = text.lower()
 
+        # Confidential business content: keyword markers + applied sensitivity labels
+        # (Purview/MIP, TLP, classification banners). Its own category — NOT source_code_leak
+        # — so it is *not* suppressed for coding tools (a financial doc pasted from Claude
+        # Code must still flag).
         marks = [t for t in CONFIDENTIALITY_TERMS if t in low]
-        if marks:
+        labels = [m.group(0) for rx in _LABEL_RES for m in [rx.search(text)] if m]
+        if marks or labels:
+            ev = ", ".join((labels + marks)[:4])
             out.append(Signal(
-                category=Category.SOURCE_CODE_LEAK,
-                title="Confidentiality-marked material",
-                detail="Content is labeled confidential/internal/proprietary.",
-                weight=0.6, confidence=0.6, detector=self.name,
-                evidence=", ".join(marks[:4]),
+                category=Category.CONFIDENTIAL_DATA,
+                title="Confidential/classified material",
+                detail="Content is labeled confidential/internal or carries a sensitivity "
+                       "label (Purview/MIP/TLP) — proprietary business data leaving for an AI tool.",
+                weight=0.6, confidence=0.65, detector=self.name,
+                evidence=ev,
             ))
 
         code_hits = sum(1 for rx in CODE_MARKERS if rx.search(text))
