@@ -30,6 +30,32 @@ def test_proxy_profiles():
     assert "ProxyServer" in reg and "proxy.acme.com:8081" in reg
 
 
+def test_forcelist_webstore_vs_self_hosted():
+    assert pp.chrome_forcelist("abc123") == "abc123;https://clients2.google.com/service/update2/crx"
+    # Self-hosted: force-install from your own updates.xml, no Web Store.
+    assert pp.chrome_forcelist("abc123", "https://cdn.corp/updates.xml") == "abc123;https://cdn.corp/updates.xml"
+
+
+def test_extension_updates_xml():
+    xml = pp.extension_updates_xml("abc123", "https://cdn.corp/warden.crx", "0.5.0")
+    assert 'appid="abc123"' in xml and 'codebase="https://cdn.corp/warden.crx"' in xml
+    assert 'version="0.5.0"' in xml and "gupdate" in xml
+
+
+def test_pack_self_hosted_extension_opt_in():
+    # Default (Web Store): no updates.xml, forcelist points at the store.
+    default = pp.render_pack("https://w", "abc123", "", 8081, [], [])
+    assert "extension-updates.xml" not in default
+    assert "clients2.google.com" in default["chrome-edge-forcelist.txt"]
+    # Self-hosted: updates.xml emitted, forcelist points at it.
+    sh = pp.render_pack("https://w", "abc123", "", 8081, [], [],
+                        ext_update_url="https://cdn.corp/updates.xml",
+                        ext_crx_url="https://cdn.corp/warden.crx")
+    assert "extension-updates.xml" in sh
+    assert sh["chrome-edge-forcelist.txt"] == "abc123;https://cdn.corp/updates.xml"
+    assert "https://cdn.corp/warden.crx" in sh["extension-updates.xml"]
+
+
 def test_forcelist_and_pack():
     assert pp.chrome_forcelist("abc123").startswith("abc123;https://clients2.google.com")
     pack = pp.render_pack("https://w.acme.com/", "abc123", "proxy.acme.com", 8081,

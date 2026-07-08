@@ -72,10 +72,34 @@ def windows_proxy_reg(host: str, port: int) -> str:
             f'"ProxyServer"="{host}:{port}"\r\n')
 
 
-def chrome_forcelist(extension_id: str) -> str:
-    """ExtensionInstallForcelist value for Chrome/Edge (force-install the Warden extension)."""
+_WEBSTORE_UPDATE_URL = "https://clients2.google.com/service/update2/crx"
+
+
+def chrome_forcelist(extension_id: str, update_url: str = "") -> str:
+    """ExtensionInstallForcelist value for Chrome/Edge (force-install the Warden extension).
+
+    Default pulls from the Chrome Web Store (the extension must be published there —
+    Unlisted is fine). Pass a self-hosted `update_url` (your updates.xml) to force-install
+    a self-hosted CRX with no Web Store submission — managed devices only."""
     eid = extension_id or "REPLACE_WITH_PUBLISHED_EXTENSION_ID"
-    return f"{eid};https://clients2.google.com/service/update2/crx"
+    return f"{eid};{update_url.strip() or _WEBSTORE_UPDATE_URL}"
+
+
+def extension_updates_xml(extension_id: str, crx_url: str, version: str = "0.5.0") -> str:
+    """Omaha `updates.xml` for a SELF-HOSTED extension — host this next to the .crx and point
+    ExtensionInstallForcelist at its URL. Lets you force-install the extension via MDM without
+    ever submitting it to the Web Store (the enterprise-policy exception to store-only installs)."""
+    eid = extension_id or "REPLACE_WITH_EXTENSION_ID"
+    return f'''<?xml version="1.0" encoding="UTF-8"?>
+<!-- Self-hosted extension update manifest. Host alongside the signed .crx; set the CRX
+     location in `codebase` and keep `version` in sync with the extension's manifest.json.
+     Point ExtensionInstallForcelist at THIS file's URL: "{eid};https://your.host/updates.xml". -->
+<gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
+  <app appid="{eid}">
+    <updatecheck codebase="{crx_url or 'https://your.host/warden-extension.crx'}" version="{version}" />
+  </app>
+</gupdate>
+'''
 
 
 def claude_managed_settings(base_url: str, hook_path: str, posture_path: str) -> str:
@@ -284,8 +308,11 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
                 posture_path: str = "/usr/local/bin/warden-posture",
                 cursor_hook_path: str = "/usr/local/bin/warden-cursor-hook",
                 secrets_path: str = "/usr/local/bin/warden-secrets",
-                secrets_engine: str = "trufflehog") -> dict[str, str]:
+                secrets_engine: str = "trufflehog",
+                ext_update_url: str = "", ext_crx_url: str = "",
+                ext_version: str = "0.5.0") -> dict[str, str]:
     b = base_url.rstrip("/")
+    self_host_ext = bool(ext_update_url.strip())
     readme = (
         "Warden MDM policy pack — apply these with your MDM (Jamf/Intune/GPO). No Warden\n"
         "agent is installed; the OS/editor/browser/Claude Code enforce the policy.\n\n"
@@ -294,7 +321,12 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "1. vscode-extensions.json  -> push as VS Code machine settings (locks extensions.allowed).\n"
         "2. macos-proxy.mobileconfig / windows-proxy.reg -> system proxy to the Warden proxy.\n"
         "3. chrome-edge-forcelist.txt -> ExtensionInstallForcelist (force-install the extension).\n"
-        "4. ca-note.txt -> deploy your root CA to the system trust store (required for TLS inspection).\n"
+        + ("   Points at the Chrome Web Store (extension must be published there; Unlisted is fine).\n"
+           if not self_host_ext else
+           "   Points at your SELF-HOSTED updates.xml — no Web Store submission needed (managed\n"
+           "   devices only). Host extension-updates.xml + the signed .crx and set their URLs.\n"
+           "3b. extension-updates.xml -> the self-hosted update manifest for the forcelist above.\n")
+        + "4. ca-note.txt -> deploy your root CA to the system trust store (required for TLS inspection).\n"
         "5. claude-managed-settings.json -> Claude Code managed-settings.json (gateway routing +\n"
         "   the local-plane hooks). Deploy warden-hook/warden-posture to the paths it references\n"
         f"   ({hook_path}, {posture_path}) and replace the ak_ placeholder with each dev's key\n"
@@ -321,12 +353,12 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "gateway redirect for Claude Code (item 5) and OpenAI SDKs (item 6); Cursor via local\n"
         "hooks (item 8) despite its cert pinning; and credential-at-rest hygiene (item 9).\n"
     )
-    return {
+    artifacts = {
         "README.txt": readme,
         "vscode-extensions.json": vscode_extension_policy(allowed_exts, denied_exts),
         "macos-proxy.mobileconfig": macos_proxy_profile(proxy_host or "proxy.example.com", proxy_port),
         "windows-proxy.reg": windows_proxy_reg(proxy_host or "proxy.example.com", proxy_port),
-        "chrome-edge-forcelist.txt": chrome_forcelist(extension_id),
+        "chrome-edge-forcelist.txt": chrome_forcelist(extension_id, ext_update_url),
         "claude-managed-settings.json": claude_managed_settings(b, hook_path, posture_path),
         "openai.env": openai_env(b),
         "gemini.txt": gemini_config(b),
@@ -337,3 +369,7 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "warden-secrets-task.xml": secrets_win_task(b, secrets_path, secrets_engine),
         "ca-note.txt": ca_note(),
     }
+    # Self-hosted extension path (no Web Store): ship the update manifest to host next to the CRX.
+    if self_host_ext:
+        artifacts["extension-updates.xml"] = extension_updates_xml(extension_id, ext_crx_url, ext_version)
+    return artifacts

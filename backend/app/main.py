@@ -744,6 +744,8 @@ def policy_pack(
     hook_path: str = "/usr/local/bin/warden-hook",
     posture_path: str = "/usr/local/bin/warden-posture",
     secrets_engine: str = "trufflehog",
+    ext_update_url: str = "",
+    ext_crx_url: str = "",
     current: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -762,7 +764,8 @@ def policy_pack(
                                proxy_host=proxy_host, proxy_port=proxy_port,
                                allowed_exts=allowed, denied_exts=denied,
                                hook_path=hook_path, posture_path=posture_path,
-                               secrets_engine=secrets_engine)
+                               secrets_engine=secrets_engine,
+                               ext_update_url=ext_update_url, ext_crx_url=ext_crx_url)
     return {"artifacts": artifacts}
 
 
