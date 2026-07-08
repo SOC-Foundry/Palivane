@@ -8,6 +8,7 @@ const CAT_LABEL = {
   secret_leak: "Secret leak",
   pii_exposure: "PII exposure",
   source_code_leak: "Source/IP leak",
+  confidential_data: "Confidential data",
   unsanctioned_ai: "Unsanctioned AI",
   mcp_untrusted_server: "Untrusted MCP server",
   sensitive_resource_access: "Sensitive resource access",
@@ -44,8 +45,8 @@ function remediationFor(finding) {
   }
   if (cats.has("pii_exposure"))
     steps.push("Remove the personal data; for regulated data use only an approved, contracted tool.");
-  if (cats.has("source_code_leak") || cats.has("unsanctioned_ai"))
-    steps.push("Redirect the user to a sanctioned AI tool; add it to the allowlist if appropriate.");
+  if (cats.has("source_code_leak") || cats.has("unsanctioned_ai") || cats.has("confidential_data"))
+    steps.push("Redirect the user to a sanctioned AI tool; for confidential/classified material, use only an approved, contracted tool.");
   if (cats.has("dangerous_command") || cats.has("sensitive_resource_access") || cats.has("tool_poisoning"))
     steps.push("Review the agent's tool call; restrict the MCP server or command, and confirm nothing ran.");
   if (cats.has("mcp_untrusted_server"))

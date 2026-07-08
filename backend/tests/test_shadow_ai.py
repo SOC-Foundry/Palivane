@@ -52,7 +52,29 @@ def test_source_code_leak():
 
 
 def test_confidential_marking():
-    assert Category.SOURCE_CODE_LEAK in _cats("This document is CONFIDENTIAL and internal use only.")
+    # Marked/confidential business content -> its own category (NOT source_code_leak, so it
+    # isn't suppressed for coding tools).
+    assert Category.CONFIDENTIAL_DATA in _cats("This document is CONFIDENTIAL and internal use only.")
+
+
+def test_sensitivity_labels():
+    for marked in ("TLP:AMBER — do not forward", "Classification: Restricted",
+                   "[INTERNAL] Q3 board deck", "Data Classification = Highly Confidential"):
+        assert Category.CONFIDENTIAL_DATA in _cats(marked), marked
+    # ordinary text with none of these is not flagged confidential
+    assert Category.CONFIDENTIAL_DATA not in _cats("here are five blog title ideas")
+
+
+def test_confidential_not_suppressed_for_coding_tool():
+    from app.detectors.base import AnalysisInput, Surface
+    from app.policy import signal_filter_for
+    item = AnalysisInput(content="TLP:RED merger terms with Acme", surface=Surface.AI_USAGE,
+                         channel="claude-code")
+    sigs = det.analyze(item)
+    filt = signal_filter_for("claude-code")
+    kept = filt(sigs) if filt else sigs
+    # source_code_leak would be suppressed for claude-code; confidential_data must survive.
+    assert Category.CONFIDENTIAL_DATA in {s.category for s in kept}
 
 
 def test_known_tool_is_unsanctioned_by_default():

@@ -101,7 +101,9 @@ the signals into one risk verdict:
    payment cards, contact lists, **IBAN / UK NINO**, and keyword-confirmed **passport / EIN
    / routing / SWIFT / NPI / Aadhaar**, plus **single-record** detection — a lone email/DOB
    in a record — and **per-tenant custom PII/confidential patterns**), proprietary source
-   code / confidentiality-marked material, and an *unsanctioned destination* (a consumer AI tool not on your
+   code, **confidential business content** (`confidential_data`: marked/NDA material and
+   Purview/MIP & TLP sensitivity labels — plus, with the judge on, *unmarked*
+   financials/contracts/roadmaps), and an *unsanctioned destination* (a consumer AI tool not on your
    `SANCTIONED_AI_TOOLS` allowlist). On the gateway it also flags PII leaving to your
    own LLMs. Secret detection is two-tier: **known formats** (OpenAI/Anthropic/AWS/
    GitHub incl. fine-grained PATs, GitLab, Stripe, Google OAuth, Slack, npm/PyPI,

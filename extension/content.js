@@ -26,6 +26,7 @@ const CATEGORY_LABELS = {
   secret_leak: "Credentials / secrets",
   pii_exposure: "Personal data (PII)",
   source_code_leak: "Proprietary code / confidential material",
+  confidential_data: "Confidential business data",
   prompt_injection: "Prompt injection",
   jailbreak: "Jailbreak attempt",
   data_exfiltration: "Data-exfiltration attempt",

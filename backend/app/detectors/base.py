@@ -40,6 +40,8 @@ class Category(str, Enum):
     SECRET_LEAK = "secret_leak"                # credentials/keys leaving for an AI tool
     PII_EXPOSURE = "pii_exposure"              # personal data leaving for an AI tool
     SOURCE_CODE_LEAK = "source_code_leak"      # proprietary code/IP leaving for an AI tool
+    CONFIDENTIAL_DATA = "confidential_data"    # confidential business content (financials,
+                                               # contracts, roadmaps, labeled/marked material)
     UNSANCTIONED_AI = "unsanctioned_ai"        # destination is an unapproved AI service
     # --- Agentic tool-use (mcp) ---
     MCP_UNTRUSTED_SERVER = "mcp_untrusted_server"      # MCP server not on the allowlist
