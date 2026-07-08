@@ -27,6 +27,7 @@ It returns these artifacts (write each to a file):
 | `macos-proxy.mobileconfig` | macOS system proxy → the Warden egress proxy |
 | `windows-proxy.reg` | Windows system proxy → the Warden egress proxy |
 | `chrome-edge-forcelist.txt` | `ExtensionInstallForcelist` value for the browser extension. Defaults to the **Chrome Web Store** (extension published there — Unlisted is fine). Pass `?ext_update_url=…` (+ `?ext_crx_url=…`) to `/api/policy-pack` for a **self-hosted CRX** with no Web Store submission (managed devices only) — that also emits `extension-updates.xml` below. |
+| `chrome-extension-settings.json` | Chrome/Edge **`ExtensionSettings`** to govern *third-party* browser extensions — including agentic AI ones (e.g. Claude for Chrome) that Warden's own extension can't inspect. Blocks unsanctioned AI extensions by ID and/or keeps permitted ones off sensitive origins (`runtime_blocked_hosts`); Warden's extension is always force-installed. Query params: `?browser_ext_lockdown=true` (deny-all + allowlist), `?browser_ext_blocklist=`/`?browser_ext_allowlist=` (comma-sep IDs), `?browser_ext_blocked_hosts=`. |
 | `extension-updates.xml` | *(self-hosted only)* Omaha update manifest to host next to your signed `.crx`; the forcelist points at its URL. |
 | `claude-managed-settings.json` | Claude Code `managed-settings.json`: gateway routing + the Route C hooks (warden-hook, warden-posture) |
 | `openai.env` | Environment vars (`OPENAI_BASE_URL`) routing OpenAI SDK/CLI clients through the gateway — agentless, no CA needed |
