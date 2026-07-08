@@ -52,6 +52,10 @@ class Tenant(Base):
     # Alerting: POST high/critical findings to this webhook (Slack-compatible {"text":…}).
     alert_webhook = Column(String(1024), default="")
     alert_min_severity = Column(String(16), default="high")
+    # Digest mode: "off" = real-time per finding; "hourly"/"daily" = batch alertable findings
+    # into a rollup (criticals still fire real-time). alert_digest_last tracks the window.
+    alert_digest = Column(String(16), default="off")
+    alert_digest_last = Column(DateTime, nullable=True)
     # Per-tenant policy posture (each org picks its own monitor/enforce stance; empty/None
     # = inherit the global env default, same tri-state pattern as judge_enabled).
     gateway_enforce = Column(Boolean, nullable=True, default=None)
@@ -77,6 +81,7 @@ class Tenant(Base):
                 "dep_denylist": self.dep_denylist or "",
                 "alert_webhook": self.alert_webhook or "",
                 "alert_min_severity": self.alert_min_severity or "high",
+                "alert_digest": self.alert_digest or "off",
                 "gateway_enforce": self.gateway_enforce,
                 "gateway_block_severity": self.gateway_block_severity or "",
                 "mcp_block_severity": self.mcp_block_severity or "",

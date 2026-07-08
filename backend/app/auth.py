@@ -592,6 +592,10 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         if body.alert_min_severity not in ("low", "suspicious", "high", "critical"):
             raise HTTPException(status_code=400, detail="invalid alert_min_severity")
         tenant.alert_min_severity = body.alert_min_severity
+    if body.alert_digest is not None:
+        if body.alert_digest not in ("off", "hourly", "daily"):
+            raise HTTPException(status_code=400, detail="invalid alert_digest")
+        tenant.alert_digest = body.alert_digest
     if body.gateway_enforce is not None:
         tenant.gateway_enforce = _JUDGE[body.gateway_enforce]  # same tri-state mapping
     for sev_field in ("gateway_block_severity", "mcp_block_severity"):

@@ -71,5 +71,6 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             from . import alerts
             alerts.notify(tenant.alert_webhook.strip(), tenant.alert_min_severity,
                           {**result, "finding_id": finding_id},
-                          subject=item.subject, actor=item.sender, surface=item.surface.value)
+                          subject=item.subject, actor=item.sender, surface=item.surface.value,
+                          digest=tenant.alert_digest or "off")
     return {"finding_id": finding_id, "judge_used": engine.judge_enabled, **result}

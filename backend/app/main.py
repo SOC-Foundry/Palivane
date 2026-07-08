@@ -70,7 +70,32 @@ async def lifespan(_app: FastAPI):
         # Warn (don't fail): the local Docker stack uses a well-known dev key on Postgres.
         log.warning("WARDEN_SECRET_KEY is a well-known weak value — set a strong random "
                     "key before production.")
-    yield
+
+    # Periodic alert digests: tick every few minutes and send any tenant digests that are due.
+    # Each send is claimed via a conditional DB update, so multiple workers won't duplicate.
+    import asyncio
+
+    async def _digest_loop():
+        from . import alerts
+        from .database import SessionLocal
+        while True:
+            try:
+                await asyncio.sleep(300)   # 5-minute tick; per-tenant hourly/daily gating in run_digests
+                db = SessionLocal()
+                try:
+                    await asyncio.to_thread(alerts.run_digests, db)
+                finally:
+                    db.close()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.warning("digest loop error: %s", e)
+
+    task = asyncio.create_task(_digest_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
 
 
 app = FastAPI(
@@ -148,6 +173,15 @@ def test_alert(current: User = Depends(require_admin), db: Session = Depends(get
         "text": ":shield: Warden test alert — your webhook is connected.",
         "warden": {"test": True, "org": t.slug}})
     return {"ok": ok}
+
+
+@app.post("/api/alerts/digest/run")
+def run_digest_now(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Force-send this tenant's digest now if one is due (Settings → Alerts button, or a
+    cron for ops). The background loop does this automatically every few minutes."""
+    from . import alerts
+    sent = alerts.run_digests(db)
+    return {"sent": sent}
 
 
 @app.get("/api/export/findings")

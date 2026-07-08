@@ -60,10 +60,12 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   // --- Alerts & integrations ---
   const [alertCfg, setAlertCfg] = useState({
     webhook: tenant?.alert_webhook || "", min: tenant?.alert_min_severity || "high",
+    digest: tenant?.alert_digest || "off",
   });
   async function saveAlerts() {
     try {
-      const t = await api.updateTenant({ alert_webhook: alertCfg.webhook, alert_min_severity: alertCfg.min });
+      const t = await api.updateTenant({ alert_webhook: alertCfg.webhook,
+        alert_min_severity: alertCfg.min, alert_digest: alertCfg.digest });
       onTenant?.(t); flash("Alerts saved.");
     } catch (e) { err(e); }
   }
@@ -293,14 +295,22 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
               <option value="high">high</option>
               <option value="critical">critical</option>
             </select></label>
+          <label>Delivery
+            <select value={alertCfg.digest} onChange={(e) => setAlertCfg((a) => ({ ...a, digest: e.target.value }))}>
+              <option value="off">real-time (every finding)</option>
+              <option value="hourly">hourly digest</option>
+              <option value="daily">daily digest</option>
+            </select></label>
         </div>
         <div className="form-row" style={{ gap: 10 }}>
           <button type="button" className="primary-btn slim" onClick={saveAlerts}>Save alerts</button>
           <button type="button" className="mini-btn" onClick={testAlert}>Send test</button>
           <button type="button" className="mini-btn" onClick={exportFindings}>Export findings (JSONL)</button>
         </div>
-        <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Findings export is for SIEM ingest.
-           Alerts fire asynchronously and fail open — a down webhook never blocks capture.</p>
+        <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>In digest mode, alertable
+           findings are batched into a rollup on the chosen cadence — <strong>critical findings
+           still fire in real time</strong>. Findings export is for SIEM ingest. Alerts fail open
+           — a down webhook never blocks capture.</p>
       </div>
 
       {/* Usage */}

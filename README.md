@@ -64,7 +64,8 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
   **`warden-secrets`** (credentials at rest). Enforcement config is generated for your MDM.
 - **Per-tenant policy & compliance** — each org sets monitor/enforce, block severity,
   sanctioned tools, and suppressions; plus a signed DPA, full data export, delete-my-org,
-  Slack alerts, and SIEM export.
+  Slack alerts (real-time, or **hourly/daily digests** with criticals still real-time), and
+  SIEM export.
 - **Keeps secrets out of repos too** — a **pre-commit hook + GitHub Action**
   ([`git/`](git/)) scan commits/PRs for secrets & PII via the same engine, complementing
   GitHub's native push protection; existing **TruffleHog/Gitleaks/GitGuardian** CI jobs can
