@@ -81,6 +81,33 @@ def test_find_secrets_shared_helper():
     assert find_secrets("nothing sensitive here") == []
 
 
+def test_secrets_detected_with_normal_separators():
+    assert "GitHub token" in find_secrets("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345")
+    assert "GitLab PAT" in find_secrets("glpat-ABCDEFGHIJKLMNOPQRST")
+    assert "npm token" in find_secrets("npm_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+    assert "Stripe secret key" in find_secrets("sk_live_ABCDEFGHIJKLMNOP")
+
+
+def test_secrets_detected_when_separator_stripped():
+    # De-dashed / de-underscored to dodge DLP — still caught (distinctive prefix + length).
+    assert "GitHub token" in find_secrets("ghpABCDEFGHIJKLMNOPQRSTUVWXYZ012345")
+    assert "GitHub fine-grained PAT" in find_secrets("github_patABCDEFGHIJKLMNOPQRSTUVWX")
+    assert "GitLab PAT" in find_secrets("glpatABCDEFGHIJKLMNOPQRST")
+    assert "Anthropic API key" in find_secrets("skantabcdefghijklmnopqrstuv")
+    assert "npm token" in find_secrets("npmABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+    assert "PyPI token" in find_secrets("pypiABCDEFGHIJKLMNOP")
+    assert "Stripe secret key" in find_secrets("skliveABCDEFGHIJKLMNOP")
+
+
+def test_optional_separator_does_not_flag_prose():
+    # The de-dashed patterns must not fire on ordinary words/code sharing a short prefix.
+    for benign in ("please skip the standup and ghost the meeting",
+                   "run npm install express and start the app",
+                   "the ghostwriter published a skateboarding blog",
+                   "pypi and glpat are package registries we discussed"):
+        assert find_secrets(benign) == [], benign
+
+
 def test_custom_secret_patterns_from_env(monkeypatch):
     monkeypatch.setenv("CUSTOM_SECRET_PATTERNS", "Acme token=ACME-[0-9A-Z]{8}")
     assert "Acme token" in find_secrets("here is ACME-AB12CD34 in the config")

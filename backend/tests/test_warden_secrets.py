@@ -43,6 +43,17 @@ def test_scan_text_generic_assignment_needs_keyword():
     assert not ws.scan_text("greeting = helloworldfriend")       # no cred keyword -> ignored
 
 
+def test_scan_text_catches_de_dashed_keys():
+    # Separator stripped to evade — still detected at rest.
+    assert any(t == "GitHub token" for t, _, _ in ws.scan_text("ghpABCDEFGHIJKLMNOPQRSTUVWXYZ012345"))
+    assert any(t == "GitLab PAT" for t, _, _ in ws.scan_text("glpatABCDEFGHIJKLMNOPQRST"))
+    assert any(t == "npm token" for t, _, _ in ws.scan_text("npmABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"))
+
+
+def test_scan_text_no_false_positive_on_prose():
+    assert ws.scan_text("please skip the standup and run npm install express") == []
+
+
 def test_scan_file_detects_and_reports_metadata(tmp_path):
     p = tmp_path / ".env"
     p.write_text("TOKEN=ghp_0123456789abcdefghij0123\n")
