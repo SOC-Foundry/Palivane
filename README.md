@@ -445,7 +445,8 @@ client.chat.completions.create(model="gpt-4o", messages=[...])
 - **response-side DLP** (`GATEWAY_SCAN_RESPONSES`, default on) also scans the model's *output*
   for secrets/PII — a jailbroken/compromised model echoing credentials, or RAG/tool output
   surfacing data the user shouldn't see. Recorded in monitor; a leaking response is blocked
-  (not delivered) in enforce. Covers non-streaming replies and buffered streams.
+  (not delivered) in enforce. Covers non-streaming, enforce-buffered streams, and monitor
+  live streams (a *tee* records after the last token — no added latency).
 - allowed calls forward to a configured `GATEWAY_UPSTREAM_BASE` (any OpenAI-compatible
   provider), or return a stub when none is set (so it's demoable offline).
 - **per-tenant upstreams**: each org can set its own provider base URL + key via

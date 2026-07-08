@@ -16,7 +16,8 @@ categories that are expected for a sanctioned tool — e.g. source code from Cla
 scanned for secrets/PII — a jailbroken/compromised model echoing credentials, RAG/tool
 output surfacing data the user shouldn't see, or exfiltration via the completion. Recorded
 in monitor mode; in enforce mode a leaking response is blocked instead of delivered.
-Works for non-streaming replies and, in enforce mode, buffered streams.
+Covers non-streaming replies, enforce-mode buffered streams, AND monitor-mode live streams
+(a *tee* records the finding after the last token — no client-facing latency).
 
 It also inspects **agentic tool-use** on the `mcp` surface: an AI coding agent's tool
 calls, their arguments, and their results all round-trip the model, so they're visible in
@@ -506,14 +507,49 @@ def _read_stream(url: str, payload: dict, headers: dict) -> tuple[int, str, byte
     return status, ctype, b"".join(chunks)
 
 
-def _passthrough_stream(url: str, payload: dict, headers: dict) -> StreamingResponse:
-    """True pass-through streaming (monitor mode) — forward chunks as they arrive so the
-    client keeps live output. The action is still recorded request-side on the next turn."""
+def _record_stream_dlp(raw: bytes, model: str, tool: str, principal: Principal) -> None:
+    """Post-stream response DLP for monitor mode: scan the assembled output and record a
+    finding after the client already got it (monitor can't block anyway). Best-effort, on a
+    fresh session, never raises — the client's stream must not be affected."""
+    try:
+        text = _stream_output_text(raw.decode("utf-8", "replace"))
+        if not text:
+            return
+        from .database import SessionLocal
+        db = SessionLocal()
+        try:
+            _capture_response_dlp(text, model, tool, principal, db)
+        finally:
+            db.close()
+    except Exception:
+        pass
+
+
+_STREAM_TEE_CAP = 2_000_000   # cap the accumulated copy so a huge stream can't blow memory
+
+
+def _passthrough_stream(url: str, payload: dict, headers: dict, model: str = "",
+                        tool: str = "", principal: Principal | None = None) -> StreamingResponse:
+    """Pass-through streaming (monitor mode) — forward chunks as they arrive so the client
+    keeps live output. When response DLP is on, also *tee* a bounded copy and scan the
+    assembled output once the stream ends (no client-facing latency — the scan happens after
+    the last token). The action is also recorded request-side on the next turn."""
+    scan = principal is not None and settings.gateway_scan_responses
+
     def gen():
-        with httpx.Client(timeout=120) as c:
-            with c.stream("POST", url, json=payload, headers=headers) as r:
-                for b in r.iter_bytes():
-                    yield b
+        buf: list[bytes] = []
+        acc = 0
+        try:
+            with httpx.Client(timeout=120) as c:
+                with c.stream("POST", url, json=payload, headers=headers) as r:
+                    for b in r.iter_bytes():
+                        if scan and acc < _STREAM_TEE_CAP:
+                            buf.append(b)
+                            acc += len(b)
+                        yield b
+        finally:
+            if scan and buf:
+                _record_stream_dlp(b"".join(buf), model, tool, principal)
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
@@ -566,7 +602,7 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
             headers["Authorization"] = f"Bearer {key}"
         if payload.get("stream"):
             if not pol.enforce:
-                return _passthrough_stream(url, payload, headers)   # monitor: live output
+                return _passthrough_stream(url, payload, headers, model, tool, principal)  # monitor: live output (teed)
             status, ctype, raw = _read_stream(url, payload, headers)
             decoded = raw.decode("utf-8", "replace")
             act = _stream_tool_use_openai(decoded)
@@ -725,7 +761,7 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
             headers["Authorization"] = f"Bearer {key}"
         if payload.get("stream"):
             if not pol.enforce:
-                return _passthrough_stream(url, payload, headers)   # monitor: live output
+                return _passthrough_stream(url, payload, headers, model, tool, principal)  # monitor: live output (teed)
             status, ctype, raw = _read_stream(url, payload, headers)
             decoded = raw.decode("utf-8", "replace")
             act = _stream_tool_use_responses(decoded)
@@ -810,7 +846,7 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
             url = base.rstrip("/") + "/v1/messages"
             headers = _anthropic_headers(request, key)
             if not pol.enforce:
-                return _passthrough_stream(url, payload, headers)   # monitor: live output
+                return _passthrough_stream(url, payload, headers, model, tool, principal)  # monitor: live output (teed)
             # enforce: buffer, inspect the assembled tool_use, block or replay verbatim.
             status, ctype, raw = _read_stream(url, payload, headers)
             decoded = raw.decode("utf-8", "replace")
