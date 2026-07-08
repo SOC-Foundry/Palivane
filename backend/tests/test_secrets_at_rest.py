@@ -1,0 +1,71 @@
+"""Endpoint credential-hygiene detector (surface=secrets) + /api/scan/secrets."""
+
+from __future__ import annotations
+
+from app.detectors.secrets_at_rest import SecretsAtRestDetector
+from app.detectors.base import AnalysisInput, Category, Surface
+
+_d = SecretsAtRestDetector()
+
+
+def _sig(secret_types, world_readable=False, path="/home/dev/.ssh/id_rsa"):
+    item = AnalysisInput(content=path, surface=Surface.SECRETS,
+                         metadata={"secret_types": secret_types, "path": path,
+                                   "world_readable": world_readable})
+    sigs = _d.analyze(item)
+    return sigs[0] if sigs else None
+
+
+def test_private_key_is_high_weight():
+    s = _sig(["Private key block"])
+    assert s.category == Category.CREDENTIAL_AT_REST
+    assert s.weight == 0.85
+
+
+def test_github_token_high():
+    assert _sig(["GitHub token"]).weight == 0.75
+
+
+def test_generic_credential_medium():
+    assert _sig(["Credential assignment"]).weight == 0.6
+
+
+def test_world_readable_boosts_weight():
+    assert _sig(["Private key block"], world_readable=True).weight == 0.95   # 0.85 + 0.1, capped
+    assert _sig(["Credential assignment"], world_readable=True).weight == 0.7
+
+
+def test_no_types_no_signal():
+    assert _sig([]) is None
+
+
+def test_evidence_never_leaks_raw_secret():
+    # The detector only ever sees masked/path metadata — assert it echoes that, not a secret.
+    s = _sig(["GitHub token"], path="/home/dev/.git-credentials")
+    assert "/home/dev/.git-credentials" in s.detail
+    assert "ghp_" not in s.detail  # nothing that looks like a raw token
+
+
+# --- endpoint: warden-secrets -> /api/scan/secrets -----------------------------------
+
+def test_scan_secrets_endpoint_records_and_scores(client, raw_client):
+    key = client.post("/api/apikeys", json={"label": "sec", "actor": "dev@acme.com"}).json()["token"]
+    body = {"host": "laptop-1", "items": [
+        {"path": "/home/dev/.ssh/id_rsa", "secret_types": ["Private key block"],
+         "masked": "••••", "line": 1, "world_readable": True},
+        {"path": "/home/dev/proj/.env", "secret_types": ["GitHub token"],
+         "masked": "ghp_••••4f2a", "line": 3, "world_readable": False},
+    ]}
+    r = raw_client.post("/api/scan/secrets", json=body, headers={"X-Warden-Token": key}).json()
+    assert r["scanned"] == 2 and r["flagged"] == 2
+    by_path = {f["path"]: f for f in r["findings"]}
+    assert by_path["/home/dev/.ssh/id_rsa"]["severity"] == "critical"   # world-readable priv key
+    assert by_path["/home/dev/.ssh/id_rsa"]["action"] == "block"
+    # remediation is actionable and mentions chmod for the world-readable one
+    assert any("chmod 600" in step for step in by_path["/home/dev/.ssh/id_rsa"]["remediation"])
+    assert any("Revoke" in step for step in by_path["/home/dev/proj/.env"]["remediation"])
+
+    # persisted as credential_at_rest findings on the secrets surface
+    findings = client.get("/api/findings?surface=secrets").json()["findings"]
+    assert len(findings) == 2
+    assert all(f["surface"] == "secrets" for f in findings)

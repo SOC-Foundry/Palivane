@@ -25,6 +25,7 @@ class Surface(str, Enum):
     MCP = "mcp"           # Agentic tool-use — MCP calls from AI coding assistants
     DEPS = "deps"         # Dependency manifests — supply-chain risk in package files
     IDE = "ide"           # IDE extensions — known-bad / unapproved editor plugins
+    SECRETS = "secrets"   # Endpoint credential hygiene — secrets at rest on a device
 
 
 class Category(str, Enum):
@@ -47,6 +48,8 @@ class Category(str, Enum):
     TOOL_POISONING = "tool_poisoning"                  # injected instructions in a tool description
     # --- Supply chain (deps) ---
     DEPENDENCY_RISK = "dependency_risk"                # risky/malicious dependency in a manifest
+    # --- Endpoint credential hygiene (secrets) ---
+    CREDENTIAL_AT_REST = "credential_at_rest"          # a live secret/key sitting on a device
 
 
 @dataclass(frozen=True)

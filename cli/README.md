@@ -1,9 +1,9 @@
 # Warden CLI — self-serve onboarding + local planes
 
-Five stdlib-only Python scripts (no install; drop them on PATH, e.g. `~/bin/`). Together
+Six stdlib-only Python scripts (no install; drop them on PATH, e.g. `~/bin/`). Together
 they give Warden **local, pre-execution visibility** — the surface the network planes
-can't reach (cert-pinned clients, stdio MCP servers, on-device drift) — without an
-endpoint agent: each is an app-scoped hook/shim that rides the existing ingest APIs.
+can't reach (cert-pinned clients, stdio MCP servers, on-device drift, secrets at rest) —
+without an endpoint agent: each is an app-scoped hook/shim that rides the existing ingest APIs.
 
 | Script | Plane | Reports to |
 | --- | --- | --- |
@@ -12,6 +12,7 @@ endpoint agent: each is an app-scoped hook/shim that rides the existing ingest A
 | `warden-cursor-hook` | **Cursor** prompts + tool calls, before execution | `POST /api/ingest/{mcp,ai-usage}` |
 | `warden-mcp` | local **stdio MCP servers**, inline | `POST /api/ingest/mcp` |
 | `warden-posture` | device drift: IDE extensions, MCP configs | `POST /api/scan/*` |
+| `warden-secrets` | **credentials at rest** (SSH/RSA keys, tokens, `.env`) | `POST /api/scan/secrets` |
 
 All of them are **monitor by default, fail-open always**: Warden being down or slow
 never blocks a developer. Enforcement is opt-in per plane (env vars below).
@@ -149,6 +150,32 @@ A sha256 cache (`~/.warden/posture-cache.json`) skips unchanged state, so repeat
 don't spam findings. `warden-connect` wires it to Claude Code session start; a cron or
 launchd job works for non-Claude fleets. Flags: `--force`, `--dry-run`, `--quiet`,
 `--async` (detach and return immediately).
+
+## `warden-secrets` — credentials at rest (infostealer surface)
+
+Infostealers don't phish — they grab credentials already on the box. This scans the places
+they actually live and reports what it finds *before* a stealer does:
+
+- well-known credential files: `~/.ssh/id_*` / `*.pem`, `~/.aws/credentials`,
+  `~/.config/gh/hosts.yml`, `.git-credentials`, `.npmrc`, `.pypirc`, `.netrc`,
+  `~/.docker/config.json`, `~/.kube/config`, gcloud ADC, shell history;
+- a bounded `.env` sweep of dev roots (`~/src`, `~/code`, … and `.`; prunes
+  `node_modules`/`.git`/venvs, depth- and size-capped).
+
+**Privacy by design:** detection runs locally and only **metadata** leaves the machine —
+the secret *type*, path, line, a masked preview (`ghp_••••4f2a`), and whether the file is
+world/group-readable. The raw secret never leaves the device. Each file becomes a
+`credential_at_rest` finding (`POST /api/scan/secrets`) with a rotate/lock-down plan.
+
+```bash
+warden-secrets                # scan + report to Warden
+warden-secrets --dry-run      # print findings locally, send nothing
+warden-secrets --root ~/work  # add a directory to the .env sweep
+```
+
+Best scheduled (cron / launchd / Scheduled Task) or pushed via MDM — it's a filesystem
+walk, so it's opt-in rather than wired into every session. Config: `WARDEN_URL`/
+`WARDEN_TOKEN` from the env or the `warden-connect` credentials.
 
 ## Managed fleets
 
