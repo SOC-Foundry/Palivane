@@ -84,6 +84,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     })();
     return true;
   }
+  if (msg && msg.type === "exception") {
+    (async () => {
+      try {
+        const c = await config();
+        if (!c.token) { sendResponse({ ok: false }); return; }
+        const res = await fetch(c.backendUrl.replace(/\/$/, "") + "/api/exception-request", {
+          method: "POST",
+          headers: { "content-type": "application/json", "X-Warden-Token": c.token },
+          body: JSON.stringify({ ...msg.payload, user: c.user }),
+        });
+        sendResponse({ ok: res.ok });
+      } catch (e) { sendResponse({ ok: false, error: String(e) }); }
+    })();
+    return true;
+  }
   if (!msg || msg.type !== "scan") return;
   (async () => {
     try {

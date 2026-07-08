@@ -59,6 +59,22 @@ function showBlockModal(verdict) {
     return `<li style="margin:4px 0">${escapeHtml(label)}${ev}</li>`;
   }).join("");
 
+  // Turn a hard "no" into "no — use this instead": the org's approved AI tools.
+  const tools = (verdict.sanctioned_tools || []).slice(0, 4);
+  const alt = tools.length ? `
+    <div style="margin-top:14px;padding:11px 13px;background:rgba(63,185,80,.08);
+        border:1px solid rgba(63,185,80,.35);border-radius:10px">
+      <div style="font-weight:700;color:#4ade80;font-size:13px">✓ Approved for sensitive data — use instead:</div>
+      <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px">
+        ${tools.map((t) => t.url
+          ? `<a href="${escapeHtml(t.url)}" target="_blank" rel="noopener" style="
+               color:#9ecbff;text-decoration:none;border:1px solid #2a3346;border-radius:7px;
+               padding:5px 10px;font-size:12.5px">${escapeHtml(t.label)} ↗</a>`
+          : `<span style="color:#c4ccdb;border:1px solid #2a3346;border-radius:7px;
+               padding:5px 10px;font-size:12.5px">${escapeHtml(t.label)}</span>`).join("")}
+      </div>
+    </div>` : "";
+
   const wrap = document.createElement("div");
   wrap.id = "warden-modal";
   wrap.style.cssText = [
@@ -69,7 +85,7 @@ function showBlockModal(verdict) {
   ].join(";");
   wrap.innerHTML = `
     <div role="alertdialog" aria-modal="true" style="
-        width:440px;max-width:92vw;background:#151926;color:#e6e9f0;
+        width:460px;max-width:92vw;background:#151926;color:#e6e9f0;
         border:1px solid #2a3346;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.5);
         padding:22px 24px">
       <div style="display:flex;align-items:center;gap:10px;font-size:17px;font-weight:800">
@@ -79,15 +95,23 @@ function showBlockModal(verdict) {
         It was <strong>not sent</strong> to the AI tool because it contained ${reasonText(verdict)}.
       </p>
       <ul style="margin:8px 0 4px;padding-left:18px;color:#e6e9f0">${rows}</ul>
-      <div style="color:#8a93a6;font-size:12px;margin-top:10px">
+      ${alt}
+      <div style="color:#8a93a6;font-size:12px;margin-top:12px">
         risk ${verdict.risk_score}/${(verdict.severity || "").toUpperCase()} ·
         the AI tool may show a "failed to send" error — that's the block working.
       </div>
-      <button id="warden-modal-x" style="
-        margin-top:18px;width:100%;padding:11px;border:none;border-radius:8px;
-        background:#4da3ff;color:#04101f;font-weight:700;font-size:14px;cursor:pointer">
-        Edit my message
-      </button>
+      <div style="display:flex;gap:8px;margin-top:18px">
+        <button id="warden-modal-x" style="
+          flex:1;padding:11px;border:none;border-radius:8px;
+          background:#4da3ff;color:#04101f;font-weight:700;font-size:14px;cursor:pointer">
+          Edit my message
+        </button>
+        <button id="warden-modal-exc" style="
+          padding:11px 14px;border:1px solid #2a3346;border-radius:8px;background:transparent;
+          color:#c4ccdb;font-size:13px;cursor:pointer">
+          Request exception
+        </button>
+      </div>
     </div>`;
   const close = () => wrap.remove();
   wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
@@ -95,6 +119,25 @@ function showBlockModal(verdict) {
   const btn = document.getElementById("warden-modal-x");
   btn.addEventListener("click", close);
   btn.focus();
+
+  document.getElementById("warden-modal-exc").addEventListener("click", async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true; b.textContent = "Sending…";
+    try {
+      const r = await chrome.runtime.sendMessage({
+        type: "exception",
+        payload: {
+          finding_id: verdict.finding_id || null,
+          destination: (verdict.signals || []).find((s) => s.category === "unsanctioned_ai")?.evidence || "",
+          categories: dataSignals(verdict).map((s) => s.category),
+          reason: "Requested from the block screen",
+        },
+      });
+      b.textContent = r && r.ok ? "✓ Request sent" : "Couldn't send";
+      b.style.color = r && r.ok ? "#4ade80" : "#ff9d9d";
+    } catch (_) { b.textContent = "Couldn't send"; b.style.color = "#ff9d9d"; }
+  });
+
   document.addEventListener("keydown", function esc(e) {
     if (e.key === "Escape") { close(); document.removeEventListener("keydown", esc); }
   });
