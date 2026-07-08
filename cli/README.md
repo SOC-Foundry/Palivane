@@ -157,11 +157,18 @@ launchd job works for non-Claude fleets. Flags: `--force`, `--dry-run`, `--quiet
 Infostealers don't phish — they grab credentials already on the box. This scans the places
 they actually live and reports what it finds *before* a stealer does:
 
-- well-known credential files: `~/.ssh/id_*` / `*.pem`, `~/.aws/credentials`,
+- well-known credential files: `~/.ssh/id_*` / `*.pem` / `*.key`, `~/.aws/credentials`,
   `~/.config/gh/hosts.yml`, `.git-credentials`, `.npmrc`, `.pypirc`, `.netrc`,
-  `~/.docker/config.json`, `~/.kube/config`, gcloud ADC, shell history;
-- a bounded `.env` sweep of dev roots (`~/src`, `~/code`, … and `.`; prunes
-  `node_modules`/`.git`/venvs, depth- and size-capped).
+  `~/.docker/config.json`, `~/.kube/config`, **cloud service-account keys/tokens** (gcloud
+  ADC + legacy, `~/.azure/accessTokens.json`), **DB creds** (`~/.pgpass`, `~/.my.cnf`),
+  **Ansible/vault password** files, and shell history;
+- a bounded sweep of dev/data roots (`~/src`, `~/code`, `~/Desktop`, `~/Documents`, … and
+  `.`; prunes `node_modules`/`.git`/venvs, depth- and size-capped) for `.env`-style files,
+  common **config files** (`settings.py`, `config.yml`, `appsettings.json`, `wp-config.php`,
+  `docker-compose.yml`, …), **Terraform state** (`*.tfstate`), **key/cert material**
+  (`*.pem`/`*.key`/`*.p12`/`*.pfx`/`*.ppk` — binary keystores flagged by extension), and
+  **service-account JSON**. Add more roots (e.g. server paths) via `WARDEN_SECRETS_ROOTS`
+  (`/etc:/opt:/srv`) or `--root`.
 
 **Privacy by design:** detection runs locally and only **metadata** leaves the machine —
 the secret *type*, path, line, a masked preview (`ghp_••••4f2a`), and whether the file is
