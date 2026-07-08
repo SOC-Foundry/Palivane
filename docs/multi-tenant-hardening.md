@@ -73,6 +73,11 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   Prometheus `/metrics` endpoint — HTTP request counts + latency histogram labelled by
   route template (bounded cardinality), via middleware. `/metrics` is optionally gated by
   `WARDEN_METRICS_TOKEN`.
+- **Alerting & SIEM (per tenant).** A Slack-compatible webhook (real-time, or hourly/daily
+  **digest** — criticals always real-time), a pull-based JSONL **findings export**, and a
+  real-time **SIEM push forwarder** (generic JSON / Splunk HEC / CEF). The webhook and SIEM
+  URLs are SSRF-guarded; the SIEM token is write-only (`siem_token_set` is the only readback).
+  All outbound sends are fire-and-forget and fail open — a down collector never blocks capture.
 
 ## Next tracks
 

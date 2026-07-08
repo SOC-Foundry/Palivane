@@ -292,7 +292,8 @@ Other admin pages in the console: **Connections** (active capture keys + enrollm
 with one-click revoke), **Coverage** (paste an IdP/CASB `actor,tool` list → the unmanaged
 shadow set), and **Settings** — per-tenant **policy** (monitor/enforce, block severity,
 sanctioned tools, per-tool suppression), supply-chain allow/deny lists, **alerts** (Slack
-webhook + SIEM findings export), and **compliance** (DPA, full data export, delete-my-org).
+webhook, real-time or hourly/daily digest), **SIEM** (JSONL export + real-time push —
+Splunk HEC / JSON / CEF), and **compliance** (DPA, full data export, delete-my-org).
 The dashboard shows a **Coverage & enforcement** health card (which planes reported in 24h).
 
 Then log in for a token and call the API:
@@ -330,9 +331,9 @@ fragment — so it assumes the console and API share an origin (the bundled ngin
 > `WARDEN_SECRET_KEY` (the app refuses to boot without it on Postgres) and back the login
 > throttle with a shared store for multi-worker setups.
 >
-> **SSRF-guarded.** User-supplied URLs the *server* fetches — the alert webhook and each
-> tenant's gateway upstream `base_url` — are validated: hosts resolving to private /
-> loopback / link-local / metadata addresses are rejected, so a tenant can't turn Warden
+> **SSRF-guarded.** User-supplied URLs the *server* fetches — the alert webhook, the SIEM
+> collector, and each tenant's gateway upstream `base_url` — are validated: hosts resolving
+> to private / loopback / link-local / metadata addresses are rejected, so a tenant can't turn Warden
 > into an SSRF proxy into your cloud metadata or internal network.
 
 **Evasion-resistant detection.** Keyword rules match against a **normalized** view of the
@@ -381,9 +382,12 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | GET    | `/api/usage`             | Gateway usage for the tenant: current-minute count, last-24h, per-day totals, effective limit (admin). |
 | GET    | `/api/audit`             | The tenant's admin audit trail (who did what, when); filterable by `action` (admin). |
 | GET    | `/api/export/tenant`     | Full self-serve data export (JSON): tenant config, users, keys, findings, audit log, SSO/upstream config, DPA record. Secrets excluded; `?include_content=true` decrypts finding content (admin). |
-| GET    | `/api/export/findings`   | Export findings as JSONL for SIEM ingest; filter by `severity`/`surface` (admin). |
+| GET    | `/api/export/findings`   | Export findings as JSONL for SIEM ingest (pull); filter by `severity`/`surface` (admin). |
 | GET    | `/api/setup-status`      | Per-plane activity (findings in last 24h) + enforce/judge state, for the console health card. |
 | POST   | `/api/alerts/test`       | Send a sample alert to the tenant's configured webhook (admin). |
+| POST   | `/api/alerts/digest/run` | Send this tenant's alert digest now if one is due (also runs automatically every few minutes) (admin). |
+| POST   | `/api/siem/test`         | Send a sample event to the tenant's SIEM collector in its configured format (admin). |
+| POST   | `/api/exception-request` | An end user (via the extension block screen) asks the security team to allow a blocked send; recorded to the audit log. Token-gated. |
 | GET/POST | `/api/tenant/dpa`      | Data-processing-agreement record: current vs accepted version, who/when. POST records acceptance (admin). |
 | DELETE | `/api/tenant`            | Delete the org and **all** its data (findings, users, keys, enrollment tokens, upstreams, audit log, usage, SSO); slug-confirmed. GDPR "delete my org" (admin). |
 | POST   | `/api/findings/purge`    | Delete this tenant's findings older than `retention_days` (scheduler-friendly) (admin). |
