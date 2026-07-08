@@ -253,8 +253,8 @@ platform ships with SaaS-grade hardening:
 - **Rate limiting** — DB-backed per-minute quotas (separate gateway and sensor/ingest limits).
 - **Compliance & data control** — a signed DPA record, full self-serve data export (secrets
   excluded), and one-click delete-my-org.
-- **SSRF-guarded** — user-set URLs the server fetches (alert webhook, per-tenant gateway
-  upstream) reject private/loopback/metadata hosts.
+- **SSRF-guarded** — user-set URLs the server fetches (alert webhook, SIEM collector,
+  per-tenant gateway upstream) reject private/loopback/metadata hosts.
 - **No forgeable keys** — the app refuses to boot without `WARDEN_SECRET_KEY` on a
   production (non-SQLite) deployment.
 
