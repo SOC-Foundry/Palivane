@@ -105,12 +105,34 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_CORS_ORIGINS = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_CORS_ORIGINS,
+    # Never pair a wildcard origin with credentials; we authenticate via the Authorization
+    # header (not cookies), so credentials aren't needed and methods/headers are explicit.
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Warden-Token", "x-api-key",
+                   "anthropic-version", "anthropic-beta"],
 )
+
+
+@app.middleware("http")
+async def _guard(request: Request, call_next):
+    # Reject oversized bodies up front (DoS/OOM) — the detectors run many regex passes over
+    # request content, so bound it before parsing. Backs the per-field Pydantic caps.
+    cl = request.headers.get("content-length")
+    if cl and cl.isdigit() and int(cl) > settings.max_body_bytes:
+        from fastapi.responses import JSONResponse as _JR
+        return _JR(status_code=413, content={"detail": "request body too large"})
+    resp = await call_next(request)
+    # Baseline hardening headers.
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    return resp
+
 
 app.include_router(auth_router)
 app.include_router(gateway_router)
@@ -787,6 +809,7 @@ def scan_import(
         raise HTTPException(status_code=400,
                             detail=f"no findings parsed for tool '{body.tool}' "
                                    "(supported: trufflehog, gitleaks, gitguardian)")
+    normalized = normalized[:5000]   # bound work from an oversized scanner report
     host = (body.host or "").strip()
     results = [
         _record_secret(

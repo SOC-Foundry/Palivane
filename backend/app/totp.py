@@ -58,8 +58,14 @@ def hash_code(code: str) -> str:
 
 
 def consume_recovery(stored_hashes: list[str], code: str) -> list[str] | None:
-    """If `code` matches a stored hash, return the remaining hashes (consumed); else None."""
+    """If `code` matches a stored hash, return the remaining hashes (consumed); else None.
+    Constant-time compare against each stored hash (no early-exit on the first match)."""
+    import hmac
     h = hash_code(code)
-    if h in (stored_hashes or []):
-        return [x for x in stored_hashes if x != h]
-    return None
+    matched = None
+    for stored in (stored_hashes or []):
+        if hmac.compare_digest(h, stored):
+            matched = stored
+    if matched is None:
+        return None
+    return [x for x in stored_hashes if x != matched]

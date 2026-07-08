@@ -335,7 +335,8 @@ fragment — so it assumes the console and API share an origin (the bundled ngin
 > throttle with a shared store for multi-worker setups.
 >
 > **SSRF-guarded.** User-supplied URLs the *server* fetches — the alert webhook, the SIEM
-> collector, and each tenant's gateway upstream `base_url` — are validated: hosts resolving
+> collector, each tenant's gateway upstream `base_url`, and the OIDC issuer/token/JWKS
+> endpoints — are validated: hosts resolving
 > to private / loopback / link-local / metadata addresses are rejected, so a tenant can't turn Warden
 > into an SSRF proxy into your cloud metadata or internal network.
 

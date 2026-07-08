@@ -8,9 +8,14 @@ from pydantic import BaseModel, Field
 
 Surface = Literal["llm_io", "ai_usage"]
 
+# Upper bound on any single content field the detectors scan — generous for real prompts /
+# documents, but caps CPU (regex passes) and memory on a hostile payload. A server-side
+# body-size limit (main.py) backs this for fields Pydantic can't bound (e.g. free-form JSON).
+MAX_CONTENT = 200_000
+
 
 class AnalyzeRequest(BaseModel):
-    content: str = Field(min_length=1, description="content to analyze")
+    content: str = Field(min_length=1, max_length=MAX_CONTENT, description="content to analyze")
     subject: str = ""            # optional label
     # 'llm_io' = prompts/responses on our own LLMs; 'ai_usage' = content bound for an AI tool.
     surface: Surface = "llm_io"
@@ -24,7 +29,7 @@ class BatchAnalyzeRequest(BaseModel):
 
 class AIUsageIngest(BaseModel):
     """Content a browser extension or proxy captured on its way to an external AI tool."""
-    content: str = Field(min_length=1)
+    content: str = Field(min_length=1, max_length=MAX_CONTENT)
     destination: str = ""   # AI tool URL/domain
     user: str = ""          # end-user identity (from SSO/extension)
     tool: str = ""          # capturing tool id (e.g. "claude-code") for per-tool policy
@@ -35,9 +40,9 @@ class MCPIngest(BaseModel):
     method: str = ""                                   # tools/call, resources/read, initialize, tools/list.result
     server: str = ""                                   # MCP server host
     tool: str = ""                                     # tool name for tools/call
-    args_text: str = ""                                # joined string values of the tool arguments
+    args_text: str = Field("", max_length=MAX_CONTENT)  # joined string values of the tool arguments
     resource: str = ""                                 # URI/path for resources/read
-    tool_descriptions: list[str] = Field(default_factory=list)  # for tools/list.result / advertised tools
+    tool_descriptions: list[str] = Field(default_factory=list, max_length=200)  # advertised tools
     transport: str = "http"                            # http | stdio | via-llm-api
     user: str = ""                                     # end-user identity
 
@@ -50,7 +55,7 @@ class MCPBatchIngest(BaseModel):
 
 class MCPConfigScan(BaseModel):
     """An MCP configuration file (.mcp.json, Cursor/VS Code) to vet in CI or the console."""
-    content: str = Field(min_length=1)
+    content: str = Field(min_length=1, max_length=MAX_CONTENT)
     path: str = ""
     record: bool = False   # persist non-clean servers as findings (off by default)
 
@@ -76,7 +81,7 @@ class SecretAtRest(BaseModel):
 
 class SecretScan(BaseModel):
     """A batch of at-rest credential findings from a device (from `warden-secrets`)."""
-    items: list[SecretAtRest] = Field(default_factory=list)
+    items: list[SecretAtRest] = Field(default_factory=list, max_length=10000)
     host: str = ""               # device identifier for attribution
     record: bool = True          # persist findings (on by default — this is the point)
 
@@ -84,9 +89,9 @@ class SecretScan(BaseModel):
 class ExceptionRequest(BaseModel):
     """An end user asking their security team to allow a blocked send (from the extension)."""
     finding_id: int | None = None
-    destination: str = ""
-    reason: str = ""
-    categories: list[str] = Field(default_factory=list)
+    destination: str = Field("", max_length=2048)
+    reason: str = Field("", max_length=2000)
+    categories: list[str] = Field(default_factory=list, max_length=32)
     user: str = ""
 
 
@@ -102,12 +107,12 @@ class ScannerImport(BaseModel):
 
 class CodeFile(BaseModel):
     path: str = ""
-    content: str
+    content: str = Field(max_length=MAX_CONTENT)
 
 
 class CodeScanRequest(BaseModel):
     # A pre-commit hook / CI step sends the changed files; we scan each for secrets & PII.
-    files: list[CodeFile] = Field(default_factory=list)
+    files: list[CodeFile] = Field(default_factory=list, max_length=2000)
     record: bool = False          # persist non-clean files as findings (off by default)
 
 
