@@ -88,7 +88,8 @@ edge (where AI traffic actually happens).
 ### The three capture planes
 
 1. **LLM gateway** — Your first-party apps point their base URL at Warden instead of the
-   provider. Warden inspects every prompt, then forwards allowed calls upstream and
+   provider. Warden inspects every prompt (and, with `GATEWAY_SCAN_RESPONSES`, the model's
+   **output** for secrets/PII — response-side DLP), then forwards allowed calls upstream and
    streams the response back. Speaks four API shapes: OpenAI (`/v1/chat/completions`), the
    **OpenAI Responses API** (`/v1/responses`, used by Codex CLI), Anthropic (`/v1/messages`,
    used by Claude Code), and Gemini (`/v1beta/models/{model}:generateContent`). OpenAI/Gemini
