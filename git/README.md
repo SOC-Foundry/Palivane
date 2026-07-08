@@ -113,6 +113,52 @@ for a Warden-engine gate, and `warden-import` to fold in whatever scanners you a
 On endpoints (not CI), the same integration is `warden-secrets --engine trufflehog`, which
 the MDM pack schedules for you.
 
+## One-time history sweep (secrets already committed)
+
+The pre-commit hook and the PR Action catch secrets going **forward** (staged / changed
+files). To find what's **already buried in a repo's history**, do a one-off sweep — a
+history scanner walks every commit and blob, and `warden-import` lands the hits in the
+console:
+
+```bash
+export WARDEN_URL=https://warden.corp.example.com WARDEN_TOKEN=ak_…
+
+# TruffleHog (scans full git history + verifies live credentials):
+trufflehog git file://. --json                     | warden-import trufflehog
+
+# or Gitleaks (scans history by default):
+gitleaks detect --report-format json -o /dev/stdout . | warden-import gitleaks
+
+# sweep every repo under a directory:
+for r in ~/src/*/.git; do (cd "$r/.." && trufflehog git file://. --json | warden-import trufflehog); done
+```
+
+> **A secret found in history is already compromised** — it was pushed to a remote, so
+> rewriting history (`git filter-repo`, BFG) is *cleanup*, not remediation. **Rotate and
+> revoke the credential first**; the console finding's "How to fix" says the same.
+
+## Other CI systems (GitLab / Bitbucket / Jenkins / …)
+
+The GitHub Action is GitHub-specific, but the scanner is host-agnostic — run
+`warden_git_scan.py --range` in any pipeline (it needs Python 3 and the repo checked out
+with history). Fail the job closed so a leak blocks the merge.
+
+**GitLab CI** (`.gitlab-ci.yml`):
+```yaml
+warden-secret-scan:
+  image: python:3.12-slim
+  variables: { WARDEN_URL: "https://warden.corp.example.com" }   # WARDEN_TOKEN via a masked CI variable
+  script:
+    - curl -sSL https://raw.githubusercontent.com/TachTech-Engineering/Warden/main/git/warden_git_scan.py -o warden_git_scan.py
+    - python3 warden_git_scan.py --range "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME...HEAD" --fail-closed --record
+```
+
+**Generic / Bitbucket / Jenkins** — same idea, adjust the diff range to your platform's
+base ref:
+```bash
+python3 warden_git_scan.py --range "origin/main...HEAD" --fail-closed --record
+```
+
 ## Scanner CLI
 
 ```
