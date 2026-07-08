@@ -4,6 +4,7 @@ from .ext_guard import ExtGuardDetector
 from .llm_judge import LLMJudgeDetector
 from .mcp_guard import MCPGuardDetector
 from .prompt_threats import PromptThreatDetector
+from .secrets_at_rest import SecretsAtRestDetector
 from .shadow_ai import ShadowAIDetector
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "MCPGuardDetector",
     "DepGuardDetector",
     "ExtGuardDetector",
+    "SecretsAtRestDetector",
     "LLMJudgeDetector",
 ]

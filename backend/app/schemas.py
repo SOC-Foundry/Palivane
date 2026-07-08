@@ -62,6 +62,23 @@ class IDEExtScan(BaseModel):
     record: bool = False
 
 
+class SecretAtRest(BaseModel):
+    """One credential the local `warden-secrets` scanner found at rest — METADATA ONLY.
+    The raw secret never leaves the device; `masked` is a redacted preview."""
+    path: str = Field(min_length=1)
+    secret_types: list[str] = Field(default_factory=list)
+    masked: str = ""             # e.g. "ghp_••••4f2a" — redacted preview, never the secret
+    line: int = 0
+    world_readable: bool = False
+
+
+class SecretScan(BaseModel):
+    """A batch of at-rest credential findings from a device (from `warden-secrets`)."""
+    items: list[SecretAtRest] = Field(default_factory=list)
+    host: str = ""               # device identifier for attribution
+    record: bool = True          # persist findings (on by default — this is the point)
+
+
 class CodeFile(BaseModel):
     path: str = ""
     content: str

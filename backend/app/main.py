@@ -34,6 +34,8 @@ from .schemas import (
     MCPConfigScan,
     MCPIngest,
     ProvisionRequest,
+    SecretAtRest,
+    SecretScan,
     StatusUpdate,
 )
 from .security import using_insecure_key
@@ -634,6 +636,62 @@ def scan_ide_extensions(
         "risk_score": result["risk_score"],
         "extensions": result["signals"],
     }
+
+
+@app.post("/api/scan/secrets")
+def scan_secrets(
+    body: SecretScan,
+    x_warden_token: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Record credentials the local `warden-secrets` scanner found AT REST on a device
+    (SSH/RSA keys, cloud/VCS tokens, .env, .git-credentials). Privacy-preserving: the
+    scanner sends only metadata (type, path, masked preview, world-readability) — never
+    the raw secret. Each file is scored as a `credential_at_rest` finding; the response
+    carries a per-item remediation plan. Token-gated."""
+    tenant_id, actor = _ingest_auth(x_warden_token, db)
+    _enforce_rate(db, tenant_id)
+    host = (body.host or "").strip()
+    results = []
+    for it in body.items:
+        item = AnalysisInput(
+            content=f"{it.path}\n{it.masked}", subject=it.path,
+            sender=actor, channel=host or "endpoint", surface=Surface.SECRETS,
+            metadata={"secret_types": it.secret_types, "path": it.path,
+                      "world_readable": it.world_readable, "evidence": it.masked or it.path},
+        )
+        r = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
+                         db=db, tenant_id=tenant_id)
+        results.append({
+            "path": it.path, "secret_types": it.secret_types, "line": it.line,
+            "severity": r["severity"], "risk_score": r["risk_score"],
+            "action": _action_for(r["severity"]),
+            "remediation": _secret_remediation(it),
+        })
+    flagged = [r for r in results if r["severity"] not in ("benign", "low")]
+    return {"scanned": len(results), "flagged": len(flagged), "findings": results}
+
+
+def _secret_remediation(it: SecretAtRest) -> list[str]:
+    """A concrete rotate/lock-down plan for one at-rest credential."""
+    steps: list[str] = []
+    types = " ".join(it.secret_types).lower()
+    if "private key" in types:
+        steps.append("Rotate the key pair and remove the private key from disk; use an SSH "
+                     "agent or the OS keychain instead of a plaintext key file.")
+    if "github" in types:
+        steps.append("Revoke the token at github.com/settings/tokens and re-issue a "
+                     "fine-grained, expiring PAT via the gh keyring / a secret manager.")
+    if "aws" in types:
+        steps.append("Deactivate the access key in IAM and switch to short-lived creds "
+                     "(aws sso / STS) — stop storing long-lived keys in ~/.aws/credentials.")
+    if not steps:
+        steps.append("Rotate the credential and move it out of the file into a secret "
+                     "manager or the OS keychain.")
+    if it.world_readable:
+        steps.append(f"Tighten permissions now: chmod 600 {it.path} (currently readable by "
+                     "other local users — prime infostealer target).")
+    return steps
 
 
 @app.get("/api/policy-pack")

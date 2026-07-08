@@ -16,6 +16,7 @@ from .detectors import (
     LLMJudgeDetector,
     MCPGuardDetector,
     PromptThreatDetector,
+    SecretsAtRestDetector,
     ShadowAIDetector,
     Surface,
 )
@@ -29,9 +30,10 @@ class Engine:
         self.mcp_guard = MCPGuardDetector()
         self.dep_guard = DepGuardDetector()
         self.ext_guard = ExtGuardDetector()
+        self.secrets_at_rest = SecretsAtRestDetector()
         self.judge = LLMJudgeDetector()
         self.detectors = [self.prompt_threats, self.shadow_ai, self.mcp_guard,
-                          self.dep_guard, self.ext_guard, self.judge]
+                          self.dep_guard, self.ext_guard, self.secrets_at_rest, self.judge]
 
     @property
     def judge_enabled(self) -> bool:
