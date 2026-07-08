@@ -27,7 +27,7 @@ const SURFACE = {
   secrets: { label: "secrets", cls: "atk" },
 };
 
-export default function FindingsList({ findings, selectedId, onSelect, filter, onFilter }) {
+export default function FindingsList({ findings, selectedId, onSelect, filter, onFilter, onConnect }) {
   const severities = ["", "critical", "high", "suspicious", "low", "benign"];
   const surfaces = ["", "llm_io", "ai_usage", "mcp", "deps", "ide", "secrets"];
   const [surface, setSurface] = useState("");
@@ -51,8 +51,16 @@ export default function FindingsList({ findings, selectedId, onSelect, filter, o
           </select>
         </div>
       </div>
-      {shown.length === 0 && (
-        <div className="empty">No findings match this filter yet.</div>
+      {shown.length === 0 && findings.length === 0 && (
+        <div className="empty empty-onboard">
+          <p><strong>No findings yet.</strong></p>
+          <p>Connect a capture source and Warden starts recording verdicts here — usually
+             within a minute of the first prompt, tool call, or scan.</p>
+          {onConnect && <button className="primary-btn slim" onClick={onConnect}>Connect a source →</button>}
+        </div>
+      )}
+      {shown.length === 0 && findings.length > 0 && (
+        <div className="empty">No findings match this filter.</div>
       )}
       <ul className="finding-rows">
         {shown.map((f) => {

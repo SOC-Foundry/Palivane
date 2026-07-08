@@ -266,6 +266,13 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 .detail-actions button:hover { border-color: var(--accent); }
 .detail-actions button.active { border-color: var(--accent); color: var(--accent); font-weight: 700; cursor: default; }
 
+/* Onboarding empty state */
+.empty-onboard { text-align: center; padding: 28px 20px; }
+.empty-onboard p { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 0 0 8px; max-width: 340px;
+  margin-left: auto; margin-right: auto; }
+.empty-onboard strong { color: var(--text); font-size: 14px; }
+.empty-onboard .primary-btn { margin-top: 8px; }
+
 /* Live indicator (auto-refresh) */
 .head-actions { display: flex; align-items: center; gap: 12px; }
 .live-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted);
