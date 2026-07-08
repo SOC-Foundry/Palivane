@@ -19,6 +19,8 @@ class Settings:
     judge_model: str = os.getenv("JUDGE_MODEL", "")
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./warden.db")
     cors_origins: str = os.getenv("CORS_ORIGINS", "http://localhost:5173")
+    # Reject request bodies larger than this (DoS/OOM guard); ~12 MB default.
+    max_body_bytes: int = int(os.getenv("WARDEN_MAX_BODY_BYTES", "12000000"))
     # Auth. Set WARDEN_SECRET_KEY in production (signs JWTs). Empty => an insecure
     # dev fallback is used and the API logs a warning at startup.
     auth_secret_key: str = os.getenv("WARDEN_SECRET_KEY", "")

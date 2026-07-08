@@ -61,14 +61,16 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
 
   // --- Alerts & integrations ---
   const [alertCfg, setAlertCfg] = useState({
-    webhook: tenant?.alert_webhook || "", min: tenant?.alert_min_severity || "high",
-    digest: tenant?.alert_digest || "off",
+    webhook: "", min: tenant?.alert_min_severity || "high",
+    digest: tenant?.alert_digest || "off", webhookSet: !!tenant?.alert_webhook_set,
   });
   async function saveAlerts() {
     try {
-      const t = await api.updateTenant({ alert_webhook: alertCfg.webhook,
-        alert_min_severity: alertCfg.min, alert_digest: alertCfg.digest });
-      onTenant?.(t); flash("Alerts saved.");
+      const payload = { alert_min_severity: alertCfg.min, alert_digest: alertCfg.digest };
+      if (alertCfg.webhook) payload.alert_webhook = alertCfg.webhook;   // write-only; only if changed
+      const t = await api.updateTenant(payload);
+      onTenant?.(t); setAlertCfg((a) => ({ ...a, webhook: "", webhookSet: !!t.alert_webhook_set }));
+      flash("Alerts saved.");
     } catch (e) { err(e); }
   }
   async function testAlert() {
@@ -308,8 +310,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
       <div className="panel settings-card">
         <h2>Alerts &amp; integrations</h2>
         <div className="field-grid">
-          <label className="field-wide">Webhook URL (Slack-compatible — posts high/critical findings)
-            <input placeholder="https://hooks.slack.com/services/…"
+          <label className="field-wide">Webhook URL (Slack-compatible — posts findings) {alertCfg.webhookSet && <span className="muted">(set — leave blank to keep)</span>}
+            <input type="password" placeholder={alertCfg.webhookSet ? "••••••••" : "https://hooks.slack.com/services/…"}
                    value={alertCfg.webhook} onChange={(e) => setAlertCfg((a) => ({ ...a, webhook: e.target.value }))} /></label>
           <label>Alert on severity ≥
             <select value={alertCfg.min} onChange={(e) => setAlertCfg((a) => ({ ...a, min: e.target.value }))}>

@@ -79,6 +79,16 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   URLs are SSRF-guarded; the SIEM token is write-only (`siem_token_set` is the only readback).
   All outbound sends are fire-and-forget and fail open — a down collector never blocks capture.
 
+- **Input / DoS bounds + outbound-fetch hardening.** A server-side request-body limit
+  (`WARDEN_MAX_BODY_BYTES`, ~12 MB → 413) plus per-field `max_length`/`max_items` caps on all
+  ingest/scan/analyze content, so a hostile payload can't OOM a worker or amplify regex cost;
+  the scanner importer caps normalized findings. SSRF guard extended to the OIDC issuer/token/
+  JWKS fetches. `alert_webhook` is write-only (may embed a Slack token — API returns only
+  `alert_webhook_set`, like `siem_token`). CORS restricted to explicit methods/headers with
+  credentials off; baseline security headers (nosniff / DENY / no-referrer). Recovery-code
+  check is constant-time. (A prior pass added the SSRF guard on the alert webhook + gateway
+  upstream and the forgeable-JWT-key boot refusal.)
+
 ## Next tracks
 
 ### 1. Data security & compliance (remaining)

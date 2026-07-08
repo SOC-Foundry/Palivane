@@ -88,7 +88,9 @@ class Tenant(Base):
                 "ide_ext_allowed": self.ide_ext_allowed or "",
                 "ide_ext_denylist": self.ide_ext_denylist or "",
                 "dep_denylist": self.dep_denylist or "",
-                "alert_webhook": self.alert_webhook or "",
+                # alert_webhook can embed a secret (Slack token in the URL) — write-only,
+                # like siem_token; expose only whether one is configured.
+                "alert_webhook_set": bool((self.alert_webhook or "").strip()),
                 "alert_min_severity": self.alert_min_severity or "high",
                 "alert_digest": self.alert_digest or "off",
                 # siem_token is write-only — never returned; expose whether one is set.

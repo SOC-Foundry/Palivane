@@ -20,9 +20,19 @@ class OIDCError(Exception):
     """Any failure discovering, exchanging, or validating — surfaced as an auth error."""
 
 
+def _safe(url: str) -> str:
+    """SSRF guard for server-side fetches to IdP-controlled URLs (issuer discovery, token,
+    JWKS). Rejects private/loopback/metadata targets so a malicious/misconfigured issuer
+    can't turn the server into an internal-network proxy."""
+    from .netguard import is_safe_url
+    if not is_safe_url(url):
+        raise OIDCError(f"refusing to fetch a non-public URL: {url}")
+    return url
+
+
 def discover(issuer: str) -> dict:
     """Fetch the IdP's OpenID configuration (authorization/token/jwks endpoints)."""
-    url = issuer.rstrip("/") + "/.well-known/openid-configuration"
+    url = _safe(issuer.rstrip("/") + "/.well-known/openid-configuration")
     try:
         with httpx.Client(timeout=10) as c:
             r = c.get(url)
@@ -58,7 +68,7 @@ def exchange_code(meta: dict, client_id: str, client_secret: str, code: str,
     }
     try:
         with httpx.Client(timeout=10) as c:
-            r = c.post(meta["token_endpoint"], data=data)
+            r = c.post(_safe(meta["token_endpoint"]), data=data)
             r.raise_for_status()
             return r.json()
     except (httpx.HTTPError, ValueError) as e:
@@ -71,7 +81,7 @@ def validate_id_token(meta: dict, issuer: str, client_id: str, id_token: str,
     Enforces iss, aud (our client_id), exp, and the round-trip nonce."""
     try:
         with httpx.Client(timeout=10) as c:
-            jwks = c.get(meta["jwks_uri"], timeout=10).json()
+            jwks = c.get(_safe(meta["jwks_uri"]), timeout=10).json()
         key_set = JsonWebKey.import_key_set(jwks)
         claims = jwt.decode(id_token, key_set, claims_options={
             "iss": {"essential": True, "value": issuer},
