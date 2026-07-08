@@ -103,13 +103,30 @@ The scoring engine treats the attack/data-loss signal as the base risk and satur
 many weak signals can't trivially max it while a few strong ones reliably do. It runs
 fully on the offline detectors with **no API key**; add an LLM key to enrich with the judge.
 
-## Run the whole stack locally (Docker)
+## Using Warden (hosted)
+
+Warden is a **hosted, multi-tenant service — there's nothing to run.** As a customer you:
+
+1. **Sign in** to your org's console at your Warden URL (or create an org). Everything is
+   configured *from Warden itself* — no config files, no redeploys.
+2. Open **Connect → Quick start** and pick how you ship software to your fleet — an **MDM
+   policy pack** (Jamf/Intune/GPO) or a **per-OS installer**. Warden generates everything
+   pre-wired to your tenant: browser extension, Claude Code + Cursor, OpenAI/Gemini gateway
+   routing, MCP inspection, and the scheduled credential scan. A live **readiness strip**
+   lights up per plane as findings start arriving.
+3. Set **policy** in Settings — monitor vs. enforce, block severity, sanctioned tools,
+   alerts, compliance (DPA, export) — all in the console.
+
+That's it. The rest of this document is for **local development, evaluation, or
+self-hosting** — a customer on the hosted service never touches Docker or the CLI below.
+
+## Run it yourself (local dev · evaluation · self-host)
 
 > New here? The **[setup guide](docs/setup.md)** walks through both install paths
 > (Docker and from-source), first sign-in, and connecting your first capture source.
 
-The fastest way to a real, hosted-locally deployment — Postgres + backend + an
-nginx-served frontend, one command:
+The fastest way to a full local deployment — Postgres + backend + an nginx-served
+frontend, one command:
 
 ```bash
 cp .env.docker.example .env     # edit secrets (set WARDEN_SECRET_KEY for real use)
@@ -123,12 +140,13 @@ the host port with `WEB_PORT` in `.env`.
 
 This is the production-shaped path: Postgres (not SQLite), schema by migration (not
 auto-create), and the frontend served as static assets behind nginx (which proxies
-`/api` to the backend). For service-style deployment (systemd) see [`deploy/`](deploy/).
+`/api` to the backend). For managed production hosting see **Cloud Run + Cloud SQL**
+([`deploy/cloudrun/`](deploy/cloudrun/)); for service-style (systemd) see [`deploy/`](deploy/).
 
-## Quick start
+### From source (development)
 
-The Docker path above is recommended. For iterating on the code, run the pieces
-directly (this uses SQLite and auto-creates the schema):
+For iterating on the code, run the pieces directly (this uses SQLite and auto-creates
+the schema):
 
 ### Backend (FastAPI)
 
