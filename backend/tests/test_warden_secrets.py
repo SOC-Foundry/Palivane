@@ -43,15 +43,17 @@ def test_scan_text_generic_assignment_needs_keyword():
     assert not ws.scan_text("greeting = helloworldfriend")       # no cred keyword -> ignored
 
 
-def test_scan_text_catches_de_dashed_keys():
-    # Separator stripped to evade — still detected at rest.
-    assert any(t == "GitHub token" for t, _, _ in ws.scan_text("ghpABCDEFGHIJKLMNOPQRSTUVWXYZ012345"))
-    assert any(t == "GitLab PAT" for t, _, _ in ws.scan_text("glpatABCDEFGHIJKLMNOPQRST"))
-    assert any(t == "npm token" for t, _, _ in ws.scan_text("npmABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"))
+def test_scan_text_catches_de_dashed_keys_as_bypass():
+    # Separator stripped to evade — still detected at rest, flagged as a bypass.
+    labels = lambda s: {t for t, _, _ in ws.scan_text(s)}
+    assert "GitHub token (separator stripped — likely bypass)" in labels("ghpABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+    assert "GitLab PAT (separator stripped — likely bypass)" in labels("glpatABCDEFGHIJKLMNOPQRST")
+    assert "npm token (separator stripped — likely bypass)" in labels("npmABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
 
 def test_scan_text_no_false_positive_on_prose():
     assert ws.scan_text("please skip the standup and run npm install express") == []
+    assert ws.scan_text("sklearn and skimage are python libraries we use") == []
 
 
 def test_scan_file_detects_and_reports_metadata(tmp_path):

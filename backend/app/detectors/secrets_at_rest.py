@@ -26,9 +26,12 @@ _HIGH_TYPES = {
 
 
 def _base_weight(secret_type: str) -> float:
-    if secret_type in _CRITICAL_TYPES:
+    # Normalize a "(separator stripped — likely bypass)" evasion label back to its canonical
+    # name so a de-dashed key scores the same as the real thing (not down at the default).
+    base = secret_type.split(" (", 1)[0]
+    if base in _CRITICAL_TYPES:
         return 0.85
-    if secret_type in _HIGH_TYPES:
+    if base in _HIGH_TYPES:
         return 0.75
     return 0.6
 
