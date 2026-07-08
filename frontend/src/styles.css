@@ -257,12 +257,34 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
   background: var(--bg); padding: 5px 8px; border-radius: 6px; word-break: break-all;
 }
 .signal-src { font-size: 10.5px; color: var(--muted); margin-top: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
-.detail-actions { display: flex; gap: 8px; margin-top: 18px; }
+.detail-actions { display: flex; gap: 8px; margin-top: 18px; align-items: center; }
+.detail-actions-label { font-size: 12px; color: var(--muted); margin-right: 2px; }
 .detail-actions button {
   flex: 1; background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
   padding: 10px; border-radius: 9px; cursor: pointer; font-size: 12.5px; transition: border-color 0.12s;
 }
 .detail-actions button:hover { border-color: var(--accent); }
+.detail-actions button.active { border-color: var(--accent); color: var(--accent); font-weight: 700; cursor: default; }
+
+/* Live indicator (auto-refresh) */
+.head-actions { display: flex; align-items: center; gap: 12px; }
+.live-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.05em; }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--benign);
+  box-shadow: 0 0 6px var(--benign); animation: livepulse 2s ease-in-out infinite; }
+@keyframes livepulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* Status chip + remediation ("How to fix") */
+.status-chip { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 8px;
+  border-radius: 999px; border: 1px solid var(--border); color: var(--muted); margin-left: 8px; }
+.status-chip.status-open { color: var(--crit); border-color: rgba(255,77,94,0.4); }
+.status-chip.status-triaged { color: var(--accent); border-color: var(--accent); }
+.status-chip.status-dismissed { color: var(--muted); }
+.detail-section.remediation { background: rgba(88,166,255,0.06); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent); border-radius: 10px; padding: 12px 14px; }
+.detail-section.remediation h4 { margin-top: 0; }
+.remediation-list { margin: 0; padding-left: 18px; }
+.remediation-list li { font-size: 13px; line-height: 1.55; color: var(--text); margin-bottom: 6px; }
 
 /* ===== Placeholder ===== */
 .placeholder {

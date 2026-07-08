@@ -205,9 +205,14 @@ export default function App() {
                 <h1 className="page-title">Findings</h1>
                 <p className="page-sub">Live risk verdicts from the gateway, browser extension, and egress proxy.</p>
               </div>
-              <button type="button" className="ghost-btn" onClick={refresh}>
-                <IconRefresh /> <span>Refresh</span>
-              </button>
+              <div className="head-actions">
+                <span className="live-pill" title="Auto-updates every 15 seconds">
+                  <span className="live-dot" /> live
+                </span>
+                <button type="button" className="ghost-btn" onClick={refresh}>
+                  <IconRefresh /> <span>Refresh</span>
+                </button>
+              </div>
             </div>
 
             <Dashboard stats={stats} />
