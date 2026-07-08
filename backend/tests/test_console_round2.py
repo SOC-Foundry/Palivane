@@ -19,7 +19,7 @@ def test_findings_surface_filter(client):
 def test_setup_status(client):
     client.post("/api/analyze", json={"content": "hello", "surface": "ai_usage", "persist": True})
     s = client.get("/api/setup-status").json()
-    assert set(s["planes"]) == {"gateway", "shadow_ai", "mcp"}
+    assert set(s["planes"]) == {"gateway", "shadow_ai", "mcp", "secrets"}
     assert s["planes"]["shadow_ai"] >= 1
     for k in ("judge_enabled", "gateway_enforce", "mcp_enforce"):
         assert k in s

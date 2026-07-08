@@ -32,6 +32,7 @@ It returns these artifacts (write each to a file):
 | `gemini.txt` | Gemini routing: SDK `http_options` snippet + note (Gemini has no base-URL env var, so the system proxy is its primary capture path) |
 | `cursor-hooks.json` | Cursor `hooks.json` registering `warden-cursor-hook` on the security events — local, pinning-proof capture of Cursor prompts + tool calls |
 | `cursor.txt` | The full Cursor story: why chat is proxy-opaque, and how the hooks + MCP wrap + git/gateway close it |
+| `warden-secrets.plist` / `.cron` / `-task.xml` | Schedule the endpoint credential scan (`warden-secrets`) daily via launchd (macOS) / cron (Linux) / Task Scheduler (Windows) — finds SSH/RSA keys, tokens, `.env` secrets **at rest** before an infostealer does (metadata-only) |
 | `ca-note.txt` | Where to deploy your root CA (required for TLS inspection) |
 
 The extension allow/deny lists come from this tenant's IDE-vetting config (its

@@ -24,11 +24,12 @@ const SURFACE = {
   mcp: { label: "mcp", cls: "atk" },
   deps: { label: "deps", cls: "ai" },
   ide: { label: "ide", cls: "ai" },
+  secrets: { label: "secrets", cls: "atk" },
 };
 
 export default function FindingsList({ findings, selectedId, onSelect, filter, onFilter }) {
   const severities = ["", "critical", "high", "suspicious", "low", "benign"];
-  const surfaces = ["", "llm_io", "ai_usage", "mcp", "deps", "ide"];
+  const surfaces = ["", "llm_io", "ai_usage", "mcp", "deps", "ide", "secrets"];
   const [surface, setSurface] = useState("");
   const shown = surface ? findings.filter((f) => f.surface === surface) : findings;
   return (
