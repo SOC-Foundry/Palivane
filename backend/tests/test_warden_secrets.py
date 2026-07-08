@@ -106,6 +106,48 @@ def test_iter_target_files_covers_wellknown_and_env(tmp_path, monkeypatch):
     assert any(f.endswith("app/.env") for f in found)
 
 
+def test_sweep_match_covers_config_key_and_state_files():
+    for good in (".env", ".env.production", "prod.env", "settings.py", "config.yml",
+                 "appsettings.json", "wp-config.php", "docker-compose.yml",
+                 "terraform.tfstate", "server.pem", "id.key", "vault.p12",
+                 "gcp-service-account.json"):
+        assert ws._sweep_match(good), good
+    for bad in ("app.py", "README.md", "index.html", "data.json", "styles.css"):
+        assert not ws._sweep_match(bad), bad
+
+
+def test_iter_target_files_expanded_coverage(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    # cloud SA key + DB creds in the well-known list
+    (tmp_path / ".azure").mkdir()
+    (tmp_path / ".azure" / "accessTokens.json").write_text("[]")
+    (tmp_path / ".pgpass").write_text("host:5432:db:user:pw")
+    # config + terraform state in a dev root (not .env-named)
+    proj = tmp_path / "repos" / "infra"
+    proj.mkdir(parents=True)
+    (proj / "terraform.tfstate").write_text('{"outputs":{}}')
+    (proj / "settings.py").write_text("SECRET_KEY='x'")
+    found = ws.iter_target_files([])
+    assert any(f.endswith(".azure/accessTokens.json") for f in found)
+    assert any(f.endswith(".pgpass") for f in found)
+    assert any(f.endswith("terraform.tfstate") for f in found)
+    assert any(f.endswith("settings.py") for f in found)
+
+
+def test_scan_file_flags_binary_keystore_by_extension(tmp_path):
+    p = tmp_path / "corp.p12"
+    p.write_bytes(b"\x30\x82\x0a\x00binary-pkcs12-blob")   # binary, unreadable as text
+    rep = ws.scan_file(str(p))
+    assert rep["secret_types"] == ["Private key block"]
+
+
+def test_sweep_roots_env_override(monkeypatch):
+    monkeypatch.setenv("WARDEN_SECRETS_ROOTS", "/etc:/opt")
+    roots = ws._sweep_roots(["/extra"])
+    assert "/etc" in roots and "/opt" in roots and "/extra" in roots
+
+
 def test_engine_trufflehog_maps_masks_and_verifies(monkeypatch):
     import json as _json
     monkeypatch.setattr(ws.shutil, "which", lambda name: "/usr/bin/trufflehog")
