@@ -82,29 +82,35 @@ def test_find_secrets_shared_helper():
 
 
 def test_secrets_detected_with_normal_separators():
-    assert "GitHub token" in find_secrets("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345")
-    assert "GitLab PAT" in find_secrets("glpat-ABCDEFGHIJKLMNOPQRST")
-    assert "npm token" in find_secrets("npm_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-    assert "Stripe secret key" in find_secrets("sk_live_ABCDEFGHIJKLMNOP")
+    # Canonical form -> the plain label (no evasion suffix).
+    assert find_secrets("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345") == ["GitHub token"]
+    assert find_secrets("glpat-ABCDEFGHIJKLMNOPQRST") == ["GitLab PAT"]
+    assert find_secrets("npm_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") == ["npm token"]
+    assert find_secrets("sk_live_ABCDEFGHIJKLMNOP") == ["Stripe secret key"]
 
 
-def test_secrets_detected_when_separator_stripped():
-    # De-dashed / de-underscored to dodge DLP — still caught (distinctive prefix + length).
-    assert "GitHub token" in find_secrets("ghpABCDEFGHIJKLMNOPQRSTUVWXYZ012345")
-    assert "GitHub fine-grained PAT" in find_secrets("github_patABCDEFGHIJKLMNOPQRSTUVWX")
-    assert "GitLab PAT" in find_secrets("glpatABCDEFGHIJKLMNOPQRST")
-    assert "Anthropic API key" in find_secrets("skantabcdefghijklmnopqrstuv")
-    assert "npm token" in find_secrets("npmABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-    assert "PyPI token" in find_secrets("pypiABCDEFGHIJKLMNOP")
-    assert "Stripe secret key" in find_secrets("skliveABCDEFGHIJKLMNOP")
+def test_separator_stripped_is_flagged_as_bypass():
+    # Delimiter deleted to dodge DLP -> caught AND labeled as a likely bypass, exactly once.
+    def one(text):
+        found = find_secrets(text)
+        assert len(found) == 1, found
+        return found[0]
+    assert one("ghpABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") == "GitHub token (separator stripped — likely bypass)"
+    assert one("github_patABCDEFGHIJKLMNOPQRSTUVWX") == "GitHub fine-grained PAT (separator stripped — likely bypass)"
+    assert one("glpatABCDEFGHIJKLMNOPQRST") == "GitLab PAT (separator stripped — likely bypass)"
+    assert one("skantabcdefghijklmnopqrstuv") == "Anthropic API key (separator stripped — likely bypass)"
+    assert one("skprojABCDEFGHIJKLMNOPQRST") == "OpenAI API key (separator stripped — likely bypass)"
+    assert one("npmABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") == "npm token (separator stripped — likely bypass)"
+    assert one("skliveABCDEFGHIJKLMNOP") == "Stripe secret key (separator stripped — likely bypass)"
 
 
-def test_optional_separator_does_not_flag_prose():
-    # The de-dashed patterns must not fire on ordinary words/code sharing a short prefix.
+def test_evasion_patterns_do_not_flag_prose():
+    # The separator-stripped patterns must not fire on ordinary words/code.
     for benign in ("please skip the standup and ghost the meeting",
                    "run npm install express and start the app",
                    "the ghostwriter published a skateboarding blog",
-                   "pypi and glpat are package registries we discussed"):
+                   "pypi and glpat are package registries we discussed",
+                   "sklearn and skimage are python libraries"):
         assert find_secrets(benign) == [], benign
 
 
