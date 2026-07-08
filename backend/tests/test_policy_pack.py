@@ -36,6 +36,35 @@ def test_forcelist_webstore_vs_self_hosted():
     assert pp.chrome_forcelist("abc123", "https://cdn.corp/updates.xml") == "abc123;https://cdn.corp/updates.xml"
 
 
+def test_browser_extension_policy_governed():
+    import json as _json
+    pol = _json.loads(pp.browser_extension_policy(
+        "wardenid", blocked_ids=["claudeforchromeid"], blocked_hosts=["*://*.corp.example.com"]))
+    es = pol["ExtensionSettings"]
+    assert es["*"]["installation_mode"] == "allowed"                    # governed default
+    assert es["*"]["runtime_blocked_hosts"] == ["*://*.corp.example.com"]
+    assert es["wardenid"]["installation_mode"] == "force_installed"      # Warden always on
+    assert es["claudeforchromeid"]["installation_mode"] == "blocked"     # AI ext blocked by ID
+
+
+def test_browser_extension_policy_lockdown():
+    import json as _json
+    pol = _json.loads(pp.browser_extension_policy(
+        "wardenid", lockdown=True, allowed_ids=["approvedid"]))
+    es = pol["ExtensionSettings"]
+    assert es["*"]["installation_mode"] == "blocked"                     # deny-all default
+    assert es["approvedid"]["installation_mode"] == "allowed"
+    assert es["wardenid"]["installation_mode"] == "force_installed"
+
+
+def test_pack_includes_browser_extension_settings():
+    pack = pp.render_pack("https://w", "abc123", "", 8081, [], [])
+    assert "chrome-extension-settings.json" in pack
+    import json as _json
+    es = _json.loads(pack["chrome-extension-settings.json"])["ExtensionSettings"]
+    assert es["abc123"]["installation_mode"] == "force_installed"
+
+
 def test_extension_updates_xml():
     xml = pp.extension_updates_xml("abc123", "https://cdn.corp/warden.crx", "0.5.0")
     assert 'appid="abc123"' in xml and 'codebase="https://cdn.corp/warden.crx"' in xml
@@ -62,6 +91,7 @@ def test_forcelist_and_pack():
                           ["ms-python.python"], ["bad.ext"])
     assert set(pack) >= {"README.txt", "vscode-extensions.json", "macos-proxy.mobileconfig",
                          "windows-proxy.reg", "chrome-edge-forcelist.txt",
+                         "chrome-extension-settings.json",
                          "claude-managed-settings.json", "openai.env", "gemini.txt",
                          "cursor-hooks.json", "cursor.txt", "warden-secrets.plist",
                          "warden-secrets.cron", "warden-secrets-task.xml", "ca-note.txt"}

@@ -832,6 +832,10 @@ def policy_pack(
     secrets_engine: str = "trufflehog",
     ext_update_url: str = "",
     ext_crx_url: str = "",
+    browser_ext_lockdown: bool = False,
+    browser_ext_blocklist: str = "",
+    browser_ext_allowlist: str = "",
+    browser_ext_blocked_hosts: str = "",
     current: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -846,12 +850,17 @@ def policy_pack(
     denied_raw = _tenant_or_global(current.tenant_id, db, "ide_ext_denylist", settings.ide_ext_denylist)
     allowed = [x.strip() for x in allowed_raw.split(",") if x.strip()]
     denied = [x.strip() for x in denied_raw.split(",") if x.strip()]
+    _csv = lambda s: [x.strip() for x in (s or "").split(",") if x.strip()]
     artifacts = pp.render_pack(base_url=base_url, extension_id=settings.extension_id,
                                proxy_host=proxy_host, proxy_port=proxy_port,
                                allowed_exts=allowed, denied_exts=denied,
                                hook_path=hook_path, posture_path=posture_path,
                                secrets_engine=secrets_engine,
-                               ext_update_url=ext_update_url, ext_crx_url=ext_crx_url)
+                               ext_update_url=ext_update_url, ext_crx_url=ext_crx_url,
+                               browser_ext_lockdown=browser_ext_lockdown,
+                               browser_ext_blocklist=_csv(browser_ext_blocklist),
+                               browser_ext_allowlist=_csv(browser_ext_allowlist),
+                               browser_ext_blocked_hosts=_csv(browser_ext_blocked_hosts))
     return {"artifacts": artifacts}
 
 

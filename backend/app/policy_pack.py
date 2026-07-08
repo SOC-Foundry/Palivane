@@ -85,6 +85,40 @@ def chrome_forcelist(extension_id: str, update_url: str = "") -> str:
     return f"{eid};{update_url.strip() or _WEBSTORE_UPDATE_URL}"
 
 
+def browser_extension_policy(warden_id: str, warden_update_url: str = "", lockdown: bool = False,
+                             blocked_ids: list[str] | None = None, allowed_ids: list[str] | None = None,
+                             blocked_hosts: list[str] | None = None) -> str:
+    """Chrome/Edge `ExtensionSettings` policy — govern *third-party* browser extensions,
+    including agentic AI ones (e.g. Claude for Chrome) that Warden's own extension can't
+    inspect (Chrome sandboxes extensions from each other). Two stances:
+
+    - default (governed): everything `allowed`, but a denylist of AI extensions is `blocked`
+      and permitted extensions are kept off sensitive origins via `runtime_blocked_hosts`.
+    - lockdown: default `blocked`; only the allowlist (+ Warden's own) may install.
+
+    Warden's own extension is always force-installed. Applied by MDM (Chrome/Edge enterprise)."""
+    blocked_ids = blocked_ids or []
+    allowed_ids = allowed_ids or []
+    blocked_hosts = blocked_hosts or []
+
+    default: dict = {"installation_mode": "blocked" if lockdown else "allowed"}
+    if blocked_hosts:                       # keep ALL extensions off these origins
+        default["runtime_blocked_hosts"] = blocked_hosts
+    settings: dict = {"*": default}
+
+    settings[warden_id or "REPLACE_WITH_WARDEN_EXTENSION_ID"] = {
+        "installation_mode": "force_installed",
+        "update_url": (warden_update_url.strip() or _WEBSTORE_UPDATE_URL)}
+    for i in allowed_ids:
+        settings[i] = {"installation_mode": "allowed"}
+    for i in blocked_ids:
+        settings[i] = {"installation_mode": "blocked"}
+    if not lockdown and not blocked_ids:
+        # Placeholder so the admin sees where to list AI extensions to block by ID.
+        settings["REPLACE_WITH_BLOCKED_AI_EXTENSION_ID"] = {"installation_mode": "blocked"}
+    return json.dumps({"ExtensionSettings": settings}, indent=2)
+
+
 def extension_updates_xml(extension_id: str, crx_url: str, version: str = "0.5.0") -> str:
     """Omaha `updates.xml` for a SELF-HOSTED extension — host this next to the .crx and point
     ExtensionInstallForcelist at its URL. Lets you force-install the extension via MDM without
@@ -310,7 +344,10 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
                 secrets_path: str = "/usr/local/bin/warden-secrets",
                 secrets_engine: str = "trufflehog",
                 ext_update_url: str = "", ext_crx_url: str = "",
-                ext_version: str = "0.5.0") -> dict[str, str]:
+                ext_version: str = "0.5.0",
+                browser_ext_lockdown: bool = False, browser_ext_blocklist: list[str] | None = None,
+                browser_ext_allowlist: list[str] | None = None,
+                browser_ext_blocked_hosts: list[str] | None = None) -> dict[str, str]:
     b = base_url.rstrip("/")
     self_host_ext = bool(ext_update_url.strip())
     readme = (
@@ -321,6 +358,10 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "1. vscode-extensions.json  -> push as VS Code machine settings (locks extensions.allowed).\n"
         "2. macos-proxy.mobileconfig / windows-proxy.reg -> system proxy to the Warden proxy.\n"
         "3. chrome-edge-forcelist.txt -> ExtensionInstallForcelist (force-install the extension).\n"
+        "3c. chrome-extension-settings.json -> Chrome/Edge ExtensionSettings: govern THIRD-PARTY\n"
+        "    browser extensions (e.g. agentic AI ones like Claude for Chrome that Warden can't\n"
+        "    inspect). Block unsanctioned AI extensions by ID, and/or keep permitted ones off\n"
+        "    sensitive origins via runtime_blocked_hosts. Edit the placeholders with your IDs.\n"
         + ("   Points at the Chrome Web Store (extension must be published there; Unlisted is fine).\n"
            if not self_host_ext else
            "   Points at your SELF-HOSTED updates.xml — no Web Store submission needed (managed\n"
@@ -359,6 +400,9 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "macos-proxy.mobileconfig": macos_proxy_profile(proxy_host or "proxy.example.com", proxy_port),
         "windows-proxy.reg": windows_proxy_reg(proxy_host or "proxy.example.com", proxy_port),
         "chrome-edge-forcelist.txt": chrome_forcelist(extension_id, ext_update_url),
+        "chrome-extension-settings.json": browser_extension_policy(
+            extension_id, ext_update_url, browser_ext_lockdown, browser_ext_blocklist,
+            browser_ext_allowlist, browser_ext_blocked_hosts),
         "claude-managed-settings.json": claude_managed_settings(b, hook_path, posture_path),
         "openai.env": openai_env(b),
         "gemini.txt": gemini_config(b),
