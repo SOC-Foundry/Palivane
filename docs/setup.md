@@ -201,10 +201,13 @@ one plane at a time. Pick whichever matches how your org uses AI:
 
 | AI is used via… | Capture plane | Setup |
 | --- | --- | --- |
-| Your own apps / CLIs / Claude Code | **LLM gateway** (`/v1`) | Point the client's base URL at Warden — see below. |
+| Your own apps / CLIs / Claude Code / Codex CLI | **LLM gateway** (`/v1`) | Point the client's base URL at Warden — see below. |
 | Browser web UIs (claude.ai, chatgpt.com, Microsoft Copilot) | **Browser extension** | [`extension/README.md`](../extension/README.md) |
-| Desktop apps, IDE assistants, 3rd-party CLIs (incl. GitHub Copilot) | **Egress proxy** | [`proxy/README.md`](../proxy/README.md) |
+| Desktop apps, IDE assistants, 3rd-party CLIs (GitHub Copilot, Gemini CLI) | **Egress proxy** | [`proxy/README.md`](../proxy/README.md) |
+| **Cursor** (cert-pinned chat) | **Local hook** (`warden-cursor-hook`) | [`cli/README.md`](../cli/README.md) — auto-installed by `warden connect` |
 | Secrets/PII reaching a **Git repo** (commit / PR) | **Pre-commit hook + GitHub Action** | [`git/README.md`](../git/README.md) |
+| Credentials **at rest** on a device (SSH/RSA keys, `.env`, tokens) | **`warden-secrets`** (`secrets` surface) | [`cli/README.md`](../cli/README.md); schedule via the MDM pack |
+| Existing **TruffleHog / Gitleaks / GitGuardian** jobs | **`warden-import`** / `warden-secrets --engine` | [`git/README.md`](../git/README.md), [`cli/README.md`](../cli/README.md) |
 
 > **Cursor (AI IDE).** Cursor's model/chat endpoint (`api2.cursor.sh`) **pins its
 > certificate**, so a TLS-inspecting egress proxy can't read its prompts (measured — the
@@ -225,9 +228,9 @@ curl localhost:8088/v1/chat/completions -H "Authorization: Bearer $TOKEN" \
 ```
 
 That prompt records an `llm_io` finding (or returns HTTP 403 in enforce mode); refresh
-the console and it appears in the findings list. The gateway also speaks the
-**Anthropic** (`/v1/messages`) and **Gemini** (`/v1beta/models/{model}:generateContent`)
-APIs — see the README for client snippets.
+the console and it appears in the findings list. The gateway also speaks the **OpenAI
+Responses API** (`/v1/responses`, used by Codex CLI), **Anthropic** (`/v1/messages`), and
+**Gemini** (`/v1beta/models/{model}:generateContent`) — see the README for client snippets.
 
 **Monitor vs enforce** — by default the gateway *records* risky prompts and passes them
 through. Set `GATEWAY_ENFORCE=true` (and `GATEWAY_BLOCK_SEVERITY`, default `high`) to

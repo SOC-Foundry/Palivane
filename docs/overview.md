@@ -2,11 +2,12 @@
 
 **Govern how your organization uses AI. DETECT · BLOCK · PROTECT.**
 
-Warden is a self-hosted, multi-tenant security gateway for AI. It sits between the
-people and tools in your organization and the large language models they talk to —
-whether that's your own LLM applications or public services like ChatGPT, Claude, and
-Gemini — and it detects, records, and (optionally) blocks risky prompts and data before
-they cause harm.
+Warden is a **hosted, multi-tenant** security gateway for AI (self-hostable if you prefer).
+It sits between the people and tools in your organization and the large language models they
+talk to — whether that's your own LLM applications or public services like ChatGPT, Claude,
+and Gemini — and it detects, records, and (optionally) blocks risky prompts and data before
+they cause harm. As a customer you don't run infrastructure: you sign in to your console and
+configure every capture plane from **Connect → Quick start**.
 
 ---
 
@@ -33,10 +34,16 @@ Warden addresses both fronts from one control plane. Crucially, it captures this
 ## 2. What Warden does
 
 - **Detects** prompt-injection / jailbreak / exfiltration attacks against your LLMs.
-- **Detects** secrets, PII, and source code leaving your org toward external AI tools.
+- **Detects** secrets, PII, and source code leaving your org toward external AI tools —
+  including keys whose separator was stripped to dodge DLP (`ghp…` for `ghp_…`).
 - **Enforces** an allowlist of sanctioned AI tools.
 - **Blocks** risky prompts and data inline (HTTP 403), or just records them for triage.
 - **Scans** git commits for secrets and PII before they land in a repo.
+- **Scans** endpoints for credentials **at rest** (SSH/RSA keys, `.env`, tokens) before an
+  infostealer does — with your own scanners too: TruffleHog / Gitleaks / GitGuardian feed the
+  same console (masked at ingest; a verified-live secret escalates to critical).
+- **Covers Cursor** despite its cert pinning, via a local hook that sees the prompt + tool
+  calls before they run.
 - **Gives** security teams a console to triage findings, manage policy, and prove coverage.
 
 It works **offline-first**: all core detection runs on local rules without any LLM key.
@@ -82,15 +89,27 @@ edge (where AI traffic actually happens).
 
 1. **LLM gateway** — Your first-party apps point their base URL at Warden instead of the
    provider. Warden inspects every prompt, then forwards allowed calls upstream and
-   streams the response back. Speaks three API shapes: OpenAI (`/v1/chat/completions`),
-   Anthropic (`/v1/messages`, used by Claude Code), and Gemini
-   (`/v1beta/models/{model}:generateContent`).
+   streams the response back. Speaks four API shapes: OpenAI (`/v1/chat/completions`), the
+   **OpenAI Responses API** (`/v1/responses`, used by Codex CLI), Anthropic (`/v1/messages`,
+   used by Claude Code), and Gemini (`/v1beta/models/{model}:generateContent`). OpenAI/Gemini
+   SDK/CLI clients can be routed here via the MDM pack's `openai.env` / `gemini.txt`.
 2. **Browser extension** — A Manifest V3 extension wraps `window.fetch` on public AI
    sites, extracts the prompt before it's sent, and asks Warden for a verdict
-   (allow / warn / block). Rolled out org-wide via MDM force-install.
+   (allow / warn / block). Rolled out org-wide via MDM force-install — from the Chrome Web
+   Store (Unlisted) or a **self-hosted CRX** (no store submission; managed devices only).
 3. **Egress proxy** — A mitmproxy addon inspects TLS traffic from desktop apps, IDE
-   assistants (Copilot, Cursor), and CLIs that don't run in a browser. Deployed via
+   assistants (Copilot, Cursor), and CLIs that don't run in a browser — including the
+   **Gemini CLI** in all three modes (API-key, OAuth/Code Assist, Vertex). Deployed via
    system proxy + a trusted CA pushed through MDM.
+4. **Cursor (local hook)** — Cursor's chat pins its cert (the proxy can't read it) and
+   ignores `OPENAI_BASE_URL` (the gateway can't interpose), so **`warden-cursor-hook`** uses
+   Cursor's Hooks API to inspect the prompt, shell/MCP calls, and file reads/edits locally
+   *before they run* — immune to the pinning. Auto-installed by `warden connect`.
+5. **Endpoint credential hygiene** — **`warden-secrets`** scans where infostealers look
+   (SSH/RSA keys, `~/.aws/credentials`, `.git-credentials`, `.env`, shell history) and reports
+   credentials **at rest** (surface `secrets`). Detection runs locally; only masked metadata
+   leaves. It can drive **TruffleHog/Gitleaks** (`--engine`), and existing CI scanner jobs
+   pipe in via **`warden-import`** → `/api/scan/import`.
 
 Plus a **git / CI plane**: stdlib-only scanners run as a pre-commit hook or GitHub Action —
 `/api/scan/code` (secrets/PII in commits), `/api/scan/deps` (dependency supply-chain, opt-in
@@ -102,7 +121,9 @@ an AI coding agent's tool calls, arguments, and results ride the LLM traffic, so
 catches sensitive-file access, dangerous commands, tool poisoning, and untrusted servers —
 including **local stdio MCP** — and blocks on the request, response, or mid-stream, with no
 endpoint agent. Enforcement config for managed devices is generated by `/api/policy-pack`
-(editor allowlist, system proxy, force-install, CA) and applied by the org's MDM.
+(editor allowlist, system proxy, browser force-install, CA note, Claude Code managed
+settings, OpenAI/Gemini gateway routing, Cursor hooks, and a scheduled `warden-secrets`
+scan that drives TruffleHog by default) and applied by the org's MDM.
 
 **Onboarding is managed or self-serve.** Fleets get zero-touch config via MDM; BYOD users
 sign in (login/SSO) to bind their tenant — the extension's **Sign in to Warden** and
@@ -110,10 +131,12 @@ sign in (login/SSO) to bind their tenant — the extension's **Sign in to Warden
 
 **Agentless by default, with optional local sensors.** The above needs no endpoint agent.
 For deeper local coverage (e.g. local stdio MCP servers the network can't see), opt-in
-sensors run on the device: **`warden-mcp`** (stdio-MCP wrapper, inline inspection),
-**`warden-hook`** (Claude Code PreToolUse pre-execution check), and **`warden-posture`**
-(continuous IDE/MCP drift reporting). They report on a separate ingest quota so they don't
-consume the gateway quota.
+stdlib sensors run on the device: **`warden-mcp`** (stdio-MCP wrapper, inline inspection),
+**`warden-hook`** (Claude Code PreToolUse pre-execution check), **`warden-cursor-hook`**
+(Cursor prompts + tool calls), **`warden-posture`** (continuous IDE/MCP drift reporting),
+**`warden-secrets`** (credentials at rest, optionally driving TruffleHog/Gitleaks), and
+**`warden-import`** (pipe CI scanner output in). They report on a separate ingest quota so
+they don't consume the gateway quota.
 
 **All planes fail open.** If Warden is unreachable, traffic flows and tools keep
 working — security controls never take the business offline.
@@ -130,10 +153,11 @@ into a **verdict**.
 - **PromptThreatDetector** (surface: `llm_io`) — injection keywords ("ignore previous
   instructions"), jailbreak terms ("DAN mode"), exfiltration patterns ("reveal your
   system prompt"), and encoded smuggling (long base64, zero-width Unicode).
-- **ShadowAIDetector** (surface: `ai_usage`) — PII (SSNs, emails, phones, Luhn-validated
-  credit cards), known secret formats (`AKIA…`, `sk-…`, GitHub tokens), high-entropy
-  unlabeled credentials, source-code markers, confidentiality markers, and destination
-  checks against the sanctioned-tool allowlist.
+- **ShadowAIDetector** (surface: `ai_usage`) — PII (SSNs incl. unformatted 9-digit, emails,
+  phones, Luhn-validated credit cards), known secret formats (`AKIA…`, `sk-…`, GitHub tokens)
+  **plus separator-stripped variants** flagged as likely-bypass, high-entropy unlabeled
+  credentials, source-code markers, confidentiality markers, and destination checks against
+  the sanctioned-tool allowlist.
 - **MCPGuardDetector** (surface: `mcp`) — agentic tool-use: sensitive-resource access
   (`.env`, keys), dangerous shell commands, tool poisoning (injected tool descriptions),
   and untrusted MCP servers (per-tenant/global allowlist).
@@ -141,6 +165,10 @@ into a **verdict**.
   script abuse, non-registry sources, known-bad packages (+ opt-in OSV CVE lookup).
 - **ExtGuardDetector** (surface: `ide`) — known-bad / unapproved IDE extensions from a
   `.vscode/extensions.json` or MDM inventory list.
+- **SecretsAtRestDetector** (surface: `secrets`) — credentials found at rest on a device by
+  `warden-secrets` or a third-party scanner (`credential_at_rest`). Private keys / cloud +
+  VCS tokens score highest; a world-readable file or a scanner-**verified live** secret
+  escalates to critical.
 - **LLMJudgeDetector** (optional, all surfaces) — a frontier model reads the content like
   an analyst and returns a structured `JudgeVerdict` (AI-generated likelihood, malicious
   likelihood, indicators, recommended action). Provider is pluggable
@@ -256,7 +284,11 @@ The security-team UI provides:
 
 ## 8. Deploying Warden
 
-**Docker Compose (recommended)** — brings up Postgres + backend + nginx-served frontend:
+**Hosted (default).** Warden is a managed SaaS — customers don't run infrastructure. Sign in
+to the console, open **Connect → Quick start**, and push the generated config (MDM pack or a
+per-OS installer). Everything below is for **local development, evaluation, or self-hosting**.
+
+**Docker Compose (self-host / eval)** — brings up Postgres + backend + nginx-served frontend:
 
 ```bash
 docker compose up --build
@@ -300,14 +332,17 @@ cd frontend && npm install && npm run dev
 | Area | Path |
 |------|------|
 | Detection engine & scoring | `backend/app/engine.py`, `backend/app/scoring.py` |
-| Detectors | `backend/app/detectors/{prompt_threats,shadow_ai,llm_judge}.py` |
-| LLM gateway | `backend/app/gateway.py` |
+| Detectors | `backend/app/detectors/{prompt_threats,shadow_ai,mcp_guard,dep_guard,ext_guard,secrets_at_rest,llm_judge}.py` |
+| LLM gateway (incl. `/v1/responses`) | `backend/app/gateway.py` |
+| Scanner import (TruffleHog/Gitleaks/GitGuardian) | `backend/app/scanner_import.py` |
+| MDM policy pack | `backend/app/policy_pack.py` |
 | API routes & auth | `backend/app/main.py`, `backend/app/auth.py` |
 | Data models | `backend/app/models.py` |
 | Config | `backend/app/config.py`, `backend/.env.example` |
 | Browser extension | `extension/` |
 | Egress proxy | `proxy/warden_addon.py` |
 | Git scanner | `git/warden_git_scan.py` |
+| Local sensors / onboarding CLI | `cli/` (warden-connect, -hook, -cursor-hook, -mcp, -posture, -secrets, -import) |
 | Console (frontend) | `frontend/src/` |
 | Deep-dive docs | `docs/{setup,tokens-and-identity,claude-deployment,multi-tenant-hardening}.md` |
 
