@@ -224,6 +224,7 @@ export default function App() {
                   onSelect={setSelectedId}
                   filter={filter}
                   onFilter={setFilter}
+                  onConnect={() => setView("connect")}
                 />
               </div>
               <div className="right-col">
