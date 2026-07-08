@@ -185,6 +185,7 @@ class TenantUpdate(BaseModel):
     dep_denylist: str | None = None         # known-bad dependency names
     alert_webhook: str | None = None        # Slack-compatible webhook for high/critical alerts
     alert_min_severity: str | None = None   # minimum severity to alert on
+    alert_digest: str | None = None         # off | hourly | daily (batch non-critical alerts)
     # Policy posture (per-org monitor/enforce): "on"/"off" force it, "inherit" follows
     # the global GATEWAY_ENFORCE. Severities: "" = inherit the global threshold.
     gateway_enforce: Literal["on", "off", "inherit"] | None = None
