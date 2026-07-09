@@ -77,6 +77,7 @@ def test_run_posts_once_then_skips(tmp_path, monkeypatch):
     (tmp_path / ".mcp.json").write_text(json.dumps(
         {"mcpServers": {"x": {"command": "npx", "args": ["srv"]}}}))
     monkeypatch.setattr(wp, "collect_ide_extensions", lambda: ["ms-python.python"])
+    monkeypatch.setattr(wp, "collect_agent_configs", lambda: [])  # isolate from real home dir
     posts: list[str] = []
     monkeypatch.setattr(wp, "_post", lambda cfg, path, body, timeout=10.0: posts.append(path) or True)
     cache_path = str(tmp_path / "cache.json")
@@ -96,6 +97,7 @@ def test_run_posts_once_then_skips(tmp_path, monkeypatch):
 
 def test_run_failed_post_retries_next_run(tmp_path, monkeypatch):
     monkeypatch.setattr(wp, "collect_ide_extensions", lambda: ["ext.one"])
+    monkeypatch.setattr(wp, "collect_agent_configs", lambda: [])  # isolate from real home dir
     monkeypatch.setattr(wp, "_post", lambda *a, **k: False)  # backend down
     cache_path = str(tmp_path / "cache.json")
     cfg = {"url": "https://w.io", "token": "ak_x"}

@@ -258,6 +258,13 @@ class CoverageRequest(BaseModel):
     window_days: int | None = None  # only count findings within this many days as covered
 
 
+class PolicyOverrideIn(BaseModel):
+    scope: Literal["user", "group"]
+    match: str = Field(min_length=1, max_length=320)   # email (user) or glob (group)
+    label: str = Field("", max_length=128)
+    disabled_checks: list[str] = Field(default_factory=list)
+
+
 class AgentConfigScan(BaseModel):
     content: str = Field(min_length=1, max_length=MAX_CONTENT)  # IDE/agent config blob
     user: str = ""                    # actor the config belongs to (per-user attribution)

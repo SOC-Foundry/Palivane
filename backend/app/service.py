@@ -40,10 +40,17 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     include_judge = not (tenant is not None and tenant.judge_enabled is False)
     verdict = engine.analyze(item, include_judge=include_judge)
     # Per-tenant policy: drop signals for checks the admin has disabled, then apply any
-    # per-tool suppression the caller passed. Either may re-score the verdict.
-    from .policies import checks_signal_filter, parse_disabled
-    check_filter = checks_signal_filter(
-        parse_disabled(getattr(tenant, "disabled_checks", "") if tenant else ""))
+    # per-tool suppression the caller passed. Either may re-score the verdict. A per-user or
+    # per-group override (resolved from the finding's actor) replaces the tenant default.
+    from .policies import checks_signal_filter, parse_disabled, resolve_disabled
+    base_disabled = parse_disabled(getattr(tenant, "disabled_checks", "") if tenant else "")
+    if tenant is not None:
+        from .models import PolicyOverride
+        overrides = db.query(PolicyOverride).filter(PolicyOverride.tenant_id == tenant.id).all()
+        effective_disabled, _ = resolve_disabled(base_disabled, item.sender, overrides)
+    else:
+        effective_disabled = base_disabled
+    check_filter = checks_signal_filter(effective_disabled)
     filters = [f for f in (check_filter, signal_filter) if f is not None]
     if filters:
         from .scoring import score

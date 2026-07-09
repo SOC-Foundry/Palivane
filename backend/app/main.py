@@ -22,7 +22,7 @@ from .gateway import gemini_router, router as gateway_router
 from .database import Base, engine as db_engine, get_db
 from .detectors import AnalysisInput, Surface
 from .engine import engine
-from .models import Finding, Tenant, User
+from .models import Finding, PolicyOverride, Tenant, User
 from .schemas import (
     AIUsageIngest,
     AnalyzeRequest,
@@ -32,6 +32,7 @@ from .schemas import (
     CoverageRequest,
     DiscoveryIngest,
     IDEExtScan,
+    PolicyOverrideIn,
     MCPBatchIngest,
     ExceptionRequest,
     MCPConfigScan,
@@ -1039,7 +1040,50 @@ def policies_catalog(current: User = Depends(require_admin), db: Session = Depen
     from .policies import catalog_for, parse_disabled
     tenant = db.get(Tenant, current.tenant_id)
     disabled = parse_disabled(getattr(tenant, "disabled_checks", "") if tenant else "")
-    return catalog_for(disabled)
+    out = catalog_for(disabled)
+    overrides = (db.query(PolicyOverride)
+                   .filter(PolicyOverride.tenant_id == current.tenant_id)
+                   .order_by(PolicyOverride.scope, PolicyOverride.match).all())
+    out["overrides"] = [o.to_dict() for o in overrides]
+    return out
+
+
+@app.post("/api/policies/overrides")
+def policy_override_upsert(body: PolicyOverrideIn, current: User = Depends(require_admin),
+                           db: Session = Depends(get_db)):
+    """Create or update a per-user (exact email) or per-group (glob) policy override. Its
+    disabled-check set replaces the tenant default for matched actors."""
+    from .policies import VALID_KEYS
+    bad = [k for k in body.disabled_checks if k not in VALID_KEYS]
+    if bad:
+        raise HTTPException(status_code=400, detail=f"unknown policy check(s): {', '.join(bad[:5])}")
+    match = body.match.strip()
+    if not match:
+        raise HTTPException(status_code=400, detail="match is required")
+    disabled = ",".join(dict.fromkeys(k for k in body.disabled_checks if k in VALID_KEYS))
+    row = (db.query(PolicyOverride)
+             .filter(PolicyOverride.tenant_id == current.tenant_id,
+                     PolicyOverride.scope == body.scope, PolicyOverride.match == match)
+             .one_or_none())
+    if row is None:
+        row = PolicyOverride(tenant_id=current.tenant_id, scope=body.scope, match=match)
+        db.add(row)
+    row.label = body.label.strip()
+    row.disabled_checks = disabled
+    db.commit(); db.refresh(row)
+    return row.to_dict()
+
+
+@app.delete("/api/policies/overrides/{override_id}")
+def policy_override_delete(override_id: int, current: User = Depends(require_admin),
+                          db: Session = Depends(get_db)):
+    row = (db.query(PolicyOverride)
+             .filter(PolicyOverride.id == override_id,
+                     PolicyOverride.tenant_id == current.tenant_id).one_or_none())
+    if row is None:
+        raise HTTPException(status_code=404, detail="override not found")
+    db.delete(row); db.commit()
+    return {"ok": True}
 
 
 @app.get("/api/discovery/inventory")
