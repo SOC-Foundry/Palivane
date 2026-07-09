@@ -56,6 +56,7 @@ class Category(str, Enum):
     CREDENTIAL_AT_REST = "credential_at_rest"          # a live secret/key sitting on a device
     # --- Access governance (oversharing) ---
     DATA_OVERSHARING = "data_oversharing"              # LLM surfaced restricted data to an unauthorized user
+    AGENT_AUTHZ = "agent_authz"                        # agent took an action outside its least-privilege role
 
 
 @dataclass(frozen=True)

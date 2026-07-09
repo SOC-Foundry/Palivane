@@ -67,6 +67,10 @@ export const api = {
   agentCreate: (payload) => req("/agents", { method: "POST", body: JSON.stringify(payload) }),
   agentRotate: (id) => req(`/agents/${id}/rotate`, { method: "POST" }),
   agentDelete: (id) => req(`/agents/${id}`, { method: "DELETE" }),
+  agentUpdate: (id, payload) => req(`/agents/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  agentRoles: () => req("/agent-roles"),
+  agentRoleUpsert: (payload) => req("/agent-roles", { method: "POST", body: JSON.stringify(payload) }),
+  agentRoleDelete: (id) => req(`/agent-roles/${id}`, { method: "DELETE" }),
   policies: () => req("/policies"),
   policyOverrideUpsert: (payload) =>
     req("/policies/overrides", { method: "POST", body: JSON.stringify(payload) }),

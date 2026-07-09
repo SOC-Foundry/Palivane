@@ -76,6 +76,10 @@ CATALOG: list[dict] = [
      "desc": "Flags when an enterprise LLM returns restricted data (confidential, PII, keywords) "
              "to a user outside the allowed group — configured in Settings → Need-to-know rules.",
      "group": "Access governance"},
+    {"key": "agent_authz", "label": "Agent least-privilege",
+     "desc": "Flags when an AI agent calls a tool or MCP server outside its assigned role — "
+             "monitor by default, enforce per role. Configured in Agents → Roles.",
+     "group": "Access governance"},
 ]
 
 # The keys that ext_guard uses — ext_guard emits DEPENDENCY_RISK for IDE ext findings, so

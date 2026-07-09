@@ -22,11 +22,11 @@ from .config import settings
 from .crypto import decrypt, encrypt
 from .database import get_db
 from .models import (
-    Agent, ApiKey, AuditLog, EnrollmentToken, Finding, GatewayUsage, LoginAttempt, Tenant,
+    Agent, AgentRole, ApiKey, AuditLog, EnrollmentToken, Finding, GatewayUsage, LoginAttempt, Tenant,
     TenantOIDC, TenantSAML, TenantUpstream, User,
 )
 from .schemas import (
-    AgentCreate, ApiKeyCreate, EnrollmentTokenCreate, EnrollRequest, LoginRequest, MFACode, MFAVerify,
+    AgentCreate, AgentRoleIn, AgentUpdate, ApiKeyCreate, EnrollmentTokenCreate, EnrollRequest, LoginRequest, MFACode, MFAVerify,
     DPAAccept, OIDCConfig, SAMLConfig, SignupRequest, TenantDelete, TenantUpdate, UpstreamConfig,
     UserCreate, UserUpdate,
 )
@@ -466,6 +466,23 @@ def rotate_agent(agent_id: int, current: User = Depends(require_admin),
     return {**agent.to_dict(), "token": token}
 
 
+@router.patch("/agents/{agent_id}")
+def update_agent(agent_id: int, body: AgentUpdate, current: User = Depends(require_admin),
+                 db: Session = Depends(get_db)):
+    """Assign (or clear) an agent's least-privilege role."""
+    agent = db.get(Agent, agent_id)
+    if agent is None or agent.tenant_id != current.tenant_id:
+        raise HTTPException(status_code=404, detail="agent not found")
+    role = body.role.strip()
+    if role and not db.query(AgentRole).filter(AgentRole.tenant_id == current.tenant_id,
+                                               AgentRole.name == role).first():
+        raise HTTPException(status_code=400, detail=f"no such role '{role}'")
+    agent.role = role
+    db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "agent.role", target=f"{agent.name}={role or '-'}")
+    return agent.to_dict()
+
+
 @router.delete("/agents/{agent_id}")
 def disable_agent(agent_id: int, current: User = Depends(require_admin),
                   db: Session = Depends(get_db)):
@@ -476,6 +493,51 @@ def disable_agent(agent_id: int, current: User = Depends(require_admin),
     db.commit()
     audit_log.record(db, current.tenant_id, current.email, "agent.disable", target=agent.name)
     return {"id": agent_id, "active": False}
+
+
+# --- Agent roles (least-privilege, Phase 1) ------------------------------------------
+
+def _apply_role(role: AgentRole, body: AgentRoleIn) -> None:
+    role.allow_tools = ",".join(dict.fromkeys(s.strip() for s in body.allow_tools if s.strip()))
+    role.allow_servers = ",".join(dict.fromkeys(s.strip() for s in body.allow_servers if s.strip()))
+    role.deny = ",".join(dict.fromkeys(s.strip() for s in body.deny if s.strip()))
+    role.default_allow = bool(body.default_allow)
+    role.enforce = bool(body.enforce)
+
+
+@router.post("/agent-roles")
+def upsert_agent_role(body: AgentRoleIn, current: User = Depends(require_admin),
+                      db: Session = Depends(get_db)):
+    """Create or update a least-privilege role (by name). enforce=false is monitor-only."""
+    role = (db.query(AgentRole).filter(AgentRole.tenant_id == current.tenant_id,
+                                       AgentRole.name == body.name.strip()).one_or_none())
+    if role is None:
+        role = AgentRole(tenant_id=current.tenant_id, name=body.name.strip())
+        db.add(role)
+    _apply_role(role, body)
+    db.commit(); db.refresh(role)
+    audit_log.record(db, current.tenant_id, current.email, "agentrole.upsert", target=role.name)
+    return role.to_dict()
+
+
+@router.get("/agent-roles")
+def list_agent_roles(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    rows = db.query(AgentRole).filter(AgentRole.tenant_id == current.tenant_id).order_by(AgentRole.name).all()
+    return {"roles": [r.to_dict() for r in rows]}
+
+
+@router.delete("/agent-roles/{role_id}")
+def delete_agent_role(role_id: int, current: User = Depends(require_admin),
+                      db: Session = Depends(get_db)):
+    role = db.get(AgentRole, role_id)
+    if role is None or role.tenant_id != current.tenant_id:
+        raise HTTPException(status_code=404, detail="role not found")
+    # Unassign it from any agents so their calls fall back to no-role (allowed).
+    db.query(Agent).filter(Agent.tenant_id == current.tenant_id, Agent.role == role.name)\
+        .update({Agent.role: ""})
+    db.delete(role); db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "agentrole.delete", target=role.name)
+    return {"ok": True}
 
 
 # --- device enrollment (per-device self-registration) --------------------------------

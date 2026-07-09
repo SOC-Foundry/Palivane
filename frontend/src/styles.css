@@ -256,6 +256,7 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 .cat-dangerous_command { background: rgba(255,138,61,0.13); color: var(--high); }
 .cat-unsafe_autonomy { background: rgba(255,138,61,0.13); color: var(--high); }
 .cat-data_oversharing { background: rgba(255,77,94,0.13); color: var(--crit); }
+.cat-agent_authz { background: rgba(179,136,255,0.15); color: var(--ai); }
 .signal-detail { font-size: 12.5px; color: #c4ccdb; margin-top: 5px; }
 .signal-evidence {
   display: block; margin-top: 6px; font-size: 11.5px; color: var(--muted);
