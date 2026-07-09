@@ -235,14 +235,17 @@ class AgentCreate(BaseModel):
 
 
 class AgentUpdate(BaseModel):
-    role: str = Field("", max_length=64)   # assign/clear the agent's role
+    role: str | None = Field(None, max_length=64)   # assign/clear the agent's role
+    deny: list[str] | None = None                   # per-agent extra deny globs (tightens role)
 
 
 class AgentRoleIn(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     allow_tools: list[str] = Field(default_factory=list)
     allow_servers: list[str] = Field(default_factory=list)
+    allow_commands: list[str] = Field(default_factory=list)
     deny: list[str] = Field(default_factory=list)
+    data_scopes: list[str] = Field(default_factory=list)
     default_allow: bool = False
     enforce: bool = False
 

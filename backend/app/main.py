@@ -505,10 +505,14 @@ def _mcp_filter(signals: list) -> list:
     return [s for s in signals if s.category.value not in _MCP_DROP]
 
 
-def _agent_authz_signal(agent: str, tenant_id, server: str, tool: str, db: Session):
-    """If a named agent has a least-privilege role and this MCP action falls outside it,
-    return an agent_authz Signal (weight scales with the role's enforce flag: monitor=warn,
-    enforce=block). Returns None when there's no agent, no role, or the action is allowed."""
+_SHELL_TOOLS = {"shell", "bash", "sh", "run", "exec", "execute", "run_command", "run_shell_command"}
+_RESTRICTED_DATA = {"secret_leak", "pii_exposure", "source_code_leak",
+                    "confidential_data", "credential_at_rest"}
+
+
+def _agent_role_ctx(agent: str, tenant_id, db: Session):
+    """Resolve (effective_role_dict, enforce) for a named agent — role plus any per-agent
+    deny globs merged in. None if the agent has no active role."""
     if not agent or tenant_id is None:
         return None
     ag = (db.query(Agent).filter(Agent.tenant_id == tenant_id, Agent.name == agent,
@@ -519,20 +523,55 @@ def _agent_authz_signal(agent: str, tenant_id, server: str, tool: str, db: Sessi
                                        AgentRole.name == ag.role).one_or_none())
     if role is None:
         return None
-    from .authz import authorize
-    allowed, reason = authorize(role, server, tool)
-    if allowed:
-        return None
+    d = role.to_dict()
+    agent_deny = [x.strip().lower() for x in (ag.deny or "").split(",") if x.strip()]
+    if agent_deny:
+        d = {**d, "deny": d["deny"] + agent_deny}
+    return d, bool(role.enforce)
+
+
+def _authz_signal(enforce: bool, title: str, detail: str, evidence: str):
     from .detectors.base import Category, Signal
-    weight = 0.85 if role.enforce else 0.55   # enforce -> block; monitor -> warn/visible
-    mode = "enforce" if role.enforce else "monitor"
     return Signal(
-        category=Category.AGENT_AUTHZ,
-        title="Agent action outside its role",
-        detail=f"{reason} ({mode})",
-        weight=weight, confidence=0.9, detector="authz",
-        evidence=f"{agent} → {tool or server}", check="agent_authz",
+        category=Category.AGENT_AUTHZ, title=title,
+        detail=f"{detail} ({'enforce' if enforce else 'monitor'})",
+        weight=0.85 if enforce else 0.55, confidence=0.9, detector="authz",
+        evidence=evidence, check="agent_authz",
     )
+
+
+def _agent_authz_filter(agent: str, tenant_id, body, db: Session):
+    """Signal filter that folds least-privilege verdicts into an MCP scan: action authz
+    (tool/server, or shell command against allow_commands) + data-scope authz (does the
+    content carry a restricted category the role may not access). Falls back to _mcp_filter
+    when the agent has no role."""
+    ctx = _agent_role_ctx(agent, tenant_id, db)
+    if ctx is None:
+        return _mcp_filter
+    role_d, enforce = ctx
+    from .authz import authorize
+    shell = (body.tool or "").lower() in _SHELL_TOOLS
+    command = body.args_text if shell else ""
+
+    def _filter(signals):
+        out = _mcp_filter(signals)
+        allowed, reason = authorize(role_d, body.server, body.tool, command)
+        if not allowed:
+            out.append(_authz_signal(enforce, "Agent action outside its role", reason,
+                                     f"{agent} → {(command[:60] or body.tool or body.server)}"))
+        scopes = role_d.get("data_scopes") or []
+        if scopes:
+            # Check against the RAW signals — the MCP filter drops source_code_leak (agents
+            # read code by design), but a role's data-scope may still forbid it.
+            oos = ({s.category.value for s in signals} & _RESTRICTED_DATA) - set(scopes)
+            if oos:
+                out.append(_authz_signal(
+                    enforce, "Agent accessed out-of-scope data",
+                    f"role '{role_d['name']}' may not handle {', '.join(sorted(oos))}",
+                    f"{agent}: {', '.join(sorted(oos))}"))
+        return out
+
+    return _filter
 
 
 def _tenant_or_global(tenant_id: int | None, db: Session, attr: str, global_value: str) -> str:
@@ -580,16 +619,11 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
             "allowed_servers": allowed_servers,
         },
     )
-    # Least-privilege: if the agent has a role and this call is outside it, fold in an
-    # agent_authz signal (monitor warns, enforce blocks) alongside the MCP category filter.
-    authz_sig = _agent_authz_signal(agent, tenant_id, body.server, body.tool, db)
-    if authz_sig is not None:
-        sig_filter = lambda sigs: _mcp_filter(sigs) + [authz_sig]
-    else:
-        sig_filter = _mcp_filter
+    # Least-privilege: fold agent role authz (action + shell command + data-scope) into the
+    # MCP scan — monitor warns, enforce blocks.
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
-                          signal_filter=sig_filter, agent=agent,
-                          persist_benign=settings.mcp_persist_benign)
+                          signal_filter=_agent_authz_filter(agent, tenant_id, body, db),
+                          agent=agent, persist_benign=settings.mcp_persist_benign)
     return {
         "action": _action_for(result["severity"], block_severity),
         "risk_score": result["risk_score"],

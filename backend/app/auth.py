@@ -473,13 +473,17 @@ def update_agent(agent_id: int, body: AgentUpdate, current: User = Depends(requi
     agent = db.get(Agent, agent_id)
     if agent is None or agent.tenant_id != current.tenant_id:
         raise HTTPException(status_code=404, detail="agent not found")
-    role = body.role.strip()
-    if role and not db.query(AgentRole).filter(AgentRole.tenant_id == current.tenant_id,
-                                               AgentRole.name == role).first():
-        raise HTTPException(status_code=400, detail=f"no such role '{role}'")
-    agent.role = role
+    if body.role is not None:
+        role = body.role.strip()
+        if role and not db.query(AgentRole).filter(AgentRole.tenant_id == current.tenant_id,
+                                                   AgentRole.name == role).first():
+            raise HTTPException(status_code=400, detail=f"no such role '{role}'")
+        agent.role = role
+        audit_log.record(db, current.tenant_id, current.email, "agent.role",
+                         target=f"{agent.name}={role or '-'}")
+    if body.deny is not None:
+        agent.deny = ",".join(dict.fromkeys(x.strip() for x in body.deny if x.strip()))
     db.commit()
-    audit_log.record(db, current.tenant_id, current.email, "agent.role", target=f"{agent.name}={role or '-'}")
     return agent.to_dict()
 
 
@@ -498,9 +502,12 @@ def disable_agent(agent_id: int, current: User = Depends(require_admin),
 # --- Agent roles (least-privilege, Phase 1) ------------------------------------------
 
 def _apply_role(role: AgentRole, body: AgentRoleIn) -> None:
-    role.allow_tools = ",".join(dict.fromkeys(s.strip() for s in body.allow_tools if s.strip()))
-    role.allow_servers = ",".join(dict.fromkeys(s.strip() for s in body.allow_servers if s.strip()))
-    role.deny = ",".join(dict.fromkeys(s.strip() for s in body.deny if s.strip()))
+    _j = lambda xs: ",".join(dict.fromkeys(s.strip() for s in xs if s.strip()))
+    role.allow_tools = _j(body.allow_tools)
+    role.allow_servers = _j(body.allow_servers)
+    role.allow_commands = _j(body.allow_commands)
+    role.deny = _j(body.deny)
+    role.data_scopes = _j(body.data_scopes)
     role.default_allow = bool(body.default_allow)
     role.enforce = bool(body.enforce)
 
