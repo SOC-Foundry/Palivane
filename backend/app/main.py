@@ -412,9 +412,15 @@ def _resolve_agent_jwt(token: str, db: Session):
     t = db.query(Tenant).filter(Tenant.agent_oidc_issuer == iss).first()
     if t is None:
         return None
+    # SECURITY: require a configured audience. Without it, any validly-signed token from this
+    # issuer (issued for a different app/tenant) would authenticate — a cross-tenant hole.
+    # Fail closed: an issuer with no audience configured cannot authenticate agents.
+    if not (t.agent_oidc_audience or "").strip():
+        raise HTTPException(status_code=401,
+                            detail="agent JWT rejected: workload OIDC has no audience configured")
     from . import oidc
     try:
-        claims = oidc.validate_agent_jwt(iss, t.agent_oidc_audience or "", token,
+        claims = oidc.validate_agent_jwt(iss, t.agent_oidc_audience.strip(), token,
                                          jwks_uri=t.agent_oidc_jwks or "")
     except oidc.OIDCError as e:
         raise HTTPException(status_code=401, detail=f"agent JWT rejected: {e}")
@@ -1323,7 +1329,7 @@ def policy_override_upsert(body: PolicyOverrideIn, current: User = Depends(requi
     bad = [k for k in body.disabled_checks if k not in VALID_KEYS]
     if bad:
         raise HTTPException(status_code=400, detail=f"unknown policy check(s): {', '.join(bad[:5])}")
-    match = body.match.strip()
+    match = body.match.strip().lower()   # matching is case-insensitive; store normalized
     if not match:
         raise HTTPException(status_code=400, detail="match is required")
     disabled = ",".join(dict.fromkeys(k for k in body.disabled_checks if k in VALID_KEYS))
@@ -1337,6 +1343,10 @@ def policy_override_upsert(body: PolicyOverrideIn, current: User = Depends(requi
     row.label = body.label.strip()
     row.disabled_checks = disabled
     db.commit(); db.refresh(row)
+    from . import audit_log
+    audit_log.record(db, current.tenant_id, current.email, "policy_override.upsert",
+                     target=f"{body.scope}:{match}",
+                     detail={"scope": body.scope, "match": match, "disabled_checks": body.disabled_checks})
     return row.to_dict()
 
 
@@ -1348,7 +1358,11 @@ def policy_override_delete(override_id: int, current: User = Depends(require_adm
                      PolicyOverride.tenant_id == current.tenant_id).one_or_none())
     if row is None:
         raise HTTPException(status_code=404, detail="override not found")
+    scope, match, disabled = row.scope, row.match, row.disabled_checks
     db.delete(row); db.commit()
+    from . import audit_log
+    audit_log.record(db, current.tenant_id, current.email, "policy_override.delete",
+                     target=f"{scope}:{match}", detail={"disabled_checks": disabled})
     return {"ok": True}
 
 

@@ -83,6 +83,13 @@ import time as _time  # noqa: E402
 _JWKS_CACHE: dict = {}   # jwks_uri -> (key_set, expires_at)
 _DISC_CACHE: dict = {}   # issuer -> (meta, expires_at)
 _TTL = 3600
+_CACHE_MAX = 64          # bound memory: evict oldest when exceeded (dicts keep insertion order)
+
+
+def _cache_put(cache: dict, key: str, value) -> None:
+    cache[key] = value
+    while len(cache) > _CACHE_MAX:
+        cache.pop(next(iter(cache)))
 
 
 def _discover_cached(issuer: str) -> dict:
@@ -90,7 +97,7 @@ def _discover_cached(issuer: str) -> dict:
     if hit and hit[1] > _time.time():
         return hit[0]
     meta = discover(issuer)
-    _DISC_CACHE[issuer] = (meta, _time.time() + _TTL)
+    _cache_put(_DISC_CACHE, issuer, (meta, _time.time() + _TTL))
     return meta
 
 
@@ -104,7 +111,7 @@ def _key_set(jwks_uri: str):
         ks = JsonWebKey.import_key_set(jwks)
     except Exception as e:
         raise OIDCError(f"JWKS fetch failed: {e}")
-    _JWKS_CACHE[jwks_uri] = (ks, _time.time() + _TTL)
+    _cache_put(_JWKS_CACHE, jwks_uri, (ks, _time.time() + _TTL))
     return ks
 
 

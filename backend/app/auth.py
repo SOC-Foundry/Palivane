@@ -427,6 +427,18 @@ def revoke_api_key(key_id: int, current: User = Depends(require_admin),
 
 # --- Agent identity (Phase 0: verifiable identity + attribution) ----------------------
 
+def _assert_oidc_subject_free(db: Session, tenant_id: int, subject: str, exclude_id=None) -> None:
+    """A workload OIDC subject maps a JWT to exactly one agent, so it must be unique within a
+    tenant — otherwise auth would resolve to an arbitrary agent."""
+    if not subject:
+        return
+    q = db.query(Agent).filter(Agent.tenant_id == tenant_id, Agent.oidc_subject == subject)
+    if exclude_id is not None:
+        q = q.filter(Agent.id != exclude_id)
+    if q.first():
+        raise HTTPException(status_code=409, detail=f"oidc_subject '{subject}' is already in use")
+
+
 @router.post("/agents")
 def create_agent(body: AgentCreate, current: User = Depends(require_admin),
                  db: Session = Depends(get_db)):
@@ -436,6 +448,7 @@ def create_agent(body: AgentCreate, current: User = Depends(require_admin),
     if db.query(Agent).filter(Agent.tenant_id == current.tenant_id,
                               Agent.name == body.name.strip()).first():
         raise HTTPException(status_code=409, detail="an agent with that name already exists")
+    _assert_oidc_subject_free(db, current.tenant_id, body.oidc_subject.strip())
     token, prefix, token_hash = generate_agent_token()
     agent = Agent(tenant_id=current.tenant_id, name=body.name.strip(), kind=body.kind,
                   role=body.role.strip(), oidc_subject=body.oidc_subject.strip(),
@@ -485,7 +498,12 @@ def update_agent(agent_id: int, body: AgentUpdate, current: User = Depends(requi
     if body.deny is not None:
         agent.deny = ",".join(dict.fromkeys(x.strip() for x in body.deny if x.strip()))
     if body.oidc_subject is not None:
-        agent.oidc_subject = body.oidc_subject.strip()
+        sub = body.oidc_subject.strip()
+        _assert_oidc_subject_free(db, current.tenant_id, sub, exclude_id=agent.id)
+        if sub != (agent.oidc_subject or ""):
+            audit_log.record(db, current.tenant_id, current.email, "agent.oidc_subject",
+                             target=f"{agent.name}={sub or '-'}")
+        agent.oidc_subject = sub
     db.commit()
     return agent.to_dict()
 
