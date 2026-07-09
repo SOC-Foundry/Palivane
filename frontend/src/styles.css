@@ -572,8 +572,9 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
   display: flex; justify-content: space-between; align-items: center; gap: 16px;
   max-width: 1120px; margin: 0 auto; padding: 14px 24px;
   position: sticky; top: 0; z-index: 5;
-  background: linear-gradient(180deg, rgba(10,13,19,0.94) 82%, transparent);
-  backdrop-filter: blur(6px);
+  background: rgba(9, 12, 18, 0.97);
+  border-bottom: 1px solid var(--border-soft);
+  backdrop-filter: blur(8px);
 }
 .lp-brand { display: flex; align-items: center; gap: 9px; font-size: 19px; font-weight: 800; color: var(--text); }
 .lp-brand-emblem { height: 48px; width: auto; display: block; }
