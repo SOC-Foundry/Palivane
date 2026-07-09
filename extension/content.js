@@ -31,6 +31,8 @@ const CATEGORY_LABELS = {
   jailbreak: "Jailbreak attempt",
   data_exfiltration: "Data-exfiltration attempt",
   unsanctioned_ai: "Unsanctioned AI tool",
+  unsafe_autonomy: "Unsafe agent autonomy (YOLO)",
+  dangerous_command: "Dangerous command",
 };
 
 function dataSignals(verdict) {

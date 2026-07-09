@@ -48,6 +48,7 @@ class Category(str, Enum):
     SENSITIVE_RESOURCE_ACCESS = "sensitive_resource_access"  # tool/resource touches .env, keys, etc.
     DANGEROUS_COMMAND = "dangerous_command"            # tool call runs a high-risk shell command
     TOOL_POISONING = "tool_poisoning"                  # injected instructions in a tool description
+    UNSAFE_AUTONOMY = "unsafe_autonomy"                # coding agent set to act without confirmation (YOLO)
     # --- Supply chain (deps) ---
     DEPENDENCY_RISK = "dependency_risk"                # risky/malicious dependency in a manifest
     # --- Endpoint credential hygiene (secrets) ---

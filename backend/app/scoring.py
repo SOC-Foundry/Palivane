@@ -63,6 +63,7 @@ _ATTACK_CATEGORIES = {
     Category.SENSITIVE_RESOURCE_ACCESS,
     Category.DANGEROUS_COMMAND,
     Category.TOOL_POISONING,
+    Category.UNSAFE_AUTONOMY,
     # Supply chain — a risky/malicious dependency is itself the threat.
     Category.DEPENDENCY_RISK,
     # Endpoint hygiene — a live credential sitting at rest is itself the exposure.

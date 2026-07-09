@@ -52,6 +52,15 @@ CATALOG: list[dict] = [
     {"key": "sensitive_resource_access", "label": "Sensitive resource access",
      "desc": "Tool/resource calls touching .env, private keys, and other sensitive paths.",
      "group": "Agentic (MCP)"},
+    # --- Coding assistants & agents ---
+    {"key": "yolo_mode", "label": "YOLO / auto-apply modes",
+     "desc": "Detects agent autonomy settings — autoRun, autoFix, auto-apply, MCP autoApprove, "
+             "--dangerously-skip-permissions — that let it act without user confirmation.",
+     "group": "Coding assistants & agents"},
+    {"key": "cursor_chat", "label": "Cursor chat analysis",
+     "desc": "Scans AI coding chats and generated code blocks for destructive / dangerous "
+             "commands before a developer runs them.",
+     "group": "Coding assistants & agents"},
     # --- Supply chain & endpoint ---
     {"key": "dependency_risk", "label": "Dependency risk",
      "desc": "Risky dependency manifests: install-script abuse, non-registry sources, known-bad packages + CVEs.",
