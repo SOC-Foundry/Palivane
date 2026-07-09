@@ -958,6 +958,7 @@ def list_findings(
     severity: str | None = None,
     status: str | None = None,
     surface: str | None = None,
+    actor: str | None = None,
     limit: int = 100,
 ):
     q = db.query(Finding).filter(Finding.tenant_id == current.tenant_id)
@@ -967,6 +968,8 @@ def list_findings(
         q = q.filter(Finding.status == status)
     if surface:
         q = q.filter(Finding.surface == surface)
+    if actor:
+        q = q.filter(Finding.sender == actor)
     rows = q.order_by(Finding.created_at.desc()).limit(min(limit, 500)).all()
     return {"findings": [r.to_summary() for r in rows]}
 
@@ -1047,6 +1050,43 @@ def coverage_reconcile(body: CoverageRequest, current: User = Depends(require_ad
         q = q.filter(Finding.created_at >= cutoff)
     covered = {r[0] for r in q.distinct().all()}
     return reconcile(body.events, covered)
+
+
+@app.get("/api/activity/users")
+def activity_users(current: User = Depends(require_admin), db: Session = Depends(get_db),
+                   limit: int = 200):
+    """Per-registered-user scan log: each actor Warden has findings for, with counts,
+    severity mix, the categories they trip, and last-seen — the 'who is doing what' view."""
+    _RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}
+    rows = (db.query(Finding)
+              .filter(Finding.tenant_id == current.tenant_id, Finding.sender != "")
+              .order_by(Finding.created_at.desc()).limit(20000).all())
+    users: dict[str, dict] = {}
+    for r in rows:
+        u = users.setdefault(r.sender, {
+            "actor": r.sender, "findings": 0, "high": 0, "critical": 0, "max_risk": 0,
+            "surfaces": set(), "categories": {}, "last_seen": ""})
+        u["findings"] += 1
+        if r.severity == "critical":
+            u["critical"] += 1
+        if r.severity in ("high", "critical"):
+            u["high"] += 1
+        u["max_risk"] = max(u["max_risk"], r.risk_score or 0)
+        u["surfaces"].add(r.surface)
+        for s in (r.signals or []):
+            c = s.get("category")
+            if c:
+                u["categories"][c] = u["categories"].get(c, 0) + 1
+        ls = r.created_at.isoformat() if r.created_at else ""
+        if ls > u["last_seen"]:
+            u["last_seen"] = ls
+    out = []
+    for u in users.values():
+        top = sorted(u["categories"].items(), key=lambda kv: kv[1], reverse=True)[:4]
+        out.append({**u, "surfaces": sorted(u["surfaces"]),
+                    "categories": [{"category": k, "count": v} for k, v in top]})
+    out.sort(key=lambda x: (x["critical"], x["high"], x["max_risk"], x["findings"]), reverse=True)
+    return {"users": out[:min(limit, 1000)]}
 
 
 @app.post("/api/discovery/ingest")

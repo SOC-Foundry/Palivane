@@ -18,8 +18,9 @@ import Connections from "./components/Connections.jsx";
 import Coverage from "./components/Coverage.jsx";
 import Discovery from "./components/Discovery.jsx";
 import Policies from "./components/Policies.jsx";
+import ScanLog from "./components/ScanLog.jsx";
 import Help from "./components/Help.jsx";
-import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard, IconInbox, IconTarget, IconRadar, IconSliders, IconBook } from "./components/icons.jsx";
+import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard, IconInbox, IconTarget, IconRadar, IconSliders, IconActivity, IconBook } from "./components/icons.jsx";
 
 export default function App() {
   const [auth, setAuth] = useState(null);        // { user, tenant }
@@ -163,6 +164,12 @@ export default function App() {
             </button>
           )}
           {isAdmin && (
+            <button type="button" className={`nav-item ${view === "scanlog" ? "nav-on" : ""}`}
+                    onClick={() => setView("scanlog")}>
+              <IconActivity /> <span>Scan log</span>
+            </button>
+          )}
+          {isAdmin && (
             <button type="button" className={`nav-item ${view === "users" ? "nav-on" : ""}`}
                     onClick={() => setView("users")}>
               <IconUsers /> <span>Users</span>
@@ -222,6 +229,8 @@ export default function App() {
           <Coverage />
         ) : view === "policies" ? (
           <Policies tenant={auth.tenant} onTenant={(t) => setAuth((a) => ({ ...a, tenant: t }))} />
+        ) : view === "scanlog" ? (
+          <ScanLog />
         ) : view === "users" ? (
           <Users currentUser={auth.user} />
         ) : view === "settings" ? (

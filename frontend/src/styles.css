@@ -835,3 +835,6 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 }
 .chip-toggle:hover { color: var(--text); border-color: var(--muted-2); }
 .chip-toggle.on { background: rgba(124,108,255,0.16); border-color: rgba(124,108,255,0.5); color: #c7bcff; }
+
+/* Scan log — selected user row */
+.data-table tr.row-on { background: var(--accent-soft); }
