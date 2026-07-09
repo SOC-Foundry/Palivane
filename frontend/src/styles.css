@@ -570,15 +570,15 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 
 .lp-nav {
   display: flex; justify-content: space-between; align-items: center; gap: 16px;
-  max-width: 1120px; margin: 0 auto; padding: 16px 24px;
+  max-width: 1200px; margin: 0 auto; padding: 26px 32px;
   position: sticky; top: 0; z-index: 5;
   background: linear-gradient(180deg, rgba(10,13,19,0.92) 60%, transparent);
   backdrop-filter: blur(6px);
 }
-.lp-brand { display: flex; align-items: center; gap: 9px; font-size: 19px; font-weight: 800; color: var(--text); }
-.lp-brand-emblem { height: 30px; width: auto; display: block; }
-.lp-nav-links { display: flex; align-items: center; gap: 18px; }
-.lp-nav-links a { color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 600; }
+.lp-brand { display: flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 800; color: var(--text); }
+.lp-brand-emblem { height: 44px; width: auto; display: block; filter: drop-shadow(0 0 14px rgba(124,108,255,0.28)); }
+.lp-nav-links { display: flex; align-items: center; gap: 24px; }
+.lp-nav-links a { color: var(--muted); text-decoration: none; font-size: 15px; font-weight: 600; }
 .lp-nav-links a:hover { color: var(--text); }
 
 /* Purple gradient primary button + ghost outline — landing scope only */
