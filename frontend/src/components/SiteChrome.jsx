@@ -29,6 +29,19 @@ export function SiteNav({ onSignIn }) {
   );
 }
 
+// A product screenshot wrapped in a browser-chrome frame (title bar + traffic-light dots).
+export function Shot({ src, alt = "", caption = "", lead = false }) {
+  return (
+    <figure className={`lp-shot ${lead ? "lp-shot-lead" : ""}`}>
+      <div className="lp-frame">
+        <span className="lp-frame-bar"><i /><i /><i /><span className="lp-frame-url">app.warden.security</span></span>
+        <img src={src} alt={alt} loading="lazy" />
+      </div>
+      {caption && <figcaption>{caption}</figcaption>}
+    </figure>
+  );
+}
+
 export function SiteFooter() {
   return (
     <footer className="lp-foot">
