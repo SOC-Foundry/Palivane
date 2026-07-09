@@ -403,6 +403,7 @@ class Agent(Base):
     role = Column(String(64), default="")               # reserved for Phase 1 authz
     prefix = Column(String(16), index=True, default="")
     token_hash = Column(String(64), default="")
+    deny = Column(String(1024), default="")             # per-agent extra deny globs (tightens the role)
     active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=_utcnow)
     last_seen = Column(DateTime, nullable=True)
@@ -410,6 +411,7 @@ class Agent(Base):
     def to_dict(self) -> dict:
         return {"id": self.id, "name": self.name, "kind": self.kind, "role": self.role or "",
                 "prefix": self.prefix, "active": self.active,
+                "deny": [x.strip() for x in (self.deny or "").split(",") if x.strip()],
                 "created_at": self.created_at.isoformat() if self.created_at else None,
                 "last_seen": self.last_seen.isoformat() if self.last_seen else None}
 
@@ -428,7 +430,9 @@ class AgentRole(Base):
     name = Column(String(64), nullable=False)
     allow_tools = Column(String(2048), default="")     # comma-sep globs (MCP tool names)
     allow_servers = Column(String(2048), default="")   # comma-sep globs (MCP servers)
+    allow_commands = Column(String(2048), default="")  # comma-sep globs (shell commands)
     deny = Column(String(2048), default="")            # comma-sep globs (explicit denies)
+    data_scopes = Column(String(512), default="")      # data categories the agent may access
     default_allow = Column(Boolean, default=False)     # posture when nothing matches
     enforce = Column(Boolean, default=False)           # False = monitor, True = block
     created_at = Column(DateTime, default=_utcnow)
@@ -441,7 +445,9 @@ class AgentRole(Base):
         return {"id": self.id, "name": self.name,
                 "allow_tools": self._list(self.allow_tools),
                 "allow_servers": self._list(self.allow_servers),
+                "allow_commands": self._list(self.allow_commands),
                 "deny": self._list(self.deny),
+                "data_scopes": self._list(self.data_scopes),
                 "default_allow": bool(self.default_allow), "enforce": bool(self.enforce)}
 
 

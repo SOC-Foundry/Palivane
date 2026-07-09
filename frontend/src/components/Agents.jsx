@@ -4,7 +4,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 
-const BLANK_ROLE = { name: "", allow_tools: "", allow_servers: "", deny: "", default_allow: false, enforce: false };
+const BLANK_ROLE = { name: "", allow_tools: "", allow_servers: "", allow_commands: "",
+                     deny: "", data_scopes: "", default_allow: false, enforce: false };
 const _csv = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
 
 export default function Agents() {
@@ -28,6 +29,10 @@ export default function Agents() {
     try { await api.agentUpdate(a.id, { role }); await load(); }
     catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
   }
+  async function setAgentDeny(a, denyStr) {
+    try { await api.agentUpdate(a.id, { deny: _csv(denyStr) }); await load(); }
+    catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
+  }
   async function saveRole() {
     setErr(null);
     if (!roleDraft.name.trim()) { setErr("Give the role a name."); return; }
@@ -35,6 +40,7 @@ export default function Agents() {
       await api.agentRoleUpsert({
         name: roleDraft.name.trim(),
         allow_tools: _csv(roleDraft.allow_tools), allow_servers: _csv(roleDraft.allow_servers),
+        allow_commands: _csv(roleDraft.allow_commands), data_scopes: _csv(roleDraft.data_scopes),
         deny: _csv(roleDraft.deny), default_allow: roleDraft.default_allow, enforce: roleDraft.enforce });
       setRoleDraft(BLANK_ROLE); await load();
     } catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
@@ -108,7 +114,7 @@ export default function Agents() {
         <h2>Agents</h2>
         {agents && agents.length ? (
           <table className="data-table">
-            <thead><tr><th>Name</th><th>Kind</th><th>Role</th><th>Status</th><th>Last seen</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Kind</th><th>Role</th><th>Extra deny</th><th>Status</th><th></th></tr></thead>
             <tbody>
               {agents.map((a) => (
                 <tr key={a.id} style={{ opacity: a.active ? 1 : 0.5 }}>
@@ -120,10 +126,14 @@ export default function Agents() {
                       {roles.map((r) => <option key={r.id} value={r.name}>{r.name}{r.enforce ? " (enforce)" : ""}</option>)}
                     </select>
                   </td>
+                  <td>
+                    <input defaultValue={(a.deny || []).join(", ")} placeholder="*prod*, *delete*"
+                           style={{ width: 130 }} title="Per-agent extra deny globs (tighten the role)"
+                           onBlur={(e) => { const v = e.target.value; if (v !== (a.deny || []).join(", ")) setAgentDeny(a, v); }} />
+                  </td>
                   <td>{a.active
                     ? <span className="cat cat-unsanctioned_ai">active</span>
                     : <span className="cat cat-secret_leak">disabled</span>}</td>
-                  <td className="muted">{a.last_seen ? a.last_seen.slice(0, 16).replace("T", " ") : "—"}</td>
                   <td>
                     <button className="link-btn" onClick={() => rotate(a)}>Rotate</button>
                     {a.active && <button className="link-btn" style={{ marginLeft: 12, color: "var(--crit)" }}
@@ -146,13 +156,15 @@ export default function Agents() {
 
         {roles.length > 0 && (
           <table className="data-table" style={{ marginBottom: 16 }}>
-            <thead><tr><th>Role</th><th>Allow tools</th><th>Allow servers</th><th>Deny</th><th>Mode</th><th></th></tr></thead>
+            <thead><tr><th>Role</th><th>Allow tools</th><th>Allow servers</th><th>Commands</th><th>Data scopes</th><th>Deny</th><th>Mode</th><th></th></tr></thead>
             <tbody>
               {roles.map((r) => (
                 <tr key={r.id}>
                   <td><strong>{r.name}</strong>{r.default_allow && <span className="muted" style={{ fontSize: 11 }}> · default-allow</span>}</td>
                   <td className="muted">{r.allow_tools.join(", ") || "—"}</td>
                   <td className="muted">{r.allow_servers.join(", ") || "—"}</td>
+                  <td className="muted">{r.allow_commands.join(", ") || "—"}</td>
+                  <td className="muted">{r.data_scopes.join(", ") || "—"}</td>
                   <td className="muted">{r.deny.join(", ") || "—"}</td>
                   <td>{r.enforce
                     ? <span className="cat cat-secret_leak">enforce</span>
@@ -176,6 +188,12 @@ export default function Agents() {
                    onChange={(e) => setRoleDraft((d) => ({ ...d, allow_servers: e.target.value }))} />
             <input placeholder="deny (*delete*, *.prod)" value={roleDraft.deny}
                    onChange={(e) => setRoleDraft((d) => ({ ...d, deny: e.target.value }))} />
+          </div>
+          <div className="override-row">
+            <input placeholder="allow shell commands (kubectl get*, ls*)" value={roleDraft.allow_commands}
+                   onChange={(e) => setRoleDraft((d) => ({ ...d, allow_commands: e.target.value }))} />
+            <input placeholder="data scopes (pii_exposure, secret_leak)" value={roleDraft.data_scopes}
+                   onChange={(e) => setRoleDraft((d) => ({ ...d, data_scopes: e.target.value }))} />
           </div>
           <div className="override-checks">
             <button type="button" className={`chip-toggle ${roleDraft.default_allow ? "on" : ""}`}

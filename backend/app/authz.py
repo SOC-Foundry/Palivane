@@ -22,16 +22,24 @@ def _match(value: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatch(v, p) for p in patterns)
 
 
-def authorize(role, server: str, tool: str) -> tuple[bool, str]:
+def authorize(role, server: str, tool: str, command: str = "") -> tuple[bool, str]:
     """Return (allowed, reason). `role` is an AgentRole (or its to_dict()). reason is set only
-    on deny."""
+    on deny. A non-empty `command` means a shell execution — authorized against allow_commands
+    (opt-in: an empty allow_commands leaves shell unrestricted) rather than the tool allow-list."""
     d = role.to_dict() if hasattr(role, "to_dict") else role
     server = (server or "").lower()
     tool = (tool or "").lower()
+    command = (command or "").lower()
 
     deny = d.get("deny") or []
-    if deny and (_match(tool, deny) or _match(server, deny)):
-        return False, f"'{tool or server}' is denied by role '{d.get('name', '')}'."
+    if deny and any(_match(v, deny) for v in (command, tool, server) if v):
+        return False, f"'{command or tool or server}' is denied by role '{d.get('name', '')}'."
+
+    if command:  # shell execution — gate on allow_commands
+        ac = d.get("allow_commands") or []
+        if ac and not _match(command, ac):
+            return False, f"command '{command[:60]}' is not permitted by role '{d.get('name', '')}'."
+        return True, ""
 
     allow_tools = d.get("allow_tools") or []
     allow_servers = d.get("allow_servers") or []
