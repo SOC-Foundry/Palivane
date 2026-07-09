@@ -2,7 +2,7 @@
 // diagram, surface chips, detector cards, tiered secret stack, scoring formula + severity
 // table, monitor/enforce split) rather than a wall of prose. Content mirrors README
 // "How detection works" — kept accurate for a security-minded reader evaluating the engine.
-import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
+import { SiteNav, SiteFooter, Shot } from "./SiteChrome.jsx";
 import { IconInbox, IconShield, IconList, IconTarget, IconAlert, IconClipboard, IconPlug } from "./icons.jsx";
 
 const PIPELINE = [
@@ -190,9 +190,7 @@ export default function HowItWorks() {
         <div className="lp-wrap">
           <h2 className="lp-h2">…into one console</h2>
           <p className="lp-sub">Every verdict, across every plane, scored and triageable in one place.</p>
-          <figure className="lp-shot lp-shot-lead">
-            <img src="/shots/dashboard.png" alt="Warden findings dashboard" loading="lazy" />
-          </figure>
+          <Shot lead src="/shots/dashboard.png" alt="Warden findings dashboard" />
         </div>
       </section>
 

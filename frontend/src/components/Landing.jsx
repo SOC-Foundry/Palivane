@@ -1,5 +1,5 @@
 import { IconShield, IconPlug, IconTarget, IconAlert, IconInbox, IconClipboard } from "./icons.jsx";
-import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
+import { SiteNav, SiteFooter, Shot } from "./SiteChrome.jsx";
 
 const FRONTS = [
   {
@@ -69,23 +69,15 @@ export default function Landing({ onSignIn }) {
           <h2 className="lp-h2">See Warden in action</h2>
           <p className="lp-sub">One console across every plane — findings, shadow-AI discovery,
              granular policy, and agent governance.</p>
-          <figure className="lp-shot lp-shot-lead">
-            <img src="/shots/dashboard.png" alt="Warden findings dashboard" loading="lazy" />
-            <figcaption>Live risk verdicts from the gateway, browser extension, egress proxy &amp; CI.</figcaption>
-          </figure>
+          <Shot lead src="/shots/dashboard.png" alt="Warden findings dashboard"
+                caption="Live risk verdicts from the gateway, browser extension, egress proxy & CI." />
           <div className="lp-gallery">
-            <figure className="lp-shot">
-              <img src="/shots/discovery.png" alt="Shadow-AI discovery inventory" loading="lazy" />
-              <figcaption>Shadow-AI discovery — every AI tool, by team, with real data exposure.</figcaption>
-            </figure>
-            <figure className="lp-shot">
-              <img src="/shots/policies.png" alt="Policy console" loading="lazy" />
-              <figcaption>Granular policy — toggle any check, presets, per-user/group overrides.</figcaption>
-            </figure>
-            <figure className="lp-shot">
-              <img src="/shots/agents.png" alt="Agent identity &amp; least-privilege" loading="lazy" />
-              <figcaption>Agent identity &amp; least-privilege roles — monitor or enforce.</figcaption>
-            </figure>
+            <Shot src="/shots/discovery.png" alt="Shadow-AI discovery inventory"
+                  caption="Shadow-AI discovery — every AI tool, by team, with real data exposure." />
+            <Shot src="/shots/policies.png" alt="Policy console"
+                  caption="Granular policy — toggle any check, presets, per-user/group overrides." />
+            <Shot src="/shots/agents.png" alt="Agent identity & least-privilege"
+                  caption="Agent identity & least-privilege roles — monitor or enforce." />
           </div>
         </div>
       </section>

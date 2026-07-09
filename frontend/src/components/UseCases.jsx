@@ -1,6 +1,6 @@
 // Public "Use cases" page at /use-cases. Concrete scenarios Warden addresses, mapped to
 // the real capture planes and detectors. Reuses the landing (lp-*) design language.
-import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
+import { SiteNav, SiteFooter, Shot } from "./SiteChrome.jsx";
 import { IconTarget, IconShield, IconAlert, IconInbox, IconClipboard, IconPlug } from "./icons.jsx";
 
 const CASES = [
@@ -73,9 +73,7 @@ export default function UseCases() {
           <h2 className="lp-h2">Find the shadow AI first</h2>
           <p className="lp-sub">An inventory of every AI tool in use — sanctioned or not — by tool
              and by team, with the real sensitive-data exposure each one received.</p>
-          <figure className="lp-shot lp-shot-lead">
-            <img src="/shots/discovery.png" alt="Shadow-AI discovery inventory" loading="lazy" />
-          </figure>
+          <Shot lead src="/shots/discovery.png" alt="Shadow-AI discovery inventory" />
         </div>
       </section>
 

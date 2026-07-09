@@ -1,6 +1,6 @@
 // Public "Why Warden" page at /why-warden. The differentiators — what sets Warden apart.
 // Reuses the landing (lp-*) design language.
-import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
+import { SiteNav, SiteFooter, Shot } from "./SiteChrome.jsx";
 import { IconShield, IconTarget, IconPlug, IconInbox, IconClipboard, IconAlert } from "./icons.jsx";
 
 const REASONS = [
@@ -72,9 +72,7 @@ export default function WhyWarden() {
           <h2 className="lp-h2">Govern agents, not just prompts</h2>
           <p className="lp-sub">Give every AI agent a verifiable identity and a least-privilege
              role — which tools, servers, commands, and data it may touch — monitor or enforce.</p>
-          <figure className="lp-shot lp-shot-lead">
-            <img src="/shots/agents.png" alt="Agent identity & least-privilege" loading="lazy" />
-          </figure>
+          <Shot lead src="/shots/agents.png" alt="Agent identity & least-privilege" />
         </div>
       </section>
 
