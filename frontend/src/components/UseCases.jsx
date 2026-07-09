@@ -68,6 +68,17 @@ export default function UseCases() {
         </div>
       </section>
 
+      <section className="lp-section alt">
+        <div className="lp-wrap">
+          <h2 className="lp-h2">Find the shadow AI first</h2>
+          <p className="lp-sub">An inventory of every AI tool in use — sanctioned or not — by tool
+             and by team, with the real sensitive-data exposure each one received.</p>
+          <figure className="lp-shot lp-shot-lead">
+            <img src="/shots/discovery.png" alt="Shadow-AI discovery inventory" loading="lazy" />
+          </figure>
+        </div>
+      </section>
+
       <section className="lp-cta-band">
         <div className="lp-wrap">
           <div className="lp-banner">

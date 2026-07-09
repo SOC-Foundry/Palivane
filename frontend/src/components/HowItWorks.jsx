@@ -185,6 +185,17 @@ export default function HowItWorks() {
         </div>
       </section>
 
+      {/* Everything lands in one console */}
+      <section className="lp-section">
+        <div className="lp-wrap">
+          <h2 className="lp-h2">…into one console</h2>
+          <p className="lp-sub">Every verdict, across every plane, scored and triageable in one place.</p>
+          <figure className="lp-shot lp-shot-lead">
+            <img src="/shots/dashboard.png" alt="Warden findings dashboard" loading="lazy" />
+          </figure>
+        </div>
+      </section>
+
       {/* Offline-first CTA band */}
       <section className="lp-cta-band">
         <div className="lp-wrap">

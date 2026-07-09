@@ -67,6 +67,17 @@ export default function WhyWarden() {
         </div>
       </section>
 
+      <section className="lp-section alt">
+        <div className="lp-wrap">
+          <h2 className="lp-h2">Govern agents, not just prompts</h2>
+          <p className="lp-sub">Give every AI agent a verifiable identity and a least-privilege
+             role — which tools, servers, commands, and data it may touch — monitor or enforce.</p>
+          <figure className="lp-shot lp-shot-lead">
+            <img src="/shots/agents.png" alt="Agent identity & least-privilege" loading="lazy" />
+          </figure>
+        </div>
+      </section>
+
       <section className="lp-cta-band">
         <div className="lp-wrap">
           <div className="lp-banner">
