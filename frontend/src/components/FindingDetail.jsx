@@ -97,6 +97,7 @@ export default function FindingDetail({ finding, onClose, onStatusChange }) {
       <div className="detail-meta">
         <span>{finding.channel}</span>
         {finding.sender && <span>· {finding.sender}</span>}
+        {finding.agent && <span className="tag tag-ai">🤖 {finding.agent}</span>}
         {finding.ai_generated && <span className="tag tag-ai">AI-generated</span>}
         {finding.attack_intent && <span className="tag tag-atk">attack intent</span>}
       </div>

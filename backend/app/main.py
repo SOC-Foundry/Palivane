@@ -22,7 +22,7 @@ from .gateway import gemini_router, router as gateway_router
 from .database import Base, engine as db_engine, get_db
 from .detectors import AnalysisInput, Surface
 from .engine import engine
-from .models import Finding, PolicyOverride, Tenant, User
+from .models import Agent, Finding, PolicyOverride, Tenant, User
 from .schemas import (
     AIUsageIngest,
     AnalyzeRequest,
@@ -362,22 +362,63 @@ def _ingest_auth(x_warden_token: str, db: Session) -> tuple[int | None, str]:
     """Resolve (tenant_id, default_actor) from a per-tenant API key (`ak_…`) or the
     shared EXTENSION_INGEST_TOKEN. Used by the token-gated ingest & scan endpoints, which
     are deployed via policy/CI and so authenticate with a capture token, not a user JWT."""
-    from .security import looks_like_api_key
+    from .security import looks_like_agent_token, looks_like_api_key
 
     if looks_like_api_key(x_warden_token):
         from .gateway import _resolve_api_key
         principal = _resolve_api_key(x_warden_token, db)   # 401s on bad/expired key
         return principal.tenant_id, principal.actor
+    if looks_like_agent_token(x_warden_token):
+        ag = _resolve_agent_token(x_warden_token, db)      # 401s on bad/disabled agent
+        return ag.tenant_id, ag.name
     token = settings.extension_ingest_token
     if not token or not hmac.compare_digest(x_warden_token, token):
         raise HTTPException(status_code=401, detail="invalid or missing ingest token")
     return _ingest_tenant_id(db), ""
 
 
+def _naive_now():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _resolve_agent_token(token: str, db: Session) -> Agent:
+    """Resolve an `ag_…` agent token to its Agent (401 on unknown/disabled). Bumps last_seen."""
+    from .security import hash_token
+    row = (db.query(Agent)
+             .filter(Agent.token_hash == hash_token(token), Agent.active.is_(True))
+             .one_or_none())
+    if row is None:
+        raise HTTPException(status_code=401, detail="invalid or disabled agent token")
+    row.last_seen = _naive_now()
+    db.commit()
+    return row
+
+
+def _capture_agent(x_warden_token: str, x_warden_agent: str, tenant_id, db: Session) -> str:
+    """Best-effort agent name for attribution: an `X-Warden-Agent` header, or the primary
+    token itself when it's an `ag_…`. Returns "" if none/mismatched (never raises)."""
+    from .security import hash_token, looks_like_agent_token
+    tok = (x_warden_agent or "").strip()
+    if not looks_like_agent_token(tok):
+        tok = x_warden_token if looks_like_agent_token(x_warden_token) else ""
+    if not looks_like_agent_token(tok):
+        return ""
+    row = (db.query(Agent)
+             .filter(Agent.token_hash == hash_token(tok), Agent.active.is_(True))
+             .one_or_none())
+    if row is None or (tenant_id is not None and row.tenant_id != tenant_id):
+        return ""
+    row.last_seen = _naive_now()
+    db.commit()
+    return row.name
+
+
 @app.post("/api/ingest/ai-usage")
 def ingest_ai_usage(
     body: AIUsageIngest,
     x_warden_token: str = Header(default=""),
+    x_warden_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Score content a browser extension / proxy captured on its way to an AI tool.
@@ -388,6 +429,7 @@ def ingest_ai_usage(
     tenant_id, default_actor = _ingest_auth(x_warden_token, db)
     _enforce_rate(db, tenant_id)
     actor = body.user or default_actor
+    agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
 
     meta: dict = {"destination": body.destination} if body.destination else {}
     meta["sanctioned_tools"] = _tenant_or_global(
@@ -400,7 +442,8 @@ def ingest_ai_usage(
     from .policy import detect_tool, signal_filter_for
     suppress = _tenant_or_global(tenant_id, db, "tool_suppress", settings.gateway_tool_suppress)
     sig_filter = signal_filter_for(detect_tool(explicit=body.tool), extra=suppress)
-    result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id, signal_filter=sig_filter)
+    result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
+                          signal_filter=sig_filter, agent=agent)
     # Feed the shadow-AI discovery inventory: who used which AI tool, and did it carry
     # sensitive data (best-effort — never breaks the verdict).
     from .discovery import record_capture
@@ -483,7 +526,7 @@ def _tenant_mcp_block_severity(tenant_id: int | None, db: Session) -> str:
 
 
 def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
-               allowed_servers: str, block_severity: str, db: Session) -> dict:
+               allowed_servers: str, block_severity: str, db: Session, agent: str = "") -> dict:
     """Score one MCP activity on the `mcp` surface and return the client verdict.
 
     Benign (allow-level) verdicts aren't persisted unless WARDEN_MCP_PERSIST_BENIGN is set
@@ -508,7 +551,7 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
         },
     )
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
-                          signal_filter=_mcp_filter,
+                          signal_filter=_mcp_filter, agent=agent,
                           persist_benign=settings.mcp_persist_benign)
     return {
         "action": _action_for(result["severity"], block_severity),
@@ -524,6 +567,7 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
 def ingest_mcp(
     body: MCPIngest,
     x_warden_token: str = Header(default=""),
+    x_warden_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Score an MCP JSON-RPC activity a capture client (proxy, warden-hook, warden-mcp)
@@ -531,14 +575,16 @@ def ingest_mcp(
     `mcp` surface: allow/warn/block. Benign verdicts aren't persisted by default."""
     tenant_id, default_actor = _ingest_auth(x_warden_token, db)
     _enforce_rate(db, tenant_id)
+    agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
     return _score_mcp(body, tenant_id, default_actor, _tenant_mcp_allow(tenant_id, db),
-                      _tenant_mcp_block_severity(tenant_id, db), db)
+                      _tenant_mcp_block_severity(tenant_id, db), db, agent=agent)
 
 
 @app.post("/api/ingest/mcp/batch")
 def ingest_mcp_batch(
     body: MCPBatchIngest,
     x_warden_token: str = Header(default=""),
+    x_warden_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Score many MCP activities in one request — for long-lived capture clients
@@ -546,9 +592,10 @@ def ingest_mcp_batch(
     request against the tenant's sensor quota. Returns per-item verdicts, index-aligned."""
     tenant_id, default_actor = _ingest_auth(x_warden_token, db)
     _enforce_rate(db, tenant_id)
+    agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
     allowed = _tenant_mcp_allow(tenant_id, db)
     block = _tenant_mcp_block_severity(tenant_id, db)
-    results = [_score_mcp(item, tenant_id, default_actor, allowed, block, db)
+    results = [_score_mcp(item, tenant_id, default_actor, allowed, block, db, agent=agent)
                for item in body.items]
     return {"results": results}
 
@@ -797,6 +844,7 @@ def scan_ide_extensions(
 def scan_agent_config(
     body: AgentConfigScan,
     x_warden_token: str = Header(default=""),
+    x_warden_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Scan an AI coding-assistant config (Cursor settings.json, MCP client config, agent CLI
@@ -806,11 +854,12 @@ def scan_agent_config(
     tenant_id, default_actor = _ingest_auth(x_warden_token, db)
     _enforce_rate(db, tenant_id)
     actor = body.user or default_actor
+    agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
     item = AnalysisInput(content=body.content, sender=actor,
                          channel=f"{body.tool or 'agent'}-config", surface=Surface.IDE,
                          metadata={"kind": "agent_config", "tool": body.tool})
     result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
-                          db=db, tenant_id=tenant_id)
+                          db=db, tenant_id=tenant_id, agent=agent)
     return {
         "action": _action_for(result["severity"]),
         "severity": result["severity"],
