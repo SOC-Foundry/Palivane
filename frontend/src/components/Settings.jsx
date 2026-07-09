@@ -33,6 +33,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     sanctioned_ai_tools: tenant?.sanctioned_ai_tools || "",
     tool_suppress: tenant?.tool_suppress || "",
     custom_pii_patterns: tenant?.custom_pii_patterns || "",
+    oversharing_rules: tenant?.oversharing_rules || "",
   });
   const setField = (k) => (e) => setOrgState((o) => ({ ...o, [k]: e.target.value }));
 
@@ -53,6 +54,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         sanctioned_ai_tools: org.sanctioned_ai_tools,
         tool_suppress: org.tool_suppress,
         custom_pii_patterns: org.custom_pii_patterns,
+        oversharing_rules: org.oversharing_rules,
       });
       onTenant?.(t);
       flash("Organization settings saved.");
@@ -299,6 +301,9 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <label className="field-wide">Custom PII / confidential patterns (one <code>label=regex</code> per line)
             <textarea rows={3} placeholder={"Customer ID=CUST-\\d{8}\nMRN=MRN\\d{7}\nProject codename=(Bluebird|Falcon)"}
                       value={org.custom_pii_patterns} onChange={setField("custom_pii_patterns")} /></label>
+          <label className="field-wide">Need-to-know rules (oversharing) — one <code>restricted = allowed-group</code> per line
+            <textarea rows={3} placeholder={"confidential_data = *@acme.com\npii_exposure = *@hr.acme.com\nkw:salary = *@hr.acme.com,*@exec.acme.com"}
+                      value={org.oversharing_rules} onChange={setField("oversharing_rules")} /></label>
         </div>
         <p className="muted" style={{ margin: "0 0 12px", fontSize: 12 }}>Block severity is the lowest
            verdict that blocks (lower = stricter). Suppressions drop a category for a named capture

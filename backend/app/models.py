@@ -77,6 +77,9 @@ class Tenant(Base):
     custom_pii_patterns = Column(String(4096), default="")
     # Detection checks the admin has turned OFF (comma-separated policy keys). Empty = all on.
     disabled_checks = Column(String(2048), default="")
+    # Need-to-know rules for oversharing detection ("category|kw:word = allowed_glob,…" per
+    # line): flags an LLM response returning restricted data to an unauthorized recipient.
+    oversharing_rules = Column(String(4096), default="")
     # Data-processing agreement acceptance (compliance record; history in the audit log).
     dpa_version = Column(String(32), default="")
     dpa_accepted_at = Column(DateTime, nullable=True)
@@ -107,6 +110,7 @@ class Tenant(Base):
                 "custom_pii_patterns": self.custom_pii_patterns or "",
                 "tool_suppress": self.tool_suppress or "",
                 "disabled_checks": [c for c in (self.disabled_checks or "").split(",") if c],
+                "oversharing_rules": self.oversharing_rules or "",
                 "dpa_version": self.dpa_version or "",
                 "dpa_accepted_at": self.dpa_accepted_at.isoformat() if self.dpa_accepted_at else None,
                 "dpa_accepted_by": self.dpa_accepted_by or ""}

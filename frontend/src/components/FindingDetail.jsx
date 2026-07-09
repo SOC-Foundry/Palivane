@@ -17,6 +17,7 @@ const CAT_LABEL = {
   unsafe_autonomy: "Unsafe agent autonomy",
   dependency_risk: "Dependency risk",
   credential_at_rest: "Credential at rest",
+  data_oversharing: "Data oversharing",
 };
 
 // Concrete "what do I do now" steps, derived from the finding's signals + evidence — mirrors
@@ -52,6 +53,8 @@ function remediationFor(finding) {
     steps.push("Review the agent's tool call; restrict the MCP server or command, and confirm nothing ran.");
   if (cats.has("unsafe_autonomy"))
     steps.push("Turn off the agent's auto-run / auto-apply (YOLO) setting and require confirmation before it executes commands or edits.");
+  if (cats.has("data_oversharing"))
+    steps.push("Restrict the source data's permissions at the origin (SharePoint/Drive/index) so the LLM can't surface it to unauthorized users; verify the need-to-know rule matches your access policy.");
   if (cats.has("mcp_untrusted_server"))
     steps.push("Add the server to the per-tenant MCP allowlist if trusted, otherwise block it.");
   if (cats.has("dependency_risk"))

@@ -26,6 +26,7 @@ class Surface(str, Enum):
     DEPS = "deps"         # Dependency manifests — supply-chain risk in package files
     IDE = "ide"           # IDE extensions — known-bad / unapproved editor plugins
     SECRETS = "secrets"   # Endpoint credential hygiene — secrets at rest on a device
+    OVERSHARING = "oversharing"  # Need-to-know: an LLM response returning restricted data
 
 
 class Category(str, Enum):
@@ -53,6 +54,8 @@ class Category(str, Enum):
     DEPENDENCY_RISK = "dependency_risk"                # risky/malicious dependency in a manifest
     # --- Endpoint credential hygiene (secrets) ---
     CREDENTIAL_AT_REST = "credential_at_rest"          # a live secret/key sitting on a device
+    # --- Access governance (oversharing) ---
+    DATA_OVERSHARING = "data_oversharing"              # LLM surfaced restricted data to an unauthorized user
 
 
 @dataclass(frozen=True)
