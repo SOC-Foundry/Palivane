@@ -1,0 +1,103 @@
+"""Policy catalog — the individual detection checks an admin can enable/disable per tenant.
+
+Each check maps to one or more signal keys (a Signal's `effective_check` — an explicit
+`check` string or its category). Disabling a check drops its signals before scoring, so a
+tenant can tune exactly what Warden flags. The catalog is the single source of truth for
+the console's Policies page and for validating tenant updates.
+"""
+
+from __future__ import annotations
+
+# key -> (label, description, group). `key` is what a Signal.effective_check resolves to.
+CATALOG: list[dict] = [
+    # --- Prompt / LLM I/O ---
+    {"key": "prompt_injection", "label": "Prompt injection",
+     "desc": "Instruction-override attempts that try to supersede the model's own instructions.",
+     "group": "Prompt & LLM I/O"},
+    {"key": "jailbreak", "label": "Jailbreak / guardrail evasion",
+     "desc": "Personas and tricks that try to disable safety constraints or coerce policy-violating output.",
+     "group": "Prompt & LLM I/O"},
+    {"key": "data_exfiltration", "label": "System-prompt / data exfiltration",
+     "desc": "Attempts to extract the hidden system prompt, rules, secrets, or context data.",
+     "group": "Prompt & LLM I/O"},
+    {"key": "hidden_characters", "label": "Hidden characters",
+     "desc": "Zero-width / invisible Unicode and encoded (base64) payloads used to smuggle instructions.",
+     "group": "Prompt & LLM I/O"},
+    # --- Data loss (shadow AI) ---
+    {"key": "secret_leak", "label": "Secret & credential leak",
+     "desc": "API keys, tokens, private keys, and labeled credentials leaving for an AI tool.",
+     "group": "Data loss"},
+    {"key": "pii_exposure", "label": "PII exposure",
+     "desc": "SSNs, payment cards, national IDs, and single-record personal data.",
+     "group": "Data loss"},
+    {"key": "source_code_leak", "label": "Source / IP leak",
+     "desc": "Proprietary source code sent to an AI tool (auto-suppressed for sanctioned coding tools).",
+     "group": "Data loss"},
+    {"key": "confidential_data", "label": "Confidential business data",
+     "desc": "Financials, contracts, roadmaps, and material carrying a classification label (TLP / Purview).",
+     "group": "Data loss"},
+    {"key": "unsanctioned_ai", "label": "Unsanctioned AI destination",
+     "desc": "Content going to a consumer AI service not on the org's approved allowlist.",
+     "group": "Data loss"},
+    # --- Agentic (MCP) ---
+    {"key": "tool_poisoning", "label": "MCP tool poisoning",
+     "desc": "Injected instructions hidden in an MCP server's advertised tool descriptions.",
+     "group": "Agentic (MCP)"},
+    {"key": "mcp_untrusted_server", "label": "MCP untrusted server",
+     "desc": "Calls to MCP servers not on the trusted-servers allowlist.",
+     "group": "Agentic (MCP)"},
+    {"key": "dangerous_command", "label": "Dangerous command",
+     "desc": "Agent tool-calls running high-risk shell commands (curl | sh, rm -rf, etc.).",
+     "group": "Agentic (MCP)"},
+    {"key": "sensitive_resource_access", "label": "Sensitive resource access",
+     "desc": "Tool/resource calls touching .env, private keys, and other sensitive paths.",
+     "group": "Agentic (MCP)"},
+    # --- Supply chain & endpoint ---
+    {"key": "dependency_risk", "label": "Dependency risk",
+     "desc": "Risky dependency manifests: install-script abuse, non-registry sources, known-bad packages + CVEs.",
+     "group": "Supply chain & endpoint"},
+    {"key": "ide_extension", "label": "IDE extension analysis",
+     "desc": "Editor extensions with dangerous permissions, unverified publishers, or suspicious naming.",
+     "group": "Supply chain & endpoint"},
+    {"key": "credential_at_rest", "label": "Credentials at rest",
+     "desc": "Live secrets found sitting on a managed endpoint (cloud keys, .npmrc, .git-credentials, key files).",
+     "group": "Supply chain & endpoint"},
+]
+
+# The keys that ext_guard uses — ext_guard emits DEPENDENCY_RISK for IDE ext findings, so
+# `ide_extension` currently aliases dependency_risk on the `ide` surface. Kept distinct in
+# the catalog for admin clarity; both share the underlying category filter.
+_ALIASES = {"ide_extension": "dependency_risk"}
+
+VALID_KEYS = {c["key"] for c in CATALOG}
+
+# Presets: the set of checks each preset DISABLES (everything else on).
+PRESETS: dict[str, list[str]] = {
+    "strict": [],  # everything on
+    "balanced": [],  # everything on — the default; presets differ mostly by enforce/severity elsewhere
+    "monitor": [],  # discovery-first: keep all checks recording (blocking handled by mode, not checks)
+}
+
+
+def parse_disabled(raw) -> set[str]:
+    """Normalize a stored value (CSV string or list) into a validated set of check keys."""
+    if not raw:
+        return set()
+    items = raw.split(",") if isinstance(raw, str) else list(raw)
+    return {i.strip() for i in items if i and i.strip() in VALID_KEYS}
+
+
+def checks_signal_filter(disabled: set[str]):
+    """A signal filter (list[Signal] -> list[Signal]) that drops signals for disabled checks.
+    Resolves aliases so a catalog key and its underlying category both match."""
+    if not disabled:
+        return None
+    active = set(disabled) | {_ALIASES[d] for d in disabled if d in _ALIASES}
+    return lambda signals: [s for s in signals if s.effective_check not in active]
+
+
+def catalog_for(disabled: set[str]) -> dict:
+    """The catalog annotated with each check's current enabled state, grouped, + presets."""
+    checks = [{**c, "enabled": c["key"] not in disabled} for c in CATALOG]
+    return {"checks": checks, "groups": list(dict.fromkeys(c["group"] for c in CATALOG)),
+            "presets": list(PRESETS.keys())}

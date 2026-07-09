@@ -1004,6 +1004,17 @@ def discovery_ingest(body: DiscoveryIngest, current: User = Depends(require_admi
     return ingest_logs(db, current.tenant_id, body.events)
 
 
+@app.get("/api/policies")
+def policies_catalog(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """The detection-policy catalog for the tenant: every check, grouped, with its current
+    enabled/disabled state and the available presets. Toggling is a PATCH /api/tenant with
+    `disabled_checks`."""
+    from .policies import catalog_for, parse_disabled
+    tenant = db.get(Tenant, current.tenant_id)
+    disabled = parse_disabled(getattr(tenant, "disabled_checks", "") if tenant else "")
+    return catalog_for(disabled)
+
+
 @app.get("/api/discovery/inventory")
 def discovery_inventory(current: User = Depends(require_admin), db: Session = Depends(get_db)):
     """The shadow-AI inventory: every AI tool observed, by tool and by team/department, each

@@ -203,6 +203,7 @@ class TenantUpdate(BaseModel):
     sanctioned_ai_tools: str | None = None     # org-approved AI destinations (comma-separated)
     tool_suppress: str | None = None           # "tool:category;tool:category" suppressions
     custom_pii_patterns: str | None = None     # org PII/confidential "label=regex" per line
+    disabled_checks: list[str] | None = None   # detection checks turned off (policy keys)
 
 
 class TenantDelete(BaseModel):
