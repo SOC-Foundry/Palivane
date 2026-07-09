@@ -137,6 +137,7 @@ export default function Legal({ page }) {
       <footer className="lp-foot">
         <span>◆ Warden — AI Security Gateway</span>
         <span className="lp-foot-links">
+          <a href="/how-it-works">How it works</a>
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>
         </span>

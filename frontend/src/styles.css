@@ -646,6 +646,18 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
   padding: 1px 6px; font-size: 12.5px; color: var(--text);
 }
 
+/* "How it works" deep-dive page */
+.lp-textlink { color: var(--accent); text-decoration: none; font-weight: 600; }
+.lp-textlink:hover { text-decoration: underline; }
+.hiw-table { width: 100%; border-collapse: collapse; margin: 14px 0 4px; }
+.hiw-table th, .hiw-table td {
+  text-align: left; padding: 9px 12px; font-size: 13.5px;
+  border-bottom: 1px solid var(--border); vertical-align: middle;
+}
+.hiw-table th { color: var(--muted-2); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.hiw-table td { color: var(--muted); }
+.hiw-table code { font-size: 12.5px; }
+
 @media (max-width: 820px) {
   .lp-hero h1 { font-size: 32px; }
   .lp-fronts, .lp-cards { grid-template-columns: 1fr; }
