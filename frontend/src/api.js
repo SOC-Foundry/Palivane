@@ -62,6 +62,9 @@ export const api = {
   },
   coverageReconcile: (events) =>
     req("/coverage/reconcile", { method: "POST", body: JSON.stringify({ events }) }),
+  discoveryInventory: () => req("/discovery/inventory"),
+  discoveryIngest: (events) =>
+    req("/discovery/ingest", { method: "POST", body: JSON.stringify({ events }) }),
   stats: () => req("/stats"),
   setupStatus: () => req("/setup-status"),
   analyze: (payload) =>

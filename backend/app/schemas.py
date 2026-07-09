@@ -255,3 +255,17 @@ class AccessEvent(BaseModel):
 class CoverageRequest(BaseModel):
     events: list[AccessEvent] = Field(min_length=1, max_length=20000)
     window_days: int | None = None  # only count findings within this many days as covered
+
+
+class DiscoveryEvent(BaseModel):
+    actor: str = ""                      # user identity from the log line
+    destination: str = ""                # URL / domain seen (proxy, SWG, DNS)
+    domain: str = ""                     # alias for destination
+    tool: str = ""                       # or a named tool, if the log already resolved it
+    team: str = ""                       # department/team, if the log carries it
+    count: int = 1                       # events collapsed into this line
+    last_seen: str = ""                  # ISO timestamp (optional)
+
+
+class DiscoveryIngest(BaseModel):
+    events: list[DiscoveryEvent] = Field(min_length=1, max_length=50000)
