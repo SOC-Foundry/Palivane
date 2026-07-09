@@ -1,8 +1,41 @@
-// Public technical deep-dive, reachable without auth at /how-it-works. Linked from the
-// landing page's "How detection works" section. Reuses the landing (lp-*) shell and the
-// .legal article styling so it matches the brand. Content mirrors README "How detection
-// works" — kept accurate for a security-minded reader evaluating the engine.
+// Public technical deep-dive at /how-it-works. A visual, sectioned walkthrough (pipeline
+// diagram, surface chips, detector cards, tiered secret stack, scoring formula + severity
+// table, monitor/enforce split) rather than a wall of prose. Content mirrors README
+// "How detection works" — kept accurate for a security-minded reader evaluating the engine.
 import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
+import { IconInbox, IconShield, IconList, IconTarget, IconAlert, IconClipboard, IconPlug } from "./icons.jsx";
+
+const PIPELINE = [
+  { icon: <IconInbox />, label: "Capture", sub: "gateway · extension · proxy · CI" },
+  { icon: <IconShield />, label: "Route by surface", sub: "only the matching detectors" },
+  { icon: <IconList />, label: "Signals", sub: "evidence · weight × confidence" },
+  { icon: <IconTarget />, label: "Score", sub: "saturating fusion" },
+  { icon: <IconAlert />, label: "Verdict", sub: "0–100 · allow / warn / block" },
+];
+
+const SURFACES = [
+  ["llm_io", "Prompts & responses on your own models"],
+  ["ai_usage", "Content bound for external AI tools"],
+  ["mcp", "Agent tool-use from AI assistants"],
+  ["deps", "Dependency manifests (supply chain)"],
+  ["ide", "Editor extensions"],
+  ["secrets", "Credentials at rest on a device"],
+];
+
+const DETECTORS = [
+  { icon: <IconShield />, title: "Prompt threats", surface: "llm_io", body: "Instruction-override / injection, jailbreak & guardrail-evasion, and system-prompt / secret exfiltration. Matches a normalized view of the text (folds homoglyph, full-width, zero-width & spacing tricks) and decodes base64 blobs to re-scan hidden payloads." },
+  { icon: <IconTarget />, title: "Shadow-AI", surface: "ai_usage · mcp", body: "Secrets, PII (SSN with/without dashes, Luhn-valid cards, IBAN / national IDs, single-record combos), proprietary source code, and confidential business content — including classification labels (TLP, Purview/MIP)." },
+  { icon: <IconAlert />, title: "Agentic (MCP) guard", surface: "mcp", body: "Sensitive-file access, dangerous commands, tool-poisoning, and untrusted MCP servers — read off the agent's tool-use, even for local stdio MCP." },
+  { icon: <IconClipboard />, title: "Supply-chain & IDE", surface: "deps · ide", body: "Risky dependency manifests (install-script abuse, non-registry sources, known-bad packages + OSV CVEs) and unapproved editor extensions." },
+  { icon: <IconPlug />, title: "Credentials at rest", surface: "secrets", body: "Live keys on managed endpoints — cloud SA keys, .npmrc, .git-credentials, key files — optionally with TruffleHog/Gitleaks verification." },
+];
+
+const TIERS = [
+  { cls: "t-crit", badge: "Tier 1", title: "Known formats", action: "hard block", body: "Distinctive-prefix patterns — OpenAI, Anthropic, AWS, GitHub (incl. fine-grained PATs), GitLab, Stripe, Slack, Google, npm/PyPI, PEM keys, JWTs, labeled key=value. Near-certain, full weight." },
+  { cls: "t-high", badge: "Tier 1b", title: "Evasion variants", action: "hard block", body: "The same prefixes with the separator stripped (ghp_… → ghp…). A real key never ships without its delimiter, so this reads as a deliberate DLP bypass." },
+  { cls: "t-susp", badge: "Tier 2", title: "High-entropy heuristic", action: "warn", body: "Novel / vendor tokens with no known prefix, caught via Shannon entropy + mixed character classes — excluding hex digests (git SHAs) and UUIDs. Lower-confidence, so it warns." },
+  { cls: "t-ai", badge: "Custom", title: "Your own patterns", action: "your call", body: "Per-org secret / PII / confidential regexes (customer IDs, account numbers, MRNs, codenames) — applied across every plane, no redeploy." },
+];
 
 const SEVERITIES = [
   ["critical", "80–100", "block", "A verified secret, or several strong signals at once."],
@@ -17,150 +50,154 @@ export default function HowItWorks() {
     <div className="landing">
       <SiteNav />
 
-      <article className="legal">
+      <section className="lp-pagehead">
+        <div className="lp-tagline">HOW IT WORKS</div>
         <h1>How Warden works</h1>
-        <p className="legal-updated">The detection engine, end to end — and why the core runs entirely offline.</p>
+        <p>Every piece of AI-bound content becomes one risk verdict. The core is pure regex and
+           heuristics — no API key, no network call, fully deterministic.</p>
+      </section>
 
-        <p>
-          Warden turns every piece of AI-bound content — a prompt to your own LLM, a paste into
-          ChatGPT, an AI agent's tool-call, a commit — into a single <strong>risk verdict</strong>.
-          The pipeline is the same everywhere it captures: <strong>content → detectors → signals →
-          scoring → verdict</strong>. The core is <strong>pure Python regex and heuristics — no API
-          key, no network call, deterministic</strong>. An optional LLM judge layers on top for the
-          novel cases the rules miss, but nothing below depends on it.
-        </p>
-
-        <h2>1. Capture, then route by surface</h2>
-        <p>
-          Content arrives from whichever capture point saw it — the LLM gateway, the browser
-          extension, the egress proxy, or CI — tagged with a <strong>surface</strong> describing
-          where it came from: <code>llm_io</code> (prompts to your own models), <code>ai_usage</code>{" "}
-          (content bound for external AI tools), <code>mcp</code> (agent tool-use), <code>deps</code>,{" "}
-          <code>ide</code>, and <code>secrets</code> (credentials at rest on a device). The engine
-          runs <strong>only the detectors that declare that surface</strong>, so attack rules apply
-          to your models and data-loss rules apply to outbound content. Each detector is sandboxed —
-          one that errors can never sink the whole analysis.
-        </p>
-
-        <h2>2. Detectors emit signals</h2>
-        <p>
-          A detector inspects content and emits zero or more <strong>signals</strong>, each a single
-          piece of evidence carrying a <strong>weight</strong> (how much this kind of evidence
-          matters) and a <strong>confidence</strong> (how sure the detector is it's really present).
-          The offline detectors:
-        </p>
-        <ul>
-          <li>
-            <strong>Prompt-threat detector</strong> (<code>llm_io</code>) — instruction-override /
-            injection, jailbreak &amp; guardrail-evasion personas, and system-prompt / secret
-            exfiltration. It matches against a <em>normalized</em> view of the text that folds
-            homoglyphs, full-width, zero-width, and spacing tricks, so evasion like <code>іgnore</code>{" "}
-            (Cyrillic <code>і</code>) still trips. Long base64 blobs are decoded and re-scanned — if a
-            blob decodes to attack text it's treated as the real injection — and invisible / zero-width
-            characters get their own signal.
-          </li>
-          <li>
-            <strong>Shadow-AI detector</strong> (<code>ai_usage</code> / <code>mcp</code>) — secrets,
-            PII (SSN with or without dashes, Luhn-valid payment cards, IBAN / national IDs,
-            keyword-confirmed passport / EIN / routing / SWIFT, and single-record combinations),
-            proprietary source code, and confidential business content (including classification
-            labels like TLP and Purview/MIP banners).
-          </li>
-          <li>
-            <strong>Agentic (MCP) guard</strong> — sensitive-file access, dangerous commands, tool
-            poisoning, and untrusted MCP servers, read off the agent's tool-use.
-          </li>
-          <li>
-            <strong>Supply-chain &amp; IDE guards</strong> (<code>deps</code> / <code>ide</code>) —
-            risky dependency manifests (install-script abuse, non-registry sources, known-bad
-            packages + OSV CVEs) and unapproved editor extensions.
-          </li>
-          <li>
-            <strong>Credentials at rest</strong> (<code>secrets</code>) — live keys sitting on a
-            managed endpoint (cloud SA keys, <code>.npmrc</code>, <code>.git-credentials</code>, key
-            files), optionally with TruffleHog/Gitleaks verification.
-          </li>
-        </ul>
-
-        <h2>3. Secret detection is two-tier</h2>
-        <p>
-          Because a leaked credential is the highest-stakes finding, secret detection is layered:
-        </p>
-        <ul>
-          <li>
-            <strong>Known formats</strong> — distinctive-prefix patterns (OpenAI, Anthropic, AWS,
-            GitHub incl. fine-grained PATs, GitLab, Stripe, Slack, Google, npm/PyPI, PEM private keys,
-            JWTs, labeled <code>key=value</code>). A match is near-certain, so it carries full weight
-            and hard-blocks.
-          </li>
-          <li>
-            <strong>Evasion variants</strong> — the same prefixes with the separator deliberately
-            stripped (<code>ghp_…</code> → <code>ghp…</code>). A real key never ships without its
-            delimiter, so this reads as an attempt to slip a credential past DLP — still a hard block,
-            labeled as a likely bypass.
-          </li>
-          <li>
-            <strong>High-entropy heuristic</strong> — catches novel/vendor tokens with no known prefix
-            using Shannon entropy and mixed character classes, while excluding hex digests (git SHAs)
-            and UUIDs. Lower-confidence by nature, so it <strong>warns rather than blocks</strong> on
-            its own.
-          </li>
-          <li>
-            <strong>Custom patterns</strong> — each org can add its own secret / PII / confidential
-            formats (customer IDs, account numbers, MRNs, codenames), applied across every plane with
-            no redeploy.
-          </li>
-        </ul>
-
-        <h2>4. Scoring fuses signals into one verdict</h2>
-        <p>
-          The scoring engine combines signal contributions (weight × confidence) with a{" "}
-          <strong>saturating probabilistic OR</strong>: <code>1 − Π(1 − c)</code>. This means a pile
-          of weak signals can't trivially max the score, but a few strong ones reliably do. The{" "}
-          <strong>attack / data-loss confidence is the base risk</strong>; an "AI-generated"
-          assessment is only an amplifier (plenty of benign text is AI-written), never a threat on its
-          own. The result maps to a 0–100 score, a severity, and a recommended action:
-        </p>
-        <table className="hiw-table">
-          <thead><tr><th>Severity</th><th>Risk</th><th>Action</th><th>Meaning</th></tr></thead>
-          <tbody>
-            {SEVERITIES.map(([sev, range, action, desc]) => (
-              <tr key={sev}>
-                <td><span className={`sev sev-${sev}`}>{sev}</span></td>
-                <td><code>{range}</code></td>
-                <td>{action}</td>
-                <td>{desc}</td>
-              </tr>
+      {/* Pipeline */}
+      <section className="lp-section">
+        <div className="lp-wrap">
+          <h2 className="lp-h2">One pipeline, everywhere it captures</h2>
+          <p className="lp-sub">A prompt, a paste into ChatGPT, an agent's tool-call, a commit —
+             all flow through the same five stages.</p>
+          <div className="hiw-pipeline">
+            {PIPELINE.map((s, i) => (
+              <div className="hiw-pipe-cell" key={s.label}>
+                <div className="hiw-pipe">
+                  <span className="hiw-pipe-ic">{s.icon}</span>
+                  <b>{s.label}</b>
+                  <span>{s.sub}</span>
+                </div>
+                {i < PIPELINE.length - 1 && <span className="hiw-arrow">→</span>}
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        </div>
+      </section>
 
-        <h2>5. Monitor or enforce</h2>
-        <p>
-          Each capture point runs in one of two modes. In <strong>monitor</strong> mode nothing is
-          blocked — content passes through and findings are recorded, ideal for a rollout's first
-          phase so you see what would trip before you turn on enforcement. In <strong>enforce</strong>{" "}
-          mode, findings at or above your block severity are stopped at the source: the extension
-          shows a block modal, the gateway returns an error, the git hook fails the commit. Source-code
-          detection is automatically suppressed for sanctioned coding tools (Claude Code, Cursor,
-          Copilot) — but a <em>secret</em> inside that code still blocks.
-        </p>
+      {/* Surfaces */}
+      <section className="lp-section alt">
+        <div className="lp-wrap">
+          <h2 className="lp-h2">Routed by surface</h2>
+          <p className="lp-sub">Each submission is tagged with where it came from. The engine runs
+             only the detectors that declare that surface — and one that errors can never sink the analysis.</p>
+          <div className="hiw-surfaces">
+            {SURFACES.map(([key, desc]) => (
+              <div className="hiw-surface" key={key}>
+                <code>{key}</code><span>{desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-        <h2>6. Offline first — the judge is additive</h2>
-        <p>
-          Everything above runs with <strong>no API key and no outbound call</strong>. That makes
-          detection <strong>fast, free, private</strong> (content never leaves your environment on the
-          offline path), and <strong>deterministic</strong> — the same input always yields the same
-          verdict, which is what makes Warden's labeled-corpus evaluation meaningful. Connect a
-          frontier model (Claude, GPT, or Gemini) and the <strong>LLM judge</strong> reads content like
-          an analyst for the novel cases the rules miss — but it's strictly additive. A tenant can turn
-          it off for data-residency and still get a fully functional engine.
-        </p>
+      {/* Detectors */}
+      <section className="lp-section">
+        <div className="lp-wrap">
+          <h2 className="lp-h2">The offline detectors</h2>
+          <p className="lp-sub">Each emits <strong>signals</strong> — pieces of evidence carrying a
+             <em> weight</em> (how much it matters) and a <em>confidence</em> (how sure it is).</p>
+          <div className="lp-cards">
+            {DETECTORS.map((d) => (
+              <div className="lp-card" key={d.title}>
+                <span className="lp-card-icon">{d.icon}</span>
+                <h3>{d.title}</h3>
+                <code className="hiw-surface-tag">{d.surface}</code>
+                <p style={{ marginTop: 8 }}>{d.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-        <p style={{ marginTop: 32 }}>
-          <a className="primary-btn slim" href="/" style={{ textDecoration: "none" }}>← Back to overview</a>
-        </p>
-      </article>
+      {/* Two-tier secrets */}
+      <section className="lp-section alt">
+        <div className="lp-wrap">
+          <h2 className="lp-h2">Secret detection is layered</h2>
+          <p className="lp-sub">A leaked credential is the highest-stakes finding, so it's caught four ways.</p>
+          <div className="hiw-tiers">
+            {TIERS.map((t) => (
+              <div className={`hiw-tier ${t.cls}`} key={t.badge}>
+                <span className="hiw-tier-badge">{t.badge}</span>
+                <div className="hiw-tier-body">
+                  <h3>{t.title}</h3>
+                  <p>{t.body}</p>
+                </div>
+                <span className="hiw-tier-action">{t.action}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Scoring */}
+      <section className="lp-section">
+        <div className="lp-wrap">
+          <h2 className="lp-h2">Scoring fuses signals into one verdict</h2>
+          <p className="lp-sub">A <strong>saturating probabilistic OR</strong> — a few strong signals
+             reliably escalate, while many weak ones can't trivially max the score. Attack / data-loss
+             is the base; an "AI-generated" read only amplifies, never fires on its own.</p>
+          <div className="hiw-formula">
+            <code>risk = 1 − Π ( 1 − weightᵢ × confidenceᵢ )</code>
+            <span>combined, mapped to 0–100 → a severity and a recommended action</span>
+          </div>
+          <table className="hiw-table">
+            <thead><tr><th>Severity</th><th>Risk</th><th>Action</th><th>Meaning</th></tr></thead>
+            <tbody>
+              {SEVERITIES.map(([sev, range, action, desc]) => (
+                <tr key={sev}>
+                  <td><span className={`sev sev-${sev}`}>{sev}</span></td>
+                  <td><code>{range}</code></td>
+                  <td>{action}</td>
+                  <td>{desc}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Monitor vs enforce */}
+      <section className="lp-section alt">
+        <div className="lp-wrap">
+          <h2 className="lp-h2">Monitor or enforce</h2>
+          <p className="lp-sub">Every capture point runs in one of two modes — roll out on monitor, then flip to enforce.</p>
+          <div className="hiw-modes">
+            <div className="hiw-mode">
+              <h3><span className="hiw-dot dot-monitor" /> Monitor</h3>
+              <p>Nothing is blocked — content passes through and findings are recorded. Ideal for a
+                 rollout's first phase, so you see exactly what would trip before enforcing.</p>
+            </div>
+            <div className="hiw-mode hiw-mode-enforce">
+              <h3><span className="hiw-dot dot-enforce" /> Enforce</h3>
+              <p>Findings at or above your block severity are stopped at the source: the extension
+                 shows a block modal, the gateway returns an error, the git hook fails the commit.</p>
+            </div>
+          </div>
+          <p className="lp-sub" style={{ marginTop: 18 }}>Source-code detection is auto-suppressed for
+             sanctioned coding tools (Claude Code, Cursor, Copilot) — but a <em>secret</em> inside that
+             code still blocks.</p>
+        </div>
+      </section>
+
+      {/* Offline-first CTA band */}
+      <section className="lp-cta-band">
+        <div className="lp-wrap">
+          <div className="lp-banner">
+            <IconShield width={22} height={22} />
+            <div>
+              <strong>Offline-first — the judge is additive.</strong> Everything above runs with no API
+              key and no outbound call: fast, private, deterministic. Connect a frontier model (Claude,
+              GPT, or Gemini) and the LLM judge reads content like an analyst for the novel cases the
+              rules miss — turn it off for data-residency and the engine still fully works.
+            </div>
+            <a className="primary-btn slim" href="/#signin" style={{ textDecoration: "none" }}>Open the console →</a>
+          </div>
+        </div>
+      </section>
 
       <SiteFooter />
     </div>
