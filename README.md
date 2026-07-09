@@ -28,8 +28,9 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
   (sensitive-file access, dangerous commands, tool poisoning, untrusted servers) — over the
   egress proxy *and* the LLM traffic (so **local stdio MCP** is covered), blocking on the
   request, the response, and mid-stream, all **agentless**.
-- **Supply-chain checks (CI)** — vet MCP configs (`/api/scan/mcp-config`), dependency
-  manifests (`/api/scan/deps`, with opt-in OSV/CVE lookup), and IDE extensions
+- **Supply-chain checks (CI)** — vet MCP configs (`/api/scan/mcp-config`, incl. **MCP-server
+  dependency CVEs** via OSV on the launcher's pinned package), dependency manifests
+  (`/api/scan/deps`, with opt-in OSV/CVE lookup), and IDE extensions
   (`/api/scan/ide-extensions`) — plus an **MDM policy pack** (`/api/policy-pack`) that
   generates the full enforcement config: editor allowlist, system proxy, browser
   force-install (Chrome Web Store **or** a self-hosted CRX — no store submission needed),
@@ -98,6 +99,14 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
   group, per your need-to-know rules.
 - **Per-user scan log** — a **Scan log** view of activity per registered user: what each
   person trips, how often, and how risky, with drill-down to their findings.
+- **Agent identity & least-privilege** — give each AI agent a verifiable identity (a
+  Warden `ag_` token **or** an OIDC/workload JWT validated against your IdP's JWKS); findings
+  are attributed to the agent. Assign a **role** that limits which MCP tools, servers, and
+  shell commands it may use and which data categories it may access (`data_scopes`), with
+  per-agent deny overrides — **monitor or enforce**. Managed on the **Agents** console page.
+- **In-IDE remediation** — every capture-plane verdict carries concrete *how-to-fix* steps,
+  surfaced inline in the Cursor hook message and the browser-extension block modal, not just
+  a wall.
 - **In-app guidance** — a built-in **Help** page explains the capture planes, how to
   connect a source, how to read a finding (category glossary + severity scale), and
   monitor-vs-enforce — so an admin never has to leave the console to get oriented.
@@ -420,7 +429,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/users`             | Create a user in the tenant — `role` `admin`/`analyst` (admin). |
 | PATCH  | `/api/users/{id}`        | Change a user's role or enable/disable login; protects against last-admin / self-lockout (admin). |
 | GET/PUT/DELETE | `/api/upstreams[/{provider}]` | Per-tenant gateway provider config (openai/anthropic/gemini) — base URL + key (stored encrypted, never returned); the gateway forwards with the tenant's own account (admin). |
-| PATCH  | `/api/tenant`            | Org settings: name, LLM-judge consent (`judge`: on/off/inherit), findings `retention_days`, gateway `rate_limit`/min (admin). |
+| PATCH  | `/api/tenant`            | Org settings: name, LLM-judge consent, `retention_days`, rate limits, monitor/enforce + block severity, sanctioned tools, alerts, SIEM, custom PII, `disabled_checks` (policy toggles), need-to-know `oversharing_rules`, and agent workload-OIDC trust (issuer/JWKS/audience) (admin). |
 | GET    | `/api/usage`             | Gateway usage for the tenant: current-minute count, last-24h, per-day totals, effective limit (admin). |
 | GET    | `/api/audit`             | The tenant's admin audit trail (who did what, when); filterable by `action` (admin). |
 | GET    | `/api/export/tenant`     | Full self-serve data export (JSON): tenant config, users, keys, findings, audit log, SSO/upstream config, DPA record. Secrets excluded; `?include_content=true` decrypts finding content (admin). |
@@ -436,6 +445,9 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/apikeys`           | Mint a long-lived machine API key; plaintext returned once (admin). |
 | GET    | `/api/apikeys`           | List the tenant's API keys (no secrets) (admin). |
 | DELETE | `/api/apikeys/{id}`      | Revoke an API key (admin).                |
+| POST/GET | `/api/agents`          | Register an AI agent + mint its `ag_` identity token (shown once); list agents. Attribution + least-privilege (admin). |
+| PATCH/POST/DELETE | `/api/agents/{id}[/rotate]` | Assign role / per-agent deny / OIDC subject; rotate the token; disable (admin). |
+| POST/GET/DELETE | `/api/agent-roles[/{id}]` | Least-privilege roles: allow tools/servers/commands, `data_scopes`, deny, `default_allow`, `enforce` (admin). |
 | POST   | `/api/auth/extension/token` | Mint a per-user, tenant-scoped capture key for self-serve sign-in (browser extension / `warden connect`); attributed to the caller, revocable. |
 | POST   | `/api/analyze`           | Analyze one item; returns verdict + signals. Set `surface` (`llm_io`/`ai_usage`); pass `destination` for `ai_usage`. |
 | POST   | `/api/analyze/batch`     | Analyze up to 500 items in one call. |
@@ -446,6 +458,8 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/scan/ide-extensions` | Vet a list of IDE extensions (`.vscode/extensions.json` in CI, or MDM inventory) for known-bad / unapproved editor plugins. Token-gated. |
 | POST   | `/api/scan/secrets`      | Record credentials found **at rest** on a device by `warden-secrets` (SSH/RSA keys, tokens, `.env`) as `credential_at_rest` findings. Metadata-only (masked); returns a per-file remediation plan. Token-gated. |
 | POST   | `/api/scan/import`       | Normalize a third-party scanner's output (**TruffleHog / Gitleaks / GitGuardian**) into `credential_at_rest` findings. Secret masked at ingest (never persisted); `verified` escalates to critical. Token-gated. |
+| POST   | `/api/scan/agent-config` | Scan an AI coding-assistant config (Cursor/Claude settings, MCP config, CLI flags) for unsafe autonomy — YOLO / auto-apply / `--dangerously-skip-permissions`. Attributed per user. Token-gated. |
+| POST   | `/api/scan/oversharing`  | Need-to-know check: given an LLM response + its recipient, flag restricted data (confidential / PII / keyword) returned to someone outside the allowed group. Token-gated. |
 | GET    | `/api/policy-pack`       | Generate the MDM policy pack (agentless enforcement config): editor allowlist, system-proxy profiles, browser force-install, CA note, Claude Code managed settings, OpenAI/Gemini gateway routing, Cursor hooks, and a scheduled `warden-secrets` scan (TruffleHog by default; `?secrets_engine=`) (admin). Runbook: [`docs/mdm-policy-pack.md`](docs/mdm-policy-pack.md). |
 | POST   | `/api/scan/code`         | Scan changed files (pre-commit hook / CI) for secrets & PII before they reach a repo; ignores `source_code_leak`. Returns a per-file allow/warn/block. Token-gated. |
 | GET    | `/api/findings`          | List the tenant's findings (filter by `severity`, `status`). |
@@ -454,6 +468,11 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | GET    | `/api/stats`             | Dashboard counters for the tenant (incl. `by_surface`). |
 | GET    | `/api/corpus/export`     | Export the tenant's triaged/dismissed findings as eval-corpus JSONL (admin). |
 | POST   | `/api/coverage/reconcile`| Compare an IdP/CASB "who used AI" list to captured findings; returns the uncovered actors (admin). |
+| POST   | `/api/discovery/ingest`  | Classify AI usage from CASB/SWG/proxy/DNS logs into the shadow-AI inventory (admin). |
+| GET    | `/api/discovery/inventory` | The shadow-AI inventory: AI tools by tool and by team, sanctioned/unsanctioned + real exposure (admin). |
+| GET    | `/api/activity/users`    | Per-registered-user scan log — findings count, severity mix, top categories, last-seen (admin). |
+| GET    | `/api/policies`          | Detection-policy catalog: every check grouped, enabled state, presets, and per-user/group overrides (admin). |
+| POST/DELETE | `/api/policies/overrides[/{id}]` | Per-user (email) / per-group (glob) policy overrides that replace the tenant default (admin). |
 | POST   | `/v1/chat/completions`   | OpenAI-compatible LLM gateway — scans/records every prompt (`llm_io`), blocks in enforce mode. |
 | POST   | `/v1/responses`          | OpenAI **Responses API** (Codex CLI / newer SDKs) — same capture + enforce, incl. streaming + tool-call inspection. |
 | POST   | `/v1/messages`           | Anthropic-compatible gateway (Claude Code / Anthropic SDK) — same capture + enforce. |
