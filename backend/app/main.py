@@ -29,6 +29,7 @@ from .schemas import (
     BatchAnalyzeRequest,
     CodeScanRequest,
     CoverageRequest,
+    DiscoveryIngest,
     IDEExtScan,
     MCPBatchIngest,
     ExceptionRequest,
@@ -396,6 +397,11 @@ def ingest_ai_usage(
     suppress = _tenant_or_global(tenant_id, db, "tool_suppress", settings.gateway_tool_suppress)
     sig_filter = signal_filter_for(detect_tool(explicit=body.tool), extra=suppress)
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id, signal_filter=sig_filter)
+    # Feed the shadow-AI discovery inventory: who used which AI tool, and did it carry
+    # sensitive data (best-effort — never breaks the verdict).
+    from .discovery import record_capture
+    record_capture(db, tenant_id, actor, body.destination, body.tool,
+                   result["signals"], result["risk_score"])
     return {
         "action": _action_for(result["severity"]),
         "risk_score": result["risk_score"],
@@ -984,6 +990,29 @@ def coverage_reconcile(body: CoverageRequest, current: User = Depends(require_ad
         q = q.filter(Finding.created_at >= cutoff)
     covered = {r[0] for r in q.distinct().all()}
     return reconcile(body.events, covered)
+
+
+@app.post("/api/discovery/ingest")
+def discovery_ingest(body: DiscoveryIngest, current: User = Depends(require_admin),
+                     db: Session = Depends(get_db)):
+    """Classify AI usage from CASB / SWG / proxy / DNS logs into the discovery inventory.
+
+    Each log line (actor + destination) is matched against Warden's AI-tool catalog; matches
+    are attributed to the actor (and team, if present). No content is inspected here — this
+    is how you discover shadow AI on devices the capture planes never touched."""
+    from .discovery import ingest_logs
+    return ingest_logs(db, current.tenant_id, body.events)
+
+
+@app.get("/api/discovery/inventory")
+def discovery_inventory(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """The shadow-AI inventory: every AI tool observed, by tool and by team/department, each
+    marked sanctioned/unsanctioned against the tenant's live allowlist — plus the actual
+    sensitive-data exposure the capture planes saw per tool."""
+    from .discovery import build_inventory
+    sanctioned = _tenant_or_global(current.tenant_id, db, "sanctioned_ai_tools",
+                                   settings.sanctioned_ai_tools)
+    return build_inventory(db, current.tenant_id, sanctioned)
 
 
 @app.get("/api/usage")

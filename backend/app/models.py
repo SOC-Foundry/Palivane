@@ -348,3 +348,32 @@ class Finding(Base):
         d["content"] = unseal(self.content)   # decrypt if stored encrypted
         d["signals"] = self.signals or []
         return d
+
+
+class DiscoveredUsage(Base):
+    """One (actor, AI tool) pair Warden has observed — the substrate for shadow-AI
+    discovery. Rows come from two sources:
+      - `capture`: a capture plane (extension / gateway / proxy) actually saw content go
+        to this tool, so we also know whether it carried sensitive data.
+      - `log`: a CASB / SWG / proxy / DNS log line said this actor reached this tool. No
+        content, so it's attribution only.
+    Upserted (counts incremented) rather than one row per event, so the table stays small.
+    Sanctioned/unsanctioned is NOT stored — it's derived at query time from the tenant's
+    allowlist, so changing the policy re-classifies the whole inventory instantly."""
+
+    __tablename__ = "discovered_usage"
+    __table_args__ = (UniqueConstraint("tenant_id", "actor", "tool", name="uq_usage_actor_tool"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=True)
+    actor = Column(String(320), default="", index=True)   # normalized (lowercased) user id
+    team = Column(String(128), default="")                # department/team, if known
+    tool = Column(String(128), default="", index=True)    # canonical AI tool name
+    domain = Column(String(255), default="")              # catalog domain matched
+    category = Column(String(32), default="")             # assistant | coding | meeting | …
+    source = Column(String(16), default="log")            # log | capture
+    event_count = Column(Integer, default=0)
+    sensitive_count = Column(Integer, default=0)          # events that carried sensitive data
+    max_risk = Column(Integer, default=0)                 # peak risk score seen (capture)
+    first_seen = Column(DateTime, default=_utcnow)
+    last_seen = Column(DateTime, default=_utcnow, index=True)

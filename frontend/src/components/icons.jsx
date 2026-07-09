@@ -34,6 +34,9 @@ export const IconUsers = (p) => (
 export const IconClipboard = (p) => (
   <svg {...base} {...p}><path d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1zM8 6H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-2M9 11h6M9 15h6" /></svg>
 );
+export const IconRadar = (p) => (
+  <svg {...base} {...p}><path d="M12 3a9 9 0 1 0 9 9M12 12l6-4M12 12a5 5 0 1 0 5 5" /><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" /></svg>
+);
 export const IconBook = (p) => (
   <svg {...base} {...p}><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5zM19 3v18M8 7h7M8 11h7" /></svg>
 );

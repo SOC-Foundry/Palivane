@@ -16,8 +16,9 @@ import WhyWarden from "./components/WhyWarden.jsx";
 import ExtensionConnect from "./components/ExtensionConnect.jsx";
 import Connections from "./components/Connections.jsx";
 import Coverage from "./components/Coverage.jsx";
+import Discovery from "./components/Discovery.jsx";
 import Help from "./components/Help.jsx";
-import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard, IconInbox, IconTarget, IconBook } from "./components/icons.jsx";
+import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard, IconInbox, IconTarget, IconRadar, IconBook } from "./components/icons.jsx";
 
 export default function App() {
   const [auth, setAuth] = useState(null);        // { user, tenant }
@@ -149,6 +150,12 @@ export default function App() {
             </button>
           )}
           {isAdmin && (
+            <button type="button" className={`nav-item ${view === "discovery" ? "nav-on" : ""}`}
+                    onClick={() => setView("discovery")}>
+              <IconRadar /> <span>Discovery</span>
+            </button>
+          )}
+          {isAdmin && (
             <button type="button" className={`nav-item ${view === "coverage" ? "nav-on" : ""}`}
                     onClick={() => setView("coverage")}>
               <IconTarget /> <span>Coverage</span>
@@ -202,6 +209,8 @@ export default function App() {
           <Connect tenant={auth.tenant} />
         ) : view === "connections" ? (
           <Connections />
+        ) : view === "discovery" ? (
+          <Discovery tenant={auth.tenant} onTenant={(t) => setAuth((a) => ({ ...a, tenant: t }))} />
         ) : view === "coverage" ? (
           <Coverage />
         ) : view === "users" ? (
