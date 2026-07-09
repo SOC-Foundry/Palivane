@@ -14,6 +14,7 @@ const CAT_LABEL = {
   sensitive_resource_access: "Sensitive resource access",
   dangerous_command: "Dangerous command",
   tool_poisoning: "Tool poisoning",
+  unsafe_autonomy: "Unsafe agent autonomy",
   dependency_risk: "Dependency risk",
   credential_at_rest: "Credential at rest",
 };
@@ -49,6 +50,8 @@ function remediationFor(finding) {
     steps.push("Redirect the user to a sanctioned AI tool; for confidential/classified material, use only an approved, contracted tool.");
   if (cats.has("dangerous_command") || cats.has("sensitive_resource_access") || cats.has("tool_poisoning"))
     steps.push("Review the agent's tool call; restrict the MCP server or command, and confirm nothing ran.");
+  if (cats.has("unsafe_autonomy"))
+    steps.push("Turn off the agent's auto-run / auto-apply (YOLO) setting and require confirmation before it executes commands or edits.");
   if (cats.has("mcp_untrusted_server"))
     steps.push("Add the server to the per-tenant MCP allowlist if trusted, otherwise block it.");
   if (cats.has("dependency_risk"))

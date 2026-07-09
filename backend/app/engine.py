@@ -10,6 +10,7 @@ it here, not forking the backbone.
 from __future__ import annotations
 
 from .detectors import (
+    AgentSafetyDetector,
     AnalysisInput,
     DepGuardDetector,
     ExtGuardDetector,
@@ -31,9 +32,11 @@ class Engine:
         self.dep_guard = DepGuardDetector()
         self.ext_guard = ExtGuardDetector()
         self.secrets_at_rest = SecretsAtRestDetector()
+        self.agent_safety = AgentSafetyDetector()
         self.judge = LLMJudgeDetector()
         self.detectors = [self.prompt_threats, self.shadow_ai, self.mcp_guard,
-                          self.dep_guard, self.ext_guard, self.secrets_at_rest, self.judge]
+                          self.dep_guard, self.ext_guard, self.secrets_at_rest,
+                          self.agent_safety, self.judge]
 
     @property
     def judge_enabled(self) -> bool:

@@ -1,4 +1,5 @@
 from .base import AnalysisInput, Category, Detector, Signal, Surface
+from .agent_safety import AgentSafetyDetector
 from .dep_guard import DepGuardDetector
 from .ext_guard import ExtGuardDetector
 from .llm_judge import LLMJudgeDetector
@@ -15,6 +16,7 @@ __all__ = [
     "Surface",
     "PromptThreatDetector",
     "ShadowAIDetector",
+    "AgentSafetyDetector",
     "MCPGuardDetector",
     "DepGuardDetector",
     "ExtGuardDetector",

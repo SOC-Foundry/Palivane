@@ -8,6 +8,8 @@ scan APIs, so drift (a new rogue extension, a new unapproved MCP server) surface
 finding shortly after it happens:
 
 - installed VS Code extensions (`code --list-extensions`) → POST /api/scan/ide-extensions
+- AI coding-assistant settings (Cursor / Claude Code) → POST /api/scan/agent-config, to
+  flag unsafe autonomy (YOLO / auto-apply / auto-run / --dangerously-skip-permissions)
 - MCP server configs → POST /api/scan/mcp-config, from: ~/.claude.json (Claude Code —
   a minimal {"mcpServers": …} view is synthesized; the raw file holds unrelated user
   state and is never posted), ./.mcp.json, VS Code and Cursor user configs.
@@ -42,6 +44,40 @@ _RAW_MCP_CONFIGS = (
     ("~/.config/Code/User/mcp.json", "~/.config/Code/User/mcp.json"),
     ("~/.cursor/mcp.json", "~/.cursor/mcp.json"),
 )
+
+# AI coding-assistant settings scanned for unsafe autonomy (YOLO / auto-apply / auto-run).
+# (label, filesystem path, tool)
+_AGENT_CONFIGS = (
+    ("cursor:settings", "~/.config/Cursor/User/settings.json", "cursor"),
+    ("cursor:settings", "~/Library/Application Support/Cursor/User/settings.json", "cursor"),
+    ("cursor:settings", "~/AppData/Roaming/Cursor/User/settings.json", "cursor"),
+    ("cursor:settings", "~/.cursor/settings.json", "cursor"),
+    ("claude-code:settings", "~/.claude/settings.json", "claude-code"),
+)
+
+
+def _user() -> str:
+    """Best-effort identity for per-user attribution of endpoint findings."""
+    import getpass
+    return os.getenv("WARDEN_USER") or (getpass.getuser() if hasattr(getpass, "getuser") else "") or ""
+
+
+def collect_agent_configs() -> list[tuple[str, str, str]]:
+    """Read AI coding-assistant settings files that exist. Returns (label, content, tool)."""
+    out, seen = [], set()
+    for label, path, tool in _AGENT_CONFIGS:
+        p = os.path.expanduser(path)
+        if p in seen:
+            continue
+        try:
+            with open(p) as f:
+                content = f.read(200_000)
+        except Exception:
+            continue
+        if content.strip():
+            seen.add(p)
+            out.append((label, content, tool))
+    return out
 
 
 def _settings_env(path: str = "~/.claude/settings.json") -> dict:
@@ -206,6 +242,10 @@ def run(cfg: dict, cache_path: str = CACHE_PATH, cwd: str = ".",
     for label, content in find_mcp_configs(cwd):
         items.append((f"mcp:{label}", "/api/scan/mcp-config",
                       {"content": content, "path": label, "record": True}, content))
+    user = _user()
+    for label, content, tool in collect_agent_configs():
+        items.append((f"agent:{label}", "/api/scan/agent-config",
+                      {"content": content, "tool": tool, "user": user, "record": True}, content))
 
     for key, api_path, body, canonical in items:
         dig = digest(canonical)

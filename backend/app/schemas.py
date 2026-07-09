@@ -258,6 +258,13 @@ class CoverageRequest(BaseModel):
     window_days: int | None = None  # only count findings within this many days as covered
 
 
+class AgentConfigScan(BaseModel):
+    content: str = Field(min_length=1, max_length=MAX_CONTENT)  # IDE/agent config blob
+    user: str = ""                    # actor the config belongs to (per-user attribution)
+    tool: str = "cursor"              # cursor | claude-code | aider | …
+    record: bool = True
+
+
 class DiscoveryEvent(BaseModel):
     actor: str = ""                      # user identity from the log line
     destination: str = ""                # URL / domain seen (proxy, SWG, DNS)

@@ -27,6 +27,7 @@ from .schemas import (
     AIUsageIngest,
     AnalyzeRequest,
     BatchAnalyzeRequest,
+    AgentConfigScan,
     CodeScanRequest,
     CoverageRequest,
     DiscoveryIngest,
@@ -752,6 +753,32 @@ def scan_ide_extensions(
         "severity": result["severity"],
         "risk_score": result["risk_score"],
         "extensions": result["signals"],
+    }
+
+
+@app.post("/api/scan/agent-config")
+def scan_agent_config(
+    body: AgentConfigScan,
+    x_warden_token: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Scan an AI coding-assistant config (Cursor settings.json, MCP client config, agent CLI
+    flags) for unsafe autonomy — YOLO / auto-apply / auto-run / skip-permissions. Attributed
+    to the submitting user, so findings show per-registered-user. Token-gated for the posture
+    sensor / cursor hook."""
+    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    _enforce_rate(db, tenant_id)
+    actor = body.user or default_actor
+    item = AnalysisInput(content=body.content, sender=actor,
+                         channel=f"{body.tool or 'agent'}-config", surface=Surface.IDE,
+                         metadata={"kind": "agent_config", "tool": body.tool})
+    result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
+                          db=db, tenant_id=tenant_id)
+    return {
+        "action": _action_for(result["severity"]),
+        "severity": result["severity"],
+        "risk_score": result["risk_score"],
+        "signals": result["signals"],
     }
 
 
