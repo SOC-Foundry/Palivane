@@ -63,6 +63,10 @@ export const api = {
   coverageReconcile: (events) =>
     req("/coverage/reconcile", { method: "POST", body: JSON.stringify({ events }) }),
   policies: () => req("/policies"),
+  policyOverrideUpsert: (payload) =>
+    req("/policies/overrides", { method: "POST", body: JSON.stringify(payload) }),
+  policyOverrideDelete: (id) =>
+    req(`/policies/overrides/${id}`, { method: "DELETE" }),
   discoveryInventory: () => req("/discovery/inventory"),
   discoveryIngest: (events) =>
     req("/discovery/ingest", { method: "POST", body: JSON.stringify({ events }) }),

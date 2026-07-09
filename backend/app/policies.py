@@ -96,6 +96,33 @@ def parse_disabled(raw) -> set[str]:
     return {i.strip() for i in items if i and i.strip() in VALID_KEYS}
 
 
+def resolve_disabled(base_disabled: set[str], actor: str, overrides) -> tuple[set[str], dict | None]:
+    """Pick the effective disabled-check set for an actor.
+
+    A user override (exact email) beats any group override; among group overrides the most
+    specific glob wins (fewest wildcards, then longest pattern). An override REPLACES the
+    tenant default. Returns (disabled_set, matched_override_dict_or_None)."""
+    import fnmatch
+
+    a = (actor or "").strip().lower()
+    if not a or not overrides:
+        return base_disabled, None
+
+    users = [o for o in overrides if o.scope == "user" and (o.match or "").strip().lower() == a]
+    if users:
+        o = users[0]
+        return parse_disabled(o.disabled_checks), {"id": o.id, "scope": "user", "match": o.match}
+
+    groups = [o for o in overrides if o.scope == "group"
+              and fnmatch.fnmatch(a, (o.match or "").strip().lower())]
+    if groups:
+        groups.sort(key=lambda o: ((o.match or "").count("*"), -len(o.match or "")))
+        o = groups[0]
+        return parse_disabled(o.disabled_checks), {"id": o.id, "scope": "group", "match": o.match}
+
+    return base_disabled, None
+
+
 def checks_signal_filter(disabled: set[str]):
     """A signal filter (list[Signal] -> list[Signal]) that drops signals for disabled checks.
     Resolves aliases so a catalog key and its underlying category both match."""

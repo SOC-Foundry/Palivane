@@ -380,3 +380,31 @@ class DiscoveredUsage(Base):
     max_risk = Column(Integer, default=0)                 # peak risk score seen (capture)
     first_seen = Column(DateTime, default=_utcnow)
     last_seen = Column(DateTime, default=_utcnow, index=True)
+
+
+class PolicyOverride(Base):
+    """A per-user or per-group override of the tenant's detection policy.
+
+    scope='user'  -> `match` is an exact actor email (case-insensitive).
+    scope='group' -> `match` is a glob against the actor (e.g. '*@contractors.acme.com',
+                     'alice@*', '*intern*'), so a "group" is a matching rule — it works for
+                     any actor, not only registered users.
+
+    `disabled_checks` fully REPLACES the tenant default for a matched actor (predictable:
+    what you see is that actor's exact check set). A user override beats any group override;
+    among groups the most specific pattern wins."""
+
+    __tablename__ = "policy_overrides"
+    __table_args__ = (UniqueConstraint("tenant_id", "scope", "match", name="uq_override_scope_match"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=True)
+    scope = Column(String(8), default="user")     # user | group
+    match = Column(String(320), default="")       # email (user) or glob pattern (group)
+    label = Column(String(128), default="")       # friendly name, e.g. "Contractors"
+    disabled_checks = Column(String(2048), default="")
+    created_at = Column(DateTime, default=_utcnow)
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "scope": self.scope, "match": self.match, "label": self.label,
+                "disabled_checks": [c for c in (self.disabled_checks or "").split(",") if c]}
