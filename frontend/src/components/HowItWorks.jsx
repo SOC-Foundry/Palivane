@@ -2,6 +2,7 @@
 // landing page's "How detection works" section. Reuses the landing (lp-*) shell and the
 // .legal article styling so it matches the brand. Content mirrors README "How detection
 // works" — kept accurate for a security-minded reader evaluating the engine.
+import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
 
 const SEVERITIES = [
   ["critical", "80–100", "block", "A verified secret, or several strong signals at once."],
@@ -14,13 +15,7 @@ const SEVERITIES = [
 export default function HowItWorks() {
   return (
     <div className="landing">
-      <header className="lp-nav">
-        <a className="lp-brand" href="/" style={{ color: "inherit", textDecoration: "none" }}>
-          <img src="/warden-emblem.png" alt="Warden" className="lp-brand-emblem" />
-          <span>Warden</span>
-        </a>
-        <a className="primary-btn slim" href="/" style={{ textDecoration: "none" }}>← Home</a>
-      </header>
+      <SiteNav />
 
       <article className="legal">
         <h1>How Warden works</h1>
@@ -167,14 +162,7 @@ export default function HowItWorks() {
         </p>
       </article>
 
-      <footer className="lp-foot">
-        <span>◆ Warden — AI Security Gateway</span>
-        <span className="lp-foot-links">
-          <a href="/how-it-works">How it works</a>
-          <a href="/privacy">Privacy</a>
-          <a href="/terms">Terms</a>
-        </span>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }
