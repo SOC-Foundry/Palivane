@@ -362,7 +362,7 @@ def _ingest_auth(x_warden_token: str, db: Session) -> tuple[int | None, str]:
     """Resolve (tenant_id, default_actor) from a per-tenant API key (`ak_…`) or the
     shared EXTENSION_INGEST_TOKEN. Used by the token-gated ingest & scan endpoints, which
     are deployed via policy/CI and so authenticate with a capture token, not a user JWT."""
-    from .security import looks_like_agent_token, looks_like_api_key
+    from .security import looks_like_agent_token, looks_like_api_key, looks_like_jwt
 
     if looks_like_api_key(x_warden_token):
         from .gateway import _resolve_api_key
@@ -370,6 +370,11 @@ def _ingest_auth(x_warden_token: str, db: Session) -> tuple[int | None, str]:
         return principal.tenant_id, principal.actor
     if looks_like_agent_token(x_warden_token):
         ag = _resolve_agent_token(x_warden_token, db)      # 401s on bad/disabled agent
+        return ag.tenant_id, ag.name
+    if looks_like_jwt(x_warden_token):                     # OIDC/workload agent identity
+        ag = _resolve_agent_jwt(x_warden_token, db)
+        if ag is None:
+            raise HTTPException(status_code=401, detail="unrecognized or invalid agent JWT")
         return ag.tenant_id, ag.name
     token = settings.extension_ingest_token
     if not token or not hmac.compare_digest(x_warden_token, token):
@@ -395,23 +400,58 @@ def _resolve_agent_token(token: str, db: Session) -> Agent:
     return row
 
 
+def _resolve_agent_jwt(token: str, db: Session):
+    """Validate an OIDC/workload agent JWT and map it to an Agent. The unverified `iss` picks
+    the tenant whose agent-OIDC trust to verify against; the validated `sub`/`client_id`/`azp`
+    maps to Agent.oidc_subject. Returns the Agent, or None (unknown issuer / no matching
+    agent). Raises HTTP 401 on a token that fails signature/claims validation."""
+    from .security import jwt_unverified_claims
+    iss = (jwt_unverified_claims(token).get("iss") or "").strip()
+    if not iss:
+        return None
+    t = db.query(Tenant).filter(Tenant.agent_oidc_issuer == iss).first()
+    if t is None:
+        return None
+    from . import oidc
+    try:
+        claims = oidc.validate_agent_jwt(iss, t.agent_oidc_audience or "", token,
+                                         jwks_uri=t.agent_oidc_jwks or "")
+    except oidc.OIDCError as e:
+        raise HTTPException(status_code=401, detail=f"agent JWT rejected: {e}")
+    subject = (claims.get("sub") or claims.get("client_id") or claims.get("azp") or "").strip()
+    if not subject:
+        return None
+    ag = (db.query(Agent).filter(Agent.tenant_id == t.id, Agent.oidc_subject == subject,
+                                 Agent.active.is_(True)).one_or_none())
+    if ag is not None:
+        ag.last_seen = _naive_now()
+        db.commit()
+    return ag
+
+
 def _capture_agent(x_warden_token: str, x_warden_agent: str, tenant_id, db: Session) -> str:
-    """Best-effort agent name for attribution: an `X-Warden-Agent` header, or the primary
-    token itself when it's an `ag_…`. Returns "" if none/mismatched (never raises)."""
-    from .security import hash_token, looks_like_agent_token
-    tok = (x_warden_agent or "").strip()
-    if not looks_like_agent_token(tok):
-        tok = x_warden_token if looks_like_agent_token(x_warden_token) else ""
-    if not looks_like_agent_token(tok):
-        return ""
-    row = (db.query(Agent)
-             .filter(Agent.token_hash == hash_token(tok), Agent.active.is_(True))
-             .one_or_none())
-    if row is None or (tenant_id is not None and row.tenant_id != tenant_id):
-        return ""
-    row.last_seen = _naive_now()
-    db.commit()
-    return row.name
+    """Best-effort agent name for attribution: an `X-Warden-Agent` header or the primary token
+    when it's an `ag_…` or an OIDC/workload JWT. Returns "" if none/mismatched (never raises)."""
+    from .security import hash_token, looks_like_agent_token, looks_like_jwt
+    tok = (x_warden_agent or "").strip() or (x_warden_token or "")
+    if looks_like_agent_token(tok):
+        row = (db.query(Agent)
+                 .filter(Agent.token_hash == hash_token(tok), Agent.active.is_(True))
+                 .one_or_none())
+        if row is None or (tenant_id is not None and row.tenant_id != tenant_id):
+            return ""
+        row.last_seen = _naive_now()
+        db.commit()
+        return row.name
+    if looks_like_jwt(tok):
+        try:
+            ag = _resolve_agent_jwt(tok, db)
+        except HTTPException:
+            return ""
+        if ag is None or (tenant_id is not None and ag.tenant_id != tenant_id):
+            return ""
+        return ag.name
+    return ""
 
 
 @app.post("/api/ingest/ai-usage")

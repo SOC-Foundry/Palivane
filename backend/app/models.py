@@ -80,6 +80,11 @@ class Tenant(Base):
     # Need-to-know rules for oversharing detection ("category|kw:word = allowed_glob,…" per
     # line): flags an LLM response returning restricted data to an unauthorized recipient.
     oversharing_rules = Column(String(4096), default="")
+    # Agent workload identity (OIDC): trust JWTs from this issuer as agent credentials.
+    # jwks is optional (discovered from the issuer when blank); audience is validated if set.
+    agent_oidc_issuer = Column(String(512), default="")
+    agent_oidc_jwks = Column(String(512), default="")
+    agent_oidc_audience = Column(String(255), default="")
     # Data-processing agreement acceptance (compliance record; history in the audit log).
     dpa_version = Column(String(32), default="")
     dpa_accepted_at = Column(DateTime, nullable=True)
@@ -111,6 +116,9 @@ class Tenant(Base):
                 "tool_suppress": self.tool_suppress or "",
                 "disabled_checks": [c for c in (self.disabled_checks or "").split(",") if c],
                 "oversharing_rules": self.oversharing_rules or "",
+                "agent_oidc_issuer": self.agent_oidc_issuer or "",
+                "agent_oidc_jwks": self.agent_oidc_jwks or "",
+                "agent_oidc_audience": self.agent_oidc_audience or "",
                 "dpa_version": self.dpa_version or "",
                 "dpa_accepted_at": self.dpa_accepted_at.isoformat() if self.dpa_accepted_at else None,
                 "dpa_accepted_by": self.dpa_accepted_by or ""}
@@ -403,6 +411,7 @@ class Agent(Base):
     role = Column(String(64), default="")               # reserved for Phase 1 authz
     prefix = Column(String(16), index=True, default="")
     token_hash = Column(String(64), default="")
+    oidc_subject = Column(String(320), default="", index=True)  # JWT sub/client_id -> this agent
     deny = Column(String(1024), default="")             # per-agent extra deny globs (tightens the role)
     active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=_utcnow)
@@ -411,6 +420,7 @@ class Agent(Base):
     def to_dict(self) -> dict:
         return {"id": self.id, "name": self.name, "kind": self.kind, "role": self.role or "",
                 "prefix": self.prefix, "active": self.active,
+                "oidc_subject": self.oidc_subject or "",
                 "deny": [x.strip() for x in (self.deny or "").split(",") if x.strip()],
                 "created_at": self.created_at.isoformat() if self.created_at else None,
                 "last_seen": self.last_seen.isoformat() if self.last_seen else None}

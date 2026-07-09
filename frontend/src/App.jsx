@@ -239,7 +239,7 @@ export default function App() {
         ) : view === "scanlog" ? (
           <ScanLog />
         ) : view === "agents" ? (
-          <Agents />
+          <Agents tenant={auth.tenant} onTenant={(t) => setAuth((a) => ({ ...a, tenant: t }))} />
         ) : view === "users" ? (
           <Users currentUser={auth.user} />
         ) : view === "settings" ? (

@@ -438,7 +438,8 @@ def create_agent(body: AgentCreate, current: User = Depends(require_admin),
         raise HTTPException(status_code=409, detail="an agent with that name already exists")
     token, prefix, token_hash = generate_agent_token()
     agent = Agent(tenant_id=current.tenant_id, name=body.name.strip(), kind=body.kind,
-                  role=body.role.strip(), prefix=prefix, token_hash=token_hash)
+                  role=body.role.strip(), oidc_subject=body.oidc_subject.strip(),
+                  prefix=prefix, token_hash=token_hash)
     db.add(agent)
     db.commit()
     db.refresh(agent)
@@ -483,6 +484,8 @@ def update_agent(agent_id: int, body: AgentUpdate, current: User = Depends(requi
                          target=f"{agent.name}={role or '-'}")
     if body.deny is not None:
         agent.deny = ",".join(dict.fromkeys(x.strip() for x in body.deny if x.strip()))
+    if body.oidc_subject is not None:
+        agent.oidc_subject = body.oidc_subject.strip()
     db.commit()
     return agent.to_dict()
 
@@ -750,6 +753,10 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.disabled_checks = ",".join(dict.fromkeys(k for k in body.disabled_checks if k in VALID_KEYS))
     if body.oversharing_rules is not None:
         tenant.oversharing_rules = body.oversharing_rules.strip()
+    for _f in ("agent_oidc_issuer", "agent_oidc_jwks", "agent_oidc_audience"):
+        _v = getattr(body, _f)
+        if _v is not None:
+            setattr(tenant, _f, _v.strip())
     if body.tool_suppress is not None:
         cleaned = body.tool_suppress.strip()
         if any(":" not in seg for seg in cleaned.split(";") if seg.strip()):

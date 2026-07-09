@@ -75,6 +75,59 @@ def exchange_code(meta: dict, client_id: str, client_secret: str, code: str,
         raise OIDCError(f"OIDC token exchange failed: {e}")
 
 
+# --- Workload / agent identity (client-credentials JWTs) ------------------------------
+# Cache discovery + JWKS so per-request agent-token validation is a local crypto check, not
+# a network round-trip. Coarse TTL; JWKS rotation is picked up within the window.
+import time as _time  # noqa: E402
+
+_JWKS_CACHE: dict = {}   # jwks_uri -> (key_set, expires_at)
+_DISC_CACHE: dict = {}   # issuer -> (meta, expires_at)
+_TTL = 3600
+
+
+def _discover_cached(issuer: str) -> dict:
+    hit = _DISC_CACHE.get(issuer)
+    if hit and hit[1] > _time.time():
+        return hit[0]
+    meta = discover(issuer)
+    _DISC_CACHE[issuer] = (meta, _time.time() + _TTL)
+    return meta
+
+
+def _key_set(jwks_uri: str):
+    hit = _JWKS_CACHE.get(jwks_uri)
+    if hit and hit[1] > _time.time():
+        return hit[0]
+    try:
+        with httpx.Client(timeout=10) as c:
+            jwks = c.get(_safe(jwks_uri), timeout=10).json()
+        ks = JsonWebKey.import_key_set(jwks)
+    except Exception as e:
+        raise OIDCError(f"JWKS fetch failed: {e}")
+    _JWKS_CACHE[jwks_uri] = (ks, _time.time() + _TTL)
+    return ks
+
+
+def validate_agent_jwt(issuer: str, audience: str, token: str, jwks_uri: str = "") -> dict:
+    """Validate a workload/agent bearer JWT against the issuer's JWKS (signature + iss + exp,
+    and aud when configured). No nonce/email — this is a service credential, not a user login.
+    Returns the claims (with `sub`/`client_id`/`azp` for mapping to an Agent)."""
+    uri = jwks_uri or _discover_cached(issuer).get("jwks_uri", "")
+    if not uri:
+        raise OIDCError("no JWKS URI for issuer")
+    opts = {"iss": {"essential": True, "value": issuer}, "exp": {"essential": True}}
+    if audience:
+        opts["aud"] = {"essential": True, "value": audience}
+    try:
+        claims = jwt.decode(token, _key_set(uri), claims_options=opts)
+        claims.validate()
+    except OIDCError:
+        raise
+    except Exception as e:
+        raise OIDCError(f"agent token validation failed: {e}")
+    return dict(claims)
+
+
 def validate_id_token(meta: dict, issuer: str, client_id: str, id_token: str,
                       nonce: str) -> dict:
     """Validate the ID token's signature (via the IdP JWKS) and claims, and return them.

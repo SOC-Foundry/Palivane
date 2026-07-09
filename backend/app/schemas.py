@@ -205,6 +205,9 @@ class TenantUpdate(BaseModel):
     custom_pii_patterns: str | None = None     # org PII/confidential "label=regex" per line
     disabled_checks: list[str] | None = None   # detection checks turned off (policy keys)
     oversharing_rules: str | None = None        # need-to-know rules ("category = allowed_glob" per line)
+    agent_oidc_issuer: str | None = None         # workload-identity trust: issuer
+    agent_oidc_jwks: str | None = None           # optional explicit JWKS URI (else discovered)
+    agent_oidc_audience: str | None = None        # expected audience (validated if set)
 
 
 class TenantDelete(BaseModel):
@@ -232,11 +235,13 @@ class AgentCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     kind: Literal["service", "interactive"] = "service"
     role: str = Field("", max_length=64)   # optional least-privilege role name
+    oidc_subject: str = Field("", max_length=320)   # JWT sub/client_id for workload identity
 
 
 class AgentUpdate(BaseModel):
     role: str | None = Field(None, max_length=64)   # assign/clear the agent's role
     deny: list[str] | None = None                   # per-agent extra deny globs (tightens role)
+    oidc_subject: str | None = Field(None, max_length=320)   # JWT subject mapping
 
 
 class AgentRoleIn(BaseModel):
