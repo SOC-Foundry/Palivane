@@ -172,6 +172,17 @@ overrides — changes apply immediately to new scans:
 
 ![Policies](assets/policies.png)
 
+**Govern your AI agents**: give each a verifiable identity (Warden `ag_` token or an
+OIDC/workload JWT) and a least-privilege role that limits its tools, servers, commands, and
+data scopes — monitor or enforce:
+
+![Agents — identity & least-privilege](assets/agents.png)
+
+See **who is doing what**: a per-registered-user scan log — what each person trips, how
+often, and how risky, with drill-down to their findings:
+
+![Scan log](assets/scanlog.png)
+
 New to the console? The built-in **Help** page walks through the planes, connecting a
 source, reading a finding, and monitor-vs-enforce — no need to leave the app:
 
