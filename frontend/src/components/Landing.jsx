@@ -1,4 +1,5 @@
 import { IconShield, IconPlug, IconTarget, IconAlert, IconInbox, IconClipboard } from "./icons.jsx";
+import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
 
 const FRONTS = [
   {
@@ -43,16 +44,7 @@ const ENTERPRISE = [
 export default function Landing({ onSignIn }) {
   return (
     <div className="landing">
-      <header className="lp-nav">
-        <div className="lp-brand">
-          <img src="/warden-emblem.png" alt="Warden" className="lp-brand-emblem" />
-          <span>Warden</span>
-        </div>
-        <nav className="lp-nav-links">
-          <a href="/how-it-works">How it works</a>
-          <button className="primary-btn slim" onClick={onSignIn}>Sign in</button>
-        </nav>
-      </header>
+      <SiteNav onSignIn={onSignIn} />
 
       <section className="lp-hero-wrap">
         <div className="lp-hero">
@@ -158,14 +150,7 @@ export default function Landing({ onSignIn }) {
         </div>
       </section>
 
-      <footer className="lp-foot">
-        <span>◆ Warden — AI Security Gateway</span>
-        <span className="lp-foot-links">
-          <a href="/how-it-works">How it works</a>
-          <a href="/privacy">Privacy</a>
-          <a href="/terms">Terms</a>
-        </span>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

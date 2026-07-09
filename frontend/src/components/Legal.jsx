@@ -1,5 +1,6 @@
 // Public legal pages (privacy / terms), reachable without auth at /privacy and /terms.
 // Styled with the app's landing (lp-*) design language so it matches the brand.
+import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
 
 const UPDATED = "2 July 2026";
 
@@ -122,26 +123,13 @@ function TermsBody() {
 export default function Legal({ page }) {
   return (
     <div className="landing">
-      <header className="lp-nav">
-        <a className="lp-brand" href="/" style={{ color: "inherit", textDecoration: "none" }}>
-          <img src="/warden-emblem.png" alt="Warden" className="lp-brand-emblem" />
-          <span>Warden</span>
-        </a>
-        <a className="primary-btn slim" href="/" style={{ textDecoration: "none" }}>← Home</a>
-      </header>
+      <SiteNav />
 
       <article className="legal">
         {page === "terms" ? <TermsBody /> : <PrivacyBody />}
       </article>
 
-      <footer className="lp-foot">
-        <span>◆ Warden — AI Security Gateway</span>
-        <span className="lp-foot-links">
-          <a href="/how-it-works">How it works</a>
-          <a href="/privacy">Privacy</a>
-          <a href="/terms">Terms</a>
-        </span>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

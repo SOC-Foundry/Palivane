@@ -11,6 +11,8 @@ import Login from "./components/Login.jsx";
 import Landing from "./components/Landing.jsx";
 import Legal from "./components/Legal.jsx";
 import HowItWorks from "./components/HowItWorks.jsx";
+import UseCases from "./components/UseCases.jsx";
+import WhyWarden from "./components/WhyWarden.jsx";
 import ExtensionConnect from "./components/ExtensionConnect.jsx";
 import Connections from "./components/Connections.jsx";
 import Coverage from "./components/Coverage.jsx";
@@ -19,7 +21,7 @@ import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, Ico
 
 export default function App() {
   const [auth, setAuth] = useState(null);        // { user, tenant }
-  const [showLogin, setShowLogin] = useState(false);
+  const [showLogin, setShowLogin] = useState(() => window.location.hash === "#signin");
   const [booting, setBooting] = useState(true);
   const [health, setHealth] = useState(null);
   const [stats, setStats] = useState(null);
@@ -97,6 +99,12 @@ export default function App() {
   }
   if (legalPath === "/how-it-works") {
     return <HowItWorks />;
+  }
+  if (legalPath === "/use-cases") {
+    return <UseCases />;
+  }
+  if (legalPath === "/why-warden") {
+    return <WhyWarden />;
   }
   // Browser-extension sign-in landing (OAuth-style; opened by the extension).
   if (legalPath === "/extension-connect") {
