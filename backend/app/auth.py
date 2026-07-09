@@ -22,11 +22,11 @@ from .config import settings
 from .crypto import decrypt, encrypt
 from .database import get_db
 from .models import (
-    ApiKey, AuditLog, EnrollmentToken, Finding, GatewayUsage, LoginAttempt, Tenant,
+    Agent, ApiKey, AuditLog, EnrollmentToken, Finding, GatewayUsage, LoginAttempt, Tenant,
     TenantOIDC, TenantSAML, TenantUpstream, User,
 )
 from .schemas import (
-    ApiKeyCreate, EnrollmentTokenCreate, EnrollRequest, LoginRequest, MFACode, MFAVerify,
+    AgentCreate, ApiKeyCreate, EnrollmentTokenCreate, EnrollRequest, LoginRequest, MFACode, MFAVerify,
     DPAAccept, OIDCConfig, SAMLConfig, SignupRequest, TenantDelete, TenantUpdate, UpstreamConfig,
     UserCreate, UserUpdate,
 )
@@ -36,6 +36,7 @@ from .security import (
     TokenError,
     create_token,
     decode_token,
+    generate_agent_token,
     generate_api_key,
     generate_enrollment_token,
     hash_password,
@@ -422,6 +423,59 @@ def revoke_api_key(key_id: int, current: User = Depends(require_admin),
     audit_log.record(db, current.tenant_id, current.email, "apikey.revoke",
                      target=key.label or str(key_id))
     return {"id": key_id, "active": False}
+
+
+# --- Agent identity (Phase 0: verifiable identity + attribution) ----------------------
+
+@router.post("/agents")
+def create_agent(body: AgentCreate, current: User = Depends(require_admin),
+                 db: Session = Depends(get_db)):
+    """Register an AI agent and mint its `ag_…` identity token (returned ONCE — only the
+    hash is stored). The agent presents this token on capture requests so its actions are
+    attributed to it; role is reserved for the least-privilege phase."""
+    if db.query(Agent).filter(Agent.tenant_id == current.tenant_id,
+                              Agent.name == body.name.strip()).first():
+        raise HTTPException(status_code=409, detail="an agent with that name already exists")
+    token, prefix, token_hash = generate_agent_token()
+    agent = Agent(tenant_id=current.tenant_id, name=body.name.strip(), kind=body.kind,
+                  role=body.role.strip(), prefix=prefix, token_hash=token_hash)
+    db.add(agent)
+    db.commit()
+    db.refresh(agent)
+    audit_log.record(db, current.tenant_id, current.email, "agent.create", target=agent.name)
+    return {**agent.to_dict(), "token": token}
+
+
+@router.get("/agents")
+def list_agents(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    rows = db.query(Agent).filter(Agent.tenant_id == current.tenant_id).order_by(Agent.name).all()
+    return {"agents": [a.to_dict() for a in rows]}
+
+
+@router.post("/agents/{agent_id}/rotate")
+def rotate_agent(agent_id: int, current: User = Depends(require_admin),
+                 db: Session = Depends(get_db)):
+    """Rotate an agent's token — issues a new `ag_…` (old one stops working immediately)."""
+    agent = db.get(Agent, agent_id)
+    if agent is None or agent.tenant_id != current.tenant_id:
+        raise HTTPException(status_code=404, detail="agent not found")
+    token, prefix, token_hash = generate_agent_token()
+    agent.prefix, agent.token_hash, agent.active = prefix, token_hash, True
+    db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "agent.rotate", target=agent.name)
+    return {**agent.to_dict(), "token": token}
+
+
+@router.delete("/agents/{agent_id}")
+def disable_agent(agent_id: int, current: User = Depends(require_admin),
+                  db: Session = Depends(get_db)):
+    agent = db.get(Agent, agent_id)
+    if agent is None or agent.tenant_id != current.tenant_id:
+        raise HTTPException(status_code=404, detail="agent not found")
+    agent.active = False
+    db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "agent.disable", target=agent.name)
+    return {"id": agent_id, "active": False}
 
 
 # --- device enrollment (per-device self-registration) --------------------------------

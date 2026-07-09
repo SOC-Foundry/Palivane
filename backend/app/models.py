@@ -316,6 +316,7 @@ class Finding(Base):
     surface = Column(String(32), default="llm_io", index=True)  # llm_io | ai_usage
     sender = Column(String(512), default="")
     subject = Column(String(1024), default="")
+    agent = Column(String(128), default="", index=True)  # resolved AI-agent identity, if any
     content = Column(Text, default="")
 
     # Verdict
@@ -340,6 +341,7 @@ class Finding(Base):
             "surface": self.surface,
             "sender": self.sender,
             "subject": self.subject,
+            "agent": self.agent or "",
             "risk_score": self.risk_score,
             "severity": self.severity,
             "recommended_action": self.recommended_action,
@@ -384,6 +386,32 @@ class DiscoveredUsage(Base):
     max_risk = Column(Integer, default=0)                 # peak risk score seen (capture)
     first_seen = Column(DateTime, default=_utcnow)
     last_seen = Column(DateTime, default=_utcnow, index=True)
+
+
+class Agent(Base):
+    """A verifiable AI-agent identity within a tenant (Phase 0: identity + attribution; role
+    is carried for the future least-privilege phase). Authenticates with an `ag_…` token
+    (only the hash is stored) — a per-agent credential distinct from the human/tenant."""
+
+    __tablename__ = "agents"
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_agent_tenant_name"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    name = Column(String(128), nullable=False)          # "billing-bot"
+    kind = Column(String(16), default="service")        # service | interactive
+    role = Column(String(64), default="")               # reserved for Phase 1 authz
+    prefix = Column(String(16), index=True, default="")
+    token_hash = Column(String(64), default="")
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+    last_seen = Column(DateTime, nullable=True)
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "name": self.name, "kind": self.kind, "role": self.role or "",
+                "prefix": self.prefix, "active": self.active,
+                "created_at": self.created_at.isoformat() if self.created_at else None,
+                "last_seen": self.last_seen.isoformat() if self.last_seen else None}
 
 
 class PolicyOverride(Base):

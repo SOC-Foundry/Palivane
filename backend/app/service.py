@@ -27,7 +27,7 @@ _ALLOW_LEVEL = {"benign", "low"}  # verdicts below the warn threshold
 
 def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                  tenant_id: int | None = None, signal_filter=None,
-                 persist_benign: bool = True) -> dict:
+                 persist_benign: bool = True, agent: str = "") -> dict:
     """Analyze one item, optionally persist a Finding, return the API payload.
 
     `tenant_id` attributes the stored finding to an organization (data isolation).
@@ -69,6 +69,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             surface=item.surface.value,
             sender=item.sender,
             subject=item.subject,
+            agent=agent or "",
             content=_stored_content(item.content),
             risk_score=verdict.risk_score,
             severity=verdict.severity,

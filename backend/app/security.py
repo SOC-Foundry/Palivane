@@ -83,6 +83,19 @@ def looks_like_api_key(token: str) -> bool:
     return token.startswith(API_KEY_PREFIX)
 
 
+AGENT_TOKEN_PREFIX = "ag_"
+
+
+def generate_agent_token() -> tuple[str, str, str]:
+    """Return (plaintext, lookup_prefix, sha256_hash) for a per-agent identity credential."""
+    token = AGENT_TOKEN_PREFIX + secrets.token_urlsafe(32)
+    return token, token[:_PREFIX_LEN], hash_token(token)
+
+
+def looks_like_agent_token(token: str) -> bool:
+    return (token or "").startswith(AGENT_TOKEN_PREFIX)
+
+
 ENROLL_TOKEN_PREFIX = "et_"
 
 

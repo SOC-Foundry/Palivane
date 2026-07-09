@@ -228,6 +228,12 @@ class ApiKeyCreate(BaseModel):
     expires_in_days: int | None = None
 
 
+class AgentCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    kind: Literal["service", "interactive"] = "service"
+    role: str = Field("", max_length=64)   # reserved for the least-privilege phase
+
+
 class EnrollmentTokenCreate(BaseModel):
     label: str = ""
     max_uses: int | None = None       # None = unlimited
