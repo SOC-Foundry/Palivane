@@ -30,6 +30,11 @@ const REASONS = [
     body: "Provider-agnostic across Claude, GPT, and Gemini for both the gateway and the judge. Complements GitHub secret scanning and your CASB rather than replacing them, and folds in TruffleHog / Gitleaks / GitGuardian output so every finding lands in one place.",
   },
   {
+    icon: <IconTarget />,
+    title: "Discover, then govern — granularly",
+    body: "Warden inventories every AI tool in use (by tool and by team) from logs and live capture, then lets you govern it: toggle any detection check on/off with presets, and set per-user or per-group policy overrides. One console covers discovery, policy, and enforcement.",
+  },
+  {
     icon: <IconClipboard />,
     title: "Multi-tenant & compliance-ready",
     body: "Org signup, role-based console, per-tenant API keys and policy, a full audit log, alert digests, SIEM export, a signed DPA, and self-serve data export plus one-click delete-my-org. Deployable with docker compose locally or Cloud Run + Cloud SQL for production.",

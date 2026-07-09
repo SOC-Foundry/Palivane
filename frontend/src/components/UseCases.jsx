@@ -12,7 +12,12 @@ const CASES = [
   {
     icon: <IconShield />, tag: "AI coding assistants",
     title: "Let developers use Claude Code, Cursor & Copilot — safely",
-    body: "Coding assistants are the fastest-growing egress path. Warden allows the code they're meant to see, but still blocks API keys, tokens, and credentials in that code — and governs the agent's MCP tool-use. Source-code detection is auto-suppressed for sanctioned tools so it never gets in the way.",
+    body: "Coding assistants are the fastest-growing egress path. Warden allows the code they're meant to see, but still blocks API keys and credentials in it, flags unsafe autonomy (YOLO / auto-apply / auto-run) and dangerous commands in AI chats, and governs the agent's MCP tool-use — source-code detection auto-suppressed for sanctioned tools so it never gets in the way.",
+  },
+  {
+    icon: <IconInbox />, tag: "Need-to-know",
+    title: "Stop your own AI from oversharing internal data",
+    body: "Enterprise LLMs (M365 Copilot, Glean, internal RAG) will surface HR files, salary data, and confidential docs to any employee who asks. Warden checks each answer against your need-to-know rules and flags — or blocks — when restricted data reaches someone outside the allowed group.",
   },
   {
     icon: <IconAlert />, tag: "Agentic (MCP)",

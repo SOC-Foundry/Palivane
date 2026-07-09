@@ -81,6 +81,23 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
 - **Multi-tenant + self-serve** — org signup, role-based console (admin/analyst), per-org
   API keys, and a **Connect** page that generates copy-paste install config for every
   source.
+- **Shadow-AI discovery** — an inventory of every AI tool in use (sanctioned or not),
+  built from CASB/SWG/proxy/DNS **logs** (`/api/discovery/ingest`) *and* live capture, rolled
+  up **by tool and by team** with a risk score. Because Warden inspects content, the inventory
+  shows the **actual sensitive data** each tool received — and you can **sanction a tool in one
+  click**. A ~110-tool catalog keeps it current.
+- **Granular policy console** — enable/disable each detection **check** per tenant with
+  Strict/Balanced/Monitor **presets**, plus **per-user and per-group overrides**
+  (`alice@acme.com` or a glob like `*@contractors.acme.com`) that replace the org default for
+  matched people.
+- **Coding-agent safety** — flags unsafe **autonomy** (Cursor autoRun/auto-apply/YOLO,
+  `--dangerously-skip-permissions`) and **dangerous commands in AI chats**; `warden-posture`
+  scans Cursor/Claude Code settings and attributes findings **per user**.
+- **Need-to-know (anti-oversharing)** — `/api/scan/oversharing` flags when an enterprise LLM
+  (M365 Copilot, Glean, internal RAG) returns restricted data to someone outside the allowed
+  group, per your need-to-know rules.
+- **Per-user scan log** — a **Scan log** view of activity per registered user: what each
+  person trips, how often, and how risky, with drill-down to their findings.
 - **In-app guidance** — a built-in **Help** page explains the capture planes, how to
   connect a source, how to read a finding (category glossary + severity scale), and
   monitor-vs-enforce — so an admin never has to leave the console to get oriented.
@@ -135,6 +152,16 @@ Warden is a **hosted, multi-tenant service — there's nothing to run.** As a cu
    lights up per plane as findings start arriving.
 3. Set **policy** in Settings — monitor vs. enforce, block severity, sanctioned tools,
    alerts, compliance (DPA, export) — all in the console.
+
+**Discover** every AI tool in use (sanctioned or not), by tool and by team, with the actual
+sensitive-data exposure each one received — and sanction any of them in one click:
+
+![Shadow-AI discovery](assets/discovery.png)
+
+**Govern** it: toggle any detection check, apply a preset, and set per-user / per-group
+overrides — changes apply immediately to new scans:
+
+![Policies](assets/policies.png)
 
 New to the console? The built-in **Help** page walks through the planes, connecting a
 source, reading a finding, and monitor-vs-enforce — no need to leave the app:

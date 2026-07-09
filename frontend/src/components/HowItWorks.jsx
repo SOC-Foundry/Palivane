@@ -20,6 +20,7 @@ const SURFACES = [
   ["deps", "Dependency manifests (supply chain)"],
   ["ide", "Editor extensions"],
   ["secrets", "Credentials at rest on a device"],
+  ["oversharing", "LLM responses returning restricted data"],
 ];
 
 const DETECTORS = [
@@ -28,6 +29,7 @@ const DETECTORS = [
   { icon: <IconAlert />, title: "Agentic (MCP) guard", surface: "mcp", body: "Sensitive-file access, dangerous commands, tool-poisoning, and untrusted MCP servers — read off the agent's tool-use, even for local stdio MCP." },
   { icon: <IconClipboard />, title: "Supply-chain & IDE", surface: "deps · ide", body: "Risky dependency manifests (install-script abuse, non-registry sources, known-bad packages + OSV CVEs) and unapproved editor extensions." },
   { icon: <IconPlug />, title: "Credentials at rest", surface: "secrets", body: "Live keys on managed endpoints — cloud SA keys, .npmrc, .git-credentials, key files — optionally with TruffleHog/Gitleaks verification." },
+  { icon: <IconInbox />, title: "Agent safety & oversharing", surface: "ide · oversharing", body: "Unsafe coding-agent autonomy (YOLO / auto-apply / --dangerously-skip-permissions), dangerous commands in AI chats, and need-to-know oversharing — an LLM returning restricted data to the wrong recipient." },
 ];
 
 const TIERS = [
