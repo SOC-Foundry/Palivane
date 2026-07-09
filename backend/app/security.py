@@ -96,6 +96,25 @@ def looks_like_agent_token(token: str) -> bool:
     return (token or "").startswith(AGENT_TOKEN_PREFIX)
 
 
+def looks_like_jwt(token: str) -> bool:
+    """A compact JWS: three base64url segments, header starting with the `eyJ` marker."""
+    t = token or ""
+    return t.startswith("eyJ") and t.count(".") == 2
+
+
+def jwt_unverified_claims(token: str) -> dict:
+    """Best-effort decode of a JWT's payload WITHOUT signature verification — only to read
+    `iss` so we can pick the tenant whose JWKS to verify against. Never trust these claims."""
+    import base64
+    import json
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        return json.loads(base64.urlsafe_b64decode(payload))
+    except Exception:
+        return {}
+
+
 ENROLL_TOKEN_PREFIX = "et_"
 
 

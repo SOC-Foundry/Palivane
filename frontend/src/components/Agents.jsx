@@ -8,10 +8,14 @@ const BLANK_ROLE = { name: "", allow_tools: "", allow_servers: "", allow_command
                      deny: "", data_scopes: "", default_allow: false, enforce: false };
 const _csv = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
 
-export default function Agents() {
+export default function Agents({ tenant, onTenant }) {
   const [agents, setAgents] = useState(null);
   const [roles, setRoles] = useState([]);
-  const [draft, setDraft] = useState({ name: "", kind: "service" });
+  const [draft, setDraft] = useState({ name: "", kind: "service", oidc_subject: "" });
+  const [oidc, setOidc] = useState({
+    agent_oidc_issuer: tenant?.agent_oidc_issuer || "",
+    agent_oidc_jwks: tenant?.agent_oidc_jwks || "",
+    agent_oidc_audience: tenant?.agent_oidc_audience || "" });
   const [roleDraft, setRoleDraft] = useState(BLANK_ROLE);
   const [token, setToken] = useState(null);   // freshly minted/rotated token, shown once
   const [err, setErr] = useState(null);
@@ -31,6 +35,15 @@ export default function Agents() {
   }
   async function setAgentDeny(a, denyStr) {
     try { await api.agentUpdate(a.id, { deny: _csv(denyStr) }); await load(); }
+    catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
+  }
+  async function setAgentSubject(a, sub) {
+    try { await api.agentUpdate(a.id, { oidc_subject: sub }); await load(); }
+    catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
+  }
+  async function saveOidc() {
+    setErr(null);
+    try { const t = await api.updateTenant(oidc); onTenant?.(t); }
     catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
   }
   async function saveRole() {
@@ -56,9 +69,10 @@ export default function Agents() {
     if (!draft.name.trim()) { setErr("Give the agent a name."); return; }
     setBusy(true);
     try {
-      const r = await api.agentCreate({ name: draft.name.trim(), kind: draft.kind });
+      const r = await api.agentCreate({ name: draft.name.trim(), kind: draft.kind,
+                                        oidc_subject: draft.oidc_subject.trim() });
       setToken({ name: r.name, token: r.token });
-      setDraft({ name: "", kind: "service" });
+      setDraft({ name: "", kind: "service", oidc_subject: "" });
       await load();
     } catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
     finally { setBusy(false); }
@@ -87,6 +101,24 @@ export default function Agents() {
       </div>
 
       {err && <div className="error">{err}</div>}
+
+      <div className="panel settings-card">
+        <h2>Workload identity (OIDC)</h2>
+        <p className="muted" style={{ marginTop: 0 }}>Optionally trust JWTs from your workload
+           IdP as agent credentials (instead of Warden's <code>ag_</code> token). A token whose
+           <code> iss</code> matches and validates against the issuer's JWKS is mapped to the agent
+           whose <strong>OIDC subject</strong> equals the token's <code>sub</code>/<code>client_id</code>.</p>
+        <div className="override-row">
+          <input placeholder="issuer (https://idp.example)" value={oidc.agent_oidc_issuer}
+                 onChange={(e) => setOidc((o) => ({ ...o, agent_oidc_issuer: e.target.value }))} />
+          <input placeholder="JWKS URI (optional; discovered if blank)" value={oidc.agent_oidc_jwks}
+                 onChange={(e) => setOidc((o) => ({ ...o, agent_oidc_jwks: e.target.value }))} />
+          <input placeholder="audience (optional)" value={oidc.agent_oidc_audience}
+                 onChange={(e) => setOidc((o) => ({ ...o, agent_oidc_audience: e.target.value }))} />
+        </div>
+        <button className="primary-btn slim" style={{ marginTop: 10 }} onClick={saveOidc}>Save workload identity</button>
+      </div>
+
       {token && (
         <div className="panel settings-card" style={{ borderColor: "rgba(124,108,255,.5)" }}>
           <h2>Token for {token.name}</h2>
@@ -106,6 +138,9 @@ export default function Agents() {
             <option value="service">service (autonomous)</option>
             <option value="interactive">interactive (human-in-the-loop)</option>
           </select>
+          <input placeholder="OIDC subject (optional)" value={draft.oidc_subject}
+                 title="JWT sub/client_id if this agent authenticates with a workload OIDC token"
+                 onChange={(e) => setDraft((d) => ({ ...d, oidc_subject: e.target.value }))} />
           <button className="primary-btn slim" onClick={create} disabled={busy}>{busy ? "…" : "Create agent"}</button>
         </div>
       </div>
@@ -114,7 +149,7 @@ export default function Agents() {
         <h2>Agents</h2>
         {agents && agents.length ? (
           <table className="data-table">
-            <thead><tr><th>Name</th><th>Kind</th><th>Role</th><th>Extra deny</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Kind</th><th>Role</th><th>OIDC subject</th><th>Extra deny</th><th>Status</th><th></th></tr></thead>
             <tbody>
               {agents.map((a) => (
                 <tr key={a.id} style={{ opacity: a.active ? 1 : 0.5 }}>
@@ -125,6 +160,11 @@ export default function Agents() {
                       <option value="">— none —</option>
                       {roles.map((r) => <option key={r.id} value={r.name}>{r.name}{r.enforce ? " (enforce)" : ""}</option>)}
                     </select>
+                  </td>
+                  <td>
+                    <input defaultValue={a.oidc_subject || ""} placeholder="spn / client_id"
+                           style={{ width: 120 }} title="JWT subject that maps a workload token to this agent"
+                           onBlur={(e) => { const v = e.target.value.trim(); if (v !== (a.oidc_subject || "")) setAgentSubject(a, v); }} />
                   </td>
                   <td>
                     <input defaultValue={(a.deny || []).join(", ")} placeholder="*prod*, *delete*"

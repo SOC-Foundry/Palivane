@@ -1,10 +1,18 @@
 # Design draft — Agent identity & least-privilege enforcement
 
-> Status: **draft / not built.** This is the design for the one Kirin capability Warden does
-> not yet have: runtime **authorization** for AI agents — a verifiable identity per agent and
-> enforcement that an agent can only reach the tools, servers, and data its role permits.
-> Everything else Warden does today is *detection* (flag/block bad content or actions); this
-> adds *authorization* (deny an action because the caller isn't entitled to it).
+> Status: **BUILT — Phases 0–3 shipped.** Runtime **authorization** for AI agents: a
+> verifiable identity per agent and enforcement that an agent can only reach the tools,
+> servers, commands, and data its role permits. Everything else Warden does is *detection*
+> (flag/block bad content); this adds *authorization* (deny an action because the caller
+> isn't entitled to it).
+>
+> - **Phase 0** — Agent identity + `ag_` tokens + per-finding attribution. ✅
+> - **Phase 1** — `AgentRole` (allow tools/servers) authorized on MCP calls, monitor/enforce. ✅
+> - **Phase 2** — shell `allow_commands`, `data_scopes` (wired to detection), per-agent deny. ✅
+> - **Phase 3** — OAuth/workload identity: agents authenticate with an OIDC JWT validated
+>   against the tenant's JWKS, mapped to an agent by `sub`/`client_id`. ✅ (SPIFFE/mTLS: future.)
+>
+> The sections below are the original design; the shipped implementation follows it closely.
 
 ## 1. The gap
 
