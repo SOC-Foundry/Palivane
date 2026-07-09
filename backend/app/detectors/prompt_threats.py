@@ -160,7 +160,7 @@ class PromptThreatDetector:
                     title="Injection hidden in encoded payload",
                     detail="A base64 blob decodes to instruction-override / jailbreak / exfil text.",
                     weight=0.8, confidence=0.8, detector=self.name,
-                    evidence=", ".join(hidden[:4]),
+                    evidence=", ".join(hidden[:4]), check="hidden_characters",
                 ))
             else:
                 signals.append(Signal(
@@ -168,7 +168,7 @@ class PromptThreatDetector:
                     title="Encoded payload (possible smuggled instructions)",
                     detail="A long base64-like blob can hide an injection from keyword filters.",
                     weight=0.45, confidence=0.5, detector=self.name,
-                    evidence=b64.group(0)[:48] + "…",
+                    evidence=b64.group(0)[:48] + "…", check="hidden_characters",
                 ))
 
         if INVISIBLE_RE.search(text):
@@ -177,7 +177,7 @@ class PromptThreatDetector:
                 title="Invisible / zero-width characters",
                 detail="Hidden Unicode (zero-width or tag chars) is a known prompt-smuggling vector.",
                 weight=0.6, confidence=0.7, detector=self.name,
-                evidence="non-printing characters detected",
+                evidence="non-printing characters detected", check="hidden_characters",
             ))
 
         return signals

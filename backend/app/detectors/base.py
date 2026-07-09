@@ -69,11 +69,18 @@ class Signal:
     confidence: float
     detector: str
     evidence: str = ""
+    check: str = ""   # optional finer-grained policy key; defaults to the category
 
     @property
     def contribution(self) -> float:
         """The signal's raw push toward the risk score (0..1)."""
         return max(0.0, min(1.0, self.weight)) * max(0.0, min(1.0, self.confidence))
+
+    @property
+    def effective_check(self) -> str:
+        """The policy check this signal belongs to — an explicit `check` when a detector
+        wants sub-category granularity (e.g. 'hidden_characters'), else its category."""
+        return self.check or self.category.value
 
 
 @dataclass

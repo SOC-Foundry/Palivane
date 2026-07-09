@@ -75,6 +75,8 @@ class Tenant(Base):
     # Org-specific PII / confidential patterns ("label=regex" per line): customer IDs,
     # account numbers, MRNs, project codenames. Applied on top of the built-in PII set.
     custom_pii_patterns = Column(String(4096), default="")
+    # Detection checks the admin has turned OFF (comma-separated policy keys). Empty = all on.
+    disabled_checks = Column(String(2048), default="")
     # Data-processing agreement acceptance (compliance record; history in the audit log).
     dpa_version = Column(String(32), default="")
     dpa_accepted_at = Column(DateTime, nullable=True)
@@ -104,6 +106,7 @@ class Tenant(Base):
                 "sanctioned_ai_tools": self.sanctioned_ai_tools or "",
                 "custom_pii_patterns": self.custom_pii_patterns or "",
                 "tool_suppress": self.tool_suppress or "",
+                "disabled_checks": [c for c in (self.disabled_checks or "").split(",") if c],
                 "dpa_version": self.dpa_version or "",
                 "dpa_accepted_at": self.dpa_accepted_at.isoformat() if self.dpa_accepted_at else None,
                 "dpa_accepted_by": self.dpa_accepted_by or ""}

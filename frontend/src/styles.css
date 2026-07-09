@@ -800,3 +800,19 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 .help-list li { margin: 6px 0; }
 .help-h3 { margin: 18px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .help-list .link-btn { font-size: inherit; padding: 0; vertical-align: baseline; }
+
+/* Policies page — per-check toggles */
+.policy-list { display: flex; flex-direction: column; }
+.policy-row { display: flex; align-items: center; gap: 18px; padding: 15px 2px; border-top: 1px solid var(--border-soft); }
+.policy-row:first-child { border-top: none; }
+.policy-text { flex: 1; min-width: 0; }
+.policy-name { font-size: 14.5px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 9px; }
+.policy-state { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 2px 7px; border-radius: 5px; }
+.policy-state.on { background: rgba(70,201,139,0.14); color: var(--benign); }
+.policy-state.off { background: rgba(138,147,166,0.14); color: var(--muted); }
+.policy-desc { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin-top: 3px; }
+.toggle { flex: none; width: 42px; height: 24px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel-2); position: relative; cursor: pointer; transition: background .14s, border-color .14s; padding: 0; }
+.toggle:disabled { opacity: .6; cursor: default; }
+.toggle-knob { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: transform .14s, background .14s; }
+.toggle-on { background: linear-gradient(135deg, #8b7cff, #6d5efc); border-color: transparent; }
+.toggle-on .toggle-knob { transform: translateX(18px); background: #fff; }

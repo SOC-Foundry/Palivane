@@ -17,8 +17,9 @@ import ExtensionConnect from "./components/ExtensionConnect.jsx";
 import Connections from "./components/Connections.jsx";
 import Coverage from "./components/Coverage.jsx";
 import Discovery from "./components/Discovery.jsx";
+import Policies from "./components/Policies.jsx";
 import Help from "./components/Help.jsx";
-import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard, IconInbox, IconTarget, IconRadar, IconBook } from "./components/icons.jsx";
+import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard, IconInbox, IconTarget, IconRadar, IconSliders, IconBook } from "./components/icons.jsx";
 
 export default function App() {
   const [auth, setAuth] = useState(null);        // { user, tenant }
@@ -168,6 +169,12 @@ export default function App() {
             </button>
           )}
           {isAdmin && (
+            <button type="button" className={`nav-item ${view === "policies" ? "nav-on" : ""}`}
+                    onClick={() => setView("policies")}>
+              <IconSliders /> <span>Policies</span>
+            </button>
+          )}
+          {isAdmin && (
             <button type="button" className={`nav-item ${view === "settings" ? "nav-on" : ""}`}
                     onClick={() => setView("settings")}>
               <IconGear /> <span>Settings</span>
@@ -213,6 +220,8 @@ export default function App() {
           <Discovery tenant={auth.tenant} onTenant={(t) => setAuth((a) => ({ ...a, tenant: t }))} />
         ) : view === "coverage" ? (
           <Coverage />
+        ) : view === "policies" ? (
+          <Policies tenant={auth.tenant} onTenant={(t) => setAuth((a) => ({ ...a, tenant: t }))} />
         ) : view === "users" ? (
           <Users currentUser={auth.user} />
         ) : view === "settings" ? (

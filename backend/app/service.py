@@ -39,9 +39,18 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     tenant = db.get(Tenant, tenant_id) if tenant_id is not None else None
     include_judge = not (tenant is not None and tenant.judge_enabled is False)
     verdict = engine.analyze(item, include_judge=include_judge)
-    if signal_filter is not None:
+    # Per-tenant policy: drop signals for checks the admin has disabled, then apply any
+    # per-tool suppression the caller passed. Either may re-score the verdict.
+    from .policies import checks_signal_filter, parse_disabled
+    check_filter = checks_signal_filter(
+        parse_disabled(getattr(tenant, "disabled_checks", "") if tenant else ""))
+    filters = [f for f in (check_filter, signal_filter) if f is not None]
+    if filters:
         from .scoring import score
-        verdict = score(signal_filter(list(verdict.signals)))
+        sigs = list(verdict.signals)
+        for f in filters:
+            sigs = f(sigs)
+        verdict = score(sigs)
     result = verdict.to_dict()
     finding_id = None
     if persist and not persist_benign and verdict.severity in _ALLOW_LEVEL:

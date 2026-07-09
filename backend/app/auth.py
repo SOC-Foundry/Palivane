@@ -619,6 +619,12 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
             setattr(tenant, sev_field, val)  # "" clears the override -> inherit global
     if body.sanctioned_ai_tools is not None:
         tenant.sanctioned_ai_tools = body.sanctioned_ai_tools.strip()
+    if body.disabled_checks is not None:
+        from .policies import VALID_KEYS
+        bad = [k for k in body.disabled_checks if k not in VALID_KEYS]
+        if bad:
+            raise HTTPException(status_code=400, detail=f"unknown policy check(s): {', '.join(bad[:5])}")
+        tenant.disabled_checks = ",".join(dict.fromkeys(k for k in body.disabled_checks if k in VALID_KEYS))
     if body.tool_suppress is not None:
         cleaned = body.tool_suppress.strip()
         if any(":" not in seg for seg in cleaned.split(";") if seg.strip()):
