@@ -10,6 +10,7 @@ import Audit from "./components/Audit.jsx";
 import Login from "./components/Login.jsx";
 import Landing from "./components/Landing.jsx";
 import Legal from "./components/Legal.jsx";
+import HowItWorks from "./components/HowItWorks.jsx";
 import ExtensionConnect from "./components/ExtensionConnect.jsx";
 import Connections from "./components/Connections.jsx";
 import Coverage from "./components/Coverage.jsx";
@@ -93,6 +94,9 @@ export default function App() {
   const legalPath = window.location.pathname.replace(/\/+$/, "");
   if (legalPath === "/privacy" || legalPath === "/terms") {
     return <Legal page={legalPath === "/terms" ? "terms" : "privacy"} />;
+  }
+  if (legalPath === "/how-it-works") {
+    return <HowItWorks />;
   }
   // Browser-extension sign-in landing (OAuth-style; opened by the extension).
   if (legalPath === "/extension-connect") {

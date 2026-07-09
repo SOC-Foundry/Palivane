@@ -109,6 +109,10 @@ export default function Landing({ onSignIn }) {
             </div>
           ))}
         </div>
+        <p className="lp-sub" style={{ marginTop: 22 }}>
+          <a className="lp-textlink" href="/how-it-works">Read the technical overview — surfaces,
+          the two-tier secret engine, the scoring model, and why the core runs offline →</a>
+        </p>
       </section>
 
       <section className="lp-section">
@@ -139,6 +143,7 @@ export default function Landing({ onSignIn }) {
       <footer className="lp-foot">
         <span>◆ Warden — AI Security Gateway</span>
         <span className="lp-foot-links">
+          <a href="/how-it-works">How it works</a>
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>
         </span>
