@@ -68,6 +68,8 @@ _ATTACK_CATEGORIES = {
     Category.DEPENDENCY_RISK,
     # Endpoint hygiene — a live credential sitting at rest is itself the exposure.
     Category.CREDENTIAL_AT_REST,
+    # Access governance — an LLM returning restricted data to the wrong person is the risk.
+    Category.DATA_OVERSHARING,
 }
 
 

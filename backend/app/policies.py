@@ -71,6 +71,11 @@ CATALOG: list[dict] = [
     {"key": "credential_at_rest", "label": "Credentials at rest",
      "desc": "Live secrets found sitting on a managed endpoint (cloud keys, .npmrc, .git-credentials, key files).",
      "group": "Supply chain & endpoint"},
+    # --- Access governance ---
+    {"key": "data_oversharing", "label": "Data oversharing (need-to-know)",
+     "desc": "Flags when an enterprise LLM returns restricted data (confidential, PII, keywords) "
+             "to a user outside the allowed group — configured in Settings → Need-to-know rules.",
+     "group": "Access governance"},
 ]
 
 # The keys that ext_guard uses — ext_guard emits DEPENDENCY_RISK for IDE ext findings, so

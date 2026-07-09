@@ -32,6 +32,7 @@ from .schemas import (
     CoverageRequest,
     DiscoveryIngest,
     IDEExtScan,
+    OversharingScan,
     PolicyOverrideIn,
     MCPBatchIngest,
     ExceptionRequest,
@@ -773,6 +774,34 @@ def scan_agent_config(
     item = AnalysisInput(content=body.content, sender=actor,
                          channel=f"{body.tool or 'agent'}-config", surface=Surface.IDE,
                          metadata={"kind": "agent_config", "tool": body.tool})
+    result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
+                          db=db, tenant_id=tenant_id)
+    return {
+        "action": _action_for(result["severity"]),
+        "severity": result["severity"],
+        "risk_score": result["risk_score"],
+        "signals": result["signals"],
+    }
+
+
+@app.post("/api/scan/oversharing")
+def scan_oversharing(
+    body: OversharingScan,
+    x_warden_token: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Need-to-know check: given an LLM response and the user who received it, flag when it
+    surfaced restricted data (confidential / PII / keywords) the recipient isn't permitted to
+    see — the "LLM oversharing" problem. Rules come from the tenant's need-to-know config.
+    For enterprise search / Copilot / RAG integrations to call with each answer."""
+    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    _enforce_rate(db, tenant_id)
+    actor = body.user or default_actor
+    rules = _tenant_or_global(tenant_id, db, "oversharing_rules", "")
+    item = AnalysisInput(content=body.content, sender=actor,
+                         channel=body.source or "llm-response", surface=Surface.OVERSHARING,
+                         subject=f"LLM response to {actor or 'user'}",
+                         metadata={"oversharing_rules": rules})
     result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
                           db=db, tenant_id=tenant_id)
     return {

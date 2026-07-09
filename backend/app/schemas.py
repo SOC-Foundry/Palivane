@@ -204,6 +204,7 @@ class TenantUpdate(BaseModel):
     tool_suppress: str | None = None           # "tool:category;tool:category" suppressions
     custom_pii_patterns: str | None = None     # org PII/confidential "label=regex" per line
     disabled_checks: list[str] | None = None   # detection checks turned off (policy keys)
+    oversharing_rules: str | None = None        # need-to-know rules ("category = allowed_glob" per line)
 
 
 class TenantDelete(BaseModel):
@@ -269,6 +270,13 @@ class AgentConfigScan(BaseModel):
     content: str = Field(min_length=1, max_length=MAX_CONTENT)  # IDE/agent config blob
     user: str = ""                    # actor the config belongs to (per-user attribution)
     tool: str = "cursor"              # cursor | claude-code | aider | …
+    record: bool = True
+
+
+class OversharingScan(BaseModel):
+    content: str = Field(min_length=1, max_length=MAX_CONTENT)  # the LLM response returned
+    user: str = ""                    # recipient (the person who asked)
+    source: str = ""                  # e.g. "m365-copilot", "glean", "internal-rag"
     record: bool = True
 
 
