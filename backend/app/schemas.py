@@ -62,7 +62,7 @@ class MCPConfigScan(BaseModel):
 
 class IDEExtScan(BaseModel):
     """IDE extensions to vet — a list of ids, or a `.vscode/extensions.json` file content."""
-    extensions: list[str] = Field(default_factory=list)
+    extensions: list[str] = Field(default_factory=list, max_length=10000)
     content: str = ""       # e.g. .vscode/extensions.json (recommendations)
     record: bool = False
 
@@ -202,8 +202,8 @@ class TenantUpdate(BaseModel):
     mcp_block_severity: str | None = None      # block threshold for capture-plane verdicts
     sanctioned_ai_tools: str | None = None     # org-approved AI destinations (comma-separated)
     tool_suppress: str | None = None           # "tool:category;tool:category" suppressions
-    custom_pii_patterns: str | None = None     # org PII/confidential "label=regex" per line
-    disabled_checks: list[str] | None = None   # detection checks turned off (policy keys)
+    custom_pii_patterns: str | None = Field(None, max_length=8192)  # org PII/confidential "label=regex" per line
+    disabled_checks: list[str] | None = Field(None, max_length=64)  # detection checks turned off (policy keys)
     oversharing_rules: str | None = None        # need-to-know rules ("category = allowed_glob" per line)
     agent_oidc_issuer: str | None = None         # workload-identity trust: issuer
     agent_oidc_jwks: str | None = None           # optional explicit JWKS URI (else discovered)
@@ -240,17 +240,17 @@ class AgentCreate(BaseModel):
 
 class AgentUpdate(BaseModel):
     role: str | None = Field(None, max_length=64)   # assign/clear the agent's role
-    deny: list[str] | None = None                   # per-agent extra deny globs (tightens role)
+    deny: list[str] | None = Field(None, max_length=200)   # per-agent extra deny globs
     oidc_subject: str | None = Field(None, max_length=320)   # JWT subject mapping
 
 
 class AgentRoleIn(BaseModel):
     name: str = Field(min_length=1, max_length=64)
-    allow_tools: list[str] = Field(default_factory=list)
-    allow_servers: list[str] = Field(default_factory=list)
-    allow_commands: list[str] = Field(default_factory=list)
-    deny: list[str] = Field(default_factory=list)
-    data_scopes: list[str] = Field(default_factory=list)
+    allow_tools: list[str] = Field(default_factory=list, max_length=200)
+    allow_servers: list[str] = Field(default_factory=list, max_length=200)
+    allow_commands: list[str] = Field(default_factory=list, max_length=200)
+    deny: list[str] = Field(default_factory=list, max_length=200)
+    data_scopes: list[str] = Field(default_factory=list, max_length=32)
     default_allow: bool = False
     enforce: bool = False
 
@@ -290,7 +290,7 @@ class PolicyOverrideIn(BaseModel):
     scope: Literal["user", "group"]
     match: str = Field(min_length=1, max_length=320)   # email (user) or glob (group)
     label: str = Field("", max_length=128)
-    disabled_checks: list[str] = Field(default_factory=list)
+    disabled_checks: list[str] = Field(default_factory=list, max_length=64)
 
 
 class AgentConfigScan(BaseModel):
@@ -313,7 +313,7 @@ class DiscoveryEvent(BaseModel):
     domain: str = ""                     # alias for destination
     tool: str = ""                       # or a named tool, if the log already resolved it
     team: str = ""                       # department/team, if the log carries it
-    count: int = 1                       # events collapsed into this line
+    count: int = Field(1, ge=1, le=100000)  # events collapsed into this line (bounded)
     last_seen: str = ""                  # ISO timestamp (optional)
 
 
