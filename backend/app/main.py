@@ -46,6 +46,7 @@ from .schemas import (
 )
 from .security import using_insecure_key
 from .service import run_analysis
+from .remediation import remediation_for
 
 # SQLite (local dev) auto-creates its schema; Postgres is managed by Alembic
 # migrations (run via the container entrypoint / `alembic upgrade head`).
@@ -411,6 +412,7 @@ def ingest_ai_usage(
         "severity": result["severity"],
         "signals": result["signals"],
         "finding_id": result["finding_id"],
+        "remediation": remediation_for(result["signals"]),
         # Approved AI tools to offer the user instead of a hard "no" (shown in the block UI).
         "sanctioned_tools": _sanctioned_list(meta["sanctioned_tools"]),
     }
@@ -514,6 +516,7 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
         "severity": result["severity"],
         "signals": result["signals"],
         "finding_id": result["finding_id"],
+        "remediation": remediation_for(result["signals"]),
     }
 
 
@@ -587,11 +590,28 @@ def scan_mcp_config(
     tenant_id, _ = _ingest_auth(x_warden_token, db)
     _enforce_rate(db, tenant_id)
 
+    from .detectors.dep_guard import extract_mcp_packages
+    from . import osv
+
     flagged: list[dict] = []
     worst = 0
     allowed = _tenant_mcp_allow(tenant_id, db)
     block_sev = _tenant_mcp_block_severity(tenant_id, db)
     servers = _parse_mcp_servers(body.content)
+
+    # Supply-chain: resolve each server's launcher to the registry package it runs, then OSV
+    # the pinned ones for CVEs (matches Kirin's "MCP dependencies" check).
+    _srv_pkgs = {s.get("name", ""): extract_mcp_packages(s.get("command", ""), s.get("args") or [])
+                 for s in servers}
+    _pin_vulns: dict = {}
+    if settings.dep_osv_enabled:
+        pins = [p for pkgs in _srv_pkgs.values() for p in pkgs if p[2]]
+        if pins:
+            _pin_vulns = osv.query(list(dict.fromkeys(pins)))
+    from .policies import parse_disabled
+    _t = db.get(Tenant, tenant_id) if tenant_id is not None else None
+    _mcp_disabled = parse_disabled(getattr(_t, "disabled_checks", "") if _t else "")
+
     for s in servers:
         name = s.get("name", "")
         url = s.get("url") or s.get("serverUrl") or ""
@@ -615,12 +635,27 @@ def scan_mcp_config(
         )
         result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
                               db=db, tenant_id=tenant_id, signal_filter=_mcp_filter)
-        action = _action_for(result["severity"], block_sev)
-        worst = max(worst, _ACTION_RANK.get(result["severity"], 0))
+        signals = list(result["signals"])
+        sev = result["severity"]
+        # Supply-chain signals for this server's launcher package (respects the
+        # dependency_risk policy toggle).
+        # Known-CVE check on the server's pinned launcher package (Kirin "MCP dependencies").
+        # Only pinned deps are flagged — unpinned npx/uvx is the norm, so warning on it would
+        # be pure noise; the OSV advisory on a concrete version is the precise signal.
+        if "dependency_risk" not in _mcp_disabled:
+            for (eco, pname, ver) in _srv_pkgs.get(name, []):
+                ids = _pin_vulns.get((eco, pname, ver)) if ver else None
+                if ids:
+                    signals.append({"category": "dependency_risk", "title": "MCP server dependency vuln (OSV)",
+                                    "detail": f"{pname}@{ver} has {len(ids)} known advisory(ies): {', '.join(ids[:4])}.",
+                                    "weight": 0.9, "confidence": 0.95, "detector": "osv", "evidence": ", ".join(ids[:4])})
+                    sev = "critical"
+        action = _action_for(sev, block_sev)
+        worst = max(worst, _ACTION_RANK.get(sev, 0))
         if action != "allow":
             flagged.append({"name": name, "transport": transport, "action": action,
-                            "severity": result["severity"], "risk_score": result["risk_score"],
-                            "signals": result["signals"]})
+                            "severity": sev, "risk_score": result["risk_score"],
+                            "signals": signals})
 
     overall = _action_for(_SEV_BY_RANK[worst], block_sev)
     return {"action": overall, "scanned": len(servers), "servers": flagged}
@@ -781,6 +816,7 @@ def scan_agent_config(
         "severity": result["severity"],
         "risk_score": result["risk_score"],
         "signals": result["signals"],
+        "remediation": remediation_for(result["signals"]),
     }
 
 
@@ -809,6 +845,7 @@ def scan_oversharing(
         "severity": result["severity"],
         "risk_score": result["risk_score"],
         "signals": result["signals"],
+        "remediation": remediation_for(result["signals"]),
     }
 
 
