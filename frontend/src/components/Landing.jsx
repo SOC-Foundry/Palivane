@@ -48,96 +48,114 @@ export default function Landing({ onSignIn }) {
           <img src="/warden-emblem.png" alt="Warden" className="lp-brand-emblem" />
           <span>Warden</span>
         </div>
-        <button className="primary-btn slim" onClick={onSignIn}>Sign in</button>
+        <nav className="lp-nav-links">
+          <a href="/how-it-works">How it works</a>
+          <button className="primary-btn slim" onClick={onSignIn}>Sign in</button>
+        </nav>
       </header>
 
-      <section className="lp-hero">
-        <img className="lp-hero-logo" src="/warden-emblem.png" alt="Warden" />
-        <div className="lp-tagline">DETECT · BLOCK · PROTECT</div>
-        <h1>Govern how your organization uses AI.</h1>
-        <p className="lp-lead">
-          Warden stops attacks on your own LLMs, stops sensitive data from leaking into AI tools,
-          <strong> and</strong> governs AI coding agents (MCP) &amp; their supply chain — captured
-          automatically at a gateway, browser extension, egress proxy, and CI, then recorded or
-          blocked inline. <strong>Agentless by default.</strong>
-        </p>
-        <div className="lp-cta">
-          <button className="primary-btn slim" onClick={onSignIn}>Open the console →</button>
+      <section className="lp-hero-wrap">
+        <div className="lp-hero">
+          <div className="lp-tagline">DETECT · BLOCK · PROTECT</div>
+          <h1>Govern how your organization uses AI.</h1>
+          <p className="lp-lead">
+            Warden stops attacks on your own LLMs, stops sensitive data from leaking into AI tools,
+            <strong> and</strong> governs AI coding agents (MCP) &amp; their supply chain — captured
+            automatically at a gateway, browser extension, egress proxy, and CI, then recorded or
+            blocked inline. <strong>Agentless by default.</strong>
+          </p>
+          <div className="lp-cta">
+            <button className="primary-btn slim" onClick={onSignIn}>Open the console →</button>
+            <a className="lp-btn-ghost wide" href="/how-it-works">How it works</a>
+          </div>
           <span className="lp-cta-note">Core detection runs offline · no API key required</span>
         </div>
       </section>
 
       <section className="lp-section">
-        <h2 className="lp-h2">Three fronts, one engine</h2>
-        <div className="lp-fronts">
-          {FRONTS.map((f) => (
-            <div key={f.tag} className={`lp-front front-${f.cls}`}>
-              <span className="lp-front-icon">{f.icon}</span>
-              <span className={`tag tag-${f.cls}`}>{f.tag}</span>
-              <h3>{f.title}</h3>
-              <p>{f.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="lp-section">
-        <h2 className="lp-h2">Automatic capture — no manual paste</h2>
-        <p className="lp-sub">Different usage routes need different capture points. All feed one engine.</p>
-        <div className="lp-cards">
-          {CAPTURE.map((c) => (
-            <div key={c.title} className="lp-card">
-              <span className="lp-card-icon">{c.icon}</span>
-              <h3>{c.title}</h3>
-              <p>{c.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="lp-section">
-        <h2 className="lp-h2">How detection works</h2>
-        <p className="lp-sub">Each submission runs through the detectors for its surface; a scoring engine fuses the signals into one risk verdict.</p>
-        <div className="lp-steps">
-          {STEPS.map((s) => (
-            <div key={s.n} className="lp-step">
-              <span className="lp-step-n">{s.n}</span>
-              <div>
-                <h3>{s.title}</h3>
-                <p>{s.body}</p>
+        <div className="lp-wrap">
+          <h2 className="lp-h2">Three fronts, one engine</h2>
+          <p className="lp-sub">One detection engine covers every way AI can put your organization at risk.</p>
+          <div className="lp-fronts">
+            {FRONTS.map((f) => (
+              <div key={f.tag} className={`lp-front front-${f.cls}`}>
+                <span className="lp-front-icon">{f.icon}</span>
+                <span className={`tag tag-${f.cls}`}>{f.tag}</span>
+                <h3>{f.title}</h3>
+                <p>{f.body}</p>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-        <p className="lp-sub" style={{ marginTop: 22 }}>
-          <a className="lp-textlink" href="/how-it-works">Read the technical overview — surfaces,
-          the two-tier secret engine, the scoring model, and why the core runs offline →</a>
-        </p>
+      </section>
+
+      <section className="lp-section alt">
+        <div className="lp-wrap">
+          <h2 className="lp-h2">Automatic capture — no manual paste</h2>
+          <p className="lp-sub">Different usage routes need different capture points. All feed one engine.</p>
+          <div className="lp-cards">
+            {CAPTURE.map((c) => (
+              <div key={c.title} className="lp-card">
+                <span className="lp-card-icon">{c.icon}</span>
+                <h3>{c.title}</h3>
+                <p>{c.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
       </section>
 
       <section className="lp-section">
-        <h2 className="lp-h2">Agentless, and enterprise-ready</h2>
-        <p className="lp-sub">Deploy in minutes — agentless by default (optional local sensors for
-           stdio-level depth): bind tenants, enforce via MDM, find the coverage gaps, and stay
-           compliant.</p>
-        <div className="lp-cards">
-          {ENTERPRISE.map((c) => (
-            <div key={c.title} className="lp-card">
-              <span className="lp-card-icon">{c.icon}</span>
-              <h3>{c.title}</h3>
-              <p>{c.body}</p>
-            </div>
-          ))}
+        <div className="lp-wrap">
+          <h2 className="lp-h2">How detection works</h2>
+          <p className="lp-sub">Each submission runs through the detectors for its surface; a scoring engine fuses the signals into one risk verdict.</p>
+          <div className="lp-steps">
+            {STEPS.map((s) => (
+              <div key={s.n} className="lp-step">
+                <span className="lp-step-n">{s.n}</span>
+                <div>
+                  <h3>{s.title}</h3>
+                  <p>{s.body}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="lp-sub" style={{ marginTop: 22 }}>
+            <a className="lp-textlink" href="/how-it-works">Read the technical overview — surfaces,
+            the two-tier secret engine, the scoring model, and why the core runs offline →</a>
+          </p>
         </div>
       </section>
 
-      <section className="lp-banner">
-        <IconAlert width={22} height={22} />
-        <div>
-          <strong>Monitor or enforce.</strong> Record every risky prompt and pass it through, or
-          block it inline before it leaves — real prevention, not just detection.
+      <section className="lp-section alt">
+        <div className="lp-wrap">
+          <h2 className="lp-h2">Agentless, and enterprise-ready</h2>
+          <p className="lp-sub">Deploy in minutes — agentless by default (optional local sensors for
+             stdio-level depth): bind tenants, enforce via MDM, find the coverage gaps, and stay
+             compliant.</p>
+          <div className="lp-cards">
+            {ENTERPRISE.map((c) => (
+              <div key={c.title} className="lp-card">
+                <span className="lp-card-icon">{c.icon}</span>
+                <h3>{c.title}</h3>
+                <p>{c.body}</p>
+              </div>
+            ))}
+          </div>
         </div>
-        <button className="primary-btn slim" onClick={onSignIn}>Sign in</button>
+      </section>
+
+      <section className="lp-cta-band">
+        <div className="lp-wrap">
+          <div className="lp-banner">
+            <IconAlert width={22} height={22} />
+            <div>
+              <strong>Monitor or enforce.</strong> Record every risky prompt and pass it through, or
+              block it inline before it leaves — real prevention, not just detection.
+            </div>
+            <button className="primary-btn slim" onClick={onSignIn}>Open the console →</button>
+          </div>
+        </div>
       </section>
 
       <footer className="lp-foot">
