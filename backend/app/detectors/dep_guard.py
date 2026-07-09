@@ -46,6 +46,46 @@ _NONREGISTRY = re.compile(r"^(?:git\+|git:|https?:|file:|link:|github:|bitbucket
 _EXACT_VERSION = re.compile(r"^\d+\.\d+")
 _REQ_PIN = re.compile(r"^([A-Za-z0-9._-]+)==([0-9][\w.\-]*)")
 
+# Launchers that fetch-and-run a package from a public registry (the MCP-server supply chain).
+_NPM_RUNNERS = ("npx", "npm", "pnpm", "bunx", "yarn")
+_PY_RUNNERS = ("uvx", "uv", "pipx")
+_RUNNER_FLAGS = {"-y", "--yes", "-q", "--quiet", "-p", "--package", "run", "exec",
+                 "dlx", "-c", "--", "install", "add", "--silent"}
+
+
+def extract_mcp_packages(command: str, args: list) -> list[tuple[str, str, str]]:
+    """From an MCP server's launch command, resolve the package it fetches-and-runs to
+    (ecosystem, name, version). version="" means UNPINNED (runs whatever the registry serves
+    now — a supply-chain backdoor risk). Returns [] when there's no registry package (a local
+    script, a bare `python -m`, etc.)."""
+    cmd = (command or "").strip().lower().split("/")[-1]
+    toks = [str(a).strip() for a in (args or []) if str(a).strip()]
+    if cmd in _NPM_RUNNERS:
+        eco = "npm"
+    elif cmd in _PY_RUNNERS:
+        eco = "PyPI"
+    else:
+        return []
+    for tok in toks:
+        low = tok.lower()
+        if low in _RUNNER_FLAGS or tok.startswith("-"):
+            continue
+        # First real token is the package spec; a path/URL isn't a registry package.
+        if "/" in tok and not tok.startswith("@"):
+            return []
+        if eco == "npm":
+            # @scope/name@ver | name@ver | @scope/name | name
+            at = tok.rfind("@")
+            if at > 0:
+                return [("npm", tok[:at], tok[at + 1:])]
+            return [("npm", tok, "")]
+        else:
+            m = re.match(r"^([A-Za-z0-9._-]+)(?:==([0-9][\w.\-]*))?$", tok)
+            if m:
+                return [("PyPI", m.group(1), m.group(2) or "")]
+            return []
+    return []
+
 
 def extract_pinned(content: str, subject: str = "") -> list[tuple[str, str, str]]:
     """Extract (ecosystem, name, version) for dependencies pinned to a concrete version —

@@ -226,8 +226,13 @@ def _post(endpoint: str, payload: dict, cfg: dict) -> dict:
 def _reason(verdict: dict) -> str:
     cats = ", ".join(dict.fromkeys(
         s.get("category", "") for s in verdict.get("signals", []) if s.get("category")))
-    return (f"Blocked by Warden: {cats or 'policy'} — "
-            f"risk {verdict.get('risk_score', 0)}/{verdict.get('severity', 'high')}.")
+    msg = (f"Blocked by Warden: {cats or 'policy'} — "
+           f"risk {verdict.get('risk_score', 0)}/{verdict.get('severity', 'high')}.")
+    # Surface the fix inline in the IDE, not just the block (in-editor remediation).
+    fixes = verdict.get("remediation") or []
+    if fixes:
+        msg += "\nHow to fix:\n" + "\n".join(f"  • {f}" for f in fixes[:4])
+    return msg
 
 
 def block_output(event_name: str, verdict: dict) -> dict:

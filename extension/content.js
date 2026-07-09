@@ -78,6 +78,17 @@ function showBlockModal(verdict) {
       </div>
     </div>` : "";
 
+  // "How to fix" — concrete remediation steps from the verdict, shown inline.
+  const fixes = (verdict.remediation || []).slice(0, 4);
+  const fix = fixes.length ? `
+    <div style="margin-top:14px;padding:11px 13px;background:rgba(77,163,255,.08);
+        border:1px solid rgba(77,163,255,.32);border-radius:10px">
+      <div style="font-weight:700;color:#9ecbff;font-size:13px">How to fix</div>
+      <ul style="margin:6px 0 0;padding-left:18px;color:#c4ccdb;font-size:12.5px">
+        ${fixes.map((f) => `<li style="margin:3px 0">${escapeHtml(f)}</li>`).join("")}
+      </ul>
+    </div>` : "";
+
   const wrap = document.createElement("div");
   wrap.id = "warden-modal";
   wrap.style.cssText = [
@@ -98,6 +109,7 @@ function showBlockModal(verdict) {
         It was <strong>not sent</strong> to the AI tool because it contained ${reasonText(verdict)}.
       </p>
       <ul style="margin:8px 0 4px;padding-left:18px;color:#e6e9f0">${rows}</ul>
+      ${fix}
       ${alt}
       <div style="color:#8a93a6;font-size:12px;margin-top:12px">
         risk ${verdict.risk_score}/${(verdict.severity || "").toUpperCase()} ·
