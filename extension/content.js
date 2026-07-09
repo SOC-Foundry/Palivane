@@ -33,6 +33,7 @@ const CATEGORY_LABELS = {
   unsanctioned_ai: "Unsanctioned AI tool",
   unsafe_autonomy: "Unsafe agent autonomy (YOLO)",
   dangerous_command: "Dangerous command",
+  agent_authz: "Agent acted outside its role",
 };
 
 function dataSignals(verdict) {

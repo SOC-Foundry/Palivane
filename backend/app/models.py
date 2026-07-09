@@ -414,6 +414,37 @@ class Agent(Base):
                 "last_seen": self.last_seen.isoformat() if self.last_seen else None}
 
 
+class AgentRole(Base):
+    """A least-privilege role for AI agents (Phase 1). Allow-lists are globs matched against
+    the MCP server / tool an agent calls; `deny` wins over allow; `default_allow` is the
+    posture when no allow-list matches (default: deny). `enforce=False` = monitor (log a
+    would-deny finding but let it through); `enforce=True` = block the action."""
+
+    __tablename__ = "agent_roles"
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_agentrole_tenant_name"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    name = Column(String(64), nullable=False)
+    allow_tools = Column(String(2048), default="")     # comma-sep globs (MCP tool names)
+    allow_servers = Column(String(2048), default="")   # comma-sep globs (MCP servers)
+    deny = Column(String(2048), default="")            # comma-sep globs (explicit denies)
+    default_allow = Column(Boolean, default=False)     # posture when nothing matches
+    enforce = Column(Boolean, default=False)           # False = monitor, True = block
+    created_at = Column(DateTime, default=_utcnow)
+
+    @staticmethod
+    def _list(raw: str) -> list[str]:
+        return [x.strip().lower() for x in (raw or "").split(",") if x.strip()]
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "name": self.name,
+                "allow_tools": self._list(self.allow_tools),
+                "allow_servers": self._list(self.allow_servers),
+                "deny": self._list(self.deny),
+                "default_allow": bool(self.default_allow), "enforce": bool(self.enforce)}
+
+
 class PolicyOverride(Base):
     """A per-user or per-group override of the tenant's detection policy.
 

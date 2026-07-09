@@ -231,7 +231,20 @@ class ApiKeyCreate(BaseModel):
 class AgentCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     kind: Literal["service", "interactive"] = "service"
-    role: str = Field("", max_length=64)   # reserved for the least-privilege phase
+    role: str = Field("", max_length=64)   # optional least-privilege role name
+
+
+class AgentUpdate(BaseModel):
+    role: str = Field("", max_length=64)   # assign/clear the agent's role
+
+
+class AgentRoleIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    allow_tools: list[str] = Field(default_factory=list)
+    allow_servers: list[str] = Field(default_factory=list)
+    deny: list[str] = Field(default_factory=list)
+    default_allow: bool = False
+    enforce: bool = False
 
 
 class EnrollmentTokenCreate(BaseModel):

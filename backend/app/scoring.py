@@ -70,6 +70,8 @@ _ATTACK_CATEGORIES = {
     Category.CREDENTIAL_AT_REST,
     # Access governance — an LLM returning restricted data to the wrong person is the risk.
     Category.DATA_OVERSHARING,
+    # Agent authorization — an agent acting outside its least-privilege role is the risk.
+    Category.AGENT_AUTHZ,
 }
 
 

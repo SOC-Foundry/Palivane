@@ -22,7 +22,7 @@ from .gateway import gemini_router, router as gateway_router
 from .database import Base, engine as db_engine, get_db
 from .detectors import AnalysisInput, Surface
 from .engine import engine
-from .models import Agent, Finding, PolicyOverride, Tenant, User
+from .models import Agent, AgentRole, Finding, PolicyOverride, Tenant, User
 from .schemas import (
     AIUsageIngest,
     AnalyzeRequest,
@@ -505,6 +505,36 @@ def _mcp_filter(signals: list) -> list:
     return [s for s in signals if s.category.value not in _MCP_DROP]
 
 
+def _agent_authz_signal(agent: str, tenant_id, server: str, tool: str, db: Session):
+    """If a named agent has a least-privilege role and this MCP action falls outside it,
+    return an agent_authz Signal (weight scales with the role's enforce flag: monitor=warn,
+    enforce=block). Returns None when there's no agent, no role, or the action is allowed."""
+    if not agent or tenant_id is None:
+        return None
+    ag = (db.query(Agent).filter(Agent.tenant_id == tenant_id, Agent.name == agent,
+                                 Agent.active.is_(True)).one_or_none())
+    if ag is None or not (ag.role or "").strip():
+        return None
+    role = (db.query(AgentRole).filter(AgentRole.tenant_id == tenant_id,
+                                       AgentRole.name == ag.role).one_or_none())
+    if role is None:
+        return None
+    from .authz import authorize
+    allowed, reason = authorize(role, server, tool)
+    if allowed:
+        return None
+    from .detectors.base import Category, Signal
+    weight = 0.85 if role.enforce else 0.55   # enforce -> block; monitor -> warn/visible
+    mode = "enforce" if role.enforce else "monitor"
+    return Signal(
+        category=Category.AGENT_AUTHZ,
+        title="Agent action outside its role",
+        detail=f"{reason} ({mode})",
+        weight=weight, confidence=0.9, detector="authz",
+        evidence=f"{agent} → {tool or server}", check="agent_authz",
+    )
+
+
 def _tenant_or_global(tenant_id: int | None, db: Session, attr: str, global_value: str) -> str:
     """A tenant's own list for `attr` if set, else the global env default."""
     if tenant_id is not None:
@@ -550,8 +580,15 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
             "allowed_servers": allowed_servers,
         },
     )
+    # Least-privilege: if the agent has a role and this call is outside it, fold in an
+    # agent_authz signal (monitor warns, enforce blocks) alongside the MCP category filter.
+    authz_sig = _agent_authz_signal(agent, tenant_id, body.server, body.tool, db)
+    if authz_sig is not None:
+        sig_filter = lambda sigs: _mcp_filter(sigs) + [authz_sig]
+    else:
+        sig_filter = _mcp_filter
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
-                          signal_filter=_mcp_filter, agent=agent,
+                          signal_filter=sig_filter, agent=agent,
                           persist_benign=settings.mcp_persist_benign)
     return {
         "action": _action_for(result["severity"], block_severity),
