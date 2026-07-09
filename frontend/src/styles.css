@@ -577,7 +577,7 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
   backdrop-filter: blur(8px);
 }
 .lp-brand { display: flex; align-items: center; gap: 9px; font-size: 19px; font-weight: 800; color: var(--text); }
-.lp-brand-emblem { height: 48px; width: auto; display: block; }
+.lp-brand-emblem { height: 40px; width: auto; display: block; }
 .lp-nav-links { display: flex; align-items: center; gap: 18px; }
 .lp-nav-links a { color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 600; }
 .lp-nav-links a:hover { color: var(--text); }
