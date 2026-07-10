@@ -236,6 +236,32 @@ overrides the `logs.jsonl` path (defaults to claude-otel's data root per-OS); `W
 the follow poll seconds. A byte-accurate offset+inode cursor (`~/.warden/otel-state.json`)
 survives restarts and log rotation, so nothing is double-sent or missed.
 
+### Fileless / real-time: OTLP straight to Warden
+
+Instead of the CLI tailing a file, point the claude-otel collector's `otlphttp` logs exporter
+directly at Warden's OTLP receiver (`POST /v1/logs`, OTLP-JSON) — same mapping, no sidecar,
+near-real-time. Add to the collector's `otel-collector.yaml` and **fan out** so the local
+file (and your Panther pipeline) still works:
+
+```yaml
+exporters:
+  otlphttp/warden:
+    logs_endpoint: https://warden.example.com/v1/logs
+    encoding: json
+    headers:
+      X-Warden-Token: ak_<a Warden capture key>
+
+service:
+  pipelines:
+    logs:
+      exporters: [file/logs, otlphttp/warden]   # keep the file; also ship to Warden
+```
+
+Warden always answers OTLP success (a telemetry export must never back up on our account);
+one export counts as one hit against the tenant's ingest quota. Same monitor-only, same
+privacy-profile scaling as the CLI. Choose the CLI when you'd rather not touch the collector
+config; choose OTLP when you want fileless/real-time.
+
 ## Managed fleets
 
 On managed devices, prefer the zero-touch path: push Claude Code `managed-settings.json`
