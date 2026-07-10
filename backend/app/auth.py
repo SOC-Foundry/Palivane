@@ -85,6 +85,12 @@ def get_current_user(
     except TokenError as exc:
         raise HTTPException(status_code=401, detail=str(exc),
                             headers={"WWW-Authenticate": "Bearer"})
+    # Only a *session* token authenticates. Special-purpose tokens carry a `typ`
+    # (MFA challenge, OIDC state) — they must NOT be accepted here, or a caller who
+    # only passed the first factor could use the MFA challenge as a full session.
+    if payload.get("typ"):
+        raise HTTPException(status_code=401, detail="not a session token",
+                            headers={"WWW-Authenticate": "Bearer"})
     user = db.get(User, int(payload.get("sub", 0)))
     if user is None or not user.active:
         raise HTTPException(status_code=401, detail="user not found or inactive")
@@ -214,8 +220,14 @@ def mfa_verify(body: MFAVerify, request: Request, db: Session = Depends(get_db))
     if _throttled(db, user.email, ip):
         raise HTTPException(status_code=429, detail="too many attempts — try again later")
 
-    ok = totp.verify(decrypt(user.mfa_secret), body.code)
-    if not ok:
+    ok = False
+    step = totp.verify_step(decrypt(user.mfa_secret), body.code)
+    if step is not None:
+        # Reject a code from a step already used (replay within the validity window).
+        if step > (user.mfa_last_step or 0):
+            user.mfa_last_step = step
+            ok = True
+    else:
         remaining = totp.consume_recovery(user.mfa_recovery or [], body.code)
         if remaining is not None:
             user.mfa_recovery = remaining   # one-time use
@@ -619,13 +631,23 @@ def enroll(body: EnrollRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="invalid enrollment token")
     if et.expires_at and et.expires_at < _naive_utc():
         raise HTTPException(status_code=401, detail="enrollment token expired")
-    if et.max_uses is not None and et.uses >= et.max_uses:
+
+    # Atomically claim one use: a single conditional UPDATE gated on uses < max_uses, so
+    # concurrent requests can't each pass a check-then-increment race and over-redeem a
+    # (e.g. max_uses=1) token into many device keys.
+    claimed = (
+        db.query(EnrollmentToken)
+        .filter(EnrollmentToken.id == et.id, EnrollmentToken.active.is_(True),
+                (EnrollmentToken.max_uses.is_(None)) | (EnrollmentToken.uses < EnrollmentToken.max_uses))
+        .update({EnrollmentToken.uses: EnrollmentToken.uses + 1}, synchronize_session=False)
+    )
+    if not claimed:
+        db.rollback()
         raise HTTPException(status_code=401, detail="enrollment token exhausted")
 
     token, prefix, token_hash = generate_api_key()
     key = ApiKey(tenant_id=et.tenant_id, label=f"device:{body.device}", actor=body.device,
                  prefix=prefix, token_hash=token_hash)
-    et.uses = (et.uses or 0) + 1
     db.add(key)
     db.commit()
     audit_log.record(db, et.tenant_id, body.device, "device.enroll", target=body.device)

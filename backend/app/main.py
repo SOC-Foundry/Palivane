@@ -63,18 +63,18 @@ async def lifespan(_app: FastAPI):
     import logging
     log = logging.getLogger("uvicorn.error")
     prod = not settings.database_url.startswith("sqlite")   # Postgres => a real deployment
-    if using_insecure_key():
+    weak = using_insecure_key() or settings.auth_secret_key in _WEAK_SECRET_KEYS \
+        or len(settings.auth_secret_key) < 16
+    if weak:
         if prod:
-            # Refuse to boot with a forgeable JWT key on a production-shaped deployment.
+            # Refuse to boot with a forgeable JWT key on a production-shaped deployment — an
+            # unset OR well-known/short key both let anyone forge an admin session for any
+            # tenant. (SQLite = local dev, where the dev key is allowed with a warning.)
             raise RuntimeError(
-                "WARDEN_SECRET_KEY is unset. On a non-SQLite (production) deployment this "
-                "means JWTs are signed with a public dev key and anyone can forge an admin "
-                "session. Set WARDEN_SECRET_KEY to a strong random value and restart.")
-        log.warning("WARDEN_SECRET_KEY is unset — using an insecure dev key (SQLite dev only).")
-    elif settings.auth_secret_key in _WEAK_SECRET_KEYS:
-        # Warn (don't fail): the local Docker stack uses a well-known dev key on Postgres.
-        log.warning("WARDEN_SECRET_KEY is a well-known weak value — set a strong random "
-                    "key before production.")
+                "WARDEN_SECRET_KEY is unset or weak. On a non-SQLite (production) deployment "
+                "JWTs would be forgeable and anyone could mint an admin session. Set "
+                "WARDEN_SECRET_KEY to a strong random value (openssl rand -hex 32) and restart.")
+        log.warning("WARDEN_SECRET_KEY is unset/weak — using an insecure dev key (SQLite dev only).")
 
     # Periodic alert digests: tick every few minutes and send any tenant digests that are due.
     # Each send is claimed via a conditional DB update, so multiple workers won't duplicate.
@@ -1499,6 +1499,18 @@ def stats(current: User = Depends(get_current_user), db: Session = Depends(get_d
 # last so it never shadows the API routers/routes above.
 import os as _os  # noqa: E402
 
+
+def _safe_static_file(root: str, full_path: str) -> str | None:
+    """Resolve `full_path` under the static `root`, returning the file path only if it stays
+    inside root and exists. Guards path traversal (e.g. percent-encoded ../../etc/passwd),
+    which would otherwise be an unauthenticated arbitrary file read via the SPA catch-all."""
+    if not full_path:
+        return None
+    cand = _os.path.realpath(_os.path.join(root, full_path))
+    inside = cand == root or cand.startswith(root + _os.sep)
+    return cand if (inside and _os.path.isfile(cand)) else None
+
+
 _STATIC_DIR = _os.getenv("WARDEN_STATIC_DIR", "")
 if _STATIC_DIR and _os.path.isdir(_STATIC_DIR):
     from fastapi.responses import FileResponse  # noqa: E402
@@ -1510,12 +1522,14 @@ if _STATIC_DIR and _os.path.isdir(_STATIC_DIR):
 
     _API_PREFIXES = ("api/", "v1/", "v1beta/", "livez", "readyz", "metrics", "assets/")
 
+    _STATIC_ROOT = _os.path.realpath(_STATIC_DIR)
+
     @app.get("/{full_path:path}")
     def _spa(full_path: str):
         # Let API/probe paths 404 through the app instead of returning index.html.
         if full_path.startswith(_API_PREFIXES):
             raise HTTPException(status_code=404, detail="not found")
-        candidate = _os.path.join(_STATIC_DIR, full_path)
-        if full_path and _os.path.isfile(candidate):
-            return FileResponse(candidate)               # real file (logo, favicon, …)
-        return FileResponse(_os.path.join(_STATIC_DIR, "index.html"))  # SPA routes
+        cand = _safe_static_file(_STATIC_ROOT, full_path)
+        if cand is not None:
+            return FileResponse(cand)                    # real file (logo, favicon, …)
+        return FileResponse(_os.path.join(_STATIC_ROOT, "index.html"))  # SPA routes

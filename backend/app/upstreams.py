@@ -38,4 +38,12 @@ def resolve(provider: str, tenant_id: int | None, db: Session) -> tuple[str, str
     )
     if row is None:
         return g_base, g_key
+    # SSRF guard at call time: a tenant-set base_url is only checked statically at write
+    # (hostnames pass, deferred to here). Re-validate with DNS now — if it resolves to an
+    # internal/metadata address (or a rebind), drop the whole tenant upstream and use the
+    # trusted global default rather than letting the gateway fetch an attacker-chosen host.
+    if row.base_url:
+        from .netguard import is_safe_url
+        if not is_safe_url(row.base_url):
+            return g_base, g_key
     return (row.base_url or g_base), (decrypt(row.key_encrypted) or g_key)

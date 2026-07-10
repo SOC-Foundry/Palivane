@@ -26,11 +26,12 @@ def test_resolve_prefers_tenant_over_global(db_factory, monkeypatch):
     # No tenant row → global fallback.
     assert upstreams.resolve("openai", tenant.id, db) == ("https://global.example/v1", "global-key")
 
-    # Tenant row overrides (key stored encrypted, resolved decrypted).
+    # Tenant row overrides (key stored encrypted, resolved decrypted). Base is a public IP
+    # literal so the call-time SSRF re-check passes without depending on DNS.
     db.add(TenantUpstream(tenant_id=tenant.id, provider="openai",
-                          base_url="https://acme.example/v1", key_encrypted=encrypt("acme-key")))
+                          base_url="https://8.8.8.8/v1", key_encrypted=encrypt("acme-key")))
     db.commit()
-    assert upstreams.resolve("openai", tenant.id, db) == ("https://acme.example/v1", "acme-key")
+    assert upstreams.resolve("openai", tenant.id, db) == ("https://8.8.8.8/v1", "acme-key")
 
 
 def test_upstream_api_hides_key_and_validates_provider(client):
@@ -68,7 +69,7 @@ def test_gateway_forwards_with_tenant_key(client, monkeypatch):
     """The tenant's own key + base URL are used for forwarding — not the global env."""
     monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
     client.put("/api/upstreams/anthropic",
-               json={"base_url": "https://acme-anthropic.test", "key": "sk-ant-acme"})
+               json={"base_url": "https://8.8.8.8", "key": "sk-ant-acme"})   # public IP: passes SSRF re-check
 
     captured = {}
 
@@ -90,5 +91,20 @@ def test_gateway_forwards_with_tenant_key(client, monkeypatch):
     monkeypatch.setattr(gateway.httpx, "Client", FakeClient)
     r = client.post("/v1/messages", json=ANTHROPIC_BENIGN)
     assert r.status_code == 200
-    assert captured["url"].startswith("https://acme-anthropic.test")
+    assert captured["url"].startswith("https://8.8.8.8")
     assert captured["headers"]["x-api-key"] == "sk-ant-acme"
+
+def test_resolve_ignores_internal_tenant_base(client, db_factory):
+    # A stored tenant base_url that resolves internal (e.g. bypassing set-time via an old
+    # row / rebind) must NOT be used by the gateway — resolve() re-checks at call time and
+    # falls back to the trusted global default.
+    from app import upstreams
+    from app.models import Tenant, TenantUpstream
+    db = db_factory()
+    tid = db.query(Tenant).filter(Tenant.slug == "acme").first().id
+    db.add(TenantUpstream(tenant_id=tid, provider="openai",
+                          base_url="http://169.254.169.254/v1", key_encrypted=""))
+    db.commit()
+    base, _key = upstreams.resolve("openai", tid, db)
+    assert base != "http://169.254.169.254/v1"   # internal base rejected -> global default
+    db.close()

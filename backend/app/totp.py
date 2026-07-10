@@ -33,12 +33,22 @@ def _hotp(secret_b32: str, counter: int) -> str:
 
 def verify(secret_b32: str, code: str) -> bool:
     """Constant-time-ish check of a 6-digit code against the current ±1 time windows."""
+    return verify_step(secret_b32, code) is not None
+
+
+def verify_step(secret_b32: str, code: str) -> int | None:
+    """Like verify() but returns the matched time-step counter (or None). The caller
+    persists the last accepted step and rejects any step <= it, so a code can't be
+    replayed within its validity window (RFC 6238 single-use-per-step)."""
     code = (code or "").strip()
     if not secret_b32 or not code.isdigit():
-        return False
+        return None
     now = int(time.time() // _STEP)
-    return any(hmac.compare_digest(_hotp(secret_b32, now + i), code)
-               for i in range(-_WINDOW, _WINDOW + 1))
+    matched = None
+    for i in range(-_WINDOW, _WINDOW + 1):
+        if hmac.compare_digest(_hotp(secret_b32, now + i), code):
+            matched = now + i   # no early-exit: keep the compare count constant
+    return matched
 
 
 def provisioning_uri(secret_b32: str, account: str, issuer: str = "Warden") -> str:
