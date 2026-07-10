@@ -14,9 +14,11 @@ without an endpoint agent: each is an app-scoped hook/shim that rides the existi
 | `warden-posture` | device drift: IDE extensions, MCP configs | `POST /api/scan/*` |
 | `warden-secrets` | **credentials at rest** (SSH/RSA keys, tokens, `.env`) | `POST /api/scan/secrets` |
 | `warden-import` | pipe **TruffleHog / Gitleaks / GitGuardian** output into Warden | `POST /api/scan/import` |
+| `warden-otel` | bridge **claude-otel** telemetry (Claude Code OTEL) into Warden | `POST /api/ingest/{ai-usage,mcp}` |
 
 All of them are **monitor by default, fail-open always**: Warden being down or slow
-never blocks a developer. Enforcement is opt-in per plane (env vars below).
+never blocks a developer. Enforcement is opt-in per plane (env vars below). `warden-otel`
+is inherently monitor-only — it reads *post-hoc* telemetry, so it observes but can't block.
 
 ## `warden-connect` — self-serve onboarding
 
@@ -203,6 +205,36 @@ trufflehog git file://. --json                        | warden-import trufflehog
 gitleaks detect --report-format json -o /dev/stdout . | warden-import gitleaks
 ggshield secret scan path . --json                    | warden-import gitguardian
 ```
+
+## `warden-otel` — claude-otel telemetry bridge (optional)
+
+For orgs already running [claude-otel](https://github.com/TachTech-Engineering/claude-otel)
+(a local OTEL collector capturing Claude Code's native telemetry into `logs.jsonl`), this
+tails that file and forwards the security-relevant events to Warden — a capture plane with
+**no proxy, no CA, no hook**, from telemetry Claude Code already emits:
+
+| Claude Code OTEL event | Inspected | Reports to |
+| --- | --- | --- |
+| `user_prompt` | prompt text — injection / secrets / PII | `/api/ingest/ai-usage` |
+| `tool_result` | tool name + arguments — dangerous commands, sensitive paths, secrets | `/api/ingest/mcp` (batched) |
+| `mcp_server_connection` | server name — untrusted-server allowlist | `/api/ingest/mcp` |
+
+**Monitor-only:** OTEL is *post-hoc* (a `tool_result` fires after the tool ran), so this
+plane observes and records — it can't block. Pair it with the inline hook/gateway for
+enforcement. Its depth tracks the claude-otel **privacy profile**: `minimal` = coverage
+only (content redacted), `standard` = prompt DLP, `full` = tool-argument DLP.
+
+```bash
+# one-shot (cron): forward any new telemetry, then exit
+WARDEN_URL=… WARDEN_TOKEN=ak_… warden-otel --once
+# sidecar: follow the collector's log continuously (systemd/launchd, next to claude-otel)
+warden-otel
+```
+
+Reads `WARDEN_URL`/`WARDEN_TOKEN` from the env or `~/.claude/settings.json`. `WARDEN_OTEL_LOGS`
+overrides the `logs.jsonl` path (defaults to claude-otel's data root per-OS); `WARDEN_OTEL_INTERVAL`
+the follow poll seconds. A byte-accurate offset+inode cursor (`~/.warden/otel-state.json`)
+survives restarts and log rotation, so nothing is double-sent or missed.
 
 ## Managed fleets
 

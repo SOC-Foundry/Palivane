@@ -603,6 +603,7 @@ Different usage routes need different capture points — all feed the one engine
 | **Claude Code tool calls** (shell, file access, MCP tools) — *before execution* | `warden-hook` PreToolUse hook → `mcp` ([`cli/`](cli/README.md)) | ✅ |
 | **Local stdio MCP servers** (inline inspect + block) | `warden-mcp` wrapper → `mcp` ([`cli/`](cli/README.md)) | ✅ |
 | **Device posture** (installed IDE extensions, MCP configs — drift) | `warden-posture` → `/api/scan/*` ([`cli/`](cli/README.md)) | ✅ |
+| **Claude Code via OTEL** (prompts, tool calls) — for orgs running [claude-otel](https://github.com/TachTech-Engineering/claude-otel) | `warden-otel` bridge → `ai_usage` + `mcp` ([`cli/`](cli/README.md)) | ✅ monitor-only (post-hoc) |
 | **Cursor** (AI IDE) | Egress proxy (codebase/telemetry) | ⚠️ chat endpoint pins certs — see [`proxy/README.md`](proxy/README.md) |
 | **Source code committed to a Git repo** | Pre-commit hook + GitHub Action → `/api/scan/code` | ✅ |
 
@@ -858,7 +859,8 @@ cli/                  # warden-connect (self-serve onboarding: Claude Code + Cur
                       #   planes: warden-hook (Claude Code tool calls), warden-cursor-hook
                       #   (Cursor prompts + tool calls), warden-mcp (stdio MCP wrapper),
                       #   warden-posture (IDE/MCP drift), warden-secrets (credentials at rest,
-                      #   incl. --engine trufflehog/gitleaks), warden-import (CI scanner ingest)
+                      #   incl. --engine trufflehog/gitleaks), warden-import (CI scanner ingest),
+                      #   warden-otel (claude-otel telemetry bridge, optional)
 extension/            # MV3 browser extension — shadow-AI capture + self-serve sign-in
 proxy/                # mitmproxy addon — shadow-AI + MCP capture (desktop apps / network)
 git/                  # pre-commit hook + GitHub Action — secrets/PII out of repos

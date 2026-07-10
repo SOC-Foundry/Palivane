@@ -117,6 +117,10 @@ export default function Connect({ tenant }) {
     mcpServers: { github: { command: "warden-mcp", args: ["--", "npx", "-y", "@modelcontextprotocol/server-github"] } },
   }, null, 2);
 
+  const otelCmd =
+    `WARDEN_URL=${origin} WARDEN_TOKEN=${K} \\\n` +
+    `  warden-otel            # sidecar next to the claude-otel collector (--once for cron)`;
+
   return (
     <div className="connect">
       <div className="connect-head">
@@ -210,6 +214,15 @@ export default function Connect({ tenant }) {
         <Block text={mcpWrap} />
         <p className="muted" style={{ marginTop: 8 }}>Self-serve: <code>warden-connect {origin}</code> installs
            the hooks automatically alongside the gateway routing.</p>
+      </div>
+
+      <div className="connect-card">
+        <h3>⑤ claude-otel telemetry bridge (optional)</h3>
+        <p className="muted">Already running <code>claude-otel</code>? <code>warden-otel</code> tails its
+           OTEL log and forwards Claude Code's prompts and tool calls to Warden — a capture plane with
+           <em> no proxy, CA, or hook</em>. Monitor-only (telemetry is post-hoc, so it observes but can't
+           block); depth follows the claude-otel privacy profile.</p>
+        <Block text={otelCmd} />
       </div>
     </div>
   );
