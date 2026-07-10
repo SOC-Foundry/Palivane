@@ -163,11 +163,10 @@ class ShadowAIDetector:
         """Tier-2 generic secret heuristic: a long, high-entropy token with no recognized
         format. Lower weight so it *warns* on its own and only blocks when it combines
         with another signal (e.g. an unsanctioned destination)."""
-        # Coding assistants stream high-entropy code/hashes by design — the same per-tool
-        # policy that suppresses source_code_leak suppresses this heuristic for them.
-        from ..policy import suppressions_for
-        if "source_code_leak" in suppressions_for(tool or ""):
-            return []
+        # NB: `tool` is client-asserted (User-Agent / x-warden-tool / ingest body), so it
+        # must NOT gate secret detection — else a caller declaring tool=claude-code could
+        # exfiltrate a format-less credential with zero signals. This is warn-level, so it
+        # doesn't hard-block routine code from a real coding assistant on its own.
         # Don't double-flag what a Tier-1 pattern already caught as a definite secret.
         if find_secrets(text):
             return []
