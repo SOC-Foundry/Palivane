@@ -4,6 +4,10 @@
 // <script> tag — that was blocked by strict-CSP sites like Microsoft Copilot.
 
 window.addEventListener("message", async (e) => {
+  // Only accept messages from the interceptor in THIS window (injected.js runs in the
+  // MAIN world of the same window). Rejecting other sources/origins stops a hostile page
+  // script from spoofing verdicts or summoning a fake Warden block/warn UI (phishing).
+  if (e.source !== window) return;
   const d = e.data;
   if (!d || !d.__warden) return;
 
@@ -70,8 +74,8 @@ function showBlockModal(verdict) {
         border:1px solid rgba(63,185,80,.35);border-radius:10px">
       <div style="font-weight:700;color:#4ade80;font-size:13px">✓ Approved for sensitive data — use instead:</div>
       <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px">
-        ${tools.map((t) => t.url
-          ? `<a href="${escapeHtml(t.url)}" target="_blank" rel="noopener" style="
+        ${tools.map((t) => safeUrl(t.url)
+          ? `<a href="${escapeHtml(safeUrl(t.url))}" target="_blank" rel="noopener" style="
                color:#9ecbff;text-decoration:none;border:1px solid #2a3346;border-radius:7px;
                padding:5px 10px;font-size:12.5px">${escapeHtml(t.label)} ↗</a>`
           : `<span style="color:#c4ccdb;border:1px solid #2a3346;border-radius:7px;
@@ -113,7 +117,7 @@ function showBlockModal(verdict) {
       ${fix}
       ${alt}
       <div style="color:#8a93a6;font-size:12px;margin-top:12px">
-        risk ${verdict.risk_score}/${(verdict.severity || "").toUpperCase()} ·
+        risk ${riskText(verdict)} ·
         the AI tool may show a "failed to send" error — that's the block working.
       </div>
       <div style="display:flex;gap:8px;margin-top:18px">
@@ -173,7 +177,7 @@ function showWarnBanner(verdict) {
   el.innerHTML =
     `<strong>⚠ Warden warning</strong> ` +
     `<span style="opacity:.95">Detected ${reasonText(verdict)} ` +
-    `(risk ${verdict.risk_score}/${verdict.severity}). Review before sending sensitive data.</span>`;
+    `(risk ${riskText(verdict)}). Review before sending sensitive data.</span>`;
   const close = document.createElement("span");
   close.textContent = "✕";
   close.style.cssText = "cursor:pointer;float:right;opacity:.85;font-weight:700;margin-left:12px";
@@ -187,4 +191,21 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
   ));
+}
+
+// Only allow http(s) links — an org's sanctioned-tool URL is free text, and escapeHtml
+// does NOT neutralize a `javascript:` scheme, which would run in the AI tool's origin.
+function safeUrl(u) {
+  try {
+    const p = new URL(String(u), location.href).protocol;
+    return (p === "http:" || p === "https:") ? String(u) : "";
+  } catch (_) { return ""; }
+}
+
+// Coerce backend-typed verdict scalars before interpolating into innerHTML (defense in
+// depth, and safe if a spoofed message supplies odd shapes): numeric risk, alnum severity.
+function riskText(v) {
+  const r = Number(v && v.risk_score);
+  const sev = String((v && v.severity) || "").replace(/[^a-zA-Z]/g, "").toUpperCase();
+  return `${Number.isFinite(r) ? r : "?"}/${sev}`;
 }

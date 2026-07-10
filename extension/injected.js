@@ -51,6 +51,7 @@
   }
 
   window.addEventListener("message", (e) => {
+    if (e.source !== window) return;   // only our content-script relay, same window
     const d = e.data;
     if (!d || !d.__warden || d.kind !== "verdict") return;
     const resolve = PENDING.get(d.id);
