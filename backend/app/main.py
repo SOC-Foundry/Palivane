@@ -460,6 +460,31 @@ def _capture_agent(x_warden_token: str, x_warden_agent: str, tenant_id, db: Sess
     return ""
 
 
+def _score_ai_usage(content: str, actor: str, tool: str, destination: str,
+                    tenant_id: int | None, agent: str, db: Session) -> tuple[dict, dict]:
+    """Score one ai-usage capture on the AI_USAGE surface + feed discovery. Shared by the
+    ai-usage ingest endpoint and the OTLP receiver so their behavior can't drift. Returns
+    (verdict, metadata)."""
+    meta: dict = {"destination": destination} if destination else {}
+    meta["sanctioned_tools"] = _tenant_or_global(
+        tenant_id, db, "sanctioned_ai_tools", settings.sanctioned_ai_tools)
+    meta["custom_pii"] = _tenant_or_global(tenant_id, db, "custom_pii_patterns", "")
+    item = AnalysisInput(
+        content=content, sender=actor, channel=tool or "ai_tool",
+        surface=Surface.AI_USAGE, metadata=meta,
+    )
+    from .policy import detect_tool, signal_filter_for
+    suppress = _tenant_or_global(tenant_id, db, "tool_suppress", settings.gateway_tool_suppress)
+    sig_filter = signal_filter_for(detect_tool(explicit=tool), extra=suppress)
+    result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
+                          signal_filter=sig_filter, agent=agent)
+    # Feed the shadow-AI discovery inventory (best-effort — never breaks the verdict).
+    from .discovery import record_capture
+    record_capture(db, tenant_id, actor, destination, tool,
+                   result["signals"], result["risk_score"])
+    return result, meta
+
+
 @app.post("/api/ingest/ai-usage")
 def ingest_ai_usage(
     body: AIUsageIngest,
@@ -476,25 +501,8 @@ def ingest_ai_usage(
     _enforce_rate(db, tenant_id)
     actor = body.user or default_actor
     agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
-
-    meta: dict = {"destination": body.destination} if body.destination else {}
-    meta["sanctioned_tools"] = _tenant_or_global(
-        tenant_id, db, "sanctioned_ai_tools", settings.sanctioned_ai_tools)
-    meta["custom_pii"] = _tenant_or_global(tenant_id, db, "custom_pii_patterns", "")
-    item = AnalysisInput(
-        content=body.content, sender=actor, channel=body.tool or "ai_tool",
-        surface=Surface.AI_USAGE, metadata=meta,
-    )
-    from .policy import detect_tool, signal_filter_for
-    suppress = _tenant_or_global(tenant_id, db, "tool_suppress", settings.gateway_tool_suppress)
-    sig_filter = signal_filter_for(detect_tool(explicit=body.tool), extra=suppress)
-    result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
-                          signal_filter=sig_filter, agent=agent)
-    # Feed the shadow-AI discovery inventory: who used which AI tool, and did it carry
-    # sensitive data (best-effort — never breaks the verdict).
-    from .discovery import record_capture
-    record_capture(db, tenant_id, actor, body.destination, body.tool,
-                   result["signals"], result["risk_score"])
+    result, meta = _score_ai_usage(body.content, actor, body.tool, body.destination,
+                                   tenant_id, agent, db)
     return {
         "action": _action_for(result["severity"]),
         "risk_score": result["risk_score"],
@@ -539,6 +547,46 @@ def exception_request(
         detail={"finding_id": body.finding_id, "reason": body.reason[:500],
                 "categories": body.categories[:8]})
     return {"ok": True}
+
+
+@app.post("/v1/logs")
+async def otlp_logs(
+    request: Request,
+    x_warden_token: str = Header(default=""),
+    x_warden_agent: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """OTLP/HTTP logs receiver (JSON) — the fileless alternative to the `warden-otel` CLI.
+
+    Point a claude-otel collector's `otlphttp` logs exporter (encoding: json) here with an
+    `X-Warden-Token` header; Claude Code's user_prompt / tool_result / mcp_server_connection
+    events are mapped to the same detection as the ingest API. **Monitor-only** — OTEL is
+    post-hoc, so this records but can't block. Always returns OTLP success: a telemetry
+    export must never back up because of us (bad records are skipped, not rejected)."""
+    from . import otel
+    tenant_id, default_actor = _ingest_auth(x_warden_token, db)   # 401 on a bad token
+    _enforce_rate(db, tenant_id)
+    agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
+    try:
+        doc = await request.json()
+    except Exception:
+        return {"partialSuccess": {}}
+    allowed = _tenant_mcp_allow(tenant_id, db)
+    block = _tenant_mcp_block_severity(tenant_id, db)
+    for name, attrs in otel.iter_events(doc):
+        try:
+            if name == "user_prompt":
+                f = otel.prompt_fields(attrs)
+                if f:
+                    _score_ai_usage(f["content"], f["user"] or default_actor, f["tool"],
+                                    f["destination"], tenant_id, agent, db)
+            elif name in ("tool_result", "mcp_server_connection"):
+                f = otel.mcp_fields(name, attrs)
+                if f:
+                    _score_mcp(MCPIngest(**f), tenant_id, default_actor, allowed, block, db, agent=agent)
+        except Exception:
+            continue  # one bad record never fails the whole export
+    return {"partialSuccess": {}}
 
 
 # An agent reading code is normal, and MCP has no external AI destination — so on the
