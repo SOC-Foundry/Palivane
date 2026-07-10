@@ -75,3 +75,24 @@ def test_disable_returns_to_password_only(client):
     raw = TestClient(app)
     lr = raw.post("/api/auth/login", json={"email": "admin@acme.com", "password": "password123"})
     assert "access_token" in lr.json() and not lr.json().get("mfa_required")
+
+def test_mfa_challenge_is_not_a_session_token(client):
+    # The post-password MFA challenge must NOT authenticate protected routes — otherwise a
+    # caller who only passed the first factor could skip MFA by using the challenge directly.
+    _enroll(client)
+    raw = TestClient(app)
+    challenge = raw.post("/api/auth/login",
+                         json={"email": "admin@acme.com", "password": "password123"}).json()["challenge"]
+    r = raw.get("/api/auth/me", headers={"Authorization": f"Bearer {challenge}"})
+    assert r.status_code == 401
+
+
+def test_totp_code_cannot_be_replayed(client):
+    secret, _ = _enroll(client)
+    raw = TestClient(app)
+    code = _code(secret)
+    ch = raw.post("/api/auth/login", json={"email": "admin@acme.com", "password": "password123"}).json()["challenge"]
+    assert raw.post("/api/auth/mfa/verify", json={"challenge": ch, "code": code}).status_code == 200
+    # Same code (same time-step) presented again -> replay, rejected.
+    ch2 = raw.post("/api/auth/login", json={"email": "admin@acme.com", "password": "password123"}).json()["challenge"]
+    assert raw.post("/api/auth/mfa/verify", json={"challenge": ch2, "code": code}).status_code == 401

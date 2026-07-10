@@ -142,6 +142,8 @@ class User(Base):
     mfa_enabled = Column(Boolean, default=False, nullable=False)
     mfa_secret = Column(Text, default="")
     mfa_recovery = Column(JSON, default=list)
+    # Highest accepted TOTP time-step — a code at/below this is a replay and is refused.
+    mfa_last_step = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
 
     def to_dict(self) -> dict:
