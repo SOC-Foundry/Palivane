@@ -16,7 +16,8 @@ from sqlalchemy.orm import Session
 from . import audit_log
 from .config import settings
 from .models import (
-    ApiKey, EnrollmentToken, Finding, TenantOIDC, TenantSAML, TenantUpstream, User,
+    Agent, AgentRole, ApiKey, DiscoveredUsage, EnrollmentToken, Finding, PolicyOverride,
+    TenantOIDC, TenantSAML, TenantUpstream, User,
 )
 
 _FINDINGS_CAP = 50000
@@ -45,6 +46,15 @@ def _sso(db: Session, tid: int) -> dict:
     return out
 
 
+def _discovered(d) -> dict:
+    """DiscoveredUsage has no to_dict(); all its columns are non-secret inventory."""
+    return {"actor": d.actor, "team": d.team, "tool": d.tool, "domain": d.domain,
+            "category": d.category, "source": d.source, "event_count": d.event_count,
+            "sensitive_count": d.sensitive_count, "max_risk": d.max_risk,
+            "first_seen": d.first_seen.isoformat() if d.first_seen else None,
+            "last_seen": d.last_seen.isoformat() if d.last_seen else None}
+
+
 def build_tenant_export(db: Session, tenant, include_content: bool = False,
                         limit: int = _FINDINGS_CAP) -> dict:
     """Assemble the complete export document for `tenant` (a Tenant instance)."""
@@ -55,6 +65,10 @@ def build_tenant_export(db: Session, tenant, include_content: bool = False,
     users = db.query(User).filter(User.tenant_id == tid).all()
     keys = db.query(ApiKey).filter(ApiKey.tenant_id == tid).all()
     tokens = db.query(EnrollmentToken).filter(EnrollmentToken.tenant_id == tid).all()
+    agents = db.query(Agent).filter(Agent.tenant_id == tid).all()
+    roles = db.query(AgentRole).filter(AgentRole.tenant_id == tid).all()
+    overrides = db.query(PolicyOverride).filter(PolicyOverride.tenant_id == tid).all()
+    discovered = db.query(DiscoveredUsage).filter(DiscoveredUsage.tenant_id == tid).all()
 
     return {
         "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -64,10 +78,16 @@ def build_tenant_export(db: Session, tenant, include_content: bool = False,
         "users": [u.to_dict() for u in users],
         "api_keys": [k.to_dict() for k in keys],
         "enrollment_tokens": [t.to_dict() for t in tokens],
+        "agents": [a.to_dict() for a in agents],           # to_dict omits token_hash
+        "agent_roles": [r.to_dict() for r in roles],
+        "policy_overrides": [o.to_dict() for o in overrides],
+        "discovered_usage": [_discovered(d) for d in discovered],
         "upstreams": _upstreams(db, tid),
         "sso": _sso(db, tid),
         "audit_log": audit_log.recent(db, tid, limit=_AUDIT_CAP),
         "findings": [f.to_detail() if include_content else f.to_summary() for f in findings],
         "counts": {"users": len(users), "api_keys": len(keys),
-                   "enrollment_tokens": len(tokens), "findings": len(findings)},
+                   "enrollment_tokens": len(tokens), "findings": len(findings),
+                   "agents": len(agents), "agent_roles": len(roles),
+                   "policy_overrides": len(overrides), "discovered_usage": len(discovered)},
     }

@@ -63,9 +63,24 @@ def test_retention_purge_deletes_only_old_findings(client, db_factory):
 
 
 def test_delete_my_org_requires_slug_and_cascades(client, db_factory):
+    from app.models import (ApiKey, AuditLog, Agent, AgentRole, DiscoveredUsage,
+                            GatewayUsage, PolicyOverride)
     client.post("/api/apikeys", json={"label": "k", "actor": "a@acme.com"})
     client.post("/api/analyze", json={"content": "hi", "persist": True})
     client.patch("/api/tenant", json={"name": "Acme"})   # writes an audit row
+
+    # Seed every remaining tenant-scoped table so we prove a *complete* delete (and that
+    # db.delete(tenant) won't hit an FK violation on a FK-enforcing engine).
+    db = db_factory()
+    tid = db.query(Tenant).filter(Tenant.slug == "acme").first().id
+    db.add_all([
+        DiscoveredUsage(tenant_id=tid, actor="a@acme.com", tool="chatgpt"),
+        Agent(tenant_id=tid, name="bot", prefix="ag_x"),
+        AgentRole(tenant_id=tid, name="billing"),
+        PolicyOverride(tenant_id=tid, scope="user", match="a@acme.com"),
+        GatewayUsage(tenant_id=tid, window_start=datetime(2026, 1, 1), kind="ingest", count=1),
+    ])
+    db.commit(); db.close()
 
     # Wrong confirmation is refused.
     assert client.request("DELETE", "/api/tenant", json={"confirm": "wrong"}).status_code == 400
@@ -73,17 +88,18 @@ def test_delete_my_org_requires_slug_and_cascades(client, db_factory):
     r = client.request("DELETE", "/api/tenant", json={"confirm": "acme"})
     assert r.status_code == 200 and r.json()["deleted_tenant"] == "acme"
     deleted = r.json()["deleted"]
-    assert deleted["api_keys"] >= 1 and deleted["audit_log"] >= 1   # not just findings/users
+    assert deleted["api_keys"] >= 1 and deleted["audit_log"] >= 1
+    assert deleted["discovered_usage"] >= 1 and deleted["agents"] >= 1
+    assert deleted["agent_roles"] >= 1 and deleted["policy_overrides"] >= 1
 
     # The admin user is gone too, so the session no longer authenticates.
     assert client.get("/api/upstreams").status_code == 401
     # And ALL the tenant's data is gone — a partial delete isn't a delete.
     db = db_factory()
-    from app.models import ApiKey, AuditLog
     assert db.query(Tenant).filter(Tenant.slug == "acme").first() is None
-    assert db.query(Finding).count() == 0
-    assert db.query(ApiKey).count() == 0
-    assert db.query(AuditLog).count() == 0
+    for model in (Finding, ApiKey, AuditLog, DiscoveredUsage, Agent, AgentRole,
+                  PolicyOverride, GatewayUsage):
+        assert db.query(model).count() == 0, model.__name__
     db.close()
 
 

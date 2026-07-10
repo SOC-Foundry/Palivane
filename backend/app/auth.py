@@ -22,8 +22,9 @@ from .config import settings
 from .crypto import decrypt, encrypt
 from .database import get_db
 from .models import (
-    Agent, AgentRole, ApiKey, AuditLog, EnrollmentToken, Finding, GatewayUsage, LoginAttempt, Tenant,
-    TenantOIDC, TenantSAML, TenantUpstream, User,
+    Agent, AgentRole, ApiKey, AuditLog, DiscoveredUsage, EnrollmentToken, Finding,
+    GatewayUsage, LoginAttempt, PolicyOverride, Tenant, TenantOIDC, TenantSAML,
+    TenantUpstream, User,
 )
 from .schemas import (
     AgentCreate, AgentRoleIn, AgentUpdate, ApiKeyCreate, EnrollmentTokenCreate, EnrollRequest, LoginRequest, MFACode, MFAVerify,
@@ -823,6 +824,10 @@ def delete_tenant(body: TenantDelete, current: User = Depends(require_admin),
         "usage": db.query(GatewayUsage).filter(GatewayUsage.tenant_id == tid).delete(),
         "oidc": db.query(TenantOIDC).filter(TenantOIDC.tenant_id == tid).delete(),
         "saml": db.query(TenantSAML).filter(TenantSAML.tenant_id == tid).delete(),
+        "discovered_usage": db.query(DiscoveredUsage).filter(DiscoveredUsage.tenant_id == tid).delete(),
+        "agents": db.query(Agent).filter(Agent.tenant_id == tid).delete(),
+        "agent_roles": db.query(AgentRole).filter(AgentRole.tenant_id == tid).delete(),
+        "policy_overrides": db.query(PolicyOverride).filter(PolicyOverride.tenant_id == tid).delete(),
     }
     db.delete(tenant)
     db.commit()
