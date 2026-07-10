@@ -287,6 +287,7 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `CORS_ORIGINS`      | `http://localhost:5173`    | Comma-separated.                                   |
 | `SANCTIONED_AI_TOOLS` | *(empty)*                | Allowlist — comma-separated AI tools/domains the org approves (e.g. `claude.ai,copilot.microsoft.com`). |
 | `GATEWAY_ENFORCE`   | `false`                    | LLM gateway: `true` blocks risky prompts inline; otherwise monitor-only. |
+| `GATEWAY_ENFORCE_SECRETS` | `true`               | Even in monitor mode, hard-block a **confirmed** secret/PII leak (known-format credential or PII) to an AI tool — "block the certain, monitor the fuzzy". Applies to the gateway, extension, and proxy (via `force_block`). |
 | `GATEWAY_BLOCK_SEVERITY` | `high`                | Block when a prompt's verdict severity is at/above this. |
 | `GATEWAY_SCAN_RESPONSES` | `true`                | Response-side DLP: scan the model's output for secrets/PII (records; blocks in enforce). |
 | `GATEWAY_UPSTREAM_BASE` / `GATEWAY_UPSTREAM_KEY` | *(unset)* | OpenAI-compatible upstream for allowed calls (empty = stub reply). |

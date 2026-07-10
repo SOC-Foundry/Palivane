@@ -151,6 +151,17 @@ def _blocked(verdict: dict, pol: GatewayPolicy) -> int:
     return _SEVERITY_RANK.get(verdict["severity"], 0) >= _SEVERITY_RANK.get(pol.block_severity, 3)
 
 
+def _should_block(verdict: dict, pol: GatewayPolicy) -> bool:
+    """Block when the tenant enforces and the verdict clears the bar, OR — even in monitor
+    mode — when it carries a CONFIRMED secret/PII leak (block-the-certain default)."""
+    if pol.enforce and _blocked(verdict, pol):
+        return True
+    if settings.gateway_enforce_secrets:
+        from .detectors.shadow_ai import confirmed_leak
+        return confirmed_leak(verdict.get("signals", []))
+    return False
+
+
 _RETRY_HEADER = {"Retry-After": "60"}
 
 
@@ -700,7 +711,7 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
     verdict = _capture(_scan_messages(payload.get("messages", [])), model, tool, principal, db)
     pol = _tenant_policy(principal.tenant_id, db)
 
-    if pol.enforce and _blocked(verdict, pol):
+    if _should_block(verdict, pol):
         return _openai_error(verdict)
     # Agentic tool-use inspection (agentless MCP over the LLM API).
     agentic = _capture_agentic(payload, tool, principal, db)
@@ -860,7 +871,7 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
     verdict = _capture(_responses_user_text(payload.get("input")), model, tool, principal, db)
     pol = _tenant_policy(principal.tenant_id, db)
 
-    if pol.enforce and _blocked(verdict, pol):
+    if _should_block(verdict, pol):
         return _openai_error(verdict)
     agentic = _capture_activity_dict(_responses_agentic(payload), tool, principal, db)
     if _agentic_block(agentic, pol):
@@ -945,7 +956,7 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
     verdict = _capture(prompt, model, tool, principal, db)
     pol = _tenant_policy(principal.tenant_id, db)
 
-    if pol.enforce and _blocked(verdict, pol):
+    if _should_block(verdict, pol):
         return _anthropic_error(verdict)
     # Agentic tool-use inspection (agentless MCP over the LLM API).
     agentic = _capture_agentic(payload, tool, principal, db)
@@ -1100,7 +1111,7 @@ async def _gemini_entry(model: str, method: str, request: Request,
     verdict = _capture(prompt, model, tool, principal, db)
     pol = _tenant_policy(principal.tenant_id, db)
 
-    if pol.enforce and _blocked(verdict, pol):
+    if _should_block(verdict, pol):
         return _gemini_error(verdict)
     base, key = resolve_upstream("gemini", principal.tenant_id, db)
     if key:

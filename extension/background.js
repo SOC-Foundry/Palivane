@@ -111,7 +111,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       });
       if (!res.ok) { sendResponse({ action: "allow", reason: "backend " + res.status }); return; }
       const verdict = await res.json();
-      if (!c.enforce && verdict.action === "block") verdict.action = "warn";
+      // In monitor mode (enforce off) a "block" is normally downgraded to "warn" — but a
+      // CONFIRMED secret/PII leak (force_block) is hard-blocked regardless: block the
+      // certain, monitor the fuzzy.
+      if (!c.enforce && verdict.action === "block" && !verdict.force_block) verdict.action = "warn";
       await recordVerdict(verdict);
       sendResponse(verdict);
     } catch (e) {
