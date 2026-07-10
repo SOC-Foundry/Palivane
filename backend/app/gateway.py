@@ -180,21 +180,29 @@ def _text_from_content(c) -> str:
 
 
 def _scan_messages(messages: list, system=None) -> str:
-    """Scan only the *current* outbound user turn — the last user-role message's text.
+    """Scan the current outbound turn: the system prompt plus the latest user message.
 
-    Agents (e.g. Claude Code) resend the whole conversation history and large system
-    prompts / tool results on every request. Scanning all of that means one secret
-    anywhere in the history poisons every later turn (cascading false positives), and
-    re-flags the same content repeatedly. We only inspect what the user is sending now:
-    the text of the latest user message (text blocks only — tool-result/file-context
-    blocks are excluded)."""
+    Agents (e.g. Claude Code) resend the whole conversation history and large tool results
+    on every request. Scanning all of that means one secret anywhere in the history poisons
+    every later turn (cascading false positives) and re-flags the same content. So we inspect
+    what the user is sending now — the latest user message's text — AND the `system` prompt
+    (instructions; previously accepted but never scanned, letting an injection/secret ride in
+    the system field unchecked). tool-result/file-context blocks are still excluded."""
+    parts = []
+    sys_text = _text_from_content(system).strip() if system else ""
+    if sys_text:
+        parts.append(sys_text)
+    got_user = False
     for m in reversed(messages or []):
         if not isinstance(m, dict):
             continue
         role = (m.get("author") or {}).get("role") if isinstance(m.get("author"), dict) else m.get("role")
-        if role == "user":
-            return _text_from_content(m.get("content")).strip()
-    return ""
+        if role == "system":                       # OpenAI-style system message (in the array)
+            parts.append(_text_from_content(m.get("content")).strip())
+        elif role == "user" and not got_user:      # the latest user turn only
+            parts.append(_text_from_content(m.get("content")).strip())
+            got_user = True
+    return "\n".join(p for p in parts if p)
 
 
 def _tenant_suppress(tenant_id: int | None, db: Session) -> str:
@@ -395,13 +403,37 @@ def _response_activity(resp: dict) -> dict | None:
                     args.append(fn["arguments"])
     if not args:
         return None
-    return {"method": "tools/call", "tool": tool_name, "args_text": "\n".join(args)[:20000]}
+    names = []
+    for b in resp.get("content") or []:
+        if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name"):
+            names.append(b["name"])
+    for ch in resp.get("choices") or []:
+        for tc in ((ch.get("message") if isinstance(ch, dict) else None) or {}).get("tool_calls") or []:
+            fn = tc.get("function") if isinstance(tc, dict) else None
+            if isinstance(fn, dict) and fn.get("name"):
+                names.append(fn["name"])
+    return {"method": "tools/call", "tool": tool_name, "tools": names or [tool_name],
+            "args_text": "\n".join(args)[:20000]}
+
+
+def _gw_extra_tools_denied(principal: Principal, tools: list, db: Session) -> bool:
+    """Least-privilege check for EVERY tool in a parallel/multi tool_use (the assembler
+    flattens args but names only the first). Action authz only — content is already scanned.
+    True if an enforcing role forbids any of them."""
+    if not principal.agent or not tools or len(tools) <= 1:
+        return False
+    from .authz import role_context, authorize
+    ctx = role_context(db, principal.tenant_id, principal.agent)
+    if ctx is None:
+        return False
+    role_d, enforce = ctx
+    return enforce and any(not authorize(role_d, "", t, "")[0] for t in tools)
 
 
 def _capture_tool_activity(tool_name: str, args_text: str, tool: str,
-                           principal: Principal, db: Session) -> dict | None:
+                           principal: Principal, db: Session, tools: list | None = None) -> dict | None:
     """Analyze one assembled tool call on the mcp surface (shared by the response-side and
-    streaming paths)."""
+    streaming paths). `tools` lists every name in a parallel tool_use so authz covers all."""
     if not args_text:
         return None
     item = AnalysisInput(
@@ -411,7 +443,7 @@ def _capture_tool_activity(tool_name: str, args_text: str, tool: str,
     filt, dec = _gw_authz(principal, "", tool_name, args_text, db)
     result = run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
                           signal_filter=filt, agent=principal.agent)
-    if dec["enforce"] and dec["denied"]:
+    if (dec["enforce"] and dec["denied"]) or _gw_extra_tools_denied(principal, tools or [], db):
         result["authz_block"] = True
     return result
 
@@ -420,7 +452,7 @@ def _capture_response_agentic(resp: dict, tool: str, principal: Principal, db: S
     act = _response_activity(resp)
     if not act:
         return None
-    return _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
+    return _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db, act.get("tools"))
 
 
 # --- Response-side DLP: scan the MODEL'S OUTPUT for secrets/PII ------------------------
@@ -572,7 +604,7 @@ def _assemble_tool_use(idx_name: dict, idx_json: dict) -> dict | None:
         except (ValueError, TypeError):
             if raw:
                 args.append(raw)
-    return {"tool": names[0], "args_text": "\n".join(args)[:20000]}
+    return {"tool": names[0], "tools": names, "args_text": "\n".join(args)[:20000]}
 
 
 def _read_stream(url: str, payload: dict, headers: dict) -> tuple[int, str, bytes]:
@@ -687,7 +719,7 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
             decoded = raw.decode("utf-8", "replace")
             act = _stream_tool_use_openai(decoded)
             if act:
-                v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
+                v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db, act.get("tools"))
                 if _agentic_block(v, pol):
                     return _openai_error(v)
             if settings.gateway_scan_responses:
@@ -846,7 +878,7 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
             decoded = raw.decode("utf-8", "replace")
             act = _stream_tool_use_responses(decoded)
             if act:
-                v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
+                v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db, act.get("tools"))
                 if _agentic_block(v, pol):
                     return _openai_error(v)
             if settings.gateway_scan_responses:
@@ -874,7 +906,7 @@ def _capture_response_agentic_responses(resp: dict, tool: str, principal: Princi
     act = _response_activity_responses(resp)
     if not act:
         return None
-    return _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
+    return _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db, act.get("tools"))
 
 
 # --- Anthropic shape (Claude Code, Anthropic SDK) -------------------------------------
@@ -932,7 +964,7 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
             decoded = raw.decode("utf-8", "replace")
             act = _stream_tool_use_anthropic(decoded)
             if act:
-                v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
+                v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db, act.get("tools"))
                 if _agentic_block(v, pol):
                     return _anthropic_error(v)
             if settings.gateway_scan_responses:

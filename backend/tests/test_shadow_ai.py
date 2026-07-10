@@ -218,12 +218,14 @@ def test_tier2_is_warn_level_not_definite_secret_title():
     assert any("Possible secret" in t for t in titles)
 
 
-def test_tier2_suppressed_for_coding_tools_but_tier1_still_caught():
+def test_tier2_high_entropy_not_suppressed_by_client_tool():
     token = "x7Qm2Lp9Zt4Wd8Rk1Vn6Bc3Hs5Yj0FgAa2Bb"
-    # Coding assistants stream high-entropy code/hashes — heuristic is suppressed.
-    assert Category.SECRET_LEAK not in _cats(token, channel="claude-code")
-    assert Category.SECRET_LEAK not in _cats(token, channel="cursor")
-    # ...but a known-prefix secret is still caught even through a coding tool.
+    # The `tool` is client-asserted, so it must NOT disable secret detection — a caller
+    # can't declare tool=claude-code to exfiltrate a format-less credential unflagged.
+    # (Warn-level, so it doesn't hard-block routine code from a real coding assistant.)
+    assert Category.SECRET_LEAK in _cats(token, channel="claude-code")
+    assert Category.SECRET_LEAK in _cats(token, channel="cursor")
+    # A known-prefix secret is caught regardless of tool.
     assert Category.SECRET_LEAK in _cats("AKIAIOSFODNN7EXAMPLE", channel="claude-code")
 
 
