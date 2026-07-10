@@ -15,6 +15,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 RUN chmod +x docker-entrypoint.sh
 
+# Run as a non-root user — smaller blast radius if the app is compromised.
+RUN useradd --system --uid 10001 warden && chown -R warden /app
+USER warden
+
 EXPOSE 8088
 ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8088"]

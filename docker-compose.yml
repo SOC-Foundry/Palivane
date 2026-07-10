@@ -25,9 +25,9 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-aithreat}:${POSTGRES_PASSWORD:-aithreat}@db:5432/${POSTGRES_DB:-aithreat}
-      WARDEN_SECRET_KEY: ${WARDEN_SECRET_KEY:-dev-insecure-change-me}
+      WARDEN_SECRET_KEY: ${WARDEN_SECRET_KEY:?set a strong WARDEN_SECRET_KEY in .env (generate: openssl rand -hex 32)}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
-      SEED_ON_START: ${SEED_ON_START:-true}
+      SEED_ON_START: ${SEED_ON_START:-false}
       WARDEN_ALLOW_SIGNUP: ${WARDEN_ALLOW_SIGNUP:-true}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@demo.local}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-changeme123}

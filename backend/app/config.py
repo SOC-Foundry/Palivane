@@ -44,6 +44,12 @@ class Settings:
     # Current data-processing-agreement version an org accepts (compliance record). Bump
     # when the DPA text changes to prompt re-acceptance.
     dpa_version: str = os.getenv("WARDEN_DPA_VERSION", "1.0")
+    # Public origin of this deployment (e.g. https://app.warden.io). When set, SSO builds
+    # its token-bearing redirect from THIS, not the client Host header — closing a
+    # host-header open-redirect / session-token exfil. Also seeds the trusted-host allowlist.
+    public_base_url: str = os.getenv("WARDEN_PUBLIC_URL", "").rstrip("/")
+    # Comma-separated Host allowlist for TrustedHostMiddleware (empty = disabled).
+    allowed_hosts: str = os.getenv("WARDEN_ALLOWED_HOSTS", "")
     # Tenant that capture clients (extension/proxy) attribute findings to (slug or id).
     ingest_tenant: str = os.getenv("INGEST_TENANT", "")
     # Default gateway requests-per-minute limit per tenant (0 = unlimited). A tenant's own
