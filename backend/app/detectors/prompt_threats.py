@@ -107,11 +107,14 @@ class PromptThreatDetector:
 
         inj = _hits(low, INJECTION_TERMS)
         if inj:
+            # A single unambiguous instruction-override should on its own clear the default
+            # "high" block bar (a lone injection previously landed at "suspicious", i.e. not
+            # blocked in enforce mode). Base raised so 1 hit -> ~high, more hits -> critical.
             signals.append(Signal(
                 category=Category.PROMPT_INJECTION,
                 title="Instruction-override attempt",
                 detail="Input tries to supersede or cancel the model's own instructions.",
-                weight=0.8, confidence=min(1.0, 0.55 + 0.15 * len(inj)),
+                weight=0.8, confidence=min(1.0, 0.62 + 0.15 * len(inj)),
                 detector=self.name, evidence=", ".join(inj[:5]),
             ))
 
