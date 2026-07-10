@@ -361,12 +361,22 @@ def test_gemini_scans_system_instruction():
 def test_gateway_detects_pii(client, monkeypatch):
     from app import gateway
     monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
+    monkeypatch.setattr(gateway.settings, "gateway_enforce_secrets", False)   # isolate detection from the block posture
     r = client.post("/v1/chat/completions", json={"model": "gpt-4o", "messages": [
         {"role": "user", "content": "Format my resume. SSN 123-45-6789 and card 4111 1111 1111 1111"}
     ]})
     assert r.status_code == 200
-    # PII is now flagged on first-party LLM traffic (was benign before).
+    # PII is flagged on first-party LLM traffic (was benign before).
     assert r.json()["warden"]["severity"] in ("suspicious", "high", "critical")
+
+
+def test_confirmed_pii_blocked_in_monitor_by_default(client, monkeypatch):
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", False)   # monitor globally...
+    monkeypatch.setattr(gateway.settings, "gateway_enforce_secrets", True)
+    r = client.post("/v1/chat/completions", json={"model": "gpt-4o", "messages": [
+        {"role": "user", "content": "SSN 123-45-6789 and card 4111 1111 1111 1111"}]})
+    assert r.status_code == 403   # ...but confirmed PII is hard-blocked
 
 
 def test_gateway_does_not_flag_code_as_leak(client, monkeypatch):
@@ -665,3 +675,33 @@ def test_openai_system_message_is_scanned(client, monkeypatch):
         {"role": "user", "content": "hi"}]}
     r = client.post("/v1/chat/completions", json=body)
     assert r.status_code == 403 and r.json()["error"]["type"] == "warden_blocked"
+
+
+def test_confirmed_secret_blocked_even_in_monitor(client, monkeypatch):
+    # Default posture: monitor globally, but a confirmed (known-format) secret leaving to
+    # the LLM is hard-blocked even with GATEWAY_ENFORCE off.
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
+    monkeypatch.setattr(gateway.settings, "gateway_enforce_secrets", True)
+    body = {"model": "gpt-4o", "messages": [
+        {"role": "user", "content": "here is the key AKIAIOSFODNN7EXAMPLE for the deploy"}]}
+    r = client.post("/v1/chat/completions", json=body)
+    assert r.status_code == 403 and r.json()["error"]["type"] == "warden_blocked"
+
+
+def test_monitor_still_passes_fuzzy_injection(client, monkeypatch):
+    # A prompt-injection (fuzzy, not a confirmed leak) still passes in monitor mode.
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
+    monkeypatch.setattr(gateway.settings, "gateway_enforce_secrets", True)
+    r = client.post("/v1/chat/completions", json=INJECTION)
+    assert r.status_code == 200   # recorded, not blocked
+
+
+def test_enforce_secrets_can_be_disabled(client, monkeypatch):
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
+    monkeypatch.setattr(gateway.settings, "gateway_enforce_secrets", False)
+    body = {"model": "gpt-4o", "messages": [
+        {"role": "user", "content": "key AKIAIOSFODNN7EXAMPLE"}]}
+    assert client.post("/v1/chat/completions", json=body).status_code == 200

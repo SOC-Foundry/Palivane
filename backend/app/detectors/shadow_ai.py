@@ -21,6 +21,10 @@ from ..config import settings
 from .base import AnalysisInput, Category, Signal, Surface
 from .patterns import custom_pii_patterns, find_high_entropy_tokens, find_secrets
 
+# Title of the warn-level heuristic secret signal (distinct from known-format Tier-1
+# secrets) — used to exclude it from confirmed_leak()'s hard-block set.
+HIGH_ENTROPY_TITLE = "Possible secret (high-entropy token)"
+
 # --- PII --------------------------------------------------------------------------------
 
 SSN_RE = re.compile(r"\b\d{3}[-\s]\d{2}[-\s]\d{4}\b")          # dashed or spaced
@@ -119,6 +123,18 @@ def _sanctioned(override: str | None = None) -> set[str]:
     return {t.strip().lower() for t in (raw or "").split(",") if t.strip()}
 
 
+def confirmed_leak(signals) -> bool:
+    """True if `signals` include a HIGH-CONFIDENCE secret/PII leak — a known-format
+    credential or PII — as opposed to the warn-level high-entropy heuristic. Used to
+    hard-block confirmed exfil to an AI tool even under a monitor-mode posture."""
+    for s in signals:
+        cat = s.get("category") if isinstance(s, dict) else getattr(s.category, "value", "")
+        title = s.get("title") if isinstance(s, dict) else getattr(s, "title", "")
+        if cat in ("secret_leak", "pii_exposure") and title != HIGH_ENTROPY_TITLE:
+            return True
+    return False
+
+
 class ShadowAIDetector:
     name = "shadow_ai"
     # Also runs on the gateway's llm_io surface so first-party LLM calls get data-loss
@@ -131,12 +147,14 @@ class ShadowAIDetector:
         signals: list[Signal] = []
         # PII is data-loss regardless of where it's going — flag on every surface.
         signals.extend(self._scan_pii(text, item.metadata))
-        # Secrets, proprietary code, and unsanctioned-destination are ai_usage concerns:
-        # on the gateway (llm_io) secrets are already covered by the prompt-threat
-        # detector, and sending code to your *own* LLM app is expected, not a leak.
-        if item.surface == Surface.AI_USAGE:
+        # Secrets are data-loss on ANY surface — including the gateway (llm_io): an actual
+        # credential in a prompt to your own LLM is still a leak (and is force-blocked by
+        # default). Proprietary-code / unsanctioned-destination remain ai_usage-only (sending
+        # code to your *own* LLM is expected; there's no external AI destination on llm_io).
+        if item.surface in (Surface.AI_USAGE, Surface.LLM_IO):
             signals.extend(self._scan_secrets(text))
             signals.extend(self._scan_high_entropy(text, item.channel))
+        if item.surface == Surface.AI_USAGE:
             signals.extend(self._scan_proprietary(text))
             signals.extend(self._scan_destination(item))
         elif item.surface == Surface.MCP:
@@ -175,7 +193,7 @@ class ShadowAIDetector:
             return []
         return [Signal(
             category=Category.SECRET_LEAK,
-            title="Possible secret (high-entropy token)",
+            title=HIGH_ENTROPY_TITLE,
             detail="A long, random-looking token with no recognized format is about to "
                    "leave for an AI tool — it may be an API key or credential.",
             weight=0.7, confidence=0.7, detector=self.name,

@@ -171,6 +171,10 @@ def scan(content: str, destination: str, tool: str = "",
 
 
 def should_block(verdict: dict, enforce: bool) -> bool:
+    # A confirmed secret/PII leak (force_block) is hard-blocked even in monitor mode —
+    # "block the certain, monitor the fuzzy". Everything else blocks only under enforce.
+    if verdict.get("force_block"):
+        return True
     return enforce and verdict.get("action") == "block"
 
 

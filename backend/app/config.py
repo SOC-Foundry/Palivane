@@ -70,6 +70,10 @@ class Settings:
     # enforce=block risky prompts; otherwise monitor (observe + record only). Block when
     # verdict severity >= block_severity.
     gateway_enforce: bool = os.getenv("GATEWAY_ENFORCE", "").lower() in ("1", "true", "yes")
+    # Even in monitor mode, hard-block a CONFIRMED secret/PII leak (known-format credential
+    # or PII) heading to an AI tool — near-zero false positives, high cost of a miss. This is
+    # the "block the certain, monitor the fuzzy" default; set false to monitor those too.
+    gateway_enforce_secrets: bool = os.getenv("GATEWAY_ENFORCE_SECRETS", "true").lower() in ("1", "true", "yes")
     gateway_block_severity: str = os.getenv("GATEWAY_BLOCK_SEVERITY", "high")
     # Response-side DLP: scan the model's OUTPUT for secrets/PII (records; blocks in enforce).
     gateway_scan_responses: bool = os.getenv("GATEWAY_SCAN_RESPONSES", "true").lower() in ("1", "true", "yes")

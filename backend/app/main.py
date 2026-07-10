@@ -532,6 +532,7 @@ def ingest_ai_usage(
     agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
     result, meta = _score_ai_usage(body.content, actor, body.tool, body.destination,
                                    tenant_id, agent, db)
+    from .detectors.shadow_ai import confirmed_leak
     return {
         "action": _action_for(result["severity"]),
         "risk_score": result["risk_score"],
@@ -539,6 +540,9 @@ def ingest_ai_usage(
         "signals": result["signals"],
         "finding_id": result["finding_id"],
         "remediation": remediation_for(result["signals"]),
+        # A confirmed secret/PII leak: the client should block regardless of its local
+        # enforce flag ("block the certain" — monitor everything else).
+        "force_block": settings.gateway_enforce_secrets and confirmed_leak(result["signals"]),
         # Approved AI tools to offer the user instead of a hard "no" (shown in the block UI).
         "sanctioned_tools": _sanctioned_list(meta["sanctioned_tools"]),
     }
