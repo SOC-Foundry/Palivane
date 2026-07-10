@@ -406,33 +406,42 @@ def _resolve_agent_jwt(token: str, db: Session):
     maps to Agent.oidc_subject. Returns the Agent, or None (unknown issuer / no matching
     agent). Raises HTTP 401 on a token that fails signature/claims validation."""
     from .security import jwt_unverified_claims
+    from . import oidc
     iss = (jwt_unverified_claims(token).get("iss") or "").strip()
     if not iss:
         return None
-    t = db.query(Tenant).filter(Tenant.agent_oidc_issuer == iss).first()
-    if t is None:
+    # SECURITY: an issuer is NOT tenant-unique — e.g. GitHub Actions' issuer
+    # (token.actions.githubusercontent.com) is identical for every org. Resolve the tenant by
+    # the *audience* the token actually validates against, not by .first() on the issuer.
+    matched = db.query(Tenant).filter(Tenant.agent_oidc_issuer == iss).all()
+    if not matched:
         return None
-    # SECURITY: require a configured audience. Without it, any validly-signed token from this
-    # issuer (issued for a different app/tenant) would authenticate — a cross-tenant hole.
-    # Fail closed: an issuer with no audience configured cannot authenticate agents.
-    if not (t.agent_oidc_audience or "").strip():
+    with_aud = [t for t in matched if (t.agent_oidc_audience or "").strip()]
+    if not with_aud:
+        # Require a configured audience; without it any validly-signed token from this issuer
+        # (minted for another app/tenant) would authenticate. Fail closed.
         raise HTTPException(status_code=401,
                             detail="agent JWT rejected: workload OIDC has no audience configured")
-    from . import oidc
-    try:
-        claims = oidc.validate_agent_jwt(iss, t.agent_oidc_audience.strip(), token,
-                                         jwks_uri=t.agent_oidc_jwks or "")
-    except oidc.OIDCError as e:
-        raise HTTPException(status_code=401, detail=f"agent JWT rejected: {e}")
-    subject = (claims.get("sub") or claims.get("client_id") or claims.get("azp") or "").strip()
-    if not subject:
-        return None
-    ag = (db.query(Agent).filter(Agent.tenant_id == t.id, Agent.oidc_subject == subject,
-                                 Agent.active.is_(True)).one_or_none())
-    if ag is not None:
-        ag.last_seen = _naive_now()
-        db.commit()
-    return ag
+    last_err = None
+    for t in with_aud:
+        try:
+            claims = oidc.validate_agent_jwt(iss, t.agent_oidc_audience.strip(), token,
+                                             jwks_uri=t.agent_oidc_jwks or "")
+        except oidc.OIDCError as e:
+            last_err = e   # wrong audience for this tenant — try the next one sharing the issuer
+            continue
+        # Audience validated → this is the token's tenant. Map sub → agent (else no attribution).
+        subject = (claims.get("sub") or claims.get("client_id") or claims.get("azp") or "").strip()
+        if not subject:
+            return None
+        ag = (db.query(Agent).filter(Agent.tenant_id == t.id, Agent.oidc_subject == subject,
+                                     Agent.active.is_(True)).one_or_none())
+        if ag is not None:
+            ag.last_seen = _naive_now()
+            db.commit()
+        return ag
+    raise HTTPException(status_code=401,
+                        detail=f"agent JWT rejected: {last_err or 'no matching audience'}")
 
 
 def _capture_agent(x_warden_token: str, x_warden_agent: str, tenant_id, db: Session) -> str:
