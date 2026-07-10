@@ -46,9 +46,10 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
 from .detectors import AnalysisInput, Surface
-from .models import ApiKey, Tenant, User
+from .models import Agent, ApiKey, Tenant, User
 from .policy import detect_tool, signal_filter_for
-from .security import TokenError, decode_token, hash_token, looks_like_api_key
+from .security import (TokenError, decode_token, hash_token, looks_like_agent_token,
+                       looks_like_api_key)
 from .metering import record_and_check
 from .service import run_analysis
 from .upstreams import resolve as resolve_upstream
@@ -62,6 +63,7 @@ _SEVERITY_RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical":
 class Principal:
     tenant_id: int
     actor: str  # who/what to attribute findings to (user email or API-key label)
+    agent: str = ""  # resolved agent name (authenticated ag_ token), for least-privilege authz
 
 
 def _resolve_api_key(token: str, db: Session) -> Principal:
@@ -96,16 +98,39 @@ def get_gateway_principal(request: Request, db: Session = Depends(get_db)) -> Pr
     if not token:
         raise HTTPException(status_code=401, detail="missing API key",
                             headers={"WWW-Authenticate": "Bearer"})
+    if looks_like_agent_token(token):        # an agent authenticating with its own ag_ token
+        ag = (db.query(Agent).filter(Agent.token_hash == hash_token(token), Agent.active.is_(True))
+              .one_or_none())
+        if ag is None:
+            raise HTTPException(status_code=401, detail="invalid agent token")
+        return Principal(tenant_id=ag.tenant_id, actor=ag.name, agent=ag.name)
     if looks_like_api_key(token):
-        return _resolve_api_key(token, db)
-    try:
-        payload = decode_token(token)
-    except TokenError as exc:
-        raise HTTPException(status_code=401, detail=str(exc))
-    user = db.get(User, int(payload.get("sub", 0)))
-    if user is None or not user.active:
-        raise HTTPException(status_code=401, detail="user not found or inactive")
-    return Principal(tenant_id=user.tenant_id, actor=user.email)
+        p = _resolve_api_key(token, db)
+    else:
+        try:
+            payload = decode_token(token)
+        except TokenError as exc:
+            raise HTTPException(status_code=401, detail=str(exc))
+        user = db.get(User, int(payload.get("sub", 0)))
+        if user is None or not user.active:
+            raise HTTPException(status_code=401, detail="user not found or inactive")
+        p = Principal(tenant_id=user.tenant_id, actor=user.email)
+    p.agent = _resolve_gateway_agent(request, token, p.tenant_id, db)
+    return p
+
+
+def _resolve_gateway_agent(request: Request, primary: str, tenant_id: int, db: Session) -> str:
+    """Authenticated agent name for least-privilege authz on the gateway: an `ag_…` token in
+    `X-Warden-Agent` (or as the primary credential) that belongs to this tenant. Empty
+    otherwise. The name is never self-asserted — it's resolved from a hashed token, so a
+    caller can't claim a more-privileged agent to widen its role."""
+    from .security import hash_token, looks_like_agent_token
+    tok = (request.headers.get("x-warden-agent") or "").strip() or primary
+    if not looks_like_agent_token(tok):
+        return ""
+    ag = (db.query(Agent).filter(Agent.token_hash == hash_token(tok), Agent.active.is_(True))
+          .one_or_none())
+    return ag.name if (ag is not None and ag.tenant_id == tenant_id) else ""
 
 
 @dataclass
@@ -294,8 +319,55 @@ def _capture_activity_dict(act: dict | None, tool: str, principal: Principal, db
         metadata={"method": act["method"], "tool": act["tool"],
                   "args_text": act["args_text"], "tool_descriptions": act["tool_descriptions"]},
     )
-    return run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
-                        signal_filter=_mcp_sig_filter)
+    filt, dec = _gw_authz(principal, "", act["tool"], act["args_text"], db)
+    result = run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
+                          signal_filter=filt, agent=principal.agent)
+    if dec["enforce"] and dec["denied"]:
+        result["authz_block"] = True
+    return result
+
+
+def _authz_signal_gw(enforce: bool, reason: str, agent: str, what: str):
+    from .detectors.base import Category, Signal
+    return Signal(
+        category=Category.AGENT_AUTHZ, title="Agent action outside its role",
+        detail=f"{reason} ({'enforce' if enforce else 'monitor'})",
+        weight=0.85 if enforce else 0.55, confidence=0.9, detector="authz",
+        evidence=f"{agent} → {(what or '')[:60]}", check="agent_authz")
+
+
+def _gw_authz(principal: Principal, server: str, tool: str, args_text: str, db: Session):
+    """(signal_filter, decision) for an authenticated gateway agent's tool call. The filter
+    records the least-privilege verdict; the caller hard-blocks on enforce+denied regardless
+    of severity — same authoritative control as the ingest path. Falls back to the plain MCP
+    filter when there's no agent/role."""
+    from .authz import role_context, decision as authz_decide
+    dec = {"enforce": False, "denied": False, "reason": ""}
+    ctx = role_context(db, principal.tenant_id, principal.agent) if principal.agent else None
+    if ctx is None:
+        return _mcp_sig_filter, dec
+    role_d, enforce = ctx
+    dec["enforce"] = enforce
+
+    def _filter(signals):
+        out = _mcp_sig_filter(signals)
+        cats = {s.category.value for s in signals}
+        denied, reason = authz_decide(role_d, server, tool, args_text, cats)
+        if denied:
+            dec["denied"] = True
+            dec["reason"] = reason
+            out.append(_authz_signal_gw(enforce, reason, principal.agent, tool or server))
+        return out
+
+    return _filter, dec
+
+
+def _agentic_block(v: dict | None, pol: "GatewayPolicy") -> bool:
+    """Whether an agentic verdict should block: an authenticated agent's role denied it
+    (hard, role-governed), or the gateway is enforcing and the content crossed the bar."""
+    if not v:
+        return False
+    return bool(v.get("authz_block")) or (pol.enforce and bool(_blocked(v, pol)))
 
 
 def _capture_agentic(payload: dict, tool: str, principal: Principal, db: Session) -> dict | None:
@@ -336,8 +408,12 @@ def _capture_tool_activity(tool_name: str, args_text: str, tool: str,
         content=args_text, subject=f"agent {tool_name}".strip(), sender=principal.actor,
         channel=tool or "agent", surface=Surface.MCP,
         metadata={"method": "tools/call", "tool": tool_name, "args_text": args_text})
-    return run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
-                        signal_filter=_mcp_sig_filter)
+    filt, dec = _gw_authz(principal, "", tool_name, args_text, db)
+    result = run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
+                          signal_filter=filt, agent=principal.agent)
+    if dec["enforce"] and dec["denied"]:
+        result["authz_block"] = True
+    return result
 
 
 def _capture_response_agentic(resp: dict, tool: str, principal: Principal, db: Session) -> dict | None:
@@ -425,8 +501,12 @@ def _scan_response(data: dict, model: str, tool: str, pol: "GatewayPolicy",
         v = _capture_response_dlp(_response_output_text(data), model, tool, principal, db)
         if pol.enforce and v and _blocked(v, pol):
             return v
-    if pol.enforce:
-        return _capture_response_agentic(data, tool, principal, db)
+    # Capture the response tool_use always (not just when the gateway enforces) so an
+    # agent whose *role* enforces is blocked even under a monitor-mode gateway.
+    ragentic = _capture_response_agentic(data, tool, principal, db)
+    if _agentic_block(ragentic, pol):
+        return ragentic
+    return None
     return None
 
 
@@ -592,7 +672,7 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
         return _openai_error(verdict)
     # Agentic tool-use inspection (agentless MCP over the LLM API).
     agentic = _capture_agentic(payload, tool, principal, db)
-    if pol.enforce and agentic and _blocked(agentic, pol):
+    if _agentic_block(agentic, pol):
         return _openai_error(agentic)
     base, key = resolve_upstream("openai", principal.tenant_id, db)
     if base:
@@ -608,7 +688,7 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
             act = _stream_tool_use_openai(decoded)
             if act:
                 v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
-                if v and _blocked(v, pol):
+                if _agentic_block(v, pol):
                     return _openai_error(v)
             if settings.gateway_scan_responses:
                 dlp = _capture_response_dlp(_stream_output_text(decoded), model, tool, principal, db)
@@ -751,7 +831,7 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
     if pol.enforce and _blocked(verdict, pol):
         return _openai_error(verdict)
     agentic = _capture_activity_dict(_responses_agentic(payload), tool, principal, db)
-    if pol.enforce and agentic and _blocked(agentic, pol):
+    if _agentic_block(agentic, pol):
         return _openai_error(agentic)
     base, key = resolve_upstream("openai", principal.tenant_id, db)
     if base:
@@ -767,7 +847,7 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
             act = _stream_tool_use_responses(decoded)
             if act:
                 v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
-                if v and _blocked(v, pol):
+                if _agentic_block(v, pol):
                     return _openai_error(v)
             if settings.gateway_scan_responses:
                 dlp = _capture_response_dlp(_stream_output_text(decoded), model, tool, principal, db)
@@ -784,7 +864,7 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
         if pol.enforce:
             ragentic = _capture_response_agentic(data, tool, principal, db) or \
                 _capture_response_agentic_responses(data, tool, principal, db)
-            if ragentic and _blocked(ragentic, pol):
+            if _agentic_block(ragentic, pol):
                 return _openai_error(ragentic)
         return JSONResponse(status_code=r.status_code, content=data)
     return JSONResponse(content=_responses_stub(model, verdict))
@@ -837,7 +917,7 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
         return _anthropic_error(verdict)
     # Agentic tool-use inspection (agentless MCP over the LLM API).
     agentic = _capture_agentic(payload, tool, principal, db)
-    if pol.enforce and agentic and _blocked(agentic, pol):
+    if _agentic_block(agentic, pol):
         return _anthropic_error(agentic)
 
     base, key = resolve_upstream("anthropic", principal.tenant_id, db)
@@ -853,7 +933,7 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
             act = _stream_tool_use_anthropic(decoded)
             if act:
                 v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db)
-                if v and _blocked(v, pol):
+                if _agentic_block(v, pol):
                     return _anthropic_error(v)
             if settings.gateway_scan_responses:
                 dlp = _capture_response_dlp(_stream_output_text(decoded), model, tool, principal, db)
@@ -869,7 +949,7 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
                 return _anthropic_error(dlp)
         if pol.enforce:
             ragentic = _capture_response_agentic(data, tool, principal, db)
-            if ragentic and _blocked(ragentic, pol):
+            if _agentic_block(ragentic, pol):
                 return _anthropic_error(ragentic)
         return JSONResponse(status_code=status, content=data)
     return JSONResponse(content=_anthropic_stub(model, verdict))
