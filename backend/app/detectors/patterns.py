@@ -12,6 +12,22 @@ import os
 import re
 from collections import Counter
 
+# Reject the classic catastrophic-backtracking (ReDoS) constructs in ADMIN/ENV-supplied
+# regexes — a nested unbounded quantifier like (a+)+ / (a*)* / (.*)+ can hang on crafted
+# input, and these patterns run on request content on the shared capture path. Not an
+# exhaustive ReDoS detector (undecidable in general), but it blocks the common footguns.
+_REDOS_RISKY = re.compile(r"\([^()]*[+*][^()]*\)[?*]*[+*]")
+
+
+def _safe_custom_regex(rx: str) -> re.Pattern | None:
+    """Compile a user-supplied regex, or None if it's invalid or ReDoS-risky."""
+    if _REDOS_RISKY.search(rx):
+        return None
+    try:
+        return re.compile(rx)
+    except re.error:
+        return None
+
 # (label, compiled regex) — label is human-facing evidence.
 # Tier 1: high-confidence, distinctive-prefix formats in their CANONICAL form (separator
 # present). A match is a near-certain secret, so these carry full weight and hard-block.
@@ -73,10 +89,9 @@ def custom_patterns() -> list[tuple[str, re.Pattern]]:
         if not line or "=" not in line:
             continue
         label, _, rx = line.partition("=")
-        try:
-            out.append((label.strip() or "Custom secret", re.compile(rx.strip())))
-        except re.error:
-            continue
+        pat = _safe_custom_regex(rx.strip())
+        if pat is not None:
+            out.append((label.strip() or "Custom secret", pat))
     return out
 
 
@@ -99,10 +114,9 @@ def custom_pii_patterns(extra: str = "") -> list[tuple[str, re.Pattern]]:
             if not line or "=" not in line:
                 continue
             label, _, rx = line.partition("=")
-            try:
-                out.append((label.strip() or "Custom PII", re.compile(rx.strip())))
-            except re.error:
-                continue
+            pat = _safe_custom_regex(rx.strip())
+            if pat is not None:
+                out.append((label.strip() or "Custom PII", pat))
     return out
 
 

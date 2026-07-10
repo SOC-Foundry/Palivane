@@ -43,7 +43,7 @@ def test_login_404_when_not_configured(raw_client):
 
 
 def test_acs_provisions_user_and_issues_session(client, raw_client, monkeypatch):
-    _configure(client)
+    _configure(client, auto_provision=True)   # this test exercises provisioning explicitly
     monkeypatch.setattr(saml_mod, "process_acs", lambda *a, **k: {"email": "sso-saml@acme.com",
                                                                   "nameid": "x", "attributes": {}})
     r = raw_client.post("/api/auth/saml/acme/acs", data={"SAMLResponse": "b64", "RelayState": "x"},

@@ -225,3 +225,12 @@ def test_tier2_suppressed_for_coding_tools_but_tier1_still_caught():
     assert Category.SECRET_LEAK not in _cats(token, channel="cursor")
     # ...but a known-prefix secret is still caught even through a coding tool.
     assert Category.SECRET_LEAK in _cats("AKIAIOSFODNN7EXAMPLE", channel="claude-code")
+
+
+def test_custom_regex_rejects_redos_and_invalid():
+    from app.detectors.patterns import _safe_custom_regex
+    assert _safe_custom_regex(r"(a+)+$") is None       # nested quantifier (ReDoS)
+    assert _safe_custom_regex(r"(.*)*") is None
+    assert _safe_custom_regex(r"(\d+)*x") is None
+    assert _safe_custom_regex(r"([unterminated") is None   # invalid regex
+    assert _safe_custom_regex(r"CUST-[0-9]{6}") is not None  # safe pattern compiles
