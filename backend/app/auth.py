@@ -1033,8 +1033,12 @@ def _sso_complete(db: Session, tenant: Tenant, email: str, auto_provision: bool,
 
     token = create_token({"sub": str(user.id), "tenant_id": user.tenant_id,
                           "role": user.role, "tv": user.token_version})
+    # Build the token-bearing redirect from the CONFIGURED public origin when set, not the
+    # client Host header — otherwise a spoofed Host would redirect the session token to an
+    # attacker domain (open-redirect / token exfil). Fall back to request-derived base.
+    origin = settings.public_base_url or base
     # Hand the session to the SPA via URL fragment (not query — keeps it out of logs).
-    return RedirectResponse(f"{base}/#sso_token={token}", status_code=303)
+    return RedirectResponse(f"{origin}/#sso_token={token}", status_code=303)
 
 
 # --- per-tenant SAML SSO -------------------------------------------------------------

@@ -54,3 +54,11 @@ def test_input_caps(client):
     r = client.post("/api/discovery/ingest",
                     json={"events": [{"actor": "a", "destination": "chatgpt.com", "count": 0}]})
     assert r.status_code == 422
+
+
+def test_finding_status_change_is_audited(client):
+    client.post("/api/analyze", json={"content": "hi there", "persist": True})
+    fid = client.get("/api/findings").json()["findings"][0]["id"]
+    assert client.patch(f"/api/findings/{fid}", json={"status": "triaged"}).status_code == 200
+    actions = [e["action"] for e in client.get("/api/audit").json()["entries"]]
+    assert "finding.status" in actions

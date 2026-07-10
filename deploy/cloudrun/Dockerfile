@@ -27,6 +27,10 @@ RUN chmod +x docker-entrypoint.sh
 COPY --from=web /web/dist ./static
 ENV WARDEN_STATIC_DIR=/app/static
 
+# Run as a non-root user — smaller blast radius if the app is compromised.
+RUN useradd --system --uid 10001 warden && chown -R warden /app
+USER warden
+
 # Cloud Run injects $PORT (default 8080). The entrypoint waits for the DB, runs
 # `alembic upgrade head`, then execs this CMD.
 ENV PORT=8080

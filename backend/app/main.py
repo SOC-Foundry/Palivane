@@ -117,6 +117,20 @@ app = FastAPI(
 )
 
 _CORS_ORIGINS = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+
+# Reject requests with a spoofed Host (defense-in-depth against host-header injection into
+# any base_url-derived link). Enabled only when an allowlist is configured; the public
+# origin's host is always included.
+_ALLOWED_HOSTS = [h.strip() for h in settings.allowed_hosts.split(",") if h.strip()]
+if settings.public_base_url:
+    from urllib.parse import urlparse as _urlparse
+    _ph = _urlparse(settings.public_base_url).hostname
+    if _ph and _ph not in _ALLOWED_HOSTS:
+        _ALLOWED_HOSTS.append(_ph)
+if _ALLOWED_HOSTS:
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=_ALLOWED_HOSTS + ["testserver"])
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ORIGINS,
@@ -1251,6 +1265,9 @@ def update_status(finding_id: int, body: StatusUpdate,
         raise HTTPException(status_code=404, detail="finding not found")
     row.status = body.status
     db.commit()
+    from . import audit_log
+    audit_log.record(db, current.tenant_id, current.email, "finding.status",
+                     target=str(finding_id), detail={"status": row.status})
     return {"id": finding_id, "status": row.status}
 
 

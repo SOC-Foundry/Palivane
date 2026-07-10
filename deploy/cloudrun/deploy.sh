@@ -30,9 +30,11 @@ ENV_VARS="GATEWAY_ENFORCE=${GATEWAY_ENFORCE:-true}"
 ENV_VARS+=",GATEWAY_BLOCK_SEVERITY=${GATEWAY_BLOCK_SEVERITY:-high}"
 ENV_VARS+=",GATEWAY_ANTHROPIC_BASE=${GATEWAY_ANTHROPIC_BASE:-https://api.anthropic.com}"
 ENV_VARS+=",JUDGE_PROVIDER=${JUDGE_PROVIDER:-auto}"
-ENV_VARS+=",WARDEN_ALLOW_SIGNUP=${WARDEN_ALLOW_SIGNUP:-true}"
+# Public deploy: signup OFF by default (else the internet can self-register orgs). Set
+# WARDEN_ALLOW_SIGNUP=true explicitly for an open multi-tenant deployment.
+ENV_VARS+=",WARDEN_ALLOW_SIGNUP=${WARDEN_ALLOW_SIGNUP:-false}"
 ENV_VARS+=",SEED_ON_START=${SEED_ON_START:-false}"
-[ -n "$DOMAIN" ] && ENV_VARS+=",CORS_ORIGINS=https://${DOMAIN}"
+[ -n "$DOMAIN" ] && ENV_VARS+=",CORS_ORIGINS=https://${DOMAIN},WARDEN_PUBLIC_URL=https://${DOMAIN},WARDEN_ALLOWED_HOSTS=${DOMAIN}"
 [ -n "${INGEST_TENANT:-}" ] && ENV_VARS+=",INGEST_TENANT=${INGEST_TENANT}"
 [ -n "${WARDEN_EXTENSION_ID:-}" ] && ENV_VARS+=",WARDEN_EXTENSION_ID=${WARDEN_EXTENSION_ID}"
 
@@ -42,6 +44,7 @@ for pair in \
   "GATEWAY_ANTHROPIC_KEY=gateway-anthropic-key" \
   "OPENAI_API_KEY=openai-api-key" \
   "GEMINI_API_KEY=gemini-api-key" \
+  "WARDEN_METRICS_TOKEN=warden-metrics-token" \
   "EXTENSION_INGEST_TOKEN=extension-ingest-token"; do
   name="${pair##*=}"
   if gcloud secrets describe "$name" --project "$PROJECT_ID" >/dev/null 2>&1; then
