@@ -40,6 +40,16 @@ def test_cef_format():
     assert "secret_leak" in line and "cn1=75" in line and "suser=bob@acme.com" in line
 
 
+def test_cef_header_escapes_pipe_no_injection():
+    # A subject containing '|' must not forge a new CEF header field.
+    f = siem._fields(_VERDICT, subject="pwn|9|extra|CEF:0|evil", actor="a", surface="ai_usage", org="o")
+    line = siem._cef(f)
+    # The name's pipes must be escaped (\|) so the injection can't forge new CEF fields —
+    # it stays a single, contained name field.
+    assert "pwn\\|9\\|extra\\|CEF:0\\|evil" in line
+    assert "pwn|9" not in line        # no raw unescaped pipe from the injected subject
+
+
 # --- gating + SSRF --------------------------------------------------------------------
 
 def test_forward_gates_on_severity(monkeypatch):
