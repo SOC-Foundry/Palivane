@@ -16,10 +16,54 @@ from __future__ import annotations
 
 import fnmatch
 
+# Tools whose argument is a shell command (authorized against allow_commands).
+SHELL_TOOLS = {"shell", "bash", "sh", "run", "exec", "execute", "run_command", "run_shell_command"}
+# Data categories a role's data_scopes can gate (need-to-know over agent-handled content).
+RESTRICTED_DATA = {"secret_leak", "pii_exposure", "source_code_leak",
+                   "confidential_data", "credential_at_rest"}
+
 
 def _match(value: str, patterns: list[str]) -> bool:
     v = (value or "").lower()
     return any(fnmatch.fnmatch(v, p) for p in patterns)
+
+
+def role_context(db, tenant_id, agent_name: str):
+    """Resolve (effective_role_dict, enforce) for a named agent — the role plus any per-agent
+    deny globs. None if the agent has no active role. Shared by the ingest and gateway paths
+    so least-privilege is enforced identically wherever an agent's tool-use is seen."""
+    from .models import Agent, AgentRole
+    if not agent_name or tenant_id is None:
+        return None
+    ag = (db.query(Agent).filter(Agent.tenant_id == tenant_id, Agent.name == agent_name,
+                                 Agent.active.is_(True)).one_or_none())
+    if ag is None or not (ag.role or "").strip():
+        return None
+    role = (db.query(AgentRole).filter(AgentRole.tenant_id == tenant_id,
+                                       AgentRole.name == ag.role).one_or_none())
+    if role is None:
+        return None
+    d = role.to_dict()
+    agent_deny = [x.strip().lower() for x in (ag.deny or "").split(",") if x.strip()]
+    if agent_deny:
+        d = {**d, "deny": d["deny"] + agent_deny}
+    return d, bool(role.enforce)
+
+
+def decision(role_d: dict, server: str, tool: str, args_text: str, categories) -> tuple[bool, str]:
+    """(denied, reason) for an agent action + data-scope, given the role and the data
+    categories the content carried. Pure — the caller hard-blocks when enforce and denied,
+    independent of scoring or the disabled-checks filter (authz is a control, not a signal)."""
+    command = args_text if (tool or "").lower() in SHELL_TOOLS else ""
+    allowed, reason = authorize(role_d, server, tool, command)
+    if not allowed:
+        return True, reason
+    scopes = set(role_d.get("data_scopes") or [])
+    if scopes:
+        oos = (set(categories) & RESTRICTED_DATA) - scopes
+        if oos:
+            return True, f"role '{role_d.get('name', '')}' may not handle {', '.join(sorted(oos))}"
+    return False, ""
 
 
 def authorize(role, server: str, tool: str, command: str = "") -> tuple[bool, str]:

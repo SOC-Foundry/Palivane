@@ -67,3 +67,56 @@ def test_per_agent_deny_tightens_role(client, raw_client):
     assert _mcp(raw_client, tok, tool="deploy.staging")["action"] != "block"
     out = _mcp(raw_client, tok, tool="deploy.prod")
     assert out["action"] == "block" and any(s["category"] == "agent_authz" for s in out["signals"])
+
+
+# --- authz is an authoritative control, not a mutable scoring signal -------------------
+
+def test_enforce_hard_blocks_below_severity_threshold(client, raw_client):
+    # An enforce-deny must block even when the tenant raised its block bar to critical and
+    # the content is benign (severity would otherwise be warn/allow). Pre-fix this "warned".
+    client.post("/api/agent-roles", json={"name": "locked", "allow_tools": ["safe.*"], "enforce": True})
+    tok, _ = _agent(client, "lock-bot", "locked")
+    client.patch("/api/tenant", json={"mcp_block_severity": "critical"})
+    out = _mcp(raw_client, tok, server="", tool="dangerous.tool", args_text="path=./x")
+    assert out["action"] == "block"
+    assert any(s["category"] == "agent_authz" for s in out["signals"])
+
+
+def test_enforce_survives_disabled_check(client, raw_client):
+    # The block decision is independent of the scoring/disabled-checks path, so a tenant
+    # (or per-actor override) muting the agent_authz check can't defeat least-privilege
+    # enforcement — the control still blocks.
+    client.post("/api/agent-roles", json={"name": "ro", "allow_tools": ["read.*"], "enforce": True})
+    tok, _ = _agent(client, "ro-bot", "ro")
+    client.patch("/api/tenant", json={"disabled_checks": ["agent_authz"]})
+    out = _mcp(raw_client, tok, server="", tool="delete.all", args_text="rm target")
+    assert out["action"] == "block"
+
+
+def test_gateway_enforces_agent_role_even_in_monitor(client, monkeypatch):
+    # C1: an agent authenticating to the LLM gateway with its ag_ token is bound by its role
+    # even when the gateway itself is monitor-only — the role's enforce flag governs.
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", False)   # gateway MONITOR
+    client.post("/api/agent-roles", json={"name": "gwro", "allow_tools": ["read.*"], "enforce": True})
+    tok, _ = _agent(client, "gw-bot", "gwro")
+    body = {"model": "claude-opus-4-8", "messages": [
+        {"role": "user", "content": "go"},
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "t1", "name": "delete_everything", "input": {"path": "/production/database"}}]}]}
+    r = client.post("/v1/messages", json=body, headers={"x-api-key": tok, "Authorization": ""})
+    assert r.status_code == 400                                       # role enforce blocks anyway
+    assert "agent_authz" in r.json()["error"]["message"]
+
+
+def test_gateway_allows_in_role_agent(client, monkeypatch):
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
+    client.post("/api/agent-roles", json={"name": "gwok", "allow_tools": ["read_*"], "enforce": True})
+    tok, _ = _agent(client, "ok-bot", "gwok")
+    body = {"model": "claude-opus-4-8", "messages": [
+        {"role": "user", "content": "go"},
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "t1", "name": "read_file", "input": {"path": "README"}}]}]}
+    r = client.post("/v1/messages", json=body, headers={"x-api-key": tok, "Authorization": ""})
+    assert r.status_code == 200   # in-role tool call passes
