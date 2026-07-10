@@ -464,6 +464,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/analyze/batch`     | Analyze up to 500 items in one call. |
 | POST   | `/api/ingest/ai-usage`   | Score content captured by the browser extension / proxy (`ai_usage`); returns allow/warn/block. Token-gated. |
 | POST   | `/api/ingest/mcp`        | Score an MCP tool call / resource read / tool listing captured by the proxy (`mcp`) — sensitive-resource access, dangerous commands, untrusted servers, tool poisoning. Returns allow/warn/block. Token-gated. |
+| POST   | `/v1/logs`               | OTLP/HTTP logs receiver — a [claude-otel](https://github.com/TachTech-Engineering/claude-otel) collector otlphttp-exports Claude Code telemetry here; maps user_prompt→`ai_usage`, tool_result/mcp_server_connection→`mcp`. Monitor-only (post-hoc). Token-gated (`X-Warden-Token`). |
 | POST   | `/api/scan/mcp-config`   | Vet an MCP config file (`.mcp.json`, Cursor/VS Code) in CI/console — enumerates declared servers (incl. local stdio) and flags unapproved servers, dangerous launch commands, and secrets in config. Token-gated. |
 | POST   | `/api/scan/deps`         | Vet dependency manifests (`package.json`, `requirements.txt`) for supply-chain risk — install-script abuse, non-registry sources, known-bad packages, and (opt-in) known CVEs for pinned deps via OSV. Token-gated. |
 | POST   | `/api/scan/ide-extensions` | Vet a list of IDE extensions (`.vscode/extensions.json` in CI, or MDM inventory) for known-bad / unapproved editor plugins. Token-gated. |
@@ -603,7 +604,7 @@ Different usage routes need different capture points — all feed the one engine
 | **Claude Code tool calls** (shell, file access, MCP tools) — *before execution* | `warden-hook` PreToolUse hook → `mcp` ([`cli/`](cli/README.md)) | ✅ |
 | **Local stdio MCP servers** (inline inspect + block) | `warden-mcp` wrapper → `mcp` ([`cli/`](cli/README.md)) | ✅ |
 | **Device posture** (installed IDE extensions, MCP configs — drift) | `warden-posture` → `/api/scan/*` ([`cli/`](cli/README.md)) | ✅ |
-| **Claude Code via OTEL** (prompts, tool calls) — for orgs running [claude-otel](https://github.com/TachTech-Engineering/claude-otel) | `warden-otel` bridge → `ai_usage` + `mcp` ([`cli/`](cli/README.md)) | ✅ monitor-only (post-hoc) |
+| **Claude Code via OTEL** (prompts, tool calls) — for orgs running [claude-otel](https://github.com/TachTech-Engineering/claude-otel) | `warden-otel` file-tail **or** collector OTLP → `POST /v1/logs` → `ai_usage` + `mcp` ([`cli/`](cli/README.md)) | ✅ monitor-only (post-hoc) |
 | **Cursor** (AI IDE) | Egress proxy (codebase/telemetry) | ⚠️ chat endpoint pins certs — see [`proxy/README.md`](proxy/README.md) |
 | **Source code committed to a Git repo** | Pre-commit hook + GitHub Action → `/api/scan/code` | ✅ |
 
