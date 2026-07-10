@@ -28,20 +28,34 @@ _SENSITIVE_PATH = re.compile(
     r"(?:^|[/\\\s\"'=])("
     r"\.env(?:\.[\w.-]+)?"
     r"|\.aws[/\\]credentials|\.aws[/\\]config"
-    r"|\.ssh[/\\]|id_rsa|id_ed25519|[\w.-]+\.pem|[\w.-]+\.key"
+    r"|\.ssh[/\\]|id_rsa|id_ed25519|id_ecdsa|id_dsa|[\w.-]+\.pem|[\w.-]+\.key"
     r"|\.kube[/\\]config|\.docker[/\\]config\.json"
     r"|\.npmrc|\.pypirc|\.netrc|\.git-credentials"
+    r"|\.(?:bash|zsh|python|mysql)_history"
     r"|secrets?\.(?:ya?ml|json|env|txt)"
-    r"|/etc/shadow|/etc/passwd"
+    r"|/etc/shadow|/etc/passwd|/proc/(?:\d+|self)/environ"
     r"|\.gnupg[/\\]|credentials\.json|service[-_]account[\w.-]*\.json"
     r")",
     re.IGNORECASE,
 )
 
+
+def _norm_path(s: str) -> str:
+    """Collapse trivial path obfuscation (/./ and //) so /etc/./passwd and /etc//passwd
+    match the same as /etc/passwd. Not a full realpath (no filesystem), just defeats the
+    cheap tricks; also fold backslashes so Windows-style separators are matched."""
+    s = s.replace("\\", "/")
+    prev = None
+    while prev != s:
+        prev = s
+        s = s.replace("/./", "/").replace("//", "/")
+    return s
+
 # High-risk shell patterns an agent might execute via a run-command tool.
 _DANGEROUS_CMD = re.compile(
     r"(?:curl|wget)\s+[^\n|;&]*\|\s*(?:sudo\s+)?(?:ba)?sh"     # curl … | sh
-    r"|base64\s+-d[^\n|]*\|\s*(?:ba)?sh"                        # base64 -d | sh
+    r"|(?:curl|wget)\s+[^\n|;&]*\|\s*(?:sudo\s+)?(?:python3?|perl|ruby|node|php)\b"  # curl … | python
+    r"|base64\s+-d[^\n|]*\|\s*(?:sudo\s+)?(?:(?:ba)?sh|python3?|perl|ruby|node)\b"   # base64 -d | sh/python
     r"|rm\s+-rf\s+(?:/|~|\$HOME|--no-preserve-root)"           # rm -rf /
     r"|nc\s+-e|/dev/tcp/|bash\s+-i\s*>&"                        # reverse shells
     r"|chmod\s+(?:-R\s+)?0?777"                                 # world-writable
@@ -53,11 +67,14 @@ _DANGEROUS_CMD = re.compile(
 
 # Injection phrasing hidden in a tool's description (MCP "tool poisoning").
 _TOOL_POISON = re.compile(
-    r"ignore\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|above)\s+instructions"
-    r"|disregard\s+(?:the\s+)?(?:system\s+prompt|previous)"
-    r"|system\s+prompt|<important>|do\s+not\s+(?:tell|inform|mention)\s+the\s+user"
-    r"|exfiltrat|send\s+(?:the\s+)?(?:contents?|secrets?|keys?|env)\s+to"
-    r"|before\s+using\s+this\s+tool,?\s+(?:you\s+must|first)",
+    r"ignore\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|above|earlier)\s+"
+    r"(?:instructions|guidance|rules|context)"
+    r"|disregard\s+(?:the\s+|any\s+|all\s+|earlier\s+)?(?:system\s+prompt|previous|instructions|guidance)"
+    r"|system\s+prompt|<important>|do\s+not\s+(?:tell|inform|mention|reveal)\s+(?:the\s+)?user"
+    r"|(?:silently|secretly|without\s+telling)"
+    r"|exfiltrat|send\s+(?:the\s+)?(?:contents?|secrets?|keys?|env|file)\s+to"
+    r"|(?:read|include|attach|append)\s+[^\n]{0,40}(?:\.env|\.ssh|id_rsa|credentials|secret|api[_ -]?key)"
+    r"|before\s+(?:using|calling|running)\s+this\s+tool,?\s+(?:you\s+must|first|always)",
     re.IGNORECASE,
 )
 
@@ -103,8 +120,9 @@ class MCPGuardDetector:
                 detector=self.name, evidence=f"server={server} transport={transport}",
             ))
 
-        # 2) Sensitive resource / path access.
-        haystack = f"{resource}\n{args_text}"
+        # 2) Sensitive resource / path access. Normalize first so /etc/./passwd,
+        # /etc//passwd, and backslash paths don't slip past the pattern.
+        haystack = _norm_path(f"{resource}\n{args_text}")
         mres = _SENSITIVE_PATH.search(haystack)
         if mres:
             signals.append(Signal(
