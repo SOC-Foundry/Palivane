@@ -49,7 +49,8 @@ def notify(webhook: str, min_severity: str, verdict: dict,
     if not webhook or not _realtime_ok(verdict.get("severity"), min_severity, digest):
         return
     payload = _payload(verdict, subject, actor, surface)
-    threading.Thread(target=send_sync, args=(webhook, payload), daemon=True).start()
+    from .dispatch import submit
+    submit(send_sync, webhook, payload)   # bounded shared pool (no thread-per-finding)
 
 
 def _realtime_ok(severity: str, min_severity: str, digest: str) -> bool:

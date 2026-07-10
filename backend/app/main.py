@@ -564,6 +564,9 @@ def exception_request(
     return {"ok": True}
 
 
+_OTLP_MAX_RECORDS = 1000   # cap Claude-Code events processed per OTLP export (DoS guard)
+
+
 @app.post("/v1/logs")
 async def otlp_logs(
     request: Request,
@@ -588,17 +591,24 @@ async def otlp_logs(
         return {"partialSuccess": {}}
     allowed = _tenant_mcp_allow(tenant_id, db)
     block = _tenant_mcp_block_severity(tenant_id, db)
+    # Cap records processed per export so one 12 MB body can't fan out into tens of
+    # thousands of detection passes + finding writes (each export is one ingest-quota hit).
+    processed = 0
     for name, attrs in otel.iter_events(doc):
+        if processed >= _OTLP_MAX_RECORDS:
+            break
         try:
             if name == "user_prompt":
                 f = otel.prompt_fields(attrs)
                 if f:
                     _score_ai_usage(f["content"], f["user"] or default_actor, f["tool"],
                                     f["destination"], tenant_id, agent, db)
+                    processed += 1
             elif name in ("tool_result", "mcp_server_connection"):
                 f = otel.mcp_fields(name, attrs)
                 if f:
                     _score_mcp(MCPIngest(**f), tenant_id, default_actor, allowed, block, db, agent=agent)
+                    processed += 1
         except Exception:
             continue  # one bad record never fails the whole export
     return {"partialSuccess": {}}

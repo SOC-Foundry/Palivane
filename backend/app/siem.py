@@ -93,4 +93,5 @@ def forward(url: str, token: str, min_severity: str, fmt: str, verdict: dict,
     if _RANK.get(verdict.get("severity"), 0) < _RANK.get(min_severity or "high", 3):
         return
     fields = _fields(verdict, subject, actor, surface, org)
-    threading.Thread(target=send_sync, args=(url, token, fmt or "json", fields), daemon=True).start()
+    from .dispatch import submit
+    submit(send_sync, url, token, fmt or "json", fields)   # bounded shared pool
