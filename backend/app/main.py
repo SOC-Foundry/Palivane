@@ -81,14 +81,20 @@ async def lifespan(_app: FastAPI):
     import asyncio
 
     async def _digest_loop():
-        from . import alerts
+        from . import alerts, metering
         from .database import SessionLocal
+        ticks = 0
         while True:
             try:
                 await asyncio.sleep(300)   # 5-minute tick; per-tenant hourly/daily gating in run_digests
+                ticks += 1
                 db = SessionLocal()
                 try:
                     await asyncio.to_thread(alerts.run_digests, db)
+                    # Prune the usage/metering counter (rows past the retention horizon) so
+                    # gateway_usage doesn't grow unbounded. ~hourly (every 12th 5-min tick).
+                    if ticks % 12 == 0:
+                        await asyncio.to_thread(metering.prune, db)
                 finally:
                     db.close()
             except asyncio.CancelledError:

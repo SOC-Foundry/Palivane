@@ -41,8 +41,12 @@ def _sanctioned_set(raw: str) -> set[str]:
 
 
 def _is_sanctioned(tool: str, domain: str, sanctioned: set[str]) -> bool:
+    # Exact tool match, or exact/suffix domain match — NOT a bare substring (which would
+    # let "ai" sanction "openai" or "corp.com" sanction "evilcorp.com.attacker.net").
     t, d = tool.lower(), (domain or "").lower()
-    return t in sanctioned or d in sanctioned or any(s in d or s in t for s in sanctioned)
+    if t in sanctioned or (d and d in sanctioned):
+        return True
+    return any(s and (d == s or d.endswith("." + s)) for s in sanctioned)
 
 
 def _upsert(db, tenant_id, actor, hit, *, source, inc=1, sensitive=False, risk=0, team="", when=None):

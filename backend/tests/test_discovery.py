@@ -64,3 +64,15 @@ def test_capture_records_sensitive_exposure(client, raw_client):
     assert chatgpt["sensitive_events"] >= 1
     assert "capture" in chatgpt["sources"]
     assert chatgpt["risk"] >= 60
+
+
+def test_is_sanctioned_boundary_match():
+    from app.discovery import _is_sanctioned
+    s = {"openai.com", "chatgpt"}
+    assert _is_sanctioned("chatgpt", "chatgpt.com", s) is True          # exact tool
+    assert _is_sanctioned("x", "openai.com", s) is True                 # exact domain
+    assert _is_sanctioned("x", "api.openai.com", s) is True             # domain suffix
+    # bare-substring over-matching must NOT sanction these:
+    assert _is_sanctioned("openaiish", "evil-openai.com.attacker.net", s) is False
+    assert _is_sanctioned("x", "notopenai.com", s) is False
+    assert _is_sanctioned("chatgptzero", "chatgptzero.io", s) is False  # not exact tool

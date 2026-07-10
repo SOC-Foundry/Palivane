@@ -277,7 +277,7 @@ class TenantOIDC(Base):
     client_id = Column(String(512), default="")
     client_secret_encrypted = Column(Text, default="")
     enabled = Column(Boolean, default=False)
-    auto_provision = Column(Boolean, default=True)
+    auto_provision = Column(Boolean, default=False)  # safe default: don't auto-create accounts unless opted in
     allowed_domain = Column(String(256), default="")
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
@@ -294,7 +294,7 @@ class TenantSAML(Base):
     idp_sso_url = Column(String(512), default="")
     idp_x509_cert = Column(Text, default="")     # IdP signing cert (public; not a secret)
     enabled = Column(Boolean, default=False)
-    auto_provision = Column(Boolean, default=True)
+    auto_provision = Column(Boolean, default=False)  # safe default: don't auto-create accounts unless opted in
     allowed_domain = Column(String(256), default="")
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)

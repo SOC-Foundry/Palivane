@@ -52,7 +52,7 @@ def test_login_404_when_not_configured(client):
 
 
 def test_callback_provisions_user_and_issues_working_session(client, monkeypatch):
-    _configure(client)
+    _configure(client, auto_provision=True)   # this test exercises provisioning explicitly
     monkeypatch.setattr(oidc_mod, "discover", lambda i: META)
     monkeypatch.setattr(oidc_mod, "exchange_code", lambda *a, **k: {"id_token": "idtok"})
     monkeypatch.setattr(oidc_mod, "validate_id_token", lambda *a, **k: {"email": "sso@acme.com"})
@@ -94,3 +94,8 @@ def test_callback_enforces_allowed_domain(client, monkeypatch):
     state = create_token({"typ": "oidc_state", "org": "acme", "nonce": "N"}, ttl=600)
     r = client.get(f"/api/auth/oidc/acme/callback?code=x&state={state}", follow_redirects=False)
     assert r.status_code == 403
+
+def test_oidc_auto_provision_defaults_off(client):
+    # Safe default: a new SSO config does NOT auto-create accounts unless opted in.
+    b = _configure(client).json()
+    assert b["auto_provision"] is False

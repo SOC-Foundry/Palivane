@@ -181,3 +181,14 @@ def test_bridge_batch_accepted(client, raw_client):
     r = raw_client.post("/api/ingest/mcp/batch", json={"items": items}, headers={"X-Warden-Token": key})
     assert r.status_code == 200
     assert "sensitive_resource_access" in {s["category"] for s in r.json()["results"][0]["signals"]}
+
+
+def test_start_offset_resets_on_inode_reuse(tmp_path):
+    import os
+    logs = tmp_path / "logs.jsonl"
+    logs.write_text("AAAA\nBBBB\n")
+    st = os.stat(logs)
+    good = {"inode": st.st_ino, "offset": 5, "head": wo._head_sig(str(logs))}
+    assert wo._start_offset(str(logs), good) == 5              # same file -> resume
+    stale = {"inode": st.st_ino, "offset": 5, "head": "deadbeefdeadbeef"}
+    assert wo._start_offset(str(logs), stale) == 0            # inode reused by a new file

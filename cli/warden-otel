@@ -29,6 +29,7 @@ the follow poll seconds (default 5).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -252,14 +253,28 @@ def save_state(path: str, state: dict) -> None:
     os.chmod(p, 0o600)
 
 
+def _head_sig(logs: str, n: int = 200) -> str:
+    """A short fingerprint of the file's first bytes — detects a *different* file even when
+    the OS reuses the inode number (so we don't resume at a stale offset into new content)."""
+    try:
+        with open(logs, "rb") as f:
+            return hashlib.sha256(f.read(n)).hexdigest()[:16]
+    except OSError:
+        return ""
+
+
 def _start_offset(logs: str, state: dict) -> int:
-    """Resume from the saved offset unless the file rotated (new inode) or was truncated."""
+    """Resume from the saved offset only if it's the same file — same inode, not truncated,
+    and same head fingerprint (guards inode reuse). Otherwise start at 0."""
     try:
         st = os.stat(logs)
     except OSError:
         return 0
-    same = state.get("inode") == st.st_ino and state.get("offset", 0) <= st.st_size
-    return state.get("offset", 0) if same else 0
+    if state.get("inode") != st.st_ino or state.get("offset", 0) > st.st_size:
+        return 0
+    if state.get("head") and state["head"] != _head_sig(logs):
+        return 0   # inode reused by a different file
+    return state.get("offset", 0)
 
 
 def drain(cfg: dict, state: dict) -> dict:
@@ -275,9 +290,10 @@ def drain(cfg: dict, state: dict) -> dict:
     with open(logs, "rb") as f:
         f.seek(offset)
         data = f.read()
+    head = _head_sig(logs)
     nl = data.rfind(b"\n")
     if nl == -1:
-        return {"inode": st.st_ino, "offset": offset}  # no complete line yet
+        return {"inode": st.st_ino, "offset": offset, "head": head}  # no complete line yet
     prompts: list[dict] = []
     mcp: list[dict] = []
     for line in data[:nl + 1].decode("utf-8", "replace").splitlines():
@@ -285,7 +301,7 @@ def drain(cfg: dict, state: dict) -> dict:
             process_line(line, prompts, mcp)
     if prompts or mcp:
         flush(cfg, prompts, mcp)
-    return {"inode": st.st_ino, "offset": offset + nl + 1}
+    return {"inode": st.st_ino, "offset": offset + nl + 1, "head": head}
 
 
 def main() -> int:
