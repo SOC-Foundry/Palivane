@@ -25,7 +25,20 @@ def test_export_is_complete_and_scoped(client):
     assert doc["counts"]["findings"] >= 1 and doc["counts"]["api_keys"] >= 1
     assert any(u["email"] == "admin@acme.com" for u in doc["users"])
     assert {"users", "api_keys", "enrollment_tokens", "findings", "audit_log",
-            "upstreams", "sso"} <= set(doc)
+            "upstreams", "sso", "agents", "agent_roles", "policy_overrides",
+            "discovered_usage"} <= set(doc)
+
+
+def test_export_includes_agents_without_secrets(client, db_factory):
+    from app.models import Agent
+    db = db_factory()
+    tid = db.query(__import__("app.models", fromlist=["Tenant"]).Tenant).first().id
+    db.add(Agent(tenant_id=tid, name="bot", prefix="ag_z", token_hash="SECRETHASH"))
+    db.commit(); db.close()
+    blob = client.get("/api/export/tenant").text
+    assert "SECRETHASH" not in blob            # token_hash never exported
+    doc = json.loads(blob)
+    assert any(a["name"] == "bot" for a in doc["agents"])
 
 
 def test_export_excludes_other_tenants(client, db_factory):
