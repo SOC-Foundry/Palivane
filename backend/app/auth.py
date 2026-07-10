@@ -667,8 +667,8 @@ def set_upstream(provider: str, body: UpstreamConfig, current: User = Depends(re
            .first())
     base = body.base_url.strip()
     if base:
-        from .netguard import is_safe_url
-        if not is_safe_url(base):
+        from .netguard import is_safe_url_static
+        if not is_safe_url_static(base):
             raise HTTPException(status_code=400,
                                 detail="base_url must be an https(s) URL to a public host "
                                        "(private/loopback/metadata addresses are blocked)")
@@ -732,7 +732,13 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
     if body.dep_denylist is not None:
         tenant.dep_denylist = body.dep_denylist.strip()
     if body.alert_webhook is not None:
-        tenant.alert_webhook = body.alert_webhook.strip()
+        webhook = body.alert_webhook.strip()
+        if webhook:
+            from .netguard import is_safe_url_static
+            if not is_safe_url_static(webhook):
+                raise HTTPException(status_code=400,
+                                    detail="alert_webhook must be a public http(s) URL (no internal/loopback/metadata hosts)")
+        tenant.alert_webhook = webhook
     if body.alert_min_severity is not None:
         if body.alert_min_severity not in ("low", "suspicious", "high", "critical"):
             raise HTTPException(status_code=400, detail="invalid alert_min_severity")
@@ -741,9 +747,15 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         if body.alert_digest not in ("off", "hourly", "daily"):
             raise HTTPException(status_code=400, detail="invalid alert_digest")
         tenant.alert_digest = body.alert_digest
-    # SIEM forwarding (URL is SSRF-guarded at send time, like the alert webhook).
+    # SIEM forwarding — SSRF-guarded at set time (early feedback) and again at send time.
     if body.siem_url is not None:
-        tenant.siem_url = body.siem_url.strip()
+        siem = body.siem_url.strip()
+        if siem:
+            from .netguard import is_safe_url_static
+            if not is_safe_url_static(siem):
+                raise HTTPException(status_code=400,
+                                    detail="siem_url must be a public http(s) URL (no internal/loopback/metadata hosts)")
+        tenant.siem_url = siem
     if body.siem_token is not None:
         tenant.siem_token = body.siem_token.strip()
     if body.siem_min_severity is not None:

@@ -38,7 +38,7 @@ def test_oidc_ssrf_guard():
                 "http://127.0.0.1:6379/", "http://10.0.0.5/token"):
         with pytest.raises(oidc.OIDCError):
             oidc._safe(bad)
-    assert oidc._safe("https://idp.example.com/token") == "https://idp.example.com/token"
+    assert oidc._safe("https://8.8.8.8/token") == "https://8.8.8.8/token"  # public host allowed
 
 
 def test_recovery_code_consume_constant_time_still_correct():

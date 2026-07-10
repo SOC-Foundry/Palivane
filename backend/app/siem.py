@@ -36,10 +36,12 @@ def _fields(verdict: dict, subject: str, actor: str, surface: str, org: str) -> 
 
 def _cef(f: dict) -> str:
     """A CEF line: CEF:0|Vendor|Product|Version|SignatureID|Name|Severity|Extensions."""
-    def esc(v):  # CEF extension values escape = and \
+    def esc(v):   # CEF extension value: escape \ = and newlines
         return str(v).replace("\\", "\\\\").replace("=", "\\=").replace("\n", " ")
-    sig = ",".join(f["categories"]) or "finding"
-    name = (f.get("subject") or "Warden finding")[:120]
+    def hesc(v):  # CEF header field: escape \ | and newlines (pipe would forge a new field)
+        return str(v).replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ")
+    sig = hesc(",".join(f["categories"]) or "finding")
+    name = hesc((f.get("subject") or "Warden finding")[:120])
     header = f"CEF:0|TachTech|Warden|1.0|{sig}|{name}|{_CEF_SEV.get(f['severity'], 5)}"
     ext = {
         "cs1Label": "surface", "cs1": f.get("surface", ""),
