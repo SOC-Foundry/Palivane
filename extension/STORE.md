@@ -49,8 +49,9 @@ AI tools — scans prompts and warns or blocks before they're sent.
 
 **Detailed description:**
 > Warden — Shadow-AI Guard inspects prompts you send to external AI tools (ChatGPT,
-> Claude, Gemini, Microsoft Copilot) for secrets, credentials, PII, and proprietary
-> source code, and warns or blocks **before the prompt leaves your browser**.
+> Claude, Gemini, Microsoft Copilot, Perplexity, Mistral, DeepSeek, Grok, Google AI
+> Studio, Poe) for secrets, credentials, PII, and proprietary source code, and warns or
+> blocks **before the prompt leaves your browser**.
 >
 > Detection runs on your organization's self-hosted Warden backend; the extension is the
 > capture client. It fails open — if the backend is unreachable, your AI tools keep
@@ -74,7 +75,7 @@ AI tools — scans prompts and warns or blocks before they're sent.
 | --- | --- |
 | `storage` | Store the admin's configuration (backend URL, ingest token, enforce flag) and read enterprise **managed** policy. |
 | `identity` | Self-serve sign-in: `chrome.identity.launchWebAuthFlow` opens the organization's Warden console so the user authenticates (login/SSO) and the extension receives a per-user, tenant-scoped token. No Google account data is read; it's only the OAuth-style redirect back to the extension. |
-| `host_permissions` — `claude.ai`, `chatgpt.com`, `chat.openai.com`, `gemini.google.com`, `copilot.microsoft.com` | Run the content/injected script on these AI tools to read the prompt text before submission so it can be scanned. The extension acts **only** on these AI hosts. |
+| `host_permissions` — `claude.ai`, `chatgpt.com`, `chat.openai.com`, `gemini.google.com`, `copilot.microsoft.com`, `m365.cloud.microsoft`, `www.bing.com`, `perplexity.ai`, `chat.mistral.ai`, `chat.deepseek.com`, `grok.com`, `aistudio.google.com`, `poe.com` | Run the content/injected script on these AI tools to read the prompt text before submission so it can be scanned. The extension acts **only** on these AI hosts. |
 | `host_permissions` — `localhost` / `127.0.0.1` | Allow talking to a Warden backend running locally during evaluation. Remove these two from `manifest.json` before a public listing if you only use a hosted backend. |
 
 **Data use disclosures (Chrome "Privacy practices" tab):**

@@ -8,12 +8,16 @@
   // URL patterns that look like "the user is submitting a prompt".
   const SEND_PATTERNS = [
     /\/backend-api\/(f\/)?conversation\b/, // chatgpt.com
-    /\/completion\b/,                      // claude.ai
+    /\/completion\b/,                      // claude.ai, deepseek (/chat/completion)
     /\/append_message\b/,                  // claude.ai (older)
     /\/retry_completion\b/,
     /\/chat_conversations\/.+\/(completion|messages)\b/, // claude.ai (current)
-    /GenerateContent|StreamGenerate/i,     // gemini
+    /GenerateContent|StreamGenerate/i,     // gemini, Google AI Studio (aistudio)
     /\/v1\/(chat\/completions|messages|responses)\b/,    // OpenAI/Anthropic-style APIs
+    /perplexity_ask\b/,                    // perplexity.ai (SSE ask)
+    /\/api\/chat\b/,                       // mistral (Le Chat) + generic /api/chat
+    /\/app-chat\/conversations\b/,         // grok.com
+    /\/gql_POST\b/,                        // poe.com (GraphQL sendMessage)
   ];
   const looksLikeSend = (url) => SEND_PATTERNS.some((re) => re.test(url));
 
@@ -34,6 +38,16 @@
       }
       if (typeof j.prompt === "string") return j.prompt;   // claude.ai
       if (typeof j.text === "string") return j.text;
+      if (typeof j.message === "string") return j.message;            // grok, misc chat apps
+      if (typeof j.query === "string") return j.query;                // misc search-style
+      if (typeof j.query_str === "string") return j.query_str;        // perplexity
+      if (j.params && typeof j.params.query_str === "string") return j.params.query_str; // perplexity
+      if (typeof j.input === "string") return j.input;
+      // Poe (GraphQL): the user's text rides in variables — grab the longest string field.
+      if (j.variables && typeof j.variables === "object") {
+        const v = Object.values(j.variables).filter((x) => typeof x === "string");
+        if (v.length) return v.sort((a, b) => b.length - a.length)[0];
+      }
     } catch (_) { /* not JSON — fall through */ }
     return String(bodyText).slice(0, 8000);
   }
