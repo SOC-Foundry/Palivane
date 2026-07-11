@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Warden — Shadow-AI Guard",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Inspects prompts sent to external AI tools for secrets, PII, and proprietary data, and warns or blocks before they leave.",
   "permissions": ["storage", "identity"],
   "storage": { "managed_schema": "managed_schema.json" },
@@ -19,6 +19,13 @@
     "https://copilot.microsoft.com/*",
     "https://m365.cloud.microsoft/*",
     "https://www.bing.com/*",
+    "https://perplexity.ai/*",
+    "https://www.perplexity.ai/*",
+    "https://chat.mistral.ai/*",
+    "https://chat.deepseek.com/*",
+    "https://grok.com/*",
+    "https://aistudio.google.com/*",
+    "https://poe.com/*",
     "http://localhost/*",
     "http://127.0.0.1/*"
   ],
@@ -43,7 +50,14 @@
         "https://gemini.google.com/*",
         "https://copilot.microsoft.com/*",
         "https://m365.cloud.microsoft/*",
-        "https://www.bing.com/*"
+        "https://www.bing.com/*",
+        "https://perplexity.ai/*",
+        "https://www.perplexity.ai/*",
+        "https://chat.mistral.ai/*",
+        "https://chat.deepseek.com/*",
+        "https://grok.com/*",
+        "https://aistudio.google.com/*",
+        "https://poe.com/*"
       ],
       "js": ["injected.js"],
       "run_at": "document_start",
@@ -58,7 +72,14 @@
         "https://gemini.google.com/*",
         "https://copilot.microsoft.com/*",
         "https://m365.cloud.microsoft/*",
-        "https://www.bing.com/*"
+        "https://www.bing.com/*",
+        "https://perplexity.ai/*",
+        "https://www.perplexity.ai/*",
+        "https://chat.mistral.ai/*",
+        "https://chat.deepseek.com/*",
+        "https://grok.com/*",
+        "https://aistudio.google.com/*",
+        "https://poe.com/*"
       ],
       "js": ["content.js"],
       "run_at": "document_start"

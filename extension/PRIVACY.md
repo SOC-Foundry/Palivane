@@ -9,9 +9,11 @@ organization operates**.
 ## What the extension does
 
 On the supported AI tools (claude.ai, chatgpt.com, chat.openai.com, gemini.google.com,
-copilot.microsoft.com, m365.cloud.microsoft, www.bing.com), the extension reads the text
-of a prompt **before it is sent** so that it can be scanned for secrets, credentials,
-personal data, and proprietary content, and then **warns or blocks** risky submissions.
+copilot.microsoft.com, m365.cloud.microsoft, www.bing.com, perplexity.ai,
+chat.mistral.ai, chat.deepseek.com, grok.com, aistudio.google.com, poe.com), the
+extension reads the text of a prompt **before it is sent** so that it can be scanned for
+secrets, credentials, personal data, and proprietary content, and then **warns or
+blocks** risky submissions.
 
 ## What data is processed
 

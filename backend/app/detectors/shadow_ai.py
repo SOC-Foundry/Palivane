@@ -95,6 +95,7 @@ CODE_MARKERS = [
 KNOWN_AI_TOOLS = {
     "chat.openai.com": "ChatGPT", "chatgpt.com": "ChatGPT", "openai.com": "OpenAI",
     "claude.ai": "Claude", "gemini.google.com": "Gemini", "bard.google.com": "Bard",
+    "aistudio.google.com": "Google AI Studio",
     "copilot.microsoft.com": "Microsoft Copilot", "poe.com": "Poe",
     "character.ai": "Character.AI", "perplexity.ai": "Perplexity",
     "huggingface.co": "Hugging Face", "you.com": "You.com", "deepseek.com": "DeepSeek",
