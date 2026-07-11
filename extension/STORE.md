@@ -78,6 +78,10 @@ AI tools — scans prompts and warns or blocks before they're sent.
 | `host_permissions` — `claude.ai`, `chatgpt.com`, `chat.openai.com`, `gemini.google.com`, `copilot.microsoft.com`, `m365.cloud.microsoft`, `www.bing.com`, `perplexity.ai`, `chat.mistral.ai`, `chat.deepseek.com`, `grok.com`, `aistudio.google.com`, `poe.com` | Run the content/injected script on these AI tools to read the prompt text before submission so it can be scanned. The extension acts **only** on these AI hosts. |
 | `host_permissions` — `localhost` / `127.0.0.1` | Allow talking to a Warden backend running locally during evaluation. Remove these two from `manifest.json` before a public listing if you only use a hosted backend. |
 
+**Remote code:** No. The extension executes no remotely-hosted code — all logic ships in
+the package. It sends prompt text to an admin-configured backend and receives a JSON
+verdict; no code is fetched or evaluated.
+
 **Data use disclosures (Chrome "Privacy practices" tab):**
 - **What's collected:** the text of prompts the user submits to the supported AI tools
   (so it can be scanned), plus an optional user identifier set by the admin.
@@ -91,6 +95,23 @@ AI tools — scans prompts and warns or blocks before they're sent.
 > Because the extension transmits prompt content, expect Chrome to flag it for a closer
 > review of the data-use disclosures. The honest framing above — *data goes only to the
 > customer's own backend, never to us* — is what reviewers look for.
+
+### Version update note (paste into the reviewer notes field)
+
+Update this each release; adding `host_permissions` in an update re-triggers review and may
+require users to re-accept permissions, so call the host change out explicitly.
+
+**0.6.0:**
+> Version 0.6.0 adds coverage for six additional AI tools: Perplexity, Mistral (Le Chat),
+> DeepSeek, Grok, Google AI Studio, and Poe. This required adding those domains to
+> `host_permissions` and the content-script matches. **No new API permissions were added**
+> — the change is only additional AI hosts, consistent with the extension's single purpose
+> (scanning prompts before they're sent to AI tools). No remotely-hosted code; behavior is
+> otherwise unchanged.
+
+> Note: if your published build uses the `build.sh` prod transform (which drops
+> `localhost`/`127.0.0.1` and bakes your SaaS origin), omit the localhost line from the
+> host-permission justification so it matches the uploaded package.
 
 ---
 
