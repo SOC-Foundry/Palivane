@@ -26,6 +26,31 @@ def test_windows_script_self_enrolls():
     assert "Google\\Chrome" in s and "Microsoft\\Edge" in s
 
 
+def test_linux_script_self_enrolls():
+    s = provision.render("linux", "https://warden.corp/", "et_lin", extension_id="lnx123")
+    assert s.startswith("#!/usr/bin/env bash")
+    assert "et_lin" in s                                   # carries the enrollment token
+    assert "/api/enroll" in s                               # self-enrolls at runtime
+    assert "ANTHROPIC_BASE_URL" in s and "$WARDEN_URL/v1" in s
+    assert "/etc/claude-code" in s                          # Linux managed-settings path
+    assert "managed-settings.json" in s
+    assert "pacman" in s                                    # Arch package-manager path
+    assert "lnx123" in s                                    # extension id in browser policy
+    assert "/etc/chromium/policies/managed" in s           # Linux browser managed-policy dir
+    assert "3rdparty" in s                                  # Chromium managed-storage schema
+
+
+def test_arch_alias_renders_linux():
+    assert provision.render("arch", "https://x", "et_a") == provision.render("linux", "https://x", "et_a")
+
+
+def test_provision_endpoint_serves_linux(client):
+    r = client.post("/api/provision", json={"platform": "linux", "base_url": "https://warden.corp"})
+    assert r.status_code == 200, r.text
+    assert set(r.json()["scripts"]) == {"linux"}
+    assert "#!/usr/bin/env bash" in r.json()["scripts"]["linux"]
+
+
 def test_unknown_platform_rejected():
     with pytest.raises(ValueError):
         provision.render("android", "https://x", "et_")

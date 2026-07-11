@@ -165,6 +165,10 @@ export default function Connect({ tenant }) {
                       onClick={() => getInstaller("windows")}>
                 {provBusy === "windows" ? "…" : "Windows (.ps1)"}
               </button>
+              <button className="primary-btn slim" disabled={!!provBusy}
+                      onClick={() => getInstaller("linux")}>
+                {provBusy === "linux" ? "…" : "Linux (.sh)"}
+              </button>
             </div>
           </div>
         </div>
