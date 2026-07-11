@@ -188,7 +188,8 @@ one step; most orgs don't need the per-source table below. Pick one:
 - **You use MDM (Jamf / Intune / GPO)** → *Download policy pack*. An agentless bundle your
   MDM pushes: browser force-install, system-proxy profile, and Claude Code managed settings
   + hooks — pre-filled with this org's key and approved-extension lists.
-- **You hand out a setup script** → *Download the macOS (`.sh`) or Windows (`.ps1`) installer*.
+- **You hand out a setup script** → *Download the macOS (`.sh`), Windows (`.ps1`), or Linux
+  (`.sh`) installer* (Linux covers Arch and derivatives; Debian/Fedora too).
   Run it on any number of devices; each self-enrolls for its own per-device key, then
   configures every source.
 

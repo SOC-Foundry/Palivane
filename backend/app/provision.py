@@ -98,10 +98,69 @@ Write-Host "Done. Restart Claude Code and your browser to apply."
 '''
 
 
+def render_linux(base_url: str, enroll_token: str, extension_id: str, proxy_host: str = "") -> str:
+    ext = extension_id or DEFAULT_EXTENSION_ID
+    b = _base(base_url)
+    return f'''#!/usr/bin/env bash
+# Warden device setup (Linux — Arch and derivatives; also Debian/Fedora). Carries an
+# ENROLLMENT token; each machine self-enrolls for its own per-device key. Safe to run on
+# many machines; treat the file as a secret. Needs sudo to write system-wide managed config.
+set -euo pipefail
+WARDEN_URL="{b}"
+ENROLL_TOKEN="{enroll_token}"
+EXT_ID="{ext}"
+DEVICE="$(whoami)@$(hostname -s 2>/dev/null || hostname)"
+
+# curl is required; install it with the system package manager if missing (Arch: pacman).
+if ! command -v curl >/dev/null 2>&1; then
+  if   command -v pacman  >/dev/null 2>&1; then sudo pacman -Sy --needed --noconfirm curl
+  elif command -v apt-get >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y curl
+  elif command -v dnf     >/dev/null 2>&1; then sudo dnf install -y curl
+  else echo "curl not found and no supported package manager (pacman/apt/dnf)" >&2; exit 1; fi
+fi
+
+echo "Enrolling this device with Warden as $DEVICE ..."
+RESP=$(curl -fsS -X POST "$WARDEN_URL/api/enroll" -H 'content-type: application/json' \\
+  -d "{{\\"token\\":\\"$ENROLL_TOKEN\\",\\"device\\":\\"$DEVICE\\"}}")
+KEY=$(printf '%s' "$RESP" | sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
+if [ -z "$KEY" ]; then echo "Enrollment failed: $RESP" >&2; exit 1; fi
+echo "  device key issued."
+
+echo "Configuring Claude Code ..."
+CC_DIR="/etc/claude-code"
+sudo mkdir -p "$CC_DIR"
+sudo tee "$CC_DIR/managed-settings.json" >/dev/null <<JSON
+{{ "env": {{ "ANTHROPIC_BASE_URL": "$WARDEN_URL/v1", "ANTHROPIC_AUTH_TOKEN": "$KEY" }} }}
+JSON
+echo "  Claude Code -> $CC_DIR/managed-settings.json"
+
+# Browser extension (Chrome/Chromium/Edge): system-wide managed policy delivers this
+# org's config to extension id $EXT_ID via Chromium's 3rdparty managed-storage schema.
+echo "Configuring browser extension managed policy ..."
+POLICY_JSON=$(cat <<JSON
+{{ "3rdparty": {{ "extensions": {{ "$EXT_ID": {{ "backendUrl": "$WARDEN_URL", "token": "$KEY", "enforce": true }} }} }} }}
+JSON
+)
+for DIR in /etc/opt/chrome/policies/managed /etc/chromium/policies/managed /etc/opt/edge/policies/managed; do
+  # Only configure browsers that are actually installed (their policy root exists).
+  root="${{DIR%/policies/managed}}"
+  [ -d "$root" ] || continue
+  sudo mkdir -p "$DIR"
+  printf '%s\\n' "$POLICY_JSON" | sudo tee "$DIR/warden.json" >/dev/null
+  echo "  policy -> $DIR/warden.json"
+done
+
+# Desktop app (egress proxy) — optional; needs the Warden CA + admin. See docs.
+echo "Done. Restart Claude Code and your browser to apply."
+'''
+
+
 def render(platform: str, base_url: str, enroll_token: str,
            extension_id: str = "", proxy_host: str = "") -> str:
     if platform == "macos":
         return render_macos(base_url, enroll_token, extension_id, proxy_host)
     if platform == "windows":
         return render_windows(base_url, enroll_token, extension_id, proxy_host)
+    if platform in ("linux", "arch"):
+        return render_linux(base_url, enroll_token, extension_id, proxy_host)
     raise ValueError(f"unknown platform: {platform!r}")
