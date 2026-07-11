@@ -52,13 +52,26 @@ for pair in \
   fi
 done
 
+# Direct VPC egress — required when Cloud SQL has a PRIVATE IP only (org policy
+# constraints/sql.restrictPublicIp). Set VPC_NETWORK + VPC_SUBNET to route the Cloud SQL
+# connector to the instance's private IP over the VPC.
+VPC_ARGS=()
+if [ -n "${VPC_NETWORK:-}" ] && [ -n "${VPC_SUBNET:-}" ]; then
+  VPC_ARGS=(--network "$VPC_NETWORK" --subnet "$VPC_SUBNET" --vpc-egress "${VPC_EGRESS:-private-ranges-only}")
+fi
+# Public by default; on an org that forbids allUsers set INGRESS/NO_UNAUTH to lock it down.
+AUTH_ARGS=(--allow-unauthenticated)
+[ "${NO_UNAUTH:-}" = "1" ] && AUTH_ARGS=(--no-allow-unauthenticated)
+[ -n "${INGRESS:-}" ] && AUTH_ARGS+=(--ingress "$INGRESS")
+
 echo "==> Deploying Cloud Run service '$SERVICE'"
 gcloud run deploy "$SERVICE" --project "$PROJECT_ID" --region "$REGION" \
   --image "$IMAGE" \
   --add-cloudsql-instances "$SQL_CONNECTION" \
   --set-env-vars "$ENV_VARS" \
   --set-secrets "$SECRETS" \
-  --allow-unauthenticated \
+  "${AUTH_ARGS[@]}" \
+  "${VPC_ARGS[@]}" \
   --port 8080 \
   --cpu 1 --memory 512Mi \
   --min-instances "${MIN_INSTANCES:-0}" --max-instances "${MAX_INSTANCES:-4}" \
