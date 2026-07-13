@@ -13,6 +13,7 @@ authlib>=1.3.1,<2       # OIDC ID-token / JWKS validation for SSO (>=1.3.1: CVE-
 prometheus-client>=0.20 # /metrics exposition
 python3-saml>=1.16      # per-tenant SAML SSO (pulls lxml + xmlsec manylinux wheels)
 python-multipart>=0.0.18 # SAML ACS form parsing (>=0.0.18: CVE-2024-53981 multipart DoS)
+boto3>=1.34          # optional SIEM/data-lake delivery to S3 (per-tenant, lazy-imported)
 
 # --- dev / test ---
 pytest>=8.0

@@ -97,6 +97,28 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     try { const r = await api.testSiem(); flash(r.ok ? "Test event sent to SIEM." : "SIEM endpoint unreachable.", !!r.ok); }
     catch (e) { err(e); }
   }
+
+  // --- SIEM S3 / data-lake delivery ---
+  const [s3Cfg, setS3Cfg] = useState({
+    bucket: tenant?.siem_s3_bucket || "", prefix: tenant?.siem_s3_prefix || "",
+    region: tenant?.siem_s3_region || "", keyId: "", secret: "",
+    configured: !!tenant?.siem_s3_configured,
+  });
+  async function saveS3() {
+    try {
+      const payload = { siem_s3_bucket: s3Cfg.bucket, siem_s3_prefix: s3Cfg.prefix, siem_s3_region: s3Cfg.region };
+      if (s3Cfg.keyId) payload.siem_s3_key_id = s3Cfg.keyId;    // write-only; only send if changed
+      if (s3Cfg.secret) payload.siem_s3_secret = s3Cfg.secret;
+      const t = await api.updateTenant(payload);
+      onTenant?.(t);
+      setS3Cfg((s) => ({ ...s, keyId: "", secret: "", configured: !!t.siem_s3_configured }));
+      flash("S3 delivery saved.");
+    } catch (e) { err(e); }
+  }
+  async function testS3() {
+    try { const r = await api.testSiemS3(); flash(r.ok ? "Test object written to S3." : `S3 write failed: ${r.detail || "check config"}`, !!r.ok); }
+    catch (e) { err(e); }
+  }
   function _download(text, name, type) {
     const url = URL.createObjectURL(new Blob([text], { type }));
     const a = document.createElement("a");
@@ -377,6 +399,38 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Pushes each finding at/above
            the threshold as it's captured; SSRF-guarded and fail-open (a down collector never
            blocks capture). Internal/private endpoints are blocked — use a reachable collector.</p>
+      </div>
+
+      {/* SIEM S3 / data-lake delivery */}
+      <div className="panel settings-card">
+        <h2>S3 / data-lake delivery</h2>
+        <p className="muted" style={{ fontSize: 12 }}>Independent of the HTTP push above — write
+           each finding as a JSON object to an S3 bucket for a <strong>Panther S3 log source</strong>,
+           Athena, or Snowflake. Uses the <strong>same severity threshold</strong> as SIEM forwarding.</p>
+        <div className="field-grid">
+          <label className="field-wide">Bucket
+            <input placeholder="my-warden-logs"
+                   value={s3Cfg.bucket} onChange={(e) => setS3Cfg((s) => ({ ...s, bucket: e.target.value }))} /></label>
+          <label>Prefix (optional)
+            <input placeholder="warden/"
+                   value={s3Cfg.prefix} onChange={(e) => setS3Cfg((s) => ({ ...s, prefix: e.target.value }))} /></label>
+          <label>Region
+            <input placeholder="us-east-1"
+                   value={s3Cfg.region} onChange={(e) => setS3Cfg((s) => ({ ...s, region: e.target.value }))} /></label>
+          <label>AWS access key ID {s3Cfg.configured && <span className="muted">(set — leave blank to keep)</span>}
+            <input placeholder={s3Cfg.configured ? "••••••••" : "AKIA…"}
+                   value={s3Cfg.keyId} onChange={(e) => setS3Cfg((s) => ({ ...s, keyId: e.target.value }))} /></label>
+          <label>AWS secret access key {s3Cfg.configured && <span className="muted">(set — leave blank to keep)</span>}
+            <input type="password" placeholder={s3Cfg.configured ? "••••••••" : "secret"}
+                   value={s3Cfg.secret} onChange={(e) => setS3Cfg((s) => ({ ...s, secret: e.target.value }))} /></label>
+        </div>
+        <div className="form-row" style={{ gap: 10 }}>
+          <button type="button" className="primary-btn slim" onClick={saveS3}>Save S3 delivery</button>
+          <button type="button" className="mini-btn" onClick={testS3}>Write test object</button>
+        </div>
+        <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Objects are written under
+           <code> &lt;prefix&gt;/warden/findings/YYYY/MM/DD/…json</code>. Credentials are stored
+           write-only. Grant the key <code>s3:PutObject</code> on the bucket only.</p>
       </div>
 
       {/* Usage */}
