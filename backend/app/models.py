@@ -62,6 +62,13 @@ class Tenant(Base):
     siem_token = Column(String(1024), default="")     # bearer / HEC token (write-only via API)
     siem_min_severity = Column(String(16), default="high")
     siem_format = Column(String(16), default="json")  # json | splunk_hec | cef
+    # SIEM/data-lake delivery to S3 (independent of the HTTP push above): batched-ish per-
+    # finding JSON objects to a bucket a Panther S3 log source / Athena / Snowflake can ingest.
+    siem_s3_bucket = Column(String(255), default="")
+    siem_s3_prefix = Column(String(255), default="")
+    siem_s3_region = Column(String(32), default="")
+    siem_s3_key_id = Column(String(128), default="")   # AWS access key id (write-only via API)
+    siem_s3_secret = Column(String(256), default="")   # AWS secret access key (write-only)
     # Per-tenant policy posture (each org picks its own monitor/enforce stance; empty/None
     # = inherit the global env default, same tri-state pattern as judge_enabled).
     gateway_enforce = Column(Boolean, nullable=True, default=None)
@@ -107,6 +114,13 @@ class Tenant(Base):
                 "siem_url": self.siem_url or "",
                 "siem_min_severity": self.siem_min_severity or "high",
                 "siem_format": self.siem_format or "json",
+                "siem_s3_bucket": self.siem_s3_bucket or "",
+                "siem_s3_prefix": self.siem_s3_prefix or "",
+                "siem_s3_region": self.siem_s3_region or "",
+                # creds are write-only; expose only whether S3 delivery is fully configured.
+                "siem_s3_configured": bool((self.siem_s3_bucket or "").strip()
+                                           and (self.siem_s3_key_id or "").strip()
+                                           and (self.siem_s3_secret or "").strip()),
                 "siem_token_set": bool((self.siem_token or "").strip()),
                 "gateway_enforce": self.gateway_enforce,
                 "gateway_block_severity": self.gateway_block_severity or "",

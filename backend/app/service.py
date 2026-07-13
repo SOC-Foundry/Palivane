@@ -98,4 +98,13 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                          {**result, "finding_id": finding_id},
                          subject=item.subject, actor=item.sender,
                          surface=item.surface.value, org=tenant.slug)
+        # Independent S3/data-lake sink (can run alongside the HTTP push above).
+        if tenant is not None and (tenant.siem_s3_bucket or "").strip():
+            from . import siem_s3
+            siem_s3.forward_s3(tenant.siem_s3_bucket.strip(), tenant.siem_s3_prefix or "",
+                               tenant.siem_s3_region or "", tenant.siem_s3_key_id or "",
+                               tenant.siem_s3_secret or "", tenant.siem_min_severity,
+                               {**result, "finding_id": finding_id},
+                               subject=item.subject, actor=item.sender,
+                               surface=item.surface.value, org=tenant.slug)
     return {"finding_id": finding_id, "judge_used": engine.judge_enabled, **result}

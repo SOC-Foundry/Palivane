@@ -195,6 +195,11 @@ class TenantUpdate(BaseModel):
     siem_token: str | None = None           # bearer / Splunk-HEC token (write-only)
     siem_min_severity: str | None = None    # minimum severity to forward
     siem_format: str | None = None          # json | splunk_hec | cef
+    siem_s3_bucket: str | None = Field(None, max_length=255)   # S3 delivery bucket
+    siem_s3_prefix: str | None = Field(None, max_length=255)   # key prefix
+    siem_s3_region: str | None = Field(None, max_length=32)
+    siem_s3_key_id: str | None = Field(None, max_length=128)   # AWS access key id (write-only)
+    siem_s3_secret: str | None = Field(None, max_length=256)   # AWS secret (write-only)
     # Policy posture (per-org monitor/enforce): "on"/"off" force it, "inherit" follows
     # the global GATEWAY_ENFORCE. Severities: "" = inherit the global threshold.
     gateway_enforce: Literal["on", "off", "inherit"] | None = None

@@ -237,6 +237,18 @@ def test_siem(current: User = Depends(require_admin), db: Session = Depends(get_
     return {"ok": ok}
 
 
+@app.post("/api/siem/s3/test")
+def test_siem_s3(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Write a sample object to the tenant's configured S3 delivery bucket (Settings → SIEM)."""
+    from . import siem_s3
+    t = db.get(Tenant, current.tenant_id)
+    if not t or not (t.siem_s3_bucket or "").strip():
+        raise HTTPException(status_code=400, detail="no S3 bucket configured")
+    ok, detail = siem_s3.test(t.siem_s3_bucket.strip(), t.siem_s3_prefix or "",
+                              t.siem_s3_region or "", t.siem_s3_key_id or "", t.siem_s3_secret or "")
+    return {"ok": ok, "detail": detail}
+
+
 @app.post("/api/alerts/digest/run")
 def run_digest_now(current: User = Depends(require_admin), db: Session = Depends(get_db)):
     """Force-send this tenant's digest now if one is due (Settings → Alerts button, or a

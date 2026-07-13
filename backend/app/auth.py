@@ -788,6 +788,17 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         if body.siem_format not in ("json", "splunk_hec", "cef"):
             raise HTTPException(status_code=400, detail="invalid siem_format")
         tenant.siem_format = body.siem_format
+    # SIEM S3 delivery config (creds set only when a non-empty value is provided → write-only).
+    if body.siem_s3_bucket is not None:
+        tenant.siem_s3_bucket = body.siem_s3_bucket.strip()
+    if body.siem_s3_prefix is not None:
+        tenant.siem_s3_prefix = body.siem_s3_prefix.strip()
+    if body.siem_s3_region is not None:
+        tenant.siem_s3_region = body.siem_s3_region.strip()
+    if body.siem_s3_key_id:
+        tenant.siem_s3_key_id = body.siem_s3_key_id.strip()
+    if body.siem_s3_secret:
+        tenant.siem_s3_secret = body.siem_s3_secret.strip()
     if body.gateway_enforce is not None:
         tenant.gateway_enforce = _JUDGE[body.gateway_enforce]  # same tri-state mapping
     for sev_field in ("gateway_block_severity", "mcp_block_severity"):
