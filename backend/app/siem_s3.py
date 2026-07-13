@@ -14,10 +14,31 @@ even where boto3 isn't installed (tests mock the put).
 from __future__ import annotations
 
 import json
+import threading
 import time
 import uuid
 
 from . import siem  # reuse _fields + _RANK for a consistent event shape/threshold
+
+# boto3 clients are thread-safe once built, but building one per put costs a fresh TLS
+# handshake — cache per credential set. Small hard cap: on overflow just clear (clients
+# rebuild on demand), which also evicts entries for since-rotated tenant keys.
+_clients: dict[tuple[str, str, str], object] = {}
+_clients_lock = threading.Lock()
+
+
+def _client(region: str, key_id: str, secret: str):
+    import boto3  # noqa: PLC0415
+
+    ck = (region or "", key_id, secret)
+    with _clients_lock:
+        c = _clients.get(ck)
+        if c is None:
+            if len(_clients) >= 64:
+                _clients.clear()
+            c = _clients[ck] = boto3.client("s3", region_name=(region or None),
+                                            aws_access_key_id=key_id, aws_secret_access_key=secret)
+        return c
 
 
 def _key(prefix: str) -> str:
@@ -32,12 +53,10 @@ def _key(prefix: str) -> str:
 def _put(bucket: str, prefix: str, region: str, key_id: str, secret: str, fields: dict) -> tuple[bool, str]:
     """PUT one finding object to S3. Returns (ok, detail). boto3 imported lazily."""
     try:
-        import boto3  # noqa: PLC0415
+        s3 = _client(region, key_id, secret)
     except Exception as e:      # boto3 not installed
         return False, f"boto3 unavailable: {e}"
     try:
-        s3 = boto3.client("s3", region_name=(region or None),
-                          aws_access_key_id=key_id, aws_secret_access_key=secret)
         s3.put_object(Bucket=bucket, Key=_key(prefix),
                       Body=json.dumps(fields).encode(), ContentType="application/json")
         return True, ""
