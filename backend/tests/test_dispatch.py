@@ -30,6 +30,34 @@ def test_alerts_and_siem_use_bounded_dispatch(monkeypatch):
     assert len(seen) <= 8 + 1
 
 
+def test_dispatch_drops_when_saturated(monkeypatch):
+    # When every slot (workers + queue) is taken, submit drops instead of queueing.
+    # Own executor: the shared pool may still be draining other tests' delivery jobs.
+    from concurrent.futures import ThreadPoolExecutor
+    import app.dispatch as dispatch
+    ex = ThreadPoolExecutor(max_workers=2, thread_name_prefix="test-dispatch")
+    monkeypatch.setattr(dispatch, "_executor", ex)
+    monkeypatch.setattr(dispatch, "_slots", threading.BoundedSemaphore(1))
+    started, release = threading.Event(), threading.Event()
+    ran = []
+    try:
+        dispatch.submit(lambda: (started.set(), release.wait(5)))
+        assert started.wait(3)                      # the only slot is now held
+        dispatch.submit(lambda: ran.append("overflow"))
+        assert ran == []                            # dropped synchronously, never queued
+        release.set()
+        # the slot frees only once the blocker's finally runs — wait for it, then hand it back
+        assert dispatch._slots.acquire(timeout=3)
+        dispatch._slots.release()
+
+        done = threading.Event()
+        dispatch.submit(lambda: (ran.append("after"), done.set()))
+        assert done.wait(3) and ran == ["after"]    # slot was released for later jobs
+    finally:
+        release.set()
+        ex.shutdown(wait=True)
+
+
 def test_confirmed_leak_helper():
     from app.detectors.shadow_ai import confirmed_leak, HIGH_ENTROPY_TITLE
     assert confirmed_leak([{"category": "secret_leak", "title": "Credentials/secrets in outbound content"}])
