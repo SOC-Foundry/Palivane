@@ -1,0 +1,7 @@
+name = "warden-front"
+main = "worker.js"
+compatibility_date = "2026-07-01"
+
+routes = [
+  { pattern = "warden.tachtech.net/*", zone_name = "tachtech.net" }
+]
