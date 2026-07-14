@@ -130,6 +130,16 @@ class LoginRequest(BaseModel):
     org: str = ""
 
 
+class ForgotRequest(BaseModel):
+    email: str = Field(min_length=3)
+    org: str = ""   # optional disambiguation, same semantics as login
+
+
+class ResetRequest(BaseModel):
+    token: str = Field(min_length=10)
+    password: str = Field(min_length=8)
+
+
 class SignupRequest(BaseModel):
     org_name: str = Field(min_length=2, description="organization / tenant name")
     email: str = Field(min_length=3)
@@ -139,7 +149,9 @@ class SignupRequest(BaseModel):
 
 class UserCreate(BaseModel):
     email: str = Field(min_length=3)
-    password: str = Field(min_length=8)
+    # Empty password = email invite: the account is created with an unguessable random
+    # password and the user gets a set-password link (requires the email plane).
+    password: str = ""
     role: Literal["admin", "analyst"] = "analyst"
 
 

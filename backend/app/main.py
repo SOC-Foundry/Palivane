@@ -179,12 +179,14 @@ async def _metrics_middleware(request, call_next):
 
 @app.get("/api/health")
 def health():
+    from . import email as email_mod
     return {
         "status": "ok",
         "judge_enabled": engine.judge_enabled,
         "judge_model": engine.judge.model if engine.judge_enabled else None,
         "judge_provider": engine.judge.provider if engine.judge_enabled else None,
         "allow_signup": settings.allow_signup,
+        "email_enabled": email_mod.enabled(),
     }
 
 

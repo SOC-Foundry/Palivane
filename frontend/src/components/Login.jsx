@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { api, setToken } from "../api.js";
 
 export default function Login({ onAuthed, onBack }) {
-  const [mode, setMode] = useState("signin");   // "signin" | "signup"
+  const [mode, setMode] = useState("signin");   // "signin" | "signup" | "forgot" | "reset"
+  const [resetToken, setResetToken] = useState(null);
+  const [notice, setNotice] = useState(null);   // green info banner (sent / reset ok)
+  const [emailEnabled, setEmailEnabled] = useState(false);
   const [org, setOrg] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -12,10 +15,29 @@ export default function Login({ onAuthed, onBack }) {
   const [mfaChallenge, setMfaChallenge] = useState(null);   // set when login needs a 2nd factor
   const [mfaCode, setMfaCode] = useState("");
   const [pendingOrg, setPendingOrg] = useState(null);       // signup became a join request
+  const [pendingKind, setPendingKind] = useState("approval"); // "approval" | "email"
 
   // Only offer self-serve org creation when the server permits it.
   useEffect(() => {
-    api.health().then((h) => setAllowSignup(!!h.allow_signup)).catch(() => setAllowSignup(false));
+    api.health().then((h) => {
+      setAllowSignup(!!h.allow_signup);
+      setEmailEnabled(!!h.email_enabled);
+    }).catch(() => setAllowSignup(false));
+    // Password-reset links land as /#reset=TOKEN (fragment: never sent to the server).
+    const m = window.location.hash.match(/^#reset=(.+)$/);
+    if (m) {
+      setResetToken(m[1]);
+      setMode("reset");
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    // Join-confirm links bounce back as /#join=approved|verified|invalid.
+    const j = window.location.hash.match(/^#join=(\w+)$/);
+    if (j) {
+      window.history.replaceState(null, "", window.location.pathname);
+      if (j[1] === "approved") setNotice("Email confirmed — your account is ready. Sign in with the password you chose.");
+      else if (j[1] === "verified") setNotice("Email confirmed — an admin has been notified and will approve your request.");
+      else setErr("That confirmation link is invalid or has expired — sign up again to get a new one.");
+    }
   }, []);
 
   const signup = mode === "signup";
@@ -24,19 +46,35 @@ export default function Login({ onAuthed, onBack }) {
     e.preventDefault();
     setBusy(true);
     setErr(null);
+    setNotice(null);
     try {
+      if (mode === "forgot") {
+        await api.forgot(email.trim(), org.trim());
+        setNotice("If that address has an account, a reset link is on its way. It's valid for 30 minutes.");
+        setMode("signin");
+        return;
+      }
+      if (mode === "reset") {
+        await api.resetPassword(resetToken, password);
+        setNotice("Password updated — sign in with your new password.");
+        setMode("signin"); setPassword(""); setResetToken(null);
+        return;
+      }
       const res = signup
         ? await api.signup(org.trim(), email.trim(), password)
         : await api.login(email.trim(), password, org.trim());
       if (res.mfa_required) { setMfaChallenge(res.challenge); return; }   // second-factor step
       // Domain capture: the email belongs to an org already on Warden — request queued.
-      if (res.status === "pending_approval") { setPendingOrg(res.org); return; }
+      if (res.status === "pending_approval") { setPendingKind("approval"); setPendingOrg(res.org); return; }
+      if (res.status === "confirm_email") { setPendingKind("email"); setPendingOrg(res.org); return; }
       setToken(res.access_token);
       onAuthed(res.user);
     } catch (e) {
       const msg = String(e.message || e);
       setErr(
+        mode === "reset" ? "That reset link is invalid or has expired — request a new one." :
         msg.includes("401") ? "Invalid email or password." :
+        msg.includes("403") && msg.includes("suspended") ? "This organization is suspended." :
         msg.includes("403") ? "Self-serve signup is disabled here." :
         msg.includes("409") && signup && msg.includes("awaiting approval")
           ? "Your join request is still awaiting an admin's approval." :
@@ -77,9 +115,15 @@ export default function Login({ onAuthed, onBack }) {
           <img className="login-logo" src="/warden-emblem.png" alt="Warden" />
           <div className="login-wordmark">WARDEN</div>
           <p className="login-sub">
-            <strong>{pendingOrg}</strong> is already on Warden, so we sent your request to
-            its administrators instead of creating a new organization. You can sign in with
-            the password you chose once an admin approves you.
+            {pendingKind === "email" ? (
+              <><strong>{pendingOrg}</strong> is already on Warden. We emailed you a
+              confirmation link — click it to verify your address and complete your
+              request to join.</>
+            ) : (
+              <><strong>{pendingOrg}</strong> is already on Warden, so we sent your request to
+              its administrators instead of creating a new organization. You can sign in with
+              the password you chose once an admin approves you.</>
+            )}
           </p>
           <button type="button" className="primary-btn"
                   onClick={() => { setPendingOrg(null); setMode("signin"); setErr(null); }}>
@@ -116,26 +160,53 @@ export default function Login({ onAuthed, onBack }) {
         <img className="login-logo" src="/warden-emblem.png" alt="Warden" />
         <div className="login-wordmark">WARDEN</div>
         <p className="login-sub">
-          {signup ? "Create your organization" : "Sign in to your security workspace"}
+          {mode === "signup" ? "Create your organization" :
+           mode === "forgot" ? "We'll email you a password-reset link" :
+           mode === "reset" ? "Choose a new password" :
+           "Sign in to your security workspace"}
         </p>
-        <input placeholder={signup ? "organization name" : "organization (only if required)"}
-               value={org} onChange={(e) => setOrg(e.target.value)}
-               autoFocus={signup} required={signup} />
-
-        <input type="email" placeholder="email" value={email}
-               onChange={(e) => setEmail(e.target.value)} autoFocus={!signup} required />
-        <input type="password" placeholder={signup ? "password (min 8 chars)" : "password"}
-               value={password} onChange={(e) => setPassword(e.target.value)} required />
+        {mode !== "reset" && (
+          <input placeholder={signup ? "organization name" : "organization (only if required)"}
+                 value={org} onChange={(e) => setOrg(e.target.value)}
+                 autoFocus={signup} required={signup} />
+        )}
+        {mode !== "reset" && (
+          <input type="email" placeholder="email" value={email}
+                 onChange={(e) => setEmail(e.target.value)} autoFocus={!signup} required />
+        )}
+        {mode !== "forgot" && (
+          <input type="password"
+                 placeholder={mode === "signin" ? "password" : "new password (min 8 chars)"}
+                 value={password} onChange={(e) => setPassword(e.target.value)}
+                 autoFocus={mode === "reset"} required />
+        )}
+        {notice && <div className="login-sub" style={{ color: "var(--ok, #4caf50)" }}>{notice}</div>}
         {err && <div className="error">{err}</div>}
-        <button className="primary-btn" disabled={busy || !email || !password || (signup && !org)}>
-          {busy ? "…" : signup ? "Create organization" : "Sign in"}
+        <button className="primary-btn"
+                disabled={busy || (mode === "forgot" ? !email : !password || (mode !== "reset" && !email)) || (signup && !org)}>
+          {busy ? "…" :
+           mode === "signup" ? "Create organization" :
+           mode === "forgot" ? "Send reset link" :
+           mode === "reset" ? "Set new password" : "Sign in"}
         </button>
-        {!signup && (
+        {mode === "signin" && (
           <button type="button" className="sso-btn" onClick={ssoLogin}>
             Sign in with SSO
           </button>
         )}
-        {(allowSignup || signup) && (
+        {mode === "signin" && emailEnabled && (
+          <button type="button" className="link-btn link-muted"
+                  onClick={() => { setErr(null); setNotice(null); setMode("forgot"); }}>
+            Forgot password?
+          </button>
+        )}
+        {(mode === "forgot" || mode === "reset") && (
+          <button type="button" className="link-btn link-muted"
+                  onClick={() => { setErr(null); setNotice(null); setMode("signin"); }}>
+            ← Back to sign in
+          </button>
+        )}
+        {(mode === "signin" || mode === "signup") && (allowSignup || signup) && (
           <button type="button" className="link-btn" style={{ marginTop: 10 }}
                   onClick={() => { setErr(null); setMode(signup ? "signin" : "signup"); }}>
             {signup ? "← Back to sign in" : "Create a new organization →"}

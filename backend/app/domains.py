@@ -183,6 +183,55 @@ def approve(db: Session, req: JoinRequest, decided_by: str) -> User:
     return user
 
 
+@router.get("/auth/join/confirm")
+def confirm_join(token: str, db: Session = Depends(get_db)):
+    """Landing for the emailed confirm link. Unauthenticated by design — the signed token
+    is the credential. Proves mailbox ownership, then either auto-joins (when the claim
+    has auto_approve) or flags the request verified and notifies the tenant's admins.
+    Always redirects to the console with a status fragment (it's clicked from an inbox)."""
+    from fastapi.responses import RedirectResponse  # noqa: PLC0415
+    from . import email as email_mod
+    from .models import Tenant
+    from .security import TokenError, decode_token
+
+    def bounce(state: str) -> RedirectResponse:
+        return RedirectResponse(f"{email_mod.base_url()}/#join={state}")
+
+    try:
+        payload = decode_token(token)
+    except TokenError:
+        return bounce("invalid")
+    if payload.get("typ") != "join":
+        return bounce("invalid")
+    req = db.get(JoinRequest, int(payload.get("sub", 0)))
+    if req is None or req.status != "pending":
+        return bounce("invalid")
+    tenant = db.get(Tenant, req.tenant_id)
+    if tenant is None or tenant.status == "suspended":
+        return bounce("invalid")
+    req.email_verified = True
+    db.commit()
+
+    claim = match_verified(db, req.email)
+    if claim is not None and claim.tenant_id == req.tenant_id and claim.auto_approve:
+        if db.query(User).filter(User.tenant_id == req.tenant_id,
+                                 User.email == req.email).first():
+            return bounce("invalid")
+        approve(db, req, f"auto ({claim.domain})")
+        return bounce("approved")
+
+    admins = (db.query(User).filter(User.tenant_id == req.tenant_id, User.role == "admin",
+                                    User.active.is_(True)).all())
+    for a in admins:
+        email_mod.send(
+            a.email, f"Warden join request: {req.email}",
+            f"{req.email} verified their address and requests to join your "
+            f"\"{tenant.name or tenant.slug}\" organization on Warden.\n\n"
+            f"Approve or deny it on the Team page: {email_mod.base_url()}\n\n"
+            "(Their mailbox ownership is confirmed — they clicked a link sent to it.)")
+    return bounce("verified")
+
+
 @router.post("/join-requests/{request_id}/approve")
 def approve_join(request_id: int, current: User = Depends(require_admin),
                  db: Session = Depends(get_db)):
