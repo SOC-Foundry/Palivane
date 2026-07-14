@@ -274,6 +274,9 @@ class JoinRequest(Base):
     email = Column(String(320), nullable=False)
     password_hash = Column(String(256), nullable=False)
     status = Column(String(16), default="pending", nullable=False)  # pending|approved|denied
+    # True once the requester clicked the emailed confirm link — i.e. mailbox ownership is
+    # proven. Stays False (and is shown to the approving admin) when email is disabled.
+    email_verified = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
     decided_at = Column(DateTime, nullable=True)
     decided_by = Column(String(320), default="")
@@ -281,6 +284,7 @@ class JoinRequest(Base):
     def to_dict(self) -> dict:
         return {
             "id": self.id, "email": self.email, "status": self.status,
+            "email_verified": self.email_verified,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "decided_at": self.decided_at.isoformat() if self.decided_at else None,
             "decided_by": self.decided_by,

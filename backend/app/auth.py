@@ -28,8 +28,8 @@ from .models import (
 )
 from .schemas import (
     AgentCreate, AgentRoleIn, AgentUpdate, ApiKeyCreate, EnrollmentTokenCreate, EnrollRequest, LoginRequest, MFACode, MFAVerify,
-    DPAAccept, OIDCConfig, SAMLConfig, SignupRequest, TenantDelete, TenantUpdate, UpstreamConfig,
-    UserCreate, UserUpdate,
+    DPAAccept, ForgotRequest, OIDCConfig, ResetRequest, SAMLConfig, SignupRequest, TenantDelete, TenantUpdate,
+    UpstreamConfig, UserCreate, UserUpdate,
 )
 from .upstreams import PROVIDERS, resolve as resolve_upstream
 from .security import (
@@ -145,10 +145,25 @@ def signup(body: SignupRequest, db: Session = Depends(get_db)):
         else:   # decided earlier — allow a fresh attempt with a fresh password
             req.status = "pending"
             req.password_hash = hash_password(body.password)
+            req.email_verified = False
             req.decided_at = None
             req.decided_by = ""
         db.commit()
         db.refresh(req)
+
+        from . import email as email_mod
+        if email_mod.enabled():
+            # Mailbox ownership isn't proven yet — park the request behind an emailed
+            # confirm link. Even auto-approve waits for the click (that's the point).
+            token = create_token({"typ": "join", "sub": str(req.id)}, ttl=86400)
+            email_mod.send(
+                email, f"Confirm your request to join {tenant.name or tenant.slug} on Warden",
+                f"Someone (hopefully you) asked to join the \"{tenant.name or tenant.slug}\" "
+                f"organization on Warden as {email}.\n\n"
+                f"Confirm it here (link valid for 24 hours):\n"
+                f"{email_mod.base_url()}/api/auth/join/confirm?token={token}\n\n"
+                "If this wasn't you, ignore this email and nothing will happen.")
+            return {"status": "confirm_email", "org": tenant.name or tenant.slug}
         if claim.auto_approve:
             user = domains_mod.approve(db, req, f"auto ({claim.domain})")
             return _session_payload(user, tenant)
@@ -245,6 +260,63 @@ def _session_response(user: User) -> dict:
     token = create_token({"sub": str(user.id), "tenant_id": user.tenant_id,
                           "role": user.role, "tv": user.token_version})
     return {"access_token": token, "token_type": "bearer", "user": user.to_dict()}
+
+
+@router.post("/auth/forgot")
+def forgot_password(body: ForgotRequest, request: Request, db: Session = Depends(get_db)):
+    """Email a password-reset link. ALWAYS returns 200 with the same body — the response
+    must not reveal whether an account exists. Reuses the login throttle so this can't be
+    used as an email-spam cannon; throttled requests silently skip the send."""
+    from . import email as email_mod
+    email_addr = body.email.lower().strip()
+    ip = _client_ip(request)
+    if not email_mod.enabled() or _throttled(db, email_addr, ip):
+        return {"ok": True}
+    db.add(LoginAttempt(email=email_addr, ip=ip))   # count toward the throttle window
+    db.commit()
+
+    q = db.query(User).filter(User.email == email_addr, User.active.is_(True))
+    if body.org.strip():
+        tenant = db.query(Tenant).filter(Tenant.slug == body.org.strip().lower()).first()
+        q = q.filter(User.tenant_id == tenant.id) if tenant else q.filter(User.id == -1)
+    for user in q.limit(5).all():   # one reset link per matching account (multi-org emails)
+        tenant = db.get(Tenant, user.tenant_id)
+        if tenant is None or tenant.status == "suspended":
+            continue
+        token = create_token({"typ": "pwreset", "sub": str(user.id),
+                              "tv": user.token_version}, ttl=1800)
+        email_mod.send(
+            user.email, "Reset your Warden password",
+            f"A password reset was requested for your Warden account "
+            f"({user.email}, organization \"{tenant.slug}\").\n\n"
+            f"Reset it here (link valid for 30 minutes):\n"
+            f"{email_mod.base_url()}/#reset={token}\n\n"
+            "If you didn't request this, you can ignore this email — "
+            "your password is unchanged.")
+    return {"ok": True}
+
+
+@router.post("/auth/reset")
+def reset_password(body: ResetRequest, db: Session = Depends(get_db)):
+    """Set a new password from a reset token. Bumps token_version, which both revokes
+    every existing session and makes the link single-use (its `tv` no longer matches)."""
+    try:
+        payload = decode_token(body.token)
+    except TokenError:
+        raise HTTPException(status_code=400, detail="invalid or expired reset link")
+    if payload.get("typ") != "pwreset":
+        raise HTTPException(status_code=400, detail="invalid or expired reset link")
+    user = db.get(User, int(payload.get("sub", 0)))
+    if user is None or not user.active or int(payload.get("tv", -1)) != user.token_version:
+        raise HTTPException(status_code=400, detail="invalid or expired reset link")
+    from .lifecycle import ensure_active
+    ensure_active(db, user.tenant_id)
+    user.password_hash = hash_password(body.password)
+    user.token_version += 1
+    db.query(LoginAttempt).filter(LoginAttempt.email == user.email).delete()
+    db.commit()
+    audit_log.record(db, user.tenant_id, user.email, "user.password_reset", target=user.email)
+    return {"ok": True}
 
 
 @router.post("/auth/mfa/verify")
@@ -375,16 +447,38 @@ def create_user(body: UserCreate, current: User = Depends(require_admin), db: Se
     from .metering import check_resource_quota
     check_resource_quota(db, current.tenant_id, "users",
                          db.query(User).filter(User.tenant_id == current.tenant_id).count())
+    from . import email as email_mod
+    invite = not body.password
+    if invite and not email_mod.enabled():
+        raise HTTPException(status_code=400,
+                            detail="a password is required (email invites are not "
+                                   "configured on this deployment)")
+    if not invite and len(body.password) < 8:
+        raise HTTPException(status_code=422, detail="password must be at least 8 characters")
     user = User(
         tenant_id=current.tenant_id, email=email,
-        password_hash=hash_password(body.password), role=body.role,
+        # Invited users get an unguessable placeholder; only the emailed set-password
+        # link (below) can turn this into a usable login.
+        password_hash=hash_password(body.password or secrets.token_urlsafe(32)),
+        role=body.role,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
+    if invite:
+        tenant = db.get(Tenant, current.tenant_id)
+        token = create_token({"typ": "pwreset", "sub": str(user.id),
+                              "tv": user.token_version}, ttl=259200)   # 3 days
+        email_mod.send(
+            email, f"You've been invited to {tenant.name or tenant.slug} on Warden",
+            f"{current.email} invited you to the \"{tenant.name or tenant.slug}\" "
+            f"organization on Warden as {body.role}.\n\n"
+            f"Set your password to activate the account (link valid for 3 days):\n"
+            f"{email_mod.base_url()}/#reset={token}\n\n"
+            "If you weren't expecting this, you can ignore it.")
     audit_log.record(db, current.tenant_id, current.email, "user.create",
-                     target=email, detail={"role": body.role})
-    return user.to_dict()
+                     target=email, detail={"role": body.role, "invite": invite})
+    return user.to_dict() | {"invited": invite}
 
 
 def _active_admin_count(db: Session, tenant_id: int) -> int:

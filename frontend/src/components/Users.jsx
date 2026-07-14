@@ -13,6 +13,8 @@ export default function Users({ currentUser }) {
   const [role, setRole] = useState("analyst");
   const [adding, setAdding] = useState(false);
 
+  const [emailEnabled, setEmailEnabled] = useState(false);
+
   // domain capture
   const [domains, setDomains] = useState([]);
   const [joinReqs, setJoinReqs] = useState([]);
@@ -24,9 +26,10 @@ export default function Users({ currentUser }) {
     try {
       const r = await api.users();
       setUsers(r.users);
-      const [d, j] = await Promise.all([api.domains(), api.joinRequests()]);
+      const [d, j, h] = await Promise.all([api.domains(), api.joinRequests(), api.health()]);
       setDomains(d.domains);
       setJoinReqs(j.requests);
+      setEmailEnabled(!!h.email_enabled);
     } catch (e) {
       setErr(String(e.message || e));
     } finally {
@@ -97,14 +100,20 @@ export default function Users({ currentUser }) {
         <div className="add-user-row">
           <input type="email" placeholder="email" value={email}
                  onChange={(e) => setEmail(e.target.value)} required />
-          <input type="password" placeholder="temporary password (min 8)" value={password}
-                 onChange={(e) => setPassword(e.target.value)} minLength={8} required />
+          <input type="password"
+                 placeholder={emailEnabled ? "temporary password (blank = email invite)"
+                                           : "temporary password (min 8)"}
+                 value={password} onChange={(e) => setPassword(e.target.value)}
+                 minLength={password ? 8 : undefined} required={!emailEnabled} />
           <select value={role} onChange={(e) => setRole(e.target.value)}>
             <option value="analyst">Analyst</option>
             <option value="admin">Admin</option>
           </select>
-          <button className="primary-btn slim" disabled={adding || !email || password.length < 8}>
-            {adding ? "…" : "Add user"}
+          <button className="primary-btn slim"
+                  disabled={adding || !email ||
+                            (emailEnabled ? (password.length > 0 && password.length < 8)
+                                          : password.length < 8)}>
+            {adding ? "…" : emailEnabled && !password ? "Send invite" : "Add user"}
           </button>
         </div>
       </form>
@@ -124,6 +133,9 @@ export default function Users({ currentUser }) {
               {joinReqs.map((r) => (
                 <tr key={r.id}>
                   <td className="ut-email">{r.email}</td>
+                  <td className="muted">
+                    {r.email_verified ? "✓ email verified" : "email not verified"}
+                  </td>
                   <td className="muted">{r.created_at?.slice(0, 10)}</td>
                   <td className="ta-right ut-actions">
                     <button className="mini-btn" disabled={domBusy}

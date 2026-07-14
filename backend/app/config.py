@@ -59,6 +59,14 @@ class Settings:
     # counted separately from the gateway so agentic volume can't starve LLM traffic
     # (0 = unlimited). A tenant's own ingest_rate_limit overrides this.
     ingest_rate_limit: int = int(os.getenv("INGEST_RATE_LIMIT", "0"))
+    # Outbound email (password reset, join verification, invites). Dark until SMTP_HOST +
+    # MAIL_FROM are set; flows degrade to email-less behavior. Provider-neutral SMTP.
+    smtp_host: str = os.getenv("SMTP_HOST", "")
+    smtp_port: int = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user: str = os.getenv("SMTP_USER", "")
+    smtp_pass: str = os.getenv("SMTP_PASS", "")
+    smtp_tls: bool = os.getenv("SMTP_TLS", "true").lower() in ("1", "true", "yes")
+    mail_from: str = os.getenv("MAIL_FROM", "")
     # Per-tenant resource quotas for open multi-tenant signup (0 = unlimited). A tenant's
     # own quota_* column (operator-set via `python -m app.users set-quota`) overrides the
     # global default — tenant admins can NOT raise their own quotas through the API.
