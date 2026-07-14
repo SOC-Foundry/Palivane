@@ -1,5 +1,5 @@
 import { IconShield, IconPlug, IconTarget, IconAlert, IconInbox, IconClipboard } from "./icons.jsx";
-import { SiteNav, SiteFooter, Shot } from "./SiteChrome.jsx";
+import { SiteNav, SiteFooter, Shot, Clip } from "./SiteChrome.jsx";
 
 const FRONTS = [
   {
@@ -69,14 +69,14 @@ export default function Landing({ onSignIn }) {
           <h2 className="lp-h2">See Warden in action</h2>
           <p className="lp-sub">One console across every plane — findings, shadow-AI discovery,
              granular policy, and agent governance.</p>
-          <Shot lead src="/shots/dashboard.png" alt="Warden findings dashboard"
-                caption="Live risk verdicts from the gateway, browser extension, egress proxy & CI." />
+          <Clip lead src="/shots/demo.mp4?v=2" poster="/shots/dashboard.png?v=2"
+                caption="30-second tour — sign in, triage a critical finding, discovery, policy, agents & connect." />
           <div className="lp-gallery">
-            <Shot src="/shots/discovery.png" alt="Shadow-AI discovery inventory"
+            <Shot src="/shots/discovery.png?v=2" alt="Shadow-AI discovery inventory"
                   caption="Shadow-AI discovery — every AI tool, by team, with real data exposure." />
-            <Shot src="/shots/policies.png" alt="Policy console"
+            <Shot src="/shots/policies.png?v=2" alt="Policy console"
                   caption="Granular policy — toggle any check, presets, per-user/group overrides." />
-            <Shot src="/shots/agents.png" alt="Agent identity & least-privilege"
+            <Shot src="/shots/agents.png?v=2" alt="Agent identity & least-privilege"
                   caption="Agent identity & least-privilege roles — monitor or enforce." />
           </div>
         </div>
