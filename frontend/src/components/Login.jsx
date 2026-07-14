@@ -38,6 +38,13 @@ export default function Login({ onAuthed, onBack }) {
       else if (j[1] === "verified") setNotice("Email confirmed — an admin has been notified and will approve your request.");
       else setErr("That confirmation link is invalid or has expired — sign up again to get a new one.");
     }
+    // New-org signup verify links bounce back as /#verified=ok|bad.
+    const v = window.location.hash.match(/^#verified=(\w+)$/);
+    if (v) {
+      window.history.replaceState(null, "", window.location.pathname);
+      if (v[1] === "ok") setNotice("Email verified — your organization is active. Sign in with your password.");
+      else setErr("That verification link is invalid or has expired — sign up again to get a new one.");
+    }
   }, []);
 
   const signup = mode === "signup";
@@ -67,6 +74,8 @@ export default function Login({ onAuthed, onBack }) {
       // Domain capture: the email belongs to an org already on Warden — request queued.
       if (res.status === "pending_approval") { setPendingKind("approval"); setPendingOrg(res.org); return; }
       if (res.status === "confirm_email") { setPendingKind("email"); setPendingOrg(res.org); return; }
+      // New-org signup with the email plane on — must verify the mailbox first.
+      if (res.status === "verify_email") { setPendingKind("verify"); setPendingOrg(res.org); return; }
       setToken(res.access_token);
       onAuthed(res.user);
     } catch (e) {
@@ -115,7 +124,10 @@ export default function Login({ onAuthed, onBack }) {
           <img className="login-logo" src="/warden-emblem.png" alt="Warden" />
           <div className="login-wordmark">WARDEN</div>
           <p className="login-sub">
-            {pendingKind === "email" ? (
+            {pendingKind === "verify" ? (
+              <>Almost there — we emailed a link to verify your address and activate
+              <strong> {pendingOrg}</strong>. Click it, then sign in.</>
+            ) : pendingKind === "email" ? (
               <><strong>{pendingOrg}</strong> is already on Warden. We emailed you a
               confirmation link — click it to verify your address and complete your
               request to join.</>

@@ -41,6 +41,9 @@ ENV_VARS+="@SEED_ON_START=${SEED_ON_START:-false}"
 # Email plane (password reset / join verification / invites). SMTP_PASS rides in via the
 # optional-secrets loop below (create secret 'warden-smtp-pass' to enable).
 [ -n "${SMTP_HOST:-}" ] && ENV_VARS+="@SMTP_HOST=${SMTP_HOST}@SMTP_PORT=${SMTP_PORT:-587}@SMTP_USER=${SMTP_USER:-}@MAIL_FROM=${MAIL_FROM:-}"
+# Encrypt stored finding content at rest (needs a durable WARDEN_SECRET_KEY — key loss =
+# data loss). Opt-in per deploy; threaded through when set.
+[ -n "${WARDEN_ENCRYPT_FINDINGS:-}" ] && ENV_VARS+="@WARDEN_ENCRYPT_FINDINGS=${WARDEN_ENCRYPT_FINDINGS}"
 [ -n "${INGEST_TENANT:-}" ] && ENV_VARS+="@INGEST_TENANT=${INGEST_TENANT}"
 [ -n "${WARDEN_EXTENSION_ID:-}" ] && ENV_VARS+="@WARDEN_EXTENSION_ID=${WARDEN_EXTENSION_ID}"
 
