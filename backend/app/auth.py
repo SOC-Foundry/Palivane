@@ -174,11 +174,23 @@ def signup(body: SignupRequest, db: Session = Depends(get_db)):
     db.add(tenant)
     db.commit()
     db.refresh(tenant)
-    user = User(tenant_id=tenant.id, email=body.email.lower().strip(),
-                password_hash=hash_password(body.password), role="admin")
+    from . import email as email_mod
+    verify = email_mod.enabled()   # require mailbox proof when we can send it
+    user = User(tenant_id=tenant.id, email=email,
+                password_hash=hash_password(body.password), role="admin",
+                email_verified=not verify)
     db.add(user)
     db.commit()
     db.refresh(user)
+    if verify:
+        token = create_token({"typ": "email_verify", "sub": str(user.id)}, ttl=86400)
+        email_mod.send(
+            email, "Verify your Warden account",
+            f"Welcome to Warden. Confirm this address to activate your new organization "
+            f"\"{tenant.name or tenant.slug}\" (link valid for 24 hours):\n\n"
+            f"{email_mod.base_url()}/api/auth/verify?token={token}\n\n"
+            "If you didn't sign up, ignore this email.")
+        return {"status": "verify_email", "org": tenant.name or tenant.slug}
     return _session_payload(user, tenant)
 
 
@@ -239,6 +251,10 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
     from .lifecycle import ensure_active
     ensure_active(db, user.tenant_id)
+    if not user.email_verified:
+        raise HTTPException(status_code=403,
+                            detail="verify your email first — check your inbox for the "
+                                   "confirmation link")
 
     # Successful login clears this email's recent failures.
     db.query(LoginAttempt).filter(LoginAttempt.email == email).delete()
@@ -317,6 +333,29 @@ def reset_password(body: ResetRequest, db: Session = Depends(get_db)):
     db.commit()
     audit_log.record(db, user.tenant_id, user.email, "user.password_reset", target=user.email)
     return {"ok": True}
+
+
+@router.get("/auth/verify")
+def verify_email(token: str, db: Session = Depends(get_db)):
+    """Landing for the new-org signup verification link. Marks the mailbox proven and
+    redirects to the console with a status fragment (it's opened from an inbox)."""
+    from fastapi.responses import RedirectResponse
+    from . import email as email_mod
+    base = email_mod.base_url()
+    try:
+        payload = decode_token(token)
+    except TokenError:
+        return RedirectResponse(f"{base}/#verified=bad")
+    if payload.get("typ") != "email_verify":
+        return RedirectResponse(f"{base}/#verified=bad")
+    user = db.get(User, int(payload.get("sub", 0)))
+    if user is None or not user.active:
+        return RedirectResponse(f"{base}/#verified=bad")
+    if not user.email_verified:
+        user.email_verified = True
+        db.commit()
+        audit_log.record(db, user.tenant_id, user.email, "user.email_verified", target=user.email)
+    return RedirectResponse(f"{base}/#verified=ok")
 
 
 @router.post("/auth/mfa/verify")

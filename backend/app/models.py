@@ -159,6 +159,10 @@ class User(Base):
     password_hash = Column(String(256), nullable=False)
     role = Column(String(32), default="analyst")  # admin | analyst
     active = Column(Boolean, default=True)
+    # Mailbox proven. Default True (existing/CLI-created/invited users are trusted); a
+    # self-serve NEW-ORG signup is created False when the email plane is on and can't log
+    # in until the emailed verify link is clicked. False blocks login.
+    email_verified = Column(Boolean, default=True, nullable=False)
     # Bumped to revoke all of this user's existing session tokens ("log out everywhere").
     token_version = Column(Integer, default=0, nullable=False)
     # MFA (TOTP): secret is encrypted at rest; recovery codes stored as sha256 hashes.
