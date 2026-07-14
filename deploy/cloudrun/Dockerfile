@@ -25,6 +25,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ .
 RUN chmod +x docker-entrypoint.sh
 COPY --from=web /web/dist ./static
+# CLI + egress-proxy addon, served publicly via /install.sh and /cli/<name> for self-serve
+# onboarding (see app/distribution.py).
+COPY cli/ ./cli
+COPY proxy/ ./proxy
 ENV WARDEN_STATIC_DIR=/app/static
 
 # Run as a non-root user — smaller blast radius if the app is compromised.
