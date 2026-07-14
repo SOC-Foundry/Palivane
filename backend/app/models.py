@@ -42,6 +42,11 @@ class Tenant(Base):
     # Sensor/ingest requests per minute (capture planes), counted separately from the
     # gateway so agentic tool-call volume can't starve real LLM traffic (0 = inherit global).
     ingest_rate_limit = Column(Integer, default=0)
+    # Resource quotas (0 = inherit the WARDEN_QUOTA_* global). Operator-set only — not
+    # writable through the tenant API, or orgs could raise their own caps.
+    quota_users = Column(Integer, default=0)
+    quota_api_keys = Column(Integer, default=0)
+    quota_ingest_per_day = Column(Integer, default=0)
     # Approved MCP server hosts for this org (comma-separated). Empty = inherit the global
     # MCP_ALLOWED_SERVERS; a non-empty list flags MCP activity to any server not on it.
     mcp_allowed_servers = Column(String(1024), default="")

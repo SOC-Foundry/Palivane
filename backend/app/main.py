@@ -385,11 +385,17 @@ def _enforce_rate(db: Session, tenant_id: int | None) -> None:
     """Count one capture request against the tenant's sensor/ingest quota; 429 if over.
     Uses the `ingest` counter — separate from the gateway budget — so agentic tool-call
     volume can't starve real LLM traffic (bounded by `ingest_rate_limit`, default off)."""
-    from .metering import record_and_check
+    from .metering import check_daily_ingest, record_and_check
     allowed, _count, limit = record_and_check(db, tenant_id, kind="ingest")
     if not allowed:
         raise HTTPException(status_code=429, detail=f"ingest rate limit exceeded ({limit}/min)",
                             headers={"Retry-After": "60"})
+    if tenant_id is not None:
+        day_ok, _today, day_limit = check_daily_ingest(db, tenant_id)
+        if not day_ok:
+            raise HTTPException(status_code=429,
+                                detail=f"daily ingest quota exceeded ({day_limit}/day)",
+                                headers={"Retry-After": "3600"})
 
 
 def _ingest_auth(x_warden_token: str, db: Session) -> tuple[int | None, str]:
