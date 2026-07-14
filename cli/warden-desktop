@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# warden-desktop — govern *desktop* AI apps (Claude/ChatGPT desktop, pinned IDE assistants)
+# that make their own HTTPS calls and can't use the gateway or the browser extension.
+#
+# It runs a LOCAL mitmproxy on 127.0.0.1:8081 with Warden's addon, trusts its CA, and
+# points the machine's system HTTPS proxy at it — so those apps' traffic is inspected and
+# (in enforce mode) blocked before it leaves. Reuses the per-user token that `warden
+# connect` already stored, so no separate sign-in.
+#
+#   warden-desktop install     # set up + start the local proxy (needs sudo for CA + proxy)
+#   warden-desktop uninstall   # stop it, remove the system proxy + CA trust
+#   warden-desktop status
+#
+# macOS and Linux (GNOME). Windows is a separate PowerShell path (see docs).
+set -euo pipefail
+
+WARDEN_URL="${WARDEN_URL:-https://warden.tachtech.net}"
+PORT="${WARDEN_PROXY_PORT:-8081}"
+HOME_DIR="${HOME}"
+WDIR="${HOME_DIR}/.warden"
+ADDON="${WDIR}/warden_addon.py"
+CA="${HOME_DIR}/.mitmproxy/mitmproxy-ca-cert.pem"
+OS="$(uname -s)"
+
+log() { printf '\033[36m[warden-desktop]\033[0m %s\n' "$*"; }
+die() { printf '\033[31m[warden-desktop] %s\033[0m\n' "$*" >&2; exit 1; }
+
+read_token() {
+  # The per-user token warden-connect wrote into Claude Code's settings.
+  local f="${HOME_DIR}/.claude/settings.json"
+  [ -f "$f" ] || die "No Warden token found. Run 'warden connect' first, then re-run this."
+  python3 - "$f" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+env = d.get("env", {})
+tok = env.get("WARDEN_TOKEN") or env.get("ANTHROPIC_AUTH_TOKEN") or ""
+print(tok)
+PY
+}
+
+ensure_mitm() {
+  if command -v mitmdump >/dev/null 2>&1; then return; fi
+  log "installing mitmproxy…"
+  if command -v pipx >/dev/null 2>&1; then pipx install mitmproxy >/dev/null
+  else python3 -m pip install --user --quiet mitmproxy; fi
+  command -v mitmdump >/dev/null 2>&1 || die "mitmproxy install failed; install it manually (pipx install mitmproxy)."
+}
+
+fetch_addon() {
+  mkdir -p "$WDIR"
+  log "fetching capture addon…"
+  curl -fsSL "${WARDEN_URL%/}/cli/warden_addon.py" -o "$ADDON" || die "could not download warden_addon.py from $WARDEN_URL"
+}
+
+bootstrap_ca() {
+  [ -f "$CA" ] && return
+  log "generating mitmproxy CA (first run)…"
+  ( mitmdump -q --listen-port "$PORT" >/dev/null 2>&1 & echo $! >/tmp/warden-mitm-boot.pid ) || true
+  for _ in $(seq 1 20); do [ -f "$CA" ] && break; sleep 0.5; done
+  kill "$(cat /tmp/warden-mitm-boot.pid 2>/dev/null)" 2>/dev/null || true
+  rm -f /tmp/warden-mitm-boot.pid
+  [ -f "$CA" ] || die "mitmproxy CA was not generated at $CA"
+}
+
+trust_ca() {
+  case "$OS" in
+    Darwin)
+      log "trusting the CA (sudo; system keychain)…"
+      sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$CA" ;;
+    Linux)
+      log "trusting the CA (sudo; /usr/local/share/ca-certificates)…"
+      sudo cp "$CA" /usr/local/share/ca-certificates/warden-mitmproxy.crt
+      sudo update-ca-certificates >/dev/null ;;
+    *) die "unsupported OS: $OS" ;;
+  esac
+}
+
+set_proxy() {
+  case "$OS" in
+    Darwin)
+      local svc; svc="$(networksetup -listnetworkserviceorder | awk -F') ' '/\) /{print $2}' | head -1)"
+      log "pointing system HTTPS proxy at 127.0.0.1:$PORT (service: $svc)…"
+      sudo networksetup -setsecurewebproxy "$svc" 127.0.0.1 "$PORT"
+      sudo networksetup -setsecurewebproxystate "$svc" on ;;
+    Linux)
+      if command -v gsettings >/dev/null 2>&1; then
+        log "setting GNOME system proxy…"
+        gsettings set org.gnome.system.proxy mode 'manual'
+        gsettings set org.gnome.system.proxy.https host '127.0.0.1'
+        gsettings set org.gnome.system.proxy.https port "$PORT"
+      else
+        log "No gsettings — set your HTTPS proxy to 127.0.0.1:$PORT manually (or via your DE)."
+      fi ;;
+  esac
+}
+
+start_service() {
+  local tok; tok="$1"
+  case "$OS" in
+    Darwin)
+      local plist="${HOME_DIR}/Library/LaunchAgents/net.tachtech.warden-proxy.plist"
+      mkdir -p "${HOME_DIR}/Library/LaunchAgents"
+      cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>net.tachtech.warden-proxy</string>
+  <key>ProgramArguments</key><array>
+    <string>$(command -v mitmdump)</string>
+    <string>-q</string><string>-s</string><string>${ADDON}</string>
+    <string>--listen-port</string><string>${PORT}</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>WARDEN_URL</key><string>${WARDEN_URL}</string>
+    <key>WARDEN_TOKEN</key><string>${tok}</string>
+    <key>WARDEN_PROXY_ENFORCE</key><string>${WARDEN_PROXY_ENFORCE:-false}</string>
+  </dict>
+  <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+</dict></plist>
+PLIST
+      launchctl unload "$plist" 2>/dev/null || true
+      launchctl load "$plist"
+      log "launchd service loaded (net.tachtech.warden-proxy)." ;;
+    Linux)
+      local unit="${HOME_DIR}/.config/systemd/user/warden-proxy.service"
+      mkdir -p "${HOME_DIR}/.config/systemd/user"
+      cat > "$unit" <<UNIT
+[Unit]
+Description=Warden desktop egress proxy
+[Service]
+Environment=WARDEN_URL=${WARDEN_URL}
+Environment=WARDEN_TOKEN=${tok}
+Environment=WARDEN_PROXY_ENFORCE=${WARDEN_PROXY_ENFORCE:-false}
+ExecStart=$(command -v mitmdump) -q -s ${ADDON} --listen-port ${PORT}
+Restart=always
+[Install]
+WantedBy=default.target
+UNIT
+      systemctl --user daemon-reload
+      systemctl --user enable --now warden-proxy.service
+      log "systemd --user service started (warden-proxy)." ;;
+  esac
+}
+
+cmd_install() {
+  command -v python3 >/dev/null 2>&1 || die "python3 is required."
+  command -v curl >/dev/null 2>&1 || die "curl is required."
+  local tok; tok="$(read_token)"; [ -n "$tok" ] || die "empty Warden token; run 'warden connect' first."
+  ensure_mitm
+  fetch_addon
+  bootstrap_ca
+  trust_ca
+  start_service "$tok"
+  set_proxy
+  log "done. Desktop AI apps now route through Warden. Enforce mode: ${WARDEN_PROXY_ENFORCE:-false} (monitor)."
+  log "Verify: open the Claude/ChatGPT desktop app and check findings in the console."
+}
+
+cmd_uninstall() {
+  case "$OS" in
+    Darwin)
+      local svc; svc="$(networksetup -listnetworkserviceorder | awk -F') ' '/\) /{print $2}' | head -1)"
+      sudo networksetup -setsecurewebproxystate "$svc" off 2>/dev/null || true
+      launchctl unload "${HOME_DIR}/Library/LaunchAgents/net.tachtech.warden-proxy.plist" 2>/dev/null || true
+      rm -f "${HOME_DIR}/Library/LaunchAgents/net.tachtech.warden-proxy.plist"
+      log "stopped. (CA left in the keychain; remove manually if desired.)" ;;
+    Linux)
+      systemctl --user disable --now warden-proxy.service 2>/dev/null || true
+      command -v gsettings >/dev/null 2>&1 && gsettings set org.gnome.system.proxy mode 'none' || true
+      log "stopped. (CA left in the trust store; remove /usr/local/share/ca-certificates/warden-mitmproxy.crt to fully revert.)" ;;
+  esac
+}
+
+cmd_status() {
+  case "$OS" in
+    Darwin) launchctl list 2>/dev/null | grep -q warden-proxy && echo "running" || echo "not running" ;;
+    Linux)  systemctl --user is-active warden-proxy.service 2>/dev/null || echo "not running" ;;
+  esac
+}
+
+case "${1:-install}" in
+  install)   cmd_install ;;
+  uninstall) cmd_uninstall ;;
+  status)    cmd_status ;;
+  *) die "usage: warden-desktop [install|uninstall|status]" ;;
+esac
