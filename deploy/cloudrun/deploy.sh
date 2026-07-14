@@ -38,6 +38,9 @@ ENV_VARS+="@SEED_ON_START=${SEED_ON_START:-false}"
 # WARDEN_ALLOWED_HOSTS may need more than DOMAIN (e.g. the *.run.app hostname when a
 # fronting proxy/Worker reaches the service by its run.app origin) — allow an override.
 [ -n "$DOMAIN" ] && ENV_VARS+="@CORS_ORIGINS=https://${DOMAIN}@WARDEN_PUBLIC_URL=https://${DOMAIN}@WARDEN_ALLOWED_HOSTS=${WARDEN_ALLOWED_HOSTS:-$DOMAIN}"
+# Email plane (password reset / join verification / invites). SMTP_PASS rides in via the
+# optional-secrets loop below (create secret 'warden-smtp-pass' to enable).
+[ -n "${SMTP_HOST:-}" ] && ENV_VARS+="@SMTP_HOST=${SMTP_HOST}@SMTP_PORT=${SMTP_PORT:-587}@SMTP_USER=${SMTP_USER:-}@MAIL_FROM=${MAIL_FROM:-}"
 [ -n "${INGEST_TENANT:-}" ] && ENV_VARS+="@INGEST_TENANT=${INGEST_TENANT}"
 [ -n "${WARDEN_EXTENSION_ID:-}" ] && ENV_VARS+="@WARDEN_EXTENSION_ID=${WARDEN_EXTENSION_ID}"
 
@@ -48,7 +51,8 @@ for pair in \
   "OPENAI_API_KEY=openai-api-key" \
   "GEMINI_API_KEY=gemini-api-key" \
   "WARDEN_METRICS_TOKEN=warden-metrics-token" \
-  "EXTENSION_INGEST_TOKEN=extension-ingest-token"; do
+  "EXTENSION_INGEST_TOKEN=extension-ingest-token" \
+  "SMTP_PASS=warden-smtp-pass"; do
   name="${pair##*=}"
   if gcloud secrets describe "$name" --project "$PROJECT_ID" >/dev/null 2>&1; then
     SECRETS+=",${pair}:latest"
