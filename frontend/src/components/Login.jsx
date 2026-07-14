@@ -11,6 +11,7 @@ export default function Login({ onAuthed, onBack }) {
   const [allowSignup, setAllowSignup] = useState(false);
   const [mfaChallenge, setMfaChallenge] = useState(null);   // set when login needs a 2nd factor
   const [mfaCode, setMfaCode] = useState("");
+  const [pendingOrg, setPendingOrg] = useState(null);       // signup became a join request
 
   // Only offer self-serve org creation when the server permits it.
   useEffect(() => {
@@ -28,6 +29,8 @@ export default function Login({ onAuthed, onBack }) {
         ? await api.signup(org.trim(), email.trim(), password)
         : await api.login(email.trim(), password, org.trim());
       if (res.mfa_required) { setMfaChallenge(res.challenge); return; }   // second-factor step
+      // Domain capture: the email belongs to an org already on Warden — request queued.
+      if (res.status === "pending_approval") { setPendingOrg(res.org); return; }
       setToken(res.access_token);
       onAuthed(res.user);
     } catch (e) {
@@ -35,6 +38,10 @@ export default function Login({ onAuthed, onBack }) {
       setErr(
         msg.includes("401") ? "Invalid email or password." :
         msg.includes("403") ? "Self-serve signup is disabled here." :
+        msg.includes("409") && signup && msg.includes("awaiting approval")
+          ? "Your join request is still awaiting an admin's approval." :
+        msg.includes("409") && signup && msg.includes("sign in instead")
+          ? "You already have an account in your organization — sign in instead." :
         msg.includes("409") ? "This email belongs to more than one organization — enter your organization." :
         msg.includes("429") ? "Too many attempts. Please wait a few minutes and try again." :
         msg
@@ -61,6 +68,26 @@ export default function Login({ onAuthed, onBack }) {
       setErr(msg.includes("429") ? "Too many attempts. Please wait and try again." :
              "Invalid code. Try again, or use a recovery code.");
     } finally { setBusy(false); }
+  }
+
+  if (pendingOrg) {
+    return (
+      <div className="login-screen">
+        <div className="login-card">
+          <img className="login-logo" src="/warden-emblem.png" alt="Warden" />
+          <div className="login-wordmark">WARDEN</div>
+          <p className="login-sub">
+            <strong>{pendingOrg}</strong> is already on Warden, so we sent your request to
+            its administrators instead of creating a new organization. You can sign in with
+            the password you chose once an admin approves you.
+          </p>
+          <button type="button" className="primary-btn"
+                  onClick={() => { setPendingOrg(null); setMode("signin"); setErr(null); }}>
+            Back to sign in
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (mfaChallenge) {
