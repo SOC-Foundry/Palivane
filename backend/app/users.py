@@ -4,6 +4,7 @@
     python -m app.users create-user --tenant acme --email soc@acme.com --role admin --password ...
     python -m app.users list-tenants
     python -m app.users list-users --tenant acme
+    python -m app.users set-quota --tenant acme --users 100 --api-keys 500 --ingest-per-day 200000
 
 If --password is omitted on create-user, it is read interactively (not echoed).
 """
@@ -71,6 +72,14 @@ def main(argv: list[str]) -> int:
     lu = sub.add_parser("list-users")
     lu.add_argument("--tenant", required=True)
 
+    # Quota overrides are operator-only on purpose: there is no API for a tenant admin
+    # to raise their own caps. 0 (or omitted) = inherit the WARDEN_QUOTA_* global.
+    sq = sub.add_parser("set-quota")
+    sq.add_argument("--tenant", required=True)
+    sq.add_argument("--users", type=int, default=None)
+    sq.add_argument("--api-keys", type=int, default=None)
+    sq.add_argument("--ingest-per-day", type=int, default=None)
+
     args = p.parse_args(argv)
     db = SessionLocal()
     try:
@@ -90,6 +99,20 @@ def main(argv: list[str]) -> int:
                 raise SystemExit(f"tenant '{args.tenant}' not found")
             for u in db.query(User).filter(User.tenant_id == tenant.id).all():
                 print(f"#{u.id} {u.email} role={u.role} active={u.active}")
+        elif args.cmd == "set-quota":
+            tenant = _get_tenant(db, args.tenant)
+            if tenant is None:
+                raise SystemExit(f"tenant '{args.tenant}' not found")
+            if args.users is not None:
+                tenant.quota_users = args.users
+            if args.api_keys is not None:
+                tenant.quota_api_keys = args.api_keys
+            if args.ingest_per_day is not None:
+                tenant.quota_ingest_per_day = args.ingest_per_day
+            db.commit()
+            print(f"tenant '{tenant.slug}' quotas: users={tenant.quota_users or 'default'} "
+                  f"api_keys={tenant.quota_api_keys or 'default'} "
+                  f"ingest_per_day={tenant.quota_ingest_per_day or 'default'}")
     finally:
         db.close()
     return 0

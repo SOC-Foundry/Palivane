@@ -39,6 +39,43 @@ def effective_ingest_limit(tenant: Tenant | None) -> int:
     return settings.ingest_rate_limit
 
 
+def effective_quota(tenant: Tenant | None, name: str) -> int:
+    """Resource quota `name` (users | api_keys | ingest_per_day) for this tenant: its own
+    override column when set, else the WARDEN_QUOTA_* global. 0 = unlimited."""
+    if tenant is not None and getattr(tenant, f"quota_{name}", 0):
+        return getattr(tenant, f"quota_{name}")
+    return getattr(settings, f"quota_{name}")
+
+
+def check_resource_quota(db: Session, tenant_id: int, name: str, current_count: int) -> None:
+    """Raise 403 when creating one more of `name` would exceed the tenant's quota.
+    Import-light so auth.py can call it at user/key creation without cycles."""
+    from fastapi import HTTPException  # noqa: PLC0415
+
+    limit = effective_quota(db.get(Tenant, tenant_id), name)
+    if limit and current_count >= limit:
+        raise HTTPException(
+            status_code=403,
+            detail=f"{name.replace('_', ' ')} quota reached ({limit}) — "
+                   "contact your Warden operator to raise it")
+
+
+def check_daily_ingest(db: Session, tenant_id: int) -> tuple[bool, int, int]:
+    """Sustained-abuse cap on top of the per-minute rate: total ingest requests since
+    UTC midnight vs the tenant's daily quota. Returns (allowed, count_today, limit)."""
+    tenant = db.get(Tenant, tenant_id)
+    limit = effective_quota(tenant, "ingest_per_day")
+    if not limit:
+        return True, 0, 0
+    midnight = _now().replace(hour=0, minute=0, second=0, microsecond=0)
+    from sqlalchemy import func  # noqa: PLC0415
+    total = (db.query(func.coalesce(func.sum(GatewayUsage.count), 0))
+             .filter(GatewayUsage.tenant_id == tenant_id, GatewayUsage.kind == "ingest",
+                     GatewayUsage.window_start >= midnight)
+             .scalar())
+    return total <= limit, int(total), limit
+
+
 def record_and_check(db: Session, tenant_id: int | None, kind: str = "gateway",
                      limit: int | None = None) -> tuple[bool, int, int]:
     """Count one request in the current minute for `kind` and report whether it's allowed.
@@ -98,6 +135,12 @@ def usage_summary(db: Session, tenant_id: int, days: int = 7) -> dict:
         "ingest_limit_per_min": effective_ingest_limit(tenant),
         "ingest_current_window": ingest_current,
         "ingest_last_24h": ingest_24h,
+        "quotas": {
+            "users": effective_quota(tenant, "users"),
+            "api_keys": effective_quota(tenant, "api_keys"),
+            "ingest_per_day": effective_quota(tenant, "ingest_per_day"),
+            "ingest_today": check_daily_ingest(db, tenant_id)[1],
+        },
     }
 
 

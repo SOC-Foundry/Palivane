@@ -59,6 +59,12 @@ class Settings:
     # counted separately from the gateway so agentic volume can't starve LLM traffic
     # (0 = unlimited). A tenant's own ingest_rate_limit overrides this.
     ingest_rate_limit: int = int(os.getenv("INGEST_RATE_LIMIT", "0"))
+    # Per-tenant resource quotas for open multi-tenant signup (0 = unlimited). A tenant's
+    # own quota_* column (operator-set via `python -m app.users set-quota`) overrides the
+    # global default — tenant admins can NOT raise their own quotas through the API.
+    quota_users: int = int(os.getenv("WARDEN_QUOTA_USERS", "25"))
+    quota_api_keys: int = int(os.getenv("WARDEN_QUOTA_API_KEYS", "100"))
+    quota_ingest_per_day: int = int(os.getenv("WARDEN_QUOTA_INGEST_PER_DAY", "50000"))
     # Persist benign MCP-surface findings (warden-hook/warden-mcp tool calls)? Default off:
     # the vast majority of tool calls are benign noise; only warn+ verdicts are stored.
     mcp_persist_benign: bool = os.getenv("WARDEN_MCP_PERSIST_BENIGN", "").lower() in ("1", "true", "yes")

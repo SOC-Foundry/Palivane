@@ -367,6 +367,9 @@ def create_user(body: UserCreate, current: User = Depends(require_admin), db: Se
     )
     if exists:
         raise HTTPException(status_code=409, detail="a user with that email already exists")
+    from .metering import check_resource_quota
+    check_resource_quota(db, current.tenant_id, "users",
+                         db.query(User).filter(User.tenant_id == current.tenant_id).count())
     user = User(
         tenant_id=current.tenant_id, email=email,
         password_hash=hash_password(body.password), role=body.role,
@@ -444,6 +447,10 @@ def create_api_key(body: ApiKeyCreate, current: User = Depends(require_admin),
                    db: Session = Depends(get_db)):
     """Mint a long-lived API key for a machine client (gateway/SIEM). The plaintext is
     returned ONCE — only its hash is stored."""
+    from .metering import check_resource_quota
+    check_resource_quota(db, current.tenant_id, "api_keys",
+                         db.query(ApiKey).filter(ApiKey.tenant_id == current.tenant_id,
+                                                 ApiKey.active.is_(True)).count())
     token, prefix, token_hash = generate_api_key()
     expires_at = None
     if body.expires_in_days:
@@ -684,6 +691,10 @@ def enroll(body: EnrollRequest, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=401, detail="enrollment token exhausted")
 
+    from .metering import check_resource_quota
+    check_resource_quota(db, et.tenant_id, "api_keys",
+                         db.query(ApiKey).filter(ApiKey.tenant_id == et.tenant_id,
+                                                 ApiKey.active.is_(True)).count())
     token, prefix, token_hash = generate_api_key()
     key = ApiKey(tenant_id=et.tenant_id, label=f"device:{body.device}", actor=body.device,
                  prefix=prefix, token_hash=token_hash)

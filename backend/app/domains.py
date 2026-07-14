@@ -168,6 +168,9 @@ def list_join_requests(current: User = Depends(require_admin),
 def approve(db: Session, req: JoinRequest, decided_by: str) -> User:
     """Create the user from the parked hash and mark the request. Shared by the admin
     endpoint and the auto_approve signup path. Caller commits via this function."""
+    from .metering import check_resource_quota
+    check_resource_quota(db, req.tenant_id, "users",
+                         db.query(User).filter(User.tenant_id == req.tenant_id).count())
     user = User(tenant_id=req.tenant_id, email=req.email,
                 password_hash=req.password_hash, role="analyst")
     req.status = "approved"
