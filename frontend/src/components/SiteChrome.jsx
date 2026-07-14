@@ -48,7 +48,7 @@ export function Clip({ src, poster = "", caption = "", lead = false }) {
     <figure className={`lp-shot ${lead ? "lp-shot-lead" : ""}`}>
       <div className="lp-frame">
         <span className="lp-frame-bar"><i /><i /><i /><span className="lp-frame-url">warden.tachtech.net</span></span>
-        <video src={src} poster={poster} controls muted playsInline preload="metadata"
+        <video src={src} poster={poster} controls playsInline preload="metadata"
                style={{ display: "block", width: "100%" }} />
       </div>
       {caption && <figcaption>{caption}</figcaption>}
