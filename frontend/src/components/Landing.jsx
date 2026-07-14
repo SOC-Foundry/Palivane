@@ -35,9 +35,9 @@ const STEPS = [
 ];
 
 const ENTERPRISE = [
-  { icon: <IconPlug />, title: "Self-serve or managed onboarding", body: "Users bind their tenant by signing in (SSO) from the extension or `warden connect` for Claude Code — or push config zero-touch to managed fleets via MDM." },
+  { icon: <IconPlug />, title: "Self-serve or managed onboarding", body: "Claim your email domain and teammates who sign up land in your org — auto-joined or admin-approved, never a duplicate tenant. Email invites and password reset built in; SSO (OIDC & SAML) binds the extension and `warden connect`; managed fleets get zero-touch MDM config." },
   { icon: <IconShield />, title: "Agentless by default", body: "No endpoint agent for the core — an MDM policy pack (editor allowlist, system proxy, force-install, CA) lets Jamf/Intune/GPO enforce it. Opt-in local sensors add stdio-level MCP & pre-tool-use depth when you want it." },
-  { icon: <IconTarget />, title: "See your blind spots", body: "Coverage reconciliation compares your IdP/CASB AI-usage to what Warden captured — the unmanaged, shadow set. Alerts (Slack) + SIEM export included." },
+  { icon: <IconTarget />, title: "See your blind spots", body: "Coverage reconciliation compares your IdP/CASB AI-usage to what Warden captured — the unmanaged, shadow set. Slack alerts, SIEM push (Splunk HEC / CEF), and S3 data-lake export for Panther, Athena, or Snowflake." },
   { icon: <IconClipboard />, title: "Compliance & data control", body: "Per-tenant policy (monitor/enforce, block severity, sanctioned tools), a signed DPA, full self-serve data export, and one-click delete-my-org." },
 ];
 

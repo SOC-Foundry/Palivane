@@ -162,7 +162,7 @@ def scan(content: str, destination: str, tool: str = "",
             base + "/api/ingest/ai-usage", method="POST",
             data=json.dumps({"content": content, "destination": destination, "tool": tool,
                              "user": os.getenv("WARDEN_PROXY_USER", "")}).encode(),
-            headers={"content-type": "application/json", "X-Warden-Token": tok},
+            headers={"content-type": "application/json", "User-Agent": "warden-proxy/1.0", "X-Warden-Token": tok},
         )
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
@@ -343,7 +343,7 @@ def scan_mcp(activity: dict, server: str = "", transport: str = "http",
         req = urllib.request.Request(
             base + "/api/ingest/mcp", method="POST",
             data=json.dumps(payload).encode(),
-            headers={"content-type": "application/json", "X-Warden-Token": tok},
+            headers={"content-type": "application/json", "User-Agent": "warden-proxy/1.0", "X-Warden-Token": tok},
         )
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())

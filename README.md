@@ -66,8 +66,16 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
 - **Per-tenant policy & compliance** — each org sets monitor/enforce, block severity,
   sanctioned tools, and suppressions; plus a signed DPA, full data export, delete-my-org,
   Slack alerts (real-time, or **hourly/daily digests** with criticals still real-time), and
-  **SIEM integration** — pull-based JSONL export *and* real-time push forwarding (Splunk HEC
-  / generic JSON / CEF).
+  **SIEM integration** — pull-based JSONL export, real-time push forwarding (Splunk HEC
+  / generic JSON / CEF), *and* **S3 data-lake delivery** — severity-gated, date-partitioned
+  JSON objects written with the tenant's own AWS key, ready for a Panther S3 log source,
+  Athena, or a Snowflake external stage.
+- **Self-serve multi-tenant onboarding** — public signup with **domain capture**: an org
+  claims its email domain (DNS-TXT verified), and teammates who sign up with a matching
+  address become join requests — admin-approved or auto-joined after an emailed mailbox
+  confirmation — instead of accidental duplicate orgs. **Email invites** and **password
+  reset** built in (any SMTP provider); per-tenant **resource quotas** and operator
+  suspend/purge tooling keep an open deployment abuse-resistant.
 - **Keeps secrets out of repos too** — a **pre-commit hook + GitHub Action**
   ([`git/`](git/)) scan commits/PRs for secrets & PII via the same engine, complementing
   GitHub's native push protection; existing **TruffleHog/Gitleaks/GitGuardian** CI jobs can
@@ -355,7 +363,9 @@ with one-click revoke), **Coverage** (paste an IdP/CASB `actor,tool` list → th
 shadow set), and **Settings** — per-tenant **policy** (monitor/enforce, block severity,
 sanctioned tools, per-tool suppression), supply-chain allow/deny lists, **alerts** (Slack
 webhook, real-time or hourly/daily digest), **SIEM** (JSONL export + real-time push —
-Splunk HEC / JSON / CEF), and **compliance** (DPA, full data export, delete-my-org).
+Splunk HEC / JSON / CEF — plus S3 data-lake delivery for Panther/Athena/Snowflake), and
+**compliance** (DPA, full data export, delete-my-org). The **Team** page manages users
+(email invites included), claimed signup domains, and pending join requests.
 The dashboard shows a **Coverage & enforcement** health card (which planes reported in 24h).
 
 Then log in for a token and call the API:
@@ -450,6 +460,10 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/alerts/test`       | Send a sample alert to the tenant's configured webhook (admin). |
 | POST   | `/api/alerts/digest/run` | Send this tenant's alert digest now if one is due (also runs automatically every few minutes) (admin). |
 | POST   | `/api/siem/test`         | Send a sample event to the tenant's SIEM collector in its configured format (admin). |
+| POST   | `/api/siem/s3/test`      | Write a sample finding object to the tenant's S3 data-lake sink to validate the config (admin). |
+| *      | `/api/domains…`          | Claim, DNS-TXT-verify, and manage the org's signup-capture email domains (admin). |
+| *      | `/api/join-requests…`    | List and approve/deny signups captured by a claimed domain (admin). |
+| POST   | `/api/auth/forgot` / `reset` | Email a password-reset link; set a new password from it (single-use, revokes sessions). |
 | POST   | `/api/exception-request` | An end user (via the extension block screen) asks the security team to allow a blocked send; recorded to the audit log. Token-gated. |
 | GET/POST | `/api/tenant/dpa`      | Data-processing-agreement record: current vs accepted version, who/when. POST records acceptance (admin). |
 | DELETE | `/api/tenant`            | Delete the org and **all** its data (findings, users, keys, enrollment tokens, upstreams, audit log, usage, SSO); slug-confirmed. GDPR "delete my org" (admin). |

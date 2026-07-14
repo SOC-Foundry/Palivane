@@ -137,7 +137,7 @@ def scan_mcp(activity: dict, url: str, token: str, user: str = "", timeout: floa
         req = urllib.request.Request(
             url.rstrip("/") + "/api/ingest/mcp", method="POST",
             data=json.dumps(payload).encode(),
-            headers={"content-type": "application/json", "X-Warden-Token": token},
+            headers={"content-type": "application/json", "User-Agent": "warden-hook/1.0", "X-Warden-Token": token},
         )
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
