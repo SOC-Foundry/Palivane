@@ -34,8 +34,22 @@ export function Shot({ src, alt = "", caption = "", lead = false }) {
   return (
     <figure className={`lp-shot ${lead ? "lp-shot-lead" : ""}`}>
       <div className="lp-frame">
-        <span className="lp-frame-bar"><i /><i /><i /><span className="lp-frame-url">app.warden.security</span></span>
+        <span className="lp-frame-bar"><i /><i /><i /><span className="lp-frame-url">warden.tachtech.net</span></span>
         <img src={src} alt={alt} loading="lazy" />
+      </div>
+      {caption && <figcaption>{caption}</figcaption>}
+    </figure>
+  );
+}
+
+// A silent product walkthrough in the same browser-chrome frame as Shot.
+export function Clip({ src, poster = "", caption = "", lead = false }) {
+  return (
+    <figure className={`lp-shot ${lead ? "lp-shot-lead" : ""}`}>
+      <div className="lp-frame">
+        <span className="lp-frame-bar"><i /><i /><i /><span className="lp-frame-url">warden.tachtech.net</span></span>
+        <video src={src} poster={poster} controls muted playsInline preload="metadata"
+               style={{ display: "block", width: "100%" }} />
       </div>
       {caption && <figcaption>{caption}</figcaption>}
     </figure>
