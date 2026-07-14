@@ -118,6 +118,11 @@ app = FastAPI(
 )
 
 _CORS_ORIGINS = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+# The browser extension calls the API from its own origin (chrome-extension://<id>) with
+# no manifest host_permission for the backend — deliberately, so one store package works
+# against any org's deployment. CORS is the gate instead: allow the published extension.
+if settings.extension_id:
+    _CORS_ORIGINS.append(f"chrome-extension://{settings.extension_id}")
 
 # Reject requests with a spoofed Host (defense-in-depth against host-header injection into
 # any base_url-derived link). Enabled only when an allowlist is configured; the public
