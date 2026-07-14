@@ -69,8 +69,8 @@ export default function Landing({ onSignIn }) {
           <h2 className="lp-h2">See Warden in action</h2>
           <p className="lp-sub">One console across every plane — findings, shadow-AI discovery,
              granular policy, and agent governance.</p>
-          <Clip lead src="/shots/demo.mp4?v=3" poster="/shots/dashboard.png?v=2"
-                caption="30-second tour — sign in, triage a critical finding, discovery, policy, agents & connect." />
+          <Clip lead src="/shots/demo.mp4?v=4" poster="/shots/demo-poster.png?v=4"
+                caption="Warden blocks an AWS key pasted into ChatGPT — then the console tour: findings, discovery, policy, agents & connect." />
           <div className="lp-gallery">
             <Shot src="/shots/discovery.png?v=2" alt="Shadow-AI discovery inventory"
                   caption="Shadow-AI discovery — every AI tool, by team, with real data exposure." />
