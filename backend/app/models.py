@@ -223,6 +223,61 @@ class EnrollmentToken(Base):
         }
 
 
+class TenantDomain(Base):
+    """An email domain claimed by a tenant (verified via DNS TXT). Once verified, a
+    self-serve signup whose email matches routes to a JoinRequest for this tenant instead
+    of creating a duplicate single-user org. `domain` is globally unique — first verified
+    claim wins. Free-mail domains (gmail etc.) can never be claimed."""
+
+    __tablename__ = "tenant_domains"
+    __table_args__ = (UniqueConstraint("domain", name="uq_tenant_domain"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    domain = Column(String(255), nullable=False)          # lowercase, no leading dot
+    token = Column(String(64), nullable=False)            # value of the DNS TXT record
+    verified = Column(Boolean, default=False, nullable=False)
+    # Approve matching join requests automatically (domain ownership is proven, but the
+    # requester's control of the mailbox is NOT — leave off unless that risk is acceptable).
+    auto_approve = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+    verified_at = Column(DateTime, nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id, "domain": self.domain, "verified": self.verified,
+            "auto_approve": self.auto_approve, "token": self.token,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "verified_at": self.verified_at.isoformat() if self.verified_at else None,
+        }
+
+
+class JoinRequest(Base):
+    """A signup that matched a claimed domain: the would-be user's email + chosen password
+    (hash only), parked until a tenant admin approves. Approval creates the User with the
+    stored hash — no email round-trip needed (there is no outbound email plane yet)."""
+
+    __tablename__ = "join_requests"
+    __table_args__ = (UniqueConstraint("tenant_id", "email", name="uq_join_tenant_email"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    email = Column(String(320), nullable=False)
+    password_hash = Column(String(256), nullable=False)
+    status = Column(String(16), default="pending", nullable=False)  # pending|approved|denied
+    created_at = Column(DateTime, default=_utcnow)
+    decided_at = Column(DateTime, nullable=True)
+    decided_by = Column(String(320), default="")
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id, "email": self.email, "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "decided_at": self.decided_at.isoformat() if self.decided_at else None,
+            "decided_by": self.decided_by,
+        }
+
+
 class TenantUpstream(Base):
     """Per-tenant LLM provider config for the gateway — so each org's allowed calls
     forward with *its own* provider account/key (billing isolation in multi-tenant SaaS).

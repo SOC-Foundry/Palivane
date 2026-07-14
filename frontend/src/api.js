@@ -44,6 +44,15 @@ export const api = {
   signup: (org_name, email, password) =>
     req("/auth/signup", { method: "POST", body: JSON.stringify({ org_name, email, password }) }),
   me: () => req("/auth/me"),
+  domains: () => req("/domains"),
+  claimDomain: (domain) => req("/domains", { method: "POST", body: JSON.stringify({ domain }) }),
+  verifyDomain: (id) => req(`/domains/${id}/verify`, { method: "POST" }),
+  updateDomain: (id, payload) =>
+    req(`/domains/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteDomain: (id) => req(`/domains/${id}`, { method: "DELETE" }),
+  joinRequests: () => req("/join-requests"),
+  approveJoin: (id) => req(`/join-requests/${id}/approve`, { method: "POST" }),
+  denyJoin: (id) => req(`/join-requests/${id}/deny`, { method: "POST" }),
   users: () => req("/users"),
   createUser: (payload) =>
     req("/users", { method: "POST", body: JSON.stringify(payload) }),

@@ -110,9 +110,48 @@ def signup(body: SignupRequest, db: Session = Depends(get_db)):
     """Self-serve onboarding: create a new org (tenant) + its first admin, and log in.
 
     The first user of a new tenant is its admin; they then invite analysts via /api/users
-    and configure the capture planes. Disabled when WARDEN_ALLOW_SIGNUP=false."""
+    and configure the capture planes. Disabled when WARDEN_ALLOW_SIGNUP=false.
+
+    Domain capture: when the email's domain is claimed + verified by an existing tenant,
+    no new org is created — the signup becomes a join request for that tenant (approved
+    by its admin, or immediately when the domain has auto_approve)."""
     if not settings.allow_signup:
         raise HTTPException(status_code=403, detail="self-serve signup is disabled")
+
+    from . import domains as domains_mod
+    from .models import JoinRequest
+    email = body.email.lower().strip()
+    claim = domains_mod.match_verified(db, email)
+    if claim is not None:
+        tenant = db.get(Tenant, claim.tenant_id)
+        if db.query(User).filter(User.tenant_id == claim.tenant_id,
+                                 User.email == email).first():
+            raise HTTPException(status_code=409,
+                                detail="an account with that email already exists in "
+                                       "your organization — sign in instead")
+        req = (db.query(JoinRequest)
+               .filter(JoinRequest.tenant_id == claim.tenant_id,
+                       JoinRequest.email == email).first())
+        if req is None:
+            req = JoinRequest(tenant_id=claim.tenant_id, email=email,
+                              password_hash=hash_password(body.password))
+            db.add(req)
+        elif req.status == "pending":
+            raise HTTPException(status_code=409,
+                                detail="a join request for that email is already "
+                                       "awaiting approval")
+        else:   # decided earlier — allow a fresh attempt with a fresh password
+            req.status = "pending"
+            req.password_hash = hash_password(body.password)
+            req.decided_at = None
+            req.decided_by = ""
+        db.commit()
+        db.refresh(req)
+        if claim.auto_approve:
+            user = domains_mod.approve(db, req, f"auto ({claim.domain})")
+            return _session_payload(user, tenant)
+        return {"status": "pending_approval", "org": tenant.name or tenant.slug}
+
     slug = _unique_slug(db, _slugify(body.slug or body.org_name))
     tenant = Tenant(slug=slug, name=body.org_name.strip() or slug)
     db.add(tenant)

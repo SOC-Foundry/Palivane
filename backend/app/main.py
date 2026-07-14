@@ -17,6 +17,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .auth import get_current_user, require_admin, router as auth_router
+from .domains import router as domains_router
 from .config import settings
 from .gateway import gemini_router, router as gateway_router
 from .database import Base, engine as db_engine, get_db
@@ -160,6 +161,7 @@ async def _guard(request: Request, call_next):
 
 
 app.include_router(auth_router)
+app.include_router(domains_router)
 app.include_router(gateway_router)
 app.include_router(gemini_router)
 
