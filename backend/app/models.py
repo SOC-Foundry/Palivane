@@ -101,9 +101,13 @@ class Tenant(Base):
     dpa_version = Column(String(32), default="")
     dpa_accepted_at = Column(DateTime, nullable=True)
     dpa_accepted_by = Column(String(320), default="")
+    # Lifecycle: "active" | "suspended". Suspension is operator-set (CLI) and blocks
+    # logins, sessions, ingest, and the gateway without touching any data.
+    status = Column(String(16), default="active", nullable=False)
 
     def to_dict(self) -> dict:
         return {"id": self.id, "slug": self.slug, "name": self.name,
+                "status": self.status or "active",
                 "judge_enabled": self.judge_enabled, "retention_days": self.retention_days,
                 "rate_limit": self.rate_limit, "ingest_rate_limit": self.ingest_rate_limit or 0,
                 "mcp_allowed_servers": self.mcp_allowed_servers or "",

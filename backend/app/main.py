@@ -385,7 +385,9 @@ def _enforce_rate(db: Session, tenant_id: int | None) -> None:
     """Count one capture request against the tenant's sensor/ingest quota; 429 if over.
     Uses the `ingest` counter — separate from the gateway budget — so agentic tool-call
     volume can't starve real LLM traffic (bounded by `ingest_rate_limit`, default off)."""
+    from .lifecycle import ensure_active
     from .metering import check_daily_ingest, record_and_check
+    ensure_active(db, tenant_id)
     allowed, _count, limit = record_and_check(db, tenant_id, kind="ingest")
     if not allowed:
         raise HTTPException(status_code=429, detail=f"ingest rate limit exceeded ({limit}/min)",

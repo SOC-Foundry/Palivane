@@ -5,6 +5,9 @@
     python -m app.users list-tenants
     python -m app.users list-users --tenant acme
     python -m app.users set-quota --tenant acme --users 100 --api-keys 500 --ingest-per-day 200000
+    python -m app.users suspend --tenant acme            # blocks logins/ingest/gateway
+    python -m app.users resume --tenant acme
+    python -m app.users purge-empty --older-than-days 30 # delete abandoned signups (--yes to apply)
 
 If --password is omitted on create-user, it is read interactively (not echoed).
 """
@@ -80,6 +83,15 @@ def main(argv: list[str]) -> int:
     sq.add_argument("--api-keys", type=int, default=None)
     sq.add_argument("--ingest-per-day", type=int, default=None)
 
+    for name in ("suspend", "resume"):
+        sp = sub.add_parser(name)
+        sp.add_argument("--tenant", required=True)
+
+    pe = sub.add_parser("purge-empty")
+    pe.add_argument("--older-than-days", type=int, default=30)
+    pe.add_argument("--yes", action="store_true",
+                    help="actually delete (default is a dry-run listing)")
+
     args = p.parse_args(argv)
     db = SessionLocal()
     try:
@@ -113,6 +125,25 @@ def main(argv: list[str]) -> int:
             print(f"tenant '{tenant.slug}' quotas: users={tenant.quota_users or 'default'} "
                   f"api_keys={tenant.quota_api_keys or 'default'} "
                   f"ingest_per_day={tenant.quota_ingest_per_day or 'default'}")
+        elif args.cmd in ("suspend", "resume"):
+            tenant = _get_tenant(db, args.tenant)
+            if tenant is None:
+                raise SystemExit(f"tenant '{args.tenant}' not found")
+            tenant.status = "suspended" if args.cmd == "suspend" else "active"
+            db.commit()
+            print(f"tenant '{tenant.slug}' is now {tenant.status}")
+        elif args.cmd == "purge-empty":
+            from .lifecycle import purgeable_empty_tenants, purge_tenant
+            victims = purgeable_empty_tenants(db, args.older_than_days)
+            if not victims:
+                print("no purgeable tenants")
+            for t in victims:
+                if args.yes:
+                    counts = purge_tenant(db, t)
+                    print(f"purged #{t.id} '{t.slug}' ({sum(counts.values())} rows)")
+                else:
+                    print(f"would purge #{t.id} '{t.slug}' (created {t.created_at:%Y-%m-%d}) "
+                          "— rerun with --yes")
     finally:
         db.close()
     return 0
