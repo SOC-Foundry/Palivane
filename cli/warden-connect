@@ -15,7 +15,8 @@ posture on session start). If Cursor is installed (~/.cursor present), it also r
 warden-cursor-hook in ~/.cursor/hooks.json and writes ~/.cursor/warden.json — covering
 Cursor's prompts + tool calls locally despite its cert pinning. Stdlib only.
 
-    warden-connect https://app.warden.io       # or set WARDEN_URL
+    warden-connect                              # hosted SaaS (warden.tachtech.net)
+    warden-connect https://warden.self-hosted   # or set WARDEN_URL, for self-hosting
 """
 
 from __future__ import annotations
@@ -31,12 +32,16 @@ import urllib.parse
 import webbrowser
 
 
+# Hosted Warden SaaS default: every org shares this URL (the tenant is resolved by who
+# signs in), so `warden connect` alone just works. Override with an arg or WARDEN_URL for
+# a self-hosted deployment.
+DEFAULT_URL = "https://warden.tachtech.net"
+
+
 def _console_url(argv) -> str:
     url = (argv[1] if len(argv) > 1 else os.environ.get("WARDEN_URL", "")).strip()
     if not url:
-        url = input("Warden console URL (e.g. https://app.warden.io): ").strip()
-    if not url:
-        sys.exit("A Warden console URL is required.")
+        url = DEFAULT_URL
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
     return url.rstrip("/")
