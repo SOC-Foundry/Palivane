@@ -49,6 +49,13 @@ b = open(bpath).read()
 b = re.sub(r'backendUrl:\s*"[^"]*"', f'backendUrl: "{saas}"', b, count=1)
 b = re.sub(r'consoleUrl:\s*"[^"]*"', f'consoleUrl: "{saas}"', b, count=1)
 open(bpath, "w").write(b)
+
+# options.js: same default, so the Options form shows the SaaS URL pre-filled. Users
+# never type it — installing the extension is enough; they just click "Sign in".
+opath = f"{stage}/options.js"
+o = open(opath).read()
+o = re.sub(r'backendUrl:\s*"[^"]*"', f'backendUrl: "{saas}"', o, count=1)
+open(opath, "w").write(o)
 print("  manifest host_permissions:", hp)
 PY
 fi
