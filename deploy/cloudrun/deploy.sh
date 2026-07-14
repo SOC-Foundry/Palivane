@@ -34,7 +34,9 @@ ENV_VARS+=",JUDGE_PROVIDER=${JUDGE_PROVIDER:-auto}"
 # WARDEN_ALLOW_SIGNUP=true explicitly for an open multi-tenant deployment.
 ENV_VARS+=",WARDEN_ALLOW_SIGNUP=${WARDEN_ALLOW_SIGNUP:-false}"
 ENV_VARS+=",SEED_ON_START=${SEED_ON_START:-false}"
-[ -n "$DOMAIN" ] && ENV_VARS+=",CORS_ORIGINS=https://${DOMAIN},WARDEN_PUBLIC_URL=https://${DOMAIN},WARDEN_ALLOWED_HOSTS=${DOMAIN}"
+# WARDEN_ALLOWED_HOSTS may need more than DOMAIN (e.g. the *.run.app hostname when a
+# fronting proxy/Worker reaches the service by its run.app origin) — allow an override.
+[ -n "$DOMAIN" ] && ENV_VARS+=",CORS_ORIGINS=https://${DOMAIN},WARDEN_PUBLIC_URL=https://${DOMAIN},WARDEN_ALLOWED_HOSTS=${WARDEN_ALLOWED_HOSTS:-$DOMAIN}"
 [ -n "${INGEST_TENANT:-}" ] && ENV_VARS+=",INGEST_TENANT=${INGEST_TENANT}"
 [ -n "${WARDEN_EXTENSION_ID:-}" ] && ENV_VARS+=",WARDEN_EXTENSION_ID=${WARDEN_EXTENSION_ID}"
 
