@@ -686,6 +686,7 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 }
 .lp-frame img { display: block; width: 100%; height: auto; }
 .lp-shot figcaption { font-size: 13px; color: var(--muted); margin-top: 11px; text-align: center; }
+.lp-zoom-hint { opacity: 0.6; font-style: italic; }
 .lp-shot-lead { max-width: 940px; margin: 6px auto 32px; }
 .lp-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 22px; }
 

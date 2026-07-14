@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { IconShield, IconPlug, IconTarget, IconAlert, IconInbox, IconClipboard } from "./icons.jsx";
-import { SiteNav, SiteFooter, Shot, Clip } from "./SiteChrome.jsx";
+import { SiteNav, SiteFooter, Shot, Clip, Lightbox } from "./SiteChrome.jsx";
 
 const FRONTS = [
   {
@@ -42,8 +43,10 @@ const ENTERPRISE = [
 ];
 
 export default function Landing({ onSignIn }) {
+  const [zoom, setZoom] = useState(null);   // {src, alt} when a screenshot is enlarged
   return (
     <div className="landing">
+      <Lightbox src={zoom?.src} alt={zoom?.alt} onClose={() => setZoom(null)} />
       <SiteNav onSignIn={onSignIn} />
 
       <section className="lp-hero-wrap">
@@ -69,14 +72,14 @@ export default function Landing({ onSignIn }) {
           <h2 className="lp-h2">See Warden in action</h2>
           <p className="lp-sub">One console across every plane — findings, shadow-AI discovery,
              granular policy, and agent governance.</p>
-          <Clip lead src="/shots/demo3.mp4" poster="/shots/demo-poster3.png"
+          <Clip lead src="/shots/demo4.mp4" poster="/shots/demo-poster4.png"
                 caption="Warden blocks a leak in the browser (ChatGPT) and in Claude Code (the gateway) — then a tour of the console: findings, discovery, policy, agents & connect." />
           <div className="lp-gallery">
-            <Shot src="/shots/discovery.png?v=2" alt="Shadow-AI discovery inventory"
+            <Shot src="/shots/discovery.png?v=2" alt="Shadow-AI discovery inventory" onZoom={(s, a) => setZoom({ src: s, alt: a })}
                   caption="Shadow-AI discovery — every AI tool, by team, with real data exposure." />
-            <Shot src="/shots/policies.png?v=2" alt="Policy console"
+            <Shot src="/shots/policies.png?v=2" alt="Policy console" onZoom={(s, a) => setZoom({ src: s, alt: a })}
                   caption="Granular policy — toggle any check, presets, per-user/group overrides." />
-            <Shot src="/shots/agents.png?v=2" alt="Agent identity & least-privilege"
+            <Shot src="/shots/agents.png?v=2" alt="Agent identity & least-privilege" onZoom={(s, a) => setZoom({ src: s, alt: a })}
                   caption="Agent identity & least-privilege roles — monitor or enforce." />
           </div>
         </div>

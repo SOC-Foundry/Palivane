@@ -5,6 +5,7 @@
 // view without a navigation. On the standalone subpages there's no such handler, so the
 // button links to "/#signin" — App reads that hash on mount and opens login on the home
 // route. Pass onSignIn only from the landing.
+import { useEffect } from "react";
 
 const TABS = [
   { href: "/why-warden", label: "Why Warden" },
@@ -30,15 +31,38 @@ export function SiteNav({ onSignIn }) {
 }
 
 // A product screenshot wrapped in a browser-chrome frame (title bar + traffic-light dots).
-export function Shot({ src, alt = "", caption = "", lead = false }) {
+// Pass onZoom to make the image click-to-enlarge (opens a lightbox in the parent).
+export function Shot({ src, alt = "", caption = "", lead = false, onZoom = null }) {
   return (
     <figure className={`lp-shot ${lead ? "lp-shot-lead" : ""}`}>
       <div className="lp-frame">
         <span className="lp-frame-bar"><i /><i /><i /><span className="lp-frame-url">warden.tachtech.net</span></span>
-        <img src={src} alt={alt} loading="lazy" />
+        <img src={src} alt={alt} loading="lazy"
+             onClick={onZoom ? () => onZoom(src, alt) : undefined}
+             style={onZoom ? { cursor: "zoom-in" } : undefined} />
       </div>
-      {caption && <figcaption>{caption}</figcaption>}
+      {caption && <figcaption>{caption}{onZoom && <span className="lp-zoom-hint"> · click to enlarge</span>}</figcaption>}
     </figure>
+  );
+}
+
+// Full-screen overlay showing one screenshot at full size. Click anywhere or press Esc to close.
+export function Lightbox({ src, alt = "", onClose }) {
+  useEffect(() => {
+    const esc = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [onClose]);
+  if (!src) return null;
+  return (
+    <div onClick={onClose}
+         style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(6,8,13,0.92)",
+                  display: "flex", alignItems: "center", justifyContent: "center", padding: "3vh 3vw",
+                  cursor: "zoom-out" }}>
+      <img src={src} alt={alt}
+           style={{ maxWidth: "94vw", maxHeight: "94vh", borderRadius: 8,
+                    boxShadow: "0 20px 80px rgba(0,0,0,0.6)" }} />
+    </div>
   );
 }
 
