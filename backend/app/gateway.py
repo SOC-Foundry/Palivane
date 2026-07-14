@@ -166,7 +166,15 @@ _RETRY_HEADER = {"Retry-After": "60"}
 
 
 def _rate_limited(db: Session, principal: "Principal", shape: str) -> JSONResponse | None:
-    """Count this request; return a provider-shaped 429 if the tenant is over its limit."""
+    """Count this request; return a provider-shaped 429 if the tenant is over its limit
+    (or a 403 when the whole tenant is suspended)."""
+    from .lifecycle import SUSPENDED_DETAIL, ensure_active
+    try:
+        ensure_active(db, principal.tenant_id)
+    except Exception:
+        return JSONResponse(status_code=403,
+                            content={"error": {"message": SUSPENDED_DETAIL,
+                                               "type": "forbidden", "code": "suspended"}})
     allowed, count, limit = record_and_check(db, principal.tenant_id)
     if allowed:
         return None

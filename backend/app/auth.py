@@ -96,6 +96,8 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="user not found or inactive")
     if int(payload.get("tv", 0)) != user.token_version:
         raise HTTPException(status_code=401, detail="session revoked — please sign in again")
+    from .lifecycle import ensure_active
+    ensure_active(db, user.tenant_id)
     return user
 
 
@@ -219,6 +221,9 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         db.add(LoginAttempt(email=email, ip=ip))
         db.commit()
         raise HTTPException(status_code=401, detail="invalid credentials")
+
+    from .lifecycle import ensure_active
+    ensure_active(db, user.tenant_id)
 
     # Successful login clears this email's recent failures.
     db.query(LoginAttempt).filter(LoginAttempt.email == email).delete()
@@ -906,26 +911,11 @@ def delete_tenant(body: TenantDelete, current: User = Depends(require_admin),
     if body.confirm != tenant.slug:
         raise HTTPException(status_code=400,
                             detail=f"to confirm deletion, pass confirm=\"{tenant.slug}\"")
-    tid = tenant.id
     slug = tenant.slug
-    # Delete every table that holds this tenant's data — a partial delete isn't a delete.
-    counts = {
-        "findings": db.query(Finding).filter(Finding.tenant_id == tid).delete(),
-        "users": db.query(User).filter(User.tenant_id == tid).delete(),
-        "api_keys": db.query(ApiKey).filter(ApiKey.tenant_id == tid).delete(),
-        "enrollment_tokens": db.query(EnrollmentToken).filter(EnrollmentToken.tenant_id == tid).delete(),
-        "upstreams": db.query(TenantUpstream).filter(TenantUpstream.tenant_id == tid).delete(),
-        "audit_log": db.query(AuditLog).filter(AuditLog.tenant_id == tid).delete(),
-        "usage": db.query(GatewayUsage).filter(GatewayUsage.tenant_id == tid).delete(),
-        "oidc": db.query(TenantOIDC).filter(TenantOIDC.tenant_id == tid).delete(),
-        "saml": db.query(TenantSAML).filter(TenantSAML.tenant_id == tid).delete(),
-        "discovered_usage": db.query(DiscoveredUsage).filter(DiscoveredUsage.tenant_id == tid).delete(),
-        "agents": db.query(Agent).filter(Agent.tenant_id == tid).delete(),
-        "agent_roles": db.query(AgentRole).filter(AgentRole.tenant_id == tid).delete(),
-        "policy_overrides": db.query(PolicyOverride).filter(PolicyOverride.tenant_id == tid).delete(),
-    }
-    db.delete(tenant)
-    db.commit()
+    # The cascade lives in lifecycle.purge_tenant so this endpoint and the operator CLI
+    # share one definition of "every table that holds tenant data".
+    from .lifecycle import purge_tenant
+    counts = purge_tenant(db, tenant)
     return {"deleted_tenant": slug, "deleted": counts}
 
 
@@ -1075,6 +1065,8 @@ def _sso_complete(db: Session, tenant: Tenant, email: str, auto_provision: bool,
                   allowed_domain: str, base: str) -> RedirectResponse:
     """Shared SSO tail (OIDC + SAML): enforce domain, map/provision the user, mint a
     session, and hand it to the console via URL fragment."""
+    from .lifecycle import ensure_active
+    ensure_active(db, tenant.id)
     email = (email or "").lower().strip()
     if allowed_domain and not email.endswith("@" + allowed_domain):
         raise HTTPException(status_code=403, detail="email domain not permitted for this org")
