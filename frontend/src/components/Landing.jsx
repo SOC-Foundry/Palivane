@@ -69,7 +69,7 @@ export default function Landing({ onSignIn }) {
           <h2 className="lp-h2">See Warden in action</h2>
           <p className="lp-sub">One console across every plane — findings, shadow-AI discovery,
              granular policy, and agent governance.</p>
-          <Clip lead src="/shots/demo.mp4?v=5" poster="/shots/demo-poster.png?v=4"
+          <Clip lead src="/shots/demo2.mp4" poster="/shots/demo-poster2.png"
                 caption="Warden blocks a leak in the browser (ChatGPT) and in Claude Code (the gateway) — then a tour of the console: findings, discovery, policy, agents & connect." />
           <div className="lp-gallery">
             <Shot src="/shots/discovery.png?v=2" alt="Shadow-AI discovery inventory"
