@@ -50,7 +50,7 @@ export function Clip({ src, poster = "", caption = "", lead = false }) {
         <span className="lp-frame-bar"><i /><i /><i /><span className="lp-frame-url">warden.tachtech.net</span></span>
         <video src={src} poster={poster} controls playsInline preload="metadata"
                style={{ display: "block", width: "100%", aspectRatio: "16 / 10",
-                        objectFit: "cover", background: "#0b0f17" }} />
+                        maxHeight: "70vh", objectFit: "cover", background: "#0b0f17" }} />
       </div>
       {caption && <figcaption>{caption}</figcaption>}
     </figure>
