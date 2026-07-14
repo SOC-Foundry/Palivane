@@ -215,7 +215,7 @@ def _post(endpoint: str, payload: dict, cfg: dict) -> dict:
         req = urllib.request.Request(
             cfg["url"].rstrip("/") + endpoint, method="POST",
             data=json.dumps(body).encode(),
-            headers={"content-type": "application/json", "X-Warden-Token": cfg["token"]},
+            headers={"content-type": "application/json", "User-Agent": "warden-cursor-hook/1.0", "X-Warden-Token": cfg["token"]},
         )
         with urllib.request.urlopen(req, timeout=cfg.get("timeout", 5.0)) as r:
             return json.loads(r.read())

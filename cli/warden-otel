@@ -206,7 +206,7 @@ def _post(cfg: dict, path: str, payload: dict) -> None:
         req = urllib.request.Request(
             cfg["url"].rstrip("/") + path, method="POST",
             data=json.dumps(payload).encode(),
-            headers={"content-type": "application/json", "X-Warden-Token": cfg["token"]},
+            headers={"content-type": "application/json", "User-Agent": "warden-otel/1.0", "X-Warden-Token": cfg["token"]},
         )
         urllib.request.urlopen(req, timeout=cfg["timeout"]).read()
     except Exception:

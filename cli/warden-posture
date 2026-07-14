@@ -219,7 +219,7 @@ def _post(cfg: dict, api_path: str, body: dict, timeout: float = 10.0) -> bool:
     try:
         req = urllib.request.Request(
             cfg["url"] + api_path, method="POST", data=json.dumps(body).encode(),
-            headers={"content-type": "application/json", "X-Warden-Token": cfg["token"]},
+            headers={"content-type": "application/json", "User-Agent": "warden-posture/1.0", "X-Warden-Token": cfg["token"]},
         )
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return 200 <= r.status < 300

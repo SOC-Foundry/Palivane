@@ -37,7 +37,7 @@ P = F = 0
 
 
 def call(method, path, body=None, headers=None, raw=False):
-    h = {"Content-Type": "application/json"}
+    h = {"Content-Type": "application/json", "User-Agent": "warden-e2e/1.0"}
     if headers:
         h.update(headers)
     data = (body if raw else json.dumps(body)).encode() if body is not None else None

@@ -71,7 +71,7 @@ def main() -> int:
         req = urllib.request.Request(
             cfg["url"] + "/api/scan/import", method="POST",
             data=json.dumps({"tool": tool, "results": raw, "host": host, "record": True}).encode(),
-            headers={"content-type": "application/json", "X-Warden-Token": cfg["token"]})
+            headers={"content-type": "application/json", "User-Agent": "warden-import/1.0", "X-Warden-Token": cfg["token"]})
         with urllib.request.urlopen(req, timeout=30) as r:
             resp = json.loads(r.read())
     except Exception as e:

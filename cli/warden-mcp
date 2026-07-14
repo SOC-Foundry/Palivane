@@ -138,7 +138,7 @@ def scan_mcp(activity: dict, server: str, url: str, token: str,
         req = urllib.request.Request(
             url.rstrip("/") + "/api/ingest/mcp", method="POST",
             data=json.dumps(payload).encode(),
-            headers={"content-type": "application/json", "X-Warden-Token": token},
+            headers={"content-type": "application/json", "User-Agent": "warden-mcp/1.0", "X-Warden-Token": token},
         )
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
@@ -155,7 +155,7 @@ def scan_mcp_batch(items: list[dict], cfg: dict) -> None:
         req = urllib.request.Request(
             cfg["url"].rstrip("/") + "/api/ingest/mcp/batch", method="POST",
             data=json.dumps(payload).encode(),
-            headers={"content-type": "application/json", "X-Warden-Token": cfg["token"]},
+            headers={"content-type": "application/json", "User-Agent": "warden-mcp/1.0", "X-Warden-Token": cfg["token"]},
         )
         urllib.request.urlopen(req, timeout=cfg["timeout"]).read()
     except Exception:
