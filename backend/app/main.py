@@ -163,6 +163,12 @@ async def _guard(request: Request, call_next):
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    # HSTS: force HTTPS for a year (incl. subdomains). Emitted only on HTTPS requests (via
+    # the forwarded proto, since Cloudflare/Cloud Run terminate TLS) so a local http dev
+    # origin is never pinned.
+    if request.headers.get("x-forwarded-proto", request.url.scheme) == "https":
+        resp.headers.setdefault("Strict-Transport-Security",
+                                "max-age=31536000; includeSubDomains")
     return resp
 
 

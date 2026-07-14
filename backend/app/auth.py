@@ -108,7 +108,7 @@ def require_admin(current: User = Depends(get_current_user)) -> User:
 
 
 @router.post("/auth/signup")
-def signup(body: SignupRequest, db: Session = Depends(get_db)):
+def signup(body: SignupRequest, request: Request, db: Session = Depends(get_db)):
     """Self-serve onboarding: create a new org (tenant) + its first admin, and log in.
 
     The first user of a new tenant is its admin; they then invite analysts via /api/users
@@ -123,6 +123,14 @@ def signup(body: SignupRequest, db: Session = Depends(get_db)):
     from . import domains as domains_mod
     from .models import JoinRequest
     email = body.email.lower().strip()
+    # Public endpoint — throttle org-creation abuse per IP (reuses the login limiter, so a
+    # single source can't mass-create orgs or, once email is on, spam verification mails).
+    ip = _client_ip(request)
+    if _throttled(db, email, ip):
+        raise HTTPException(status_code=429,
+                            detail="too many signups from here — try again later")
+    db.add(LoginAttempt(email=email, ip=ip))
+    db.commit()
     claim = domains_mod.match_verified(db, email)
     if claim is not None:
         tenant = db.get(Tenant, claim.tenant_id)
