@@ -169,6 +169,15 @@ async def _guard(request: Request, call_next):
     if request.headers.get("x-forwarded-proto", request.url.scheme) == "https":
         resp.headers.setdefault("Strict-Transport-Security",
                                 "max-age=31536000; includeSubDomains")
+    # CSP: the SPA loads only same-origin bundles (no inline/external scripts); React uses
+    # inline style attributes (hence style 'unsafe-inline'); posters/video/data-URI icons are
+    # same-origin or data:. frame-ancestors 'none' complements X-Frame-Options.
+    resp.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; media-src 'self'; font-src 'self' data:; "
+        "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
+        "form-action 'self'; object-src 'none'")
     return resp
 
 
