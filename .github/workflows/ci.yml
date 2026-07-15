@@ -1,0 +1,85 @@
+name: CI
+
+# PR gate: backend tests, frontend build, Terraform fmt/validate, and (same-repo, when GCP
+# creds are configured) a Terraform plan so infra diffs are reviewed before merge.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write        # for Workload Identity Federation (the plan job)
+  pull-requests: write   # to post the plan summary
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: System deps for xmlsec (SAML)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxml2-dev libxmlsec1-dev libxmlsec1-openssl pkg-config
+      - name: Install
+        working-directory: backend
+        run: pip install -r requirements.txt
+      - name: Pytest
+        working-directory: backend
+        run: python -m pytest -q
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Build
+        working-directory: frontend
+        run: npm ci && npm run build
+
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Format check
+        run: terraform fmt -check -recursive
+      - name: Validate
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+      # Real plan against remote state — only for same-repo PRs (forks don't get creds) and
+      # only when the GCP/WIF variables are configured.
+      - name: Authenticate to GCP
+        id: auth
+        if: >-
+          github.event.pull_request.head.repo.full_name == github.repository
+          && vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - name: Terraform plan
+        if: steps.auth.outcome == 'success'
+        env:
+          TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+          TF_VAR_region: ${{ vars.GCP_REGION }}
+          TF_VAR_image: placeholder-image-ignored-by-lifecycle
+          TF_VAR_db_password: ${{ secrets.TF_DB_PASSWORD }}
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=warden"
+          terraform plan -no-color -input=false -lock=false > plan.txt || true
+          {
+            echo '### Terraform plan';
+            echo '```';
+            tail -c 60000 plan.txt;
+            echo '```';
+          } >> "$GITHUB_STEP_SUMMARY"
