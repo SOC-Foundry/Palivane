@@ -75,10 +75,12 @@ AUTH_ARGS=(--allow-unauthenticated)
 [ -n "${INGRESS:-}" ] && AUTH_ARGS+=(--ingress "$INGRESS")
 
 echo "==> Deploying Cloud Run service '$SERVICE'"
+# --update-env-vars (merge), NOT --set-env-vars (replace): a deploy that omits a var must
+# not silently drop it. Out-of-band config (e.g. SMTP set via `services update`) persists.
 gcloud run deploy "$SERVICE" --project "$PROJECT_ID" --region "$REGION" \
   --image "$IMAGE" \
   --add-cloudsql-instances "$SQL_CONNECTION" \
-  --set-env-vars "^@^${ENV_VARS}" \
+  --update-env-vars "^@^${ENV_VARS}" \
   --set-secrets "$SECRETS" \
   "${AUTH_ARGS[@]}" \
   "${VPC_ARGS[@]}" \
