@@ -114,6 +114,22 @@ variable "max_instances" {
   default = 4
 }
 
+# Set true when importing an existing, hand-built deployment (see import.sh): skips
+# generating secret VERSIONS (so prod's real WARDEN_SECRET_KEY / DATABASE_URL / metrics
+# values are left intact) and runs the service as the default compute SA instead of
+# creating warden-run. With this on, import.sh -> plan should be a clean no-op.
+variable "adopt_existing" {
+  type    = bool
+  default = false
+}
+
+# Override the runtime SA used when adopt_existing=true. Empty = auto-derive the default
+# compute SA (<project-number>-compute@developer.gserviceaccount.com).
+variable "compute_sa_email" {
+  type    = string
+  default = ""
+}
+
 # Who may invoke the Cloud Run service. NOT allUsers by default — the org's
 # domain-restricted-sharing policy forbids it, and public access is fronted by a Cloudflare
 # Worker running as a service account. List that SA and/or human users here.

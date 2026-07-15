@@ -1,7 +1,10 @@
-# Dedicated runtime identity for the Cloud Run service (least privilege — not the default
-# compute SA). Note: the manually-provisioned prod uses the default compute SA; adopt this
-# via `terraform import` or migrate the service to this SA (see README).
+data "google_project" "this" {}
+
+# Runtime identity for Cloud Run. Fresh deploy: create a dedicated least-privilege
+# `warden-run` SA and bind its roles. adopt_existing: reuse the default compute SA the
+# hand-built prod already runs as (it already holds the needed roles — don't manage them).
 resource "google_service_account" "run" {
+  count        = var.adopt_existing ? 0 : 1
   account_id   = "${var.service_name}-run"
   display_name = "Warden Cloud Run runtime"
 }
@@ -12,13 +15,18 @@ locals {
     "roles/secretmanager.secretAccessor",
     "roles/logging.logWriter",
   ]
+  # The compute SA to fall back to when adopting (auto-derived from the project number).
+  compute_sa = var.compute_sa_email != "" ? var.compute_sa_email : "${data.google_project.this.number}-compute@developer.gserviceaccount.com"
+  # The identity the service actually runs as.
+  run_sa_email = var.adopt_existing ? local.compute_sa : one(google_service_account.run[*].email)
 }
 
 resource "google_project_iam_member" "run" {
-  for_each = toset(local.run_roles)
+  # Only manage role bindings for the SA we create; the compute SA already has them.
+  for_each = var.adopt_existing ? toset([]) : toset(local.run_roles)
   project  = var.project_id
   role     = each.value
-  member   = "serviceAccount:${google_service_account.run.email}"
+  member   = "serviceAccount:${local.run_sa_email}"
 }
 
 # Front-door identity for the Cloudflare Worker (mints an ID token to invoke the private

@@ -9,7 +9,7 @@ output "sql_connection_name" {
 }
 
 output "runtime_service_account" {
-  value = google_service_account.run.email
+  value = local.run_sa_email
 }
 
 output "front_service_account" {

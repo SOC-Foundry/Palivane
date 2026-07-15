@@ -7,29 +7,15 @@
 #   PROJECT_ID=erudite-calling-502022-k6 ./import.sh
 #
 # ─────────────────────────────────────────────────────────────────────────────────────
-# READ FIRST — two parts of this config DIVERGE from prod. Importing without addressing
-# them means the next `apply` would DESTROY/ROTATE live state. Edit the config before you
-# import, or the plan afterward will be scary:
+# Run with adopt_existing=true (a tfvars line or -var) for every plan/apply against prod:
+#     echo 'adopt_existing = true' >> terraform.tfvars
+# That flag makes the config prod-safe automatically — it skips generating the secret
+# VERSIONS (so prod's real WARDEN_SECRET_KEY / DATABASE_URL / metrics values are untouched)
+# and runs the service as the default compute SA instead of creating warden-run. No manual
+# editing needed.
 #
-#  1. SECRET VALUES. secrets.tf GENERATES new values (random_password) and composes
-#     DATABASE_URL. Prod's secrets already hold real values. If you let TF manage the
-#     *versions*, apply creates NEW versions — rotating WARDEN_SECRET_KEY (=> findings become
-#     undecryptable + all sessions invalid), the metrics token, and DATABASE_URL.
-#     -> For adopting prod: in secrets.tf, comment out the three
-#        `google_secret_manager_secret_version` resources and the two `random_password`
-#        resources. Import only the secret CONTAINERS (done below). Leave the values alone.
-#
-#  2. RUNTIME SERVICE ACCOUNT. iam.tf/cloudrun.tf use a dedicated `warden-run` SA; prod runs
-#     as the DEFAULT compute SA. Options:
-#      (a) Keep the default compute SA: set template.service_account in cloudrun.tf to
-#          "442729333907-compute@developer.gserviceaccount.com" and delete
-#          google_service_account.run + google_project_iam_member.run + the run_access
-#          bindings. Simplest; no migration.
-#      (b) Migrate to warden-run (least privilege): leave the config, let apply CREATE the SA
-#          and switch the service to it (a real, intended change — review it).
-#
-#  The SQL user password will always show as an in-place "update" (Terraform can't read it
-#  back); with TF_DB_PASSWORD set to the CURRENT value it's a no-op in practice. Verify.
+# The SQL user password may still show as an in-place "update" (Terraform can't read it
+# back); with TF_DB_PASSWORD set to the CURRENT value that's a no-op in practice. Verify.
 # ─────────────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -83,9 +69,9 @@ imp google_cloud_run_v2_service_iam_member.invoker_front \
 
 cat <<DONE
 
-Imported. NOW:
+Imported. NOW (with adopt_existing = true set):
   terraform plan
-Review it carefully. A clean adoption shows NO destroys and NO secret-version creates.
-The only expected "changes" are benign (e.g. the SQL user password update TF can't avoid,
-labels/annotations). DO NOT apply until the plan matches your intent.
+A clean adoption shows NO destroys and NO secret-version creates. The only expected
+"changes" are benign (e.g. the SQL user password update TF can't avoid, labels). DO NOT
+apply until the plan matches your intent.
 DONE
