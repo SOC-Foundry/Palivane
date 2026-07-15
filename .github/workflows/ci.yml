@@ -76,7 +76,10 @@ jobs:
           terraform init -input=false \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config="prefix=warden"
-          terraform plan -no-color -input=false -lock=false > plan.txt || true
+          set -o pipefail
+          # Capture the plan to the job summary AND fail the check if plan itself errors
+          # (e.g. a missing variable), instead of hiding it.
+          terraform plan -no-color -input=false -lock=false 2>&1 | tee plan.txt
           {
             echo '### Terraform plan';
             echo '```';
