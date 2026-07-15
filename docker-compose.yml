@@ -1,5 +1,9 @@
-# Local hosted stack: Postgres + backend (FastAPI) + web (nginx-served frontend).
-#   cp .env.docker.example .env   # then edit secrets
+# Self-host / local stack: Postgres + the SAME single-origin image CI builds and deploys to
+# Cloud Run (deploy/cloudrun/Dockerfile) — SPA + API + the /install.sh & /cli distribution
+# endpoints, all on one port. Building the canonical image (not a separate backend+nginx
+# pair) means a self-hosted deployment always includes exactly what the SaaS runs.
+#
+#   cp .env.docker.example .env   # set WARDEN_SECRET_KEY (openssl rand -hex 32)
 #   docker compose up --build
 # Then open http://localhost:8080  (login: admin@demo.local / changeme123 when seeded).
 
@@ -7,67 +11,61 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-aithreat}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aithreat}
-      POSTGRES_DB: ${POSTGRES_DB:-aithreat}
+      POSTGRES_USER: ${POSTGRES_USER:-warden}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-warden}
+      POSTGRES_DB: ${POSTGRES_DB:-warden}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aithreat}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-warden}"]
       interval: 5s
       timeout: 3s
       retries: 20
 
-  backend:
-    build: ./backend
+  app:
+    build:
+      context: .
+      dockerfile: deploy/cloudrun/Dockerfile
     depends_on:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-aithreat}:${POSTGRES_PASSWORD:-aithreat}@db:5432/${POSTGRES_DB:-aithreat}
-      WARDEN_SECRET_KEY: "${WARDEN_SECRET_KEY:?set a strong WARDEN_SECRET_KEY in .env (generate openssl rand -hex 32)}"
+      PORT: "8080"
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warden}:${POSTGRES_PASSWORD:-warden}@db:5432/${POSTGRES_DB:-warden}
+      WARDEN_SECRET_KEY: "${WARDEN_SECRET_KEY:?set a strong WARDEN_SECRET_KEY in .env (openssl rand -hex 32)}"
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      WARDEN_PUBLIC_URL: ${WARDEN_PUBLIC_URL:-http://localhost:8080}
       SEED_ON_START: ${SEED_ON_START:-false}
       WARDEN_ALLOW_SIGNUP: ${WARDEN_ALLOW_SIGNUP:-true}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@demo.local}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-changeme123}
+      # Findings-at-rest posture (self-host can choose to keep content).
+      WARDEN_ENCRYPT_FINDINGS: ${WARDEN_ENCRYPT_FINDINGS:-true}
+      WARDEN_STORE_CONTENT: ${WARDEN_STORE_CONTENT:-false}
+      # Optional: LLM judge (bring your own key).
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       JUDGE_PROVIDER: ${JUDGE_PROVIDER:-auto}
-      JUDGE_MODEL: ${JUDGE_MODEL:-}
+      # Optional: gateway upstreams, capture token, tenant.
       GATEWAY_ENFORCE: ${GATEWAY_ENFORCE:-false}
-      GATEWAY_BLOCK_SEVERITY: ${GATEWAY_BLOCK_SEVERITY:-high}
-      GATEWAY_UPSTREAM_BASE: ${GATEWAY_UPSTREAM_BASE:-}
-      GATEWAY_UPSTREAM_KEY: ${GATEWAY_UPSTREAM_KEY:-}
       GATEWAY_ANTHROPIC_BASE: ${GATEWAY_ANTHROPIC_BASE:-https://api.anthropic.com}
       GATEWAY_ANTHROPIC_KEY: ${GATEWAY_ANTHROPIC_KEY:-}
-      GATEWAY_TOOL_SUPPRESS: ${GATEWAY_TOOL_SUPPRESS:-}
       EXTENSION_INGEST_TOKEN: ${EXTENSION_INGEST_TOKEN:-}
       INGEST_TENANT: ${INGEST_TENANT:-demo}
-      MCP_ENFORCE: ${MCP_ENFORCE:-false}
-      MCP_BLOCK_SEVERITY: ${MCP_BLOCK_SEVERITY:-high}
-      MCP_ALLOWED_SERVERS: ${MCP_ALLOWED_SERVERS:-}
-      DEP_DENYLIST: ${DEP_DENYLIST:-}
-      DEP_OSV_ENABLED: ${DEP_OSV_ENABLED:-false}
-      IDE_EXT_DENYLIST: ${IDE_EXT_DENYLIST:-}
-      IDE_EXT_ALLOWED: ${IDE_EXT_ALLOWED:-}
       WARDEN_EXTENSION_ID: ${WARDEN_EXTENSION_ID:-}
-    expose:
-      - "8088"
+      # Optional: email plane (SMTP) for reset / verification / invites.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+    ports:
+      - "${WEB_PORT:-8080}:8080"
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8088/api/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/api/health"]
       interval: 5s
       timeout: 3s
-      retries: 20
-
-  web:
-    build: ./frontend
-    depends_on:
-      backend:
-        condition: service_healthy
-    ports:
-      - "${WEB_PORT:-8080}:80"
+      retries: 30
 
 volumes:
   pgdata:
