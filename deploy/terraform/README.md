@@ -45,15 +45,17 @@ signs sessions), so treat the state + backend as secrets.
 
 ## Adopting the EXISTING production (don't clobber it)
 The live prod was created by hand, so a plain `apply` against that project would try to
-*create* resources that already exist and error (or, worse, diverge). To codify it safely,
-**import** each resource first, then `plan` until it's a no-op:
+*create* resources that already exist and error (or, worse, diverge). Use **`import.sh`**,
+which imports every existing resource for you:
 ```bash
-terraform import google_sql_database_instance.warden   PROJECT/warden-db
-terraform import google_compute_network.vpc            projects/PROJECT/global/networks/warden-vpc
-terraform import google_artifact_registry_repository.warden  projects/PROJECT/locations/us-central1/repositories/warden
-terraform import google_cloud_run_v2_service.warden    projects/PROJECT/locations/us-central1/services/warden
-# ...secrets, subnetwork, PSA address, service-networking connection, IAM members similarly
+terraform init -backend-config="bucket=<STATE_BUCKET>" -backend-config="prefix=warden"
+PROJECT_ID=erudite-calling-502022-k6 ./import.sh
+terraform plan   # must show no destroys and no secret-version creates before you apply
 ```
+**Read the header of `import.sh` first** — before importing you must adjust two things that
+otherwise get rotated/replaced on the next apply: the secret **versions** (TF regenerates
+values → comment them out so prod's real values stand) and the **runtime SA** (prod uses the
+default compute SA, not `warden-run`).
 Caveats when importing prod: it runs as the **default compute SA**, not `warden-run` (either
 keep using it via a variable/import or migrate); `deletion_protection=true` on the SQL
 instance is intentional; and the Cloudflare Worker + org DRS policy are out of this config's
