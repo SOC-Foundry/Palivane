@@ -16,10 +16,53 @@ from .crypto import seal
 from .redaction import redact_text
 
 
-def _stored_content(content: str) -> str:
-    """Redact secrets/PII (if enabled), then encrypt at rest (if enabled), for storage."""
+def scrub_expired_content(db) -> int:
+    """Blank the stored prompt content on findings older than the content TTL, keeping the
+    finding and its metadata. Bounds how long prose lingers for opt-in-content tenants.
+    Global (all tenants); best-effort. Returns rows scrubbed. 0 TTL = disabled."""
+    days = settings.content_ttl_days
+    if not days:
+        return 0
+    from datetime import datetime, timedelta, timezone
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+    n = (db.query(Finding)
+         .filter(Finding.created_at < cutoff, Finding.content != "")
+         .update({Finding.content: ""}, synchronize_session=False))
+    db.commit()
+    return n
+
+
+def _tenant_dek(tenant, db) -> str | None:
+    """The tenant's unwrapped data key, generating + storing a wrapped one on first use.
+    Returns None if there's no tenant (can't do per-tenant envelope) — caller falls back."""
+    if tenant is None:
+        return None
+    from . import crypto
+    if not tenant.dek_wrapped:
+        dek = crypto.new_dek()
+        tenant.dek_wrapped = crypto.wrap_dek(dek)
+        db.commit()
+        return dek
+    return crypto.unwrap_dek(tenant.dek_wrapped)
+
+
+def _stored_content(content: str, tenant, db) -> str:
+    """Decide what (if anything) of the prompt prose to persist.
+
+    Metadata-only by default: unless this tenant opts in (store_content), store NOTHING of
+    the natural-language content — only the verdict/signals/evidence carry the (already
+    redacted) reason. When content IS stored: redact secrets/PII, then encrypt under the
+    tenant's own key (enc:v2:), falling back to the global key if there's no tenant."""
+    keep = tenant.store_content if (tenant is not None and tenant.store_content is not None) \
+        else settings.store_content
+    if not keep or not content:
+        return ""
     out = redact_text(content) if settings.redact_findings else content
-    return seal(out) if settings.encrypt_findings else out
+    if not settings.encrypt_findings:
+        return out
+    from . import crypto
+    dek = _tenant_dek(tenant, db)
+    return crypto.seal_with(dek, out) if dek else seal(out)
 
 
 _ALLOW_LEVEL = {"benign", "low"}  # verdicts below the warn threshold
@@ -70,7 +113,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             sender=item.sender,
             subject=item.subject,
             agent=agent or "",
-            content=_stored_content(item.content),
+            content=_stored_content(item.content, tenant, db),
             risk_score=verdict.risk_score,
             severity=verdict.severity,
             recommended_action=verdict.recommended_action,

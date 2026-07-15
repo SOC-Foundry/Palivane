@@ -194,6 +194,9 @@ class TenantUpdate(BaseModel):
     # None (field omitted) = leave unchanged.
     judge: Literal["on", "off", "inherit"] | None = None
     retention_days: int | None = None   # 0 = keep findings forever
+    # Persist raw prompt prose in findings: "on"/"off" force it, "inherit" follows the global
+    # default (off). None = leave unchanged. Off = metadata-only (recommended).
+    store_content: Literal["on", "off", "inherit"] | None = None
     rate_limit: int | None = None       # gateway requests/min (0 = inherit global default)
     ingest_rate_limit: int | None = None  # sensor/ingest requests/min (0 = inherit global)
     mcp_allowed_servers: str | None = None  # comma-separated approved MCP server hosts
