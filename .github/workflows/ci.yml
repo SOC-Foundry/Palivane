@@ -47,6 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
+      # fmt + validate run on every PR (cheap, no cloud auth) so the config can't go invalid.
       - name: Format check
         run: terraform fmt -check -recursive
       - name: Validate
@@ -54,12 +55,22 @@ jobs:
           terraform init -backend=false -input=false
           terraform validate
 
-      # Real plan against remote state — only for same-repo PRs (forks don't get creds) and
-      # only when the GCP/WIF variables are configured.
+      # Did this PR actually touch Terraform? The (cloud-authenticated) plan runs only if so.
+      - name: Detect terraform changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            tf:
+              - 'deploy/terraform/**'
+
+      # Real plan against remote state — only when TF changed, on same-repo PRs (forks don't
+      # get creds), and only when the GCP/WIF variables are configured.
       - name: Authenticate to GCP
         id: auth
         if: >-
-          github.event.pull_request.head.repo.full_name == github.repository
+          steps.changes.outputs.tf == 'true'
+          && github.event.pull_request.head.repo.full_name == github.repository
           && vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
         uses: google-github-actions/auth@v2
         with:
