@@ -17,3 +17,11 @@ extension/*.zip
 
 # Misc
 .DS_Store
+
+# Terraform
+deploy/terraform/.terraform/
+deploy/terraform/*.tfstate
+deploy/terraform/*.tfstate.*
+deploy/terraform/*.tfvars
+deploy/terraform/.terraform.lock.hcl
+!deploy/terraform/terraform.tfvars.example
