@@ -30,6 +30,13 @@ echo "==> Deploy service account: $SA_EMAIL"
 gcloud iam service-accounts create "$SA_NAME" --project "$PROJECT_ID" \
   --display-name "Warden CI/CD deploy" 2>/dev/null || echo "  (already exists)"
 
+# Newly-created SAs take a few seconds to be usable in IAM bindings — wait for propagation.
+echo "  waiting for the SA to propagate..."
+for _ in $(seq 1 20); do
+  gcloud iam service-accounts describe "$SA_EMAIL" --project "$PROJECT_ID" >/dev/null 2>&1 && break
+  sleep 3
+done
+
 echo "==> Granting roles to the deploy SA"
 # Split note: deploy.yml (app rollout) needs only the first four; the rest are for
 # terraform-apply.yml (full infra). Splitting into two SAs is the hardening step later.
@@ -48,9 +55,14 @@ ROLES=(
   roles/serviceusage.serviceUsageAdmin
 )
 for role in "${ROLES[@]}"; do
-  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-    --member "serviceAccount:${SA_EMAIL}" --role "$role" --condition=None >/dev/null
-  echo "  + $role"
+  for attempt in 1 2 3 4 5; do
+    if gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+        --member "serviceAccount:${SA_EMAIL}" --role "$role" --condition=None >/dev/null 2>&1; then
+      echo "  + $role"; break
+    fi
+    [ "$attempt" = 5 ] && { echo "  ! failed to bind $role"; exit 1; }
+    sleep 4
+  done
 done
 
 echo "==> Terraform state bucket: gs://${STATE_BUCKET}"
