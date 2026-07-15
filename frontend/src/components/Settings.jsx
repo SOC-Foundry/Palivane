@@ -21,6 +21,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   // --- Organization ---
   const [org, setOrgState] = useState({
     name: tenant?.name || "", judge: judgeValue(tenant),
+    store_content: tenant?.store_content === true ? "on" : tenant?.store_content === false ? "off" : "inherit",
     retention_days: tenant?.retention_days ?? 0, rate_limit: tenant?.rate_limit ?? 0,
     ingest_rate_limit: tenant?.ingest_rate_limit ?? 0,
     mcp_allowed_servers: tenant?.mcp_allowed_servers || "",
@@ -41,7 +42,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     e.preventDefault();
     try {
       const t = await api.updateTenant({
-        name: org.name, judge: org.judge,
+        name: org.name, judge: org.judge, store_content: org.store_content,
         retention_days: Number(org.retention_days), rate_limit: Number(org.rate_limit),
         ingest_rate_limit: Number(org.ingest_rate_limit),
         mcp_allowed_servers: org.mcp_allowed_servers,
@@ -268,6 +269,13 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
               <option value="inherit">Inherit (global)</option>
               <option value="on">On</option>
               <option value="off">Off (no content sent to the LLM provider)</option>
+            </select>
+          </label>
+          <label>Store prompt content
+            <select value={org.store_content} onChange={setField("store_content")}>
+              <option value="inherit">Inherit (global — metadata-only)</option>
+              <option value="off">Metadata only (recommended — no prompt text stored)</option>
+              <option value="on">Store full content (redacted + encrypted per-tenant)</option>
             </select>
           </label>
           <label>Findings retention (days, 0 = forever)

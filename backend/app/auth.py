@@ -929,6 +929,8 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.name = body.name.strip() or tenant.name
     if body.judge is not None:
         tenant.judge_enabled = _JUDGE[body.judge]
+    if body.store_content is not None:
+        tenant.store_content = _JUDGE[body.store_content]   # reuse on/off/inherit -> True/False/None
     if body.retention_days is not None:
         if body.retention_days < 0:
             raise HTTPException(status_code=400, detail="retention_days must be >= 0")

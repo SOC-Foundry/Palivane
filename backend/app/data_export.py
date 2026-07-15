@@ -69,6 +69,8 @@ def build_tenant_export(db: Session, tenant, include_content: bool = False,
     roles = db.query(AgentRole).filter(AgentRole.tenant_id == tid).all()
     overrides = db.query(PolicyOverride).filter(PolicyOverride.tenant_id == tid).all()
     discovered = db.query(DiscoveredUsage).filter(DiscoveredUsage.tenant_id == tid).all()
+    from .crypto import unwrap_dek
+    dek = unwrap_dek(tenant.dek_wrapped) if tenant.dek_wrapped else None
 
     return {
         "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -85,7 +87,7 @@ def build_tenant_export(db: Session, tenant, include_content: bool = False,
         "upstreams": _upstreams(db, tid),
         "sso": _sso(db, tid),
         "audit_log": audit_log.recent(db, tid, limit=_AUDIT_CAP),
-        "findings": [f.to_detail() if include_content else f.to_summary() for f in findings],
+        "findings": [f.to_detail(dek) if include_content else f.to_summary() for f in findings],
         "counts": {"users": len(users), "api_keys": len(keys),
                    "enrollment_tokens": len(tokens), "findings": len(findings),
                    "agents": len(agents), "agent_roles": len(roles),

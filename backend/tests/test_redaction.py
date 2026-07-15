@@ -26,6 +26,7 @@ def test_invalid_card_not_redacted():
 
 def test_stored_finding_content_is_redacted(client, raw_client, monkeypatch):
     monkeypatch.setattr(main.settings, "redact_findings", True)
+    monkeypatch.setattr(main.settings, "store_content", True)
     key = client.post("/api/apikeys", json={"label": "cap", "actor": "x@acme.com"}).json()["token"]
     raw_client.post(
         "/api/ingest/ai-usage",
@@ -42,6 +43,7 @@ def test_stored_finding_content_is_redacted(client, raw_client, monkeypatch):
 
 def test_redaction_can_be_disabled(client, raw_client, monkeypatch):
     monkeypatch.setattr(main.settings, "redact_findings", False)
+    monkeypatch.setattr(main.settings, "store_content", True)
     key = client.post("/api/apikeys", json={"label": "cap2", "actor": "y@acme.com"}).json()["token"]
     raw_client.post(
         "/api/ingest/ai-usage",

@@ -38,6 +38,14 @@ class Settings:
     # Encrypt stored finding content at rest (decrypted on read for authorized admins).
     # Opt-in: requires a durable WARDEN_ENCRYPTION_KEY/WARDEN_SECRET_KEY (key loss = data loss).
     encrypt_findings: bool = os.getenv("WARDEN_ENCRYPT_FINDINGS", "").lower() in ("1", "true", "yes")
+    # Persist the raw prompt PROSE in findings? Default OFF: store the verdict, signal
+    # categories, redacted evidence, and attribution — but not the natural-language content,
+    # which can't be redacted for concepts/IP and would make the store a honeypot. A tenant
+    # can opt in (store_content column) for richer triage of its own data.
+    store_content: bool = os.getenv("WARDEN_STORE_CONTENT", "").lower() in ("1", "true", "yes")
+    # For tenants that DO store content, scrub it (keep metadata) after this many days.
+    # Bounds the exposure window instead of keeping prose forever. 0 = never scrub.
+    content_ttl_days: int = int(os.getenv("WARDEN_CONTENT_TTL_DAYS", "30"))
     # Self-serve signup: anyone can create a new org (tenant). Set false on a
     # single-org self-hosted deployment to lock it down after bootstrapping.
     allow_signup: bool = os.getenv("WARDEN_ALLOW_SIGNUP", "true").lower() in ("1", "true", "yes")

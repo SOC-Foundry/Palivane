@@ -97,6 +97,12 @@ async def lifespan(_app: FastAPI):
                     # gateway_usage doesn't grow unbounded. ~hourly (every 12th 5-min tick).
                     if ticks % 12 == 0:
                         await asyncio.to_thread(metering.prune, db)
+                    # Scrub stored prompt content past the content TTL (keeps the finding +
+                    # metadata, drops the prose) so opt-in-content tenants don't retain it
+                    # forever. ~hourly.
+                    if ticks % 12 == 0:
+                        from .service import scrub_expired_content
+                        await asyncio.to_thread(scrub_expired_content, db)
                 finally:
                     db.close()
             except asyncio.CancelledError:
@@ -1304,7 +1310,10 @@ def get_finding(finding_id: int, current: User = Depends(get_current_user),
     row = db.get(Finding, finding_id)
     if not row or row.tenant_id != current.tenant_id:
         raise HTTPException(status_code=404, detail="finding not found")
-    return row.to_detail()
+    from .crypto import unwrap_dek
+    tenant = db.get(Tenant, current.tenant_id)
+    dek = unwrap_dek(tenant.dek_wrapped) if tenant and tenant.dek_wrapped else None
+    return row.to_detail(dek)
 
 
 @app.patch("/api/findings/{finding_id}")

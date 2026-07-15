@@ -60,3 +60,55 @@ def unseal(text):
     if isinstance(text, str) and text.startswith(_ENC_PREFIX):
         return decrypt(text[len(_ENC_PREFIX):])
     return text
+
+
+# --- per-tenant envelope encryption (BYOK-style) -------------------------------------
+#
+# Each tenant gets its own random data key (DEK), wrapped by the master key (KEK derived
+# above) and stored on the tenant row. Content is sealed under the tenant's DEK, tagged
+# `enc:v2:`. Benefit over one global key: a DB breach without the KEK yields nothing, no
+# single key unlocks every tenant, and a tenant's content can be revoked by dropping its
+# wrapped DEK. Legacy `enc:v1:` (global-key) values still decrypt via unseal_with().
+
+_ENC_PREFIX_V2 = "enc:v2:"
+
+
+def new_dek() -> str:
+    """A fresh per-tenant data key (urlsafe-base64 Fernet key), as a str for storage."""
+    return Fernet.generate_key().decode()
+
+
+def wrap_dek(dek: str) -> str:
+    """Encrypt a tenant DEK under the master KEK for storage on the tenant row."""
+    return _fernet().encrypt(dek.encode()).decode()
+
+
+def unwrap_dek(wrapped: str) -> str | None:
+    try:
+        return _fernet().decrypt(wrapped.encode()).decode()
+    except (InvalidToken, ValueError):
+        return None
+
+
+def seal_with(dek: str, text: str) -> str:
+    """Encrypt `text` under a tenant DEK, tagged enc:v2:. Empty stays empty."""
+    if not text:
+        return text
+    return _ENC_PREFIX_V2 + Fernet(dek.encode()).encrypt(text.encode()).decode()
+
+
+def unseal_with(text, dek: str | None):
+    """Decrypt any sealed value: enc:v2: needs the tenant DEK; enc:v1: uses the global key;
+    anything else passes through. Returns a marker if a v2 value can't be opened."""
+    if not isinstance(text, str):
+        return text
+    if text.startswith(_ENC_PREFIX_V2):
+        if not dek:
+            return "[content unavailable — tenant key missing]"
+        try:
+            return Fernet(dek.encode()).decrypt(text[len(_ENC_PREFIX_V2):].encode()).decode()
+        except (InvalidToken, ValueError):
+            return "[content unavailable — undecryptable]"
+    if text.startswith(_ENC_PREFIX):
+        return decrypt(text[len(_ENC_PREFIX):])
+    return text

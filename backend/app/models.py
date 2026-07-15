@@ -104,10 +104,18 @@ class Tenant(Base):
     # Lifecycle: "active" | "suspended". Suspension is operator-set (CLI) and blocks
     # logins, sessions, ingest, and the gateway without touching any data.
     status = Column(String(16), default="active", nullable=False)
+    # Persist raw prompt prose in this tenant's findings? None = inherit the global default
+    # (WARDEN_STORE_CONTENT, off). Off = metadata-only (verdict + signals + redacted
+    # evidence, no natural-language content).
+    store_content = Column(Boolean, nullable=True, default=None)
+    # Per-tenant data key (DEK) wrapped by the master KEK — content is enc:v2: sealed under
+    # it. Generated lazily on first content store. Dropping this revokes the tenant's content.
+    dek_wrapped = Column(Text, default="")
 
     def to_dict(self) -> dict:
         return {"id": self.id, "slug": self.slug, "name": self.name,
                 "status": self.status or "active",
+                "store_content": self.store_content,
                 "judge_enabled": self.judge_enabled, "retention_days": self.retention_days,
                 "rate_limit": self.rate_limit, "ingest_rate_limit": self.ingest_rate_limit or 0,
                 "mcp_allowed_servers": self.mcp_allowed_servers or "",
@@ -447,10 +455,14 @@ class Finding(Base):
             "judge_used": self.judge_used,
         }
 
-    def to_detail(self) -> dict:
-        from .crypto import unseal
+    def to_detail(self, dek: str | None = None) -> dict:
+        """`dek` is the tenant's unwrapped data key, needed to open enc:v2: content;
+        legacy enc:v1: content decrypts without it. content_retained reflects whether any
+        prose was stored (false under the metadata-only policy)."""
+        from .crypto import unseal_with
         d = self.to_summary()
-        d["content"] = unseal(self.content)   # decrypt if stored encrypted
+        d["content"] = unseal_with(self.content, dek) if self.content else ""
+        d["content_retained"] = bool(self.content)
         d["signals"] = self.signals or []
         return d
 
