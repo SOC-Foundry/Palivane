@@ -8,6 +8,8 @@ on:
     branches: [main]
     paths-ignore:
       - "deploy/terraform/**"
+      - "deploy/gcp/**"
+      - ".github/**"
       - "**/*.md"
       - "docs/**"
   workflow_dispatch:
