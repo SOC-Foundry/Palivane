@@ -8,12 +8,16 @@
 # it = data loss + all sessions invalid. random_password keeps it stable in state; treat
 # the state (and its backend) as sensitive.
 
+# Generated only for a fresh deploy. When adopting existing prod (adopt_existing=true) the
+# secret VERSIONS below are skipped so TF never rotates the live values.
 resource "random_password" "secret_key" {
+  count   = var.adopt_existing ? 0 : 1
   length  = 48
   special = false
 }
 
 resource "random_password" "metrics_token" {
+  count   = var.adopt_existing ? 0 : 1
   length  = 32
   special = false
 }
@@ -26,8 +30,9 @@ resource "google_secret_manager_secret" "secret_key" {
   depends_on = [google_project_service.apis]
 }
 resource "google_secret_manager_secret_version" "secret_key" {
+  count       = var.adopt_existing ? 0 : 1
   secret      = google_secret_manager_secret.secret_key.id
-  secret_data = random_password.secret_key.result
+  secret_data = random_password.secret_key[0].result
 }
 
 resource "google_secret_manager_secret" "metrics_token" {
@@ -38,8 +43,9 @@ resource "google_secret_manager_secret" "metrics_token" {
   depends_on = [google_project_service.apis]
 }
 resource "google_secret_manager_secret_version" "metrics_token" {
+  count       = var.adopt_existing ? 0 : 1
   secret      = google_secret_manager_secret.metrics_token.id
-  secret_data = random_password.metrics_token.result
+  secret_data = random_password.metrics_token[0].result
 }
 
 resource "google_secret_manager_secret" "database_url" {
@@ -50,6 +56,7 @@ resource "google_secret_manager_secret" "database_url" {
   depends_on = [google_project_service.apis]
 }
 resource "google_secret_manager_secret_version" "database_url" {
+  count  = var.adopt_existing ? 0 : 1
   secret = google_secret_manager_secret.database_url.id
   # psycopg2 unix-socket form the app expects (host=/cloudsql/CONNECTION_NAME).
   secret_data = "postgresql+psycopg2://${var.db_user}:${var.db_password}@/warden?host=/cloudsql/${google_sql_database_instance.warden.connection_name}"
@@ -65,9 +72,10 @@ resource "google_secret_manager_secret" "smtp_pass" {
   depends_on = [google_project_service.apis]
 }
 
-# Let the runtime SA read each secret (in addition to the project-level accessor role).
+# Grant the dedicated runtime SA read access to each secret. Skipped when adopting: the
+# default compute SA already has project-level secretAccessor.
 resource "google_secret_manager_secret_iam_member" "run_access" {
-  for_each = {
+  for_each = var.adopt_existing ? {} : {
     sk = google_secret_manager_secret.secret_key.id
     mt = google_secret_manager_secret.metrics_token.id
     du = google_secret_manager_secret.database_url.id
@@ -75,5 +83,5 @@ resource "google_secret_manager_secret_iam_member" "run_access" {
   }
   secret_id = each.value
   role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.run.email}"
+  member    = "serviceAccount:${local.run_sa_email}"
 }

@@ -44,18 +44,20 @@ local state. Losing/rotating `WARDEN_SECRET_KEY` means data loss (it encrypts fi
 signs sessions), so treat the state + backend as secrets.
 
 ## Adopting the EXISTING production (don't clobber it)
-The live prod was created by hand, so a plain `apply` against that project would try to
-*create* resources that already exist and error (or, worse, diverge). Use **`import.sh`**,
-which imports every existing resource for you:
+The live prod was created by hand, so a plain `apply` would try to *create* resources that
+already exist. Set **`adopt_existing = true`** and run **`import.sh`** — the flag makes the
+config prod-safe automatically (skips generating secret versions so prod's real values
+stand, and uses the default compute SA instead of creating `warden-run`), so no hand-editing
+is needed:
 ```bash
 terraform init -backend-config="bucket=<STATE_BUCKET>" -backend-config="prefix=warden"
+echo 'adopt_existing = true' >> terraform.tfvars
 PROJECT_ID=erudite-calling-502022-k6 ./import.sh
-terraform plan   # must show no destroys and no secret-version creates before you apply
+terraform plan   # expect a clean no-op (no destroys, no secret-version creates)
 ```
-**Read the header of `import.sh` first** — before importing you must adjust two things that
-otherwise get rotated/replaced on the next apply: the secret **versions** (TF regenerates
-values → comment them out so prod's real values stand) and the **runtime SA** (prod uses the
-default compute SA, not `warden-run`).
+Keep `adopt_existing = true` for all future plans/applies against this environment. New
+environments leave it `false` (the default) to provision fresh with a dedicated SA and
+generated secrets.
 Caveats when importing prod: it runs as the **default compute SA**, not `warden-run` (either
 keep using it via a variable/import or migrate); `deletion_protection=true` on the SQL
 instance is intentional; and the Cloudflare Worker + org DRS policy are out of this config's

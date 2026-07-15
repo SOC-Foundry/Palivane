@@ -35,7 +35,7 @@ resource "google_cloud_run_v2_service" "warden" {
   ]
 
   template {
-    service_account                  = google_service_account.run.email
+    service_account                  = local.run_sa_email
     max_instance_request_concurrency = 80
 
     scaling {
