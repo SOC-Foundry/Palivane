@@ -39,6 +39,49 @@ jobs:
         working-directory: frontend
         run: npm ci && npm run build
 
+  # Prove the self-host path: build the single-origin image via docker compose (the same
+  # image CI deploys to Cloud Run) and confirm the stack boots + serves /api/health. This
+  # is what keeps self-host from silently drifting out of sync with the app.
+  selfhost-compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect image-affecting changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            img:
+              - 'backend/**'
+              - 'frontend/**'
+              - 'cli/**'
+              - 'proxy/**'
+              - 'deploy/cloudrun/**'
+              - 'docker-compose.yml'
+              - '.env.docker.example'
+      - name: Bring up the stack
+        if: steps.changes.outputs.img == 'true'
+        run: |
+          printf 'WARDEN_SECRET_KEY=%s\nSEED_ON_START=true\n' "$(openssl rand -hex 32)" > .env
+          docker compose up -d --build --wait --wait-timeout 300
+      - name: Health check + core detection
+        if: steps.changes.outputs.img == 'true'
+        run: |
+          curl -sf --retry 5 --retry-delay 3 http://localhost:8080/api/health
+          # a demo admin is seeded; confirm the app + DB + a real endpoint work end to end
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8080/api/auth/login \
+            -H 'content-type: application/json' \
+            -d '{"email":"admin@demo.local","password":"changeme123"}')
+          test "$code" = "200" || { echo "login returned $code"; exit 1; }
+          # the /install.sh distribution endpoint must be present in the self-host image too
+          curl -sf http://localhost:8080/install.sh | head -1 | grep -q '#!/usr/bin/env bash'
+      - name: Logs on failure
+        if: failure() && steps.changes.outputs.img == 'true'
+        run: docker compose logs --no-color | tail -100
+      - name: Teardown
+        if: always() && steps.changes.outputs.img == 'true'
+        run: docker compose down -v
+
   terraform:
     runs-on: ubuntu-latest
     defaults:
