@@ -1,14 +1,15 @@
 name: Terraform apply (infra)
 
-# Infra changes only: applies when Terraform files land on main. Kept separate from the app
-# deploy so routine merges don't touch infrastructure. Gate it behind an environment with
-# required reviewers for a human approval step.
+# Infra changes. MANUAL ONLY for now (workflow_dispatch): the existing production infra was
+# built by hand and is NOT yet in Terraform state, so an auto-apply would try to create
+# resources that already exist. Import prod into state first (see deploy/terraform/README),
+# confirm `plan` is a no-op, THEN re-enable the push trigger below.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "deploy/terraform/**"
   workflow_dispatch:
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "deploy/terraform/**"
 
 permissions:
   contents: read
