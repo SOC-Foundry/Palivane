@@ -1,0 +1,53 @@
+name: Deploy (Cloud Run)
+
+# App rollout on merge to main: build + push the image (Cloud Build) and deploy to Cloud
+# Run via the existing deploy script. Infra changes are handled separately by
+# terraform-apply.yml. Requires Workload Identity Federation + a deploy service account.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "deploy/terraform/**"
+      - "**/*.md"
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-cloud-run
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production   # add required reviewers here for a manual gate
+    steps:
+      - uses: actions/checkout@v4
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build + deploy
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+          SQL_CONNECTION: ${{ vars.GCP_SQL_CONNECTION }}
+          VPC_NETWORK: ${{ vars.VPC_NETWORK }}
+          VPC_SUBNET: ${{ vars.VPC_SUBNET }}
+          # Posture + fronting — set as repo/environment variables (not secrets; non-sensitive).
+          GATEWAY_ENFORCE: ${{ vars.GATEWAY_ENFORCE }}
+          WARDEN_ALLOW_SIGNUP: ${{ vars.WARDEN_ALLOW_SIGNUP }}
+          WARDEN_ENCRYPT_FINDINGS: ${{ vars.WARDEN_ENCRYPT_FINDINGS }}
+          DOMAIN: ${{ vars.DOMAIN }}
+          WARDEN_ALLOWED_HOSTS: ${{ vars.WARDEN_ALLOWED_HOSTS }}
+          WARDEN_EXTENSION_ID: ${{ vars.WARDEN_EXTENSION_ID }}
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_USER: ${{ vars.SMTP_USER }}
+          MAIL_FROM: ${{ vars.MAIL_FROM }}
+        run: ./deploy/cloudrun/deploy.sh
