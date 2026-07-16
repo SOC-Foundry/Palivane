@@ -44,7 +44,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .database import get_db
+from .database import bind_tenant, get_db
 from .detectors import AnalysisInput, Surface
 from .models import Agent, ApiKey, Tenant, User
 from .policy import detect_tool, signal_filter_for
@@ -103,6 +103,7 @@ def get_gateway_principal(request: Request, db: Session = Depends(get_db)) -> Pr
               .one_or_none())
         if ag is None:
             raise HTTPException(status_code=401, detail="invalid agent token")
+        bind_tenant(db, ag.tenant_id)
         return Principal(tenant_id=ag.tenant_id, actor=ag.name, agent=ag.name)
     if looks_like_api_key(token):
         p = _resolve_api_key(token, db)
@@ -115,6 +116,7 @@ def get_gateway_principal(request: Request, db: Session = Depends(get_db)) -> Pr
         if user is None or not user.active:
             raise HTTPException(status_code=401, detail="user not found or inactive")
         p = Principal(tenant_id=user.tenant_id, actor=user.email)
+    bind_tenant(db, p.tenant_id)
     p.agent = _resolve_gateway_agent(request, token, p.tenant_id, db)
     return p
 
