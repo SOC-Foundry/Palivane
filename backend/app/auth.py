@@ -98,6 +98,10 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="session revoked — please sign in again")
     from .lifecycle import ensure_active
     ensure_active(db, user.tenant_id)
+    # Scope the DB session to this tenant so RLS enforces isolation on everything the
+    # request touches after auth (defense-in-depth with the app-level tenant_id filters).
+    from .database import bind_tenant
+    bind_tenant(db, user.tenant_id)
     return user
 
 
