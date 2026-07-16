@@ -25,7 +25,7 @@ resource "google_cloud_run_v2_service" "warden" {
   location = var.region
   # Public ingress, but invoker IAM (iam.tf) — NOT allUsers — decides who gets through.
   ingress             = "INGRESS_TRAFFIC_ALL"
-  deletion_protection = false
+  deletion_protection = true
 
   depends_on = [
     google_secret_manager_secret_version.secret_key,
@@ -47,8 +47,8 @@ resource "google_cloud_run_v2_service" "warden" {
     vpc_access {
       egress = "PRIVATE_RANGES_ONLY"
       network_interfaces {
-        network    = google_compute_network.vpc.id
-        subnetwork = google_compute_subnetwork.subnet.id
+        network    = google_compute_network.vpc.name
+        subnetwork = google_compute_subnetwork.subnet.name
       }
     }
 
@@ -126,8 +126,17 @@ resource "google_cloud_run_v2_service" "warden" {
     }
   }
 
-  # CI/CD pushes new image tags out-of-band; don't let TF fight a newer deployed image.
+  # deploy.sh / the deploy.yml CI job own the mutable runtime config (image + env via
+  # --update-env-vars). Terraform owns the infra shell (service existence, VPC/SQL wiring,
+  # scaling, SA) and ignores what CI manages — so the two don't fight. client/client_version
+  # reflect the last deploy tool and would perpetually diff otherwise.
   lifecycle {
-    ignore_changes = [template[0].containers[0].image]
+    ignore_changes = [
+      template[0].containers[0].image,
+      template[0].containers[0].env,
+      client,
+      client_version,
+      scaling, # service-level scaling block the deploy tool sets; template.scaling is authoritative here
+    ]
   }
 }

@@ -11,9 +11,10 @@ resource "google_sql_database_instance" "warden" {
   depends_on = [google_service_networking_connection.psa]
 
   settings {
-    tier              = var.db_tier
-    disk_size         = var.db_disk_gb
-    availability_type = "ZONAL"
+    tier                        = var.db_tier
+    disk_size                   = var.db_disk_gb
+    availability_type           = "ZONAL"
+    enable_dataplex_integration = true
 
     ip_configuration {
       ipv4_enabled    = false # no public IP
@@ -49,4 +50,9 @@ resource "google_sql_user" "warden" {
   name     = var.db_user
   instance = google_sql_database_instance.warden.name
   password = var.db_password
+  # The API never returns the password, so TF would show a perpetual "update". The password
+  # is owned out-of-band (the warden-database-url secret); don't let TF churn/rotate it.
+  lifecycle {
+    ignore_changes = [password]
+  }
 }
