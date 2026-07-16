@@ -1,0 +1,52 @@
+# Defaults for one isolated single-tenant Warden instance. Per-customer values are supplied
+# at install time by provision-customer.sh (customer slug, host, node pool, Cloud SQL, GSA).
+
+# Customer identity — REQUIRED per install (provisioner sets these).
+customer: ""          # slug, e.g. "acme"; used for names, node-pool pinning, labels
+host: ""              # public hostname, e.g. "acme.warden.tachtech.net"
+
+image:
+  repo: us-central1-docker.pkg.dev/erudite-calling-502022-k6/warden/warden
+  tag: latest
+
+replicas: 1
+
+# Pin this customer's pods to their dedicated node pool (Terraform taints it
+# dedicated=<customer>:NoSchedule and labels it warden-customer=<customer>).
+nodePool:
+  isolate: true
+
+# Google service account (Workload Identity) the pod runs as — needs roles/cloudsql.client
+# and secretmanager.secretAccessor. Provisioner creates it and sets the email.
+gcpServiceAccount: ""     # e.g. "warden-acme@PROJECT.iam.gserviceaccount.com"
+
+cloudsql:
+  connectionName: ""      # PROJECT:REGION:warden-acme  (the customer's dedicated instance)
+  proxyImage: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.13.0
+
+# Secret material. Provisioner creates the k8s Secret (from Secret Manager) named
+# "<release>-secrets" with keys WARDEN_SECRET_KEY and DATABASE_URL; set create=false so the
+# chart references it rather than templating secrets into values.
+secret:
+  create: false
+  name: ""              # defaults to "<release>-secrets"
+
+# Non-secret app config (single-tenant instance: signup off, content encrypted at rest).
+config:
+  gatewayEnforce: "false"
+  allowSignup: "false"
+  encryptFindings: "true"
+  storeContent: "false"
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1"
+    memory: "1Gi"
+
+# GKE-managed TLS cert for the customer host (ManagedCertificate CRD).
+managedCertificate: true
+
+port: 8080

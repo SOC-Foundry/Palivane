@@ -1,0 +1,14 @@
+project_id = "erudite-calling-502022-k6"
+region     = "us-central1"
+
+# One entry per isolated enterprise customer. The key is the slug (used for the namespace,
+# node pool, Cloud SQL instance, GSA, and Helm release). Copy to customers.auto.tfvars.
+customers = {
+  acme = {
+    machine_type = "e2-standard-2"
+    min_nodes    = 1
+    max_nodes    = 3
+    db_tier      = "db-g1-small"
+    db_disk_gb   = 10
+  }
+}
