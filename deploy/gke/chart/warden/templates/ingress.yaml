@@ -1,0 +1,35 @@
+{{- if .Values.managedCertificate }}
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: {{ include "warden.name" . }}-cert
+  labels:
+    {{- include "warden.labels" . | nindent 4 }}
+spec:
+  domains:
+    - {{ .Values.host }}
+---
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "warden.name" . }}
+  labels:
+    {{- include "warden.labels" . | nindent 4 }}
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    {{- if .Values.managedCertificate }}
+    networking.gke.io/managed-certificates: {{ include "warden.name" . }}-cert
+    {{- end }}
+spec:
+  rules:
+    - host: {{ .Values.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "warden.name" . }}
+                port:
+                  number: 80
