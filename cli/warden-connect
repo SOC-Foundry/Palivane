@@ -201,6 +201,18 @@ def _write_cursor(token: str, backend: str, user: str) -> tuple[str, list[str]] 
     return hpath, [msg]
 
 
+def _upstream_warning(got: dict, console: str) -> str | None:
+    """A 'your org has no provider key yet' warning. The console sends upstream=0/1 with
+    the token when it knows whether the gateway can forward Claude Code's calls to a real
+    model; absent (older console) means unknown — stay quiet."""
+    if got.get("upstream") != "0":
+        return None
+    return ("⚠ Your org hasn't set a model provider key yet, so Claude Code requests\n"
+            "  through the gateway return a stub instead of a real model response.\n"
+            f"  An admin can add your Anthropic API key at {console}\n"
+            "  under Settings → Gateway upstreams.")
+
+
 def main() -> None:
     console = _console_url(sys.argv)
     got = _capture_token(console)
@@ -212,6 +224,9 @@ def main() -> None:
     for item in installed:
         print(f"  {item}")
     print(f"  wrote {path}")
+    warning = _upstream_warning(got, console)
+    if warning:
+        print(warning)
 
     cursor = _write_cursor(got["token"], backend, got.get("user", ""))
     if cursor:

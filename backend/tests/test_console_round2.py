@@ -23,6 +23,9 @@ def test_setup_status(client):
     assert s["planes"]["shadow_ai"] >= 1
     for k in ("judge_enabled", "gateway_enforce", "mcp_enforce"):
         assert k in s
+    # Per-provider "will the gateway forward or stub?" for the Connect page's warning.
+    assert set(s["upstream_forwards"]) == {"openai", "anthropic", "gemini"}
+    assert all(isinstance(v, bool) for v in s["upstream_forwards"].values())
 
 
 def test_per_tenant_ide_denylist(client, raw_client):

@@ -115,3 +115,13 @@ def test_write_cursor_none_when_hook_missing(monkeypatch, tmp_path):
     (tmp_path / ".cursor").mkdir()
     monkeypatch.setattr(wc, "_resolve_script", lambda name: None)
     assert wc._write_cursor("ak_tok", "https://w.io", "") is None
+
+
+def test_upstream_warning_only_when_console_says_no_key():
+    console = "https://w.corp.io"
+    # Console reported no forwarding upstream: warn, pointing at Settings.
+    warning = wc._upstream_warning({"upstream": "0"}, console)
+    assert warning and "Gateway upstreams" in warning and console in warning
+    # Key present, or an older console that doesn't send the flag: stay quiet.
+    assert wc._upstream_warning({"upstream": "1"}, console) is None
+    assert wc._upstream_warning({}, console) is None

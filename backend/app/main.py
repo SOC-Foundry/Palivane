@@ -228,6 +228,7 @@ def setup_status(current: User = Depends(get_current_user), db: Session = Depend
             .filter(Finding.tenant_id == current.tenant_id, Finding.created_at >= since)
             .group_by(Finding.surface).all())
     by_surface = {s: c for s, c in rows}
+    from .upstreams import PROVIDERS, forwards as upstream_forwards
     return {
         "planes": {
             "gateway": by_surface.get("llm_io", 0),      # first-party LLM (gateway)
@@ -235,6 +236,9 @@ def setup_status(current: User = Depends(get_current_user), db: Session = Depend
             "mcp": by_surface.get("mcp", 0),             # agentic tool-use
             "secrets": by_surface.get("secrets", 0),     # credentials at rest (warden-secrets)
         },
+        # Which providers the gateway will actually forward for this org (vs. the stub) —
+        # the console warns when Claude Code is routed here but anthropic can't forward.
+        "upstream_forwards": {p: upstream_forwards(p, current.tenant_id, db) for p in PROVIDERS},
         "judge_enabled": engine.judge_enabled,
         "gateway_enforce": settings.gateway_enforce,
         "mcp_enforce": settings.mcp_enforce,

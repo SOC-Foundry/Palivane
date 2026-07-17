@@ -9,8 +9,10 @@ const SELF = [
   { n: "2", title: "Run one command",
     body: "On any machine, run warden-connect <your-url>. It signs you in and configures Claude Code, Cursor, and agent tool-call hooks to route through the gateway — no manual config files." },
   { n: "3", title: "Finish the browser extension",
-    body: "Install the Warden extension for Chrome/Edge, then open the link the command prints to bind it to your org. Now claude.ai, ChatGPT, and Gemini are covered too." },
-  { n: "4", title: "Watch findings roll in",
+    body: "Install the Warden extension for Chrome/Edge from the Web Store, then click “Sign in to Warden” in its popup to bind it to your org. Now claude.ai, ChatGPT, and Gemini are covered too." },
+  { n: "4", title: "Add your org's model key (admin, once)",
+    body: "In Settings → Gateway upstreams, paste your org's Anthropic (or OpenAI / Gemini) API key. Gateway traffic forwards with your own provider account — until it's set, Claude Code gets an inspection stub instead of a model reply." },
+  { n: "5", title: "Watch findings roll in",
     body: "The Findings view shows live risk verdicts from the gateway, the browser extension, and the egress proxy — allow, warn, or block, by surface and severity." },
 ];
 
@@ -18,7 +20,7 @@ const ORG = [
   { n: "1", title: "Pick how you ship software",
     body: "Connect → Quick start. Choose an MDM policy pack (Jamf · Intune · GPO) or a per-OS setup script. Warden generates everything already pointed at your org and pre-loaded with your policy." },
   { n: "2", title: "Push the pack fleet-wide",
-    body: "One pack your MDM pushes: extension force-install, egress-proxy profile, and Claude Code managed settings + hooks. Agentless — nothing to install per device." },
+    body: "One pack your MDM pushes: extension force-install, egress-proxy profile, and Claude Code managed settings + hooks. Agentless — nothing to install per device. Set your org's model key first (Part 1, step 4) so gateway-routed Claude Code keeps answering; the proxy leg also needs your root CA in the device trust store." },
   { n: "3", title: "Confirm coverage",
     body: "Discovery and Coverage show every AI tool in use across teams — sanctioned or not — with the real sensitive-data exposure each one received." },
 ];
