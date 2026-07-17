@@ -11,6 +11,7 @@ import Login from "./components/Login.jsx";
 import Landing from "./components/Landing.jsx";
 import Legal from "./components/Legal.jsx";
 import HowItWorks from "./components/HowItWorks.jsx";
+import Setup from "./components/Setup.jsx";
 import UseCases from "./components/UseCases.jsx";
 import WhyWarden from "./components/WhyWarden.jsx";
 import ExtensionConnect from "./components/ExtensionConnect.jsx";
@@ -103,6 +104,9 @@ export default function App() {
   }
   if (legalPath === "/how-it-works") {
     return <HowItWorks />;
+  }
+  if (legalPath === "/setup") {
+    return <Setup />;
   }
   if (legalPath === "/use-cases") {
     return <UseCases />;

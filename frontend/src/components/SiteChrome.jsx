@@ -11,6 +11,7 @@ const TABS = [
   { href: "/why-warden", label: "Why Warden" },
   { href: "/use-cases", label: "Use cases" },
   { href: "/how-it-works", label: "How it works" },
+  { href: "/setup", label: "Setup" },
 ];
 
 export function SiteNav({ onSignIn }) {
