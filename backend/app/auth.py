@@ -31,7 +31,7 @@ from .schemas import (
     DPAAccept, ForgotRequest, OIDCConfig, ResetRequest, SAMLConfig, SignupRequest, TenantDelete, TenantUpdate,
     UpstreamConfig, UserCreate, UserUpdate,
 )
-from .upstreams import PROVIDERS, resolve as resolve_upstream
+from .upstreams import PROVIDERS, forwards as upstream_forwards
 from .security import (
     DUMMY_PASSWORD_HASH,
     TokenError,
@@ -589,7 +589,10 @@ def extension_token(current: User = Depends(get_current_user), db: Session = Dep
     db.refresh(key)
     audit_log.record(db, current.tenant_id, current.email, "extension.connect",
                      target=current.email)
-    return {"token": token, "actor": current.email, "tenant": current.tenant_id}
+    # upstream_forwards: whether gateway-routed Claude Code will reach a real model or the
+    # inspection stub — warden-connect relays this as a "set your provider key" warning.
+    return {"token": token, "actor": current.email, "tenant": current.tenant_id,
+            "upstream_forwards": upstream_forwards("anthropic", current.tenant_id, db)}
 
 
 @router.post("/apikeys")
@@ -860,13 +863,12 @@ def _upstream_state(provider: str, tenant_id: int, db: Session) -> dict:
     row = (db.query(TenantUpstream)
            .filter(TenantUpstream.tenant_id == tenant_id, TenantUpstream.provider == provider)
            .first())
-    eff_base, eff_key = resolve_upstream(provider, tenant_id, db)
     return {
         "provider": provider,
         "base_url": row.base_url if row else "",
         "key_set": bool(row and row.key_encrypted),   # never return the key itself
         "effective": "tenant" if row and (row.base_url or row.key_encrypted) else "global",
-        "forwards": bool(eff_base if provider == "openai" else eff_key),
+        "forwards": upstream_forwards(provider, tenant_id, db),
     }
 
 

@@ -19,8 +19,16 @@ function Readiness() {
     ["Agent tool-calls", s.planes.mcp],
     ["Credentials at rest", s.planes.secrets],
   ];
+  const noUpstream = s.upstream_forwards && !s.upstream_forwards.anthropic;
   return (
     <div className="readiness">
+      {noUpstream && (
+        <div className="error" style={{ marginBottom: 8 }}>
+          No model provider key set — Claude Code routed through the gateway gets a stub
+          reply instead of a real model response. An admin can add your org's Anthropic API
+          key under <strong>Settings → Gateway upstreams</strong>.
+        </div>
+      )}
       <span className="muted">Reporting (last 24h):</span>
       {planes.map(([label, n]) => (
         <span key={label} className={`plane-pill ${n > 0 ? "on" : "off"}`}>
@@ -196,6 +204,9 @@ export default function Connect({ tenant }) {
         <p className="muted" style={{ marginTop: 10 }}>Or self-serve (BYOD / pilots) — the user
            runs <code>warden-connect {origin}</code> to sign in and configure their own Claude
            Code. No token distribution.</p>
+        <p className="muted" style={{ marginTop: 8 }}>Gateway-routed clients forward with your
+           org's own provider account — add your Anthropic API key under
+           <strong> Settings → Gateway upstreams</strong> or they'll get a stub reply.</p>
       </div>
 
       <div className="connect-card">

@@ -47,3 +47,12 @@ def resolve(provider: str, tenant_id: int | None, db: Session) -> tuple[str, str
         if not is_safe_url(row.base_url):
             return g_base, g_key
     return (row.base_url or g_base), (decrypt(row.key_encrypted) or g_key)
+
+
+def forwards(provider: str, tenant_id: int | None, db: Session) -> bool:
+    """Whether the gateway will actually forward this tenant's calls to a real provider
+    (vs. answering with the inspection stub). OpenAI-shaped upstreams can be keyless
+    (e.g. a local/self-hosted base URL), so a base alone counts there; Anthropic/Gemini
+    need a key."""
+    base, key = resolve(provider, tenant_id, db)
+    return bool(base if provider == "openai" else key)
