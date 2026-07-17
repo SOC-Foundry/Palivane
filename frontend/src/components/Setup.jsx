@@ -53,8 +53,8 @@ export default function Setup() {
 
       <section className="lp-section alt">
         <div className="lp-wrap">
-          <Clip lead src="/shots/setup.mp4" poster="/shots/setup-poster.png"
-                caption="Self-serve in one command (Claude Code, Cursor, browser), then an agentless org-wide rollout via MDM — ending in full coverage across every team." />
+          <Clip lead src="/shots/setup.mp4?v=2" poster="/shots/setup-poster.png"
+                caption="Self-serve in one command (Claude Code, Cursor, browser, org model key), then an agentless org-wide rollout via MDM — ending in full coverage across every team." />
         </div>
       </section>
 
