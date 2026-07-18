@@ -112,7 +112,8 @@ def _merge_hook(data: dict, event: str, command: str, timeout: int | None = None
     return True
 
 
-def _write_claude_code(token: str, backend: str, user: str) -> tuple[str, list[str]]:
+def _write_claude_code(token: str, backend: str, user: str,
+                       route_gateway: bool = True) -> tuple[str, list[str]]:
     path = os.path.expanduser("~/.claude/settings.json")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     data = {}
@@ -122,10 +123,12 @@ def _write_claude_code(token: str, backend: str, user: str) -> tuple[str, list[s
         except (ValueError, OSError):
             data = {}
     env = data.setdefault("env", {})
-    env["ANTHROPIC_BASE_URL"] = backend.rstrip("/") + "/v1"
-    env["ANTHROPIC_AUTH_TOKEN"] = token
-    # Same pair under Warden's own names — the hook/posture scripts read these, and it
-    # keeps working even if the gateway routing above is later pointed elsewhere.
+    if route_gateway:
+        env["ANTHROPIC_BASE_URL"] = backend.rstrip("/") + "/v1"
+        env["ANTHROPIC_AUTH_TOKEN"] = token
+    # Warden's own names — the hook/posture scripts read these; installed even when the
+    # gateway routing above is skipped (org has no model key yet), so the local capture
+    # planes work either way.
     env["WARDEN_URL"] = backend.rstrip("/")
     env["WARDEN_TOKEN"] = token
 
@@ -202,25 +205,31 @@ def _write_cursor(token: str, backend: str, user: str) -> tuple[str, list[str]] 
 
 
 def _upstream_warning(got: dict, console: str) -> str | None:
-    """A 'your org has no provider key yet' warning. The console sends upstream=0/1 with
-    the token when it knows whether the gateway can forward Claude Code's calls to a real
-    model; absent (older console) means unknown — stay quiet."""
+    """A 'your org has no provider key yet' note. The console sends upstream=0/1 with the
+    token when it knows whether the gateway can forward Claude Code's calls to a real
+    model; absent (older console) means unknown — stay quiet. On 0 we SKIP the gateway
+    rerouting (Claude Code keeps its own auth/billing) rather than break it with stubs."""
     if got.get("upstream") != "0":
         return None
-    return ("⚠ Your org hasn't set a model provider key yet, so Claude Code requests\n"
-            "  through the gateway return a stub instead of a real model response.\n"
-            f"  An admin can add your Anthropic API key at {console}\n"
-            "  under Settings → Gateway upstreams.")
+    return ("⚠ Gateway routing skipped: your org hasn't set a model provider key yet\n"
+            "  (routing without one would answer Claude Code with inspection stubs).\n"
+            "  Claude Code keeps working with its own account; the local capture planes\n"
+            "  (hooks + posture) are active either way.\n"
+            f"  To route through the gateway: an admin adds your Anthropic API key at\n"
+            f"  {console} under Settings → Gateway upstreams, then re-run warden-connect.")
 
 
 def main() -> None:
     console = _console_url(sys.argv)
     got = _capture_token(console)
     backend = got.get("backend") or console
-    path, installed = _write_claude_code(got["token"], backend, got.get("user", ""))
+    route_gateway = got.get("upstream") != "0"
+    path, installed = _write_claude_code(got["token"], backend, got.get("user", ""),
+                                         route_gateway=route_gateway)
     who = got.get("user") or "you"
     print(f"✓ Claude Code connected as {who}")
-    print(f"  routed through the Warden gateway: {backend.rstrip('/')}/v1")
+    if route_gateway:
+        print(f"  routed through the Warden gateway: {backend.rstrip('/')}/v1")
     for item in installed:
         print(f"  {item}")
     print(f"  wrote {path}")

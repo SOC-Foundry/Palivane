@@ -125,3 +125,16 @@ def test_upstream_warning_only_when_console_says_no_key():
     # Key present, or an older console that doesn't send the flag: stay quiet.
     assert wc._upstream_warning({"upstream": "1"}, console) is None
     assert wc._upstream_warning({}, console) is None
+
+
+def test_no_upstream_skips_gateway_routing_keeps_local_planes(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    path, installed = wc._write_claude_code("ak_tok", "https://w.io", "dev@a.com",
+                                            route_gateway=False)
+    env = json.load(open(path))["env"]
+    # Claude Code keeps its own auth/billing — no gateway rerouting without an org key.
+    assert "ANTHROPIC_BASE_URL" not in env and "ANTHROPIC_AUTH_TOKEN" not in env
+    # Local capture planes still fully wired.
+    assert env["WARDEN_URL"] == "https://w.io" and env["WARDEN_TOKEN"] == "ak_tok"
+    assert len(installed) == 2
