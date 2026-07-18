@@ -31,6 +31,8 @@ ENV_VARS="GATEWAY_ENFORCE=${GATEWAY_ENFORCE:-true}"
 ENV_VARS+="@GATEWAY_BLOCK_SEVERITY=${GATEWAY_BLOCK_SEVERITY:-high}"
 ENV_VARS+="@GATEWAY_ANTHROPIC_BASE=${GATEWAY_ANTHROPIC_BASE:-https://api.anthropic.com}"
 ENV_VARS+="@JUDGE_PROVIDER=${JUDGE_PROVIDER:-auto}"
+# Judge model override (e.g. a Haiku-class model to keep per-verdict cost small).
+[ -n "${JUDGE_MODEL:-}" ] && ENV_VARS+="@JUDGE_MODEL=${JUDGE_MODEL}"
 # Public deploy: signup OFF by default (else the internet can self-register orgs). Set
 # WARDEN_ALLOW_SIGNUP=true explicitly for an open multi-tenant deployment.
 ENV_VARS+="@WARDEN_ALLOW_SIGNUP=${WARDEN_ALLOW_SIGNUP:-false}"
@@ -51,6 +53,7 @@ ENV_VARS+="@SEED_ON_START=${SEED_ON_START:-false}"
 SECRETS="WARDEN_SECRET_KEY=warden-secret-key:latest,DATABASE_URL=warden-database-url:latest"
 for pair in \
   "GATEWAY_ANTHROPIC_KEY=gateway-anthropic-key" \
+  "ANTHROPIC_API_KEY=judge-anthropic-key" \
   "OPENAI_API_KEY=openai-api-key" \
   "GEMINI_API_KEY=gemini-api-key" \
   "WARDEN_METRICS_TOKEN=warden-metrics-token" \
