@@ -64,6 +64,7 @@ class Principal:
     tenant_id: int
     actor: str  # who/what to attribute findings to (user email or API-key label)
     agent: str = ""  # resolved agent name (authenticated ag_ token), for least-privilege authz
+    agent_id: int = 0  # resolved Agent row id (0 = not an agent) — per-agent policy lookups
 
 
 def _resolve_api_key(token: str, db: Session) -> Principal:
@@ -104,7 +105,7 @@ def get_gateway_principal(request: Request, db: Session = Depends(get_db)) -> Pr
         if ag is None:
             raise HTTPException(status_code=401, detail="invalid agent token")
         bind_tenant(db, ag.tenant_id)
-        return Principal(tenant_id=ag.tenant_id, actor=ag.name, agent=ag.name)
+        return Principal(tenant_id=ag.tenant_id, actor=ag.name, agent=ag.name, agent_id=ag.id)
     if looks_like_api_key(token):
         p = _resolve_api_key(token, db)
     else:
@@ -112,27 +113,38 @@ def get_gateway_principal(request: Request, db: Session = Depends(get_db)) -> Pr
             payload = decode_token(token)
         except TokenError as exc:
             raise HTTPException(status_code=401, detail=str(exc))
+        if payload.get("typ") == "agent":
+            # A short-lived agent session token (minted in the console; TTL <= 24h). The
+            # Agent row is re-checked live, so disabling the agent revokes these instantly.
+            ag = db.get(Agent, int(payload.get("agent_id", 0)))
+            if ag is None or not ag.active or ag.tenant_id != int(payload.get("tenant", -1)):
+                raise HTTPException(status_code=401, detail="agent not found or disabled")
+            bind_tenant(db, ag.tenant_id)
+            return Principal(tenant_id=ag.tenant_id, actor=ag.name, agent=ag.name, agent_id=ag.id)
         user = db.get(User, int(payload.get("sub", 0)))
         if user is None or not user.active:
             raise HTTPException(status_code=401, detail="user not found or inactive")
         p = Principal(tenant_id=user.tenant_id, actor=user.email)
     bind_tenant(db, p.tenant_id)
-    p.agent = _resolve_gateway_agent(request, token, p.tenant_id, db)
+    p.agent, p.agent_id = _resolve_gateway_agent(request, token, p.tenant_id, db)
     return p
 
 
-def _resolve_gateway_agent(request: Request, primary: str, tenant_id: int, db: Session) -> str:
-    """Authenticated agent name for least-privilege authz on the gateway: an `ag_…` token in
-    `X-Warden-Agent` (or as the primary credential) that belongs to this tenant. Empty
-    otherwise. The name is never self-asserted — it's resolved from a hashed token, so a
-    caller can't claim a more-privileged agent to widen its role."""
+def _resolve_gateway_agent(request: Request, primary: str, tenant_id: int,
+                           db: Session) -> tuple[str, int]:
+    """Authenticated agent (name, id) for least-privilege authz on the gateway: an `ag_…`
+    token in `X-Warden-Agent` (or as the primary credential) that belongs to this tenant.
+    ("", 0) otherwise. The name is never self-asserted — it's resolved from a hashed token,
+    so a caller can't claim a more-privileged agent to widen its role."""
     from .security import hash_token, looks_like_agent_token
     tok = (request.headers.get("x-warden-agent") or "").strip() or primary
     if not looks_like_agent_token(tok):
-        return ""
+        return "", 0
     ag = (db.query(Agent).filter(Agent.token_hash == hash_token(tok), Agent.active.is_(True))
           .one_or_none())
-    return ag.name if (ag is not None and ag.tenant_id == tenant_id) else ""
+    if ag is None or ag.tenant_id != tenant_id:
+        return "", 0
+    return ag.name, ag.id
 
 
 @dataclass
@@ -147,6 +159,19 @@ def _tenant_policy(tenant_id: int | None, db: Session) -> GatewayPolicy:
     enforce = t.gateway_enforce if t and t.gateway_enforce is not None else settings.gateway_enforce
     sev = (t.gateway_block_severity or "").strip() if t else ""
     return GatewayPolicy(enforce=bool(enforce), block_severity=sev or settings.gateway_block_severity)
+
+
+def _effective_policy(principal: "Principal", db: Session) -> GatewayPolicy:
+    """The tenant's posture, tightened by the calling agent's own block-severity override
+    when one is set. Least-privilege: the STRICTER (lower) threshold wins, so an agent
+    override can never loosen the tenant policy."""
+    pol = _tenant_policy(principal.tenant_id, db)
+    if principal.agent_id:
+        ag = db.get(Agent, principal.agent_id)
+        sev = (ag.block_severity or "").strip() if ag else ""
+        if sev and _SEVERITY_RANK.get(sev, 3) < _SEVERITY_RANK.get(pol.block_severity, 3):
+            pol.block_severity = sev
+    return pol
 
 
 def _blocked(verdict: dict, pol: GatewayPolicy) -> int:
@@ -178,9 +203,17 @@ def _rate_limited(db: Session, principal: "Principal", shape: str) -> JSONRespon
                             content={"error": {"message": SUSPENDED_DETAIL,
                                                "type": "forbidden", "code": "suspended"}})
     allowed, count, limit = record_and_check(db, principal.tenant_id)
+    msg = f"Warden rate limit exceeded ({limit}/min)."
+    if allowed and principal.agent_id:
+        # Per-agent budget on top of the tenant's: an agent with its own rate_limit gets
+        # its own minute-bucket (kind=agN), so one runaway agent can't drain the org.
+        ag = db.get(Agent, principal.agent_id)
+        if ag is not None and (ag.rate_limit or 0) > 0:
+            allowed, count, limit = record_and_check(
+                db, principal.tenant_id, kind=f"ag{principal.agent_id}", limit=ag.rate_limit)
+            msg = f"Warden agent rate limit exceeded ({limit}/min for {principal.agent})."
     if allowed:
         return None
-    msg = f"Warden rate limit exceeded ({limit}/min)."
     if shape == "anthropic":
         body = {"type": "error", "error": {"type": "rate_limit_error", "message": msg}}
     elif shape == "gemini":
@@ -719,7 +752,7 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
     verdict = _capture(_scan_messages(payload.get("messages", [])), model, tool, principal, db)
-    pol = _tenant_policy(principal.tenant_id, db)
+    pol = _effective_policy(principal, db)
 
     if _should_block(verdict, pol):
         return _openai_error(verdict)
@@ -879,7 +912,7 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
     verdict = _capture(_responses_user_text(payload.get("input")), model, tool, principal, db)
-    pol = _tenant_policy(principal.tenant_id, db)
+    pol = _effective_policy(principal, db)
 
     if _should_block(verdict, pol):
         return _openai_error(verdict)
@@ -964,7 +997,7 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
     prompt = _scan_messages(payload.get("messages", []), payload.get("system"))
     verdict = _capture(prompt, model, tool, principal, db)
-    pol = _tenant_policy(principal.tenant_id, db)
+    pol = _effective_policy(principal, db)
 
     if _should_block(verdict, pol):
         return _anthropic_error(verdict)
@@ -1119,7 +1152,7 @@ async def _gemini_entry(model: str, method: str, request: Request,
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
     prompt = _scan_gemini(payload.get("contents", []), payload.get("systemInstruction") or payload.get("system_instruction"))
     verdict = _capture(prompt, model, tool, principal, db)
-    pol = _tenant_policy(principal.tenant_id, db)
+    pol = _effective_policy(principal, db)
 
     if _should_block(verdict, pol):
         return _gemini_error(verdict)

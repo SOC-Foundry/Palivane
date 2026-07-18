@@ -41,6 +41,14 @@ export default function Agents({ tenant, onTenant }) {
     try { await api.agentUpdate(a.id, { oidc_subject: sub }); await load(); }
     catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
   }
+  async function setAgentPolicy(a, patch) {
+    try { await api.agentUpdate(a.id, patch); await load(); }
+    catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
+  }
+  async function mintToken(a) {
+    try { const r = await api.agentToken(a.id, 60); setToken({ name: `${r.agent} (session, 1h)`, token: r.token }); }
+    catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
+  }
   async function saveOidc() {
     setErr(null);
     try { const t = await api.updateTenant(oidc); onTenant?.(t); }
@@ -149,7 +157,7 @@ export default function Agents({ tenant, onTenant }) {
         <h2>Agents</h2>
         {agents && agents.length ? (
           <table className="data-table">
-            <thead><tr><th>Name</th><th>Kind</th><th>Role</th><th>OIDC subject</th><th>Extra deny</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Kind</th><th>Role</th><th>OIDC subject</th><th>Extra deny</th><th>Req/min</th><th>Block ≥</th><th>Status</th><th></th></tr></thead>
             <tbody>
               {agents.map((a) => (
                 <tr key={a.id} style={{ opacity: a.active ? 1 : 0.5 }}>
@@ -171,11 +179,30 @@ export default function Agents({ tenant, onTenant }) {
                            style={{ width: 130 }} title="Per-agent extra deny globs (tighten the role)"
                            onBlur={(e) => { const v = e.target.value; if (v !== (a.deny || []).join(", ")) setAgentDeny(a, v); }} />
                   </td>
+                  <td>
+                    <input type="number" min="0" defaultValue={a.rate_limit || 0}
+                           style={{ width: 60 }} title="Gateway requests/min for this agent (0 = inherit the org limit)"
+                           onBlur={(e) => { const v = parseInt(e.target.value || "0", 10); if (v !== (a.rate_limit || 0)) setAgentPolicy(a, { rate_limit: v }); }} />
+                  </td>
+                  <td>
+                    <select value={a.block_severity || ""}
+                            title="Stricter gateway block threshold for this agent (the stricter of agent vs org wins)"
+                            onChange={(e) => setAgentPolicy(a, { block_severity: e.target.value })}>
+                      <option value="">inherit</option>
+                      <option value="low">low</option>
+                      <option value="suspicious">suspicious</option>
+                      <option value="high">high</option>
+                      <option value="critical">critical</option>
+                    </select>
+                  </td>
                   <td>{a.active
                     ? <span className="cat cat-unsanctioned_ai">active</span>
                     : <span className="cat cat-secret_leak">disabled</span>}</td>
                   <td>
                     <button className="link-btn" onClick={() => rotate(a)}>Rotate</button>
+                    {a.active && <button className="link-btn" style={{ marginLeft: 12 }}
+                                         title="Mint a 1-hour session token (JWT) — the long-lived ag_ credential stays offline"
+                                         onClick={() => mintToken(a)}>Session token</button>}
                     {a.active && <button className="link-btn" style={{ marginLeft: 12, color: "var(--crit)" }}
                                          onClick={() => disable(a)}>Disable</button>}
                   </td>

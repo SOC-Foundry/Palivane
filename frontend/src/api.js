@@ -81,6 +81,7 @@ export const api = {
   agentRotate: (id) => req(`/agents/${id}/rotate`, { method: "POST" }),
   agentDelete: (id) => req(`/agents/${id}`, { method: "DELETE" }),
   agentUpdate: (id, payload) => req(`/agents/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  agentToken: (id, ttl) => req(`/agents/${id}/token`, { method: "POST", body: JSON.stringify({ ttl_minutes: ttl }) }),
   agentRoles: () => req("/agent-roles"),
   agentRoleUpsert: (payload) => req("/agent-roles", { method: "POST", body: JSON.stringify(payload) }),
   agentRoleDelete: (id) => req(`/agent-roles/${id}`, { method: "DELETE" }),
