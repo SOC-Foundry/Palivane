@@ -25,6 +25,11 @@ WARDEN_MCP_FLUSH_MS) so a busy session doesn't hammer the backend; enforce mode 
 each request inline. The backend also drops benign tool calls from storage and meters
 sensor ingest separately from the gateway, so this traffic can't starve real LLM calls.
 
+Supply-chain verification: on start the wrapped server's resolved binary is hashed and
+pinned on first use (~/.warden/mcp-pins.json, keyed by the exact command line). A later
+hash mismatch is reported to Warden as an mcp_integrity finding; in enforce mode the
+server is refused until re-vetted (WARDEN_MCP_REPIN=1 accepts the new version).
+
 Config: WARDEN_URL + WARDEN_TOKEN (an ak_… key). Optional: --name / WARDEN_MCP_SERVER
 (server name for the org allowlist; else guessed from the command), WARDEN_USER,
 WARDEN_MCP_TIMEOUT, WARDEN_MCP_BATCH (default 20), WARDEN_MCP_FLUSH_MS (default 2000).
@@ -33,14 +38,62 @@ Stdlib only.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
 import urllib.request
 
 _MAX_ARGS_TEXT = 20000
+_PIN_PATH = os.path.expanduser("~/.warden/mcp-pins.json")
+
+
+def server_fingerprint(cmd: list[str]) -> dict:
+    """Supply-chain fingerprint of the wrapped server: the command line plus the sha256
+    of the resolved executable. For interpreter-launched servers (npx/uvx/node/python)
+    this pins the launcher, not the package — coarse, but it still catches a swapped
+    binary and gives the org an attested record of what ran."""
+    binary = shutil.which(cmd[0]) or cmd[0]
+    digest = ""
+    try:
+        h = hashlib.sha256()
+        with open(binary, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        digest = h.hexdigest()
+    except OSError:
+        pass
+    return {"command": " ".join(cmd)[:1024], "binary": binary, "sha256": digest}
+
+
+def check_pin(fp: dict) -> str:
+    """Trust-on-first-use pin for this exact command line. Returns new|ok|mismatch
+    (or "" when the binary couldn't be hashed). WARDEN_MCP_REPIN=1 re-records."""
+    if not fp["sha256"]:
+        return ""
+    pins = {}
+    try:
+        pins = json.load(open(_PIN_PATH))
+    except (OSError, ValueError):
+        pass
+    key = fp["command"]
+    old = pins.get(key)
+    if old == fp["sha256"]:
+        return "ok"
+    if old is not None and os.getenv("WARDEN_MCP_REPIN", "") not in ("1", "true", "yes"):
+        return "mismatch"
+    pins[key] = fp["sha256"]
+    try:
+        os.makedirs(os.path.dirname(_PIN_PATH), exist_ok=True)
+        with open(_PIN_PATH, "w") as f:
+            json.dump(pins, f, indent=2)
+        os.chmod(_PIN_PATH, 0o600)
+    except OSError:
+        pass
+    return "new"
 
 
 def _harvest_strings(obj, out: list[str]) -> None:
@@ -253,6 +306,20 @@ def main() -> int:
         "timeout": float(os.getenv("WARDEN_MCP_TIMEOUT", "8")),
     }
     state = {"server": name_override or os.getenv("WARDEN_MCP_SERVER", "") or guess_server_name(cmd)}
+
+    # Supply-chain verification: fingerprint the wrapped server and compare to the pin
+    # recorded on first use. Enforce mode refuses to start a changed binary (re-vet, then
+    # WARDEN_MCP_REPIN=1 to accept); monitor mode reports it and continues.
+    fp = server_fingerprint(cmd)
+    pin_status = check_pin(fp)
+    if cfg["url"] and cfg["token"]:
+        scan_mcp({"method": "initialize", "command": fp["command"],
+                  "binary_sha256": fp["sha256"], "pin_status": pin_status},
+                 state["server"], cfg["url"], cfg["token"], cfg["user"], cfg["timeout"])
+    if pin_status == "mismatch" and cfg["enforce"]:
+        sys.exit(f"warden-mcp: refusing to start '{state['server']}' — its binary no longer "
+                 f"matches the pinned hash ({fp['binary']}). Re-vet the server, then re-run "
+                 "with WARDEN_MCP_REPIN=1 to accept the new version.")
 
     child = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                              bufsize=0)  # stderr inherited

@@ -45,6 +45,11 @@ class MCPIngest(BaseModel):
     tool_descriptions: list[str] = Field(default_factory=list, max_length=200)  # advertised tools
     transport: str = "http"                            # http | stdio | via-llm-api
     user: str = ""                                     # end-user identity
+    # Local-server supply-chain verification (warden-mcp): the wrapped command line, the
+    # sha256 of its resolved binary, and how it compared to the recorded pin (TOFU).
+    command: str = Field("", max_length=1024)          # wrapped command line (stdio servers)
+    binary_sha256: str = Field("", max_length=64)      # sha256 of the resolved executable
+    pin_status: str = ""                               # "" | new | ok | mismatch
 
 
 class MCPBatchIngest(BaseModel):
@@ -262,6 +267,13 @@ class AgentUpdate(BaseModel):
     role: str | None = Field(None, max_length=64)   # assign/clear the agent's role
     deny: list[str] | None = Field(None, max_length=200)   # per-agent extra deny globs
     oidc_subject: str | None = Field(None, max_length=320)   # JWT subject mapping
+    rate_limit: int | None = Field(None, ge=0)      # gateway req/min (0 = inherit tenant)
+    block_severity: Literal["", "low", "suspicious", "high", "critical"] | None = None
+
+
+class AgentTokenRequest(BaseModel):
+    """Mint a short-lived agent session token (JWT) — the ag_ credential stays offline."""
+    ttl_minutes: int = Field(60, ge=1, le=1440)
 
 
 class AgentRoleIn(BaseModel):

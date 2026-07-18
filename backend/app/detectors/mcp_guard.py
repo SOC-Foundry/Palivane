@@ -120,6 +120,21 @@ class MCPGuardDetector:
                 detector=self.name, evidence=f"server={server} transport={transport}",
             ))
 
+        # 1b) Local-server integrity (warden-mcp supply-chain pin): the wrapped server's
+        # resolved binary no longer matches the hash recorded on first use — an update,
+        # or a swapped/trojaned server. High-signal either way: it should be re-vetted.
+        if m.get("pin_status") == "mismatch":
+            signals.append(Signal(
+                category=Category.MCP_INTEGRITY,
+                title="MCP server binary changed since it was pinned",
+                detail=(f"The local MCP server '{server}' no longer matches the binary hash "
+                        "recorded when it was first approved (trust-on-first-use pin). "
+                        "Re-vet the server and re-pin it if the change is expected."),
+                weight=0.9, confidence=0.9, detector=self.name,
+                evidence=f"command={m.get('command', '')[:120]} "
+                         f"sha256={m.get('binary_sha256', '')[:16]}…",
+            ))
+
         # 2) Sensitive resource / path access. Normalize first so /etc/./passwd,
         # /etc//passwd, and backslash paths don't slip past the pattern.
         haystack = _norm_path(f"{resource}\n{args_text}")

@@ -219,3 +219,34 @@ def test_reporter_flushes_remainder_on_close(monkeypatch):
     r.enqueue({"method": "tools/call", "tool": "t"}, "srv")
     r.close()                                # close must flush the partial batch
     assert batches and len(batches[-1]) == 1
+
+
+# --- supply-chain fingerprint + TOFU pin ------------------------------------------------
+
+def test_fingerprint_hashes_resolved_binary(tmp_path):
+    exe = tmp_path / "srv"
+    exe.write_bytes(b"#!/bin/sh\necho hi\n")
+    fp = wm.server_fingerprint([str(exe), "--flag"])
+    assert fp["command"].startswith(str(exe))
+    assert len(fp["sha256"]) == 64
+
+
+def test_check_pin_tofu_lifecycle(tmp_path, monkeypatch):
+    monkeypatch.setattr(wm, "_PIN_PATH", str(tmp_path / "pins.json"))
+    exe = tmp_path / "srv"
+    exe.write_bytes(b"v1")
+    fp = wm.server_fingerprint([str(exe)])
+    assert wm.check_pin(fp) == "new"          # first use records the pin
+    assert wm.check_pin(fp) == "ok"           # unchanged binary passes
+    exe.write_bytes(b"v2 - swapped")          # binary replaced
+    fp2 = wm.server_fingerprint([str(exe)])
+    assert wm.check_pin(fp2) == "mismatch"
+    monkeypatch.setenv("WARDEN_MCP_REPIN", "1")
+    assert wm.check_pin(fp2) == "new"         # explicit re-pin accepts the new version
+    monkeypatch.delenv("WARDEN_MCP_REPIN")
+    assert wm.check_pin(fp2) == "ok"
+
+
+def test_check_pin_unhashable_binary_is_silent(monkeypatch, tmp_path):
+    monkeypatch.setattr(wm, "_PIN_PATH", str(tmp_path / "pins.json"))
+    assert wm.check_pin({"command": "ghost", "binary": "/nonexistent", "sha256": ""}) == ""

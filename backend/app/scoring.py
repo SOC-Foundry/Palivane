@@ -60,6 +60,7 @@ _ATTACK_CATEGORIES = {
     Category.UNSANCTIONED_AI,
     # Agentic tool-use — a risky MCP action / poisoned tool is itself the threat.
     Category.MCP_UNTRUSTED_SERVER,
+    Category.MCP_INTEGRITY,
     Category.SENSITIVE_RESOURCE_ACCESS,
     Category.DANGEROUS_COMMAND,
     Category.TOOL_POISONING,
