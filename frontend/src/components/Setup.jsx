@@ -11,7 +11,7 @@ const SELF = [
   { n: "3", title: "Finish the browser extension",
     body: "Install the Warden extension for Chrome/Edge from the Web Store, then click “Sign in to Warden” in its popup to bind it to your org. Now claude.ai, ChatGPT, and Gemini are covered too." },
   { n: "4", title: "Add your org's model key (admin, once)",
-    body: "In Settings → Gateway upstreams, paste your org's Anthropic (or OpenAI / Gemini) API key. Gateway traffic forwards with your own provider account — until it's set, Claude Code gets an inspection stub instead of a model reply." },
+    body: "In Settings → Gateway upstreams, paste your org's Anthropic (or OpenAI / Gemini) API key. Gateway traffic forwards with your own provider account — until it's set, warden-connect installs the local capture planes only and leaves Claude Code's own routing untouched." },
   { n: "5", title: "Watch findings roll in",
     body: "The Findings view shows live risk verdicts from the gateway, the browser extension, and the egress proxy — allow, warn, or block, by surface and severity." },
 ];
