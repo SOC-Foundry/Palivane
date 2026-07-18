@@ -16,13 +16,18 @@ PROVIDERS = ("openai", "anthropic", "gemini")
 
 
 def _global_default(provider: str) -> tuple[str, str]:
-    """(base_url, key) from global env for the provider."""
+    """(base_url, key) from global env for the provider.
+
+    Deliberately does NOT fall back to the judge keys (ANTHROPIC_API_KEY / GEMINI_API_KEY):
+    forwarding bills the provider account, and on a multi-tenant deployment the platform's
+    judge key must never silently pay for tenants' LLM traffic. Forwarding uses the
+    GATEWAY_* keys or the tenant's own configured upstream, nothing else."""
     if provider == "openai":
         return settings.gateway_upstream_base, settings.gateway_upstream_key
     if provider == "anthropic":
-        return settings.gateway_anthropic_base, (settings.gateway_anthropic_key or settings.anthropic_api_key)
+        return settings.gateway_anthropic_base, settings.gateway_anthropic_key
     if provider == "gemini":
-        return settings.gateway_gemini_base, (settings.gateway_gemini_key or settings.gemini_api_key)
+        return settings.gateway_gemini_base, settings.gateway_gemini_key
     return "", ""
 
 
