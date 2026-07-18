@@ -46,6 +46,7 @@ class Category(str, Enum):
     UNSANCTIONED_AI = "unsanctioned_ai"        # destination is an unapproved AI service
     # --- Agentic tool-use (mcp) ---
     MCP_UNTRUSTED_SERVER = "mcp_untrusted_server"      # MCP server not on the allowlist
+    MCP_INTEGRITY = "mcp_integrity"                    # local MCP server binary changed vs its pin
     SENSITIVE_RESOURCE_ACCESS = "sensitive_resource_access"  # tool/resource touches .env, keys, etc.
     DANGEROUS_COMMAND = "dangerous_command"            # tool call runs a high-risk shell command
     TOOL_POISONING = "tool_poisoning"                  # injected instructions in a tool description
