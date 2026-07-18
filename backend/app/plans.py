@@ -1,0 +1,78 @@
+"""Plan / licensing tiers (Free · Team · Enterprise).
+
+The plan is the licensing unit for both self-serve teams and enterprises: it decides
+which features a tenant may configure and the default resource quotas it inherits.
+Operator-set only (`python -m app.users set-plan`) — upgrades are sales-led ("contact
+us"), so there is deliberately no API for a tenant to change its own plan.
+
+Quota precedence: tenant override column > plan default > WARDEN_QUOTA_* global.
+Feature gates are enforced server-side at the endpoints that *configure* a gated
+feature (an org that configured SSO while Enterprise keeps working if the plan record
+ever lapses operationally — we gate setup, not day-to-day auth of existing users).
+"""
+from __future__ import annotations
+
+from fastapi import HTTPException
+
+from .models import Tenant
+
+# Feature keys:
+#   alerts       — webhook alerting + digests            (Team+)
+#   mdm          — MDM policy pack + fleet installers    (Team+)
+#   sso          — SSO: OIDC and SAML                    (Enterprise)
+#   siem         — SIEM HTTP forwarding (Splunk/CEF/...) (Enterprise)
+#   s3_delivery  — findings delivery to S3               (Enterprise)
+PLANS: dict[str, dict] = {
+    "free": {
+        "label": "Free",
+        "features": frozenset(),
+        "quotas": {"users": 5, "api_keys": 10, "ingest_per_day": 2000},
+    },
+    "team": {
+        "label": "Team",
+        "features": frozenset({"alerts", "mdm"}),
+        "quotas": {},   # inherit the globals
+    },
+    "enterprise": {
+        "label": "Enterprise",
+        "features": frozenset({"alerts", "mdm", "sso", "siem", "s3_delivery"}),
+        "quotas": {},
+    },
+}
+
+PLAN_NAMES = tuple(PLANS)   # ("free", "team", "enterprise")
+
+# Feature -> the plan named in the 402 message (the cheapest plan that has it).
+_NEEDED_PLAN = {f: next(p for p in PLAN_NAMES if f in PLANS[p]["features"])
+                for p in PLAN_NAMES for f in PLANS[p]["features"]}
+
+
+def plan_of(tenant: Tenant | None) -> str:
+    p = (getattr(tenant, "plan", "") or "").strip().lower()
+    return p if p in PLANS else "free"
+
+
+def has_feature(tenant: Tenant | None, feature: str) -> bool:
+    return feature in PLANS[plan_of(tenant)]["features"]
+
+
+def plan_quota(tenant: Tenant | None, name: str) -> int:
+    """The plan-default quota for `name` (users | api_keys | ingest_per_day); 0 = none set."""
+    return PLANS[plan_of(tenant)]["quotas"].get(name, 0)
+
+
+def require_feature(tenant: Tenant | None, feature: str) -> None:
+    """402 with an upgrade pointer when the tenant's plan lacks `feature`."""
+    if has_feature(tenant, feature):
+        return
+    needed = PLANS[_NEEDED_PLAN[feature]]["label"]
+    raise HTTPException(
+        status_code=402,
+        detail=f"this feature requires the {needed} plan (current: "
+               f"{PLANS[plan_of(tenant)]['label']}) — see /pricing or contact "
+               "sales@tachtech.net to upgrade")
+
+
+def features_of(tenant: Tenant | None) -> list[str]:
+    """Sorted feature list for the console (client-side hints only — never authority)."""
+    return sorted(PLANS[plan_of(tenant)]["features"])

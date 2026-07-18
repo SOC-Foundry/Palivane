@@ -788,6 +788,8 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
             "args_text": body.args_text, "resource": body.resource,
             "tool_descriptions": body.tool_descriptions, "transport": body.transport,
             "allowed_servers": allowed_servers,
+            "command": body.command, "binary_sha256": body.binary_sha256,
+            "pin_status": body.pin_status,
         },
     )
     # Least-privilege: fold agent role authz (action + shell command + data-scope) into the
@@ -1267,6 +1269,8 @@ def policy_pack(
     Applied by the org's MDM (Jamf/Intune/GPO) — no Warden agent on the device. The
     extension allow/deny lists use this tenant's IDE-vetting config, else the global."""
     from . import policy_pack as pp
+    from .plans import require_feature
+    require_feature(db.get(Tenant, current.tenant_id), "mdm")
     allowed_raw = _tenant_or_global(current.tenant_id, db, "ide_ext_allowed", settings.ide_ext_allowed)
     denied_raw = _tenant_or_global(current.tenant_id, db, "ide_ext_denylist", settings.ide_ext_denylist)
     allowed = [x.strip() for x in allowed_raw.split(",") if x.strip()]
@@ -1534,6 +1538,8 @@ def provision(body: ProvisionRequest, current: User = Depends(require_admin),
     from datetime import datetime, timezone
 
     from . import provision as prov
+    from .plans import require_feature
+    require_feature(db.get(Tenant, current.tenant_id), "mdm")
     from .models import EnrollmentToken
     from .security import generate_enrollment_token
 

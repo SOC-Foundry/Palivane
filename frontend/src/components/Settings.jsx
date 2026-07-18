@@ -18,6 +18,17 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   const flash = (text, ok = true) => { setMsg({ ok, text }); setTimeout(() => setMsg(null), 3000); };
   const err = (e) => flash(String(e.message || e).replace(/^\d+:\s*/, ""), false);
 
+  // Licensing plan (display hints only — the API enforces the gates).
+  const plan = tenant?.plan || "free";
+  const planLabel = plan.charAt(0).toUpperCase() + plan.slice(1);
+  const can = (f) => (tenant?.plan_features || []).includes(f);
+  const NEEDS = { alerts: "Team", mdm: "Team", sso: "Enterprise", siem: "Enterprise", s3_delivery: "Enterprise" };
+  const PlanLock = ({ need }) => can(need) ? null : (
+    <p className="muted" style={{ marginTop: 2 }}>🔒 {NEEDS[need]} plan feature —{" "}
+      <a href="/pricing" target="_blank" rel="noreferrer">see plans</a> or{" "}
+      <a href="mailto:sales@tachtech.net">contact us</a> to enable.</p>
+  );
+
   // --- Organization ---
   const [org, setOrgState] = useState({
     name: tenant?.name || "", judge: judgeValue(tenant),
@@ -253,8 +264,16 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     <div className="settings">
       <div className="content-head">
         <div>
-          <h1 className="page-title">Settings</h1>
-          <p className="page-sub">Organization, gateway upstreams, SSO, and usage — admin only.</p>
+          <h1 className="page-title">Settings
+            <span className={`chip ${plan === "enterprise" ? "chip-on" : "chip-off"}`}
+                  style={{ marginLeft: 10, verticalAlign: "middle" }}>{planLabel} plan</span>
+          </h1>
+          <p className="page-sub">Organization, gateway upstreams, SSO, and usage — admin only.
+            {plan !== "enterprise" && (
+              <> &nbsp;Need SSO, SIEM, or higher limits? <a href="/pricing" target="_blank"
+                 rel="noreferrer">See plans</a> or <a href="mailto:sales@tachtech.net">contact us</a>.</>
+            )}
+          </p>
         </div>
       </div>
       {msg && <div className={msg.ok ? "flash-ok" : "flash-err"}>{msg.text}</div>}
@@ -344,6 +363,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
       {/* Alerts & integrations */}
       <div className="panel settings-card">
         <h2>Alerts &amp; integrations</h2>
+        <PlanLock need="alerts" />
         <div className="field-grid">
           <label className="field-wide">Webhook URL (Slack-compatible — posts findings) {alertCfg.webhookSet && <span className="muted">(set — leave blank to keep)</span>}
             <input type="password" placeholder={alertCfg.webhookSet ? "••••••••" : "https://hooks.slack.com/services/…"}
@@ -376,6 +396,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
       {/* SIEM forwarding */}
       <div className="panel settings-card">
         <h2>SIEM forwarding</h2>
+        <PlanLock need="siem" />
         <p className="muted" style={{ fontSize: 12 }}>Stream findings to your SIEM in real time
            (complements the pull-based JSONL export above). Vendor-neutral — point it at any
            HTTP collector.</p>
@@ -412,6 +433,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
       {/* SIEM S3 / data-lake delivery */}
       <div className="panel settings-card">
         <h2>S3 / data-lake delivery</h2>
+        <PlanLock need="s3_delivery" />
         <p className="muted" style={{ fontSize: 12 }}>Independent of the HTTP push above — write
            each finding as a JSON object to an S3 bucket for a <strong>Panther S3 log source</strong>,
            Athena, or Snowflake. Uses the <strong>same severity threshold</strong> as SIEM forwarding.</p>
@@ -542,6 +564,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
       <div className="panel settings-card">
         <div className="settings-head"><h2>Single sign-on (OIDC)</h2>
           {oidc?.enabled && <span className="chip chip-on">enabled</span>}</div>
+        <PlanLock need="sso" />
         <div className="field-grid">
           <label>Issuer URL
             <input placeholder="https://accounts.google.com" value={oidcDraft.issuer}
@@ -568,6 +591,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
       <div className="panel settings-card">
         <div className="settings-head"><h2>Single sign-on (SAML)</h2>
           {saml?.enabled && <span className="chip chip-on">enabled</span>}</div>
+        <PlanLock need="sso" />
         <p className="muted">We're the SP. Give your IdP the ACS URL
           <code> /api/auth/saml/{tenant?.slug}/acs</code> (SP metadata:
           <a href={`/api/auth/saml/${tenant?.slug}/metadata`} target="_blank" rel="noreferrer"> /metadata</a>).</p>
