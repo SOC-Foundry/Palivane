@@ -51,9 +51,10 @@ def raw_client(db_factory):
 
 @pytest.fixture
 def client(db_factory):
-    """Authenticated admin client for tenant 'acme'."""
+    """Authenticated admin client for tenant 'acme' (Enterprise plan, so tests of gated
+    features — SSO, SIEM, MDM — exercise the features themselves, not the plan gate)."""
     db = db_factory()
-    users_cli.create_tenant(db, "acme", "Acme")
+    users_cli.create_tenant(db, "acme", "Acme", plan="enterprise")
     users_cli.create_user(db, "acme", "admin@acme.com", "password123", "admin")
     db.close()
     c = TestClient(app)

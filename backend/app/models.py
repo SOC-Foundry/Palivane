@@ -104,6 +104,9 @@ class Tenant(Base):
     # Lifecycle: "active" | "suspended". Suspension is operator-set (CLI) and blocks
     # logins, sessions, ingest, and the gateway without touching any data.
     status = Column(String(16), default="active", nullable=False)
+    # Licensing tier: "free" | "team" | "enterprise" (see app/plans.py). Operator-set
+    # only — upgrades are sales-led; there is no API for an org to raise its own plan.
+    plan = Column(String(16), default="free", nullable=False)
     # Persist raw prompt prose in this tenant's findings? None = inherit the global default
     # (WARDEN_STORE_CONTENT, off). Off = metadata-only (verdict + signals + redacted
     # evidence, no natural-language content).
@@ -113,8 +116,12 @@ class Tenant(Base):
     dek_wrapped = Column(Text, default="")
 
     def to_dict(self) -> dict:
+        from .plans import features_of, plan_of
         return {"id": self.id, "slug": self.slug, "name": self.name,
                 "status": self.status or "active",
+                "plan": plan_of(self),
+                # Client-side hints for the console (lock badges); the API is the authority.
+                "plan_features": features_of(self),
                 "store_content": self.store_content,
                 "judge_enabled": self.judge_enabled, "retention_days": self.retention_days,
                 "rate_limit": self.rate_limit, "ingest_rate_limit": self.ingest_rate_limit or 0,
@@ -513,6 +520,10 @@ class Agent(Base):
     token_hash = Column(String(64), default="")
     oidc_subject = Column(String(320), default="", index=True)  # JWT sub/client_id -> this agent
     deny = Column(String(1024), default="")             # per-agent extra deny globs (tightens the role)
+    # Per-agent gateway policy (Phase 1): its own req/min budget (0 = inherit the tenant's)
+    # and a block-severity override — the STRICTER of agent vs tenant applies.
+    rate_limit = Column(Integer, default=0)
+    block_severity = Column(String(16), default="")
     active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=_utcnow)
     last_seen = Column(DateTime, nullable=True)
@@ -522,6 +533,8 @@ class Agent(Base):
                 "prefix": self.prefix, "active": self.active,
                 "oidc_subject": self.oidc_subject or "",
                 "deny": [x.strip() for x in (self.deny or "").split(",") if x.strip()],
+                "rate_limit": self.rate_limit or 0,
+                "block_severity": self.block_severity or "",
                 "created_at": self.created_at.isoformat() if self.created_at else None,
                 "last_seen": self.last_seen.isoformat() if self.last_seen else None}
 

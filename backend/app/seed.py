@@ -56,7 +56,7 @@ def run() -> None:
         # Demo tenant + admin user (idempotent).
         tenant = db.query(Tenant).filter(Tenant.slug == DEMO_SLUG).first()
         if tenant is None:
-            tenant = Tenant(slug=DEMO_SLUG, name="Demo Org")
+            tenant = Tenant(slug=DEMO_SLUG, name="Demo Org", plan="enterprise")
             db.add(tenant)
             db.commit()
             db.refresh(tenant)

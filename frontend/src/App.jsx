@@ -14,6 +14,7 @@ import HowItWorks from "./components/HowItWorks.jsx";
 import Setup from "./components/Setup.jsx";
 import UseCases from "./components/UseCases.jsx";
 import WhyWarden from "./components/WhyWarden.jsx";
+import Pricing from "./components/Pricing.jsx";
 import ExtensionConnect from "./components/ExtensionConnect.jsx";
 import Connections from "./components/Connections.jsx";
 import Coverage from "./components/Coverage.jsx";
@@ -113,6 +114,9 @@ export default function App() {
   }
   if (legalPath === "/why-warden") {
     return <WhyWarden />;
+  }
+  if (legalPath === "/pricing") {
+    return <Pricing />;
   }
   // Browser-extension sign-in landing (OAuth-style; opened by the extension).
   if (legalPath === "/extension-connect") {

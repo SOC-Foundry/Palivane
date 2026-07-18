@@ -24,9 +24,11 @@ function Readiness() {
     <div className="readiness">
       {noUpstream && (
         <div className="error" style={{ marginBottom: 8 }}>
-          No model provider key set — Claude Code routed through the gateway gets a stub
-          reply instead of a real model response. An admin can add your org's Anthropic API
-          key under <strong>Settings → Gateway upstreams</strong>.
+          No model provider key set — self-serve connects skip gateway routing (local hooks
+          still capture; Claude Code keeps its own account), and manually configured gateway
+          clients get a stub reply. An admin can add your org's Anthropic API key under{" "}
+          <strong>Settings → Gateway upstreams</strong>, then users re-run{" "}
+          <code>warden-connect</code> to enable routing.
         </div>
       )}
       <span className="muted">Reporting (last 24h):</span>
@@ -147,6 +149,11 @@ export default function Connect({ tenant }) {
         <p className="muted">Most orgs don't need the per-source setup below. Pick how you deliver
            software to your fleet — Warden generates everything (browser + Claude Code + agent
            tool-calls) already pointed here and pre-configured with this org's policy.</p>
+        {!(tenant?.plan_features || []).includes("mdm") && (
+          <p className="muted">🔒 Fleet rollout (policy pack + device installers) is a Team plan
+             feature — <a href="/pricing" target="_blank" rel="noreferrer">see plans</a> or{" "}
+             <a href="mailto:sales@tachtech.net">contact us</a>.</p>
+        )}
         <div className="qs-paths">
           <div className="qs-path">
             <h4>You use MDM (Jamf · Intune · GPO)</h4>

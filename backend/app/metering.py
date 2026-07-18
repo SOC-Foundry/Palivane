@@ -41,9 +41,15 @@ def effective_ingest_limit(tenant: Tenant | None) -> int:
 
 def effective_quota(tenant: Tenant | None, name: str) -> int:
     """Resource quota `name` (users | api_keys | ingest_per_day) for this tenant: its own
-    override column when set, else the WARDEN_QUOTA_* global. 0 = unlimited."""
+    override column when set, else its plan's default, else the WARDEN_QUOTA_* global.
+    0 = unlimited."""
     if tenant is not None and getattr(tenant, f"quota_{name}", 0):
         return getattr(tenant, f"quota_{name}")
+    if tenant is not None:
+        from .plans import plan_quota  # noqa: PLC0415 — avoid an import cycle via models
+        limit = plan_quota(tenant, name)
+        if limit:
+            return limit
     return getattr(settings, f"quota_{name}")
 
 
@@ -52,12 +58,16 @@ def check_resource_quota(db: Session, tenant_id: int, name: str, current_count: 
     Import-light so auth.py can call it at user/key creation without cycles."""
     from fastapi import HTTPException  # noqa: PLC0415
 
-    limit = effective_quota(db.get(Tenant, tenant_id), name)
+    tenant = db.get(Tenant, tenant_id)
+    limit = effective_quota(tenant, name)
     if limit and current_count >= limit:
+        from .plans import plan_of  # noqa: PLC0415
+        hint = ("upgrade your plan (see /pricing) to raise it"
+                if plan_of(tenant) != "enterprise"
+                else "contact your Warden operator to raise it")
         raise HTTPException(
             status_code=403,
-            detail=f"{name.replace('_', ' ')} quota reached ({limit}) — "
-                   "contact your Warden operator to raise it")
+            detail=f"{name.replace('_', ' ')} quota reached ({limit}) — {hint}")
 
 
 def check_daily_ingest(db: Session, tenant_id: int) -> tuple[bool, int, int]:

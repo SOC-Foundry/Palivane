@@ -27,7 +27,7 @@ from .models import (
     TenantUpstream, User,
 )
 from .schemas import (
-    AgentCreate, AgentRoleIn, AgentUpdate, ApiKeyCreate, EnrollmentTokenCreate, EnrollRequest, LoginRequest, MFACode, MFAVerify,
+    AgentCreate, AgentRoleIn, AgentTokenRequest, AgentUpdate, ApiKeyCreate, EnrollmentTokenCreate, EnrollRequest, LoginRequest, MFACode, MFAVerify,
     DPAAccept, ForgotRequest, OIDCConfig, ResetRequest, SAMLConfig, SignupRequest, TenantDelete, TenantUpdate,
     UpstreamConfig, UserCreate, UserUpdate,
 )
@@ -716,8 +716,34 @@ def update_agent(agent_id: int, body: AgentUpdate, current: User = Depends(requi
             audit_log.record(db, current.tenant_id, current.email, "agent.oidc_subject",
                              target=f"{agent.name}={sub or '-'}")
         agent.oidc_subject = sub
+    if body.rate_limit is not None:
+        agent.rate_limit = body.rate_limit
+    if body.block_severity is not None:
+        agent.block_severity = body.block_severity
     db.commit()
     return agent.to_dict()
+
+
+@router.post("/agents/{agent_id}/token")
+def mint_agent_token(agent_id: int, body: AgentTokenRequest,
+                     current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Mint a short-lived agent session token (JWT, TTL <= 24h) for gateway calls.
+
+    Lets the long-lived `ag_…` credential stay locked away (e.g. used only by a deploy
+    system at startup) while the running workload holds a token that expires on its own —
+    a leaked session token is worth minutes, not forever. Disabling the agent revokes all
+    its session tokens immediately (the gateway re-checks `active` on every request)."""
+    agent = db.get(Agent, agent_id)
+    if agent is None or agent.tenant_id != current.tenant_id:
+        raise HTTPException(status_code=404, detail="agent not found")
+    if not agent.active:
+        raise HTTPException(status_code=400, detail="agent is disabled")
+    from .security import create_token
+    token = create_token({"typ": "agent", "agent_id": agent.id, "tenant": agent.tenant_id},
+                         ttl=body.ttl_minutes * 60)
+    audit_log.record(db, current.tenant_id, current.email, "agent.token",
+                     target=f"{agent.name} ttl={body.ttl_minutes}m")
+    return {"token": token, "expires_in": body.ttl_minutes * 60, "agent": agent.name}
 
 
 @router.delete("/agents/{agent_id}")
@@ -930,7 +956,17 @@ _JUDGE = {"on": True, "off": False, "inherit": None}
 def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
                   db: Session = Depends(get_db)):
     """Org settings: display name, Claude-judge consent, and findings retention."""
+    from .plans import require_feature
     tenant = db.get(Tenant, current.tenant_id)
+    # Plan gates fire only when the request tries to ENABLE a gated feature (setting a
+    # non-empty value) — clearing a leftover config is always allowed.
+    if (body.alert_webhook or "").strip():
+        require_feature(tenant, "alerts")
+    if (body.siem_url or "").strip() or (body.siem_token or "").strip():
+        require_feature(tenant, "siem")
+    if any((getattr(body, f) or "").strip() for f in
+           ("siem_s3_bucket", "siem_s3_key_id", "siem_s3_secret")):
+        require_feature(tenant, "s3_delivery")
     if body.name is not None:
         tenant.name = body.name.strip() or tenant.name
     if body.judge is not None:
@@ -1129,6 +1165,8 @@ def set_oidc(body: OIDCConfig, current: User = Depends(require_admin),
              db: Session = Depends(get_db)):
     """Configure OpenID Connect SSO for this org. Empty client_secret keeps the existing
     one. Fields left unset (None) are unchanged."""
+    from .plans import require_feature
+    require_feature(db.get(Tenant, current.tenant_id), "sso")
     row = db.query(TenantOIDC).filter(TenantOIDC.tenant_id == current.tenant_id).first()
     if row is None:
         row = TenantOIDC(tenant_id=current.tenant_id)
@@ -1265,6 +1303,8 @@ def get_saml(current: User = Depends(require_admin), db: Session = Depends(get_d
 def set_saml(body: SAMLConfig, current: User = Depends(require_admin),
              db: Session = Depends(get_db)):
     """Configure SAML SSO for this org (we're the SP). The IdP cert is public, not a secret."""
+    from .plans import require_feature
+    require_feature(db.get(Tenant, current.tenant_id), "sso")
     row = db.query(TenantSAML).filter(TenantSAML.tenant_id == current.tenant_id).first()
     if row is None:
         row = TenantSAML(tenant_id=current.tenant_id)

@@ -5,6 +5,7 @@
     python -m app.users list-tenants
     python -m app.users list-users --tenant acme
     python -m app.users set-quota --tenant acme --users 100 --api-keys 500 --ingest-per-day 200000
+    python -m app.users set-plan --tenant acme --plan enterprise   # licensing tier
     python -m app.users suspend --tenant acme            # blocks logins/ingest/gateway
     python -m app.users resume --tenant acme
     python -m app.users purge-empty --older-than-days 30 # delete abandoned signups (--yes to apply)
@@ -30,10 +31,10 @@ def _get_tenant(db, ref: str) -> Tenant | None:
     return t
 
 
-def create_tenant(db, slug: str, name: str) -> Tenant:
+def create_tenant(db, slug: str, name: str, plan: str = "free") -> Tenant:
     if _get_tenant(db, slug):
         raise SystemExit(f"tenant '{slug}' already exists")
-    t = Tenant(slug=slug.lower().strip(), name=name or slug)
+    t = Tenant(slug=slug.lower().strip(), name=name or slug, plan=plan)
     db.add(t)
     db.commit()
     db.refresh(t)
@@ -64,6 +65,7 @@ def main(argv: list[str]) -> int:
     ct = sub.add_parser("create-tenant")
     ct.add_argument("--slug", required=True)
     ct.add_argument("--name", default="")
+    ct.add_argument("--plan", choices=["free", "team", "enterprise"], default="free")
 
     cu = sub.add_parser("create-user")
     cu.add_argument("--tenant", required=True)
@@ -83,6 +85,12 @@ def main(argv: list[str]) -> int:
     sq.add_argument("--api-keys", type=int, default=None)
     sq.add_argument("--ingest-per-day", type=int, default=None)
 
+    # Plan changes are operator-only: upgrades are sales-led (contact-us), so there is
+    # deliberately no tenant-facing API for this.
+    spl = sub.add_parser("set-plan")
+    spl.add_argument("--tenant", required=True)
+    spl.add_argument("--plan", choices=["free", "team", "enterprise"], required=True)
+
     for name in ("suspend", "resume"):
         sp = sub.add_parser(name)
         sp.add_argument("--tenant", required=True)
@@ -96,15 +104,22 @@ def main(argv: list[str]) -> int:
     db = SessionLocal()
     try:
         if args.cmd == "create-tenant":
-            t = create_tenant(db, args.slug, args.name)
-            print(f"created tenant #{t.id} '{t.slug}' ({t.name})")
+            t = create_tenant(db, args.slug, args.name, args.plan)
+            print(f"created tenant #{t.id} '{t.slug}' ({t.name}) plan={t.plan}")
         elif args.cmd == "create-user":
             password = args.password or getpass.getpass("password: ")
             u = create_user(db, args.tenant, args.email, password, args.role)
             print(f"created user #{u.id} {u.email} role={u.role} tenant_id={u.tenant_id}")
         elif args.cmd == "list-tenants":
             for t in db.query(Tenant).all():
-                print(f"#{t.id} {t.slug} — {t.name}")
+                print(f"#{t.id} {t.slug} — {t.name} [{t.plan or 'free'}]")
+        elif args.cmd == "set-plan":
+            tenant = _get_tenant(db, args.tenant)
+            if tenant is None:
+                raise SystemExit(f"tenant '{args.tenant}' not found")
+            tenant.plan = args.plan
+            db.commit()
+            print(f"tenant '{tenant.slug}' is now on the {tenant.plan} plan")
         elif args.cmd == "list-users":
             tenant = _get_tenant(db, args.tenant)
             if tenant is None:
