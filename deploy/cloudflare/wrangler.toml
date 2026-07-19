@@ -1,7 +1,21 @@
 name = "warden-front"
 main = "worker.js"
 compatibility_date = "2026-07-01"
+# The worker lives on the NFR-US-TachTech account (which owns the tachtech.net zone) —
+# pinned so wrangler never deploys to the personal account by mistake.
+account_id = "3d028af29af87d79a8b3245461f04241"
 
 routes = [
   { pattern = "warden.tachtech.net/*", zone_name = "tachtech.net" }
 ]
+
+# Exact per-IP edge rate limiting for auth endpoints (credential-stuffing shield).
+# A Durable Object per source IP — free-plan compatible (SQLite-backed class).
+[durable_objects]
+bindings = [
+  { name = "RATE", class_name = "RateCounter" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RateCounter"]
