@@ -28,7 +28,12 @@ _slots = threading.BoundedSemaphore(_MAX_WORKERS + _MAX_PENDING)
 def submit(fn, *args, **kwargs) -> None:
     """Run fn(*args) on the shared pool; drop (with a debug log) if the pool is saturated.
     Never raises — a delivery backlog can't break the request path."""
-    if not _slots.acquire(blocking=False):
+    # Bind the pair NOW: a job must always release the same semaphore it acquired.
+    # Resolving the globals again inside _run's finally means a job outliving a swap of
+    # these (tests monkeypatch them; a future reconfig could too) would release the NEW
+    # semaphore — leaking a permit there while deadlocking a slot here.
+    slots, executor = _slots, _executor
+    if not slots.acquire(blocking=False):
         log.debug("dispatch dropped a background job: %d jobs already pending",
                   _MAX_WORKERS + _MAX_PENDING)
         return
@@ -37,10 +42,10 @@ def submit(fn, *args, **kwargs) -> None:
         try:
             fn(*args, **kwargs)
         finally:
-            _slots.release()
+            slots.release()
 
     try:
-        _executor.submit(_run)
+        executor.submit(_run)
     except Exception as e:              # interpreter shutting down, or anything else —
-        _slots.release()                # never let delivery scheduling break capture
+        slots.release()                 # never let delivery scheduling break capture
         log.debug("dispatch dropped a background job: %s", e)
