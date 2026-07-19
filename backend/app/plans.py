@@ -48,8 +48,14 @@ _NEEDED_PLAN = {f: next(p for p in PLAN_NAMES if f in PLANS[p]["features"])
 
 
 def plan_of(tenant: Tenant | None) -> str:
+    """The tenant's effective plan: its own column, lifted by the instance license when
+    one is present (self-hosted deployments carry a vendor-signed license instead of an
+    operator-set column — see app/licensing.py). The higher tier wins."""
+    from .licensing import PLAN_RANK, licensed_plan
     p = (getattr(tenant, "plan", "") or "").strip().lower()
-    return p if p in PLANS else "free"
+    p = p if p in PLANS else "free"
+    lic = licensed_plan()
+    return lic if PLAN_RANK.get(lic, 0) > PLAN_RANK.get(p, 0) else p
 
 
 def has_feature(tenant: Tenant | None, feature: str) -> bool:
@@ -57,7 +63,13 @@ def has_feature(tenant: Tenant | None, feature: str) -> bool:
 
 
 def plan_quota(tenant: Tenant | None, name: str) -> int:
-    """The plan-default quota for `name` (users | api_keys | ingest_per_day); 0 = none set."""
+    """The plan-default quota for `name` (users | api_keys | ingest_per_day); 0 = none set.
+    A licensed instance's seat count is the users quota (tenant override still wins)."""
+    if name == "users":
+        from .licensing import licensed_seats
+        seats = licensed_seats()
+        if seats:
+            return seats
     return PLANS[plan_of(tenant)]["quotas"].get(name, 0)
 
 

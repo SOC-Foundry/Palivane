@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
-from app import gateway
+from datetime import datetime
+
+import pytest
+
+from app import gateway, metering
 
 BENIGN = {"model": "gpt-4o", "messages": [{"role": "user", "content": "Summarize this report."}]}
+
+
+@pytest.fixture
+def frozen_window(monkeypatch):
+    """Pin the metering clock mid-minute so consecutive requests can never straddle a
+    60s window rollover (the historical flake in these tests)."""
+    monkeypatch.setattr(metering, "_now", lambda: datetime(2026, 1, 1, 12, 0, 30))
 
 
 def test_unlimited_by_default(client, monkeypatch):
@@ -14,7 +25,7 @@ def test_unlimited_by_default(client, monkeypatch):
         assert client.post("/v1/chat/completions", json=BENIGN).status_code == 200
 
 
-def test_per_tenant_rate_limit_enforced(client, monkeypatch):
+def test_per_tenant_rate_limit_enforced(client, monkeypatch, frozen_window):
     monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
     client.patch("/api/tenant", json={"rate_limit": 2})   # 2 requests/min for this org
     assert client.post("/v1/chat/completions", json=BENIGN).status_code == 200
@@ -40,14 +51,14 @@ def test_usage_endpoint_reports_counts(client, monkeypatch):
     assert sum(u["by_day"].values()) >= 3
 
 
-def test_global_default_limit_applies_without_tenant_override(client, monkeypatch):
+def test_global_default_limit_applies_without_tenant_override(client, monkeypatch, frozen_window):
     monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
     monkeypatch.setattr(gateway.settings, "gateway_rate_limit", 1)   # global 1/min, no tenant override
     assert client.post("/v1/chat/completions", json=BENIGN).status_code == 200
     assert client.post("/v1/chat/completions", json=BENIGN).status_code == 429
 
 
-def test_ingest_uses_its_own_rate_limit(client, raw_client):
+def test_ingest_uses_its_own_rate_limit(client, raw_client, frozen_window):
     key = client.post("/api/apikeys", json={"label": "i", "actor": "x"}).json()["token"]
     client.patch("/api/tenant", json={"ingest_rate_limit": 1})
     body = {"content": "hello there", "destination": "https://chat.openai.com/"}
@@ -58,7 +69,7 @@ def test_ingest_uses_its_own_rate_limit(client, raw_client):
     assert r2.headers.get("retry-after") == "60"
 
 
-def test_scan_code_is_rate_limited(client, raw_client):
+def test_scan_code_is_rate_limited(client, raw_client, frozen_window):
     key = client.post("/api/apikeys", json={"label": "g", "actor": "ci"}).json()["token"]
     client.patch("/api/tenant", json={"ingest_rate_limit": 1})
     body = {"files": [{"path": "a.py", "content": "print(1)"}]}

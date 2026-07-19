@@ -255,6 +255,25 @@ high-volume triage).
 
 ---
 
+## 6. (Optional) Apply a license — Team / Enterprise tiers
+
+Self-hosted Warden runs the **Free** tier out of the box (5 users, core capture planes).
+A vendor-issued license unlocks Team (alerts, MDM packs) or Enterprise (SSO, SIEM, S3
+delivery) instance-wide — see `/pricing` or contact sales@tachtech.net.
+
+The license is a signed blob (`WDN1.…`). Set it as the value of `WARDEN_LICENSE`, or
+point `WARDEN_LICENSE` at a file containing it, and restart:
+
+    WARDEN_LICENSE=WDN1.eyJ2IjoxLCJvcmciOi…   # or WARDEN_LICENSE=/etc/warden/license
+
+`GET /api/health` shows the active license (`org`, `plan`, `expires`). An invalid or
+expired license is ignored with a startup warning — the instance falls back to Free,
+nothing breaks. Licensed seat count becomes the default users quota.
+
+On the hosted SaaS there is no license file — your plan is managed by the vendor.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Fix |
