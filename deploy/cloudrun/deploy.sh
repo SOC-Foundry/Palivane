@@ -89,7 +89,7 @@ gcloud run deploy "$SERVICE" --project "$PROJECT_ID" --region "$REGION" \
   "${VPC_ARGS[@]}" \
   --port 8080 \
   --cpu 1 --memory 512Mi \
-  --min-instances "${MIN_INSTANCES:-0}" --max-instances "${MAX_INSTANCES:-4}" \
+  --min-instances "${MIN_INSTANCES:-1}" --max-instances "${MAX_INSTANCES:-4}" \
   --cpu-boost --timeout 300
 
 echo "==> Done. Service URL:"

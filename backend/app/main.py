@@ -208,6 +208,8 @@ async def _metrics_middleware(request, call_next):
 @app.get("/api/health")
 def health():
     from . import email as email_mod
+    from .licensing import current as license_current
+    lic = license_current()
     return {
         "status": "ok",
         "judge_enabled": engine.judge_enabled,
@@ -215,6 +217,10 @@ def health():
         "judge_provider": engine.judge.provider if engine.judge_enabled else None,
         "allow_signup": settings.allow_signup,
         "email_enabled": email_mod.enabled(),
+        # Self-hosted licensing (see app/licensing.py); absent on the hosted SaaS where
+        # tenant.plan is authoritative.
+        "license": {"org": lic["org"], "plan": lic["plan"],
+                    "expires": lic["expires"]} if lic else None,
     }
 
 
