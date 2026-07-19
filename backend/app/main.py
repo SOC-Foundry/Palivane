@@ -122,6 +122,12 @@ app = FastAPI(
     description="Detects attacks on your LLMs and stops sensitive data leaking to AI tools.",
     version="0.1.0",
     lifespan=lifespan,
+    # FastAPI's interactive API docs live under /api/* — the bare /docs path belongs to
+    # the public documentation pages in the SPA (FastAPI's default /docs was shadowing
+    # them; its Swagger CDN assets are CSP-blocked in prod anyway).
+    docs_url="/api/docs",
+    redoc_url=None,
+    openapi_url="/api/openapi.json",
 )
 
 _CORS_ORIGINS = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
