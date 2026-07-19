@@ -89,6 +89,7 @@ export function SiteFooter() {
       <span>◆ Warden — AI Security Gateway</span>
       <span className="lp-foot-links">
         {TABS.map((t) => <a key={t.href} href={t.href}>{t.label}</a>)}
+        <a href="/trust">Trust &amp; Security</a>
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
       </span>
