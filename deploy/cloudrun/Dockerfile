@@ -9,6 +9,9 @@ WORKDIR /web
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
+# The /docs pages import repo markdown via ?raw ("../../../docs/*.md" from
+# /web/src/components resolves to /docs) — the docs must exist in the build stage.
+COPY docs/ /docs/
 RUN npm run build          # -> /web/dist
 
 # --- Stage 2: backend + static SPA ---
