@@ -16,6 +16,7 @@ import UseCases from "./components/UseCases.jsx";
 import WhyWarden from "./components/WhyWarden.jsx";
 import Pricing from "./components/Pricing.jsx";
 import Trust from "./components/Trust.jsx";
+import Docs from "./components/Docs.jsx";
 import ExtensionConnect from "./components/ExtensionConnect.jsx";
 import Connections from "./components/Connections.jsx";
 import Coverage from "./components/Coverage.jsx";
@@ -121,6 +122,9 @@ export default function App() {
   }
   if (legalPath === "/trust") {
     return <Trust />;
+  }
+  if (legalPath === "/docs" || legalPath.startsWith("/docs/")) {
+    return <Docs slug={legalPath.split("/")[2] || ""} />;
   }
   // Browser-extension sign-in landing (OAuth-style; opened by the extension).
   if (legalPath === "/extension-connect") {
