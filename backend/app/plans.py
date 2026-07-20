@@ -17,25 +17,28 @@ from fastapi import HTTPException
 from .models import Tenant
 
 # Feature keys:
+#   device_setup — self-serve per-OS device installers   (all plans, incl. Free)
 #   alerts       — webhook alerting + digests            (Team+)
-#   mdm          — MDM policy pack + fleet installers    (Team+)
+#   mdm          — MDM policy pack (Jamf/Intune/GPO)      (Team+)
 #   sso          — SSO: OIDC and SAML                    (Enterprise)
 #   siem         — SIEM HTTP forwarding (Splunk/CEF/...) (Enterprise)
 #   s3_delivery  — findings delivery to S3               (Enterprise)
 PLANS: dict[str, dict] = {
     "free": {
         "label": "Free",
-        "features": frozenset(),
+        # device_setup is free so any org can self-serve onboard its whole fleet (the
+        # per-OS installers); the MDM policy pack (Jamf/Intune/GPO) stays a paid feature.
+        "features": frozenset({"device_setup"}),
         "quotas": {"users": 5, "api_keys": 10, "ingest_per_day": 2000},
     },
     "team": {
         "label": "Team",
-        "features": frozenset({"alerts", "mdm"}),
+        "features": frozenset({"alerts", "mdm", "device_setup"}),
         "quotas": {},   # inherit the globals
     },
     "enterprise": {
         "label": "Enterprise",
-        "features": frozenset({"alerts", "mdm", "sso", "siem", "s3_delivery"}),
+        "features": frozenset({"alerts", "mdm", "sso", "siem", "s3_delivery", "device_setup"}),
         "quotas": {},
     },
 }

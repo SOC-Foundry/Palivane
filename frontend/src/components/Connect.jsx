@@ -69,6 +69,8 @@ export default function Connect({ tenant }) {
   const [proxyHost, setProxyHost] = useState("");
   const [packBusy, setPackBusy] = useState(false);
   const origin = window.location.origin;
+  // Device installers are free (device_setup); only the MDM policy pack is gated on "mdm".
+  const hasMdm = (tenant?.plan_features || []).includes("mdm");
 
   async function getPolicyPack() {
     setPackBusy(true); setErr(null);
@@ -149,26 +151,9 @@ export default function Connect({ tenant }) {
         <p className="muted">Most orgs don't need the per-source setup below. Pick how you deliver
            software to your fleet — Warden generates everything (browser + Claude Code + agent
            tool-calls) already pointed here and pre-configured with this org's policy.</p>
-        {!(tenant?.plan_features || []).includes("mdm") && (
-          <p className="muted">🔒 Fleet rollout (policy pack + device installers) is a Team plan
-             feature — <a href="/pricing" target="_blank" rel="noreferrer">see plans</a> or{" "}
-             <a href="mailto:sales@tachtech.net">contact us</a>.</p>
-        )}
         <div className="qs-paths">
           <div className="qs-path">
-            <h4>You use MDM (Jamf · Intune · GPO)</h4>
-            <p className="muted">Agentless. One pack your MDM pushes: extension force-install,
-               system-proxy profile, and Claude Code managed settings + hooks.</p>
-            <div className="form-row" style={{ gap: 8 }}>
-              <input placeholder="egress proxy host (optional)" value={proxyHost}
-                     onChange={(e) => setProxyHost(e.target.value)} />
-              <button className="primary-btn slim" disabled={packBusy} onClick={getPolicyPack}>
-                {packBusy ? "…" : "Download policy pack"}
-              </button>
-            </div>
-          </div>
-          <div className="qs-path">
-            <h4>You hand out a setup script</h4>
+            <h4>You hand out a setup script <span className="muted">· free</span></h4>
             <p className="muted">One installer per OS, run on any number of devices. Each
                self-enrolls for its own per-device key, then configures every source.</p>
             <div className="form-row" style={{ gap: 8 }}>
@@ -183,6 +168,24 @@ export default function Connect({ tenant }) {
               <button className="primary-btn slim" disabled={!!provBusy}
                       onClick={() => getInstaller("linux")}>
                 {provBusy === "linux" ? "…" : "Linux (.sh)"}
+              </button>
+            </div>
+          </div>
+          <div className="qs-path">
+            <h4>You use MDM (Jamf · Intune · GPO){!hasMdm && <span className="muted"> · Team plan</span>}</h4>
+            <p className="muted">Agentless. One pack your MDM pushes: extension force-install,
+               system-proxy profile, and Claude Code managed settings + hooks.</p>
+            {!hasMdm && (
+              <p className="muted">🔒 The MDM policy pack is a Team plan feature —{" "}
+                 <a href="/pricing" target="_blank" rel="noreferrer">see plans</a> or{" "}
+                 <a href="mailto:sales@tachtech.net">contact us</a>. (The setup script on the
+                 left covers the same sources and is free.)</p>
+            )}
+            <div className="form-row" style={{ gap: 8 }}>
+              <input placeholder="egress proxy host (optional)" value={proxyHost}
+                     onChange={(e) => setProxyHost(e.target.value)} />
+              <button className="primary-btn slim" disabled={packBusy || !hasMdm} onClick={getPolicyPack}>
+                {packBusy ? "…" : "Download policy pack"}
               </button>
             </div>
           </div>
