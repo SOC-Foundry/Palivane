@@ -1551,7 +1551,9 @@ def provision(body: ProvisionRequest, current: User = Depends(require_admin),
 
     from . import provision as prov
     from .plans import require_feature
-    require_feature(db.get(Tenant, current.tenant_id), "mdm")
+    # Self-serve device installers are free (device_setup) so any org can seamlessly
+    # onboard its fleet; the MDM policy pack (/api/policy-pack) stays gated on "mdm".
+    require_feature(db.get(Tenant, current.tenant_id), "device_setup")
     from .models import EnrollmentToken
     from .security import generate_enrollment_token
 

@@ -42,9 +42,16 @@ def test_free_plan_gates_sso_siem_s3_alerts_mdm(free_client):
     assert free_client.patch("/api/tenant", json={"siem_s3_bucket": "b"}).status_code == 402
     r = free_client.patch("/api/tenant", json={"alert_webhook": "https://hooks.example.com/x"})
     assert r.status_code == 402 and "plan" in r.json()["detail"]
+    # The MDM policy pack (Jamf/Intune/GPO) stays gated on the Team plan.
     assert free_client.get("/api/policy-pack").status_code == 402
-    assert free_client.post("/api/provision", json={"platform": "macos",
-                                                    "base_url": "https://w.io"}).status_code == 402
+
+
+def test_free_plan_can_provision_device_installers(free_client):
+    # Self-serve device installers (device_setup) are free so any org can seamlessly
+    # onboard its whole fleet — only the MDM policy pack above is paid.
+    r = free_client.post("/api/provision", json={"platform": "macos", "base_url": "https://w.io"})
+    assert r.status_code == 200, r.text
+    assert "macos" in r.json()["scripts"]
 
 
 def test_free_plan_can_clear_gated_config(free_client):
@@ -101,7 +108,7 @@ def test_plan_helpers():
     assert plan_of(Tenant(slug="x", plan="weird")) == "free"
     assert has_feature(Tenant(slug="x", plan="enterprise"), "sso")
     assert not has_feature(Tenant(slug="x", plan="team"), "sso")
-    assert features_of(Tenant(slug="x", plan="team")) == ["alerts", "mdm"]
+    assert features_of(Tenant(slug="x", plan="team")) == ["alerts", "device_setup", "mdm"]
 
 
 def test_cli_set_plan(db_factory, monkeypatch):
