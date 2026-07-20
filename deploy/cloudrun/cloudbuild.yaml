@@ -19,3 +19,7 @@ images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_TAG}
 options:
   machineType: E2_HIGHCPU_8
+  # Log to Cloud Logging only. The default (GCS + streaming) requires the submitter to be
+  # project Viewer/Owner to stream; the CI Workload Identity SA isn't, so the stream errors
+  # and aborts the build under `set -e`. CLOUD_LOGGING_ONLY avoids the GCS-stream path.
+  logging: CLOUD_LOGGING_ONLY

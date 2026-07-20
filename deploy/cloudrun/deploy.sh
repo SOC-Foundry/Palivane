@@ -22,6 +22,7 @@ IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${IMAGE_NAME}:${TAG}"
 echo "==> Building & pushing $IMAGE"
 gcloud builds submit --project "$PROJECT_ID" \
   --config deploy/cloudrun/cloudbuild.yaml \
+  --suppress-logs \
   --substitutions "_REGION=${REGION},_REPO=${REPO},_IMAGE=${IMAGE_NAME},_TAG=${TAG}" .
 
 # Non-secret runtime config. Secrets (DATABASE_URL, WARDEN_SECRET_KEY, provider keys) come
