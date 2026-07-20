@@ -27,28 +27,29 @@ gcloud builds submit --project "$PROJECT_ID" \
 
 # Non-secret runtime config. Secrets (DATABASE_URL, WARDEN_SECRET_KEY, provider keys) come
 # from Secret Manager via --set-secrets below.
-# "@"-separated (passed as ^@^...) so values may contain commas (e.g. WARDEN_ALLOWED_HOSTS).
+# "|"-separated (passed as ^|^...) so values may contain commas (WARDEN_ALLOWED_HOSTS) AND
+# "@" (SMTP_USER/MAIL_FROM email addresses). "|" appears in none of the values.
 ENV_VARS="GATEWAY_ENFORCE=${GATEWAY_ENFORCE:-true}"
-ENV_VARS+="@GATEWAY_BLOCK_SEVERITY=${GATEWAY_BLOCK_SEVERITY:-high}"
-ENV_VARS+="@GATEWAY_ANTHROPIC_BASE=${GATEWAY_ANTHROPIC_BASE:-https://api.anthropic.com}"
-ENV_VARS+="@JUDGE_PROVIDER=${JUDGE_PROVIDER:-auto}"
+ENV_VARS+="|GATEWAY_BLOCK_SEVERITY=${GATEWAY_BLOCK_SEVERITY:-high}"
+ENV_VARS+="|GATEWAY_ANTHROPIC_BASE=${GATEWAY_ANTHROPIC_BASE:-https://api.anthropic.com}"
+ENV_VARS+="|JUDGE_PROVIDER=${JUDGE_PROVIDER:-auto}"
 # Judge model override (e.g. a Haiku-class model to keep per-verdict cost small).
-[ -n "${JUDGE_MODEL:-}" ] && ENV_VARS+="@JUDGE_MODEL=${JUDGE_MODEL}"
+[ -n "${JUDGE_MODEL:-}" ] && ENV_VARS+="|JUDGE_MODEL=${JUDGE_MODEL}"
 # Public deploy: signup OFF by default (else the internet can self-register orgs). Set
 # WARDEN_ALLOW_SIGNUP=true explicitly for an open multi-tenant deployment.
-ENV_VARS+="@WARDEN_ALLOW_SIGNUP=${WARDEN_ALLOW_SIGNUP:-false}"
-ENV_VARS+="@SEED_ON_START=${SEED_ON_START:-false}"
+ENV_VARS+="|WARDEN_ALLOW_SIGNUP=${WARDEN_ALLOW_SIGNUP:-false}"
+ENV_VARS+="|SEED_ON_START=${SEED_ON_START:-false}"
 # WARDEN_ALLOWED_HOSTS may need more than DOMAIN (e.g. the *.run.app hostname when a
 # fronting proxy/Worker reaches the service by its run.app origin) — allow an override.
-[ -n "$DOMAIN" ] && ENV_VARS+="@CORS_ORIGINS=https://${DOMAIN}@WARDEN_PUBLIC_URL=https://${DOMAIN}@WARDEN_ALLOWED_HOSTS=${WARDEN_ALLOWED_HOSTS:-$DOMAIN}"
+[ -n "$DOMAIN" ] && ENV_VARS+="|CORS_ORIGINS=https://${DOMAIN}|WARDEN_PUBLIC_URL=https://${DOMAIN}|WARDEN_ALLOWED_HOSTS=${WARDEN_ALLOWED_HOSTS:-$DOMAIN}"
 # Email plane (password reset / join verification / invites). SMTP_PASS rides in via the
 # optional-secrets loop below (create secret 'warden-smtp-pass' to enable).
-[ -n "${SMTP_HOST:-}" ] && ENV_VARS+="@SMTP_HOST=${SMTP_HOST}@SMTP_PORT=${SMTP_PORT:-587}@SMTP_USER=${SMTP_USER:-}@MAIL_FROM=${MAIL_FROM:-}"
+[ -n "${SMTP_HOST:-}" ] && ENV_VARS+="|SMTP_HOST=${SMTP_HOST}|SMTP_PORT=${SMTP_PORT:-587}|SMTP_USER=${SMTP_USER:-}|MAIL_FROM=${MAIL_FROM:-}"
 # Encrypt stored finding content at rest (needs a durable WARDEN_SECRET_KEY — key loss =
 # data loss). Opt-in per deploy; threaded through when set.
-[ -n "${WARDEN_ENCRYPT_FINDINGS:-}" ] && ENV_VARS+="@WARDEN_ENCRYPT_FINDINGS=${WARDEN_ENCRYPT_FINDINGS}"
-[ -n "${INGEST_TENANT:-}" ] && ENV_VARS+="@INGEST_TENANT=${INGEST_TENANT}"
-[ -n "${WARDEN_EXTENSION_ID:-}" ] && ENV_VARS+="@WARDEN_EXTENSION_ID=${WARDEN_EXTENSION_ID}"
+[ -n "${WARDEN_ENCRYPT_FINDINGS:-}" ] && ENV_VARS+="|WARDEN_ENCRYPT_FINDINGS=${WARDEN_ENCRYPT_FINDINGS}"
+[ -n "${INGEST_TENANT:-}" ] && ENV_VARS+="|INGEST_TENANT=${INGEST_TENANT}"
+[ -n "${WARDEN_EXTENSION_ID:-}" ] && ENV_VARS+="|WARDEN_EXTENSION_ID=${WARDEN_EXTENSION_ID}"
 
 # Secrets — must exist in Secret Manager (see README). Optional ones are added if present.
 SECRETS="WARDEN_SECRET_KEY=warden-secret-key:latest,DATABASE_URL=warden-database-url:latest"
@@ -84,7 +85,7 @@ echo "==> Deploying Cloud Run service '$SERVICE'"
 gcloud run deploy "$SERVICE" --project "$PROJECT_ID" --region "$REGION" \
   --image "$IMAGE" \
   --add-cloudsql-instances "$SQL_CONNECTION" \
-  --update-env-vars "^@^${ENV_VARS}" \
+  --update-env-vars "^|^${ENV_VARS}" \
   --set-secrets "$SECRETS" \
   "${AUTH_ARGS[@]}" \
   "${VPC_ARGS[@]}" \
