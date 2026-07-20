@@ -12,7 +12,7 @@ def test_macos_script_self_enrolls():
     assert s.startswith("#!/usr/bin/env bash")
     assert "et_secret123" in s                    # carries the enrollment token
     assert "/api/enroll" in s                      # self-enrolls at runtime
-    assert "ANTHROPIC_BASE_URL" in s and "$WARDEN_URL/v1" in s
+    assert '"ANTHROPIC_BASE_URL": "$WARDEN_URL"' in s and "$WARDEN_URL/v1" not in s
     assert "managed-settings.json" in s
     assert "abc123" in s                           # extension id in policy block
 
@@ -31,7 +31,7 @@ def test_linux_script_self_enrolls():
     assert s.startswith("#!/usr/bin/env bash")
     assert "et_lin" in s                                   # carries the enrollment token
     assert "/api/enroll" in s                               # self-enrolls at runtime
-    assert "ANTHROPIC_BASE_URL" in s and "$WARDEN_URL/v1" in s
+    assert '"ANTHROPIC_BASE_URL": "$WARDEN_URL"' in s and "$WARDEN_URL/v1" not in s
     assert "/etc/claude-code" in s                          # Linux managed-settings path
     assert "managed-settings.json" in s
     assert "pacman" in s                                    # Arch package-manager path

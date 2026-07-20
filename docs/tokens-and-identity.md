@@ -107,7 +107,7 @@ Push keys via Claude Code's enterprise `managed-settings.json` (highest preceden
 ```json
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "https://warden.corp.example.com/v1",
+    "ANTHROPIC_BASE_URL": "https://warden.corp.example.com",
     "ANTHROPIC_AUTH_TOKEN": "ak_<the developer's Warden key>"
   }
 }

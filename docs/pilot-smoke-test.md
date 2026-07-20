@@ -44,7 +44,7 @@ these will block on every surface. Everything is attributed to your `@tachtech.n
    ```bash
    cat ~/.claude/settings.json
    ```
-   - ✅ `env.ANTHROPIC_BASE_URL` = `https://warden.tachtech.net/v1`, `ANTHROPIC_AUTH_TOKEN`
+   - ✅ `env.ANTHROPIC_BASE_URL` = `https://warden.tachtech.net` (no `/v1` — the SDK adds it), `ANTHROPIC_AUTH_TOKEN`
      set, and a `hooks` block referencing `warden-hook` (PreToolUse) + `warden-posture`.
 3. [ ] Prove the gateway blocks a leak (deterministic — no model call needed on a block):
    ```bash

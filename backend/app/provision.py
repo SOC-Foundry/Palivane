@@ -44,7 +44,7 @@ echo "Configuring Claude Code ..."
 CC_DIR="/Library/Application Support/ClaudeCode"
 sudo mkdir -p "$CC_DIR"
 sudo tee "$CC_DIR/managed-settings.json" >/dev/null <<JSON
-{{ "env": {{ "ANTHROPIC_BASE_URL": "$WARDEN_URL/v1", "ANTHROPIC_AUTH_TOKEN": "$KEY" }} }}
+{{ "env": {{ "ANTHROPIC_BASE_URL": "$WARDEN_URL", "ANTHROPIC_AUTH_TOKEN": "$KEY" }} }}
 JSON
 echo "  Claude Code -> $CC_DIR/managed-settings.json"
 
@@ -79,7 +79,7 @@ Write-Host "  device key issued."
 Write-Host "Configuring Claude Code ..."
 $ccDir = "C:\\Program Files\\ClaudeCode"
 New-Item -ItemType Directory -Force -Path $ccDir | Out-Null
-$cc = @{{ env = @{{ ANTHROPIC_BASE_URL = "$WardenUrl/v1"; ANTHROPIC_AUTH_TOKEN = $Key }} }}
+$cc = @{{ env = @{{ ANTHROPIC_BASE_URL = "$WardenUrl"; ANTHROPIC_AUTH_TOKEN = $Key }} }}
 $cc | ConvertTo-Json -Depth 5 | Set-Content -Path "$ccDir\\managed-settings.json" -Encoding UTF8
 Write-Host "  Claude Code -> $ccDir\\managed-settings.json"
 
@@ -130,7 +130,7 @@ echo "Configuring Claude Code ..."
 CC_DIR="/etc/claude-code"
 sudo mkdir -p "$CC_DIR"
 sudo tee "$CC_DIR/managed-settings.json" >/dev/null <<JSON
-{{ "env": {{ "ANTHROPIC_BASE_URL": "$WARDEN_URL/v1", "ANTHROPIC_AUTH_TOKEN": "$KEY" }} }}
+{{ "env": {{ "ANTHROPIC_BASE_URL": "$WARDEN_URL", "ANTHROPIC_AUTH_TOKEN": "$KEY" }} }}
 JSON
 echo "  Claude Code -> $CC_DIR/managed-settings.json"
 

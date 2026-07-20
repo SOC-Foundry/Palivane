@@ -149,7 +149,10 @@ def claude_managed_settings(base_url: str, hook_path: str, posture_path: str) ->
     token = "ak_REPLACE_WITH_PER_USER_WARDEN_KEY"
     return json.dumps({
         "env": {
-            "ANTHROPIC_BASE_URL": f"{b}/v1",
+            # No /v1 suffix: the Anthropic SDK appends /v1/messages itself, so a base of
+            # {b}/v1 would resolve to {b}/v1/v1/messages and 405. (Unlike OPENAI_BASE_URL,
+            # which does take /v1.) The gateway route is {b}/v1/messages.
+            "ANTHROPIC_BASE_URL": b,
             "ANTHROPIC_AUTH_TOKEN": token,
             "WARDEN_URL": b,
             "WARDEN_TOKEN": token,

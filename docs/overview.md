@@ -208,7 +208,7 @@ detection stays on.
 ### A prompt to your own LLM (Claude Code)
 
 ```
-1. Dev machine:  ANTHROPIC_BASE_URL=http://warden/v1  claude
+1. Dev machine:  ANTHROPIC_BASE_URL=http://warden  claude   (SDK appends /v1/messages)
 2. → POST /v1/messages, authenticated (API key or JWT), tenant + actor resolved
 3. → engine.analyze(): PromptThreat + ShadowAI + optional LLM judge
 4. → scoring fuses signals → Verdict (risk, severity)
