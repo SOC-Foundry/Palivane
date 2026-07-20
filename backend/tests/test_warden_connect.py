@@ -40,7 +40,7 @@ def test_write_claude_code_env_and_hooks(monkeypatch, tmp_path):
 
     data = json.load(open(path))
     env = data["env"]
-    assert env["ANTHROPIC_BASE_URL"] == "https://w.corp.io/v1"
+    assert env["ANTHROPIC_BASE_URL"] == "https://w.corp.io"
     assert env["ANTHROPIC_AUTH_TOKEN"] == "ak_tok123"
     assert env["WARDEN_URL"] == "https://w.corp.io"
     assert env["WARDEN_TOKEN"] == "ak_tok123"

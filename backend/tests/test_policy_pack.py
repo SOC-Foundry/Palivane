@@ -153,7 +153,8 @@ def test_claude_managed_settings():
     s = json.loads(pp.claude_managed_settings("https://w.acme.com/", "/opt/warden-hook",
                                               "/opt/warden-posture"))
     # Gateway routing + Warden credentials in env (the ak_ token doubles as ingest auth).
-    assert s["env"]["ANTHROPIC_BASE_URL"] == "https://w.acme.com/v1"
+    # No /v1 suffix: the Anthropic SDK appends /v1/messages, so the base is the bare origin.
+    assert s["env"]["ANTHROPIC_BASE_URL"] == "https://w.acme.com"
     assert s["env"]["WARDEN_URL"] == "https://w.acme.com"
     assert s["env"]["ANTHROPIC_AUTH_TOKEN"] == s["env"]["WARDEN_TOKEN"]
     assert s["env"]["WARDEN_TOKEN"].startswith("ak_")
@@ -168,7 +169,7 @@ def test_pack_includes_claude_settings_from_endpoint(client):
     r = client.get("/api/policy-pack?base_url=https://w.acme.com&hook_path=/opt/wh")
     assert r.status_code == 200
     s = json.loads(r.json()["artifacts"]["claude-managed-settings.json"])
-    assert s["env"]["ANTHROPIC_BASE_URL"] == "https://w.acme.com/v1"
+    assert s["env"]["ANTHROPIC_BASE_URL"] == "https://w.acme.com"
     assert s["hooks"]["PreToolUse"][0]["hooks"][0]["command"] == "/opt/wh"
 
 

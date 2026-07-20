@@ -124,7 +124,9 @@ def _write_claude_code(token: str, backend: str, user: str,
             data = {}
     env = data.setdefault("env", {})
     if route_gateway:
-        env["ANTHROPIC_BASE_URL"] = backend.rstrip("/") + "/v1"
+        # No /v1 suffix — the Anthropic SDK appends /v1/messages itself; {backend}/v1
+        # would resolve to {backend}/v1/v1/messages and 405.
+        env["ANTHROPIC_BASE_URL"] = backend.rstrip("/")
         env["ANTHROPIC_AUTH_TOKEN"] = token
     # Warden's own names — the hook/posture scripts read these; installed even when the
     # gateway routing above is skipped (org has no model key yet), so the local capture

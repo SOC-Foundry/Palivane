@@ -125,11 +125,14 @@ curl -X POST https://warden.corp.example.com/api/apikeys \
 ```json
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "https://warden.corp.example.com/v1",
+    "ANTHROPIC_BASE_URL": "https://warden.corp.example.com",
     "ANTHROPIC_AUTH_TOKEN": "ak_<the developer's Warden key>"
   }
 }
 ```
+- **No `/v1` suffix on `ANTHROPIC_BASE_URL`.** The Anthropic SDK appends `/v1/messages`
+  itself, so `…/v1` would resolve to `…/v1/v1/messages` and return **405**. (This differs
+  from `OPENAI_BASE_URL`, which *does* take `/v1`.)
 - `ANTHROPIC_AUTH_TOKEN` is sent as `Authorization: Bearer`; `ANTHROPIC_API_KEY` would be
   sent as `x-api-key` — the gateway accepts either. For per-user keys without baking them
   into the file, use Claude Code's `apiKeyHelper` to fetch the key dynamically.
@@ -168,7 +171,7 @@ the model. Installed by `warden-connect`, or fleet-wide in the same
 ```json
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "https://warden.corp.example.com/v1",
+    "ANTHROPIC_BASE_URL": "https://warden.corp.example.com",
     "ANTHROPIC_AUTH_TOKEN": "ak_<the developer's Warden key>",
     "WARDEN_URL": "https://warden.corp.example.com",
     "WARDEN_TOKEN": "ak_<the same key>"
