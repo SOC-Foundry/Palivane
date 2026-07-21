@@ -875,12 +875,27 @@ def enroll(body: EnrollRequest, db: Session = Depends(get_db)):
                          db.query(ApiKey).filter(ApiKey.tenant_id == et.tenant_id,
                                                  ApiKey.active.is_(True)).count())
     token, prefix, token_hash = generate_api_key()
-    key = ApiKey(tenant_id=et.tenant_id, label=f"device:{body.device}", actor=body.device,
-                 prefix=prefix, token_hash=token_hash)
+    # Attribute to the email-shaped user when the enroller supplied one (reconciles against
+    # the SSO/email shadow set); else fall back to the device string. Label always names the
+    # device so the key is traceable to a machine regardless.
+    key = ApiKey(tenant_id=et.tenant_id, label=f"device:{body.device}",
+                 actor=(body.user or body.device), prefix=prefix, token_hash=token_hash)
     db.add(key)
     db.commit()
     audit_log.record(db, et.tenant_id, body.device, "device.enroll", target=body.device)
-    return {"token": token, "actor": body.device, "base_url_hint": "/v1"}
+    # ANTHROPIC_BASE_URL takes the bare origin — the Anthropic SDK appends /v1/messages
+    # itself, so a "/v1" suffix here would double it into /v1/v1/messages (405). No suffix.
+    return {"token": token, "actor": body.device, "base_url_suffix": ""}
+
+
+@router.get("/enroll/check")
+def enroll_check(x_warden_token: str = Header(default=""), db: Session = Depends(get_db)):
+    """Cheap liveness check for a device key (`ak_…`): 200 if still valid, 401 if revoked
+    or rotated. Lets the CLI apiKeyHelper (warden-reenroll) tell "my cached key is dead,
+    re-enroll" from "still good" without spending a gateway/ingest call or burning quota."""
+    from .gateway import _resolve_api_key
+    principal = _resolve_api_key(x_warden_token, db)   # raises 401 on a bad/expired key
+    return {"ok": True, "actor": principal.actor}
 
 
 # --- per-tenant upstream provider config (gateway billing isolation) -----------------

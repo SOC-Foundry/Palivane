@@ -1,6 +1,6 @@
 // Service worker: calls the Warden AI-usage ingest endpoint and returns a verdict.
-// Config (backend URL, token, user, enforce) comes from chrome.storage — in a managed
-// rollout these are pushed via enterprise policy (managed storage).
+// Config (backend URL, token or enrollToken, user, enforce) comes from chrome.storage — in
+// a managed rollout these are pushed via enterprise policy (managed storage).
 
 const DEFAULTS = {
   backendUrl: "http://localhost:8090",
@@ -8,6 +8,10 @@ const DEFAULTS = {
   // in a managed rollout it's pushed via policy). Falls back to backendUrl.
   consoleUrl: "",
   token: "",
+  // Fleet enrollment token (et_...) pushed via policy instead of a static ingest token.
+  // The extension redeems it once for its own per-device key, so a leaked/rotated key
+  // self-heals on the next call without re-pushing policy to every device.
+  enrollToken: "",
   user: "",
   enforce: true, // when false, "block" verdicts are downgraded to "warn"
 };
@@ -21,6 +25,37 @@ async function config() {
     managed = (await chrome.storage.managed.get(null)) || {};
   } catch (_) { /* no managed policy present */ }
   return Object.assign({}, DEFAULTS, sync, managed);
+}
+
+// Stable per-install device identity, used to attribute the device key. Generated once and
+// cached in local storage (never synced — it's this browser install's identity).
+async function deviceId() {
+  const { deviceId } = await chrome.storage.local.get({ deviceId: "" });
+  if (deviceId) return deviceId;
+  const id = "chrome-" + crypto.randomUUID();
+  await chrome.storage.local.set({ deviceId: id });
+  return id;
+}
+
+// Resolve the ingest key. A static `token` (from sign-in or a legacy static policy) wins.
+// Otherwise, with an `enrollToken` set, redeem it for a per-device key and cache it. Pass
+// forceRenew=true to discard a cached key that just got rejected and re-enroll.
+async function getIngestKey(c, forceRenew = false) {
+  if (c.token) return c.token;
+  if (!c.enrollToken) return "";
+  if (!forceRenew) {
+    const { deviceKey } = await chrome.storage.local.get({ deviceKey: "" });
+    if (deviceKey) return deviceKey;
+  }
+  const res = await fetch(c.backendUrl.replace(/\/$/, "") + "/api/enroll", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token: c.enrollToken, device: await deviceId(), user: c.user || "" }),
+  });
+  if (!res.ok) return "";
+  const { token } = await res.json();
+  if (token) await chrome.storage.local.set({ deviceKey: token });
+  return token || "";
 }
 
 async function isManaged() {
@@ -72,7 +107,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === "status") {
     (async () => {
       const c = await config();
-      sendResponse({ configured: !!c.token, user: c.user || "",
+      sendResponse({ configured: !!(c.token || c.enrollToken), user: c.user || "",
                      backendUrl: c.backendUrl, managed: await isManaged() });
     })();
     return true;
@@ -88,10 +123,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     (async () => {
       try {
         const c = await config();
-        if (!c.token) { sendResponse({ ok: false }); return; }
+        const key = await getIngestKey(c);
+        if (!key) { sendResponse({ ok: false }); return; }
         const res = await fetch(c.backendUrl.replace(/\/$/, "") + "/api/exception-request", {
           method: "POST",
-          headers: { "content-type": "application/json", "X-Warden-Token": c.token },
+          headers: { "content-type": "application/json", "X-Warden-Token": key },
           body: JSON.stringify({ ...msg.payload, user: c.user }),
         });
         sendResponse({ ok: res.ok });
@@ -103,12 +139,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {
       const c = await config();
-      if (!c.token) { sendResponse({ action: "allow", reason: "unconfigured" }); return; }
-      const res = await fetch(c.backendUrl.replace(/\/$/, "") + "/api/ingest/ai-usage", {
+      let key = await getIngestKey(c);
+      if (!key) { sendResponse({ action: "allow", reason: "unconfigured" }); return; }
+      const call = (k) => fetch(c.backendUrl.replace(/\/$/, "") + "/api/ingest/ai-usage", {
         method: "POST",
-        headers: { "content-type": "application/json", "X-Warden-Token": c.token },
+        headers: { "content-type": "application/json", "X-Warden-Token": k },
         body: JSON.stringify({ content: msg.content, destination: msg.destination, user: c.user }),
       });
+      let res = await call(key);
+      // A cached device key can be revoked/rotated server-side. With an enrollToken we can
+      // self-heal: re-enroll for a fresh key and retry once. A static token has no fallback.
+      if ((res.status === 401 || res.status === 403) && !c.token && c.enrollToken) {
+        key = await getIngestKey(c, true);
+        if (key) res = await call(key);
+      }
       if (!res.ok) { sendResponse({ action: "allow", reason: "backend " + res.status }); return; }
       const verdict = await res.json();
       // In monitor mode (enforce off) a "block" is normally downgraded to "warn" — but a

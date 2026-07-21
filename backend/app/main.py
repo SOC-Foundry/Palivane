@@ -1547,7 +1547,7 @@ def provision(body: ProvisionRequest, current: User = Depends(require_admin),
     (POST /api/enroll) for its own per-device key, then configures Claude Code + the browser
     extension policy (+ optional desktop proxy). Per-device keys mean per-device attribution
     and independent revocation — no shared credential baked in."""
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
 
     from . import provision as prov
     from .plans import require_feature
@@ -1557,10 +1557,13 @@ def provision(body: ProvisionRequest, current: User = Depends(require_admin),
     from .models import EnrollmentToken
     from .security import generate_enrollment_token
 
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    # Fleet token lives in a distributable file, so bound its lifetime by default.
+    expires_at = now + timedelta(days=body.expires_in_days) if body.expires_in_days else None
     token, prefix, token_hash = generate_enrollment_token()
     et = EnrollmentToken(tenant_id=current.tenant_id, label=body.label, prefix=prefix,
-                         token_hash=token_hash,
-                         created_at=datetime.now(timezone.utc).replace(tzinfo=None))
+                         token_hash=token_hash, max_uses=body.max_uses,
+                         expires_at=expires_at, created_at=now)
     db.add(et)
     db.commit()
 
@@ -1568,9 +1571,13 @@ def provision(body: ProvisionRequest, current: User = Depends(require_admin),
     platforms = ["macos", "windows"] if body.platform == "both" else [body.platform]
     scripts = {p: prov.render(p, body.base_url, token, ext_id, body.proxy_host)
                for p in platforms}
+    expiry_note = (f" Expires in {body.expires_in_days} day(s)." if body.expires_in_days
+                   else " Does not expire.")
     return {"enroll_token_prefix": prefix, "scripts": scripts,
+            "expires_at": expires_at.isoformat() + "Z" if expires_at else None,
             "note": "Contains a reusable enrollment token; each device self-enrolls for its "
-                    "own key. Distribute over a trusted channel; revoke via /api/enroll/tokens."}
+                    "own key. Distribute over a trusted channel; revoke via "
+                    "/api/enroll/tokens." + expiry_note}
 
 
 @app.get("/api/stats")

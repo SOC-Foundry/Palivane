@@ -27,6 +27,7 @@ router = APIRouter(tags=["distribution"])
 # image alongside the backend). warden_addon.py keeps its .py name; the CLI tools don't.
 _ALLOW = {
     "warden-connect": "cli/warden-connect",
+    "warden-reenroll": "cli/warden-reenroll",
     "warden-hook": "cli/warden-hook",
     "warden-cursor-hook": "cli/warden-cursor-hook",
     "warden-mcp": "cli/warden-mcp",

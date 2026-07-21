@@ -95,6 +95,22 @@ Push via your MDM / Google Admin / group policy:
 With this, a managed device installs and configures the extension with **zero user
 interaction**. Set `user` from SSO if your management layer can template it.
 
+**Self-healing alternative — push an `enrollToken` instead of a static `token`:**
+
+   ```json
+   {
+     "backendUrl":  { "Value": "https://warden.corp.example.com" },
+     "enrollToken": { "Value": "et_<fleet enrollment token>" },
+     "enforce":     { "Value": true }
+   }
+   ```
+
+With an `enrollToken` the extension redeems it once for its **own per-device key**
+(`POST /api/enroll`), caches it, and **re-enrolls automatically** if that key is ever
+revoked/rotated (retries once on a 401). That gives per-device attribution and revocation,
+and means a rotated key self-heals without re-pushing policy. A static `token` still works
+(and wins if both are set); `enrollToken` is what the `/api/provision` installer emits.
+
 ## Scope & limits (honest)
 
 - Covers **managed browsers/devices** where the extension is installed; personal

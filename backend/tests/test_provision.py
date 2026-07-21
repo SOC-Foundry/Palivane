@@ -40,6 +40,26 @@ def test_linux_script_self_enrolls():
     assert "3rdparty" in s                                  # Chromium managed-storage schema
 
 
+def test_installers_are_self_healing():
+    # Gateway auth goes through apiKeyHelper (warden-reenroll), not a baked static key, so a
+    # revoked device key re-enrolls itself with no re-push.
+    for plat, ext in (("macos", "abc"), ("linux", "lnx"), ("windows", "win")):
+        s = provision.render(plat, "https://warden.corp", "et_x", extension_id=ext)
+        assert "apiKeyHelper" in s and "warden-reenroll" in s
+        assert "ANTHROPIC_AUTH_TOKEN" not in s          # no static gateway key baked in
+        assert "warden-reenroll" in s                   # helper fetched/wired at install
+
+
+def test_browser_policy_carries_enroll_token_not_static_key():
+    # The extension self-enrolls its own per-device key from the enrollment token — the
+    # installer no longer bakes a static ingest key into the managed policy.
+    lin = provision.render("linux", "https://warden.corp", "et_lin", extension_id="lnx")
+    policy = lin.split("3rdparty", 1)[1]
+    assert '"enrollToken": "$ENROLL_TOKEN"' in policy and '"token":' not in policy
+    win = provision.render("windows", "https://warden.corp", "et_win", extension_id="xyz")
+    assert 'Set-ItemProperty -Path $regkey -Name "enrollToken"' in win
+
+
 def test_arch_alias_renders_linux():
     assert provision.render("arch", "https://x", "et_a") == provision.render("linux", "https://x", "et_a")
 

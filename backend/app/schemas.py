@@ -295,7 +295,12 @@ class EnrollmentTokenCreate(BaseModel):
 
 class EnrollRequest(BaseModel):
     token: str = Field(min_length=8, description="the enrollment token (et_…)")
-    device: str = Field(min_length=1, description="device / user identity for attribution")
+    device: str = Field(min_length=1, description="device identity (used for the key label)")
+    # Optional email-shaped identity (from SSO) to attribute findings to. Coverage
+    # reconciliation matches on email-shaped actors, so when the enroller knows the user
+    # (e.g. the extension after sign-in) pass it here; else attribution falls back to the
+    # device string, which won't reconcile against the SSO/email shadow set.
+    user: str = ""
 
 
 class ProvisionRequest(BaseModel):
@@ -305,6 +310,10 @@ class ProvisionRequest(BaseModel):
     actor: str = ""               # per-user/device identity for attribution
     extension_id: str = ""        # published Chrome/Edge extension id (optional)
     proxy_host: str = ""          # host:port of the egress proxy (optional, desktop app)
+    # Bound lifetime for the fleet-wide enrollment token baked into the installer. It's a
+    # reusable credential in a file, so it expires by default (override/disable explicitly).
+    max_uses: int | None = None       # None = unlimited uses within the validity window
+    expires_in_days: int | None = 30  # None = never expires (not recommended for a fleet file)
 
 
 class AccessEvent(BaseModel):

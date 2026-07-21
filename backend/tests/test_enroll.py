@@ -55,6 +55,26 @@ def test_enroll_token_mgmt_is_admin_only(client, db_factory):
                        headers={"Authorization": f"Bearer {at}"}).status_code == 403
 
 
+def test_enroll_check_validates_key(client, raw_client):
+    # /api/enroll/check is the cheap liveness probe warden-reenroll uses: 200 while the
+    # device key is live, 401 once it's revoked/rotated (its signal to re-enroll).
+    et = _mint_enroll(client)["token"]
+    key = raw_client.post("/api/enroll", json={"token": et, "device": "laptop@acme.com"}).json()["token"]
+    ok = raw_client.get("/api/enroll/check", headers={"X-Warden-Token": key})
+    assert ok.status_code == 200 and ok.json()["ok"] is True
+    bad = raw_client.get("/api/enroll/check", headers={"X-Warden-Token": "ak_deadbeefdead"})
+    assert bad.status_code == 401
+
+
+def test_enroll_user_attribution_is_email_shaped(client, raw_client):
+    # When the enroller knows the SSO identity (extension after sign-in), attribute the key
+    # to the email so it reconciles against the shadow set; the label still names the device.
+    et = _mint_enroll(client)["token"]
+    raw_client.post("/api/enroll", json={"token": et, "device": "chrome-abc", "user": "alice@acme.com"})
+    keys = client.get("/api/apikeys").json()["api_keys"]
+    assert any(k["actor"] == "alice@acme.com" and k["label"] == "device:chrome-abc" for k in keys)
+
+
 def test_enrolled_devices_are_tenant_scoped(client, db_factory, raw_client):
     # Enroll a device under acme; its key must not see another tenant's data (implicit via
     # tenant binding). Here we just confirm the key's tenant = the token's tenant by listing.

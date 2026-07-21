@@ -100,9 +100,12 @@ can't *recommend* a banned extension either.
 - **Chrome:** policy `ExtensionInstallForcelist` (Google Admin, Intune ADMX, or GPO).
 - **Edge:** same policy name under the Edge ADMX, with the Edge Add-ons update URL.
 
-This force-installs the Warden extension; combine with the per-tenant token via managed
-config (the `/api/provision` installer emits that block prefilled — see
-[`extension/README.md`](../extension/README.md)).
+This force-installs the Warden extension; combine with the per-tenant config via managed
+storage (the `/api/provision` installer emits that block prefilled — see
+[`extension/README.md`](../extension/README.md)). Push an **`enrollToken`** (`et_…`) rather
+than a static ingest `token` and the extension self-enrolls its own per-device key,
+re-enrolling automatically if that key is revoked — per-device attribution and revocation,
+no re-push.
 
 ## 6. Verify
 
@@ -120,7 +123,8 @@ pre-execution tool-call inspection) and a `SessionStart` hook (`warden-posture` 
 drift). Deploy it to Claude Code's managed-settings path (macOS `/Library/Application
 Support/ClaudeCode/`, Linux `/etc/claude-code/`, Windows `C:\Program Files\ClaudeCode\`),
 push the two scripts to the referenced paths with your MDM's file-deployment, and replace
-the `ak_` placeholder with each developer's key (or wire `apiKeyHelper`). See
+the `ak_` placeholder with each developer's key (or wire `apiKeyHelper` — the
+`/api/provision` installer wires it to `warden-reenroll` for a self-healing per-device key). See
 [`docs/claude-deployment.md`](claude-deployment.md) (Route C) for the field-by-field
 breakdown. Same philosophy as the rest of the pack: config the app enforces, no resident
 Warden agent.

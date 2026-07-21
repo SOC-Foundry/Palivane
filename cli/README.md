@@ -1,6 +1,6 @@
 # Warden CLI — self-serve onboarding + local planes
 
-Six stdlib-only Python scripts (no install; drop them on PATH, e.g. `~/bin/`). Together
+Stdlib-only Python scripts (no install; drop them on PATH, e.g. `~/bin/`). Together
 they give Warden **local, pre-execution visibility** — the surface the network planes
 can't reach (cert-pinned clients, stdio MCP servers, on-device drift, secrets at rest) —
 without an endpoint agent: each is an app-scoped hook/shim that rides the existing ingest APIs.
@@ -8,6 +8,7 @@ without an endpoint agent: each is an app-scoped hook/shim that rides the existi
 | Script | Plane | Reports to |
 | --- | --- | --- |
 | `warden-connect` | onboarding — wires up everything below | — |
+| `warden-reenroll` | Claude Code `apiKeyHelper` — self-enrolls/rotates a per-device key | `POST /api/enroll` |
 | `warden-hook` | Claude Code tool calls, **before execution** | `POST /api/ingest/mcp` |
 | `warden-cursor-hook` | **Cursor** prompts + tool calls, before execution | `POST /api/ingest/{mcp,ai-usage}` |
 | `warden-mcp` | local **stdio MCP servers**, inline | `POST /api/ingest/mcp` |
@@ -47,6 +48,27 @@ What happens:
 5. Restart Claude Code / Cursor — prompts route through the gateway (or the Cursor hook),
    tool calls are inspected locally, posture reports on session start; all attributed to
    you and revocable in the console like any key.
+
+## `warden-reenroll` — self-healing device key (apiKeyHelper)
+
+A Claude Code [`apiKeyHelper`](https://docs.claude.com/en/docs/claude-code/settings): Claude
+Code runs it to fetch the gateway credential, so its **stdout is only the key**. Instead of
+baking a static `ANTHROPIC_AUTH_TOKEN` into managed settings (which dies the moment an admin
+revokes it, needing a re-push to every machine), the `/api/provision` installer points
+`apiKeyHelper` here. On each call it returns a live per-device key; if the cached key has
+been revoked/rotated (`GET /api/enroll/check` returns 401) it re-enrolls from the on-disk
+enrollment token — so a device self-heals within one apiKeyHelper TTL, no admin action.
+
+```bash
+warden-reenroll                    # print a live device key (apiKeyHelper mode)
+warden-reenroll --refresh          # force a fresh enrollment, ignoring the cache
+warden-reenroll --setup URL TOKEN  # write ~/.warden/enroll.json (installer helper)
+```
+
+Config (first found wins): `$WARDEN_URL`/`$WARDEN_ENROLL_TOKEN` env, else
+`~/.warden/enroll.json`, else `/etc/warden/enroll.json` (system-wide, written by the
+installer). Caches the device key at `~/.warden/device-key` (0600). Network down → falls
+back to the cached key so Claude Code keeps working offline.
 
 ## `warden-hook` — pre-execution tool-call inspection
 

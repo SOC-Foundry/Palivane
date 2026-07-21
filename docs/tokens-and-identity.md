@@ -117,6 +117,17 @@ To avoid baking a key per machine, use Claude Code's `apiKeyHelper` to fetch eac
 user's `ak_…` dynamically. See
 [claude-deployment.md §2](./claude-deployment.md#2-claude-code) for the full setup.
 
+**Self-serve installers do this automatically.** The `/api/provision` installer wires
+`apiKeyHelper` to the bundled **`warden-reenroll`** helper instead of baking a static
+`ANTHROPIC_AUTH_TOKEN`. On each call the helper returns a live per-device key, and if that
+key is revoked/rotated it re-enrolls from the on-disk enrollment token (`GET /api/enroll/check`
+tells it "dead, re-enroll" vs "still good") — so a revoked key self-heals with no re-push.
+The browser extension is symmetric: it's pushed the **enrollment token** via managed policy
+and self-enrolls its own device key (re-enrolling on a 401), rather than carrying a static
+ingest key. Enrolling with an email-shaped `user` (the extension sends it after sign-in)
+attributes the device key to that person so it reconciles against the shadow set; without
+one, attribution falls back to the device string (`whoami@hostname`), which won't.
+
 ---
 
 ## Minimum vs. recommended
