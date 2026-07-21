@@ -696,20 +696,23 @@ conditional access — which Warden consumes rather than re-implements.
 Desktop apps and IDE assistants can't host an extension, so for them (and any
 on-network device) Warden ships a [mitmproxy](https://mitmproxy.org/) addon
 ([`proxy/`](proxy/)) that inspects outbound POSTs to AI providers, scores the prompt,
-and blocks on a block verdict — covering the **Claude/ChatGPT desktop apps**, Cursor,
-CLIs, etc.
+and blocks on a block verdict — covering the **AI CLIs** (Claude Code, Codex, Gemini),
+the **Claude/ChatGPT desktop apps**, Cursor, etc.
+
+The one-line installer sets this up. It **defaults to CLI governance** — per-tool shims
+that route the AI CLIs through the proxy, **no sudo** — which is the right fit for most
+small orgs without MDM:
 
 ```bash
-pip install mitmproxy
-WARDEN_URL=http://localhost:8090 WARDEN_TOKEN=$TOKEN WARDEN_PROXY_ENFORCE=true \
-  mitmdump -s proxy/warden_addon.py --listen-port 8081
-# a desktop app's call carrying an SSN + AWS key -> 403 "warden_blocked" before reaching the provider
+curl -fsSL https://warden.tachtech.net/install.sh | bash              # CLI capture (default, no sudo)
+curl -fsSL https://warden.tachtech.net/install.sh | bash -s -- --desktop    # + desktop apps/browsers, system-wide (sudo)
+curl -fsSL https://warden.tachtech.net/install.sh | bash -s -- --no-proxy   # CLI + hooks only, skip the proxy
 ```
 
-On a managed fleet the system proxy + corporate root cert are pushed via MDM, so it's
-transparent. It **fails open** (Warden down → traffic flows). Caveat: needs TLS
-inspection, so certificate-pinned clients bypass rather than being inspected. Details
-and deploy steps in [`proxy/README.md`](proxy/README.md).
+On a managed fleet the system proxy + corporate root cert are pushed via MDM instead, so
+it's transparent (the `--desktop` posture). It **fails open** (Warden down → traffic
+flows). Caveat: needs TLS inspection, so certificate-pinned clients bypass rather than
+being inspected. Details and deploy steps in [`proxy/README.md`](proxy/README.md).
 
 ### Agentic tool-use (MCP inspection)
 

@@ -81,18 +81,26 @@ def install_sh():
     tools = " ".join(_CLI_TOOLS)
     script = f"""#!/usr/bin/env bash
 # Warden onboarding installer. Installs the governance CLI into ~/.warden/bin and runs
-# `warden connect` (browser sign-in -> Claude Code + local hooks + Cursor). Pass --desktop
-# to also govern desktop AI apps (Claude/ChatGPT desktop) via the local egress proxy.
+# `warden connect` (browser sign-in -> Claude Code + local hooks + Cursor), then stands
+# up the local egress proxy so traffic those tools make directly is inspected too.
 #
+# By default it governs AI CLIs (Claude Code, Codex, Gemini) via per-tool shims — no sudo:
 #   curl -fsSL {base}/install.sh | bash
-#   curl -fsSL {base}/install.sh | bash -s -- --desktop
+#
+#   --desktop    also govern desktop AI apps + browsers system-wide (system proxy + CA; needs sudo)
+#   --cli-only   the default; kept as an explicit opt-in for clarity
+#   --no-proxy   CLI + hooks only; skip the egress proxy entirely
 set -euo pipefail
 
 WARDEN_URL="{base}"
 BIN="$HOME/.warden/bin"
 TOOLS="{tools}"
-DESKTOP=0
-for a in "$@"; do [ "$a" = "--desktop" ] && DESKTOP=1; done
+PROXY_MODE="cli-only"   # cli-only (default) | desktop | none
+for a in "$@"; do
+  [ "$a" = "--desktop" ] && PROXY_MODE="desktop"
+  [ "$a" = "--cli-only" ] && PROXY_MODE="cli-only"
+  [ "$a" = "--no-proxy" ] && PROXY_MODE="none"
+done
 
 echo "Installing Warden CLI into $BIN ..."
 mkdir -p "$BIN"
@@ -114,13 +122,22 @@ export PATH="$BIN:$PATH"
 echo "Connecting Claude Code (a browser window will open to sign in) ..."
 "$BIN/warden-connect" "$WARDEN_URL" || echo "  (run 'warden-connect' later to finish sign-in)"
 
-if [ "$DESKTOP" = "1" ]; then
-  echo "Setting up desktop-app governance (egress proxy; will ask for sudo) ..."
-  WARDEN_URL="$WARDEN_URL" "$BIN/warden-desktop" install
-fi
+case "$PROXY_MODE" in
+  cli-only)
+    echo "Setting up CLI governance (egress proxy + shims; no sudo) ..."
+    WARDEN_URL="$WARDEN_URL" "$BIN/warden-desktop" install --cli-only \\
+      || echo "  (proxy setup skipped/failed — run 'warden-desktop install --cli-only' to retry)"
+    ;;
+  desktop)
+    echo "Setting up desktop-app governance (egress proxy; will ask for sudo) ..."
+    WARDEN_URL="$WARDEN_URL" "$BIN/warden-desktop" install \\
+      || echo "  (proxy setup skipped/failed — run 'warden-desktop install' to retry)"
+    ;;
+esac
 
 echo ""
 echo "Done. Open a new terminal (or 'source ~/.zshrc') so 'warden-connect' is on PATH."
-[ "$DESKTOP" = "1" ] || echo "To also govern desktop apps later:  warden-desktop install"
+[ "$PROXY_MODE" = "desktop" ] && echo "Desktop apps + browsers are governed system-wide."
+[ "$PROXY_MODE" = "none" ] && echo "To also govern AI CLIs:  warden-desktop install --cli-only   (or --desktop for system-wide)"
 """
     return PlainTextResponse(script, media_type="text/x-shellscript")
