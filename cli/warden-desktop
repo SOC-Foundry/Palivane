@@ -7,8 +7,9 @@
 # (in enforce mode) blocked before it leaves. Reuses the per-user token that `warden
 # connect` already stored, so no separate sign-in.
 #
-#   warden-desktop install     # set up + start the local proxy (needs sudo for CA + proxy)
-#   warden-desktop uninstall   # stop it, remove the system proxy + CA trust
+#   warden-desktop install              # desktop apps + CLIs (sudo: CA trust + system proxy)
+#   warden-desktop install --cli-only   # CLIs only (Claude Code, Codex, Gemini) — no sudo
+#   warden-desktop uninstall            # stop it; remove system proxy, CA trust, CLI shims
 #   warden-desktop status
 #
 # macOS and Linux (GNOME/KDE; other desktops fall back to manual/env-var setup).
@@ -21,6 +22,10 @@ HOME_DIR="${HOME}"
 WDIR="${HOME_DIR}/.warden"
 ADDON="${WDIR}/warden_addon.py"
 CA="${HOME_DIR}/.mitmproxy/mitmproxy-ca-cert.pem"
+SHIM_DIR="${WDIR}/bin"
+# CLIs captured via a PATH shim — they use their own HTTP client and ignore the OS proxy
+# + trust store, so a system proxy alone never sees them. Override with WARDEN_CLI_TOOLS.
+CLI_SHIM_TOOLS="${WARDEN_CLI_TOOLS:-claude codex gemini}"
 OS="$(uname -s)"
 
 log() { printf '\033[36m[warden-desktop]\033[0m %s\n' "$*"; }
@@ -180,21 +185,91 @@ UNIT
   esac
 }
 
+# Resolve the real executable for a tool, skipping our own shim dir so a shim never
+# exec's itself. Prints the path; returns non-zero if not found.
+real_bin() {
+  local name="$1" p IFS=:
+  for p in $PATH; do
+    [ "$p" = "$SHIM_DIR" ] && continue
+    [ -x "$p/$name" ] && { printf '%s' "$p/$name"; return 0; }
+  done
+  return 1
+}
+
+# CLIs (Claude Code, Codex, Gemini) are Node/own-HTTP-client tools that ignore the OS
+# trust store and system proxy — so pushing a system proxy never captures them. Drop a
+# PATH shim that sets HTTPS_PROXY + NODE_EXTRA_CA_CERTS *before* the tool starts
+# (NODE_EXTRA_CA_CERTS is read once at Node startup, so it must precede launch), then
+# exec the real binary. Surgical + reversible (uninstall removes the shims).
+wire_cli_capture() {
+  mkdir -p "$SHIM_DIR"
+  case ":$PATH:" in
+    *":$SHIM_DIR:"*) : ;;
+    *) log "note: $SHIM_DIR is not on PATH — add it (install.sh does) or the shims won't take effect." ;;
+  esac
+  local wired="" name real shim
+  for name in $CLI_SHIM_TOOLS; do
+    real="$(real_bin "$name")" || continue
+    shim="$SHIM_DIR/$name"
+    cat > "$shim" <<EOF
+#!/usr/bin/env bash
+# warden-desktop CLI capture shim (auto-generated; 'warden-desktop uninstall' removes it).
+export HTTPS_PROXY="http://127.0.0.1:${PORT}"
+export HTTP_PROXY="http://127.0.0.1:${PORT}"
+export NODE_EXTRA_CA_CERTS="${CA}"
+exec "${real}" "\$@"
+EOF
+    chmod +x "$shim"
+    wired="$wired $name"
+  done
+  if [ -n "$wired" ]; then
+    log "CLI capture wired:$wired (shims in $SHIM_DIR -> 127.0.0.1:$PORT)."
+    log "Open a NEW terminal for the shims to take effect."
+  else
+    log "no target CLIs found on PATH to wire (looked for: $CLI_SHIM_TOOLS)."
+  fi
+}
+
+unwire_cli_capture() {
+  [ -d "$SHIM_DIR" ] || return 0
+  local name shim removed=""
+  for name in $CLI_SHIM_TOOLS; do
+    shim="$SHIM_DIR/$name"
+    if [ -f "$shim" ] && grep -q "warden-desktop CLI capture shim" "$shim" 2>/dev/null; then
+      rm -f "$shim"; removed="$removed $name"
+    fi
+  done
+  [ -n "$removed" ] && log "removed CLI capture shims:$removed" || true
+}
+
 cmd_install() {
+  local cli_only=0 a
+  for a in "$@"; do [ "$a" = "--cli-only" ] && cli_only=1; done
   command -v python3 >/dev/null 2>&1 || die "python3 is required."
   command -v curl >/dev/null 2>&1 || die "curl is required."
   local tok; tok="$(read_token)"; [ -n "$tok" ] || die "empty Warden token; run 'warden connect' first."
   ensure_mitm
   fetch_addon
-  bootstrap_ca
-  trust_ca
+  bootstrap_ca          # generates the CA (also the one NODE_EXTRA_CA_CERTS points at)
+  if [ "$cli_only" = "1" ]; then
+    log "CLI-only mode: skipping system CA trust + system proxy (no sudo)."
+  else
+    trust_ca
+  fi
   start_service "$tok"
-  set_proxy
-  log "done. Desktop AI apps now route through Warden. Enforce mode: ${WARDEN_PROXY_ENFORCE:-false} (monitor)."
-  log "Verify: open the Claude/ChatGPT desktop app and check findings in the console."
+  [ "$cli_only" = "1" ] || set_proxy
+  wire_cli_capture      # PATH shims for Node CLIs (needed in both modes — Node ignores the OS proxy/trust)
+  if [ "$cli_only" = "1" ]; then
+    log "done. CLIs (${CLI_SHIM_TOOLS}) now route through Warden. Enforce mode: ${WARDEN_PROXY_ENFORCE:-false} (monitor)."
+    log "Verify: open a NEW terminal and run 'claude'; check findings in the console."
+  else
+    log "done. Desktop AI apps + CLIs now route through Warden. Enforce mode: ${WARDEN_PROXY_ENFORCE:-false} (monitor)."
+    log "Verify: open the Claude/ChatGPT desktop app (or a new terminal for CLIs) and check the console."
+  fi
 }
 
 cmd_uninstall() {
+  unwire_cli_capture
   case "$OS" in
     Darwin)
       local svc; svc="$(networksetup -listnetworkserviceorder | awk -F') ' '/\) /{print $2}' | head -1)"
@@ -220,14 +295,19 @@ cmd_uninstall() {
 
 cmd_status() {
   case "$OS" in
-    Darwin) launchctl list 2>/dev/null | grep -q warden-proxy && echo "running" || echo "not running" ;;
-    Linux)  systemctl --user is-active warden-proxy.service 2>/dev/null || echo "not running" ;;
+    Darwin) launchctl list 2>/dev/null | grep -q warden-proxy && echo "proxy: running" || echo "proxy: not running" ;;
+    Linux)  printf 'proxy: %s\n' "$(systemctl --user is-active warden-proxy.service 2>/dev/null || echo 'not running')" ;;
   esac
+  local name active=""
+  for name in $CLI_SHIM_TOOLS; do
+    [ -f "$SHIM_DIR/$name" ] && grep -q "warden-desktop CLI capture shim" "$SHIM_DIR/$name" 2>/dev/null && active="$active $name"
+  done
+  [ -n "$active" ] && echo "cli shims:$active" || echo "cli shims: none"
 }
 
 case "${1:-install}" in
-  install)   cmd_install ;;
+  install)   shift 2>/dev/null || true; cmd_install "$@" ;;
   uninstall) cmd_uninstall ;;
   status)    cmd_status ;;
-  *) die "usage: warden-desktop [install|uninstall|status]" ;;
+  *) die "usage: warden-desktop [install [--cli-only]|uninstall|status]" ;;
 esac
