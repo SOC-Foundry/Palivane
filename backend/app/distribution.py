@@ -28,6 +28,7 @@ router = APIRouter(tags=["distribution"])
 _ALLOW = {
     "warden-connect": "cli/warden-connect",
     "warden-reenroll": "cli/warden-reenroll",
+    "warden-reenroll.ps1": "cli/warden-reenroll.ps1",
     "warden-hook": "cli/warden-hook",
     "warden-cursor-hook": "cli/warden-cursor-hook",
     "warden-mcp": "cli/warden-mcp",
@@ -38,9 +39,10 @@ _ALLOW = {
     "warden_addon.py": "proxy/warden_addon.py",
 }
 
-# The CLI tools install under these names (warden_addon.py excluded — it's the proxy addon,
-# fetched separately by warden-desktop).
-_CLI_TOOLS = [n for n in _ALLOW if n != "warden_addon.py"]
+# The POSIX CLI tools install under these names via install.sh. Excluded: warden_addon.py
+# (the proxy addon, fetched separately by warden-desktop) and warden-reenroll.ps1 (the
+# Windows-native apiKeyHelper, fetched by the Windows installer).
+_CLI_TOOLS = [n for n in _ALLOW if n not in ("warden_addon.py", "warden-reenroll.ps1")]
 
 # Candidate roots: /app in the container (backend copied to /app, cli/ to /app/cli), and
 # the repo root in dev (backend/app/distribution.py -> parents[2]).
