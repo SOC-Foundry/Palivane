@@ -50,6 +50,16 @@ def test_installers_are_self_healing():
         assert "warden-reenroll" in s                   # helper fetched/wired at install
 
 
+def test_windows_apikeyhelper_is_python_free():
+    # A Windows fleet can't be assumed to have Python; the apiKeyHelper is native PowerShell
+    # (warden-reenroll.ps1, fetched at install), invoked via powershell -File.
+    s = provision.render("windows", "https://warden.corp", "et_win", extension_id="xyz")
+    assert "warden-reenroll.ps1" in s                       # native PS helper, not the py CLI
+    assert "/cli/warden-reenroll.ps1" in s                  # fetched from the backend
+    assert "powershell" in s and "-File" in s               # invoked without Python
+    assert "python" not in s                                # no Python dependency anywhere
+
+
 def test_browser_policy_carries_enroll_token_not_static_key():
     # The extension self-enrolls its own per-device key from the enrollment token — the
     # installer no longer bakes a static ingest key into the managed policy.

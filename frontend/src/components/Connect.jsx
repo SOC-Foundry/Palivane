@@ -68,6 +68,9 @@ export default function Connect({ tenant }) {
   const [provBusy, setProvBusy] = useState("");
   const [proxyHost, setProxyHost] = useState("");
   const [packBusy, setPackBusy] = useState(false);
+  // Bound the enrollment token baked into the installer — it's a reusable secret in a file.
+  const [expiresInDays, setExpiresInDays] = useState("30"); // blank = never (not recommended)
+  const [maxUses, setMaxUses] = useState("");               // blank = unlimited within window
   const origin = window.location.origin;
   // Device installers are free (device_setup); only the MDM policy pack is gated on "mdm".
   const hasMdm = (tenant?.plan_features || []).includes("mdm");
@@ -94,7 +97,13 @@ export default function Connect({ tenant }) {
   async function getInstaller(platform) {
     setProvBusy(platform); setErr(null);
     try {
-      const res = await api.provision({ platform, base_url: origin, actor: "" });
+      const days = expiresInDays.trim();
+      const uses = maxUses.trim();
+      const res = await api.provision({
+        platform, base_url: origin, actor: "",
+        expires_in_days: days === "" ? null : Number(days),
+        max_uses: uses === "" ? null : Number(uses),
+      });
       const ext = platform === "windows" ? "ps1" : "sh";
       download(`warden-install-${platform}.${ext}`, res.scripts[platform]);
     } catch (e) { setErr(String(e.message || e)); }
@@ -169,6 +178,18 @@ export default function Connect({ tenant }) {
                       onClick={() => getInstaller("linux")}>
                 {provBusy === "linux" ? "…" : "Linux (.sh)"}
               </button>
+            </div>
+            <div className="form-row" style={{ gap: 8, marginTop: 8, alignItems: "center" }}>
+              <label className="muted" style={{ fontSize: 12 }}>Token expires in
+                <input type="number" min="1" placeholder="never" value={expiresInDays}
+                       onChange={(e) => setExpiresInDays(e.target.value)}
+                       style={{ width: 64, margin: "0 4px" }} /> days
+              </label>
+              <label className="muted" style={{ fontSize: 12 }}>max enrollments
+                <input type="number" min="1" placeholder="unlimited" value={maxUses}
+                       onChange={(e) => setMaxUses(e.target.value)}
+                       style={{ width: 80, marginLeft: 4 }} />
+              </label>
             </div>
           </div>
           <div className="qs-path">

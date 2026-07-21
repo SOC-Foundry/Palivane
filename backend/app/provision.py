@@ -84,8 +84,8 @@ def render_windows(base_url: str, enroll_token: str, extension_id: str, proxy_ho
     b = _base(base_url)
     return f'''# Warden device setup (Windows, run as Administrator in PowerShell). Carries an
 # ENROLLMENT token; each machine self-enrolls for its own per-device key, and Claude Code's
-# apiKeyHelper (warden-reenroll) re-enrolls automatically if that key is revoked/rotated.
-# Needs Python on PATH for the apiKeyHelper.
+# apiKeyHelper (warden-reenroll.ps1) re-enrolls automatically if that key is revoked/rotated.
+# The helper is native PowerShell — no Python required.
 $ErrorActionPreference = "Stop"
 $WardenUrl   = "{b}"
 $EnrollToken = "{enroll_token}"
@@ -101,8 +101,8 @@ Write-Host "  device key issued."
 Write-Host "Installing warden-reenroll (apiKeyHelper) ..."
 $WardenDir = "$env:ProgramFiles\\Warden"
 New-Item -ItemType Directory -Force -Path $WardenDir | Out-Null
-$Reenroll = "$WardenDir\\warden-reenroll"
-Invoke-RestMethod -Uri "$WardenUrl/cli/warden-reenroll" -OutFile $Reenroll
+$Reenroll = "$WardenDir\\warden-reenroll.ps1"
+Invoke-RestMethod -Uri "$WardenUrl/cli/warden-reenroll.ps1" -OutFile $Reenroll
 $cfgDir = "$env:ProgramData\\Warden"
 New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
 @{{ url = $WardenUrl; enroll_token = $EnrollToken; device = $Device }} | ConvertTo-Json |
@@ -111,7 +111,7 @@ New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
 Write-Host "Configuring Claude Code ..."
 $ccDir = "C:\\Program Files\\ClaudeCode"
 New-Item -ItemType Directory -Force -Path $ccDir | Out-Null
-$cc = @{{ env = @{{ ANTHROPIC_BASE_URL = "$WardenUrl"; WARDEN_URL = "$WardenUrl"; WARDEN_TOKEN = $Key; WARDEN_ENROLL_TOKEN = $EnrollToken }}; apiKeyHelper = "python `"$Reenroll`"" }}
+$cc = @{{ env = @{{ ANTHROPIC_BASE_URL = "$WardenUrl"; WARDEN_URL = "$WardenUrl"; WARDEN_TOKEN = $Key; WARDEN_ENROLL_TOKEN = $EnrollToken }}; apiKeyHelper = "powershell -NoProfile -ExecutionPolicy Bypass -File `"$Reenroll`"" }}
 $cc | ConvertTo-Json -Depth 5 | Set-Content -Path "$ccDir\\managed-settings.json" -Encoding UTF8
 Write-Host "  Claude Code -> $ccDir\\managed-settings.json (gateway auth via apiKeyHelper)"
 

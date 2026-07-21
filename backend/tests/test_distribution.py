@@ -18,7 +18,7 @@ def test_install_sh_served_public_with_baked_url(raw_client, monkeypatch):
 
 
 def test_cli_scripts_served(raw_client):
-    for name in ("warden-connect", "warden-reenroll", "warden-hook", "warden-desktop", "warden_addon.py"):
+    for name in ("warden-connect", "warden-reenroll", "warden-reenroll.ps1", "warden-hook", "warden-desktop", "warden_addon.py"):
         r = raw_client.get(f"/cli/{name}")
         assert r.status_code == 200, name
         assert len(r.text) > 100
