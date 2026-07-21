@@ -11,7 +11,8 @@
 #   warden-desktop uninstall   # stop it, remove the system proxy + CA trust
 #   warden-desktop status
 #
-# macOS and Linux (GNOME). Windows is a separate PowerShell path (see docs).
+# macOS and Linux (GNOME/KDE; other desktops fall back to manual/env-var setup).
+# Windows is a separate PowerShell path (see docs).
 set -euo pipefail
 
 WARDEN_URL="${WARDEN_URL:-https://warden.tachtech.net}"
@@ -24,6 +25,23 @@ OS="$(uname -s)"
 
 log() { printf '\033[36m[warden-desktop]\033[0m %s\n' "$*"; }
 die() { printf '\033[31m[warden-desktop] %s\033[0m\n' "$*" >&2; exit 1; }
+
+# Normalized Linux desktop, e.g. "kde", "gnome". We branch on this rather than on
+# `command -v gsettings`: gsettings is often installed on KDE, but KDE ignores the
+# org.gnome.system.proxy keys — so trusting its presence sets a proxy nobody reads
+# (silent no-op, the worst failure mode for a security control).
+linux_de() { printf '%s' "${XDG_CURRENT_DESKTOP:-}" | tr '[:upper:]' '[:lower:]'; }
+
+# The env-var method works for CLIs (Claude Code) and most native apps regardless of DE.
+proxy_env_note() {
+  log "For CLIs/native apps, export in their environment:"
+  log "  HTTPS_PROXY=http://127.0.0.1:$PORT   HTTP_PROXY=http://127.0.0.1:$PORT"
+}
+proxy_manual_note() {
+  log "Couldn't auto-set the system proxy for this desktop (${XDG_CURRENT_DESKTOP:-unknown})."
+  log "Set your HTTPS proxy to 127.0.0.1:$PORT in your desktop's network settings, or:"
+  proxy_env_note
+}
 
 read_token() {
   # The per-user token warden-connect wrote into Claude Code's settings.
@@ -83,14 +101,34 @@ set_proxy() {
       sudo networksetup -setsecurewebproxy "$svc" 127.0.0.1 "$PORT"
       sudo networksetup -setsecurewebproxystate "$svc" on ;;
     Linux)
-      if command -v gsettings >/dev/null 2>&1; then
-        log "setting GNOME system proxy…"
-        gsettings set org.gnome.system.proxy mode 'manual'
-        gsettings set org.gnome.system.proxy.https host '127.0.0.1'
-        gsettings set org.gnome.system.proxy.https port "$PORT"
-      else
-        log "No gsettings — set your HTTPS proxy to 127.0.0.1:$PORT manually (or via your DE)."
-      fi ;;
+      case "$(linux_de)" in
+        *gnome*|*unity*|*cinnamon*|*mate*|*budgie*)
+          if command -v gsettings >/dev/null 2>&1; then
+            log "setting GNOME system proxy…"
+            gsettings set org.gnome.system.proxy mode 'manual'
+            gsettings set org.gnome.system.proxy.https host '127.0.0.1'
+            gsettings set org.gnome.system.proxy.https port "$PORT"
+          else
+            proxy_manual_note
+          fi ;;
+        *kde*|*plasma*)
+          local kw; kw="$(command -v kwriteconfig6 || command -v kwriteconfig5 || true)"
+          if [ -n "$kw" ]; then
+            log "setting KDE system proxy (kioslaverc)…"
+            "$kw" --file kioslaverc --group "Proxy Settings" --key ProxyType 1
+            "$kw" --file kioslaverc --group "Proxy Settings" --key httpsProxy "http://127.0.0.1:$PORT/"
+            "$kw" --file kioslaverc --group "Proxy Settings" --key httpProxy  "http://127.0.0.1:$PORT/"
+            # Nudge running KIO apps to reload proxy config (best-effort).
+            command -v dbus-send >/dev/null 2>&1 && \
+              dbus-send --type=signal /KIO/Scheduler org.kde.KIO.Scheduler.reparseSlaveConfiguration string:'' 2>/dev/null || true
+            log "KDE proxy set. KIO-aware apps honor it; CLIs/native apps also need the env vars:"
+            proxy_env_note
+          else
+            proxy_manual_note
+          fi ;;
+        *)
+          proxy_manual_note ;;
+      esac ;;
   esac
 }
 
@@ -166,8 +204,17 @@ cmd_uninstall() {
       log "stopped. (CA left in the keychain; remove manually if desired.)" ;;
     Linux)
       systemctl --user disable --now warden-proxy.service 2>/dev/null || true
-      command -v gsettings >/dev/null 2>&1 && gsettings set org.gnome.system.proxy mode 'none' || true
-      log "stopped. (CA left in the trust store; remove /usr/local/share/ca-certificates/warden-mitmproxy.crt to fully revert.)" ;;
+      case "$(linux_de)" in
+        *gnome*|*unity*|*cinnamon*|*mate*|*budgie*)
+          command -v gsettings >/dev/null 2>&1 && gsettings set org.gnome.system.proxy mode 'none' || true ;;
+        *kde*|*plasma*)
+          local kw; kw="$(command -v kwriteconfig6 || command -v kwriteconfig5 || true)"
+          [ -n "$kw" ] && "$kw" --file kioslaverc --group "Proxy Settings" --key ProxyType 0 || true
+          command -v dbus-send >/dev/null 2>&1 && \
+            dbus-send --type=signal /KIO/Scheduler org.kde.KIO.Scheduler.reparseSlaveConfiguration string:'' 2>/dev/null || true ;;
+      esac
+      log "stopped. (CA left in the trust store; remove /usr/local/share/ca-certificates/warden-mitmproxy.crt to fully revert.)"
+      log "         (If you set HTTPS_PROXY/HTTP_PROXY env vars manually, unset them too.)" ;;
   esac
 }
 
