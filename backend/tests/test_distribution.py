@@ -15,6 +15,11 @@ def test_install_sh_served_public_with_baked_url(raw_client, monkeypatch):
     assert "https://warden.tachtech.net" in body
     assert "warden-connect" in body and "--desktop" in body
     assert ".warden/bin" in body
+    # cli-only is the default proxy mode; --desktop and --no-proxy are the overrides
+    assert 'PROXY_MODE="cli-only"' in body
+    assert "--no-proxy" in body
+    # cli-only threads through to the sudo-free proxy install
+    assert 'warden-desktop" install --cli-only' in body
 
 
 def test_cli_scripts_served(raw_client):

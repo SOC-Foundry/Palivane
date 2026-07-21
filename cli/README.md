@@ -291,10 +291,25 @@ via MDM (the `/api/provision` installer generates it) — it can carry the same 
 `hooks` blocks `warden-connect` writes, plus the `warden-mcp` wrapper in a pushed MCP
 config. Managed settings take precedence over the user `settings.json`.
 
-## Claude Desktop
+## Egress proxy (CLIs + desktop apps)
 
-Claude **Desktop** can't be onboarded this way — it talks to Anthropic directly over HTTPS
-and doesn't read `ANTHROPIC_BASE_URL`. It's captured by the **egress proxy** (system proxy
-+ corporate CA), which is an admin/MDM setup, not a per-user sign-in. See
-[`docs/claude-deployment.md`](../docs/claude-deployment.md) and the
+Tools that talk to Anthropic directly over HTTPS (and don't read `ANTHROPIC_BASE_URL`) are
+captured by the **egress proxy** rather than by `warden connect`. `warden-desktop install`
+sets it up, and it has two postures:
+
+- **`--cli-only` (default)** — per-tool PATH shims route the AI CLIs (Claude Code, Codex,
+  Gemini) through the proxy via `HTTPS_PROXY` + `NODE_EXTRA_CA_CERTS`. **No sudo**, no
+  system-wide changes; the right fit for small orgs without MDM.
+- **`--desktop`** — installs the CA into the system trust store and sets the system proxy,
+  so **Claude/ChatGPT Desktop**, Cursor, and browsers are governed system-wide (needs sudo,
+  or push the proxy + CA via MDM for a zero-touch fleet).
+
+The one-line installer runs `--cli-only` by default:
+
+```bash
+curl -fsSL https://warden.tachtech.net/install.sh | bash                  # CLI capture (no sudo)
+curl -fsSL https://warden.tachtech.net/install.sh | bash -s -- --desktop  # + desktop apps/browsers
+```
+
+See [`docs/claude-deployment.md`](../docs/claude-deployment.md) and the
 [MDM policy pack](../docs/mdm-policy-pack.md).
