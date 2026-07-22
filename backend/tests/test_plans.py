@@ -94,7 +94,7 @@ def test_free_plan_user_quota_enforced(free_client):
     r = free_client.post("/api/users", json={"email": "u5@freeco.com",
                                              "password": "password123", "role": "analyst"})
     assert r.status_code == 403 and "quota" in r.json()["detail"]
-    assert "/pricing" in r.json()["detail"]
+    assert "sales@tachtech.net" in r.json()["detail"]
 
 
 def test_tenant_dict_exposes_plan(client):

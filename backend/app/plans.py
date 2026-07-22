@@ -84,7 +84,7 @@ def require_feature(tenant: Tenant | None, feature: str) -> None:
     raise HTTPException(
         status_code=402,
         detail=f"this feature requires the {needed} plan (current: "
-               f"{PLANS[plan_of(tenant)]['label']}) — see /pricing or contact "
+               f"{PLANS[plan_of(tenant)]['label']}) — contact "
                "sales@tachtech.net to upgrade")
 
 

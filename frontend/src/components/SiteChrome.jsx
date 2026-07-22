@@ -13,7 +13,6 @@ const TABS = [
   { href: "/how-it-works", label: "How it works" },
   { href: "/setup", label: "Setup" },
   { href: "/docs", label: "Docs" },
-  { href: "/pricing", label: "Pricing" },
 ];
 
 export function SiteNav({ onSignIn }) {
