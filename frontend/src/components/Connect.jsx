@@ -122,6 +122,9 @@ export default function Connect({ tenant }) {
     env: { ANTHROPIC_BASE_URL: `${origin}/v1`, ANTHROPIC_AUTH_TOKEN: K },
   }, null, 2);
 
+  const installCli = `curl -fsSL ${origin}/install.sh | bash`;
+  const installDesktop = `curl -fsSL ${origin}/install.sh | bash -s -- --desktop`;
+
   const proxyCmd =
     `WARDEN_URL=${origin} WARDEN_TOKEN=${K} WARDEN_PROXY_ENFORCE=true \\\n` +
     `  mitmdump -s proxy/warden_addon.py --listen-port 8081`;
@@ -241,9 +244,18 @@ export default function Connect({ tenant }) {
       </div>
 
       <div className="connect-card">
-        <h3>③ Desktop apps / network (egress proxy)</h3>
-        <p className="muted">Run the proxy near your egress and route managed devices through it
-           (system proxy + corporate CA via MDM).</p>
+        <h3>③ Desktop apps / CLIs / network (egress proxy)</h3>
+        <p className="muted">One-line installer — no clone required. Defaults to <strong>CLI
+           governance</strong>: per-tool shims route the AI CLIs (Claude Code, Codex, Gemini)
+           through the proxy, <em>no sudo</em>. The right fit for small orgs without MDM; the
+           user signs in via browser (<code>warden connect</code>), no token to distribute.</p>
+        <Block text={installCli} />
+        <p className="muted" style={{ marginTop: 10 }}>Add <code>--desktop</code> to also govern the
+           Claude/ChatGPT <strong>desktop apps</strong> and browsers system-wide (system proxy + CA
+           trust; asks for sudo). Superset of the default — includes the CLI shims.</p>
+        <Block text={installDesktop} />
+        <p className="muted" style={{ marginTop: 10 }}>Fleets: push the system proxy + corporate CA
+           via MDM (the policy pack above), or run the addon directly near your egress:</p>
         <Block text={proxyCmd} />
       </div>
 
