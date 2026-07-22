@@ -7,13 +7,13 @@ const SELF = [
   { n: "1", title: "Get your capture key",
     body: "Open the console → Connect → “Generate a capture key.” Every source authenticates with this one org key and routes its findings back here." },
   { n: "2", title: "Run one command",
-    body: "On any machine, run warden-connect <your-url>. It signs you in and configures Claude Code, Cursor, and agent tool-call hooks to route through the gateway — no manual config files." },
+    body: "On any machine, run  curl -fsSL <your-url>/install.sh | bash . It signs you in (a browser window opens), installs the governance CLI, wires Claude Code + Cursor + agent tool-call hooks, and stands up the sudo-free egress proxy so the AI CLIs (Claude Code, Codex, Gemini) are inspected too — all subscription-compatible, no config files. Add  --desktop  to also cover the Claude/ChatGPT desktop apps and browsers system-wide." },
   { n: "3", title: "Finish the browser extension",
     body: "Install the Warden extension for Chrome/Edge from the Web Store, then click “Sign in to Warden” in its popup to bind it to your org. Now claude.ai, ChatGPT, and Gemini are covered too." },
-  { n: "4", title: "Add your org's model key (admin, once)",
-    body: "In Settings → Gateway upstreams, paste your org's Anthropic (or OpenAI / Gemini) API key. Gateway traffic forwards with your own provider account — until it's set, warden-connect installs the local capture planes only and leaves Claude Code's own routing untouched." },
+  { n: "4", title: "Route through your provider account (optional · admin)",
+    body: "Want a hard, unbypassable gateway instead of the local proxy? In Settings → Gateway upstreams, paste your org's Anthropic (or OpenAI / Gemini) API key and warden-connect will point Claude Code at the gateway. This bills to your API account rather than each user's subscription — leave it unset to keep the subscription-friendly proxy path above." },
   { n: "5", title: "Watch findings roll in",
-    body: "The Findings view shows live risk verdicts from the gateway, the browser extension, and the egress proxy — allow, warn, or block, by surface and severity." },
+    body: "The Findings view shows live risk verdicts from the gateway, the browser extension, and the egress proxy (CLIs + desktop apps) — allow, warn, or block, by surface and severity." },
 ];
 
 const ORG = [

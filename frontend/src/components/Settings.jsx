@@ -25,7 +25,6 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   const NEEDS = { alerts: "Team", mdm: "Team", sso: "Enterprise", siem: "Enterprise", s3_delivery: "Enterprise" };
   const PlanLock = ({ need }) => can(need) ? null : (
     <p className="muted" style={{ marginTop: 2 }}>🔒 {NEEDS[need]} plan feature —{" "}
-      <a href="/pricing" target="_blank" rel="noreferrer">see plans</a> or{" "}
       <a href="mailto:sales@tachtech.net">contact us</a> to enable.</p>
   );
 
@@ -270,8 +269,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           </h1>
           <p className="page-sub">Organization, gateway upstreams, SSO, and usage — admin only.
             {plan !== "enterprise" && (
-              <> &nbsp;Need SSO, SIEM, or higher limits? <a href="/pricing" target="_blank"
-                 rel="noreferrer">See plans</a> or <a href="mailto:sales@tachtech.net">contact us</a>.</>
+              <> &nbsp;Need SSO, SIEM, or higher limits? <a href="mailto:sales@tachtech.net">contact us</a>.</>
             )}
           </p>
         </div>

@@ -14,7 +14,6 @@ import HowItWorks from "./components/HowItWorks.jsx";
 import Setup from "./components/Setup.jsx";
 import UseCases from "./components/UseCases.jsx";
 import WhyWarden from "./components/WhyWarden.jsx";
-import Pricing from "./components/Pricing.jsx";
 import Trust from "./components/Trust.jsx";
 import Docs from "./components/Docs.jsx";
 import ExtensionConnect from "./components/ExtensionConnect.jsx";
@@ -116,9 +115,6 @@ export default function App() {
   }
   if (legalPath === "/why-warden") {
     return <WhyWarden />;
-  }
-  if (legalPath === "/pricing") {
-    return <Pricing />;
   }
   if (legalPath === "/trust") {
     return <Trust />;
