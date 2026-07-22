@@ -13,6 +13,7 @@
 #   warden-desktop status
 #
 # macOS and Linux (GNOME/KDE; other desktops fall back to manual/env-var setup).
+# mitmproxy installs as a self-contained binary (no system Python; PEP-668-proof).
 # Windows is a separate PowerShell path (see docs).
 set -euo pipefail
 
@@ -23,6 +24,10 @@ WDIR="${HOME_DIR}/.warden"
 ADDON="${WDIR}/warden_addon.py"
 CA="${HOME_DIR}/.mitmproxy/mitmproxy-ca-cert.pem"
 SHIM_DIR="${WDIR}/bin"
+# mitmproxy is installed here as a self-contained binary (bundles its own Python) so the
+# default install needs no system Python and never trips PEP-668. Pin with WARDEN_MITM_VERSION.
+MITM_DIR="${WDIR}/mitmproxy"
+MITM_FALLBACK_VERSION="12.2.3"   # used only if the latest-version lookup fails
 # CLIs captured via a PATH shim — they use their own HTTP client and ignore the OS proxy
 # + trust store, so a system proxy alone never sees them. Override with WARDEN_CLI_TOOLS.
 CLI_SHIM_TOOLS="${WARDEN_CLI_TOOLS:-claude codex gemini}"
@@ -49,24 +54,72 @@ proxy_manual_note() {
 }
 
 read_token() {
-  # The per-user token warden-connect wrote into Claude Code's settings.
-  local f="${HOME_DIR}/.claude/settings.json"
+  # The per-user token warden-connect wrote into Claude Code's settings. Parsed with sed
+  # (not python) so this path carries no Python dependency; the file is small, flat JSON.
+  local f="${HOME_DIR}/.claude/settings.json" tok
   [ -f "$f" ] || die "No Warden token found. Run 'warden connect' first, then re-run this."
-  python3 - "$f" <<'PY'
-import json, sys
-d = json.load(open(sys.argv[1]))
-env = d.get("env", {})
-tok = env.get("WARDEN_TOKEN") or env.get("ANTHROPIC_AUTH_TOKEN") or ""
-print(tok)
-PY
+  tok="$(sed -n 's/.*"WARDEN_TOKEN"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$f" | head -1)"
+  [ -n "$tok" ] || tok="$(sed -n 's/.*"ANTHROPIC_AUTH_TOKEN"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$f" | head -1)"
+  printf '%s' "$tok"
+}
+
+# Map uname -m to mitmproxy's release arch token (empty = unsupported → caller falls back).
+mitm_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64)  printf 'x86_64' ;;
+    aarch64|arm64) [ "$OS" = "Darwin" ] && printf 'arm64' || printf 'aarch64' ;;
+  esac
+}
+
+# Latest published version (strip the leading v); WARDEN_MITM_VERSION pins it, and a baked
+# fallback keeps install working if GitHub is unreachable.
+mitm_version() {
+  [ -n "${WARDEN_MITM_VERSION:-}" ] && { printf '%s' "$WARDEN_MITM_VERSION"; return; }
+  local v
+  v="$(curl -fsSL https://api.github.com/repos/mitmproxy/mitmproxy/releases/latest 2>/dev/null \
+        | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"v\{0,1\}\([0-9.]*\)".*/\1/p' | head -1)"
+  printf '%s' "${v:-$MITM_FALLBACK_VERSION}"
+}
+
+# Preferred install: the self-contained release tarball (bundles Python) → no system deps,
+# no PEP-668. Lands mitmdump/mitmproxy/mitmweb in $MITM_DIR.
+install_mitm_standalone() {
+  local arch os ver url tmp
+  arch="$(mitm_arch)"; [ -n "$arch" ] || return 1
+  case "$OS" in Darwin) os=macos ;; Linux) os=linux ;; *) return 1 ;; esac
+  ver="$(mitm_version)"; [ -n "$ver" ] || return 1
+  url="https://downloads.mitmproxy.org/${ver}/mitmproxy-${ver}-${os}-${arch}.tar.gz"
+  log "downloading mitmproxy ${ver} (${os}-${arch}); no Python required…"
+  mkdir -p "$MITM_DIR"; tmp="$(mktemp -d)"
+  if curl -fsSL "$url" -o "${tmp}/m.tar.gz" && tar -xzf "${tmp}/m.tar.gz" -C "$MITM_DIR"; then
+    rm -rf "$tmp"; [ -x "${MITM_DIR}/mitmdump" ]
+  else
+    rm -rf "$tmp"; return 1
+  fi
+}
+
+# Fallback (unusual arch, or downloads.mitmproxy.org blocked): a dedicated venv or pipx —
+# both sidestep PEP-668 (never pip --user into system site-packages). Symlinks into $MITM_DIR.
+install_mitm_pip() {
+  if command -v python3 >/dev/null 2>&1 && python3 -m venv "${MITM_DIR}/venv" >/dev/null 2>&1 \
+       && "${MITM_DIR}/venv/bin/pip" install --quiet mitmproxy >/dev/null 2>&1; then
+    ln -sf "${MITM_DIR}/venv/bin/mitmdump" "${MITM_DIR}/mitmdump"; return 0
+  fi
+  if command -v pipx >/dev/null 2>&1 && pipx install mitmproxy >/dev/null 2>&1; then
+    local m; m="$(command -v mitmdump || printf '%s' "${HOME_DIR}/.local/bin/mitmdump")"
+    mkdir -p "$MITM_DIR"; ln -sf "$m" "${MITM_DIR}/mitmdump"; return 0
+  fi
+  return 1
 }
 
 ensure_mitm() {
-  if command -v mitmdump >/dev/null 2>&1; then return; fi
-  log "installing mitmproxy…"
-  if command -v pipx >/dev/null 2>&1; then pipx install mitmproxy >/dev/null
-  else python3 -m pip install --user --quiet mitmproxy; fi
-  command -v mitmdump >/dev/null 2>&1 || die "mitmproxy install failed; install it manually (pipx install mitmproxy)."
+  command -v mitmdump >/dev/null 2>&1 && return
+  [ -x "${MITM_DIR}/mitmdump" ] && { export PATH="${MITM_DIR}:$PATH"; return; }
+  log "installing mitmproxy (self-contained; no system changes)…"
+  install_mitm_standalone || install_mitm_pip \
+    || die "could not install mitmproxy automatically; install it from https://mitmproxy.org/downloads/ and re-run."
+  export PATH="${MITM_DIR}:$PATH"
+  command -v mitmdump >/dev/null 2>&1 || die "mitmproxy installed but 'mitmdump' is still not on PATH."
 }
 
 fetch_addon() {
@@ -245,7 +298,6 @@ unwire_cli_capture() {
 cmd_install() {
   local cli_only=0 a
   for a in "$@"; do [ "$a" = "--cli-only" ] && cli_only=1; done
-  command -v python3 >/dev/null 2>&1 || die "python3 is required."
   command -v curl >/dev/null 2>&1 || die "curl is required."
   local tok; tok="$(read_token)"; [ -n "$tok" ] || die "empty Warden token; run 'warden connect' first."
   ensure_mitm
