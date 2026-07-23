@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, getToken, setToken, setUnauthorizedHandler } from "./api.js";
 import Dashboard from "./components/Dashboard.jsx";
 import FindingsList from "./components/FindingsList.jsx";
@@ -91,6 +91,13 @@ export default function App() {
     }
     api.finding(selectedId).then(setSelected).catch(() => setSelected(null));
   }, [selectedId]);
+
+  // Selecting a finding far down the list: bring the detail pane into view (the pane is
+  // sticky on wide layouts, so this mostly matters on single-column/mobile).
+  const detailRef = useRef(null);
+  useEffect(() => {
+    if (selected) detailRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [selected]);
 
   function logout() {
     setToken(null);
@@ -307,7 +314,7 @@ export default function App() {
                   }}
                 />
               </div>
-              <div className="right-col">
+              <div className="right-col" ref={detailRef}>
                 {selected ? (
                   <FindingDetail
                     key={selected.id}

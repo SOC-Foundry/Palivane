@@ -165,6 +165,11 @@ body {
 
 /* ===== Layout ===== */
 .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+/* Keep the detail pane in view while scrolling a long findings list. */
+.right-col { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; }
+@media (max-width: 900px) {
+  .right-col { position: static; max-height: none; }  /* single column: no pinning */
+}
 
 /* ===== Headings ===== */
 h2 { font-size: 12px; margin: 0; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
