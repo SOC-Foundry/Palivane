@@ -16,6 +16,7 @@ import UseCases from "./components/UseCases.jsx";
 import WhyWarden from "./components/WhyWarden.jsx";
 import Trust from "./components/Trust.jsx";
 import Docs from "./components/Docs.jsx";
+import Admin from "./components/Admin.jsx";
 import ExtensionConnect from "./components/ExtensionConnect.jsx";
 import Connections from "./components/Connections.jsx";
 import Coverage from "./components/Coverage.jsx";
@@ -121,6 +122,11 @@ export default function App() {
   }
   if (legalPath === "/docs" || legalPath.startsWith("/docs/")) {
     return <Docs slug={legalPath.split("/")[2] || ""} />;
+  }
+  // Vendor operator console — standalone, operator-token-gated (not a tenant session),
+  // not linked from any nav. Cross-tenant, so it must never be reachable via tenant auth.
+  if (legalPath === "/admin") {
+    return <Admin />;
   }
   // Browser-extension sign-in landing (OAuth-style; opened by the extension).
   if (legalPath === "/extension-connect") {
