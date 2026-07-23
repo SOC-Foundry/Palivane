@@ -444,10 +444,19 @@ class Finding(Base):
     # Analyst workflow
     status = Column(String(32), default="open", index=True)  # open | triaged | dismissed
 
+    # Recurrence folding: repeats of the same event signature (same actor/tool/signals)
+    # bump seen_count/last_seen on the first row instead of piling up new open rows.
+    fingerprint = Column(String(64), default="", index=True)
+    seen_count = Column(Integer, default=1)
+    last_seen = Column(DateTime, default=_utcnow)
+
     def to_summary(self) -> dict:
         return {
             "id": self.id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "last_seen": self.last_seen.isoformat() if self.last_seen else None,
+            "seen_count": self.seen_count or 1,
+            "categories": sorted({s.get("category", "") for s in (self.signals or [])} - {""}),
             "channel": self.channel,
             "surface": self.surface,
             "sender": self.sender,

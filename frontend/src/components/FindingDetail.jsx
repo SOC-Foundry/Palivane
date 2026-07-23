@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { api } from "../api.js";
 
 const CAT_LABEL = {
@@ -73,14 +74,49 @@ const STATUSES = [
   { key: "dismissed", label: "Dismissed" },
 ];
 
-export default function FindingDetail({ finding, onClose, onStatusChange }) {
+// The distinct policy checks this finding's signals belong to — what a suppression targets.
+const NOT_A_CHECK = new Set(["ai_generated"]);  // verdict signals with no policy toggle
+
+function checksOf(finding) {
+  const seen = new Map();
+  for (const s of finding.signals || []) {
+    const key = s.check || s.category;
+    if (key && !NOT_A_CHECK.has(key) && !seen.has(key)) {
+      seen.set(key, CAT_LABEL[s.category] || s.title || key);
+    }
+  }
+  return [...seen.entries()];
+}
+
+export default function FindingDetail({ finding, isAdmin, onClose, onStatusChange }) {
+  const [suppressed, setSuppressed] = useState(null);
   if (!finding) return null;
   const status = finding.status || "open";
   const steps = remediationFor(finding);
+  const checks = isAdmin && finding.sender ? checksOf(finding) : [];
 
   async function setStatus(s) {
     await api.setStatus(finding.id, s);
     onStatusChange();
+  }
+
+  // One-click policy tuning: merge this check into the actor's per-user override, so
+  // expected behavior (e.g. a security engineer whose work trips the scanners) stops
+  // generating findings at the source instead of being re-dismissed forever.
+  async function suppress(check, label) {
+    const who = finding.sender;
+    if (!window.confirm(`Stop flagging "${label}" for ${who}?\n\nThis adds a per-user policy override (Policies page) — Warden will no longer record ${label} findings for this user anywhere.`)) return;
+    const pol = await api.policies();
+    const existing = (pol.overrides || []).find(
+      (o) => o.scope === "user" && o.match === who.toLowerCase());
+    const disabled = [...new Set([...(existing?.disabled_checks || []), check])];
+    try {
+      await api.policyOverrideUpsert({
+        scope: "user", match: who, label: existing?.label || "", disabled_checks: disabled });
+      setSuppressed(label);
+    } catch (e) {
+      window.alert(`Couldn't add the override: ${e.message}`);
+    }
   }
 
   return (
@@ -136,6 +172,26 @@ export default function FindingDetail({ finding, onClose, onStatusChange }) {
           ))}
         </ul>
       </div>
+
+      {checks.length > 0 && (
+        <div className="detail-section">
+          <h4>Tune policy</h4>
+          <p className="tune-hint">Expected behavior for this user? Suppress the check for
+            {" "}<strong>{finding.sender}</strong> only (admins can review/undo on the Policies page).</p>
+          <div className="tune-actions">
+            {checks.map(([check, label]) => (
+              <button key={check} className="ghost-btn slim"
+                      onClick={() => suppress(check, label)}>
+                stop flagging “{label}”
+              </button>
+            ))}
+          </div>
+          {suppressed && (
+            <p className="tune-done">✓ “{suppressed}” suppressed for {finding.sender} — takes
+              effect on their next capture.</p>
+          )}
+        </div>
+      )}
 
       <div className="detail-actions">
         <span className="detail-actions-label">Set status:</span>

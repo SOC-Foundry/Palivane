@@ -34,7 +34,8 @@ export default function App() {
   const [health, setHealth] = useState(null);
   const [stats, setStats] = useState(null);
   const [findings, setFindings] = useState([]);
-  const [filter, setFilter] = useState("");
+  const [filter, setFilter] = useState("actionable");   // severity (client-side; "actionable" = warn+)
+  const [statusFilter, setStatusFilter] = useState("open");
   const [selectedId, setSelectedId] = useState(null);
   const [selected, setSelected] = useState(null);
   const [view, setView] = useState("findings");   // "findings" | "connect"
@@ -61,11 +62,11 @@ export default function App() {
     if (!auth) return;
     const [s, f] = await Promise.all([
       api.stats(),
-      api.findings({ severity: filter }),
+      api.findings({ status: statusFilter, limit: 500 }),
     ]);
     setStats(s);
     setFindings(f.findings);
-  }, [filter, auth]);
+  }, [statusFilter, auth]);
 
   useEffect(() => {
     if (!auth) return;
@@ -297,13 +298,21 @@ export default function App() {
                   onSelect={setSelectedId}
                   filter={filter}
                   onFilter={setFilter}
+                  status={statusFilter}
+                  onStatus={setStatusFilter}
                   onConnect={() => setView("connect")}
+                  onBulkStatus={async (ids, status) => {
+                    await api.bulkStatus(ids, status);
+                    await refresh();
+                  }}
                 />
               </div>
               <div className="right-col">
                 {selected ? (
                   <FindingDetail
+                    key={selected.id}
                     finding={selected}
+                    isAdmin={isAdmin}
                     onClose={() => setSelectedId(null)}
                     onStatusChange={async () => {
                       await refresh();

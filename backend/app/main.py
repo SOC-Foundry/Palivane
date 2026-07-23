@@ -44,6 +44,7 @@ from .schemas import (
     ScannerImport,
     SecretAtRest,
     SecretScan,
+    BulkStatusUpdate,
     StatusUpdate,
 )
 from .security import using_insecure_key
@@ -757,6 +758,8 @@ def ingest_ai_usage(
         "severity": result["severity"],
         "signals": result["signals"],
         "finding_id": result["finding_id"],
+        # >1 when this event folded into an already-recorded finding (its seen_count).
+        "recurrence": result.get("recurrence"),
         "remediation": remediation_for(result["signals"]),
         # A confirmed secret/PII leak: the client should block regardless of its local
         # enforce flag ("block the certain" — monitor everything else).
@@ -1476,7 +1479,9 @@ def list_findings(
         q = q.filter(Finding.surface == surface)
     if actor:
         q = q.filter(Finding.sender == actor)
-    rows = q.order_by(Finding.created_at.desc()).limit(min(limit, 500)).all()
+    # Order by last activity so a folded recurrence resurfaces its original row.
+    rows = (q.order_by(func.coalesce(Finding.last_seen, Finding.created_at).desc())
+             .limit(min(limit, 500)).all())
     return {"findings": [r.to_summary() for r in rows]}
 
 
@@ -1504,6 +1509,21 @@ def update_status(finding_id: int, body: StatusUpdate,
     audit_log.record(db, current.tenant_id, current.email, "finding.status",
                      target=str(finding_id), detail={"status": row.status})
     return {"id": finding_id, "status": row.status}
+
+
+@app.post("/api/findings/bulk-status")
+def bulk_update_status(body: BulkStatusUpdate, current: User = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    """Set the status of many findings at once (group triage from the console). Only rows
+    in the caller's tenant are touched; unknown/foreign ids are silently skipped."""
+    n = (db.query(Finding)
+         .filter(Finding.tenant_id == current.tenant_id, Finding.id.in_(body.ids))
+         .update({Finding.status: body.status}, synchronize_session=False))
+    db.commit()
+    from . import audit_log
+    audit_log.record(db, current.tenant_id, current.email, "finding.bulk_status",
+                     detail={"status": body.status, "count": n, "ids": body.ids[:50]})
+    return {"updated": n, "status": body.status}
 
 
 @app.post("/api/findings/purge")
