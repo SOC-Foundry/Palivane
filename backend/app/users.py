@@ -100,6 +100,10 @@ def main(argv: list[str]) -> int:
     pe.add_argument("--yes", action="store_true",
                     help="actually delete (default is a dry-run listing)")
 
+    fn = sub.add_parser("funnel", help="signup→activation product-analytics funnel")
+    fn.add_argument("--days", type=int, default=None, help="only orgs created in the last N days")
+    fn.add_argument("--all", action="store_true", help="include internal orgs (tachtech, demo)")
+
     args = p.parse_args(argv)
     db = SessionLocal()
     try:
@@ -159,6 +163,27 @@ def main(argv: list[str]) -> int:
                 else:
                     print(f"would purge #{t.id} '{t.slug}' (created {t.created_at:%Y-%m-%d}) "
                           "— rerun with --yes")
+        elif args.cmd == "funnel":
+            from . import funnel
+            f = funnel.compute(db, days=args.days, include_internal=args.all)
+            s, c = f["stages"], f["conversion"]
+            scope = f"last {args.days}d" if args.days else "all time"
+            print(f"Signup → activation funnel ({scope}"
+                  f"{'' if args.all else ', external orgs'}):")
+            print(f"  1. signed up   {s['signed_up']:>5}")
+            print(f"  2. verified    {s['verified']:>5}  ({c['verified_of_signed_up']}% of signups)")
+            print(f"  3. connected   {s['connected']:>5}  ({c['connected_of_verified']}% of verified)")
+            print(f"  4. activated   {s['activated']:>5}  ({c['activated_of_connected']}% of connected"
+                  f"; {c['activated_of_signed_up']}% end-to-end)")
+            print(f"  5. retained 7d {s['retained']:>5}  ({c['retained_of_activated']}% of activated)")
+            mdta = f["median_days_to_activate"]
+            print(f"  median days to activate: {mdta if mdta is not None else 'n/a'}")
+            stuck = f["stuck_orgs"]
+            if stuck:
+                print(f"  stuck (verified, never activated) — {len(stuck)}, reach out oldest first:")
+                for o in stuck[:15]:
+                    tag = "connected-a-source" if o["connected"] else "no source yet"
+                    print(f"    - {o['slug']}  {o['age_days']}d old  ({tag})")
     finally:
         db.close()
     return 0
