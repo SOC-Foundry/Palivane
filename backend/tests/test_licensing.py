@@ -188,3 +188,37 @@ def test_admin_licenses_requires_metrics_token(client, raw_client, db_factory, m
     assert client.get("/api/admin/licenses").status_code == 401   # tenant JWT insufficient
     ok = raw_client.get("/api/admin/licenses", headers={"Authorization": "Bearer m3trics"})
     assert ok.status_code == 200 and any(L["id"] == "lic_view" for L in ok.json()["licenses"])
+
+
+def test_admin_issue_and_revoke_endpoints(client, raw_client, monkeypatch, keypair):
+    from app import main
+    priv, pub = keypair
+    _keypair_env(monkeypatch, keypair)                    # mounts signing key + pubkey
+    monkeypatch.setattr(main.settings, "metrics_token", "op-tok")
+    H = {"Authorization": "Bearer op-tok"}
+    # gating: tenant JWT and no-token both rejected
+    assert client.post("/api/admin/licenses", json={"org": "X", "plan": "team"}).status_code == 401
+    assert raw_client.post("/api/admin/licenses", json={"org": "X", "plan": "team"}).status_code == 401
+    # issue records + returns a verifiable blob
+    r = raw_client.post("/api/admin/licenses",
+                        json={"org": "Acme", "plan": "enterprise", "seats": 40}, headers=H)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["org"] == "Acme" and body["status"] == "active"
+    p = licensing.verify(body["license"])
+    assert p["id"] == body["id"] and p["plan"] == "enterprise"
+    # it shows in the registry, then revoke flips status
+    listed = raw_client.get("/api/admin/licenses", headers=H).json()["licenses"]
+    assert any(L["id"] == body["id"] for L in listed)
+    rev = raw_client.post(f"/api/admin/licenses/{body['id']}/revoke", headers=H)
+    assert rev.status_code == 200 and rev.json()["status"] == "revoked"
+    assert raw_client.post("/api/admin/licenses/lic_nope/revoke", headers=H).status_code == 404
+
+
+def test_admin_issue_503_without_signing_key(raw_client, monkeypatch):
+    from app import main
+    monkeypatch.delenv("WARDEN_LICENSE_SIGNING_KEY", raising=False)
+    monkeypatch.setattr(main.settings, "metrics_token", "op-tok")
+    r = raw_client.post("/api/admin/licenses", json={"org": "X", "plan": "team"},
+                        headers={"Authorization": "Bearer op-tok"})
+    assert r.status_code == 503

@@ -386,13 +386,7 @@ def admin_funnel(request: Request, days: int | None = None,
     aggregates across all tenants. Returns 404 when no metrics token is configured, so it
     can't be left open by accident on a deployment that never set one up."""
     from . import funnel
-    tok = settings.metrics_token
-    if not tok:
-        raise HTTPException(status_code=404, detail="not found")
-    scheme, _, bearer = request.headers.get("authorization", "").partition(" ")
-    provided = bearer if scheme.lower() == "bearer" else request.query_params.get("token", "")
-    if not hmac.compare_digest(provided, tok):
-        raise HTTPException(status_code=401, detail="metrics token required")
+    _require_operator(request)
     return funnel.compute(db, days=days, include_internal=include_internal)
 
 
@@ -403,13 +397,7 @@ def admin_plans(request: Request, db: Session = Depends(get_db)):
     tenant admin must never see other orgs). 404 when no metrics token is configured."""
     from .plans import PLANS, plan_of
     from .models import Finding
-    tok = settings.metrics_token
-    if not tok:
-        raise HTTPException(status_code=404, detail="not found")
-    scheme, _, bearer = request.headers.get("authorization", "").partition(" ")
-    provided = bearer if scheme.lower() == "bearer" else request.query_params.get("token", "")
-    if not hmac.compare_digest(provided, tok):
-        raise HTTPException(status_code=401, detail="metrics token required")
+    _require_operator(request)
     activated = {r[0] for r in db.query(Finding.tenant_id).distinct().all()}
     counts: dict[str, int] = {p: 0 for p in PLANS}
     rows = []
@@ -435,15 +423,58 @@ def admin_licenses(request: Request, db: Session = Depends(get_db)):
     """Owner license registry — every issued self-hosted license and its status. Vendor-
     only: gated by WARDEN_METRICS_TOKEN (not a tenant session); 404 without a token."""
     from .models import License
-    tok = settings.metrics_token
-    if not tok:
-        raise HTTPException(status_code=404, detail="not found")
-    scheme, _, bearer = request.headers.get("authorization", "").partition(" ")
-    provided = bearer if scheme.lower() == "bearer" else request.query_params.get("token", "")
-    if not hmac.compare_digest(provided, tok):
-        raise HTTPException(status_code=401, detail="metrics token required")
+    _require_operator(request)
     rows = db.query(License).order_by(License.issued_at.desc()).all()
     return {"licenses": [r.to_dict() for r in rows]}
+
+
+@app.post("/api/admin/licenses")
+def admin_license_issue(body: dict, request: Request, db: Session = Depends(get_db)):
+    """Issue + record a self-hosted license from the operator console. Operator-gated;
+    signs with the mounted signing key (503 if unmounted, like renewal). Returns the blob
+    to hand the customer plus the registry row."""
+    from datetime import date, datetime, timedelta
+    from . import licensing
+    from .models import License
+    import secrets as _secrets
+    _require_operator(request)
+    key = licensing.signing_key()
+    if not key:
+        raise HTTPException(status_code=503, detail="license issuing not enabled here (no signing key)")
+    org = (body.get("org") or "").strip()
+    plan = (body.get("plan") or "").strip()
+    if not org or plan not in ("team", "enterprise"):
+        raise HTTPException(status_code=400, detail="org and plan (team|enterprise) required")
+    seats = int(body.get("seats") or 0)
+    term_days = int(body.get("term_days") or licensing.DEFAULT_TERM_DAYS)
+    contract_months = int(body.get("contract_months") or 12)
+    expires = date.today() + timedelta(days=term_days)
+    lic_id = f"lic_{_secrets.token_hex(4)}"
+    try:
+        blob = licensing.issue(key, org, plan, seats, expires.isoformat(), lic_id=lic_id)
+    except licensing.LicenseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    contract = _naive_now() + timedelta(days=30 * contract_months) if contract_months else None
+    row = License(id=lic_id, org=org, plan=plan, seats=seats,
+                  expires_at=datetime(expires.year, expires.month, expires.day),
+                  contract_until=contract, note=(body.get("note") or "").strip())
+    db.add(row)
+    db.commit()
+    return {"license": blob, **row.to_dict()}
+
+
+@app.post("/api/admin/licenses/{lic_id}/revoke")
+def admin_license_revoke(lic_id: str, request: Request, db: Session = Depends(get_db)):
+    """Revoke a self-hosted license from the operator console — renewals refused, the
+    instance drops to Free at term end. Operator-gated."""
+    from .models import License
+    _require_operator(request)
+    row = db.get(License, lic_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="license not found")
+    row.status = "revoked"
+    db.commit()
+    return row.to_dict()
 
 
 @app.post("/api/license/renew")
@@ -577,6 +608,20 @@ def _ingest_auth(x_warden_token: str, db: Session) -> tuple[int | None, str]:
 def _naive_now():
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _require_operator(request: Request) -> None:
+    """Gate the vendor /api/admin/* surface on WARDEN_METRICS_TOKEN (Bearer or ?token=) —
+    a cross-tenant operator credential, NOT a tenant session. 404 when no token is
+    configured so the surface can't be left open by accident on a deployment that never
+    set one up (and isn't even discoverable there)."""
+    tok = settings.metrics_token
+    if not tok:
+        raise HTTPException(status_code=404, detail="not found")
+    scheme, _, bearer = request.headers.get("authorization", "").partition(" ")
+    provided = bearer if scheme.lower() == "bearer" else request.query_params.get("token", "")
+    if not hmac.compare_digest(provided, tok):
+        raise HTTPException(status_code=401, detail="operator token required")
 
 
 def _resolve_agent_token(token: str, db: Session) -> Agent:
