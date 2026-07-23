@@ -396,6 +396,40 @@ def admin_funnel(request: Request, days: int | None = None,
     return funnel.compute(db, days=days, include_internal=include_internal)
 
 
+@app.get("/api/admin/plans")
+def admin_plans(request: Request, db: Session = Depends(get_db)):
+    """Operator plan roster: every org with its plan and whether it's activated. Cross-
+    tenant, so — like the funnel — gated by WARDEN_METRICS_TOKEN, NOT a tenant session (a
+    tenant admin must never see other orgs). 404 when no metrics token is configured."""
+    from .plans import PLANS, plan_of
+    from .models import Finding
+    tok = settings.metrics_token
+    if not tok:
+        raise HTTPException(status_code=404, detail="not found")
+    scheme, _, bearer = request.headers.get("authorization", "").partition(" ")
+    provided = bearer if scheme.lower() == "bearer" else request.query_params.get("token", "")
+    if not hmac.compare_digest(provided, tok):
+        raise HTTPException(status_code=401, detail="metrics token required")
+    activated = {r[0] for r in db.query(Finding.tenant_id).distinct().all()}
+    counts: dict[str, int] = {p: 0 for p in PLANS}
+    rows = []
+    for t in db.query(Tenant).order_by(Tenant.created_at).all():
+        p = plan_of(t)
+        counts[p] = counts.get(p, 0) + 1
+        rows.append({"slug": t.slug, "name": t.name, "plan": p,
+                     "status": t.status or "active", "activated": t.id in activated,
+                     "created_at": t.created_at.isoformat() if t.created_at else None})
+    return {"totals": counts, "tenants": rows}
+
+
+@app.get("/api/plans")
+def plan_catalog(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """This org's plan + the tier/entitlement catalog, for the console entitlements panel.
+    Authenticated (any member); shows only the caller's own plan — no cross-tenant data."""
+    from . import plans as plans_mod
+    return plans_mod.catalog(db.get(Tenant, current.tenant_id))
+
+
 def _input_from_request(req: AnalyzeRequest) -> AnalysisInput:
     metadata = {"destination": req.destination} if req.destination else {}
     return AnalysisInput(

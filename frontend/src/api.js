@@ -132,6 +132,7 @@ export const api = {
   acceptDpa: (version) => req("/tenant/dpa", { method: "POST", body: JSON.stringify({ version: version || null }) }),
   deleteTenant: (confirm) => req("/tenant", { method: "DELETE", body: JSON.stringify({ confirm }) }),
   usage: () => req("/usage"),
+  planCatalog: () => req("/plans"),
   audit: (params = {}) => {
     const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
     return req("/audit" + (q ? `?${q}` : ""));

@@ -167,6 +167,10 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   const [usage, setUsage] = useState(null);
   const loadUsage = useCallback(() => api.usage().then(setUsage).catch(() => {}), []);
 
+  // --- Plan catalog (entitlements panel; rendered from the backend so it can't drift) ---
+  const [catalog, setCatalog] = useState(null);
+  const loadCatalog = useCallback(() => api.planCatalog().then(setCatalog).catch(() => {}), []);
+
   // --- Upstreams ---
   const [ups, setUps] = useState([]);
   const [upDraft, setUpDraft] = useState({});   // provider -> {base_url, key}
@@ -251,8 +255,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     } catch (e) { err(e); }
   }
 
-  useEffect(() => { loadUsage(); loadUps(); loadOidc(); loadSaml(); loadDpa(); },
-    [loadUsage, loadUps, loadOidc, loadSaml, loadDpa]);
+  useEffect(() => { loadUsage(); loadUps(); loadOidc(); loadSaml(); loadDpa(); loadCatalog(); },
+    [loadUsage, loadUps, loadOidc, loadSaml, loadDpa, loadCatalog]);
 
   async function logoutEverywhere() {
     try { await api.logoutAll(); } catch { /* ignore */ }
@@ -275,6 +279,51 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         </div>
       </div>
       {msg && <div className={msg.ok ? "flash-ok" : "flash-err"}>{msg.text}</div>}
+
+      {/* Your plan — entitlements comparison across tiers, current one highlighted */}
+      {catalog && (
+        <div className="panel settings-card">
+          <h2>Your plan</h2>
+          <p className="muted" style={{ marginTop: 0 }}>
+            You're on the <strong>{planLabel}</strong> plan.
+            {plan !== "enterprise" && <> To unlock more, <a href="mailto:sales@tachtech.net">contact us</a>.</>}
+          </p>
+          <div style={{ overflowX: "auto" }}>
+            <table className="data-table plan-table">
+              <thead>
+                <tr>
+                  <th>Feature</th>
+                  {catalog.tiers.map((t) => (
+                    <th key={t.name} className={t.name === catalog.current ? "plan-col-current" : ""}>
+                      {t.label}{t.name === catalog.current && <span className="chip chip-on" style={{ marginLeft: 6 }}>current</span>}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="muted">Users included</td>
+                  {catalog.tiers.map((t) => (
+                    <td key={t.name} className={t.name === catalog.current ? "plan-col-current" : ""}>
+                      {t.user_quota ? t.user_quota : "Custom"}
+                    </td>
+                  ))}
+                </tr>
+                {catalog.features.map((f) => (
+                  <tr key={f.key}>
+                    <td className="muted">{f.label}</td>
+                    {catalog.tiers.map((t) => (
+                      <td key={t.name} className={t.name === catalog.current ? "plan-col-current" : ""}>
+                        {t.includes[f.key] ? "✓" : "—"}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Organization */}
       <form className="panel settings-card" onSubmit={saveOrg}>
