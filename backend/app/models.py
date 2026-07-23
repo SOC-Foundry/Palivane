@@ -599,18 +599,21 @@ class PolicyOverride(Base):
     among groups the most specific pattern wins."""
 
     __tablename__ = "policy_overrides"
-    __table_args__ = (UniqueConstraint("tenant_id", "scope", "match", name="uq_override_scope_match"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "scope", "match", "channel",
+                                       name="uq_override_scope_match"),)
 
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=True)
     scope = Column(String(8), default="user")     # user | group
     match = Column(String(320), default="")       # email (user) or glob pattern (group)
+    channel = Column(String(64), default="")      # tool/channel glob ("" = any tool)
     label = Column(String(128), default="")       # friendly name, e.g. "Contractors"
     disabled_checks = Column(String(2048), default="")
     created_at = Column(DateTime, default=_utcnow)
 
     def to_dict(self) -> dict:
-        return {"id": self.id, "scope": self.scope, "match": self.match, "label": self.label,
+        return {"id": self.id, "scope": self.scope, "match": self.match,
+                "channel": self.channel or "", "label": self.label,
                 "disabled_checks": [c for c in (self.disabled_checks or "").split(",") if c]}
 
 

@@ -109,7 +109,8 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     if tenant is not None:
         from .models import PolicyOverride
         overrides = db.query(PolicyOverride).filter(PolicyOverride.tenant_id == tenant.id).all()
-        effective_disabled, _ = resolve_disabled(base_disabled, item.sender, overrides)
+        effective_disabled, _ = resolve_disabled(base_disabled, item.sender, overrides,
+                                                 channel=item.channel)
     else:
         effective_disabled = base_disabled
     check_filter = checks_signal_filter(effective_disabled)

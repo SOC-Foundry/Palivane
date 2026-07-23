@@ -360,6 +360,7 @@ class CoverageRequest(BaseModel):
 class PolicyOverrideIn(BaseModel):
     scope: Literal["user", "group"]
     match: str = Field(min_length=1, max_length=320)   # email (user) or glob (group)
+    channel: str = Field("", max_length=64)            # tool/channel glob ("" = any tool)
     label: str = Field("", max_length=128)
     disabled_checks: list[str] = Field(default_factory=list, max_length=64)
 

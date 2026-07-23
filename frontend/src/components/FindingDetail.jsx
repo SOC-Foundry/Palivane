@@ -102,18 +102,22 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
 
   // One-click policy tuning: merge this check into the actor's per-user override, so
   // expected behavior (e.g. a security engineer whose work trips the scanners) stops
-  // generating findings at the source instead of being re-dismissed forever.
-  async function suppress(check, label) {
+  // generating findings at the source instead of being re-dismissed forever. Scoped to
+  // this finding's tool by default (safer); "everywhere" covers all tools.
+  async function suppress(check, label, channel) {
     const who = finding.sender;
-    if (!window.confirm(`Stop flagging "${label}" for ${who}?\n\nThis adds a per-user policy override (Policies page) — Warden will no longer record ${label} findings for this user anywhere.`)) return;
+    const where = channel ? `via ${channel}` : "on every tool";
+    if (!window.confirm(`Stop flagging "${label}" for ${who} ${where}?\n\nThis adds a per-user policy override (Policies page) — Warden will no longer record ${label} findings for this user ${where}.`)) return;
+    const ch = (channel || "").toLowerCase();
     const pol = await api.policies();
     const existing = (pol.overrides || []).find(
-      (o) => o.scope === "user" && o.match === who.toLowerCase());
+      (o) => o.scope === "user" && o.match === who.toLowerCase() && (o.channel || "") === ch);
     const disabled = [...new Set([...(existing?.disabled_checks || []), check])];
     try {
       await api.policyOverrideUpsert({
-        scope: "user", match: who, label: existing?.label || "", disabled_checks: disabled });
-      setSuppressed(label);
+        scope: "user", match: who, channel: ch, label: existing?.label || "",
+        disabled_checks: disabled });
+      setSuppressed(`${label} (${where})`);
     } catch (e) {
       window.alert(`Couldn't add the override: ${e.message}`);
     }
@@ -180,14 +184,26 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
             {" "}<strong>{finding.sender}</strong> only (admins can review/undo on the Policies page).</p>
           <div className="tune-actions">
             {checks.map(([check, label]) => (
-              <button key={check} className="ghost-btn slim"
-                      onClick={() => suppress(check, label)}>
-                stop flagging “{label}”
-              </button>
+              <span key={check} className="tune-pair">
+                {finding.channel ? (
+                  <>
+                    <button className="ghost-btn slim"
+                            onClick={() => suppress(check, label, finding.channel)}>
+                      stop flagging “{label}” via {finding.channel}
+                    </button>
+                    <button className="link-btn tune-everywhere" title="Suppress on every tool, not just this one"
+                            onClick={() => suppress(check, label, "")}>everywhere</button>
+                  </>
+                ) : (
+                  <button className="ghost-btn slim" onClick={() => suppress(check, label, "")}>
+                    stop flagging “{label}”
+                  </button>
+                )}
+              </span>
             ))}
           </div>
           {suppressed && (
-            <p className="tune-done">✓ “{suppressed}” suppressed for {finding.sender} — takes
+            <p className="tune-done">✓ {suppressed} suppressed for {finding.sender} — takes
               effect on their next capture.</p>
           )}
         </div>

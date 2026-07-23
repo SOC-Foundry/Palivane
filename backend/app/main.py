@@ -1680,13 +1680,16 @@ def policy_override_upsert(body: PolicyOverrideIn, current: User = Depends(requi
     match = body.match.strip().lower()   # matching is case-insensitive; store normalized
     if not match:
         raise HTTPException(status_code=400, detail="match is required")
+    channel = body.channel.strip().lower()  # tool glob; "" = any tool
     disabled = ",".join(dict.fromkeys(k for k in body.disabled_checks if k in VALID_KEYS))
     row = (db.query(PolicyOverride)
              .filter(PolicyOverride.tenant_id == current.tenant_id,
-                     PolicyOverride.scope == body.scope, PolicyOverride.match == match)
+                     PolicyOverride.scope == body.scope, PolicyOverride.match == match,
+                     PolicyOverride.channel == channel)
              .one_or_none())
     if row is None:
-        row = PolicyOverride(tenant_id=current.tenant_id, scope=body.scope, match=match)
+        row = PolicyOverride(tenant_id=current.tenant_id, scope=body.scope, match=match,
+                             channel=channel)
         db.add(row)
     row.label = body.label.strip()
     row.disabled_checks = disabled
@@ -1694,7 +1697,8 @@ def policy_override_upsert(body: PolicyOverrideIn, current: User = Depends(requi
     from . import audit_log
     audit_log.record(db, current.tenant_id, current.email, "policy_override.upsert",
                      target=f"{body.scope}:{match}",
-                     detail={"scope": body.scope, "match": match, "disabled_checks": body.disabled_checks})
+                     detail={"scope": body.scope, "match": match, "channel": channel,
+                             "disabled_checks": body.disabled_checks})
     return row.to_dict()
 
 
