@@ -68,6 +68,25 @@ def _stored_content(content: str, tenant, db) -> str:
 _ALLOW_LEVEL = {"benign", "low"}  # verdicts below the warn threshold
 
 
+def _fingerprint(tenant_id, item: AnalysisInput, signals: list[dict]) -> str:
+    """Stable signature of an event class: same actor + tool + surface + signal set
+    (category + evidence snippet). Repeats fold into the first finding instead of
+    piling up new rows — the evidence snippet keeps *different* secrets/commands
+    from the same actor as distinct findings."""
+    import hashlib
+    parts = [str(tenant_id or 0), item.sender, item.channel, item.surface.value, item.subject]
+    parts += sorted(f"{s.get('category','')}|{(s.get('evidence') or '')[:80]}" for s in signals)
+    return hashlib.sha256("\n".join(parts).encode("utf-8", "replace")).hexdigest()
+
+
+def _fold_recurrence(db: Session, tenant_id, fp: str) -> Finding | None:
+    """The existing finding this event is a repeat of, if any."""
+    q = db.query(Finding).filter(Finding.fingerprint == fp)
+    q = q.filter(Finding.tenant_id == tenant_id) if tenant_id is not None \
+        else q.filter(Finding.tenant_id.is_(None))
+    return q.order_by(Finding.id.desc()).first()
+
+
 def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                  tenant_id: int | None = None, signal_filter=None,
                  persist_benign: bool = True, agent: str = "") -> dict:
@@ -106,8 +125,22 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     if persist and not persist_benign and verdict.severity in _ALLOW_LEVEL:
         persist = False  # drop benign sensor noise
     if persist:
+        # Recurrence folding: a repeat of an already-recorded event (same fingerprint)
+        # bumps the original's seen_count/last_seen instead of creating another open row —
+        # and stays dismissed if an analyst already dismissed it. Alerts/SIEM fired on the
+        # first occurrence; recurrences don't re-alert.
+        fp = _fingerprint(tenant_id, item, result["signals"])
+        prior = _fold_recurrence(db, tenant_id, fp)
+        if prior is not None:
+            from datetime import datetime, timezone
+            prior.seen_count = (prior.seen_count or 1) + 1
+            prior.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
+            db.commit()
+            return {"finding_id": prior.id, "recurrence": prior.seen_count,
+                    "judge_used": engine.judge_enabled, **result}
         finding = Finding(
             tenant_id=tenant_id,
+            fingerprint=fp,
             channel=item.channel,
             surface=item.surface.value,
             sender=item.sender,

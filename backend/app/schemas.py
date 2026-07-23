@@ -143,6 +143,11 @@ class StatusUpdate(BaseModel):
     status: Literal["open", "triaged", "dismissed"]
 
 
+class BulkStatusUpdate(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=1000)
+    status: Literal["open", "triaged", "dismissed"]
+
+
 # --- auth / tenancy ---
 
 class LoginRequest(BaseModel):

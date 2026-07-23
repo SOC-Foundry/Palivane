@@ -40,6 +40,7 @@ class Verdict:
                     "confidence": round(s.confidence, 3),
                     "detector": s.detector,
                     "evidence": s.evidence,
+                    "check": s.effective_check,
                 }
                 for s in self.signals
             ],
