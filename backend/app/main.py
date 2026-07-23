@@ -378,6 +378,24 @@ def metrics_endpoint(request: Request):
     return _Resp(content=body, media_type=content_type)
 
 
+@app.get("/api/admin/funnel")
+def admin_funnel(request: Request, days: int | None = None,
+                 include_internal: bool = False, db: Session = Depends(get_db)):
+    """Vendor product-analytics funnel (signup → activation). Operator-only: gated by the
+    same WARDEN_METRICS_TOKEN as /metrics (Bearer or ?token=), NOT a tenant session — it
+    aggregates across all tenants. Returns 404 when no metrics token is configured, so it
+    can't be left open by accident on a deployment that never set one up."""
+    from . import funnel
+    tok = settings.metrics_token
+    if not tok:
+        raise HTTPException(status_code=404, detail="not found")
+    scheme, _, bearer = request.headers.get("authorization", "").partition(" ")
+    provided = bearer if scheme.lower() == "bearer" else request.query_params.get("token", "")
+    if not hmac.compare_digest(provided, tok):
+        raise HTTPException(status_code=401, detail="metrics token required")
+    return funnel.compute(db, days=days, include_internal=include_internal)
+
+
 def _input_from_request(req: AnalyzeRequest) -> AnalysisInput:
     metadata = {"destination": req.destination} if req.destination else {}
     return AnalysisInput(
