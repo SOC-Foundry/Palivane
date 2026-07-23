@@ -141,3 +141,36 @@ def test_dpa_requires_admin(client, db_factory):
     tok = client.post("/api/auth/login",
                       json={"email": "analyst@acme.com", "password": "password123"}).json()["access_token"]
     assert client.get("/api/tenant/dpa", headers={"Authorization": f"Bearer {tok}"}).status_code == 403
+
+def test_dismiss_benign_bulk_closes_only_allow_level_open(client, db_factory):
+    db = db_factory()
+    tid = db.query(Tenant).filter(Tenant.slug == "acme").first().id
+    db.add(Finding(tenant_id=tid, severity="benign", status="open"))
+    db.add(Finding(tenant_id=tid, severity="low", status="open"))
+    db.add(Finding(tenant_id=tid, severity="high", status="open"))       # stays open
+    db.add(Finding(tenant_id=tid, severity="benign", status="triaged"))  # untouched
+    db.commit()
+    db.close()
+
+    assert client.post("/api/findings/dismiss-benign").json()["dismissed"] == 2
+    # idempotent
+    assert client.post("/api/findings/dismiss-benign").json()["dismissed"] == 0
+
+    db = db_factory()
+    by = {(f.severity, f.status) for f in db.query(Finding).all()}
+    db.close()
+    assert ("benign", "dismissed") in by and ("low", "dismissed") in by
+    assert ("high", "open") in by and ("benign", "triaged") in by
+
+
+def test_dismiss_benign_requires_admin(client, db_factory, monkeypatch):
+    # a non-admin analyst is refused
+    from app import users as users_cli
+    db = db_factory()
+    users_cli.create_user(db, "acme", "viewer@acme.com", "pw12345678", role="analyst")
+    db.close()
+    r = client.post("/api/auth/login", json={"email": "viewer@acme.com", "password": "pw12345678"})
+    tok = r.json()["access_token"]
+    r = client.post("/api/findings/dismiss-benign",
+                    headers={"Authorization": f"Bearer {tok}"})
+    assert r.status_code == 403

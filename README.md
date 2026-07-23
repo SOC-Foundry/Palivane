@@ -305,6 +305,7 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `GATEWAY_RATE_LIMIT` | `0` (unlimited)            | Default **gateway** (`/v1/*`) requests/min per tenant; a tenant's own `rate_limit` overrides. Over-limit → HTTP 429. |
 | `INGEST_RATE_LIMIT` | `0` (unlimited)            | Default **sensor/ingest** (`/api/ingest/*`, `/api/scan/*`) requests/min per tenant — counted separately from the gateway so agentic capture can't starve LLM traffic; a tenant's own `ingest_rate_limit` overrides. |
 | `WARDEN_MCP_PERSIST_BENIGN` | `false`           | Store benign MCP tool-call findings (warden-hook/warden-mcp)? Default off — only warn+ verdicts persist (most tool calls are benign noise). |
+| `WARDEN_USAGE_PERSIST_BENIGN` | `false`         | Store benign usage-capture findings (proxy/extension ai-usage ingest, OTLP prompts, gateway prompt capture + response DLP)? Default off — benign traffic still feeds discovery and usage metering, but only warn+ verdicts become findings. Turn on for a full per-event egress audit trail. |
 | `WARDEN_METRICS_TOKEN` | *(empty = open)*         | If set, `/metrics` requires it (Bearer or `?token=`); scrape it privately otherwise. |
 | `CUSTOM_SECRET_PATTERNS` | *(empty)*             | Org-specific secret formats — one `label=regex` per line; merged into detection. |
 | `CUSTOM_PII_PATTERNS` | *(empty)*             | Org-specific PII/confidential formats (customer IDs, MRNs, codenames) — one `label=regex` per line. Per-tenant override in Settings. |

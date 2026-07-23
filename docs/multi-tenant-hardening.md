@@ -48,7 +48,10 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   (warden-hook/warden-mcp) can't starve real LLM traffic. Over-limit → provider-shaped
   **429** (gateway) or `429 + Retry-After` (ingest); 0 = unlimited. The same counter is the
   metering source: `GET /api/usage` reports gateway current/24h/per-day plus `ingest_*`
-  totals. Benign MCP tool calls aren't persisted by default (`WARDEN_MCP_PERSIST_BENIGN`).
+  totals. Benign MCP tool calls aren't persisted by default (`WARDEN_MCP_PERSIST_BENIGN`),
+  and neither are benign usage captures — proxy/extension `ai-usage` ingest, OTLP prompts,
+  gateway prompt capture and response DLP (`WARDEN_USAGE_PERSIST_BENIGN`). Allow-level
+  traffic still feeds discovery and usage metering; only warn+ verdicts become findings.
 - **Admin console (Settings page).** A self-serve UI for all of the above: org settings
   (name, judge consent, retention, rate limit), a usage panel, per-provider upstream keys,
   OIDC SSO config, and "log out everywhere" — previously API-only.

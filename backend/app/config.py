@@ -84,6 +84,11 @@ class Settings:
     # Persist benign MCP-surface findings (warden-hook/warden-mcp tool calls)? Default off:
     # the vast majority of tool calls are benign noise; only warn+ verdicts are stored.
     mcp_persist_benign: bool = os.getenv("WARDEN_MCP_PERSIST_BENIGN", "").lower() in ("1", "true", "yes")
+    # Persist benign usage-capture findings (ai-usage ingest / OTLP prompts, gateway prompt
+    # capture + response DLP)? Default off — benign traffic is volume, not findings; the
+    # discovery inventory and usage counters are fed independently of persistence. Turn on
+    # for a full per-event egress audit trail.
+    usage_persist_benign: bool = os.getenv("WARDEN_USAGE_PERSIST_BENIGN", "").lower() in ("1", "true", "yes")
     # If set, /metrics requires this token (Bearer or ?token=); empty = open (bind it to
     # an internal network / scrape it privately).
     metrics_token: str = os.getenv("WARDEN_METRICS_TOKEN", "")

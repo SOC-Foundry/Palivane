@@ -270,7 +270,8 @@ def _capture(prompt: str, model: str, tool: str, principal: Principal, db: Sessi
     item = AnalysisInput(content=prompt or "(empty)", subject=model, sender=principal.actor,
                          channel=tool, surface=Surface.LLM_IO)
     return run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
-                        signal_filter=signal_filter_for(tool, _tenant_suppress(principal.tenant_id, db)))
+                        signal_filter=signal_filter_for(tool, _tenant_suppress(principal.tenant_id, db)),
+                        persist_benign=settings.usage_persist_benign)
 
 
 # --- Agentic tool-use inspection (agentless MCP over the LLM API) ----------------------
@@ -383,7 +384,8 @@ def _capture_activity_dict(act: dict | None, tool: str, principal: Principal, db
     )
     filt, dec = _gw_authz(principal, "", act["tool"], act["args_text"], db)
     result = run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
-                          signal_filter=filt, agent=principal.agent)
+                          signal_filter=filt, agent=principal.agent,
+                          persist_benign=settings.mcp_persist_benign)
     if dec["enforce"] and dec["denied"]:
         result["authz_block"] = True
     return result
@@ -496,7 +498,8 @@ def _capture_tool_activity(tool_name: str, args_text: str, tool: str,
         metadata={"method": "tools/call", "tool": tool_name, "args_text": args_text})
     filt, dec = _gw_authz(principal, "", tool_name, args_text, db)
     result = run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
-                          signal_filter=filt, agent=principal.agent)
+                          signal_filter=filt, agent=principal.agent,
+                          persist_benign=settings.mcp_persist_benign)
     if (dec["enforce"] and dec["denied"]) or _gw_extra_tools_denied(principal, tools or [], db):
         result["authz_block"] = True
     return result
@@ -576,7 +579,8 @@ def _capture_response_dlp(text: str, model: str, tool: str, principal: Principal
                          channel=tool or "gateway", surface=Surface.AI_USAGE,
                          metadata={"direction": "response"})
     return run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
-                        signal_filter=_response_dlp_filter)
+                        signal_filter=_response_dlp_filter,
+                        persist_benign=settings.usage_persist_benign)
 
 
 def _scan_response(data: dict, model: str, tool: str, pol: "GatewayPolicy",
