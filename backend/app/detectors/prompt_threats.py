@@ -1,9 +1,18 @@
 """Module B — Protect our AI: prompt-injection / jailbreak / exfiltration heuristics.
 
-Runs on the `llm_io` surface: the prompts and responses flowing through the org's
-own LLM applications. Where Module A asks "is this inbound message attacking a
-human?", Module B asks "is this input attacking our model?" — trying to override
-its instructions, defeat its guardrails, or extract its system prompt and secrets.
+Runs on the `llm_io` surface (prompts/responses flowing through the org's own LLM
+applications) and, in precision mode, on `ai_usage` (prompts captured by the egress
+proxy / extension on their way to third-party AI tools — previously a coverage gap:
+an injection relayed through a proxied Claude Code session scored benign). Where
+Module A asks "is this inbound message attacking a human?", Module B asks "is this
+input attacking our model?" — trying to override its instructions, defeat its
+guardrails, or extract its system prompt and secrets.
+
+ai_usage captures are mostly code/diffs, so that surface drops the false-positive-prone
+pieces: the bare "system:" / "system prompt:" terms (ubiquitous in YAML and LLM app
+source), the secret-in-content signal (shadow_ai owns secrets on ai_usage — running both
+would double-count), and the low-confidence generic base64 signal (long hashes match it);
+a base64 blob that actually DECODES to an attack still flags.
 
 Fast, free, offline. The same scoring backbone fuses these signals; the optional
 The LLM judge adds coverage for novel attacks that dodge these patterns.
@@ -93,11 +102,17 @@ def _try_decode_b64(blob: str) -> str:
     return ""
 
 
+# Terms too common in ordinary source/config (YAML keys, prompt templates in code) to
+# match against ai_usage captures — kept for llm_io, where the content is a live prompt.
+_CODE_FP_TERMS = {"system:", "system prompt:"}
+
+
 class PromptThreatDetector:
     name = "prompt_threats"
-    surfaces = {Surface.LLM_IO}
+    surfaces = {Surface.LLM_IO, Surface.AI_USAGE}
 
     def analyze(self, item: AnalysisInput) -> list[Signal]:
+        precision = item.surface == Surface.AI_USAGE  # code-heavy: high-precision subset
         text = f"{item.subject}\n{item.content}".strip()
         # Match keywords against a normalized view (folds homoglyphs / fullwidth /
         # zero-width / spacing evasion); keep `text` for zero-width & base64 signals.
@@ -105,7 +120,9 @@ class PromptThreatDetector:
         low = norm.lower()
         signals: list[Signal] = []
 
-        inj = _hits(low, INJECTION_TERMS)
+        inj_terms = [t for t in INJECTION_TERMS if t not in _CODE_FP_TERMS] \
+            if precision else INJECTION_TERMS
+        inj = _hits(low, inj_terms)
         if inj:
             # A single unambiguous instruction-override should on its own clear the default
             # "high" block bar (a lone injection previously landed at "suspicious", i.e. not
@@ -141,7 +158,7 @@ class PromptThreatDetector:
                 detector=self.name, evidence=evidence,
             ))
 
-        secrets = find_secrets(text)
+        secrets = find_secrets(text) if not precision else []  # shadow_ai owns ai_usage secrets
         if secrets:
             signals.append(Signal(
                 category=Category.DATA_EXFILTRATION,
@@ -165,7 +182,7 @@ class PromptThreatDetector:
                     weight=0.8, confidence=0.8, detector=self.name,
                     evidence=", ".join(hidden[:4]), check="hidden_characters",
                 ))
-            else:
+            elif not precision:  # code is full of hash-like blobs; only the decoded hit above
                 signals.append(Signal(
                     category=Category.PROMPT_INJECTION,
                     title="Encoded payload (possible smuggled instructions)",
