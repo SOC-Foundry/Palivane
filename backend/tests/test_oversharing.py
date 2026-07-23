@@ -59,3 +59,27 @@ def test_endpoint_records_and_respects_toggle(client, raw_client):
     r2 = raw_client.post("/api/scan/oversharing", json=body, headers={"X-Warden-Token": key})
     assert not any(s["category"] == "data_oversharing" for s in r2.json()["signals"])
     client.patch("/api/tenant", json={"disabled_checks": []})
+
+
+def test_oversharing_recipient_required(client, raw_client):
+    # A need-to-know check with no recipient is meaningless and must be rejected, not
+    # silently allowed — the recipient is the authorization input.
+    client.patch("/api/tenant", json={"oversharing_rules": "kw:salary = *@hr.acme.com"})
+    key = client.post("/api/apikeys", json={"label": "copilot", "actor": "c@acme.com"}).json()["token"]
+    r = raw_client.post("/api/scan/oversharing",
+                        json={"content": "salary data", "source": "rag"},
+                        headers={"X-Warden-Token": key})
+    assert r.status_code == 422
+
+
+def test_oversharing_ignores_token_actor_for_authz(client, raw_client):
+    # The token's own actor must NOT satisfy need-to-know. Even with an API key whose actor
+    # matches the allowed glob, a response to a non-authorized recipient still fires — the
+    # decision uses only the explicit (validated) recipient, not the token label.
+    client.patch("/api/tenant", json={"oversharing_rules": "kw:salary = *@hr.acme.com"})
+    key = client.post("/api/apikeys",
+                      json={"label": "copilot", "actor": "svc@hr.acme.com"}).json()["token"]
+    body = {"content": "Here are the salary figures.", "user": "dev@acme.com", "source": "rag"}
+    r = raw_client.post("/api/scan/oversharing", json=body, headers={"X-Warden-Token": key})
+    assert r.status_code == 200
+    assert any(s["category"] == "data_oversharing" for s in r.json()["signals"])
