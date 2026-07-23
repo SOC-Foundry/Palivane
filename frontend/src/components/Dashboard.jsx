@@ -124,7 +124,7 @@ export default function Dashboard({ stats }) {
   return (
     <>
       <div className="dashboard">
-        <StatCard icon={<IconInbox />} value={stats.total} label="Total analyzed" tone="neutral" />
+        <StatCard icon={<IconInbox />} value={stats.analyzed_total ?? stats.total} label="Total analyzed" tone="neutral" />
         <StatCard icon={<IconList />} value={stats.open} label="Open" tone="neutral" />
         <StatCard icon={<IconAlert />} value={stats.high_risk} label="High / critical" tone="danger" />
         <StatCard icon={<IconTarget />} value={stats.ai_weaponized} label="AI-weaponized" tone="warn" />

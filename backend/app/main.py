@@ -723,7 +723,8 @@ def _score_ai_usage(content: str, actor: str, tool: str, destination: str,
     suppress = _tenant_or_global(tenant_id, db, "tool_suppress", settings.gateway_tool_suppress)
     sig_filter = signal_filter_for(detect_tool(explicit=tool), extra=suppress)
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
-                          signal_filter=sig_filter, agent=agent)
+                          signal_filter=sig_filter, agent=agent,
+                          persist_benign=settings.usage_persist_benign)
     # Feed the shadow-AI discovery inventory (best-effort — never breaks the verdict).
     from .discovery import record_capture
     record_capture(db, tenant_id, actor, destination, tool,
@@ -1525,6 +1526,23 @@ def purge_findings(current: User = Depends(require_admin), db: Session = Depends
     return {"deleted": n, "retention_days": days}
 
 
+@app.post("/api/findings/dismiss-benign")
+def dismiss_benign_findings(current: User = Depends(require_admin),
+                            db: Session = Depends(get_db)):
+    """Bulk-dismiss this tenant's open allow-level (benign/low) findings — one-time cleanup
+    for backlogs recorded before benign captures stopped persisting (see
+    WARDEN_USAGE_PERSIST_BENIGN). Idempotent; verdicts and content are kept."""
+    n = (db.query(Finding)
+         .filter(Finding.tenant_id == current.tenant_id, Finding.status == "open",
+                 Finding.severity.in_(["benign", "low"]))
+         .update({Finding.status: "dismissed"}, synchronize_session=False))
+    db.commit()
+    from . import audit_log
+    audit_log.record(db, current.tenant_id, current.email, "findings.dismiss_benign",
+                     detail={"dismissed": n})
+    return {"dismissed": n}
+
+
 @app.get("/api/corpus/export")
 def export_corpus(current: User = Depends(require_admin), db: Session = Depends(get_db)):
     """Export this tenant's triaged/dismissed findings as eval-corpus JSONL.
@@ -1754,8 +1772,15 @@ def stats(current: User = Depends(get_current_user), db: Session = Depends(get_d
     open_count = _count(scoped.filter(Finding.status == "open"))
     ai_attacks = _count(scoped.filter(Finding.ai_generated.is_(True), Finding.attack_intent.is_(True)))
     high_risk = _count(scoped.filter(Finding.severity.in_(["high", "critical"])))
+    # True traffic volume (gateway + sensor/ingest requests metered per minute). Findings
+    # no longer track it since benign captures aren't persisted; floor at the findings
+    # count for tenants whose only traffic is unmetered manual /api/analyze submissions.
+    from .models import GatewayUsage
+    metered = (db.query(func.coalesce(func.sum(GatewayUsage.count), 0))
+               .filter(GatewayUsage.tenant_id == current.tenant_id).scalar() or 0)
     return {
         "total": total,
+        "analyzed_total": max(int(metered), total),
         "open": open_count,
         "high_risk": high_risk,
         "ai_weaponized": ai_attacks,

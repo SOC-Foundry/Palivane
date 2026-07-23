@@ -154,3 +154,63 @@ def test_pii_and_secrets_blocked(raw_client, db_factory, monkeypatch):
     assert body["action"] == "block"
     cats = {s["category"] for s in body["signals"]}
     assert "pii_exposure" in cats and "secret_leak" in cats
+
+
+# --- benign persistence policy (default: drop; WARDEN_USAGE_PERSIST_BENIGN opts in) -----
+
+BENIGN_CAPTURE = {"content": "Brainstorm five blog titles about remote work.",
+                  "destination": "https://chat.openai.com/", "user": "alice@acme.com"}
+
+
+def _finding_count(db_factory):
+    from app.models import Finding
+    db = db_factory()
+    try:
+        return db.query(Finding).count()
+    finally:
+        db.close()
+
+
+def test_benign_capture_not_persisted_by_default(raw_client, db_factory, monkeypatch):
+    _seed_tenant(db_factory)
+    monkeypatch.setattr(main.settings, "extension_ingest_token", "ext-secret")
+    monkeypatch.setattr(main.settings, "ingest_tenant", "acme")
+    r = raw_client.post("/api/ingest/ai-usage", json=BENIGN_CAPTURE,
+                        headers={"X-Warden-Token": "ext-secret"})
+    assert r.status_code == 200
+    assert r.json()["action"] == "allow"
+    assert r.json()["finding_id"] is None
+    assert _finding_count(db_factory) == 0
+    # The shadow-AI discovery inventory is fed independently of finding persistence.
+    from app.models import DiscoveredUsage
+    db = db_factory()
+    try:
+        assert db.query(DiscoveredUsage).count() == 1
+    finally:
+        db.close()
+
+
+def test_benign_capture_persisted_when_opted_in(raw_client, db_factory, monkeypatch):
+    _seed_tenant(db_factory)
+    monkeypatch.setattr(main.settings, "extension_ingest_token", "ext-secret")
+    monkeypatch.setattr(main.settings, "ingest_tenant", "acme")
+    monkeypatch.setattr(main.settings, "usage_persist_benign", True)
+    r = raw_client.post("/api/ingest/ai-usage", json=BENIGN_CAPTURE,
+                        headers={"X-Warden-Token": "ext-secret"})
+    assert r.status_code == 200
+    assert r.json()["finding_id"] is not None
+    assert _finding_count(db_factory) == 1
+
+
+def test_risky_capture_still_persisted(raw_client, db_factory, monkeypatch):
+    _seed_tenant(db_factory)
+    monkeypatch.setattr(main.settings, "extension_ingest_token", "ext-secret")
+    monkeypatch.setattr(main.settings, "ingest_tenant", "acme")
+    r = raw_client.post(
+        "/api/ingest/ai-usage",
+        json={**BENIGN_CAPTURE, "content": "here is the key AKIAABCDEFGHIJKLMNOP"},
+        headers={"X-Warden-Token": "ext-secret"},
+    )
+    assert r.status_code == 200
+    assert r.json()["finding_id"] is not None
+    assert _finding_count(db_factory) == 1

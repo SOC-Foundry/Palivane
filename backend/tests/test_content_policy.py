@@ -16,7 +16,8 @@ def _ingest_leak(client, raw_client, content="my AWS key AKIA4YTGH2NBQF7XZP3K he
 
 def test_metadata_only_by_default_stores_no_prose(client, raw_client, db_factory, monkeypatch):
     monkeypatch.setattr(service.settings, "store_content", False)   # global default
-    _ingest_leak(client, raw_client, "secret plan: acquire Acme and cut the hardware team")
+    _ingest_leak(client, raw_client,
+                 "secret plan: acquire Acme, key AKIA4YTGH2NBQF7XZP3K")
     db = db_factory()
     f = db.query(Finding).order_by(Finding.id.desc()).first()
     assert f is not None
@@ -59,7 +60,7 @@ def test_content_ttl_scrub(client, raw_client, db_factory, monkeypatch):
     monkeypatch.setattr(service.settings, "store_content", True)
     monkeypatch.setattr(service.settings, "encrypt_findings", False)
     monkeypatch.setattr(service.settings, "content_ttl_days", 30)
-    _ingest_leak(client, raw_client, "some retained content")
+    _ingest_leak(client, raw_client, "some retained content AKIA4YTGH2NBQF7XZP3K")
     db = db_factory()
     f = db.query(Finding).order_by(Finding.id.desc()).first()
     assert f.content   # stored
