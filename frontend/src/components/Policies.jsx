@@ -10,7 +10,7 @@ import { api } from "../api.js";
 // plus room to grow per-preset later.
 const PRESET_DISABLED = { strict: [], balanced: [], monitor: [] };
 
-const BLANK = { scope: "group", match: "", label: "", disabled_checks: [] };
+const BLANK = { scope: "group", match: "", channel: "", label: "", disabled_checks: [] };
 
 export default function Policies({ tenant, onTenant }) {
   const [cat, setCat] = useState(null);
@@ -132,16 +132,19 @@ export default function Policies({ tenant, onTenant }) {
            set — it <strong>replaces</strong> the org default for matched people. A user match is
            an exact email; a group match is a pattern like <code>*@contractors.acme.com</code>,
            <code> *intern*</code>, or <code>svc-*@acme.com</code>. User beats group; the most
-           specific group wins.</p>
+           specific group wins. Optionally scope an override to one tool
+           (e.g. <code>claude-code</code>, <code>claude-*</code>) — it then applies only to
+           captures on that tool, and beats an any-tool override for the same person.</p>
 
         {(cat.overrides || []).length > 0 && (
           <table className="data-table" style={{ marginBottom: 16 }}>
-            <thead><tr><th>Scope</th><th>Match</th><th>Label</th><th>Disabled checks</th><th></th></tr></thead>
+            <thead><tr><th>Scope</th><th>Match</th><th>Tool</th><th>Label</th><th>Disabled checks</th><th></th></tr></thead>
             <tbody>
               {cat.overrides.map((o) => (
                 <tr key={o.id}>
                   <td><span className={`cat ${o.scope === "user" ? "cat-secret_leak" : "cat-unsanctioned_ai"}`}>{o.scope}</span></td>
                   <td><code>{o.match}</code></td>
+                  <td className="muted">{o.channel ? <code>{o.channel}</code> : "any"}</td>
                   <td className="muted">{o.label || "—"}</td>
                   <td className="muted">{o.disabled_checks.length
                     ? o.disabled_checks.map(checkLabel).join(", ")
@@ -161,6 +164,8 @@ export default function Policies({ tenant, onTenant }) {
             </select>
             <input placeholder={draft.scope === "user" ? "alice@acme.com" : "*@contractors.acme.com"}
                    value={draft.match} onChange={(e) => setDraft((d) => ({ ...d, match: e.target.value }))} />
+            <input placeholder="Tool (optional, e.g. claude-code)" value={draft.channel}
+                   onChange={(e) => setDraft((d) => ({ ...d, channel: e.target.value }))} />
             <input placeholder="Label (optional)" value={draft.label}
                    onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))} />
           </div>

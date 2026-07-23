@@ -105,29 +105,47 @@ def parse_disabled(raw) -> set[str]:
     return {i.strip() for i in items if i and i.strip() in VALID_KEYS}
 
 
-def resolve_disabled(base_disabled: set[str], actor: str, overrides) -> tuple[set[str], dict | None]:
-    """Pick the effective disabled-check set for an actor.
+def resolve_disabled(base_disabled: set[str], actor: str, overrides,
+                     channel: str = "") -> tuple[set[str], dict | None]:
+    """Pick the effective disabled-check set for an actor (and optionally the tool/channel
+    the content is flowing through).
 
     A user override (exact email) beats any group override; among group overrides the most
-    specific glob wins (fewest wildcards, then longest pattern). An override REPLACES the
-    tenant default. Returns (disabled_set, matched_override_dict_or_None)."""
+    specific glob wins (fewest wildcards, then longest pattern). An override may be scoped
+    to a tool/channel glob (e.g. "claude-code", "claude-*") — it then only applies to
+    captures on that tool, and a tool-scoped override beats a tool-any one for the same
+    actor. An override REPLACES the tenant default. Returns
+    (disabled_set, matched_override_dict_or_None)."""
     import fnmatch
 
     a = (actor or "").strip().lower()
+    ch = (channel or "").strip().lower()
     if not a or not overrides:
         return base_disabled, None
 
-    users = [o for o in overrides if o.scope == "user" and (o.match or "").strip().lower() == a]
+    def _chan(o) -> str:
+        return (getattr(o, "channel", "") or "").strip().lower()
+
+    def _chan_ok(o) -> bool:
+        och = _chan(o)
+        return not och or (bool(ch) and fnmatch.fnmatch(ch, och))
+
+    def _hit(o) -> tuple[set[str], dict]:
+        return parse_disabled(o.disabled_checks), {
+            "id": o.id, "scope": o.scope, "match": o.match, "channel": _chan(o)}
+
+    users = [o for o in overrides if o.scope == "user"
+             and (o.match or "").strip().lower() == a and _chan_ok(o)]
     if users:
-        o = users[0]
-        return parse_disabled(o.disabled_checks), {"id": o.id, "scope": "user", "match": o.match}
+        users.sort(key=lambda o: not _chan(o))   # tool-scoped beats tool-any
+        return _hit(users[0])
 
     groups = [o for o in overrides if o.scope == "group"
-              and fnmatch.fnmatch(a, (o.match or "").strip().lower())]
+              and fnmatch.fnmatch(a, (o.match or "").strip().lower()) and _chan_ok(o)]
     if groups:
-        groups.sort(key=lambda o: ((o.match or "").count("*"), -len(o.match or "")))
-        o = groups[0]
-        return parse_disabled(o.disabled_checks), {"id": o.id, "scope": "group", "match": o.match}
+        groups.sort(key=lambda o: (not _chan(o), (o.match or "").count("*"),
+                                   -len(o.match or "")))
+        return _hit(groups[0])
 
     return base_disabled, None
 
