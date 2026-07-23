@@ -90,8 +90,11 @@ class Settings:
     # for a full per-event egress audit trail.
     usage_persist_benign: bool = os.getenv("WARDEN_USAGE_PERSIST_BENIGN", "").lower() in ("1", "true", "yes")
     # If set, /metrics requires this token (Bearer or ?token=); empty = open (bind it to
-    # an internal network / scrape it privately).
-    metrics_token: str = os.getenv("WARDEN_METRICS_TOKEN", "")
+    # an internal network / scrape it privately). Stripped: secret-manager values often
+    # carry a trailing newline (echo | secrets create), which no pasted token can match.
+    # Do NOT strip WARDEN_SECRET_KEY — its exact bytes are baked into every session
+    # signature and the encryption-key derivation.
+    metrics_token: str = os.getenv("WARDEN_METRICS_TOKEN", "").strip()
 
     # --- LLM gateway (protect our AI) ---
     # enforce=block risky prompts; otherwise monitor (observe + record only). Block when
@@ -119,7 +122,9 @@ class Settings:
 
     # --- Shadow-AI governance ---
     # Static token the browser extension / egress proxy present on /api/ingest/ai-usage.
-    extension_ingest_token: str = os.getenv("EXTENSION_INGEST_TOKEN", "")
+    # Stripped like metrics_token: a trailing newline from secret tooling must not break
+    # header comparison.
+    extension_ingest_token: str = os.getenv("EXTENSION_INGEST_TOKEN", "").strip()
     # AI tools/domains the org has approved — a matching destination is not flagged.
     # Comma-separated, e.g. "claude.ai,copilot.microsoft.com". Empty = all unsanctioned.
     sanctioned_ai_tools: str = os.getenv("SANCTIONED_AI_TOOLS", "")
