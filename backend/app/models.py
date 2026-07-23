@@ -10,6 +10,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -417,6 +418,8 @@ class LoginAttempt(Base):
 
 class Finding(Base):
     __tablename__ = "findings"
+    # The console queue's hot path: newest activity first within a tenant.
+    __table_args__ = (Index("ix_findings_tenant_last_seen", "tenant_id", "last_seen"),)
 
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=True)

@@ -1479,8 +1479,10 @@ def list_findings(
         q = q.filter(Finding.surface == surface)
     if actor:
         q = q.filter(Finding.sender == actor)
-    # Order by last activity so a folded recurrence resurfaces its original row.
-    rows = (q.order_by(func.coalesce(Finding.last_seen, Finding.created_at).desc())
+    # Order by last activity so a folded recurrence resurfaces its original row. last_seen
+    # is always set (model default + migration backfill); plain DESC keeps the
+    # (tenant_id, last_seen) index usable — a coalesce() here would force a full sort.
+    rows = (q.order_by(Finding.last_seen.desc().nullslast(), Finding.id.desc())
              .limit(min(limit, 500)).all())
     return {"findings": [r.to_summary() for r in rows]}
 
