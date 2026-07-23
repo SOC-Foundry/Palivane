@@ -600,3 +600,38 @@ class PolicyOverride(Base):
     def to_dict(self) -> dict:
         return {"id": self.id, "scope": self.scope, "match": self.match, "label": self.label,
                 "disabled_checks": [c for c in (self.disabled_checks or "").split(",") if c]}
+
+
+class License(Base):
+    """Vendor-issued self-hosted license registry (issuance is otherwise stateless — the
+    signed WDN1 blob verifies offline). This table is the OWNER's record: what was issued,
+    to whom, and whether it's still honored. Under the short-term + renewal model the
+    signed blob is short-lived; the customer's instance renews against /api/license/renew,
+    which consults this table — so setting status='revoked' (or letting `contract_until`
+    pass) stops renewals and the instance drops to Free when its current term expires.
+
+    Lives on the SaaS DB (the vendor operates it); unrelated to any tenant row — the `org`
+    is just the licensee label baked into the blob."""
+
+    __tablename__ = "licenses"
+
+    id = Column(String(32), primary_key=True)       # lic_… (also embedded in the blob)
+    org = Column(String(320), nullable=False)         # licensee name
+    plan = Column(String(16), nullable=False)         # team | enterprise
+    seats = Column(Integer, default=0)
+    issued_at = Column(DateTime, default=_utcnow)
+    expires_at = Column(DateTime, nullable=False)     # current term end (the blob's expiry)
+    contract_until = Column(DateTime, nullable=True)  # hard stop: renewals refused past this
+    status = Column(String(16), default="active", nullable=False)   # active | revoked
+    renewed_at = Column(DateTime, nullable=True)
+    renew_count = Column(Integer, default=0)
+    note = Column(String(512), default="")
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "org": self.org, "plan": self.plan, "seats": self.seats or 0,
+                "status": self.status or "active",
+                "issued_at": self.issued_at.isoformat() if self.issued_at else None,
+                "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+                "contract_until": self.contract_until.isoformat() if self.contract_until else None,
+                "renewed_at": self.renewed_at.isoformat() if self.renewed_at else None,
+                "renew_count": self.renew_count or 0, "note": self.note or ""}

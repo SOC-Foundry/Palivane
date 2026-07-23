@@ -42,6 +42,9 @@ MCowBQYDK2VwAyEAtVA/cNp4QTKPiU70WZcopZzwOSNe1z47GouPSGT2s3I=
 
 _PREFIX = "WDN1"
 PLAN_RANK = {"free": 0, "team": 1, "enterprise": 2}
+# Short default term under the renewal model: the signed blob lives ~6 weeks, the
+# instance renews against the vendor before it lapses. Bounds revocation blast radius.
+DEFAULT_TERM_DAYS = 45
 
 
 def _b64e(raw: bytes) -> str:
@@ -56,13 +59,15 @@ class LicenseError(Exception):
     """Malformed, mis-signed, wrong-plan, or expired license."""
 
 
-def issue(private_key_pem: bytes, org: str, plan: str, seats: int, expires: str) -> str:
-    """Sign and encode a license blob (vendor side)."""
+def issue(private_key_pem: bytes, org: str, plan: str, seats: int, expires: str,
+          lic_id: str | None = None) -> str:
+    """Sign and encode a license blob (vendor side). Pass lic_id to reuse an existing id
+    (renewal re-signs the same license with a new expiry); omit to mint a new one."""
     from cryptography.hazmat.primitives.serialization import load_pem_private_key
     if plan not in PLAN_RANK or plan == "free":
         raise LicenseError(f"plan must be team or enterprise, not '{plan}'")
     payload = json.dumps({
-        "v": 1, "id": f"lic_{secrets.token_hex(4)}", "org": org.strip(),
+        "v": 1, "id": lic_id or f"lic_{secrets.token_hex(4)}", "org": org.strip(),
         "plan": plan, "seats": int(seats),
         "issued": date.today().isoformat(), "expires": expires,
     }, separators=(",", ":"), sort_keys=True).encode()
@@ -70,8 +75,18 @@ def issue(private_key_pem: bytes, org: str, plan: str, seats: int, expires: str)
     return f"{_PREFIX}.{_b64e(payload)}.{_b64e(key.sign(payload))}"
 
 
-def verify(blob: str, pubkey_pem: str | None = None) -> dict:
-    """Decode + verify a license blob; returns the payload. Raises LicenseError."""
+def signing_key() -> bytes | None:
+    """The vendor signing key from WARDEN_LICENSE_SIGNING_KEY (PEM), for server-side
+    renewal. None when unset — the renewal endpoint then reports itself disabled, keeping
+    the key out of the app on deployments that don't need auto-renewal."""
+    pem = os.getenv("WARDEN_LICENSE_SIGNING_KEY", "").strip()
+    return pem.encode() if pem else None
+
+
+def verify(blob: str, pubkey_pem: str | None = None, allow_expired: bool = False) -> dict:
+    """Decode + verify a license blob; returns the payload. Raises LicenseError.
+    allow_expired=True skips the expiry gate (renewal verifies the signature + identity of
+    a license whose current term is ending — expiry is expected there)."""
     from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives.serialization import load_pem_public_key
     parts = (blob or "").strip().split(".")
@@ -94,7 +109,7 @@ def verify(blob: str, pubkey_pem: str | None = None) -> dict:
         raise LicenseError("unsupported license version/plan")
     exp = str(payload.get("expires") or "")
     try:
-        if datetime.strptime(exp, "%Y-%m-%d").date() < datetime.now(timezone.utc).date():
+        if not allow_expired and datetime.strptime(exp, "%Y-%m-%d").date() < datetime.now(timezone.utc).date():
             raise LicenseError(f"license expired {exp}")
     except ValueError:
         raise LicenseError("bad license expiry date")
