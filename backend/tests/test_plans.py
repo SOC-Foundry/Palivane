@@ -123,3 +123,28 @@ def test_cli_set_plan(db_factory, monkeypatch):
     db = db_factory()
     assert db.query(Tenant).filter(Tenant.slug == "corp").first().plan == "team"
     db.close()
+
+
+def test_plan_catalog_endpoint(client):
+    cat = client.get("/api/plans").json()
+    assert cat["current"] == "enterprise"   # conftest acme tenant
+    keys = {f["key"] for f in cat["features"]}
+    assert {"sso", "siem", "mdm", "alerts", "device_setup", "s3_delivery"} <= keys
+    tiers = {t["name"]: t for t in cat["tiers"]}
+    assert tiers["free"]["includes"]["device_setup"] is True
+    assert tiers["free"]["includes"]["sso"] is False
+    assert tiers["enterprise"]["includes"]["sso"] is True
+    assert tiers["free"]["user_quota"] == 5
+
+
+def test_admin_plans_roster_requires_metrics_token(client, raw_client, monkeypatch):
+    from app import main
+    monkeypatch.setattr(main.settings, "metrics_token", "")
+    assert raw_client.get("/api/admin/plans").status_code == 404
+    monkeypatch.setattr(main.settings, "metrics_token", "s3cret-metrics")
+    assert raw_client.get("/api/admin/plans").status_code == 401
+    assert client.get("/api/admin/plans").status_code == 401   # tenant JWT not sufficient
+    ok = raw_client.get("/api/admin/plans", headers={"Authorization": "Bearer s3cret-metrics"})
+    assert ok.status_code == 200
+    body = ok.json()
+    assert "totals" in body and any(t["slug"] == "acme" for t in body["tenants"])

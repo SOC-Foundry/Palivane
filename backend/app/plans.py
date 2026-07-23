@@ -91,3 +91,32 @@ def require_feature(tenant: Tenant | None, feature: str) -> None:
 def features_of(tenant: Tenant | None) -> list[str]:
     """Sorted feature list for the console (client-side hints only — never authority)."""
     return sorted(PLANS[plan_of(tenant)]["features"])
+
+
+# Human-readable feature catalog for the in-console entitlements panel — the display
+# strings live next to the gate definitions so the two can't drift.
+FEATURE_LABELS: dict[str, str] = {
+    "device_setup": "Self-serve device installers (per-OS)",
+    "alerts": "Webhook alerts + digests",
+    "mdm": "MDM policy pack (Jamf · Intune · GPO)",
+    "sso": "SSO — OIDC & SAML",
+    "siem": "SIEM forwarding (Splunk HEC · CEF · JSON)",
+    "s3_delivery": "S3 / data-lake delivery",
+}
+# Order features present-to-absent across tiers for a stable comparison table.
+_FEATURE_ORDER = ("device_setup", "alerts", "mdm", "sso", "siem", "s3_delivery")
+
+
+def catalog(tenant: Tenant | None = None) -> dict:
+    """Tier → entitlements map for the console (source of truth for the comparison table).
+    Includes the caller's current effective plan when a tenant is given."""
+    return {
+        "current": plan_of(tenant) if tenant is not None else None,
+        "features": [{"key": k, "label": FEATURE_LABELS[k]} for k in _FEATURE_ORDER],
+        "tiers": [
+            {"name": p, "label": PLANS[p]["label"],
+             "includes": {k: (k in PLANS[p]["features"]) for k in _FEATURE_ORDER},
+             "user_quota": PLANS[p]["quotas"].get("users", 0)}  # 0 = no plan cap (global default)
+            for p in PLAN_NAMES
+        ],
+    }

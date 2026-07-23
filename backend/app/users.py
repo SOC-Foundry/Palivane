@@ -104,6 +104,8 @@ def main(argv: list[str]) -> int:
     fn.add_argument("--days", type=int, default=None, help="only orgs created in the last N days")
     fn.add_argument("--all", action="store_true", help="include internal orgs (tachtech, demo)")
 
+    sub.add_parser("plans", help="operator plan roster: every org and its plan")
+
     args = p.parse_args(argv)
     db = SessionLocal()
     try:
@@ -184,6 +186,23 @@ def main(argv: list[str]) -> int:
                 for o in stuck[:15]:
                     tag = "connected-a-source" if o["connected"] else "no source yet"
                     print(f"    - {o['slug']}  {o['age_days']}d old  ({tag})")
+        elif args.cmd == "plans":
+            from .plans import PLANS, plan_of
+            from .models import Finding
+            activated = {r[0] for r in db.query(Finding.tenant_id).distinct().all()}
+            counts = {p: 0 for p in PLANS}
+            rows = db.query(Tenant).order_by(Tenant.plan, Tenant.slug).all()
+            for t in rows:
+                counts[plan_of(t)] = counts.get(plan_of(t), 0) + 1
+            print("Plan roster:", ", ".join(f"{PLANS[p]['label']}={counts[p]}" for p in PLANS),
+                  f"(total {len(rows)})")
+            for t in rows:
+                p = plan_of(t)
+                flags = []
+                if (t.status or "active") != "active":
+                    flags.append(t.status)
+                flags.append("activated" if t.id in activated else "not activated")
+                print(f"  {t.slug:<24} {PLANS[p]['label']:<11} {', '.join(flags)}")
     finally:
         db.close()
     return 0
