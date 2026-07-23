@@ -104,3 +104,87 @@ def test_health_reports_license(keypair, monkeypatch, client):
     assert lic == {"org": "Acme", "plan": "team", "expires": lic["expires"]}
     _fresh(monkeypatch)   # no license -> null
     assert client.get("/api/health").json()["license"] is None
+
+
+# --- registry + short-term renewal (owner license lifecycle) ----------------------------
+
+def _keypair_env(monkeypatch, keypair):
+    priv, pub = keypair
+    monkeypatch.setenv("WARDEN_LICENSE_SIGNING_KEY", priv.decode())
+    monkeypatch.setenv("WARDEN_LICENSE_PUBKEY", pub)
+    monkeypatch.setattr(licensing, "_cached", None)
+    monkeypatch.setattr(licensing, "_checked", False)
+    return priv, pub
+
+
+def _seed_license(db_factory, lic_id, *, status="active", expires_days=1, contract_days=365):
+    from datetime import datetime, timedelta
+    from app.models import License
+    db = db_factory()
+    db.add(License(id=lic_id, org="Acme", plan="enterprise", seats=100, status=status,
+                   expires_at=datetime.utcnow() + timedelta(days=expires_days),
+                   contract_until=(datetime.utcnow() + timedelta(days=contract_days)
+                                   if contract_days else None)))
+    db.commit(); db.close()
+
+
+def test_issue_reuses_id_and_verify_allows_expired(keypair):
+    priv, pub = keypair
+    blob = licensing.issue(priv, "Acme", "enterprise", 100, "2020-01-01", lic_id="lic_fixed")
+    # expired -> normal verify rejects, allow_expired accepts (renewal path)
+    import pytest
+    with pytest.raises(licensing.LicenseError):
+        licensing.verify(blob, pub)
+    p = licensing.verify(blob, pub, allow_expired=True)
+    assert p["id"] == "lic_fixed" and p["org"] == "Acme"
+
+
+def test_renew_disabled_without_signing_key(raw_client, monkeypatch):
+    monkeypatch.delenv("WARDEN_LICENSE_SIGNING_KEY", raising=False)
+    r = raw_client.post("/api/license/renew", json={"license": "WDN1.x.y"})
+    assert r.status_code == 503
+
+
+def test_renew_happy_path_extends_term(raw_client, db_factory, monkeypatch, keypair):
+    priv, _ = _keypair_env(monkeypatch, keypair)
+    blob = licensing.issue(priv, "Acme", "enterprise", 100, "2020-01-01", lic_id="lic_renew1")
+    _seed_license(db_factory, "lic_renew1")
+    r = raw_client.post("/api/license/renew", json={"license": blob})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # a fresh, currently-valid blob comes back (normal verify, no allow_expired)
+    p = licensing.verify(body["license"])
+    assert p["id"] == "lic_renew1"
+    from datetime import date
+    assert body["expires"] > date.today().isoformat()
+
+
+def test_renew_refused_when_revoked(raw_client, db_factory, monkeypatch, keypair):
+    priv, _ = _keypair_env(monkeypatch, keypair)
+    blob = licensing.issue(priv, "Acme", "enterprise", 100, "2020-01-01", lic_id="lic_rev")
+    _seed_license(db_factory, "lic_rev", status="revoked")
+    assert raw_client.post("/api/license/renew", json={"license": blob}).status_code == 403
+
+
+def test_renew_refused_past_contract_end(raw_client, db_factory, monkeypatch, keypair):
+    priv, _ = _keypair_env(monkeypatch, keypair)
+    blob = licensing.issue(priv, "Acme", "enterprise", 100, "2020-01-01", lic_id="lic_exp")
+    _seed_license(db_factory, "lic_exp", contract_days=-1)   # contract already ended
+    assert raw_client.post("/api/license/renew", json={"license": blob}).status_code == 403
+
+
+def test_renew_unknown_license_404(raw_client, monkeypatch, keypair):
+    priv, _ = _keypair_env(monkeypatch, keypair)
+    blob = licensing.issue(priv, "Ghost", "team", 5, "2020-01-01", lic_id="lic_ghost")
+    assert raw_client.post("/api/license/renew", json={"license": blob}).status_code == 404
+
+
+def test_admin_licenses_requires_metrics_token(client, raw_client, db_factory, monkeypatch):
+    from app import main
+    _seed_license(db_factory, "lic_view")
+    monkeypatch.setattr(main.settings, "metrics_token", "")
+    assert raw_client.get("/api/admin/licenses").status_code == 404
+    monkeypatch.setattr(main.settings, "metrics_token", "m3trics")
+    assert client.get("/api/admin/licenses").status_code == 401   # tenant JWT insufficient
+    ok = raw_client.get("/api/admin/licenses", headers={"Authorization": "Bearer m3trics"})
+    assert ok.status_code == 200 and any(L["id"] == "lic_view" for L in ok.json()["licenses"])

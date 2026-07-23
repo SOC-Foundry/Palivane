@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import secrets
 import sys
 
 from .database import Base, SessionLocal, engine as db_engine
@@ -105,6 +106,24 @@ def main(argv: list[str]) -> int:
     fn.add_argument("--all", action="store_true", help="include internal orgs (tachtech, demo)")
 
     sub.add_parser("plans", help="operator plan roster: every org and its plan")
+
+    # Self-hosted license lifecycle (SaaS uses set-plan instead). Issue records to the
+    # registry so licenses can be seen and revoked; renewal is served by /api/license/renew.
+    li = sub.add_parser("license-issue", help="sign a self-hosted license AND record it")
+    li.add_argument("--key", required=True, help="vendor signing key PEM (file path, or '-' for stdin)")
+    li.add_argument("--org", required=True)
+    li.add_argument("--plan", choices=["team", "enterprise"], required=True)
+    li.add_argument("--seats", type=int, default=0)
+    li.add_argument("--term-days", type=int, default=None,
+                    help="license term (default: the short renewal term)")
+    li.add_argument("--contract-months", type=int, default=12,
+                    help="hard stop: renewals refused past this many months (0 = no stop)")
+    li.add_argument("--note", default="")
+
+    sub.add_parser("license-list", help="the license registry: every issued license + status")
+
+    lr = sub.add_parser("license-revoke", help="revoke a license (renewals stop; instance drops to Free at term end)")
+    lr.add_argument("--id", required=True)
 
     args = p.parse_args(argv)
     db = SessionLocal()
@@ -203,6 +222,46 @@ def main(argv: list[str]) -> int:
                     flags.append(t.status)
                 flags.append("activated" if t.id in activated else "not activated")
                 print(f"  {t.slug:<24} {PLANS[p]['label']:<11} {', '.join(flags)}")
+        elif args.cmd == "license-issue":
+            import sys as _sys
+            from datetime import date, datetime, timedelta, timezone
+            from . import licensing
+            from .models import License
+            pem = _sys.stdin.buffer.read() if args.key == "-" else open(args.key, "rb").read()
+            term = args.term_days or licensing.DEFAULT_TERM_DAYS
+            expires = date.today() + timedelta(days=term)
+            lic_id = f"lic_{secrets.token_hex(4)}"
+            blob = licensing.issue(pem, args.org, args.plan, args.seats, expires.isoformat(),
+                                   lic_id=lic_id)
+            _now = datetime.now(timezone.utc).replace(tzinfo=None)
+            contract = _now + timedelta(days=30 * args.contract_months) if args.contract_months else None
+            db.add(License(id=lic_id, org=args.org.strip(), plan=args.plan, seats=args.seats,
+                           expires_at=datetime(expires.year, expires.month, expires.day),
+                           contract_until=contract, note=args.note))
+            db.commit()
+            print(f"issued {lic_id} — {args.org} / {args.plan} / {args.seats or 'plan-default'} seats"
+                  f", term {term}d"
+                  f"{', contract ' + contract.strftime('%Y-%m-%d') if contract else ''}")
+            print("send the customer this WARDEN_LICENSE value:")
+            print(blob)
+        elif args.cmd == "license-list":
+            from .models import License
+            rows = db.query(License).order_by(License.issued_at.desc()).all()
+            if not rows:
+                print("no licenses issued")
+            for L in rows:
+                exp = L.expires_at.strftime("%Y-%m-%d") if L.expires_at else "?"
+                extra = f", renewed {L.renew_count}x" if L.renew_count else ""
+                print(f"  {L.id}  {L.org:<24} {L.plan:<11} {L.status:<8} term→{exp}{extra}")
+        elif args.cmd == "license-revoke":
+            from .models import License
+            L = db.get(License, args.id)
+            if L is None:
+                raise SystemExit(f"license '{args.id}' not found")
+            L.status = "revoked"
+            db.commit()
+            print(f"revoked {L.id} ({L.org}) — renewals will be refused; the instance drops "
+                  "to Free when its current term expires.")
     finally:
         db.close()
     return 0

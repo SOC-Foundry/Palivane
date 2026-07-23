@@ -60,7 +60,8 @@ for pair in \
   "GEMINI_API_KEY=gemini-api-key" \
   "WARDEN_METRICS_TOKEN=warden-metrics-token" \
   "EXTENSION_INGEST_TOKEN=extension-ingest-token" \
-  "SMTP_PASS=warden-smtp-pass"; do
+  "SMTP_PASS=warden-smtp-pass" \
+  "WARDEN_LICENSE_SIGNING_KEY=warden-license-signing-key"; do
   name="${pair##*=}"
   if gcloud secrets describe "$name" --project "$PROJECT_ID" >/dev/null 2>&1; then
     SECRETS+=",${pair}:latest"

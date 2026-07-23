@@ -27,31 +27,46 @@ The Ed25519 **signing key** lives only in Secret Manager
 repo, image, or a customer environment. The matching public key is embedded in
 `app/licensing.py`, so every Warden build can verify but only the vendor can sign.
 
-Issue (prints the `WDN1.…` blob — send it to the customer):
+**Issue + record it in the registry** (short-term + renewal model — this is what you
+almost always want, because it makes the license visible and revocable):
 
     gcloud secrets versions access latest --secret warden-license-signing-key \
         --project erudite-calling-502022-k6 | \
-      python -m app.licensing issue --key - \
-        --org "Acme Corp" --plan enterprise --seats 200 --days 365
+      python -m app.users license-issue --key - \
+        --org "Acme Corp" --plan enterprise --seats 200 --contract-months 12
 
 - `--plan` — `team` or `enterprise` (`free` needs no license)
 - `--seats` — becomes the instance's default users quota (0 = plan default)
-- `--days 365` or `--expires YYYY-MM-DD`
+- `--term-days` — the signed blob's life (default: the short renewal term, ~45d). The
+  customer's instance renews before it lapses; you don't hand-reissue every term.
+- `--contract-months` — the hard stop: renewals are refused past this (0 = no stop).
+- prints the `WDN1.…` blob to send the customer AND records `lic_…` in the registry.
 
-Sanity-check any blob (verifies signature + expiry against the embedded public key):
+The customer sets `WARDEN_LICENSE` to the blob (or a file path) and restarts;
+`GET /api/health` shows `{org, plan, expires}`. `python -m app.licensing issue …` (no
+registry) still exists for a one-off untracked blob, and `verify` sanity-checks any blob.
 
-    python -m app.licensing verify "WDN1...."
+## See, renew, cancel
 
-The customer sets `WARDEN_LICENSE` to the blob (or a file path holding it) and
-restarts; `GET /api/health` on their instance shows `{org, plan, expires}`.
-
-## Renewals, upgrades, revocation
-
-- **Renewal / upgrade** = issue a fresh blob (new expiry / plan / seats); the customer
-  replaces `WARDEN_LICENSE`. Old blobs need no revocation — they expire on their own.
-- Expired or tampered licenses are ignored with a startup warning; the instance falls
-  back to Free (nothing breaks, gated features stop configuring).
-- **Key rotation** (only if the signing key ever leaks): `python -m app.licensing
-  keygen`, add the new private key as a Secret Manager version, replace
-  `VENDOR_PUBKEY_PEM` in `app/licensing.py`, ship a release — then reissue active
-  customer licenses (old ones stop verifying on the new build).
+- **See every license:** `python -m app.users license-list`, or `GET /api/admin/licenses`
+  (token-gated by `WARDEN_METRICS_TOKEN`, same as the plan roster / funnel). SaaS orgs use
+  the plan column instead — see them with `python -m app.users plans`.
+- **Renewal is automatic:** the customer's instance re-fetches from `POST /api/license/renew`
+  (presenting its current blob; the signature is the credential) before its term ends and
+  gets a fresh short-term blob. Enabled only when the signing key is mounted in the app via
+  the `warden-license-signing-key` secret (deploy.sh wires it; the endpoint 503s otherwise).
+  NOTE: mounting the signing key lets the running app sign — acceptable because a forged
+  self-hosted license only unlocks features on the forger's own instance (no tenant-data or
+  SaaS impact), but it is the reason the key is opt-in per deployment.
+- **Cancel (self-hosted):** `python -m app.users license-revoke --id lic_…`. Renewals are
+  then refused; the instance keeps working only until its current short term expires, then
+  drops to Free. Same effect when `--contract-months` passes. (This is why terms are short —
+  it bounds how long a cancelled license lingers.)
+- **Cancel (SaaS):** `python -m app.users set-plan --tenant <slug> --plan free` — instant.
+- **Upgrade / change seats:** re-issue (a new `lic_…`) or, for the same license, it renews
+  with whatever the registry row now says. Expired/tampered blobs fall back to Free with a
+  startup warning; nothing breaks.
+- **Key rotation** (only if the signing key leaks): `python -m app.licensing keygen`, add
+  the new private key as a Secret Manager version, replace `VENDOR_PUBKEY_PEM` in
+  `app/licensing.py`, ship a release — then reissue active licenses (old ones stop
+  verifying on the new build).

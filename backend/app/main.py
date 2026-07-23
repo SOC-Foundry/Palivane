@@ -430,6 +430,58 @@ def plan_catalog(current: User = Depends(get_current_user), db: Session = Depend
     return plans_mod.catalog(db.get(Tenant, current.tenant_id))
 
 
+@app.get("/api/admin/licenses")
+def admin_licenses(request: Request, db: Session = Depends(get_db)):
+    """Owner license registry — every issued self-hosted license and its status. Vendor-
+    only: gated by WARDEN_METRICS_TOKEN (not a tenant session); 404 without a token."""
+    from .models import License
+    tok = settings.metrics_token
+    if not tok:
+        raise HTTPException(status_code=404, detail="not found")
+    scheme, _, bearer = request.headers.get("authorization", "").partition(" ")
+    provided = bearer if scheme.lower() == "bearer" else request.query_params.get("token", "")
+    if not hmac.compare_digest(provided, tok):
+        raise HTTPException(status_code=401, detail="metrics token required")
+    rows = db.query(License).order_by(License.issued_at.desc()).all()
+    return {"licenses": [r.to_dict() for r in rows]}
+
+
+@app.post("/api/license/renew")
+def license_renew(body: dict, db: Session = Depends(get_db)):
+    """Self-hosted instances renew their short-term license here (customer-facing, no
+    session — the presented blob's signature IS the credential). Verifies the blob, looks
+    it up in the registry, and re-signs a fresh term UNLESS it's revoked or past its
+    contract end — that's how the owner cancels a self-hosted license. Disabled (503) on
+    deployments without the signing key mounted (WARDEN_LICENSE_SIGNING_KEY)."""
+    from datetime import date, datetime, timedelta
+    from . import licensing
+    from .models import License
+    key = licensing.signing_key()
+    if not key:
+        raise HTTPException(status_code=503, detail="license renewal not enabled here")
+    blob = (body or {}).get("license", "")
+    try:
+        payload = licensing.verify(blob, allow_expired=True)   # term may be expiring — expected
+    except licensing.LicenseError as exc:
+        raise HTTPException(status_code=400, detail=f"invalid license: {exc}")
+    row = db.get(License, payload.get("id", ""))
+    if row is None:
+        raise HTTPException(status_code=404, detail="license not on record")
+    now = _naive_now()
+    if row.status != "active":
+        raise HTTPException(status_code=403, detail="license revoked")
+    if row.contract_until and row.contract_until < now:
+        raise HTTPException(status_code=403, detail="license contract ended — contact sales@tachtech.net")
+    new_expiry = date.today() + timedelta(days=licensing.DEFAULT_TERM_DAYS)
+    fresh = licensing.issue(key, row.org, row.plan, row.seats or 0,
+                            new_expiry.isoformat(), lic_id=row.id)
+    row.expires_at = datetime(new_expiry.year, new_expiry.month, new_expiry.day)
+    row.renewed_at = now
+    row.renew_count = (row.renew_count or 0) + 1
+    db.commit()
+    return {"license": fresh, "expires": new_expiry.isoformat()}
+
+
 def _input_from_request(req: AnalyzeRequest) -> AnalysisInput:
     metadata = {"destination": req.destination} if req.destination else {}
     return AnalysisInput(
