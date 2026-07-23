@@ -82,3 +82,16 @@ def test_enrolled_devices_are_tenant_scoped(client, db_factory, raw_client):
     raw_client.post("/api/enroll", json={"token": et, "device": "dev@acme.com"})
     actors = {k["actor"] for k in client.get("/api/apikeys").json()["api_keys"]}
     assert "dev@acme.com" in actors
+
+
+def test_enroll_rejects_spoofy_user(client, raw_client):
+    # A free-form label or wildcard is rejected — user must be a real email shape, so it
+    # can't forge another identity or pollute coverage/need-to-know glob matching.
+    et = _mint_enroll(client)["token"]
+    for bad in ["*@acme.com", "not an email", "ceo", "x@y"]:
+        r = raw_client.post("/api/enroll",
+                            json={"token": et, "device": "d1", "user": bad})
+        assert r.status_code == 422, f"{bad!r} should be rejected, got {r.status_code}"
+    # A blank user is still fine (attribution falls back to the device string).
+    assert raw_client.post("/api/enroll",
+                           json={"token": et, "device": "d2"}).status_code == 200

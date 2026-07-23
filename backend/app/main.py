@@ -1141,9 +1141,15 @@ def scan_oversharing(
     surfaced restricted data (confidential / PII / keywords) the recipient isn't permitted to
     see — the "LLM oversharing" problem. Rules come from the tenant's need-to-know config.
     For enterprise search / Copilot / RAG integrations to call with each answer."""
-    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    tenant_id, _default_actor = _ingest_auth(x_warden_token, db)
     _enforce_rate(db, tenant_id)
-    actor = body.user or default_actor
+    # Need-to-know authorization uses ONLY the explicitly-supplied recipient — never the
+    # token's own actor. Falling back to default_actor here let the integration's API-key
+    # label serve as the recipient, so a key named to match an allowed glob (or a caller
+    # setting user to an authorized value) could silently suppress the oversharing finding.
+    # The recipient is schema-validated (required, email-shaped); an unknown one matches no
+    # glob, so the check fails closed.
+    actor = body.user
     rules = _tenant_or_global(tenant_id, db, "oversharing_rules", "")
     item = AnalysisInput(content=body.content, sender=actor,
                          channel=body.source or "llm-response", surface=Surface.OVERSHARING,

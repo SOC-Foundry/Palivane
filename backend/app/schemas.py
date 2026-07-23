@@ -2,9 +2,27 @@
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+# Loose email shape for identity fields that feed attribution/authorization decisions
+# (not full RFC validation — just "looks like a person, not a wildcard or free-form label").
+# Glob metacharacters (*?[]) are disallowed so an identity can't be crafted to game the
+# fnmatch-based coverage / need-to-know rules.
+_EMAIL_RE = re.compile(r"^[^@\s*?\[\]]+@[^@\s*?\[\]]+\.[^@\s*?\[\]]+$")
+
+
+def _email_shaped(v: str, *, required: bool) -> str:
+    v = (v or "").strip()
+    if not v:
+        if required:
+            raise ValueError("must be an email address")
+        return ""
+    if len(v) > 320 or not _EMAIL_RE.match(v):
+        raise ValueError("must be an email address")
+    return v
 
 Surface = Literal["llm_io", "ai_usage"]
 
@@ -299,8 +317,15 @@ class EnrollRequest(BaseModel):
     # Optional email-shaped identity (from SSO) to attribute findings to. Coverage
     # reconciliation matches on email-shaped actors, so when the enroller knows the user
     # (e.g. the extension after sign-in) pass it here; else attribution falls back to the
-    # device string, which won't reconcile against the SSO/email shadow set.
+    # device string, which won't reconcile against the SSO/email shadow set. Validated to
+    # a real email shape so it can't be a free-form label that spoofs another identity or
+    # a wildcard that pollutes coverage/need-to-know matching.
     user: str = ""
+
+    @field_validator("user")
+    @classmethod
+    def _validate_user(cls, v: str) -> str:
+        return _email_shaped(v, required=False)
 
 
 class ProvisionRequest(BaseModel):
@@ -343,9 +368,19 @@ class AgentConfigScan(BaseModel):
 
 class OversharingScan(BaseModel):
     content: str = Field(min_length=1, max_length=MAX_CONTENT)  # the LLM response returned
-    user: str = ""                    # recipient (the person who asked)
+    # Recipient (the person who asked) — REQUIRED and email-shaped. This identity is the
+    # need-to-know authorization input: the detector suppresses a finding only when the
+    # recipient matches an allowed glob. It must be the SSO-authenticated end user the
+    # integration served, not a free-form or omitted value — an unknown recipient must
+    # never satisfy need-to-know (the endpoint fails closed).
+    user: str = Field(min_length=3, description="recipient email (the person who asked)")
     source: str = ""                  # e.g. "m365-copilot", "glean", "internal-rag"
     record: bool = True
+
+    @field_validator("user")
+    @classmethod
+    def _validate_user(cls, v: str) -> str:
+        return _email_shaped(v, required=True)
 
 
 class DiscoveryEvent(BaseModel):
