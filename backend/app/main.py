@@ -764,6 +764,9 @@ def ingest_ai_usage(
         # A confirmed secret/PII leak: the client should block regardless of its local
         # enforce flag ("block the certain" — monitor everything else).
         "force_block": settings.gateway_enforce_secrets and confirmed_leak(result["signals"]),
+        # The org's enforce stance for local capture planes (Settings → Enforcement):
+        # clients honor "block" verdicts when true, without any per-device flag.
+        "enforce": _tenant_client_enforce(tenant_id, db),
         # Approved AI tools to offer the user instead of a hard "no" (shown in the block UI).
         "sanctioned_tools": _sanctioned_list(meta["sanctioned_tools"]),
     }
@@ -919,6 +922,18 @@ def _tenant_or_global(tenant_id: int | None, db: Session, attr: str, global_valu
     return global_value
 
 
+def _tenant_client_enforce(tenant_id: int | None, db: Session) -> bool:
+    """Effective enforce stance for the local capture planes (CLI hooks + desktop proxy):
+    the tenant's tri-state client_enforce if set, else the global CLIENT_ENFORCE default.
+    Returned in ingest verdicts so the console governs clients without any per-device
+    config; clients may still force enforce locally via WARDEN_ENFORCE."""
+    if tenant_id is not None:
+        t = db.get(Tenant, tenant_id)
+        if t is not None and t.client_enforce is not None:
+            return bool(t.client_enforce)
+    return settings.client_enforce
+
+
 def _tenant_mcp_allow(tenant_id: int | None, db: Session) -> str:
     """Effective MCP server allowlist for a tenant: its own list, else the global default."""
     return _tenant_or_global(tenant_id, db, "mcp_allowed_servers", settings.mcp_allowed_servers)
@@ -975,6 +990,8 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
         "signals": result["signals"],
         "finding_id": result["finding_id"],
         "remediation": remediation_for(result["signals"]),
+        # Org enforce stance for local capture planes — same field as ai-usage verdicts.
+        "enforce": _tenant_client_enforce(tenant_id, db),
     }
 
 

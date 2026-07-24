@@ -129,7 +129,8 @@ def _merge_hook(data: dict, event: str, command: str, timeout: int | None = None
 
 
 def _write_claude_code(token: str, backend: str, user: str,
-                       route_gateway: bool = False) -> tuple[str, list[str]]:
+                       route_gateway: bool = False,
+                       enforce: bool | None = None) -> tuple[str, list[str]]:
     path = os.path.expanduser("~/.claude/settings.json")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     data = {}
@@ -158,6 +159,11 @@ def _write_claude_code(token: str, backend: str, user: str,
     # planes work either way.
     env["WARDEN_URL"] = backend.rstrip("/")
     env["WARDEN_TOKEN"] = token
+    # Org enforce stance from the console (Settings → Enforcement) — written explicitly
+    # both ways so a reconnect after the org flips the setting updates the device too.
+    # None = older console that didn't send it: leave whatever is there alone.
+    if enforce is not None:
+        env["WARDEN_ENFORCE"] = "true" if enforce else "false"
 
     installed: list[str] = []
     if cleaned:
@@ -203,7 +209,8 @@ def _merge_cursor_hook(data: dict, event: str, command: str) -> bool:
     return True
 
 
-def _write_cursor(token: str, backend: str, user: str) -> tuple[str, list[str]] | None:
+def _write_cursor(token: str, backend: str, user: str,
+                  enforce: bool | None = None) -> tuple[str, list[str]] | None:
     """Wire warden-cursor-hook into ~/.cursor/hooks.json + write the creds file it reads.
     Only when Cursor is actually installed (~/.cursor exists) and the hook is available —
     Cursor's chat pins its cert, so this local hook is how Warden sees it."""
@@ -216,8 +223,11 @@ def _write_cursor(token: str, backend: str, user: str) -> tuple[str, list[str]] 
 
     # Cursor doesn't pass env to hook processes, so the hook reads creds from this file.
     wj = os.path.join(cdir, "warden.json")
+    creds = {"url": backend.rstrip("/"), "token": token, "user": user}
+    if enforce is not None:   # org stance from the console; absent on older consoles
+        creds["enforce"] = enforce
     with open(wj, "w") as f:
-        json.dump({"url": backend.rstrip("/"), "token": token, "user": user}, f, indent=2)
+        json.dump(creds, f, indent=2)
     os.chmod(wj, 0o600)
 
     hpath = os.path.join(cdir, "hooks.json")
@@ -259,7 +269,8 @@ def _merge_codex_hook(data: dict, event: str, matcher: str | None, command: str)
     return True
 
 
-def _write_codex(token: str, backend: str, user: str) -> tuple[str, list[str]] | None:
+def _write_codex(token: str, backend: str, user: str,
+                 enforce: bool | None = None) -> tuple[str, list[str]] | None:
     """Wire warden-codex-hook into ~/.codex/hooks.json + write the creds file it reads.
     Only when Codex CLI is actually installed (~/.codex exists) and the hook is available
     — under ChatGPT-subscription auth Codex ignores OPENAI_BASE_URL, so this local hook
@@ -273,8 +284,11 @@ def _write_codex(token: str, backend: str, user: str) -> tuple[str, list[str]] |
 
     # The hook reads creds from this file so it works however Codex is launched.
     wj = os.path.join(cdir, "warden.json")
+    creds = {"url": backend.rstrip("/"), "token": token, "user": user}
+    if enforce is not None:   # org stance from the console; absent on older consoles
+        creds["enforce"] = enforce
     with open(wj, "w") as f:
-        json.dump({"url": backend.rstrip("/"), "token": token, "user": user}, f, indent=2)
+        json.dump(creds, f, indent=2)
     os.chmod(wj, 0o600)
 
     hpath = os.path.join(cdir, "hooks.json")
@@ -318,7 +332,8 @@ def _merge_gemini_hook(data: dict, event: str, matcher: str | None, command: str
     return True
 
 
-def _write_gemini(token: str, backend: str, user: str) -> tuple[str, list[str]] | None:
+def _write_gemini(token: str, backend: str, user: str,
+                  enforce: bool | None = None) -> tuple[str, list[str]] | None:
     """Wire warden-gemini-hook into ~/.gemini/settings.json + write the creds file it
     reads. Only when Gemini CLI is actually installed (~/.gemini exists) and the hook is
     available — Gemini's endpoint varies by auth mode and the default Google login
@@ -332,8 +347,11 @@ def _write_gemini(token: str, backend: str, user: str) -> tuple[str, list[str]] 
 
     # The hook reads creds from this file so it works however Gemini CLI is launched.
     wj = os.path.join(gdir, "warden.json")
+    creds = {"url": backend.rstrip("/"), "token": token, "user": user}
+    if enforce is not None:   # org stance from the console; absent on older consoles
+        creds["enforce"] = enforce
     with open(wj, "w") as f:
-        json.dump({"url": backend.rstrip("/"), "token": token, "user": user}, f, indent=2)
+        json.dump(creds, f, indent=2)
     os.chmod(wj, 0o600)
 
     spath = os.path.join(gdir, "settings.json")
@@ -378,8 +396,11 @@ def main() -> None:
     # the console says the org has no upstream key (upstream == "0") — routing would only
     # return inspection stubs.
     route_gateway = want_gateway and got.get("upstream") != "0"
+    # Org enforce stance for the local planes (console Settings → Enforcement). Sent as
+    # enforce=0/1 with the token; absent (older console) = leave device config unchanged.
+    enforce = {"1": True, "0": False}.get(got.get("enforce", ""))
     path, installed = _write_claude_code(got["token"], backend, got.get("user", ""),
-                                         route_gateway=route_gateway)
+                                         route_gateway=route_gateway, enforce=enforce)
     who = got.get("user") or "you"
     print(f"✓ Claude Code connected as {who}")
     if route_gateway:
@@ -395,9 +416,12 @@ def main() -> None:
         if warning:
             print(warning)
 
-    for extra in (_write_cursor(got["token"], backend, got.get("user", "")),
-                  _write_gemini(got["token"], backend, got.get("user", "")),
-                  _write_codex(got["token"], backend, got.get("user", ""))):
+    if enforce is not None:
+        print(f"  org enforcement: {'ON — high-risk verdicts block' if enforce else 'monitor (confirmed secret/PII leaks still block)'}")
+
+    for extra in (_write_cursor(got["token"], backend, got.get("user", ""), enforce=enforce),
+                  _write_gemini(got["token"], backend, got.get("user", ""), enforce=enforce),
+                  _write_codex(got["token"], backend, got.get("user", ""), enforce=enforce)):
         if extra:
             epath, eitems = extra
             for item in eitems:

@@ -74,3 +74,15 @@ def test_benign_call_allowed(client, raw_client):
     body = _post(raw_client, key, method="tools/call", tool="list_files",
                  args_text="path=./src").json()
     assert body["action"] == "allow"
+
+
+def test_verdict_carries_org_enforce_stance(client, raw_client):
+    # Same field as ai-usage verdicts — warden-hook honors it for tool-call denies.
+    key = _key(client)
+    body = _post(raw_client, key, method="tools/call", tool="list_files",
+                 args_text="path=./src").json()
+    assert body["enforce"] is False   # global default: monitor
+    client.patch("/api/tenant", json={"client_enforce": "on"})
+    body = _post(raw_client, key, method="tools/call", tool="list_files",
+                 args_text="path=./src").json()
+    assert body["enforce"] is True

@@ -103,6 +103,10 @@ only thing that sees it.
 - **Enforce (`WARDEN_ENFORCE=true`):** everything scans synchronously and any high-risk
   verdict is denied — the reason is shown to the model (tool calls) or the user (blocked
   prompts are erased).
+- **Org-wide default:** an admin sets the stance once in the console (Settings →
+  *Device enforcement*). `warden-connect` provisions it into every device it connects,
+  and inline verdicts carry the live value (`enforce`) so prompt blocking follows the
+  console without a reconnect. A local `WARDEN_ENFORCE=true` still wins.
 
 Installed by `warden-connect`, or manually in `~/.claude/settings.json` /
 `managed-settings.json` (MDM):

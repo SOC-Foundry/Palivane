@@ -188,7 +188,9 @@ device* — the only prompt-level control under subscription auth. Monitor by de
 (tool calls report with zero added latency; prompts are scanned inline so a **confirmed
 secret/PII leak hard-blocks even in monitor mode** — "block the certain, monitor the
 fuzzy", same rule as the proxy); `WARDEN_ENFORCE=true` also denies ordinary high-risk
-verdicts, with the reason shown to the model (tool calls) or the user (prompts).
+verdicts, with the reason shown to the model (tool calls) or the user (prompts). The org
+sets that stance centrally in the console (Settings → *Device enforcement*):
+`warden-connect` provisions it at connect time and every verdict carries it live.
 Installed by `warden-connect`, or fleet-wide in the same `managed-settings.json` as
 Route A:
 

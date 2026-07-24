@@ -11,6 +11,10 @@ function enforceValue(t) {
   return t?.gateway_enforce === true ? "on" : t?.gateway_enforce === false ? "off" : "inherit";
 }
 
+function clientEnforceValue(t) {
+  return t?.client_enforce === true ? "on" : t?.client_enforce === false ? "off" : "inherit";
+}
+
 const SEVERITIES = ["low", "suspicious", "high", "critical"];
 
 export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
@@ -39,6 +43,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     ide_ext_denylist: tenant?.ide_ext_denylist || "",
     dep_denylist: tenant?.dep_denylist || "",
     gateway_enforce: enforceValue(tenant),
+    client_enforce: clientEnforceValue(tenant),
     gateway_block_severity: tenant?.gateway_block_severity || "",
     mcp_block_severity: tenant?.mcp_block_severity || "",
     sanctioned_ai_tools: tenant?.sanctioned_ai_tools || "",
@@ -60,6 +65,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         ide_ext_denylist: org.ide_ext_denylist,
         dep_denylist: org.dep_denylist,
         gateway_enforce: org.gateway_enforce,
+        client_enforce: org.client_enforce,
         gateway_block_severity: org.gateway_block_severity,
         mcp_block_severity: org.mcp_block_severity,
         sanctioned_ai_tools: org.sanctioned_ai_tools,
@@ -374,6 +380,13 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
               <option value="inherit">Inherit (global)</option>
               <option value="on">Enforce (block risky calls)</option>
               <option value="off">Monitor (record only)</option>
+            </select>
+          </label>
+          <label>Device enforcement (CLI hooks + desktop proxy)
+            <select value={org.client_enforce} onChange={setField("client_enforce")}>
+              <option value="inherit">Inherit (global)</option>
+              <option value="on">Enforce (block risky prompts & tool calls)</option>
+              <option value="off">Monitor (confirmed secret/PII leaks still block)</option>
             </select>
           </label>
           <label>Gateway block severity

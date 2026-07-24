@@ -45,7 +45,10 @@ export default function ExtensionConnect() {
                        `&state=${encodeURIComponent(state)}` +
                        // Can the gateway forward Claude Code to a real model, or does the
                        // org still need a provider key? The CLI warns on upstream=0.
-                       `&upstream=${r.upstream_forwards === false ? "0" : "1"}`;
+                       `&upstream=${r.upstream_forwards === false ? "0" : "1"}` +
+                       // Org enforce stance (Settings → Enforcement) — warden-connect
+                       // provisions it into the hooks it installs.
+                       `&enforce=${r.enforce ? "1" : "0"}`;
         if (kind === "fragment") u.hash = params;   // extension (launchWebAuthFlow)
         else u.search = params;                     // CLI loopback server reads query
         setStatus("done"); setDetail(r.actor);

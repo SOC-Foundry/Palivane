@@ -77,7 +77,7 @@ curl -x http://localhost:8081 https://api.openai.com/v1/chat/completions \
 | --- | --- |
 | `WARDEN_URL` | Warden backend base URL |
 | `WARDEN_TOKEN` | the backend's `EXTENSION_INGEST_TOKEN` |
-| `WARDEN_PROXY_ENFORCE` | `true` blocks; otherwise observe + record only |
+| `WARDEN_PROXY_ENFORCE` | `true` blocks; otherwise observe + record only. Either way the org's console stance (Settings → *Device enforcement*) rides along on each verdict and blocks when on |
 | `WARDEN_PROXY_USER` | end-user identity to attribute findings to |
 
 ## Deploying to managed devices

@@ -591,7 +591,13 @@ def extension_token(current: User = Depends(get_current_user), db: Session = Dep
                      target=current.email)
     # upstream_forwards: whether gateway-routed Claude Code will reach a real model or the
     # inspection stub — warden-connect relays this as a "set your provider key" warning.
+    # enforce: the org's stance for the local capture planes (Settings → Enforcement) —
+    # warden-connect provisions it into the hooks it installs.
+    tenant = db.get(Tenant, current.tenant_id)
+    enforce = tenant.client_enforce if tenant and tenant.client_enforce is not None \
+        else settings.client_enforce
     return {"token": token, "actor": current.email, "tenant": current.tenant_id,
+            "enforce": bool(enforce),
             "upstream_forwards": upstream_forwards("anthropic", current.tenant_id, db)}
 
 
@@ -1056,6 +1062,8 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.siem_s3_secret = body.siem_s3_secret.strip()
     if body.gateway_enforce is not None:
         tenant.gateway_enforce = _JUDGE[body.gateway_enforce]  # same tri-state mapping
+    if body.client_enforce is not None:
+        tenant.client_enforce = _JUDGE[body.client_enforce]
     for sev_field in ("gateway_block_severity", "mcp_block_severity"):
         val = getattr(body, sev_field)
         if val is not None:
