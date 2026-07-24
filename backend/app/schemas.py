@@ -340,6 +340,10 @@ class ProvisionRequest(BaseModel):
     actor: str = ""               # per-user/device identity for attribution
     extension_id: str = ""        # published Chrome/Edge extension id (optional)
     proxy_host: str = ""          # host:port of the egress proxy (optional, desktop app)
+    # Reroute Claude Code's API traffic through the Warden gateway — bills the org's
+    # provider key. Default off: Claude Code keeps its own sign-in (Pro/Max subscription
+    # or API account) and managed-settings locks login to claude.ai (forceLoginMethod).
+    route_gateway: bool = False
     # Bound lifetime for the fleet-wide enrollment token baked into the installer. It's a
     # reusable credential in a file, so it expires by default (override/disable explicitly).
     max_uses: int | None = None       # None = unlimited uses within the validity window

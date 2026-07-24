@@ -12,7 +12,6 @@ def test_macos_script_self_enrolls():
     assert s.startswith("#!/usr/bin/env bash")
     assert "et_secret123" in s                    # carries the enrollment token
     assert "/api/enroll" in s                      # self-enrolls at runtime
-    assert '"ANTHROPIC_BASE_URL": "$WARDEN_URL"' in s and "$WARDEN_URL/v1" not in s
     assert "managed-settings.json" in s
     assert "abc123" in s                           # extension id in policy block
 
@@ -31,7 +30,6 @@ def test_linux_script_self_enrolls():
     assert s.startswith("#!/usr/bin/env bash")
     assert "et_lin" in s                                   # carries the enrollment token
     assert "/api/enroll" in s                               # self-enrolls at runtime
-    assert '"ANTHROPIC_BASE_URL": "$WARDEN_URL"' in s and "$WARDEN_URL/v1" not in s
     assert "/etc/claude-code" in s                          # Linux managed-settings path
     assert "managed-settings.json" in s
     assert "pacman" in s                                    # Arch package-manager path
@@ -40,11 +38,37 @@ def test_linux_script_self_enrolls():
     assert "3rdparty" in s                                  # Chromium managed-storage schema
 
 
+def test_default_keeps_claude_codes_own_auth():
+    # Default (no route_gateway): Claude Code keeps its own sign-in (Pro/Max subscription).
+    # The settings block must not touch ANTHROPIC_*, and forceLoginMethod locks login to
+    # claude.ai so a fleet can't silently drift onto API-key billing.
+    for plat in ("macos", "linux", "windows"):
+        s = provision.render(plat, "https://warden.corp", "et_x", extension_id="e")
+        assert '"ANTHROPIC_BASE_URL"' not in s and "ANTHROPIC_BASE_URL =" not in s
+        assert "ANTHROPIC_AUTH_TOKEN" not in s
+        assert "forceLoginMethod" in s and "claudeai" in s
+
+
+def test_route_gateway_opt_in_wires_gateway():
+    # Opt-in gateway routing: ANTHROPIC_BASE_URL points at the gateway (no /v1 — the SDK
+    # appends it) and auth comes from apiKeyHelper, so the org's provider key is billed.
+    for plat in ("macos", "linux"):
+        s = provision.render(plat, "https://warden.corp", "et_x", extension_id="e",
+                             route_gateway=True)
+        assert '"ANTHROPIC_BASE_URL": "$WARDEN_URL"' in s and "$WARDEN_URL/v1" not in s
+        assert "forceLoginMethod" not in s
+    w = provision.render("windows", "https://warden.corp", "et_x", extension_id="e",
+                         route_gateway=True)
+    assert 'ANTHROPIC_BASE_URL = "$WardenUrl"' in w
+    assert "forceLoginMethod" not in w
+
+
 def test_installers_are_self_healing():
     # Gateway auth goes through apiKeyHelper (warden-reenroll), not a baked static key, so a
     # revoked device key re-enrolls itself with no re-push.
     for plat, ext in (("macos", "abc"), ("linux", "lnx"), ("windows", "win")):
-        s = provision.render(plat, "https://warden.corp", "et_x", extension_id=ext)
+        s = provision.render(plat, "https://warden.corp", "et_x", extension_id=ext,
+                             route_gateway=True)
         assert "apiKeyHelper" in s and "warden-reenroll" in s
         assert "ANTHROPIC_AUTH_TOKEN" not in s          # no static gateway key baked in
         assert "warden-reenroll" in s                   # helper fetched/wired at install
@@ -52,8 +76,10 @@ def test_installers_are_self_healing():
 
 def test_windows_apikeyhelper_is_python_free():
     # A Windows fleet can't be assumed to have Python; the apiKeyHelper is native PowerShell
-    # (warden-reenroll.ps1, fetched at install), invoked via powershell -File.
-    s = provision.render("windows", "https://warden.corp", "et_win", extension_id="xyz")
+    # (warden-reenroll.ps1, fetched at install), invoked via powershell -File. Wired into
+    # settings only in gateway mode, but the helper itself must always be Python-free.
+    s = provision.render("windows", "https://warden.corp", "et_win", extension_id="xyz",
+                         route_gateway=True)
     assert "warden-reenroll.ps1" in s                       # native PS helper, not the py CLI
     assert "/cli/warden-reenroll.ps1" in s                  # fetched from the backend
     assert "powershell" in s and "-File" in s               # invoked without Python
@@ -78,7 +104,17 @@ def test_provision_endpoint_serves_linux(client):
     r = client.post("/api/provision", json={"platform": "linux", "base_url": "https://warden.corp"})
     assert r.status_code == 200, r.text
     assert set(r.json()["scripts"]) == {"linux"}
-    assert "#!/usr/bin/env bash" in r.json()["scripts"]["linux"]
+    s = r.json()["scripts"]["linux"]
+    assert "#!/usr/bin/env bash" in s
+    assert "ANTHROPIC_BASE_URL" not in s and "forceLoginMethod" in s   # subscription default
+
+
+def test_provision_endpoint_route_gateway_opt_in(client):
+    r = client.post("/api/provision", json={"platform": "linux", "base_url": "https://warden.corp",
+                                            "route_gateway": True})
+    assert r.status_code == 200, r.text
+    s = r.json()["scripts"]["linux"]
+    assert '"ANTHROPIC_BASE_URL": "$WARDEN_URL"' in s and "forceLoginMethod" not in s
 
 
 def test_unknown_platform_rejected():

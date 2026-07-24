@@ -149,14 +149,15 @@ def test_gemini_config_points_at_v1beta():
     assert 'base_url="https://w.acme.com"' in cfg                 # SDK http_options snippet
 
 
-def test_claude_managed_settings():
+def test_claude_managed_settings_default_keeps_own_auth():
     s = json.loads(pp.claude_managed_settings("https://w.acme.com/", "/opt/warden-hook",
                                               "/opt/warden-posture"))
-    # Gateway routing + Warden credentials in env (the ak_ token doubles as ingest auth).
-    # No /v1 suffix: the Anthropic SDK appends /v1/messages, so the base is the bare origin.
-    assert s["env"]["ANTHROPIC_BASE_URL"] == "https://w.acme.com"
+    # Default: no gateway routing — Claude Code keeps its own sign-in, and forceLoginMethod
+    # locks login to claude.ai (Pro/Max) so the fleet can't drift onto API-key billing.
+    assert "ANTHROPIC_BASE_URL" not in s["env"]
+    assert "ANTHROPIC_AUTH_TOKEN" not in s["env"]
+    assert s["forceLoginMethod"] == "claudeai"
     assert s["env"]["WARDEN_URL"] == "https://w.acme.com"
-    assert s["env"]["ANTHROPIC_AUTH_TOKEN"] == s["env"]["WARDEN_TOKEN"]
     assert s["env"]["WARDEN_TOKEN"].startswith("ak_")
     # Route C hooks at the deployed script paths.
     pre = s["hooks"]["PreToolUse"][0]["hooks"][0]
@@ -165,12 +166,31 @@ def test_claude_managed_settings():
     assert sess == "/opt/warden-posture --async --quiet"
 
 
+def test_claude_managed_settings_route_gateway_opt_in():
+    s = json.loads(pp.claude_managed_settings("https://w.acme.com/", "/opt/warden-hook",
+                                              "/opt/warden-posture", route_gateway=True))
+    # Gateway routing + Warden credentials in env (the ak_ token doubles as ingest auth).
+    # No /v1 suffix: the Anthropic SDK appends /v1/messages, so the base is the bare origin.
+    assert s["env"]["ANTHROPIC_BASE_URL"] == "https://w.acme.com"
+    assert s["env"]["ANTHROPIC_AUTH_TOKEN"] == s["env"]["WARDEN_TOKEN"]
+    assert "forceLoginMethod" not in s        # login method is moot when routing
+
+
 def test_pack_includes_claude_settings_from_endpoint(client):
     r = client.get("/api/policy-pack?base_url=https://w.acme.com&hook_path=/opt/wh")
     assert r.status_code == 200
     s = json.loads(r.json()["artifacts"]["claude-managed-settings.json"])
-    assert s["env"]["ANTHROPIC_BASE_URL"] == "https://w.acme.com"
+    assert "ANTHROPIC_BASE_URL" not in s["env"]           # subscription default
+    assert s["forceLoginMethod"] == "claudeai"
     assert s["hooks"]["PreToolUse"][0]["hooks"][0]["command"] == "/opt/wh"
+
+
+def test_pack_endpoint_route_gateway_opt_in(client):
+    r = client.get("/api/policy-pack?base_url=https://w.acme.com&route_gateway=true")
+    assert r.status_code == 200
+    s = json.loads(r.json()["artifacts"]["claude-managed-settings.json"])
+    assert s["env"]["ANTHROPIC_BASE_URL"] == "https://w.acme.com"
+    assert "forceLoginMethod" not in s
 
 
 def test_pack_uses_per_tenant_ide_lists(client):
