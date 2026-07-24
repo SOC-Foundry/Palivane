@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 """warden connect — self-serve Claude Code onboarding.
 
-Signs the user in to their Warden console (login or SSO) in the browser and configures
-Claude Code to route through the Warden gateway — no admin token distribution. Equivalent
+Signs the user in to their Warden console (login or SSO) in the browser and wires up
+Warden's local capture planes for Claude Code — no admin token distribution. Equivalent
 of the browser-extension sign-in, for the terminal.
+
+By default Claude Code KEEPS ITS OWN SIGN-IN (Pro/Max subscription or Console) — Warden
+observes via hooks only. Pass --route-gateway to additionally reroute Claude Code's API
+traffic through the Warden gateway; note that switches its billing to the org's provider
+key (API credits), not the user's subscription.
 
 Flow: starts a loopback server, opens <console>/extension-connect pointed at it, the
 console mints a per-user tenant-scoped token after auth and redirects it back, then this
-writes ~/.claude/settings.json (ANTHROPIC_BASE_URL -> the Warden gateway, ANTHROPIC_AUTH_TOKEN
--> the token). Also wires the local planes when their sibling scripts are available:
+writes ~/.claude/settings.json (with --route-gateway: ANTHROPIC_BASE_URL -> the Warden
+gateway, ANTHROPIC_AUTH_TOKEN -> the token; without it, any such entries from a previous
+gateway-routed connect are removed). Also wires the local planes when their sibling scripts are available:
 WARDEN_URL/WARDEN_TOKEN in the same env block, a PreToolUse hook (warden-hook — local
 pre-execution tool-call inspection) and a SessionStart hook (warden-posture — device
 posture on session start). If Cursor is installed (~/.cursor present), it also registers
@@ -17,6 +23,7 @@ Cursor's prompts + tool calls locally despite its cert pinning. Stdlib only.
 
     warden-connect                              # hosted SaaS (warden.tachtech.net)
     warden-connect https://warden.self-hosted   # or set WARDEN_URL, for self-hosting
+    warden-connect --route-gateway              # also route API traffic via the gateway
 """
 
 from __future__ import annotations
@@ -39,7 +46,8 @@ DEFAULT_URL = "https://warden.tachtech.net"
 
 
 def _console_url(argv) -> str:
-    url = (argv[1] if len(argv) > 1 else os.environ.get("WARDEN_URL", "")).strip()
+    positional = [a for a in argv[1:] if not a.startswith("-")]
+    url = (positional[0] if positional else os.environ.get("WARDEN_URL", "")).strip()
     if not url:
         url = DEFAULT_URL
     if not url.startswith(("http://", "https://")):
@@ -113,7 +121,7 @@ def _merge_hook(data: dict, event: str, command: str, timeout: int | None = None
 
 
 def _write_claude_code(token: str, backend: str, user: str,
-                       route_gateway: bool = True) -> tuple[str, list[str]]:
+                       route_gateway: bool = False) -> tuple[str, list[str]]:
     path = os.path.expanduser("~/.claude/settings.json")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     data = {}
@@ -123,11 +131,20 @@ def _write_claude_code(token: str, backend: str, user: str,
         except (ValueError, OSError):
             data = {}
     env = data.setdefault("env", {})
+    cleaned = False
     if route_gateway:
         # No /v1 suffix — the Anthropic SDK appends /v1/messages itself; {backend}/v1
         # would resolve to {backend}/v1/v1/messages and 405.
         env["ANTHROPIC_BASE_URL"] = backend.rstrip("/")
         env["ANTHROPIC_AUTH_TOKEN"] = token
+    elif env.get("ANTHROPIC_BASE_URL", "").rstrip("/") == backend.rstrip("/"):
+        # A previous connect routed this install through the gateway; undo it so
+        # Claude Code goes back to its own sign-in (subscription or API account).
+        # Only touched when the base URL is OUR gateway — an unrelated custom
+        # ANTHROPIC_BASE_URL the user set themselves is left alone.
+        env.pop("ANTHROPIC_BASE_URL", None)
+        env.pop("ANTHROPIC_AUTH_TOKEN", None)
+        cleaned = True
     # Warden's own names — the hook/posture scripts read these; installed even when the
     # gateway routing above is skipped (org has no model key yet), so the local capture
     # planes work either way.
@@ -135,6 +152,9 @@ def _write_claude_code(token: str, backend: str, user: str,
     env["WARDEN_TOKEN"] = token
 
     installed: list[str] = []
+    if cleaned:
+        installed.append("removed gateway routing from a previous connect — "
+                         "Claude Code will use its own sign-in again")
     hook = _resolve_script("warden-hook")
     if hook:
         if _merge_hook(data, "PreToolUse", hook, timeout=10):
@@ -222,22 +242,32 @@ def _upstream_warning(got: dict, console: str) -> str | None:
 
 
 def main() -> None:
+    want_gateway = "--route-gateway" in sys.argv[1:]
     console = _console_url(sys.argv)
     got = _capture_token(console)
     backend = got.get("backend") or console
-    route_gateway = got.get("upstream") != "0"
+    # Gateway rerouting is opt-in: it moves Claude Code's billing to the org's provider
+    # key. Without the flag, Claude Code keeps its own sign-in (Pro/Max subscription or
+    # API account) and Warden observes via the local hooks. Even with the flag, skip when
+    # the console says the org has no upstream key (upstream == "0") — routing would only
+    # return inspection stubs.
+    route_gateway = want_gateway and got.get("upstream") != "0"
     path, installed = _write_claude_code(got["token"], backend, got.get("user", ""),
                                          route_gateway=route_gateway)
     who = got.get("user") or "you"
     print(f"✓ Claude Code connected as {who}")
     if route_gateway:
         print(f"  routed through the Warden gateway: {backend.rstrip('/')}/v1")
+        print("  note: API calls now bill the org's provider key, not personal Pro/Max plans")
+    else:
+        print("  Claude Code keeps its own sign-in (Pro/Max subscription or API account)")
     for item in installed:
         print(f"  {item}")
     print(f"  wrote {path}")
-    warning = _upstream_warning(got, console)
-    if warning:
-        print(warning)
+    if want_gateway:
+        warning = _upstream_warning(got, console)
+        if warning:
+            print(warning)
 
     cursor = _write_cursor(got["token"], backend, got.get("user", ""))
     if cursor:

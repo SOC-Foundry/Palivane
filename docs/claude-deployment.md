@@ -103,8 +103,11 @@ the agent's local tool calls, before they execute. Run A + C together for full c
 > distributing tokens — run **`warden connect https://app.warden.io`** (see
 > [`cli/README.md`](../cli/README.md)). It signs them in via the console (login/SSO), mints
 > a per-user tenant-scoped key, writes `~/.claude/settings.json`, and installs the Route C
-> hooks automatically. On **managed fleets**, prefer the zero-touch `managed-settings.json`
-> below (it takes precedence over the user file).
+> hooks automatically. By default Claude Code **keeps its own sign-in** (Pro/Max
+> subscription or API account) — Route A's gateway rerouting is opt-in via
+> `--route-gateway`, since it switches billing to the org's provider key. On **managed
+> fleets**, prefer the zero-touch `managed-settings.json` below (it takes precedence over
+> the user file).
 
 ### Route A — gateway (recommended)
 

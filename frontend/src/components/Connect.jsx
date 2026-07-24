@@ -235,10 +235,13 @@ export default function Connect({ tenant }) {
            <code>/etc/claude-code/</code>, macOS <code>/Library/Application Support/ClaudeCode/</code>).</p>
         <Block text={claudeCode} />
         <p className="muted" style={{ marginTop: 10 }}>Or self-serve (BYOD / pilots) — the user
-           runs <code>warden-connect {origin}</code> to sign in and configure their own Claude
-           Code. No token distribution.</p>
+           runs <code>warden-connect {origin}</code> to sign in and wire up the local hooks;
+           Claude Code keeps its own sign-in (Pro/Max subscription or API account). Add
+           <code> --route-gateway</code> to also reroute API traffic through the gateway.
+           No token distribution.</p>
         <p className="muted" style={{ marginTop: 8 }}>Gateway-routed clients forward with your
-           org's own provider account — add your Anthropic API key under
+           org's own provider account (API credits, not personal Pro/Max plans) — add your
+           Anthropic API key under
            <strong> Settings → Gateway upstreams</strong> or they'll get a stub reply.</p>
       </div>
 
@@ -270,7 +273,7 @@ export default function Connect({ tenant }) {
            <code> warden-mcp</code> for inline inspection (<code>WARDEN_MCP_ENFORCE=true</code> blocks):</p>
         <Block text={mcpWrap} />
         <p className="muted" style={{ marginTop: 8 }}>Self-serve: <code>warden-connect {origin}</code> installs
-           the hooks automatically alongside the gateway routing.</p>
+           the hooks automatically (add <code>--route-gateway</code> for gateway routing).</p>
       </div>
 
       <div className="connect-card">

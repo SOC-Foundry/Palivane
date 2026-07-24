@@ -36,7 +36,8 @@ def test_merge_hook_preserves_existing_foreign_hooks():
 def test_write_claude_code_env_and_hooks(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
-    path, installed = wc._write_claude_code("ak_tok123", "https://w.corp.io", "dev@acme.com")
+    path, installed = wc._write_claude_code("ak_tok123", "https://w.corp.io", "dev@acme.com",
+                                            route_gateway=True)
 
     data = json.load(open(path))
     env = data["env"]
@@ -51,10 +52,49 @@ def test_write_claude_code_env_and_hooks(monkeypatch, tmp_path):
     assert oct(os.stat(path).st_mode & 0o777) == "0o600"
 
     # Second run: same env, no duplicated hooks.
-    wc._write_claude_code("ak_tok123", "https://w.corp.io", "dev@acme.com")
+    wc._write_claude_code("ak_tok123", "https://w.corp.io", "dev@acme.com", route_gateway=True)
     data = json.load(open(path))
     assert len(data["hooks"]["PreToolUse"]) == 1
     assert len(data["hooks"]["SessionStart"]) == 1
+
+
+def test_default_keeps_claude_codes_own_auth(monkeypatch, tmp_path):
+    """Gateway routing is opt-in: the default write never touches ANTHROPIC_*."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    path, _ = wc._write_claude_code("ak_tok", "https://w.corp.io", "dev@acme.com")
+    env = json.load(open(path))["env"]
+    assert "ANTHROPIC_BASE_URL" not in env and "ANTHROPIC_AUTH_TOKEN" not in env
+    assert env["WARDEN_URL"] == "https://w.corp.io" and env["WARDEN_TOKEN"] == "ak_tok"
+
+
+def test_rerun_without_gateway_cleans_previous_routing(monkeypatch, tmp_path):
+    """Re-running connect (no flag) remediates installs a previous version gateway-routed."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    path, _ = wc._write_claude_code("ak_old", "https://w.corp.io", "dev@acme.com",
+                                    route_gateway=True)
+    path, installed = wc._write_claude_code("ak_new", "https://w.corp.io/", "dev@acme.com")
+    env = json.load(open(path))["env"]
+    assert "ANTHROPIC_BASE_URL" not in env and "ANTHROPIC_AUTH_TOKEN" not in env
+    assert env["WARDEN_TOKEN"] == "ak_new"
+    assert any("removed gateway routing" in i for i in installed)
+
+
+def test_rerun_leaves_foreign_base_url_alone(monkeypatch, tmp_path):
+    """A user's own custom ANTHROPIC_BASE_URL (not our gateway) is never removed."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    home = tmp_path / ".claude"
+    home.mkdir()
+    (home / "settings.json").write_text(json.dumps(
+        {"env": {"ANTHROPIC_BASE_URL": "https://my-own-proxy.example",
+                 "ANTHROPIC_AUTH_TOKEN": "sk-mine"}}))
+    path, installed = wc._write_claude_code("ak_tok", "https://w.corp.io", "dev@acme.com")
+    env = json.load(open(path))["env"]
+    assert env["ANTHROPIC_BASE_URL"] == "https://my-own-proxy.example"
+    assert env["ANTHROPIC_AUTH_TOKEN"] == "sk-mine"
+    assert not any("removed gateway routing" in i for i in installed)
 
 
 def test_write_claude_code_missing_scripts_noted(monkeypatch, tmp_path):

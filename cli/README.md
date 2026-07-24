@@ -29,25 +29,32 @@ distributing tokens.
 
 ```bash
 warden-connect https://app.warden.io      # or: WARDEN_URL=https://app.warden.io warden-connect
+warden-connect --route-gateway            # additionally reroute API traffic via the gateway
 ```
 
 What happens:
 1. Opens your browser to the Warden console and you authenticate (password or SSO).
 2. The console mints a **per-user, tenant-scoped** capture key and hands it back to a
    loopback server the CLI started (state-checked; token only ever goes to `127.0.0.1`).
-3. The CLI writes `~/.claude/settings.json` (mode `600`): the gateway routing
-   (`ANTHROPIC_BASE_URL` → the Warden gateway, `ANTHROPIC_AUTH_TOKEN` → your key), the
-   same pair as `WARDEN_URL`/`WARDEN_TOKEN` for the local planes, and — when the sibling
-   scripts are on PATH — a **PreToolUse** hook (`warden-hook`) and a **SessionStart**
-   hook (`warden-posture --async --quiet`). Hook merging is idempotent and leaves your
-   other hooks alone.
+3. The CLI writes `~/.claude/settings.json` (mode `600`): `WARDEN_URL`/`WARDEN_TOKEN` for
+   the local planes, and — when the sibling scripts are on PATH — a **PreToolUse** hook
+   (`warden-hook`) and a **SessionStart** hook (`warden-posture --async --quiet`). Hook
+   merging is idempotent and leaves your other hooks alone.
+
+   **Claude Code keeps its own sign-in by default** (Pro/Max subscription or API account).
+   With `--route-gateway` it additionally writes the gateway routing
+   (`ANTHROPIC_BASE_URL` → the Warden gateway, `ANTHROPIC_AUTH_TOKEN` → your key) — note
+   that bills the org's provider key (API credits), not personal Pro/Max plans. Without
+   the flag, a re-run **removes** gateway routing left by a previous connect (only when the
+   base URL points at this Warden backend — a custom `ANTHROPIC_BASE_URL` the user set
+   themselves is left alone). Fleet remediation is therefore: users re-run `warden-connect`.
 4. If **Cursor** is installed (`~/.cursor` present) and `warden-cursor-hook` is on PATH, it
    also registers the hook for the five security events in `~/.cursor/hooks.json` and writes
    the creds to `~/.cursor/warden.json` (Cursor doesn't pass env to hook processes). Skipped
    silently if Cursor isn't present.
-5. Restart Claude Code / Cursor — prompts route through the gateway (or the Cursor hook),
-   tool calls are inspected locally, posture reports on session start; all attributed to
-   you and revocable in the console like any key.
+5. Restart Claude Code / Cursor — tool calls are inspected locally, posture reports on
+   session start (and with `--route-gateway`, prompts route through the gateway); all
+   attributed to you and revocable in the console like any key.
 
 ## `warden-reenroll` — self-healing device key (apiKeyHelper)
 
