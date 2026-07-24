@@ -134,7 +134,8 @@ def main() -> int:
     print("== 8. POLICY PACK ==")
     _, d = call("GET", "/api/policy-pack?base_url=https://w.acme.com", headers=AH)
     arts = set(d.get("artifacts", {}))
-    need = {"cursor-hooks.json", "openai.env", "gemini.txt", "warden-secrets.cron", "warden-secrets.plist"}
+    need = {"cursor-hooks.json", "openai.env", "gemini.txt", "gemini-settings.json",
+            "codex-hooks.json", "warden-secrets.cron", "warden-secrets.plist"}
     ck(need <= arts, f"pack has {len(arts)} artifacts incl new ones", f"missing {need - arts}")
     ck("--engine trufflehog" in d["artifacts"]["warden-secrets.cron"], "scheduled scan drives TruffleHog")
 
@@ -159,6 +160,19 @@ def main() -> int:
     ck(r is None or '"permission": "deny"' in r[1], "warden-cursor-hook denies a dangerous shell")
     r = run_cli("warden-hook", '{"tool_name":"Bash","tool_input":{"command":"rm -rf / --no-preserve-root"}}', env)
     ck(r is None or "deny" in r[1], "warden-hook denies a dangerous Claude Code tool call")
+    r = run_cli("warden-hook", '{"hook_event_name":"UserPromptSubmit","prompt":"deploy AKIAIOSFODNN7EXAMPLE aws secret"}', env)
+    ck(r is not None and '"decision": "block"' in r[1], "warden-hook blocks a secret prompt",
+       "" if r else "(cli/ not found — skipped)")
+    # Prompt leaks hard-block even in monitor mode (force_block — 'block the certain').
+    mon = {**env, "WARDEN_ENFORCE": "false"}
+    r = run_cli("warden-hook", '{"hook_event_name":"UserPromptSubmit","prompt":"deploy AKIAIOSFODNN7EXAMPLE aws secret"}', mon)
+    ck(r is not None and '"decision": "block"' in r[1], "warden-hook blocks a secret prompt in MONITOR mode")
+    r = run_cli("warden-gemini-hook", '{"hook_event_name":"BeforeAgent","prompt":"deploy AKIAIOSFODNN7EXAMPLE aws secret"}', env)
+    ck(r is not None and '"decision": "deny"' in r[1], "warden-gemini-hook blocks a secret prompt",
+       "" if r else "(cli/ not found — skipped)")
+    r = run_cli("warden-codex-hook", '{"hook_event_name":"UserPromptSubmit","prompt":"deploy AKIAIOSFODNN7EXAMPLE aws secret"}', env)
+    ck(r is not None and '"decision": "block"' in r[1], "warden-codex-hook blocks a secret prompt",
+       "" if r else "(cli/ not found — skipped)")
     # warden-import takes the tool name as argv[1], so run it explicitly (not via run_cli).
     if (CLI / "warden-import").exists():
         p = subprocess.run([sys.executable, str(CLI / "warden-import"), "trufflehog"],

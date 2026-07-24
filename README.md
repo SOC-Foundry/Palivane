@@ -60,8 +60,9 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
   Managed policy still wins on fleets.
 - **Agentless by default, optional local sensors** — the core (gateway, extension, proxy,
   CI) needs no endpoint agent. For deeper local coverage, opt-in stdlib sensors add it:
-  **`warden-mcp`** (stdio-MCP wrapper), **`warden-hook`** (Claude Code PreToolUse),
-  **`warden-cursor-hook`** (Cursor), **`warden-posture`** (IDE/MCP drift), and
+  **`warden-mcp`** (stdio-MCP wrapper), **`warden-hook`** (Claude Code prompts + tool calls),
+  **`warden-cursor-hook`** (Cursor), **`warden-codex-hook`** (Codex CLI),
+  **`warden-gemini-hook`** (Gemini CLI), **`warden-posture`** (IDE/MCP drift), and
   **`warden-secrets`** (credentials at rest). Enforcement config is generated for your MDM.
 - **Per-tenant policy & compliance** — each org sets monitor/enforce, block severity,
   sanctioned tools, and suppressions; plus a signed DPA, full data export, delete-my-org,
@@ -617,7 +618,10 @@ Different usage routes need different capture points — all feed the one engine
 | **Browser** web UI (claude.ai, chatgpt.com, Microsoft Copilot) | Browser extension → `ai_usage` | ✅ |
 | **Desktop apps, IDE assistants, 3rd-party CLIs** (incl. GitHub Copilot) | Egress proxy → `ai_usage` | ✅ |
 | **AI coding agents over MCP** (tool calls, resource reads, tool listings) | Egress proxy → `mcp` (remote/HTTP servers) **and** gateway/proxy `tool_use` inspection (covers local stdio MCP agentlessly) | ✅ |
+| **Claude Code prompts** (typed input, incl. under subscription auth — no network plane sees it) — *before it leaves the device* | `warden-hook` UserPromptSubmit hook → `ai_usage` ([`cli/`](cli/README.md)); confirmed secret/PII leaks hard-block even in monitor mode | ✅ |
 | **Claude Code tool calls** (shell, file access, MCP tools) — *before execution* | `warden-hook` PreToolUse hook → `mcp` ([`cli/`](cli/README.md)) | ✅ |
+| **Codex CLI prompts + tool calls** (incl. ChatGPT-subscription auth, which ignores `OPENAI_BASE_URL`) | `warden-codex-hook` (UserPromptSubmit + PreToolUse, codex 0.116+) → `ai_usage` + `mcp` ([`cli/`](cli/README.md)) | ✅ |
+| **Gemini CLI prompts + tool calls** (every auth mode, incl. the Google login that ignores base-URL overrides) | `warden-gemini-hook` (BeforeAgent + BeforeTool, gemini-cli 0.26+) → `ai_usage` + `mcp` ([`cli/`](cli/README.md)) | ✅ |
 | **Local stdio MCP servers** (inline inspect + block) | `warden-mcp` wrapper → `mcp` ([`cli/`](cli/README.md)) | ✅ |
 | **Device posture** (installed IDE extensions, MCP configs — drift) | `warden-posture` → `/api/scan/*` ([`cli/`](cli/README.md)) | ✅ |
 | **Claude Code via OTEL** (prompts, tool calls) — for orgs running [claude-otel](https://github.com/TachTech-Engineering/claude-otel) | `warden-otel` file-tail **or** collector OTLP → `POST /v1/logs` → `ai_usage` + `mcp` ([`cli/`](cli/README.md)) | ✅ monitor-only (post-hoc) |

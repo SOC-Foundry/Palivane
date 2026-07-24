@@ -29,9 +29,12 @@ It returns these artifacts (write each to a file):
 | `chrome-edge-forcelist.txt` | `ExtensionInstallForcelist` value for the browser extension. Defaults to the **Chrome Web Store** (extension published there — Unlisted is fine). Pass `?ext_update_url=…` (+ `?ext_crx_url=…`) to `/api/policy-pack` for a **self-hosted CRX** with no Web Store submission (managed devices only) — that also emits `extension-updates.xml` below. |
 | `chrome-extension-settings.json` | Chrome/Edge **`ExtensionSettings`** to govern *third-party* browser extensions — including agentic AI ones (e.g. Claude for Chrome) that Warden's own extension can't inspect. Blocks unsanctioned AI extensions by ID and/or keeps permitted ones off sensitive origins (`runtime_blocked_hosts`); Warden's extension is always force-installed. Query params: `?browser_ext_lockdown=true` (deny-all + allowlist), `?browser_ext_blocklist=`/`?browser_ext_allowlist=` (comma-sep IDs), `?browser_ext_blocked_hosts=`. |
 | `extension-updates.xml` | *(self-hosted only)* Omaha update manifest to host next to your signed `.crx`; the forcelist points at its URL. |
-| `claude-managed-settings.json` | Claude Code `managed-settings.json`: Route C hooks (warden-hook, warden-posture); subscription sign-in by default (`forceLoginMethod`), gateway routing with `route_gateway=true` |
-| `openai.env` | Environment vars (`OPENAI_BASE_URL`) routing OpenAI SDK/CLI clients through the gateway — agentless, no CA needed |
-| `gemini.txt` | Gemini routing: SDK `http_options` snippet + note (Gemini has no base-URL env var, so the system proxy is its primary capture path) |
+| `claude-managed-settings.json` | Claude Code `managed-settings.json`: Route C hooks (warden-hook on PreToolUse **and UserPromptSubmit** — tool calls + the typed prompt, which nothing network-side sees under subscription auth — plus warden-posture); subscription sign-in by default (`forceLoginMethod`), gateway routing with `route_gateway=true` |
+| `openai.env` | Environment vars (`OPENAI_BASE_URL`) routing OpenAI SDK/CLI clients through the gateway — agentless, no CA needed. Does **not** cover Codex under ChatGPT-subscription auth — that's `codex-hooks.json` |
+| `codex-hooks.json` | Codex CLI `hooks.json` registering `warden-codex-hook` on `UserPromptSubmit` + `PreToolUse` (codex 0.116+) — local capture of Codex prompts + tool calls in every auth mode |
+| `codex.txt` | The Codex story: subscription auth ignores `OPENAI_BASE_URL`; distribute the hooks as managed hooks via `requirements.toml` (auto-trusted, can lock out user hooks) |
+| `gemini.txt` | Gemini coverage: local hooks for the Gemini CLI (below), system proxy + SDK `http_options` snippet for everything else |
+| `gemini-settings.json` | Gemini CLI `settings.json` hooks block registering `warden-gemini-hook` on `BeforeAgent` + `BeforeTool` (gemini-cli 0.26+) — local capture of Gemini prompts + tool calls in every auth mode, including the Google login that ignores base-URL overrides |
 | `cursor-hooks.json` | Cursor `hooks.json` registering `warden-cursor-hook` on the security events — local, pinning-proof capture of Cursor prompts + tool calls |
 | `cursor.txt` | The full Cursor story: why chat is proxy-opaque, and how the hooks + MCP wrap + git/gateway close it |
 | `warden-secrets.plist` / `.cron` / `-task.xml` | Schedule the endpoint credential scan (`warden-secrets --engine trufflehog`) daily via launchd (macOS) / cron (Linux) / Task Scheduler (Windows) — finds SSH/RSA keys, tokens, `.env` secrets **at rest** before an infostealer does (metadata-only). Drives **TruffleHog** by default (falls back to the built-in regex scan if not installed); set `?secrets_engine=gitleaks` or `?secrets_engine=` on `/api/policy-pack` to change it. |
@@ -40,8 +43,10 @@ It returns these artifacts (write each to a file):
 The extension allow/deny lists come from this tenant's IDE-vetting config (its
 `ide_ext_allowed` / `ide_ext_denylist`, else the global `IDE_EXT_ALLOWED` /
 `IDE_EXT_DENYLIST`); the browser extension id from `WARDEN_EXTENSION_ID`. The hook script
-paths default to `/usr/local/bin/warden-hook` and `/usr/local/bin/warden-posture` —
-override with `&hook_path=…&posture_path=…`.
+paths default to `/usr/local/bin/warden-hook`, `/usr/local/bin/warden-posture`,
+`/usr/local/bin/warden-cursor-hook`, `/usr/local/bin/warden-gemini-hook`, and
+`/usr/local/bin/warden-codex-hook` — override with
+`&hook_path=…&posture_path=…&cursor_hook_path=…&gemini_hook_path=…&codex_hook_path=…`.
 
 Pull one artifact to a file:
 
@@ -118,10 +123,15 @@ no re-push.
 ## Claude Code hooks (MDM-pushable, same model)
 
 The pack now generates this for you: **`claude-managed-settings.json`** carries Warden's
-**local planes** — a `PreToolUse` hook (`warden-hook` — pre-execution tool-call inspection)
-and a `SessionStart` hook (`warden-posture` — device drift). By default Claude Code keeps
+**local planes** — `PreToolUse` + `UserPromptSubmit` hooks (`warden-hook` — pre-execution
+tool-call inspection, and the typed prompt scanned before it leaves the device) and a
+`SessionStart` hook (`warden-posture` — device drift). By default Claude Code keeps
 its own sign-in and `forceLoginMethod: "claudeai"` locks login to claude.ai (Pro/Max
-subscriptions) — devs' prompts bill their plans, not an org API key. Generate the pack with
+subscriptions) — devs' prompts bill their plans, not an org API key. Under that
+subscription default no network plane sees the prompt, which is exactly why the
+`UserPromptSubmit` hook exists: confirmed secret/PII leaks in prompts hard-block even in
+monitor mode. The same model covers the other agent CLIs: `codex-hooks.json`
+(`warden-codex-hook`) and `gemini-settings.json` (`warden-gemini-hook`). Generate the pack with
 `route_gateway=true` (console checkbox or query param) to instead route prompts through the
 Warden gateway (`ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`), billing the org's provider
 key. Deploy it to Claude Code's managed-settings path (macOS `/Library/Application

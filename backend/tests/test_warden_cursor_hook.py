@@ -73,6 +73,20 @@ def test_args_text_capped():
     assert len(a["args_text"]) <= 20000
 
 
+# --- should_block: force_block overrides monitor mode ----------------------------------
+
+def test_confirmed_leak_blocks_even_in_monitor_mode():
+    # The proxy's rule, mirrored: block the certain, monitor the fuzzy.
+    assert hook.should_block({"action": "warn", "force_block": True}, enforce=False) is True
+
+
+def test_ordinary_block_verdict_only_blocks_under_enforce():
+    v = {"action": "block", "force_block": False}
+    assert hook.should_block(v, enforce=False) is False
+    assert hook.should_block(v, enforce=True) is True
+    assert hook.should_block({"action": "warn"}, enforce=True) is False
+
+
 # --- verdict shapes -------------------------------------------------------------------
 
 def test_block_output_prompt_uses_continue_false():

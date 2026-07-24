@@ -133,8 +133,10 @@ sign in (login/SSO) to bind their tenant — the extension's **Sign in to Warden
 **Agentless by default, with optional local sensors.** The above needs no endpoint agent.
 For deeper local coverage (e.g. local stdio MCP servers the network can't see), opt-in
 stdlib sensors run on the device: **`warden-mcp`** (stdio-MCP wrapper, inline inspection),
-**`warden-hook`** (Claude Code PreToolUse pre-execution check), **`warden-cursor-hook`**
-(Cursor prompts + tool calls), **`warden-posture`** (continuous IDE/MCP drift reporting),
+**`warden-hook`** (Claude Code prompts + tool calls, pre-execution), **`warden-cursor-hook`**
+(Cursor prompts + tool calls), **`warden-codex-hook`** (Codex CLI prompts + tool calls),
+**`warden-gemini-hook`** (Gemini CLI prompts + tool calls),
+**`warden-posture`** (continuous IDE/MCP drift reporting),
 **`warden-secrets`** (credentials at rest, optionally driving TruffleHog/Gitleaks), and
 **`warden-import`** (pipe CI scanner output in). They report on a separate ingest quota so
 they don't consume the gateway quota.

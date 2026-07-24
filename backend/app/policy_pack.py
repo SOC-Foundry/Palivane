@@ -139,9 +139,10 @@ def extension_updates_xml(extension_id: str, crx_url: str, version: str = "0.5.0
 def claude_managed_settings(base_url: str, hook_path: str, posture_path: str,
                             route_gateway: bool = False) -> str:
     """Claude Code enterprise `managed-settings.json` — installs the local planes (Route C)
-    fleet-wide: a PreToolUse hook (warden-hook, pre-execution tool-call inspection) and a
-    SessionStart hook (warden-posture, device drift). Managed settings take precedence
-    over user settings.
+    fleet-wide: PreToolUse + UserPromptSubmit hooks (warden-hook — pre-execution tool-call
+    inspection, and the typed prompt before it leaves the device: under subscription
+    sign-in no network plane sees it) and a SessionStart hook (warden-posture, device
+    drift). Managed settings take precedence over user settings.
 
     By default Claude Code keeps its own sign-in (Pro/Max subscription or API account)
     and `forceLoginMethod: "claudeai"` locks the login flow to subscription accounts.
@@ -166,6 +167,8 @@ def claude_managed_settings(base_url: str, hook_path: str, posture_path: str,
         "env": env,
         "hooks": {
             "PreToolUse": [{"matcher": "*", "hooks": [
+                {"type": "command", "command": hook_path, "timeout": 10}]}],
+            "UserPromptSubmit": [{"hooks": [
                 {"type": "command", "command": hook_path, "timeout": 10}]}],
             "SessionStart": [{"matcher": "*", "hooks": [
                 {"type": "command", "command": f"{posture_path} --async --quiet"}]}],
@@ -192,18 +195,32 @@ def openai_env(base_url: str) -> str:
     )
 
 
-def gemini_config(base_url: str) -> str:
+def gemini_config(base_url: str, gemini_hook_path: str = "/usr/local/bin/warden-gemini-hook") -> str:
     """Gemini routing note + SDK snippet. Google's google-genai SDK has no universal base-url
-    *env var*, so the reliable agentless path for Gemini is the system proxy (this pack's
-    proxy profile inspects generativelanguage.googleapis.com). Where a client can be code-
-    configured, point it at the gateway's `/v1beta` endpoint as shown."""
+    *env var*, so the agentless paths for Gemini are the system proxy (this pack's proxy
+    profile inspects generativelanguage.googleapis.com) and, for the Gemini CLI itself,
+    the local hooks (gemini-settings.json in this pack) — which work in every auth mode,
+    including the default Google login that ignores base-URL overrides. Where a client can
+    be code-configured, point it at the gateway's `/v1beta` endpoint as shown."""
     b = base_url.rstrip("/")
     return (
-        "Gemini routing\n"
-        "==============\n"
-        "Gemini's official SDKs don't honor a standard base-URL environment variable, so the\n"
-        "primary agentless capture for Gemini is the SYSTEM PROXY in this pack. It inspects the\n"
-        "Gemini CLI in all three modes once your root CA is trusted (see ca-note.txt):\n"
+        "Gemini coverage\n"
+        "===============\n"
+        "Gemini CLI (the agent) — LOCAL HOOKS, the primary plane. The CLI's endpoint depends\n"
+        "on its auth mode and the default 'log in with Google' mode ignores base-URL\n"
+        "overrides, so gemini-settings.json in this pack registers warden-gemini-hook\n"
+        "(gemini-cli 0.26+) inside the CLI instead:\n"
+        "  - BeforeAgent -> prompt data-loss (secrets/PII/shadow-AI), before it leaves\n"
+        "  - BeforeTool  -> shell/file/MCP tool calls (dangerous commands, allowlist)\n"
+        f"Deploy warden-gemini-hook to {gemini_hook_path} and push gemini-settings.json to\n"
+        "the system settings path (Linux /etc/gemini-cli/settings.json, macOS\n"
+        "/Library/Application Support/GeminiCli/settings.json, Windows\n"
+        "C:\\ProgramData\\gemini-cli\\settings.json) or merge into ~/.gemini/settings.json.\n"
+        "Monitor by default (confirmed secret/PII leaks in prompts still hard-block); set\n"
+        "WARDEN_ENFORCE=true to block on any high-risk verdict. Provide WARDEN_URL/\n"
+        f"WARDEN_TOKEN via machine env (WARDEN_URL={b}) or ~/.gemini/warden.json.\n\n"
+        "Gemini SDK/API clients — the SYSTEM PROXY in this pack. It inspects all three\n"
+        "modes once your root CA is trusted (see ca-note.txt):\n"
         "  - API-key mode  -> generativelanguage.googleapis.com\n"
         "  - OAuth / Code Assist (default 'log in with Google') -> cloudcode-pa.googleapis.com\n"
         "  - Vertex mode   -> aiplatform.googleapis.com\n\n"
@@ -216,6 +233,57 @@ def gemini_config(base_url: str) -> str:
         f'      http_options=HttpOptions(base_url="{b}"),  # SDK appends /v1beta/models/...\n'
         "  )\n\n"
         f"Gateway Gemini endpoint: {b}/v1beta/models/{{model}}:generateContent\n"
+    )
+
+
+def gemini_settings(gemini_hook_path: str) -> str:
+    """Gemini CLI `settings.json` hooks block registering warden-gemini-hook on the two
+    security-relevant events (gemini-cli 0.26+; timeouts are milliseconds). Push to the
+    system settings path via MDM or merge into ~/.gemini/settings.json. Local +
+    pre-execution, so it works in every auth mode."""
+    entry = {"name": "warden", "type": "command", "command": gemini_hook_path,
+             "timeout": 10000}
+    return json.dumps({
+        "hooks": {
+            "BeforeAgent": [{"hooks": [entry]}],          # prompt data-loss, pre-send
+            "BeforeTool": [{"matcher": ".*", "hooks": [entry]}],  # shell/file/MCP calls
+        },
+    }, indent=2)
+
+
+def codex_hooks(codex_hook_path: str) -> str:
+    """Codex CLI `hooks.json` registering warden-codex-hook on the two security-relevant
+    lifecycle events (codex 0.116+; the schema mirrors Claude Code's). Drop in
+    ~/.codex/hooks.json, or push as MANAGED hooks via requirements.toml — managed hooks
+    are auto-trusted, and `allow_managed_hooks_only = true` there locks out user hooks."""
+    entry = {"type": "command", "command": codex_hook_path, "timeout": 10}
+    return json.dumps({
+        "hooks": {
+            "UserPromptSubmit": [{"hooks": [entry]}],           # prompt data-loss, pre-send
+            "PreToolUse": [{"matcher": ".*", "hooks": [entry]}],  # shell/MCP tool calls
+        },
+    }, indent=2)
+
+
+def codex_note(base_url: str, codex_hook_path: str) -> str:
+    """How Warden covers Codex CLI — and why the network planes can't."""
+    b = base_url.rstrip("/")
+    return (
+        "Codex CLI coverage\n"
+        "==================\n"
+        "Under the default ChatGPT-subscription sign-in, Codex talks to the ChatGPT backend\n"
+        "and IGNORES OPENAI_BASE_URL (custom providers require API-key auth), so the gateway\n"
+        "env in openai.env only covers API-key installs. Warden covers subscription-auth\n"
+        "Codex with LOCAL hooks instead (codex-hooks.json in this pack, codex 0.116+):\n"
+        "  - UserPromptSubmit -> prompt data-loss (secrets/PII/shadow-AI), before it leaves\n"
+        "  - PreToolUse       -> shell/MCP tool calls (dangerous commands, allowlist)\n"
+        f"Deploy warden-codex-hook to {codex_hook_path} and drop codex-hooks.json in\n"
+        "~/.codex/hooks.json — or better, push it as managed hooks via Codex's\n"
+        "requirements.toml (auto-trusted; add allow_managed_hooks_only = true to lock out\n"
+        "user-defined hooks). User-level hooks need a one-time /hooks trust approval.\n"
+        "Monitor by default (confirmed secret/PII leaks in prompts still hard-block); set\n"
+        "WARDEN_ENFORCE=true to block on any high-risk verdict. Provide WARDEN_URL/\n"
+        f"WARDEN_TOKEN via machine env (WARDEN_URL={b}) or ~/.codex/warden.json.\n"
     )
 
 
@@ -354,6 +422,8 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
                 hook_path: str = "/usr/local/bin/warden-hook",
                 posture_path: str = "/usr/local/bin/warden-posture",
                 cursor_hook_path: str = "/usr/local/bin/warden-cursor-hook",
+                gemini_hook_path: str = "/usr/local/bin/warden-gemini-hook",
+                codex_hook_path: str = "/usr/local/bin/warden-codex-hook",
                 secrets_path: str = "/usr/local/bin/warden-secrets",
                 secrets_engine: str = "trufflehog",
                 ext_update_url: str = "", ext_crx_url: str = "",
@@ -396,8 +466,13 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "   Windows C:\\Program Files\\ClaudeCode\\.\n"
         "6. openai.env -> environment variables that route OpenAI SDK/CLI clients through the\n"
         "   gateway (OPENAI_BASE_URL). Push as machine/user env via MDM; agentless, no CA needed.\n"
-        "7. gemini.txt -> Gemini routing (SDK snippet + note). Gemini has no base-URL env var,\n"
-        "   so the system proxy above is its primary agentless capture path.\n"
+        "6b. codex-hooks.json + codex.txt -> Codex CLI local hooks (warden-codex-hook — prompt +\n"
+        "   tool-call inspection; covers ChatGPT-subscription auth, which ignores OPENAI_BASE_URL).\n"
+        f"   Deploy the hook to {codex_hook_path}; see codex.txt for managed-hooks distribution.\n"
+        "7. gemini.txt + gemini-settings.json -> Gemini CLI local hooks (warden-gemini-hook —\n"
+        "   prompt + tool-call inspection in every auth mode; deploy the hook to\n"
+        f"   {gemini_hook_path}) and SDK routing notes. The system proxy above covers\n"
+        "   Gemini SDK/API clients the hooks don't.\n"
         "8. cursor-hooks.json -> Cursor hooks.json registering warden-cursor-hook (local,\n"
         "   pinning-proof). Deploy warden-cursor-hook to the path it references\n"
         f"   ({cursor_hook_path}); push to Cursor's enterprise hooks path or ~/.cursor/hooks.json.\n"
@@ -411,8 +486,9 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         f"   {secrets_engine or 'the built-in scan'} (falls back to built-in if not installed).\n\n"
         "Coverage: browser UIs (claude.ai / chatgpt.com / gemini.google.com) via the extension;\n"
         "OpenAI + Gemini + Anthropic API clients via the system proxy (needs the CA); explicit\n"
-        "gateway redirect for Claude Code (item 5) and OpenAI SDKs (item 6); Cursor via local\n"
-        "hooks (item 8) despite its cert pinning; and credential-at-rest hygiene (item 9).\n"
+        "gateway redirect for Claude Code (item 5) and OpenAI SDKs (item 6); Codex CLI (item 6b),\n"
+        "Gemini CLI (item 7), and Cursor (item 8) via local hooks — prompts + tool calls in every\n"
+        "auth mode, despite cert pinning; and credential-at-rest hygiene (item 9).\n"
     )
     artifacts = {
         "README.txt": readme,
@@ -426,7 +502,10 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "claude-managed-settings.json": claude_managed_settings(b, hook_path, posture_path,
                                                                 route_gateway=route_gateway),
         "openai.env": openai_env(b),
-        "gemini.txt": gemini_config(b),
+        "codex-hooks.json": codex_hooks(codex_hook_path),
+        "codex.txt": codex_note(b, codex_hook_path),
+        "gemini.txt": gemini_config(b, gemini_hook_path),
+        "gemini-settings.json": gemini_settings(gemini_hook_path),
         "cursor-hooks.json": cursor_hooks(cursor_hook_path),
         "cursor.txt": cursor_note(b, cursor_hook_path),
         "warden-secrets.plist": secrets_launchd(b, secrets_path, secrets_engine),

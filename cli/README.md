@@ -9,8 +9,10 @@ without an endpoint agent: each is an app-scoped hook/shim that rides the existi
 | --- | --- | --- |
 | `warden-connect` | onboarding — wires up everything below | — |
 | `warden-reenroll` | Claude Code `apiKeyHelper` — self-enrolls/rotates a per-device key | `POST /api/enroll` |
-| `warden-hook` | Claude Code tool calls, **before execution** | `POST /api/ingest/mcp` |
+| `warden-hook` | **Claude Code** prompts + tool calls, before execution | `POST /api/ingest/{mcp,ai-usage}` |
 | `warden-cursor-hook` | **Cursor** prompts + tool calls, before execution | `POST /api/ingest/{mcp,ai-usage}` |
+| `warden-codex-hook` | **Codex CLI** prompts + tool calls, before execution | `POST /api/ingest/{mcp,ai-usage}` |
+| `warden-gemini-hook` | **Gemini CLI** prompts + tool calls, before execution | `POST /api/ingest/{mcp,ai-usage}` |
 | `warden-mcp` | local **stdio MCP servers**, inline | `POST /api/ingest/mcp` |
 | `warden-posture` | device drift: IDE extensions, MCP configs | `POST /api/scan/*` |
 | `warden-secrets` | **credentials at rest** (SSH/RSA keys, tokens, `.env`) | `POST /api/scan/secrets` |
@@ -37,8 +39,9 @@ What happens:
 2. The console mints a **per-user, tenant-scoped** capture key and hands it back to a
    loopback server the CLI started (state-checked; token only ever goes to `127.0.0.1`).
 3. The CLI writes `~/.claude/settings.json` (mode `600`): `WARDEN_URL`/`WARDEN_TOKEN` for
-   the local planes, and — when the sibling scripts are on PATH — a **PreToolUse** hook
-   (`warden-hook`) and a **SessionStart** hook (`warden-posture --async --quiet`). Hook
+   the local planes, and — when the sibling scripts are on PATH — **PreToolUse** +
+   **UserPromptSubmit** hooks (`warden-hook` — tool calls, and the typed prompt before it
+   leaves the device) and a **SessionStart** hook (`warden-posture --async --quiet`). Hook
    merging is idempotent and leaves your other hooks alone.
 
    **Claude Code keeps its own sign-in by default** (Pro/Max subscription or API account).
@@ -52,7 +55,12 @@ What happens:
    also registers the hook for the five security events in `~/.cursor/hooks.json` and writes
    the creds to `~/.cursor/warden.json` (Cursor doesn't pass env to hook processes). Skipped
    silently if Cursor isn't present.
-5. Restart Claude Code / Cursor — tool calls are inspected locally, posture reports on
+5. Likewise for the other agent CLIs: **Gemini CLI** (`~/.gemini` present +
+   `warden-gemini-hook`) gets `BeforeAgent`/`BeforeTool` hooks in `~/.gemini/settings.json`
+   + creds in `~/.gemini/warden.json`; **Codex CLI** (`~/.codex` present +
+   `warden-codex-hook`) gets `UserPromptSubmit`/`PreToolUse` hooks in `~/.codex/hooks.json`
+   + creds in `~/.codex/warden.json` (Codex asks you to trust the hook once — `/hooks`).
+6. Restart the tools — prompts and tool calls are inspected locally, posture reports on
    session start (and with `--route-gateway`, prompts route through the gateway); all
    attributed to you and revocable in the console like any key.
 
@@ -77,25 +85,34 @@ Config (first found wins): `$WARDEN_URL`/`$WARDEN_ENROLL_TOKEN` env, else
 installer). Caches the device key at `~/.warden/device-key` (0600). Network down → falls
 back to the cached key so Claude Code keeps working offline.
 
-## `warden-hook` — pre-execution tool-call inspection
+## `warden-hook` — pre-execution inspection of Claude Code tool calls & prompts
 
-A Claude Code **PreToolUse** hook: every tool call (built-ins like `Bash`/`Read`/`Write`
-*and* MCP tools) is mapped onto Warden's MCP-activity shape and inspected **before it
-runs** — dangerous commands, sensitive-resource access, secrets/PII in arguments, and
-the org's MCP-server allowlist (built-ins are exempt from the allowlist; they aren't MCP
-servers).
+A Claude Code hook, dispatched on `hook_event_name`. **PreToolUse**: every tool call
+(built-ins like `Bash`/`Read`/`Write` *and* MCP tools) is mapped onto Warden's
+MCP-activity shape and inspected **before it runs** — dangerous commands,
+sensitive-resource access, secrets/PII in arguments, and the org's MCP-server allowlist
+(built-ins are exempt from the allowlist; they aren't MCP servers).
+**UserPromptSubmit**: the typed prompt is scanned **before it leaves the device** — under
+the default subscription sign-in no gateway or proxy is in the path, so this hook is the
+only thing that sees it.
 
-- **Monitor (default):** the verdict is recorded with zero added latency (a detached
-  child posts the report).
-- **Enforce (`WARDEN_ENFORCE=true`):** the hook scans synchronously and denies risky
-  calls — the reason is shown to the model, which can adjust course.
+- **Monitor (default):** tool-call verdicts are recorded with zero added latency (a
+  detached child posts the report). Prompts are scanned **inline even in monitor mode**,
+  so a *confirmed* secret/PII leak (`force_block`) is stopped before it leaves — same
+  rule as the egress proxy: block the certain, monitor the fuzzy.
+- **Enforce (`WARDEN_ENFORCE=true`):** everything scans synchronously and any high-risk
+  verdict is denied — the reason is shown to the model (tool calls) or the user (blocked
+  prompts are erased).
 
 Installed by `warden-connect`, or manually in `~/.claude/settings.json` /
 `managed-settings.json` (MDM):
 
 ```json
-{ "hooks": { "PreToolUse": [{ "matcher": "*", "hooks": [
-    { "type": "command", "command": "/usr/local/bin/warden-hook", "timeout": 10 }]}]}}
+{ "hooks": {
+    "PreToolUse":       [{ "matcher": "*", "hooks": [
+        { "type": "command", "command": "/usr/local/bin/warden-hook", "timeout": 10 }]}],
+    "UserPromptSubmit": [{ "hooks": [
+        { "type": "command", "command": "/usr/local/bin/warden-hook", "timeout": 10 }]}]}}
 ```
 
 Credentials: `WARDEN_URL` + `WARDEN_TOKEN` (an `ak_…` key) from the environment or the
@@ -137,6 +154,48 @@ Register in `~/.cursor/hooks.json`, `<project>/.cursor/hooks.json`, or the enter
 Credentials: `WARDEN_URL` + `WARDEN_TOKEN` from the environment, else `~/.cursor/warden.json`
 (`{"url","token","enforce"}`), else the gateway pair `warden-connect` wrote to
 `~/.claude/settings.json`.
+
+## `warden-codex-hook` — Codex CLI coverage despite subscription auth
+
+Under the default **ChatGPT-subscription sign-in**, Codex talks to the ChatGPT backend
+and ignores `OPENAI_BASE_URL` (custom providers require API-key auth) — so neither the
+gateway nor the proxy reliably sees its prompts. This adapter uses **Codex's lifecycle
+hooks** (codex 0.116+, on by default in current releases; the schema mirrors Claude
+Code's) to inspect from *inside* Codex:
+
+| Codex event | Inspected | Reports to |
+| --- | --- | --- |
+| `UserPromptSubmit` | the typed prompt, before the model sees it | `/api/ingest/ai-usage` |
+| `PreToolUse` | shell / MCP tool calls, before execution | `/api/ingest/mcp` |
+
+Same monitor/enforce semantics as `warden-hook` (prompts scan inline even in monitor
+mode; `force_block` always wins). Registered by `warden-connect` in `~/.codex/hooks.json`
+(Codex asks for a one-time trust approval — `/hooks` inside Codex), or pushed fleet-wide
+as **managed hooks** via Codex's `requirements.toml` (auto-trusted;
+`allow_managed_hooks_only = true` locks out user hooks). The policy pack emits a
+ready-to-push `codex-hooks.json`. Credentials: `WARDEN_URL` + `WARDEN_TOKEN` from the
+environment, else `~/.codex/warden.json`, else `~/.claude/settings.json`.
+
+## `warden-gemini-hook` — Gemini CLI coverage in every auth mode
+
+Gemini CLI's endpoint depends on its auth mode (API key / Google login / Vertex), only
+the API-key mode honors a base-URL override, and the default **"log in with Google"**
+mode ignores it entirely. This adapter uses **Gemini CLI's hooks system**
+(gemini-cli 0.26+) to inspect from *inside* the CLI, independent of auth mode:
+
+| Gemini event | Inspected | Reports to |
+| --- | --- | --- |
+| `BeforeAgent` | the typed prompt, before the model sees it | `/api/ingest/ai-usage` |
+| `BeforeTool` | shell / file / MCP tool calls, before execution | `/api/ingest/mcp` |
+
+Same monitor/enforce semantics as `warden-hook` (prompts scan inline even in monitor
+mode; `force_block` always wins); blocks return Gemini's `{"decision": "deny"}` with the
+reason. Registered by `warden-connect` in `~/.gemini/settings.json` (note: Gemini hook
+timeouts are **milliseconds**), or pushed fleet-wide to the system settings path (Linux
+`/etc/gemini-cli/settings.json`, macOS `/Library/Application Support/GeminiCli/`,
+Windows `C:\ProgramData\gemini-cli\`). The policy pack emits a ready-to-merge
+`gemini-settings.json`. Credentials: `WARDEN_URL` + `WARDEN_TOKEN` from the environment,
+else `~/.gemini/warden.json`, else `~/.claude/settings.json`.
 
 ## `warden-mcp` — inline inspection for local stdio MCP servers
 

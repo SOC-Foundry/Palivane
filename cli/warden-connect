@@ -15,11 +15,19 @@ console mints a per-user tenant-scoped token after auth and redirects it back, t
 writes ~/.claude/settings.json (with --route-gateway: ANTHROPIC_BASE_URL -> the Warden
 gateway, ANTHROPIC_AUTH_TOKEN -> the token; without it, any such entries from a previous
 gateway-routed connect are removed). Also wires the local planes when their sibling scripts are available:
-WARDEN_URL/WARDEN_TOKEN in the same env block, a PreToolUse hook (warden-hook — local
-pre-execution tool-call inspection) and a SessionStart hook (warden-posture — device
-posture on session start). If Cursor is installed (~/.cursor present), it also registers
-warden-cursor-hook in ~/.cursor/hooks.json and writes ~/.cursor/warden.json — covering
-Cursor's prompts + tool calls locally despite its cert pinning. Stdlib only.
+WARDEN_URL/WARDEN_TOKEN in the same env block, PreToolUse + UserPromptSubmit hooks
+(warden-hook — local pre-execution inspection of tool calls and of the typed prompt,
+which nothing else sees under the default subscription sign-in) and a SessionStart hook
+(warden-posture — device posture on session start). If Cursor is installed (~/.cursor
+present), it also registers warden-cursor-hook in ~/.cursor/hooks.json and writes
+~/.cursor/warden.json — covering Cursor's prompts + tool calls locally despite its cert
+pinning. If Gemini CLI is installed (~/.gemini present), it registers warden-gemini-hook
+(BeforeAgent + BeforeTool) in ~/.gemini/settings.json and writes ~/.gemini/warden.json —
+covering Gemini's prompts + tool calls locally regardless of its auth mode. If Codex CLI
+is installed (~/.codex present), it registers warden-codex-hook (UserPromptSubmit +
+PreToolUse) in ~/.codex/hooks.json and writes ~/.codex/warden.json — covering Codex's
+prompts + tool calls locally despite ChatGPT-subscription auth ignoring OPENAI_BASE_URL.
+Stdlib only.
 
     warden-connect                              # hosted SaaS (warden.tachtech.net)
     warden-connect https://warden.self-hosted   # or set WARDEN_URL, for self-hosting
@@ -159,8 +167,12 @@ def _write_claude_code(token: str, backend: str, user: str,
     if hook:
         if _merge_hook(data, "PreToolUse", hook, timeout=10):
             installed.append("PreToolUse hook (warden-hook — tool-call inspection)")
+        # Prompt-level coverage: under the default subscription sign-in nothing else
+        # (gateway or proxy) sees the typed prompt — this hook does, before it leaves.
+        if _merge_hook(data, "UserPromptSubmit", hook, timeout=10):
+            installed.append("UserPromptSubmit hook (warden-hook — prompt data-loss)")
     else:
-        installed.append("warden-hook not found — skipped tool-call inspection hook")
+        installed.append("warden-hook not found — skipped tool-call + prompt hooks")
     posture = _resolve_script("warden-posture")
     if posture:
         if _merge_hook(data, "SessionStart", f"{posture} --async --quiet"):
@@ -226,6 +238,120 @@ def _write_cursor(token: str, backend: str, user: str) -> tuple[str, list[str]] 
     return hpath, [msg]
 
 
+# Codex CLI hook events warden-codex-hook handles (prompt data-loss + tool calls).
+# Codex's hooks.json mirrors Claude Code's shape; PreToolUse takes a regex matcher.
+_CODEX_EVENTS = [("UserPromptSubmit", None), ("PreToolUse", ".*")]
+
+
+def _merge_codex_hook(data: dict, event: str, matcher: str | None, command: str) -> bool:
+    """Add a Codex hook entry for `event` unless one already runs the same script."""
+    script = os.path.basename(command.split()[0])
+    entries = data.setdefault("hooks", {}).setdefault(event, [])
+    for entry in entries:
+        for h in entry.get("hooks", []) if isinstance(entry, dict) else []:
+            if isinstance(h, dict) and script in str(h.get("command", "")):
+                return False
+    entry: dict = {}
+    if matcher is not None:
+        entry["matcher"] = matcher
+    entry["hooks"] = [{"type": "command", "command": command, "timeout": 10}]
+    entries.append(entry)
+    return True
+
+
+def _write_codex(token: str, backend: str, user: str) -> tuple[str, list[str]] | None:
+    """Wire warden-codex-hook into ~/.codex/hooks.json + write the creds file it reads.
+    Only when Codex CLI is actually installed (~/.codex exists) and the hook is available
+    — under ChatGPT-subscription auth Codex ignores OPENAI_BASE_URL, so this local hook
+    is how Warden sees it. User-level Codex hooks need a one-time trust approval."""
+    hook = _resolve_script("warden-codex-hook")
+    cdir = os.path.expanduser("~/.codex")
+    if not hook:
+        return None
+    if not os.path.isdir(cdir):
+        return None, ["Codex CLI not detected (~/.codex absent) — skipped Codex hooks"]
+
+    # The hook reads creds from this file so it works however Codex is launched.
+    wj = os.path.join(cdir, "warden.json")
+    with open(wj, "w") as f:
+        json.dump({"url": backend.rstrip("/"), "token": token, "user": user}, f, indent=2)
+    os.chmod(wj, 0o600)
+
+    hpath = os.path.join(cdir, "hooks.json")
+    data = {}
+    if os.path.exists(hpath):
+        try:
+            data = json.load(open(hpath))
+        except (ValueError, OSError):
+            data = {}
+    added = sum(1 for ev, m in _CODEX_EVENTS if _merge_codex_hook(data, ev, m, hook))
+    with open(hpath, "w") as f:
+        json.dump(data, f, indent=2)
+    os.chmod(hpath, 0o600)
+    if added:
+        msgs = [f"Codex CLI hooks installed ({added} event{'s' if added != 1 else ''})",
+                "note: Codex asks you to trust the hook once — run /hooks inside Codex"]
+    else:
+        msgs = ["Codex CLI hooks already present"]
+    return hpath, msgs
+
+
+# Gemini CLI hook events warden-gemini-hook handles (prompt data-loss + tool calls).
+# Entry shape mirrors Claude Code's but hook objects carry a name and ms timeouts.
+_GEMINI_EVENTS = [("BeforeAgent", None), ("BeforeTool", ".*")]
+
+
+def _merge_gemini_hook(data: dict, event: str, matcher: str | None, command: str) -> bool:
+    """Add a Gemini CLI hook entry for `event` unless one already runs the same script."""
+    script = os.path.basename(command.split()[0])
+    entries = data.setdefault("hooks", {}).setdefault(event, [])
+    for entry in entries:
+        for h in entry.get("hooks", []) if isinstance(entry, dict) else []:
+            if isinstance(h, dict) and script in str(h.get("command", "")):
+                return False
+    entry: dict = {}
+    if matcher is not None:
+        entry["matcher"] = matcher
+    entry["hooks"] = [{"name": "warden", "type": "command", "command": command,
+                       "timeout": 10000}]
+    entries.append(entry)
+    return True
+
+
+def _write_gemini(token: str, backend: str, user: str) -> tuple[str, list[str]] | None:
+    """Wire warden-gemini-hook into ~/.gemini/settings.json + write the creds file it
+    reads. Only when Gemini CLI is actually installed (~/.gemini exists) and the hook is
+    available — Gemini's endpoint varies by auth mode and the default Google login
+    ignores base-URL overrides, so this local hook is how Warden sees it."""
+    hook = _resolve_script("warden-gemini-hook")
+    gdir = os.path.expanduser("~/.gemini")
+    if not hook:
+        return None
+    if not os.path.isdir(gdir):
+        return None, ["Gemini CLI not detected (~/.gemini absent) — skipped Gemini hooks"]
+
+    # The hook reads creds from this file so it works however Gemini CLI is launched.
+    wj = os.path.join(gdir, "warden.json")
+    with open(wj, "w") as f:
+        json.dump({"url": backend.rstrip("/"), "token": token, "user": user}, f, indent=2)
+    os.chmod(wj, 0o600)
+
+    spath = os.path.join(gdir, "settings.json")
+    data = {}
+    if os.path.exists(spath):
+        try:
+            data = json.load(open(spath))
+        except (ValueError, OSError):
+            data = {}
+    added = sum(1 for ev, m in _GEMINI_EVENTS if _merge_gemini_hook(data, ev, m, hook))
+    with open(spath, "w") as f:
+        json.dump(data, f, indent=2)
+    os.chmod(spath, 0o600)
+    msg = f"Gemini CLI hooks installed ({added} event{'s' if added != 1 else ''})" if added \
+        else "Gemini CLI hooks already present"
+    return spath, [msg]
+
+
 def _upstream_warning(got: dict, console: str) -> str | None:
     """A 'your org has no provider key yet' note. The console sends upstream=0/1 with the
     token when it knows whether the gateway can forward Claude Code's calls to a real
@@ -269,14 +395,16 @@ def main() -> None:
         if warning:
             print(warning)
 
-    cursor = _write_cursor(got["token"], backend, got.get("user", ""))
-    if cursor:
-        cpath, citems = cursor
-        for item in citems:
-            print(f"  {item}")
-        if cpath:
-            print(f"  wrote {cpath}")
-    print("  Start (or restart) Claude Code / Cursor to apply.")
+    for extra in (_write_cursor(got["token"], backend, got.get("user", "")),
+                  _write_gemini(got["token"], backend, got.get("user", "")),
+                  _write_codex(got["token"], backend, got.get("user", ""))):
+        if extra:
+            epath, eitems = extra
+            for item in eitems:
+                print(f"  {item}")
+            if epath:
+                print(f"  wrote {epath}")
+    print("  Start (or restart) Claude Code / Cursor / Gemini / Codex to apply.")
 
 
 if __name__ == "__main__":
