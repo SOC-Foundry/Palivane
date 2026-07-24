@@ -146,10 +146,13 @@ curl -X POST https://warden.corp.example.com/api/apikeys \
 - `ANTHROPIC_AUTH_TOKEN` is sent as `Authorization: Bearer`; `ANTHROPIC_API_KEY` would be
   sent as `x-api-key` — the gateway accepts either. For per-user keys without baking them
   into the file, use Claude Code's `apiKeyHelper` to fetch the key dynamically. The
-  self-serve `/api/provision` installer does exactly this: it sets `apiKeyHelper` to the
-  bundled **`warden-reenroll`** helper (no static `ANTHROPIC_AUTH_TOKEN`), which returns a
-  live per-device key and re-enrolls automatically if the key is ever revoked/rotated — so
-  a revoked key self-heals without re-pushing config to the fleet.
+  self-serve `/api/provision` installer does exactly this when generated with
+  `route_gateway=true`: it sets `apiKeyHelper` to the bundled **`warden-reenroll`** helper
+  (no static `ANTHROPIC_AUTH_TOKEN`), which returns a live per-device key and re-enrolls
+  automatically if the key is ever revoked/rotated — so a revoked key self-heals without
+  re-pushing config to the fleet. **By default** (no `route_gateway`) the installer and the
+  MDM pack leave Claude Code on its own sign-in and set `forceLoginMethod: "claudeai"` —
+  devs stay on Pro/Max subscription billing and only the Route C hooks are installed.
 - The gateway implements `/v1/messages`, `/v1/messages/count_tokens`, and forwards the
   `anthropic-version`/`anthropic-beta` headers, so Claude Code works fully.
 - Per-tool policy auto-suppresses `source_code_leak` for `claude-code` (code is its job),

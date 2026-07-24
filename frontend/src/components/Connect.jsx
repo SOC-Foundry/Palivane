@@ -71,6 +71,9 @@ export default function Connect({ tenant }) {
   // Bound the enrollment token baked into the installer — it's a reusable secret in a file.
   const [expiresInDays, setExpiresInDays] = useState("30"); // blank = never (not recommended)
   const [maxUses, setMaxUses] = useState("");               // blank = unlimited within window
+  // Off by default: Claude Code keeps its own sign-in (Pro/Max). On = route prompts
+  // through the Warden gateway and bill the org's provider key.
+  const [routeGateway, setRouteGateway] = useState(false);
   const origin = window.location.origin;
   // Device installers are free (device_setup); only the MDM policy pack is gated on "mdm".
   const hasMdm = (tenant?.plan_features || []).includes("mdm");
@@ -78,7 +81,8 @@ export default function Connect({ tenant }) {
   async function getPolicyPack() {
     setPackBusy(true); setErr(null);
     try {
-      const res = await api.policyPack({ base_url: origin, proxy_host: proxyHost });
+      const res = await api.policyPack({ base_url: origin, proxy_host: proxyHost,
+                                         route_gateway: routeGateway });
       Object.entries(res.artifacts).forEach(([name, content]) => download(name, content));
     } catch (e) { setErr(String(e.message || e)); }
     finally { setPackBusy(false); }
@@ -103,6 +107,7 @@ export default function Connect({ tenant }) {
         platform, base_url: origin, actor: "",
         expires_in_days: days === "" ? null : Number(days),
         max_uses: uses === "" ? null : Number(uses),
+        route_gateway: routeGateway,
       });
       const ext = platform === "windows" ? "ps1" : "sh";
       download(`warden-install-${platform}.${ext}`, res.scripts[platform]);
@@ -163,6 +168,13 @@ export default function Connect({ tenant }) {
         <p className="muted">Most orgs don't need the per-source setup below. Pick how you deliver
            software to your fleet — Warden generates everything (browser + Claude Code + agent
            tool-calls) already pointed here and pre-configured with this org's policy.</p>
+        <label className="muted" style={{ fontSize: 12, display: "block", margin: "4px 0 8px" }}>
+          <input type="checkbox" checked={routeGateway}
+                 onChange={(e) => setRouteGateway(e.target.checked)}
+                 style={{ marginRight: 6 }} />
+          Route Claude Code through the Warden gateway (bills your org's provider key).
+          Off = devs keep their own claude.ai sign-in (Pro/Max); hooks still monitor either way.
+        </label>
         <div className="qs-paths">
           <div className="qs-path">
             <h4>You hand out a setup script <span className="muted">· free</span></h4>

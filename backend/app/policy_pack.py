@@ -136,34 +136,44 @@ def extension_updates_xml(extension_id: str, crx_url: str, version: str = "0.5.0
 '''
 
 
-def claude_managed_settings(base_url: str, hook_path: str, posture_path: str) -> str:
-    """Claude Code enterprise `managed-settings.json` — routes prompts through the Warden
-    gateway AND installs the local planes (Route C) fleet-wide: a PreToolUse hook
-    (warden-hook, pre-execution tool-call inspection) and a SessionStart hook
-    (warden-posture, device drift). Managed settings take precedence over user settings.
+def claude_managed_settings(base_url: str, hook_path: str, posture_path: str,
+                            route_gateway: bool = False) -> str:
+    """Claude Code enterprise `managed-settings.json` — installs the local planes (Route C)
+    fleet-wide: a PreToolUse hook (warden-hook, pre-execution tool-call inspection) and a
+    SessionStart hook (warden-posture, device drift). Managed settings take precedence
+    over user settings.
+
+    By default Claude Code keeps its own sign-in (Pro/Max subscription or API account)
+    and `forceLoginMethod: "claudeai"` locks the login flow to subscription accounts.
+    With `route_gateway=True` it instead routes prompts through the Warden gateway
+    (`ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`) — billing the org's provider key.
 
     The `ak_…` placeholder is one per-developer Warden key; for per-user attribution
     without baking it in, use Claude Code's apiKeyHelper. The two scripts must be deployed
     to `hook_path` / `posture_path` on the device (push via the same MDM)."""
     b = base_url.rstrip("/")
     token = "ak_REPLACE_WITH_PER_USER_WARDEN_KEY"
-    return json.dumps({
-        "env": {
-            # No /v1 suffix: the Anthropic SDK appends /v1/messages itself, so a base of
-            # {b}/v1 would resolve to {b}/v1/v1/messages and 405. (Unlike OPENAI_BASE_URL,
-            # which does take /v1.) The gateway route is {b}/v1/messages.
-            "ANTHROPIC_BASE_URL": b,
-            "ANTHROPIC_AUTH_TOKEN": token,
-            "WARDEN_URL": b,
-            "WARDEN_TOKEN": token,
-        },
+    env = {
+        "WARDEN_URL": b,
+        "WARDEN_TOKEN": token,
+    }
+    if route_gateway:
+        # No /v1 suffix: the Anthropic SDK appends /v1/messages itself, so a base of
+        # {b}/v1 would resolve to {b}/v1/v1/messages and 405. (Unlike OPENAI_BASE_URL,
+        # which does take /v1.) The gateway route is {b}/v1/messages.
+        env = {"ANTHROPIC_BASE_URL": b, "ANTHROPIC_AUTH_TOKEN": token, **env}
+    data = {
+        "env": env,
         "hooks": {
             "PreToolUse": [{"matcher": "*", "hooks": [
                 {"type": "command", "command": hook_path, "timeout": 10}]}],
             "SessionStart": [{"matcher": "*", "hooks": [
                 {"type": "command", "command": f"{posture_path} --async --quiet"}]}],
         },
-    }, indent=2)
+    }
+    if not route_gateway:
+        data["forceLoginMethod"] = "claudeai"
+    return json.dumps(data, indent=2)
 
 
 def openai_env(base_url: str) -> str:
@@ -350,7 +360,8 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
                 ext_version: str = "0.5.0",
                 browser_ext_lockdown: bool = False, browser_ext_blocklist: list[str] | None = None,
                 browser_ext_allowlist: list[str] | None = None,
-                browser_ext_blocked_hosts: list[str] | None = None) -> dict[str, str]:
+                browser_ext_blocked_hosts: list[str] | None = None,
+                route_gateway: bool = False) -> dict[str, str]:
     b = base_url.rstrip("/")
     self_host_ext = bool(ext_update_url.strip())
     readme = (
@@ -371,10 +382,16 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
            "   devices only). Host extension-updates.xml + the signed .crx and set their URLs.\n"
            "3b. extension-updates.xml -> the self-hosted update manifest for the forcelist above.\n")
         + "4. ca-note.txt -> deploy your root CA to the system trust store (required for TLS inspection).\n"
-        "5. claude-managed-settings.json -> Claude Code managed-settings.json (gateway routing +\n"
-        "   the local-plane hooks). Deploy warden-hook/warden-posture to the paths it references\n"
-        f"   ({hook_path}, {posture_path}) and replace the ak_ placeholder with each dev's key\n"
-        "   (or use apiKeyHelper). Set WARDEN_ENFORCE=true in env to block locally; default monitors.\n"
+        "5. claude-managed-settings.json -> Claude Code managed-settings.json (the local-plane\n"
+        + ("   hooks + gateway routing: prompts bill the org's provider key via ANTHROPIC_BASE_URL).\n"
+           if route_gateway else
+           "   hooks; Claude Code keeps its own sign-in — forceLoginMethod locks login to\n"
+           "   claude.ai Pro/Max subscriptions. Re-generate with route_gateway for gateway billing.\n")
+        + "   Deploy warden-hook/warden-posture to the paths it references\n"
+        f"   ({hook_path}, {posture_path})"
+        + (" and replace the ak_ placeholder with each dev's key\n"
+           "   (or use apiKeyHelper)" if route_gateway else "")
+        + ". Set WARDEN_ENFORCE=true in env to block locally; default monitors.\n"
         "   Paths: macOS /Library/Application Support/ClaudeCode/, Linux /etc/claude-code/,\n"
         "   Windows C:\\Program Files\\ClaudeCode\\.\n"
         "6. openai.env -> environment variables that route OpenAI SDK/CLI clients through the\n"
@@ -406,7 +423,8 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "chrome-extension-settings.json": browser_extension_policy(
             extension_id, ext_update_url, browser_ext_lockdown, browser_ext_blocklist,
             browser_ext_allowlist, browser_ext_blocked_hosts),
-        "claude-managed-settings.json": claude_managed_settings(b, hook_path, posture_path),
+        "claude-managed-settings.json": claude_managed_settings(b, hook_path, posture_path,
+                                                                route_gateway=route_gateway),
         "openai.env": openai_env(b),
         "gemini.txt": gemini_config(b),
         "cursor-hooks.json": cursor_hooks(cursor_hook_path),

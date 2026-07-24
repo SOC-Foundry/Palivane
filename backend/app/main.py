@@ -1430,12 +1430,15 @@ def policy_pack(
     browser_ext_blocklist: str = "",
     browser_ext_allowlist: str = "",
     browser_ext_blocked_hosts: str = "",
+    route_gateway: bool = False,
     current: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """Generate the MDM policy pack (agentless enforcement config): VS Code extension
     allowlist, system-proxy profiles, browser force-install, a CA-deployment note, and
-    the Claude Code managed-settings.json (gateway routing + local-plane hooks).
+    the Claude Code managed-settings.json (local-plane hooks; by default Claude Code
+    keeps its own sign-in with forceLoginMethod=claudeai — pass route_gateway=true to
+    route prompts through the gateway and bill the org's provider key instead).
 
     Applied by the org's MDM (Jamf/Intune/GPO) — no Warden agent on the device. The
     extension allow/deny lists use this tenant's IDE-vetting config, else the global."""
@@ -1456,7 +1459,8 @@ def policy_pack(
                                browser_ext_lockdown=browser_ext_lockdown,
                                browser_ext_blocklist=_csv(browser_ext_blocklist),
                                browser_ext_allowlist=_csv(browser_ext_allowlist),
-                               browser_ext_blocked_hosts=_csv(browser_ext_blocked_hosts))
+                               browser_ext_blocked_hosts=_csv(browser_ext_blocked_hosts),
+                               route_gateway=route_gateway)
     return {"artifacts": artifacts}
 
 
@@ -1768,7 +1772,8 @@ def provision(body: ProvisionRequest, current: User = Depends(require_admin),
 
     ext_id = body.extension_id or settings.extension_id   # default to the configured published id
     platforms = ["macos", "windows"] if body.platform == "both" else [body.platform]
-    scripts = {p: prov.render(p, body.base_url, token, ext_id, body.proxy_host)
+    scripts = {p: prov.render(p, body.base_url, token, ext_id, body.proxy_host,
+                              body.route_gateway)
                for p in platforms}
     expiry_note = (f" Expires in {body.expires_in_days} day(s)." if body.expires_in_days
                    else " Does not expire.")

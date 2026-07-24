@@ -6,11 +6,19 @@ enrollment token** (not a device key): at runtime each machine self-enrolls
 then configures the endpoints Warden governs — Claude Code (managed-settings.json), the
 browser extension (managed policy), and optionally the desktop proxy.
 
-Crucially the artifacts stay self-healing after install: Claude Code's gateway auth goes
-through `apiKeyHelper` (warden-reenroll), and the browser extension gets the enrollment
-token (not a static ingest key). So if a device key is revoked/rotated, the machine
-re-enrolls on its own — no re-push to the fleet. One installer serves everyone, and every
-device gets an independently-revocable, attributed key.
+By default Claude Code **keeps its own sign-in** (Pro/Max subscription or API account):
+managed-settings carries only the Warden credentials for the local planes plus
+`forceLoginMethod: "claudeai"` so users land on subscription login. With
+`route_gateway=True` the installer instead reroutes Claude Code's API traffic through the
+Warden gateway (`ANTHROPIC_BASE_URL` + `apiKeyHelper`) — that bills the org's provider
+key, not personal subscriptions.
+
+Crucially the artifacts stay self-healing after install: with gateway routing, Claude
+Code's gateway auth goes through `apiKeyHelper` (warden-reenroll), and the browser
+extension gets the enrollment token (not a static ingest key). So if a device key is
+revoked/rotated, the machine re-enrolls on its own — no re-push to the fleet. One
+installer serves everyone, and every device gets an independently-revocable, attributed
+key.
 
 Pure string templating (no I/O) so it's unit-testable; the API layer mints the
 enrollment token and serves the result.
@@ -26,9 +34,24 @@ def _base(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
-def render_macos(base_url: str, enroll_token: str, extension_id: str, proxy_host: str = "") -> str:
+def _cc_settings_sh(route_gateway: bool) -> tuple[str, str]:
+    """managed-settings.json body + install echo for the bash installers.
+    Values are shell variables expanded by the heredoc at runtime."""
+    if route_gateway:
+        return ('{ "env": { "ANTHROPIC_BASE_URL": "$WARDEN_URL", "WARDEN_URL": "$WARDEN_URL", '
+                '"WARDEN_TOKEN": "$KEY", "WARDEN_ENROLL_TOKEN": "$ENROLL_TOKEN" }, '
+                '"apiKeyHelper": "/usr/local/bin/warden-reenroll" }',
+                "gateway auth via apiKeyHelper — bills the org's provider key")
+    return ('{ "env": { "WARDEN_URL": "$WARDEN_URL", "WARDEN_TOKEN": "$KEY", '
+            '"WARDEN_ENROLL_TOKEN": "$ENROLL_TOKEN" }, "forceLoginMethod": "claudeai" }',
+            "Claude Code keeps its own sign-in (Pro/Max); login locked to claude.ai")
+
+
+def render_macos(base_url: str, enroll_token: str, extension_id: str, proxy_host: str = "",
+                 route_gateway: bool = False) -> str:
     ext = extension_id or DEFAULT_EXTENSION_ID
     b = _base(base_url)
+    cc_json, cc_note = _cc_settings_sh(route_gateway)
     return f'''#!/usr/bin/env bash
 # Warden device setup (macOS). Carries an ENROLLMENT token; each machine self-enrolls for
 # its own per-device key. Claude Code's apiKeyHelper (warden-reenroll) re-enrolls
@@ -63,9 +86,9 @@ echo "Configuring Claude Code ..."
 CC_DIR="/Library/Application Support/ClaudeCode"
 sudo mkdir -p "$CC_DIR"
 sudo tee "$CC_DIR/managed-settings.json" >/dev/null <<JSON
-{{ "env": {{ "ANTHROPIC_BASE_URL": "$WARDEN_URL", "WARDEN_URL": "$WARDEN_URL", "WARDEN_TOKEN": "$KEY", "WARDEN_ENROLL_TOKEN": "$ENROLL_TOKEN" }}, "apiKeyHelper": "/usr/local/bin/warden-reenroll" }}
+{cc_json}
 JSON
-echo "  Claude Code -> $CC_DIR/managed-settings.json (gateway auth via apiKeyHelper)"
+echo "  Claude Code -> $CC_DIR/managed-settings.json ({cc_note})"
 
 # Browser extension (Chrome/Edge): push this managed policy via MDM (managed storage) for
 # extension id $EXT_ID. It carries the ENROLLMENT token — the extension self-enrolls its
@@ -79,9 +102,19 @@ echo "Done. Restart Claude Code and your browser to apply."
 '''
 
 
-def render_windows(base_url: str, enroll_token: str, extension_id: str, proxy_host: str = "") -> str:
+def render_windows(base_url: str, enroll_token: str, extension_id: str, proxy_host: str = "",
+                   route_gateway: bool = False) -> str:
     ext = extension_id or DEFAULT_EXTENSION_ID
     b = _base(base_url)
+    if route_gateway:
+        cc_ps = ('@{ env = @{ ANTHROPIC_BASE_URL = "$WardenUrl"; WARDEN_URL = "$WardenUrl"; '
+                 'WARDEN_TOKEN = $Key; WARDEN_ENROLL_TOKEN = $EnrollToken }; '
+                 'apiKeyHelper = "powershell -NoProfile -ExecutionPolicy Bypass -File `"$Reenroll`"" }')
+        cc_note = "gateway auth via apiKeyHelper — bills the org's provider key"
+    else:
+        cc_ps = ('@{ env = @{ WARDEN_URL = "$WardenUrl"; WARDEN_TOKEN = $Key; '
+                 'WARDEN_ENROLL_TOKEN = $EnrollToken }; forceLoginMethod = "claudeai" }')
+        cc_note = "Claude Code keeps its own sign-in (Pro/Max); login locked to claude.ai"
     return f'''# Warden device setup (Windows, run as Administrator in PowerShell). Carries an
 # ENROLLMENT token; each machine self-enrolls for its own per-device key, and Claude Code's
 # apiKeyHelper (warden-reenroll.ps1) re-enrolls automatically if that key is revoked/rotated.
@@ -111,9 +144,9 @@ New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
 Write-Host "Configuring Claude Code ..."
 $ccDir = "C:\\Program Files\\ClaudeCode"
 New-Item -ItemType Directory -Force -Path $ccDir | Out-Null
-$cc = @{{ env = @{{ ANTHROPIC_BASE_URL = "$WardenUrl"; WARDEN_URL = "$WardenUrl"; WARDEN_TOKEN = $Key; WARDEN_ENROLL_TOKEN = $EnrollToken }}; apiKeyHelper = "powershell -NoProfile -ExecutionPolicy Bypass -File `"$Reenroll`"" }}
+$cc = {cc_ps}
 $cc | ConvertTo-Json -Depth 5 | Set-Content -Path "$ccDir\\managed-settings.json" -Encoding UTF8
-Write-Host "  Claude Code -> $ccDir\\managed-settings.json (gateway auth via apiKeyHelper)"
+Write-Host "  Claude Code -> $ccDir\\managed-settings.json ({cc_note})"
 
 Write-Host "Configuring browser extension managed policy (Chrome + Edge) ..."
 foreach ($vendor in @("Google\\Chrome", "Microsoft\\Edge")) {{
@@ -130,9 +163,11 @@ Write-Host "Done. Restart Claude Code and your browser to apply."
 '''
 
 
-def render_linux(base_url: str, enroll_token: str, extension_id: str, proxy_host: str = "") -> str:
+def render_linux(base_url: str, enroll_token: str, extension_id: str, proxy_host: str = "",
+                 route_gateway: bool = False) -> str:
     ext = extension_id or DEFAULT_EXTENSION_ID
     b = _base(base_url)
+    cc_json, cc_note = _cc_settings_sh(route_gateway)
     return f'''#!/usr/bin/env bash
 # Warden device setup (Linux — Arch and derivatives; also Debian/Fedora). Carries an
 # ENROLLMENT token; each machine self-enrolls for its own per-device key, and Claude Code's
@@ -173,9 +208,9 @@ echo "Configuring Claude Code ..."
 CC_DIR="/etc/claude-code"
 sudo mkdir -p "$CC_DIR"
 sudo tee "$CC_DIR/managed-settings.json" >/dev/null <<JSON
-{{ "env": {{ "ANTHROPIC_BASE_URL": "$WARDEN_URL", "WARDEN_URL": "$WARDEN_URL", "WARDEN_TOKEN": "$KEY", "WARDEN_ENROLL_TOKEN": "$ENROLL_TOKEN" }}, "apiKeyHelper": "/usr/local/bin/warden-reenroll" }}
+{cc_json}
 JSON
-echo "  Claude Code -> $CC_DIR/managed-settings.json (gateway auth via apiKeyHelper)"
+echo "  Claude Code -> $CC_DIR/managed-settings.json ({cc_note})"
 
 # Browser extension (Chrome/Chromium/Edge): system-wide managed policy delivers this org's
 # config to extension id $EXT_ID via Chromium's 3rdparty managed-storage schema. It carries
@@ -200,11 +235,12 @@ echo "Done. Restart Claude Code and your browser to apply."
 
 
 def render(platform: str, base_url: str, enroll_token: str,
-           extension_id: str = "", proxy_host: str = "") -> str:
+           extension_id: str = "", proxy_host: str = "",
+           route_gateway: bool = False) -> str:
     if platform == "macos":
-        return render_macos(base_url, enroll_token, extension_id, proxy_host)
+        return render_macos(base_url, enroll_token, extension_id, proxy_host, route_gateway)
     if platform == "windows":
-        return render_windows(base_url, enroll_token, extension_id, proxy_host)
+        return render_windows(base_url, enroll_token, extension_id, proxy_host, route_gateway)
     if platform in ("linux", "arch"):
-        return render_linux(base_url, enroll_token, extension_id, proxy_host)
+        return render_linux(base_url, enroll_token, extension_id, proxy_host, route_gateway)
     raise ValueError(f"unknown platform: {platform!r}")

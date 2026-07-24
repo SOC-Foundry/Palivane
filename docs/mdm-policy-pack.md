@@ -29,7 +29,7 @@ It returns these artifacts (write each to a file):
 | `chrome-edge-forcelist.txt` | `ExtensionInstallForcelist` value for the browser extension. Defaults to the **Chrome Web Store** (extension published there — Unlisted is fine). Pass `?ext_update_url=…` (+ `?ext_crx_url=…`) to `/api/policy-pack` for a **self-hosted CRX** with no Web Store submission (managed devices only) — that also emits `extension-updates.xml` below. |
 | `chrome-extension-settings.json` | Chrome/Edge **`ExtensionSettings`** to govern *third-party* browser extensions — including agentic AI ones (e.g. Claude for Chrome) that Warden's own extension can't inspect. Blocks unsanctioned AI extensions by ID and/or keeps permitted ones off sensitive origins (`runtime_blocked_hosts`); Warden's extension is always force-installed. Query params: `?browser_ext_lockdown=true` (deny-all + allowlist), `?browser_ext_blocklist=`/`?browser_ext_allowlist=` (comma-sep IDs), `?browser_ext_blocked_hosts=`. |
 | `extension-updates.xml` | *(self-hosted only)* Omaha update manifest to host next to your signed `.crx`; the forcelist points at its URL. |
-| `claude-managed-settings.json` | Claude Code `managed-settings.json`: gateway routing + the Route C hooks (warden-hook, warden-posture) |
+| `claude-managed-settings.json` | Claude Code `managed-settings.json`: Route C hooks (warden-hook, warden-posture); subscription sign-in by default (`forceLoginMethod`), gateway routing with `route_gateway=true` |
 | `openai.env` | Environment vars (`OPENAI_BASE_URL`) routing OpenAI SDK/CLI clients through the gateway — agentless, no CA needed |
 | `gemini.txt` | Gemini routing: SDK `http_options` snippet + note (Gemini has no base-URL env var, so the system proxy is its primary capture path) |
 | `cursor-hooks.json` | Cursor `hooks.json` registering `warden-cursor-hook` on the security events — local, pinning-proof capture of Cursor prompts + tool calls |
@@ -117,14 +117,19 @@ no re-push.
 
 ## Claude Code hooks (MDM-pushable, same model)
 
-The pack now generates this for you: **`claude-managed-settings.json`** carries the
-gateway routing plus Warden's **local planes** — a `PreToolUse` hook (`warden-hook` —
-pre-execution tool-call inspection) and a `SessionStart` hook (`warden-posture` — device
-drift). Deploy it to Claude Code's managed-settings path (macOS `/Library/Application
+The pack now generates this for you: **`claude-managed-settings.json`** carries Warden's
+**local planes** — a `PreToolUse` hook (`warden-hook` — pre-execution tool-call inspection)
+and a `SessionStart` hook (`warden-posture` — device drift). By default Claude Code keeps
+its own sign-in and `forceLoginMethod: "claudeai"` locks login to claude.ai (Pro/Max
+subscriptions) — devs' prompts bill their plans, not an org API key. Generate the pack with
+`route_gateway=true` (console checkbox or query param) to instead route prompts through the
+Warden gateway (`ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`), billing the org's provider
+key. Deploy it to Claude Code's managed-settings path (macOS `/Library/Application
 Support/ClaudeCode/`, Linux `/etc/claude-code/`, Windows `C:\Program Files\ClaudeCode\`),
-push the two scripts to the referenced paths with your MDM's file-deployment, and replace
-the `ak_` placeholder with each developer's key (or wire `apiKeyHelper` — the
-`/api/provision` installer wires it to `warden-reenroll` for a self-healing per-device key). See
+push the two scripts to the referenced paths with your MDM's file-deployment, and — in
+gateway mode — replace the `ak_` placeholder with each developer's key (or wire
+`apiKeyHelper` — the `/api/provision` installer wires it to `warden-reenroll` for a
+self-healing per-device key). See
 [`docs/claude-deployment.md`](claude-deployment.md) (Route C) for the field-by-field
 breakdown. Same philosophy as the rest of the pack: config the app enforces, no resident
 Warden agent.
