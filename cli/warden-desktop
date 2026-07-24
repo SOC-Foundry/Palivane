@@ -221,8 +221,42 @@ set_proxy() {
           fi ;;
         *)
           proxy_manual_note ;;
-      esac ;;
+      esac
+      # The DE proxy settings above only reach DE-integrated apps: GNOME's gsettings is
+      # read by Chromium, but KDE's kioslaverc is NOT — Chromium/Electron (Claude/ChatGPT
+      # desktop, browsers) ignore it. So ALSO set the proxy as session-wide env via
+      # systemd's environment.d, which the graphical session imports and GUI apps inherit
+      # on any desktop. This is what makes desktop-app capture actually always-on on KDE
+      # (and a belt-and-suspenders on GNOME). Takes effect on next login.
+      set_session_proxy_env ;;
   esac
+}
+
+# Session-wide proxy env for GUI apps that ignore the DE proxy config (Chromium/Electron).
+# systemd user imports ~/.config/environment.d/*.conf into the graphical session at login.
+set_session_proxy_env() {
+  local d="${HOME_DIR}/.config/environment.d"
+  mkdir -p "$d"
+  cat > "$d/warden-proxy.conf" <<ENV
+# Warden desktop egress proxy (warden-desktop). Remove this file (or run
+# 'warden-desktop uninstall') to stop routing GUI apps through Warden.
+http_proxy=http://127.0.0.1:$PORT
+https_proxy=http://127.0.0.1:$PORT
+HTTP_PROXY=http://127.0.0.1:$PORT
+HTTPS_PROXY=http://127.0.0.1:$PORT
+no_proxy=localhost,127.0.0.1,::1
+NO_PROXY=localhost,127.0.0.1,::1
+ENV
+  # Best-effort: push into the running systemd user session too (already-open apps won't
+  # pick it up, but newly-launched ones from this session will).
+  systemctl --user import-environment http_proxy https_proxy HTTP_PROXY HTTPS_PROXY no_proxy NO_PROXY 2>/dev/null || true
+  log "session proxy env written (environment.d) — Chromium/Electron desktop apps route through"
+  log "Warden on next login. For apps already open, quit and reopen them (or log out/in)."
+}
+
+unset_session_proxy_env() {
+  rm -f "${HOME_DIR}/.config/environment.d/warden-proxy.conf"
+  systemctl --user unset-environment http_proxy https_proxy HTTP_PROXY HTTPS_PROXY no_proxy NO_PROXY 2>/dev/null || true
 }
 
 start_service() {
@@ -351,7 +385,8 @@ cmd_install() {
     log "Verify: open a NEW terminal and run 'claude'; check findings in the console."
   else
     log "done. Desktop AI apps + CLIs now route through Warden. Enforce mode: ${WARDEN_PROXY_ENFORCE:-false} (monitor)."
-    log "Verify: open the Claude/ChatGPT desktop app (or a new terminal for CLIs) and check the console."
+    log "Verify: CLIs work in a new terminal now; desktop apps (Claude/ChatGPT) route after you"
+    log "        log out and back in (or quit+reopen them), since GUI proxy env applies at login."
   fi
 }
 
@@ -376,6 +411,7 @@ cmd_uninstall() {
             dbus-send --type=signal /KIO/Scheduler org.kde.KIO.Scheduler.reparseSlaveConfiguration string:'' 2>/dev/null || true ;;
       esac
       nss_untrust_ca
+      unset_session_proxy_env
       log "stopped. (System CA left in the trust store; remove /usr/local/share/ca-certificates/warden-mitmproxy.crt to fully revert.)"
       log "         (If you set HTTPS_PROXY/HTTP_PROXY env vars manually, unset them too.)" ;;
   esac
