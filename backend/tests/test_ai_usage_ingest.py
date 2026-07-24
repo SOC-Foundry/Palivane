@@ -214,3 +214,22 @@ def test_risky_capture_still_persisted(raw_client, db_factory, monkeypatch):
     assert r.status_code == 200
     assert r.json()["finding_id"] is not None
     assert _finding_count(db_factory) == 1
+
+
+def test_verdict_carries_org_enforce_stance(client, raw_client):
+    # Settings → Enforcement: the tenant's client_enforce is returned on every verdict so
+    # deployed hooks/proxies follow the console without any per-device flag.
+    key = client.post("/api/apikeys", json={"label": "capture", "actor": "e@acme.com"}).json()["token"]
+    payload = {"content": "Brainstorm five blog titles.", "destination": "https://claude.ai/"}
+    hdrs = {"X-Warden-Token": key}
+
+    r = raw_client.post("/api/ingest/ai-usage", json=payload, headers=hdrs)
+    assert r.json()["enforce"] is False   # global default: monitor
+
+    client.patch("/api/tenant", json={"client_enforce": "on"})
+    r = raw_client.post("/api/ingest/ai-usage", json=payload, headers=hdrs)
+    assert r.json()["enforce"] is True
+
+    client.patch("/api/tenant", json={"client_enforce": "inherit"})
+    r = raw_client.post("/api/ingest/ai-usage", json=payload, headers=hdrs)
+    assert r.json()["enforce"] is False

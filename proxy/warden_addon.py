@@ -172,10 +172,12 @@ def scan(content: str, destination: str, tool: str = "",
 
 def should_block(verdict: dict, enforce: bool) -> bool:
     # A confirmed secret/PII leak (force_block) is hard-blocked even in monitor mode —
-    # "block the certain, monitor the fuzzy". Everything else blocks only under enforce.
+    # "block the certain, monitor the fuzzy". Everything else blocks under enforce —
+    # the local WARDEN_PROXY_ENFORCE, or the org's console stance (Settings →
+    # Enforcement) returned on every verdict, so the console governs deployed proxies live.
     if verdict.get("force_block"):
         return True
-    return enforce and verdict.get("action") == "block"
+    return (enforce or bool(verdict.get("enforce"))) and verdict.get("action") == "block"
 
 
 # --- MCP inspection (agentic tool-use) -----------------------------------------------

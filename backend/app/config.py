@@ -105,6 +105,10 @@ class Settings:
     # the "block the certain, monitor the fuzzy" default; set false to monitor those too.
     gateway_enforce_secrets: bool = os.getenv("GATEWAY_ENFORCE_SECRETS", "true").lower() in ("1", "true", "yes")
     gateway_block_severity: str = os.getenv("GATEWAY_BLOCK_SEVERITY", "high")
+    # Local capture planes (CLI hooks + desktop egress proxy): default enforce stance,
+    # returned to clients in ingest verdicts (tenants override per-org in Settings).
+    # false = monitor — confirmed secret/PII leaks still hard-block via force_block.
+    client_enforce: bool = os.getenv("CLIENT_ENFORCE", "").lower() in ("1", "true", "yes")
     # Response-side DLP: scan the model's OUTPUT for secrets/PII (records; blocks in enforce).
     gateway_scan_responses: bool = os.getenv("GATEWAY_SCAN_RESPONSES", "true").lower() in ("1", "true", "yes")
     # OpenAI-compatible upstream for /v1/chat/completions (empty = stub reply offline).

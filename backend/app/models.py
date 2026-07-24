@@ -79,6 +79,10 @@ class Tenant(Base):
     # = inherit the global env default, same tri-state pattern as judge_enabled).
     gateway_enforce = Column(Boolean, nullable=True, default=None)
     gateway_block_severity = Column(String(16), default="")
+    # Local capture planes (CLI hooks + desktop egress proxy): the org's monitor/enforce
+    # stance, returned to clients in ingest verdicts and provisioned at connect time.
+    # None = inherit the global CLIENT_ENFORCE env default (monitor).
+    client_enforce = Column(Boolean, nullable=True, default=None)
     # Block threshold for capture-plane verdicts (/api/ingest/mcp action). Empty = global.
     mcp_block_severity = Column(String(16), default="")
     # Org-approved AI destinations (comma-separated hosts). Empty = inherit global.
@@ -148,6 +152,7 @@ class Tenant(Base):
                                            and (self.siem_s3_secret or "").strip()),
                 "siem_token_set": bool((self.siem_token or "").strip()),
                 "gateway_enforce": self.gateway_enforce,
+                "client_enforce": self.client_enforce,
                 "gateway_block_severity": self.gateway_block_severity or "",
                 "mcp_block_severity": self.mcp_block_severity or "",
                 "sanctioned_ai_tools": self.sanctioned_ai_tools or "",

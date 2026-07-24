@@ -189,10 +189,11 @@ def _post(endpoint: str, payload: dict, cfg: dict) -> dict:
 def should_block(verdict: dict, enforce: bool) -> bool:
     """Mirror of the proxy's rule: a confirmed secret/PII leak (force_block) is blocked
     even in monitor mode — block the certain, monitor the fuzzy. Everything else blocks
-    only under enforce."""
+    under enforce — local, or the org's stance from the console (Settings → Enforcement),
+    which the server returns on every verdict."""
     if verdict.get("force_block"):
         return True
-    return enforce and verdict.get("action") == "block"
+    return (enforce or bool(verdict.get("enforce"))) and verdict.get("action") == "block"
 
 
 def block_output(event_name: str, verdict: dict) -> dict:

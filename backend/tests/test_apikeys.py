@@ -84,6 +84,9 @@ def test_extension_token_self_serve(client, raw_client):
     # Tells warden-connect whether the gateway can forward Claude Code to a real model
     # (vs. the inspection stub) so it can warn "set your provider key".
     assert isinstance(body["upstream_forwards"], bool)
+    # The org's enforce stance for the local planes — warden-connect provisions it into
+    # the hooks it installs (default: monitor).
+    assert body["enforce"] is False
     # The minted key works as an ingest token (bound to the caller's tenant).
     ing = raw_client.post("/api/ingest/ai-usage",
                           json={"content": "hello world", "destination": "https://claude.ai/"},

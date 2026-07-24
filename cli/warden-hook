@@ -20,8 +20,10 @@ inline even in monitor mode so a confirmed secret/PII leak (`force_block`) is st
 before it leaves — same rule as the egress proxy: block the certain, monitor the fuzzy.
 Set WARDEN_ENFORCE=true to also block on ordinary high-risk verdicts — tool calls are
 then scanned synchronously and denied with the reason shown to the model; blocked prompts
-are erased with the reason shown to the user. Fails open on any error: Warden being down
-never breaks the developer.
+are erased with the reason shown to the user. The org can set that stance centrally
+(console Settings → Enforcement): `warden-connect` provisions it at connect time, and
+inline verdicts carry the live value in their `enforce` field. Fails open on any error:
+Warden being down never breaks the developer.
 
 Installed by `warden-connect` (PreToolUse + UserPromptSubmit entries in
 ~/.claude/settings.json), or manually:
@@ -175,10 +177,11 @@ def scan_mcp(activity: dict, url: str, token: str, user: str = "", timeout: floa
 def should_block(verdict: dict, enforce: bool) -> bool:
     """Mirror of the proxy's rule: a confirmed secret/PII leak (force_block) is blocked
     even in monitor mode — block the certain, monitor the fuzzy. Everything else blocks
-    only under enforce."""
+    under enforce — local (WARDEN_ENFORCE) or the org's stance from the console
+    (Settings → Enforcement), which the server returns on every verdict."""
     if verdict.get("force_block"):
         return True
-    return enforce and verdict.get("action") == "block"
+    return (enforce or bool(verdict.get("enforce"))) and verdict.get("action") == "block"
 
 
 def deny_output(verdict: dict) -> dict:

@@ -150,6 +150,14 @@ def test_ordinary_block_verdict_only_blocks_under_enforce():
     assert hook.should_block({"action": "warn"}, enforce=True) is False
 
 
+def test_org_enforce_stance_in_verdict_blocks_without_local_flag():
+    # The console's Settings → Enforcement rides along on every verdict ("enforce") —
+    # the hook honors it even when the device has no WARDEN_ENFORCE set.
+    assert hook.should_block({"action": "block", "enforce": True}, enforce=False) is True
+    assert hook.should_block({"action": "block", "enforce": False}, enforce=False) is False
+    assert hook.should_block({"action": "warn", "enforce": True}, enforce=False) is False
+
+
 # --- deny_output ------------------------------------------------------------------------
 
 def test_deny_output_shape_and_reason():
