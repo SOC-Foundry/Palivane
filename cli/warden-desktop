@@ -13,6 +13,9 @@
 #   warden-desktop status
 #
 # macOS and Linux (GNOME/KDE; other desktops fall back to manual/env-var setup).
+# On Linux the CA is trusted in BOTH the system bundle and the per-user NSS store
+# (certutil), because Chromium/Electron desktop apps (Claude/ChatGPT desktop) verify TLS
+# against NSS and ignore the system bundle — without NSS trust their capture never works.
 # mitmproxy installs as a self-contained binary (no system Python; PEP-668-proof).
 # Windows is a separate PowerShell path (see docs).
 set -euo pipefail
@@ -24,6 +27,11 @@ WDIR="${HOME_DIR}/.warden"
 ADDON="${WDIR}/warden_addon.py"
 CA="${HOME_DIR}/.mitmproxy/mitmproxy-ca-cert.pem"
 SHIM_DIR="${WDIR}/bin"
+# Chromium/Electron desktop apps (Claude/ChatGPT desktop) on Linux DON'T use the system CA
+# bundle — they read this per-user NSS store. The proxy's TLS interception fails for them
+# unless the CA is trusted here too (no sudo needed — it's per-user).
+NSS_DB="sql:${HOME_DIR}/.pki/nssdb"
+CA_NICK="warden-mitmproxy"
 # mitmproxy is installed here as a self-contained binary (bundles its own Python) so the
 # default install needs no system Python and never trips PEP-668. Pin with WARDEN_MITM_VERSION.
 MITM_DIR="${WDIR}/mitmproxy"
@@ -146,9 +154,36 @@ trust_ca() {
     Linux)
       log "trusting the CA (sudo; /usr/local/share/ca-certificates)…"
       sudo cp "$CA" /usr/local/share/ca-certificates/warden-mitmproxy.crt
-      sudo update-ca-certificates >/dev/null ;;
+      sudo update-ca-certificates >/dev/null
+      nss_trust_ca ;;
     *) die "unsupported OS: $OS" ;;
   esac
+}
+
+# Chromium/Electron (Claude/ChatGPT desktop, VS Code) verify TLS against the per-user NSS
+# store, not the system bundle — so the system-CA trust above is invisible to them. Add
+# the CA to NSS too (no sudo). Without this, those apps route through the proxy and then
+# reject its certificate, so desktop-app capture silently never works on Linux.
+nss_trust_ca() {
+  [ "$OS" = "Linux" ] || return 0
+  if ! command -v certutil >/dev/null 2>&1; then
+    log "note: certutil not found — Chromium/Electron desktop apps (Claude/ChatGPT desktop)"
+    log "      won't trust the proxy CA. Install it: sudo <pkgmgr> install libnss3-tools (nss-tools)."
+    return 0
+  fi
+  [ -d "${HOME_DIR}/.pki/nssdb" ] || mkdir -p "${HOME_DIR}/.pki/nssdb"
+  certutil -d "$NSS_DB" -D -n "$CA_NICK" 2>/dev/null || true   # replace any prior copy
+  if certutil -d "$NSS_DB" -A -n "$CA_NICK" -t C,, -i "$CA" 2>/dev/null; then
+    log "trusted the CA in the NSS store — Chromium/Electron desktop apps now verify through the proxy."
+  else
+    log "warning: couldn't add the CA to the NSS store; Electron desktop apps may reject the proxy."
+  fi
+}
+
+nss_untrust_ca() {
+  [ "$OS" = "Linux" ] || return 0
+  command -v certutil >/dev/null 2>&1 || return 0
+  certutil -d "$NSS_DB" -D -n "$CA_NICK" 2>/dev/null && log "removed the CA from the NSS store." || true
 }
 
 set_proxy() {
@@ -340,7 +375,8 @@ cmd_uninstall() {
           command -v dbus-send >/dev/null 2>&1 && \
             dbus-send --type=signal /KIO/Scheduler org.kde.KIO.Scheduler.reparseSlaveConfiguration string:'' 2>/dev/null || true ;;
       esac
-      log "stopped. (CA left in the trust store; remove /usr/local/share/ca-certificates/warden-mitmproxy.crt to fully revert.)"
+      nss_untrust_ca
+      log "stopped. (System CA left in the trust store; remove /usr/local/share/ca-certificates/warden-mitmproxy.crt to fully revert.)"
       log "         (If you set HTTPS_PROXY/HTTP_PROXY env vars manually, unset them too.)" ;;
   esac
 }
