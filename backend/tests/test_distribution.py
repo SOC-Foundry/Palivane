@@ -45,3 +45,11 @@ def test_install_falls_back_when_url_unset(raw_client, monkeypatch):
     monkeypatch.setattr(dist.settings, "public_base_url", "")
     body = raw_client.get("/install.sh").text
     assert "https://warden.tachtech.net" in body   # sensible default
+
+
+def test_installer_covers_fish_path(raw_client):
+    body = raw_client.get("/install.sh").text
+    # fish doesn't read POSIX rc files — the installer must drop a conf.d snippet too.
+    assert "fish/conf.d" in body and "fish_add_path" in body
+    # and still handles bash/zsh
+    assert ".bashrc" in body and ".zshrc" in body

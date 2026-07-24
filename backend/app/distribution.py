@@ -110,13 +110,18 @@ for t in $TOOLS; do
 done
 echo "  installed: $TOOLS"
 
-# Put ~/.warden/bin on PATH for future shells (bash + zsh), and this one.
+# Put ~/.warden/bin on PATH for future shells (bash, zsh, fish), and this one.
 add_path() {{
   local rc="$1"
   [ -f "$rc" ] || return 0
   grep -qs '.warden/bin' "$rc" || printf '\\nexport PATH="$HOME/.warden/bin:$PATH"\\n' >> "$rc"
 }}
 add_path "$HOME/.bashrc"; add_path "$HOME/.zshrc"; add_path "$HOME/.profile"
+# fish doesn't read POSIX rc files; drop a conf.d snippet (fish sources every *.fish there).
+if [ -d "$HOME/.config/fish" ] || command -v fish >/dev/null 2>&1; then
+  mkdir -p "$HOME/.config/fish/conf.d"
+  printf 'fish_add_path -g "$HOME/.warden/bin"\\n' > "$HOME/.config/fish/conf.d/warden.fish"
+fi
 export PATH="$BIN:$PATH"
 
 echo "Connecting Claude Code (a browser window will open to sign in) ..."
