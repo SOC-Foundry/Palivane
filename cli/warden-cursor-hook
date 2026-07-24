@@ -18,9 +18,12 @@ One script handles every event, dispatched on `hook_event_name`:
   afterFileEdit        -> written content (secrets/PII)       -> /api/ingest/mcp (monitor-only;
                           Cursor supports no output for this event)
 
-Monitor by default: the verdict is recorded by a detached child and the action is allowed
-with ~zero added latency. Set WARDEN_ENFORCE=true to scan synchronously and DENY on a
-block verdict — the reason is surfaced to the user and the agent. Fails open on any error:
+Monitor by default: tool-surface verdicts are recorded by a detached child and the action
+is allowed with ~zero added latency. Prompts (beforeSubmitPrompt) are the exception: they
+are scanned inline even in monitor mode so a confirmed secret/PII leak (`force_block`) is
+stopped before it leaves — same rule as the egress proxy: block the certain, monitor the
+fuzzy. Set WARDEN_ENFORCE=true to scan every event synchronously and DENY on a block
+verdict — the reason is surfaced to the user and the agent. Fails open on any error:
 Warden being down never breaks the developer.
 
 Register in ~/.cursor/hooks.json (user), <project>/.cursor/hooks.json, or the enterprise
@@ -223,6 +226,15 @@ def _post(endpoint: str, payload: dict, cfg: dict) -> dict:
         return {"action": "allow", "reason": "scan-failed"}
 
 
+def should_block(verdict: dict, enforce: bool) -> bool:
+    """Mirror of the proxy's rule: a confirmed secret/PII leak (force_block) is blocked
+    even in monitor mode — block the certain, monitor the fuzzy. Everything else blocks
+    only under enforce."""
+    if verdict.get("force_block"):
+        return True
+    return enforce and verdict.get("action") == "block"
+
+
 def _reason(verdict: dict) -> str:
     cats = ", ".join(dict.fromkeys(
         s.get("category", "") for s in verdict.get("signals", []) if s.get("category")))
@@ -291,10 +303,13 @@ def main() -> int:
     if not cfg["url"] or not cfg["token"]:
         return 0  # not connected to Warden — nothing to report to
 
-    # afterFileEdit can't be enforced (no output channel) — always monitor.
-    if cfg["enforce"] and name != "afterFileEdit":
+    # Prompts are always scanned inline (even in monitor mode): a confirmed secret/PII
+    # leak (force_block) must be stopped before it leaves the device. Other events scan
+    # inline only under enforce; afterFileEdit can't be enforced (no output channel).
+    inline = name == "beforeSubmitPrompt" or (cfg["enforce"] and name != "afterFileEdit")
+    if inline:
         verdict = _post(endpoint, payload, cfg)
-        if verdict.get("action") == "block":
+        if should_block(verdict, cfg["enforce"]):
             print(json.dumps(block_output(name, verdict)))
             return 0
         out = allow_output(name)

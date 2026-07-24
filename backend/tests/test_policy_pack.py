@@ -93,6 +93,7 @@ def test_forcelist_and_pack():
                          "windows-proxy.reg", "chrome-edge-forcelist.txt",
                          "chrome-extension-settings.json",
                          "claude-managed-settings.json", "openai.env", "gemini.txt",
+                         "gemini-settings.json", "codex-hooks.json", "codex.txt",
                          "cursor-hooks.json", "cursor.txt", "warden-secrets.plist",
                          "warden-secrets.cron", "warden-secrets-task.xml", "ca-note.txt"}
 
@@ -135,6 +136,31 @@ def test_cursor_note_explains_pinning_and_planes():
     assert "https://w.acme.com/v1" in note                        # optional override URL
 
 
+def test_gemini_settings_registers_prompt_and_tool_hooks():
+    s = json.loads(pp.gemini_settings("/opt/warden-gemini-hook"))
+    ba = s["hooks"]["BeforeAgent"][0]
+    assert "matcher" not in ba                       # BeforeAgent takes no matcher
+    assert ba["hooks"][0]["command"] == "/opt/warden-gemini-hook"
+    assert ba["hooks"][0]["timeout"] == 10000        # Gemini timeouts are milliseconds
+    assert s["hooks"]["BeforeTool"][0]["matcher"] == ".*"
+
+
+def test_codex_hooks_registers_prompt_and_tool_hooks():
+    h = json.loads(pp.codex_hooks("/opt/warden-codex-hook"))
+    ups = h["hooks"]["UserPromptSubmit"][0]
+    assert "matcher" not in ups                      # UserPromptSubmit takes no matcher
+    assert ups["hooks"][0] == {"type": "command", "command": "/opt/warden-codex-hook",
+                               "timeout": 10}
+    assert h["hooks"]["PreToolUse"][0]["matcher"] == ".*"
+
+
+def test_codex_note_explains_subscription_gap():
+    note = pp.codex_note("https://w.acme.com/", "/opt/warden-codex-hook")
+    assert "OPENAI_BASE_URL" in note                 # why the env route isn't enough
+    assert "requirements.toml" in note               # managed-hooks distribution
+    assert "/opt/warden-codex-hook" in note
+
+
 def test_openai_env_routes_to_gateway():
     env = pp.openai_env("https://w.acme.com/")
     assert 'OPENAI_BASE_URL="https://w.acme.com/v1"' in env
@@ -162,6 +188,10 @@ def test_claude_managed_settings_default_keeps_own_auth():
     # Route C hooks at the deployed script paths.
     pre = s["hooks"]["PreToolUse"][0]["hooks"][0]
     assert pre["command"] == "/opt/warden-hook" and pre["timeout"] == 10
+    # Prompt-level coverage: same script, UserPromptSubmit event (no matcher).
+    ups = s["hooks"]["UserPromptSubmit"][0]
+    assert "matcher" not in ups
+    assert ups["hooks"][0]["command"] == "/opt/warden-hook"
     sess = s["hooks"]["SessionStart"][0]["hooks"][0]["command"]
     assert sess == "/opt/warden-posture --async --quiet"
 

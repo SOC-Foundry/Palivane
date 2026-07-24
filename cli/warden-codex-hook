@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+"""warden-codex-hook — OpenAI Codex CLI hook adapter: local, pre-execution inspection.
+
+Under the default ChatGPT-subscription sign-in, Codex talks to the ChatGPT backend and
+ignores OPENAI_BASE_URL, so neither the gateway nor an unpinned proxy reliably sees its
+prompts. This hook closes that gap from *inside* Codex using its lifecycle hooks
+(codex 0.116+, on by default in current releases): Codex runs it at agent-lifecycle
+events, passing structured JSON on stdin, and honors a JSON verdict on stdout. Because it
+runs locally, it is independent of auth mode and endpoint.
+
+One script handles both security-relevant events, dispatched on `hook_event_name`
+(Codex's hook schema deliberately mirrors Claude Code's):
+
+  UserPromptSubmit -> the user's typed prompt, before the model processes it
+                      -> /api/ingest/ai-usage (secrets/PII/data-loss on what's about
+                      to leave)
+  PreToolUse       -> tool call (shell, MCP) before execution
+                      -> /api/ingest/mcp     (dangerous commands, server allowlist,
+                      secrets/PII in arguments)
+
+Monitor by default: tool-call verdicts are recorded by a detached child with ~zero added
+latency. Prompts are the exception: they are scanned inline even in monitor mode so a
+confirmed secret/PII leak (`force_block`) is stopped before it leaves — same rule as the
+egress proxy: block the certain, monitor the fuzzy. Set WARDEN_ENFORCE=true to scan every
+event synchronously and DENY on a block verdict. Fails open on any error: Warden being
+down never breaks the developer.
+
+Register in ~/.codex/hooks.json (or push managed hooks via requirements.toml — managed
+hooks are auto-trusted; user-level ones need a one-time `/hooks` trust approval):
+
+  {"hooks": {
+     "UserPromptSubmit": [{"hooks": [
+        {"type": "command", "command": "/usr/local/bin/warden-codex-hook", "timeout": 10}]}],
+     "PreToolUse": [{"matcher": ".*", "hooks": [
+        {"type": "command", "command": "/usr/local/bin/warden-codex-hook", "timeout": 10}]}]}}
+
+Config: WARDEN_URL + WARDEN_TOKEN (an ak_… key) from the environment, else from
+~/.codex/warden.json ({"url","token","user","enforce"} — written by warden-connect),
+else the pair warden-connect wrote to ~/.claude/settings.json. Stdlib only.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import urllib.request
+
+_MAX_ARGS_TEXT = 20000
+
+
+def _harvest_strings(obj, out: list[str]) -> None:
+    """Recursively collect string *values* from an arbitrary JSON structure (dict keys
+    ignored) — scans unknown tool-input shapes without a per-tool parser."""
+    if isinstance(obj, str):
+        if len(obj) >= 2:
+            out.append(obj)
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            _harvest_strings(v, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _harvest_strings(v, out)
+
+
+def _cap(text: str) -> str:
+    return text[:_MAX_ARGS_TEXT]
+
+
+def build_ai_usage(event: dict) -> dict | None:
+    """UserPromptSubmit -> ai-usage payload (the typed prompt on its way to the model)."""
+    prompt = event.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        return None
+    return {"content": _cap(prompt), "destination": "codex-cli", "tool": "codex-cli"}
+
+
+def build_activity(event: dict) -> dict | None:
+    """PreToolUse -> Warden's MCP-activity shape (POST /api/ingest/mcp).
+
+    MCP tools carry a server prefix (mcp__<server>__<tool>, mirroring Claude Code) so the
+    org allowlist applies; shell and other built-ins send server="" — they aren't MCP
+    servers, so the untrusted-server signal must not fire for them."""
+    tool_name = event.get("tool_name", "")
+    if not isinstance(tool_name, str) or not tool_name:
+        return None
+    tool_input = event.get("tool_input")
+    if not isinstance(tool_input, dict):
+        tool_input = {}
+
+    activity = {"method": "tools/call", "server": "", "tool": tool_name,
+                "args_text": "", "resource": "", "transport": "stdio"}
+
+    if tool_name.startswith("mcp__"):
+        parts = tool_name.split("__", 2)  # mcp__<server>__<tool>; tool may contain __
+        activity["server"] = parts[1] if len(parts) > 1 else ""
+        activity["tool"] = parts[2] if len(parts) > 2 else ""
+        harvested: list[str] = []
+        _harvest_strings(tool_input, harvested)
+        activity["args_text"] = _cap("\n".join(harvested))
+    elif isinstance(tool_input.get("command"), str) and tool_input.get("command"):
+        # The shell tool (whatever Codex names it this release): command + any context.
+        cmd = tool_input.get("command", "")
+        cwd = tool_input.get("cwd", "")
+        activity["args_text"] = _cap("\n".join(
+            p for p in (cmd, cwd) if isinstance(p, str) and p))
+    else:
+        # Unknown built-in — harvest all string values (paths land in args_text for the
+        # sensitive-path check; content is scanned for secrets/PII).
+        harvested = []
+        _harvest_strings(tool_input, harvested)
+        activity["args_text"] = _cap("\n".join(harvested))
+    return activity
+
+
+def _codex_config(path: str = "~/.codex/warden.json") -> dict:
+    try:
+        with open(os.path.expanduser(path)) as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _claude_settings_env(path: str = "~/.claude/settings.json") -> dict:
+    try:
+        with open(os.path.expanduser(path)) as f:
+            env = json.load(f).get("env")
+        return env if isinstance(env, dict) else {}
+    except Exception:
+        return {}
+
+
+def read_config() -> dict:
+    """Resolve backend URL/token/mode: environment, then ~/.codex/warden.json, then the
+    pair warden-connect wrote to ~/.claude/settings.json (WARDEN_URL/WARDEN_TOKEN, or the
+    gateway pair — the ak_ token doubles as ingest auth)."""
+    cc = _codex_config()
+    url = os.getenv("WARDEN_URL") or cc.get("url", "")
+    token = os.getenv("WARDEN_TOKEN") or cc.get("token", "")
+    enforce_raw = os.getenv("WARDEN_ENFORCE")
+    enforce = (enforce_raw if enforce_raw is not None else str(cc.get("enforce", ""))).lower() in ("1", "true", "yes")
+    user = os.getenv("WARDEN_USER") or cc.get("user", "")
+
+    if not url or not token:
+        senv = _claude_settings_env()
+        url = url or senv.get("WARDEN_URL", "")
+        if not token:
+            tok = senv.get("WARDEN_TOKEN", "") or senv.get("ANTHROPIC_AUTH_TOKEN", "")
+            if isinstance(tok, str) and tok.startswith("ak_"):
+                token = tok
+        if not url:
+            base = senv.get("ANTHROPIC_BASE_URL", "")
+            if isinstance(base, str) and base:
+                url = base.rstrip("/")
+                if url.endswith("/v1"):
+                    url = url[: -len("/v1")]
+    try:
+        timeout = float(os.getenv("WARDEN_HOOK_TIMEOUT", "5"))
+    except ValueError:
+        timeout = 5.0
+    return {"url": url, "token": token, "enforce": enforce, "timeout": timeout, "user": user}
+
+
+def _post(endpoint: str, payload: dict, cfg: dict) -> dict:
+    """POST to a Warden ingest endpoint; fail open (action=allow) on any error."""
+    try:
+        body = dict(payload)
+        body["user"] = cfg.get("user", "")
+        req = urllib.request.Request(
+            cfg["url"].rstrip("/") + endpoint, method="POST",
+            data=json.dumps(body).encode(),
+            headers={"content-type": "application/json", "User-Agent": "warden-codex-hook/1.0", "X-Warden-Token": cfg["token"]},
+        )
+        with urllib.request.urlopen(req, timeout=cfg.get("timeout", 5.0)) as r:
+            return json.loads(r.read())
+    except Exception:
+        return {"action": "allow", "reason": "scan-failed"}
+
+
+def should_block(verdict: dict, enforce: bool) -> bool:
+    """Mirror of the proxy's rule: a confirmed secret/PII leak (force_block) is blocked
+    even in monitor mode — block the certain, monitor the fuzzy. Everything else blocks
+    only under enforce."""
+    if verdict.get("force_block"):
+        return True
+    return enforce and verdict.get("action") == "block"
+
+
+def _reason(verdict: dict, what: str) -> str:
+    cats = ", ".join(dict.fromkeys(
+        s.get("category", "") for s in verdict.get("signals", []) if s.get("category")))
+    msg = (f"Blocked by Warden: {cats or 'policy'} in this {what} — "
+           f"risk {verdict.get('risk_score', 0)}/{verdict.get('severity', 'high')}.")
+    fixes = verdict.get("remediation") or []
+    if fixes:
+        msg += "\nHow to fix:\n" + "\n".join(f"  • {f}" for f in fixes[:4])
+    return msg
+
+
+def block_output(event_name: str, verdict: dict) -> dict:
+    """Event-appropriate deny verdict (Codex mirrors Claude Code's response schema)."""
+    if event_name == "UserPromptSubmit":
+        return {"decision": "block",
+                "reason": _reason(verdict, "prompt") + " The prompt was not sent."}
+    return {"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": _reason(verdict, "tool call"),
+    }}
+
+
+def _send_detached(endpoint: str, payload: dict, cfg: dict) -> None:
+    """Report in a detached child so the hook returns instantly (monitor mode)."""
+    p = subprocess.Popen(
+        [sys.executable, os.path.abspath(__file__), "--send"],
+        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    p.stdin.write(json.dumps({"endpoint": endpoint, "payload": payload, "cfg": cfg}).encode())
+    p.stdin.close()
+
+
+def main() -> int:
+    if "--send" in sys.argv[1:]:
+        try:
+            job = json.load(sys.stdin)
+            _post(job["endpoint"], job["payload"], job["cfg"])
+        except Exception:
+            pass
+        return 0
+
+    try:
+        event = json.load(sys.stdin)
+    except Exception:
+        return 0
+    name = event.get("hook_event_name", "")
+
+    if name == "UserPromptSubmit":
+        endpoint, payload = "/api/ingest/ai-usage", build_ai_usage(event)
+    elif name == "PreToolUse":
+        endpoint, payload = "/api/ingest/mcp", build_activity(event)
+    else:
+        return 0
+    if payload is None:
+        return 0
+
+    cfg = read_config()
+    if not cfg["url"] or not cfg["token"]:
+        return 0  # not connected to Warden — nothing to report to
+
+    # Prompts are always scanned inline (even in monitor mode): a confirmed secret/PII
+    # leak (force_block) must be stopped before it leaves the device. Tool calls scan
+    # inline only under enforce. No stdout on allow — Codex treats that as proceed.
+    if name == "UserPromptSubmit" or cfg["enforce"]:
+        verdict = _post(endpoint, payload, cfg)
+        if should_block(verdict, cfg["enforce"]):
+            print(json.dumps(block_output(name, verdict)))
+        return 0
+
+    _send_detached(endpoint, payload, cfg)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception:
+        sys.exit(0)  # fail open — never break the developer's session

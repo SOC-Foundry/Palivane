@@ -31,6 +31,8 @@ _ALLOW = {
     "warden-reenroll.ps1": "cli/warden-reenroll.ps1",
     "warden-hook": "cli/warden-hook",
     "warden-cursor-hook": "cli/warden-cursor-hook",
+    "warden-gemini-hook": "cli/warden-gemini-hook",
+    "warden-codex-hook": "cli/warden-codex-hook",
     "warden-mcp": "cli/warden-mcp",
     "warden-posture": "cli/warden-posture",
     "warden-secrets": "cli/warden-secrets",

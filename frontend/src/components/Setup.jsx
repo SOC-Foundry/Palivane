@@ -7,7 +7,7 @@ const SELF = [
   { n: "1", title: "Get your capture key",
     body: "Open the console → Connect → “Generate a capture key.” Every source authenticates with this one org key and routes its findings back here." },
   { n: "2", title: "Run one command",
-    body: "On any machine, run  curl -fsSL <your-url>/install.sh | bash . It signs you in (a browser window opens), installs the governance CLI, wires Claude Code + Cursor + agent tool-call hooks, and stands up the sudo-free egress proxy so the AI CLIs (Claude Code, Codex, Gemini) are inspected too — all subscription-compatible, no config files. Add  --desktop  to also cover the Claude/ChatGPT desktop apps and browsers system-wide." },
+    body: "On any machine, run  curl -fsSL <your-url>/install.sh | bash . It signs you in (a browser window opens), installs the governance CLI, wires prompt + tool-call hooks into Claude Code, Cursor, Codex, and Gemini CLI (prompts are scanned locally before they leave — even on subscription sign-ins no gateway ever sees), and stands up the sudo-free egress proxy for everything else — all subscription-compatible, no config files. Add  --desktop  to also cover the Claude/ChatGPT desktop apps and browsers system-wide." },
   { n: "3", title: "Finish the browser extension",
     body: "Install the Warden extension for Chrome/Edge from the Web Store, then click “Sign in to Warden” in its popup to bind it to your org. Now claude.ai, ChatGPT, and Gemini are covered too." },
   { n: "4", title: "Route through your provider account (optional · admin)",

@@ -1,21 +1,34 @@
 #!/usr/bin/env python3
-"""warden-hook — Claude Code PreToolUse hook: local, pre-execution tool-call inspection.
+"""warden-hook — Claude Code hook: local, pre-execution inspection of tool calls & prompts.
 
 The egress proxy can't see agent actions that never touch the network (local stdio MCP
-servers, file access, shell commands), and cert-pinned clients bypass it entirely. This
-hook closes that gap from inside Claude Code itself: it receives every tool call *before
-execution*, maps it to Warden's MCP-activity shape, and reports it to the backend — the
-same detection pipeline (dangerous commands, sensitive resources, tool poisoning,
-secrets/PII in arguments) that inspects gateway and proxy traffic.
+servers, file access, shell commands), and cert-pinned clients bypass it entirely. And
+with the default subscription sign-in (no gateway rerouting), the typed prompt goes
+straight to api.anthropic.com with nothing of Warden's in the path. This hook closes both
+gaps from inside Claude Code itself, dispatching on `hook_event_name`:
 
-Monitor by default: the verdict is recorded and the call proceeds with zero added latency
-(the report is posted by a detached child process). Set WARDEN_ENFORCE=true to block —
-the hook then scans synchronously and denies high-risk calls with the reason shown to the
-model. Fails open on any error: Warden being down never breaks the developer.
+  PreToolUse       -> every tool call *before execution*, mapped to Warden's MCP-activity
+                      shape -> /api/ingest/mcp (dangerous commands, sensitive resources,
+                      tool poisoning, secrets/PII in arguments)
+  UserPromptSubmit -> the user's typed prompt *before it leaves the device*
+                      -> /api/ingest/ai-usage (secrets/PII/data-loss on the prompt — the
+                      piece nothing else sees under subscription auth)
 
-Installed by `warden-connect` (PreToolUse entry in ~/.claude/settings.json), or manually:
+Monitor by default: tool-call verdicts are recorded with zero added latency (the report
+is posted by a detached child process). Prompts are the exception: they are scanned
+inline even in monitor mode so a confirmed secret/PII leak (`force_block`) is stopped
+before it leaves — same rule as the egress proxy: block the certain, monitor the fuzzy.
+Set WARDEN_ENFORCE=true to also block on ordinary high-risk verdicts — tool calls are
+then scanned synchronously and denied with the reason shown to the model; blocked prompts
+are erased with the reason shown to the user. Fails open on any error: Warden being down
+never breaks the developer.
+
+Installed by `warden-connect` (PreToolUse + UserPromptSubmit entries in
+~/.claude/settings.json), or manually:
 
     {"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [
+        {"type": "command", "command": "/path/to/warden-hook", "timeout": 10}]}],
+      "UserPromptSubmit": [{"hooks": [
         {"type": "command", "command": "/path/to/warden-hook", "timeout": 10}]}]}}
 
 Config: WARDEN_URL + WARDEN_TOKEN (an ak_… key) from the environment, else from the
@@ -129,20 +142,43 @@ def build_activity(tool_name: str, tool_input: dict) -> dict | None:
     return activity
 
 
-def scan_mcp(activity: dict, url: str, token: str, user: str = "", timeout: float = 5.0) -> dict:
-    """Call the Warden MCP ingest endpoint; fail open (action=allow) on any error."""
+def build_prompt_usage(event: dict) -> dict | None:
+    """UserPromptSubmit -> ai-usage payload (the typed prompt on its way to the model)."""
+    prompt = event.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        return None
+    return {"content": prompt[:_MAX_ARGS_TEXT], "destination": "claude-code", "tool": "claude-code"}
+
+
+def scan(endpoint: str, payload: dict, url: str, token: str,
+         user: str = "", timeout: float = 5.0) -> dict:
+    """Call a Warden ingest endpoint; fail open (action=allow) on any error."""
     try:
-        payload = dict(activity)
-        payload["user"] = user
+        body = dict(payload)
+        body["user"] = user
         req = urllib.request.Request(
-            url.rstrip("/") + "/api/ingest/mcp", method="POST",
-            data=json.dumps(payload).encode(),
+            url.rstrip("/") + endpoint, method="POST",
+            data=json.dumps(body).encode(),
             headers={"content-type": "application/json", "User-Agent": "warden-hook/1.0", "X-Warden-Token": token},
         )
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
     except Exception:
         return {"action": "allow", "reason": "scan-failed"}
+
+
+def scan_mcp(activity: dict, url: str, token: str, user: str = "", timeout: float = 5.0) -> dict:
+    """Call the Warden MCP ingest endpoint; fail open (action=allow) on any error."""
+    return scan("/api/ingest/mcp", activity, url, token, user, timeout)
+
+
+def should_block(verdict: dict, enforce: bool) -> bool:
+    """Mirror of the proxy's rule: a confirmed secret/PII leak (force_block) is blocked
+    even in monitor mode — block the certain, monitor the fuzzy. Everything else blocks
+    only under enforce."""
+    if verdict.get("force_block"):
+        return True
+    return enforce and verdict.get("action") == "block"
 
 
 def deny_output(verdict: dict) -> dict:
@@ -158,7 +194,21 @@ def deny_output(verdict: dict) -> dict:
     }}
 
 
-def _send_detached(payload: dict, cfg: dict) -> None:
+def prompt_block_output(verdict: dict) -> dict:
+    """UserPromptSubmit structured block — the prompt is erased and the reason (with the
+    fix, since the reader here is the user, not the model) is shown in the transcript."""
+    cats = ", ".join(dict.fromkeys(
+        s.get("category", "") for s in verdict.get("signals", []) if s.get("category")))
+    reason = (f"Blocked by Warden: {cats or 'policy'} in your prompt — "
+              f"risk {verdict.get('risk_score', 0)}/{verdict.get('severity', 'high')}. "
+              f"The prompt was not sent.")
+    fixes = verdict.get("remediation") or []
+    if fixes:
+        reason += "\nHow to fix:\n" + "\n".join(f"  • {f}" for f in fixes[:4])
+    return {"decision": "block", "reason": reason}
+
+
+def _send_detached(endpoint: str, payload: dict, cfg: dict) -> None:
     """Report in a detached child so the hook returns instantly (monitor mode)."""
     p = subprocess.Popen(
         [sys.executable, os.path.abspath(__file__), "--send"],
@@ -166,8 +216,8 @@ def _send_detached(payload: dict, cfg: dict) -> None:
         start_new_session=True,
     )
     p.stdin.write(json.dumps({
-        "activity": payload, "url": cfg["url"], "token": cfg["token"],
-        "user": cfg["user"], "timeout": cfg["timeout"],
+        "endpoint": endpoint, "payload": payload, "url": cfg["url"],
+        "token": cfg["token"], "user": cfg["user"], "timeout": cfg["timeout"],
     }).encode())
     p.stdin.close()
 
@@ -177,8 +227,8 @@ def main() -> int:
         # Worker mode (spawned by the monitor path): post the report and exit.
         try:
             job = json.load(sys.stdin)
-            scan_mcp(job["activity"], job["url"], job["token"],
-                     job.get("user", ""), float(job.get("timeout", 5)))
+            scan(job.get("endpoint", "/api/ingest/mcp"), job["payload"], job["url"],
+                 job["token"], job.get("user", ""), float(job.get("timeout", 5)))
         except Exception:
             pass
         return 0
@@ -187,6 +237,22 @@ def main() -> int:
         event = json.load(sys.stdin)
     except Exception:
         return 0
+
+    if event.get("hook_event_name") == "UserPromptSubmit":
+        payload = build_prompt_usage(event)
+        if payload is None:
+            return 0
+        cfg = read_config()
+        if not cfg["url"] or not cfg["token"]:
+            return 0  # not connected to Warden — nothing to report to
+        # Prompts are always scanned inline (even in monitor mode): a confirmed
+        # secret/PII leak (force_block) must be stopped before it leaves the device.
+        verdict = scan("/api/ingest/ai-usage", payload, cfg["url"], cfg["token"],
+                       cfg["user"], cfg["timeout"])
+        if should_block(verdict, cfg["enforce"]):
+            print(json.dumps(prompt_block_output(verdict)))
+        return 0
+
     activity = build_activity(event.get("tool_name", ""), event.get("tool_input") or {})
     if activity is None:
         return 0
@@ -197,11 +263,11 @@ def main() -> int:
 
     if cfg["enforce"]:
         verdict = scan_mcp(activity, cfg["url"], cfg["token"], cfg["user"], cfg["timeout"])
-        if verdict.get("action") == "block":
+        if should_block(verdict, True):
             print(json.dumps(deny_output(verdict)))
             return 0
     else:
-        _send_detached(activity, cfg)
+        _send_detached("/api/ingest/mcp", activity, cfg)
     return 0
 
 

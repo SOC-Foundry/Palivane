@@ -116,6 +116,40 @@ def test_config_ignores_non_warden_gateway_token(monkeypatch, tmp_path):
     assert hook.read_config()["token"] == ""
 
 
+# --- UserPromptSubmit -> ai-usage --------------------------------------------------------
+
+def test_prompt_maps_to_ai_usage():
+    p = hook.build_prompt_usage({"hook_event_name": "UserPromptSubmit",
+                                 "prompt": "fix the bug; my SSN is 123-45-6789"})
+    assert "my SSN" in p["content"]
+    assert p["tool"] == "claude-code" and p["destination"] == "claude-code"
+
+
+def test_empty_prompt_returns_none():
+    assert hook.build_prompt_usage({"prompt": ""}) is None
+    assert hook.build_prompt_usage({"prompt": "   "}) is None
+    assert hook.build_prompt_usage({}) is None
+
+
+def test_prompt_content_capped():
+    p = hook.build_prompt_usage({"prompt": "x" * 50000})
+    assert len(p["content"]) <= 20000
+
+
+# --- should_block: force_block overrides monitor mode ------------------------------------
+
+def test_confirmed_leak_blocks_even_in_monitor_mode():
+    # The proxy's rule, mirrored: block the certain, monitor the fuzzy.
+    assert hook.should_block({"action": "warn", "force_block": True}, enforce=False) is True
+
+
+def test_ordinary_block_verdict_only_blocks_under_enforce():
+    v = {"action": "block", "force_block": False}
+    assert hook.should_block(v, enforce=False) is False
+    assert hook.should_block(v, enforce=True) is True
+    assert hook.should_block({"action": "warn"}, enforce=True) is False
+
+
 # --- deny_output ------------------------------------------------------------------------
 
 def test_deny_output_shape_and_reason():
@@ -127,6 +161,16 @@ def test_deny_output_shape_and_reason():
     assert ho["permissionDecision"] == "deny"
     assert "dangerous_command" in ho["permissionDecisionReason"]
     assert "85/high" in ho["permissionDecisionReason"]
+
+
+def test_prompt_block_output_erases_prompt_with_reason():
+    out = hook.prompt_block_output({"risk_score": 90, "severity": "high",
+                                    "signals": [{"category": "pii_exposure"}],
+                                    "remediation": ["Remove the SSN and resend"]})
+    assert out["decision"] == "block"
+    assert "pii_exposure" in out["reason"] and "90/high" in out["reason"]
+    # The reader is the user (the prompt is erased) — the fix is surfaced inline.
+    assert "Remove the SSN" in out["reason"]
 
 
 # --- integration: mapped activities through the real ingest endpoint -------------------
@@ -170,3 +214,26 @@ def test_mcp_tool_subject_to_server_allowlist(client, raw_client, monkeypatch):
     a = hook.build_activity("mcp__rogue__fetch", {"url": "https://x.dev"})
     body = _post(raw_client, key, a).json()
     assert "mcp_untrusted_server" in {s["category"] for s in body["signals"]}
+
+
+def test_prompt_with_confirmed_secret_force_blocks_end_to_end(client, raw_client):
+    # The scenario the hook exists for: an SSN/credential typed into the prompt under
+    # subscription auth. The verdict must carry force_block so even monitor mode stops it.
+    key = _key(client)
+    p = hook.build_prompt_usage({"hook_event_name": "UserPromptSubmit",
+                                 "prompt": "use AKIAIOSFODNN7EXAMPLE to deploy"})
+    body = raw_client.post("/api/ingest/ai-usage", json=p,
+                           headers={"X-Warden-Token": key}).json()
+    assert "secret_leak" in {s["category"] for s in body["signals"]}
+    assert body["force_block"] is True
+    assert hook.should_block(body, enforce=False) is True
+
+
+def test_benign_prompt_allows_end_to_end(client, raw_client):
+    key = _key(client)
+    p = hook.build_prompt_usage({"hook_event_name": "UserPromptSubmit",
+                                 "prompt": "please refactor the config loader"})
+    body = raw_client.post("/api/ingest/ai-usage", json=p,
+                           headers={"X-Warden-Token": key}).json()
+    assert body.get("force_block") is False
+    assert hook.should_block(body, enforce=False) is False

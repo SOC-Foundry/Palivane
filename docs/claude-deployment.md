@@ -171,19 +171,26 @@ Use the proxy (Section 3) and set, in the same `managed-settings.json`:
 ```
 Claude Code honors both. This catches Claude Code *and* everything else on the device.
 
-### Route C — local tool-call inspection (agentic actions)
+### Route C — local hooks (prompts + agentic actions)
 
-Routes A/B see the *prompts*; neither sees what the agent **does locally** — shell
-commands, file access, and stdio MCP servers never leave the device. Route C closes that
-with two app-scoped sensors from [`cli/`](../cli/README.md) (hooks and a shim — not an
+Routes A/B see the *prompts* — but only when they're actually in the path. Under the
+**default subscription sign-in** (no gateway, no proxy) the typed prompt goes straight to
+`api.anthropic.com`, and nothing network-side sees what the agent **does locally** —
+shell commands, file access, and stdio MCP servers never leave the device. Route C closes
+both with app-scoped sensors from [`cli/`](../cli/README.md) (hooks and a shim — not an
 endpoint agent):
 
-**`warden-hook`** — a Claude Code **PreToolUse** hook. Every tool call (built-ins and
-MCP tools) is inspected *before execution* for dangerous commands, sensitive-resource
-access, secrets in arguments, and the org's MCP-server allowlist. Monitor by default
-(zero added latency); `WARDEN_ENFORCE=true` denies risky calls with the reason shown to
-the model. Installed by `warden-connect`, or fleet-wide in the same
-`managed-settings.json` as Route A:
+**`warden-hook`** — a Claude Code hook, registered on two events. **PreToolUse**: every
+tool call (built-ins and MCP tools) is inspected *before execution* for dangerous
+commands, sensitive-resource access, secrets in arguments, and the org's MCP-server
+allowlist. **UserPromptSubmit**: the typed prompt is scanned *before it leaves the
+device* — the only prompt-level control under subscription auth. Monitor by default
+(tool calls report with zero added latency; prompts are scanned inline so a **confirmed
+secret/PII leak hard-blocks even in monitor mode** — "block the certain, monitor the
+fuzzy", same rule as the proxy); `WARDEN_ENFORCE=true` also denies ordinary high-risk
+verdicts, with the reason shown to the model (tool calls) or the user (prompts).
+Installed by `warden-connect`, or fleet-wide in the same `managed-settings.json` as
+Route A:
 
 ```json
 {
@@ -194,8 +201,9 @@ the model. Installed by `warden-connect`, or fleet-wide in the same
     "WARDEN_TOKEN": "ak_<the same key>"
   },
   "hooks": {
-    "PreToolUse":   [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/usr/local/bin/warden-hook", "timeout": 10 }]}],
-    "SessionStart": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/usr/local/bin/warden-posture --async --quiet" }]}]
+    "PreToolUse":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/usr/local/bin/warden-hook", "timeout": 10 }]}],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/warden-hook", "timeout": 10 }]}],
+    "SessionStart":     [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/usr/local/bin/warden-posture --async --quiet" }]}]
   }
 }
 ```

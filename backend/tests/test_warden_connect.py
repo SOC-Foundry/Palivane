@@ -46,15 +46,18 @@ def test_write_claude_code_env_and_hooks(monkeypatch, tmp_path):
     assert env["WARDEN_URL"] == "https://w.corp.io"
     assert env["WARDEN_TOKEN"] == "ak_tok123"
     events = {e for e in data["hooks"]}
-    assert events == {"PreToolUse", "SessionStart"}
+    assert events == {"PreToolUse", "UserPromptSubmit", "SessionStart"}
+    # The prompt hook runs the same script as the tool-call hook.
+    assert data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == "/opt/warden/warden-hook"
     assert "--async --quiet" in data["hooks"]["SessionStart"][0]["hooks"][0]["command"]
-    assert len(installed) == 2
+    assert len(installed) == 3
     assert oct(os.stat(path).st_mode & 0o777) == "0o600"
 
     # Second run: same env, no duplicated hooks.
     wc._write_claude_code("ak_tok123", "https://w.corp.io", "dev@acme.com", route_gateway=True)
     data = json.load(open(path))
     assert len(data["hooks"]["PreToolUse"]) == 1
+    assert len(data["hooks"]["UserPromptSubmit"]) == 1
     assert len(data["hooks"]["SessionStart"]) == 1
 
 
@@ -157,6 +160,107 @@ def test_write_cursor_none_when_hook_missing(monkeypatch, tmp_path):
     assert wc._write_cursor("ak_tok", "https://w.io", "") is None
 
 
+# --- Gemini CLI wiring -------------------------------------------------------------------
+
+def test_write_gemini_installs_hooks_and_creds(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / ".gemini").mkdir()                      # Gemini CLI "installed"
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    spath, items = wc._write_gemini("ak_tok", "https://w.corp.io", "dev@acme.com")
+
+    settings = json.load(open(spath))
+    assert set(settings["hooks"]) == {"BeforeAgent", "BeforeTool"}
+    ba = settings["hooks"]["BeforeAgent"][0]
+    assert "matcher" not in ba                          # BeforeAgent takes no matcher
+    assert ba["hooks"][0]["command"] == "/opt/warden/warden-gemini-hook"
+    assert ba["hooks"][0]["timeout"] == 10000           # Gemini timeouts are milliseconds
+    assert settings["hooks"]["BeforeTool"][0]["matcher"] == ".*"
+    creds = json.load(open(tmp_path / ".gemini" / "warden.json"))
+    assert creds == {"url": "https://w.corp.io", "token": "ak_tok", "user": "dev@acme.com"}
+    assert oct(os.stat(tmp_path / ".gemini" / "warden.json").st_mode & 0o777) == "0o600"
+    assert any("installed" in i for i in items)
+
+    # Second run: idempotent, and existing foreign settings survive.
+    wc._write_gemini("ak_tok", "https://w.corp.io", "dev@acme.com")
+    settings = json.load(open(spath))
+    assert len(settings["hooks"]["BeforeAgent"]) == 1
+    assert len(settings["hooks"]["BeforeTool"]) == 1
+
+
+def test_write_gemini_preserves_existing_settings(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    d = tmp_path / ".gemini"
+    d.mkdir()
+    (d / "settings.json").write_text(json.dumps(
+        {"theme": "dark", "hooks": {"BeforeTool": [
+            {"matcher": "write_file", "hooks": [{"name": "lint", "type": "command",
+                                                 "command": "my-linter"}]}]}}))
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    spath, _ = wc._write_gemini("ak_tok", "https://w.io", "")
+    settings = json.load(open(spath))
+    assert settings["theme"] == "dark"
+    assert len(settings["hooks"]["BeforeTool"]) == 2
+    assert settings["hooks"]["BeforeTool"][0]["hooks"][0]["command"] == "my-linter"
+
+
+def test_write_gemini_skipped_when_absent(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))            # no ~/.gemini dir
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    spath, items = wc._write_gemini("ak_tok", "https://w.io", "")
+    assert spath is None
+    assert any("Gemini CLI not detected" in i for i in items)
+    assert not (tmp_path / ".gemini").exists()           # nothing created
+
+
+def test_write_gemini_none_when_hook_missing(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / ".gemini").mkdir()
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: None)
+    assert wc._write_gemini("ak_tok", "https://w.io", "") is None
+
+
+# --- Codex CLI wiring --------------------------------------------------------------------
+
+def test_write_codex_installs_hooks_and_creds(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / ".codex").mkdir()                        # Codex CLI "installed"
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    hpath, items = wc._write_codex("ak_tok", "https://w.corp.io", "dev@acme.com")
+
+    hooks = json.load(open(hpath))
+    assert set(hooks["hooks"]) == {"UserPromptSubmit", "PreToolUse"}
+    ups = hooks["hooks"]["UserPromptSubmit"][0]
+    assert "matcher" not in ups                          # UserPromptSubmit takes no matcher
+    assert ups["hooks"][0] == {"type": "command",
+                               "command": "/opt/warden/warden-codex-hook", "timeout": 10}
+    assert hooks["hooks"]["PreToolUse"][0]["matcher"] == ".*"
+    creds = json.load(open(tmp_path / ".codex" / "warden.json"))
+    assert creds == {"url": "https://w.corp.io", "token": "ak_tok", "user": "dev@acme.com"}
+    assert any("installed" in i for i in items)
+    assert any("/hooks" in i for i in items)             # one-time trust approval noted
+
+    # Second run: idempotent.
+    wc._write_codex("ak_tok", "https://w.corp.io", "dev@acme.com")
+    hooks = json.load(open(hpath))
+    assert len(hooks["hooks"]["UserPromptSubmit"]) == 1
+    assert len(hooks["hooks"]["PreToolUse"]) == 1
+
+
+def test_write_codex_skipped_when_absent(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))            # no ~/.codex dir
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    hpath, items = wc._write_codex("ak_tok", "https://w.io", "")
+    assert hpath is None
+    assert any("Codex CLI not detected" in i for i in items)
+
+
+def test_write_codex_none_when_hook_missing(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / ".codex").mkdir()
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: None)
+    assert wc._write_codex("ak_tok", "https://w.io", "") is None
+
+
 def test_upstream_warning_only_when_console_says_no_key():
     console = "https://w.corp.io"
     # Console reported no forwarding upstream: warn, pointing at Settings.
@@ -177,4 +281,4 @@ def test_no_upstream_skips_gateway_routing_keeps_local_planes(monkeypatch, tmp_p
     assert "ANTHROPIC_BASE_URL" not in env and "ANTHROPIC_AUTH_TOKEN" not in env
     # Local capture planes still fully wired.
     assert env["WARDEN_URL"] == "https://w.io" and env["WARDEN_TOKEN"] == "ak_tok"
-    assert len(installed) == 2
+    assert len(installed) == 3
