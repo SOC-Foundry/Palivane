@@ -45,6 +45,7 @@ import socket
 import socketserver
 import sys
 import urllib.parse
+import urllib.request
 import webbrowser
 
 
@@ -114,6 +115,72 @@ def _resolve_script(name: str) -> str | None:
         return found
     sibling = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
     return sibling if os.path.exists(sibling) else None
+
+
+# Canonical install dir (install.sh drops the CLI here and puts it on PATH).
+_MANAGED_BIN = os.path.expanduser("~/.warden/bin")
+# Capture-plane scripts warden-connect is responsible for. Refreshed from the console on
+# every connect so a re-run upgrades plane code (e.g. the auth circuit breaker) in place,
+# without a full reinstall. warden-connect itself and warden-desktop are excluded on
+# purpose — we don't overwrite the running tool or the proxy manager mid-run.
+_PLANE_SCRIPTS = ["warden-hook", "warden-posture", "warden-cursor-hook",
+                  "warden-gemini-hook", "warden-codex-hook", "warden-mcp", "warden-secrets"]
+
+
+def _in_repo_checkout() -> bool:
+    """Running from a source checkout (…/cli/warden-connect with a .git alongside)? Then the
+    sibling scripts are the source of truth — don't fetch published copies over them."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.isdir(os.path.join(os.path.dirname(here), ".git"))
+
+
+def _download_script(url: str, dest: str) -> None:
+    """Fetch one script and write it atomically (tmp + rename) so a partial download never
+    leaves a half-written, executable plane on disk."""
+    req = urllib.request.Request(url, headers={"User-Agent": "warden-connect/1.0"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        data = r.read()
+    if not data:
+        raise ValueError("empty script")
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    tmp = dest + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(data)
+    os.chmod(tmp, 0o755)
+    os.replace(tmp, dest)
+
+
+def _refresh_planes(console: str) -> list[str]:
+    """Upgrade the installed capture-plane scripts to the console's current versions so a
+    re-run of `warden connect` picks up new plane code. Best-effort: on any failure we keep
+    whatever is already installed. Skipped for source checkouts and with --no-update."""
+    if "--no-update" in sys.argv[1:] or os.getenv("WARDEN_NO_SELF_UPDATE"):
+        return []
+    if _in_repo_checkout():
+        return ["skipped plane self-update (running from a source checkout)"]
+    base = console.rstrip("/")
+    updated, failed = [], []
+    for name in _PLANE_SCRIPTS:
+        try:
+            _download_script(f"{base}/cli/{name}", os.path.join(_MANAGED_BIN, name))
+            updated.append(name)
+        except Exception:
+            failed.append(name)
+    # The egress-proxy addon lives outside bin and only when the proxy is installed — refresh
+    # it in place too (so the proxy gets the breaker), but never create it here.
+    addon = os.path.expanduser("~/.warden/warden_addon.py")
+    if os.path.exists(addon):
+        try:
+            _download_script(f"{base}/cli/warden_addon.py", addon)
+            updated.append("warden_addon.py")
+        except Exception:
+            failed.append("warden_addon.py")
+    msgs = []
+    if updated:
+        msgs.append(f"updated {len(updated)} capture-plane script(s) to the latest version")
+    if failed:
+        msgs.append(f"could not update {', '.join(failed)} (kept existing) — see {base}/cli/")
+    return msgs
 
 
 def _merge_hook(data: dict, event: str, command: str, timeout: int | None = None) -> bool:
@@ -404,10 +471,15 @@ def main() -> None:
     # Org enforce stance for the local planes (console Settings → Enforcement). Sent as
     # enforce=0/1 with the token; absent (older console) = leave device config unchanged.
     enforce = {"1": True, "0": False}.get(got.get("enforce", ""))
+    # Upgrade the installed plane scripts first, so the hooks we (re)register below point at
+    # current code (e.g. the auth circuit breaker) rather than a stale install.
+    plane_updates = _refresh_planes(console)
     path, installed = _write_claude_code(got["token"], backend, got.get("user", ""),
                                          route_gateway=route_gateway, enforce=enforce)
     who = got.get("user") or "you"
     print(f"✓ Claude Code connected as {who}")
+    for item in plane_updates:
+        print(f"  {item}")
     if route_gateway:
         print(f"  routed through the Warden gateway: {backend.rstrip('/')}/v1")
         print("  note: API calls now bill the org's provider key, not personal Pro/Max plans")
