@@ -77,10 +77,11 @@ export default function App() {
     refresh();
   }, [refresh]);
 
-  // Live-ish: poll findings while signed in.
+  // Live-ish: poll findings while signed in. 60s keeps the dashboard fresh without a
+  // per-tab request storm (each poll hits /api/stats + /api/findings).
   useEffect(() => {
     if (!auth) return;
-    const id = setInterval(refresh, 15000);
+    const id = setInterval(refresh, 60000);
     return () => clearInterval(id);
   }, [auth, refresh]);
 
