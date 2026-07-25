@@ -329,3 +329,46 @@ def test_refresh_planes_skips_checkout_and_flag(tmp_path, monkeypatch):
     monkeypatch.setattr(wc.sys, "argv", ["warden-connect", "--no-update"])
     assert wc._refresh_planes("https://warden.example") == []
     assert calls == []   # never hit the network in either case
+
+
+# --- --uninstall reverses what connect wrote (and only that) -------------------------
+def test_uninstall_strips_only_warden(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    claude = tmp_path / ".claude"; claude.mkdir()
+    (claude / "settings.json").write_text(json.dumps({
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "*", "hooks": [{"type": "command", "command": "/x/warden-hook"}]},
+                {"matcher": "Bash", "hooks": [{"type": "command", "command": "my-linter"}]},
+            ],
+            "SessionStart": [{"matcher": "*", "hooks": [{"type": "command", "command": "warden-posture --async"}]}],
+        },
+        "env": {"WARDEN_TOKEN": "ak_x", "WARDEN_URL": "https://w",
+                "ANTHROPIC_AUTH_TOKEN": "ak_x", "ANTHROPIC_BASE_URL": "https://w", "EDITOR": "vim"},
+    }))
+    cur = tmp_path / ".cursor"; cur.mkdir()
+    (cur / "hooks.json").write_text(json.dumps(
+        {"version": 1, "hooks": {"beforeSubmitPrompt": [{"command": "warden-cursor-hook"}, {"command": "keep"}]}}))
+    (cur / "warden.json").write_text("{}")
+
+    msgs = wc._uninstall()
+
+    d = json.loads((claude / "settings.json").read_text())
+    assert d["hooks"]["PreToolUse"] == [{"matcher": "Bash", "hooks": [{"type": "command", "command": "my-linter"}]}]
+    assert "SessionStart" not in d["hooks"]              # emptied event pruned
+    assert d["env"] == {"EDITOR": "vim"}                 # our env + our gateway routing gone
+    c = json.loads((cur / "hooks.json").read_text())
+    assert c["hooks"]["beforeSubmitPrompt"] == [{"command": "keep"}]
+    assert not (cur / "warden.json").exists()
+    assert wc._uninstall() is not None                  # idempotent: second run is a no-op, no crash
+    assert any("Claude Code" in m for m in msgs)
+
+
+def test_uninstall_preserves_foreign_gateway_routing(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    claude = tmp_path / ".claude"; claude.mkdir()
+    (claude / "settings.json").write_text(json.dumps({"env": {
+        "WARDEN_TOKEN": "ak_x", "ANTHROPIC_AUTH_TOKEN": "sk-user", "ANTHROPIC_BASE_URL": "https://api.anthropic.com"}}))
+    wc._uninstall()
+    env = json.loads((claude / "settings.json").read_text())["env"]
+    assert env == {"ANTHROPIC_AUTH_TOKEN": "sk-user", "ANTHROPIC_BASE_URL": "https://api.anthropic.com"}

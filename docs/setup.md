@@ -197,6 +197,33 @@ A **Reporting (last 24h)** strip on the same card lights up per plane (Browser �
 Code/gateway · Agent tool-calls) as findings arrive, so you can confirm rollout worked
 without leaving the page.
 
+### Small team — one command per machine (no MDM)
+
+A handful of machines and no MDM? Skip the policy pack and run the one-line installer on
+each device — the same self-serve path as the [Setup page](/setup), just run once per
+machine:
+
+```bash
+curl -fsSL https://<your-console>/install.sh | bash
+```
+
+It signs the user in (a browser window opens), installs the governance CLI into
+`~/.warden/bin`, wires prompt + tool-call hooks into Claude Code, Cursor, Codex, and Gemini
+CLI, and stands up the sudo-free egress proxy for everything else — all
+subscription-compatible, no config files. Flags:
+
+| Flag | Effect |
+| --- | --- |
+| *(none)* / `--cli-only` | Default. AI CLIs + editor hooks + per-tool proxy shims. No sudo. |
+| `--desktop` | Also govern desktop AI apps (Claude / ChatGPT) + browsers **system-wide** (system proxy + root CA; asks for sudo). |
+| `--no-proxy` | Editor/CLI hooks only; skip the egress proxy. |
+
+Finish the browser surface by installing the Warden extension (Chrome/Edge) and clicking
+**Sign in to Warden** in its popup. Re-running the installer — or just `warden connect` —
+**upgrades the capture-plane scripts in place**, so shipping a fix to a small fleet is just
+"have everyone re-run it." To remove Warden from a machine, see
+[Uninstalling](#uninstalling-from-a-machine).
+
 For pilots or hand-tuning, the per-source cards below (and the table here) let you wire up
 one plane at a time. Pick whichever matches how your org uses AI:
 
@@ -271,6 +298,35 @@ expired license is ignored with a startup warning — the instance falls back to
 nothing breaks. Licensed seat count becomes the default users quota.
 
 On the hosted SaaS there is no license file — your plan is managed by the vendor.
+
+---
+
+## Uninstalling from a machine
+
+Reverse of the one-command install, in three steps:
+
+```bash
+warden-connect --uninstall     # removes the Claude Code / Cursor / Gemini / Codex hooks,
+                               # the Warden env, and the creds files it wrote
+warden-desktop uninstall       # stops the egress proxy; reverts the system-proxy setting
+                               # and removes the CLI capture shims
+rm -rf ~/.warden               # the CLI in ~/.warden/bin + local state (breaker/posture)
+```
+
+Then drop the `~/.warden/bin` line the installer added to your shell rc (`~/.bashrc` /
+`~/.zshrc` / `~/.profile`, or `~/.config/fish/conf.d/warden.fish`), and remove the **browser
+extension** from Chrome/Edge.
+
+Notes:
+
+- `warden-connect --uninstall` only touches Warden's own entries — your other hooks and any
+  `ANTHROPIC_BASE_URL` you set yourself are left intact. It's safe to run anytime and is a
+  no-op if nothing is installed.
+- The root **CA is left in the OS trust store** for safety — remove it manually for a full
+  revert (macOS: delete it from Keychain; Linux: `rm /usr/local/share/ca-certificates/warden-mitmproxy.crt`
+  then `sudo update-ca-certificates`).
+- On an **MDM-managed fleet**, remove the pushed policy pack instead — the profile owns the
+  extension force-install, proxy, and managed settings, so pulling it reverts every device.
 
 ---
 

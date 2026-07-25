@@ -457,7 +457,100 @@ def _upstream_warning(got: dict, console: str) -> str | None:
             f"  {console} under Settings → Gateway upstreams, then re-run warden-connect.")
 
 
+# Hook commands that invoke one of these are Warden's — used to strip them on --uninstall.
+_WARDEN_SCRIPT_MARKERS = ("warden-hook", "warden-posture", "warden-cursor-hook",
+                          "warden-gemini-hook", "warden-codex-hook")
+
+
+def _scrub_hook_entries(hooks: dict) -> int:
+    """Remove Warden hook entries from a {event: [entry, …]} map, leaving the user's own
+    hooks untouched. Handles both the Claude-Code/Codex shape ({matcher, hooks:[{command}]})
+    and the flat Cursor shape ({command}); prunes any event left empty. Returns the count."""
+    removed = 0
+    for event in list(hooks.keys()):
+        entries = hooks.get(event)
+        if not isinstance(entries, list):
+            continue
+        kept = []
+        for entry in entries:
+            cmds = []
+            if isinstance(entry, dict):
+                if "command" in entry:
+                    cmds.append(str(entry.get("command", "")))
+                inner = entry.get("hooks")
+                if isinstance(inner, list):
+                    cmds += [str(h.get("command", "")) for h in inner if isinstance(h, dict)]
+            if any(m in " ".join(cmds) for m in _WARDEN_SCRIPT_MARKERS):
+                removed += 1
+            else:
+                kept.append(entry)
+        if kept:
+            hooks[event] = kept
+        else:
+            del hooks[event]
+    return removed
+
+
+def _uninstall() -> list[str]:
+    """Reverse what `warden connect` wrote on this machine: strip the Warden hooks + env
+    from Claude Code, and the hooks + creds from Cursor / Gemini / Codex. Leaves the CLI in
+    ~/.warden/bin and the egress proxy alone — those are removed separately (see the printed
+    note). Best-effort and idempotent: missing files are simply skipped."""
+    out: list[str] = []
+    claude = os.path.expanduser("~/.claude/settings.json")
+    if os.path.exists(claude):
+        try:
+            data = json.load(open(claude))
+        except (ValueError, OSError):
+            data = {}
+        n = _scrub_hook_entries(data["hooks"]) if isinstance(data.get("hooks"), dict) else 0
+        if isinstance(data.get("hooks"), dict) and not data["hooks"]:
+            data.pop("hooks", None)
+        env = data.get("env")
+        if isinstance(env, dict):
+            tok = env.get("WARDEN_TOKEN")
+            # Undo gateway routing only if it's ours (auth token == our capture key).
+            if tok and env.get("ANTHROPIC_AUTH_TOKEN") == tok:
+                env.pop("ANTHROPIC_AUTH_TOKEN", None)
+                env.pop("ANTHROPIC_BASE_URL", None)
+            for k in ("WARDEN_URL", "WARDEN_TOKEN", "WARDEN_ENFORCE", "WARDEN_USER"):
+                env.pop(k, None)
+            if not env:
+                data.pop("env", None)
+        with open(claude, "w") as f:
+            json.dump(data, f, indent=2)
+        out.append(f"Claude Code: removed {n} hook(s) + Warden env — {claude}")
+    for label, hrel, wrel in (("Cursor", "~/.cursor/hooks.json", "~/.cursor/warden.json"),
+                              ("Gemini CLI", "~/.gemini/settings.json", "~/.gemini/warden.json"),
+                              ("Codex CLI", "~/.codex/hooks.json", "~/.codex/warden.json")):
+        hpath = os.path.expanduser(hrel)
+        if os.path.exists(hpath):
+            try:
+                d = json.load(open(hpath))
+            except (ValueError, OSError):
+                d = {}
+            n = _scrub_hook_entries(d["hooks"]) if isinstance(d.get("hooks"), dict) else 0
+            with open(hpath, "w") as f:
+                json.dump(d, f, indent=2)
+            out.append(f"{label}: removed {n} hook(s) — {hpath}")
+        wpath = os.path.expanduser(wrel)
+        if os.path.exists(wpath):
+            os.remove(wpath)
+            out.append(f"{label}: removed creds — {wpath}")
+    return out
+
+
 def main() -> None:
+    if "--uninstall" in sys.argv[1:]:
+        items = _uninstall()
+        print("✓ Warden disconnected from this machine")
+        for it in items:
+            print(f"  {it}")
+        if not items:
+            print("  (nothing to remove — no Warden hooks found)")
+        print("  next: 'warden-desktop uninstall' removes the egress proxy + CA + CLI shims,")
+        print("        then 'rm -rf ~/.warden' and drop the ~/.warden/bin line from your shell rc.")
+        return
     want_gateway = "--route-gateway" in sys.argv[1:]
     console = _console_url(sys.argv)
     got = _capture_token(console)
