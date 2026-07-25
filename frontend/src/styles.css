@@ -286,6 +286,8 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 
 /* Live indicator (auto-refresh) */
 .head-actions { display: flex; align-items: center; gap: 12px; }
+.toggle-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
+.toggle-inline input { cursor: pointer; }
 .live-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted);
   text-transform: uppercase; letter-spacing: 0.05em; }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--benign);
