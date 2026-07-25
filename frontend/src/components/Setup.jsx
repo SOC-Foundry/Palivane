@@ -16,6 +16,15 @@ const SELF = [
     body: "The Findings view shows live risk verdicts from the gateway, the browser extension, and the egress proxy (CLIs + desktop apps) — allow, warn, or block, by surface and severity." },
 ];
 
+const UNINSTALL = [
+  { n: "1", title: "Remove the editor & CLI hooks",
+    body: "Run  warden-connect --uninstall . It strips the Claude Code, Cursor, Gemini, and Codex hooks, the Warden env, and the creds files it wrote — and leaves any hooks you added yourself untouched. Safe to run anytime; a no-op if nothing's installed." },
+  { n: "2", title: "Remove the egress proxy",
+    body: "Run  warden-desktop uninstall  to stop the proxy, revert the system-proxy setting, and remove the per-tool CLI shims. The root CA is left in your trust store for safety — delete it manually (macOS Keychain; Linux /usr/local/share/ca-certificates/warden-mitmproxy.crt then update-ca-certificates) for a full revert." },
+  { n: "3", title: "Remove the CLI & extension",
+    body: "rm -rf ~/.warden  removes the CLI and local state, then drop the ~/.warden/bin line from your shell rc. Finally, remove the Warden extension from Chrome/Edge. On an MDM fleet, pull the policy pack instead — the profile owns every device's settings, so removing it reverts them all." },
+];
+
 const ORG = [
   { n: "1", title: "Pick how you ship software",
     body: "Connect → Quick start. Choose an MDM policy pack (Jamf · Intune · GPO) or a per-OS setup script. Warden generates everything already pointed at your org and pre-loaded with your policy." },
@@ -61,7 +70,8 @@ export default function Setup() {
       <section className="lp-section">
         <div className="lp-wrap">
           <h2 className="lp-h2">Part 1 — you & your team</h2>
-          <p className="lp-sub">The fastest way to protect your own machine. About two minutes.</p>
+          <p className="lp-sub">The fastest way to protect your own machine — about two minutes.
+             Small team without MDM? Same command, just run it once on each machine.</p>
           <Steps items={SELF} />
         </div>
       </section>
@@ -75,6 +85,15 @@ export default function Setup() {
       </section>
 
       <section className="lp-section">
+        <div className="lp-wrap">
+          <h2 className="lp-h2">Uninstalling</h2>
+          <p className="lp-sub">Cleanly reverse a single-machine install in three steps —
+             it only removes Warden's own config and leaves your other settings alone.</p>
+          <Steps items={UNINSTALL} />
+        </div>
+      </section>
+
+      <section className="lp-section alt">
         <div className="lp-wrap lp-cta-wrap" style={{ textAlign: "center" }}>
           <h2 className="lp-h2">Ready to set it up?</h2>
           <p className="lp-sub">Open the console and head to Connect — everything you saw here is one click away.</p>
