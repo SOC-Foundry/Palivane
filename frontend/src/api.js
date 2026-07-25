@@ -67,6 +67,7 @@ export const api = {
   apiKeys: () => req("/apikeys"),
   deleteApiKey: (id) => req(`/apikeys/${id}`, { method: "DELETE" }),
   enrollTokens: () => req("/enroll/tokens"),
+  deleteEnrollToken: (id) => req(`/enroll/tokens/${id}`, { method: "DELETE" }),
   provision: (payload) =>
     req("/provision", { method: "POST", body: JSON.stringify(payload) }),
   policyPack: (params = {}) => {
