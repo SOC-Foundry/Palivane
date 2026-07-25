@@ -575,19 +575,41 @@ def update_user(user_id: int, body: UserUpdate, current: User = Depends(require_
 
 
 @router.post("/extension/token")
-def extension_token(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Mint a per-user, tenant-scoped capture key for the browser extension (self-serve /
-    BYOD sign-in via the console). Any authenticated user can bind their own extension;
-    attributed to their email for per-user findings, and revocable in the console like any
-    API key. The console's /extension-connect page calls this after login/SSO and hands the
-    token back to the extension via the OAuth redirect."""
+def extension_token(device: str = "", current: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    """Mint (or re-issue) a per-user, tenant-scoped capture key for the browser extension
+    (self-serve / BYOD sign-in via the console). Any authenticated user can bind their own
+    extension; attributed to their email for per-user findings, and revocable in the console
+    like any API key. The console's /extension-connect page calls this after login/SSO and
+    hands the token back to the extension via the OAuth redirect.
+
+    Dedup: re-connecting the same device rotates that device's existing key in place instead
+    of piling up a new row on every sign-in. `device` (browser deviceId / warden-connect
+    hostname) scopes the key so separate machines keep separate, independently-revocable keys;
+    when it's absent we fall back to a single per-user "browser-extension" key."""
+    dev = (device or "").strip()[:64]
+    label = f"capture:{dev}" if dev else "browser-extension"
     token, prefix, token_hash = generate_api_key()
-    key = ApiKey(tenant_id=current.tenant_id, label="browser-extension",
-                 actor=current.email, prefix=prefix, token_hash=token_hash)
-    db.add(key)
+    existing = (db.query(ApiKey)
+                .filter(ApiKey.tenant_id == current.tenant_id,
+                        ApiKey.actor == current.email,
+                        ApiKey.label == label,
+                        ApiKey.active.is_(True))
+                .order_by(ApiKey.id.desc()).first())
+    if existing is not None:
+        # Rotate the same row: the old token stops working, the fresh one is handed back,
+        # and the device keeps one key instead of accumulating.
+        existing.prefix, existing.token_hash = prefix, token_hash
+        key = existing
+        action = "extension.reconnect"
+    else:
+        key = ApiKey(tenant_id=current.tenant_id, label=label,
+                     actor=current.email, prefix=prefix, token_hash=token_hash)
+        db.add(key)
+        action = "extension.connect"
     db.commit()
     db.refresh(key)
-    audit_log.record(db, current.tenant_id, current.email, "extension.connect",
+    audit_log.record(db, current.tenant_id, current.email, action,
                      target=current.email)
     # upstream_forwards: whether gateway-routed Claude Code will reach a real model or the
     # inspection stub — warden-connect relays this as a "set your provider key" warning.

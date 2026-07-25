@@ -112,7 +112,9 @@ export const api = {
   // --- admin settings ---
   updateTenant: (payload) =>
     req("/tenant", { method: "PATCH", body: JSON.stringify(payload) }),
-  extensionToken: () => req("/extension/token", { method: "POST" }),
+  extensionToken: (device = "") =>
+    req(`/extension/token${device ? `?device=${encodeURIComponent(device)}` : ""}`,
+        { method: "POST" }),
   testAlert: () => req("/alerts/test", { method: "POST" }),
   testSiem: () => req("/siem/test", { method: "POST" }),
   testSiemS3: () => req("/siem/s3/test", { method: "POST" }),

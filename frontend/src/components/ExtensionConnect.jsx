@@ -24,6 +24,9 @@ export default function ExtensionConnect() {
   const params = new URLSearchParams(window.location.search);
   const redirectUri = params.get("redirect_uri") || "";
   const state = params.get("state") || "";
+  // Which device is connecting (browser deviceId / warden-connect hostname) — relayed to the
+  // token endpoint so re-connecting the same device rotates its key instead of piling up rows.
+  const device = params.get("device") || "";
   const [authed, setAuthed] = useState(!!getToken());
   const [status, setStatus] = useState("init");   // init | connecting | done | error
   const [detail, setDetail] = useState("");
@@ -36,7 +39,7 @@ export default function ExtensionConnect() {
       return;
     }
     setStatus("connecting");
-    api.extensionToken()
+    api.extensionToken(device)
       .then((r) => {
         const u = new URL(redirectUri);
         const params = `token=${encodeURIComponent(r.token)}` +
