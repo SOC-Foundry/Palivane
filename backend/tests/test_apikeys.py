@@ -94,5 +94,37 @@ def test_extension_token_self_serve(client, raw_client):
     assert ing.status_code == 200
 
 
+def test_extension_token_dedups_per_device(client, raw_client):
+    # Re-connecting the same device rotates one capture key in place instead of piling up a
+    # new row every sign-in. Two connects from device "laptop" => one key, fresh token,
+    # old token dead.
+    first = client.post("/api/extension/token?device=laptop").json()["token"]
+    second = client.post("/api/extension/token?device=laptop").json()["token"]
+    assert first != second                       # rotated, not reused verbatim
+
+    keys = client.get("/api/apikeys").json()["api_keys"]
+    laptop = [k for k in keys if k["label"] == "capture:laptop" and k["active"]]
+    assert len(laptop) == 1                       # deduped to a single active row
+
+    # The old token stops working; the fresh one ingests fine.
+    dead = raw_client.post("/api/ingest/ai-usage",
+                           json={"content": "hi", "destination": "https://claude.ai/"},
+                           headers={"X-Warden-Token": first})
+    assert dead.status_code == 401
+    live = raw_client.post("/api/ingest/ai-usage",
+                           json={"content": "hi", "destination": "https://claude.ai/"},
+                           headers={"X-Warden-Token": second})
+    assert live.status_code == 200
+
+
+def test_extension_token_separate_keys_per_device(client):
+    # Different devices keep separate, independently-revocable keys (no cross-device rotation).
+    client.post("/api/extension/token?device=laptop")
+    client.post("/api/extension/token?device=phone")
+    keys = client.get("/api/apikeys").json()["api_keys"]
+    labels = {k["label"] for k in keys if k["active"]}
+    assert {"capture:laptop", "capture:phone"} <= labels
+
+
 def test_extension_token_requires_auth(raw_client):
     assert raw_client.post("/api/extension/token").status_code == 401

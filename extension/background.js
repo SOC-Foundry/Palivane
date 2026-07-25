@@ -72,7 +72,10 @@ async function signIn() {
   if (!consoleUrl) throw new Error("Set your Warden URL first (Options).");
   const redirectUri = chrome.identity.getRedirectURL();          // https://<id>.chromiumapp.org/
   const state = Math.random().toString(36).slice(2);
-  const authUrl = `${consoleUrl}/extension-connect?redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`;
+  // device scopes the capture key so re-signing-in this browser rotates one key instead of
+  // minting a new one every time (console dedups on it).
+  const authUrl = `${consoleUrl}/extension-connect?redirect_uri=${encodeURIComponent(redirectUri)}` +
+                  `&state=${state}&device=${encodeURIComponent(await deviceId())}`;
   const resultUrl = await chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true });
   const frag = new URLSearchParams(new URL(resultUrl).hash.slice(1));
   if (frag.get("state") !== state) throw new Error("state mismatch");

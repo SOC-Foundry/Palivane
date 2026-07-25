@@ -41,6 +41,7 @@ import json
 import os
 import secrets
 import shutil
+import socket
 import socketserver
 import sys
 import urllib.parse
@@ -85,8 +86,12 @@ def _capture_token(console: str) -> dict:
     with socketserver.TCPServer(("127.0.0.1", 0), Handler) as srv:
         port = srv.server_address[1]
         redirect = f"http://127.0.0.1:{port}/cb"
+        # device = this machine's hostname, so re-running `warden connect` here rotates one
+        # capture key instead of minting a fresh row every time (console dedups on it).
+        device = socket.gethostname() or "cli"
         url = (f"{console}/extension-connect"
-               f"?redirect_uri={urllib.parse.quote(redirect, safe='')}&state={state}")
+               f"?redirect_uri={urllib.parse.quote(redirect, safe='')}&state={state}"
+               f"&device={urllib.parse.quote(device, safe='')}")
         print("Opening your browser to sign in…")
         print(f"  If it doesn't open, visit:\n  {url}\n")
         try:
