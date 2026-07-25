@@ -244,3 +244,26 @@ def test_mcp_block_body_is_jsonrpc_error():
         {"signals": [{"category": "dangerous_command"}], "risk_score": 90, "severity": "critical"}))
     assert payload["jsonrpc"] == "2.0"
     assert "dangerous_command" in payload["error"]["message"]
+
+
+# --- Auth circuit breaker: revoked key stands the proxy down ------------------------
+def test_scan_circuit_breaker(tmp_path, monkeypatch):
+    """A 401 arms the breaker so the egress proxy stops re-scanning every intercepted
+    request with a dead key; a fresh token is not suppressed; 200 clears it."""
+    import urllib.error
+    monkeypatch.setenv("WARDEN_STATE_DIR", str(tmp_path))
+    calls = {"n": 0}
+
+    def revoked(req, timeout=None):
+        calls["n"] += 1
+        raise urllib.error.HTTPError(req.full_url, 401, "err", {}, None)
+
+    monkeypatch.setattr(addon.urllib.request, "urlopen", revoked)
+    assert addon.scan("secret", "https://claude.ai/", token="tok-A")["reason"] == "scan-failed:401"
+    assert calls["n"] == 1
+    # Same token → skipped, no network.
+    assert addon.scan("secret", "https://claude.ai/", token="tok-A")["reason"] == "scan-skipped:deauthorized"
+    assert calls["n"] == 1
+    # Fresh token → attempts again.
+    addon.scan("secret", "https://claude.ai/", token="tok-B")
+    assert calls["n"] == 2

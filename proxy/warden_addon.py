@@ -29,9 +29,13 @@ standalone; the mitmproxy hook is a thin wrapper.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import sys
+import time
+import urllib.error
 import urllib.request
 
 # Outbound destinations we inspect (suffix match on the request host).
@@ -220,11 +224,88 @@ def detect_tool(user_agent: str) -> str:
     return ""
 
 
+# --- Auth circuit breaker -------------------------------------------------------------
+# HTTP 401/403 means THIS token is dead (revoked or invalid) — a permanent signal, so we
+# stop calling out on every intercepted request. We fingerprint the token, stand down (fail
+# open, no network) for _DEAUTH_SECS, and re-probe hourly in case the 401 was transient. A
+# fresh token from `warden connect` has a different fingerprint, so a stale marker never
+# suppresses it. Repeated transient errors (timeouts/5xx) trip a shorter cooldown so we
+# don't retry-storm an unreachable backend either.
+_DEAUTH_SECS = 3600
+_COOLDOWN_SECS = 300
+_FAIL_THRESHOLD = 3
+
+
+def _breaker_path() -> str:
+    d = os.path.expanduser(os.getenv("WARDEN_STATE_DIR", "~/.warden"))
+    return os.path.join(d, "proxy-breaker.json")
+
+
+def _token_fp(token: str) -> str:
+    return hashlib.sha256((token or "").encode()).hexdigest()[:16]
+
+
+def _breaker_load() -> dict:
+    try:
+        with open(_breaker_path()) as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
+def _breaker_save(state: dict) -> None:
+    try:
+        path = _breaker_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump(state, fh)
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+def _breaker_skip(token: str) -> str:
+    """Reason to skip the network and fail open, or '' to proceed."""
+    st, fp, now = _breaker_load(), _token_fp(token), time.time()
+    if st.get("deauth_fp") == fp and now < st.get("deauth_until", 0):
+        return "deauthorized"
+    if now < st.get("cooldown_until", 0):
+        return "backoff"
+    return ""
+
+
+def _breaker_record(token: str, status) -> None:
+    """status: 200 healthy | 401/403 revoked | None transient error."""
+    st, fp, now = _breaker_load(), _token_fp(token), time.time()
+    if status == 200:
+        if st:
+            _breaker_save({})                       # healthy — clear breaker state
+        return
+    if status in (401, 403):
+        first = st.get("deauth_fp") != fp
+        _breaker_save({"deauth_fp": fp, "deauth_until": now + _DEAUTH_SECS})
+        if first:
+            sys.stderr.write("warden: capture key rejected (revoked or invalid) — standing "
+                             "down; re-run `warden connect` to re-issue.\n")
+        return
+    fails = int(st.get("fails", 0)) + 1
+    if fails >= _FAIL_THRESHOLD:
+        st.update(fails=0, cooldown_until=now + _COOLDOWN_SECS)
+    else:
+        st["fails"] = fails
+    _breaker_save(st)
+
+
 def scan(content: str, destination: str, tool: str = "",
          url: str | None = None, token: str | None = None, timeout: float = 8.0) -> dict:
-    """Call the Warden ai-usage endpoint; fail open (action=allow) on any error."""
+    """Call the Warden ai-usage endpoint; fail open (action=allow) on any error. A revoked
+    key trips the circuit breaker so we stop hammering the backend on every request."""
     base = (url or os.getenv("WARDEN_URL", "http://localhost:8090")).rstrip("/")
     tok = token if token is not None else os.getenv("WARDEN_TOKEN", "")
+    skip = _breaker_skip(tok)
+    if skip:
+        return {"action": "allow", "reason": f"scan-skipped:{skip}"}
     try:
         req = urllib.request.Request(
             base + "/api/ingest/ai-usage", method="POST",
@@ -233,8 +314,14 @@ def scan(content: str, destination: str, tool: str = "",
             headers={"content-type": "application/json", "User-Agent": "warden-proxy/1.0", "X-Warden-Token": tok},
         )
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read())
+            out = json.loads(r.read())
+        _breaker_record(tok, 200)
+        return out
+    except urllib.error.HTTPError as e:
+        _breaker_record(tok, e.code)
+        return {"action": "allow", "reason": f"scan-failed:{e.code}"}
     except Exception:
+        _breaker_record(tok, None)
         return {"action": "allow", "reason": "scan-failed"}
 
 
@@ -407,6 +494,9 @@ def scan_mcp(activity: dict, server: str = "", transport: str = "http",
     """Call the Warden MCP ingest endpoint; fail open (action=allow) on any error."""
     base = (url or os.getenv("WARDEN_URL", "http://localhost:8090")).rstrip("/")
     tok = token if token is not None else os.getenv("WARDEN_TOKEN", "")
+    skip = _breaker_skip(tok)
+    if skip:
+        return {"action": "allow", "reason": f"scan-skipped:{skip}"}
     payload = {"server": server, "transport": transport,
                "user": os.getenv("WARDEN_PROXY_USER", ""), **activity}
     try:
@@ -416,8 +506,14 @@ def scan_mcp(activity: dict, server: str = "", transport: str = "http",
             headers={"content-type": "application/json", "User-Agent": "warden-proxy/1.0", "X-Warden-Token": tok},
         )
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read())
+            out = json.loads(r.read())
+        _breaker_record(tok, 200)
+        return out
+    except urllib.error.HTTPError as e:
+        _breaker_record(tok, e.code)
+        return {"action": "allow", "reason": f"scan-failed:{e.code}"}
     except Exception:
+        _breaker_record(tok, None)
         return {"action": "allow", "reason": "scan-failed"}
 
 
