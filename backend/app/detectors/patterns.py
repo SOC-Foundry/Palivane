@@ -33,6 +33,9 @@ def _safe_custom_regex(rx: str) -> re.Pattern | None:
 # present). A match is a near-certain secret, so these carry full weight and hard-block.
 SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("OpenAI API key", re.compile(r"sk-[a-zA-Z0-9]{16,}")),
+    # Modern OpenAI keys carry a dashed sub-marker (sk-proj-/sk-svcacct-/sk-admin-); the
+    # bare pattern above stops at the internal dash and misses them, so match them here.
+    ("OpenAI API key", re.compile(r"sk-(?:proj|svcacct|admin)-[A-Za-z0-9_\-]{20,}")),
     ("Anthropic API key", re.compile(r"sk-ant-[a-zA-Z0-9_\-]{16,}")),
     ("AWS access key id", re.compile(r"AKIA[0-9A-Z]{16}")),
     ("GitHub token", re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}")),
@@ -95,11 +98,33 @@ def custom_patterns() -> list[tuple[str, re.Pattern]]:
     return out
 
 
+# Placeholder right-hand-sides in a `KEY = value` assignment — a config TEMPLATE, not a
+# credential (e.g. `API_KEY=your-api-key-here`, `DB_PASSWORD=changeme`). Excluding these is
+# what stops .env.example / tutorial snippets from false-positiving as a secret leak.
+_PLACEHOLDER_VALUE_RE = re.compile(
+    r"(?i)^(?:x{3,}|\*{3,}|\.{3,}|changeme|change[_-]?me|your[_-].*|my[_-].*|some[_-].*|"
+    r"placeholder|example|examplekey|sample|todo|tbd|fixme|none|null|nil|test|testing|"
+    r"dummy|fake|redacted|secret|password|passwd|<[^>]+>|\$?\{[^}]+\}|\$[a-z_]+|env\.[a-z_.]+)$")
+
+
+def _is_placeholder_assignment(match_text: str) -> bool:
+    """The matched 'KEY = value' has a placeholder value (env template), not a real secret."""
+    mm = re.search(r"[:=]\s*[\"']?([^\s\"']+)", match_text)
+    return bool(mm and _PLACEHOLDER_VALUE_RE.match(mm.group(1)))
+
+
 def find_secrets(text: str) -> list[str]:
     """Return the labels of every secret pattern that matches `text` — canonical formats,
-    their separator-stripped (evasion) variants, and any custom patterns."""
-    return [label for label, rx in SECRET_PATTERNS + EVASION_PATTERNS + custom_patterns()
-            if rx.search(text)]
+    their separator-stripped (evasion) variants, and any custom patterns. Skips placeholder
+    assignments (`API_KEY=your-key-here`) so config templates don't false-positive."""
+    out: list[str] = []
+    for label, rx in SECRET_PATTERNS + EVASION_PATTERNS + custom_patterns():
+        for m in rx.finditer(text):
+            if label == "Credential assignment" and _is_placeholder_assignment(m.group(0)):
+                continue
+            out.append(label)
+            break   # one confirmed match per label is enough
+    return out
 
 
 def custom_pii_patterns(extra: str = "") -> list[tuple[str, re.Pattern]]:

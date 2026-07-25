@@ -199,6 +199,21 @@ def test_tier1_additional_secret_prefixes():
     assert find_secrets(rsa)
 
 
+def test_modern_openai_dashed_keys_caught():
+    # sk-proj-/sk-svcacct-/sk-admin- carry an internal dash the bare sk- pattern stops at.
+    assert find_secrets("key sk-proj-aBcD1234efGh5678iJkL9012mnOpQrSt")
+    assert find_secrets("sk-svcacct-Zx0192AbCdEf3456GhIjKl7890MnOp")
+
+
+def test_placeholder_assignments_not_flagged_but_real_values_are():
+    # Config TEMPLATES (.env.example, tutorials) must not false-positive as a secret leak.
+    for template in ("API_KEY=your-api-key-here", "DB_PASSWORD=changeme", "SECRET=<your-secret>",
+                     "password: placeholder", "TOKEN=${GITHUB_TOKEN}", "api_key = example"):
+        assert find_secrets(template) == [], template
+    # A real (non-placeholder) value in the same shape is still caught.
+    assert find_secrets("password=Xk9zMp2qLw7RtY3v") == ["Credential assignment"]
+
+
 # --- Tier 2: generic high-entropy token heuristic ------------------------------------
 
 def test_tier2_flags_unknown_high_entropy_token():
