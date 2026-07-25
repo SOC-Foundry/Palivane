@@ -34,6 +34,15 @@ export default function Connections() {
     catch (e) { flash(String(e.message || e).replace(/^\d+:\s*/, ""), false); }
   }
 
+  async function revokeToken(t) {
+    // Revoking the token blocks NEW enrollments only — devices already enrolled keep their
+    // own capture keys (revoke those above to cut a live device off).
+    if (!window.confirm(`Revoke enrollment token "${t.label || t.prefix}"? `
+      + `No new devices can enroll with it; already-enrolled devices are unaffected.`)) return;
+    try { await api.deleteEnrollToken(t.id); flash("Enrollment token revoked."); load(); }
+    catch (e) { flash(String(e.message || e).replace(/^\d+:\s*/, ""), false); }
+  }
+
   return (
     <div className="connect">
       <div className="content-head">
@@ -100,7 +109,9 @@ export default function Connections() {
                   <td><code>{t.prefix}</code></td>
                   <td>{t.uses}{t.max_uses ? ` / ${t.max_uses}` : ""}</td>
                   <td>{when(t.created_at)}</td>
-                  <td>{t.active ? "active" : "revoked"}</td>
+                  <td>{t.active
+                    ? <button className="mini-btn danger" onClick={() => revokeToken(t)}>revoke</button>
+                    : <span className="muted">revoked</span>}</td>
                 </tr>
               ))}
             </tbody>
