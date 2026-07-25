@@ -282,3 +282,50 @@ def test_no_upstream_skips_gateway_routing_keeps_local_planes(monkeypatch, tmp_p
     # Local capture planes still fully wired.
     assert env["WARDEN_URL"] == "https://w.io" and env["WARDEN_TOKEN"] == "ak_tok"
     assert len(installed) == 3
+
+
+# --- plane self-update: `warden connect` refreshes installed plane scripts -----------
+def test_refresh_planes_updates_and_is_atomic(tmp_path, monkeypatch):
+    """A re-connect fetches current plane scripts into ~/.warden/bin (atomic, executable),
+    so new plane code (e.g. the auth circuit breaker) lands without a full reinstall."""
+    fetched = []
+
+    class _R:
+        def __init__(self, body): self.body = body
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return self.body
+
+    def fake_urlopen(req, timeout=None):
+        fetched.append(req.full_url)
+        return _R(b"#!/usr/bin/env python3\n# v2\n")
+
+    monkeypatch.setattr(wc.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(wc, "_MANAGED_BIN", str(tmp_path / "bin"))
+    monkeypatch.setattr(wc, "_in_repo_checkout", lambda: False)
+    monkeypatch.setattr(wc.sys, "argv", ["warden-connect"])
+    # No proxy addon in this sandboxed HOME, so it isn't fetched.
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+    msgs = wc._refresh_planes("https://warden.example")
+    for name in wc._PLANE_SCRIPTS:
+        p = tmp_path / "bin" / name
+        assert p.exists() and os.access(p, os.X_OK)
+        assert not (tmp_path / "bin" / (name + ".tmp")).exists()   # atomic: no temp left
+    assert {u.rsplit("/", 1)[-1] for u in fetched} == set(wc._PLANE_SCRIPTS)
+    assert any("updated" in m for m in msgs)
+
+
+def test_refresh_planes_skips_checkout_and_flag(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(wc.urllib.request, "urlopen",
+                        lambda *a, **k: calls.append(1))
+    # Source checkout: sibling scripts are authoritative — don't fetch over them.
+    monkeypatch.setattr(wc, "_in_repo_checkout", lambda: True)
+    monkeypatch.setattr(wc.sys, "argv", ["warden-connect"])
+    assert any("checkout" in m for m in wc._refresh_planes("https://warden.example"))
+    # Explicit opt-out.
+    monkeypatch.setattr(wc, "_in_repo_checkout", lambda: False)
+    monkeypatch.setattr(wc.sys, "argv", ["warden-connect", "--no-update"])
+    assert wc._refresh_planes("https://warden.example") == []
+    assert calls == []   # never hit the network in either case
