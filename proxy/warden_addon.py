@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.request
 
 # Outbound destinations we inspect (suffix match on the request host).
@@ -59,6 +60,36 @@ _ACTION_RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4
 def is_ai_host(host: str) -> bool:
     host = (host or "").lower()
     return any(host == s or host.endswith("." + s) or host.endswith(s) for s in AI_HOST_SUFFIXES)
+
+
+# Hosts whose request shape we reliably parse (messages/contents). On THESE, a body that
+# isn't a recognized prompt shape is not a prompt — it's the tool's telemetry/metadata to
+# the same API host (e.g. Claude Code's ClaudeCodeInternalEvent / session-count events,
+# which carry the user's own email). We must NOT harvest those; doing so false-positived
+# on the tool's own analytics and blocked every prompt. Web/proprietary hosts (chat UIs,
+# Cursor) still get the harvest fallback since we can't parse their bodies.
+STRUCTURED_API_SUFFIXES = (
+    "api.openai.com", "api.anthropic.com",
+    "generativelanguage.googleapis.com", "cloudcode-pa.googleapis.com",
+    "aiplatform.googleapis.com", "api.cohere.ai", "api.mistral.ai", "api.perplexity.ai",
+    "githubcopilot.com", "copilot-proxy.githubusercontent.com",
+)
+
+
+def needs_harvest(host: str) -> bool:
+    """Only harvest-all-strings for AI hosts whose body shape we can't parse (proprietary
+    backends, chat web UIs). Structured API hosts are excluded — an unrecognized body
+    there is telemetry, not user data."""
+    host = (host or "").lower()
+    if any(host == s or host.endswith("." + s) or host.endswith(s) for s in STRUCTURED_API_SUFFIXES):
+        return False
+    return is_ai_host(host)
+
+
+# Agent clients inject context wrappers into the user turn — Claude Code's <system-reminder>
+# carries the user's own email/date/env as "context". That's scaffolding, not user
+# data-egress; scanning it flags the user's own identity as a PII leak on every turn.
+_SYSTEM_REMINDER_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.S | re.I)
 
 
 def _harvest_strings(obj, out: list[str]) -> None:
@@ -94,31 +125,52 @@ def extract_prompt(body: bytes | str) -> str:
     parts: list[str] = []
 
     # OpenAI / Anthropic messages API: [{role, content}], content str or block list.
+    # Scan only the CURRENT user turn — the LAST user message — not the whole history or
+    # the tool's system prompt. Agent clients (Claude Code, Cursor) resend the entire
+    # conversation plus a large context/env scaffold (git email, cwd, file listings) on
+    # every request; scanning all of it re-flags the same content every turn and
+    # false-positives on the assistant's own scaffolding, blocking every prompt. The user's
+    # actual data-egress is what they send now — the latest user message. (Mirrors the
+    # gateway's _scan_messages scoping; earlier turns were already scanned when they were new.)
     msgs = j.get("messages") if isinstance(j, dict) else None
     if isinstance(msgs, list):
+        last_user = ""
         for m in msgs:
             if not isinstance(m, dict):
                 continue
             role = (m.get("author") or {}).get("role") if isinstance(m.get("author"), dict) else m.get("role")
-            if role and role not in ("user", "system"):
+            if role != "user":
                 continue
             c = m.get("content")
+            text = ""
             if isinstance(c, str):
-                parts.append(c)
+                text = c
             elif isinstance(c, dict) and isinstance(c.get("parts"), list):   # ChatGPT web
-                parts.extend(p for p in c["parts"] if isinstance(p, str))
+                text = "\n".join(p for p in c["parts"] if isinstance(p, str))
             elif isinstance(c, list):                                         # Anthropic blocks
-                for block in c:
-                    if isinstance(block, dict) and isinstance(block.get("text"), str):
-                        parts.append(block["text"])
+                text = "\n".join(b["text"] for b in c
+                                 if isinstance(b, dict) and isinstance(b.get("text"), str))
+            if text.strip():
+                last_user = text        # keep the LAST user turn only
+        if last_user:
+            parts.append(last_user)
 
-    # Gemini: contents:[{parts:[{text}]}]
+    # Gemini: contents:[{role, parts:[{text}]}] — same current-turn scoping: the last user
+    # turn only (role defaults to "user" when absent, e.g. single-shot generateContent).
     contents = j.get("contents") if isinstance(j, dict) else None
     if isinstance(contents, list):
+        last_user = ""
         for item in contents:
-            for p in (item.get("parts") or []) if isinstance(item, dict) else []:
-                if isinstance(p, dict) and isinstance(p.get("text"), str):
-                    parts.append(p["text"])
+            if not isinstance(item, dict):
+                continue
+            if item.get("role", "user") != "user":
+                continue
+            text = "\n".join(p["text"] for p in (item.get("parts") or [])
+                             if isinstance(p, dict) and isinstance(p.get("text"), str))
+            if text.strip():
+                last_user = text
+        if last_user:
+            parts.append(last_user)
 
     # Legacy single-field shapes.
     if isinstance(j, dict):
@@ -128,14 +180,30 @@ def extract_prompt(body: bytes | str) -> str:
                 parts.append(v)
 
     structured = "\n".join(p for p in parts if p).strip()
-    if structured:
-        return structured
+    # Strip agent-injected context wrappers before returning (Claude Code's <system-reminder>
+    # carries the user's own email/env — not user data-egress).
+    structured = _SYSTEM_REMINDER_RE.sub(" ", structured).strip()
+    # "" when no recognized prompt shape: the caller harvests ONLY for proprietary hosts
+    # (needs_harvest) — a shapeless body on a structured API host is telemetry, not a prompt.
+    return structured
 
-    # Unknown JSON shape (e.g. Cursor): harvest every string value so a secret/PII still
-    # gets scanned even without a per-vendor parser. Fall back to the raw text otherwise.
+
+def harvest_prompt(body: bytes | str) -> str:
+    """Fallback for proprietary/unparseable request bodies (Cursor, chat web UIs): harvest
+    every string value so a secret/PII is still caught without a per-vendor parser. Used
+    only for hosts where needs_harvest() is true — never for structured API telemetry."""
+    if isinstance(body, bytes):
+        body = body.decode("utf-8", "replace")
+    if not body:
+        return ""
+    try:
+        j = json.loads(body)
+    except (ValueError, TypeError):
+        return body[:8000]
     harvested: list[str] = []
     _harvest_strings(j, harvested)
-    return "\n".join(harvested)[:20000] if harvested else body[:8000]
+    text = "\n".join(harvested)[:20000] if harvested else body[:8000]
+    return _SYSTEM_REMINDER_RE.sub(" ", text).strip()
 
 
 def detect_tool(user_agent: str) -> str:
@@ -390,8 +458,12 @@ class WardenGuard:
         raw = req.raw_content or b""
 
         if is_ai_host(req.pretty_host):
-            # 1) Prompt content scan (shadow-AI / data-loss).
+            # 1) Prompt content scan (shadow-AI / data-loss). extract_prompt returns the
+            #    current user turn from a recognized shape; only fall back to harvesting all
+            #    strings for hosts we can't parse (never on structured API telemetry).
             prompt = extract_prompt(raw)
+            if not prompt.strip() and needs_harvest(req.pretty_host):
+                prompt = harvest_prompt(raw)
             if prompt.strip():
                 tool = detect_tool(req.headers.get("user-agent", ""))
                 verdict = scan(prompt, f"https://{req.pretty_host}", tool=tool)
