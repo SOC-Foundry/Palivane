@@ -9,7 +9,7 @@ function Readiness() {
     let live = true;
     const load = () => api.setupStatus().then((r) => live && setS(r)).catch(() => {});
     load();
-    const t = setInterval(load, 15000);
+    const t = setInterval(load, 60000);
     return () => { live = false; clearInterval(t); };
   }, []);
   if (!s) return null;
