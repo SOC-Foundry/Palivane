@@ -104,17 +104,52 @@ def test_extract_legacy_and_nonjson():
     assert addon.extract_prompt(b"") == ""
 
 
-def test_extract_unknown_json_shape_harvests_strings():
-    # A Cursor-like proprietary body with no recognized field — harvest still finds the
-    # secret so it gets scanned, and ignores dict keys.
+def test_harvest_prompt_finds_secret_in_proprietary_shape():
+    # A Cursor-like proprietary body with no recognized field — harvest_prompt still finds
+    # the secret so it gets scanned, and ignores dict keys.
     body = json.dumps({
         "request": {"editor": "cursor",
                     "blocks": [{"kind": "user", "value": "deploy with AKIAABCDEFGHIJKLMNOP"}]},
         "meta": {"v": 3},
     })
-    out = addon.extract_prompt(body)
+    out = addon.harvest_prompt(body)
     assert "AKIAABCDEFGHIJKLMNOP" in out
     assert "request" not in out      # dict keys aren't harvested, only values
+    # extract_prompt (structured only) returns "" for an unrecognized shape — the caller
+    # harvests based on the host (proprietary vs structured API telemetry).
+    assert addon.extract_prompt(body) == ""
+
+
+def test_scan_only_current_user_turn_not_history_or_scaffold():
+    # Agent clients resend the whole conversation every request. Only the LATEST user turn
+    # is scanned — not earlier turns — else old context re-flags every prompt.
+    body = json.dumps({"messages": [
+        {"role": "user", "content": "old turn AKIAOLDOLDOLDOLDOLD1"},
+        {"role": "assistant", "content": "ok"},
+        {"role": "user", "content": "hello"},
+    ]})
+    assert addon.extract_prompt(body) == "hello"
+
+
+def test_strips_injected_system_reminder():
+    # Claude Code injects the user's own email/env as a <system-reminder> into the user
+    # turn — scaffolding, not egress. Stripped so it doesn't flag every turn.
+    body = json.dumps({"messages": [{"role": "user", "content": [
+        {"type": "text", "text": "<system-reminder>The user's email is davidk@tachtech.net.</system-reminder>"},
+        {"type": "text", "text": "reply ok"},
+    ]}]})
+    out = addon.extract_prompt(body)
+    assert out.strip() == "reply ok" and "tachtech.net" not in out
+
+
+def test_structured_api_telemetry_not_harvested():
+    # Claude Code posts analytics (no messages) to api.anthropic.com carrying the user's
+    # email — NOT a prompt. extract_prompt returns "" and the host isn't a harvest host,
+    # so telemetry is never scanned (this was the every-prompt-blocked bug).
+    telem = json.dumps({"event": "ClaudeCodeInternalEvent", "email": "davidk@tachtech.net"})
+    assert addon.extract_prompt(telem) == ""
+    assert addon.needs_harvest("api.anthropic.com") is False
+    assert addon.needs_harvest("api2.cursor.sh") is True
 
 
 def test_should_block():
