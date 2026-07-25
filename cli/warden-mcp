@@ -45,6 +45,8 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
+import urllib.error
 import urllib.request
 
 _MAX_ARGS_TEXT = 20000
@@ -180,9 +182,86 @@ def block_reply(req_id, verdict: dict) -> bytes:
                         "error": {"code": -32001, "message": msg}}) + "\n").encode()
 
 
+# --- Auth circuit breaker -------------------------------------------------------------
+# HTTP 401/403 means THIS token is dead (revoked or invalid) — a permanent signal, so we
+# stop calling out on every tool call. We fingerprint the token, stand down (fail open, no
+# network) for _DEAUTH_SECS, and re-probe hourly in case the 401 was transient. A fresh
+# token from `warden connect` has a different fingerprint, so a stale marker never
+# suppresses it. Repeated transient errors (timeouts/5xx) trip a shorter cooldown so we
+# don't retry-storm an unreachable backend either.
+_DEAUTH_SECS = 3600
+_COOLDOWN_SECS = 300
+_FAIL_THRESHOLD = 3
+
+
+def _breaker_path() -> str:
+    d = os.path.expanduser(os.getenv("WARDEN_STATE_DIR", "~/.warden"))
+    return os.path.join(d, "mcp-breaker.json")
+
+
+def _token_fp(token: str) -> str:
+    return hashlib.sha256((token or "").encode()).hexdigest()[:16]
+
+
+def _breaker_load() -> dict:
+    try:
+        with open(_breaker_path()) as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
+def _breaker_save(state: dict) -> None:
+    try:
+        path = _breaker_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump(state, fh)
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+def _breaker_skip(token: str) -> str:
+    """Reason to skip the network and fail open, or '' to proceed."""
+    st, fp, now = _breaker_load(), _token_fp(token), time.time()
+    if st.get("deauth_fp") == fp and now < st.get("deauth_until", 0):
+        return "deauthorized"
+    if now < st.get("cooldown_until", 0):
+        return "backoff"
+    return ""
+
+
+def _breaker_record(token: str, status) -> None:
+    """status: 200 healthy | 401/403 revoked | None transient error."""
+    st, fp, now = _breaker_load(), _token_fp(token), time.time()
+    if status == 200:
+        if st:
+            _breaker_save({})                       # healthy — clear breaker state
+        return
+    if status in (401, 403):
+        first = st.get("deauth_fp") != fp
+        _breaker_save({"deauth_fp": fp, "deauth_until": now + _DEAUTH_SECS})
+        if first:
+            sys.stderr.write("warden: capture key rejected (revoked or invalid) — standing "
+                             "down; re-run `warden connect` to re-issue.\n")
+        return
+    fails = int(st.get("fails", 0)) + 1
+    if fails >= _FAIL_THRESHOLD:
+        st.update(fails=0, cooldown_until=now + _COOLDOWN_SECS)
+    else:
+        st["fails"] = fails
+    _breaker_save(st)
+
+
 def scan_mcp(activity: dict, server: str, url: str, token: str,
              user: str = "", timeout: float = 8.0) -> dict:
-    """Call the Warden MCP ingest endpoint; fail open (action=allow) on any error."""
+    """Call the Warden MCP ingest endpoint; fail open (action=allow) on any error. A revoked
+    key trips the circuit breaker so we stop hammering the backend on every tool call."""
+    skip = _breaker_skip(token)
+    if skip:
+        return {"action": "allow", "reason": f"scan-skipped:{skip}"}
     try:
         payload = {"method": "", "server": server, "tool": "", "args_text": "",
                    "resource": "", "tool_descriptions": [], "transport": "stdio",
@@ -194,13 +273,23 @@ def scan_mcp(activity: dict, server: str, url: str, token: str,
             headers={"content-type": "application/json", "User-Agent": "warden-mcp/1.0", "X-Warden-Token": token},
         )
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read())
+            out = json.loads(r.read())
+        _breaker_record(token, 200)
+        return out
+    except urllib.error.HTTPError as e:
+        _breaker_record(token, e.code)
+        return {"action": "allow", "reason": f"scan-failed:{e.code}"}
     except Exception:
+        _breaker_record(token, None)
         return {"action": "allow", "reason": "scan-failed"}
 
 
 def scan_mcp_batch(items: list[dict], cfg: dict) -> None:
-    """Report a batch of activities to the batch ingest endpoint; fail open (silent)."""
+    """Report a batch of activities to the batch ingest endpoint; fail open (silent).
+    Respects the same circuit breaker so a revoked key stops the batch telemetry too."""
+    token = cfg["token"]
+    if _breaker_skip(token):
+        return
     try:
         payload = {"items": [{"method": "", "server": "", "tool": "", "args_text": "",
                               "resource": "", "tool_descriptions": [], "transport": "stdio",
@@ -208,11 +297,14 @@ def scan_mcp_batch(items: list[dict], cfg: dict) -> None:
         req = urllib.request.Request(
             cfg["url"].rstrip("/") + "/api/ingest/mcp/batch", method="POST",
             data=json.dumps(payload).encode(),
-            headers={"content-type": "application/json", "User-Agent": "warden-mcp/1.0", "X-Warden-Token": cfg["token"]},
+            headers={"content-type": "application/json", "User-Agent": "warden-mcp/1.0", "X-Warden-Token": token},
         )
         urllib.request.urlopen(req, timeout=cfg["timeout"]).read()
+        _breaker_record(token, 200)
+    except urllib.error.HTTPError as e:
+        _breaker_record(token, e.code)
     except Exception:
-        pass  # monitor telemetry — never affects the pipe
+        _breaker_record(token, None)  # monitor telemetry — never affects the pipe
 
 
 class _Reporter:

@@ -245,3 +245,48 @@ def test_benign_prompt_allows_end_to_end(client, raw_client):
                            headers={"X-Warden-Token": key}).json()
     assert body.get("force_block") is False
     assert hook.should_block(body, enforce=False) is False
+
+
+# --- Auth circuit breaker: revoked key stands the hook down --------------------------
+def test_scan_circuit_breaker(tmp_path, monkeypatch):
+    """A 401 (revoked/invalid key) fails open AND arms the breaker so the hook stops
+    hitting the backend on every call; a fresh token is never suppressed; a healthy 200
+    clears it; repeated transient errors trip a shorter cooldown."""
+    import urllib.error
+    monkeypatch.setenv("WARDEN_STATE_DIR", str(tmp_path))
+    calls = {"n": 0}
+
+    def revoked(req, timeout=None):
+        calls["n"] += 1
+        raise urllib.error.HTTPError(req.full_url, 401, "err", {}, None)
+
+    monkeypatch.setattr(hook.urllib.request, "urlopen", revoked)
+    # First 401 fails open and arms the breaker.
+    assert hook.scan("/api/ingest/mcp", {}, "http://x", "tok-A")["reason"] == "scan-failed:401"
+    assert calls["n"] == 1
+    # Same token now short-circuits with no network call — the storm is dead.
+    assert hook.scan("/api/ingest/mcp", {}, "http://x", "tok-A")["reason"] == "scan-skipped:deauthorized"
+    assert calls["n"] == 1
+    # A fresh token (re-issued by `warden connect`) has a new fingerprint — not suppressed.
+    hook.scan("/api/ingest/mcp", {}, "http://x", "tok-B")
+    assert calls["n"] == 2
+
+    # A healthy 200 clears the breaker entirely.
+    class _OK:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return b'{"action":"allow"}'
+    monkeypatch.setattr(hook.urllib.request, "urlopen", lambda req, timeout=None: _OK())
+    hook.scan("/api/ingest/mcp", {}, "http://x", "tok-C")
+    assert hook._breaker_load() == {}
+
+    # Transient errors (timeouts/5xx) trip a cooldown after the threshold, skipping the net.
+    def down(req, timeout=None):
+        calls["n"] += 1
+        raise TimeoutError("net down")
+    monkeypatch.setattr(hook.urllib.request, "urlopen", down)
+    for _ in range(hook._FAIL_THRESHOLD):
+        hook.scan("/api/ingest/mcp", {}, "http://x", "tok-D")
+    n = calls["n"]
+    assert hook.scan("/api/ingest/mcp", {}, "http://x", "tok-D")["reason"] == "scan-skipped:backoff"
+    assert calls["n"] == n  # cooldown skipped the network

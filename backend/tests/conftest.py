@@ -17,6 +17,12 @@ from app.database import Base, get_db
 from app.main import app
 
 
+@pytest.fixture(autouse=True)
+def _isolate_warden_state(tmp_path, monkeypatch):
+    """Keep capture-plane circuit-breaker state out of the real ~/.warden during tests."""
+    monkeypatch.setenv("WARDEN_STATE_DIR", str(tmp_path / "warden-state"))
+
+
 @pytest.fixture
 def db_factory(tmp_path):
     """Bind the app to a throwaway sqlite DB for the duration of one test."""
