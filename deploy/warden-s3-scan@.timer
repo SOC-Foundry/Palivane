@@ -1,0 +1,14 @@
+# Daily schedule for the per-bucket S3 scan. Enable one per bucket:
+#   systemctl enable --now warden-s3-scan@my-bucket.timer
+[Unit]
+Description=Daily Warden S3 scan — bucket %i
+
+[Timer]
+OnCalendar=daily
+# Spread load so many buckets don't all fire at 00:00; survive downtime (run on next boot
+# if a scheduled run was missed).
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

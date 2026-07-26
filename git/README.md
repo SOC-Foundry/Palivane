@@ -161,6 +161,17 @@ warden-s3-scan my-data-bucket --prefix exports/ --record
 security box (download from `<console>/cli/<name>`); they aren't installed on every
 developer machine. Both fail **open** by default; add `--fail-closed` in a pipeline.
 
+**Run them on a schedule** (they don't auto-run — nothing triggers them until you do):
+
+- **Org sweep, scheduled GitHub Action** — copy [`warden-org-scan.yml`](./warden-org-scan.yml)
+  into a repo as `.github/workflows/warden-org-scan.yml`. It runs `warden-github-scan --org`
+  on a cron (weekly by default) + on demand. Set `WARDEN_TOKEN` and an org-repo-read
+  `WARDEN_ORG_READ_TOKEN` as secrets (the built-in `GITHUB_TOKEN` only sees the current repo).
+- **S3 sweep, systemd timer** — the instanced unit
+  [`deploy/warden-s3-scan@.timer`](../deploy/warden-s3-scan@.timer) runs one scan per bucket
+  daily. Enable per bucket: `systemctl enable --now warden-s3-scan@my-bucket.timer`. See
+  [`deploy/README.md`](../deploy/README.md#scheduled-s3-scanning).
+
 > These are **content** sweeps (secrets/PII in current files & objects), complementary to
 > the git-**history** sweep above. For secrets buried in old commits, use the history
 > scanners in the previous section.
