@@ -10,6 +10,7 @@ import setupMd from "../../../docs/setup.md?raw";
 import claudeMd from "../../../docs/claude-deployment.md?raw";
 import mdmMd from "../../../docs/mdm-policy-pack.md?raw";
 import tokensMd from "../../../docs/tokens-and-identity.md?raw";
+import atRestMd from "../../../docs/at-rest-scanning.md?raw";
 import pilotMd from "../../../docs/pilot-smoke-test.md?raw";
 
 const DOCS = [
@@ -18,6 +19,7 @@ const DOCS = [
   { slug: "claude", title: "Deploying for Claude", md: claudeMd },
   { slug: "mdm-policy-pack", title: "MDM policy pack", md: mdmMd },
   { slug: "tokens-and-identity", title: "Tokens & identity", md: tokensMd },
+  { slug: "at-rest-scanning", title: "S3 & repo scanning", md: atRestMd },
   { slug: "pilot", title: "Pilot smoke test", md: pilotMd },
 ];
 
