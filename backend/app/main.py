@@ -946,7 +946,8 @@ def _tenant_mcp_block_severity(tenant_id: int | None, db: Session) -> str:
 
 
 def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
-               allowed_servers: str, block_severity: str, db: Session, agent: str = "") -> dict:
+               allowed_servers: str, block_severity: str, db: Session, agent: str = "",
+               client_ua: str = "") -> dict:
     """Score one MCP activity on the `mcp` surface and return the client verdict.
 
     Benign (allow-level) verdicts aren't persisted unless WARDEN_MCP_PERSIST_BENIGN is set
@@ -983,6 +984,13 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
     action = _action_for(result["severity"], block_severity)
     if authz["enforce"] and authz["denied"]:
         action = "block"
+    # Feed shadow-AI discovery: the MCP surface has no destination domain, so the plane's
+    # User-Agent (warden-cursor-hook / -hook / -gemini / -codex / -mcp) names the tool. This
+    # is how Cursor, Claude Code, Gemini CLI and Codex show up in the inventory at all.
+    from .ai_catalog import classify_client
+    from .discovery import record_capture_client
+    record_capture_client(db, tenant_id, actor, classify_client(client_ua),
+                          result["signals"], result["risk_score"])
     return {
         "action": action,
         "risk_score": result["risk_score"],
@@ -1000,6 +1008,7 @@ def ingest_mcp(
     body: MCPIngest,
     x_warden_token: str = Header(default=""),
     x_warden_agent: str = Header(default=""),
+    user_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Score an MCP JSON-RPC activity a capture client (proxy, warden-hook, warden-mcp)
@@ -1009,7 +1018,8 @@ def ingest_mcp(
     _enforce_rate(db, tenant_id)
     agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
     return _score_mcp(body, tenant_id, default_actor, _tenant_mcp_allow(tenant_id, db),
-                      _tenant_mcp_block_severity(tenant_id, db), db, agent=agent)
+                      _tenant_mcp_block_severity(tenant_id, db), db, agent=agent,
+                      client_ua=user_agent)
 
 
 @app.post("/api/ingest/mcp/batch")
@@ -1017,6 +1027,7 @@ def ingest_mcp_batch(
     body: MCPBatchIngest,
     x_warden_token: str = Header(default=""),
     x_warden_agent: str = Header(default=""),
+    user_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Score many MCP activities in one request — for long-lived capture clients
@@ -1027,7 +1038,8 @@ def ingest_mcp_batch(
     agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
     allowed = _tenant_mcp_allow(tenant_id, db)
     block = _tenant_mcp_block_severity(tenant_id, db)
-    results = [_score_mcp(item, tenant_id, default_actor, allowed, block, db, agent=agent)
+    results = [_score_mcp(item, tenant_id, default_actor, allowed, block, db, agent=agent,
+                          client_ua=user_agent)
                for item in body.items]
     return {"results": results}
 

@@ -96,6 +96,21 @@ def record_capture(db, tenant_id, actor, destination, tool_channel, signals, ris
         db.rollback()
 
 
+def record_capture_client(db, tenant_id, actor, hit, signals, risk) -> None:
+    """Record an MCP-surface capture whose tool is already resolved from the plane identity
+    (ai_catalog.classify_client) rather than a destination domain. Best-effort — never raises
+    into the request path. `hit` may be None (unrecognized plane), in which case we skip."""
+    try:
+        if not hit:
+            return
+        cats = {s.get("category") for s in (signals or [])}
+        sensitive = bool(cats & _SENSITIVE)
+        _upsert(db, tenant_id, actor, hit, source="capture", sensitive=sensitive, risk=int(risk or 0))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
 def ingest_logs(db, tenant_id, events) -> dict:
     """Classify AI usage from log events. Each event has .actor and one of
     .destination/.domain/.tool, plus optional .team, .count, .last_seen. Returns a summary."""

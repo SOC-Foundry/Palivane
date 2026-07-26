@@ -39,6 +39,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     # --- Coding assistants / agents ---
     "github.com/copilot": ("GitHub Copilot", "coding"), "githubcopilot.com": ("GitHub Copilot", "coding"),
     "cursor.com": ("Cursor", "coding"), "cursor.sh": ("Cursor", "coding"),
+    "cursor": ("Cursor", "coding"),   # bare alias: the Cursor hook reports destination="cursor"
     "codeium.com": ("Codeium", "coding"), "windsurf.com": ("Windsurf", "coding"),
     "tabnine.com": ("Tabnine", "coding"), "sourcegraph.com": ("Sourcegraph Cody", "coding"),
     "replit.com": ("Replit AI", "coding"), "codium.ai": ("Qodo (CodiumAI)", "coding"),
@@ -92,6 +93,30 @@ CATEGORY_LABEL = {
     "writing": "Writing / docs", "search": "AI search", "meeting": "Meeting notetaker",
     "agent": "Agent / automation", "ml_platform": "ML platform", "api": "Model API",
 }
+
+# Local capture planes → the AI tool/platform they govern. MCP-surface captures (Cursor
+# shell/tool calls, Claude Code / Gemini / Codex hooks, agent MCP) carry no destination
+# domain, so the *plane's identity* (its User-Agent) is what names the tool for discovery.
+CLIENT_TOOLS: dict[str, tuple[str, str]] = {
+    "warden-cursor-hook": ("Cursor", "coding"),
+    "warden-hook": ("Claude Code", "coding"),
+    "warden-gemini-hook": ("Gemini CLI", "coding"),
+    "warden-codex-hook": ("Codex CLI", "coding"),
+    "warden-mcp": ("MCP client", "agent"),
+}
+
+
+def classify_client(user_agent: str) -> dict | None:
+    """Map a capture-plane User-Agent (e.g. 'warden-cursor-hook/1.0') to the AI tool it
+    governs — for discovery of MCP-surface usage that has no destination domain. None if the
+    UA isn't a recognized local plane (e.g. the egress proxy, which fronts many tools)."""
+    ua = (user_agent or "").strip().lower()
+    if not ua:
+        return None
+    for key, (name, cat) in CLIENT_TOOLS.items():
+        if key in ua:
+            return {"tool": name, "category": cat, "domain": key}
+    return None
 
 
 def classify(text: str) -> dict | None:

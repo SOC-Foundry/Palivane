@@ -76,3 +76,46 @@ def test_is_sanctioned_boundary_match():
     assert _is_sanctioned("openaiish", "evil-openai.com.attacker.net", s) is False
     assert _is_sanctioned("x", "notopenai.com", s) is False
     assert _is_sanctioned("chatgptzero", "chatgptzero.io", s) is False  # not exact tool
+
+
+def test_classify_client_maps_planes():
+    from app.ai_catalog import classify_client
+    assert classify_client("warden-cursor-hook/1.0")["tool"] == "Cursor"
+    assert classify_client("warden-hook/1.0")["tool"] == "Claude Code"
+    assert classify_client("warden-gemini-hook/1.0")["tool"] == "Gemini CLI"
+    assert classify_client("warden-codex-hook/1.0")["tool"] == "Codex CLI"
+    assert classify_client("warden-mcp/1.0")["tool"] == "MCP client"
+    assert classify_client("warden-proxy/1.0") is None   # egress proxy fronts many tools
+    assert classify_client("") is None
+
+
+def test_cursor_bare_destination_classifies():
+    # The Cursor hook posts prompts to ai-usage with destination="cursor" (bare, no domain).
+    assert classify("cursor")["tool"] == "Cursor"
+    assert classify("cursor.sh")["tool"] == "Cursor"   # specific domain still wins/works
+
+
+def test_mcp_capture_attributes_tool_by_plane_ua(client, raw_client):
+    # MCP-surface captures carry no destination domain — the plane's User-Agent names the
+    # tool, so Cursor (and Claude Code / Gemini / Codex) show up in discovery from the local
+    # hooks, not just the extension/proxy.
+    key = client.post("/api/apikeys", json={"label": "cur", "actor": "c@acme.com"}).json()["token"]
+    r = raw_client.post("/api/ingest/mcp",
+                        json={"method": "tools/call", "server": "shell", "tool": "shell",
+                              "args_text": "ls ~", "user": "cara@acme.com"},
+                        headers={"X-Warden-Token": key, "User-Agent": "warden-cursor-hook/1.0"})
+    assert r.status_code == 200
+    inv = client.get("/api/discovery/inventory").json()
+    cursor = next((t for t in inv["tools"] if t["tool"] == "Cursor"), None)
+    assert cursor is not None and cursor["events"] >= 1
+    assert "capture" in cursor["sources"]
+
+
+def test_mcp_capture_unknown_plane_not_recorded(client, raw_client):
+    # An unrecognized plane UA (e.g. the proxy) shouldn't invent a bogus discovery tool.
+    key = client.post("/api/apikeys", json={"label": "p", "actor": "p@acme.com"}).json()["token"]
+    raw_client.post("/api/ingest/mcp",
+                    json={"method": "tools/call", "server": "s", "tool": "t", "args_text": "hi"},
+                    headers={"X-Warden-Token": key, "User-Agent": "warden-proxy/1.0"})
+    inv = client.get("/api/discovery/inventory").json()
+    assert all(t["tool"] not in ("MCP client",) or t["events"] for t in inv["tools"])
