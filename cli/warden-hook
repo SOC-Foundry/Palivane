@@ -105,7 +105,25 @@ def read_config() -> dict:
     except ValueError:
         timeout = 5.0
     user = os.getenv("WARDEN_USER") or senv.get("WARDEN_USER", "")
-    return {"url": url, "token": token, "enforce": enforce, "timeout": timeout, "user": user}
+    # Directories to NOT inspect (e.g. the Warden repo itself, whose test fixtures are full
+    # of realistic-looking secrets) — os.pathsep- or comma-separated absolute paths.
+    raw_excl = os.getenv("WARDEN_HOOK_EXCLUDE_DIRS") or senv.get("WARDEN_HOOK_EXCLUDE_DIRS", "")
+    exclude = [os.path.realpath(os.path.expanduser(p)) for p in
+               raw_excl.replace(",", os.pathsep).split(os.pathsep) if p.strip()]
+    return {"url": url, "token": token, "enforce": enforce, "timeout": timeout,
+            "user": user, "exclude": exclude}
+
+
+def _is_excluded(cwd: str, exclude: list) -> bool:
+    """True if the session's working directory is at/under an excluded dir — so developing
+    Warden itself doesn't flag its own secret fixtures on every tool call."""
+    if not cwd or not exclude:
+        return False
+    try:
+        rp = os.path.realpath(os.path.expanduser(cwd))
+    except OSError:
+        return False
+    return any(rp == d or rp.startswith(d + os.sep) for d in exclude)
 
 
 def build_activity(tool_name: str, tool_input: dict) -> dict | None:
@@ -327,11 +345,15 @@ def main() -> int:
     except Exception:
         return 0
 
+    cfg = read_config()
+    # Skip inspection entirely inside an excluded working directory (e.g. the Warden repo).
+    if _is_excluded(event.get("cwd") or "", cfg["exclude"]):
+        return 0
+
     if event.get("hook_event_name") == "UserPromptSubmit":
         payload = build_prompt_usage(event)
         if payload is None:
             return 0
-        cfg = read_config()
         if not cfg["url"] or not cfg["token"]:
             return 0  # not connected to Warden — nothing to report to
         # Prompts are always scanned inline (even in monitor mode): a confirmed
@@ -346,7 +368,6 @@ def main() -> int:
     if activity is None:
         return 0
 
-    cfg = read_config()
     if not cfg["url"] or not cfg["token"]:
         return 0  # not connected to Warden — nothing to report to
 
