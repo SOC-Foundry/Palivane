@@ -139,6 +139,21 @@ class CodeScanRequest(BaseModel):
     record: bool = False          # persist non-clean files as findings (off by default)
 
 
+class S3Object(BaseModel):
+    key: str = ""
+    content: str = Field(default="", max_length=MAX_CONTENT)
+
+
+class S3Scan(BaseModel):
+    # warden-s3-scan streams a bucket's objects here to scan for secrets/PII at rest, plus
+    # whether the bucket is publicly reachable — public + sensitive is the crown-jewel case.
+    bucket: str = ""
+    region: str = ""
+    public: bool = False          # bucket is world-readable (ACL / policy / no public-block)
+    objects: list[S3Object] = Field(default_factory=list, max_length=2000)
+    record: bool = False
+
+
 class StatusUpdate(BaseModel):
     status: Literal["open", "triaged", "dismissed"]
 
