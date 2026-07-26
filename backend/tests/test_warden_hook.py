@@ -290,3 +290,20 @@ def test_scan_circuit_breaker(tmp_path, monkeypatch):
     n = calls["n"]
     assert hook.scan("/api/ingest/mcp", {}, "http://x", "tok-D")["reason"] == "scan-skipped:backoff"
     assert calls["n"] == n  # cooldown skipped the network
+
+
+# --- Dev-directory exclusion: don't inspect tool calls inside an excluded repo ----------
+def test_is_excluded_paths():
+    ex = [hook.os.path.realpath("/repo/warden")]
+    assert hook._is_excluded("/repo/warden", ex) is True
+    assert hook._is_excluded("/repo/warden/backend/app", ex) is True   # subdir
+    assert hook._is_excluded("/repo/warden-other", ex) is False        # sibling prefix only
+    assert hook._is_excluded("/repo/other", ex) is False
+    assert hook._is_excluded("", ex) is False
+    assert hook._is_excluded("/repo/warden", []) is False              # nothing excluded
+
+
+def test_config_parses_exclude_dirs(monkeypatch):
+    monkeypatch.setenv("WARDEN_HOOK_EXCLUDE_DIRS", "/a/repo,/b/dir")
+    ex = hook.read_config()["exclude"]
+    assert hook.os.path.realpath("/a/repo") in ex and hook.os.path.realpath("/b/dir") in ex
