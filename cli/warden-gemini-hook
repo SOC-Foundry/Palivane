@@ -167,7 +167,14 @@ def read_config() -> dict:
         timeout = float(os.getenv("WARDEN_HOOK_TIMEOUT", "5"))
     except ValueError:
         timeout = 5.0
-    return {"url": url, "token": token, "enforce": enforce, "timeout": timeout, "user": user}
+    # Directories to NOT inspect (e.g. the Warden repo, whose fixtures look like real secrets)
+    # — WARDEN_HOOK_EXCLUDE_DIRS, os.pathsep- or comma-separated, from env or settings.json env.
+    raw_excl = (os.getenv("WARDEN_HOOK_EXCLUDE_DIRS")
+                or _claude_settings_env().get("WARDEN_HOOK_EXCLUDE_DIRS", ""))
+    exclude = [os.path.realpath(os.path.expanduser(p)) for p in
+               raw_excl.replace(",", os.pathsep).split(os.pathsep) if p.strip()]
+    return {"url": url, "token": token, "enforce": enforce, "timeout": timeout,
+            "user": user, "exclude": exclude}
 
 
 def _post(endpoint: str, payload: dict, cfg: dict) -> dict:
@@ -221,6 +228,27 @@ def _send_detached(endpoint: str, payload: dict, cfg: dict) -> None:
     p.stdin.close()
 
 
+def _event_cwd(event: dict) -> str:
+    """The working directory this hook event happened in — the event's cwd, its tool_input's
+    cwd, else the hook process's own cwd (the project root the CLI was launched in)."""
+    cwd = event.get("cwd")
+    if not cwd and isinstance(event.get("tool_input"), dict):
+        cwd = event["tool_input"].get("cwd")
+    return cwd or os.getcwd()
+
+
+def _is_excluded(cwd: str, exclude: list) -> bool:
+    """True if `cwd` is at/under an excluded dir (WARDEN_HOOK_EXCLUDE_DIRS) — so developing
+    Warden itself doesn't flag its own secret fixtures on every tool call."""
+    if not cwd or not exclude:
+        return False
+    try:
+        rp = os.path.realpath(os.path.expanduser(cwd))
+    except OSError:
+        return False
+    return any(rp == d or rp.startswith(d + os.sep) for d in exclude)
+
+
 def main() -> int:
     if "--send" in sys.argv[1:]:
         try:
@@ -233,6 +261,8 @@ def main() -> int:
     try:
         event = json.load(sys.stdin)
     except Exception:
+        return 0
+    if _is_excluded(_event_cwd(event), read_config()["exclude"]):
         return 0
     name = event.get("hook_event_name", "")
 
