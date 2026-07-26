@@ -69,3 +69,16 @@ def test_scan_secrets_endpoint_records_and_scores(client, raw_client):
     findings = client.get("/api/findings?surface=secrets").json()["findings"]
     assert len(findings) == 2
     assert all(f["surface"] == "secrets" for f in findings)
+
+
+# --- New provider patterns + connection-string mirror into find_secrets ----------------
+def test_find_secrets_new_providers_and_conn_strings():
+    from app.detectors.patterns import find_secrets
+    assert "DigitalOcean token" in find_secrets("t=dop_v1_" + "a" * 64)
+    assert "HashiCorp Vault token" in find_secrets("hvs.CAESIJ1a2b3c4d5e6f7g8h9i0jABCDEF")
+    assert "Doppler token" in find_secrets("dp.pt." + "A" * 44)
+    assert "Notion integration token" in find_secrets("ntn_" + "b" * 43)
+    # Connection-URL credential, and its placeholder-password guard.
+    assert "Connection string credential" in find_secrets("postgres://admin:r3alP4ss@db:5432/app")
+    assert "Connection string credential" not in find_secrets("redis://user:${REDIS_PW}@cache:6379")
+    assert "Connection string credential" not in find_secrets("postgres://user:password@localhost/db")
