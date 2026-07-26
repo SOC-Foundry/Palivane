@@ -12,6 +12,34 @@ function summarize(detail) {
   return Object.entries(detail).map(([k, v]) => `${k}: ${v}`).join(", ");
 }
 
+// Readable labels for the raw audit action keys (e.g. "apikey.revoke"). Anything not listed
+// falls back to a humanized form so new actions still read cleanly instead of "Foo.Bar_baz".
+const ACTION_LABELS = {
+  "apikey.create": "API key created", "apikey.revoke": "API key revoked",
+  "enroll_token.create": "Enrollment token created", "enroll_token.revoke": "Enrollment token revoked",
+  "device.enroll": "Device enrolled",
+  "extension.connect": "Extension connected", "extension.reconnect": "Extension reconnected",
+  "finding.status": "Finding updated", "finding.bulk_status": "Findings updated",
+  "user.invite": "User invited", "user.update": "User updated", "user.role": "Role changed",
+  "login.success": "Signed in", "login.failed": "Sign-in failed",
+  "tenant.update": "Settings changed",
+};
+
+function actionLabel(action) {
+  if (!action) return "—";
+  if (ACTION_LABELS[action]) return ACTION_LABELS[action];
+  const words = action.replace(/[._]+/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+// Colour the pill by intent so a destructive revoke doesn't read the same as a status change.
+function actionKind(action) {
+  const a = (action || "").toLowerCase();
+  if (/(revoke|delete|remove|disable|suspend|deauth|block|fail)/.test(a)) return "danger";
+  if (/(create|connect|enroll|invite|add|signup|success)/.test(a)) return "ok";
+  return "neutral";
+}
+
 export default function Audit() {
   const [entries, setEntries] = useState([]);
   const [filter, setFilter] = useState("");
@@ -45,7 +73,7 @@ export default function Audit() {
           <select value={filter} onChange={(e) => setFilter(e.target.value)}>
             <option value="">all actions</option>
             {(filter && !actions.includes(filter) ? [filter, ...actions] : actions).map((a) => (
-              <option key={a} value={a}>{a}</option>
+              <option key={a} value={a}>{actionLabel(a)}</option>
             ))}
           </select>
         </div>
@@ -63,7 +91,8 @@ export default function Audit() {
                 <tr key={e.id}>
                   <td className="audit-when">{when(e.created_at)}</td>
                   <td>{e.actor}</td>
-                  <td><span className="role-pill role-analyst">{e.action}</span></td>
+                  <td><span className={`audit-act audit-act-${actionKind(e.action)}`}
+                            title={e.action}>{actionLabel(e.action)}</span></td>
                   <td className="ut-email">{e.target || "—"}</td>
                   <td className="audit-detail">{summarize(e.detail)}</td>
                 </tr>

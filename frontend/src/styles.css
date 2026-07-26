@@ -473,6 +473,12 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 }
 .role-admin { background: var(--accent-soft); color: var(--accent); }
 .role-analyst { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
+
+/* Audit action pills — humanized in JS (no text-transform), coloured by intent. */
+.audit-act { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 6px; white-space: nowrap; }
+.audit-act-danger { background: rgba(255,77,94,0.13); color: var(--crit); }
+.audit-act-ok { background: rgba(70,201,139,0.13); color: var(--benign); }
+.audit-act-neutral { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
 .access-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: middle; }
 .access-dot.on { background: var(--benign); box-shadow: 0 0 7px var(--benign); }
 .access-dot.off { background: var(--muted-2); }
