@@ -76,5 +76,42 @@ curl -s localhost:8088/api/health
 For most deployments you'd run the full stack with `docker compose up` instead (Postgres
 + API + web); these units are for a bare-metal/systemd install of the API.
 
+## Scheduled S3 scanning
+
+`warden-s3-scan` sweeps an S3 bucket's objects for secrets/PII at rest and flags public
+exposure — but nothing triggers it until you schedule it. The instanced units
+[`warden-s3-scan@.service`](./warden-s3-scan@.service) + [`warden-s3-scan@.timer`](./warden-s3-scan@.timer)
+run **one scan per bucket, daily** (the `%i` instance is the bucket name).
+
+```bash
+# On a box that can reach Warden and the buckets (a "security" instance is ideal):
+curl -fsSL "$WARDEN_URL/cli/warden-s3-scan" -o /opt/warden/bin/warden-s3-scan
+sudo chmod +x /opt/warden/bin/warden-s3-scan
+sudo -u warden /opt/warden/backend/.venv/bin/pip install boto3   # the scanner needs boto3
+
+# WARDEN_URL + WARDEN_TOKEN go in /etc/warden/warden.env; AWS creds are best supplied by the
+# box's instance role (else add AWS_* / AWS_REGION to the same env file).
+sudo cp /opt/warden/deploy/warden-s3-scan@.service /opt/warden/deploy/warden-s3-scan@.timer \
+        /etc/systemd/system/
+sudo systemctl daemon-reload
+
+# Enable a daily scan per bucket (repeat per bucket; systemd-escape names with '/' or '.'):
+sudo systemctl enable --now warden-s3-scan@my-data-bucket.timer
+sudo systemctl enable --now warden-s3-scan@my-exports-bucket.timer
+
+systemctl list-timers 'warden-s3-scan@*'                 # confirm the schedule
+journalctl -u 'warden-s3-scan@my-data-bucket.service'    # see a run's output
+```
+
+Prefer cron? The equivalent one-liner (e.g. in `/etc/cron.d/warden-s3-scan`):
+
+```cron
+17 3 * * *  warden  WARDEN_URL=https://warden.corp.example.com WARDEN_TOKEN=ak_… /opt/warden/bin/warden-s3-scan my-data-bucket --record --fail-closed
+```
+
+For the org-wide **GitHub** sweep, use the scheduled Action template
+[`git/warden-org-scan.yml`](../git/warden-org-scan.yml) instead — CI is the natural home for
+a repo scan.
+
 The connectors exchange the refresh token for a short-lived access token on each run,
 so no interactive login is needed once configured.
