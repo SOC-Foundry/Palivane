@@ -51,6 +51,18 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("SendGrid API key", re.compile(r"SG\.[A-Za-z0-9_\-]{16,}\.[A-Za-z0-9_\-]{16,}")),
     ("Twilio API key SID", re.compile(r"\bSK[0-9a-fA-F]{32}\b")),
     ("Square access token", re.compile(r"sq0(csp|atp)-[A-Za-z0-9_\-]{22,}")),
+    ("Mailgun API key", re.compile(r"\bkey-[0-9a-f]{32}\b")),
+    ("DigitalOcean token", re.compile(r"dop_v1_[a-f0-9]{64}")),
+    ("Doppler token", re.compile(r"dp\.(?:pt|st|ct|sa|scim|audit)\.[A-Za-z0-9]{40,}")),
+    ("HashiCorp Vault token", re.compile(r"\bhvs\.[A-Za-z0-9_\-]{24,}")),
+    ("Grafana service account token", re.compile(r"glsa_[A-Za-z0-9]{32}_[0-9a-fA-F]{8}")),
+    ("Terraform Cloud token", re.compile(r"[A-Za-z0-9]{14}\.atlasv1\.[A-Za-z0-9_\-]{60,}")),
+    ("Databricks token", re.compile(r"\bdapi[0-9a-f]{32}\b")),
+    ("Notion integration token", re.compile(r"\bntn_[A-Za-z0-9]{40,}")),
+    # Credentials embedded in a connection URL (postgres://user:pass@host, mongodb+srv://…).
+    ("Connection string credential", re.compile(
+        r"\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqps?|mssql|"
+        r"clickhouse|cockroachdb|ftp)://[^\s:/@]+:([^\s:/@]{3,})@[^\s/]+", re.IGNORECASE)),
     ("Private key block", re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")),
     ("JWT", re.compile(r"\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{6,}")),
     ("Credential assignment", re.compile(
@@ -113,6 +125,13 @@ def _is_placeholder_assignment(match_text: str) -> bool:
     return bool(mm and _PLACEHOLDER_VALUE_RE.match(mm.group(1)))
 
 
+def _is_placeholder_conn(match_text: str) -> bool:
+    """The matched connection URL uses a template password (redis://user:${PW}@…), not a real
+    one — so docs/.env.example don't false-positive."""
+    mm = re.search(r"://[^\s:/@]+:([^\s:/@]+)@", match_text)
+    return bool(mm and _PLACEHOLDER_VALUE_RE.match(mm.group(1)))
+
+
 def find_secrets(text: str) -> list[str]:
     """Return the labels of every secret pattern that matches `text` — canonical formats,
     their separator-stripped (evasion) variants, and any custom patterns. Skips placeholder
@@ -121,6 +140,8 @@ def find_secrets(text: str) -> list[str]:
     for label, rx in SECRET_PATTERNS + EVASION_PATTERNS + custom_patterns():
         for m in rx.finditer(text):
             if label == "Credential assignment" and _is_placeholder_assignment(m.group(0)):
+                continue
+            if label == "Connection string credential" and _is_placeholder_conn(m.group(0)):
                 continue
             out.append(label)
             break   # one confirmed match per label is enough

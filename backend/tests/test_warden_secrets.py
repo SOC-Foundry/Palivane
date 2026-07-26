@@ -186,3 +186,38 @@ def test_read_config_falls_back_to_cursor(monkeypatch, tmp_path):
         json.dumps({"url": "https://w.corp.io", "token": "ak_cur"}))
     cfg = ws.read_config()
     assert cfg == {"url": "https://w.corp.io", "token": "ak_cur"}
+
+
+# --- Expanded local detection: new providers, connection URLs, high-entropy ------------
+def _labels(text):
+    return {t for t, _, _ in ws.scan_text(text)}
+
+
+def test_scan_new_provider_patterns():
+    assert "SendGrid API key" in _labels("SENDGRID=SG.abcdefghijklmnop.qrstuvwxyz0123456789ABCD")
+    assert "DigitalOcean token" in _labels("t=dop_v1_" + "a" * 64)
+    assert "HashiCorp Vault token" in _labels("VAULT_TOKEN=hvs.CAESIJ1a2b3c4d5e6f7g8h9i0jABCDEF")
+    assert "Doppler token" in _labels("DOPPLER=dp.pt." + "A" * 44)
+    assert "Databricks token" in _labels("DATABRICKS_TOKEN=dapi" + "0" * 32)
+    assert "Notion integration token" in _labels("NOTION=ntn_" + "b" * 43)
+    assert "OpenAI API key" in _labels("OPENAI_API_KEY=sk-proj-" + "A" * 30)   # modern dashed key
+
+
+def test_scan_connection_string_credentials():
+    assert "Connection string credential" in _labels("DATABASE_URL=postgres://admin:r3alP4ss@db:5432/app")
+    assert "Connection string credential" in _labels("mongodb+srv://svc:S3cretVal9@cluster0.mongodb.net/db")
+    # Template / interpolated passwords must not fire.
+    assert "Connection string credential" not in _labels("REDIS_URL=redis://user:${REDIS_PW}@cache:6379")
+    assert "Connection string credential" not in _labels("postgres://user:password@localhost/db")
+
+
+def test_scan_high_entropy_and_false_positives():
+    # A novel token with no known prefix is caught by the tier-2 heuristic.
+    assert ws._ENTROPY_LABEL in _labels("API_TOKEN=Zx9Qw3rTy7Bn2Kp8Lm4Vc6Hs1Df5Gj0Ne")
+    # Digests, UUIDs, prose and templates must NOT trip it.
+    assert ws._ENTROPY_LABEL not in _labels("commit=" + "a1b2c3d4" * 5)             # hex digest
+    assert ws._ENTROPY_LABEL not in _labels("id=550e8400-e29b-41d4-a716-446655440000")  # uuid
+    assert ws._ENTROPY_LABEL not in _labels("the quick brown fox jumps over the lazy dog again")  # prose, no sep
+    # A known-provider token isn't double-reported as a generic entropy hit.
+    ls = _labels("k=dop_v1_" + "a" * 64)
+    assert "DigitalOcean token" in ls and ws._ENTROPY_LABEL not in ls
