@@ -36,15 +36,20 @@ _ALLOW = {
     "warden-mcp": "cli/warden-mcp",
     "warden-posture": "cli/warden-posture",
     "warden-secrets": "cli/warden-secrets",
+    "warden-s3-scan": "cli/warden-s3-scan",
+    "warden-github-scan": "cli/warden-github-scan",
     "warden-otel": "cli/warden-otel",
     "warden-desktop": "cli/warden-desktop",
     "warden_addon.py": "proxy/warden_addon.py",
 }
 
 # The POSIX CLI tools install under these names via install.sh. Excluded: warden_addon.py
-# (the proxy addon, fetched separately by warden-desktop) and warden-reenroll.ps1 (the
-# Windows-native apiKeyHelper, fetched by the Windows installer).
-_CLI_TOOLS = [n for n in _ALLOW if n not in ("warden_addon.py", "warden-reenroll.ps1")]
+# (the proxy addon, fetched separately by warden-desktop); warden-reenroll.ps1 (the
+# Windows-native apiKeyHelper, fetched by the Windows installer); and warden-s3-scan /
+# warden-github-scan — ops/admin scanners run on demand (CI / a security box), not planes
+# installed on every developer machine, so they're downloadable but not auto-installed.
+_INSTALLER_SKIP = {"warden_addon.py", "warden-reenroll.ps1", "warden-s3-scan", "warden-github-scan"}
+_CLI_TOOLS = [n for n in _ALLOW if n not in _INSTALLER_SKIP]
 
 # Candidate roots: /app in the container (backend copied to /app, cli/ to /app/cli), and
 # the repo root in dev (backend/app/distribution.py -> parents[2]).

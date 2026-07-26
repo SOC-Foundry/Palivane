@@ -43,6 +43,7 @@ from .schemas import (
     ProvisionRequest,
     ScannerImport,
     SecretAtRest,
+    S3Scan,
     SecretScan,
     BulkStatusUpdate,
     StatusUpdate,
@@ -1195,6 +1196,50 @@ def scan_code(
 
     overall = "block" if worst >= 3 else ("warn" if worst >= 2 else "allow")
     return {"action": overall, "scanned": len(body.files[:1000]), "files": flagged}
+
+
+@app.post("/api/scan/s3")
+def scan_s3(
+    body: S3Scan,
+    x_warden_token: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Scan an S3 bucket's objects for secrets & PII at rest (warden-s3-scan streams them
+    here). Same data-loss detection as the code scanner, plus the bucket's public-exposure
+    flag: a world-readable bucket holding sensitive data is the crown-jewel case, so a
+    non-clean object in a public bucket is escalated to `block` and tagged for alerting.
+    Token-gated. Returns an overall action + per-object detail; `public` echoes exposure."""
+    tenant_id, _ = _ingest_auth(x_warden_token, db)
+    _enforce_rate(db, tenant_id)
+
+    flagged: list[dict] = []
+    worst = 0
+    for obj in body.objects[:1000]:
+        meta = {"bucket": body.bucket, "key": obj.key, "region": body.region,
+                "public": body.public, "source": "s3-scan"}
+        item = AnalysisInput(content=obj.content, subject=f"s3://{body.bucket}/{obj.key}",
+                             channel="s3", surface=Surface.AI_USAGE, metadata=meta)
+        result = run_analysis(item, persist=False, db=db, tenant_id=tenant_id,
+                              signal_filter=_vcs_filter)
+        action = _action_for(result["severity"])
+        if action == "allow":
+            continue
+        # Public bucket + sensitive object = the worst case — escalate to a hard block.
+        if body.public:
+            action = "block"
+        worst = max(worst, 3 if body.public else _ACTION_RANK.get(result["severity"], 0))
+        flagged.append({
+            "key": obj.key, "action": action, "severity": result["severity"],
+            "risk_score": result["risk_score"], "signals": result["signals"],
+            "public": body.public,
+        })
+        if body.record and tenant_id is not None:
+            run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
+                         signal_filter=_vcs_filter)
+
+    overall = "block" if worst >= 3 else ("warn" if worst >= 2 else "allow")
+    return {"action": overall, "scanned": len(body.objects[:1000]),
+            "bucket": body.bucket, "public": body.public, "objects": flagged}
 
 
 @app.post("/api/scan/deps")

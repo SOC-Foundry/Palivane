@@ -137,6 +137,34 @@ for r in ~/src/*/.git; do (cd "$r/.." && trufflehog git file://. --json | warden
 > rewriting history (`git filter-repo`, BFG) is *cleanup*, not remediation. **Rotate and
 > revoke the credential first**; the console finding's "How to fix" says the same.
 
+## Whole-repo, org-wide & S3 sweeps
+
+The hook and PR Action scan **what changes**. To sweep **existing contents** at rest:
+
+```bash
+export WARDEN_URL=https://warden.corp.example.com WARDEN_TOKEN=ak_…
+
+# Every tracked file in the current checkout (not just the diff):
+warden_git_scan.py --all --record
+
+# Every repo in a GitHub org (or --user, or explicit --repo owner/name), via the API —
+# no local clone needed. Skips archived/fork repos by default.
+GITHUB_TOKEN=ghp_… warden-github-scan --org acme --record
+GITHUB_TOKEN=ghp_… warden-github-scan --repo acme/api --repo acme/web
+
+# An S3 bucket's objects, plus whether the bucket is publicly reachable (public + sensitive
+# is escalated to a hard block). AWS creds come from the standard boto3 chain.
+warden-s3-scan my-data-bucket --prefix exports/ --record
+```
+
+`warden-github-scan` and `warden-s3-scan` are ops/admin tools — run them from CI or a
+security box (download from `<console>/cli/<name>`); they aren't installed on every
+developer machine. Both fail **open** by default; add `--fail-closed` in a pipeline.
+
+> These are **content** sweeps (secrets/PII in current files & objects), complementary to
+> the git-**history** sweep above. For secrets buried in old commits, use the history
+> scanners in the previous section.
+
 ## Other CI systems (GitLab / Bitbucket / Jenkins / …)
 
 The GitHub Action is GitHub-specific, but the scanner is host-agnostic — run

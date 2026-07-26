@@ -41,6 +41,8 @@ def _git(*args: str) -> str:
 def _changed(mode: str, rng: str) -> list[str]:
     if mode == "staged":
         out = _git("diff", "--cached", "--name-only", "--diff-filter=ACM", "-z")
+    elif mode == "all":
+        out = _git("ls-files", "-z")          # every tracked file — whole-repo sweep
     else:
         out = _git("diff", "--name-only", "--diff-filter=ACM", "-z", *rng.split())
     return [p for p in out.split("\0") if p]
@@ -69,6 +71,7 @@ def main() -> int:
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--staged", action="store_true", help="scan staged changes (default)")
     g.add_argument("--range", dest="rng", help="scan a git diff range, e.g. origin/main..HEAD")
+    g.add_argument("--all", action="store_true", help="scan every tracked file (whole repo)")
     ap.add_argument("files", nargs="*", help="explicit files to scan")
     ap.add_argument("--url", default=os.getenv("WARDEN_URL", "http://localhost:8088"))
     ap.add_argument("--strict", action="store_true", help="fail on warn findings too")
@@ -81,7 +84,7 @@ def main() -> int:
         print("warden: WARDEN_TOKEN is not set — skipping scan.", file=sys.stderr)
         return 1 if args.fail_closed else 0
 
-    mode = "range" if args.rng else "staged"
+    mode = "all" if args.all else ("range" if args.rng else "staged")
     paths = args.files or _changed(mode, args.rng or "")
     files = [{"path": p, "content": c} for p in paths if (c := _content(p, mode)) is not None]
     if not files:
