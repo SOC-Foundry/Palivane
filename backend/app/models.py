@@ -219,6 +219,10 @@ class ApiKey(Base):
     active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=_utcnow)
     last_used_at = Column(DateTime, nullable=True)
+    # Stamped when a client presents this key AFTER it was revoked/expired — the fleet
+    # view surfaces these as "device still presenting a dead key" (otherwise a rotated
+    # device fails open silently and looks identical to a healthy quiet one).
+    last_failed_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=True)
 
     def to_dict(self) -> dict:
@@ -227,6 +231,7 @@ class ApiKey(Base):
             "actor": self.actor, "active": self.active,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_used_at": self.last_used_at.isoformat() if self.last_used_at else None,
+            "last_failed_at": self.last_failed_at.isoformat() if self.last_failed_at else None,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
         }
 
@@ -614,12 +619,81 @@ class PolicyOverride(Base):
     channel = Column(String(64), default="")      # tool/channel glob ("" = any tool)
     label = Column(String(128), default="")       # friendly name, e.g. "Contractors"
     disabled_checks = Column(String(2048), default="")
+    # Staged enforcement: an explicit monitor/enforce stance for the matched actor/tool.
+    # None = no opinion (the tenant/global client_enforce applies); True/False force it.
+    # Lets an org enforce a pilot user, group glob, or single tool while everyone else
+    # stays in monitor.
+    enforce = Column(Boolean, nullable=True, default=None)
     created_at = Column(DateTime, default=_utcnow)
 
     def to_dict(self) -> dict:
         return {"id": self.id, "scope": self.scope, "match": self.match,
                 "channel": self.channel or "", "label": self.label,
+                "enforce": self.enforce,
                 "disabled_checks": [c for c in (self.disabled_checks or "").split(",") if c]}
+
+
+class SensorHeartbeat(Base):
+    """Last-seen per (actor, plane, tool) — the fleet-health ledger.
+
+    Every capture-plane call (ai-usage, mcp, posture scans) upserts its row, so the
+    console can distinguish "protected and quiet" from "silently dark" (hooks fail open
+    by design — without this, a revoked key or uninstalled hook looks identical to a
+    healthy device that just isn't sending anything)."""
+
+    __tablename__ = "sensor_heartbeats"
+    __table_args__ = (UniqueConstraint("tenant_id", "actor", "plane", "tool",
+                                       name="uq_heartbeat_scope"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=True)
+    actor = Column(String(320), default="")   # who the sensor reports as (key actor/user)
+    plane = Column(String(32), default="")    # ai-usage | mcp | posture
+    tool = Column(String(64), default="")     # claude-code, cursor, claude.ai, …
+    first_seen = Column(DateTime, default=_utcnow)
+    last_seen = Column(DateTime, default=_utcnow, index=True)
+    count = Column(Integer, default=0)
+
+    def to_dict(self) -> dict:
+        return {"actor": self.actor, "plane": self.plane, "tool": self.tool,
+                "first_seen": self.first_seen.isoformat() if self.first_seen else None,
+                "last_seen": self.last_seen.isoformat() if self.last_seen else None,
+                "count": self.count}
+
+
+class ExceptionRecord(Base):
+    """A block-screen exception request with review state.
+
+    The old flow only wrote an audit row; this makes it a first-class queue an admin can
+    approve (which materializes a scoped PolicyOverride) or deny — the block screen's
+    "request exception" button becomes a real workflow instead of a suggestion box."""
+
+    __tablename__ = "exception_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=True)
+    finding_id = Column(Integer, nullable=True)
+    actor = Column(String(320), default="")
+    destination = Column(String(2048), default="")
+    categories = Column(String(512), default="")   # CSV of signal categories/checks
+    reason = Column(String(2000), default="")
+    status = Column(String(16), default="pending", index=True)  # pending|approved|denied
+    created_at = Column(DateTime, default=_utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+    resolved_by = Column(String(320), default="")
+    resolution_note = Column(String(512), default="")
+    applied_override_id = Column(Integer, nullable=True)  # PolicyOverride created on approve
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "finding_id": self.finding_id, "actor": self.actor,
+                "destination": self.destination,
+                "categories": [c for c in (self.categories or "").split(",") if c],
+                "reason": self.reason, "status": self.status,
+                "created_at": self.created_at.isoformat() if self.created_at else None,
+                "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
+                "resolved_by": self.resolved_by,
+                "resolution_note": self.resolution_note,
+                "applied_override_id": self.applied_override_id}
 
 
 class License(Base):

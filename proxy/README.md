@@ -80,6 +80,14 @@ curl -x http://localhost:8081 https://api.openai.com/v1/chat/completions \
 | `WARDEN_PROXY_ENFORCE` | `true` blocks; otherwise observe + record only. Either way the org's console stance (Settings → *Device enforcement*) rides along on each verdict and blocks when on |
 | `WARDEN_PROXY_USER` | end-user identity to attribute findings to |
 
+**Attribution:** on a per-device install (`warden-desktop`), leave `WARDEN_PROXY_USER`
+unset — the proxy authenticates with the device's per-user `ak_…` key (from
+`warden connect`), and the backend attributes findings to that key's owner
+automatically. `WARDEN_PROXY_USER` matters only for a *central* egress proxy running
+with the shared `EXTENSION_INGEST_TOKEN`, where one process serves many people: it can
+only carry a single static identity, so per-user attribution needs either per-device
+proxies or per-user keys. Prefer per-device installs when attribution matters.
+
 ## Deploying to managed devices
 
 1. **System proxy** — push the proxy address via MDM (or a PAC file) so all traffic

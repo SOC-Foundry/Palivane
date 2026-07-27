@@ -10,7 +10,19 @@ import { api } from "../api.js";
 // plus room to grow per-preset later.
 const PRESET_DISABLED = { strict: [], balanced: [], monitor: [] };
 
-const BLANK = { scope: "group", match: "", channel: "", label: "", disabled_checks: [] };
+const BLANK = { scope: "group", match: "", channel: "", label: "", disabled_checks: [], enforce: "inherit" };
+
+// How long ago an ISO timestamp was, coarsely — for the exceptions queue.
+function age(ts) {
+  if (!ts) return "—";
+  const ms = Date.now() - new Date(ts).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  const mins = Math.floor(ms / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
 
 export default function Policies({ tenant, onTenant }) {
   const [cat, setCat] = useState(null);
@@ -18,12 +30,43 @@ export default function Policies({ tenant, onTenant }) {
   const [err, setErr] = useState(null);
   const [flash, setFlash] = useState(null);
   const [draft, setDraft] = useState(BLANK);   // new-override form
+  const [exceptions, setExceptions] = useState(null);
+  const [showResolved, setShowResolved] = useState(false);
+  const [note, setNote] = useState("");        // shared approve/deny note
+  const [analytics, setAnalytics] = useState(null);
 
   const load = useCallback(async () => {
     try { setCat(await api.policies()); }
     catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  const loadExceptions = useCallback(async () => {
+    try {
+      const r = await api.exceptions(showResolved ? "all" : "pending");
+      setExceptions(r.exceptions || []);
+    } catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
+  }, [showResolved]);
+  useEffect(() => { loadExceptions(); }, [loadExceptions]);
+
+  useEffect(() => {
+    api.policyAnalytics(30).then(setAnalytics).catch(() => setAnalytics(null));
+  }, []);
+
+  async function resolveException(id, action) {
+    setErr(null); setSaving(`exc:${id}`);
+    try {
+      const payload = { action };
+      if (note.trim()) payload.note = note.trim();
+      await api.exceptionResolve(id, payload);
+      setNote("");
+      await loadExceptions();
+      if (action === "approve") await load();   // approval creates an override — refresh the list
+      setFlash(action === "approve" ? "Exception approved — override created." : "Exception denied.");
+      setTimeout(() => setFlash(null), 2500);
+    } catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
+    finally { setSaving(""); }
+  }
 
   const disabledSet = () => new Set((cat?.checks || []).filter((c) => !c.enabled).map((c) => c.key));
 
@@ -138,13 +181,14 @@ export default function Policies({ tenant, onTenant }) {
 
         {(cat.overrides || []).length > 0 && (
           <table className="data-table" style={{ marginBottom: 16 }}>
-            <thead><tr><th>Scope</th><th>Match</th><th>Tool</th><th>Label</th><th>Disabled checks</th><th></th></tr></thead>
+            <thead><tr><th>Scope</th><th>Match</th><th>Tool</th><th>Enforcement</th><th>Label</th><th>Disabled checks</th><th></th></tr></thead>
             <tbody>
               {cat.overrides.map((o) => (
                 <tr key={o.id}>
                   <td><span className={`cat ${o.scope === "user" ? "cat-secret_leak" : "cat-unsanctioned_ai"}`}>{o.scope}</span></td>
                   <td><code>{o.match}</code></td>
                   <td className="muted">{o.channel ? <code>{o.channel}</code> : "any"}</td>
+                  <td className="muted">{o.enforce === true ? "enforce" : o.enforce === false ? "monitor" : "—"}</td>
                   <td className="muted">{o.label || "—"}</td>
                   <td className="muted">{o.disabled_checks.length
                     ? o.disabled_checks.map(checkLabel).join(", ")
@@ -166,6 +210,12 @@ export default function Policies({ tenant, onTenant }) {
                    value={draft.match} onChange={(e) => setDraft((d) => ({ ...d, match: e.target.value }))} />
             <input placeholder="Tool (optional, e.g. claude-code)" value={draft.channel}
                    onChange={(e) => setDraft((d) => ({ ...d, channel: e.target.value }))} />
+            <select value={draft.enforce} aria-label="Enforcement"
+                    onChange={(e) => setDraft((d) => ({ ...d, enforce: e.target.value }))}>
+              <option value="inherit">Enforcement: inherit</option>
+              <option value="on">Enforcement: enforce</option>
+              <option value="off">Enforcement: monitor</option>
+            </select>
             <input placeholder="Label (optional)" value={draft.label}
                    onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))} />
           </div>
@@ -181,6 +231,94 @@ export default function Policies({ tenant, onTenant }) {
             {saving === "override" ? "…" : "Add override"}
           </button>
         </div>
+      </div>
+
+      {/* Exception requests — users asking to allow a blocked destination/category. */}
+      <div className="panel settings-card">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <h2 style={{ margin: 0 }}>Exceptions</h2>
+          <label className="muted" style={{ fontSize: 12.5, display: "flex", alignItems: "center", gap: 6 }}>
+            <input type="checkbox" checked={showResolved}
+                   onChange={(e) => setShowResolved(e.target.checked)} />
+            Show resolved
+          </label>
+        </div>
+        <p className="muted" style={{ marginTop: 6 }}>Requests from users to allow something the
+           policy flagged. Approving creates a scoped override for the requesting user.</p>
+
+        {exceptions === null ? (
+          <p className="muted">Loading exceptions…</p>
+        ) : exceptions.length === 0 ? (
+          <p className="muted">{showResolved ? "No exception requests." : "No pending exception requests."}</p>
+        ) : (
+          <>
+            <table className="data-table">
+              <thead><tr><th>Actor</th><th>Destination</th><th>Categories</th><th>Reason</th><th>Age</th><th>Status</th><th></th></tr></thead>
+              <tbody>
+                {exceptions.map((x) => (
+                  <tr key={x.id}>
+                    <td>{x.actor}</td>
+                    <td className="muted">{x.destination ? <code>{x.destination}</code> : "—"}</td>
+                    <td className="muted">{(x.categories || []).join(", ") || "—"}</td>
+                    <td className="muted">{x.reason || "—"}</td>
+                    <td className="muted">{age(x.created_at)}</td>
+                    <td>
+                      {x.status === "pending"
+                        ? <span className="badge sev-suspicious">pending</span>
+                        : x.status === "approved"
+                          ? <span className="badge sev-benign">approved</span>
+                          : <span className="badge sev-critical">denied</span>}
+                    </td>
+                    <td>
+                      {x.status === "pending" && (
+                        <span style={{ display: "flex", gap: 8 }}>
+                          <button className="link-btn" disabled={saving === `exc:${x.id}`}
+                                  onClick={() => resolveException(x.id, "approve")}>Approve</button>
+                          <button className="link-btn" disabled={saving === `exc:${x.id}`}
+                                  onClick={() => resolveException(x.id, "deny")}>Deny</button>
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {exceptions.some((x) => x.status === "pending") && (
+              <input style={{ marginTop: 10, width: "100%" }} value={note}
+                     placeholder="Optional note — attached to the next approve/deny"
+                     onChange={(e) => setNote(e.target.value)} />
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Check activity — findings vs. dismissals per check over the last 30 days. */}
+      <div className="panel settings-card">
+        <h2>Check activity (30d)</h2>
+        <p className="muted" style={{ marginTop: 6 }}>A high dismiss rate means the check is
+           mostly generating noise for your org — a candidate to tune or disable.</p>
+        {analytics === null ? (
+          <p className="muted">No activity data available.</p>
+        ) : (analytics.checks || []).length === 0 ? (
+          <p className="muted">No check activity in the last {analytics.days} days.</p>
+        ) : (
+          <table className="data-table">
+            <thead><tr><th>Check</th><th>Findings</th><th>Dismissed</th><th>Dismiss rate</th></tr></thead>
+            <tbody>
+              {analytics.checks.map((c) => (
+                <tr key={c.check}>
+                  <td><code>{c.check}</code></td>
+                  <td>{c.findings}</td>
+                  <td>{c.dismissed}</td>
+                  <td className={c.dismiss_rate >= 0.5 ? "" : "muted"}
+                      style={c.dismiss_rate >= 0.5 ? { color: "var(--susp)" } : undefined}>
+                    {Math.round((c.dismiss_rate || 0) * 100)}%
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

@@ -24,6 +24,9 @@ import Discovery from "./components/Discovery.jsx";
 import Policies from "./components/Policies.jsx";
 import ScanLog from "./components/ScanLog.jsx";
 import Agents from "./components/Agents.jsx";
+import Fleet from "./components/Fleet.jsx";
+import Simulator from "./components/Simulator.jsx";
+import Report from "./components/Report.jsx";
 import Help from "./components/Help.jsx";
 import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard, IconInbox, IconTarget, IconRadar, IconSliders, IconActivity, IconBot, IconBook } from "./components/icons.jsx";
 
@@ -192,6 +195,12 @@ export default function App() {
             </button>
           )}
           {isAdmin && (
+            <button type="button" className={`nav-item ${view === "fleet" ? "nav-on" : ""}`}
+                    onClick={() => setView("fleet")}>
+              <IconActivity /> <span>Fleet</span>
+            </button>
+          )}
+          {isAdmin && (
             <button type="button" className={`nav-item ${view === "scanlog" ? "nav-on" : ""}`}
                     onClick={() => setView("scanlog")}>
               <IconActivity /> <span>Scan log</span>
@@ -213,6 +222,18 @@ export default function App() {
             <button type="button" className={`nav-item ${view === "policies" ? "nav-on" : ""}`}
                     onClick={() => setView("policies")}>
               <IconSliders /> <span>Policies</span>
+            </button>
+          )}
+          {isAdmin && (
+            <button type="button" className={`nav-item ${view === "simulator" ? "nav-on" : ""}`}
+                    onClick={() => setView("simulator")}>
+              <IconTarget /> <span>Simulator</span>
+            </button>
+          )}
+          {isAdmin && (
+            <button type="button" className={`nav-item ${view === "report" ? "nav-on" : ""}`}
+                    onClick={() => setView("report")}>
+              <IconClipboard /> <span>Report</span>
             </button>
           )}
           {isAdmin && (
@@ -263,6 +284,12 @@ export default function App() {
           <Coverage />
         ) : view === "policies" ? (
           <Policies tenant={auth.tenant} onTenant={(t) => setAuth((a) => ({ ...a, tenant: t }))} />
+        ) : view === "fleet" ? (
+          <Fleet />
+        ) : view === "simulator" ? (
+          <Simulator />
+        ) : view === "report" ? (
+          <Report />
         ) : view === "scanlog" ? (
           <ScanLog />
         ) : view === "agents" ? (

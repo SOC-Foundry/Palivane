@@ -67,6 +67,23 @@ class Principal:
     agent_id: int = 0  # resolved Agent row id (0 = not an agent) — per-agent policy lookups
 
 
+def _stamp_dead_key(token: str, db: Session, key: "ApiKey | None" = None) -> None:
+    """A client just presented a revoked/expired key: stamp last_failed_at on the real
+    row (hash-verified) so the fleet view can surface "device still presenting a dead
+    key". Without this a rotated device fails open silently — indistinguishable from a
+    healthy machine that has nothing to report. Best-effort, never blocks the 401."""
+    try:
+        if key is None:
+            key = (db.query(ApiKey)
+                     .filter(ApiKey.prefix == token[:11], ApiKey.active.is_(False))
+                     .first())
+        if key is not None and hmac.compare_digest(key.token_hash, hash_token(token)):
+            key.last_failed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            db.commit()
+    except Exception:
+        db.rollback()
+
+
 def _resolve_api_key(token: str, db: Session) -> Principal:
     key = (
         db.query(ApiKey)
@@ -74,8 +91,10 @@ def _resolve_api_key(token: str, db: Session) -> Principal:
         .first()
     )
     if key is None or not hmac.compare_digest(key.token_hash, hash_token(token)):
+        _stamp_dead_key(token, db)
         raise HTTPException(status_code=401, detail="invalid API key")
     if key.expires_at and key.expires_at < datetime.now(timezone.utc).replace(tzinfo=None):
+        _stamp_dead_key(token, db, key=key)
         raise HTTPException(status_code=401, detail="API key expired")
     try:  # best-effort last-used stamp
         key.last_used_at = datetime.now(timezone.utc).replace(tzinfo=None)
