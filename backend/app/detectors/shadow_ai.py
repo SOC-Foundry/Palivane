@@ -25,6 +25,11 @@ from .patterns import custom_pii_patterns, find_high_entropy_tokens, find_secret
 # secrets) — used to exclude it from confirmed_leak()'s hard-block set.
 HIGH_ENTROPY_TITLE = "Possible secret (high-entropy token)"
 
+# Title of the bulk personal-email heuristic — same tier as HIGH_ENTROPY_TITLE: a
+# freemail contact list warns and records, but hard-blocks only under an enforce
+# posture, never via confirmed_leak()'s monitor-mode override.
+CONTACT_LIST_TITLE = "Personal contact list (bulk emails)"
+
 # --- PII --------------------------------------------------------------------------------
 
 SSN_RE = re.compile(r"\b\d{3}[-\s]\d{2}[-\s]\d{4}\b")          # dashed or spaced
@@ -38,6 +43,38 @@ def _valid_ssn9(d: str) -> bool:
     area, group, serial = d[:3], d[3:5], d[5:9]
     return area not in ("000", "666") and area[0] != "9" and group != "00" and serial != "0000"
 EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+\.[a-z]{2,}\b", re.IGNORECASE)
+# Freemail/consumer mailbox providers. Only these count toward the bulk contact-list
+# heuristic: corporate addresses saturate developer content (git logs, CODEOWNERS,
+# commit trailers, on-call rosters) and read as workflow, not a personal-data leak.
+# The single personal-record check below still honors any domain — a customer record
+# is PII wherever their mailbox lives.
+_PERSONAL_EMAIL_DOMAINS = frozenset({
+    "gmail.com", "googlemail.com",
+    "yahoo.com", "yahoo.co.uk", "yahoo.fr", "yahoo.de", "yahoo.es", "yahoo.it",
+    "yahoo.ca", "yahoo.com.br", "yahoo.co.in", "yahoo.co.jp", "ymail.com", "rocketmail.com",
+    "hotmail.com", "hotmail.co.uk", "hotmail.fr", "hotmail.de", "hotmail.es", "hotmail.it",
+    "outlook.com", "outlook.fr", "outlook.de", "outlook.es", "live.com", "live.co.uk",
+    "live.fr", "live.de", "msn.com",
+    "aol.com", "icloud.com", "me.com", "mac.com",
+    "proton.me", "protonmail.com", "pm.me", "tutanota.com", "tuta.io",
+    "zoho.com", "fastmail.com", "hey.com", "mail.com", "email.com",
+    "gmx.com", "gmx.de", "gmx.net", "web.de", "t-online.de", "freenet.de",
+    "yandex.ru", "yandex.com", "mail.ru", "inbox.ru", "list.ru", "bk.ru",
+    "qq.com", "163.com", "126.com", "sina.com", "naver.com", "daum.net", "hanmail.net",
+    "rediffmail.com", "orange.fr", "wanadoo.fr", "free.fr", "laposte.net", "sfr.fr",
+    "libero.it", "virgilio.it", "tiscali.it",
+    "comcast.net", "verizon.net", "att.net", "sbcglobal.net", "bellsouth.net",
+    "cox.net", "charter.net", "earthlink.net", "optonline.net",
+    "shaw.ca", "rogers.com", "sympatico.ca",
+    "btinternet.com", "sky.com", "talktalk.net", "virginmedia.com",
+    "telstra.com", "bigpond.com", "optusnet.com.au", "xtra.co.nz",
+})
+
+
+def _personal_email(addr: str) -> bool:
+    return addr.rsplit("@", 1)[-1].lower() in _PERSONAL_EMAIL_DOMAINS
+
+
 PHONE_RE = re.compile(r"\b(?:\+?1[ .\-]?)?\(?\d{3}\)?[ .\-]\d{3}[ .\-]\d{4}\b")
 # 13–16 digit runs, possibly space/dash grouped — validated with Luhn to cut noise.
 CC_CANDIDATE_RE = re.compile(r"\b(?:\d[ -]?){13,16}\b")
@@ -131,7 +168,8 @@ def confirmed_leak(signals) -> bool:
     for s in signals:
         cat = s.get("category") if isinstance(s, dict) else getattr(s.category, "value", "")
         title = s.get("title") if isinstance(s, dict) else getattr(s, "title", "")
-        if cat in ("secret_leak", "pii_exposure") and title != HIGH_ENTROPY_TITLE:
+        if (cat in ("secret_leak", "pii_exposure")
+                and title not in (HIGH_ENTROPY_TITLE, CONTACT_LIST_TITLE)):
             return True
     return False
 
@@ -228,9 +266,8 @@ class ShadowAIDetector:
             weight = max(weight, 0.8)
 
         emails = EMAIL_RE.findall(text)
-        if len(emails) >= 3:
-            found.append(f"{len(emails)} email addresses (contact list)")
-            weight = max(weight, 0.55)
+        personal = [e for e in emails if _personal_email(e)]
+        bulk_emails = len(personal) >= 3   # emitted as its own warn-tier signal below
         phones = PHONE_RE.findall(text)
         if len(phones) >= 3:
             found.append(f"{len(phones)} phone numbers")
@@ -239,7 +276,7 @@ class ShadowAIDetector:
         # (C) A lone email/phone/DOB is PII when it sits in an obvious personal record —
         # the bulk (>=3) heuristic alone misses a single customer's record.
         if _RECORD_CTX_RE.search(text) and (emails or phones or _DOB_RE.search(text)):
-            if not any(("email" in f or "phone" in f) for f in found):
+            if not bulk_emails and not any("phone" in f for f in found):
                 found.append("personal record (contact/DOB in context)")
                 weight = max(weight, 0.55)
 
@@ -260,15 +297,27 @@ class ShadowAIDetector:
                 found.append(label)
                 weight = max(weight, 0.7)
 
-        if not found:
-            return []
-        return [Signal(
-            category=Category.PII_EXPOSURE,
-            title="Personal data in outbound content",
-            detail="Personally identifiable information is about to leave for an AI tool.",
-            weight=weight, confidence=0.75, detector=self.name,
-            evidence="; ".join(found[:4]),
-        )]
+        out: list[Signal] = []
+        if bulk_emails:
+            # Heuristic tier (like the high-entropy secret): distinct title keeps it out
+            # of confirmed_leak(), so it warns in monitor mode instead of hard-blocking.
+            out.append(Signal(
+                category=Category.PII_EXPOSURE,
+                title=CONTACT_LIST_TITLE,
+                detail="Multiple personal (freemail) addresses are about to leave for an "
+                       "AI tool — looks like a contact list.",
+                weight=0.55, confidence=0.6, detector=self.name,
+                evidence=f"{len(personal)} personal email addresses",
+            ))
+        if found:
+            out.append(Signal(
+                category=Category.PII_EXPOSURE,
+                title="Personal data in outbound content",
+                detail="Personally identifiable information is about to leave for an AI tool.",
+                weight=weight, confidence=0.75, detector=self.name,
+                evidence="; ".join(found[:4]),
+            ))
+        return out
 
     def _scan_proprietary(self, text: str) -> list[Signal]:
         out: list[Signal] = []

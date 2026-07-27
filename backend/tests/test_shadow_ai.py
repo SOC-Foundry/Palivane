@@ -39,11 +39,47 @@ def test_invalid_card_number_not_flagged():
 
 
 def test_contact_list_is_pii():
-    assert Category.PII_EXPOSURE in _cats("a@x.com, b@x.com, c@x.com and d@x.com")
+    # Bulk-email PII counts *personal* mailboxes (freemail providers) only.
+    assert Category.PII_EXPOSURE in _cats(
+        "a@gmail.com, b@yahoo.co.uk, c@hotmail.com and d@icloud.com")
+
+
+def test_contact_list_is_warn_tier_not_confirmed_leak():
+    # A freemail contact list is heuristic-tier (like the high-entropy token): it warns
+    # and records but must NOT trip confirmed_leak()'s monitor-mode hard-block.
+    from app.detectors.shadow_ai import CONTACT_LIST_TITLE, confirmed_leak
+    item = AnalysisInput(content="a@gmail.com, b@yahoo.com, c@hotmail.com",
+                         surface=Surface.AI_USAGE, channel="ai_tool")
+    signals = det.analyze(item)
+    assert CONTACT_LIST_TITLE in {s.title for s in signals}
+    assert confirmed_leak(signals) is False
+    # …whereas a known-format PII hit (SSN) stays a confirmed leak.
+    ssn = det.analyze(AnalysisInput(content="employee SSN is 123-45-6789",
+                                    surface=Surface.AI_USAGE, channel="ai_tool"))
+    assert confirmed_leak(ssn) is True
+
+
+def test_corporate_contact_list_not_flagged():
+    # 3+ work addresses are everyday dev content (git logs, CODEOWNERS, on-call
+    # rosters) — workflow, not a personal-data leak.
+    assert Category.PII_EXPOSURE not in _cats(
+        "reviewers: a@acme.com, b@acme.com, c@acme.com and d@partner.io")
+
+
+def test_mixed_contact_list_counts_only_personal():
+    # Two personal + two corporate = below the 3-personal threshold.
+    assert Category.PII_EXPOSURE not in _cats(
+        "a@gmail.com, b@yahoo.com, c@acme.com and d@acme.com")
 
 
 def test_single_email_not_flagged():
     assert Category.PII_EXPOSURE not in _cats("reply to me at jane@example.com")
+
+
+def test_record_context_honors_any_email_domain():
+    # A single customer record is PII wherever the mailbox lives — the personal-domain
+    # filter applies only to the bulk contact-list heuristic.
+    assert Category.PII_EXPOSURE in _cats("customer full name: Jane Roe, email jane@acme.com")
 
 
 def test_source_code_leak():
