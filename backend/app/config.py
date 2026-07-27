@@ -111,6 +111,11 @@ class Settings:
     client_enforce: bool = os.getenv("CLIENT_ENFORCE", "").lower() in ("1", "true", "yes")
     # Response-side DLP: scan the model's OUTPUT for secrets/PII (records; blocks in enforce).
     gateway_scan_responses: bool = os.getenv("GATEWAY_SCAN_RESPONSES", "true").lower() in ("1", "true", "yes")
+    # Opt-in OCR of images sent to LLMs (screenshots carry secrets/PII the text scan never
+    # sees). Requires pytesseract + Pillow AND the tesseract binary; default off. When
+    # enabled, OCR text is appended to the scanned content for detection only — it is
+    # never stored beyond normal finding evidence.
+    gateway_ocr: bool = os.getenv("WARDEN_OCR", "").lower() in ("1", "true", "yes")
     # OpenAI-compatible upstream for /v1/chat/completions (empty = stub reply offline).
     gateway_upstream_base: str = os.getenv("GATEWAY_UPSTREAM_BASE", "")
     gateway_upstream_key: str = os.getenv("GATEWAY_UPSTREAM_KEY", "")

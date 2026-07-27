@@ -18,6 +18,7 @@ prometheus-client==0.25.0 # /metrics exposition
 python3-saml==1.16.0      # per-tenant SAML SSO (pulls lxml + xmlsec manylinux wheels)
 python-multipart==0.0.32  # SAML ACS form parsing (>=0.0.18: CVE-2024-53981 multipart DoS)
 boto3==1.43.46            # optional SIEM/data-lake delivery to S3 (per-tenant, lazy-imported)
+# Optional OCR for image DLP (WARDEN_OCR=true): pillow, pytesseract (+ tesseract binary)
 
 # --- dev / test ---
 pytest==9.1.1
