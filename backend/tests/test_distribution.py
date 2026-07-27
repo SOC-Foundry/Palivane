@@ -23,13 +23,26 @@ def test_install_sh_served_public_with_baked_url(raw_client, monkeypatch):
 
 
 def test_cli_scripts_served(raw_client):
-    for name in ("warden-connect", "warden-reenroll", "warden-reenroll.ps1", "warden-hook", "warden-desktop", "warden_addon.py"):
+    for name in ("warden-connect", "warden-reenroll", "warden-reenroll.ps1", "warden-hook",
+                 "warden-desktop", "warden-desktop.ps1", "warden_addon.py"):
         r = raw_client.get(f"/cli/{name}")
         assert r.status_code == 200, name
         assert len(r.text) > 100
     # warden-connect is a python CLI; warden-desktop is bash; both start with a shebang
     assert raw_client.get("/cli/warden-connect").text.startswith("#!")
     assert raw_client.get("/cli/warden-desktop").text.startswith("#!/usr/bin/env bash")
+    # the Windows desktop installer is PowerShell (comment-block header, not a shebang)
+    assert raw_client.get("/cli/warden-desktop.ps1").text.startswith("<#")
+
+
+def test_windows_scripts_not_in_bash_installer(raw_client):
+    # install.sh is bash — the PowerShell endpoints are served but never auto-installed;
+    # the header points Windows users at warden-desktop.ps1 instead.
+    body = raw_client.get("/install.sh").text
+    assert 'curl -fsSL "$WARDEN_URL/cli/$t"' in body
+    tools_line = [ln for ln in body.splitlines() if ln.startswith("TOOLS=")][0]
+    assert ".ps1" not in tools_line
+    assert "warden-desktop.ps1" in body  # Windows one-liner note in the header comment
 
 
 def test_unknown_and_traversal_rejected(raw_client):

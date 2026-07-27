@@ -29,6 +29,7 @@ _ALLOW = {
     "warden-connect": "cli/warden-connect",
     "warden-reenroll": "cli/warden-reenroll",
     "warden-reenroll.ps1": "cli/warden-reenroll.ps1",
+    "warden-desktop.ps1": "cli/warden-desktop.ps1",
     "warden-hook": "cli/warden-hook",
     "warden-cursor-hook": "cli/warden-cursor-hook",
     "warden-gemini-hook": "cli/warden-gemini-hook",
@@ -44,11 +45,13 @@ _ALLOW = {
 }
 
 # The POSIX CLI tools install under these names via install.sh. Excluded: warden_addon.py
-# (the proxy addon, fetched separately by warden-desktop); warden-reenroll.ps1 (the
-# Windows-native apiKeyHelper, fetched by the Windows installer); and warden-s3-scan /
-# warden-github-scan — ops/admin scanners run on demand (CI / a security box), not planes
-# installed on every developer machine, so they're downloadable but not auto-installed.
-_INSTALLER_SKIP = {"warden_addon.py", "warden-reenroll.ps1", "warden-s3-scan", "warden-github-scan"}
+# (the proxy addon, fetched separately by warden-desktop); warden-reenroll.ps1 /
+# warden-desktop.ps1 (the Windows-native apiKeyHelper and desktop installer, fetched
+# directly on Windows — install.sh is bash); and warden-s3-scan / warden-github-scan —
+# ops/admin scanners run on demand (CI / a security box), not planes installed on every
+# developer machine, so they're downloadable but not auto-installed.
+_INSTALLER_SKIP = {"warden_addon.py", "warden-reenroll.ps1", "warden-desktop.ps1",
+                   "warden-s3-scan", "warden-github-scan"}
 _CLI_TOOLS = [n for n in _ALLOW if n not in _INSTALLER_SKIP]
 
 # Candidate roots: /app in the container (backend copied to /app, cli/ to /app/cli), and
@@ -97,6 +100,10 @@ def install_sh():
 #   --desktop    also govern desktop AI apps + browsers system-wide (system proxy + CA; needs sudo)
 #   --cli-only   the default; kept as an explicit opt-in for clarity
 #   --no-proxy   CLI + hooks only; skip the egress proxy entirely
+#
+# Windows (PowerShell, no admin needed):
+#   iwr {base}/cli/warden-desktop.ps1 -OutFile warden-desktop.ps1
+#   powershell -ExecutionPolicy Bypass -File warden-desktop.ps1 install
 set -euo pipefail
 
 WARDEN_URL="{base}"

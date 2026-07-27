@@ -80,6 +80,14 @@ Routes egress through the proxy so MCP + AI traffic is inspected (and enforced).
   (`HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings` → `ProxyEnable`,
   `ProxyServer`). For system-wide/WinHTTP use `netsh winhttp set proxy proxy_host:port`
   pushed as a startup script.
+- **Windows without MDM (self-serve):** the endpoint can stand up its own *local* egress
+  proxy — CA in the CurrentUser Root store, WinINET user proxy, hidden per-user Scheduled
+  Task, CLI shims — with no admin rights:
+
+  ```powershell
+  iwr https://warden.tachtech.net/cli/warden-desktop.ps1 -OutFile warden-desktop.ps1
+  powershell -ExecutionPolicy Bypass -File warden-desktop.ps1 install
+  ```
 
 ## 4. VS Code extension allowlist
 

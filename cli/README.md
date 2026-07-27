@@ -385,5 +385,18 @@ curl -fsSL https://warden.tachtech.net/install.sh | bash                  # CLI 
 curl -fsSL https://warden.tachtech.net/install.sh | bash -s -- --desktop  # + desktop apps/browsers
 ```
 
+### Windows
+
+`warden-desktop.ps1` is the PowerShell 5.1 port — same subcommands (`install`,
+`install -CliOnly`, `uninstall`, `status`), all **per-user, no admin**: the CA goes into
+the CurrentUser Root store (Windows shows a one-time confirmation dialog), the proxy is
+the WinINET *user* proxy (WinHTTP/services are MDM territory), persistence is a hidden
+per-user Scheduled Task, and the CLIs get `.cmd` shims in `%USERPROFILE%\.warden\bin`:
+
+```powershell
+iwr https://warden.tachtech.net/cli/warden-desktop.ps1 -OutFile warden-desktop.ps1
+powershell -ExecutionPolicy Bypass -File warden-desktop.ps1 install            # or: install -CliOnly
+```
+
 See [`docs/claude-deployment.md`](../docs/claude-deployment.md) and the
 [MDM policy pack](../docs/mdm-policy-pack.md).
