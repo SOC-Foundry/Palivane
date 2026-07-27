@@ -278,6 +278,21 @@ def _scan_messages(messages: list, system=None) -> str:
     return "\n".join(p for p in parts if p)
 
 
+def _with_image_text(prompt: str, body: dict) -> str:
+    """Opt-in image DLP (WARDEN_OCR): OCR base64 images in the request body (Anthropic
+    `source.data`, OpenAI `image_url` data: URIs, Gemini `inline_data`) and append the
+    recovered text to the scannable prompt so screenshots can't smuggle secrets/PII past
+    the text-only scan. No-op unless enabled AND pytesseract/Pillow are installed; OCR is
+    fail-open, so a bad image never breaks the request."""
+    from .ocr import collect_images, extract_image_text, ocr_available
+    if not (settings.gateway_ocr and ocr_available()):
+        return prompt
+    text = extract_image_text(collect_images(body))
+    if not text:
+        return prompt
+    return f"{prompt}\n[image text]\n{text}"
+
+
 def _tenant_suppress(tenant_id: int | None, db: Session) -> str:
     """The tenant's per-tool suppression spec, else the global GATEWAY_TOOL_SUPPRESS."""
     t = db.get(Tenant, tenant_id) if tenant_id is not None else None
@@ -774,7 +789,8 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
     payload = await request.json()
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
-    verdict = _capture(_scan_messages(payload.get("messages", [])), model, tool, principal, db)
+    prompt = _with_image_text(_scan_messages(payload.get("messages", [])), payload)
+    verdict = _capture(prompt, model, tool, principal, db)
     pol = _effective_policy(principal, db)
 
     if _should_block(verdict, pol):
@@ -1018,7 +1034,7 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
     payload = await request.json()
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
-    prompt = _scan_messages(payload.get("messages", []), payload.get("system"))
+    prompt = _with_image_text(_scan_messages(payload.get("messages", []), payload.get("system")), payload)
     verdict = _capture(prompt, model, tool, principal, db)
     pol = _effective_policy(principal, db)
 
@@ -1173,7 +1189,9 @@ async def _gemini_entry(model: str, method: str, request: Request,
         return limited
     payload = await request.json()
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
-    prompt = _scan_gemini(payload.get("contents", []), payload.get("systemInstruction") or payload.get("system_instruction"))
+    prompt = _with_image_text(
+        _scan_gemini(payload.get("contents", []), payload.get("systemInstruction") or payload.get("system_instruction")),
+        payload)
     verdict = _capture(prompt, model, tool, principal, db)
     pol = _effective_policy(principal, db)
 
