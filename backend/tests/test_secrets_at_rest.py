@@ -82,3 +82,16 @@ def test_find_secrets_new_providers_and_conn_strings():
     assert "Connection string credential" in find_secrets("postgres://admin:r3alP4ss@db:5432/app")
     assert "Connection string credential" not in find_secrets("redis://user:${REDIS_PW}@cache:6379")
     assert "Connection string credential" not in find_secrets("postgres://user:password@localhost/db")
+
+
+# --- world_readable is TRI-STATE: True/False are answers, None = unknown ------------------
+
+def test_unknown_permissions_neither_penalized_nor_claimed_private():
+    # Windows without an ACL read reports None. It must not get the +0.1 world-readable
+    # penalty, and must not claim the file is private either.
+    unknown = _sig(["Private key block"], world_readable=None)
+    private = _sig(["Private key block"], world_readable=False)
+    assert unknown.weight == private.weight == 0.85
+    assert "permissions unknown" in unknown.detail
+    assert "world/group-readable" not in unknown.detail
+    assert "permissions unknown" not in private.detail

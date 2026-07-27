@@ -221,3 +221,74 @@ def test_scan_high_entropy_and_false_positives():
     # A known-provider token isn't double-reported as a generic entropy hit.
     ls = _labels("k=dop_v1_" + "a" * 64)
     assert "DigitalOcean token" in ls and ws._ENTROPY_LABEL not in ls
+
+
+# --- Windows support ----------------------------------------------------------------------
+
+def test_windows_targets_and_roots_are_additive():
+    # The POSIX dotfile paths still apply on Windows (git/ssh/aws use them there too);
+    # the Windows list adds the %APPDATA%-style homes the dotfile list can't reach.
+    joined = " ".join(ws._TARGET_GLOBS_WIN).lower()
+    assert "psreadline" in joined                  # PowerShell history
+    assert "appdata%\\gcloud" in joined            # gcloud's Windows home
+    assert "gitcredentialmanager" in joined
+    assert any(g.endswith(".ppk") for g in ws._TARGET_GLOBS_WIN)
+    assert r"%USERPROFILE%\source\repos" in ws._DEFAULT_ROOTS_WIN
+
+
+def test_windows_globs_expand_env_vars(tmp_path, monkeypatch):
+    # %APPDATA%-style entries must go through expandvars, or they'd never match. Only
+    # ntpath.expandvars understands %VAR% (posixpath's handles $VAR), so this test runs the
+    # Windows semantics explicitly — on a real Windows box os.path *is* ntpath.
+    import ntpath
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    hist = tmp_path / "Microsoft" / "Windows" / "PowerShell" / "PSReadLine"
+    hist.mkdir(parents=True)
+    (hist / "ConsoleHost_history.txt").write_text("$env:TOKEN='ghp_0123456789abcdefghijklmn'\n")
+    monkeypatch.setattr(ws.os, "name", "nt")
+    monkeypatch.setattr(ws.os.path, "expandvars", ntpath.expandvars)
+    files = ws.iter_target_files([])
+    assert any("ConsoleHost_history.txt" in f for f in files)
+
+
+def test_unknown_permissions_report_none(tmp_path, monkeypatch):
+    # On Windows the POSIX mode bits are meaningless; when icacls can't answer we report
+    # None (unknown) rather than False, which the server would read as "private".
+    p = tmp_path / "cred"
+    p.write_text("x")
+    monkeypatch.setattr(ws.os, "name", "nt")
+    monkeypatch.setattr(ws, "_win_world_readable", lambda path: None)
+    assert ws.world_readable(str(p)) is None
+
+
+def test_win_acl_parse(monkeypatch):
+    import subprocess
+
+    def fake_run(argv, **kw):
+        path = argv[1]
+        return subprocess.CompletedProcess(argv, 0, stdout=_ACL_FIXTURES[path], stderr="")
+
+    monkeypatch.setattr(ws.subprocess, "run", fake_run)
+    # Everyone / Authenticated Users / BUILTIN\Users with a read right => open.
+    assert ws._win_world_readable(r"C:\k\open.pfx") is True
+    assert ws._win_world_readable(r"C:\k\users.pem") is True
+    # Owner + SYSTEM + Administrators only => not open to ordinary local users.
+    assert ws._win_world_readable(r"C:\k\tight.pem") is False
+
+
+_ACL_FIXTURES = {
+    r"C:\k\open.pfx": "C:\\k\\open.pfx Everyone:(R)\r\n",
+    r"C:\k\users.pem": ("C:\\k\\users.pem DESK\\davidk:(F)\r\n"
+                        "                 BUILTIN\\Users:(I)(RX)\r\n"),
+    r"C:\k\tight.pem": ("C:\\k\\tight.pem DESK\\davidk:(F)\r\n"
+                        "                 NT AUTHORITY\\SYSTEM:(I)(F)\r\n"
+                        "                 BUILTIN\\Administrators:(I)(F)\r\n"),
+}
+
+
+def test_win_acl_unavailable_is_unknown(monkeypatch):
+    def boom(argv, **kw):
+        raise OSError("icacls not found")
+
+    monkeypatch.setattr(ws.subprocess, "run", boom)
+    assert ws._win_world_readable(r"C:\k\x.pem") is None

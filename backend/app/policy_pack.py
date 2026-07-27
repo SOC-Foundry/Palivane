@@ -381,9 +381,15 @@ def secrets_cron(base_url: str, secrets_path: str, engine: str = "trufflehog") -
 
 
 def secrets_win_task(base_url: str, secrets_path: str, engine: str = "trufflehog") -> str:
-    """Windows Task Scheduler XML — daily at 03:00. Import with schtasks /create /xml."""
+    """Windows Task Scheduler XML — daily at 03:00. Import with schtasks /create /xml.
+
+    Runs the scanner through the launcher `warden-desktop.ps1 install` writes
+    (%USERPROFILE%\\.warden\\bin\\warden-secrets.cmd), which resolves an interpreter and
+    carries WARDEN_URL/WARDEN_TOKEN. An explicit Windows `secrets_path` (containing a
+    backslash) overrides it — e.g. a packaged warden-secrets.exe you deploy yourself."""
     b = base_url.rstrip("/")
-    win = secrets_path if "\\" in secrets_path else r"C:\Program Files\Warden\warden-secrets.exe"
+    win = (secrets_path if "\\" in secrets_path
+           else r"%USERPROFILE%\.warden\bin\warden-secrets.cmd")
     args = _engine_args(engine)
     args_xml = f"\n      <Arguments>{' '.join(args)}</Arguments>" if args else ""
     return f'''<?xml version="1.0" encoding="UTF-16"?>

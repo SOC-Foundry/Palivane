@@ -48,12 +48,15 @@ class SecretsAtRestDetector:
         if not types:
             return []
         path = str(m.get("path") or item.subject or "a file")
-        world_readable = bool(m.get("world_readable"))
+        # Tri-state: True/False are answers, None means the scanner couldn't tell (Windows
+        # without an ACL read). Unknown gets neither the penalty nor a "private" claim.
+        wr_raw = m.get("world_readable")
+        world_readable = bool(wr_raw) if wr_raw is not None else None
         verified = bool(m.get("verified"))
         source = str(m.get("source") or "").strip()
 
         weight = max(_base_weight(t) for t in types)
-        if world_readable:
+        if world_readable is True:
             weight = min(0.95, weight + 0.1)   # readable by other local users → worse
         confidence = 0.9
         if verified:
@@ -63,7 +66,8 @@ class SecretsAtRestDetector:
             confidence = 0.97
 
         kinds = ", ".join(dict.fromkeys(types))
-        perm = " (world/group-readable)" if world_readable else ""
+        perm = (" (world/group-readable)" if world_readable is True
+                else " (file permissions unknown)" if world_readable is None else "")
         vtag = " — VERIFIED LIVE" if verified else ""
         via = f" [via {source}]" if source and source != "warden" else ""
         return [Signal(
