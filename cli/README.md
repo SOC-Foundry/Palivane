@@ -107,6 +107,10 @@ only thing that sees it.
   *Device enforcement*). `warden-connect` provisions it into every device it connects,
   and inline verdicts carry the live value (`enforce`) so prompt blocking follows the
   console without a reconnect. A local `WARDEN_ENFORCE=true` still wins.
+- **Staged rollout:** a policy override (console → Policies) can force enforce/monitor
+  for one user, a group glob (`*@pilot.acme.com`), or a single tool — pilot a team on
+  enforcement while the rest of the org stays in monitor. Overrides ride the same
+  verdict `enforce` field, so no device config changes.
 
 Installed by `warden-connect`, or manually in `~/.claude/settings.json` /
 `managed-settings.json` (MDM):

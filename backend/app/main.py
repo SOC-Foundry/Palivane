@@ -38,6 +38,8 @@ from .schemas import (
     PolicyOverrideIn,
     MCPBatchIngest,
     ExceptionRequest,
+    ExceptionResolve,
+    SimulateIn,
     MCPConfigScan,
     MCPIngest,
     ProvisionRequest,
@@ -750,6 +752,7 @@ def ingest_ai_usage(
     _enforce_rate(db, tenant_id)
     actor = body.user or default_actor
     agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
+    _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool)
     result, meta = _score_ai_usage(body.content, actor, body.tool, body.destination,
                                    tenant_id, agent, db)
     from .detectors.shadow_ai import confirmed_leak
@@ -765,9 +768,10 @@ def ingest_ai_usage(
         # A confirmed secret/PII leak: the client should block regardless of its local
         # enforce flag ("block the certain" — monitor everything else).
         "force_block": settings.gateway_enforce_secrets and confirmed_leak(result["signals"]),
-        # The org's enforce stance for local capture planes (Settings → Enforcement):
-        # clients honor "block" verdicts when true, without any per-device flag.
-        "enforce": _tenant_client_enforce(tenant_id, db),
+        # The org's enforce stance for local capture planes (Settings → Enforcement),
+        # staged per actor/tool via policy overrides: clients honor "block" verdicts
+        # when true, without any per-device flag.
+        "enforce": _client_enforce_for(tenant_id, actor, body.tool, db),
         # Approved AI tools to offer the user instead of a hard "no" (shown in the block UI).
         "sanctioned_tools": _sanctioned_list(meta["sanctioned_tools"]),
     }
@@ -804,7 +808,18 @@ def exception_request(
         target=body.destination or "",
         detail={"finding_id": body.finding_id, "reason": body.reason[:500],
                 "categories": body.categories[:8]})
-    return {"ok": True}
+    # First-class queue row (the audit entry above is kept for compat/history): admins
+    # review these under Policies → Exceptions and can approve into a scoped override.
+    from .models import ExceptionRecord
+    row = ExceptionRecord(
+        tenant_id=tenant_id, finding_id=body.finding_id,
+        actor=(body.user or default_actor)[:320],
+        destination=body.destination[:2048],
+        categories=",".join(dict.fromkeys(c.strip() for c in body.categories[:8] if c.strip())),
+        reason=body.reason[:2000])
+    db.add(row)
+    db.commit(); db.refresh(row)
+    return {"ok": True, "id": row.id}
 
 
 _OTLP_MAX_RECORDS = 1000   # cap Claude-Code events processed per OTLP export (DoS guard)
@@ -935,6 +950,44 @@ def _tenant_client_enforce(tenant_id: int | None, db: Session) -> bool:
     return settings.client_enforce
 
 
+def _client_enforce_for(tenant_id: int | None, actor: str, tool: str, db: Session) -> bool:
+    """Staged enforcement: the tenant/global stance, unless a policy override with an
+    explicit enforce matches this actor (+ tool) — so an org can enforce a pilot user,
+    a group glob, or one tool while everyone else stays in monitor."""
+    base = _tenant_client_enforce(tenant_id, db)
+    if tenant_id is None or not actor:
+        return base
+    from .policies import resolve_enforce
+    overrides = db.query(PolicyOverride).filter(PolicyOverride.tenant_id == tenant_id).all()
+    effective, _ = resolve_enforce(base, actor, overrides, channel=tool)
+    return effective
+
+
+def _record_heartbeat(db: Session, tenant_id: int | None, actor: str,
+                      plane: str, tool: str = "") -> None:
+    """Best-effort fleet-health upsert — never breaks the capture path it rides on."""
+    try:
+        from datetime import datetime, timezone
+
+        from .models import SensorHeartbeat
+        row = (db.query(SensorHeartbeat)
+                 .filter(SensorHeartbeat.tenant_id == tenant_id,
+                         SensorHeartbeat.actor == (actor or ""),
+                         SensorHeartbeat.plane == plane,
+                         SensorHeartbeat.tool == (tool or "")[:64])
+                 .one_or_none())
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        if row is None:
+            row = SensorHeartbeat(tenant_id=tenant_id, actor=(actor or ""), plane=plane,
+                                  tool=(tool or "")[:64], first_seen=now)
+            db.add(row)
+        row.last_seen = now
+        row.count = (row.count or 0) + 1
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
 def _tenant_mcp_allow(tenant_id: int | None, db: Session) -> str:
     """Effective MCP server allowlist for a tenant: its own list, else the global default."""
     return _tenant_or_global(tenant_id, db, "mcp_allowed_servers", settings.mcp_allowed_servers)
@@ -999,8 +1052,9 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
         "signals": result["signals"],
         "finding_id": result["finding_id"],
         "remediation": remediation_for(result["signals"]),
-        # Org enforce stance for local capture planes — same field as ai-usage verdicts.
-        "enforce": _tenant_client_enforce(tenant_id, db),
+        # Org enforce stance for local capture planes — same field as ai-usage verdicts,
+        # staged per actor/tool via policy overrides.
+        "enforce": _client_enforce_for(tenant_id, actor, body.tool or "mcp", db),
     }
 
 
@@ -1018,6 +1072,7 @@ def ingest_mcp(
     tenant_id, default_actor = _ingest_auth(x_warden_token, db)
     _enforce_rate(db, tenant_id)
     agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
+    _record_heartbeat(db, tenant_id, body.user or default_actor, "mcp", body.tool)
     return _score_mcp(body, tenant_id, default_actor, _tenant_mcp_allow(tenant_id, db),
                       _tenant_mcp_block_severity(tenant_id, db), db, agent=agent,
                       client_ua=user_agent)
@@ -1037,6 +1092,9 @@ def ingest_mcp_batch(
     tenant_id, default_actor = _ingest_auth(x_warden_token, db)
     _enforce_rate(db, tenant_id)
     agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
+    if body.items:
+        _record_heartbeat(db, tenant_id, body.items[0].user or default_actor, "mcp",
+                          body.items[0].tool)
     allowed = _tenant_mcp_allow(tenant_id, db)
     block = _tenant_mcp_block_severity(tenant_id, db)
     results = [_score_mcp(item, tenant_id, default_actor, allowed, block, db, agent=agent,
@@ -1079,8 +1137,9 @@ def scan_mcp_config(
     sensitive paths, and secrets committed in the config. Agentless: it reads config, not
     a running process. Token-gated; returns an overall action + per-server detail."""
     from urllib.parse import urlparse
-    tenant_id, _ = _ingest_auth(x_warden_token, db)
+    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
     _enforce_rate(db, tenant_id)
+    _record_heartbeat(db, tenant_id, default_actor, "posture", "mcp-config")
 
     from .detectors.dep_guard import extract_mcp_packages
     from . import osv
@@ -1310,8 +1369,9 @@ def scan_ide_extensions(
     """Vet a list of IDE extensions (from `.vscode/extensions.json` in CI, or an MDM software
     inventory) for known-bad / unapproved editor plugins. Agentless — reads a list, not a
     running IDE. Token-gated; returns an action plus the flagged extensions."""
-    tenant_id, _ = _ingest_auth(x_warden_token, db)
+    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
     _enforce_rate(db, tenant_id)
+    _record_heartbeat(db, tenant_id, default_actor, "posture", "ide-extensions")
     content = body.content or "\n".join(body.extensions)
     item = AnalysisInput(content=content, subject="ide-extensions", channel="ide",
                          surface=Surface.IDE,
@@ -1344,6 +1404,7 @@ def scan_agent_config(
     _enforce_rate(db, tenant_id)
     actor = body.user or default_actor
     agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
+    _record_heartbeat(db, tenant_id, actor, "posture", body.tool or "agent-config")
     item = AnalysisInput(content=body.content, sender=actor,
                          channel=f"{body.tool or 'agent'}-config", surface=Surface.IDE,
                          metadata={"kind": "agent_config", "tool": body.tool})
@@ -1777,11 +1838,14 @@ def policy_override_upsert(body: PolicyOverrideIn, current: User = Depends(requi
         db.add(row)
     row.label = body.label.strip()
     row.disabled_checks = disabled
+    # Staged enforcement: tri-state → True/False/None (None = tenant default applies).
+    row.enforce = {"on": True, "off": False}.get(body.enforce)
     db.commit(); db.refresh(row)
     from . import audit_log
     audit_log.record(db, current.tenant_id, current.email, "policy_override.upsert",
                      target=f"{body.scope}:{match}",
                      detail={"scope": body.scope, "match": match, "channel": channel,
+                             "enforce": body.enforce,
                              "disabled_checks": body.disabled_checks})
     return row.to_dict()
 
@@ -1800,6 +1864,286 @@ def policy_override_delete(override_id: int, current: User = Depends(require_adm
     audit_log.record(db, current.tenant_id, current.email, "policy_override.delete",
                      target=f"{scope}:{match}", detail={"disabled_checks": disabled})
     return {"ok": True}
+
+
+# --- Exception queue (block-screen requests → reviewed → optionally an override) --------
+
+
+@app.get("/api/exceptions")
+def exceptions_list(status: str = "pending", current: User = Depends(require_admin),
+                    db: Session = Depends(get_db)):
+    """The exception-request queue. `status=pending|approved|denied|all`."""
+    from .models import ExceptionRecord
+    q = db.query(ExceptionRecord).filter(ExceptionRecord.tenant_id == current.tenant_id)
+    if status != "all":
+        q = q.filter(ExceptionRecord.status == status)
+    rows = q.order_by(ExceptionRecord.created_at.desc()).limit(200).all()
+    return {"exceptions": [r.to_dict() for r in rows]}
+
+
+@app.post("/api/exceptions/{req_id}/resolve")
+def exception_resolve(req_id: int, body: ExceptionResolve,
+                      current: User = Depends(require_admin),
+                      db: Session = Depends(get_db)):
+    """Approve or deny a queued exception request. Approving materializes a per-user
+    policy override that disables the requested checks for that actor (optionally scoped
+    to one tool) — the request stops being a suggestion box and becomes policy."""
+    from datetime import datetime, timezone
+
+    from . import audit_log
+    from .models import ExceptionRecord
+    from .policies import VALID_KEYS
+    row = (db.query(ExceptionRecord)
+             .filter(ExceptionRecord.id == req_id,
+                     ExceptionRecord.tenant_id == current.tenant_id).one_or_none())
+    if row is None:
+        raise HTTPException(status_code=404, detail="exception request not found")
+    if row.status != "pending":
+        raise HTTPException(status_code=409, detail=f"already {row.status}")
+
+    if body.action == "approve":
+        checks = [k for k in (body.disable_checks or
+                              [c for c in (row.categories or "").split(",") if c])
+                  if k in VALID_KEYS]
+        if not checks:
+            raise HTTPException(status_code=400,
+                                detail="nothing to approve: no valid checks requested — "
+                                       "pass disable_checks explicitly")
+        if not row.actor:
+            raise HTTPException(status_code=400, detail="request has no actor to scope to")
+        channel = body.channel.strip().lower()
+        ov = (db.query(PolicyOverride)
+                .filter(PolicyOverride.tenant_id == current.tenant_id,
+                        PolicyOverride.scope == "user",
+                        PolicyOverride.match == row.actor.lower(),
+                        PolicyOverride.channel == channel).one_or_none())
+        if ov is None:
+            ov = PolicyOverride(tenant_id=current.tenant_id, scope="user",
+                                match=row.actor.lower(), channel=channel,
+                                label=f"exception #{row.id}")
+            db.add(ov)
+        merged = dict.fromkeys([c for c in (ov.disabled_checks or "").split(",") if c]
+                               + checks)
+        ov.disabled_checks = ",".join(merged)
+        db.flush()
+        row.applied_override_id = ov.id
+
+    row.status = "approved" if body.action == "approve" else "denied"
+    row.resolved_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    row.resolved_by = current.email
+    row.resolution_note = body.note.strip()
+    db.commit(); db.refresh(row)
+    audit_log.record(db, current.tenant_id, current.email, f"exception.{row.status}",
+                     target=row.actor,
+                     detail={"request_id": row.id, "note": body.note[:200],
+                             "override_id": row.applied_override_id})
+    return row.to_dict()
+
+
+@app.get("/api/policies/analytics")
+def policies_analytics(days: int = 30, current: User = Depends(require_admin),
+                       db: Session = Depends(get_db)):
+    """Per-check activity over the window: how often each check fired, how often those
+    findings were dismissed — the data an admin tunes policy from (a check with a high
+    dismiss rate is a noise source; one with zero hits costs nothing to keep on)."""
+    from datetime import datetime, timedelta, timezone
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max(1, min(days, 365)))
+    rows = (db.query(Finding.signals, Finding.status)
+              .filter(Finding.tenant_id == current.tenant_id,
+                      Finding.last_seen >= since)
+              .limit(20000).all())
+    stats: dict[str, dict] = {}
+    for signals, status in rows:
+        checks = {(s.get("check") or s.get("category") or "") for s in (signals or [])}
+        for c in checks - {""}:
+            st = stats.setdefault(c, {"check": c, "findings": 0, "dismissed": 0})
+            st["findings"] += 1
+            if status == "dismissed":
+                st["dismissed"] += 1
+    out = sorted(stats.values(), key=lambda s: -s["findings"])
+    for st in out:
+        st["dismiss_rate"] = round(st["dismissed"] / st["findings"], 3) if st["findings"] else 0.0
+    return {"days": days, "checks": out}
+
+
+# --- Fleet health (sensor heartbeats + dead-key visibility) ------------------------------
+
+
+@app.get("/api/fleet")
+def fleet_health(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Sensor-health ledger: who reported, from which plane, how recently — plus devices
+    still presenting a revoked/expired key. This is what distinguishes "protected and
+    quiet" from "silently dark" on a fail-open control."""
+    from datetime import datetime, timedelta, timezone
+
+    from .models import ApiKey, SensorHeartbeat
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    rows = (db.query(SensorHeartbeat)
+              .filter(SensorHeartbeat.tenant_id == current.tenant_id)
+              .order_by(SensorHeartbeat.last_seen.desc()).limit(2000).all())
+
+    def _bucket(last_seen) -> str:
+        if last_seen is None:
+            return "dark"
+        age = now - last_seen
+        if age <= timedelta(hours=24):
+            return "fresh"
+        if age <= timedelta(hours=72):
+            return "stale"
+        return "dark"
+
+    sensors = []
+    for r in rows:
+        d = r.to_dict()
+        d["health"] = _bucket(r.last_seen)
+        sensors.append(d)
+    dead_cutoff = now - timedelta(days=7)
+    dead = (db.query(ApiKey)
+              .filter(ApiKey.tenant_id == current.tenant_id,
+                      ApiKey.active.is_(False),
+                      ApiKey.last_failed_at.isnot(None),
+                      ApiKey.last_failed_at >= dead_cutoff)
+              .order_by(ApiKey.last_failed_at.desc()).limit(100).all())
+    summary = {"actors": len({s["actor"] for s in sensors}),
+               "fresh": sum(1 for s in sensors if s["health"] == "fresh"),
+               "stale": sum(1 for s in sensors if s["health"] == "stale"),
+               "dark": sum(1 for s in sensors if s["health"] == "dark"),
+               "dead_keys": len(dead)}
+    return {"summary": summary, "sensors": sensors,
+            "dead_keys": [k.to_dict() for k in dead]}
+
+
+# --- Exec summary report ------------------------------------------------------------------
+
+
+@app.get("/api/reports/summary")
+def report_summary(days: int = 30, current: User = Depends(require_admin),
+                   db: Session = Depends(get_db)):
+    """The numbers a security lead forwards upward: window totals, what was prevented,
+    where it came from, who's covered. Printable from the console's Report page."""
+    from datetime import datetime, timedelta, timezone
+
+    from .detectors.shadow_ai import confirmed_leak
+    from .models import GatewayUsage, SensorHeartbeat
+    days = max(1, min(days, 365))
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    since = now - timedelta(days=days)
+
+    rows = (db.query(Finding.severity, Finding.status, Finding.signals,
+                     Finding.channel, Finding.sender, Finding.recommended_action)
+              .filter(Finding.tenant_id == current.tenant_id,
+                      Finding.last_seen >= since)
+              .limit(20000).all())
+    by_severity: dict[str, int] = {}
+    by_category: dict[str, int] = {}
+    by_tool: dict[str, int] = {}
+    actors: set[str] = set()
+    prevented = 0
+    for severity, status, signals, channel, sender, action in rows:
+        by_severity[severity] = by_severity.get(severity, 0) + 1
+        for c in {(s.get("category") or "") for s in (signals or [])} - {""}:
+            by_category[c] = by_category.get(c, 0) + 1
+        if channel:
+            by_tool[channel] = by_tool.get(channel, 0) + 1
+        if sender:
+            actors.add(sender)
+        # "Prevented" mirrors what clients actually hard-block: a block-band verdict, or
+        # a confirmed secret/PII leak (force_block even in monitor mode).
+        if action == "block" or confirmed_leak(signals or []):
+            prevented += 1
+
+    hb = (db.query(SensorHeartbeat)
+            .filter(SensorHeartbeat.tenant_id == current.tenant_id).all())
+    covered = {h.actor for h in hb if h.actor and h.last_seen and h.last_seen >= since}
+    analyzed = (db.query(func.coalesce(func.sum(GatewayUsage.count), 0))
+                  .filter(GatewayUsage.tenant_id == current.tenant_id,
+                          GatewayUsage.window_start >= since).scalar() or 0)
+    return {"days": days, "generated_at": now.isoformat(),
+            "analyzed_events": int(analyzed),
+            "findings": len(rows), "prevented_blocks": prevented,
+            "by_severity": by_severity,
+            "by_category": dict(sorted(by_category.items(), key=lambda kv: -kv[1])),
+            "by_tool": dict(sorted(by_tool.items(), key=lambda kv: -kv[1])[:15]),
+            "actors_with_findings": len(actors),
+            "covered_actors": len(covered)}
+
+
+# --- Protection simulator (nothing persisted) --------------------------------------------
+
+
+@app.post("/api/simulate")
+def simulate(body: SimulateIn, current: User = Depends(require_admin),
+             db: Session = Depends(get_db)):
+    """'Test my protection': run content through the real scoring pipeline — same
+    detectors, same tenant policy/overrides — without persisting anything, and report
+    the verdict a client would enforce on each posture (monitor vs enforce)."""
+    from .detectors.shadow_ai import confirmed_leak
+    from .policies import parse_disabled, resolve_disabled, resolve_enforce
+
+    plane_tool = {"prompt": "claude-code", "tool": "claude-code",
+                  "desktop": "claude-desktop", "browser": "claude.ai"}
+    tool = body.tool or plane_tool[body.plane]
+    actor = body.actor.strip().lower()
+    destination = body.destination or ("api.anthropic.com" if body.plane == "desktop"
+                                       else "claude.ai" if body.plane == "browser" else tool)
+
+    meta = {"destination": destination,
+            "sanctioned_tools": _tenant_or_global(current.tenant_id, db,
+                                                  "sanctioned_ai_tools",
+                                                  settings.sanctioned_ai_tools),
+            "custom_pii": _tenant_or_global(current.tenant_id, db, "custom_pii_patterns", "")}
+    if body.plane == "tool":
+        item = AnalysisInput(content=body.content, sender=actor, channel=tool,
+                             subject="MCP tools/call", surface=Surface.MCP,
+                             metadata={"method": "tools/call", "tool": tool,
+                                       "args_text": body.content, "transport": "stdio",
+                                       "allowed_servers": _tenant_mcp_allow(current.tenant_id, db)})
+    else:
+        item = AnalysisInput(content=body.content, sender=actor, channel=tool,
+                             surface=Surface.AI_USAGE, metadata=meta)
+    from .policy import detect_tool, signal_filter_for
+    suppress = _tenant_or_global(current.tenant_id, db, "tool_suppress",
+                                 settings.gateway_tool_suppress)
+    sig_filter = signal_filter_for(detect_tool(explicit=tool), extra=suppress)
+    result = run_analysis(item, persist=False, db=db, tenant_id=current.tenant_id,
+                          signal_filter=sig_filter)
+
+    tenant = db.get(Tenant, current.tenant_id)
+    overrides = (db.query(PolicyOverride)
+                   .filter(PolicyOverride.tenant_id == current.tenant_id).all())
+    _, matched_checks = resolve_disabled(
+        parse_disabled(getattr(tenant, "disabled_checks", "") if tenant else ""),
+        actor, overrides, channel=tool)
+    base_enforce = _tenant_client_enforce(current.tenant_id, db)
+    effective_enforce, matched_enforce = resolve_enforce(base_enforce, actor, overrides,
+                                                         channel=tool)
+
+    if body.plane == "tool":
+        action = _action_for(result["severity"],
+                             _tenant_mcp_block_severity(current.tenant_id, db))
+        force = False   # the mcp surface emits no force_block
+    else:
+        action = _action_for(result["severity"])
+        force = settings.gateway_enforce_secrets and confirmed_leak(result["signals"])
+
+    def _outcome(enforce: bool) -> str:
+        if force:
+            return "block"
+        if action == "block":
+            return "block" if enforce else "warn"
+        return action
+
+    # Monitor-mode tool calls are reported asynchronously (fire-and-forget) — the hook
+    # never blocks or warns interactively there, it only records.
+    outcome_monitor = "log" if body.plane == "tool" else _outcome(False)
+    return {"action": action, "force_block": force,
+            "risk_score": result["risk_score"], "severity": result["severity"],
+            "signals": result["signals"],
+            "remediation": remediation_for(result["signals"]),
+            "enforce_stance": effective_enforce,
+            "matched_override": matched_enforce or matched_checks,
+            "outcome_monitor": outcome_monitor,
+            "outcome_enforce": _outcome(True)}
 
 
 @app.get("/api/discovery/inventory")

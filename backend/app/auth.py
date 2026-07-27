@@ -618,6 +618,12 @@ def extension_token(device: str = "", current: User = Depends(get_current_user),
     tenant = db.get(Tenant, current.tenant_id)
     enforce = tenant.client_enforce if tenant and tenant.client_enforce is not None \
         else settings.client_enforce
+    # Staged enforcement: a policy override for this user (any tool) beats the org stance.
+    from .models import PolicyOverride
+    from .policies import resolve_enforce
+    overrides = (db.query(PolicyOverride)
+                   .filter(PolicyOverride.tenant_id == current.tenant_id).all())
+    enforce, _ = resolve_enforce(bool(enforce), current.email, overrides)
     return {"token": token, "actor": current.email, "tenant": current.tenant_id,
             "enforce": bool(enforce),
             "upstream_forwards": upstream_forwards("anthropic", current.tenant_id, db)}

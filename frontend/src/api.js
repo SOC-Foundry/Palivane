@@ -91,6 +91,17 @@ export const api = {
     req("/policies/overrides", { method: "POST", body: JSON.stringify(payload) }),
   policyOverrideDelete: (id) =>
     req(`/policies/overrides/${id}`, { method: "DELETE" }),
+  fleet: () => req("/fleet"),
+  simulate: (payload) =>
+    req("/simulate", { method: "POST", body: JSON.stringify(payload) }),
+  exceptions: (status = "pending") =>
+    req(`/exceptions?${new URLSearchParams({ status })}`),
+  exceptionResolve: (id, payload) =>
+    req(`/exceptions/${id}/resolve`, { method: "POST", body: JSON.stringify(payload) }),
+  policyAnalytics: (days = 30) =>
+    req(`/policies/analytics?${new URLSearchParams({ days })}`),
+  reportSummary: (days = 30) =>
+    req(`/reports/summary?${new URLSearchParams({ days })}`),
   discoveryInventory: () => req("/discovery/inventory"),
   discoveryIngest: (events) =>
     req("/discovery/ingest", { method: "POST", body: JSON.stringify({ events }) }),

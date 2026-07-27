@@ -385,6 +385,29 @@ class PolicyOverrideIn(BaseModel):
     channel: str = Field("", max_length=64)            # tool/channel glob ("" = any tool)
     label: str = Field("", max_length=128)
     disabled_checks: list[str] = Field(default_factory=list, max_length=64)
+    # Staged enforcement: "on"/"off" force the matched actor/tool's stance,
+    # "inherit" (default) leaves the tenant/global client_enforce in charge.
+    enforce: Literal["on", "off", "inherit"] = "inherit"
+
+
+class SimulateIn(BaseModel):
+    """Console 'test my protection' — run content through the real scoring pipeline
+    (nothing persisted) and show the verdict per plane, in monitor vs enforce."""
+    content: str = Field(min_length=1, max_length=MAX_CONTENT)
+    plane: Literal["prompt", "tool", "desktop", "browser"] = "prompt"
+    actor: str = Field("", max_length=320)     # simulate as this user (override matching)
+    tool: str = Field("", max_length=64)       # defaults per plane when empty
+    destination: str = Field("", max_length=256)
+
+
+class ExceptionResolve(BaseModel):
+    """Admin decision on a queued exception request."""
+    action: Literal["approve", "deny"]
+    note: str = Field("", max_length=512)
+    # approve only: checks to disable for the requester (defaults to the request's
+    # categories ∩ the policy catalog) and the tool scope of the override ("" = any).
+    disable_checks: list[str] = Field(default_factory=list, max_length=16)
+    channel: str = Field("", max_length=64)
 
 
 class AgentConfigScan(BaseModel):

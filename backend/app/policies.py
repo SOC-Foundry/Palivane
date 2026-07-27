@@ -105,23 +105,20 @@ def parse_disabled(raw) -> set[str]:
     return {i.strip() for i in items if i and i.strip() in VALID_KEYS}
 
 
-def resolve_disabled(base_disabled: set[str], actor: str, overrides,
-                     channel: str = "") -> tuple[set[str], dict | None]:
-    """Pick the effective disabled-check set for an actor (and optionally the tool/channel
-    the content is flowing through).
+def _best_match(actor: str, overrides, channel: str = ""):
+    """The single override that governs this actor (+ optional tool/channel), or None.
 
     A user override (exact email) beats any group override; among group overrides the most
     specific glob wins (fewest wildcards, then longest pattern). An override may be scoped
     to a tool/channel glob (e.g. "claude-code", "claude-*") — it then only applies to
     captures on that tool, and a tool-scoped override beats a tool-any one for the same
-    actor. An override REPLACES the tenant default. Returns
-    (disabled_set, matched_override_dict_or_None)."""
+    actor."""
     import fnmatch
 
     a = (actor or "").strip().lower()
     ch = (channel or "").strip().lower()
     if not a or not overrides:
-        return base_disabled, None
+        return None
 
     def _chan(o) -> str:
         return (getattr(o, "channel", "") or "").strip().lower()
@@ -130,24 +127,50 @@ def resolve_disabled(base_disabled: set[str], actor: str, overrides,
         och = _chan(o)
         return not och or (bool(ch) and fnmatch.fnmatch(ch, och))
 
-    def _hit(o) -> tuple[set[str], dict]:
-        return parse_disabled(o.disabled_checks), {
-            "id": o.id, "scope": o.scope, "match": o.match, "channel": _chan(o)}
-
     users = [o for o in overrides if o.scope == "user"
              and (o.match or "").strip().lower() == a and _chan_ok(o)]
     if users:
         users.sort(key=lambda o: not _chan(o))   # tool-scoped beats tool-any
-        return _hit(users[0])
+        return users[0]
 
     groups = [o for o in overrides if o.scope == "group"
               and fnmatch.fnmatch(a, (o.match or "").strip().lower()) and _chan_ok(o)]
     if groups:
         groups.sort(key=lambda o: (not _chan(o), (o.match or "").count("*"),
                                    -len(o.match or "")))
-        return _hit(groups[0])
+        return groups[0]
 
-    return base_disabled, None
+    return None
+
+
+def _matched_dict(o) -> dict:
+    return {"id": o.id, "scope": o.scope, "match": o.match,
+            "channel": (getattr(o, "channel", "") or "").strip().lower()}
+
+
+def resolve_disabled(base_disabled: set[str], actor: str, overrides,
+                     channel: str = "") -> tuple[set[str], dict | None]:
+    """Pick the effective disabled-check set for an actor (and optionally the tool/channel
+    the content is flowing through). The matched override REPLACES the tenant default.
+    Returns (disabled_set, matched_override_dict_or_None)."""
+    hit = _best_match(actor, overrides, channel)
+    if hit is None:
+        return base_disabled, None
+    return parse_disabled(hit.disabled_checks), _matched_dict(hit)
+
+
+def resolve_enforce(default: bool, actor: str, overrides,
+                    channel: str = "") -> tuple[bool, dict | None]:
+    """Effective monitor/enforce stance for an actor (+ optional tool/channel): the
+    best-matching override that carries an explicit enforce wins, else the tenant/global
+    default. This is what makes STAGED enforcement possible — enforce a pilot user,
+    group glob, or single tool while the rest of the org stays in monitor. Only
+    overrides with enforce set participate; check-only overrides are invisible here."""
+    hit = _best_match(actor, [o for o in (overrides or [])
+                              if getattr(o, "enforce", None) is not None], channel)
+    if hit is None:
+        return default, None
+    return bool(hit.enforce), _matched_dict(hit)
 
 
 def checks_signal_filter(disabled: set[str]):
