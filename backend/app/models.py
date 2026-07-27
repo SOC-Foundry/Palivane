@@ -18,6 +18,7 @@ from sqlalchemy import (
 )
 
 from .database import Base
+from .signal_summary import top_signals
 
 
 def _utcnow() -> datetime:
@@ -470,6 +471,9 @@ class Finding(Base):
             "last_seen": self.last_seen.isoformat() if self.last_seen else None,
             "seen_count": self.seen_count or 1,
             "categories": sorted({s.get("category", "") for s in (self.signals or [])} - {""}),
+            # The strongest signals (title + redacted evidence) so a list row can show *what*
+            # matched, not just the category buckets — same summary the alerts use.
+            "top_signals": top_signals(self.signals, 3),
             "channel": self.channel,
             "surface": self.surface,
             "sender": self.sender,

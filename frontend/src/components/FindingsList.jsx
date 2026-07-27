@@ -82,6 +82,12 @@ function FindingRow({ f, selectedId, onSelect }) {
             <span className="seen-badge" title={`seen ${f.seen_count} times`}>×{f.seen_count}</span>
           )}
         </div>
+        {f.top_signals?.[0] && (
+          <div className="finding-what">
+            {f.top_signals[0].title}
+            {f.top_signals[0].evidence && <code>{f.top_signals[0].evidence}</code>}
+          </div>
+        )}
         <div className="finding-meta">
           {surf && <span className={`tag tag-${surf.cls}`}>{surf.label}</span>}
           <span className="chan">{f.channel}</span>
@@ -113,6 +119,12 @@ function GroupRow({ g, expanded, onToggle, selectedId, onSelect, onBulkStatus })
               {g.events > g.items.length ? `${g.items.length} · ${g.events} events` : g.items.length}
             </span>
           </div>
+          {g.worst.top_signals?.[0] && (
+            <div className="finding-what">
+              {g.worst.top_signals[0].title}
+              {g.worst.top_signals[0].evidence && <code>{g.worst.top_signals[0].evidence}</code>}
+            </div>
+          )}
           <div className="finding-meta">
             {surf && <span className={`tag tag-${surf.cls}`}>{surf.label}</span>}
             {g.sender && <span className="sender">{g.sender}</span>}

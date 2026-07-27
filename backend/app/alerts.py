@@ -15,14 +15,20 @@ _RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}
 
 
 def _payload(verdict: dict, subject: str, actor: str, surface: str) -> dict:
+    from .signal_summary import top_signals
     cats = ", ".join(s.get("category", "") for s in verdict.get("signals", [])[:5]) or "—"
+    # The concrete cause — the strongest signals with their (already-redacted) evidence — so
+    # the alert says WHAT matched, not just which category buckets tripped.
+    tops = top_signals(verdict.get("signals"), 3)
+    lines = "".join(f"\n  • {t['title']}" + (f" — `{t['evidence']}`" if t["evidence"] else "")
+                    for t in tops)
     text = (f":shield: *Warden {verdict.get('severity', '?').upper()}* — "
             f"{subject or 'finding'} ({actor or 'unknown'})\n"
-            f"{cats} · risk {verdict.get('risk_score', '?')} · surface {surface}")
+            f"{cats} · risk {verdict.get('risk_score', '?')} · surface {surface}{lines}")
     return {"text": text, "warden": {
         "severity": verdict.get("severity"), "risk_score": verdict.get("risk_score"),
         "categories": cats, "actor": actor, "surface": surface,
-        "finding_id": verdict.get("finding_id"),
+        "finding_id": verdict.get("finding_id"), "top_signals": tops,
     }}
 
 
@@ -70,9 +76,17 @@ def _digest_payload(tenant, findings: list, since, now) -> dict:
     from collections import Counter
     c = Counter(f.severity for f in findings)
     by_sev = " · ".join(f"{c[s]} {s}" for s in ("critical", "high", "suspicious", "low") if c.get(s))
+    from .signal_summary import top_signals
     top = sorted(findings, key=lambda f: _RANK.get(f.severity, 0), reverse=True)[:10]
+
+    def _what(f):   # the single strongest signal, so a digest line still names the cause
+        t = top_signals(f.signals, 1)
+        if not t:
+            return ""
+        return f" — {t[0]['title']}" + (f" `{t[0]['evidence']}`" if t[0]["evidence"] else "")
+
     lines = "\n".join(
-        f"• *{f.severity}* · {f.surface} · {(f.subject or 'finding')[:70]} ({f.sender or '—'})"
+        f"• *{f.severity}* · {f.surface} · {(f.subject or 'finding')[:70]} ({f.sender or '—'}){_what(f)}"
         for f in top)
     more = f"\n…and {len(findings) - len(top)} more" if len(findings) > len(top) else ""
     text = (f":shield: *Warden {tenant.alert_digest} digest* — {len(findings)} finding(s) "
