@@ -273,6 +273,20 @@ the secret *type*, path, line, a masked preview (`ghp_••••4f2a`), and wh
 world/group-readable. The raw secret never leaves the device. Each file becomes a
 `credential_at_rest` finding (`POST /api/scan/secrets`) with a rotate/lock-down plan.
 
+**Windows.** The `~`-dotfile paths above still apply (git/ssh/aws/npm use them on Windows
+too), plus the Windows-native credential homes the dotfile list can't reach: **PowerShell
+history** (`ConsoleHost_history.txt` — the `.bash_history` analogue), `%APPDATA%\gcloud`
+ADC + legacy credentials, `%APPDATA%\npm\etc\npmrc`, `NuGet.Config`, **Git Credential
+Manager**'s store, and `.ppk`/`.pfx`/`.p12` exports in the profile; sweep roots add
+`%USERPROFILE%\source\repos` (Visual Studio's default) and the OneDrive-backed
+Desktop/Documents. File readability comes from the **NTFS ACL** via `icacls` (POSIX mode
+bits don't apply) — a file readable by `Everyone`, `Authenticated Users`, or
+`BUILTIN\Users` counts as world-readable. When readability can't be determined the field
+is reported as **unknown** (null) rather than "private", so the server neither penalizes
+nor vouches for it. Install/schedule it with `warden-desktop.ps1 install`, which registers
+a daily 03:00 task — it needs a system **Python 3** (this scanner is stdlib Python, unlike
+the bundled-interpreter proxy) and tells you plainly if none is found.
+
 ```bash
 warden-secrets                     # scan + report to Warden
 warden-secrets --dry-run           # print findings locally, send nothing

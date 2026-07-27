@@ -97,7 +97,9 @@ class SecretAtRest(BaseModel):
     secret_types: list[str] = Field(default_factory=list)
     masked: str = ""             # e.g. "ghp_••••4f2a" — redacted preview, never the secret
     line: int = 0
-    world_readable: bool = False
+    # True/False when the scanner could determine it; None = unknown (e.g. Windows ACL
+    # lookup unavailable). None must NOT be read as "private" — it carries no signal.
+    world_readable: bool | None = False
     verified: bool = False       # a scanner confirmed the credential is live (TruffleHog)
     source: str = ""             # detection engine: "warden" | "trufflehog" | "gitleaks" | …
 
