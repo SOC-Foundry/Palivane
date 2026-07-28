@@ -23,6 +23,8 @@ from .models import Tenant
 #   sso          — SSO: OIDC and SAML                    (Enterprise)
 #   siem         — SIEM HTTP forwarding (Splunk/CEF/...) (Enterprise)
 #   s3_delivery  — findings delivery to S3               (Enterprise)
+#   judge        — managed LLM judge (operator-funded)    (Enterprise; SaaS only, when
+#                  WARDEN_JUDGE_PLAN_GATED is on — self-hosted brings its own key)
 PLANS: dict[str, dict] = {
     "free": {
         "label": "Free",
@@ -38,7 +40,8 @@ PLANS: dict[str, dict] = {
     },
     "enterprise": {
         "label": "Enterprise",
-        "features": frozenset({"alerts", "mdm", "sso", "siem", "s3_delivery", "device_setup"}),
+        "features": frozenset({"alerts", "mdm", "sso", "siem", "s3_delivery", "judge",
+                               "device_setup"}),
         "quotas": {},
     },
 }
@@ -102,9 +105,10 @@ FEATURE_LABELS: dict[str, str] = {
     "sso": "SSO — OIDC & SAML",
     "siem": "SIEM forwarding (Splunk HEC · CEF · JSON)",
     "s3_delivery": "S3 / data-lake delivery",
+    "judge": "Managed LLM judge (semantic detection)",
 }
 # Order features present-to-absent across tiers for a stable comparison table.
-_FEATURE_ORDER = ("device_setup", "alerts", "mdm", "sso", "siem", "s3_delivery")
+_FEATURE_ORDER = ("device_setup", "alerts", "mdm", "sso", "siem", "s3_delivery", "judge")
 
 
 def catalog(tenant: Tenant | None = None) -> dict:

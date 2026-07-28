@@ -280,6 +280,13 @@ Confirm with `curl .../api/health` — `judge_enabled` flips to `true`, and `jud
 / `judge_model` show the selection. Switch models with `JUDGE_MODEL` (e.g. `claude-haiku-4-5` for cheap
 high-volume triage).
 
+> **Self-hosted keeps the judge on for every tenant.** The key you set is *yours*, so
+> the judge runs for all orgs on the instance (each org can still opt out for
+> data-residency via its settings). Plan-gating — where the judge is a paid entitlement —
+> is a managed-SaaS control (`WARDEN_JUDGE_PLAN_GATED`, off by default); leave it unset
+> self-hosted. If you never set a provider key, Warden simply runs offline-only, which is
+> a fully supported mode.
+
 ---
 
 ## 6. (Optional) Apply a license — Team / Enterprise tiers

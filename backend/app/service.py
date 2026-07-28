@@ -100,7 +100,16 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     # A tenant can opt out of the LLM judge (it ships content to the judge provider).
     tenant = db.get(Tenant, tenant_id) if tenant_id is not None else None
     include_judge = not (tenant is not None and tenant.judge_enabled is False)
+    # On the managed SaaS the judge is operator-funded, so it is a paid entitlement: when
+    # plan-gating is on, a tenant whose plan lacks the "judge" feature runs offline-only
+    # (self-hosted leaves gating off and runs the operator's own key for everyone).
+    if include_judge and settings.judge_plan_gated:
+        from .plans import has_feature
+        include_judge = has_feature(tenant, "judge")
     verdict = engine.analyze(item, include_judge=include_judge)
+    # Did the judge actually participate? (a provider is configured AND it ran for this
+    # tenant) — recorded on the finding so judge_used is honest per-tenant, not global.
+    judge_ran = include_judge and engine.judge_enabled
     # Per-tenant policy: drop signals for checks the admin has disabled, then apply any
     # per-tool suppression the caller passed. Either may re-score the verdict. A per-user or
     # per-group override (resolved from the finding's actor) replaces the tenant default.
@@ -138,7 +147,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             prior.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
             db.commit()
             return {"finding_id": prior.id, "recurrence": prior.seen_count,
-                    "judge_used": engine.judge_enabled, **result}
+                    "judge_used": judge_ran, **result}
         finding = Finding(
             tenant_id=tenant_id,
             fingerprint=fp,
@@ -154,7 +163,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             ai_generated=verdict.ai_generated,
             attack_intent=verdict.attack_intent,
             signals=result["signals"],
-            judge_used=engine.judge_enabled,
+            judge_used=judge_ran,
         )
         db.add(finding)
         db.commit()
@@ -184,4 +193,4 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                                {**result, "finding_id": finding_id},
                                subject=item.subject, actor=item.sender,
                                surface=item.surface.value, org=tenant.slug)
-    return {"finding_id": finding_id, "judge_used": engine.judge_enabled, **result}
+    return {"finding_id": finding_id, "judge_used": judge_ran, **result}

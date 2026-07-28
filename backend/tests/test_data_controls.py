@@ -47,6 +47,38 @@ def test_judge_off_is_honored_end_to_end(client, db_factory):
         engine_mod.engine.judge.analyze = orig
 
 
+def test_managed_judge_is_plan_gated(db_factory, monkeypatch):
+    # On the managed SaaS the judge is operator-funded, so WARDEN_JUDGE_PLAN_GATED makes it
+    # a paid entitlement: a Free tenant runs offline-only; an Enterprise tenant gets it.
+    from app import service, users as users_cli
+    fake = Signal(category=Category.AI_GENERATED, title="judge ran", detail="",
+                  weight=0.9, confidence=0.9, detector="llm_judge")
+    monkeypatch.setattr(service.engine.judge, "analyze", lambda item: [fake])
+    monkeypatch.setattr(service.engine.judge, "_backends", [("x", object(), "m")])  # judge "configured"
+    monkeypatch.setattr(service.settings, "judge_plan_gated", True)
+
+    db = db_factory()
+    users_cli.create_tenant(db, "freeco", "Freeco", plan="free")
+    users_cli.create_tenant(db, "entco", "Entco", plan="enterprise")
+    free_id = db.query(Tenant).filter(Tenant.slug == "freeco").first().id
+    ent_id = db.query(Tenant).filter(Tenant.slug == "entco").first().id
+    item = AnalysisInput(content="hello", surface=Surface.LLM_IO)
+
+    free = service.run_analysis(item, persist=False, db=db, tenant_id=free_id)
+    ent = service.run_analysis(item, persist=False, db=db, tenant_id=ent_id)
+    assert free["judge_used"] is False
+    assert not any(s["title"] == "judge ran" for s in free["signals"])
+    assert ent["judge_used"] is True
+    assert any(s["title"] == "judge ran" for s in ent["signals"])
+
+    # Self-hosted (gating off, the default) runs the operator's key for everyone, incl. Free.
+    monkeypatch.setattr(service.settings, "judge_plan_gated", False)
+    free2 = service.run_analysis(item, persist=False, db=db, tenant_id=free_id)
+    assert free2["judge_used"] is True
+    assert any(s["title"] == "judge ran" for s in free2["signals"])
+    db.close()
+
+
 def test_retention_purge_deletes_only_old_findings(client, db_factory):
     db = db_factory()
     tid = db.query(Tenant).filter(Tenant.slug == "acme").first().id

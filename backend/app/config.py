@@ -17,6 +17,11 @@ class Settings:
     # Model for the judgment call. Empty = a sensible per-provider default. Override for
     # cost/latency (e.g. claude-haiku-4-5, gpt-4o-mini, gemini-2.5-flash) via JUDGE_MODEL.
     judge_model: str = os.getenv("JUDGE_MODEL", "")
+    # Whether the LLM judge is a plan-gated entitlement. On the managed SaaS the judge key
+    # is operator-funded, so it is bundled only into the paid tier(s) that carry the "judge"
+    # feature (see app/plans.py). Self-hosted leaves this off (default): the operator sets
+    # their own provider key and the judge runs for everyone whenever a key is configured.
+    judge_plan_gated: bool = os.getenv("WARDEN_JUDGE_PLAN_GATED", "").lower() in ("1", "true", "yes")
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./warden.db")
     cors_origins: str = os.getenv("CORS_ORIGINS", "http://localhost:5173")
     # Reject request bodies larger than this (DoS/OOM guard); ~12 MB default.
