@@ -14,10 +14,14 @@ the offline detectors alone.
 
 from __future__ import annotations
 
+import logging
+
 from pydantic import BaseModel, Field
 
 from ..config import settings
 from .base import AnalysisInput, Category, Signal, Surface
+
+log = logging.getLogger("warden.judge")
 
 _CATEGORY_MAP = {
     "ai_generated": Category.AI_GENERATED,
@@ -155,26 +159,35 @@ def _resolve_key(provider: str) -> str:
     return ""
 
 
-def _build_backend():
-    """Pick a provider per JUDGE_PROVIDER and build its backend, or (None, None, None)."""
+def _build_backends():
+    """Build EVERY configured provider's backend, in priority order, for runtime failover.
+
+    A specific JUDGE_PROVIDER is primary; the rest (whichever also have keys) become
+    fallbacks so a billing/outage error on one provider doesn't silently take the judge
+    offline. 'auto' orders anthropic > openai > gemini. Returns [(provider, backend, model)]."""
     want = (settings.judge_provider or "auto").strip().lower()
     if want == "none":
-        return None, None, None
+        return []
 
-    order = [want] if want in _DEFAULT_MODELS else ["anthropic", "openai", "gemini"]
+    order = ["anthropic", "openai", "gemini"]
+    if want in _DEFAULT_MODELS:                      # honor an explicit choice as primary
+        order = [want] + [p for p in order if p != want]
     ctors = {"anthropic": _AnthropicBackend, "openai": _OpenAIBackend, "gemini": _GeminiBackend}
 
+    built = []
     for provider in order:
         key = _resolve_key(provider)
         if not key:
             continue
-        model = settings.judge_model or _DEFAULT_MODELS[provider]
+        # JUDGE_MODEL only applies to the primary provider; fallbacks use their own default
+        # (a Claude model id would be invalid for GPT/Gemini).
+        model = (settings.judge_model or _DEFAULT_MODELS[provider]) if provider == want \
+            else _DEFAULT_MODELS[provider]
         try:
-            backend = ctors[provider](key, model)
-        except Exception:  # SDK missing / bad key — try the next candidate
+            built.append((provider, ctors[provider](key, model), model))
+        except Exception:  # SDK missing / bad key — skip this candidate
             continue
-        return provider, backend, model
-    return None, None, None
+    return built
 
 
 class LLMJudgeDetector:
@@ -182,18 +195,40 @@ class LLMJudgeDetector:
     surfaces: set[Surface] = set()  # the analyst reads everything, every surface
 
     def __init__(self) -> None:
-        self.provider, self._backend, self.model = _build_backend()
+        self._backends = _build_backends()
+        # Primary provider (for health/display); the actual one used may differ on failover.
+        self.provider, _, self.model = self._backends[0] if self._backends else (None, None, None)
 
     @property
     def enabled(self) -> bool:
-        return self._backend is not None
+        return bool(self._backends)
 
     @property
     def label(self) -> str:
         return _PROVIDER_LABELS.get(self.provider, "LLM judge")
 
+    def _run_with_failover(self, system: str, user: str):
+        """Try each configured provider in order; fall over on any error (billing, outage,
+        rate limit). Returns (verdict, provider_label) or (None, None) if all providers fail.
+        Failures are logged loudly — a dead provider must never silently disable the judge."""
+        last_exc = None
+        for provider, backend, model in self._backends:
+            try:
+                verdict = backend.run(system, user)
+                if last_exc is not None:
+                    log.warning("judge: failed over to %s/%s after prior provider error", provider, model)
+                return verdict, _PROVIDER_LABELS.get(provider, provider)
+            except Exception as exc:
+                last_exc = exc
+                log.warning("judge: provider %s/%s failed (%s: %s) — trying next",
+                            provider, model, type(exc).__name__, str(exc)[:160])
+        log.error("judge: ALL providers failed (%d configured); last error %s: %s — running "
+                  "offline detectors only", len(self._backends), type(last_exc).__name__,
+                  str(last_exc)[:160])
+        return None, None
+
     def analyze(self, item: AnalysisInput) -> list[Signal]:
-        if not self._backend:
+        if not self._backends:
             return []
 
         # Give the judge a de-obfuscated view too (homoglyphs/fullwidth/zero-width/leetspeak
@@ -210,21 +245,19 @@ class LLMJudgeDetector:
             f"Subject: {item.subject or '(none)'}\n"
             f"---\n{item.content}{deobf}"
         )
-        try:
-            verdict = self._backend.run(SYSTEM_PROMPT, user_content)
-        except Exception as exc:  # network/auth/parse failure — don't sink the request
+        verdict, used_label = self._run_with_failover(SYSTEM_PROMPT, user_content)
+        if used_label is None:  # every configured provider errored — degrade, but loudly
             return [Signal(
                 category=Category.AI_GENERATED,
                 title="LLM judge unavailable",
-                detail=f"{self.label} analysis skipped: {type(exc).__name__}",
+                detail="all configured judge providers failed — running offline detectors only",
                 weight=0.0, confidence=0.0, detector=self.name,
             )]
-
-        if verdict is None:
+        if verdict is None:     # a provider ran but returned no verdict
             return []
 
         signals: list[Signal] = []
-        label = self.label
+        label = used_label
 
         # Headline AI-generation signal from the judge.
         if verdict.ai_generated_likelihood > 0.0:
