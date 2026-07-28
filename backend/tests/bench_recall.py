@@ -532,9 +532,10 @@ def test_recall_floor():
     report = run_bench()
     print_report(report)
     recall = report["detected"] / report["total"]
-    # Lenient floor: this is a regression guard, not a tuning target. If heuristics
-    # regress badly this trips; routine tuning within the band won't flake CI.
-    assert recall >= 0.70, f"overall recall {recall:.1%} fell below the 70% floor"
+    # Regression guard — raised to 0.90 after the file:// sensitive-path fix took overall
+    # recall to ~96.9%. (The remaining misses are terse single-line source_code_leak, a
+    # deliberate FP↔recall tradeoff left to destination-context + the judge.)
+    assert recall >= 0.90, f"overall recall {recall:.1%} fell below the 90% floor"
 
 
 if __name__ == "__main__":

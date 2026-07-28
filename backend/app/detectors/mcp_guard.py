@@ -26,7 +26,9 @@ from .normalize import normalize_for_match
 
 # Paths whose access by an autonomous agent is high-signal (credentials / keys / secrets).
 _SENSITIVE_PATH = re.compile(
-    r"(?:^|[/\\\s\"'=])("
+    # `:` is a valid delimiter too, so a scheme-prefixed path — file:///etc/shadow, which
+    # _norm_path collapses to file:/etc/shadow — is still caught (was a recall miss).
+    r"(?:^|[/\\\s\"'=:])("
     r"\.env(?:\.[\w.-]+)?"
     r"|\.aws[/\\]credentials|\.aws[/\\]config"
     r"|\.ssh[/\\]|id_rsa|id_ed25519|id_ecdsa|id_dsa|[\w.-]+\.pem|[\w.-]+\.key"
