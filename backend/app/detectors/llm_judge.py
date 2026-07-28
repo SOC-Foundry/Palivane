@@ -188,11 +188,19 @@ class LLMJudgeDetector:
         if not self._backend:
             return []
 
+        # Give the judge a de-obfuscated view too (homoglyphs/fullwidth/zero-width/leetspeak
+        # folded), so an attacker can't hide intent from the semantic layer the way they hide
+        # it from the regexes. Appended, not substituted — the raw text is still the evidence.
+        from .normalize import leet_fold, normalize_for_match
+        views = {v for v in (normalize_for_match(item.content), leet_fold(item.content))
+                 if v and v != item.content}
+        deobf = ("\n---\n(de-obfuscated view — homoglyphs/spacing/leetspeak folded, for intent "
+                 "analysis)\n" + "\n".join(sorted(views))) if views else ""
         user_content = (
             f"Channel: {item.channel}\n"
             f"Sender: {item.sender or 'unknown'}\n"
             f"Subject: {item.subject or '(none)'}\n"
-            f"---\n{item.content}"
+            f"---\n{item.content}{deobf}"
         )
         try:
             verdict = self._backend.run(SYSTEM_PROMPT, user_content)
