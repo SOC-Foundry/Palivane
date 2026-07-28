@@ -323,7 +323,7 @@ def run_bench():
 # MCP-command + secret surface normalization brought it to 22. The rest are FP-risky folds
 # (single-space word-splitting, leetspeak) and non-English keywords — left for later. This
 # fails only if a change RE-OPENS a bypass, pushing the count back up.
-BYPASS_CEILING = 24
+BYPASS_CEILING = 20
 
 
 def test_evasion_bench():

@@ -27,6 +27,18 @@ _HOMOGLYPHS = {
 _HOMOGLYPH_TABLE = {ord(k): v for k, v in _HOMOGLYPHS.items()}
 
 
+# Leetspeak → letters, for a SECONDARY keyword-match view only (never for secret/PII regexes,
+# which need real digits). Safe because attack keyword lists are multi-word phrases — benign
+# text almost never folds into "ignore all previous instructions".
+_LEET_TABLE = {ord(k): v for k, v in
+               {"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "@": "a", "$": "s"}.items()}
+
+
+def leet_fold(text: str) -> str:
+    """A leetspeak-folded view of the normalized text ('1gn0r3' → 'ignore')."""
+    return normalize_for_match(text).translate(_LEET_TABLE)
+
+
 def normalize_for_match(text: str) -> str:
     """Return a folded view of `text` for keyword matching (NFKC, no zero-width,
     homoglyphs→Latin, collapsed whitespace)."""

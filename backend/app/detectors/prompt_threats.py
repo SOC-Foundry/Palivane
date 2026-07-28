@@ -26,7 +26,7 @@ import re
 import urllib.parse
 
 from .base import AnalysisInput, Category, Signal, Surface
-from .normalize import normalize_for_match
+from .normalize import leet_fold, normalize_for_match
 from .patterns import find_secrets
 
 # --- Prompt injection: hijacking the model's instructions -----------------------------
@@ -142,7 +142,9 @@ class PromptThreatDetector:
                     norm = norm + "\n" + normalize_for_match(dec)
             except (ValueError, UnicodeDecodeError):
                 pass
-        low = norm.lower()
+        # A leetspeak-folded view catches '1gn0r3 @ll pr3v10u5 1n57ruc710n5'. Kept separate
+        # (appended for keyword matching only) so folded digits never reach secret/PII regexes.
+        low = (norm + "\n" + leet_fold(text)).lower()
         signals: list[Signal] = []
 
         inj_terms = [t for t in INJECTION_TERMS if t not in _CODE_FP_TERMS] \
