@@ -53,3 +53,22 @@ def test_export_findings_jsonl(client):
     assert "application/x-ndjson" in r.headers.get("content-type", "")
     lines = [ln for ln in r.text.splitlines() if ln.strip()]
     assert lines and '"severity"' in lines[0]
+
+
+def test_judge_down_alert_fires_only_with_webhook(monkeypatch):
+    sent = []
+    monkeypatch.setattr(alerts, "send_sync", lambda url, payload, **k: sent.append((url, payload)) or True)
+    h = {"configured": True, "ok": False, "last_error": "BadRequestError: credit balance too low",
+         "consecutive_failures": 3}
+    assert alerts.notify_judge_down("", h) is False and sent == []          # no webhook -> no-op
+    assert alerts.notify_judge_down("https://hook", h) is True
+    url, payload = sent[-1]
+    assert url == "https://hook" and payload["warden"]["event"] == "judge_down"
+    assert "credit balance" in payload["text"]
+    assert alerts.notify_judge_recovered("https://hook", h) is True
+    assert sent[-1][1]["warden"]["event"] == "judge_recovered"
+
+
+def test_health_endpoint_reports_judge_healthy(client):
+    body = client.get("/api/health").json()
+    assert "judge_healthy" in body   # None when no provider configured in tests

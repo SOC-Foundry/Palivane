@@ -198,6 +198,16 @@ class LLMJudgeDetector:
         self._backends = _build_backends()
         # Primary provider (for health/display); the actual one used may differ on failover.
         self.provider, _, self.model = self._backends[0] if self._backends else (None, None, None)
+        # Live health: ok=None until first call; False once every provider fails a call.
+        self._health = {"ok": None, "last_error": "", "consecutive_failures": 0}
+
+    @property
+    def health(self) -> dict:
+        """Live judge health for /api/health + the ops alert. `configured` is whether any
+        provider is set up at all; `ok` is whether the last call succeeded (None = untested)."""
+        return {"configured": bool(self._backends), "ok": self._health["ok"],
+                "last_error": self._health["last_error"],
+                "consecutive_failures": self._health["consecutive_failures"]}
 
     @property
     def enabled(self) -> bool:
@@ -217,11 +227,14 @@ class LLMJudgeDetector:
                 verdict = backend.run(system, user)
                 if last_exc is not None:
                     log.warning("judge: failed over to %s/%s after prior provider error", provider, model)
+                self._health.update(ok=True, last_error="", consecutive_failures=0)
                 return verdict, _PROVIDER_LABELS.get(provider, provider)
             except Exception as exc:
                 last_exc = exc
                 log.warning("judge: provider %s/%s failed (%s: %s) — trying next",
                             provider, model, type(exc).__name__, str(exc)[:160])
+        self._health["consecutive_failures"] += 1
+        self._health.update(ok=False, last_error=f"{type(last_exc).__name__}: {str(last_exc)[:160]}")
         log.error("judge: ALL providers failed (%d configured); last error %s: %s — running "
                   "offline detectors only", len(self._backends), type(last_exc).__name__,
                   str(last_exc)[:160])

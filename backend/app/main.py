@@ -90,10 +90,20 @@ async def lifespan(_app: FastAPI):
         from . import alerts, metering
         from .database import SessionLocal
         ticks = 0
+        judge_alerted = False   # edge-trigger so a down judge pages once, not every tick
         while True:
             try:
                 await asyncio.sleep(300)   # 5-minute tick; per-tenant hourly/daily gating in run_digests
                 ticks += 1
+                # Judge health: page the operator (once) when the judge goes down and once
+                # when it recovers — so exhausted credits / an outage can't sit silent.
+                jh = engine.judge.health
+                if jh["configured"] and jh["ok"] is False and not judge_alerted:
+                    alerts.notify_judge_down(settings.ops_webhook, jh)
+                    judge_alerted = True
+                elif jh["ok"] is True and judge_alerted:
+                    alerts.notify_judge_recovered(settings.ops_webhook, jh)
+                    judge_alerted = False
                 db = SessionLocal()
                 try:
                     await asyncio.to_thread(alerts.run_digests, db)
@@ -225,6 +235,10 @@ def health():
         "judge_enabled": engine.judge_enabled,
         "judge_model": engine.judge.model if engine.judge_enabled else None,
         "judge_provider": engine.judge.provider if engine.judge_enabled else None,
+        # Live judge health for monitoring: True/False once exercised, None until first call,
+        # null when no provider is configured. A content-check on this pages when the judge
+        # silently degrades (e.g. exhausted API credits).
+        "judge_healthy": engine.judge.health["ok"] if engine.judge_enabled else None,
         "allow_signup": settings.allow_signup,
         "email_enabled": email_mod.enabled(),
         # Self-hosted licensing (see app/licensing.py); absent on the hosted SaaS where

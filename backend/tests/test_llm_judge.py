@@ -71,3 +71,18 @@ def test_build_orders_primary_then_fallbacks(monkeypatch):
 def test_provider_none_disables_judge(monkeypatch):
     monkeypatch.setattr(lj.settings, "judge_provider", "none")
     assert lj._build_backends() == []
+
+
+def test_health_tracks_ok_and_down():
+    det = LLMJudgeDetector()
+    det._backends = [("openai", _Good(), "gpt-4o")]
+    det.analyze(_ITEM)
+    assert det.health["ok"] is True and det.health["configured"] is True
+    det._backends = [("anthropic", _Boom(), "claude-x")]
+    det.analyze(_ITEM)
+    assert det.health["ok"] is False and det.health["consecutive_failures"] >= 1
+    assert "credit balance" in det.health["last_error"]
+    # recovery flips it back
+    det._backends = [("openai", _Good(), "gpt-4o")]
+    det.analyze(_ITEM)
+    assert det.health["ok"] is True and det.health["consecutive_failures"] == 0
