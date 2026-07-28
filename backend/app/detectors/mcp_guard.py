@@ -22,6 +22,7 @@ import re
 
 from ..config import settings
 from .base import AnalysisInput, Category, Signal, Surface
+from .normalize import normalize_for_match
 
 # Paths whose access by an autonomous agent is high-signal (credentials / keys / secrets).
 _SENSITIVE_PATH = re.compile(
@@ -148,8 +149,9 @@ class MCPGuardDetector:
                 evidence=f"tool={tool or method} path={mres.group(1)}",
             ))
 
-        # 3) Dangerous command execution.
-        mcmd = _DANGEROUS_CMD.search(args_text)
+        # 3) Dangerous command execution. Scan a normalized view too, so homoglyph / fullwidth
+        # / zero-width obfuscation of `curl … | sh` can't slip past the raw-text pattern.
+        mcmd = _DANGEROUS_CMD.search(args_text) or _DANGEROUS_CMD.search(normalize_for_match(args_text))
         if mcmd:
             signals.append(Signal(
                 category=Category.DANGEROUS_COMMAND,
@@ -159,9 +161,11 @@ class MCPGuardDetector:
                 evidence=f"tool={tool}",
             ))
 
-        # 4) Tool poisoning — injection hidden in a tool description.
+        # 4) Tool poisoning — injection hidden in a tool description (scan a normalized view
+        # so homoglyph / zero-width / fullwidth obfuscation of the directive can't hide it).
         for desc in descriptions:
-            if isinstance(desc, str) and _TOOL_POISON.search(desc):
+            if isinstance(desc, str) and (_TOOL_POISON.search(desc)
+                                          or _TOOL_POISON.search(normalize_for_match(desc))):
                 signals.append(Signal(
                     category=Category.TOOL_POISONING,
                     title="Poisoned MCP tool description",

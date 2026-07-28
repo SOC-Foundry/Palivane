@@ -319,14 +319,22 @@ def run_bench():
     return baseline_ok, rows, bypasses
 
 
+# Regression guard. Started at 37 bypasses; the hex/URL decode, newline-collapse, and
+# MCP-command + secret surface normalization brought it to 22. The rest are FP-risky folds
+# (single-space word-splitting, leetspeak) and non-English keywords — left for later. This
+# fails only if a change RE-OPENS a bypass, pushing the count back up.
+BYPASS_CEILING = 24
+
+
 def test_evasion_bench():
-    """Lenient: always passes. Prints the matrix + bypass list; never fails CI."""
+    """Prints the matrix + bypass list; asserts the bypass count doesn't regress upward."""
     baseline_ok, rows, bypasses = run_bench()
-    # Surface baseline regressions as a soft note, but do not fail.
     missing_baseline = [p for p, ok in baseline_ok.items() if not ok]
     if missing_baseline:
         print(f"\nNOTE: base payloads that did not detect plain: {missing_baseline}")
-    assert True
+    assert len(bypasses) <= BYPASS_CEILING, (
+        f"{len(bypasses)} evasion bypasses exceeds the {BYPASS_CEILING} regression ceiling — "
+        f"a change re-opened an evasion gap.")
 
 
 if __name__ == "__main__":
