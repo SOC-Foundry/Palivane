@@ -113,9 +113,33 @@ def extract_pinned(content: str, subject: str = "") -> list[tuple[str, str, str]
     return pins
 
 
+_MANIFEST_KEYS = {"dependencies", "devDependencies", "scripts"}
+_JSON_DECODER = json.JSONDecoder()
+_REQUIREMENTS_RE = re.compile(r"\brequirements[\w.-]*\.txt\b", re.I)
+
+
+def _extract_manifest_json(content: str) -> str | None:
+    """Find an npm-manifest-shaped JSON object in free text (has dependencies / scripts) and
+    return just that JSON substring — so a package.json written via a tool call is caught even
+    when the content is prefixed by the file path. None if there's no such manifest."""
+    i = content.find("{")
+    while i != -1:
+        try:
+            obj, end = _JSON_DECODER.raw_decode(content, i)
+        except ValueError:
+            i = content.find("{", i + 1)
+            continue
+        if isinstance(obj, dict) and (obj.keys() & _MANIFEST_KEYS):
+            return content[i:end]
+        i = content.find("{", i + 1)
+    return None
+
+
 class DepGuardDetector:
     name = "dep_guard"
-    surfaces: set[Surface] = {Surface.DEPS}
+    # DEPS = the /api/scan/deps manifest scan; MCP = a manifest written via an agent tool call
+    # (a package.json Write), which would otherwise only trip the generic dangerous_command check.
+    surfaces: set[Surface] = {Surface.DEPS, Surface.MCP}
 
     def analyze(self, item: AnalysisInput) -> list[Signal]:
         fname = (item.subject or "").lower()
@@ -124,9 +148,21 @@ class DepGuardDetector:
         # Per-tenant denylist (metadata) over the global default, always plus the built-in.
         extra = m["dep_denylist"] if "dep_denylist" in m else settings.dep_denylist
         deny = _BUILTIN_DENYLIST | {s.strip().lower() for s in str(extra or "").split(",") if s.strip()}
-        if fname.endswith(".json") or content.lstrip().startswith("{"):
-            return self._scan_package_json(content, deny)
-        return self._scan_requirements(content, deny)
+
+        # DEPS: the caller (scan_deps) guarantees the content IS a manifest, keyed by filename.
+        if item.surface == Surface.DEPS:
+            if fname.endswith(".json") or content.lstrip().startswith("{"):
+                return self._scan_package_json(content, deny)
+            return self._scan_requirements(content, deny)
+
+        # Any other surface (e.g. an MCP Write of package.json): only act on content that
+        # clearly IS a manifest, so arbitrary tool-call text can't false-positive.
+        pkg = _extract_manifest_json(content)
+        if pkg is not None:
+            return self._scan_package_json(pkg, deny)
+        if _REQUIREMENTS_RE.search(content):
+            return self._scan_requirements(content, deny)
+        return []
 
     def _sig(self, title: str, detail: str, evidence: str, weight: float, conf: float) -> Signal:
         return Signal(category=Category.DEPENDENCY_RISK, title=title, detail=detail,

@@ -149,12 +149,15 @@ class PromptThreatDetector:
         exfil_re = EXFIL_RE.search(norm)
         if exfil or exfil_re:
             evidence = ", ".join(exfil[:5]) or (exfil_re.group(0)[:60] if exfil_re else "")
-            confidence = min(1.0, 0.5 + 0.15 * len(exfil)) if exfil else 0.65
+            # A direct "repeat/print everything above … verbatim" is a realistic exfil attempt
+            # on par with an instruction-override injection — weight it to clear the block
+            # threshold rather than sit at warn (a single phrase => ~0.75 confidence).
+            confidence = min(1.0, 0.6 + 0.15 * len(exfil)) if exfil else 0.65
             signals.append(Signal(
                 category=Category.DATA_EXFILTRATION,
                 title="System-prompt / data exfiltration attempt",
                 detail="Input tries to extract the hidden system prompt, rules, or context data.",
-                weight=0.7, confidence=confidence,
+                weight=0.8, confidence=confidence,
                 detector=self.name, evidence=evidence,
             ))
 

@@ -128,6 +128,12 @@ CODE_MARKERS = [
     re.compile(r"\b(SELECT|INSERT|UPDATE|DELETE)\b.+\bFROM\b", re.IGNORECASE),
     re.compile(r"(mongodb|postgres|postgresql|mysql|redis)://", re.IGNORECASE),
     re.compile(r"=>|::|\bconst\s+\w+\s*="),
+    # A body: a return statement, an indented assignment, or a decorator — so a single real
+    # function (def + return) clears the ≥2-marker bar instead of scoring zero unless it also
+    # carries explicit "confidential/proprietary" label words.
+    re.compile(r"\breturn\s+\S"),
+    re.compile(r"^\s+[\w.\[\]]+\s*[-+*/|&]?=\s*\S", re.MULTILINE),
+    re.compile(r"^\s*@\w+", re.MULTILINE),
 ]
 
 # --- Destination: known external AI tools -----------------------------------------------

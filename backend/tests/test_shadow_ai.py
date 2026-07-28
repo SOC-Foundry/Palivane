@@ -306,3 +306,14 @@ def test_first_party_client_destination_not_unsanctioned():
         assert Category.UNSANCTIONED_AI not in _cats("hello there", destination=client)
     # A real external consumer tool still flags.
     assert Category.UNSANCTIONED_AI in _cats("hello there", destination="chatgpt.com")
+
+
+def test_source_code_leak_fires_on_a_lone_function():
+    # A single proprietary function (def + return) should score source_code_leak even without
+    # explicit "confidential/proprietary" label words.
+    code = ('def calc_discount(tier, value, floor=0.34):\n'
+            '    return value * (1 - floor) if tier == "enterprise" else value')
+    assert Category.SOURCE_CODE_LEAK in {s.category for s in det._scan_proprietary(code)}
+    # ...but ordinary prose using the words return/if/else must not.
+    prose = "Please return the item if it is broken, otherwise keep it and let me know."
+    assert Category.SOURCE_CODE_LEAK not in {s.category for s in det._scan_proprietary(prose)}
