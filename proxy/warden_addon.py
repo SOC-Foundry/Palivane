@@ -39,6 +39,9 @@ import urllib.error
 import urllib.request
 
 # Outbound destinations we inspect (suffix match on the request host).
+
+# Reported in the User-Agent so the console can inventory client builds per device.
+VERSION = "1.1.0"
 AI_HOST_SUFFIXES = (
     "api.openai.com", "chatgpt.com", "chat.openai.com",
     "api.anthropic.com", "claude.ai",
@@ -311,7 +314,7 @@ def scan(content: str, destination: str, tool: str = "",
             base + "/api/ingest/ai-usage", method="POST",
             data=json.dumps({"content": content, "destination": destination, "tool": tool,
                              "user": os.getenv("WARDEN_PROXY_USER", "")}).encode(),
-            headers={"content-type": "application/json", "User-Agent": "warden-proxy/1.0", "X-Warden-Token": tok},
+            headers={"content-type": "application/json", "User-Agent": f"warden-proxy/{VERSION}", "X-Warden-Token": tok},
         )
         with urllib.request.urlopen(req, timeout=timeout) as r:
             out = json.loads(r.read())
@@ -503,7 +506,7 @@ def scan_mcp(activity: dict, server: str = "", transport: str = "http",
         req = urllib.request.Request(
             base + "/api/ingest/mcp", method="POST",
             data=json.dumps(payload).encode(),
-            headers={"content-type": "application/json", "User-Agent": "warden-proxy/1.0", "X-Warden-Token": tok},
+            headers={"content-type": "application/json", "User-Agent": f"warden-proxy/{VERSION}", "X-Warden-Token": tok},
         )
         with urllib.request.urlopen(req, timeout=timeout) as r:
             out = json.loads(r.read())

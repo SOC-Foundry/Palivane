@@ -38,6 +38,10 @@ from datetime import datetime, timezone
 
 CACHE_PATH = "~/.warden/posture-cache.json"
 
+# Reported in the User-Agent so the console's Fleet view can show which client build each
+# device runs (and flag the stale ones). Bump when the client contract changes.
+VERSION = "1.1.0"
+
 # MCP config files posted raw (path label → filesystem path).
 _RAW_MCP_CONFIGS = (
     ("./.mcp.json", ".mcp.json"),
@@ -219,12 +223,127 @@ def _post(cfg: dict, api_path: str, body: dict, timeout: float = 10.0) -> bool:
     try:
         req = urllib.request.Request(
             cfg["url"] + api_path, method="POST", data=json.dumps(body).encode(),
-            headers={"content-type": "application/json", "User-Agent": "warden-posture/1.0", "X-Warden-Token": cfg["token"]},
+            headers={"content-type": "application/json", "User-Agent": f"warden-posture/{VERSION}", "X-Warden-Token": cfg["token"]},
         )
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return 200 <= r.status < 300
     except Exception:
         return False
+
+
+# --- self-update ------------------------------------------------------------------------
+# Warden's *decisions* are server-side, so detector/policy/judge changes reach every device
+# the moment the backend deploys — nothing here is needed for those. What DOES go stale on
+# disk is the plumbing: these hook scripts, the proxy addon, and warden-secrets' local
+# patterns. This refreshes those from the backend that already governs the device.
+#
+# Rules, in order of importance:
+#   * Only ever replace files that already exist locally (never install new tools silently).
+#   * Verify the sha256 from the manifest BEFORE swapping; a mismatch aborts that file.
+#   * Swap atomically (temp file in the same dir + os.replace), so a killed process can't
+#     leave a half-written hook — the old one keeps working.
+#   * Skip anything not writable by us (MDM-managed copies under /usr/local/bin stay the
+#     MDM's job) and honor WARDEN_NO_SELF_UPDATE=1 plus the server's own kill switch.
+#   * Never block a session: throttled to once a day, and every failure is silent.
+_UPDATE_INTERVAL_S = 86400
+# Where installed copies live: the CLI tools in ~/.warden/bin, the proxy addon in ~/.warden.
+_UPDATE_DIRS = ("~/.warden/bin", "~/.warden")
+
+
+def _self_update_disabled() -> bool:
+    return (os.getenv("WARDEN_NO_SELF_UPDATE", "") or "").lower() in ("1", "true", "yes")
+
+
+def _fetch(url: str, token: str, timeout: float = 20.0) -> bytes | None:
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": f"warden-posture/{VERSION}", "X-Warden-Token": token})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            if not (200 <= r.status < 300):
+                return None
+            return r.read()
+    except Exception:
+        return None
+
+
+def _installed_paths(name: str) -> list[str]:
+    """Local copies of `name` we're allowed to touch (existing + writable files only)."""
+    out = []
+    for d in _UPDATE_DIRS:
+        p = os.path.join(os.path.expanduser(d), name)
+        if os.path.isfile(p) and os.access(p, os.W_OK):
+            out.append(p)
+    return out
+
+
+def _replace_atomic(path: str, blob: bytes) -> bool:
+    """Write `blob` over `path` atomically, preserving its executable bit."""
+    tmp = f"{path}.warden-new"
+    try:
+        mode = os.stat(path).st_mode
+        with open(tmp, "wb") as f:
+            f.write(blob)
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)       # atomic within the same filesystem
+        return True
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return False
+
+
+def self_update(cfg: dict, cache: dict, force: bool = False,
+                dry_run: bool = False, say=print) -> int:
+    """Refresh installed Warden scripts whose hash differs from the backend's manifest.
+    Returns the number updated (0 on any skip/failure — this never raises)."""
+    if _self_update_disabled():
+        return 0
+    last = cache.get("update_checked_at_epoch") or 0
+    now = int(datetime.now(timezone.utc).timestamp())
+    if not force and (now - last) < _UPDATE_INTERVAL_S:
+        return 0
+    cache["update_checked_at_epoch"] = now
+
+    raw = _fetch(cfg["url"].rstrip("/") + "/cli/manifest.json", cfg["token"])
+    if raw is None:
+        return 0
+    try:
+        manifest = json.loads(raw)
+        files = manifest["files"]
+    except Exception:
+        return 0
+    if manifest.get("self_update") is False:      # server-side kill switch
+        return 0
+
+    updated = 0
+    for name, meta in sorted(files.items()):
+        want = (meta or {}).get("sha256", "")
+        if not want:
+            continue
+        for path in _installed_paths(name):
+            try:
+                with open(path, "rb") as f:
+                    have = hashlib.sha256(f.read()).hexdigest()
+            except OSError:
+                continue
+            if have == want:
+                continue
+            if dry_run:
+                say(f"would update {name} ({path})")
+                updated += 1
+                continue
+            blob = _fetch(f"{cfg['url'].rstrip('/')}/cli/{name}", cfg["token"])
+            if blob is None:
+                continue
+            if hashlib.sha256(blob).hexdigest() != want:
+                say(f"skipped {name}: hash mismatch (served content != manifest)")
+                continue
+            if _replace_atomic(path, blob):
+                updated += 1
+                say(f"updated {name} -> {manifest.get('version', '?')} ({path})")
+    return updated
 
 
 def run(cfg: dict, cache_path: str = CACHE_PATH, cwd: str = ".",
@@ -263,9 +382,15 @@ def run(cfg: dict, cache_path: str = CACHE_PATH, cwd: str = ".",
         else:
             say(f"failed {key} (will retry next run)")
 
-    if not dry_run and reported:
+    # Pick up new hook/addon/scanner code (throttled, silent on failure). Runs after the
+    # reports so a bad update can never cost this session its posture data — and at session
+    # START, so nothing is swapped underneath a hook that's mid-invocation.
+    updated = self_update(cfg, cache, force=force, dry_run=dry_run, say=say)
+
+    if not dry_run and (reported or updated or cache.get("update_checked_at_epoch")):
         save_cache(cache_path, cache)
-    say(f"warden-posture: {reported} reported, {skipped} unchanged")
+    tail = f", {updated} updated" if updated else ""
+    say(f"warden-posture: {reported} reported, {skipped} unchanged{tail}")
     return 0
 
 
