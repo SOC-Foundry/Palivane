@@ -51,6 +51,9 @@ import sys
 import urllib.parse
 import urllib.request
 
+
+# Reported in the User-Agent so the console can inventory client builds per device.
+VERSION = "1.1.0"
 _MAX_ARGS_TEXT = 20000
 
 # Events that expect a permission verdict ({"permission": allow|deny|ask}); the odd ones
@@ -225,7 +228,7 @@ def _post(endpoint: str, payload: dict, cfg: dict) -> dict:
         req = urllib.request.Request(
             cfg["url"].rstrip("/") + endpoint, method="POST",
             data=json.dumps(body).encode(),
-            headers={"content-type": "application/json", "User-Agent": "warden-cursor-hook/1.0", "X-Warden-Token": cfg["token"]},
+            headers={"content-type": "application/json", "User-Agent": f"warden-cursor-hook/{VERSION}", "X-Warden-Token": cfg["token"]},
         )
         with urllib.request.urlopen(req, timeout=cfg.get("timeout", 5.0)) as r:
             return json.loads(r.read())

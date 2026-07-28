@@ -61,6 +61,14 @@ class Settings:
     # its token-bearing redirect from THIS, not the client Host header — closing a
     # host-header open-redirect / session-token exfil. Also seeds the trusted-host allowlist.
     public_base_url: str = os.getenv("WARDEN_PUBLIC_URL", "").rstrip("/")
+    # Build identity, surfaced to clients so they can tell whether their installed copies
+    # of the hooks/proxy addon are current (see /cli/manifest.json). The deploy sets it to
+    # the image tag; "dev" locally. Clients compare FILE HASHES from the manifest, not this
+    # string — it's for display, fleet inventory, and staging an update.
+    version: str = os.getenv("WARDEN_VERSION", "dev")
+    # Refuse to serve self-updates (clients keep whatever they have). For fleets that
+    # manage the scripts via MDM and don't want devices pulling their own updates.
+    self_update_enabled: bool = os.getenv("WARDEN_SELF_UPDATE", "true").lower() in ("1", "true", "yes")
     # Comma-separated Host allowlist for TrustedHostMiddleware (empty = disabled).
     allowed_hosts: str = os.getenv("WARDEN_ALLOWED_HOSTS", "")
     # Tenant that capture clients (extension/proxy) attribute findings to (slug or id).

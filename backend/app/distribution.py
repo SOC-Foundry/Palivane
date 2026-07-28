@@ -14,10 +14,12 @@ files on the allowlist are served, resolved from a fixed base dir — no path tr
 
 from __future__ import annotations
 
+import hashlib
 import os
+import re
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from .config import settings
 
@@ -70,6 +72,76 @@ def _resolve(rel: str) -> str | None:
 
 def _base_url() -> str:
     return (settings.public_base_url or "https://warden.tachtech.net").rstrip("/")
+
+
+def _manifest() -> dict:
+    """Version + per-file sha256 of every script this deployment serves.
+
+    Clients (warden-posture's self-update) compare these hashes against their local copies
+    and re-download only what changed — so a backend deploy propagates new hook/addon/
+    scanner code without anyone re-running the installer. Hashes, not the version string,
+    are the source of truth: a client that already matches never downloads anything.
+    Computed once per process (the files are baked into the image)."""
+    global _MANIFEST_CACHE
+    if _MANIFEST_CACHE is None:
+        files: dict[str, dict] = {}
+        for name, rel in _ALLOW.items():
+            path = _resolve(rel)
+            if path is None:
+                continue          # not shipped in this deployment — omit, don't fake it
+            with open(path, "rb") as f:
+                blob = f.read()
+            files[name] = {"sha256": hashlib.sha256(blob).hexdigest(), "size": len(blob)}
+        _MANIFEST_CACHE = {"version": settings.version,
+                           "self_update": settings.self_update_enabled,
+                           "base_url": _base_url(), "files": files}
+    return _MANIFEST_CACHE
+
+
+_MANIFEST_CACHE: dict | None = None
+
+# User-Agent client name -> the served script that carries its VERSION constant. The proxy
+# addon reports as "warden-proxy"; every other client's UA name matches its filename.
+_UA_SOURCE = {
+    "warden-hook": "warden-hook",
+    "warden-posture": "warden-posture",
+    "warden-cursor-hook": "warden-cursor-hook",
+    "warden-gemini-hook": "warden-gemini-hook",
+    "warden-codex-hook": "warden-codex-hook",
+    "warden-proxy": "warden_addon.py",
+}
+_VERSIONS_CACHE: dict[str, str] | None = None
+_VERSION_RE = re.compile(r'^VERSION\s*=\s*["\']([^"\']+)["\']', re.MULTILINE)
+
+
+def client_versions() -> dict[str, str]:
+    """The client build each script declares, keyed by its User-Agent name — what a
+    device SHOULD be running. The console compares reported versions against this to flag
+    stale plumbing. Read from the shipped files so there's one source of truth (the
+    scripts themselves), cached per process."""
+    global _VERSIONS_CACHE
+    if _VERSIONS_CACHE is None:
+        out: dict[str, str] = {}
+        for ua_name, served in _UA_SOURCE.items():
+            path = _resolve(_ALLOW.get(served, ""))
+            if path is None:
+                continue
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    m = _VERSION_RE.search(f.read())
+            except OSError:
+                continue
+            if m:
+                out[ua_name] = m.group(1)
+        _VERSIONS_CACHE = out
+    return _VERSIONS_CACHE
+
+
+@router.get("/cli/manifest.json")
+def cli_manifest():
+    """Public manifest of the served scripts (same posture as the scripts themselves —
+    no secrets). Cache-busting is the client's job: it fetches this, not the files."""
+    return JSONResponse(_manifest(), headers={"Cache-Control": "no-cache"})
 
 
 @router.get("/cli/{name}")

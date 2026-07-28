@@ -30,6 +30,9 @@ gcloud builds submit --project "$PROJECT_ID" \
 # "|"-separated (passed as ^|^...) so values may contain commas (WARDEN_ALLOWED_HOSTS) AND
 # "@" (SMTP_USER/MAIL_FROM email addresses). "|" appears in none of the values.
 ENV_VARS="GATEWAY_ENFORCE=${GATEWAY_ENFORCE:-true}"
+# Build identity (the image tag = git short sha). Served at /cli/manifest.json so devices
+# can tell whether their installed hooks/addon are current, and shown in the Fleet view.
+ENV_VARS+="|WARDEN_VERSION=${TAG}"
 ENV_VARS+="|GATEWAY_BLOCK_SEVERITY=${GATEWAY_BLOCK_SEVERITY:-high}"
 ENV_VARS+="|GATEWAY_ANTHROPIC_BASE=${GATEWAY_ANTHROPIC_BASE:-https://api.anthropic.com}"
 ENV_VARS+="|JUDGE_PROVIDER=${JUDGE_PROVIDER:-auto}"

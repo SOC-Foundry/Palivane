@@ -50,6 +50,9 @@ import urllib.error
 import urllib.request
 
 # Tool calls with no security surface — pure agent bookkeeping. Never reported.
+# Reported in the User-Agent so the console can inventory client builds per device.
+VERSION = "1.1.0"
+
 SKIP_TOOLS = {"TodoWrite", "Task", "ExitPlanMode", "AskUserQuestion"}
 
 _MAX_ARGS_TEXT = 20000
@@ -259,7 +262,7 @@ def scan(endpoint: str, payload: dict, url: str, token: str,
         req = urllib.request.Request(
             url.rstrip("/") + endpoint, method="POST",
             data=json.dumps(body).encode(),
-            headers={"content-type": "application/json", "User-Agent": "warden-hook/1.0", "X-Warden-Token": token},
+            headers={"content-type": "application/json", "User-Agent": f"warden-hook/{VERSION}", "X-Warden-Token": token},
         )
         with urllib.request.urlopen(req, timeout=timeout) as r:
             out = json.loads(r.read())

@@ -12,6 +12,16 @@ function fmtWhen(ts) {
   return Number.isNaN(d.getTime()) ? String(ts) : d.toLocaleString();
 }
 
+// A sensor's installed build. Detection/policy is server-side and always current, so a
+// lagging build only means stale *plumbing* (hooks, addon, scanner patterns) — it
+// self-updates at the next session start via warden-posture.
+function clientCell(row) {
+  if (!row.client) return "—";
+  const label = `${row.client} ${row.client_version || "?"}`;
+  if (row.client_current) return label;
+  return <span style={{ color: "var(--susp)" }} title="Older than this deployment ships — refreshes at next session start">{label} · stale</span>;
+}
+
 export default function Fleet() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -55,6 +65,7 @@ export default function Fleet() {
               <div><span className="usage-n">{s.stale ?? "—"}</span><span className="usage-l">stale 24–72h</span></div>
               <div><span className="usage-n">{s.dark ?? "—"}</span><span className="usage-l">dark &gt;72h</span></div>
               <div><span className="usage-n">{s.dead_keys ?? "—"}</span><span className="usage-l">dead keys</span></div>
+              <div><span className="usage-n">{s.stale_clients ?? "—"}</span><span className="usage-l">stale builds</span></div>
             </div>
           </div>
 
@@ -63,7 +74,7 @@ export default function Fleet() {
             {sensors.length ? (
               <table className="data-table">
                 <thead>
-                  <tr><th>Actor</th><th>Plane</th><th>Tool</th><th>Last seen</th><th>Events</th><th>Health</th></tr>
+                  <tr><th>Actor</th><th>Plane</th><th>Tool</th><th>Client</th><th>Last seen</th><th>Events</th><th>Health</th></tr>
                 </thead>
                 <tbody>
                   {sensors.map((row, i) => (
@@ -71,6 +82,7 @@ export default function Fleet() {
                       <td>{row.actor}</td>
                       <td className="muted">{row.plane}</td>
                       <td className="muted">{row.tool || "—"}</td>
+                      <td className="muted">{clientCell(row)}</td>
                       <td className="muted">{fmtWhen(row.last_seen)}</td>
                       <td>{row.count}</td>
                       <td><span className={`badge ${HEALTH_CLASS[row.health] || "sev-low"}`}>{row.health}</span></td>

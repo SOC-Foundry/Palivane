@@ -657,12 +657,18 @@ class SensorHeartbeat(Base):
     first_seen = Column(DateTime, default=_utcnow)
     last_seen = Column(DateTime, default=_utcnow, index=True)
     count = Column(Integer, default=0)
+    # Client build the sensor last reported (parsed from its User-Agent, e.g.
+    # "warden-hook/1.1.0"). Lets the console spot devices running stale plumbing —
+    # server-side detection updates instantly, but installed scripts don't.
+    client = Column(String(48), default="")           # warden-hook | warden-proxy | …
+    client_version = Column(String(24), default="")
 
     def to_dict(self) -> dict:
         return {"actor": self.actor, "plane": self.plane, "tool": self.tool,
                 "first_seen": self.first_seen.isoformat() if self.first_seen else None,
                 "last_seen": self.last_seen.isoformat() if self.last_seen else None,
-                "count": self.count}
+                "count": self.count, "client": self.client or "",
+                "client_version": self.client_version or ""}
 
 
 class ExceptionRecord(Base):

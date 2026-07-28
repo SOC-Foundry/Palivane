@@ -301,6 +301,38 @@ breadth and live-verification while Warden stays the system of record. Falls bac
 built-in regex scan if the tool isn't installed. Best scheduled (cron / launchd / Scheduled
 Task) or pushed via MDM. Config: `WARDEN_URL`/`WARDEN_TOKEN` from the env or `warden-connect`.
 
+## Staying current (self-update)
+
+**Most updates need nothing on the device.** Detection, scoring, policy, and enforcement
+all run server-side — new detectors, tuned thresholds, judge changes, and policy edits take
+effect for every connected device the moment the backend deploys. The browser extension
+auto-updates via the Web Store (or your Omaha manifest), and the MDM policy pack is
+generated per request, so it's never stale either.
+
+What *does* live on disk is the plumbing: these hook scripts, the proxy addon, and
+`warden-secrets`' local patterns. Those refresh themselves:
+
+- the backend publishes **`GET /cli/manifest.json`** — its build version plus a sha256 for
+  every script it serves;
+- `warden-posture` (already a `SessionStart` hook) compares those hashes against the
+  installed copies **once a day**, re-downloads only what differs, verifies the sha256
+  *before* swapping, and replaces atomically — so a killed process can never leave a
+  half-written hook, and a mismatch aborts that file;
+- updates land at session **start**, never mid-invocation, and only over files that already
+  exist and are writable (MDM-managed copies under `/usr/local/bin` stay the MDM's job).
+
+Every client also reports its build in its `User-Agent` (e.g. `warden-hook/1.1.0`), which
+the console's **Fleet** page shows per sensor and flags when it lags the deployment.
+
+Opting out: `WARDEN_NO_SELF_UPDATE=1` on the device, or `WARDEN_SELF_UPDATE=false` on the
+server (a fleet-wide kill switch — the manifest then tells clients not to update). Both
+fail safe: an unreachable backend, a failed download, or a hash mismatch leaves the working
+copy exactly where it was.
+
+```bash
+warden-posture --force --dry-run    # show what a self-update would change, change nothing
+```
+
 ## `warden-import` — pipe existing scanner jobs into Warden (CI)
 
 Already run TruffleHog / Gitleaks / GitGuardian in CI? Pipe their JSON to `warden-import` and

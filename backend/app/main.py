@@ -755,6 +755,7 @@ def ingest_ai_usage(
     body: AIUsageIngest,
     x_warden_token: str = Header(default=""),
     x_warden_agent: str = Header(default=""),
+    user_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Score content a browser extension / proxy captured on its way to an AI tool.
@@ -766,7 +767,7 @@ def ingest_ai_usage(
     _enforce_rate(db, tenant_id)
     actor = body.user or default_actor
     agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
-    _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool)
+    _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool, user_agent)
     result, meta = _score_ai_usage(body.content, actor, body.tool, body.destination,
                                    tenant_id, agent, db)
     from .detectors.shadow_ai import confirmed_leak
@@ -788,6 +789,9 @@ def ingest_ai_usage(
         "enforce": _client_enforce_for(tenant_id, actor, body.tool, db),
         # Approved AI tools to offer the user instead of a hard "no" (shown in the block UI).
         "sanctioned_tools": _sanctioned_list(meta["sanctioned_tools"]),
+        # What this client SHOULD be running, so a stale install is visible in its own logs
+        # (the actual refresh happens at session start via warden-posture, never mid-call).
+        "client_latest": _client_latest(user_agent),
     }
 
 
@@ -977,8 +981,25 @@ def _client_enforce_for(tenant_id: int | None, actor: str, tool: str, db: Sessio
     return effective
 
 
+def _client_latest(ua: str) -> str:
+    """The current build for the client making this request ("" when it isn't ours)."""
+    from .distribution import client_versions
+    name, _ = _parse_client_ua(ua)
+    return client_versions().get(name, "") if name else ""
+
+
+def _parse_client_ua(ua: str) -> tuple[str, str]:
+    """('warden-hook', '1.1.0') from a client User-Agent; ('', '') for anything else.
+    Only Warden's own clients are recorded — a browser UA carries no build we own."""
+    token = (ua or "").strip().split()[0] if (ua or "").strip() else ""
+    name, _, version = token.partition("/")
+    if not name.startswith("warden"):
+        return "", ""
+    return name[:48], version[:24]
+
+
 def _record_heartbeat(db: Session, tenant_id: int | None, actor: str,
-                      plane: str, tool: str = "") -> None:
+                      plane: str, tool: str = "", client_ua: str = "") -> None:
     """Best-effort fleet-health upsert — never breaks the capture path it rides on."""
     try:
         from datetime import datetime, timezone
@@ -997,6 +1018,9 @@ def _record_heartbeat(db: Session, tenant_id: int | None, actor: str,
             db.add(row)
         row.last_seen = now
         row.count = (row.count or 0) + 1
+        client, version = _parse_client_ua(client_ua)
+        if client:          # keep the last known build when a request carries no UA
+            row.client, row.client_version = client, version
         db.commit()
     except Exception:
         db.rollback()
@@ -1086,7 +1110,7 @@ def ingest_mcp(
     tenant_id, default_actor = _ingest_auth(x_warden_token, db)
     _enforce_rate(db, tenant_id)
     agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
-    _record_heartbeat(db, tenant_id, body.user or default_actor, "mcp", body.tool)
+    _record_heartbeat(db, tenant_id, body.user or default_actor, "mcp", body.tool, user_agent)
     return _score_mcp(body, tenant_id, default_actor, _tenant_mcp_allow(tenant_id, db),
                       _tenant_mcp_block_severity(tenant_id, db), db, agent=agent,
                       client_ua=user_agent)
@@ -1108,7 +1132,7 @@ def ingest_mcp_batch(
     agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
     if body.items:
         _record_heartbeat(db, tenant_id, body.items[0].user or default_actor, "mcp",
-                          body.items[0].tool)
+                          body.items[0].tool, user_agent)
     allowed = _tenant_mcp_allow(tenant_id, db)
     block = _tenant_mcp_block_severity(tenant_id, db)
     results = [_score_mcp(item, tenant_id, default_actor, allowed, block, db, agent=agent,
@@ -1142,6 +1166,7 @@ def _parse_mcp_servers(content: str) -> list[dict]:
 def scan_mcp_config(
     body: MCPConfigScan,
     x_warden_token: str = Header(default=""),
+    user_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Vet an MCP configuration file (in CI, via the git plane, or the console).
@@ -1153,7 +1178,7 @@ def scan_mcp_config(
     from urllib.parse import urlparse
     tenant_id, default_actor = _ingest_auth(x_warden_token, db)
     _enforce_rate(db, tenant_id)
-    _record_heartbeat(db, tenant_id, default_actor, "posture", "mcp-config")
+    _record_heartbeat(db, tenant_id, default_actor, "posture", "mcp-config", user_agent)
 
     from .detectors.dep_guard import extract_mcp_packages
     from . import osv
@@ -1378,6 +1403,7 @@ def scan_deps(
 def scan_ide_extensions(
     body: IDEExtScan,
     x_warden_token: str = Header(default=""),
+    user_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Vet a list of IDE extensions (from `.vscode/extensions.json` in CI, or an MDM software
@@ -1385,7 +1411,7 @@ def scan_ide_extensions(
     running IDE. Token-gated; returns an action plus the flagged extensions."""
     tenant_id, default_actor = _ingest_auth(x_warden_token, db)
     _enforce_rate(db, tenant_id)
-    _record_heartbeat(db, tenant_id, default_actor, "posture", "ide-extensions")
+    _record_heartbeat(db, tenant_id, default_actor, "posture", "ide-extensions", user_agent)
     content = body.content or "\n".join(body.extensions)
     item = AnalysisInput(content=content, subject="ide-extensions", channel="ide",
                          surface=Surface.IDE,
@@ -1408,6 +1434,7 @@ def scan_agent_config(
     body: AgentConfigScan,
     x_warden_token: str = Header(default=""),
     x_warden_agent: str = Header(default=""),
+    user_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Scan an AI coding-assistant config (Cursor settings.json, MCP client config, agent CLI
@@ -1418,7 +1445,7 @@ def scan_agent_config(
     _enforce_rate(db, tenant_id)
     actor = body.user or default_actor
     agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
-    _record_heartbeat(db, tenant_id, actor, "posture", body.tool or "agent-config")
+    _record_heartbeat(db, tenant_id, actor, "posture", body.tool or "agent-config", user_agent)
     item = AnalysisInput(content=body.content, sender=actor,
                          channel=f"{body.tool or 'agent'}-config", surface=Surface.IDE,
                          metadata={"kind": "agent_config", "tool": body.tool})
@@ -2018,12 +2045,22 @@ def fleet_health(current: User = Depends(require_admin), db: Session = Depends(g
                       ApiKey.last_failed_at.isnot(None),
                       ApiKey.last_failed_at >= dead_cutoff)
               .order_by(ApiKey.last_failed_at.desc()).limit(100).all())
+    # Client builds: sensors reporting a version older than this deployment serves have
+    # stale plumbing (hooks/addon/scanner). Server-side detection is already current for
+    # them — this is only about the installed scripts, which self-update at session start.
+    from .distribution import client_versions
+    latest = client_versions()
+    for s in sensors:
+        cur = latest.get(s.get("client", ""), "")
+        s["client_current"] = (not s.get("client")) or (not cur) or (s["client_version"] == cur)
     summary = {"actors": len({s["actor"] for s in sensors}),
                "fresh": sum(1 for s in sensors if s["health"] == "fresh"),
                "stale": sum(1 for s in sensors if s["health"] == "stale"),
                "dark": sum(1 for s in sensors if s["health"] == "dark"),
-               "dead_keys": len(dead)}
+               "dead_keys": len(dead),
+               "stale_clients": sum(1 for s in sensors if not s["client_current"])}
     return {"summary": summary, "sensors": sensors,
+            "server_version": settings.version, "latest_client_versions": latest,
             "dead_keys": [k.to_dict() for k in dead]}
 
 
