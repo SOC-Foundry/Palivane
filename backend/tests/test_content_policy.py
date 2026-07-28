@@ -34,7 +34,9 @@ def test_opt_in_stores_encrypted_per_tenant(client, raw_client, db_factory, monk
     monkeypatch.setattr(service.settings, "store_content", False)
     monkeypatch.setattr(service.settings, "encrypt_findings", True)
     client.patch("/api/tenant", json={"store_content": "on"})     # this tenant opts in
-    _ingest_leak(client, raw_client, "confidential roadmap details here")
+    # An unambiguous leak (a secret) so a finding is created regardless of confidential-term
+    # tuning — this test is about per-tenant content encryption, not the confidential detector.
+    _ingest_leak(client, raw_client, "confidential roadmap details here AKIAIOSFODNN7EXAMPLE")
     db = db_factory()
     f = db.query(Finding).order_by(Finding.id.desc()).first()
     t = db.query(Tenant).filter(Tenant.id == f.tenant_id).first()

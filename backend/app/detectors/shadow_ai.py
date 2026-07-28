@@ -108,9 +108,28 @@ CONFIDENTIALITY_TERMS = [
     "proprietary", "not for distribution", "company confidential", "trade secret",
     "attorney-client", "nda", "restricted",
 ]
-# Whole-word matching — a bare `"nda" in text` substring check flags "sta​nda​rd", "agenda",
-# "Fernanda", etc. (a real false positive found in testing). Match on word boundaries instead.
-_CONFIDENTIALITY_RES = [re.compile(r"\b" + re.escape(t) + r"\b", re.I) for t in CONFIDENTIALITY_TERMS]
+# A bare confidentiality term only counts as an APPLIED classification, not lowercase prose
+# discussing the concept — "how does attorney-client privilege work", "the difference between
+# confidential and restricted data", "restricted parking" were all false positives. Applied
+# forms: an ALL-CAPS banner (CONFIDENTIAL / TRADE SECRET), a "marked/classified/labeled
+# <term>" phrase, or a "<term>:" header. Formal labels (TLP, [CONFIDENTIAL], classification:)
+# are handled separately by _LABEL_RES.
+# Strong applied phrases are directives placed ON a document ("do not distribute", "company
+# confidential") — nobody writes those in a casual question — so they fire on a plain
+# whole-word match. The weak single words (confidential / proprietary / restricted /
+# attorney-client / nda / trade secret) appear constantly in ordinary discussion, so they
+# only count in an applied form (banner / marked-as / "term:").
+_STRONG_CONF_TERMS = {"do not distribute", "not for distribution", "company confidential",
+                      "internal use only", "internal only"}
+_CONFIDENTIALITY_RES = []
+for _t in CONFIDENTIALITY_TERMS:
+    if _t in _STRONG_CONF_TERMS:
+        _CONFIDENTIALITY_RES.append((_t, re.compile(r"(?i)\b" + re.escape(_t) + r"\b")))
+    else:
+        _CONFIDENTIALITY_RES.append((_t, re.compile(
+            r"(?<![A-Za-z])" + re.escape(_t.upper()) + r"(?![A-Za-z])"
+            r"|(?i:(?:marked|classified|labell?ed|tagged|stamped)\s+(?:as\s+)?" + re.escape(_t) + r")"
+            r"|(?i:\b" + re.escape(_t) + r"\s*:)")))
 # Sensitivity labels the enterprise already applies (Microsoft Purview/MIP, TLP, banners) —
 # honor them rather than re-classify. These + the terms above emit `confidential_data`.
 _LABEL_RES = [
@@ -343,7 +362,7 @@ class ShadowAIDetector:
         # (Purview/MIP, TLP, classification banners). Its own category — NOT source_code_leak
         # — so it is *not* suppressed for coding tools (a financial doc pasted from Claude
         # Code must still flag).
-        marks = [t for t, rx in zip(CONFIDENTIALITY_TERMS, _CONFIDENTIALITY_RES) if rx.search(text)]
+        marks = [t for t, rx in _CONFIDENTIALITY_RES if rx.search(text)]
         labels = [m.group(0) for rx in _LABEL_RES for m in [rx.search(text)] if m]
         if marks or labels:
             ev = ", ".join((labels + marks)[:4])

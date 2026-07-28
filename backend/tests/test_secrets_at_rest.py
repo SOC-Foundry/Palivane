@@ -95,3 +95,16 @@ def test_unknown_permissions_neither_penalized_nor_claimed_private():
     assert "permissions unknown" in unknown.detail
     assert "world/group-readable" not in unknown.detail
     assert "permissions unknown" not in private.detail
+
+
+def test_credential_assignment_ignores_env_expressions():
+    # A value that reads from env/config at runtime is NOT a hardcoded secret — these were
+    # false positives (the captured token was the expression, not a literal).
+    from app.detectors.patterns import find_secrets
+    for benign in ("password = os.getenv('DB_PASSWORD', 'changeme')",
+                   "const apiKey = process.env.API_KEY || 'your-api-key-here';",
+                   "secret = config.get('token')",
+                   'db_password = "${DB_PW}"'):
+        assert "Credential assignment" not in find_secrets(benign), benign
+    # A hardcoded literal secret still flags.
+    assert "Credential assignment" in find_secrets("password = 'S3cr3t-Hunter2-Prod-9xQ'")

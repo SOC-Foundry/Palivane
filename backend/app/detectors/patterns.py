@@ -119,10 +119,24 @@ _PLACEHOLDER_VALUE_RE = re.compile(
     r"dummy|fake|redacted|secret|password|passwd|<[^>]+>|\$?\{[^}]+\}|\$[a-z_]+|env\.[a-z_.]+)$")
 
 
+# A value that reads from env/config at runtime (or is any code expression) is not a
+# hardcoded credential — `password = os.getenv('DB_PW','changeme')`, `= process.env.X`,
+# `= ${VAR}`, `= config.get(...)`. These defeated the plain placeholder whitelist because the
+# captured token was the expression, not the literal — a real false-positive source.
+_ENV_EXPR_RE = re.compile(
+    r"(?i)^(?:os\.(?:getenv|environ)|getenv|process\.env|import\.meta\.env|system\.getenv"
+    r"|config[\.\[]|settings[\.\[]|conf[\.\[]|vault|secretsmanager|secretmanager|ssm|"
+    r"params[\.\[]|env[\.\[]|var\.|data\.|secrets[\.\[]|\$\{|\$[a-z_])")
+
+
 def _is_placeholder_assignment(match_text: str) -> bool:
-    """The matched 'KEY = value' has a placeholder value (env template), not a real secret."""
+    """The matched 'KEY = value' isn't a real hardcoded secret: a placeholder/template value
+    (`your-api-key-here`, `changeme`), OR a code expression that reads it from env/config."""
     mm = re.search(r"[:=]\s*[\"']?([^\s\"']+)", match_text)
-    return bool(mm and _PLACEHOLDER_VALUE_RE.match(mm.group(1)))
+    if not mm:
+        return False
+    val = mm.group(1)
+    return bool(_PLACEHOLDER_VALUE_RE.match(val) or _ENV_EXPR_RE.match(val) or "(" in val)
 
 
 def _is_placeholder_conn(match_text: str) -> bool:

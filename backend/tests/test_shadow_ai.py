@@ -317,3 +317,20 @@ def test_source_code_leak_fires_on_a_lone_function():
     # ...but ordinary prose using the words return/if/else must not.
     prose = "Please return the item if it is broken, otherwise keep it and let me know."
     assert Category.SOURCE_CODE_LEAK not in {s.category for s in det._scan_proprietary(prose)}
+
+
+def test_confidential_terms_need_applied_form_not_discussion():
+    # Bare single words in ordinary discussion must NOT flag (big FP source): definitions,
+    # questions, incidental mentions.
+    for benign in ("Explain the difference between confidential, restricted, and public data.",
+                   "How does attorney-client privilege work in a corporate setting?",
+                   "The restricted parking area is for staff only.",
+                   "Grandma guards her proprietary blend of spices."):
+        assert Category.CONFIDENTIAL_DATA not in _cats(benign), benign
+    # Applied classifications still flag: ALL-CAPS banner, marked-as, "term:", and the strong
+    # directive phrases that only ever appear applied to a document.
+    for leak in ("This memo is CONFIDENTIAL — Q3 numbers inside.",
+                 "Classification: RESTRICTED",
+                 "This slide is marked confidential.",
+                 "This document is company confidential and proprietary. Do not distribute."):
+        assert Category.CONFIDENTIAL_DATA in _cats(leak), leak
