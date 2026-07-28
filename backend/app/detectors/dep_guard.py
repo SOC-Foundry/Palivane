@@ -122,8 +122,12 @@ def _extract_manifest_json(content: str) -> str | None:
     """Find an npm-manifest-shaped JSON object in free text (has dependencies / scripts) and
     return just that JSON substring — so a package.json written via a tool call is caught even
     when the content is prefixed by the file path. None if there's no such manifest."""
-    i = content.find("{")
-    while i != -1:
+    # A real manifest's opening brace is within the first line or two (after the file path),
+    # so only try the first few `{` — otherwise `raw_decode` per `{` over adversarial text
+    # like `'{"a":' * 20000` is O(n²).
+    i, attempts = content.find("{"), 0
+    while i != -1 and attempts < 32:
+        attempts += 1
         try:
             obj, end = _JSON_DECODER.raw_decode(content, i)
         except ValueError:
@@ -175,9 +179,12 @@ class DepGuardDetector:
             return []
         if not isinstance(j, dict):
             return []
+        # A malformed manifest can have non-dict "dependencies" (a string/list); guard the
+        # spread so it can't raise "argument to ** must be a mapping".
+        deps = j.get("dependencies") if isinstance(j.get("dependencies"), dict) else {}
+        dev = j.get("devDependencies") if isinstance(j.get("devDependencies"), dict) else {}
         signals: list[Signal] = []
-        signals.extend(self._denylist_signals(
-            {**(j.get("dependencies") or {}), **(j.get("devDependencies") or {})}.items(), deny))
+        signals.extend(self._denylist_signals({**deps, **dev}.items(), deny))
 
         scripts = j.get("scripts") or {}
         if isinstance(scripts, dict):
@@ -190,8 +197,7 @@ class DepGuardDetector:
                         f"classic malicious-package vector.",
                         f"{k}: {v[:100]}", 0.95, 0.9))
 
-        for name, spec in {**(j.get("dependencies") or {}),
-                           **(j.get("devDependencies") or {})}.items():
+        for name, spec in {**deps, **dev}.items():
             if isinstance(spec, str) and _NONREGISTRY.search(spec.strip()):
                 signals.append(self._sig(
                     "Non-registry dependency source",

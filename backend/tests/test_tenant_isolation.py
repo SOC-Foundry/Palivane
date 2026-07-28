@@ -70,3 +70,108 @@ def test_stats_and_usage_are_own_tenant_only(client, db_factory):
     # acme has no findings; beta's critical finding must not show in acme's stats
     s = client.get("/api/stats").json()
     assert s["total"] == 0 and s["high_risk"] == 0
+
+
+# ---------------------------------------------------------------------------------------
+# Two live tenants seeded through the REAL API/ingest path (not raw DB inserts), proving
+# A's token can read ONLY A's rows on findings / apikeys / audit / discovery-inventory,
+# and cannot fetch B's finding or revoke B's key by id. Complements the raw-insert IDOR
+# tests above by exercising the ingest + auth stack end to end.
+# ---------------------------------------------------------------------------------------
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from app.main import app  # noqa: E402
+
+
+def _make_tenant(db_factory, slug: str):
+    """Create <slug> with an admin, return an authenticated admin TestClient."""
+    db = db_factory()
+    users_cli.create_tenant(db, slug, slug.title(), plan="enterprise")
+    users_cli.create_user(db, slug, f"admin@{slug}.com", "password123", "admin")
+    db.close()
+    c = TestClient(app)
+    tok = c.post("/api/auth/login",
+                 json={"email": f"admin@{slug}.com", "password": "password123"}).json()
+    c.headers.update({"Authorization": f"Bearer {tok['access_token']}"})
+    return c
+
+
+def _seed_via_api(c: TestClient, prompt: str):
+    """Mint an API key and drive a finding through the real ingest path. Returns
+    (api_key_id, finding_id)."""
+    k = c.post("/api/apikeys", json={"label": f"key", "actor": "svc@x"}).json()
+    key_id, token = k["id"], k["token"]
+    body = c.post("/api/ingest/ai-usage",
+                  json={"content": prompt, "tool": "chatgpt", "destination": "chatgpt"},
+                  headers={"X-Warden-Token": token}).json()
+    fid = body.get("finding_id")
+    assert fid is not None, f"ingest did not persist a finding: {body}"
+    return key_id, fid
+
+
+def _two_live_tenants(db_factory):
+    a = _make_tenant(db_factory, "alpha")
+    b = _make_tenant(db_factory, "bravo")
+    # Each tenant gets a distinct, risky finding (a secret leak -> persisted).
+    a_key, a_find = _seed_via_api(a, "here is our key AKIAIOSFODNN7EXAMPLE for alpha")
+    b_key, b_find = _seed_via_api(b, "bravo secret AKIA1234567890ABCDEF ssn 123-45-6789")
+    return a, b, {"a_key": a_key, "a_find": a_find, "b_key": b_key, "b_find": b_find}
+
+
+def test_findings_list_is_tenant_scoped(db_factory):
+    a, b, ids = _two_live_tenants(db_factory)
+    a_ids = [f["id"] for f in a.get("/api/findings").json()["findings"]]
+    b_ids = [f["id"] for f in b.get("/api/findings").json()["findings"]]
+    assert ids["a_find"] in a_ids and ids["b_find"] not in a_ids, "A saw B's finding!"
+    assert ids["b_find"] in b_ids and ids["a_find"] not in b_ids, "B saw A's finding!"
+
+
+def test_finding_by_id_cross_tenant_is_404(db_factory):
+    a, b, ids = _two_live_tenants(db_factory)
+    # A fetching B's finding by id -> 404 (not 200 with B's content).
+    assert a.get(f"/api/findings/{ids['b_find']}").status_code == 404
+    assert b.get(f"/api/findings/{ids['a_find']}").status_code == 404
+    # And A can read its own.
+    assert a.get(f"/api/findings/{ids['a_find']}").status_code == 200
+
+
+def test_apikeys_list_is_tenant_scoped(db_factory):
+    a, b, ids = _two_live_tenants(db_factory)
+    a_keys = [k["id"] for k in a.get("/api/apikeys").json()["api_keys"]]
+    b_keys = [k["id"] for k in b.get("/api/apikeys").json()["api_keys"]]
+    assert ids["a_key"] in a_keys and ids["b_key"] not in a_keys, "A saw B's api key!"
+    assert ids["b_key"] in b_keys and ids["a_key"] not in b_keys
+
+
+def test_apikey_revoke_cross_tenant_denied(db_factory):
+    a, b, ids = _two_live_tenants(db_factory)
+    # A trying to revoke B's key -> 404, and B's key stays active.
+    assert a.delete(f"/api/apikeys/{ids['b_key']}").status_code == 404
+    still = [k for k in b.get("/api/apikeys").json()["api_keys"] if k["id"] == ids["b_key"]]
+    assert still and still[0].get("active", True) is True, "cross-tenant revoke took effect!"
+    # A can revoke its own.
+    assert a.delete(f"/api/apikeys/{ids['a_key']}").status_code == 200
+
+
+def test_audit_is_tenant_scoped_live(db_factory):
+    a, b, ids = _two_live_tenants(db_factory)
+    a_targets = [e.get("target") for e in a.get("/api/audit").json()["entries"]]
+    b_targets = [e.get("target") for e in b.get("/api/audit").json()["entries"]]
+    # apikey.create was audited under each tenant; neither log leaks the other's actor.
+    assert "svc@x" in a_targets or any("key" in str(t) for t in a_targets)
+    a_actors = {e.get("actor") for e in a.get("/api/audit").json()["entries"]}
+    assert "admin@bravo.com" not in a_actors, "A's audit log leaked B's admin!"
+    b_actors = {e.get("actor") for e in b.get("/api/audit").json()["entries"]}
+    assert "admin@alpha.com" not in b_actors
+
+
+def test_discovery_inventory_is_tenant_scoped(db_factory):
+    a, b, ids = _two_live_tenants(db_factory)
+    a_inv = a.get("/api/discovery/inventory")
+    b_inv = b.get("/api/discovery/inventory")
+    assert a_inv.status_code == 200 and b_inv.status_code == 200
+    # The inventory is derived from findings; A's must reflect A's activity only. Assert
+    # no bravo-specific actor/tool leaks into alpha's inventory blob and vice versa.
+    assert "bravo" not in a_inv.text.lower(), "discovery inventory leaked bravo into alpha!"
+    assert "alpha" not in b_inv.text.lower(), "discovery inventory leaked alpha into bravo!"
