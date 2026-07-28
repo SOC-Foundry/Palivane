@@ -370,14 +370,13 @@ def main() -> int:
     return 0
 
 
-# Regression ceiling for the pytest entry. The IDEAL target is <5%, but the current
-# offline-detector baseline is ~19% — dominated by design choices (unlabeled source
-# code and bare mentions of "confidential"/"proprietary"/"restricted"/"trade secret"
-# flagging on their own; see the report). Rather than fail CI on that known baseline,
-# the assertion is a *regression guard*: it fails only if the rate climbs materially
-# above today's number, so a NEW false positive is caught while the report always
-# prints the full breakdown. Tighten this as the underlying detectors are improved.
-FP_REGRESSION_CEILING = 25.0
+# Regression ceiling for the pytest entry. The bare-confidential-term and env-expression
+# placeholder fixes took the baseline from ~19% down to ~5.8%; the remaining FPs are
+# context-dependent judge-territory cases (a test card number is identical whether it's
+# discussed or leaked) and the unlabeled-source-code edge. This is a *regression guard*: it
+# fails only if a NEW false positive pushes the rate materially above today's ~6%, while the
+# report always prints the full breakdown.
+FP_REGRESSION_CEILING = 9.0
 
 
 def test_false_positive_rate_under_threshold():
