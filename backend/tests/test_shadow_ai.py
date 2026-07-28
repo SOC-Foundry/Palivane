@@ -287,3 +287,22 @@ def test_custom_regex_rejects_redos_and_invalid():
     assert _safe_custom_regex(r"(\d+)*x") is None
     assert _safe_custom_regex(r"([unterminated") is None   # invalid regex
     assert _safe_custom_regex(r"CUST-[0-9]{6}") is not None  # safe pattern compiles
+
+
+def test_confidential_terms_match_whole_words_only():
+    # Regression: "nda" was a bare-substring match, so "standard"/"agenda"/"Fernanda" tripped
+    # confidential_data. Must match whole words only now.
+    assert Category.CONFIDENTIAL_DATA not in _cats("What is the standard format for a US SSN?")
+    assert Category.CONFIDENTIAL_DATA not in _cats("review the agenda before the meeting")
+    # ...but a real NDA / confidential mention still flags.
+    assert Category.CONFIDENTIAL_DATA in _cats("This document is under NDA, do not share")
+    assert Category.CONFIDENTIAL_DATA in _cats("CONFIDENTIAL — company proprietary material")
+
+
+def test_first_party_client_destination_not_unsanctioned():
+    # Regression: the local hooks label their destination "claude-code" (etc.); that's the
+    # governed first-party client, not shadow AI, so it must NOT emit unsanctioned_ai.
+    for client in ("claude-code", "cursor", "gemini-cli", "codex-cli"):
+        assert Category.UNSANCTIONED_AI not in _cats("hello there", destination=client)
+    # A real external consumer tool still flags.
+    assert Category.UNSANCTIONED_AI in _cats("hello there", destination="chatgpt.com")

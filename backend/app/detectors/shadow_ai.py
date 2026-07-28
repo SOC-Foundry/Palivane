@@ -108,6 +108,9 @@ CONFIDENTIALITY_TERMS = [
     "proprietary", "not for distribution", "company confidential", "trade secret",
     "attorney-client", "nda", "restricted",
 ]
+# Whole-word matching — a bare `"nda" in text` substring check flags "sta​nda​rd", "agenda",
+# "Fernanda", etc. (a real false positive found in testing). Match on word boundaries instead.
+_CONFIDENTIALITY_RES = [re.compile(r"\b" + re.escape(t) + r"\b", re.I) for t in CONFIDENTIALITY_TERMS]
 # Sensitivity labels the enterprise already applies (Microsoft Purview/MIP, TLP, banners) —
 # honor them rather than re-classify. These + the terms above emit `confidential_data`.
 _LABEL_RES = [
@@ -128,6 +131,12 @@ CODE_MARKERS = [
 ]
 
 # --- Destination: known external AI tools -----------------------------------------------
+
+# The local capture planes label their own client as the destination (`claude-code`,
+# `cursor`, …). Those are the FIRST-PARTY tools Warden is installed to govern — not shadow-AI
+# destinations — so they must never count as "unsanctioned" (otherwise every governed prompt
+# carries a spurious baseline). Sensitive-data signals still fire on the content regardless.
+_FIRST_PARTY_CLIENTS = {"claude-code", "claude code", "cursor", "gemini-cli", "codex-cli"}
 
 KNOWN_AI_TOOLS = {
     "chat.openai.com": "ChatGPT", "chatgpt.com": "ChatGPT", "openai.com": "OpenAI",
@@ -321,13 +330,12 @@ class ShadowAIDetector:
 
     def _scan_proprietary(self, text: str) -> list[Signal]:
         out: list[Signal] = []
-        low = text.lower()
 
         # Confidential business content: keyword markers + applied sensitivity labels
         # (Purview/MIP, TLP, classification banners). Its own category — NOT source_code_leak
         # — so it is *not* suppressed for coding tools (a financial doc pasted from Claude
         # Code must still flag).
-        marks = [t for t in CONFIDENTIALITY_TERMS if t in low]
+        marks = [t for t, rx in zip(CONFIDENTIALITY_TERMS, _CONFIDENTIALITY_RES) if rx.search(text)]
         labels = [m.group(0) for rx in _LABEL_RES for m in [rx.search(text)] if m]
         if marks or labels:
             ev = ", ".join((labels + marks)[:4])
@@ -356,8 +364,8 @@ class ShadowAIDetector:
         if item.metadata:
             dest = str(item.metadata.get("destination") or item.metadata.get("tool") or "")
         dest = dest.lower().strip()
-        if not dest:
-            return []
+        if not dest or dest in _FIRST_PARTY_CLIENTS:
+            return []   # no destination, or Warden's own governed client — not shadow AI
 
         override = item.metadata.get("sanctioned_tools") if item.metadata else None
         sanctioned = _sanctioned(override)
