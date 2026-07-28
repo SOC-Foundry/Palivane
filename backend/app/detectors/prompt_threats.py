@@ -23,6 +23,7 @@ from __future__ import annotations
 import base64
 import binascii
 import re
+import urllib.parse
 
 from .base import AnalysisInput, Category, Signal, Surface
 from .normalize import normalize_for_match
@@ -79,6 +80,8 @@ EXFIL_RE = re.compile(
 # Long base64 runs can hide an injection from keyword scanning (and from a casual
 # human reviewer). Flag a single unbroken base64-ish token of meaningful length.
 BASE64_RE = re.compile(r"[A-Za-z0-9+/]{60,}={0,2}")
+# A long hex run can smuggle an instruction the same way base64 does ("decode & follow: 49…").
+HEX_RE = re.compile(r"(?:[0-9a-fA-F]{2}){20,}")
 # Zero-width and Unicode "tag" characters used to smuggle invisible instructions.
 INVISIBLE_RE = re.compile(r"[​‌‍⁠﻿\U000e0000-\U000e007f]")
 
@@ -88,6 +91,13 @@ def _hits(text: str, terms: list[str]) -> list[str]:
     return [t for t in terms if t in low]
 
 
+def _printable_text(raw: bytes) -> str:
+    """Decode bytes to text only if it looks like real text (not binary)."""
+    text = raw.decode("utf-8", "replace")
+    printable = sum(c.isprintable() or c.isspace() for c in text)
+    return text if text and printable / len(text) > 0.85 else ""
+
+
 def _try_decode_b64(blob: str) -> str:
     """Best-effort decode of a base64 blob to text; '' if it isn't decodable text."""
     for decoder in (base64.b64decode, base64.urlsafe_b64decode):
@@ -95,11 +105,17 @@ def _try_decode_b64(blob: str) -> str:
             raw = decoder(blob + "=" * (-len(blob) % 4))
         except (binascii.Error, ValueError):
             continue
-        text = raw.decode("utf-8", "replace")
-        printable = sum(c.isprintable() or c.isspace() for c in text)
-        if text and printable / len(text) > 0.85:  # looks like real text, not binary
-            return text
+        if (t := _printable_text(raw)):
+            return t
     return ""
+
+
+def _try_decode_hex(blob: str) -> str:
+    """Best-effort decode of a hex run to text; '' if it isn't decodable text."""
+    try:
+        return _printable_text(bytes.fromhex(blob))
+    except ValueError:
+        return ""
 
 
 # Terms too common in ordinary source/config (YAML keys, prompt templates in code) to
@@ -117,6 +133,15 @@ class PromptThreatDetector:
         # Match keywords against a normalized view (folds homoglyphs / fullwidth /
         # zero-width / spacing evasion); keep `text` for zero-width & base64 signals.
         norm = normalize_for_match(text)
+        # A percent-encoded payload (%49%67%6e%6f%72%65…) decodes back to the plain attack —
+        # fold the URL-decoded view into the match haystack so the keyword lists still hit.
+        if "%" in text:
+            try:
+                dec = urllib.parse.unquote(text)
+                if dec != text:
+                    norm = norm + "\n" + normalize_for_match(dec)
+            except (ValueError, UnicodeDecodeError):
+                pass
         low = norm.lower()
         signals: list[Signal] = []
 
@@ -172,20 +197,25 @@ class PromptThreatDetector:
             ))
 
         b64 = BASE64_RE.search(text)
-        if b64:
-            decoded = _try_decode_b64(b64.group(0))
+        hx = HEX_RE.search(text)
+        # Try BOTH interpretations independently — a hex run also matches the base64 charset,
+        # so a single `or` would short-circuit on the (garbage) base64 attempt and never try
+        # hex. An encoded blob that decodes to attack text under either is the real thing.
+        if b64 or hx:
+            decoded = " ".join(d for d in (
+                _try_decode_b64(b64.group(0)) if b64 else "",
+                _try_decode_hex(hx.group(0)) if hx else "") if d)
             hidden = (_hits(decoded, INJECTION_TERMS) + _hits(decoded, JAILBREAK_TERMS)
                       + _hits(decoded, EXFIL_TERMS)) if decoded else []
             if hidden:
-                # The blob decodes to an actual attack — treat it as the real thing.
                 signals.append(Signal(
                     category=Category.PROMPT_INJECTION,
                     title="Injection hidden in encoded payload",
-                    detail="A base64 blob decodes to instruction-override / jailbreak / exfil text.",
+                    detail="A base64/hex blob decodes to instruction-override / jailbreak / exfil text.",
                     weight=0.8, confidence=0.8, detector=self.name,
                     evidence=", ".join(hidden[:4]), check="hidden_characters",
                 ))
-            elif not precision:  # code is full of hash-like blobs; only the decoded hit above
+            elif b64 and not precision:  # code is full of hash-like blobs; only the decoded hit above
                 signals.append(Signal(
                     category=Category.PROMPT_INJECTION,
                     title="Encoded payload (possible smuggled instructions)",

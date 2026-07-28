@@ -35,5 +35,7 @@ def normalize_for_match(text: str) -> str:
     t = unicodedata.normalize("NFKC", text)
     t = _ZERO_WIDTH.sub("", t)
     t = t.translate(_HOMOGLYPH_TABLE)
-    t = re.sub(r"[ \t ]{2,}", " ", t)
+    # Collapse ANY whitespace run (incl. newlines/tabs/nbsp) to a single space, so a keyword
+    # split across lines ("ignore\nall\nprevious") still matches the phrase lists.
+    t = re.sub(r"\s+", " ", t)
     return t

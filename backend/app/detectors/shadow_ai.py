@@ -19,6 +19,7 @@ import re
 
 from ..config import settings
 from .base import AnalysisInput, Category, Signal, Surface
+from .normalize import normalize_for_match
 from .patterns import custom_pii_patterns, find_high_entropy_tokens, find_secrets
 
 # Title of the warn-level heuristic secret signal (distinct from known-format Tier-1
@@ -241,7 +242,9 @@ class ShadowAIDetector:
         return signals
 
     def _scan_secrets(self, text: str) -> list[Signal]:
-        secrets = find_secrets(text)
+        # Scan a normalized view too, so a key hidden with homoglyph letters or fullwidth
+        # digits (ghp_１２３…, Cyrillic look-alikes) can't slip past the raw-text patterns.
+        secrets = find_secrets(text) or find_secrets(normalize_for_match(text))
         if not secrets:
             return []
         return [Signal(
