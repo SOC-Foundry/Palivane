@@ -178,6 +178,19 @@ KNOWN_AI_TOOLS = {
 }
 
 
+# Reflow a key split with spaces ("ghp_ 1234 5678 …"): match a known secret prefix followed
+# by 11+ token chars that may be single-spaced, and strip the spaces from that run only.
+# Anchored on distinctive prefixes so it can't glue arbitrary prose into a fake key.
+_SPACED_SECRET_RE = re.compile(
+    r"(gh[pousr]_|github_pat_|glpat-|sk-ant-|AKIA|xox[baprs]-|ya29\.|npm_|dop_v1_|hvs\.|glsa_|github_pat)"
+    r"((?:[ \t]?[A-Za-z0-9_+/=-]){11,})", re.IGNORECASE)
+
+
+def _deglue_secret_spacing(text: str) -> str:
+    return _SPACED_SECRET_RE.sub(
+        lambda m: (m.group(1) + m.group(2)).replace(" ", "").replace("\t", ""), text)
+
+
 def _luhn_ok(digits: str) -> bool:
     total, alt = 0, False
     for ch in reversed(digits):
@@ -242,9 +255,12 @@ class ShadowAIDetector:
         return signals
 
     def _scan_secrets(self, text: str) -> list[Signal]:
-        # Scan a normalized view too, so a key hidden with homoglyph letters or fullwidth
-        # digits (ghp_１２３…, Cyrillic look-alikes) can't slip past the raw-text patterns.
-        secrets = find_secrets(text) or find_secrets(normalize_for_match(text))
+        # Scan a normalized view too (homoglyph letters / fullwidth digits: ghp_１２３…), plus a
+        # glued view that removes whitespace immediately AFTER a known secret prefix, catching a
+        # key split with spaces ("ghp_ 1234 5678 …"). Anchored on the prefix so it only reflows
+        # a real key, never merges prose.
+        secrets = (find_secrets(text) or find_secrets(normalize_for_match(text))
+                   or find_secrets(_deglue_secret_spacing(normalize_for_match(text))))
         if not secrets:
             return []
         return [Signal(

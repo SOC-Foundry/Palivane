@@ -334,3 +334,12 @@ def test_confidential_terms_need_applied_form_not_discussion():
                  "This slide is marked confidential.",
                  "This document is company confidential and proprietary. Do not distribute."):
         assert Category.CONFIDENTIAL_DATA in _cats(leak), leak
+
+
+def test_space_split_secret_key_detected():
+    # A key split with spaces after a known prefix ('ghp_ 016c 25f5 …') is reflowed and caught.
+    det2 = ShadowAIDetector()
+    sigs = det2._scan_secrets("token: ghp_ 016c 25f5 8a1b 9d3e 7f42 6c8a 0b1d 2e3f 4a5b")
+    assert any(s.category == Category.SECRET_LEAK for s in sigs)
+    # ...but a known prefix followed by ordinary prose is NOT glued into a fake key.
+    assert not ShadowAIDetector()._scan_secrets("please ask-ing about the npm_ registry today")
