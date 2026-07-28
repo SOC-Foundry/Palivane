@@ -59,6 +59,29 @@ def notify(webhook: str, min_severity: str, verdict: dict,
     submit(send_sync, webhook, payload)   # bounded shared pool (no thread-per-finding)
 
 
+def notify_judge_down(webhook: str, health: dict) -> bool:
+    """Page the operator that the LLM judge is failing — all configured providers erroring
+    (e.g. exhausted API credits), so Warden is running offline detectors only. Best-effort;
+    returns True if a webhook was configured and the POST was attempted."""
+    text = (":rotating_light: *Warden: LLM judge is DOWN* — all configured providers are "
+            f"failing ({health.get('consecutive_failures', '?')} consecutive calls). "
+            f"Last error: {health.get('last_error') or 'unknown'}.\n"
+            "Warden is running offline detectors only. Restore a judge provider "
+            "(top up API credits, or set a fallback provider key for failover).")
+    if not webhook:
+        return False
+    return send_sync(webhook, {"text": text, "warden": {"event": "judge_down", **health}})
+
+
+def notify_judge_recovered(webhook: str, health: dict) -> bool:
+    """Tell the operator the LLM judge is back (a provider is answering again)."""
+    if not webhook:
+        return False
+    return send_sync(webhook, {"text": ":white_check_mark: *Warden: LLM judge recovered* — a "
+                              "provider is answering again; full detection restored.",
+                              "warden": {"event": "judge_recovered", **health}})
+
+
 def _realtime_ok(severity: str, min_severity: str, digest: str) -> bool:
     """Should this finding fire a real-time alert? It must clear the severity threshold, and
     in digest mode only criticals go out immediately (the rest are batched)."""

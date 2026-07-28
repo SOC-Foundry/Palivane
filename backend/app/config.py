@@ -95,6 +95,10 @@ class Settings:
     # Do NOT strip WARDEN_SECRET_KEY — its exact bytes are baked into every session
     # signature and the encryption-key derivation.
     metrics_token: str = os.getenv("WARDEN_METRICS_TOKEN", "").strip()
+    # Operator (instance-level) alert webhook — Slack-compatible. Currently used to page when
+    # the LLM judge goes down (all providers erroring, e.g. exhausted API credits). Distinct
+    # from per-tenant alert_webhook; empty = log/health only.
+    ops_webhook: str = os.getenv("WARDEN_OPS_WEBHOOK", "").strip()
 
     # --- LLM gateway (protect our AI) ---
     # enforce=block risky prompts; otherwise monitor (observe + record only). Block when
