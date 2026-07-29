@@ -6,11 +6,11 @@ import { SiteNav, SiteFooter, Shot } from "./SiteChrome.jsx";
 import { IconInbox, IconShield, IconList, IconTarget, IconAlert, IconClipboard, IconPlug } from "./icons.jsx";
 
 const PIPELINE = [
-  { icon: <IconInbox />, label: "Capture", sub: "gateway · extension · proxy · CI" },
-  { icon: <IconShield />, label: "Route by surface", sub: "only the matching detectors" },
-  { icon: <IconList />, label: "Signals", sub: "evidence · weight × confidence" },
-  { icon: <IconTarget />, label: "Score", sub: "saturating fusion" },
-  { icon: <IconAlert />, label: "Verdict", sub: "0–100 · allow / warn / block" },
+  { icon: <IconInbox />, label: "Capture", sub: "from the browser, desktop apps, coding tools, or CI" },
+  { icon: <IconShield />, label: "Route by surface", sub: "run only the checks that fit this kind of content" },
+  { icon: <IconList />, label: "Signals", sub: "what matched, and how strong each match is" },
+  { icon: <IconTarget />, label: "Score", sub: "signals combined into one 0–100 risk score" },
+  { icon: <IconAlert />, label: "Verdict", sub: "allow, warn, or block" },
 ];
 
 const SURFACES = [
@@ -55,16 +55,18 @@ export default function HowItWorks() {
       <section className="lp-pagehead">
         <div className="lp-tagline">HOW IT WORKS</div>
         <h1>How Warden works</h1>
-        <p>Every piece of AI-bound content becomes one risk verdict. The core is pure regex and
-           heuristics — no API key, no network call, fully deterministic.</p>
+        <p>Every piece of AI-bound content ends up as one risk verdict. The engine is regex and
+           heuristics — deterministic, millisecond-fast, and it calls no third-party AI service
+           to reach a decision.</p>
       </section>
 
       {/* Pipeline */}
       <section className="lp-section">
         <div className="lp-wrap">
-          <h2 className="lp-h2">One pipeline, everywhere it captures</h2>
-          <p className="lp-sub">A prompt, a paste into ChatGPT, an agent's tool-call, a commit —
-             all flow through the same five stages.</p>
+          <h2 className="lp-h2">Everything runs through the same five steps</h2>
+          <p className="lp-sub">A prompt to your own model, a paste into ChatGPT, an action an AI
+             assistant is about to take, a commit — one pipeline, one policy, one console. Each
+             step is spelled out below.</p>
           <div className="hiw-pipeline">
             {PIPELINE.map((s, i) => (
               <div className="hiw-pipe-cell" key={s.label}>
