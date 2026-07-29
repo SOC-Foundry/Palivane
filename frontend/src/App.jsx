@@ -13,6 +13,7 @@ import Legal from "./components/Legal.jsx";
 import HowItWorks from "./components/HowItWorks.jsx";
 import Setup from "./components/Setup.jsx";
 import UseCases from "./components/UseCases.jsx";
+import Pricing from "./components/Pricing.jsx";
 import WhyWarden from "./components/WhyWarden.jsx";
 import Trust from "./components/Trust.jsx";
 import Docs from "./components/Docs.jsx";
@@ -122,6 +123,9 @@ export default function App() {
   }
   if (legalPath === "/setup") {
     return <Setup />;
+  }
+  if (legalPath === "/pricing") {
+    return <Pricing />;
   }
   if (legalPath === "/use-cases") {
     return <UseCases />;

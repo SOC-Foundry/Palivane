@@ -5,40 +5,40 @@ import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
 const TIERS = [
   {
     name: "Free", price: "$0", per: "forever",
-    blurb: "Protect yourself and a few teammates in minutes.",
+    blurb: "Find out what your team is actually sending, this afternoon.",
     cta: { label: "Start free →", href: "/#signin" },
     features: [
-      "Up to 5 users",
-      "Every capture plane: gateway, browser extension, hooks, proxy",
-      "Live findings, discovery & coverage",
-      "Monitor and enforce modes",
+      "Up to 5 people",
+      "Covers the browser, desktop AI apps, AI coding tools, and your code",
+      "Live findings, a list of every AI tool in use, and who is covered",
+      "Watch-only or blocking — your call",
       "Community support",
     ],
   },
   {
     name: "Team", price: "$12", per: "per user / month ($10 annual)",
-    blurb: "Roll Warden out to the whole team, with alerting and fleet installers.",
+    blurb: "Cover everyone, and get told when something happens.",
     cta: { label: "Contact us →", href: "mailto:sales@tachtech.net?subject=Warden%20Team%20plan" },
     featured: true,
     features: [
-      "Everything in Free, unlimited users",
-      "Webhook alerts + hourly/daily digests",
-      "MDM policy packs (Jamf · Intune · GPO)",
-      "Per-device fleet installers & enrollment keys",
+      "Everything in Free, for as many people as you have",
+      "Alerts where you already work, plus hourly or daily digests",
+      "Push the setup to managed laptops (Jamf · Intune · Group Policy)",
+      "One-step install per device — no shared passwords to hand around",
       "Priority email support",
     ],
   },
   {
     name: "Enterprise", price: "Custom", per: "annual license",
-    blurb: "Org-wide governance with identity, compliance, and data-plane integrations.",
+    blurb: "For when identity, audit, and a security review are part of the deal.",
     cta: { label: "Talk to sales →", href: "mailto:sales@tachtech.net?subject=Warden%20Enterprise" },
     features: [
       "Everything in Team",
-      "SSO — OIDC & SAML",
-      "SIEM forwarding (Splunk HEC · CEF · JSON)",
-      "S3 / data-lake findings delivery",
-      "Isolated single-tenant deployment option",
-      "Custom quotas, DPA & compliance support",
+      "Single sign-on with your identity provider (OIDC & SAML)",
+      "Findings forwarded to your SIEM (Splunk HEC · CEF · JSON)",
+      "Delivery to your own data lake (S3 for Panther, Athena, Snowflake)",
+      "Run it isolated, on infrastructure you control",
+      "Custom limits, signed DPA, and help through security reviews",
     ],
   },
 ];
@@ -71,9 +71,10 @@ export default function Pricing() {
 
       <section className="lp-pagehead">
         <div className="lp-tagline">PRICING</div>
-        <h1>Plans for every team</h1>
-        <p>Start free on your own machine today. Upgrade when you're ready to cover the
-           team — or the whole company.</p>
+        <h1>Start free. Pay when it covers everyone.</h1>
+        <p>See it working on your own traffic before you spend anything. The paid plans are
+           about scale and the things a security review asks for — not about unlocking the
+           protection.</p>
       </section>
 
       <section className="lp-section">
@@ -82,8 +83,8 @@ export default function Pricing() {
             {TIERS.map((t) => <Tier key={t.name} t={t} />)}
           </div>
           <p className="lp-sub" style={{ textAlign: "center", marginTop: 28 }}>
-            Self-hosting? Warden's core is source-available — the same Team and Enterprise
-            licenses apply to supported self-hosted deployments.
+            Want to run it yourself? Warden's core is source-available, and the same Team and
+            Enterprise licenses cover supported self-hosted deployments.
             Questions: <a href="mailto:sales@tachtech.net">sales@tachtech.net</a>.
           </p>
         </div>
@@ -91,9 +92,9 @@ export default function Pricing() {
 
       <section className="lp-section alt">
         <div className="lp-wrap lp-cta-wrap" style={{ textAlign: "center" }}>
-          <h2 className="lp-h2">Two minutes to first findings</h2>
-          <p className="lp-sub">Every plan starts the same way — sign up, run one command,
-             watch the findings roll in.</p>
+          <h2 className="lp-h2">First findings in about two minutes</h2>
+          <p className="lp-sub">Every plan starts the same way: sign up, run one command, and
+             watch real findings from your own traffic appear.</p>
           <a className="primary-btn slim" href="/setup" style={{ textDecoration: "none" }}>See the setup →</a>
         </div>
       </section>

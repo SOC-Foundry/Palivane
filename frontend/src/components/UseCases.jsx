@@ -5,39 +5,39 @@ import { IconTarget, IconShield, IconAlert, IconInbox, IconClipboard, IconPlug }
 
 const CASES = [
   {
-    icon: <IconTarget />, tag: "Shadow AI",
-    title: "Stop sensitive data leaking into public AI tools",
-    body: "Employees paste customer records, credentials, and source into ChatGPT, Claude, Gemini, and Copilot. Warden's browser extension and gateway scan every prompt and warn or block on secrets, PII, source code, and confidential content before it's sent — and offer a sanctioned alternative in the block screen.",
+    icon: <IconTarget />, tag: "The obvious one",
+    title: "Someone pastes customer data into ChatGPT",
+    body: "It happens on a deadline, with good intentions. Warden checks what people send to ChatGPT, Claude, Gemini, and Copilot and stops the customer records, passwords, and source code — then points them at a tool you've approved instead of just saying no.",
   },
   {
-    icon: <IconShield />, tag: "AI coding assistants",
-    title: "Let developers use Claude Code, Cursor & Copilot — safely",
-    body: "Coding assistants are the fastest-growing egress path. Warden allows the code they're meant to see, but still blocks API keys and credentials in it, flags unsafe autonomy (YOLO / auto-apply / auto-run) and dangerous commands in AI chats, and governs the agent's MCP tool-use — source-code detection auto-suppressed for sanctioned tools so it never gets in the way.",
+    icon: <IconShield />, tag: "Developers move fast",
+    title: "Your engineers want Claude Code and Cursor",
+    body: "Good — they're faster with them. Warden lets the assistant read the code it's meant to work on, while still catching API keys and credentials hidden in it, flagging the settings that let it act without asking, and stopping destructive commands before they run.",
   },
   {
-    icon: <IconInbox />, tag: "Need-to-know",
-    title: "Stop your own AI from oversharing internal data",
-    body: "Enterprise LLMs (M365 Copilot, Glean, internal RAG) will surface HR files, salary data, and confidential docs to any employee who asks. Warden checks each answer against your need-to-know rules and flags — or blocks — when restricted data reaches someone outside the allowed group.",
+    icon: <IconInbox />, tag: "Your own AI overshares",
+    title: "Your internal AI answers questions it shouldn't",
+    body: "Copilot, Glean, or your own internal assistant will happily surface HR files, salary data, or a confidential deal to whoever asks. Warden checks each answer against who's allowed to see what, and flags or blocks when restricted material reaches the wrong person.",
   },
   {
-    icon: <IconAlert />, tag: "Agentic (MCP)",
-    title: "Govern what autonomous agents are allowed to do",
-    body: "AI agents call tools, run commands, and touch files. Warden inspects MCP tool-use for dangerous commands, sensitive-file access, tool-poisoning, and calls to untrusted servers — over the LLM traffic, even for local stdio MCP, so an agent can't quietly exfiltrate or destroy.",
+    icon: <IconAlert />, tag: "Assistants that act",
+    title: "An AI assistant has real access to your systems",
+    body: "Modern assistants don't just answer — they read files, run commands, and call other services. Warden gives each one a boundary: which tools it may use, which commands it may run, which files it may open. Anything outside that gets stopped, not just logged.",
   },
   {
-    icon: <IconClipboard />, tag: "Secrets sprawl",
-    title: "Find credentials before they leak — at rest and in git",
-    body: "Keys don't only leak through prompts. warden-secrets scans managed endpoints for credentials at rest (cloud SA keys, .npmrc, .git-credentials, key files), and a pre-commit hook + CI check keep secrets and PII out of repos — with a one-time history sweep via TruffleHog/Gitleaks for what's already committed.",
+    icon: <IconClipboard />, tag: "Credentials already loose",
+    title: "Keys are sitting on laptops and in your repos",
+    body: "Prompts aren't the only way a secret escapes. Warden finds credentials already sitting on developer machines — the first place info-stealing malware looks — and keeps new ones out of your repositories, with a one-time sweep of what's already committed.",
   },
   {
-    icon: <IconInbox />, tag: "Protect your own LLMs",
-    title: "Defend the AI features you ship to customers",
-    body: "Point your own apps at the Warden gateway and every prompt is checked for instruction-override / injection, jailbreak & guardrail-evasion, and system-prompt or secret exfiltration — with response-side DLP scanning the model's output too. Monitor first, then enforce.",
+    icon: <IconInbox />, tag: "You ship AI yourself",
+    title: "The AI feature in your product needs a guard",
+    body: "Point your own app at Warden and every prompt gets checked for the attacks aimed at AI: hijacking its instructions, talking it past its rules, or coaxing out its hidden setup and data. It checks the answers on the way back out, too.",
   },
   {
-    icon: <IconPlug />, tag: "Compliance & visibility",
-    title: "Prove governance and close your blind spots",
-    body: "Coverage reconciliation compares your IdP/CASB record of who used AI to what Warden actually captured — surfacing the unmanaged, shadow set. Add per-tenant policy, a full audit log, alert digests, SIEM export, a signed DPA, and self-serve data export/delete for a defensible AI-governance story.",
+    icon: <IconPlug />, tag: "Someone asks for proof",
+    title: "Your auditor or biggest customer asks what you do about AI",
+    body: "Warden shows which people and teams are actually covered and which aren't, keeps a full record of every decision it made, and produces a monthly summary you can hand to a board or a security questionnaire. Signed DPA available.",
   },
 ];
 
@@ -48,9 +48,10 @@ export default function UseCases() {
 
       <section className="lp-pagehead">
         <div className="lp-tagline">USE CASES</div>
-        <h1>Where Warden earns its keep</h1>
-        <p>From shadow-AI data loss to autonomous agents and secrets in git — one engine and
-           one console across every way AI touches your organization.</p>
+        <h1>Which of these is your problem?</h1>
+        <p>Most companies arrive with one of these already on their mind. Warden covers all of
+           them from a single console, so solving the first one does not mean buying again for
+           the next.</p>
       </section>
 
       <section className="lp-section">
@@ -70,10 +71,11 @@ export default function UseCases() {
 
       <section className="lp-section alt">
         <div className="lp-wrap">
-          <h2 className="lp-h2">Find the shadow AI first</h2>
-          <p className="lp-sub">An inventory of every AI tool in use — sanctioned or not — by tool
-             and by team, with the real sensitive-data exposure each one received.</p>
-          <Shot lead src="/shots/discovery.png" alt="Shadow-AI discovery inventory" />
+          <h2 className="lp-h2">Start by seeing what is actually happening</h2>
+          <p className="lp-sub">Before you write a policy, get the list: every AI tool in use,
+             approved or not, broken down by team — and what sensitive data each one actually
+             received.</p>
+          <Shot lead src="/shots/discovery.png" alt="Inventory of AI tools in use" />
         </div>
       </section>
 
@@ -82,8 +84,8 @@ export default function UseCases() {
           <div className="lp-banner">
             <IconShield width={22} height={22} />
             <div>
-              <strong>See it on your own traffic.</strong> Sign in, connect one source, and watch
-              findings land in minutes — the core runs offline, no API key required.
+              <strong>Try it on your own traffic.</strong> Connect one source and watch real findings
+              land in minutes. Watch-only until you say otherwise.
             </div>
             <a className="primary-btn slim" href="/#signin" style={{ textDecoration: "none" }}>Open the console →</a>
           </div>
