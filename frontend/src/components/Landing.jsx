@@ -4,42 +4,42 @@ import { SiteNav, SiteFooter, Shot, Clip, Lightbox } from "./SiteChrome.jsx";
 
 const FRONTS = [
   {
-    icon: <IconShield />, tag: "Protect our AI", cls: "atk",
-    title: "Stop attacks on your own LLMs",
-    body: "Prompt injection, jailbreaks & guardrail-evasion personas, and system-prompt or secret exfiltration — caught at the gateway before they reach your model.",
+    icon: <IconTarget />, tag: "Data protection", cls: "ai",
+    title: "Nothing sensitive leaves by accident",
+    body: "Customer records, passwords and API keys, and your own source code get caught on the way out — whether someone pastes them into ChatGPT or an AI assistant sends them for you.",
   },
   {
-    icon: <IconTarget />, tag: "Shadow-AI governance", cls: "ai",
-    title: "Stop sensitive data leaking into AI tools",
-    body: "Secrets, PII, and proprietary source code are blocked before they leave for ChatGPT, Claude, Gemini, or any unsanctioned destination.",
+    icon: <IconInbox />, tag: "Visibility", cls: "mcp",
+    title: "You finally know which AI tools are in use",
+    body: "Every AI tool your company touches, who uses it, and what data went where — including the ones nobody asked permission for.",
   },
   {
-    icon: <IconAlert />, tag: "Agentic & supply chain", cls: "mcp",
-    title: "Govern AI coding agents",
-    body: "Inspect MCP tool-use (sensitive-file access, dangerous commands, tool poisoning, untrusted servers) and vet dependencies, MCP configs, and IDE extensions — agentlessly.",
+    icon: <IconAlert />, tag: "AI assistants", cls: "atk",
+    title: "AI coding assistants stay inside the lines",
+    body: "Claude Code, Cursor, and Copilot read your files and run your commands. Warden checks each action before it happens and stops the dangerous ones.",
   },
 ];
 
 const CAPTURE = [
-  { icon: <IconShield />, title: "LLM gateway", body: "An OpenAI-, Anthropic- & Gemini-compatible proxy. Point your apps and Claude Code at Warden — every prompt, and every agent tool-call, is scored before it reaches the model." },
-  { icon: <IconPlug />, title: "Browser extension", body: "Intercepts what employees paste into claude.ai, ChatGPT, Gemini, and Copilot in the browser — warning or blocking on secrets and PII before send." },
-  { icon: <IconInbox />, title: "Egress proxy", body: "A mitmproxy addon for desktop apps, IDE assistants, and CLIs — plus remote MCP servers — that make their own HTTPS calls and never touch the browser." },
-  { icon: <IconClipboard />, title: "Git & CI", body: "A pre-commit hook + GitHub Action scan commits, dependency manifests (with OSV CVEs), MCP configs, and IDE extensions before they land in a repo." },
+  { icon: <IconPlug />, title: "In the browser", body: "Covers what people paste into ChatGPT, Claude, Gemini, and Copilot on the web — the most common way data walks out." },
+  { icon: <IconInbox />, title: "In desktop apps", body: "Covers the AI apps that don't run in a browser: Claude and ChatGPT desktop, and the assistants built into editors." },
+  { icon: <IconShield />, title: "In your AI coding tools", body: "Claude Code, Cursor, Codex, and Gemini CLI report what they're about to send or do, so it can be checked first." },
+  { icon: <IconClipboard />, title: "In your code and laptops", body: "Scans commits and dependencies before they land, and finds credentials already sitting on developer machines — where info-stealing malware looks first." },
 ];
 
 const STEPS = [
-  { n: "1", title: "Prompt-threat detector", body: "Instruction-override & injection, jailbreak personas, system-prompt/secret exfiltration, and smuggled payloads — fully offline, no API key." },
-  { n: "2", title: "Shadow-AI detector", body: "Credentials & keys, PII (SSN, Luhn-valid cards, contact lists), proprietary source code, and unsanctioned destinations." },
-  { n: "3", title: "Agentic (MCP) guard", body: "An AI coding agent's tool-use — sensitive-file access, dangerous commands, tool poisoning, untrusted MCP servers — caught over the LLM traffic, even for local stdio MCP." },
-  { n: "4", title: "Supply-chain scan", body: "Dependency manifests (install-script abuse, non-registry sources, known-bad packages + OSV CVEs) and IDE extensions, in CI." },
-  { n: "5", title: "LLM judge (optional)", body: "Connect a frontier model — Claude, GPT, or Gemini — and it reads the content like an analyst for the novel cases the rules miss." },
+  { n: "1", title: "Passwords, keys, and tokens", body: "Cloud keys, API tokens, private keys, database passwords — in prompts, in what an AI assistant sends, and sitting on laptops." },
+  { n: "2", title: "Personal and customer data", body: "Social security numbers, payment cards, and customer records — tuned so everyday engineering work doesn't set off alarms." },
+  { n: "3", title: "Your code and confidential documents", body: "Proprietary source code, financials, contracts, and anything already marked confidential by your own labeling tools." },
+  { n: "4", title: "Risky AI behavior", body: "Attempts to hijack an AI's instructions, talk it past its rules, or get an assistant to run destructive commands or open files it shouldn't — in the tools your team uses, and in any AI feature you ship in your own product." },
+  { n: "5", title: "A second opinion, if you want one", body: "Optionally add Claude, GPT, or Gemini as a reviewer for the unusual cases fixed rules miss. Everything above works without it." },
 ];
 
 const ENTERPRISE = [
-  { icon: <IconPlug />, title: "Self-serve or managed onboarding", body: "Claim your email domain and teammates who sign up land in your org — auto-joined or admin-approved, never a duplicate tenant. Email invites and password reset built in; SSO (OIDC & SAML) binds the extension and `warden connect`; managed fleets get zero-touch MDM config." },
-  { icon: <IconShield />, title: "Agentless by default", body: "No endpoint agent for the core — an MDM policy pack (editor allowlist, system proxy, force-install, CA) lets Jamf/Intune/GPO enforce it. Opt-in local sensors add stdio-level MCP & pre-tool-use depth when you want it." },
-  { icon: <IconTarget />, title: "See your blind spots", body: "Coverage reconciliation compares your IdP/CASB AI-usage to what Warden captured — the unmanaged, shadow set. Slack alerts, SIEM push (Splunk HEC / CEF), and S3 data-lake export for Panther, Athena, or Snowflake." },
-  { icon: <IconClipboard />, title: "Compliance & data control", body: "Per-tenant policy (monitor/enforce, block severity, sanctioned tools), a signed DPA, full self-serve data export, and one-click delete-my-org." },
+  { icon: <IconPlug />, title: "Onboarding that doesn't need a project plan", body: "Claim your email domain and teammates who sign up land in your org automatically. Invites, password reset, and single sign-on (Okta, Entra, Google) are built in." },
+  { icon: <IconShield />, title: "Nothing to install on laptops", body: "No agent to roll out. If you use Jamf, Intune, or Group Policy, Warden hands you the config to push and you're done. Optional local helpers add depth on the machines where you want it." },
+  { icon: <IconTarget />, title: "Proof it's actually working", body: "See which people and teams are covered and which aren't. Alerts land in Slack, findings flow to your SIEM or data lake, and a monthly report gives your board the numbers." },
+  { icon: <IconClipboard />, title: "Your data stays yours", body: "Choose what gets recorded, export everything at any time, and delete your org in one click. Signed DPA available; content can be scanned without ever being stored." },
 ];
 
 export default function Landing({ onSignIn }) {
@@ -51,45 +51,45 @@ export default function Landing({ onSignIn }) {
 
       <section className="lp-hero-wrap">
         <div className="lp-hero">
-          <div className="lp-tagline">DETECT · BLOCK · PROTECT</div>
-          <h1>Govern how your organization uses AI.</h1>
+          <div className="lp-tagline">AI SECURITY FOR THE TOOLS YOUR TEAM ALREADY USES</div>
+          <h1>Your secrets shouldn't leave with the prompt.</h1>
           <p className="lp-lead">
-            Warden stops attacks on your own LLMs, stops sensitive data from leaking into AI tools,
-            <strong> and</strong> governs AI coding agents (MCP) &amp; their supply chain — captured
-            automatically at a gateway, browser extension, egress proxy, and CI, then recorded or
-            blocked inline. <strong>Agentless by default.</strong>
+            Your team uses ChatGPT, Claude, Copilot, and AI coding assistants every day.
+            Warden shows you what they send — and <strong>stops the customer data, passwords,
+            and source code that shouldn't go</strong>. Set up in an afternoon, with nothing
+            to install on anyone's laptop.
           </p>
           <div className="lp-cta">
             <button className="primary-btn slim" onClick={onSignIn}>Open the console →</button>
             <a className="lp-btn-ghost wide" href="/setup">Set it up</a>
             <a className="lp-btn-ghost wide" href="/how-it-works">How it works</a>
           </div>
-          <span className="lp-cta-note">Core detection runs offline · no API key required</span>
+          <span className="lp-cta-note">Start by watching only — turn on blocking when you're ready</span>
         </div>
       </section>
 
       <section className="lp-section alt">
         <div className="lp-wrap">
-          <h2 className="lp-h2">See Warden in action</h2>
-          <p className="lp-sub">One console across every plane — findings, shadow-AI discovery,
-             granular policy, and agent governance.</p>
+          <h2 className="lp-h2">See it stop a real leak</h2>
+          <p className="lp-sub">Ninety seconds: a secret blocked in ChatGPT, in Claude Code, and in
+             Cursor — then a tour of the console you would actually live in.</p>
           <Clip lead src="/shots/demo7.mp4" poster="/shots/demo-poster7.png"
-                caption="Warden blocks a real leak in the browser (ChatGPT), in Claude Code, and in Cursor — all via the gateway — then a full guided tour of every console tab: findings, connect, discovery, coverage, agents, policy, users, settings & audit." />
+                caption="A secret gets blocked in ChatGPT, in Claude Code, and in Cursor — then a walkthrough of every screen in the console." />
           <div className="lp-gallery">
-            <Shot src="/shots/discovery.png?v=2" alt="Shadow-AI discovery inventory" onZoom={(s, a) => setZoom({ src: s, alt: a })}
-                  caption="Shadow-AI discovery — every AI tool, by team, with real data exposure." />
+            <Shot src="/shots/discovery.png?v=2" alt="Inventory of AI tools in use" onZoom={(s, a) => setZoom({ src: s, alt: a })}
+                  caption="Every AI tool in use, broken down by team — and what data actually went to each one." />
             <Shot src="/shots/policies.png?v=2" alt="Policy console" onZoom={(s, a) => setZoom({ src: s, alt: a })}
-                  caption="Granular policy — toggle any check, presets, per-user/group overrides." />
-            <Shot src="/shots/agents.png?v=2" alt="Agent identity & least-privilege" onZoom={(s, a) => setZoom({ src: s, alt: a })}
-                  caption="Agent identity & least-privilege roles — monitor or enforce." />
+                  caption="Turn individual checks on or off, org-wide or for one team." />
+            <Shot src="/shots/agents.png?v=2" alt="AI assistant identity and limits" onZoom={(s, a) => setZoom({ src: s, alt: a })}
+                  caption="Give each AI assistant its own identity and limits — watch first, enforce when ready." />
           </div>
         </div>
       </section>
 
       <section className="lp-section">
         <div className="lp-wrap">
-          <h2 className="lp-h2">Three fronts, one engine</h2>
-          <p className="lp-sub">One detection engine covers every way AI can put your organization at risk.</p>
+          <h2 className="lp-h2">What changes on day one</h2>
+          <p className="lp-sub">Three problems, one product — and one place to see all of it.</p>
           <div className="lp-fronts">
             {FRONTS.map((f) => (
               <div key={f.tag} className={`lp-front front-${f.cls}`}>
@@ -105,8 +105,9 @@ export default function Landing({ onSignIn }) {
 
       <section className="lp-section alt">
         <div className="lp-wrap">
-          <h2 className="lp-h2">Automatic capture — no manual paste</h2>
-          <p className="lp-sub">Different usage routes need different capture points. All feed one engine.</p>
+          <h2 className="lp-h2">It works wherever your team uses AI</h2>
+          <p className="lp-sub">Nobody has to remember to run anything. Warden watches the places AI is
+             actually used, and everything lands in the same console.</p>
           <div className="lp-cards">
             {CAPTURE.map((c) => (
               <div key={c.title} className="lp-card">
@@ -121,8 +122,10 @@ export default function Landing({ onSignIn }) {
 
       <section className="lp-section">
         <div className="lp-wrap">
-          <h2 className="lp-h2">How detection works</h2>
-          <p className="lp-sub">Each submission runs through the detectors for its surface; a scoring engine fuses the signals into one risk verdict.</p>
+          <h2 className="lp-h2">What Warden looks for</h2>
+          <p className="lp-sub">Every check runs inside Warden in milliseconds — no third-party AI
+             service ever sees your content — then one risk score decides whether to allow,
+             warn, or block.</p>
           <div className="lp-steps">
             {STEPS.map((s) => (
               <div key={s.n} className="lp-step">
@@ -135,18 +138,18 @@ export default function Landing({ onSignIn }) {
             ))}
           </div>
           <p className="lp-sub" style={{ marginTop: 22 }}>
-            <a className="lp-textlink" href="/how-it-works">Read the technical overview — surfaces,
-            the two-tier secret engine, the scoring model, and why the core runs offline →</a>
+            <a className="lp-textlink" href="/how-it-works">For the technically minded: the detection
+            surfaces, the two-tier secret engine, the scoring model, and why the core runs
+            offline →</a>
           </p>
         </div>
       </section>
 
       <section className="lp-section alt">
         <div className="lp-wrap">
-          <h2 className="lp-h2">Agentless, and enterprise-ready</h2>
-          <p className="lp-sub">Deploy in minutes — agentless by default (optional local sensors for
-             stdio-level depth): bind tenants, enforce via MDM, find the coverage gaps, and stay
-             compliant.</p>
+          <h2 className="lp-h2">Built for a small team to run</h2>
+          <p className="lp-sub">You should not need a dedicated headcount to govern AI. Warden is
+             designed to be set up once and then mostly leave you alone.</p>
           <div className="lp-cards">
             {ENTERPRISE.map((c) => (
               <div key={c.title} className="lp-card">
@@ -164,8 +167,8 @@ export default function Landing({ onSignIn }) {
           <div className="lp-banner">
             <IconAlert width={22} height={22} />
             <div>
-              <strong>Monitor or enforce.</strong> Record every risky prompt and pass it through, or
-              block it inline before it leaves — real prevention, not just detection.
+              <strong>Start by watching.</strong> Run it in monitor mode to see what your team is
+              really sending, then switch on blocking when you have seen enough.
             </div>
             <button className="primary-btn slim" onClick={onSignIn}>Open the console →</button>
           </div>
