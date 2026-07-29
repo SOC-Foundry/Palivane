@@ -66,6 +66,10 @@ class Settings:
     # the image tag; "dev" locally. Clients compare FILE HASHES from the manifest, not this
     # string — it's for display, fleet inventory, and staging an update.
     version: str = os.getenv("WARDEN_VERSION", "dev")
+    # Hosted signups start a full-featured trial of this many days; 0 puts new orgs on the
+    # free (self-host equivalent) tier instead — set that for a self-hosted deployment where
+    # every org is local and there is nothing to sell.
+    trial_days: int = int(os.getenv("WARDEN_TRIAL_DAYS", "14"))
     # Refuse to serve self-updates (clients keep whatever they have). For fleets that
     # manage the scripts via MDM and don't want devices pulling their own updates.
     self_update_enabled: bool = os.getenv("WARDEN_SELF_UPDATE", "true").lower() in ("1", "true", "yes")

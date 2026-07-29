@@ -113,6 +113,9 @@ class Tenant(Base):
     # Licensing tier: "free" | "team" | "enterprise" (see app/plans.py). Operator-set
     # only — upgrades are sales-led; there is no API for an org to raise its own plan.
     plan = Column(String(16), default="free", nullable=False)
+    # When a hosted trial lapses (plan="trial"). NULL = no clock: that is every
+    # self-hosted/free tenant, and an operator can clear it to extend a trial indefinitely.
+    trial_ends_at = Column(DateTime, nullable=True)
     # Persist raw prompt prose in this tenant's findings? None = inherit the global default
     # (WARDEN_STORE_CONTENT, off). Off = metadata-only (verdict + signals + redacted
     # evidence, no natural-language content).
@@ -122,10 +125,14 @@ class Tenant(Base):
     dek_wrapped = Column(Text, default="")
 
     def to_dict(self) -> dict:
-        from .plans import features_of, plan_of
+        from .plans import PLANS, features_of, plan_of, trial_days_left
         return {"id": self.id, "slug": self.slug, "name": self.name,
                 "status": self.status or "active",
                 "plan": plan_of(self),
+                "plan_label": PLANS[plan_of(self)]["label"],
+                # Non-null only on a hosted trial — drives the console's countdown banner.
+                "trial_ends_at": self.trial_ends_at.isoformat() if self.trial_ends_at else None,
+                "trial_days_left": trial_days_left(self),
                 # Client-side hints for the console (lock badges); the API is the authority.
                 "plan_features": features_of(self),
                 "store_content": self.store_content,

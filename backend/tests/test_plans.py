@@ -131,10 +131,13 @@ def test_plan_catalog_endpoint(client):
     keys = {f["key"] for f in cat["features"]}
     assert {"sso", "siem", "mdm", "alerts", "device_setup", "s3_delivery"} <= keys
     tiers = {t["name"]: t for t in cat["tiers"]}
-    assert tiers["free"]["includes"]["device_setup"] is True
-    assert tiers["free"]["includes"]["sso"] is False
+    # The table lists what you can buy; trial/expired/self-hosted-free are states, not
+    # products, so they only appear when they're the caller's own current tier.
+    assert set(tiers) == {"team", "enterprise"}
+    assert all(t["purchasable"] for t in cat["tiers"])
+    assert tiers["team"]["includes"]["mdm"] is True
+    assert tiers["team"]["includes"]["sso"] is False
     assert tiers["enterprise"]["includes"]["sso"] is True
-    assert tiers["free"]["user_quota"] == 5
 
 
 def test_admin_plans_roster_requires_metrics_token(client, raw_client, monkeypatch):
@@ -148,3 +151,103 @@ def test_admin_plans_roster_requires_metrics_token(client, raw_client, monkeypat
     assert ok.status_code == 200
     body = ok.json()
     assert "totals" in body and any(t["slug"] == "acme" for t in body["tenants"])
+
+
+# --- hosted trial: full features for 14 days, then a loud (not silent) downgrade --------
+
+def _tenant(db_factory, slug, plan, days=None):
+    from datetime import datetime, timedelta, timezone
+    from app.models import Tenant
+    db = db_factory()
+    t = Tenant(slug=slug, name=slug, plan=plan)
+    if days is not None:
+        t.trial_ends_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=days)
+    db.add(t); db.commit(); db.refresh(t)
+    db.close()
+    return t
+
+
+def test_signup_starts_a_trial(raw_client, db_factory, monkeypatch):
+    from app import auth
+    monkeypatch.setattr(auth.settings, "allow_signup", True)
+    monkeypatch.setattr(auth.settings, "trial_days", 14)
+    r = raw_client.post("/api/auth/signup", json={
+        "org_name": "Trial Co", "slug": "trialco",
+        "email": "boss@trialco.example", "password": "hunter2hunter2"})
+    assert r.status_code in (200, 201)
+    from app.models import Tenant
+    db = db_factory()
+    t = db.query(Tenant).filter(Tenant.slug == "trialco").one()
+    assert t.plan == "trial" and t.trial_ends_at is not None
+    from app.plans import plan_of, trial_days_left
+    assert plan_of(t) == "trial"
+    assert 13 <= trial_days_left(t) <= 14
+    db.close()
+
+
+def test_trial_has_every_feature(db_factory):
+    from app.plans import has_feature
+    t = _tenant(db_factory, "livetrial", "trial", days=7)
+    for f in ("alerts", "mdm", "sso", "siem", "s3_delivery", "judge", "device_setup"):
+        assert has_feature(t, f), f
+
+
+def test_expired_trial_loses_gated_features_but_keeps_reporting(db_factory):
+    from app.plans import has_feature, plan_of, plan_quota, trial_days_left
+    t = _tenant(db_factory, "deadtrial", "trial", days=-1)
+    assert plan_of(t) == "expired"
+    assert trial_days_left(t) == 0
+    for f in ("alerts", "mdm", "sso", "siem", "s3_delivery", "judge", "device_setup"):
+        assert not has_feature(t, f), f
+    # Quotas tighten rather than going to zero: an expired trial must not silently stop
+    # protecting a fleet that is still pointed at it.
+    assert plan_quota(t, "ingest_per_day") > 0
+    assert plan_quota(t, "users") > 0
+
+
+def test_expired_trial_gets_its_own_upgrade_message(db_factory):
+    import pytest
+    from fastapi import HTTPException
+    from app.plans import require_feature
+    t = _tenant(db_factory, "deadtrial2", "trial", days=-1)
+    with pytest.raises(HTTPException) as e:
+        require_feature(t, "sso")
+    assert e.value.status_code == 402
+    assert "trial has ended" in e.value.detail
+
+
+def test_upgrade_pointer_never_names_the_trial(db_factory):
+    import pytest
+    from fastapi import HTTPException
+    from app.plans import require_feature
+    # A self-hosted free tenant asking for a paid feature must be pointed at a plan it can
+    # actually buy — not at "Trial", which holds every feature by construction.
+    t = _tenant(db_factory, "selfhost", "free")
+    for feature, expect in (("alerts", "Team"), ("sso", "Enterprise")):
+        with pytest.raises(HTTPException) as e:
+            require_feature(t, feature)
+        assert expect in e.value.detail
+        assert "Trial" not in e.value.detail
+
+
+def test_trial_without_end_date_never_expires(db_factory):
+    from app.plans import has_feature, plan_of
+    t = _tenant(db_factory, "opentrial", "trial")     # operator cleared the clock
+    assert plan_of(t) == "trial" and has_feature(t, "sso")
+
+
+def test_self_hosted_free_is_untouched_by_the_trial_model(db_factory):
+    from app.plans import has_feature, plan_of
+    t = _tenant(db_factory, "shfree", "free")
+    assert plan_of(t) == "free"
+    assert has_feature(t, "device_setup") is True     # still fully usable
+    assert has_feature(t, "mdm") is False
+
+
+def test_catalog_shows_the_callers_own_tier_alongside_what_they_can_buy(db_factory):
+    from app.plans import catalog
+    t = _tenant(db_factory, "trialcat", "trial", days=3)
+    tiers = {x["name"]: x for x in catalog(t)["tiers"]}
+    assert set(tiers) == {"trial", "team", "enterprise"}
+    assert tiers["trial"]["purchasable"] is False
+    assert tiers["team"]["purchasable"] is True

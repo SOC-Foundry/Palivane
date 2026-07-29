@@ -90,7 +90,7 @@ def main(argv: list[str]) -> int:
     # deliberately no tenant-facing API for this.
     spl = sub.add_parser("set-plan")
     spl.add_argument("--tenant", required=True)
-    spl.add_argument("--plan", choices=["free", "team", "enterprise"], required=True)
+    spl.add_argument("--plan", choices=["trial", "free", "team", "enterprise"], required=True)
 
     for name in ("suspend", "resume"):
         sp = sub.add_parser(name)

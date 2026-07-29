@@ -182,7 +182,13 @@ def signup(body: SignupRequest, request: Request, db: Session = Depends(get_db))
         return {"status": "pending_approval", "org": tenant.name or tenant.slug}
 
     slug = _unique_slug(db, _slugify(body.slug or body.org_name))
-    tenant = Tenant(slug=slug, name=body.org_name.strip() or slug)
+    # A hosted signup starts a full-featured trial; the source-available self-host path is
+    # what stays free indefinitely (see app/plans.py).
+    trial_days = settings.trial_days
+    tenant = Tenant(
+        slug=slug, name=body.org_name.strip() or slug,
+        plan="trial" if trial_days > 0 else "free",
+        trial_ends_at=(_naive_utc() + timedelta(days=trial_days)) if trial_days > 0 else None)
     db.add(tenant)
     db.commit()
     db.refresh(tenant)

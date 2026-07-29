@@ -24,7 +24,10 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
 
   // Licensing plan (display hints only — the API enforces the gates).
   const plan = tenant?.plan || "free";
-  const planLabel = plan.charAt(0).toUpperCase() + plan.slice(1);
+  // plan_label comes from the server so "Trial expired" / "Free (self-hosted)" read
+  // correctly instead of being title-cased from the raw key.
+  const planLabel = tenant?.plan_label || (plan.charAt(0).toUpperCase() + plan.slice(1));
+  const trialLeft = tenant?.trial_days_left;   // null unless on a hosted trial
   const can = (f) => (tenant?.plan_features || []).includes(f);
   const NEEDS = { alerts: "Team", mdm: "Team", sso: "Enterprise", siem: "Enterprise", s3_delivery: "Enterprise" };
   const PlanLock = ({ need }) => can(need) ? null : (
@@ -292,8 +295,18 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <h2>Your plan</h2>
           <p className="muted" style={{ marginTop: 0 }}>
             You're on the <strong>{planLabel}</strong> plan.
+            {plan === "trial" && trialLeft != null && (
+              <> Every feature is unlocked for <strong>{trialLeft} more {trialLeft === 1 ? "day" : "days"}</strong>.</>
+            )}
             {plan !== "enterprise" && <> To unlock more, <a href="mailto:sales@tachtech.net">contact us</a>.</>}
           </p>
+          {plan === "expired" && (
+            <p style={{ color: "var(--crit)", marginTop: 0 }}>
+              Your trial has ended. Capture and detection keep running, but paid features
+              can no longer be configured and limits are reduced —{" "}
+              <a href="mailto:sales@tachtech.net">talk to us</a> to pick a plan.
+            </p>
+          )}
           <div style={{ overflowX: "auto" }}>
             <table className="data-table plan-table">
               <thead>
