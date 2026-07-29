@@ -10,10 +10,11 @@ import { useEffect } from "react";
 const TABS = [
   { href: "/why-warden", label: "Why Warden" },
   { href: "/use-cases", label: "Use cases" },
-  { href: "/pricing", label: "Pricing" },
   { href: "/how-it-works", label: "How it works" },
   { href: "/setup", label: "Setup" },
   { href: "/docs", label: "Docs" },
+  // Pricing last: it reads as the natural next step, adjacent to the sign-in CTA.
+  { href: "/pricing", label: "Pricing" },
 ];
 
 export function SiteNav({ onSignIn }) {
