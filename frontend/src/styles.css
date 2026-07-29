@@ -795,7 +795,11 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 .hiw-arrow { align-self: center; }   /* the connector stays centred between the boxes */
 .hiw-pipe-ic { display: grid; place-items: center; width: 40px; height: 40px; margin: 0 auto 10px; border-radius: 11px; background: rgba(124,108,255,0.12); color: var(--lp-violet); border: 1px solid rgba(124,108,255,0.28); }
 .hiw-pipe b { display: block; color: var(--text); font-size: 14.5px; }
-.hiw-pipe span { display: block; font-size: 11.5px; color: var(--muted-2); margin-top: 3px; }
+/* :not(.hiw-pipe-ic) — the icon tile is a span inside .hiw-pipe too, and this rule
+   (0,1,1) outranks .hiw-pipe-ic (0,1,0): it was overriding the tile to display:block,
+   which dropped the glyph onto the text baseline instead of centring it, and repainting
+   the icon muted grey instead of violet. */
+.hiw-pipe span:not(.hiw-pipe-ic) { display: block; font-size: 11.5px; color: var(--muted-2); margin-top: 3px; }
 .hiw-arrow { color: var(--lp-violet); font-size: 18px; flex: none; }
 
 /* Surface chips */
