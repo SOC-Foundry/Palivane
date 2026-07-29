@@ -2,8 +2,8 @@
 already store (no external analytics SaaS, no new write-path, no tracking pixels — which
 would also break our own CSP/trust posture).
 
-The Free tier is open; the question that matters is where new orgs drop off between
-signing up and getting value. Every stage below is a monotonic subset of the previous
+Hosted signups start a full-featured trial; the question that matters is where new orgs
+drop off between signing up and getting value. Every stage below is a monotonic subset of the previous
 one and is reconstructed from existing timestamps:
 
   1. signed_up   — a Tenant row exists

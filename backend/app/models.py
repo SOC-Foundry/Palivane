@@ -116,6 +116,9 @@ class Tenant(Base):
     # When a hosted trial lapses (plan="trial"). NULL = no clock: that is every
     # self-hosted/free tenant, and an operator can clear it to extend a trial indefinitely.
     trial_ends_at = Column(DateTime, nullable=True)
+    # Highest trial-lifecycle notice already emailed ("" | d7 | d2 | expired) — the dedupe
+    # marker for app/trial.py, claimed via conditional update so workers can't double-send.
+    trial_notice = Column(String(16), default="", nullable=False)
     # Persist raw prompt prose in this tenant's findings? None = inherit the global default
     # (WARDEN_STORE_CONTENT, off). Off = metadata-only (verdict + signals + redacted
     # evidence, no natural-language content).
@@ -746,3 +749,29 @@ class License(Base):
                 "contract_until": self.contract_until.isoformat() if self.contract_until else None,
                 "renewed_at": self.renewed_at.isoformat() if self.renewed_at else None,
                 "renew_count": self.renew_count or 0, "note": self.note or ""}
+
+
+class UpgradeRequest(Base):
+    """An org's in-console "we want to buy" record — the sales-led upgrade path until a
+    billing provider exists. One pending request per tenant (the console shows its state
+    instead of the form); the operator works the queue at /admin and closes rows there.
+    Closing is bookkeeping only — the actual plan change stays `users set-plan` / a license."""
+
+    __tablename__ = "upgrade_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    plan = Column(String(16), nullable=False)          # team | enterprise
+    seats = Column(Integer, default=0)                 # 0 = unspecified
+    contact = Column(String(320), default="")          # requester's email (reply-to)
+    note = Column(String(2000), default="")
+    status = Column(String(16), default="pending", nullable=False)   # pending | closed
+    created_at = Column(DateTime, default=_utcnow)
+    closed_at = Column(DateTime, nullable=True)
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "plan": self.plan, "seats": self.seats or 0,
+                "contact": self.contact or "", "note": self.note or "",
+                "status": self.status or "pending",
+                "created_at": self.created_at.isoformat() if self.created_at else None,
+                "closed_at": self.closed_at.isoformat() if self.closed_at else None}

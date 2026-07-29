@@ -82,6 +82,21 @@ def notify_judge_recovered(webhook: str, health: dict) -> bool:
                               "warden": {"event": "judge_recovered", **health}})
 
 
+def notify_upgrade_request(webhook: str, org: str, plan: str, seats: int,
+                           contact: str, note: str) -> bool:
+    """Page the operator that an org hit "Request upgrade" in the console — a buying
+    signal that should never wait for someone to check /admin. Best-effort."""
+    if not webhook:
+        return False
+    text = (f":moneybag: *Warden: upgrade request* — \"{org}\" wants the *{plan}* plan"
+            + (f" ({seats} seats)" if seats else "")
+            + f". Contact: {contact or 'unknown'}."
+            + (f"\n> {note}" if note else "")
+            + "\nWork the queue in the operator console (/admin).")
+    return send_sync(webhook, {"text": text, "warden": {
+        "event": "upgrade_request", "org": org, "plan": plan, "seats": seats}})
+
+
 def _realtime_ok(severity: str, min_severity: str, digest: str) -> bool:
     """Should this finding fire a real-time alert? It must clear the severity threshold, and
     in digest mode only criticals go out immediately (the rest are batched)."""

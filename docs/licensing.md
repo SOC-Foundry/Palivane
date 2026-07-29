@@ -20,6 +20,21 @@ DB is private-IP, so run it as a one-off Cloud Run job (same pattern as bootstra
     python -m app.users set-plan --tenant <slug> --plan team|enterprise|free
     python -m app.users list-tenants          # shows each org's plan
 
+## SaaS: the trial → paid pipeline
+
+You don't have to watch trials by hand — two things surface buyers:
+
+- **Trial lifecycle emails** (`app/trial.py`, sent from the background loop when SMTP is
+  configured): the org's admins get a 7-days-left, 2-days-left, and expiry email. Each
+  points at the console's "Request upgrade" form.
+- **Upgrade requests**: an org admin hits "Request upgrade" on Settings → Your plan. It
+  pages the ops webhook (`WARDEN_OPS_WEBHOOK`), emails `WARDEN_SALES_EMAIL`, and lands
+  in the operator console (`/admin` → Upgrade requests).
+
+Working the queue: agree terms with the contact → `set-plan` (SaaS) or issue a license
+(self-hosted, below) → hit **Close** on the request in `/admin`. Closing is bookkeeping
+only; the plan change is always set-plan / a license.
+
 ## Self-hosted: issue a license file
 
 The Ed25519 **signing key** lives only in Secret Manager

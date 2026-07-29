@@ -540,6 +540,14 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 .flash-ok { background: rgba(70,201,139,0.10); color: var(--benign); border-color: rgba(70,201,139,0.3); }
 .flash-err { background: rgba(255,77,94,0.10); color: var(--crit); border-color: rgba(255,77,94,0.3); }
 
+/* Console-wide trial countdown / expiry strip (App.jsx) */
+.trial-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  border: 1px solid rgba(255,183,77,0.35); background: rgba(255,183,77,0.08);
+  color: var(--text); border-radius: 9px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px;
+}
+.trial-banner-expired { border-color: rgba(255,77,94,0.35); background: rgba(255,77,94,0.08); }
+
 .usage-stats { display: flex; gap: 28px; margin-bottom: 8px; }
 .usage-stats > div { display: flex; flex-direction: column; }
 .usage-n { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; }

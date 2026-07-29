@@ -1,5 +1,5 @@
-// Public pricing page at /pricing. Three licensing tiers (Free · Team · Enterprise);
-// mirrors the real plan gates in backend app/plans.py — keep the two in sync.
+// Public pricing page at /pricing. Two purchasable tiers (Team · Enterprise) plus the
+// 14-day trial; mirrors the real plan gates in backend app/plans.py — keep in sync.
 import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
 
 const TIERS = [

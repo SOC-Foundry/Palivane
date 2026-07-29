@@ -31,8 +31,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   const can = (f) => (tenant?.plan_features || []).includes(f);
   const NEEDS = { alerts: "Team", mdm: "Team", sso: "Enterprise", siem: "Enterprise", s3_delivery: "Enterprise" };
   const PlanLock = ({ need }) => can(need) ? null : (
-    <p className="muted" style={{ marginTop: 2 }}>🔒 {NEEDS[need]} plan feature —{" "}
-      <a href="mailto:sales@tachtech.net">contact us</a> to enable.</p>
+    <p className="muted" style={{ marginTop: 2 }}>🔒 {NEEDS[need]} plan feature — request an
+      upgrade under “Your plan” above to enable.</p>
   );
 
   // --- Organization ---
@@ -180,6 +180,22 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   const [catalog, setCatalog] = useState(null);
   const loadCatalog = useCallback(() => api.planCatalog().then(setCatalog).catch(() => {}), []);
 
+  // --- Upgrade request (the in-app upgrade path; sales-led, one pending per org) ---
+  const [upgrade, setUpgrade] = useState(null);          // latest request row or null
+  const [upDraftPlan, setUpDraftPlan] = useState({ plan: "team", seats: "", note: "" });
+  const loadUpgrade = useCallback(
+    () => api.upgradeRequest().then((r) => setUpgrade(r.request)).catch(() => {}), []);
+
+  async function submitUpgrade(e) {
+    e.preventDefault();
+    try {
+      const r = await api.requestUpgrade(upDraftPlan.plan, Number(upDraftPlan.seats) || 0,
+                                         upDraftPlan.note);
+      setUpgrade(r.request);
+      flash("Upgrade requested — we'll be in touch shortly.");
+    } catch (e2) { err(e2); }
+  }
+
   // --- Upstreams ---
   const [ups, setUps] = useState([]);
   const [upDraft, setUpDraft] = useState({});   // provider -> {base_url, key}
@@ -264,8 +280,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     } catch (e) { err(e); }
   }
 
-  useEffect(() => { loadUsage(); loadUps(); loadOidc(); loadSaml(); loadDpa(); loadCatalog(); },
-    [loadUsage, loadUps, loadOidc, loadSaml, loadDpa, loadCatalog]);
+  useEffect(() => { loadUsage(); loadUps(); loadOidc(); loadSaml(); loadDpa(); loadCatalog(); loadUpgrade(); },
+    [loadUsage, loadUps, loadOidc, loadSaml, loadDpa, loadCatalog, loadUpgrade]);
 
   async function logoutEverywhere() {
     try { await api.logoutAll(); } catch { /* ignore */ }
@@ -282,7 +298,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           </h1>
           <p className="page-sub">Organization, gateway upstreams, SSO, and usage — admin only.
             {plan !== "enterprise" && (
-              <> &nbsp;Need SSO, SIEM, or higher limits? <a href="mailto:sales@tachtech.net">contact us</a>.</>
+              <> &nbsp;Need SSO, SIEM, or higher limits? Request an upgrade under “Your plan” below.</>
             )}
           </p>
         </div>
@@ -298,14 +314,44 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
             {plan === "trial" && trialLeft != null && (
               <> Every feature is unlocked for <strong>{trialLeft} more {trialLeft === 1 ? "day" : "days"}</strong>.</>
             )}
-            {plan !== "enterprise" && <> To unlock more, <a href="mailto:sales@tachtech.net">contact us</a>.</>}
           </p>
           {plan === "expired" && (
             <p style={{ color: "var(--crit)", marginTop: 0 }}>
               Your trial has ended. Capture and detection keep running, but paid features
-              can no longer be configured and limits are reduced —{" "}
-              <a href="mailto:sales@tachtech.net">talk to us</a> to pick a plan.
+              can no longer be configured and limits are reduced — request an upgrade below
+              to pick a plan.
             </p>
+          )}
+          {plan !== "enterprise" && (
+            upgrade && upgrade.status === "pending" ? (
+              <p className="flash-ok" style={{ marginTop: 0 }}>
+                Upgrade to <strong>{upgrade.plan === "team" ? "Team" : "Enterprise"}</strong> requested
+                {upgrade.created_at && <> on {upgrade.created_at.slice(0, 10)}</>} — we'll be in
+                touch at <strong>{upgrade.contact}</strong>. Prefer email?{" "}
+                <a href="mailto:sales@tachtech.net">sales@tachtech.net</a>.
+              </p>
+            ) : (
+              <form onSubmit={submitUpgrade}
+                    style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
+                <label>Plan
+                  <select value={upDraftPlan.plan}
+                          onChange={(e) => setUpDraftPlan((s) => ({ ...s, plan: e.target.value }))}>
+                    <option value="team">Team — $12/user/mo</option>
+                    <option value="enterprise">Enterprise — custom</option>
+                  </select>
+                </label>
+                <label>Seats
+                  <input type="number" min="0" placeholder="optional" value={upDraftPlan.seats}
+                         style={{ width: 90 }}
+                         onChange={(e) => setUpDraftPlan((s) => ({ ...s, seats: e.target.value }))} />
+                </label>
+                <label style={{ flex: "1 1 220px" }}>Anything we should know?
+                  <input value={upDraftPlan.note} placeholder="optional"
+                         onChange={(e) => setUpDraftPlan((s) => ({ ...s, note: e.target.value }))} />
+                </label>
+                <button className="primary-btn slim" type="submit">Request upgrade</button>
+              </form>
+            )
           )}
           <div style={{ overflowX: "auto" }}>
             <table className="data-table plan-table">

@@ -149,6 +149,9 @@ export const api = {
   deleteTenant: (confirm) => req("/tenant", { method: "DELETE", body: JSON.stringify({ confirm }) }),
   usage: () => req("/usage"),
   planCatalog: () => req("/plans"),
+  upgradeRequest: () => req("/plans/upgrade"),
+  requestUpgrade: (plan, seats, note) =>
+    req("/plans/upgrade", { method: "POST", body: JSON.stringify({ plan, seats, note }) }),
   audit: (params = {}) => {
     const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
     return req("/audit" + (q ? `?${q}` : ""));
