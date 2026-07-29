@@ -6,38 +6,38 @@ import { IconShield, IconTarget, IconPlug, IconInbox, IconClipboard, IconAlert }
 const REASONS = [
   {
     icon: <IconShield />,
-    title: "Agentless by default",
-    body: "The core — gateway, browser extension, egress proxy, CI — needs no endpoint agent. Push config zero-touch to managed fleets via an MDM policy pack (Jamf / Intune / GPO). Opt-in local sensors add stdio-level MCP and pre-tool-use depth only when you want it.",
+    title: "Nothing to install on laptops",
+    body: "No agent to package, roll out, or explain to your developers. If you already use Jamf, Intune, or Group Policy, Warden gives you the config to push. Optional local helpers add extra depth on the machines where you want it — your choice, not a requirement.",
   },
   {
     icon: <IconTarget />,
-    title: "Offline-first detection",
-    body: "The detection engine is pure regex and heuristics — no API key, no outbound call. That makes it fast, private (content never leaves your environment on the offline path), and deterministic. An optional LLM judge layers on top for novel cases, but nothing depends on it.",
+    title: "No third-party AI sees your content",
+    body: "Detection is Warden's own engine — it calls no outside AI service to do its job. That keeps it fast, private, and predictable: the same input always gets the same answer. Run it as our hosted service or entirely inside your own infrastructure, and add an AI reviewer for hard cases only if you want one.",
   },
   {
     icon: <IconInbox />,
-    title: "One engine, every surface",
-    body: "Prompts to your own LLMs, pastes into public AI tools, agent tool-calls, commits, and credentials at rest all feed the same scoring engine and the same console. No stitching together five point tools with five policies.",
+    title: "One tool instead of five",
+    body: "Browser pastes, desktop apps, AI coding assistants, your own AI features, code commits, and credentials sitting on laptops all land in the same console under the same policy. No stitching together point products with five different rule sets.",
   },
   {
     icon: <IconAlert />,
-    title: "Prevention, not just detection",
-    body: "Start in monitor mode to see what would trip, then flip to enforce and Warden blocks at the source — the extension shows a block modal, the gateway returns an error, the git hook fails the commit. Real prevention, with a per-tenant block threshold you control.",
+    title: "It actually stops things",
+    body: "Most tools tell you about the leak afterward. Warden can block it as it happens — the browser refuses the paste, the AI tool gets an error, the commit fails. Start in watch-only mode, see what would have been caught, then turn blocking on when you trust it.",
   },
   {
     icon: <IconPlug />,
-    title: "Works with what you already have",
-    body: "Provider-agnostic across Claude, GPT, and Gemini for both the gateway and the judge. Complements GitHub secret scanning and your CASB rather than replacing them, and folds in TruffleHog / Gitleaks / GitGuardian output so every finding lands in one place.",
+    title: "Works with what you already bought",
+    body: "Claude, GPT, or Gemini — Warden doesn't care which you use. It sits alongside GitHub secret scanning and your existing security stack rather than replacing them, and pulls results from scanners you already run into the same place.",
   },
   {
     icon: <IconTarget />,
-    title: "Discover, then govern — granularly",
-    body: "Warden inventories every AI tool in use (by tool and by team) from logs and live capture, then lets you govern it: toggle any detection check on/off with presets, and set per-user or per-group policy overrides. One console covers discovery, policy, and enforcement.",
+    title: "Find the problem before you police it",
+    body: "Warden first shows you which AI tools are in use and by whom, so your policy is based on what's really happening. Then you decide: which checks matter, who they apply to, and where you want a hard stop versus a warning.",
   },
   {
     icon: <IconClipboard />,
-    title: "Multi-tenant & compliance-ready",
-    body: "Org signup, role-based console, per-tenant API keys and policy, a full audit log, alert digests, SIEM export, a signed DPA, and self-serve data export plus one-click delete-my-org. Deployable with docker compose locally or Cloud Run + Cloud SQL for production.",
+    title: "Answers for your auditors and customers",
+    body: "A full audit trail, alerts, exports to your SIEM or data lake, a signed DPA, and a monthly summary you can hand upward. Export everything or delete your org in one click — it stays your data.",
   },
 ];
 
@@ -48,9 +48,10 @@ export default function WhyWarden() {
 
       <section className="lp-pagehead">
         <div className="lp-tagline">WHY WARDEN</div>
-        <h1>Coverage that fits how AI actually spreads</h1>
-        <p>AI adoption outran the tools built to govern it. Warden was built for it —
-           agentless, offline-first, and prevention-capable across every surface.</p>
+        <h1>Why teams pick Warden</h1>
+        <p>Your people adopted AI faster than anyone could write a policy for it. Warden was
+           built for that reality: quick to stand up, honest about what it sees, and able to
+           stop a leak rather than just report one.</p>
       </section>
 
       <section className="lp-section">
@@ -69,10 +70,11 @@ export default function WhyWarden() {
 
       <section className="lp-section alt">
         <div className="lp-wrap">
-          <h2 className="lp-h2">Govern agents, not just prompts</h2>
-          <p className="lp-sub">Give every AI agent a verifiable identity and a least-privilege
-             role — which tools, servers, commands, and data it may touch — monitor or enforce.</p>
-          <Shot lead src="/shots/agents.png" alt="Agent identity & least-privilege" />
+          <h2 className="lp-h2">AI assistants get their own rules</h2>
+          <p className="lp-sub">An AI assistant with access to your codebase deserves the same
+             limits you would give a contractor. Warden gives each one an identity and a
+             boundary — which tools, commands, and data it may touch — and enforces it.</p>
+          <Shot lead src="/shots/agents.png" alt="AI assistant identity and limits" />
         </div>
       </section>
 
@@ -81,8 +83,8 @@ export default function WhyWarden() {
           <div className="lp-banner">
             <IconShield width={22} height={22} />
             <div>
-              <strong>Curious how the engine works?</strong> The technical overview walks through
-              surfaces, the two-tier secret engine, and the scoring model.
+              <strong>Want the engineering detail?</strong> The technical overview covers every
+              detection surface, the two-tier secret engine, and how scoring works.
             </div>
             <a className="lp-btn-ghost wide" href="/how-it-works">How it works →</a>
             <a className="primary-btn slim" href="/#signin" style={{ textDecoration: "none" }}>Sign in</a>
