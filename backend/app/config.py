@@ -116,6 +116,9 @@ class Settings:
     # the LLM judge goes down (all providers erroring, e.g. exhausted API credits). Distinct
     # from per-tenant alert_webhook; empty = log/health only.
     ops_webhook: str = os.getenv("WARDEN_OPS_WEBHOOK", "").strip()
+    # Where in-console upgrade requests and trial emails point buyers. One knob so a
+    # self-hosted reseller (or a future address change) doesn't chase hardcoded strings.
+    sales_email: str = os.getenv("WARDEN_SALES_EMAIL", "sales@tachtech.net").strip()
 
     # --- LLM gateway (protect our AI) ---
     # enforce=block risky prompts; otherwise monitor (observe + record only). Block when

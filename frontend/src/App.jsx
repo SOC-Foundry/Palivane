@@ -278,6 +278,26 @@ export default function App() {
       </aside>
 
       <main className="content">
+        {/* Trial countdown / expiry — console-wide (Settings alone is not enough: nobody
+            re-opens Settings in week two). Hidden on Settings itself, where the plan
+            panel and upgrade form already carry this. */}
+        {view !== "settings" &&
+          (auth.tenant?.plan === "expired" ||
+           (auth.tenant?.plan === "trial" && auth.tenant?.trial_days_left != null &&
+            auth.tenant.trial_days_left <= 7)) && (
+          <div className={`trial-banner ${auth.tenant.plan === "expired" ? "trial-banner-expired" : ""}`}>
+            <span>
+              {auth.tenant.plan === "expired"
+                ? "Your trial has ended — capture and detection keep running, but paid features are off and limits are reduced."
+                : `Your trial ends in ${auth.tenant.trial_days_left} ${auth.tenant.trial_days_left === 1 ? "day" : "days"}.`}
+            </span>
+            {isAdmin
+              ? <button type="button" className="mini-btn" onClick={() => setView("settings")}>
+                  Upgrade
+                </button>
+              : <span className="muted">Ask your admin to upgrade.</span>}
+          </div>
+        )}
         {view === "connect" ? (
           <Connect tenant={auth.tenant} />
         ) : view === "connections" ? (

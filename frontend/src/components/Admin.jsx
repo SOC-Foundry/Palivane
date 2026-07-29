@@ -34,6 +34,7 @@ export default function Admin() {
   const [funnel, setFunnel] = useState(null);
   const [plans, setPlans] = useState(null);
   const [licenses, setLicenses] = useState(null);
+  const [upgrades, setUpgrades] = useState(null);
   const [issuing, setIssuing] = useState(false);
   const [issued, setIssued] = useState(null);   // freshly issued blob, shown once
   const [form, setForm] = useState({ org: "", plan: "enterprise", seats: 0, term_days: 45, contract_months: 12 });
@@ -41,10 +42,11 @@ export default function Admin() {
   const load = useCallback(async (tok) => {
     setErr(null);
     try {
-      const [f, p, l] = await Promise.all([
+      const [f, p, l, u] = await Promise.all([
         call("/admin/funnel", tok), call("/admin/plans", tok), call("/admin/licenses", tok),
+        call("/admin/upgrade-requests", tok),
       ]);
-      setFunnel(f); setPlans(p); setLicenses(l); setAuthed(true);
+      setFunnel(f); setPlans(p); setLicenses(l); setUpgrades(u); setAuthed(true);
       sessionStorage.setItem("warden_op_token", tok); setTokenState(tok);
     } catch (e) {
       setAuthed(false); setErr(String(e.message || e));
@@ -77,6 +79,13 @@ export default function Admin() {
     if (!window.confirm(`Revoke ${id}? Renewals stop; the instance drops to Free at term end.`)) return;
     try { await call(`/admin/licenses/${id}/revoke`, token, { method: "POST" }); await refreshLicenses(); }
     catch (e) { setErr(String(e.message || e)); }
+  }
+
+  async function closeUpgrade(id) {
+    try {
+      await call(`/admin/upgrade-requests/${id}/close`, token, { method: "POST" });
+      setUpgrades(await call("/admin/upgrade-requests", token));
+    } catch (e) { setErr(String(e.message || e)); }
   }
 
   if (!authed) {
@@ -134,6 +143,29 @@ export default function Admin() {
               <tr key={t.slug}><td><strong>{t.slug}</strong></td><td>{t.plan}</td>
                 <td>{t.status}</td><td>{t.activated ? "✓" : "—"}</td></tr>
             ))}</tbody></table>
+        </Section>
+      )}
+
+      {upgrades && (
+        <Section title={`Upgrade requests (${upgrades.requests.filter((r) => r.status === "pending").length} open)`}>
+          {upgrades.requests.length ? (
+            <table className="data-table"><thead><tr>
+              <th>Org</th><th>Wants</th><th>Seats</th><th>Contact</th><th>Note</th><th>When</th><th>Status</th><th></th></tr></thead>
+              <tbody>{upgrades.requests.map((r) => (
+                <tr key={r.id} style={{ opacity: r.status === "closed" ? 0.55 : 1 }}>
+                  <td><strong>{r.slug}</strong> <span className="muted">({r.current_plan})</span></td>
+                  <td>{r.plan}</td><td>{r.seats || "—"}</td>
+                  <td><a href={`mailto:${r.contact}`}>{r.contact}</a></td>
+                  <td style={{ maxWidth: 260, whiteSpace: "pre-wrap" }}>{r.note || "—"}</td>
+                  <td>{r.created_at ? r.created_at.slice(0, 10) : "—"}</td>
+                  <td>{r.status === "pending"
+                    ? <span className="cat cat-secret_leak">pending</span>
+                    : <span className="cat cat-unsanctioned_ai">closed</span>}</td>
+                  <td>{r.status === "pending" &&
+                    <button className="link-btn" onClick={() => closeUpgrade(r.id)}>Close</button>}</td>
+                </tr>
+              ))}</tbody></table>
+          ) : <p className="muted">No upgrade requests yet.</p>}
         </Section>
       )}
 

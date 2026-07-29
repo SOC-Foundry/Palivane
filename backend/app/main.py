@@ -107,6 +107,10 @@ async def lifespan(_app: FastAPI):
                 db = SessionLocal()
                 try:
                     await asyncio.to_thread(alerts.run_digests, db)
+                    # Trial lifecycle notices (7-day / 2-day / expiry emails). Cheap: one
+                    # query over plan="trial" tenants; per-stage dedupe in run_notices.
+                    from .trial import run_notices
+                    await asyncio.to_thread(run_notices, db)
                     # Prune the usage/metering counter (rows past the retention horizon) so
                     # gateway_usage doesn't grow unbounded. ~hourly (every 12th 5-min tick).
                     if ticks % 12 == 0:
@@ -434,6 +438,84 @@ def plan_catalog(current: User = Depends(get_current_user), db: Session = Depend
     Authenticated (any member); shows only the caller's own plan — no cross-tenant data."""
     from . import plans as plans_mod
     return plans_mod.catalog(db.get(Tenant, current.tenant_id))
+
+
+@app.get("/api/plans/upgrade")
+def upgrade_request_status(current: User = Depends(require_admin),
+                           db: Session = Depends(get_db)):
+    """This org's most recent upgrade request (null if none) — drives the console's
+    "requested / request upgrade" state on the plan panel."""
+    from .models import UpgradeRequest
+    row = (db.query(UpgradeRequest).filter(UpgradeRequest.tenant_id == current.tenant_id)
+           .order_by(UpgradeRequest.created_at.desc(), UpgradeRequest.id.desc()).first())
+    return {"request": row.to_dict() if row else None}
+
+
+@app.post("/api/plans/upgrade")
+def upgrade_request_create(body: dict, current: User = Depends(require_admin),
+                           db: Session = Depends(get_db)):
+    """The in-console upgrade path (sales-led until a billing provider exists): record the
+    request, page the operator webhook, and email sales — so a buying signal never depends
+    on someone composing a mailto. One pending request per org (409 on a duplicate)."""
+    from . import alerts, audit_log, email as email_mod
+    from .models import UpgradeRequest
+    from .plans import PLANS, PURCHASABLE
+    plan = (body.get("plan") or "").strip().lower()
+    if plan not in PURCHASABLE:
+        raise HTTPException(status_code=400,
+                            detail=f"plan must be one of: {', '.join(PURCHASABLE)}")
+    if (db.query(UpgradeRequest)
+            .filter(UpgradeRequest.tenant_id == current.tenant_id,
+                    UpgradeRequest.status == "pending").first()):
+        raise HTTPException(status_code=409,
+                            detail="an upgrade request is already pending — we'll be in touch")
+    seats = max(0, int(body.get("seats") or 0))
+    note = (body.get("note") or "").strip()[:2000]
+    tenant = db.get(Tenant, current.tenant_id)
+    row = UpgradeRequest(tenant_id=current.tenant_id, plan=plan, seats=seats,
+                         contact=current.email, note=note)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    audit_log.record(db, current.tenant_id, current.email, "upgrade_request",
+                     target=plan, detail={"seats": seats})
+    org = tenant.name or tenant.slug if tenant else "?"
+    alerts.notify_upgrade_request(settings.ops_webhook, org, plan, seats,
+                                  current.email, note)
+    if email_mod.enabled():
+        email_mod.send(
+            settings.sales_email, f"Warden upgrade request: {org} → {PLANS[plan]['label']}",
+            f"Org: {org}\nPlan: {PLANS[plan]['label']}\nSeats: {seats or 'unspecified'}\n"
+            f"Contact: {current.email}\nNote: {note or '—'}\n\n"
+            "Recorded in the operator console (/admin → Upgrade requests).")
+    return {"request": row.to_dict()}
+
+
+@app.get("/api/admin/upgrade-requests")
+def admin_upgrade_requests(request: Request, db: Session = Depends(get_db)):
+    """Operator queue of in-console upgrade requests, newest first. Cross-tenant, so
+    operator-token-gated like the funnel; 404 when no metrics token is configured."""
+    from .models import UpgradeRequest
+    _require_operator(request)
+    rows = (db.query(UpgradeRequest, Tenant).join(Tenant, UpgradeRequest.tenant_id == Tenant.id)
+            .order_by(UpgradeRequest.created_at.desc(), UpgradeRequest.id.desc()).all())
+    return {"requests": [{**r.to_dict(), "org": t.name or t.slug, "slug": t.slug,
+                          "current_plan": t.plan} for r, t in rows]}
+
+
+@app.post("/api/admin/upgrade-requests/{rid}/close")
+def admin_upgrade_request_close(rid: int, request: Request, db: Session = Depends(get_db)):
+    """Mark a worked upgrade request closed (bookkeeping only — the plan change itself is
+    `users set-plan` or a license). Operator-gated."""
+    from .models import UpgradeRequest
+    _require_operator(request)
+    row = db.get(UpgradeRequest, rid)
+    if row is None:
+        raise HTTPException(status_code=404, detail="upgrade request not found")
+    row.status = "closed"
+    row.closed_at = _naive_now()
+    db.commit()
+    return row.to_dict()
 
 
 @app.get("/api/admin/licenses")
