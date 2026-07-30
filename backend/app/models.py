@@ -86,6 +86,11 @@ class Tenant(Base):
     client_enforce = Column(Boolean, nullable=True, default=None)
     # Block threshold for capture-plane verdicts (/api/ingest/mcp action). Empty = global.
     mcp_block_severity = Column(String(16), default="")
+    # Block threshold for CI-runner scans (/api/scan/ci action -> warden-ci-scan exit code).
+    # Empty = inherit the global CI_BLOCK_SEVERITY, which defaults to `critical`: confirmed
+    # exposure (pwn-request, secrets handed to an agent) fails a build, while posture debt
+    # (unpinned actions, write-all) warns — a gate on pre-existing debt gets switched off.
+    ci_block_severity = Column(String(16), default="")
     # Org-approved AI destinations (comma-separated hosts). Empty = inherit global.
     sanctioned_ai_tools = Column(String(2048), default="")
     # Per-tool signal suppression ("tool:category;tool:category"). Empty = inherit global.
@@ -166,6 +171,7 @@ class Tenant(Base):
                 "client_enforce": self.client_enforce,
                 "gateway_block_severity": self.gateway_block_severity or "",
                 "mcp_block_severity": self.mcp_block_severity or "",
+                "ci_block_severity": self.ci_block_severity or "",
                 "sanctioned_ai_tools": self.sanctioned_ai_tools or "",
                 "custom_pii_patterns": self.custom_pii_patterns or "",
                 "tool_suppress": self.tool_suppress or "",

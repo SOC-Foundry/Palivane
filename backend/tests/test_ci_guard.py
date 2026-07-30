@@ -288,6 +288,59 @@ def test_scan_ci_requires_token(raw_client):
     assert r.status_code == 401
 
 
+UNPINNED_PRIVILEGED = """
+on: push
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: vendor/act@v1
+        env:
+          KEY: ${{ secrets.DEPLOY_KEY }}
+"""
+
+
+def _scan(raw_client, key, content=UNPINNED_PRIVILEGED):
+    r = raw_client.post("/api/scan/ci", headers={"X-Warden-Token": key}, json={
+        "repo": "acme/api", "workflows": [{"path": "wf.yml", "content": content}],
+        "record": False})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_posture_findings_warn_by_default_and_org_can_tighten(client, raw_client):
+    """Default ci_block_severity=critical: a `high` posture finding warns (so a PR gate
+    doesn't fail on pre-existing debt), but the org can opt into the strict ratchet."""
+    key = _make_key(client)
+    body = _scan(raw_client, key)
+    assert body["block_severity"] == "critical"
+    assert body["workflows"][0]["severity"] == "high"
+    assert body["action"] == "warn" and body["workflows"][0]["action"] == "warn"
+
+    assert client.patch("/api/tenant",
+                        json={"ci_block_severity": "high"}).status_code == 200
+    strict = _scan(raw_client, key)
+    assert strict["block_severity"] == "high"
+    assert strict["action"] == "block" and strict["workflows"][0]["action"] == "block"
+
+
+def test_confirmed_exposure_still_blocks_at_the_default_threshold(client, raw_client):
+    # pwn-request is the confirmed-exposure class — it must fail a build out of the box.
+    key = _make_key(client)
+    body = _scan(raw_client, key, PWN_WF)
+    assert body["block_severity"] == "critical"
+    assert body["action"] == "block"
+
+
+def test_ci_block_severity_is_validated(client):
+    assert client.patch("/api/tenant",
+                        json={"ci_block_severity": "nonsense"}).status_code == 400
+    # "" clears the override -> inherit the global default
+    assert client.patch("/api/tenant", json={"ci_block_severity": "high"}).status_code == 200
+    assert client.patch("/api/tenant", json={"ci_block_severity": ""}).status_code == 200
+    assert client.get("/api/auth/me").json()["tenant"]["ci_block_severity"] == ""
+
+
 def test_scan_ci_policy_toggle_suppresses_check(client, raw_client):
     # disabling the ci_unpinned_action check drops those signals for the tenant
     assert client.patch("/api/tenant",

@@ -1114,6 +1114,12 @@ def _tenant_mcp_allow(tenant_id: int | None, db: Session) -> str:
     return _tenant_or_global(tenant_id, db, "mcp_allowed_servers", settings.mcp_allowed_servers)
 
 
+def _tenant_ci_block_severity(tenant_id: int | None, db: Session) -> str:
+    """The org's CI-scan block threshold (default `critical` — see config.ci_block_severity)."""
+    return _tenant_or_global(tenant_id, db, "ci_block_severity",
+                             settings.ci_block_severity) or "critical"
+
+
 def _tenant_mcp_block_severity(tenant_id: int | None, db: Session) -> str:
     """Effective block threshold for capture-plane MCP verdicts (tenant, else global)."""
     return _tenant_or_global(tenant_id, db, "mcp_block_severity",
@@ -1554,13 +1560,18 @@ def scan_ci(
     unpinned third-party actions, write-all permissions, secrets:inherit, self-hosted
     runners on PR triggers, and AI agents running in CI (plus non-model secrets handed
     to them). Structural — the sensor sends workflow files, never secret values.
-    Token-gated; a runner can also authenticate with its GitHub OIDC token."""
+    Token-gated; a runner can also authenticate with its GitHub OIDC token.
+
+    The `action` on each workflow (and the overall one) is the authority on whether a
+    pipeline should fail: it honors the org's ci_block_severity, which defaults to
+    `critical` so confirmed exposure fails a build while posture debt warns."""
     from . import discovery
     tenant_id, default_actor = _ingest_auth(x_warden_token, db)
     _enforce_rate(db, tenant_id)
     repo = (body.repo or "").strip()
     actor = repo or default_actor
     _record_heartbeat(db, tenant_id, actor, "ci", repo or "workflows", user_agent)
+    block_sev = _tenant_ci_block_severity(tenant_id, db)
 
     flagged: list[dict] = []
     worst = 0
@@ -1581,16 +1592,17 @@ def scan_ci(
                         db, tenant_id, actor,
                         {"tool": s["evidence"], "category": "coding", "domain": "ci"},
                         result["signals"], result["risk_score"])
-        if _action_for(result["severity"]) != "allow":
+        action = _action_for(result["severity"], block_sev)
+        if action != "allow":
             flagged.append({
-                "workflow": wf.path, "severity": result["severity"],
+                "workflow": wf.path, "action": action, "severity": result["severity"],
                 "risk_score": result["risk_score"], "signals": result["signals"],
                 "remediation": remediation_for(result["signals"]),
             })
 
-    overall = "block" if worst >= 3 else ("warn" if worst >= 2 else "allow")
-    return {"action": overall, "scanned": len(body.workflows[:500]),
-            "repo": repo, "workflows": flagged}
+    overall = _action_for(_SEV_BY_RANK.get(worst, "benign"), block_sev)
+    return {"action": overall, "block_severity": block_sev,
+            "scanned": len(body.workflows[:500]), "repo": repo, "workflows": flagged}
 
 
 @app.post("/api/scan/oversharing")

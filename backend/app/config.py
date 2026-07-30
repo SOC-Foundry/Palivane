@@ -171,6 +171,10 @@ class Settings:
     # enforce=block risky MCP calls; otherwise monitor. Block when severity >= block_severity.
     mcp_enforce: bool = os.getenv("MCP_ENFORCE", "").lower() in ("1", "true", "yes")
     mcp_block_severity: str = os.getenv("MCP_BLOCK_SEVERITY", "high")
+    # CI-runner scans block only on `critical` by default (confirmed exposure). Posture
+    # findings — unpinned actions, write-all, self-hosted runners — warn: they are usually
+    # pre-existing debt, and a PR gate that fails on debt the author didn't add gets deleted.
+    ci_block_severity: str = os.getenv("CI_BLOCK_SEVERITY", "critical")
     # Allowlist of approved (inspectable, remote) MCP server hosts — comma-separated, e.g.
     # "mcp.githubcopilot.com,mcp.acme.com". Empty = don't flag on server identity. A call to
     # a server not on a non-empty list is flagged (policy-flag stance for shadow MCP).

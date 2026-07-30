@@ -49,6 +49,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     client_enforce: clientEnforceValue(tenant),
     gateway_block_severity: tenant?.gateway_block_severity || "",
     mcp_block_severity: tenant?.mcp_block_severity || "",
+    ci_block_severity: tenant?.ci_block_severity || "",
     sanctioned_ai_tools: tenant?.sanctioned_ai_tools || "",
     tool_suppress: tenant?.tool_suppress || "",
     custom_pii_patterns: tenant?.custom_pii_patterns || "",
@@ -71,6 +72,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         client_enforce: org.client_enforce,
         gateway_block_severity: org.gateway_block_severity,
         mcp_block_severity: org.mcp_block_severity,
+        ci_block_severity: org.ci_block_severity,
         sanctioned_ai_tools: org.sanctioned_ai_tools,
         tool_suppress: org.tool_suppress,
         custom_pii_patterns: org.custom_pii_patterns,
@@ -457,6 +459,12 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <label>MCP block severity
             <select value={org.mcp_block_severity} onChange={setField("mcp_block_severity")}>
               <option value="">Inherit (global)</option>
+              {SEVERITIES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+          <label>CI scan block severity
+            <select value={org.ci_block_severity} onChange={setField("ci_block_severity")}>
+              <option value="">Inherit (critical)</option>
               {SEVERITIES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </label>

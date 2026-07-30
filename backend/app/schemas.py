@@ -277,6 +277,7 @@ class TenantUpdate(BaseModel):
     client_enforce: Literal["on", "off", "inherit"] | None = None
     gateway_block_severity: str | None = None  # ""|low|suspicious|high|critical
     mcp_block_severity: str | None = None      # block threshold for capture-plane verdicts
+    ci_block_severity: str | None = None       # block threshold for CI-runner scans
     sanctioned_ai_tools: str | None = None     # org-approved AI destinations (comma-separated)
     tool_suppress: str | None = None           # "tool:category;tool:category" suppressions
     custom_pii_patterns: str | None = Field(None, max_length=8192)  # org PII/confidential "label=regex" per line
