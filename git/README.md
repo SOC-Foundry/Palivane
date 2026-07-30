@@ -167,6 +167,13 @@ developer machine. Both fail **open** by default; add `--fail-closed` in a pipel
   into a repo as `.github/workflows/warden-org-scan.yml`. It runs `warden-github-scan --org`
   on a cron (weekly by default) + on demand. Set `WARDEN_TOKEN` and an org-repo-read
   `WARDEN_ORG_READ_TOKEN` as secrets (the built-in `GITHUB_TOKEN` only sees the current repo).
+- **CI-runner posture scan** — copy [`warden-ci-scan.yml`](./warden-ci-scan.yml) into a repo
+  as `.github/workflows/warden-ci-scan.yml`. It runs `warden-ci-scan` against the repo's own
+  workflows (PR gate on workflow changes + weekly), flagging pwn-request triggers, unpinned
+  third-party actions, `write-all` permissions, `secrets: inherit`, self-hosted runners on PR
+  triggers, and AI agents running in CI (plus non-model secrets handed to them). It can
+  authenticate with the runner's **OIDC token** (`--github-oidc`, needs `id-token: write`) —
+  no long-lived Warden secret in the repo. `warden-ci-scan --org acme` sweeps a whole org.
 - **S3 sweep, systemd timer** — the instanced unit
   [`deploy/warden-s3-scan@.timer`](../deploy/warden-s3-scan@.timer) runs one scan per bucket
   daily. Enable per bucket: `systemctl enable --now warden-s3-scan@my-bucket.timer`. See

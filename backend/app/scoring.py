@@ -68,6 +68,8 @@ _ATTACK_CATEGORIES = {
     Category.UNSAFE_AUTONOMY,
     # Supply chain — a risky/malicious dependency is itself the threat.
     Category.DEPENDENCY_RISK,
+    # CI runners — an exploitable workflow configuration is itself the exposure.
+    Category.CI_WORKFLOW_RISK,
     # Endpoint hygiene — a live credential sitting at rest is itself the exposure.
     Category.CREDENTIAL_AT_REST,
     # Access governance — an LLM returning restricted data to the wrong person is the risk.

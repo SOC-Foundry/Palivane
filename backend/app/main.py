@@ -30,6 +30,7 @@ from .schemas import (
     AnalyzeRequest,
     BatchAnalyzeRequest,
     AgentConfigScan,
+    CIScan,
     CodeScanRequest,
     CoverageRequest,
     DiscoveryIngest,
@@ -1540,6 +1541,56 @@ def scan_agent_config(
         "signals": result["signals"],
         "remediation": remediation_for(result["signals"]),
     }
+
+
+@app.post("/api/scan/ci")
+def scan_ci(
+    body: CIScan,
+    x_warden_token: str = Header(default=""),
+    user_agent: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Scan a repo's GitHub Actions workflows for runner risk: pwn-request triggers,
+    unpinned third-party actions, write-all permissions, secrets:inherit, self-hosted
+    runners on PR triggers, and AI agents running in CI (plus non-model secrets handed
+    to them). Structural — the sensor sends workflow files, never secret values.
+    Token-gated; a runner can also authenticate with its GitHub OIDC token."""
+    from . import discovery
+    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    _enforce_rate(db, tenant_id)
+    repo = (body.repo or "").strip()
+    actor = repo or default_actor
+    _record_heartbeat(db, tenant_id, actor, "ci", repo or "workflows", user_agent)
+
+    flagged: list[dict] = []
+    worst = 0
+    for wf in body.workflows[:500]:
+        item = AnalysisInput(content=wf.content, subject=wf.path or "workflow",
+                             sender=actor, channel="github-actions", surface=Surface.CI,
+                             metadata={"kind": "ci_workflow", "repo": repo,
+                                       "ref": body.ref, "workflow": wf.path})
+        result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
+                              db=db, tenant_id=tenant_id)
+        worst = max(worst, _ACTION_RANK.get(result["severity"], 0))
+        # AI agents found in CI join the shadow-AI inventory, attributed to the repo
+        # (ci_guard already resolved the tool name, so no catalog lookup needed).
+        if tenant_id is not None:
+            for s in result["signals"]:
+                if s.get("check") == "ci_ai_agent" and s.get("evidence"):
+                    discovery.record_capture_client(
+                        db, tenant_id, actor,
+                        {"tool": s["evidence"], "category": "coding", "domain": "ci"},
+                        result["signals"], result["risk_score"])
+        if _action_for(result["severity"]) != "allow":
+            flagged.append({
+                "workflow": wf.path, "severity": result["severity"],
+                "risk_score": result["risk_score"], "signals": result["signals"],
+                "remediation": remediation_for(result["signals"]),
+            })
+
+    overall = "block" if worst >= 3 else ("warn" if worst >= 2 else "allow")
+    return {"action": overall, "scanned": len(body.workflows[:500]),
+            "repo": repo, "workflows": flagged}
 
 
 @app.post("/api/scan/oversharing")

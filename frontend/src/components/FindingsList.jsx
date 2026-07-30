@@ -37,6 +37,7 @@ const CAT_LABEL = {
   unsafe_autonomy: "Unsafe autonomy", dependency_risk: "Dependency risk",
   credential_at_rest: "Credential at rest", data_oversharing: "Data oversharing",
   agent_authz: "Least-privilege", ai_generated: "AI-generated",
+  ci_workflow_risk: "CI workflow risk",
 };
 
 const SEV_RANK = { benign: 0, low: 1, suspicious: 2, high: 3, critical: 4 };

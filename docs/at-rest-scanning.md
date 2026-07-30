@@ -16,6 +16,7 @@ your infrastructure) and only findings are stored.
 | [`warden-secrets`](../cli/README.md) | Credentials at rest on a **device** (SSH keys, `.env`, cloud creds) | on-demand / MDM-scheduled |
 | **`warden-s3-scan`** | **S3 bucket** objects + public-exposure | on-demand / systemd timer |
 | **`warden-github-scan`** | **Whole repos / an entire GitHub org** (via the API) | on-demand / scheduled Action |
+| **`warden-ci-scan`** | **GitHub Actions workflows / CI runners** (posture, not content): pwn-request triggers, unpinned actions, write-all permissions, self-hosted runners on PRs, AI agents in CI | on-demand / PR gate / scheduled Action |
 | `warden_git_scan.py --all` | Every tracked file in a **local checkout** | on-demand / CI |
 
 > These are **content** sweeps (secrets/PII in current files & objects). Secrets buried in

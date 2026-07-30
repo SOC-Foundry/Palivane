@@ -27,6 +27,7 @@ class Surface(str, Enum):
     IDE = "ide"           # IDE extensions — known-bad / unapproved editor plugins
     SECRETS = "secrets"   # Endpoint credential hygiene — secrets at rest on a device
     OVERSHARING = "oversharing"  # Need-to-know: an LLM response returning restricted data
+    CI = "ci"             # CI runners — GitHub Actions workflow posture & AI agents in CI
 
 
 class Category(str, Enum):
@@ -53,6 +54,8 @@ class Category(str, Enum):
     UNSAFE_AUTONOMY = "unsafe_autonomy"                # coding agent set to act without confirmation (YOLO)
     # --- Supply chain (deps) ---
     DEPENDENCY_RISK = "dependency_risk"                # risky/malicious dependency in a manifest
+    # --- CI runners (ci) ---
+    CI_WORKFLOW_RISK = "ci_workflow_risk"              # exploitable CI workflow configuration
     # --- Endpoint credential hygiene (secrets) ---
     CREDENTIAL_AT_REST = "credential_at_rest"          # a live secret/key sitting on a device
     # --- Access governance (oversharing) ---
