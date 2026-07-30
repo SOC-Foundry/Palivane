@@ -70,10 +70,64 @@ jobs:
       - uses: docker://alpine:3.20
 """
     sigs = [s for s in _analyze(wf) if s.effective_check == "ci_unpinned_action"]
-    evidence = {s.evidence for s in sigs}
-    assert "tj-actions/changed-files@v44" in evidence
-    assert "docker://alpine:3.20" in evidence
-    assert not any("actions/checkout" in e or "pinned/action" in e for e in evidence)
+    # one aggregated signal per workflow, not one per occurrence
+    assert len(sigs) == 1
+    ev = sigs[0].evidence
+    assert "tj-actions/changed-files@v44" in ev and "docker://alpine:3.20" in ev
+    assert "actions/checkout" not in ev and "pinned/action" not in ev
+
+
+def test_unpinned_actions_are_deduped_and_capped_below_critical():
+    """Many unpinned actions must not saturate into `critical` — that tier is for
+    confirmed exposure. Repeats of the same action collapse to one mention."""
+    from app.scoring import score
+    many = "\n".join(f"      - uses: vendor{i}/act@v1" for i in range(8))
+    wf = f"on: push\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n{many}\n"
+    sigs = _analyze(wf)
+    assert len([s for s in sigs if s.effective_check == "ci_unpinned_action"]) == 1
+    assert score(sigs).severity in ("suspicious", "high")
+
+    dupes = "\n".join(["      - uses: vendor/act@v1"] * 4)
+    wf2 = f"on: push\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n{dupes}\n"
+    ev = [s for s in _analyze(wf2) if s.effective_check == "ci_unpinned_action"][0].evidence
+    assert ev == "vendor/act@v1"
+
+
+def test_unpinned_escalates_only_when_the_workflow_holds_credentials():
+    from app.scoring import score
+    plain = """
+on: push
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: vendor/act@v1
+      - run: make lint
+"""
+    with_secrets = """
+on: push
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: vendor/act@v1
+        env:
+          KEY: ${{ secrets.DEPLOY_KEY }}
+"""
+    oidc = """
+on: push
+permissions:
+  id-token: write
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: vendor/act@v1
+"""
+    assert score(_analyze(plain)).severity == "suspicious"
+    for privileged in (with_secrets, oidc):
+        sev = score(_analyze(privileged)).severity
+        assert sev == "high", sev
 
 
 def test_write_all_permissions_workflow_and_job_level():
