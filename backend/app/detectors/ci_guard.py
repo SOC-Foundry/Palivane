@@ -59,6 +59,7 @@ _SHA_REF = re.compile(r"^[0-9a-f]{40}$")
 _MODEL_KEY = re.compile(r"(ANTHROPIC|OPENAI|GEMINI|GOOGLE_AI|CLAUDE|OPENROUTER|MISTRAL|"
                         r"GROQ|XAI|DEEPSEEK)\w*_?(API_)?(KEY|TOKEN)", re.I)
 _SECRET_REF = re.compile(r"secrets\.([A-Za-z_][A-Za-z0-9_]*)")
+_ID_TOKEN_WRITE = re.compile(r"id-token\s*:\s*write")
 _PR_HEAD_REF = re.compile(
     r"github\.event\.pull_request\.head\.(?:sha|ref)|github\.head_ref")
 
@@ -118,7 +119,7 @@ class CIGuardDetector:
             return self._text_only(item.content)
         signals: list[Signal] = []
         signals += self._triggers(doc, item.content)
-        signals += self._pins(doc)
+        signals += self._pins(doc, item.content)
         signals += self._permissions(doc)
         signals += self._reusable_secrets(doc)
         signals += self._runners(doc)
@@ -155,32 +156,43 @@ class CIGuardDetector:
             weight=0.45, confidence=0.8, detector=self.name,
             evidence=", ".join(sorted(risky)), check="ci_unsafe_trigger")]
 
-    def _pins(self, doc: dict) -> list[Signal]:
-        out = []
+    def _pins(self, doc: dict, raw: str) -> list[Signal]:
+        """One signal per workflow, not per occurrence. Unpinned actions are a single
+        posture problem ("this workflow doesn't pin third parties"), so N of them must not
+        saturate the score into `critical` — that tier is for confirmed exposure
+        (pwn-request, secrets handed to an agent). Severity instead turns on whether the
+        workflow actually hands credentials to those actions."""
+        unpinned: list[str] = []
         for job in _jobs(doc).values():
             for step in _steps(job):
                 uses = str(step.get("uses") or "")
                 if not uses or uses.startswith("./"):
                     continue
                 if uses.startswith("docker://"):
-                    if "@sha256:" not in uses:
-                        out.append(Signal(
-                            category=Category.CI_WORKFLOW_RISK, title="Unpinned container action",
-                            detail=f"'{uses}' pulls a mutable image tag; pin the digest.",
-                            weight=0.45, confidence=0.85, detector=self.name,
-                            evidence=uses, check="ci_unpinned_action"))
+                    if "@sha256:" not in uses and uses not in unpinned:
+                        unpinned.append(uses)
                     continue
                 ref = uses.partition("@")[2]
                 org = uses.split("/", 1)[0].lower()
                 if org in _TRUSTED_ACTION_ORGS or _SHA_REF.match(ref):
                     continue
-                out.append(Signal(
-                    category=Category.CI_WORKFLOW_RISK, title="Unpinned third-party action",
-                    detail=f"'{uses}' floats on a mutable ref — a compromised tag runs with "
-                           "this workflow's secrets. Pin to a full commit SHA.",
-                    weight=0.5, confidence=0.85, detector=self.name,
-                    evidence=uses, check="ci_unpinned_action"))
-        return out
+                if uses not in unpinned:
+                    unpinned.append(uses)
+        if not unpinned:
+            return []
+        # A hijacked tag only reaches credentials if this workflow has some to reach.
+        privileged = bool(_SECRET_REF.search(raw) or _ID_TOKEN_WRITE.search(raw))
+        shown = ", ".join(unpinned[:5]) + (f" (+{len(unpinned) - 5} more)"
+                                           if len(unpinned) > 5 else "")
+        detail = (f"{len(unpinned)} third-party action(s) float on a mutable ref: {shown}. "
+                  "Pin each to a full commit SHA.")
+        if privileged:
+            detail += (" This workflow exposes secrets or an OIDC id-token, so a hijacked "
+                       "tag would run with those credentials.")
+        return [Signal(
+            category=Category.CI_WORKFLOW_RISK, title="Unpinned third-party action",
+            detail=detail, weight=0.75 if privileged else 0.5, confidence=0.85,
+            detector=self.name, evidence=shown, check="ci_unpinned_action")]
 
     def _permissions(self, doc: dict) -> list[Signal]:
         found = []
