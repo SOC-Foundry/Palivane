@@ -5,7 +5,7 @@
 // view without a navigation. On the standalone subpages there's no such handler, so the
 // button links to "/#signin" — App reads that hash on mount and opens login on the home
 // route. Pass onSignIn only from the landing.
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const TABS = [
   { href: "/why-warden", label: "Why Warden" },
@@ -70,15 +70,30 @@ export function Lightbox({ src, alt = "", onClose }) {
   );
 }
 
-// A silent product walkthrough in the same browser-chrome frame as Shot.
+// A product walkthrough in the same browser-chrome frame as Shot. Native controls stay
+// hidden behind a branded play overlay until the first play, so the poster reads as a
+// still with one obvious affordance instead of a bare <video> scrub bar.
 export function Clip({ src, poster = "", caption = "", lead = false }) {
+  const ref = useRef(null);
+  const [started, setStarted] = useState(false);
+  const start = () => {
+    setStarted(true);
+    ref.current?.play().catch(() => {});
+  };
   return (
     <figure className={`lp-shot ${lead ? "lp-shot-lead" : ""}`}>
-      <div className="lp-frame">
+      <div className="lp-frame" style={{ position: "relative" }}>
         <span className="lp-frame-bar"><i /><i /><i /><span className="lp-frame-url">warden.tachtech.net</span></span>
-        <video src={src} poster={poster} controls playsInline preload="metadata"
+        <video ref={ref} src={src} poster={poster} controls={started} playsInline preload="metadata"
+               onPlay={() => setStarted(true)}
                style={{ display: "block", width: "100%", aspectRatio: "16 / 10",
                         maxHeight: "70vh", objectFit: "cover", background: "#0b0f17" }} />
+        {!started && (
+          <button type="button" className="lp-play" onClick={start} aria-label="Play video">
+            <img src="/warden-emblem.png" alt="" />
+            <span className="lp-play-tri" />
+          </button>
+        )}
       </div>
       {caption && <figcaption>{caption}</figcaption>}
     </figure>
