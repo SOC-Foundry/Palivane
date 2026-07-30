@@ -1098,7 +1098,7 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.gateway_enforce = _JUDGE[body.gateway_enforce]  # same tri-state mapping
     if body.client_enforce is not None:
         tenant.client_enforce = _JUDGE[body.client_enforce]
-    for sev_field in ("gateway_block_severity", "mcp_block_severity"):
+    for sev_field in ("gateway_block_severity", "mcp_block_severity", "ci_block_severity"):
         val = getattr(body, sev_field)
         if val is not None:
             if val not in ("", "low", "suspicious", "high", "critical"):

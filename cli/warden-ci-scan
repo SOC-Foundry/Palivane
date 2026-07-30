@@ -152,23 +152,30 @@ def scan(url: str, token: str, repo: str, ref: str, workflows: list[dict],
         return json.loads(r.read())
 
 
-def _print_result(repo: str, result: dict) -> bool:
-    """Print flagged workflows; return True on a block-level finding."""
+_SEV_RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}
+
+
+def _print_result(repo: str, result: dict, block_on: str = "") -> bool:
+    """Print flagged workflows; return True if the run should fail.
+
+    The backend's `action` is the authority — it already applied the org's
+    ci_block_severity. `--block-on` is a LOCAL override for a pipeline that wants a
+    stricter gate than org policy; it can only tighten, never loosen."""
     flagged = result.get("workflows", [])
     if not flagged:
         print(f"  {repo or 'workflows'}: clean ✓ ({result.get('scanned', 0)} workflow(s))")
         return False
-    blocking = False
+    blocking = result.get("action") == "block"
     print(f"\n  ⚠ {repo or 'workflows'}: {len(flagged)} risky workflow(s):")
     for wf in flagged:
         sev = wf.get("severity", "")
-        mark = "🔴" if sev in ("high", "critical") else "🟠"
+        local_block = bool(block_on) and _SEV_RANK.get(sev, 0) >= _SEV_RANK.get(block_on, 9)
+        mark = "🔴" if wf.get("action") == "block" or local_block else "🟠"
         titles = ", ".join(dict.fromkeys(s.get("title", "") for s in wf.get("signals", [])))
-        print(f"    {mark} {wf.get('workflow', '?')}  [{titles}]")
+        print(f"    {mark} {wf.get('workflow', '?')}  [{sev}] {titles}")
         for step in wf.get("remediation", []):
             print(f"       ↳ {step}")
-        if sev in ("high", "critical"):
-            blocking = True
+        blocking = blocking or local_block
     return blocking
 
 
@@ -188,6 +195,9 @@ def main() -> int:
                     help="authenticate to Warden with the runner's GitHub OIDC token")
     ap.add_argument("--no-record", dest="record", action="store_false",
                     help="don't persist findings in Warden (default: record)")
+    ap.add_argument("--block-on", choices=("suspicious", "high", "critical"), default="",
+                    help="fail on this severity or worse, even if org policy is laxer "
+                         "(default: follow the org's CI block threshold)")
     ap.add_argument("--fail-closed", action="store_true",
                     help="fail if GitHub/backend is unreachable")
     args = ap.parse_args()
@@ -243,7 +253,7 @@ def main() -> int:
             print(f"warden: could not reach GitHub ({e}).", file=sys.stderr)
             return 1 if args.fail_closed else 0
 
-    blocking, scanned = False, 0
+    blocking, scanned, gate = False, 0, args.block_on
     for repo, ref, workflows in units:
         if not workflows:
             print(f"  {repo or 'local'}: no workflows.")
@@ -262,9 +272,11 @@ def main() -> int:
                 return 1
             continue
         scanned += result.get("scanned", 0)
-        blocking = _print_result(repo, result) or blocking
+        blocking = _print_result(repo, result, args.block_on) or blocking
+        gate = args.block_on or result.get("block_severity", "")
 
-    print(f"\nwarden: scanned {scanned} workflow(s) across {len(units)} repo(s).")
+    print(f"\nwarden: scanned {scanned} workflow(s) across {len(units)} repo(s)"
+          + (f" — failing at {gate}+." if scanned and gate else "."))
     return 1 if blocking else 0
 
 

@@ -38,4 +38,10 @@ jobs:
         # https://token.actions.githubusercontent.com under Agents → workload identity).
         # For an org-wide sweep instead: ./warden-ci-scan --org your-org (needs a
         # GITHUB_TOKEN with org repo read — the built-in github.token is repo-scoped).
+        #
+        # Whether a finding FAILS this job follows your org's CI block severity
+        # (Settings → CI scan block severity), which defaults to `critical`: an exploitable
+        # workflow fails the build, while posture debt (unpinned actions, write-all) is
+        # reported and warns. Add --block-on=high here to run a stricter gate in this
+        # pipeline than org policy — it can tighten the gate, never loosen it.
         run: ./warden-ci-scan --path . --github-oidc --fail-closed
