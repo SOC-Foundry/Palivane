@@ -73,7 +73,7 @@ export default function Landing({ onSignIn }) {
           <h2 className="lp-h2">See it stop a real leak</h2>
           <p className="lp-sub">Ninety seconds: a secret blocked in ChatGPT, in Claude Code, and in
              Cursor — then a tour of the console you would actually live in.</p>
-          <Clip lead src="/shots/demo7.mp4" poster="/shots/demo-poster7.png"
+          <Clip lead src="/shots/demo8.mp4" poster="/shots/demo-poster7.png"
                 caption="A secret gets blocked in ChatGPT, in Claude Code, and in Cursor — then a walkthrough of every screen in the console." />
           <div className="lp-gallery">
             <Shot src="/shots/discovery.png?v=2" alt="Inventory of AI tools in use" onZoom={(s, a) => setZoom({ src: s, alt: a })}

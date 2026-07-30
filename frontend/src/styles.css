@@ -730,6 +730,22 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
   font-size: 11px; color: var(--muted-2); padding: 0 10px; overflow: hidden; white-space: nowrap;
 }
 .lp-frame img { display: block; width: 100%; height: auto; }
+
+/* Branded play overlay on Clip videos: header emblem + triangle in a glass pill */
+.lp-play {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  display: flex; align-items: center; gap: 12px; padding: 14px 24px;
+  border-radius: 999px; border: 1px solid rgba(255,255,255,0.22);
+  background: rgba(9,13,21,0.72); backdrop-filter: blur(6px); cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.lp-play:hover { transform: translate(-50%, -50%) scale(1.07); background: rgba(9,13,21,0.85); }
+.lp-play img { height: 30px; width: auto; display: block; }
+.lp-play-tri {
+  width: 0; height: 0; display: block;
+  border-top: 9px solid transparent; border-bottom: 9px solid transparent;
+  border-left: 14px solid #e8eefc;
+}
 .lp-shot figcaption { font-size: 13px; color: var(--muted); margin-top: 11px; text-align: center; }
 .lp-zoom-hint { opacity: 0.6; font-style: italic; }
 .lp-shot-lead { max-width: 940px; margin: 6px auto 32px; }
