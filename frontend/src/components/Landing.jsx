@@ -11,7 +11,7 @@ const FRONTS = [
   {
     icon: <IconInbox />, tag: "Visibility", cls: "mcp",
     title: "You finally know which AI tools are in use",
-    body: "Every AI tool your company touches, who uses it, and what data went where — including the ones nobody asked permission for.",
+    body: "Every AI tool your company touches, who — or which repo — is using it, and what data went where, including the ones nobody asked permission for.",
   },
   {
     icon: <IconAlert />, tag: "AI assistants", cls: "atk",
@@ -25,6 +25,7 @@ const CAPTURE = [
   { icon: <IconInbox />, title: "In desktop apps", body: "Covers the AI apps that don't run in a browser: Claude and ChatGPT desktop, and the assistants built into editors." },
   { icon: <IconShield />, title: "In your AI coding tools", body: "Claude Code, Cursor, Codex, and Gemini CLI report what they're about to send or do, so it can be checked first." },
   { icon: <IconClipboard />, title: "In your code and laptops", body: "Scans commits and dependencies before they land, and finds credentials already sitting on developer machines — where info-stealing malware looks first." },
+  { icon: <IconAlert />, title: "In GitHub Actions", body: "Coding agents increasingly run on CI runners, with your deploy keys in reach and nobody watching. Warden checks what they can touch — before you merge the workflow that gives it to them." },
 ];
 
 const STEPS = [
@@ -108,7 +109,7 @@ export default function Landing({ onSignIn }) {
           <h2 className="lp-h2">It works wherever your team uses AI</h2>
           <p className="lp-sub">Nobody has to remember to run anything. Warden watches the places AI is
              actually used, and everything lands in the same console.</p>
-          <div className="lp-cards">
+          <div className="lp-cards lp-cards-5">
             {CAPTURE.map((c) => (
               <div key={c.title} className="lp-card">
                 <span className="lp-card-icon">{c.icon}</span>
