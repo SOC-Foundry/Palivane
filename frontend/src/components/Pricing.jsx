@@ -10,7 +10,7 @@ const TIERS = [
     featured: true,
     features: [
       "Up to 25 people (more on request)",
-      "Covers the browser, desktop AI apps, AI coding tools, and your code",
+      "Covers the browser, desktop AI apps, AI coding tools, your code, and GitHub Actions",
       "Live findings, every AI tool in use, and who is covered",
       "Watch-only or blocking — your call",
       "Alerts where you already work, plus hourly or daily digests",

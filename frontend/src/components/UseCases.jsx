@@ -30,6 +30,11 @@ const CASES = [
     body: "Prompts aren't the only way a secret escapes. Warden finds credentials already sitting on developer machines — the first place info-stealing malware looks — and keeps new ones out of your repositories, with a one-time sweep of what's already committed.",
   },
   {
+    icon: <IconAlert />, tag: "Agents nobody is watching",
+    title: "An AI agent runs in CI with your deploy keys",
+    body: "Handing a coding agent a GitHub Actions job is the new normal — and that job often holds cloud credentials no developer would paste into a chat window. Warden reads your workflows before you merge them: which agents run there, what secrets reach them, whether approvals are switched off, and the trigger and permission mistakes that let a fork's pull request run in your CI at all.",
+  },
+  {
     icon: <IconInbox />, tag: "You ship AI yourself",
     title: "The AI feature in your product needs a guard",
     body: "Point your own app at Warden and every prompt gets checked for the attacks aimed at AI: hijacking its instructions, talking it past its rules, or coaxing out its hidden setup and data. It checks the answers on the way back out, too.",

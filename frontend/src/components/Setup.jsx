@@ -34,6 +34,17 @@ const ORG = [
     body: "Discovery and Coverage show every AI tool in use across teams — sanctioned or not — with the real sensitive-data exposure each one received." },
 ];
 
+const CI = [
+  { n: "1", title: "Add one workflow file",
+    body: "Copy Warden's GitHub Actions template into your repo as .github/workflows/warden-ci-scan.yml. It fetches the scanner from your console at run time, so there's nothing to vendor and nothing to keep updated." },
+  { n: "2", title: "Let the runner authenticate as itself",
+    body: "The template asks GitHub for a short-lived OIDC token (permissions: id-token: write) and presents that to Warden — so no long-lived Warden key has to live in your repository secrets. Register the GitHub issuer once under Agents → workload identity. Prefer a key? Set WARDEN_TOKEN as a secret instead." },
+  { n: "3", title: "Choose what fails a pull request",
+    body: "By default an exploitable workflow fails the check, while hardening debt — unpinned actions, over-broad token permissions — is recorded and warns, so the gate doesn't fail a pull request over problems its author didn't introduce. Settings → CI scan block severity changes that line for your whole org." },
+  { n: "4", title: "Sweep every repo (optional · admin)",
+    body: "Run the same scanner with --org to audit every repository's workflows on a schedule, not just the ones being changed. Findings land in the same console, and any AI agents it finds show up in Discovery against the repo that runs them." },
+];
+
 function Steps({ items }) {
   return (
     <div className="lp-cards">
@@ -86,6 +97,15 @@ export default function Setup() {
 
       <section className="lp-section">
         <div className="lp-wrap">
+          <h2 className="lp-h2">Part 3 — your GitHub Actions (optional)</h2>
+          <p className="lp-sub">Cover the machines nobody is sitting at. If coding agents run in your
+             CI, this is where they hold credentials and act unsupervised — one workflow file covers it.</p>
+          <Steps items={CI} />
+        </div>
+      </section>
+
+      <section className="lp-section alt">
+        <div className="lp-wrap">
           <h2 className="lp-h2">Uninstalling</h2>
           <p className="lp-sub">Cleanly reverse a single-machine install in three steps —
              it only removes Warden's own config and leaves your other settings alone.</p>
@@ -93,7 +113,7 @@ export default function Setup() {
         </div>
       </section>
 
-      <section className="lp-section alt">
+      <section className="lp-section">
         <div className="lp-wrap lp-cta-wrap" style={{ textAlign: "center" }}>
           <h2 className="lp-h2">Ready to set it up?</h2>
           <p className="lp-sub">Open the console and head to Connect — everything you saw here is one click away.</p>
