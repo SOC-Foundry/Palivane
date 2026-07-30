@@ -9,6 +9,7 @@ const CAT_LABEL = {
   unsanctioned_ai: "unsanctioned AI", prompt_injection: "injection", jailbreak: "jailbreak",
   data_exfiltration: "exfiltration", dangerous_command: "dangerous cmd", unsafe_autonomy: "YOLO",
   data_oversharing: "oversharing", credential_at_rest: "creds at rest", dependency_risk: "deps",
+  ci_workflow_risk: "CI workflow",
 };
 
 export default function ScanLog() {

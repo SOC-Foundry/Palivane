@@ -41,6 +41,7 @@ _ALLOW = {
     "warden-secrets": "cli/warden-secrets",
     "warden-s3-scan": "cli/warden-s3-scan",
     "warden-github-scan": "cli/warden-github-scan",
+    "warden-ci-scan": "cli/warden-ci-scan",
     "warden-otel": "cli/warden-otel",
     "warden-desktop": "cli/warden-desktop",
     "warden_addon.py": "proxy/warden_addon.py",
@@ -53,7 +54,7 @@ _ALLOW = {
 # ops/admin scanners run on demand (CI / a security box), not planes installed on every
 # developer machine, so they're downloadable but not auto-installed.
 _INSTALLER_SKIP = {"warden_addon.py", "warden-reenroll.ps1", "warden-desktop.ps1",
-                   "warden-s3-scan", "warden-github-scan"}
+                   "warden-s3-scan", "warden-github-scan", "warden-ci-scan"}
 _CLI_TOOLS = [n for n in _ALLOW if n not in _INSTALLER_SKIP]
 
 # Candidate roots: /app in the container (backend copied to /app, cli/ to /app/cli), and

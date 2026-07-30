@@ -141,6 +141,15 @@ class CodeScanRequest(BaseModel):
     record: bool = False          # persist non-clean files as findings (off by default)
 
 
+class CIScan(BaseModel):
+    """GitHub Actions runner/workflow posture scan: the repo's workflow files, sent by
+    `warden-ci-scan` (from inside a runner, or sweeping repos via the GitHub API)."""
+    repo: str = ""                # owner/name — provenance for findings + discovery actor
+    ref: str = ""                 # branch/sha the workflows came from (informational)
+    workflows: list[CodeFile] = Field(default_factory=list, max_length=500)
+    record: bool = True
+
+
 class S3Object(BaseModel):
     key: str = ""
     content: str = Field(default="", max_length=MAX_CONTENT)

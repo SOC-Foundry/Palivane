@@ -20,6 +20,7 @@ const CAT_LABEL = {
   credential_at_rest: "Credential at rest",
   data_oversharing: "Data oversharing",
   agent_authz: "Agent least-privilege",
+  ci_workflow_risk: "CI workflow risk",
 };
 
 // Concrete "what do I do now" steps, derived from the finding's signals + evidence — mirrors

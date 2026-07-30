@@ -51,6 +51,19 @@ def remediation_for(signals: list[dict]) -> list[str]:
             steps.append("Remove or replace the risky dependency; prefer registry sources and pinned versions.")
     if "data_oversharing" in cats:
         steps.append("Restrict the source data's permissions at the origin so the LLM can't return it to unauthorized users; verify the need-to-know rule.")
+    if "ci_workflow_risk" in cats:
+        if "pwn-request" in ev or "pull_request_target" in ev:
+            steps.append("Split the workflow: handle untrusted PR code under plain pull_request, and never check out the PR head under pull_request_target.")
+        if "unpinned" in ev:
+            steps.append("Pin third-party actions to a full commit SHA (uses: owner/repo@<sha>) so a hijacked tag can't run in your CI.")
+        if "write-all" in ev:
+            steps.append("Replace permissions: write-all with the explicit scopes each job needs (usually contents: read).")
+        if "inherit" in ev:
+            steps.append("Pass reusable workflows only the specific secrets they need instead of secrets: inherit.")
+        if "self-hosted" in ev:
+            steps.append("Move PR-triggered jobs to hosted runners, or require approval for outside collaborators before self-hosted runs.")
+        if not steps:
+            steps.append("Review the workflow's triggers, permissions, and action pins against your CI hardening baseline.")
 
     # De-dupe preserving order.
     seen: set[str] = set()

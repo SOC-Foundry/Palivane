@@ -662,7 +662,7 @@ class SensorHeartbeat(Base):
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=True)
     actor = Column(String(320), default="")   # who the sensor reports as (key actor/user)
-    plane = Column(String(32), default="")    # ai-usage | mcp | posture
+    plane = Column(String(32), default="")    # ai-usage | mcp | posture | ci
     tool = Column(String(64), default="")     # claude-code, cursor, claude.ai, …
     first_seen = Column(DateTime, default=_utcnow)
     last_seen = Column(DateTime, default=_utcnow, index=True)
