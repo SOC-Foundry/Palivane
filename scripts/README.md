@@ -5,7 +5,7 @@ their own headers; the demo-video rig is below.
 
 ## The landing-page hero video
 
-Three scripts rebuild `frontend/public/shots/demo11.mp4` from scratch. They exist because
+Three scripts rebuild `frontend/public/shots/demo12.mp4` from scratch. They exist because
 the previous video (and its score) were produced ad hoc and only the `.mp4` was committed —
 so every re-cut started over. Everything here is reproducible.
 
@@ -25,6 +25,7 @@ ffmpeg -i /tmp/warden-demo/silent.mp4 -i /tmp/warden-demo/score.wav \
 | --- | --- |
 | `demo_capture.py` | Drives a live backend over its real endpoints and writes every verdict the video shows. Refuses any non-localhost `WARDEN_URL` (it records findings). |
 | `demo_scenes.py` | The HTML for each scene. Each page exposes `setT(t)`, `t` in 0..1. |
+| `demo_icons.py` | Simplified tool marks (Claude, Gemini, OpenAI, Cursor, GitHub, AWS). Drop a real SVG at `scripts/brand-icons/<key>.svg` to override — check the vendor's brand terms first. |
 | `demo_video.py` | Steps `setT` frame by frame, screenshots, encodes each scene, crossfades them, and captures the closing console tour against the live console. |
 | `demo_score.py` | Synthesizes the lofi bed. Section map at the bottom — match it to the cut's length. |
 

@@ -61,7 +61,7 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
     ):
         scenes.append((key, S.browser_scene(
             brand, accent, bg, panel, items, short_prompt, d[key],
-            len(scenes), f"{brand} in the browser"), 9.5))
+            key, f"{brand} in the browser"), 9.5))
 
     # 4 · Claude Code — the real gateway 400
     msg = gateway_message(d["claudecode"])
@@ -76,7 +76,7 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
             ("dim", ""),
             ("dim", "  The prompt never reached Anthropic. Warden scored it at the"),
             ("dim", "  gateway and refused the request."),
-        ], len(scenes), "Claude Code"), 10.0))
+        ], "claudecode", "Claude Code", "#d97757"), 10.0))
 
     # 5 · Codex CLI — the local hook blocks before anything is sent
     cx = d["codex"]
@@ -92,7 +92,7 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
             ("dim", ""),
             ("warn", "How to fix:"),
             *[("out", f"  • {f}") for f in fixes],
-        ], len(scenes), "Codex CLI"), 9.5))
+        ], "codex", "Codex CLI"), 9.5))
 
     # 6 · Cursor — same gateway, inside the editor
     scenes.append(("cursor", S.terminal_scene(
@@ -104,7 +104,7 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
             ("err", f"Request failed: {gateway_message(d['cursor'])}"),
             ("dim", ""),
             ("dim", "  Same gateway, same policy — the editor is not a way around it."),
-        ], len(scenes), "Cursor"), 9.5))
+        ], "cursor", "Cursor", "#8b93ff"), 9.5))
 
     # 7 · AWS — a public bucket, scanned at rest
     aws = d["aws"]
@@ -126,7 +126,7 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
             ("dim", ""),
             ("warn", f"  ⚠ Warden flagged {len(aws.get('objects', []))} object(s):"),
             *obj_lines,
-        ], len(scenes), "AWS S3 at rest"), 10.0))
+        ], "aws", "AWS S3 at rest", "#ff9900"), 10.0))
 
     # 8 · GitHub — an agent running in CI with production credentials
     gh = d["github"]
@@ -142,13 +142,13 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
             ("warn", f"  ⚠ northgate/billing: 1 risky workflow ({wf.get('severity')}):"),
             ("err", f"    🔴 {wf.get('workflow')}"),
             *sig_lines,
-        ], len(scenes), "GitHub Actions"), 10.5))
+        ], "github", "GitHub Actions"), 10.5))
 
     return scenes
 
 
 def console_tour_frames(pw, out_dir: str, seconds: float) -> int:
-    """Capture the LIVE console: a few real tabs, gently scrolled. Returns frame count."""
+    """Capture the LIVE console: every real tab, cursor-driven, gently scrolled."""
     import urllib.request
     req = urllib.request.Request(
         BASE + "/api/auth/login", method="POST",
@@ -156,24 +156,49 @@ def console_tour_frames(pw, out_dir: str, seconds: float) -> int:
         headers={"content-type": "application/json"})
     token = json.loads(urllib.request.urlopen(req, timeout=30).read())["access_token"]
 
-    tabs = ["Findings", "Discovery", "Coverage", "Policies"]
+    # The whole console, in the order an evaluator would click through it. Every screen is
+    # the real thing rendered against the findings the earlier scenes just produced.
+    tabs = ["Findings", "Discovery", "Coverage", "Fleet", "Scan log", "Agents",
+            "Policies", "Simulator", "Report", "Settings", "Audit"]
     per = seconds / len(tabs)
-    frames_per = int(per * FPS)
+    frames_per = max(1, int(per * FPS))
     b = pw.chromium.launch()
     page = b.new_context(viewport={"width": W, "height": H}).new_page()
     page.add_init_script(f"localStorage.setItem('warden_token', {json.dumps(token)})")
+    # A drawn cursor that glides to each tab, so the tour reads as someone using the app.
+    page.add_init_script("""
+      window.__cur = () => {
+        if (document.getElementById('demo-cursor')) return;
+        const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        s.id = 'demo-cursor'; s.setAttribute('viewBox', '0 0 20 26');
+        s.style.cssText = 'position:fixed;z-index:2147483647;width:20px;height:26px;' +
+          'pointer-events:none;filter:drop-shadow(0 2px 3px rgba(0,0,0,.6));' +
+          'transition:left .45s cubic-bezier(.4,0,.2,1),top .45s cubic-bezier(.4,0,.2,1)';
+        s.innerHTML = '<path d="M2 1 L2 20 L7 15.5 L10.5 23 L13.5 21.5 L10 14.5 L17 14 Z" ' +
+          'fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/>';
+        document.body.appendChild(s);
+      };
+      window.__move = (x, y) => { window.__cur();
+        const c = document.getElementById('demo-cursor');
+        c.style.left = x + 'px'; c.style.top = y + 'px'; };
+    """)
     page.goto(BASE, wait_until="networkidle")
     page.wait_for_timeout(1200)
     n = 0
     for tab in tabs:
         try:
-            page.get_by_role("button", name=tab, exact=True).click()
-            page.wait_for_timeout(900)
+            btn = page.get_by_role("button", name=tab, exact=True)
+            box = btn.bounding_box()
+            if box:
+                page.evaluate(f"__move({box['x'] + 18}, {box['y'] + 12})")
+                page.wait_for_timeout(260)           # let the cursor glide before the click
+            btn.click()
+            page.wait_for_timeout(500)
         except Exception as e:                       # a tab that isn't there shouldn't kill the run
             print(f"  console tour: skipping {tab} ({str(e)[:60]})")
             continue
         for i in range(frames_per):
-            page.mouse.wheel(0, 6)                   # slow drift so the screen isn't static
+            page.mouse.wheel(0, 7)                   # slow drift so the screen isn't static
             page.screenshot(path=f"{out_dir}/f{n:05d}.png")
             n += 1
     b.close()
@@ -253,7 +278,7 @@ def main() -> int:
         fd = f"{WORK}/frames_console"
         shutil.rmtree(fd, ignore_errors=True)
         os.makedirs(fd)
-        n = console_tour_frames(pw, fd, 12.0)
+        n = console_tour_frames(pw, fd, 26.0)
         if n:
             seg = f"{WORK}/seg_console.mp4"
             encode_segment(fd, seg)
