@@ -15,6 +15,8 @@ from __future__ import annotations
 import html
 import json
 
+from demo_icons import icon
+
 W, H = 1280, 800
 
 CATEGORY_LABELS = {   # mirrors extension/content.js
@@ -42,8 +44,7 @@ html, body {{ width: {W}px; height: {H}px; overflow: hidden;
   align-items: center; gap: 9px; padding: 8px 15px 8px 9px; border-radius: 999px;
   background: rgba(9,13,21,.82); border: 1px solid rgba(255,255,255,.16);
   color: #e8eefc; font-size: 13.5px; font-weight: 650; backdrop-filter: blur(6px); }}
-.badge b {{ display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
-  background: #7c6cff; color: #fff; font-size: 12px; font-weight: 800; }}
+.badge .bicon {{ display: grid; place-items: center; width: 22px; height: 22px; }}
 .cursor {{ position: absolute; z-index: 90; width: 20px; height: 26px; pointer-events: none;
   filter: drop-shadow(0 2px 3px rgba(0,0,0,.6)); }}
 .fadein {{ opacity: 0; }}
@@ -110,7 +111,7 @@ CURSOR_SVG = """<svg class="cursor" id="cur" viewBox="0 0 20 26" style="left:0;t
 
 
 def _chat_app(brand: str, accent: str, bg: str, panel: str, sidebar_items: list[str],
-              placeholder: str) -> str:
+              placeholder: str, icon_key: str = "") -> str:
     """A generic assistant-app frame: sidebar, thread, composer. Recognisable by name and
     accent colour, intentionally not a facsimile of anyone's product."""
     items = "".join(
@@ -122,7 +123,8 @@ def _chat_app(brand: str, accent: str, bg: str, panel: str, sidebar_items: list[
       <div style="width:236px;background:{panel};border-right:1px solid rgba(255,255,255,.07);
           padding:16px 12px;display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;align-items:center;gap:9px;padding:4px 6px 14px">
-          <div style="width:24px;height:24px;border-radius:7px;background:{accent}"></div>
+          <div style="width:26px;height:26px;display:grid;place-items:center">
+            {icon(icon_key or "chatgpt", 24, accent)}</div>
           <div style="color:#e8eefc;font-weight:700;font-size:14.5px">{html.escape(brand)}</div>
         </div>
         <div style="padding:9px 11px;border:1px solid rgba(255,255,255,.14);border-radius:9px;
@@ -133,7 +135,8 @@ def _chat_app(brand: str, accent: str, bg: str, panel: str, sidebar_items: list[
         <div style="flex:1;padding:34px 60px;overflow:hidden">
           <div style="max-width:720px;margin:0 auto">
             <div style="display:flex;gap:12px;margin-bottom:22px">
-              <div style="width:28px;height:28px;border-radius:7px;background:{accent};flex:none"></div>
+              <div style="width:28px;height:28px;flex:none;display:grid;place-items:center">
+                {icon(icon_key or "chatgpt", 24, accent)}</div>
               <div style="color:#c9d3e6;font-size:14.5px;line-height:1.65">
                 Sure — paste the export and I'll take a look at the totals.</div>
             </div>
@@ -155,14 +158,19 @@ def _chat_app(brand: str, accent: str, bg: str, panel: str, sidebar_items: list[
     </div>"""
 
 
+def _badge(icon_key: str, label: str, accent: str = "#e8eefc") -> str:
+    return (f'<div class="badge"><span class="bicon">{icon(icon_key, 20, accent)}</span>'
+            f'{html.escape(label)}</div>')
+
+
 def browser_scene(brand: str, accent: str, bg: str, panel: str, items: list[str],
-                  prompt: str, verdict: dict, badge_n: int, badge_label: str) -> str:
+                  prompt: str, verdict: dict, icon_key: str, badge_label: str) -> str:
     """Typing a sensitive prompt into an assistant, then the extension's block modal."""
     return f"""<!doctype html><meta charset="utf-8"><style>{BASE_CSS}</style>
 <div class="scene" style="background:{bg}">
-  {_chat_app(brand, accent, bg, panel, items, "Message " + brand + "…")}
+  {_chat_app(brand, accent, bg, panel, items, "Message " + brand + "…", icon_key)}
   {block_modal(verdict)}
-  <div class="badge"><b>{badge_n}</b> {html.escape(badge_label)}</div>
+  {_badge(icon_key, badge_label, accent)}
   {CURSOR_SVG}
 </div>
 <script>
@@ -192,8 +200,8 @@ setT(0);
 </script>"""
 
 
-def terminal_scene(title: str, lines: list[tuple[str, str]], badge_n: int, badge_label: str,
-                   chrome_label: str = "") -> str:
+def terminal_scene(title: str, lines: list[tuple[str, str]], icon_key: str,
+                   badge_label: str, accent: str = "#e8eefc") -> str:
     """A terminal that types its command, then prints real output line by line.
     `lines` is (kind, text): kind in {cmd, out, err, ok, dim}."""
     palette = {"cmd": "#e8eefc", "out": "#c4ccdb", "err": "#ff8a8a", "ok": "#6ee7a8",
@@ -222,7 +230,7 @@ def terminal_scene(title: str, lines: list[tuple[str, str]], badge_n: int, badge
       <span style="color:#8a93a6;font-size:12.5px;margin-left:8px">{html.escape(title)}</span></div>
     <div class="tbody" id="body">{rendered}</div>
   </div>
-  <div class="badge"><b>{badge_n}</b> {html.escape(badge_label)}</div>
+  {_badge(icon_key, badge_label, accent)}
 </div>
 <script>
 const lns = [...document.querySelectorAll('.ln')];

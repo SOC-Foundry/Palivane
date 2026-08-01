@@ -221,10 +221,11 @@ os.makedirs(BASE, exist_ok=True)
 
 # 90.28s hero cut. Sections follow the story: title, the three browser blocks, the three
 # agent blocks, infrastructure (AWS + GitHub), then the console payoff and a settle.
-render(90.28, [
-    (0.0,   4.0,   ["Am"],                       0.15),   # title card
-    (4.0,   32.5,  ["Am", "F", "C", "G"],        0.55),   # browser: claude / chatgpt / gemini
-    (32.5,  61.5,  ["Am", "F", "C", "G"],        0.75),   # agents: claude code / codex / cursor
-    (61.5,  78.0,  ["F", "G", "Am", "C"],       0.85),   # infrastructure: AWS + GitHub
-    (78.0,  90.28, ["Am", "F", "C", "G"],        0.60),   # console payoff + settle
+render(104.24, [
+    (0.0,   4.0,    ["Am"],                       0.15),   # title card
+    (4.0,   32.5,   ["Am", "F", "C", "G"],        0.55),   # browser: claude / chatgpt / gemini
+    (32.5,  61.0,   ["Am", "F", "C", "G"],        0.75),   # agents: claude code / codex / cursor
+    (61.0,  78.0,   ["F", "G", "Am", "C"],        0.85),   # infrastructure: AWS + GitHub
+    (78.0,  99.0,   ["Am", "F", "C", "G"],        0.62),   # console tour
+    (99.0,  104.24, ["Am", "F"],                  0.30),   # settle out
 ], f"{BASE}/score.wav")
