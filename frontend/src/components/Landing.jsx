@@ -72,10 +72,11 @@ export default function Landing({ onSignIn }) {
       <section className="lp-section alt">
         <div className="lp-wrap">
           <h2 className="lp-h2">See it stop a real leak</h2>
-          <p className="lp-sub">Ninety seconds: a secret blocked in ChatGPT, in Claude Code, and in
-             Cursor — then a tour of the console you would actually live in.</p>
-          <Clip lead src="/shots/demo10.mp4" poster="/shots/demo-poster7.png"
-                caption="A secret gets blocked in ChatGPT, in Claude Code, and in Cursor — then a walkthrough of every screen in the console." />
+          <p className="lp-sub">Ninety seconds: the same customer export and AWS key stopped in
+             Claude, ChatGPT and Gemini, in Claude Code, Codex and Cursor, in an S3 bucket and in
+             a GitHub Actions run — then all of it in one console.</p>
+          <Clip lead src="/shots/demo11.mp4" poster="/shots/demo-poster11.png"
+                caption="Eight places the same secret tried to escape — and the one console it all lands in. Every verdict, risk score and fix in the video is live output from a running Warden instance." />
           <div className="lp-gallery">
             <Shot src="/shots/discovery.png?v=2" alt="Inventory of AI tools in use" onZoom={(s, a) => setZoom({ src: s, alt: a })}
                   caption="Every AI tool in use, broken down by team — and what data actually went to each one." />
