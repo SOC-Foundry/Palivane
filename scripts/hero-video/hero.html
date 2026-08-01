@@ -1,0 +1,330 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Warden — hero</title>
+<style>
+  :root{
+    --bg:#0a0d13; --bg2:#0d111a; --panel:#131722; --panel2:#0f1420;
+    --border:#232a3a; --border-soft:#1c2230; --text:#e6e9f0; --muted:#8a93a6;
+    --accent:#4da3ff; --crit:#ff4d5e; --high:#ff8a3d; --susp:#ffd24d;
+    --benign:#46c98b; --ai:#b388ff;
+    --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{background:#000}
+  #stage{
+    position:relative;width:1280px;height:800px;overflow:hidden;
+    background:
+      radial-gradient(1200px 700px at 20% -10%, rgba(77,163,255,.10), transparent 60%),
+      radial-gradient(900px 600px at 110% 120%, rgba(179,136,255,.10), transparent 55%),
+      linear-gradient(180deg,var(--bg2),var(--bg));
+    font-family:var(--font); color:var(--text); user-select:none;
+  }
+  .layer{position:absolute;inset:0}
+  .center{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;text-align:center}
+
+  /* --- shield mark --- */
+  .shield{filter:drop-shadow(0 10px 30px rgba(77,163,255,.35))}
+  .wordmark{font-weight:800;letter-spacing:.14em;font-size:58px}
+  .wordmark span{color:var(--accent)}
+  .tag{color:var(--muted);font-size:23px;font-weight:500;letter-spacing:.01em}
+  .url{color:var(--accent);font-size:20px;font-weight:600;letter-spacing:.03em}
+
+  /* --- browser window --- */
+  #browser{
+    position:absolute;left:150px;top:96px;width:980px;height:612px;
+    background:var(--panel);border:1px solid var(--border);border-radius:16px;
+    box-shadow:0 40px 90px rgba(0,0,0,.55);overflow:hidden;display:flex;flex-direction:column;
+    transform-origin:50% 40%;
+  }
+  .chrome{height:46px;flex:0 0 46px;display:flex;align-items:center;gap:14px;padding:0 16px;
+    background:linear-gradient(180deg,#161b27,#121722);border-bottom:1px solid var(--border-soft)}
+  .dots{display:flex;gap:8px}.dots i{width:12px;height:12px;border-radius:50%;display:block}
+  .dots i:nth-child(1){background:#ff5f57}.dots i:nth-child(2){background:#febc2e}.dots i:nth-child(3){background:#28c840}
+  .addr{flex:1;height:28px;border-radius:8px;background:#0c111b;border:1px solid var(--border-soft);
+    display:flex;align-items:center;gap:9px;padding:0 12px;color:var(--muted);font-size:13.5px}
+  .addr .lock{width:11px;height:11px;border:2px solid var(--muted);border-radius:3px;position:relative;flex:0 0 auto}
+  .brand-chip{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+  .brand-chip i{width:15px;height:15px;border-radius:5px;display:block}
+
+  .body{flex:1;position:relative;display:flex;flex-direction:column;padding:26px 30px 0;overflow:hidden}
+  .app-name{display:flex;align-items:center;gap:11px;font-size:16px;color:var(--muted);margin-bottom:20px}
+  .app-name b{color:var(--text);font-weight:700;font-size:17px}
+  .thread{flex:1;display:flex;flex-direction:column;gap:16px}
+  .msg{max-width:78%;padding:13px 16px;border-radius:14px;font-size:15px;line-height:1.5}
+  .msg.you{align-self:flex-end;background:var(--accent-soft,rgba(77,163,255,.14));border:1px solid rgba(77,163,255,.28)}
+  .compose{margin:0 -30px;padding:16px 30px 24px;border-top:1px solid var(--border-soft);
+    background:linear-gradient(180deg,transparent,rgba(0,0,0,.15))}
+  .field{min-height:66px;border:1px solid var(--border);border-radius:14px;background:var(--panel2);
+    padding:14px 16px;display:flex;align-items:flex-start;gap:12px;position:relative}
+  .field .txt{flex:1;font-size:15px;line-height:1.55;white-space:pre-wrap;word-break:break-word;color:var(--text)}
+  .field .txt .lead{color:var(--text)}
+  .field .txt .code{font-family:var(--mono);font-size:13.5px;color:#cfe3ff;display:block;margin-top:6px}
+  .caret{display:inline-block;width:2px;height:18px;background:var(--accent);vertical-align:-3px;margin-left:1px}
+  .redact{position:relative}
+  .redact .strike{position:absolute;left:-2px;right:-2px;top:50%;height:2px;background:var(--crit);transform:scaleX(0);transform-origin:left}
+  .redact.done .sec{opacity:.35;filter:blur(2px)}
+  .redact-chip{display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:4px 10px;border-radius:999px;
+    font-size:12.5px;font-weight:600;color:var(--crit);background:rgba(255,77,94,.10);border:1px solid rgba(255,77,94,.3)}
+  .send{width:40px;height:40px;flex:0 0 auto;border-radius:11px;background:var(--accent);
+    display:flex;align-items:center;justify-content:center;align-self:flex-end;box-shadow:0 6px 18px rgba(77,163,255,.4)}
+
+  /* --- warden block banner --- */
+  .banner{position:absolute;left:30px;right:30px;top:82px;border-radius:14px;padding:15px 18px;
+    display:flex;align-items:center;gap:15px;
+    background:linear-gradient(90deg,rgba(255,77,94,.16),rgba(19,23,34,.96));
+    border:1px solid rgba(255,77,94,.5);border-left:4px solid var(--crit);
+    box-shadow:0 22px 50px rgba(0,0,0,.5);backdrop-filter:blur(3px)}
+  .banner.sev-high{background:linear-gradient(90deg,rgba(255,138,61,.16),rgba(19,23,34,.96));
+    border-color:rgba(255,138,61,.5);border-left-color:var(--high)}
+  .banner .b-ico{width:40px;height:40px;flex:0 0 auto;border-radius:11px;display:flex;align-items:center;justify-content:center;
+    background:rgba(255,77,94,.14)}
+  .banner.sev-high .b-ico{background:rgba(255,138,61,.14)}
+  .banner .b-main{flex:1}
+  .banner .b-t{font-size:16.5px;font-weight:700;display:flex;align-items:center;gap:9px}
+  .banner .b-t .tagpill{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    padding:2px 8px;border-radius:6px;background:var(--crit);color:#1a0509}
+  .banner.sev-high .b-t .tagpill{background:var(--high)}
+  .banner .b-s{font-size:13.5px;color:var(--muted);margin-top:3px}
+  .banner .b-by{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:7px;opacity:.9}
+
+  /* --- console scene --- */
+  #console{padding:64px 150px}
+  .con-h{display:flex;align-items:center;gap:14px;margin-bottom:8px}
+  .con-h .t{font-size:30px;font-weight:800}
+  .con-sub{color:var(--muted);font-size:17px;margin-bottom:30px}
+  .counter{margin-left:auto;text-align:right}
+  .counter .n{font-size:44px;font-weight:800;color:var(--crit);line-height:1}
+  .counter .l{font-size:12.5px;color:var(--muted);letter-spacing:.05em;text-transform:uppercase}
+  .rows{display:flex;flex-direction:column;gap:14px}
+  .row{display:flex;align-items:center;gap:18px;padding:18px 22px;border-radius:14px;
+    background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--crit)}
+  .row.sev-high{border-left-color:var(--high)}
+  .row .dot{width:11px;height:11px;border-radius:50%;background:var(--crit);box-shadow:0 0 12px var(--crit);flex:0 0 auto}
+  .row.sev-high .dot{background:var(--high);box-shadow:0 0 12px var(--high)}
+  .row .cat{font-weight:700;font-size:17px;min-width:210px}
+  .row .det{color:var(--muted);font-size:15px;flex:1}
+  .row .src{font-family:var(--mono);font-size:13.5px;color:var(--accent)}
+  .row .act{font-size:12.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--crit);padding:5px 12px;border-radius:8px;background:rgba(255,77,94,.1);border:1px solid rgba(255,77,94,.3)}
+  .row.sev-high .act{color:var(--high);background:rgba(255,138,61,.1);border-color:rgba(255,138,61,.3)}
+
+  /* --- cursor --- */
+  #cursor{position:absolute;width:26px;height:26px;pointer-events:none;z-index:50;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))}
+  #click{position:absolute;width:44px;height:44px;border-radius:50%;border:2px solid var(--accent);pointer-events:none;z-index:49}
+</style>
+
+<body>
+<div id="stage">
+  <!-- intro / outro -->
+  <div class="layer center" id="intro">
+    <svg class="shield" id="introShield" width="132" height="150" viewBox="0 0 44 50"></svg>
+    <div class="wordmark">WAR<span>DEN</span></div>
+    <div class="tag" id="introTag">Stop the leak before it leaves the browser.</div>
+  </div>
+
+  <!-- browser window (reused across the 3 AI scenes) -->
+  <div id="browser">
+    <div class="chrome">
+      <span class="dots"><i></i><i></i><i></i></span>
+      <span class="addr"><span class="lock"></span><span id="addrUrl">claude.ai</span></span>
+      <span class="brand-chip"><i id="brandDot"></i><span id="brandName">Claude</span></span>
+    </div>
+    <div class="body">
+      <div class="app-name"><b id="appTitle">Claude</b><span>· new chat</span></div>
+      <div class="thread" id="thread"></div>
+      <div class="compose">
+        <div class="field">
+          <div class="txt" id="composeTxt"></div>
+          <div class="send"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 12l16-8-6 8 6 8z" fill="#08111f"/></svg></div>
+        </div>
+      </div>
+    </div>
+    <div class="banner" id="banner">
+      <div class="b-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2l8 3v6c0 5-3.5 8.5-8 11-4.5-2.5-8-6-8-11V5z" stroke="#ff4d5e" stroke-width="1.7" fill="rgba(255,77,94,.12)"/><path d="M9 12l2 2 4-4.5" stroke="#ff4d5e" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="b-main">
+        <div class="b-t"><span class="tagpill">Blocked</span><span id="bTitle">AWS secret key</span></div>
+        <div class="b-s" id="bSub">Not sent to claude.ai · redacted before it left your browser</div>
+      </div>
+      <div class="b-by"><svg width="15" height="15" viewBox="0 0 44 50"><path d="M22 2L6 8v14c0 12 8 20 16 24 8-4 16-12 16-24V8z" fill="none" stroke="#4da3ff" stroke-width="2.4"/></svg>Warden</div>
+    </div>
+  </div>
+
+  <!-- console -->
+  <div class="layer" id="console" style="opacity:0">
+    <div class="con-h">
+      <svg width="30" height="34" viewBox="0 0 44 50"><path d="M22 2L6 8v14c0 12 8 20 16 24 8-4 16-12 16-24V8z" fill="none" stroke="#4da3ff" stroke-width="2.6"/><path d="M14 24l6 6 11-13" fill="none" stroke="#4da3ff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="t">Warden — Findings</span>
+      <span class="counter"><div class="n" id="conNum">0</div><div class="l">blocked today</div></span>
+    </div>
+    <div class="con-sub">Every block, logged and attributed. Watch first — turn on enforcement when you're ready.</div>
+    <div class="rows" id="conRows"></div>
+  </div>
+
+  <img id="cursor" style="opacity:0" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNiIgaGVpZ2h0PSIyNiIgdmlld0JveD0iMCAwIDI0IDI0Ij48cGF0aCBkPSJNNSAyLjVMMTkgMTNsLTYuMi41IDMuNiA2LjItMy4xIDEuOC0zLjYtNi4yTDUgMTkuNXoiIGZpbGw9IiNmZmYiIHN0cm9rZT0iIzExMTYyMCIgc3Ryb2tlLXdpZHRoPSIxLjMiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48L3N2Zz4=" />
+  <div id="click" style="opacity:0"></div>
+</div>
+
+<script>
+const S = {
+  DURATION: 27.8, FPS: 30, W: 1280, H: 800,
+};
+const el = id => document.getElementById(id);
+
+// shield marks (intro + outro share #introShield)
+el('introShield').innerHTML =
+  '<path d="M22 2L6 8v14c0 12 8 20 16 24 8-4 16-12 16-24V8z" fill="rgba(77,163,255,.08)" stroke="#4da3ff" stroke-width="2.4"/>'
++ '<path d="M14 24l6 6 11-13" fill="none" stroke="#4da3ff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>';
+
+// ----- helpers -----
+const clamp=(a,b,x)=>Math.max(a,Math.min(b,x));
+const easeInOut=x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2;
+const easeOut=x=>1-Math.pow(1-x,3);
+// progress of a segment [a,b] at time t (0..1, clamped)
+const seg=(t,a,b)=>clamp(0,1,(t-a)/(b-a));
+// opacity envelope: 0 before `a`, ramps in over `fin`, holds, ramps out over `fout` before `b`
+function env(t,a,b,fin=.35,fout=.35){
+  if(t<a||t>b) return 0;
+  return clamp(0,1,Math.min((t-a)/fin,(b-t)/fout,1));
+}
+const lerp=(a,b,x)=>a+(b-a)*x;
+
+// ----- scene data -----
+const AI=[
+ { start:2.2, url:'claude.ai', appName:'Claude', dot:'#d97757',
+   lead:"Here's our prod config — can you help me debug the connection? ",
+   sec:"AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", code:false,
+   sev:'crit', title:'AWS secret key', chip:'secret',
+   sub:'Not sent to claude.ai · redacted before it left your browser' },
+ { start:8.6, url:'gemini.google.com', appName:'Gemini', dot:'#4285f4',
+   lead:"Summarize this customer export for me: ",
+   sec:"Jane Doe, jane@acme.com, 402-11-7788\nMark Lee, mark@acme.com, 511-02-9931  … +22 more", code:false,
+   sev:'high', title:'Customer PII — 24 records', chip:'pii',
+   sub:'Names, emails and SSNs · blocked before send' },
+ { start:15.0, url:'chatgpt.com', appName:'ChatGPT', dot:'#10a37f',
+   lead:"Refactor this for me: ",
+   sec:"def sign_license(payload, key):\n    sig = hmac.new(key, payload, sha256)\n    return b64encode(sig.digest())", code:true,
+   sev:'crit', title:'Proprietary source code', chip:'source-code',
+   sub:'Internal licensing module · blocked before send' },
+];
+const SCENE_DUR=6.4;
+const CONSOLE_START=21.4, CONSOLE_END=25.4, OUTRO_START=25.4;
+
+const CON=[
+ {sev:'crit', cat:'Secret',      det:'AWS secret access key',   src:'claude.ai'},
+ {sev:'high', cat:'Customer PII', det:'24 records — names, emails, SSNs', src:'gemini.google.com'},
+ {sev:'crit', cat:'Source code', det:'Internal licensing module', src:'chatgpt.com'},
+];
+el('conRows').innerHTML = CON.map(r=>
+  `<div class="row ${r.sev==='high'?'sev-high':''}"><span class="dot"></span>`
+ +`<span class="cat">${r.cat}</span><span class="det">${r.det}</span>`
+ +`<span class="src">${r.src}</span><span class="act">Blocked</span></div>`).join('');
+const conRowEls=[...document.querySelectorAll('#conRows .row')];
+
+// cursor waypoints per scene (stage coords). Compose field ~ y 636, send button ~ x 1092.
+function cursorPos(scene, lt){
+  // rest -> compose (0.4-1.0) -> hold while typing -> send (2.9-3.35)
+  const restX=760, restY=430, composeX=470, composeY=636, sendX=1092, sendY=650;
+  if(lt<0.4) return {x:restX,y:restY,o:0};
+  if(lt<1.0){const p=easeInOut(seg(lt,0.4,1.0));return{x:lerp(restX,composeX,p),y:lerp(restY,composeY,p),o:easeOut(seg(lt,0.4,0.7))};}
+  if(lt<2.9) return {x:composeX,y:composeY,o:1};
+  if(lt<3.35){const p=easeInOut(seg(lt,2.9,3.35));return{x:lerp(composeX,sendX,p),y:lerp(composeY,sendY,p),o:1};}
+  if(lt<4.1) return {x:sendX,y:sendY,o:1};
+  return {x:sendX,y:sendY,o:clamp(0,1,1-seg(lt,4.1,4.5))};
+}
+
+// ----- master render -----
+function render(t){
+  // intro (0..2.2) and outro (25.4..end) share #intro; console 21.4..25.4
+  const introO = t<3 ? env(t,0.0,2.15,.5,.35) : env(t,OUTRO_START,S.DURATION,.5,.5);
+  const intro=el('intro'); intro.style.opacity=introO;
+  if(t>=OUTRO_START){ el('introTag').textContent='warden.tachtech.net'; el('introTag').className='url'; }
+  else { el('introTag').textContent='Stop the leak before it leaves the browser.'; el('introTag').className='tag'; }
+  intro.style.transform = t<3
+    ? `scale(${lerp(.92,1,easeOut(seg(t,0,1.2)))})`
+    : `scale(${lerp(.94,1,easeOut(seg(t,OUTRO_START,OUTRO_START+1.2)))})`;
+
+  // which AI scene is active?
+  let active=-1, lt=0;
+  for(let i=0;i<AI.length;i++){ if(t>=AI[i].start && t<AI[i].start+SCENE_DUR){active=i;lt=t-AI[i].start;} }
+  const browser=el('browser');
+  // window opacity: fade in at first scene, quick dip between scenes, fade out into console
+  let winO=0, winScale=1;
+  if(active>=0){
+    const first = active===0;
+    winO = Math.min(env(t,AI[active].start,AI[active].start+SCENE_DUR, first?.5:.28, .3), 1);
+    winScale = first ? lerp(.96,1,easeOut(seg(t,AI[0].start,AI[0].start+1))) : 1;
+  }
+  browser.style.opacity=winO;
+  browser.style.transform=`scale(${winScale})`;
+
+  if(active>=0){
+    const sc=AI[active];
+    el('addrUrl').textContent=sc.url; el('brandName').textContent=sc.appName;
+    el('appTitle').textContent=sc.appName; el('brandDot').style.background=sc.dot;
+    // typing: type the lead (0.7..1.9), then paste the secret block at ~2.15
+    const leadDone = seg(lt,0.7,1.9);
+    const nLead=Math.round(sc.lead.length*easeOut(leadDone));
+    const pasted = lt>=2.15;
+    const blocked = lt>=3.55;
+    let html = `<span class="lead">${escapeHtml(sc.lead.slice(0,nLead))}</span>`;
+    if(!pasted && lt<2.1){ if(nLead>=sc.lead.length || (lt%0.7)<0.42) html+='<span class="caret"></span>'; }
+    if(pasted){
+      const strike = blocked ? clamp(0,1,seg(lt,3.55,3.95)) : 0;
+      const secHtml = sc.code ? `<span class="code">${escapeHtml(sc.sec)}</span>` : `<span>${escapeHtml(sc.sec)}</span>`;
+      html += `<span class="redact ${blocked?'done':''}"><span class="sec">${secHtml}</span>`
+            + `<span class="strike" style="transform:scaleX(${strike})"></span></span>`;
+      if(blocked) html += `<span class="redact-chip">✕ «redacted:${sc.chip}»</span>`;
+    }
+    el('composeTxt').innerHTML=html;
+
+    // banner slide/opacity
+    const b=el('banner');
+    b.className='banner'+(sc.sev==='high'?' sev-high':'');
+    const bp=easeOut(seg(lt,3.55,4.0));
+    b.style.opacity=bp; b.style.transform=`translateY(${lerp(-18,0,bp)}px)`;
+    el('bTitle').textContent=sc.title; el('bSub').textContent=sc.sub;
+
+    // cursor + click ripple
+    const cur=cursorPos(sc,lt);
+    const c=el('cursor'); c.style.opacity=cur.o*winO;
+    c.style.transform=`translate(${cur.x}px,${cur.y}px)`;
+    const clickP=seg(lt,3.3,3.75);
+    const clk=el('click');
+    if(lt>=3.3 && lt<3.8){ clk.style.opacity=(1-clickP)*winO; clk.style.transform=`translate(${1092-22+13}px,${650-22+13}px) scale(${lerp(.3,1.4,clickP)})`; }
+    else clk.style.opacity=0;
+  } else {
+    browser.style.opacity=Math.min(browser.style.opacity,winO);
+    el('cursor').style.opacity=0; el('click').style.opacity=0;
+  }
+
+  // console scene
+  const conO=env(t,CONSOLE_START,CONSOLE_END,.4,.4);
+  el('console').style.opacity=conO;
+  if(conO>0){
+    conRowEls.forEach((r,i)=>{
+      const p=easeOut(seg(t,CONSOLE_START+.25+i*.45, CONSOLE_START+.85+i*.45));
+      r.style.opacity=p; r.style.transform=`translateX(${lerp(26,0,p)}px)`;
+    });
+    const shown=conRowEls.filter((_,i)=>t>=CONSOLE_START+.55+i*.45).length;
+    el('conNum').textContent=shown;
+  }
+}
+function escapeHtml(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+
+// expose for the frame-capture harness
+window.__render=render; window.__DURATION=S.DURATION; window.__FPS=S.FPS;
+
+// live preview loop (skipped when captured with ?capture=1)
+if(!location.search.includes('capture')){
+  let t0=null;
+  function loop(now){ if(t0===null)t0=now; const t=((now-t0)/1000)%S.DURATION; render(t); requestAnimationFrame(loop); }
+  requestAnimationFrame(loop);
+} else {
+  // capture mode: render a single fixed frame at ?t=<seconds> (for headless screenshots)
+  const t=parseFloat(new URLSearchParams(location.search).get('t')||'0');
+  render(t);
+}
+</script>
+</body>
+</html>
