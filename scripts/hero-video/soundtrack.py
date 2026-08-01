@@ -18,7 +18,7 @@ SR = 44100
 BPM = 72.0
 BEAT = 60.0 / BPM            # 0.833s
 BAR = 4 * BEAT               # 3.333s
-DUR = 28.0
+DUR = 40.5
 N = int(DUR * SR)
 rng = np.random.default_rng(7)
 
@@ -131,7 +131,7 @@ PROG = [
 ROOTS = [38, 31, 36, 33]                               # bass roots (one octave down-ish)
 
 kick_times, pad_bus = [], np.zeros((N, 2))
-for bar in range(8):
+for bar in range(12):
     bar_t = bar * BAR
     ch = PROG[bar % 4]
     # EP chord: strike on beat 1, softer re-voice on beat 3
