@@ -74,7 +74,7 @@ export default function Landing({ onSignIn }) {
           <h2 className="lp-h2">See it stop a real leak</h2>
           <p className="lp-sub">Half a minute: an API key, customer records, and source code — each
              caught the moment someone pastes it into Claude, Gemini, or ChatGPT.</p>
-          <Clip lead src="/shots/demo11.mp4" poster="/shots/demo-poster8.png"
+          <Clip lead src="/shots/demo12.mp4" poster="/shots/demo-poster9.png"
                 caption="A secret, customer PII, and proprietary code — each blocked before it reaches claude.ai, Gemini, or ChatGPT, then logged in the console." />
           <div className="lp-gallery">
             <Shot src="/shots/discovery.png?v=2" alt="Inventory of AI tools in use" onZoom={(s, a) => setZoom({ src: s, alt: a })}

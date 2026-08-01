@@ -167,7 +167,7 @@
 
 <script>
 const S = {
-  DURATION: 27.8, FPS: 30, W: 1280, H: 800,
+  DURATION: 40.4, FPS: 30, W: 1280, H: 800,
 };
 const el = id => document.getElementById(id);
 
@@ -191,24 +191,24 @@ const lerp=(a,b,x)=>a+(b-a)*x;
 
 // ----- scene data -----
 const AI=[
- { start:2.2, url:'claude.ai', appName:'Claude', dot:'#d97757',
+ { start:3.4, url:'claude.ai', appName:'Claude', dot:'#d97757',
    lead:"Here's our prod config — can you help me debug the connection? ",
    sec:"AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", code:false,
    sev:'crit', title:'AWS secret key', chip:'secret',
    sub:'Not sent to claude.ai · redacted before it left your browser' },
- { start:8.6, url:'gemini.google.com', appName:'Gemini', dot:'#4285f4',
+ { start:12.8, url:'gemini.google.com', appName:'Gemini', dot:'#4285f4',
    lead:"Summarize this customer export for me: ",
    sec:"Jane Doe, jane@acme.com, 402-11-7788\nMark Lee, mark@acme.com, 511-02-9931  … +22 more", code:false,
    sev:'high', title:'Customer PII — 24 records', chip:'pii',
    sub:'Names, emails and SSNs · blocked before send' },
- { start:15.0, url:'chatgpt.com', appName:'ChatGPT', dot:'#10a37f',
+ { start:22.2, url:'chatgpt.com', appName:'ChatGPT', dot:'#10a37f',
    lead:"Refactor this for me: ",
    sec:"def sign_license(payload, key):\n    sig = hmac.new(key, payload, sha256)\n    return b64encode(sig.digest())", code:true,
    sev:'crit', title:'Proprietary source code', chip:'source-code',
    sub:'Internal licensing module · blocked before send' },
 ];
-const SCENE_DUR=6.4;
-const CONSOLE_START=21.4, CONSOLE_END=25.4, OUTRO_START=25.4;
+const SCENE_DUR=9.4;
+const CONSOLE_START=31.6, CONSOLE_END=37.6, OUTRO_START=37.6;
 
 const CON=[
  {sev:'crit', cat:'Secret',      det:'AWS secret access key',   src:'claude.ai'},
@@ -225,23 +225,23 @@ const conRowEls=[...document.querySelectorAll('#conRows .row')];
 function cursorPos(scene, lt){
   // rest -> compose (0.4-1.0) -> hold while typing -> send (2.9-3.35)
   const restX=760, restY=430, composeX=470, composeY=636, sendX=1092, sendY=650;
-  if(lt<0.4) return {x:restX,y:restY,o:0};
-  if(lt<1.0){const p=easeInOut(seg(lt,0.4,1.0));return{x:lerp(restX,composeX,p),y:lerp(restY,composeY,p),o:easeOut(seg(lt,0.4,0.7))};}
-  if(lt<2.9) return {x:composeX,y:composeY,o:1};
-  if(lt<3.35){const p=easeInOut(seg(lt,2.9,3.35));return{x:lerp(composeX,sendX,p),y:lerp(composeY,sendY,p),o:1};}
-  if(lt<4.1) return {x:sendX,y:sendY,o:1};
-  return {x:sendX,y:sendY,o:clamp(0,1,1-seg(lt,4.1,4.5))};
+  if(lt<0.5) return {x:restX,y:restY,o:0};
+  if(lt<1.2){const p=easeInOut(seg(lt,0.5,1.2));return{x:lerp(restX,composeX,p),y:lerp(restY,composeY,p),o:easeOut(seg(lt,0.5,0.9))};}
+  if(lt<3.6) return {x:composeX,y:composeY,o:1};
+  if(lt<4.1){const p=easeInOut(seg(lt,3.6,4.1));return{x:lerp(composeX,sendX,p),y:lerp(composeY,sendY,p),o:1};}
+  if(lt<4.6) return {x:sendX,y:sendY,o:1};
+  return {x:sendX,y:sendY,o:clamp(0,1,1-seg(lt,4.6,5.0))};
 }
 
 // ----- master render -----
 function render(t){
   // intro (0..2.2) and outro (25.4..end) share #intro; console 21.4..25.4
-  const introO = t<3 ? env(t,0.0,2.15,.5,.35) : env(t,OUTRO_START,S.DURATION,.5,.5);
+  const introO = t<20 ? env(t,0.0,3.3,.6,.4) : env(t,OUTRO_START,S.DURATION,.5,.5);
   const intro=el('intro'); intro.style.opacity=introO;
   if(t>=OUTRO_START){ el('introTag').textContent='warden.tachtech.net'; el('introTag').className='url'; }
   else { el('introTag').textContent='Stop the leak before it leaves the browser.'; el('introTag').className='tag'; }
-  intro.style.transform = t<3
-    ? `scale(${lerp(.92,1,easeOut(seg(t,0,1.2)))})`
+  intro.style.transform = t<20
+    ? `scale(${lerp(.92,1,easeOut(seg(t,0,1.4)))})`
     : `scale(${lerp(.94,1,easeOut(seg(t,OUTRO_START,OUTRO_START+1.2)))})`;
 
   // which AI scene is active?
@@ -263,14 +263,14 @@ function render(t){
     el('addrUrl').textContent=sc.url; el('brandName').textContent=sc.appName;
     el('appTitle').textContent=sc.appName; el('brandDot').style.background=sc.dot;
     // typing: type the lead (0.7..1.9), then paste the secret block at ~2.15
-    const leadDone = seg(lt,0.7,1.9);
+    const leadDone = seg(lt,0.9,2.6);
     const nLead=Math.round(sc.lead.length*easeOut(leadDone));
-    const pasted = lt>=2.15;
-    const blocked = lt>=3.55;
+    const pasted = lt>=2.9;
+    const blocked = lt>=4.3;
     let html = `<span class="lead">${escapeHtml(sc.lead.slice(0,nLead))}</span>`;
-    if(!pasted && lt<2.1){ if(nLead>=sc.lead.length || (lt%0.7)<0.42) html+='<span class="caret"></span>'; }
+    if(!pasted && lt<2.85){ if(nLead>=sc.lead.length || (lt%0.7)<0.42) html+='<span class="caret"></span>'; }
     if(pasted){
-      const strike = blocked ? clamp(0,1,seg(lt,3.55,3.95)) : 0;
+      const strike = blocked ? clamp(0,1,seg(lt,4.3,4.7)) : 0;
       const secHtml = sc.code ? `<span class="code">${escapeHtml(sc.sec)}</span>` : `<span>${escapeHtml(sc.sec)}</span>`;
       html += `<span class="redact ${blocked?'done':''}"><span class="sec">${secHtml}</span>`
             + `<span class="strike" style="transform:scaleX(${strike})"></span></span>`;
@@ -281,7 +281,7 @@ function render(t){
     // banner slide/opacity
     const b=el('banner');
     b.className='banner'+(sc.sev==='high'?' sev-high':'');
-    const bp=easeOut(seg(lt,3.55,4.0));
+    const bp=easeOut(seg(lt,4.3,4.8));
     b.style.opacity=bp; b.style.transform=`translateY(${lerp(-18,0,bp)}px)`;
     el('bTitle').textContent=sc.title; el('bSub').textContent=sc.sub;
 
@@ -289,9 +289,9 @@ function render(t){
     const cur=cursorPos(sc,lt);
     const c=el('cursor'); c.style.opacity=cur.o*winO;
     c.style.transform=`translate(${cur.x}px,${cur.y}px)`;
-    const clickP=seg(lt,3.3,3.75);
+    const clickP=seg(lt,4.05,4.5);
     const clk=el('click');
-    if(lt>=3.3 && lt<3.8){ clk.style.opacity=(1-clickP)*winO; clk.style.transform=`translate(${1092-22+13}px,${650-22+13}px) scale(${lerp(.3,1.4,clickP)})`; }
+    if(lt>=4.05 && lt<4.55){ clk.style.opacity=(1-clickP)*winO; clk.style.transform=`translate(${1092-22+13}px,${650-22+13}px) scale(${lerp(.3,1.4,clickP)})`; }
     else clk.style.opacity=0;
   } else {
     browser.style.opacity=Math.min(browser.style.opacity,winO);

@@ -1,7 +1,7 @@
 # Warden hero video generator
 
 Self-contained pipeline that produces the landing-page hero clip
-(`frontend/public/shots/demo11.mp4`) — the one that shows a secret, customer PII, and
+(`frontend/public/shots/demo12.mp4`, ~40s) — the one that shows a secret, customer PII, and
 source code each being **blocked as someone pastes it into Claude, Gemini, and ChatGPT**,
 then landing in the Warden console.
 
