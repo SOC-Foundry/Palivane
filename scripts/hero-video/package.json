@@ -1,9 +1,0 @@
-{
-  "name": "warden-hero-video",
-  "private": true,
-  "type": "module",
-  "description": "Generator for the Warden landing hero video (animation + lofi score + encode).",
-  "devDependencies": {
-    "puppeteer-core": "^23.11.1"
-  }
-}
