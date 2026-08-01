@@ -1,7 +1,0 @@
-node_modules/
-.venv/
-frames/
-*.wav
-hero.mp4
-hero.artifact.html
-hero-preview.html
