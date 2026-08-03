@@ -102,6 +102,7 @@ CLIENT_TOOLS: dict[str, tuple[str, str]] = {
     "warden-hook": ("Claude Code", "coding"),
     "warden-gemini-hook": ("Gemini CLI", "coding"),
     "warden-codex-hook": ("Codex CLI", "coding"),
+    "warden-copilot-hook": ("GitHub Copilot", "coding"),
     "warden-mcp": ("MCP client", "agent"),
 }
 

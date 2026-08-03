@@ -94,6 +94,7 @@ def test_forcelist_and_pack():
                          "chrome-extension-settings.json",
                          "claude-managed-settings.json", "openai.env", "gemini.txt",
                          "gemini-settings.json", "codex-hooks.json", "codex.txt",
+                         "copilot-hooks.json", "copilot.txt",
                          "cursor-hooks.json", "cursor.txt", "warden-secrets.plist",
                          "warden-secrets.cron", "warden-secrets-task.xml", "ca-note.txt"}
 

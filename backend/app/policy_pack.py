@@ -287,6 +287,57 @@ def codex_note(base_url: str, codex_hook_path: str) -> str:
     )
 
 
+def copilot_hooks(copilot_hook_path: str) -> str:
+    """GitHub Copilot hook file registering warden-copilot-hook on its two lifecycle
+    events (Copilot's schema: version: 1, lowerCamelCase events, a `bash` command,
+    per-hook timeoutSec). One file serves all three Copilot surfaces: drop in
+    ~/.copilot/hooks/warden.json per device (Copilot CLI), or commit/push as
+    .github/hooks/warden.json per repo — where it also drives VS Code agent mode and
+    the CLOUD coding agent (hooks run inside the Actions environment; deploy the hook
+    script in a setup step there)."""
+    entry = {"type": "command", "bash": copilot_hook_path, "timeoutSec": 10}
+    return json.dumps({
+        "version": 1,
+        "hooks": {
+            "preToolUse": [dict(entry)],           # shell/edit/MCP calls — deniable
+            "userPromptSubmitted": [dict(entry)],  # prompt record — observe-only
+        },
+    }, indent=2)
+
+
+def copilot_note(base_url: str, copilot_hook_path: str) -> str:
+    """How Warden covers GitHub Copilot — and what this plane can/can't block."""
+    b = base_url.rstrip("/")
+    return (
+        "GitHub Copilot coverage\n"
+        "=======================\n"
+        "Copilot has no base-URL override, so the gateway can't be interposed and the\n"
+        "egress proxy sees only TLS to GitHub — not tool calls. Warden covers Copilot\n"
+        "with its native hooks (copilot-hooks.json in this pack):\n"
+        "  - preToolUse          -> shell/edit/MCP tool calls, DENIABLE pre-execution\n"
+        "                           (dangerous commands, MCP allowlist, secrets in args)\n"
+        "  - userPromptSubmitted -> prompt record — OBSERVE-ONLY (Copilot ignores hook\n"
+        "                           output here; the proxy remains the prompt-DLP backstop)\n"
+        "One hook file covers all three Copilot surfaces:\n"
+        f"  - Copilot CLI: deploy warden-copilot-hook to {copilot_hook_path} and drop\n"
+        "    copilot-hooks.json in ~/.copilot/hooks/warden.json (or push via MDM).\n"
+        "  - VS Code agent mode + the CLOUD coding agent: commit copilot-hooks.json as\n"
+        "    .github/hooks/warden.json in each governed repo — the cloud agent runs it\n"
+        "    inside the Actions environment (install the hook script in a setup step).\n"
+        "    Note: GitHub's own cloud-agent firewall does NOT cover MCP servers; this\n"
+        "    hook plus warden-mcp wrapping of ~/.copilot/mcp-config.json closes that.\n"
+        "Semantics to know: Copilot DENIES on a hook's non-zero exit (fail-closed) but\n"
+        "ALLOWS on timeout (fail-open) — warden-copilot-hook always exits 0 and lets the\n"
+        "verdict speak. Known upstream gap: subagent tool calls may not fire preToolUse\n"
+        "(github/copilot-cli#2392) — don't claim subagent coverage yet.\n"
+        "Monitor by default. Tool calls scan inline, so the org's enforce stance\n"
+        "(console Settings → Enforcement, stageable per user/tool) denies high-risk tool\n"
+        "calls centrally — prompts can't block at this plane. Set WARDEN_ENFORCE=true to\n"
+        f"also enforce from device-local config. Provide WARDEN_URL/WARDEN_TOKEN via\n"
+        f"machine env (WARDEN_URL={b}) or ~/.copilot/warden.json.\n"
+    )
+
+
 def cursor_hooks(hook_path: str) -> str:
     """Cursor `hooks.json` registering warden-cursor-hook on the security-relevant agent
     events. Push to the enterprise path via MDM (macOS /Library/Application Support/Cursor/,
@@ -430,6 +481,7 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
                 cursor_hook_path: str = "/usr/local/bin/warden-cursor-hook",
                 gemini_hook_path: str = "/usr/local/bin/warden-gemini-hook",
                 codex_hook_path: str = "/usr/local/bin/warden-codex-hook",
+                copilot_hook_path: str = "/usr/local/bin/warden-copilot-hook",
                 secrets_path: str = "/usr/local/bin/warden-secrets",
                 secrets_engine: str = "trufflehog",
                 ext_update_url: str = "", ext_crx_url: str = "",
@@ -475,6 +527,10 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "6b. codex-hooks.json + codex.txt -> Codex CLI local hooks (warden-codex-hook — prompt +\n"
         "   tool-call inspection; covers ChatGPT-subscription auth, which ignores OPENAI_BASE_URL).\n"
         f"   Deploy the hook to {codex_hook_path}; see codex.txt for managed-hooks distribution.\n"
+        "6c. copilot-hooks.json + copilot.txt -> GitHub Copilot hooks (warden-copilot-hook —\n"
+        "   deniable tool-call inspection; prompts observe-only at this plane). One file covers\n"
+        "   Copilot CLI (~/.copilot/hooks/), and — committed as .github/hooks/warden.json —\n"
+        f"   VS Code agent mode + the cloud coding agent. Deploy the hook to {copilot_hook_path}.\n"
         "7. gemini.txt + gemini-settings.json -> Gemini CLI local hooks (warden-gemini-hook —\n"
         "   prompt + tool-call inspection in every auth mode; deploy the hook to\n"
         f"   {gemini_hook_path}) and SDK routing notes. The system proxy above covers\n"
@@ -493,8 +549,9 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "Coverage: browser UIs (claude.ai / chatgpt.com / gemini.google.com) via the extension;\n"
         "OpenAI + Gemini + Anthropic API clients via the system proxy (needs the CA); explicit\n"
         "gateway redirect for Claude Code (item 5) and OpenAI SDKs (item 6); Codex CLI (item 6b),\n"
-        "Gemini CLI (item 7), and Cursor (item 8) via local hooks — prompts + tool calls in every\n"
-        "auth mode, despite cert pinning; and credential-at-rest hygiene (item 9).\n"
+        "GitHub Copilot (item 6c), Gemini CLI (item 7), and Cursor (item 8) via local hooks —\n"
+        "prompts + tool calls in every auth mode, despite cert pinning; and credential-at-rest\n"
+        "hygiene (item 9).\n"
     )
     artifacts = {
         "README.txt": readme,
@@ -510,6 +567,8 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "openai.env": openai_env(b),
         "codex-hooks.json": codex_hooks(codex_hook_path),
         "codex.txt": codex_note(b, codex_hook_path),
+        "copilot-hooks.json": copilot_hooks(copilot_hook_path),
+        "copilot.txt": copilot_note(b, copilot_hook_path),
         "gemini.txt": gemini_config(b, gemini_hook_path),
         "gemini-settings.json": gemini_settings(gemini_hook_path),
         "cursor-hooks.json": cursor_hooks(cursor_hook_path),
