@@ -73,6 +73,121 @@ def test_provider_none_disables_judge(monkeypatch):
     assert lj._build_backends() == []
 
 
+def _patch_api_ctors(monkeypatch):
+    monkeypatch.setattr(lj, "_AnthropicBackend", lambda key, model: ("anthropic", model))
+    monkeypatch.setattr(lj, "_OpenAIBackend", lambda key, model: ("openai", model))
+    monkeypatch.setattr(lj, "_GeminiBackend", lambda key, model: ("gemini", model))
+
+
+def test_judge_model_applies_under_auto(monkeypatch):
+    # Regression: under JUDGE_PROVIDER=auto, `provider == want` never matched ("anthropic"
+    # != "auto"), so JUDGE_MODEL was silently ignored and prod ran the expensive
+    # per-provider default instead of the configured Haiku.
+    monkeypatch.setattr(lj.settings, "judge_provider", "auto")
+    monkeypatch.setattr(lj.settings, "judge_model", "claude-haiku-4-5-20251001")
+    monkeypatch.setattr(lj, "_resolve_key", lambda p: "k")
+    _patch_api_ctors(monkeypatch)
+    models = {p: m for p, _, m in lj._build_backends()}
+    assert models["anthropic"] == "claude-haiku-4-5-20251001"  # priority provider honors it
+    assert models["openai"] == lj._DEFAULT_MODELS["openai"]    # fallbacks keep their defaults
+    assert models["gemini"] == lj._DEFAULT_MODELS["gemini"]
+
+
+# --- claude-cli (subscription) provider ---------------------------------------------------
+
+def test_auto_never_picks_claude_cli(monkeypatch):
+    # Routing content through the operator's Claude account must be an explicit choice.
+    monkeypatch.setattr(lj.settings, "judge_provider", "auto")
+    monkeypatch.setattr(lj.settings, "judge_model", "")
+    monkeypatch.setattr(lj, "_resolve_key", lambda p: "k")
+    _patch_api_ctors(monkeypatch)
+    monkeypatch.setattr(lj, "_ClaudeCLIBackend", lambda binary, model: ("cli", model))
+    assert "claude-cli" not in [p for p, _, _ in lj._build_backends()]
+
+
+def test_claude_cli_explicit_is_primary_with_api_fallbacks(monkeypatch):
+    monkeypatch.setattr(lj.settings, "judge_provider", "claude-cli")
+    monkeypatch.setattr(lj.settings, "judge_model", "")
+    monkeypatch.setattr(lj, "_resolve_key", lambda p: "k" if p == "anthropic" else "")
+    _patch_api_ctors(monkeypatch)
+    monkeypatch.setattr(lj, "_ClaudeCLIBackend", lambda binary, model: ("cli", model))
+    providers = [p for p, _, _ in lj._build_backends()]
+    assert providers[0] == "claude-cli"      # subscription is primary
+    assert "anthropic" in providers          # API key still serves as failover
+
+
+def test_claude_cli_skipped_when_binary_missing(monkeypatch):
+    monkeypatch.setattr(lj.settings, "judge_provider", "claude-cli")
+    monkeypatch.setattr(lj.settings, "judge_cli_bin", "definitely-not-a-real-binary-xyz")
+    monkeypatch.setattr(lj, "_resolve_key", lambda p: "")
+    assert lj._build_backends() == []        # FileNotFoundError → candidate skipped
+
+
+def _fake_claude(tmp_path):
+    fake = tmp_path / "claude"
+    fake.write_text("#!/bin/sh\n")
+    fake.chmod(0o755)
+    return str(fake)
+
+
+def test_cli_backend_run_parses_envelope_and_strips_api_keys(monkeypatch, tmp_path):
+    import json
+    import subprocess
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-must-not-reach-the-cli")
+    captured = {}
+
+    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None, env=None):
+        captured.update(cmd=cmd, env=env, prompt=input)
+
+        class R:
+            returncode = 0
+            stderr = ""
+            stdout = json.dumps({"type": "result", "is_error": False,
+                                 "result": "```json\n" + _verdict(0.8).model_dump_json() + "\n```"})
+        return R()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    backend = lj._ClaudeCLIBackend(_fake_claude(tmp_path), "")
+    verdict = backend.run("system text", "user content")
+    assert verdict.malicious_likelihood == 0.8
+    assert "-p" in captured["cmd"] and "--max-turns" in captured["cmd"]
+    assert "--model" not in captured["cmd"]                    # empty model = CLI default
+    # The CLI must judge on its own sign-in (subscription), never a stray API key.
+    assert "ANTHROPIC_API_KEY" not in captured["env"]
+    assert "system text" in captured["prompt"] and "user content" in captured["prompt"]
+
+
+def test_cli_backend_model_flag_and_error_result(monkeypatch, tmp_path):
+    import json
+    import subprocess
+    captured = {}
+
+    def fake_run(cmd, **kw):
+        captured["cmd"] = cmd
+
+        class R:
+            returncode = 0
+            stderr = ""
+            stdout = json.dumps({"type": "result", "is_error": True, "result": "quota exhausted"})
+        return R()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    backend = lj._ClaudeCLIBackend(_fake_claude(tmp_path), "claude-haiku-4-5")
+    import pytest
+    with pytest.raises(RuntimeError, match="quota exhausted"):
+        backend.run("s", "u")
+    assert "--model" in captured["cmd"] and "claude-haiku-4-5" in captured["cmd"]
+
+
+def test_cli_extract_json_handles_fences_and_prose():
+    ex = lj._ClaudeCLIBackend._extract_json
+    assert ex('```json\n{"a": 1}\n```') == '{"a": 1}'
+    assert ex('Sure! {"a": {"b": 2}} hope that helps') == '{"a": {"b": 2}}'
+    import pytest
+    with pytest.raises(ValueError):
+        ex("no json here")
+
+
 def test_health_tracks_ok_and_down():
     det = LLMJudgeDetector()
     det._backends = [("openai", _Good(), "gpt-4o")]

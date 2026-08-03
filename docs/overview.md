@@ -182,7 +182,12 @@ into a **verdict**.
   likelihood, indicators, recommended action). It's the semantic catch-all for what regex
   can't classify — notably **unmarked confidential business content** (financials, contracts,
   roadmaps, M&A) which it emits as `confidential_data`. Provider is pluggable
-  (`JUDGE_PROVIDER=auto|anthropic|openai|gemini|none`).
+  (`JUDGE_PROVIDER=auto|anthropic|openai|gemini|claude-cli|none`). `claude-cli` runs
+  verdicts through the locally signed-in **Claude Code CLI** — a Claude Pro/Max/Team
+  subscription carries the cost, so a self-hosted org needs no API key or credit
+  balance. It is never chosen by `auto` (it routes content through the signed-in Claude
+  account, so opting in must be explicit), and configured API keys still serve as
+  failover behind it.
 
 ### Scoring
 
@@ -327,8 +332,9 @@ cd frontend && npm install && npm run dev
 |----------|---------|
 | `WARDEN_SECRET_KEY` | Signs JWTs — required in production |
 | `DATABASE_URL` | Postgres connection string |
-| `JUDGE_PROVIDER` | `auto` / `anthropic` / `openai` / `gemini` / `none` |
+| `JUDGE_PROVIDER` | `auto` / `anthropic` / `openai` / `gemini` / `claude-cli` / `none` |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` | LLM judge keys |
+| `JUDGE_CLI_BIN` / `JUDGE_CLI_TIMEOUT` | Claude Code binary + per-verdict timeout for `claude-cli` (subscription-auth judge, self-hosted) |
 | `GATEWAY_ENFORCE` | `true` = block risky prompts; `false` = monitor only |
 | `GATEWAY_BLOCK_SEVERITY` | Severity threshold for blocking |
 | `EXTENSION_INGEST_TOKEN` | Shared auth token for extension/proxy |

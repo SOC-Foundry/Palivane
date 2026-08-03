@@ -13,7 +13,14 @@ class Settings:
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     # LLM judge provider: "auto" picks whichever key is configured (anthropic > openai >
     # gemini); force one with "anthropic" | "openai" | "gemini", or "none" to disable.
+    # "claude-cli" runs the judge through the locally signed-in Claude Code CLI instead
+    # of an API key — a Claude Pro/Max/Team SUBSCRIPTION carries the cost, so a
+    # self-hosted org doesn't need API credits. Explicit opt-in only (never chosen by
+    # "auto"): it routes tenant content through the signed-in Claude account.
     judge_provider: str = os.getenv("JUDGE_PROVIDER", "auto")
+    # Claude Code binary + per-verdict timeout for the claude-cli judge provider.
+    judge_cli_bin: str = os.getenv("JUDGE_CLI_BIN", "claude")
+    judge_cli_timeout: float = float(os.getenv("JUDGE_CLI_TIMEOUT", "120"))
     # Model for the judgment call. Empty = a sensible per-provider default. Override for
     # cost/latency (e.g. claude-haiku-4-5, gpt-4o-mini, gemini-2.5-flash) via JUDGE_MODEL.
     judge_model: str = os.getenv("JUDGE_MODEL", "")

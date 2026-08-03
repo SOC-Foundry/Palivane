@@ -7,9 +7,11 @@ like an analyst and returns a structured verdict: an attack on the model (inject
 jailbreak / exfiltration) or sensitive data leaving for an AI tool.
 
 Provider-agnostic: works with Anthropic (Claude), OpenAI (GPT), or Google (Gemini),
-selected by JUDGE_PROVIDER (default "auto" — whichever API key is configured). Degrades
-gracefully: if no key/SDK is available the detector is a no-op and the platform runs on
-the offline detectors alone.
+selected by JUDGE_PROVIDER (default "auto" — whichever API key is configured), or with
+JUDGE_PROVIDER=claude-cli through the locally signed-in Claude Code CLI — a Claude
+Pro/Max/Team subscription carries the cost, so self-hosted orgs need no API credits.
+Degrades gracefully: if no key/SDK is available the detector is a no-op and the
+platform runs on the offline detectors alone.
 """
 
 from __future__ import annotations
@@ -36,12 +38,15 @@ _CATEGORY_MAP = {
 }
 
 # Per-provider default model when JUDGE_MODEL is unset. Override with JUDGE_MODEL.
+# claude-cli's empty default = whatever the signed-in Claude Code session would use.
 _DEFAULT_MODELS = {
     "anthropic": "claude-opus-4-8",
     "openai": "gpt-4o",
     "gemini": "gemini-2.5-pro",
+    "claude-cli": "",
 }
-_PROVIDER_LABELS = {"anthropic": "Claude", "openai": "GPT", "gemini": "Gemini"}
+_PROVIDER_LABELS = {"anthropic": "Claude", "openai": "GPT", "gemini": "Gemini",
+                    "claude-cli": "Claude (subscription)"}
 
 SYSTEM_PROMPT = """You are a senior AI-security analyst. You review content flowing \
 through an organization's AI usage for two intertwined risks: (1) attacks on the \
@@ -147,6 +152,59 @@ class _GeminiBackend:
         return resp.parsed
 
 
+class _ClaudeCLIBackend:
+    """Judge via the locally signed-in Claude Code CLI (`claude -p`) — subscription auth.
+
+    A Claude Pro/Max/Team subscription carries the inference cost, so a self-hosted org
+    runs the judge without an Anthropic API key or credit balance. The CLI is invoked in
+    headless print mode with the prompt on stdin and --max-turns 1 (a judgment is one
+    text turn — no tools, no agent loop). ANTHROPIC_API_KEY/AUTH_TOKEN are stripped from
+    the child env so the CLI always uses its own sign-in, never a stray API key.
+
+    Structured output: the CLI has no schema-enforced parse endpoint, so the prompt
+    demands a bare JSON object matching JudgeVerdict's schema and the reply is validated
+    with pydantic — a malformed reply raises, which the failover loop treats like any
+    other provider error."""
+
+    def __init__(self, binary: str, model: str) -> None:
+        import shutil
+        resolved = shutil.which(binary)
+        if not resolved:
+            raise FileNotFoundError(f"claude CLI not found: {binary!r}")
+        self._bin = resolved
+        self.model = model
+
+    @staticmethod
+    def _extract_json(text: str) -> str:
+        """The bare JSON object from a reply that may carry fences or stray prose."""
+        start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end <= start:
+            raise ValueError(f"no JSON object in CLI reply: {text[:120]!r}")
+        return text[start:end + 1]
+
+    def run(self, system: str, user: str) -> JudgeVerdict | None:
+        import json as _json
+        import os
+        import subprocess
+        schema = _json.dumps(JudgeVerdict.model_json_schema())
+        prompt = (f"{system}\n\nRespond with ONLY a single JSON object matching this "
+                  f"JSON schema — no prose, no code fences:\n{schema}\n\n"
+                  f"Content to review:\n{user}")
+        cmd = [self._bin, "-p", "--output-format", "json", "--max-turns", "1"]
+        if self.model:
+            cmd += ["--model", self.model]
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
+        out = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
+                             timeout=settings.judge_cli_timeout, env=env)
+        if out.returncode != 0:
+            raise RuntimeError(f"claude CLI exited {out.returncode}: {out.stderr[:160]}")
+        envelope = _json.loads(out.stdout)
+        if envelope.get("is_error"):
+            raise RuntimeError(f"claude CLI error result: {str(envelope.get('result'))[:160]}")
+        return JudgeVerdict.model_validate_json(self._extract_json(str(envelope.get("result", ""))))
+
+
 def _resolve_key(provider: str) -> str:
     """Dedicated judge API key for a provider. Kept separate from the gateway-proxy
     keys so enabling the judge (which sends content to that provider) is explicit."""
@@ -164,7 +222,10 @@ def _build_backends():
 
     A specific JUDGE_PROVIDER is primary; the rest (whichever also have keys) become
     fallbacks so a billing/outage error on one provider doesn't silently take the judge
-    offline. 'auto' orders anthropic > openai > gemini. Returns [(provider, backend, model)]."""
+    offline. 'auto' orders anthropic > openai > gemini — "claude-cli" (the signed-in
+    Claude Code subscription) is never chosen by auto; it participates only when named
+    explicitly, because it routes content through the operator's Claude account.
+    Returns [(provider, backend, model)]."""
     want = (settings.judge_provider or "auto").strip().lower()
     if want == "none":
         return []
@@ -172,20 +233,26 @@ def _build_backends():
     order = ["anthropic", "openai", "gemini"]
     if want in _DEFAULT_MODELS:                      # honor an explicit choice as primary
         order = [want] + [p for p in order if p != want]
-    ctors = {"anthropic": _AnthropicBackend, "openai": _OpenAIBackend, "gemini": _GeminiBackend}
 
     built = []
     for provider in order:
-        key = _resolve_key(provider)
-        if not key:
-            continue
-        # JUDGE_MODEL only applies to the primary provider; fallbacks use their own default
-        # (a Claude model id would be invalid for GPT/Gemini).
-        model = (settings.judge_model or _DEFAULT_MODELS[provider]) if provider == want \
+        # JUDGE_MODEL applies to the PRIORITY provider (order[0]: the explicit choice,
+        # or anthropic under "auto") — never to fallbacks, whose model ids differ per
+        # provider. Comparing against `want` broke this under "auto" ("anthropic" !=
+        # "auto"), silently ignoring JUDGE_MODEL and running the pricey default.
+        model = (settings.judge_model or _DEFAULT_MODELS[provider]) if provider == order[0] \
             else _DEFAULT_MODELS[provider]
         try:
+            if provider == "claude-cli":
+                built.append((provider, _ClaudeCLIBackend(settings.judge_cli_bin, model), model))
+                continue
+            key = _resolve_key(provider)
+            if not key:
+                continue
+            ctors = {"anthropic": _AnthropicBackend, "openai": _OpenAIBackend,
+                     "gemini": _GeminiBackend}
             built.append((provider, ctors[provider](key, model), model))
-        except Exception:  # SDK missing / bad key — skip this candidate
+        except Exception:  # SDK/CLI missing / bad key — skip this candidate
             continue
     return built
 

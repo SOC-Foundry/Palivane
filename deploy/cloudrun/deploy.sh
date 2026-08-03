@@ -38,6 +38,8 @@ ENV_VARS+="|GATEWAY_ANTHROPIC_BASE=${GATEWAY_ANTHROPIC_BASE:-https://api.anthrop
 ENV_VARS+="|JUDGE_PROVIDER=${JUDGE_PROVIDER:-auto}"
 # Judge model override (e.g. a Haiku-class model to keep per-verdict cost small).
 [ -n "${JUDGE_MODEL:-}" ] && ENV_VARS+="|JUDGE_MODEL=${JUDGE_MODEL}"
+# Judge plan gating (SaaS: the operator-funded judge is an Enterprise entitlement).
+[ -n "${WARDEN_JUDGE_PLAN_GATED:-}" ] && ENV_VARS+="|WARDEN_JUDGE_PLAN_GATED=${WARDEN_JUDGE_PLAN_GATED}"
 # Public deploy: signup OFF by default (else the internet can self-register orgs). Set
 # WARDEN_ALLOW_SIGNUP=true explicitly for an open multi-tenant deployment.
 ENV_VARS+="|WARDEN_ALLOW_SIGNUP=${WARDEN_ALLOW_SIGNUP:-false}"
