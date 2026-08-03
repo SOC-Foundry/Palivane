@@ -36,6 +36,7 @@ _ALLOW = {
     "warden-cursor-hook": "cli/warden-cursor-hook",
     "warden-gemini-hook": "cli/warden-gemini-hook",
     "warden-codex-hook": "cli/warden-codex-hook",
+    "warden-copilot-hook": "cli/warden-copilot-hook",
     "warden-mcp": "cli/warden-mcp",
     "warden-posture": "cli/warden-posture",
     "warden-secrets": "cli/warden-secrets",
@@ -109,6 +110,7 @@ _UA_SOURCE = {
     "warden-cursor-hook": "warden-cursor-hook",
     "warden-gemini-hook": "warden-gemini-hook",
     "warden-codex-hook": "warden-codex-hook",
+    "warden-copilot-hook": "warden-copilot-hook",
     "warden-proxy": "warden_addon.py",
 }
 _VERSIONS_CACHE: dict[str, str] | None = None

@@ -27,7 +27,10 @@ covering Gemini's prompts + tool calls locally regardless of its auth mode. If C
 is installed (~/.codex present), it registers warden-codex-hook (UserPromptSubmit +
 PreToolUse) in ~/.codex/hooks.json and writes ~/.codex/warden.json — covering Codex's
 prompts + tool calls locally despite ChatGPT-subscription auth ignoring OPENAI_BASE_URL.
-Stdlib only.
+If Copilot CLI is installed (~/.copilot present), it registers warden-copilot-hook
+(preToolUse + userPromptSubmitted) in ~/.copilot/hooks/warden.json and writes
+~/.copilot/warden.json — covering Copilot's tool calls (deniable) and prompts
+(observe-only at this plane) locally. Stdlib only.
 
     warden-connect                              # hosted SaaS (warden.tachtech.net)
     warden-connect https://warden.self-hosted   # or set WARDEN_URL, for self-hosting
@@ -124,7 +127,8 @@ _MANAGED_BIN = os.path.expanduser("~/.warden/bin")
 # without a full reinstall. warden-connect itself and warden-desktop are excluded on
 # purpose — we don't overwrite the running tool or the proxy manager mid-run.
 _PLANE_SCRIPTS = ["warden-hook", "warden-posture", "warden-cursor-hook",
-                  "warden-gemini-hook", "warden-codex-hook", "warden-mcp", "warden-secrets"]
+                  "warden-gemini-hook", "warden-codex-hook", "warden-copilot-hook",
+                  "warden-mcp", "warden-secrets"]
 
 
 def _in_repo_checkout() -> bool:
@@ -382,6 +386,60 @@ def _write_codex(token: str, backend: str, user: str,
     return hpath, msgs
 
 
+# Copilot hook events warden-copilot-hook handles. Copilot loads every *.json in
+# ~/.copilot/hooks/, so Warden owns one whole file there (no merging with user hooks).
+# preToolUse is the only deniable event; userPromptSubmitted is observe-only.
+_COPILOT_EVENTS = ["preToolUse", "userPromptSubmitted"]
+
+
+def copilot_hook_config(command: str) -> dict:
+    """The full content of ~/.copilot/hooks/warden.json — Copilot's schema: version: 1,
+    lowerCamelCase events, a `bash` command string, per-hook timeoutSec."""
+    entry = {"type": "command", "bash": command, "timeoutSec": 10}
+    return {"version": 1, "hooks": {ev: [dict(entry)] for ev in _COPILOT_EVENTS}}
+
+
+def _write_copilot(token: str, backend: str, user: str,
+                   enforce: bool | None = None) -> tuple[str, list[str]] | None:
+    """Wire warden-copilot-hook into ~/.copilot/hooks/warden.json + write the creds file
+    it reads. Only when Copilot CLI is actually installed (~/.copilot exists) and the
+    hook is available — Copilot has no base-URL override, so this local hook is how
+    Warden sees its tool calls. The same script also serves repo-level .github/hooks
+    (VS Code agent mode + the cloud coding agent) via the MDM policy pack."""
+    hook = _resolve_script("warden-copilot-hook")
+    cdir = os.path.expanduser("~/.copilot")
+    if not hook:
+        return None
+    if not os.path.isdir(cdir):
+        return None, ["Copilot CLI not detected (~/.copilot absent) — skipped Copilot hooks"]
+
+    # The hook reads creds from this file so it works however Copilot is launched.
+    wj = os.path.join(cdir, "warden.json")
+    creds = {"url": backend.rstrip("/"), "token": token, "user": user}
+    if enforce is not None:   # org stance from the console; absent on older consoles
+        creds["enforce"] = enforce
+    with open(wj, "w") as f:
+        json.dump(creds, f, indent=2)
+    os.chmod(wj, 0o600)
+
+    hpath = os.path.join(cdir, "hooks", "warden.json")
+    desired = copilot_hook_config(hook)
+    current = None
+    if os.path.exists(hpath):
+        try:
+            current = json.load(open(hpath))
+        except (ValueError, OSError):
+            current = None
+    if current == desired:
+        return hpath, ["Copilot hooks already present"]
+    os.makedirs(os.path.dirname(hpath), exist_ok=True)
+    with open(hpath, "w") as f:
+        json.dump(desired, f, indent=2)
+    os.chmod(hpath, 0o600)
+    return hpath, [f"Copilot hooks installed ({len(_COPILOT_EVENTS)} events; "
+                   "tool calls deniable, prompts observe-only)"]
+
+
 # Gemini CLI hook events warden-gemini-hook handles (prompt data-loss + tool calls).
 # Entry shape mirrors Claude Code's but hook objects carry a name and ms timeouts.
 _GEMINI_EVENTS = [("BeforeAgent", None), ("BeforeTool", ".*")]
@@ -459,7 +517,7 @@ def _upstream_warning(got: dict, console: str) -> str | None:
 
 # Hook commands that invoke one of these are Warden's — used to strip them on --uninstall.
 _WARDEN_SCRIPT_MARKERS = ("warden-hook", "warden-posture", "warden-cursor-hook",
-                          "warden-gemini-hook", "warden-codex-hook")
+                          "warden-gemini-hook", "warden-codex-hook", "warden-copilot-hook")
 
 
 def _scrub_hook_entries(hooks: dict) -> int:
@@ -537,6 +595,15 @@ def _uninstall() -> list[str]:
         if os.path.exists(wpath):
             os.remove(wpath)
             out.append(f"{label}: removed creds — {wpath}")
+    # Copilot owns a whole hook file (Copilot loads every *.json in ~/.copilot/hooks/),
+    # so uninstall is deletion, not scrubbing.
+    for label, path in (("Copilot", "~/.copilot/hooks/warden.json"),
+                        ("Copilot", "~/.copilot/warden.json")):
+        p = os.path.expanduser(path)
+        if os.path.exists(p):
+            os.remove(p)
+            what = "hook file" if "hooks" in path else "creds"
+            out.append(f"{label}: removed {what} — {p}")
     return out
 
 
@@ -591,14 +658,15 @@ def main() -> None:
 
     for extra in (_write_cursor(got["token"], backend, got.get("user", ""), enforce=enforce),
                   _write_gemini(got["token"], backend, got.get("user", ""), enforce=enforce),
-                  _write_codex(got["token"], backend, got.get("user", ""), enforce=enforce)):
+                  _write_codex(got["token"], backend, got.get("user", ""), enforce=enforce),
+                  _write_copilot(got["token"], backend, got.get("user", ""), enforce=enforce)):
         if extra:
             epath, eitems = extra
             for item in eitems:
                 print(f"  {item}")
             if epath:
                 print(f"  wrote {epath}")
-    print("  Start (or restart) Claude Code / Cursor / Gemini / Codex to apply.")
+    print("  Start (or restart) Claude Code / Cursor / Gemini / Codex / Copilot to apply.")
 
 
 if __name__ == "__main__":

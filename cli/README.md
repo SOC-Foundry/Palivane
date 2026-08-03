@@ -13,6 +13,7 @@ without an endpoint agent: each is an app-scoped hook/shim that rides the existi
 | `warden-cursor-hook` | **Cursor** prompts + tool calls, before execution | `POST /api/ingest/{mcp,ai-usage}` |
 | `warden-codex-hook` | **Codex CLI** prompts + tool calls, before execution | `POST /api/ingest/{mcp,ai-usage}` |
 | `warden-gemini-hook` | **Gemini CLI** prompts + tool calls, before execution | `POST /api/ingest/{mcp,ai-usage}` |
+| `warden-copilot-hook` | **GitHub Copilot** tool calls (deniable) + prompts (observe-only), before execution | `POST /api/ingest/{mcp,ai-usage}` |
 | `warden-mcp` | local **stdio MCP servers**, inline | `POST /api/ingest/mcp` |
 | `warden-posture` | device drift: IDE extensions, MCP configs | `POST /api/scan/*` |
 | `warden-secrets` | **credentials at rest** (SSH/RSA keys, tokens, `.env`) | `POST /api/scan/secrets` |
@@ -59,7 +60,10 @@ What happens:
    `warden-gemini-hook`) gets `BeforeAgent`/`BeforeTool` hooks in `~/.gemini/settings.json`
    + creds in `~/.gemini/warden.json`; **Codex CLI** (`~/.codex` present +
    `warden-codex-hook`) gets `UserPromptSubmit`/`PreToolUse` hooks in `~/.codex/hooks.json`
-   + creds in `~/.codex/warden.json` (Codex asks you to trust the hook once — `/hooks`).
+   + creds in `~/.codex/warden.json` (Codex asks you to trust the hook once — `/hooks`);
+   **Copilot CLI** (`~/.copilot` present + `warden-copilot-hook`) gets a Warden-owned
+   `~/.copilot/hooks/warden.json` (`preToolUse` + `userPromptSubmitted`) + creds in
+   `~/.copilot/warden.json`.
 6. Restart the tools — prompts and tool calls are inspected locally, posture reports on
    session start (and with `--route-gateway`, prompts route through the gateway); all
    attributed to you and revocable in the console like any key.
@@ -183,6 +187,35 @@ as **managed hooks** via Codex's `requirements.toml` (auto-trusted;
 `allow_managed_hooks_only = true` locks out user hooks). The policy pack emits a
 ready-to-push `codex-hooks.json`. Credentials: `WARDEN_URL` + `WARDEN_TOKEN` from the
 environment, else `~/.codex/warden.json`, else `~/.claude/settings.json`.
+
+## `warden-copilot-hook` — GitHub Copilot coverage across all three surfaces
+
+Copilot has **no base-URL override** (the gateway can't interpose) and its traffic is
+just TLS to GitHub (the proxy sees no tool semantics). This adapter uses **Copilot's
+hooks** (GA with Copilot CLI; the same `.github/hooks` files drive **VS Code agent
+mode** and the **cloud coding agent**) to inspect from *inside* Copilot:
+
+| Copilot event | Inspected | Reports to |
+| --- | --- | --- |
+| `preToolUse` | shell / edit / MCP tool calls, before execution — **deniable** | `/api/ingest/mcp` |
+| `userPromptSubmitted` | the typed prompt — **observe-only** (Copilot ignores hook output here) | `/api/ingest/ai-usage` |
+
+The blocking geometry is the **inverse** of the other agent hooks: prompts can't block
+at this plane, so they report via a detached child (zero latency; the proxy remains the
+prompt-DLP backstop), while **tool calls scan inline even in monitor mode** — every
+verdict carries the org's live enforce stance (stageable per user/tool), so centrally
+flipping enforcement denies high-risk tool calls immediately, no device re-config.
+`WARDEN_ENFORCE=true` denies on device-local stance as well.
+
+Copilot-specific semantics: a hook's **non-zero exit denies** (fail-closed) and a
+**timeout allows** (fail-open) — so the adapter always exits 0 and lets the JSON verdict
+speak. Known upstream gap: subagent tool calls may not fire `preToolUse`
+(github/copilot-cli#2392). Registered by `warden-connect` as a Warden-owned
+`~/.copilot/hooks/warden.json` (Copilot loads every `*.json` there — your own hooks are
+untouched); for VS Code agent mode + the cloud agent, commit the policy pack's
+`copilot-hooks.json` as `.github/hooks/warden.json` per repo. Credentials: `WARDEN_URL`
++ `WARDEN_TOKEN` from the environment, else `~/.copilot/warden.json`, else
+`~/.claude/settings.json`.
 
 ## `warden-gemini-hook` — Gemini CLI coverage in every auth mode
 

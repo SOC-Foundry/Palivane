@@ -33,6 +33,8 @@ It returns these artifacts (write each to a file):
 | `openai.env` | Environment vars (`OPENAI_BASE_URL`) routing OpenAI SDK/CLI clients through the gateway — agentless, no CA needed. Does **not** cover Codex under ChatGPT-subscription auth — that's `codex-hooks.json` |
 | `codex-hooks.json` | Codex CLI `hooks.json` registering `warden-codex-hook` on `UserPromptSubmit` + `PreToolUse` (codex 0.116+) — local capture of Codex prompts + tool calls in every auth mode |
 | `codex.txt` | The Codex story: subscription auth ignores `OPENAI_BASE_URL`; distribute the hooks as managed hooks via `requirements.toml` (auto-trusted, can lock out user hooks) |
+| `copilot-hooks.json` | GitHub Copilot hook file registering `warden-copilot-hook` on `preToolUse` (tool calls — **deniable**) + `userPromptSubmitted` (prompts — observe-only). One file, three surfaces: `~/.copilot/hooks/warden.json` per device (Copilot CLI), or committed as `.github/hooks/warden.json` per repo (VS Code agent mode + the **cloud coding agent**) |
+| `copilot.txt` | The Copilot story: no base-URL override, proxy sees no tool semantics; hook exit/timeout semantics (non-zero exit denies, timeout allows), the subagent-coverage gap, and why `warden-mcp` wrapping of `~/.copilot/mcp-config.json` matters (GitHub's cloud-agent firewall doesn't cover MCP) |
 | `gemini.txt` | Gemini coverage: local hooks for the Gemini CLI (below), system proxy + SDK `http_options` snippet for everything else |
 | `gemini-settings.json` | Gemini CLI `settings.json` hooks block registering `warden-gemini-hook` on `BeforeAgent` + `BeforeTool` (gemini-cli 0.26+) — local capture of Gemini prompts + tool calls in every auth mode, including the Google login that ignores base-URL overrides |
 | `cursor-hooks.json` | Cursor `hooks.json` registering `warden-cursor-hook` on the security events — local, pinning-proof capture of Cursor prompts + tool calls |
@@ -44,9 +46,9 @@ The extension allow/deny lists come from this tenant's IDE-vetting config (its
 `ide_ext_allowed` / `ide_ext_denylist`, else the global `IDE_EXT_ALLOWED` /
 `IDE_EXT_DENYLIST`); the browser extension id from `WARDEN_EXTENSION_ID`. The hook script
 paths default to `/usr/local/bin/warden-hook`, `/usr/local/bin/warden-posture`,
-`/usr/local/bin/warden-cursor-hook`, `/usr/local/bin/warden-gemini-hook`, and
-`/usr/local/bin/warden-codex-hook` — override with
-`&hook_path=…&posture_path=…&cursor_hook_path=…&gemini_hook_path=…&codex_hook_path=…`.
+`/usr/local/bin/warden-cursor-hook`, `/usr/local/bin/warden-gemini-hook`,
+`/usr/local/bin/warden-codex-hook`, and `/usr/local/bin/warden-copilot-hook` — override with
+`&hook_path=…&posture_path=…&cursor_hook_path=…&gemini_hook_path=…&codex_hook_path=…&copilot_hook_path=…`.
 
 Pull one artifact to a file:
 
@@ -139,7 +141,9 @@ subscriptions) — devs' prompts bill their plans, not an org API key. Under tha
 subscription default no network plane sees the prompt, which is exactly why the
 `UserPromptSubmit` hook exists: confirmed secret/PII leaks in prompts hard-block even in
 monitor mode. The same model covers the other agent CLIs: `codex-hooks.json`
-(`warden-codex-hook`) and `gemini-settings.json` (`warden-gemini-hook`). Generate the pack with
+(`warden-codex-hook`), `gemini-settings.json` (`warden-gemini-hook`), and
+`copilot-hooks.json` (`warden-copilot-hook` — note Copilot's inverse geometry: prompts
+observe-only, tool calls deniable). Generate the pack with
 `route_gateway=true` (console checkbox or query param) to instead route prompts through the
 Warden gateway (`ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`), billing the org's provider
 key. Deploy it to Claude Code's managed-settings path (macOS `/Library/Application

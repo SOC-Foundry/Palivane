@@ -261,6 +261,72 @@ def test_write_codex_none_when_hook_missing(monkeypatch, tmp_path):
     assert wc._write_codex("ak_tok", "https://w.io", "") is None
 
 
+def test_write_copilot_installs_hooks_and_creds(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / ".copilot").mkdir()                      # Copilot CLI "installed"
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    hpath, items = wc._write_copilot("ak_tok", "https://w.corp.io", "dev@acme.com")
+
+    hooks = json.load(open(hpath))
+    assert hooks["version"] == 1                         # Copilot's schema requires it
+    assert set(hooks["hooks"]) == {"preToolUse", "userPromptSubmitted"}
+    entry = hooks["hooks"]["preToolUse"][0]
+    # Copilot's entry shape: a bash command string + timeoutSec (not command/timeout).
+    assert entry == {"type": "command", "bash": "/opt/warden/warden-copilot-hook",
+                     "timeoutSec": 10}
+    creds = json.load(open(tmp_path / ".copilot" / "warden.json"))
+    assert creds == {"url": "https://w.corp.io", "token": "ak_tok", "user": "dev@acme.com"}
+    assert any("installed" in i for i in items)
+
+    # Second run: idempotent — same content, reported as already present.
+    hpath2, items2 = wc._write_copilot("ak_tok", "https://w.corp.io", "dev@acme.com")
+    assert hpath2 == hpath
+    assert any("already present" in i for i in items2)
+
+
+def test_write_copilot_owns_its_file_only(monkeypatch, tmp_path):
+    # A user hook file in ~/.copilot/hooks/ is never touched — Warden owns warden.json.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    hooks_dir = tmp_path / ".copilot" / "hooks"
+    hooks_dir.mkdir(parents=True)
+    (hooks_dir / "mine.json").write_text(json.dumps(
+        {"version": 1, "hooks": {"preToolUse": [{"type": "command", "bash": "my-guard"}]}}))
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    hpath, _ = wc._write_copilot("ak_tok", "https://w.corp.io", "dev@acme.com")
+    assert hpath.endswith("warden.json")
+    mine = json.load(open(hooks_dir / "mine.json"))
+    assert mine["hooks"]["preToolUse"][0]["bash"] == "my-guard"
+
+
+def test_write_copilot_skipped_when_absent(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))            # no ~/.copilot dir
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    hpath, items = wc._write_copilot("ak_tok", "https://w.io", "")
+    assert hpath is None
+    assert any("Copilot CLI not detected" in i for i in items)
+
+
+def test_write_copilot_none_when_hook_missing(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / ".copilot").mkdir()
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: None)
+    assert wc._write_copilot("ak_tok", "https://w.io", "") is None
+
+
+def test_uninstall_removes_copilot_files(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    hooks_dir = tmp_path / ".copilot" / "hooks"
+    hooks_dir.mkdir(parents=True)
+    (hooks_dir / "warden.json").write_text("{}")
+    (hooks_dir / "mine.json").write_text("{}")           # user's own hook file survives
+    (tmp_path / ".copilot" / "warden.json").write_text("{}")
+    out = wc._uninstall()
+    assert not (hooks_dir / "warden.json").exists()
+    assert not (tmp_path / ".copilot" / "warden.json").exists()
+    assert (hooks_dir / "mine.json").exists()
+    assert any("Copilot" in i for i in out)
+
+
 def test_upstream_warning_only_when_console_says_no_key():
     console = "https://w.corp.io"
     # Console reported no forwarding upstream: warn, pointing at Settings.

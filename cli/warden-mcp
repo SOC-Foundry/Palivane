@@ -3,8 +3,8 @@
 
 Local stdio MCP servers never touch the network, so the egress proxy can't see them —
 until now their only governance was the config-level allowlist. This wrapper closes the
-gap: it sits between the MCP client (Claude Code, Cursor, VS Code) and the real server,
-pumping JSON-RPC through untouched while reporting each tool call, resource read, and
+gap: it sits between the MCP client (Claude Code, Cursor, VS Code, Copilot) and the real
+server, pumping JSON-RPC through untouched while reporting each tool call, resource read, and
 advertised tool description to Warden — the same MCP-guard pipeline (dangerous commands,
 sensitive resources, tool poisoning, secrets in arguments) that inspects remote servers.
 

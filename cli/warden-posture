@@ -12,7 +12,7 @@ finding shortly after it happens:
   flag unsafe autonomy (YOLO / auto-apply / auto-run / --dangerously-skip-permissions)
 - MCP server configs → POST /api/scan/mcp-config, from: ~/.claude.json (Claude Code —
   a minimal {"mcpServers": …} view is synthesized; the raw file holds unrelated user
-  state and is never posted), ./.mcp.json, VS Code and Cursor user configs.
+  state and is never posted), ./.mcp.json, VS Code, Cursor, and Copilot CLI user configs.
 
 Runs are cheap and idempotent: a sha256 cache (~/.warden/posture-cache.json) skips the
 POST when nothing changed, so repeated runs don't spam findings. warden-connect installs
@@ -47,6 +47,7 @@ _RAW_MCP_CONFIGS = (
     ("./.mcp.json", ".mcp.json"),
     ("~/.config/Code/User/mcp.json", "~/.config/Code/User/mcp.json"),
     ("~/.cursor/mcp.json", "~/.cursor/mcp.json"),
+    ("~/.copilot/mcp-config.json", "~/.copilot/mcp-config.json"),
 )
 
 # AI coding-assistant settings scanned for unsafe autonomy (YOLO / auto-apply / auto-run).
@@ -57,6 +58,7 @@ _AGENT_CONFIGS = (
     ("cursor:settings", "~/AppData/Roaming/Cursor/User/settings.json", "cursor"),
     ("cursor:settings", "~/.cursor/settings.json", "cursor"),
     ("claude-code:settings", "~/.claude/settings.json", "claude-code"),
+    ("copilot:config", "~/.copilot/config.json", "copilot"),
 )
 
 
