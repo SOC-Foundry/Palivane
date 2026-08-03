@@ -146,15 +146,59 @@ bootstrap_ca() {
   [ -f "$CA" ] || die "mitmproxy CA was not generated at $CA"
 }
 
+# Linux distros split on how the system trust store is managed: Debian/Ubuntu use
+# update-ca-certificates (dropping into /usr/local/share/ca-certificates), while the
+# p11-kit distros (Arch, Fedora/RHEL, openSUSE) use update-ca-trust with a per-distro
+# anchors dir. Debian's tools DON'T exist on the p11-kit distros, so hard-coding that path
+# left the system CA untrusted there — curl/git and other system-bundle clients then reject
+# the proxy cert (desktop-app capture via NSS still worked, masking it). Detect the family.
+P11KIT_ANCHOR_DIRS="/etc/ca-certificates/trust-source/anchors /etc/pki/ca-trust/source/anchors /etc/pki/trust/anchors"
+
+p11kit_anchor_dir() {
+  local d
+  for d in $P11KIT_ANCHOR_DIRS; do [ -d "$d" ] && { printf '%s' "$d"; return; }; done
+  printf '/etc/ca-certificates/trust-source/anchors'   # Arch default (created below if absent)
+}
+
+trust_ca_system() {
+  if command -v update-ca-certificates >/dev/null 2>&1 && [ -d /usr/local/share/ca-certificates ]; then
+    log "trusting the CA (sudo; Debian trust store)…"
+    sudo cp "$CA" /usr/local/share/ca-certificates/warden-mitmproxy.crt
+    sudo update-ca-certificates >/dev/null
+  elif command -v update-ca-trust >/dev/null 2>&1; then
+    local dir; dir="$(p11kit_anchor_dir)"
+    log "trusting the CA (sudo; $dir)…"
+    sudo mkdir -p "$dir"
+    sudo cp "$CA" "$dir/warden-mitmproxy.crt"
+    sudo update-ca-trust extract   # regenerate the extracted bundle curl/git actually read
+  else
+    log "note: no system-CA tool found (update-ca-certificates / update-ca-trust) —"
+    log "      CLIs using the system trust store won't trust the proxy. Trust $CA manually."
+  fi
+}
+
+# Reverse of trust_ca_system, for both distro families (best-effort; never fails uninstall).
+untrust_ca_system() {
+  if [ -f /usr/local/share/ca-certificates/warden-mitmproxy.crt ]; then
+    sudo rm -f /usr/local/share/ca-certificates/warden-mitmproxy.crt || true
+    sudo update-ca-certificates --fresh >/dev/null 2>&1 || sudo update-ca-certificates >/dev/null 2>&1 || true
+  fi
+  local d
+  for d in $P11KIT_ANCHOR_DIRS; do
+    if [ -f "$d/warden-mitmproxy.crt" ]; then
+      sudo rm -f "$d/warden-mitmproxy.crt" || true
+      command -v update-ca-trust >/dev/null 2>&1 && { sudo update-ca-trust extract || true; }
+    fi
+  done
+}
+
 trust_ca() {
   case "$OS" in
     Darwin)
       log "trusting the CA (sudo; system keychain)…"
       sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$CA" ;;
     Linux)
-      log "trusting the CA (sudo; /usr/local/share/ca-certificates)…"
-      sudo cp "$CA" /usr/local/share/ca-certificates/warden-mitmproxy.crt
-      sudo update-ca-certificates >/dev/null
+      trust_ca_system
       nss_trust_ca ;;
     *) die "unsupported OS: $OS" ;;
   esac
@@ -411,8 +455,9 @@ cmd_uninstall() {
             dbus-send --type=signal /KIO/Scheduler org.kde.KIO.Scheduler.reparseSlaveConfiguration string:'' 2>/dev/null || true ;;
       esac
       nss_untrust_ca
+      untrust_ca_system
       unset_session_proxy_env
-      log "stopped. (System CA left in the trust store; remove /usr/local/share/ca-certificates/warden-mitmproxy.crt to fully revert.)"
+      log "stopped. Proxy off; CA untrusted (system trust store + NSS); session proxy env removed."
       log "         (If you set HTTPS_PROXY/HTTP_PROXY env vars manually, unset them too.)" ;;
   esac
 }
