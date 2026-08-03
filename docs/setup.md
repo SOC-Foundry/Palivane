@@ -329,9 +329,10 @@ Notes:
 - `warden-connect --uninstall` only touches Warden's own entries — your other hooks and any
   `ANTHROPIC_BASE_URL` you set yourself are left intact. It's safe to run anytime and is a
   no-op if nothing is installed.
-- The root **CA is left in the OS trust store** for safety — remove it manually for a full
-  revert (macOS: delete it from Keychain; Linux: `rm /usr/local/share/ca-certificates/warden-mitmproxy.crt`
-  then `sudo update-ca-certificates`).
+- On **Linux**, `warden-desktop uninstall` now **removes the root CA** from the system trust
+  store automatically (both the Debian `update-ca-certificates` and the p11-kit
+  `update-ca-trust` families — Arch, Fedora/RHEL, openSUSE) as well as the per-user NSS store.
+  On **macOS** the CA is left in the Keychain for safety — delete it manually for a full revert.
 - On an **MDM-managed fleet**, remove the pushed policy pack instead — the profile owns the
   extension force-install, proxy, and managed settings, so pulling it reverts every device.
 
