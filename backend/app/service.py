@@ -14,6 +14,7 @@ from .engine import engine
 from .models import Finding, Tenant
 from .crypto import seal
 from .redaction import redact_text
+from .session_correlation import correlate, is_chain_relevant
 
 
 def scrub_expired_content(db) -> int:
@@ -180,28 +181,41 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         db.commit()
         db.refresh(finding)
         finding_id = finding.id
-        # Fire an alert (non-blocking) if the tenant configured a webhook.
-        if tenant is not None and (tenant.alert_webhook or "").strip():
-            from . import alerts
-            alerts.notify(tenant.alert_webhook.strip(), tenant.alert_min_severity,
-                          {**result, "finding_id": finding_id},
-                          subject=item.subject, actor=item.sender, surface=item.surface.value,
-                          digest=tenant.alert_digest or "off")
-        # Stream to the tenant's SIEM (independent of the alert webhook).
-        if tenant is not None and (tenant.siem_url or "").strip():
-            from . import siem
-            siem.forward(tenant.siem_url.strip(), tenant.siem_token or "",
-                         tenant.siem_min_severity, tenant.siem_format,
-                         {**result, "finding_id": finding_id},
-                         subject=item.subject, actor=item.sender,
-                         surface=item.surface.value, org=tenant.slug)
-        # Independent S3/data-lake sink (can run alongside the HTTP push above).
-        if tenant is not None and (tenant.siem_s3_bucket or "").strip():
-            from . import siem_s3
-            siem_s3.forward_s3(tenant.siem_s3_bucket.strip(), tenant.siem_s3_prefix or "",
-                               tenant.siem_s3_region or "", tenant.siem_s3_key_id or "",
-                               tenant.siem_s3_secret or "", tenant.siem_min_severity,
-                               {**result, "finding_id": finding_id},
-                               subject=item.subject, actor=item.sender,
-                               surface=item.surface.value, org=tenant.slug)
+        _dispatch_sinks(tenant, {**result, "finding_id": finding_id},
+                        item.subject, item.sender, item.surface.value)
+        # Session behavioral correlation: this event alone is stored; now look across the
+        # actor's recent activity for an escalating attack CHAIN and record it if present.
+        # Runs only for a real (non-recurrence) finding that itself touches a chain stage;
+        # correlate() self-gates on the WARDEN_SESSION_CORRELATION setting (read there so a
+        # config reload is respected, not stale-bound).
+        if tenant is not None and item.sender and is_chain_relevant(result["signals"]):
+            try:
+                correlate(db, tenant_id, item.sender, agent or "", dispatch=_dispatch_sinks)
+            except Exception:
+                pass  # correlation is additive — it must never sink the primary analysis
     return {"finding_id": finding_id, "judge_used": judge_ran, **result}
+
+
+def _dispatch_sinks(tenant, payload: dict, subject: str, actor: str, surface: str) -> None:
+    """Fire the tenant's configured out-of-band sinks (alert webhook, SIEM push, S3 lake)
+    for a stored finding. Shared by the primary persist path and session correlation so a
+    correlated attack-chain finding alerts exactly like any other. Each sink is guarded and
+    best-effort; a sink being unset or failing never affects the caller."""
+    if tenant is None:
+        return
+    if (tenant.alert_webhook or "").strip():
+        from . import alerts
+        alerts.notify(tenant.alert_webhook.strip(), tenant.alert_min_severity, payload,
+                      subject=subject, actor=actor, surface=surface,
+                      digest=tenant.alert_digest or "off")
+    if (tenant.siem_url or "").strip():
+        from . import siem
+        siem.forward(tenant.siem_url.strip(), tenant.siem_token or "",
+                     tenant.siem_min_severity, tenant.siem_format, payload,
+                     subject=subject, actor=actor, surface=surface, org=tenant.slug)
+    if (tenant.siem_s3_bucket or "").strip():
+        from . import siem_s3
+        siem_s3.forward_s3(tenant.siem_s3_bucket.strip(), tenant.siem_s3_prefix or "",
+                           tenant.siem_s3_region or "", tenant.siem_s3_key_id or "",
+                           tenant.siem_s3_secret or "", tenant.siem_min_severity, payload,
+                           subject=subject, actor=actor, surface=surface, org=tenant.slug)
