@@ -6,7 +6,13 @@ compatibility_date = "2026-07-01"
 account_id = "3d028af29af87d79a8b3245461f04241"
 
 routes = [
-  { pattern = "warden.tachtech.net/*", zone_name = "tachtech.net" }
+  { pattern = "warden.tachtech.net/*", zone_name = "tachtech.net" },
+  # Rename dual-serve: the same front-door worker also fronts the new Palivane hostname.
+  # Requires a PROXIED (orange-cloud) DNS record for `palivane` in the tachtech.net zone —
+  # the wrangler token can't create DNS, so that record is added in the Cloudflare
+  # dashboard. Once it exists, `wrangler deploy` activates this route. Both hosts serve the
+  # same Cloud Run backend during the transition; the old host redirects after cutover.
+  { pattern = "palivane.tachtech.net/*", zone_name = "tachtech.net" }
 ]
 
 # Exact per-IP edge rate limiting for auth endpoints (credential-stuffing shield).
