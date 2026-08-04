@@ -2010,6 +2010,29 @@ def activity_users(current: User = Depends(require_admin), db: Session = Depends
     return {"users": out[:min(limit, 1000)]}
 
 
+@app.get("/api/audit/sessions")
+def audit_sessions(current: User = Depends(require_admin), db: Session = Depends(get_db),
+                   days: int = 7, limit: int = 200):
+    """Unified cross-vendor session audit: one row per actor summarizing everything they
+    did across EVERY agent product (Claude Code, Cursor, Codex, Gemini CLI, Copilot,
+    browser AI, MCP) in the window — the vendor tools touched, event count, kill-chain
+    stages seen, peak severity, and whether a correlated attack chain fired. The single
+    activity view no per-vendor log can produce."""
+    from . import session_audit
+    return {"days": days, "sessions": session_audit.sessions(db, current.tenant_id, days, limit)}
+
+
+@app.get("/api/audit/timeline")
+def audit_timeline(actor: str, current: User = Depends(require_admin),
+                   db: Session = Depends(get_db), days: int = 7, limit: int = 500):
+    """The normalized chronological timeline of one actor's activity across every vendor
+    plane — each event in a common shape (when / vendor / action / verdict / kill-chain
+    stage), newest first. Retention is Warden's own, independent of any vendor's cap."""
+    from . import session_audit
+    return {"actor": actor, "days": days,
+            "events": session_audit.timeline(db, current.tenant_id, actor, days, limit)}
+
+
 @app.post("/api/discovery/ingest")
 def discovery_ingest(body: DiscoveryIngest, current: User = Depends(require_admin),
                      db: Session = Depends(get_db)):

@@ -26,6 +26,7 @@ import Policies from "./components/Policies.jsx";
 import ScanLog from "./components/ScanLog.jsx";
 import Agents from "./components/Agents.jsx";
 import Fleet from "./components/Fleet.jsx";
+import Sessions from "./components/Sessions.jsx";
 import Simulator from "./components/Simulator.jsx";
 import Report from "./components/Report.jsx";
 import Help from "./components/Help.jsx";
@@ -205,6 +206,12 @@ export default function App() {
             </button>
           )}
           {isAdmin && (
+            <button type="button" className={`nav-item ${view === "sessions" ? "nav-on" : ""}`}
+                    onClick={() => setView("sessions")}>
+              <IconActivity /> <span>Sessions</span>
+            </button>
+          )}
+          {isAdmin && (
             <button type="button" className={`nav-item ${view === "scanlog" ? "nav-on" : ""}`}
                     onClick={() => setView("scanlog")}>
               <IconActivity /> <span>Scan log</span>
@@ -310,6 +317,8 @@ export default function App() {
           <Policies tenant={auth.tenant} onTenant={(t) => setAuth((a) => ({ ...a, tenant: t }))} />
         ) : view === "fleet" ? (
           <Fleet />
+        ) : view === "sessions" ? (
+          <Sessions />
         ) : view === "simulator" ? (
           <Simulator />
         ) : view === "report" ? (

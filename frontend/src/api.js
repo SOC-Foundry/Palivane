@@ -160,6 +160,9 @@ export const api = {
   setUpstream: (provider, payload) =>
     req(`/upstreams/${provider}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteUpstream: (provider) => req(`/upstreams/${provider}`, { method: "DELETE" }),
+  auditSessions: (days = 7) => req(`/audit/sessions?days=${days}`),
+  auditTimeline: (actor, days = 7) =>
+    req(`/audit/timeline?actor=${encodeURIComponent(actor)}&days=${days}`),
   judgeKey: () => req("/judge-key"),
   setJudgeKey: (payload) => req("/judge-key", { method: "PUT", body: JSON.stringify(payload) }),
   deleteJudgeKey: () => req("/judge-key", { method: "DELETE" }),
