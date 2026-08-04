@@ -29,7 +29,7 @@ from .models import (
 from .schemas import (
     AgentCreate, AgentRoleIn, AgentTokenRequest, AgentUpdate, ApiKeyCreate, EnrollmentTokenCreate, EnrollRequest, LoginRequest, MFACode, MFAVerify,
     DPAAccept, ForgotRequest, OIDCConfig, ResetRequest, SAMLConfig, SignupRequest, TenantDelete, TenantUpdate,
-    UpstreamConfig, UserCreate, UserUpdate,
+    JudgeKeyConfig, UpstreamConfig, UserCreate, UserUpdate,
 )
 from .upstreams import PROVIDERS, forwards as upstream_forwards
 from .security import (
@@ -1000,6 +1000,60 @@ def delete_upstream(provider: str, current: User = Depends(require_admin),
         db.commit()
     audit_log.record(db, current.tenant_id, current.email, "upstream.delete", target=provider)
     return {"provider": provider, "effective": "global"}
+
+
+# --- BYOK judge key (the org pays for its own judge inference) -----------------------
+
+_JUDGE_BYOK_PROVIDERS = ("anthropic", "openai", "gemini")
+
+
+def _judge_key_state(tenant) -> dict:
+    return {"provider": tenant.judge_byok_provider or "",
+            "model": tenant.judge_byok_model or "",
+            "key_set": bool(tenant.judge_byok_key_encrypted)}
+
+
+@router.get("/judge-key")
+def get_judge_key(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """This org's own judge API key config: provider, model, and whether a key is set
+    (never the key). With a key set, the LLM judge runs for this org on its own bill —
+    independent of the operator's judge and exempt from plan gating."""
+    return _judge_key_state(db.get(Tenant, current.tenant_id))
+
+
+@router.put("/judge-key")
+def set_judge_key(body: JudgeKeyConfig, current: User = Depends(require_admin),
+                  db: Session = Depends(get_db)):
+    """Set the org's own judge key (stored encrypted, write-only). An empty `key`
+    keeps the existing one (e.g. to change only provider/model — note a key minted for
+    one provider won't authenticate against another)."""
+    provider = (body.provider or "").strip().lower()
+    if provider not in _JUDGE_BYOK_PROVIDERS:
+        raise HTTPException(status_code=404,
+                            detail=f"unknown provider (expected one of {', '.join(_JUDGE_BYOK_PROVIDERS)})")
+    tenant = db.get(Tenant, current.tenant_id)
+    tenant.judge_byok_provider = provider
+    tenant.judge_byok_model = (body.model or "").strip()
+    if body.key:
+        tenant.judge_byok_key_encrypted = encrypt(body.key.strip())
+    if not tenant.judge_byok_key_encrypted:
+        raise HTTPException(status_code=400, detail="key is required (none stored yet)")
+    db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "judge_key.set", target=provider)
+    return _judge_key_state(tenant)
+
+
+@router.delete("/judge-key")
+def delete_judge_key(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Remove the org's own judge key; the judge reverts to the operator's global
+    config (subject to plan gating), or off if the operator runs none."""
+    tenant = db.get(Tenant, current.tenant_id)
+    tenant.judge_byok_provider = ""
+    tenant.judge_byok_key_encrypted = ""
+    tenant.judge_byok_model = ""
+    db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "judge_key.delete")
+    return _judge_key_state(tenant)
 
 
 # --- tenant settings & lifecycle (data control) --------------------------------------

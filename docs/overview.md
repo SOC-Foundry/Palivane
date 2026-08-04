@@ -187,7 +187,10 @@ into a **verdict**.
   subscription carries the cost, so a self-hosted org needs no API key or credit
   balance. It is never chosen by `auto` (it routes content through the signed-in Claude
   account, so opting in must be explicit), and configured API keys still serve as
-  failover behind it.
+  failover behind it. On a multi-tenant deployment, an org can also **bring its own
+  judge key** (Settings → LLM judge, stored encrypted, write-only): verdicts then bill
+  that org's provider account, run independently of the operator's judge capacity, and
+  are exempt from plan gating — the org's judge consent setting still applies.
 
 ### Scoring
 

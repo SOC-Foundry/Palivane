@@ -100,16 +100,27 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     # A tenant can opt out of the LLM judge (it ships content to the judge provider).
     tenant = db.get(Tenant, tenant_id) if tenant_id is not None else None
     include_judge = not (tenant is not None and tenant.judge_enabled is False)
-    # On the managed SaaS the judge is operator-funded, so it is a paid entitlement: when
+    # BYOK: a tenant's OWN judge key runs on their bill — it works even when the global
+    # judge is off, and is exempt from the plan gate (they pay for the inference). The
+    # opt-out above still wins: consent to ship content is a separate decision.
+    byok = []
+    if include_judge and tenant is not None and getattr(tenant, "judge_byok_key_encrypted", ""):
+        from .crypto import decrypt
+        from .detectors.llm_judge import byok_backends
+        byok = byok_backends(tenant.judge_byok_provider or "",
+                             decrypt(tenant.judge_byok_key_encrypted),
+                             tenant.judge_byok_model or "")
+    # On the managed SaaS the operator-funded judge is a paid entitlement: when
     # plan-gating is on, a tenant whose plan lacks the "judge" feature runs offline-only
     # (self-hosted leaves gating off and runs the operator's own key for everyone).
-    if include_judge and settings.judge_plan_gated:
+    if include_judge and not byok and settings.judge_plan_gated:
         from .plans import has_feature
         include_judge = has_feature(tenant, "judge")
-    verdict = engine.analyze(item, include_judge=include_judge)
+    verdict = engine.analyze(item, include_judge=include_judge,
+                             judge_backends=byok or None)
     # Did the judge actually participate? (a provider is configured AND it ran for this
     # tenant) — recorded on the finding so judge_used is honest per-tenant, not global.
-    judge_ran = include_judge and engine.judge_enabled
+    judge_ran = include_judge and (bool(byok) or engine.judge_enabled)
     # Per-tenant policy: drop signals for checks the admin has disabled, then apply any
     # per-tool suppression the caller passed. Either may re-score the verdict. A per-user or
     # per-group override (resolved from the finding's actor) replaces the tenant default.

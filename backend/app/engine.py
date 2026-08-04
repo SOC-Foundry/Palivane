@@ -50,7 +50,10 @@ class Engine:
         surfaces = getattr(detector, "surfaces", set())
         return not surfaces or surface in surfaces
 
-    def analyze(self, item: AnalysisInput, include_judge: bool = True) -> Verdict:
+    def analyze(self, item: AnalysisInput, include_judge: bool = True,
+                judge_backends=None) -> Verdict:
+        """`judge_backends` overrides the judge's provider list for this analysis (BYOK:
+        the tenant's own key runs even when the global judge is unconfigured)."""
         signals = []
         for detector in self.detectors:
             if detector is self.judge and not include_judge:
@@ -58,7 +61,10 @@ class Engine:
             if not self._applies(detector, item.surface):
                 continue
             try:
-                signals.extend(detector.analyze(item))
+                if detector is self.judge:
+                    signals.extend(detector.analyze(item, backends=judge_backends))
+                else:
+                    signals.extend(detector.analyze(item))
             except Exception:
                 # A misbehaving detector must never sink the whole analysis.
                 continue

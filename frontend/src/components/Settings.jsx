@@ -217,6 +217,28 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     catch (e) { err(e); }
   }
 
+  // --- BYOK judge key ---
+  const [judgeKey, setJudgeKeyState] = useState(null);   // {provider, model, key_set}
+  const [jkDraft, setJkDraft] = useState({ provider: "anthropic", key: "", model: "" });
+  const loadJudgeKey = useCallback(() => api.judgeKey().then((j) => {
+    setJudgeKeyState(j);
+    setJkDraft((d) => ({ ...d, provider: j.provider || "anthropic", model: j.model || "" }));
+  }).catch(() => {}), []);
+
+  async function saveJudgeKey(e) {
+    e.preventDefault();
+    try {
+      await api.setJudgeKey({ provider: jkDraft.provider, key: jkDraft.key, model: jkDraft.model });
+      setJkDraft((d) => ({ ...d, key: "" }));             // key is write-only
+      await loadJudgeKey();
+      flash("Judge key saved — the LLM judge now runs on your org's own key.");
+    } catch (e2) { err(e2); }
+  }
+  async function clearJudgeKey() {
+    try { await api.deleteJudgeKey(); await loadJudgeKey(); flash("Judge key removed."); }
+    catch (e) { err(e); }
+  }
+
   // --- OIDC ---
   const [oidc, setOidcState] = useState(null);
   const [oidcDraft, setOidcDraft] = useState({ issuer: "", client_id: "", client_secret: "", allowed_domain: "" });
@@ -282,8 +304,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     } catch (e) { err(e); }
   }
 
-  useEffect(() => { loadUsage(); loadUps(); loadOidc(); loadSaml(); loadDpa(); loadCatalog(); loadUpgrade(); },
-    [loadUsage, loadUps, loadOidc, loadSaml, loadDpa, loadCatalog, loadUpgrade]);
+  useEffect(() => { loadUsage(); loadUps(); loadJudgeKey(); loadOidc(); loadSaml(); loadDpa(); loadCatalog(); loadUpgrade(); },
+    [loadUsage, loadUps, loadJudgeKey, loadOidc, loadSaml, loadDpa, loadCatalog, loadUpgrade]);
 
   async function logoutEverywhere() {
     try { await api.logoutAll(); } catch { /* ignore */ }
@@ -686,6 +708,41 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           );
         })}
       </div>
+
+      {/* BYOK judge key */}
+      <form className="panel settings-card" onSubmit={saveJudgeKey}>
+        <h2>LLM judge — bring your own key
+          {judgeKey?.key_set && <span className="chip chip-on">active</span>}
+        </h2>
+        <p className="muted">Run the LLM judge on your org's own provider key: verdicts bill
+          your account, work regardless of the platform's judge capacity, and aren't plan-gated.
+          The key is stored encrypted and never shown again. Your "LLM judge" consent setting
+          above still applies — Off disables the judge entirely.</p>
+        <div className="field-grid">
+          <label>Provider
+            <select value={jkDraft.provider}
+                    onChange={(e) => setJkDraft((d) => ({ ...d, provider: e.target.value }))}>
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">OpenAI (GPT)</option>
+              <option value="gemini">Google (Gemini)</option>
+            </select>
+          </label>
+          <label>API key
+            <input type="password" value={jkDraft.key}
+                   placeholder={judgeKey?.key_set ? "key set — enter to replace" : "provider API key"}
+                   onChange={(e) => setJkDraft((d) => ({ ...d, key: e.target.value }))} />
+          </label>
+          <label>Model (optional)
+            <input value={jkDraft.model} placeholder="provider default"
+                   onChange={(e) => setJkDraft((d) => ({ ...d, model: e.target.value }))} />
+          </label>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="primary-btn slim" type="submit">Save judge key</button>
+          {judgeKey?.key_set &&
+            <button type="button" className="mini-btn" onClick={clearJudgeKey}>Remove key</button>}
+        </div>
+      </form>
 
       {/* SSO / OIDC */}
       <div className="panel settings-card">

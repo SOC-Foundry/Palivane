@@ -12,7 +12,7 @@ from app.models import Finding, Tenant
 def test_judge_opt_out_skips_the_judge(monkeypatch):
     fake = Signal(category=Category.AI_GENERATED, title="judge ran", detail="",
                   weight=0.5, confidence=0.5, detector="llm_judge")
-    monkeypatch.setattr(engine.judge, "analyze", lambda item: [fake])
+    monkeypatch.setattr(engine.judge, "analyze", lambda item, backends=None: [fake])
     item = AnalysisInput(content="hello", surface=Surface.LLM_IO)
     assert any(s.title == "judge ran" for s in engine.analyze(item, include_judge=True).signals)
     assert not any(s.title == "judge ran" for s in engine.analyze(item, include_judge=False).signals)
@@ -36,7 +36,7 @@ def test_judge_off_is_honored_end_to_end(client, db_factory):
                   weight=0.9, confidence=0.9, detector="llm_judge")
     # (monkeypatch on the shared engine instance used by the app)
     orig = engine_mod.engine.judge.analyze
-    engine_mod.engine.judge.analyze = lambda item: [fake]
+    engine_mod.engine.judge.analyze = lambda item, backends=None: [fake]
     try:
         client.patch("/api/tenant", json={"judge": "off"})
         client.post("/api/analyze", json={"content": "hi there", "persist": True})
@@ -53,7 +53,7 @@ def test_managed_judge_is_plan_gated(db_factory, monkeypatch):
     from app import service, users as users_cli
     fake = Signal(category=Category.AI_GENERATED, title="judge ran", detail="",
                   weight=0.9, confidence=0.9, detector="llm_judge")
-    monkeypatch.setattr(service.engine.judge, "analyze", lambda item: [fake])
+    monkeypatch.setattr(service.engine.judge, "analyze", lambda item, backends=None: [fake])
     monkeypatch.setattr(service.engine.judge, "_backends", [("x", object(), "m")])  # judge "configured"
     monkeypatch.setattr(service.settings, "judge_plan_gated", True)
 
