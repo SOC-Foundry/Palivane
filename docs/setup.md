@@ -78,11 +78,12 @@ your IdP/CASB "who used AI" list against who Warden actually captured).
 | From source | Python 3.11+ and Node 18+ (`python3 --version`, `node --version`). |
 
 An **LLM API key is optional** — Warden runs fully on its offline regex/heuristic
-detectors with no key. Add a key later (Claude, GPT, or Gemini) to enrich detection with
-the LLM judge — or skip API keys entirely: with `JUDGE_PROVIDER=claude-cli`, the judge
-runs through the machine's signed-in **Claude Code CLI**, so a Claude Pro/Max/Team
-subscription carries the cost (self-hosted; the host needs `claude` on PATH and a
-completed sign-in).
+detectors with no key. To enrich detection with the LLM judge, the **recommended default
+is `JUDGE_PROVIDER=claude-cli`**: verdicts run through the machine's signed-in **Claude
+Code CLI**, so the Claude Pro/Max/Team subscription your team already has carries the
+cost — no API key, no credit balance to keep topped up (the host needs `claude` on PATH
+and a completed sign-in). Bringing an API key (Claude, GPT, or Gemini) remains supported
+for orgs that prefer it.
 
 ---
 
