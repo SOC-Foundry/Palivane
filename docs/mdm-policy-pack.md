@@ -87,7 +87,7 @@ Routes egress through the proxy so MCP + AI traffic is inspected (and enforced).
   Task, CLI shims — with no admin rights:
 
   ```powershell
-  iwr https://warden.tachtech.net/cli/warden-desktop.ps1 -OutFile warden-desktop.ps1
+  iwr https://palivane.tachtech.net/cli/warden-desktop.ps1 -OutFile warden-desktop.ps1
   powershell -ExecutionPolicy Bypass -File warden-desktop.ps1 install
   ```
 

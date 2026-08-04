@@ -20,7 +20,7 @@
 # Windows is a separate PowerShell path (see docs).
 set -euo pipefail
 
-WARDEN_URL="${WARDEN_URL:-https://warden.tachtech.net}"
+WARDEN_URL="${WARDEN_URL:-https://palivane.tachtech.net}"
 PORT="${WARDEN_PROXY_PORT:-8081}"
 HOME_DIR="${HOME}"
 WDIR="${HOME_DIR}/.warden"

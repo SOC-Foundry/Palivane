@@ -32,7 +32,7 @@ If Copilot CLI is installed (~/.copilot present), it registers warden-copilot-ho
 ~/.copilot/warden.json — covering Copilot's tool calls (deniable) and prompts
 (observe-only at this plane) locally. Stdlib only.
 
-    warden-connect                              # hosted SaaS (warden.tachtech.net)
+    warden-connect                              # hosted SaaS (palivane.tachtech.net)
     warden-connect https://warden.self-hosted   # or set WARDEN_URL, for self-hosting
     warden-connect --route-gateway              # also route API traffic via the gateway
 """
@@ -52,10 +52,11 @@ import urllib.request
 import webbrowser
 
 
-# Hosted Warden SaaS default: every org shares this URL (the tenant is resolved by who
-# signs in), so `warden connect` alone just works. Override with an arg or WARDEN_URL for
-# a self-hosted deployment.
-DEFAULT_URL = "https://warden.tachtech.net"
+# Hosted Palivane SaaS default: every org shares this URL (the tenant is resolved by who
+# signs in), so `warden connect` alone just works. Override with an arg or WARDEN_URL/
+# PALIVANE_URL for a self-hosted deployment. (The legacy warden.tachtech.net host still
+# serves the API, so already-connected devices keep working until they re-run connect.)
+DEFAULT_URL = "https://palivane.tachtech.net"
 
 
 def _console_url(argv) -> str:

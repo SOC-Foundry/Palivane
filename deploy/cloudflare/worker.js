@@ -132,6 +132,16 @@ function apiOverLimit(ip) {
   return c.n > API_LIMIT;
 }
 
+// Rename cutover: the canonical host is palivane.tachtech.net. The legacy
+// warden.tachtech.net stays live (same worker, both routes) and PROXIES all traffic
+// transparently — but human/browser navigation (GET/HEAD for non-API paths: the console
+// SPA and public site) is 301-redirected to the new host so people land on the new brand.
+// API/gateway traffic (/api/*, /v1) is NEVER redirected: installed CLIs, the extension,
+// and MDM clients POST there, and a 301 wouldn't replay their bodies — they keep hitting
+// the old host transparently until they re-enroll against palivane.
+const CANONICAL_HOST = 'palivane.tachtech.net';
+const LEGACY_HOST = 'warden.tachtech.net';
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -142,6 +152,14 @@ export default {
     }
     if (BLOCKED_PATH.test(path) || BLOCKED_EXT.test(path)) {
       return deny(404, 'not found');
+    }
+
+    // Human navigation on the legacy host → move to the new brand hostname. Programmatic
+    // API/gateway calls fall through and are proxied unchanged (see note above).
+    const isApi = path.startsWith('/api/') || path.startsWith('/v1');
+    const isNav = request.method === 'GET' || request.method === 'HEAD';
+    if (url.hostname === LEGACY_HOST && isNav && !isApi) {
+      return Response.redirect('https://' + CANONICAL_HOST + path + url.search, 301);
     }
 
     const ip = request.headers.get('cf-connecting-ip') || 'unknown';

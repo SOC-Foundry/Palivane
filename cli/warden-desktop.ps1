@@ -115,7 +115,7 @@ function Read-WardenSettings {
 function Resolve-WardenUrl([object]$settings) {
     $url = $env:WARDEN_URL
     if (-not $url -and $settings) { $url = $settings.Url }
-    if (-not $url) { $url = "https://warden.tachtech.net" }
+    if (-not $url) { $url = "https://palivane.tachtech.net" }
     return $url.TrimEnd("/")
 }
 
