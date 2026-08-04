@@ -16,7 +16,7 @@ const FRONTS = [
   {
     icon: <IconAlert />, tag: "AI assistants", cls: "atk",
     title: "AI coding assistants stay inside the lines",
-    body: "Claude Code, Cursor, and Copilot read your files and run your commands. Warden checks each action before it happens and stops the dangerous ones.",
+    body: "Claude Code, Cursor, and Copilot read your files and run your commands. Palivane checks each action before it happens and stops the dangerous ones.",
   },
 ];
 
@@ -25,7 +25,7 @@ const CAPTURE = [
   { icon: <IconInbox />, title: "In desktop apps", body: "Covers the AI apps that don't run in a browser: Claude and ChatGPT desktop, and the assistants built into editors." },
   { icon: <IconShield />, title: "In your AI coding tools", body: "Claude Code, Cursor, Codex, and Gemini CLI report what they're about to send or do, so it can be checked first." },
   { icon: <IconClipboard />, title: "In your code and laptops", body: "Scans commits and dependencies before they land, and finds credentials already sitting on developer machines — where info-stealing malware looks first." },
-  { icon: <IconAlert />, title: "In GitHub Actions", body: "Coding agents increasingly run on CI runners, with your deploy keys in reach and nobody watching. Warden checks what they can touch — before you merge the workflow that gives it to them." },
+  { icon: <IconAlert />, title: "In GitHub Actions", body: "Coding agents increasingly run on CI runners, with your deploy keys in reach and nobody watching. Palivane checks what they can touch — before you merge the workflow that gives it to them." },
 ];
 
 const STEPS = [
@@ -38,7 +38,7 @@ const STEPS = [
 
 const ENTERPRISE = [
   { icon: <IconPlug />, title: "Onboarding that doesn't need a project plan", body: "Claim your email domain and teammates who sign up land in your org automatically. Invites, password reset, and single sign-on (Okta, Entra, Google) are built in." },
-  { icon: <IconShield />, title: "Nothing to install on laptops", body: "No agent to roll out. If you use Jamf, Intune, or Group Policy, Warden hands you the config to push and you're done. Optional local helpers add depth on the machines where you want it." },
+  { icon: <IconShield />, title: "Nothing to install on laptops", body: "No agent to roll out. If you use Jamf, Intune, or Group Policy, Palivane hands you the config to push and you're done. Optional local helpers add depth on the machines where you want it." },
   { icon: <IconTarget />, title: "Proof it's actually working", body: "See which people and teams are covered and which aren't. Alerts land in Slack, findings flow to your SIEM or data lake, and a monthly report gives your board the numbers." },
   { icon: <IconClipboard />, title: "Your data stays yours", body: "Choose what gets recorded, export everything at any time, and delete your org in one click. Signed DPA available; content can be scanned without ever being stored." },
 ];
@@ -56,7 +56,7 @@ export default function Landing({ onSignIn }) {
           <h1>Your secrets shouldn't leave with the prompt.</h1>
           <p className="lp-lead">
             Your team uses ChatGPT, Claude, Copilot, and AI coding assistants every day.
-            Warden shows you what they send — and <strong>stops the customer data, passwords,
+            Palivane shows you what they send — and <strong>stops the customer data, passwords,
             and source code that shouldn't go</strong>. Set up in an afternoon, with nothing
             to install on anyone's laptop.
           </p>
@@ -76,7 +76,7 @@ export default function Landing({ onSignIn }) {
              Claude, ChatGPT and Gemini, in Claude Code, Codex and Cursor, in an S3 bucket and in
              a GitHub Actions run — then a walkthrough of every screen in the console.</p>
           <Clip lead src="/shots/demo12.mp4" poster="/shots/demo-poster12.png"
-                caption="Eight places the same secret tried to escape, then a tour of every console screen it lands in. Every verdict, risk score and fix in the video is live output from a running Warden instance." />
+                caption="Eight places the same secret tried to escape, then a tour of every console screen it lands in. Every verdict, risk score and fix in the video is live output from a running Palivane instance." />
           <div className="lp-gallery">
             <Shot src="/shots/discovery.png?v=2" alt="Inventory of AI tools in use" onZoom={(s, a) => setZoom({ src: s, alt: a })}
                   caption="Every AI tool in use, broken down by team — and what data actually went to each one." />
@@ -108,7 +108,7 @@ export default function Landing({ onSignIn }) {
       <section className="lp-section alt">
         <div className="lp-wrap">
           <h2 className="lp-h2">It works wherever your team uses AI</h2>
-          <p className="lp-sub">Nobody has to remember to run anything. Warden watches the places AI is
+          <p className="lp-sub">Nobody has to remember to run anything. Palivane watches the places AI is
              actually used, and everything lands in the same console.</p>
           <div className="lp-cards lp-cards-5">
             {CAPTURE.map((c) => (
@@ -124,8 +124,8 @@ export default function Landing({ onSignIn }) {
 
       <section className="lp-section">
         <div className="lp-wrap">
-          <h2 className="lp-h2">What Warden looks for</h2>
-          <p className="lp-sub">Every check runs inside Warden in milliseconds — no third-party AI
+          <h2 className="lp-h2">What Palivane looks for</h2>
+          <p className="lp-sub">Every check runs inside Palivane in milliseconds — no third-party AI
              service ever sees your content — then one risk score decides whether to allow,
              warn, or block.</p>
           <div className="lp-steps">
@@ -150,7 +150,7 @@ export default function Landing({ onSignIn }) {
       <section className="lp-section alt">
         <div className="lp-wrap">
           <h2 className="lp-h2">Built for a small team to run</h2>
-          <p className="lp-sub">You should not need a dedicated headcount to govern AI. Warden is
+          <p className="lp-sub">You should not need a dedicated headcount to govern AI. Palivane is
              designed to be set up once and then mostly leave you alone.</p>
           <div className="lp-cards">
             {ENTERPRISE.map((c) => (

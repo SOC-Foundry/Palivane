@@ -71,8 +71,8 @@ export default function Trust() {
 
       <section className="lp-pagehead">
         <div className="lp-tagline">TRUST &amp; SECURITY</div>
-        <h1>How Warden protects your data</h1>
-        <p>Warden inspects your organization's most sensitive traffic, so it's built to be
+        <h1>How Palivane protects your data</h1>
+        <p>Palivane inspects your organization's most sensitive traffic, so it's built to be
            the most locked-down thing you run. Everything below is implemented today and
            verifiable — ask us anything: <a href="mailto:security@tachtech.net">security@tachtech.net</a>.</p>
       </section>

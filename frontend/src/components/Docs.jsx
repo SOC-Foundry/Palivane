@@ -15,7 +15,7 @@ import pilotMd from "../../../docs/pilot-smoke-test.md?raw";
 
 const DOCS = [
   { slug: "overview", title: "Overview & architecture", md: overviewMd },
-  { slug: "setup", title: "Setting up Warden", md: setupMd },
+  { slug: "setup", title: "Setting up Palivane", md: setupMd },
   { slug: "claude", title: "Deploying for Claude", md: claudeMd },
   { slug: "mdm-policy-pack", title: "MDM policy pack", md: mdmMd },
   { slug: "tokens-and-identity", title: "Tokens & identity", md: tokensMd },
@@ -38,7 +38,7 @@ export default function Docs({ slug }) {
   const html = useMemo(() => marked.parse(doc.md, { renderer }), [doc]);
 
   useEffect(() => {
-    document.title = `${doc.title} — Warden docs`;
+    document.title = `${doc.title} — Palivane docs`;
     if (window.location.hash) {
       document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
     } else {

@@ -8,12 +8,12 @@ function PrivacyBody() {
   return (
     <>
       <h1>Privacy Policy</h1>
-      <p className="legal-updated">Warden — Shadow-AI Guard · Last updated: {UPDATED}</p>
+      <p className="legal-updated">Palivane — Shadow-AI Guard · Last updated: {UPDATED}</p>
 
       <p>
-        Warden — Shadow-AI Guard (“the extension”) is an organizational
+        Palivane — Shadow-AI Guard (“the extension”) is an organizational
         data-loss-prevention tool. It is deployed by an administrator and connected to a{" "}
-        <strong>Warden backend that your organization operates</strong>.
+        <strong>Palivane backend that your organization operates</strong>.
       </p>
 
       <h2>What the extension does</h2>
@@ -29,7 +29,7 @@ function PrivacyBody() {
       <ul>
         <li>
           <strong>Prompt content</strong> you submit to the supported AI tools — sent to
-          your organization's Warden backend for scanning.
+          your organization's Palivane backend for scanning.
         </li>
         <li>
           <strong>An optional user identifier</strong> (e.g. your work email), if your
@@ -43,7 +43,7 @@ function PrivacyBody() {
 
       <h2>Where data goes</h2>
       <p>
-        Scanned content is transmitted <strong>only</strong> to the Warden backend endpoint
+        Scanned content is transmitted <strong>only</strong> to the Palivane backend endpoint
         your organization configures (<code>POST /api/ingest/ai-usage</code>). It is{" "}
         <strong>not</strong> transmitted to the extension's developer, and it is{" "}
         <strong>not</strong> sold, shared, or used for advertising or any purpose unrelated
@@ -54,7 +54,7 @@ function PrivacyBody() {
       <p>
         The extension itself stores no prompt history; it relays content for a real-time
         verdict and discards it. Any retention of findings happens in your organization's
-        Warden backend, governed by your organization's own data policy.
+        Palivane backend, governed by your organization's own data policy.
       </p>
 
       <h2>Failure behavior</h2>
@@ -73,13 +73,13 @@ function TermsBody() {
   return (
     <>
       <h1>Terms of Use</h1>
-      <p className="legal-updated">Warden — Shadow-AI Guard · Last updated: {UPDATED}</p>
+      <p className="legal-updated">Palivane — Shadow-AI Guard · Last updated: {UPDATED}</p>
 
-      <h2>1. What Warden is</h2>
+      <h2>1. What Palivane is</h2>
       <p>
-        Warden — Shadow-AI Guard (“the extension”) is an organizational security tool that
+        Palivane — Shadow-AI Guard (“the extension”) is an organizational security tool that
         inspects prompts sent to supported AI tools and warns or blocks submissions that
-        contain sensitive data. It operates against a Warden backend that your organization
+        contain sensitive data. It operates against a Palivane backend that your organization
         deploys and controls.
       </p>
 

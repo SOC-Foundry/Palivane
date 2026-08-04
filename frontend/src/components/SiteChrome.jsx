@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 
 const TABS = [
-  { href: "/why-warden", label: "Why Warden" },
+  { href: "/why-warden", label: "Why Palivane" },
   { href: "/use-cases", label: "Use cases" },
   { href: "/how-it-works", label: "How it works" },
   { href: "/setup", label: "Setup" },
@@ -21,8 +21,8 @@ export function SiteNav({ onSignIn }) {
   return (
     <header className="lp-nav">
       <a className="lp-brand" href="/" style={{ color: "inherit", textDecoration: "none" }}>
-        <img src="/warden-emblem.png" alt="Warden" className="lp-brand-emblem" />
-        <span>Warden</span>
+        <img src="/warden-emblem.png" alt="Palivane" className="lp-brand-emblem" />
+        <span>Palivane</span>
       </a>
       <nav className="lp-nav-links">
         {TABS.map((t) => <a key={t.href} href={t.href}>{t.label}</a>)}
@@ -103,7 +103,7 @@ export function Clip({ src, poster = "", caption = "", lead = false }) {
 export function SiteFooter() {
   return (
     <footer className="lp-foot">
-      <span>◆ Warden — AI Security Gateway</span>
+      <span>◆ Palivane — AI Security Gateway</span>
       <span className="lp-foot-links">
         {TABS.map((t) => <a key={t.href} href={t.href}>{t.label}</a>)}
         <a href="/trust">Trust &amp; Security</a>

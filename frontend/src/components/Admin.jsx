@@ -92,7 +92,7 @@ export default function Admin() {
     return (
       <div className="login-screen">
         <div className="login-card" style={{ maxWidth: 420 }}>
-          <h1 style={{ fontSize: 20, marginTop: 0 }}>Warden operator console</h1>
+          <h1 style={{ fontSize: 20, marginTop: 0 }}>Palivane operator console</h1>
           <p className="login-sub">Vendor-only. Enter the operator token (WARDEN_METRICS_TOKEN).</p>
           <form onSubmit={(e) => { e.preventDefault(); load(entered.trim()); }}>
             <input type="password" autoFocus placeholder="operator token" value={entered}
