@@ -1,5 +1,5 @@
 // Coverage — find unmanaged/shadow AI use by comparing an IdP/CASB "who used AI" list to
-// the actors Warden actually captured. The gap = the shadow set. (Agentless: you can't
+// the actors Palivane actually captured. The gap = the shadow set. (Agentless: you can't
 // monitor a device you don't manage, so you find it by what's missing.)
 import { useState } from "react";
 import { api } from "../api.js";
@@ -39,7 +39,7 @@ export default function Coverage() {
       <div className="content-head">
         <div>
           <h1 className="page-title">Coverage reconciliation</h1>
-          <p className="page-sub">Paste your IdP/CASB record of who used AI tools. Warden subtracts the
+          <p className="page-sub">Paste your IdP/CASB record of who used AI tools. Palivane subtracts the
              actors it captured and returns the rest — the unmanaged / shadow set.</p>
         </div>
       </div>

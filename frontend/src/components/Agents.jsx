@@ -102,8 +102,8 @@ export default function Agents({ tenant, onTenant }) {
         <div>
           <h1 className="page-title">Agents</h1>
           <p className="page-sub">Verifiable identities for your AI agents. An agent presents its
-             <code> ag_</code> token on capture requests (as <code>X-Warden-Token</code>, or an
-             <code> X-Warden-Agent</code> header alongside a shared key) and its actions are
+             <code> ag_</code> token on capture requests (as <code>X-Palivane-Token</code>, or an
+             <code> X-Palivane-Agent</code> header alongside a shared key) and its actions are
              attributed to it across Findings and the Scan log.</p>
         </div>
       </div>
@@ -113,7 +113,7 @@ export default function Agents({ tenant, onTenant }) {
       <div className="panel settings-card">
         <h2>Workload identity (OIDC)</h2>
         <p className="muted" style={{ marginTop: 0 }}>Optionally trust JWTs from your workload
-           IdP as agent credentials (instead of Warden's <code>ag_</code> token). A token whose
+           IdP as agent credentials (instead of Palivane's <code>ag_</code> token). A token whose
            <code> iss</code> matches and validates against the issuer's JWKS is mapped to the agent
            whose <strong>OIDC subject</strong> equals the token's <code>sub</code>/<code>client_id</code>.</p>
         <div className="override-row">

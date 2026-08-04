@@ -108,7 +108,7 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
   async function suppress(check, label, channel) {
     const who = finding.sender;
     const where = channel ? `via ${channel}` : "on every tool";
-    if (!window.confirm(`Stop flagging "${label}" for ${who} ${where}?\n\nThis adds a per-user policy override (Policies page) — Warden will no longer record ${label} findings for this user ${where}.`)) return;
+    if (!window.confirm(`Stop flagging "${label}" for ${who} ${where}?\n\nThis adds a per-user policy override (Policies page) — Palivane will no longer record ${label} findings for this user ${where}.`)) return;
     const ch = (channel || "").toLowerCase();
     const pol = await api.policies();
     const existing = (pol.overrides || []).find(

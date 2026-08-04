@@ -6,7 +6,7 @@ const TIERS = [
   {
     name: "Team", price: "$12", per: "per user / month ($10 annual)",
     blurb: "The plan most companies run. Covers everyone and tells you when something happens.",
-    cta: { label: "Talk to us →", href: "mailto:sales@tachtech.net?subject=Warden%20Team%20plan" },
+    cta: { label: "Talk to us →", href: "mailto:sales@tachtech.net?subject=Palivane%20Team%20plan" },
     featured: true,
     features: [
       "Up to 25 people (more on request)",
@@ -21,7 +21,7 @@ const TIERS = [
   {
     name: "Enterprise", price: "Custom", per: "annual license",
     blurb: "For when identity, audit, and a security review are part of the deal.",
-    cta: { label: "Talk to sales →", href: "mailto:sales@tachtech.net?subject=Warden%20Enterprise" },
+    cta: { label: "Talk to sales →", href: "mailto:sales@tachtech.net?subject=Palivane%20Enterprise" },
     features: [
       "Everything in Team, without the seat cap",
       "Single sign-on with your identity provider (OIDC & SAML)",
@@ -86,7 +86,7 @@ export default function Pricing() {
             {TIERS.map((t) => <Tier key={t.name} t={t} />)}
           </div>
           <p className="lp-sub" style={{ textAlign: "center", marginTop: 28 }}>
-            Running it yourself is the free option: Warden's core is source-available, and an
+            Running it yourself is the free option: Palivane's core is source-available, and an
             unlicensed instance keeps working indefinitely. Team and Enterprise licenses add
             the fleet and compliance features to a self-hosted deployment too.
             Questions: <a href="mailto:sales@tachtech.net">sales@tachtech.net</a>.

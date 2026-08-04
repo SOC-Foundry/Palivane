@@ -56,7 +56,7 @@ export default function HowItWorks() {
 
       <section className="lp-pagehead">
         <div className="lp-tagline">HOW IT WORKS</div>
-        <h1>How Warden works</h1>
+        <h1>How Palivane works</h1>
         <p>Every piece of AI-bound content ends up as one risk verdict. The engine is regex and
            heuristics — deterministic, millisecond-fast, and it calls no third-party AI service
            to reach a decision.</p>
@@ -195,7 +195,7 @@ export default function HowItWorks() {
         <div className="lp-wrap">
           <h2 className="lp-h2">…into one console</h2>
           <p className="lp-sub">Every verdict, across every plane, scored and triageable in one place.</p>
-          <Shot lead src="/shots/dashboard.png" alt="Warden findings dashboard" />
+          <Shot lead src="/shots/dashboard.png" alt="Palivane findings dashboard" />
         </div>
       </section>
 

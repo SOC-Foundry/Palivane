@@ -47,7 +47,7 @@ export default function Simulator() {
       <div className="content-head">
         <div>
           <h1 className="page-title">Policy simulator</h1>
-          <p className="page-sub">Test what Warden would do with a prompt, tool call, or paste —
+          <p className="page-sub">Test what Palivane would do with a prompt, tool call, or paste —
              using your org's live policy and overrides.</p>
         </div>
       </div>

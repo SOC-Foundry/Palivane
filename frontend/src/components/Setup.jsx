@@ -9,7 +9,7 @@ const SELF = [
   { n: "2", title: "Run one command",
     body: "On any machine, run  curl -fsSL <your-url>/install.sh | bash . It signs you in (a browser window opens), installs the governance CLI, wires prompt + tool-call hooks into Claude Code, Cursor, Codex, and Gemini CLI (prompts are scanned locally before they leave — even on subscription sign-ins no gateway ever sees), and stands up the sudo-free egress proxy for everything else — all subscription-compatible, no config files. Add  --desktop  to also cover the Claude/ChatGPT desktop apps and browsers system-wide." },
   { n: "3", title: "Finish the browser extension",
-    body: "Install the Warden extension for Chrome/Edge from the Web Store, then click “Sign in to Warden” in its popup to bind it to your org. Now claude.ai, ChatGPT, and Gemini are covered too." },
+    body: "Install the Palivane extension for Chrome/Edge from the Web Store, then click “Sign in to Palivane” in its popup to bind it to your org. Now claude.ai, ChatGPT, and Gemini are covered too." },
   { n: "4", title: "Route through your provider account (optional · admin)",
     body: "Want a hard, unbypassable gateway instead of the local proxy? In Settings → Gateway upstreams, paste your org's Anthropic (or OpenAI / Gemini) API key and warden-connect will point Claude Code at the gateway. This bills to your API account rather than each user's subscription — leave it unset to keep the subscription-friendly proxy path above." },
   { n: "5", title: "Watch findings roll in",
@@ -18,16 +18,16 @@ const SELF = [
 
 const UNINSTALL = [
   { n: "1", title: "Remove the editor & CLI hooks",
-    body: "Run  warden-connect --uninstall . It strips the Claude Code, Cursor, Gemini, and Codex hooks, the Warden env, and the creds files it wrote — and leaves any hooks you added yourself untouched. Safe to run anytime; a no-op if nothing's installed." },
+    body: "Run  warden-connect --uninstall . It strips the Claude Code, Cursor, Gemini, and Codex hooks, the Palivane env, and the creds files it wrote — and leaves any hooks you added yourself untouched. Safe to run anytime; a no-op if nothing's installed." },
   { n: "2", title: "Remove the egress proxy",
     body: "Run  warden-desktop uninstall  to stop the proxy, revert the system-proxy setting, and remove the per-tool CLI shims. The root CA is left in your trust store for safety — delete it manually (macOS Keychain; Linux /usr/local/share/ca-certificates/warden-mitmproxy.crt then update-ca-certificates) for a full revert." },
   { n: "3", title: "Remove the CLI & extension",
-    body: "rm -rf ~/.warden  removes the CLI and local state, then drop the ~/.warden/bin line from your shell rc. Finally, remove the Warden extension from Chrome/Edge. On an MDM fleet, pull the policy pack instead — the profile owns every device's settings, so removing it reverts them all." },
+    body: "rm -rf ~/.warden  removes the CLI and local state, then drop the ~/.warden/bin line from your shell rc. Finally, remove the Palivane extension from Chrome/Edge. On an MDM fleet, pull the policy pack instead — the profile owns every device's settings, so removing it reverts them all." },
 ];
 
 const ORG = [
   { n: "1", title: "Pick how you ship software",
-    body: "Connect → Quick start. Choose an MDM policy pack (Jamf · Intune · GPO) or a per-OS setup script. Warden generates everything already pointed at your org and pre-loaded with your policy." },
+    body: "Connect → Quick start. Choose an MDM policy pack (Jamf · Intune · GPO) or a per-OS setup script. Palivane generates everything already pointed at your org and pre-loaded with your policy." },
   { n: "2", title: "Push the pack fleet-wide",
     body: "One pack your MDM pushes: extension force-install, egress-proxy profile, and Claude Code managed settings + hooks. Agentless — nothing to install per device. Set your org's model key first (Part 1, step 4) so gateway-routed Claude Code keeps answering; the proxy leg also needs your root CA in the device trust store." },
   { n: "3", title: "Confirm coverage",
@@ -36,9 +36,9 @@ const ORG = [
 
 const CI = [
   { n: "1", title: "Add one workflow file",
-    body: "Copy Warden's GitHub Actions template into your repo as .github/workflows/warden-ci-scan.yml. It fetches the scanner from your console at run time, so there's nothing to vendor and nothing to keep updated." },
+    body: "Copy Palivane's GitHub Actions template into your repo as .github/workflows/warden-ci-scan.yml. It fetches the scanner from your console at run time, so there's nothing to vendor and nothing to keep updated." },
   { n: "2", title: "Let the runner authenticate as itself",
-    body: "The template asks GitHub for a short-lived OIDC token (permissions: id-token: write) and presents that to Warden — so no long-lived Warden key has to live in your repository secrets. Register the GitHub issuer once under Agents → workload identity. Prefer a key? Set WARDEN_TOKEN as a secret instead." },
+    body: "The template asks GitHub for a short-lived OIDC token (permissions: id-token: write) and presents that to Palivane — so no long-lived Palivane key has to live in your repository secrets. Register the GitHub issuer once under Agents → workload identity. Prefer a key? Set WARDEN_TOKEN as a secret instead." },
   { n: "3", title: "Choose what fails a pull request",
     body: "By default an exploitable workflow fails the check, while hardening debt — unpinned actions, over-broad token permissions — is recorded and warns, so the gate doesn't fail a pull request over problems its author didn't introduce. Settings → CI scan block severity changes that line for your whole org." },
   { n: "4", title: "Sweep every repo (optional · admin)",
@@ -66,7 +66,7 @@ export default function Setup() {
 
       <section className="lp-pagehead">
         <div className="lp-tagline">GET STARTED</div>
-        <h1>Set up Warden</h1>
+        <h1>Set up Palivane</h1>
         <p>Cover one machine in a single command, or your whole fleet with one MDM pack.
            Here’s the whole thing end to end.</p>
       </section>
@@ -108,7 +108,7 @@ export default function Setup() {
         <div className="lp-wrap">
           <h2 className="lp-h2">Uninstalling</h2>
           <p className="lp-sub">Cleanly reverse a single-machine install in three steps —
-             it only removes Warden's own config and leaves your other settings alone.</p>
+             it only removes Palivane's own config and leaves your other settings alone.</p>
           <Steps items={UNINSTALL} />
         </div>
       </section>

@@ -1,4 +1,4 @@
-// Public "Why Warden" page at /why-warden. The differentiators — what sets Warden apart.
+// Public "Why Palivane" page at /why-warden. The differentiators — what sets Palivane apart.
 // Reuses the landing (lp-*) design language.
 import { SiteNav, SiteFooter, Shot } from "./SiteChrome.jsx";
 import { IconShield, IconTarget, IconPlug, IconInbox, IconClipboard, IconAlert } from "./icons.jsx";
@@ -7,12 +7,12 @@ const REASONS = [
   {
     icon: <IconShield />,
     title: "Nothing to install on laptops",
-    body: "No agent to package, roll out, or explain to your developers. If you already use Jamf, Intune, or Group Policy, Warden gives you the config to push. Optional local helpers add extra depth on the machines where you want it — your choice, not a requirement.",
+    body: "No agent to package, roll out, or explain to your developers. If you already use Jamf, Intune, or Group Policy, Palivane gives you the config to push. Optional local helpers add extra depth on the machines where you want it — your choice, not a requirement.",
   },
   {
     icon: <IconTarget />,
     title: "No third-party AI sees your content",
-    body: "Detection is Warden's own engine — it calls no outside AI service to do its job. That keeps it fast, private, and predictable: the same input always gets the same answer. Run it as our hosted service or entirely inside your own infrastructure, and add an AI reviewer for hard cases only if you want one.",
+    body: "Detection is Palivane's own engine — it calls no outside AI service to do its job. That keeps it fast, private, and predictable: the same input always gets the same answer. Run it as our hosted service or entirely inside your own infrastructure, and add an AI reviewer for hard cases only if you want one.",
   },
   {
     icon: <IconInbox />,
@@ -22,17 +22,17 @@ const REASONS = [
   {
     icon: <IconAlert />,
     title: "It actually stops things",
-    body: "Most tools tell you about the leak afterward. Warden can block it as it happens — the browser refuses the paste, the AI tool gets an error, the commit fails. Start in watch-only mode, see what would have been caught, then turn blocking on when you trust it.",
+    body: "Most tools tell you about the leak afterward. Palivane can block it as it happens — the browser refuses the paste, the AI tool gets an error, the commit fails. Start in watch-only mode, see what would have been caught, then turn blocking on when you trust it.",
   },
   {
     icon: <IconPlug />,
     title: "Works with what you already bought",
-    body: "Claude, GPT, or Gemini — Warden doesn't care which you use. It sits alongside GitHub secret scanning and your existing security stack rather than replacing them, and pulls results from scanners you already run into the same place.",
+    body: "Claude, GPT, or Gemini — Palivane doesn't care which you use. It sits alongside GitHub secret scanning and your existing security stack rather than replacing them, and pulls results from scanners you already run into the same place.",
   },
   {
     icon: <IconTarget />,
     title: "Find the problem before you police it",
-    body: "Warden first shows you which AI tools are in use and by whom, so your policy is based on what's really happening. Then you decide: which checks matter, who they apply to, and where you want a hard stop versus a warning.",
+    body: "Palivane first shows you which AI tools are in use and by whom, so your policy is based on what's really happening. Then you decide: which checks matter, who they apply to, and where you want a hard stop versus a warning.",
   },
   {
     icon: <IconClipboard />,
@@ -47,9 +47,9 @@ export default function WhyWarden() {
       <SiteNav />
 
       <section className="lp-pagehead">
-        <div className="lp-tagline">WHY WARDEN</div>
-        <h1>Why teams pick Warden</h1>
-        <p>Your people adopted AI faster than anyone could write a policy for it. Warden was
+        <div className="lp-tagline">WHY PALIVANE</div>
+        <h1>Why teams pick Palivane</h1>
+        <p>Your people adopted AI faster than anyone could write a policy for it. Palivane was
            built for that reality: quick to stand up, honest about what it sees, and able to
            stop a leak rather than just report one.</p>
       </section>
@@ -72,7 +72,7 @@ export default function WhyWarden() {
         <div className="lp-wrap">
           <h2 className="lp-h2">AI assistants get their own rules</h2>
           <p className="lp-sub">An AI assistant with access to your codebase deserves the same
-             limits you would give a contractor. Warden gives each one an identity and a
+             limits you would give a contractor. Palivane gives each one an identity and a
              boundary — which tools, commands, and data it may touch — and enforces it.</p>
           <Shot lead src="/shots/agents.png" alt="AI assistant identity and limits" />
         </div>

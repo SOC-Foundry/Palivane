@@ -68,7 +68,7 @@ export default function Discovery({ tenant, onTenant }) {
         <div>
           <h1 className="page-title">Shadow-AI discovery</h1>
           <p className="page-sub">Every AI tool in use — sanctioned or not — from your logs and from
-             what Warden actually captured. Unlike log-only tools, the exposure column shows the
+             what Palivane actually captured. Unlike log-only tools, the exposure column shows the
              <strong> real sensitive data</strong> each tool received.</p>
         </div>
       </div>
@@ -150,7 +150,7 @@ export default function Discovery({ tenant, onTenant }) {
         <p className="muted" style={{ marginTop: 0 }}>Paste CASB / SWG / proxy / DNS log lines as
            <code> actor,destination[,team]</code> (one per line), or a JSON array of
            <code> {"{actor, destination, team, count}"}</code>. Destinations are matched against
-           Warden's AI-tool catalog.</p>
+           Palivane's AI-tool catalog.</p>
         <textarea rows={7} style={{ width: "100%" }}
           placeholder={"alice@acme.com,chatgpt.com,Sales\nbob@acme.com,https://otter.ai/,Legal"}
           value={text} onChange={(e) => setText(e.target.value)} />

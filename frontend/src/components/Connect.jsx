@@ -72,7 +72,7 @@ export default function Connect({ tenant }) {
   const [expiresInDays, setExpiresInDays] = useState("30"); // blank = never (not recommended)
   const [maxUses, setMaxUses] = useState("");               // blank = unlimited within window
   // Off by default: Claude Code keeps its own sign-in (Pro/Max). On = route prompts
-  // through the Warden gateway and bill the org's provider key.
+  // through the Palivane gateway and bill the org's provider key.
   const [routeGateway, setRouteGateway] = useState(false);
   const origin = window.location.origin;
   // Device installers are free (device_setup); only the MDM policy pack is gated on "mdm".
@@ -166,13 +166,13 @@ export default function Connect({ tenant }) {
       <div className="quickstart">
         <h3>⚡ Quick start — cover your whole org in one step</h3>
         <p className="muted">Most orgs don't need the per-source setup below. Pick how you deliver
-           software to your fleet — Warden generates everything (browser + Claude Code + agent
+           software to your fleet — Palivane generates everything (browser + Claude Code + agent
            tool-calls) already pointed here and pre-configured with this org's policy.</p>
         <label className="muted" style={{ fontSize: 12, display: "block", margin: "4px 0 8px" }}>
           <input type="checkbox" checked={routeGateway}
                  onChange={(e) => setRouteGateway(e.target.checked)}
                  style={{ marginRight: 6 }} />
-          Route Claude Code through the Warden gateway (bills your org's provider key).
+          Route Claude Code through the Palivane gateway (bills your org's provider key).
           Off = devs keep their own claude.ai sign-in (Pro/Max); hooks still monitor either way.
         </label>
         <div className="qs-paths">
@@ -235,7 +235,7 @@ export default function Connect({ tenant }) {
 
       <div className="connect-card">
         <h3>① Browser (claude.ai, ChatGPT, Gemini)</h3>
-        <p className="muted">Install the Warden extension, then push this managed-config policy
+        <p className="muted">Install the Palivane extension, then push this managed-config policy
            (Chrome/Edge enterprise → 3rdparty/extensions/&lt;id&gt;/policy). For a pilot, set the
            same values in the extension's Options.</p>
         <Block text={extPolicy} />
@@ -291,7 +291,7 @@ export default function Connect({ tenant }) {
       <div className="connect-card">
         <h3>⑤ claude-otel telemetry bridge (optional)</h3>
         <p className="muted">Already running <code>claude-otel</code>? <code>warden-otel</code> tails its
-           OTEL log and forwards Claude Code's prompts and tool calls to Warden — a capture plane with
+           OTEL log and forwards Claude Code's prompts and tool calls to Palivane — a capture plane with
            <em> no proxy, CA, or hook</em>. Monitor-only (telemetry is post-hoc, so it observes but can't
            block); depth follows the claude-otel privacy profile.</p>
         <Block text={otelCmd} />

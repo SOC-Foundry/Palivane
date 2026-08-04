@@ -51,7 +51,7 @@ export default function Sessions() {
         <div>
           <h1>Sessions</h1>
           <p className="muted">Unified cross-vendor audit — every actor's activity across
-            all agent tools in one normalized timeline. Warden's retention, not any vendor's cap.</p>
+            all agent tools in one normalized timeline. Palivane's retention, not any vendor's cap.</p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <select value={days} onChange={(e) => setDays(Number(e.target.value))}>

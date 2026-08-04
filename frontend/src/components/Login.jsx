@@ -71,7 +71,7 @@ export default function Login({ onAuthed, onBack }) {
         ? await api.signup(org.trim(), email.trim(), password)
         : await api.login(email.trim(), password, org.trim());
       if (res.mfa_required) { setMfaChallenge(res.challenge); return; }   // second-factor step
-      // Domain capture: the email belongs to an org already on Warden — request queued.
+      // Domain capture: the email belongs to an org already on Palivane — request queued.
       if (res.status === "pending_approval") { setPendingKind("approval"); setPendingOrg(res.org); return; }
       if (res.status === "confirm_email") { setPendingKind("email"); setPendingOrg(res.org); return; }
       // New-org signup with the email plane on — must verify the mailbox first.
@@ -121,18 +121,18 @@ export default function Login({ onAuthed, onBack }) {
     return (
       <div className="login-screen">
         <div className="login-card">
-          <img className="login-logo" src="/warden-emblem.png" alt="Warden" />
-          <div className="login-wordmark">WARDEN</div>
+          <img className="login-logo" src="/warden-emblem.png" alt="Palivane" />
+          <div className="login-wordmark">PALIVANE</div>
           <p className="login-sub">
             {pendingKind === "verify" ? (
               <>Almost there — we emailed a link to verify your address and activate
               <strong> {pendingOrg}</strong>. Click it, then sign in.</>
             ) : pendingKind === "email" ? (
-              <><strong>{pendingOrg}</strong> is already on Warden. We emailed you a
+              <><strong>{pendingOrg}</strong> is already on Palivane. We emailed you a
               confirmation link — click it to verify your address and complete your
               request to join.</>
             ) : (
-              <><strong>{pendingOrg}</strong> is already on Warden, so we sent your request to
+              <><strong>{pendingOrg}</strong> is already on Palivane, so we sent your request to
               its administrators instead of creating a new organization. You can sign in with
               the password you chose once an admin approves you.</>
             )}
@@ -150,8 +150,8 @@ export default function Login({ onAuthed, onBack }) {
     return (
       <div className="login-screen">
         <form className="login-card" onSubmit={submitMfa}>
-          <img className="login-logo" src="/warden-logo.png" alt="Warden" width="76" height="76" />
-          <div className="brand"><span className="logo">◆</span> Warden</div>
+          <img className="login-logo" src="/warden-logo.png" alt="Palivane" width="76" height="76" />
+          <div className="brand"><span className="logo">◆</span> Palivane</div>
           <p className="login-sub">Enter the 6-digit code from your authenticator app (or a recovery code).</p>
           <input autoFocus inputMode="numeric" placeholder="123456" value={mfaCode}
                  onChange={(e) => setMfaCode(e.target.value)} required />
@@ -169,8 +169,8 @@ export default function Login({ onAuthed, onBack }) {
   return (
     <div className="login-screen">
       <form className="login-card" onSubmit={submit}>
-        <img className="login-logo" src="/warden-emblem.png" alt="Warden" />
-        <div className="login-wordmark">WARDEN</div>
+        <img className="login-logo" src="/warden-emblem.png" alt="Palivane" />
+        <div className="login-wordmark">PALIVANE</div>
         <p className="login-sub">
           {mode === "signup" ? "Create your organization" :
            mode === "forgot" ? "We'll email you a password-reset link" :

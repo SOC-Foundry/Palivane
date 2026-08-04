@@ -1,5 +1,5 @@
 // Help — an in-app guide so an admin who logs into the console (and may never see the
-// repo) can understand what Warden does, connect their sources, and read a finding. Content
+// repo) can understand what Palivane does, connect their sources, and read a finding. Content
 // is curated from the repo docs (README / docs/overview / git+cli READMEs) and links out to
 // them for the deep dives. All copy lives here — no backend call, works offline.
 
@@ -45,14 +45,14 @@ export default function Help({ isAdmin = false, onNavigate }) {
       <div className="content-head">
         <div>
           <h1 className="page-title">Help &amp; documentation</h1>
-          <p className="page-sub">What Warden does, how to connect your sources, and how to read a finding.
+          <p className="page-sub">What Palivane does, how to connect your sources, and how to read a finding.
              The full reference lives in the repository docs, linked at the bottom.</p>
         </div>
       </div>
 
-      <Card title="What Warden is"
+      <Card title="What Palivane is"
             sub="An AI security gateway that keeps sensitive data — secrets, PII, source code, and confidential business content — from leaving your org through AI tools, and gives you one console for every path AI data can take.">
-        <p style={{ marginBottom: 0 }}>Warden captures AI-bound traffic across several <strong>planes</strong>. You don't
+        <p style={{ marginBottom: 0 }}>Palivane captures AI-bound traffic across several <strong>planes</strong>. You don't
            need all of them — start with one and add coverage over time. Each finding you
            see in the console came from one of these:</p>
         <ul className="help-list">
@@ -136,7 +136,7 @@ export default function Help({ isAdmin = false, onNavigate }) {
           <li><strong>Git capture plane</strong> — <code>git/README.md</code> (pre-commit, CI, history sweep)</li>
           <li><strong>Endpoint CLIs</strong> — <code>cli/README.md</code> (warden-secrets, warden-import, warden-posture)</li>
         </ul>
-        <p className="muted" style={{ marginBottom: 0 }}>Need something that isn't here? Contact your Warden administrator or the security team.</p>
+        <p className="muted" style={{ marginBottom: 0 }}>Need something that isn't here? Contact your Palivane administrator or the security team.</p>
       </Card>
     </div>
   );
