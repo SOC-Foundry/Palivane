@@ -38,7 +38,7 @@ def test_corpus_loads_and_is_well_formed():
     assert len(corpus) >= 20
     ids = [e.id for e in corpus]
     assert len(ids) == len(set(ids))  # unique
-    assert {e.surface for e in corpus} == {"llm_io", "ai_usage"}
+    assert {"llm_io", "ai_usage", "agent_rules"} <= {e.surface for e in corpus}
     assert all(e.label in ("malicious", "benign") for e in corpus)
 
 
@@ -49,8 +49,23 @@ def test_bundled_corpus_meets_quality_bar():
     assert rep["overall"]["precision"] >= 0.9
     assert rep["overall"]["f1"] >= 0.9
     # Every malicious example should fire at least one expected category.
-    cov = rep["category_coverage"]
-    assert cov["rate"] == 1.0
+    assert rep["category_coverage"]["rate"] == 1.0
+
+
+def test_agent_rules_corpus_gate():
+    # Rules-file backdoor detection must separate real injections from benign rules files
+    # (the corpus includes FP-traps that mention secrets/tools/"do not").
+    rep = build_report(score_corpus(load_corpus()), "suspicious")
+    ar = rep["per_surface"].get("agent_rules")
+    assert ar is not None and ar["support"] >= 12
+    assert ar["precision"] >= 0.9 and ar["recall"] >= 0.9
+
+
+def test_session_correlation_sequence_gate():
+    # The stateful chain detector must be clean on the labeled sequence set (no false
+    # chains, no missed chains). sequences.main() returns 0 only when fp==0 and fn==0.
+    from app.eval.sequences import main as seq_main
+    assert seq_main(["--json"]) == 0
 
 
 def test_report_lists_misclassifications_at_strict_cutoff():
