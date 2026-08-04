@@ -437,6 +437,14 @@ class AgentConfigScan(BaseModel):
     record: bool = True
 
 
+class AgentRulesScan(BaseModel):
+    content: str = Field(min_length=1, max_length=MAX_CONTENT)  # the rules-file contents
+    user: str = ""                    # actor the file belongs to (per-user attribution)
+    path: str = ""                    # e.g. "CLAUDE.md", ".cursor/rules/foo.mdc"
+    tool: str = ""                    # claude-code | cursor | copilot | … (best-effort)
+    record: bool = True
+
+
 class OversharingScan(BaseModel):
     content: str = Field(min_length=1, max_length=MAX_CONTENT)  # the LLM response returned
     # Recipient (the person who asked) — REQUIRED and email-shaped. This identity is the

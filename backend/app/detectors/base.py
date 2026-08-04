@@ -28,6 +28,7 @@ class Surface(str, Enum):
     SECRETS = "secrets"   # Endpoint credential hygiene — secrets at rest on a device
     OVERSHARING = "oversharing"  # Need-to-know: an LLM response returning restricted data
     CI = "ci"             # CI runners — GitHub Actions workflow posture & AI agents in CI
+    AGENT_RULES = "agent_rules"  # Agent instruction files (CLAUDE.md/.cursorrules/skills) — hidden-instruction injection
 
 
 class Category(str, Enum):

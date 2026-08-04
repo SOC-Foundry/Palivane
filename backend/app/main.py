@@ -30,6 +30,7 @@ from .schemas import (
     AnalyzeRequest,
     BatchAnalyzeRequest,
     AgentConfigScan,
+    AgentRulesScan,
     CIScan,
     CodeScanRequest,
     CoverageRequest,
@@ -1538,6 +1539,42 @@ def scan_agent_config(
     item = AnalysisInput(content=body.content, sender=actor,
                          channel=f"{body.tool or 'agent'}-config", surface=Surface.IDE,
                          metadata={"kind": "agent_config", "tool": body.tool})
+    result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
+                          db=db, tenant_id=tenant_id, agent=agent)
+    return {
+        "action": _action_for(result["severity"]),
+        "severity": result["severity"],
+        "risk_score": result["risk_score"],
+        "signals": result["signals"],
+        "remediation": remediation_for(result["signals"]),
+    }
+
+
+@app.post("/api/scan/agent-rules")
+def scan_agent_rules(
+    body: AgentRulesScan,
+    x_warden_token: str = Header(default=""),
+    x_warden_agent: str = Header(default=""),
+    user_agent: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Scan an agent instruction/rules file (CLAUDE.md, .cursorrules, .cursor/rules/*.mdc,
+    AGENTS.md, .github/copilot-instructions.md, a Skill's SKILL.md, agent memory) for a
+    hidden-instruction injection — the 'rules-file backdoor': concealed text (zero-width /
+    comment), exfiltration or hide-from-user directives, and tool-poisoning preambles.
+    These files are authority the agent obeys on every turn but a reviewer skims, so they
+    are a distinct attack surface. Token-gated for the posture sensor / git plane."""
+    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    _enforce_rate(db, tenant_id)
+    actor = body.user or default_actor
+    agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
+    _record_heartbeat(db, tenant_id, actor, "posture", "agent-rules", user_agent)
+    item = AnalysisInput(
+        content=body.content, sender=actor,
+        subject=f"agent-rules: {body.path or 'instructions'}",
+        channel=(body.tool or "agent") + "-rules", surface=Surface.AGENT_RULES,
+        metadata={"kind": "agent_rules", "path": body.path, "tool": body.tool},
+    )
     result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
                           db=db, tenant_id=tenant_id, agent=agent)
     return {
