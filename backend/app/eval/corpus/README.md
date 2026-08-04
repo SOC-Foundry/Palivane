@@ -13,7 +13,8 @@ evaluate and tune detection against their real traffic (no code changes needed).
  "expect_categories": ["phishing"], "note": "why it's labeled this way"}
 ```
 
-- `surface` — `llm_io` | `ai_usage`
+- `surface` — any detection surface: `llm_io` | `ai_usage` | `agent_rules` (rules-file
+  backdoors — CLAUDE.md/.cursorrules/skills) | `mcp` | `ide` | … (`--surface` accepts all)
 - `label` — `malicious` (a finding that *should* be flagged) or `benign`
 - `destination` — `ai_usage` only; maps to the egress target
 - `expect_categories` — optional; the signal categories you'd expect to fire
@@ -27,3 +28,14 @@ Label by **"is this a finding worth flagging?"**, not "is anything notable here"
   data** is low-risk policy noise → `benign`. (Tune the operating cutoff lower if your
   policy treats any unsanctioned use as reportable.)
 - An AI-written but harmless newsletter is `benign` — AI-generation alone is not a threat.
+- An ordinary rules file that *mentions* secrets, tools, or "do not X" is `benign`; only a
+  concealed/exfil/hide-from-user/tool-poisoning directive is a rules-file backdoor.
+
+## Stateful detectors
+
+Single-event scoring runs via `python -m app.eval`. **Session behavioral correlation** is
+cross-event (an attack *chain*), so it has its own labeled sequence set and runner:
+
+```
+python -m app.eval.sequences            # per-scenario chain-detection precision/recall
+```

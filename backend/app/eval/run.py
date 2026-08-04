@@ -19,6 +19,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..detectors.base import Surface
 from ..engine import engine
 from .corpus import Example, load_corpus
 from .metrics import CUTOFF_ORDER, confusion, is_flagged
@@ -126,7 +127,7 @@ def print_report(rep: dict) -> None:
 
 def main(argv: list[str]) -> int:
     p = argparse.ArgumentParser(prog="app.eval", description="Warden detection evaluation")
-    p.add_argument("--surface", choices=["llm_io", "ai_usage"])
+    p.add_argument("--surface", choices=[s.value for s in Surface])
     p.add_argument("--cutoff", choices=CUTOFF_ORDER, default="suspicious")
     p.add_argument("--corpus", help="path to a corpus directory (default: bundled)")
     p.add_argument("--json", action="store_true", help="emit JSON instead of a table")
