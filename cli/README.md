@@ -460,8 +460,8 @@ sets it up, and it has two postures:
 The one-line installer runs `--cli-only` by default:
 
 ```bash
-curl -fsSL https://warden.tachtech.net/install.sh | bash                  # CLI capture (no sudo)
-curl -fsSL https://warden.tachtech.net/install.sh | bash -s -- --desktop  # + desktop apps/browsers
+curl -fsSL https://palivane.tachtech.net/install.sh | bash                  # CLI capture (no sudo)
+curl -fsSL https://palivane.tachtech.net/install.sh | bash -s -- --desktop  # + desktop apps/browsers
 ```
 
 ### Windows
@@ -473,7 +473,7 @@ the WinINET *user* proxy (WinHTTP/services are MDM territory), persistence is a 
 per-user Scheduled Task, and the CLIs get `.cmd` shims in `%USERPROFILE%\.warden\bin`:
 
 ```powershell
-iwr https://warden.tachtech.net/cli/warden-desktop.ps1 -OutFile warden-desktop.ps1
+iwr https://palivane.tachtech.net/cli/warden-desktop.ps1 -OutFile warden-desktop.ps1
 powershell -ExecutionPolicy Bypass -File warden-desktop.ps1 install            # or: install -CliOnly
 ```
 

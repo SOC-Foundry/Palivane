@@ -14,7 +14,7 @@ these will block on every surface. Everything is attributed to your `@tachtech.n
 ---
 
 ## 0. Prereqs
-- [ ] You can sign in at <https://warden.tachtech.net> (email + password; SSO once configured).
+- [ ] You can sign in at <https://palivane.tachtech.net> (email + password; SSO once configured).
 - [ ] Browser zero-config needs extension **v0.6.1** live in the Web Store. If it isn't yet,
       the store build still works — you'll just set the URL in Options once (noted below).
 
@@ -24,7 +24,7 @@ these will block on every surface. Everything is attributed to your `@tachtech.n
 1. [ ] Install **Palivane — Shadow-AI Guard** from the Chrome Web Store.
 2. [ ] Open the toolbar popup:
    - **v0.6.1+:** click **“Sign in to Palivane”** → a tab opens, you authenticate, it closes.
-   - **v0.6.0:** open the extension **Options** first, set URL `https://warden.tachtech.net`,
+   - **v0.6.0:** open the extension **Options** first, set URL `https://palivane.tachtech.net`,
      save, then click **Sign in**.
    - ✅ Popup now shows **Connected as you@tachtech.net**.
 3. [ ] Go to <https://chatgpt.com>, paste the test payload into the composer, press send.
@@ -37,7 +37,7 @@ these will block on every surface. Everything is attributed to your `@tachtech.n
 ## 2. CLI + Claude Code / Cursor  (surface: `llm_io`, plus local hooks)
 1. [ ] Install the CLI and connect (one line):
    ```bash
-   curl -fsSL https://warden.tachtech.net/install.sh | bash
+   curl -fsSL https://palivane.tachtech.net/install.sh | bash
    ```
    - ✅ It installs into `~/.warden/bin`, opens a browser to sign in, then prints success.
 2. [ ] Verify Claude Code was wired:
@@ -48,12 +48,12 @@ these will block on every surface. Everything is attributed to your `@tachtech.n
      its own Pro/Max sign-in), and a `hooks` block referencing `warden-hook` (PreToolUse) +
      `warden-posture`.
    - ✅ If connected with `--route-gateway`: additionally `env.ANTHROPIC_BASE_URL` =
-     `https://warden.tachtech.net` (no `/v1` — the SDK adds it) and `ANTHROPIC_AUTH_TOKEN` set.
+     `https://palivane.tachtech.net` (no `/v1` — the SDK adds it) and `ANTHROPIC_AUTH_TOKEN` set.
 3. [ ] Prove the gateway blocks a leak (deterministic — no model call needed on a block;
    uses the Palivane key directly, so it works in either mode):
    ```bash
    TOK=$(python3 -c "import json;print(json.load(open('$HOME/.claude/settings.json'))['env']['WARDEN_TOKEN'])")
-   curl -s -X POST https://warden.tachtech.net/v1/messages \
+   curl -s -X POST https://palivane.tachtech.net/v1/messages \
      -H "x-api-key: $TOK" -H "anthropic-version: 2023-06-01" -H "content-type: application/json" \
      -d '{"model":"claude-opus-4-8","max_tokens":64,"messages":[{"role":"user","content":"push creds AKIA4YTGH2NBQF7XZP3K / hR8kLm2Xq9vTn4wZbC7yE1sD6fA3jP0uK5gW8iO2"}]}'
    ```
