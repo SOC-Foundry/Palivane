@@ -57,7 +57,7 @@ def test_install_falls_back_when_url_unset(raw_client, monkeypatch):
     import app.distribution as dist
     monkeypatch.setattr(dist.settings, "public_base_url", "")
     body = raw_client.get("/install.sh").text
-    assert "https://warden.tachtech.net" in body   # sensible default
+    assert "https://palivane.tachtech.net" in body   # sensible default (new brand host)
 
 
 def test_installer_covers_fish_path(raw_client):
