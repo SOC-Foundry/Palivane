@@ -1,4 +1,5 @@
 from .base import AnalysisInput, Category, Detector, Signal, Surface
+from .agent_rules import AgentRulesDetector
 from .agent_safety import AgentSafetyDetector
 from .ci_guard import CIGuardDetector
 from .dep_guard import DepGuardDetector
@@ -19,6 +20,7 @@ __all__ = [
     "PromptThreatDetector",
     "ShadowAIDetector",
     "AgentSafetyDetector",
+    "AgentRulesDetector",
     "CIGuardDetector",
     "MCPGuardDetector",
     "OversharingDetector",

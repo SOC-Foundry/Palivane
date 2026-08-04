@@ -114,8 +114,11 @@ edge (where AI traffic actually happens).
 
 Plus a **git / CI plane**: stdlib-only scanners run as a pre-commit hook or GitHub Action —
 `/api/scan/code` (secrets/PII in commits), `/api/scan/deps` (dependency supply-chain, opt-in
-OSV/CVE lookup), `/api/scan/mcp-config` (shadow/malicious MCP servers in `.mcp.json`), and
-`/api/scan/ide-extensions` (known-bad / unapproved editor plugins).
+OSV/CVE lookup), `/api/scan/mcp-config` (shadow/malicious MCP servers in `.mcp.json`),
+`/api/scan/ide-extensions` (known-bad / unapproved editor plugins), and
+`/api/scan/agent-rules` (hidden-instruction injection — the "rules-file backdoor" — in the
+instruction files a coding agent obeys: CLAUDE.md, .cursorrules, .cursor/rules/*.mdc,
+AGENTS.md, copilot-instructions.md, skill SKILL.md).
 
 The gateway and egress proxy also inspect **agentic tool-use over MCP** (surface `mcp`):
 an AI coding agent's tool calls, arguments, and results ride the LLM traffic, so Warden

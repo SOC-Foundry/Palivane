@@ -13,6 +13,9 @@ finding shortly after it happens:
 - MCP server configs → POST /api/scan/mcp-config, from: ~/.claude.json (Claude Code —
   a minimal {"mcpServers": …} view is synthesized; the raw file holds unrelated user
   state and is never posted), ./.mcp.json, VS Code, Cursor, and Copilot CLI user configs.
+- agent instruction/rules files → POST /api/scan/agent-rules, to catch hidden-instruction
+  injection (the "rules-file backdoor"): CLAUDE.md / .cursorrules / .cursor/rules/*.mdc /
+  AGENTS.md / .github/copilot-instructions.md / GEMINI.md / skill SKILL.md files.
 
 Runs are cheap and idempotent: a sha256 cache (~/.warden/posture-cache.json) skips the
 POST when nothing changed, so repeated runs don't spam findings. warden-connect installs
@@ -61,11 +64,75 @@ _AGENT_CONFIGS = (
     ("copilot:config", "~/.copilot/config.json", "copilot"),
 )
 
+# Agent INSTRUCTION/RULES files — steering context the agent obeys every turn, scanned for
+# hidden-instruction injection (the "rules-file backdoor"). Repo-relative files are read
+# from the session's cwd; user-level ones are absolute. (label, relative-to, path, tool).
+# "cwd" = the project the agent runs in; "home" = the developer's user config.
+_RULES_FILES = (
+    ("CLAUDE.md", "cwd", "CLAUDE.md", "claude-code"),
+    ("CLAUDE.local.md", "cwd", "CLAUDE.local.md", "claude-code"),
+    ("~/.claude/CLAUDE.md", "home", "~/.claude/CLAUDE.md", "claude-code"),
+    (".cursorrules", "cwd", ".cursorrules", "cursor"),
+    ("AGENTS.md", "cwd", "AGENTS.md", "codex"),
+    (".github/copilot-instructions.md", "cwd", ".github/copilot-instructions.md", "copilot"),
+    ("GEMINI.md", "cwd", "GEMINI.md", "gemini"),
+)
+# Directories whose files are each scanned (Cursor MDC rules, Claude Code skills/memory).
+_RULES_GLOBS = (
+    (".cursor/rules", "cwd", ".cursor/rules", ("*.mdc",), "cursor"),
+    (".claude/skills", "cwd", ".claude/skills", ("SKILL.md",), "claude-code"),
+    ("~/.claude/skills", "home", "~/.claude/skills", ("SKILL.md",), "claude-code"),
+)
+
 
 def _user() -> str:
     """Best-effort identity for per-user attribution of endpoint findings."""
     import getpass
     return os.getenv("WARDEN_USER") or (getpass.getuser() if hasattr(getpass, "getuser") else "") or ""
+
+
+def collect_agent_rules(cwd: str = ".") -> list[tuple[str, str, str, str]]:
+    """Read agent instruction/rules files present on the device. Returns
+    (label, content, path, tool). Repo-relative files come from `cwd`; user-level ones
+    from home. Bounded read + a cap on directory files so a huge skills tree can't stall
+    a session-start hook."""
+    out: list[tuple[str, str, str, str]] = []
+    seen: set[str] = set()
+
+    def _add(label: str, fspath: str, tool: str) -> None:
+        rp = os.path.realpath(fspath)
+        if rp in seen:
+            return
+        try:
+            with open(fspath, encoding="utf-8", errors="replace") as f:
+                content = f.read(200_000)
+        except Exception:
+            return
+        if content.strip():
+            seen.add(rp)
+            out.append((label, content, label, tool))
+
+    for label, relto, path, tool in _RULES_FILES:
+        base = os.path.join(cwd, path) if relto == "cwd" else os.path.expanduser(path)
+        _add(label, base, tool)
+    for label, relto, path, patterns, tool in _RULES_GLOBS:
+        root = os.path.join(cwd, path) if relto == "cwd" else os.path.expanduser(path)
+        try:
+            import fnmatch
+            hits = 0
+            for dirpath, _dirs, files in os.walk(root):
+                for fn in sorted(files):
+                    if any(fnmatch.fnmatch(fn, pat) for pat in patterns):
+                        rel = os.path.relpath(os.path.join(dirpath, fn), root)
+                        _add(f"{label}/{rel}", os.path.join(dirpath, fn), tool)
+                        hits += 1
+                        if hits >= 100:      # cap: don't walk an enormous skills tree
+                            break
+                if hits >= 100:
+                    break
+        except Exception:
+            continue
+    return out
 
 
 def collect_agent_configs() -> list[tuple[str, str, str]]:
@@ -367,6 +434,10 @@ def run(cfg: dict, cache_path: str = CACHE_PATH, cwd: str = ".",
     for label, content, tool in collect_agent_configs():
         items.append((f"agent:{label}", "/api/scan/agent-config",
                       {"content": content, "tool": tool, "user": user, "record": True}, content))
+    for label, content, path, tool in collect_agent_rules(cwd):
+        items.append((f"rules:{label}", "/api/scan/agent-rules",
+                      {"content": content, "path": path, "tool": tool, "user": user,
+                       "record": True}, content))
 
     for key, api_path, body, canonical in items:
         dig = digest(canonical)
