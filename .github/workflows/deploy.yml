@@ -44,6 +44,7 @@ jobs:
           VPC_SUBNET: ${{ vars.VPC_SUBNET }}
           # Posture + fronting — set as repo/environment variables (not secrets; non-sensitive).
           GATEWAY_ENFORCE: ${{ vars.GATEWAY_ENFORCE }}
+          JUDGE_PROVIDER: ${{ vars.JUDGE_PROVIDER }}
           JUDGE_MODEL: ${{ vars.JUDGE_MODEL }}
           WARDEN_JUDGE_PLAN_GATED: ${{ vars.WARDEN_JUDGE_PLAN_GATED }}
           WARDEN_ALLOW_SIGNUP: ${{ vars.WARDEN_ALLOW_SIGNUP }}
