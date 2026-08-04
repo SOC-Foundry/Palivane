@@ -206,9 +206,11 @@ export default function HowItWorks() {
             <IconShield width={22} height={22} />
             <div>
               <strong>Offline-first — the judge is additive.</strong> Everything above runs with no API
-              key and no outbound call: fast, private, deterministic. Connect a frontier model (Claude,
+              key and no outbound call: fast, private, deterministic. Add a frontier model (Claude,
               GPT, or Gemini) and the LLM judge reads content like an analyst for the novel cases the
-              rules miss — turn it off for data-residency and the engine still fully works.
+              rules miss — point it at a Claude Pro or Max subscription you already have (no API key,
+              no metered billing), or bring your own provider key. Turn it off for data-residency and
+              the engine still fully works.
             </div>
             <a className="primary-btn slim" href="/#signin" style={{ textDecoration: "none" }}>Open the console →</a>
           </div>
