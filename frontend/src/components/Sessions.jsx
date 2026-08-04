@@ -59,6 +59,14 @@ export default function Sessions() {
             <option value={7}>Last 7 days</option>
             <option value={30}>Last 30 days</option>
           </select>
+          <button type="button" className="mini-btn"
+                  onClick={() => api.downloadAudit(days, "jsonl").catch((e) => setErr(String(e.message || e)))}>
+            Export JSONL
+          </button>
+          <button type="button" className="mini-btn"
+                  onClick={() => api.downloadAudit(days, "cef").catch((e) => setErr(String(e.message || e)))}>
+            Export CEF
+          </button>
           <button type="button" className="mini-btn" onClick={load} disabled={busy}>
             <IconRefresh /> Refresh
           </button>

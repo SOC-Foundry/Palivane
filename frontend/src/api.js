@@ -163,6 +163,20 @@ export const api = {
   auditSessions: (days = 7) => req(`/audit/sessions?days=${days}`),
   auditTimeline: (actor, days = 7) =>
     req(`/audit/timeline?actor=${encodeURIComponent(actor)}&days=${days}`),
+  // Downloads the normalized cross-vendor audit as a file (jsonl | cef) — raw text, not JSON.
+  downloadAudit: async (days = 7, format = "jsonl") => {
+    const headers = {};
+    const token = getToken();
+    if (token) headers.authorization = `Bearer ${token}`;
+    const res = await fetch(`${BASE}/audit/export?days=${days}&format=${format}`, { headers });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `warden-audit.${format === "cef" ? "cef" : "jsonl"}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  },
   judgeKey: () => req("/judge-key"),
   setJudgeKey: (payload) => req("/judge-key", { method: "PUT", body: JSON.stringify(payload) }),
   deleteJudgeKey: () => req("/judge-key", { method: "DELETE" }),

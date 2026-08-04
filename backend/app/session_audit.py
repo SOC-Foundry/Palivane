@@ -17,6 +17,7 @@ window, the same key the behavioral-correlation engine uses.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
@@ -137,3 +138,39 @@ def timeline(db: Session, tenant_id: int, actor: str, days: int = 7,
                     Finding.last_seen >= since)
             .order_by(Finding.last_seen.desc()).limit(min(limit, 2000)).all())
     return [normalize(f) for f in rows]
+
+
+EXPORT_FORMATS = ("jsonl", "cef")
+
+
+def export(db: Session, tenant_id: int, org: str, actor: str = "", days: int = 7,
+           fmt: str = "jsonl", limit: int = 5000) -> str:
+    """Serialize the normalized cross-vendor audit trail for a SIEM/data lake — the whole
+    tenant's activity, or one actor's — as newline-delimited JSON or CEF. This is the same
+    normalized shape the console shows; retention is Warden's, so it spans past any single
+    vendor's log cap. Chronological (oldest first — a timeline a SIEM appends to)."""
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max(1, days))
+    q = db.query(Finding).filter(Finding.tenant_id == tenant_id, Finding.sender != "",
+                                 Finding.last_seen >= since)
+    if actor:
+        q = q.filter(Finding.sender == actor)
+    rows = q.order_by(Finding.last_seen.asc()).limit(min(limit, 20000)).all()
+    events = [normalize(f) for f in rows]
+
+    if fmt == "cef":
+        from .siem import _cef
+        lines = []
+        for e in events:
+            lines.append(_cef({
+                "vendor": "TachTech", "product": "Warden",
+                "categories": e["categories"] or [e["surface"]],
+                "subject": f"[{e['vendor']}] {e['action']}",
+                "severity": e["severity"], "surface": e["surface"],
+                "actor": e["actor"], "risk_score": e["risk_score"],
+                "finding_id": e["finding_id"], "org": org,
+                "top_signals": [{"title": "stages", "evidence": ", ".join(e["stages"])}]
+                if e["stages"] else [],
+            }))
+        return "\n".join(lines)
+    # jsonl (default): the normalized event verbatim, one per line
+    return "\n".join(json.dumps({**e, "org": org}) for e in events)

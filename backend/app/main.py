@@ -2045,6 +2045,24 @@ def audit_timeline(actor: str, current: User = Depends(require_admin),
             "events": session_audit.timeline(db, current.tenant_id, actor, days, limit)}
 
 
+@app.get("/api/audit/export")
+def audit_export(current: User = Depends(require_admin), db: Session = Depends(get_db),
+                 days: int = 7, actor: str = "", format: str = "jsonl"):
+    """Export the normalized cross-vendor audit trail for a SIEM / data lake — the whole
+    tenant's agent activity (or one actor's) over the window, as newline-delimited JSON
+    (`jsonl`) or `cef`. Same normalized shape as the console, retained on Warden's schedule
+    (past any single vendor's log cap). Downloads as a file."""
+    from fastapi.responses import PlainTextResponse
+    from . import session_audit
+    fmt = format if format in session_audit.EXPORT_FORMATS else "jsonl"
+    tenant = db.get(Tenant, current.tenant_id)
+    body = session_audit.export(db, current.tenant_id, org=(tenant.slug if tenant else ""),
+                                actor=actor, days=days, fmt=fmt)
+    ext, media = ("cef", "text/plain") if fmt == "cef" else ("jsonl", "application/x-ndjson")
+    return PlainTextResponse(body, media_type=media, headers={
+        "Content-Disposition": f'attachment; filename="warden-audit.{ext}"'})
+
+
 @app.post("/api/discovery/ingest")
 def discovery_ingest(body: DiscoveryIngest, current: User = Depends(require_admin),
                      db: Session = Depends(get_db)):

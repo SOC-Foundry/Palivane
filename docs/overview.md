@@ -132,6 +132,8 @@ trail — every event mapped to a common shape (when / who / which vendor tool /
 verdict / kill-chain stage), grouped per actor into sessions with a rollup (vendors
 touched, event count, stages seen, peak severity, whether an attack chain fired). One
 timeline across every agent product, retained on Warden's schedule — not any vendor's cap.
+Exportable to a SIEM / data lake via `GET /api/audit/export` (newline-delimited JSON or
+CEF; whole-tenant or per-actor) and from the console's Export buttons.
 
 **Session behavioral correlation** (surface `session`): every detector above scores one
 event, but the dangerous pattern is a *sequence* — an agent reads credentials, runs a
