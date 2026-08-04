@@ -120,6 +120,15 @@ OSV/CVE lookup), `/api/scan/mcp-config` (shadow/malicious MCP servers in `.mcp.j
 instruction files a coding agent obeys: CLAUDE.md, .cursorrules, .cursor/rules/*.mdc,
 AGENTS.md, copilot-instructions.md, skill SKILL.md).
 
+**Session behavioral correlation** (surface `session`): every detector above scores one
+event, but the dangerous pattern is a *sequence* — an agent reads credentials, runs a
+shell command, then sends data out. After each finding is stored, Warden looks across the
+same actor's recent activity (a rolling `WARDEN_SESSION_WINDOW_MIN`-minute window), maps
+each event to a kill-chain stage (recon → manipulation → collection → execution →
+exfiltration), and when the window crosses into a payoff stage across **multiple events**
+it records one escalated `session_correlation` finding scoring the *chain* — the Nx
+"s1ngularity" shape that no single event trips. On by default (`WARDEN_SESSION_CORRELATION`).
+
 The gateway and egress proxy also inspect **agentic tool-use over MCP** (surface `mcp`):
 an AI coding agent's tool calls, arguments, and results ride the LLM traffic, so Warden
 catches sensitive-file access, dangerous commands, tool poisoning, and untrusted servers —

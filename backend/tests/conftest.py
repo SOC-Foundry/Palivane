@@ -21,6 +21,12 @@ from app.main import app
 def _isolate_warden_state(tmp_path, monkeypatch):
     """Keep capture-plane circuit-breaker state out of the real ~/.warden during tests."""
     monkeypatch.setenv("WARDEN_STATE_DIR", str(tmp_path / "warden-state"))
+    # Session correlation is a global, default-on side effect (it writes an extra
+    # correlated finding when an actor's events form an attack chain). Default it OFF so
+    # unrelated tests get a clean per-event baseline; the correlation tests opt in
+    # explicitly with their own monkeypatch.
+    from app.config import settings as _settings
+    monkeypatch.setattr(_settings, "session_correlation", False)
 
 
 @pytest.fixture

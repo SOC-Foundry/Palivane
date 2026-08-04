@@ -29,6 +29,11 @@ class Settings:
     # feature (see app/plans.py). Self-hosted leaves this off (default): the operator sets
     # their own provider key and the judge runs for everyone whenever a key is configured.
     judge_plan_gated: bool = os.getenv("WARDEN_JUDGE_PLAN_GATED", "").lower() in ("1", "true", "yes")
+    # Session behavioral correlation: after a finding is stored, look across the actor's
+    # recent activity for an escalating attack CHAIN (recon → collection → exfil) that no
+    # single event trips. On by default; window is how far back to look (minutes).
+    session_correlation: bool = os.getenv("WARDEN_SESSION_CORRELATION", "true").lower() in ("1", "true", "yes")
+    session_window_min: int = int(os.getenv("WARDEN_SESSION_WINDOW_MIN", "30"))
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./warden.db")
     cors_origins: str = os.getenv("CORS_ORIGINS", "http://localhost:5173")
     # Reject request bodies larger than this (DoS/OOM guard); ~12 MB default.
