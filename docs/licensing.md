@@ -1,6 +1,6 @@
 # Licensing — vendor runbook
 
-How Warden (the vendor) grants Team / Enterprise tiers. Two mechanisms, one per
+How Palivane (the vendor) grants Team / Enterprise tiers. Two mechanisms, one per
 deployment model:
 
 | Deployment | The license is… | You grant it with… |
@@ -40,7 +40,7 @@ only; the plan change is always set-plan / a license.
 The Ed25519 **signing key** lives only in Secret Manager
 (`warden-license-signing-key`, project `erudite-calling-502022-k6`) — never in the
 repo, image, or a customer environment. The matching public key is embedded in
-`app/licensing.py`, so every Warden build can verify but only the vendor can sign.
+`app/licensing.py`, so every Palivane build can verify but only the vendor can sign.
 
 **Issue + record it in the registry** (short-term + renewal model — this is what you
 almost always want, because it makes the license visible and revocable):

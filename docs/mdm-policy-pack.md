@@ -1,9 +1,9 @@
 # MDM policy pack — agentless enforcement
 
-Warden's `/api/scan/*` endpoints *detect* risky MCP servers, dependencies, and IDE
+Palivane's `/api/scan/*` endpoints *detect* risky MCP servers, dependencies, and IDE
 extensions. This runbook covers the **enforcement** side: the config your MDM pushes to
-managed devices so policy is applied **with no Warden agent on the box**. The OS, editor,
-and browser do the enforcing; Warden only generates the config.
+managed devices so policy is applied **with no Palivane agent on the box**. The OS, editor,
+and browser do the enforcing; Palivane only generates the config.
 
 > Everything here is applied by your MDM (Jamf / Intune / Group Policy). If you can't use
 > an MDM, the same files can be applied by hand for a pilot.
@@ -24,10 +24,10 @@ It returns these artifacts (write each to a file):
 | --- | --- |
 | `README.txt` | Summary of the pack + your backend/proxy values |
 | `vscode-extensions.json` | VS Code `extensions.allowed` — allow approved, block known-bad |
-| `macos-proxy.mobileconfig` | macOS system proxy → the Warden egress proxy |
-| `windows-proxy.reg` | Windows system proxy → the Warden egress proxy |
+| `macos-proxy.mobileconfig` | macOS system proxy → the Palivane egress proxy |
+| `windows-proxy.reg` | Windows system proxy → the Palivane egress proxy |
 | `chrome-edge-forcelist.txt` | `ExtensionInstallForcelist` value for the browser extension. Defaults to the **Chrome Web Store** (extension published there — Unlisted is fine). Pass `?ext_update_url=…` (+ `?ext_crx_url=…`) to `/api/policy-pack` for a **self-hosted CRX** with no Web Store submission (managed devices only) — that also emits `extension-updates.xml` below. |
-| `chrome-extension-settings.json` | Chrome/Edge **`ExtensionSettings`** to govern *third-party* browser extensions — including agentic AI ones (e.g. Claude for Chrome) that Warden's own extension can't inspect. Blocks unsanctioned AI extensions by ID and/or keeps permitted ones off sensitive origins (`runtime_blocked_hosts`); Warden's extension is always force-installed. Query params: `?browser_ext_lockdown=true` (deny-all + allowlist), `?browser_ext_blocklist=`/`?browser_ext_allowlist=` (comma-sep IDs), `?browser_ext_blocked_hosts=`. |
+| `chrome-extension-settings.json` | Chrome/Edge **`ExtensionSettings`** to govern *third-party* browser extensions — including agentic AI ones (e.g. Claude for Chrome) that Palivane's own extension can't inspect. Blocks unsanctioned AI extensions by ID and/or keeps permitted ones off sensitive origins (`runtime_blocked_hosts`); Palivane's extension is always force-installed. Query params: `?browser_ext_lockdown=true` (deny-all + allowlist), `?browser_ext_blocklist=`/`?browser_ext_allowlist=` (comma-sep IDs), `?browser_ext_blocked_hosts=`. |
 | `extension-updates.xml` | *(self-hosted only)* Omaha update manifest to host next to your signed `.crx`; the forcelist points at its URL. |
 | `claude-managed-settings.json` | Claude Code `managed-settings.json`: Route C hooks (warden-hook on PreToolUse **and UserPromptSubmit** — tool calls + the typed prompt, which nothing network-side sees under subscription auth — plus warden-posture); subscription sign-in by default (`forceLoginMethod`), gateway routing with `route_gateway=true` |
 | `openai.env` | Environment vars (`OPENAI_BASE_URL`) routing OpenAI SDK/CLI clients through the gateway — agentless, no CA needed. Does **not** cover Codex under ChatGPT-subscription auth — that's `codex-hooks.json` |
@@ -60,7 +60,7 @@ curl -s "https://warden.example.com/api/policy-pack?..." -H "Authorization: Bear
 ## 2. Deploy the CA first (required)
 
 TLS inspection — and therefore MCP/AI-traffic inspection through the egress proxy — needs
-your corporate/egress-proxy **root CA** trusted on the device. Warden doesn't generate the
+your corporate/egress-proxy **root CA** trusted on the device. Palivane doesn't generate the
 cert (it's yours); deploy it to the **system** trust store:
 
 - **Jamf / Intune (macOS):** a *Certificate* payload in a configuration profile.
@@ -71,7 +71,7 @@ cert (it's yours); deploy it to the **system** trust store:
 Without the CA the proxy **fails open** (traffic flows uninspected). Cert-pinned clients
 (e.g. Cursor's chat endpoint) bypass inspection regardless — that's expected.
 
-## 3. System proxy → the Warden egress proxy
+## 3. System proxy → the Palivane egress proxy
 
 Routes egress through the proxy so MCP + AI traffic is inspected (and enforced).
 
@@ -115,7 +115,7 @@ can't *recommend* a banned extension either.
 - **Chrome:** policy `ExtensionInstallForcelist` (Google Admin, Intune ADMX, or GPO).
 - **Edge:** same policy name under the Edge ADMX, with the Edge Add-ons update URL.
 
-This force-installs the Warden extension; combine with the per-tenant config via managed
+This force-installs the Palivane extension; combine with the per-tenant config via managed
 storage (the `/api/provision` installer emits that block prefilled — see
 [`extension/README.md`](../extension/README.md)). Push an **`enrollToken`** (`et_…`) rather
 than a static ingest `token` and the extension self-enrolls its own per-device key,
@@ -125,14 +125,14 @@ no re-push.
 ## 6. Verify
 
 - **Proxy:** on a managed device, an AI/MCP request should appear as a finding in the
-  console; a blocked one returns the Warden error.
+  console; a blocked one returns the Palivane error.
 - **CA:** `curl https://api.anthropic.com` through the proxy succeeds (no cert error).
 - **VS Code:** installing a non-approved extension is refused by the editor.
-- **Browser:** the Warden extension appears as *installed by your organization*.
+- **Browser:** the Palivane extension appears as *installed by your organization*.
 
 ## Claude Code hooks (MDM-pushable, same model)
 
-The pack now generates this for you: **`claude-managed-settings.json`** carries Warden's
+The pack now generates this for you: **`claude-managed-settings.json`** carries Palivane's
 **local planes** — `PreToolUse` + `UserPromptSubmit` hooks (`warden-hook` — pre-execution
 tool-call inspection, and the typed prompt scanned before it leaves the device) and a
 `SessionStart` hook (`warden-posture` — device drift). By default Claude Code keeps
@@ -145,7 +145,7 @@ monitor mode. The same model covers the other agent CLIs: `codex-hooks.json`
 `copilot-hooks.json` (`warden-copilot-hook` — note Copilot's inverse geometry: prompts
 observe-only, tool calls deniable). Generate the pack with
 `route_gateway=true` (console checkbox or query param) to instead route prompts through the
-Warden gateway (`ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`), billing the org's provider
+Palivane gateway (`ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`), billing the org's provider
 key. Deploy it to Claude Code's managed-settings path (macOS `/Library/Application
 Support/ClaudeCode/`, Linux `/etc/claude-code/`, Windows `C:\Program Files\ClaudeCode\`),
 push the two scripts to the referenced paths with your MDM's file-deployment, and — in
@@ -154,7 +154,7 @@ gateway mode — replace the `ak_` placeholder with each developer's key (or wir
 self-healing per-device key). See
 [`docs/claude-deployment.md`](claude-deployment.md) (Route C) for the field-by-field
 breakdown. Same philosophy as the rest of the pack: config the app enforces, no resident
-Warden agent.
+Palivane agent.
 
 ## OpenAI & Gemini clients (gateway redirect)
 
@@ -165,7 +165,7 @@ gateway redirect:
 
 - **`openai.env`** — `OPENAI_BASE_URL` (and the legacy `OPENAI_API_BASE`) pointed at the
   gateway's OpenAI-compatible `/v1/chat/completions`. Push as machine/user env via MDM;
-  agentless, no CA required. Set `OPENAI_API_KEY` to each user's `ak_` Warden key.
+  agentless, no CA required. Set `OPENAI_API_KEY` to each user's `ak_` Palivane key.
 - **`gemini.txt`** — Gemini's SDKs don't honor a standard base-URL env var, so the **system
   proxy is Gemini's primary agentless capture**. Where a client is code-configurable, the
   file gives the google-genai `http_options(base_url=…)` snippet pointing at the gateway's
@@ -174,9 +174,9 @@ gateway redirect:
 ## What this does and doesn't cover
 
 - ✅ Enforces the proxy, the extension install, the editor allowlist, and CA trust — all by
-  config, no Warden agent.
+  config, no Palivane agent.
 - ⚠️ **Gathering** a live per-device inventory (what's installed/running right now) needs
-  your MDM's inventory feed — Warden can *vet* that list (`/api/scan/ide-extensions`) but
+  your MDM's inventory feed — Palivane can *vet* that list (`/api/scan/ide-extensions`) but
   doesn't collect it (on developer machines, [`warden-posture`](claude-deployment.md)
   closes most of this gap by reporting installed IDE extensions and MCP configs).
   Cert-pinned clients bypass TLS inspection — inherent to the network plane; the Claude

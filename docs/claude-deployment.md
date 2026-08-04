@@ -1,4 +1,4 @@
-# Deploying Warden for Claude (browser, Claude Code, desktop)
+# Deploying Palivane for Claude (browser, Claude Code, desktop)
 
 This guide covers governing the three ways your org uses Claude:
 
@@ -8,7 +8,7 @@ This guide covers governing the three ways your org uses Claude:
 | **Claude Code (CLI/IDE)** | `api.anthropic.com` via the CLI | LLM gateway (or proxy) | [2](#2-claude-code) |
 | **Claude desktop app** | its own HTTPS to Anthropic | Egress proxy | [3](#3-claude-desktop-app) |
 
-All three feed the same Warden engine, tenant, and dashboard. Each call is scored for
+All three feed the same Palivane engine, tenant, and dashboard. Each call is scored for
 **prompt injection / jailbreak / exfiltration** (attacks on the model) and **PII /
 secrets** (data leaving), and either recorded (monitor) or blocked inline (enforce).
 
@@ -16,7 +16,7 @@ secrets** (data leaving), and either recorded (monitor) or blocked inline (enfor
 
 ## Prerequisites (once)
 
-1. **Run Warden.** From the repo root:
+1. **Run Palivane.** From the repo root:
    ```bash
    cp .env.docker.example .env       # set WARDEN_SECRET_KEY (openssl rand -hex 32)
    docker compose up --build         # API+UI at http://<host>:8080 (8090 in our dev setup)
@@ -136,7 +136,7 @@ curl -X POST https://warden.corp.example.com/api/apikeys \
 {
   "env": {
     "ANTHROPIC_BASE_URL": "https://warden.corp.example.com",
-    "ANTHROPIC_AUTH_TOKEN": "ak_<the developer's Warden key>"
+    "ANTHROPIC_AUTH_TOKEN": "ak_<the developer's Palivane key>"
   }
 }
 ```
@@ -198,7 +198,7 @@ Route A:
 {
   "env": {
     "ANTHROPIC_BASE_URL": "https://warden.corp.example.com",
-    "ANTHROPIC_AUTH_TOKEN": "ak_<the developer's Warden key>",
+    "ANTHROPIC_AUTH_TOKEN": "ak_<the developer's Palivane key>",
     "WARDEN_URL": "https://warden.corp.example.com",
     "WARDEN_TOKEN": "ak_<the same key>"
   },
@@ -241,7 +241,7 @@ and MDM-deployable). Linux community builds are out of scope.
 > Scope note: this is the awkward surface. Prefer governing Claude via the **gateway**
 > (Claude Code / SDKs) and the **browser extension** — those cooperate at the app layer.
 > Use the desktop proxy only where you must, and lean on your **existing corporate
-> proxy/SWG** if you already run one rather than standing up a per-device Warden proxy.
+> proxy/SWG** if you already run one rather than standing up a per-device Palivane proxy.
 
 ### Run the proxy (once, near your egress)
 ```bash
@@ -265,7 +265,7 @@ mitmdump -s proxy/warden_addon.py --listen-port 8081
    → Details → Proxies → Secure Web Proxy (HTTPS)** = `PROXY_HOST:8081`.
 3. Fully quit and reopen Claude Desktop → send a fake secret (`SSN 123-45-6789
    AKIAABCDEFGHIJKLMNOP`) → it should be blocked; the request shows in the proxy log and a
-   finding appears in Warden.
+   finding appears in Palivane.
 
 **Windows**
 1. Import the CA to Trusted Root:
@@ -289,10 +289,10 @@ proxy, so no per-app config.
 - **Certificate pinning is the wildcard.** The proxy needs TLS inspection; if Claude
   Desktop pins `api.anthropic.com`, it refuses the inspected cert and either errors or
   bypasses — unfixable at the network layer. **Confirm with the single-machine test before
-  committing to a fleet rollout.** If a chat *works but Warden sees nothing*, the app is
+  committing to a fleet rollout.** If a chat *works but Palivane sees nothing*, the app is
   bypassing the proxy (routing/config); if it *fails to connect after the CA is trusted*,
   it's pinning.
-- **Fail-open:** if Warden is unreachable the proxy lets traffic through, so an outage
+- **Fail-open:** if Palivane is unreachable the proxy lets traffic through, so an outage
   never blocks the company's AI access.
 - **Hard-deny posture:** the proxy scans the full transcript, so a secret can't slip
   through on a later replayed turn; the user starts a new chat to clear it (blocks return

@@ -1,4 +1,4 @@
-# Warden pilot smoke test (no-MDM, self-serve)
+# Palivane pilot smoke test (no-MDM, self-serve)
 
 A ~15-minute checklist to prove the three capture planes work on a real machine before
 rolling out to the team. Run it on a Mac (primary) or Linux. Each step says what to do,
@@ -21,14 +21,14 @@ these will block on every surface. Everything is attributed to your `@tachtech.n
 ---
 
 ## 1. Browser extension  (surface: `ai_usage`)
-1. [ ] Install **Warden — Shadow-AI Guard** from the Chrome Web Store.
+1. [ ] Install **Palivane — Shadow-AI Guard** from the Chrome Web Store.
 2. [ ] Open the toolbar popup:
-   - **v0.6.1+:** click **“Sign in to Warden”** → a tab opens, you authenticate, it closes.
+   - **v0.6.1+:** click **“Sign in to Palivane”** → a tab opens, you authenticate, it closes.
    - **v0.6.0:** open the extension **Options** first, set URL `https://warden.tachtech.net`,
      save, then click **Sign in**.
    - ✅ Popup now shows **Connected as you@tachtech.net**.
 3. [ ] Go to <https://chatgpt.com>, paste the test payload into the composer, press send.
-   - ✅ A **“Warden blocked this message”** modal appears; the prompt never sends.
+   - ✅ A **“Palivane blocked this message”** modal appears; the prompt never sends.
 4. [ ] Confirm in the console → **Findings**: a new `ai_usage` finding, destination
    chatgpt.com, severity critical, attributed to your email.
 
@@ -50,16 +50,16 @@ these will block on every surface. Everything is attributed to your `@tachtech.n
    - ✅ If connected with `--route-gateway`: additionally `env.ANTHROPIC_BASE_URL` =
      `https://warden.tachtech.net` (no `/v1` — the SDK adds it) and `ANTHROPIC_AUTH_TOKEN` set.
 3. [ ] Prove the gateway blocks a leak (deterministic — no model call needed on a block;
-   uses the Warden key directly, so it works in either mode):
+   uses the Palivane key directly, so it works in either mode):
    ```bash
    TOK=$(python3 -c "import json;print(json.load(open('$HOME/.claude/settings.json'))['env']['WARDEN_TOKEN'])")
    curl -s -X POST https://warden.tachtech.net/v1/messages \
      -H "x-api-key: $TOK" -H "anthropic-version: 2023-06-01" -H "content-type: application/json" \
      -d '{"model":"claude-opus-4-8","max_tokens":64,"messages":[{"role":"user","content":"push creds AKIA4YTGH2NBQF7XZP3K / hR8kLm2Xq9vTn4wZbC7yE1sD6fA3jP0uK5gW8iO2"}]}'
    ```
-   - ✅ Response is `400` with `"Blocked by Warden: secret_leak … (risk …/critical)"`.
+   - ✅ Response is `400` with `"Blocked by Palivane: secret_leak … (risk …/critical)"`.
 4. [ ] Real Claude Code: start `claude`, ask it to do something that would echo the test
-   payload into a file. ✅ It surfaces the same Warden block instead of sending.
+   payload into a file. ✅ It surfaces the same Palivane block instead of sending.
 5. [ ] (Cursor, if installed) confirm `~/.cursor/hooks.json` has a `warden-cursor-hook` entry.
 6. [ ] Console → **Findings**: an `llm_io` finding from the gateway, attributed to you.
 
@@ -71,7 +71,7 @@ these will block on every surface. Everything is attributed to your `@tachtech.n
    ```bash
    warden-desktop install
    ```
-   - ✅ Ends with “Desktop AI apps now route through Warden.”
+   - ✅ Ends with “Desktop AI apps now route through Palivane.”
    - [ ] `warden-desktop status` → `running`.
 2. [ ] Open the **Claude desktop app** (or ChatGPT desktop), send a prompt containing the
    test payload.

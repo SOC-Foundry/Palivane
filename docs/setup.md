@@ -1,6 +1,6 @@
-# Setting up Warden
+# Setting up Palivane
 
-A start-to-finish guide to getting Warden running — from zero to a live console with
+A start-to-finish guide to getting Palivane running — from zero to a live console with
 findings streaming in. Pick one of two paths:
 
 - **[Docker](#path-a--docker-whole-stack)** — Postgres + backend + nginx-served console,
@@ -11,7 +11,7 @@ findings streaming in. Pick one of two paths:
 Once it's up, jump to [first sign-in](#3-first-sign-in), then
 [connect a source](#4-connect-a-source) so real traffic flows in.
 
-> Deploying Warden in front of **Claude** specifically (browser extension, Claude Code,
+> Deploying Palivane in front of **Claude** specifically (browser extension, Claude Code,
 > Claude desktop)? After the install below, follow the surface-by-surface
 > [Claude deployment guide](./claude-deployment.md). For the auth/token model, see
 > [tokens & identity](./tokens-and-identity.md).
@@ -20,8 +20,8 @@ Once it's up, jump to [first sign-in](#3-first-sign-in), then
 
 ## Architecture — where everything runs
 
-Warden is **self-hosted**: you run it on your own infrastructure, and findings stay in
-your database. There's no Warden cloud. It's two layers — **one server you host**, and
+Palivane is **self-hosted**: you run it on your own infrastructure, and findings stay in
+your database. There's no Palivane cloud. It's two layers — **one server you host**, and
 **capture planes at the edge** that feed it.
 
 ```
@@ -58,15 +58,15 @@ depends on how that person reaches AI — and it's all admin-deployed and zero-t
 
 | AI is used via… | On the end-user machine | How it's deployed | User action |
 | --- | --- | --- | --- |
-| First-party apps, Claude Code, OpenAI/Gemini SDKs | **Nothing installed** — just a base-URL config pointing at Warden | Env var, or Claude Code `managed-settings.json` pushed by MDM | None |
+| First-party apps, Claude Code, OpenAI/Gemini SDKs | **Nothing installed** — just a base-URL config pointing at Palivane | Env var, or Claude Code `managed-settings.json` pushed by MDM | None |
 | Browser AI (claude.ai, ChatGPT, Gemini) | A browser **extension** in Chrome/Edge | **Force-installed** via MDM / group policy (`ExtensionInstallForcelist`) + managed config | None |
 | Desktop apps, IDE assistants, CLIs | **No app** — a system-proxy setting + your corporate **root CA** (usually already trusted on managed fleets) | Pushed via MDM / PAC file; the proxy itself runs as a service near egress, not on each machine | None |
 
-All three **fail open** — if Warden is unreachable, the user's tools keep working. The
+All three **fail open** — if Palivane is unreachable, the user's tools keep working. The
 catch is reach: these cover **managed / on-network devices**. Unmanaged or personal
 devices can't be captured this way — you find that gap with
 [coverage reconciliation](../README.md#coverage-reconciliation-finding-the-gap) (compare
-your IdP/CASB "who used AI" list against who Warden actually captured).
+your IdP/CASB "who used AI" list against who Palivane actually captured).
 
 ---
 
@@ -77,7 +77,7 @@ your IdP/CASB "who used AI" list against who Warden actually captured).
 | Docker | Docker Engine + the Compose plugin (`docker compose version`). |
 | From source | Python 3.11+ and Node 18+ (`python3 --version`, `node --version`). |
 
-An **LLM API key is optional** — Warden runs fully on its offline regex/heuristic
+An **LLM API key is optional** — Palivane runs fully on its offline regex/heuristic
 detectors with no key. To enrich detection with the LLM judge, the **recommended default
 is `JUDGE_PROVIDER=claude-cli`**: verdicts run through the machine's signed-in **Claude
 Code CLI**, so the Claude Pro/Max/Team subscription your team already has carries the
@@ -222,10 +222,10 @@ subscription-compatible, no config files. Flags:
 | `--desktop` | Also govern desktop AI apps (Claude / ChatGPT) + browsers **system-wide** (system proxy + root CA; asks for sudo). |
 | `--no-proxy` | Editor/CLI hooks only; skip the egress proxy. |
 
-Finish the browser surface by installing the Warden extension (Chrome/Edge) and clicking
-**Sign in to Warden** in its popup. Re-running the installer — or just `warden connect` —
+Finish the browser surface by installing the Palivane extension (Chrome/Edge) and clicking
+**Sign in to Palivane** in its popup. Re-running the installer — or just `warden connect` —
 **upgrades the capture-plane scripts in place**, so shipping a fix to a small fleet is just
-"have everyone re-run it." To remove Warden from a machine, see
+"have everyone re-run it." To remove Palivane from a machine, see
 [Uninstalling](#uninstalling-from-a-machine).
 
 For pilots or hand-tuning, the per-source cards below (and the table here) let you wire up
@@ -233,7 +233,7 @@ one plane at a time. Pick whichever matches how your org uses AI:
 
 | AI is used via… | Capture plane | Setup |
 | --- | --- | --- |
-| Your own apps / CLIs / Claude Code / Codex CLI | **LLM gateway** (`/v1`) | Point the client's base URL at Warden — see below. |
+| Your own apps / CLIs / Claude Code / Codex CLI | **LLM gateway** (`/v1`) | Point the client's base URL at Palivane — see below. |
 | Browser web UIs (claude.ai, chatgpt.com, Microsoft Copilot) | **Browser extension** | [`extension/README.md`](../extension/README.md) |
 | Desktop apps, IDE assistants, 3rd-party CLIs (GitHub Copilot, Gemini CLI) | **Egress proxy** | [`proxy/README.md`](../proxy/README.md) |
 | **Cursor** (cert-pinned chat) | **Local hook** (`warden-cursor-hook`) | [`cli/README.md`](../cli/README.md) — auto-installed by `warden connect` |
@@ -288,14 +288,14 @@ high-volume triage).
 > the judge runs for all orgs on the instance (each org can still opt out for
 > data-residency via its settings). Plan-gating — where the judge is a paid entitlement —
 > is a managed-SaaS control (`WARDEN_JUDGE_PLAN_GATED`, off by default); leave it unset
-> self-hosted. If you never set a provider key, Warden simply runs offline-only, which is
+> self-hosted. If you never set a provider key, Palivane simply runs offline-only, which is
 > a fully supported mode.
 
 ---
 
 ## 6. (Optional) Apply a license — Team / Enterprise tiers
 
-Self-hosted Warden runs the **Free** tier out of the box (5 users, core capture planes).
+Self-hosted Palivane runs the **Free** tier out of the box (5 users, core capture planes).
 A vendor-issued license unlocks Team (alerts, MDM packs) or Enterprise (SSO, SIEM, S3
 delivery) instance-wide — see `/pricing` or contact sales@tachtech.net.
 
@@ -318,7 +318,7 @@ Reverse of the one-command install, in three steps:
 
 ```bash
 warden-connect --uninstall     # removes the Claude Code / Cursor / Gemini / Codex hooks,
-                               # the Warden env, and the creds files it wrote
+                               # the Palivane env, and the creds files it wrote
 warden-desktop uninstall       # stops the egress proxy; reverts the system-proxy setting
                                # and removes the CLI capture shims
 rm -rf ~/.warden               # the CLI in ~/.warden/bin + local state (breaker/posture)
@@ -330,7 +330,7 @@ extension** from Chrome/Edge.
 
 Notes:
 
-- `warden-connect --uninstall` only touches Warden's own entries — your other hooks and any
+- `warden-connect --uninstall` only touches Palivane's own entries — your other hooks and any
   `ANTHROPIC_BASE_URL` you set yourself are left intact. It's safe to run anytime and is a
   no-op if nothing is installed.
 - On **Linux**, `warden-desktop uninstall` now **removes the root CA** from the system trust

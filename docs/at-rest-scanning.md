@@ -1,14 +1,14 @@
 # Scanning data at rest — S3 buckets & whole repos
 
-Warden's hooks, proxy, and gateway catch sensitive data **at the point it's used or
+Palivane's hooks, proxy, and gateway catch sensitive data **at the point it's used or
 changed** (a prompt, a tool call, a commit, a PR). This page covers the **at-rest sweeps** —
 scanning data that's already sitting somewhere: **S3 buckets**, **entire repositories**, and
 **whole GitHub orgs**. They reuse the same detection engine; the only new part is *reaching*
 the data.
 
-All three send Warden only what it needs — for `warden-secrets` (device at rest) nothing but
+All three send Palivane only what it needs — for `warden-secrets` (device at rest) nothing but
 masked metadata leaves the machine; for the S3 and code scanners, object/file **contents**
-are streamed to your Warden backend's detection engine (self-hosted — the content stays in
+are streamed to your Palivane backend's detection engine (self-hosted — the content stays in
 your infrastructure) and only findings are stored.
 
 | Scanner | Scans | Trigger |
@@ -155,7 +155,7 @@ Pass it as `GITHUB_TOKEN`. `--github-api` points at a GitHub Enterprise host if 
 Copy [`git/warden-org-scan.yml`](../git/warden-org-scan.yml) into a repo as
 `.github/workflows/warden-org-scan.yml` (a dedicated security/ops repo is a good home). It
 runs `warden-github-scan --org` on a **cron** (weekly by default) + on demand. Set two Actions
-secrets: `WARDEN_TOKEN` (a Warden `ak_…` key) and `WARDEN_ORG_READ_TOKEN` (the org-read PAT
+secrets: `WARDEN_TOKEN` (a Palivane `ak_…` key) and `WARDEN_ORG_READ_TOKEN` (the org-read PAT
 above). Trigger it once from the **Actions tab → Run workflow** to verify — a green run means
 the tokens are right; a 401/403 in the log means the PAT lacks org read or needs approval.
 

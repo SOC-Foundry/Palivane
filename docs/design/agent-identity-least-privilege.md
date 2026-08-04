@@ -2,7 +2,7 @@
 
 > Status: **BUILT — Phases 0–3 shipped.** Runtime **authorization** for AI agents: a
 > verifiable identity per agent and enforcement that an agent can only reach the tools,
-> servers, commands, and data its role permits. Everything else Warden does is *detection*
+> servers, commands, and data its role permits. Everything else Palivane does is *detection*
 > (flag/block bad content); this adds *authorization* (deny an action because the caller
 > isn't entitled to it).
 >
@@ -17,7 +17,7 @@
 ## 1. The gap
 
 Kirin's AI-Agent capabilities include **OAuth-based agent authentication** and **map agent
-roles to privileges (need-to-know boundaries)**. Warden today:
+roles to privileges (need-to-know boundaries)**. Palivane today:
 
 - authenticates *tenants/clients* (JWT users, `ak_` API keys) but has **no per-agent identity**;
 - inspects agent tool-use (`mcp_guard`) and blocks dangerous/poisoned/untrusted actions, but
@@ -32,7 +32,7 @@ tool isn't stopped — the call isn't malicious content, it's just unauthorized.
 **Goals**
 - A verifiable **agent identity** distinct from the human/tenant, carried on every request.
 - A **least-privilege policy**: role → allowed tools / MCP servers / data scopes / commands.
-- **Enforcement at the choke points Warden already owns** — the LLM gateway and the MCP path
+- **Enforcement at the choke points Palivane already owns** — the LLM gateway and the MCP path
   (proxy + `warden-mcp` sensor + Cursor hook) — returning a clean *deny* with a reason.
 - Reuse the existing **Policies** console and **per-user/group override** model.
 - Full **audit** of every allow/deny (we already have findings + audit + SIEM).
@@ -59,14 +59,14 @@ Agent
 
 **How an agent proves identity** (in priority order, pick per deployment):
 1. **OAuth 2.0 client-credentials** — the agent holds a client_id/secret (or a workload
-   federation token) and presents a bearer JWT; Warden validates it against the tenant's
+   federation token) and presents a bearer JWT; Palivane validates it against the tenant's
    configured issuer/JWKS (we already have SSRF-guarded OIDC discovery in `oidc.py`).
-2. **Warden-minted agent token** — an `ag_…` credential (sibling to `ak_…`), hashed at rest,
+2. **Palivane-minted agent token** — an `ag_…` credential (sibling to `ak_…`), hashed at rest,
    bound to one Agent. Simplest path for agents that can't do OAuth (local MCP, scripts).
 3. **mTLS / SPIFFE** — future, for workload-identity shops.
 
 The identity travels on the existing surfaces: `Authorization: Bearer …` (gateway) or an
-`X-Warden-Agent` token (MCP/CLI). The gateway/proxy resolves it to an `Agent` + `AgentRole`.
+`X-Palivane-Agent` token (MCP/CLI). The gateway/proxy resolves it to an `Agent` + `AgentRole`.
 
 ## 4. Policy model (least-privilege)
 
@@ -92,7 +92,7 @@ Design choices:
 
 ## 5. Enforcement flow
 
-At each choke point Warden already intercepts:
+At each choke point Palivane already intercepts:
 
 ```
 request (gateway / MCP proxy / warden-mcp / cursor-hook)
@@ -111,7 +111,7 @@ request (gateway / MCP proxy / warden-mcp / cursor-hook)
              scanned for secrets/poisoning/dangerous commands — authz and detection compose)
 ```
 
-Modes mirror the rest of Warden: **monitor** (log would-deny, allow through) → **enforce**
+Modes mirror the rest of Palivane: **monitor** (log would-deny, allow through) → **enforce**
 (actually deny). This lets an org watch what each agent *does* before locking the role down.
 
 ## 6. New pieces vs. reuse
@@ -147,11 +147,11 @@ Modes mirror the rest of Warden: **monitor** (log would-deny, allow through) →
   per-tool argument policy; start coarse (tool/server) and refine.
 - **Latency**: authz is an in-memory policy check on data we already parse — negligible.
 - **False-deny blast radius**: monitor-first + a clear deny reason + per-agent override is the
-  mitigation; never fail-closed on a Warden outage for identity resolution unless configured.
+  mitigation; never fail-closed on a Palivane outage for identity resolution unless configured.
 
-## 9. Why this fits Warden
+## 9. Why this fits Palivane
 
-It doesn't bolt on a new product — it adds an **authorization layer on the choke points Warden
+It doesn't bolt on a new product — it adds an **authorization layer on the choke points Palivane
 already inspects**, reusing OIDC, the oversharing/need-to-know engine, the Policies console, the
 override-resolution code, and the findings/audit/SIEM pipeline. The net new surface is small
 (agent identity + a role authz check); the leverage is large (closes the last Kirin gap and

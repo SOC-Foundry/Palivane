@@ -4,7 +4,7 @@
 
 ## Purpose & scope
 
-Defines how TachTech protects Warden (the hosted service at warden.tachtech.net, the
+Defines how TachTech protects Palivane (the hosted service at warden.tachtech.net, the
 source repository, and all customer data processed by either). Applies to every person
 with access — currently the Founder and any future employee or contractor from their
 first day.
@@ -12,7 +12,7 @@ first day.
 ## Objectives
 
 Protect the confidentiality, integrity, and availability of customer data — which for
-Warden includes some of the most sensitive artifacts an organization has (prompts,
+Palivane includes some of the most sensitive artifacts an organization has (prompts,
 findings about leaked credentials, security posture). The product's own design reflects
 this: redaction before storage, metadata-only defaults, per-tenant encryption.
 
