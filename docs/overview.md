@@ -118,7 +118,11 @@ OSV/CVE lookup), `/api/scan/mcp-config` (shadow/malicious MCP servers in `.mcp.j
 `/api/scan/ide-extensions` (known-bad / unapproved editor plugins), and
 `/api/scan/agent-rules` (hidden-instruction injection — the "rules-file backdoor" — in the
 instruction files a coding agent obeys: CLAUDE.md, .cursorrules, .cursor/rules/*.mdc,
-AGENTS.md, copilot-instructions.md, skill SKILL.md).
+AGENTS.md, copilot-instructions.md, skill SKILL.md). The MCP-config scan also runs a
+**reputation/provenance** check (`mcp_reputation`) beyond the allowlist and TOFU binary
+pin: a known-bad denylist (`MCP_SERVER_DENYLIST`), non-registry sources (git/URL/tarball
+instead of a pinned registry package), and — opt-in (`MCP_REPUTATION_ENABLED`) — freshly
+published or freshly *republished* packages, the postmark-mcp "trusted then trojaned" tell.
 
 **Unified cross-vendor session audit** (`GET /api/audit/sessions`, `/api/audit/timeline`;
 console **Sessions** view): an enterprise runs Claude Code, Cursor, Codex, Gemini CLI,
