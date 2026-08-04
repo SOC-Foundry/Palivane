@@ -50,6 +50,7 @@ class Category(str, Enum):
     # --- Agentic tool-use (mcp) ---
     MCP_UNTRUSTED_SERVER = "mcp_untrusted_server"      # MCP server not on the allowlist
     MCP_INTEGRITY = "mcp_integrity"                    # local MCP server binary changed vs its pin
+    MCP_REPUTATION = "mcp_reputation"                  # server pkg known-bad / non-registry / freshly (re)published
     SENSITIVE_RESOURCE_ACCESS = "sensitive_resource_access"  # tool/resource touches .env, keys, etc.
     DANGEROUS_COMMAND = "dangerous_command"            # tool call runs a high-risk shell command
     TOOL_POISONING = "tool_poisoning"                  # injected instructions in a tool description

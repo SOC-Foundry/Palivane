@@ -1330,6 +1330,18 @@ def scan_mcp_config(
                                     "detail": f"{pname}@{ver} has {len(ids)} known advisory(ies): {', '.join(ids[:4])}.",
                                     "weight": 0.9, "confidence": 0.95, "detector": "osv", "evidence": ", ".join(ids[:4])})
                     sev = "critical"
+        # Reputation/provenance: known-bad denylist + non-registry source (offline), and
+        # freshly-(re)published packages (opt-in registry lookup) — the postmark-mcp
+        # trusted-then-trojaned gap that allowlist + TOFU pinning don't cover.
+        if "mcp_reputation" not in _mcp_disabled:
+            from . import mcp_reputation
+            for rep in mcp_reputation.assess(name, command, args, _srv_pkgs.get(name, [])):
+                signals.append(rep)
+                w = rep.get("weight", 0) * rep.get("confidence", 0)
+                if w >= 0.7:
+                    sev = "critical"
+                elif sev not in ("critical",):
+                    sev = "high" if w >= 0.4 else sev
         action = _action_for(sev, block_sev)
         worst = max(worst, _ACTION_RANK.get(sev, 0))
         if action != "allow":

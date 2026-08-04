@@ -34,6 +34,14 @@ class Settings:
     # single event trips. On by default; window is how far back to look (minutes).
     session_correlation: bool = os.getenv("WARDEN_SESSION_CORRELATION", "true").lower() in ("1", "true", "yes")
     session_window_min: int = int(os.getenv("WARDEN_SESSION_WINDOW_MIN", "30"))
+    # MCP server reputation/provenance (beyond allowlist + TOFU pinning): a known-bad
+    # denylist (server names or packages, comma-separated), and an opt-in registry
+    # freshness check that flags freshly-published / freshly-republished packages — the
+    # postmark-mcp "trusted then trojaned" tell. Registry lookups are off by default
+    # (network egress) and always fail open.
+    mcp_server_denylist: str = os.getenv("MCP_SERVER_DENYLIST", "")
+    mcp_reputation_enabled: bool = os.getenv("MCP_REPUTATION_ENABLED", "").lower() in ("1", "true", "yes")
+    mcp_reputation_fresh_days: int = int(os.getenv("MCP_REPUTATION_FRESH_DAYS", "14"))
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./warden.db")
     cors_origins: str = os.getenv("CORS_ORIGINS", "http://localhost:5173")
     # Reject request bodies larger than this (DoS/OOM guard); ~12 MB default.
