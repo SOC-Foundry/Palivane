@@ -16,7 +16,7 @@ loss, or a report to security@tachtech.net that reproduces.
 
 ## Response steps
 
-1. **Detect** — uptime alerts (email), Cloud Run/Cloud SQL logs, Warden's own audit
+1. **Detect** — uptime alerts (email), Cloud Run/Cloud SQL logs, Palivane's own audit
    log and findings, security@tachtech.net reports.
 2. **Contain** — revoke/rotate affected credentials (Secret Manager versions, API key
    revocation, `logout-all`, agent disable — all built for this); suspend affected

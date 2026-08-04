@@ -2,7 +2,7 @@
 
 Pre-filled answers to the questions security reviewers ask most, organized by CAIQ v4
 domain. Hand this with the [/trust](https://warden.tachtech.net/trust) page and the
-in-product DPA. Company: **TachTech** · Service: **Warden — AI Security Gateway**
+in-product DPA. Company: **TachTech** · Service: **Palivane — AI Security Gateway**
 (hosted at warden.tachtech.net; self-hosted option available). Current as of
 **2026-07-19**; contact security@tachtech.net.
 
@@ -127,4 +127,4 @@ headcount-based separation of duties. Our SOC 2 Type II program is underway.
 |---|---|
 | Vulnerability management program? | Dependency alerts triaged on arrival; security fixes ship same-day through the change gate (history: all July 2026 audit findings remediated with regression tests). |
 | Penetration testing? | Internal adversarial audits July 2026 (remediated); independent pen test scheduled under the SOC 2 program. |
-| Endpoint protection? | Policy 10: FDE, auto-update, screen lock, MFA — continuously evidenced by dogfooding Warden's own posture sensors on the operator's machine. |
+| Endpoint protection? | Policy 10: FDE, auto-update, screen lock, MFA — continuously evidenced by dogfooding Palivane's own posture sensors on the operator's machine. |

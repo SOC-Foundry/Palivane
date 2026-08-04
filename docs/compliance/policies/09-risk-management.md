@@ -15,7 +15,7 @@ via PR, so history is the audit trail.
 |---|---|---|---|
 | Single-operator dependency (availability of the one human) | M | H | Mitigate: full runbook/IaC coverage so any competent engineer can operate from the repo (Policy 05); accept residual until first hire |
 | Tenant-isolation defect exposes cross-org data | L | H | Mitigated: RLS beneath app scoping, isolation test suite, adversarial audits; pen test scheduled |
-| Credential/secret leak (operator or supply chain) | M | H | Mitigated: Secret Manager only, hashed keys, short-lived agent tokens, rotation runbook (exercised 2026-07-16), Warden dogfoods its own secret detection |
+| Credential/secret leak (operator or supply chain) | M | H | Mitigated: Secret Manager only, hashed keys, short-lived agent tokens, rotation runbook (exercised 2026-07-16), Palivane dogfoods its own secret detection |
 | Credential stuffing / abuse of public signup | M | M | Mitigated: edge per-IP limits, app throttles, email verification, domain capture, quotas/lifecycle |
 | us-central1 regional outage | L | M | Accept at current scale; rebuild procedure documented (Policy 05) |
 | Google vendor concentration | L | M | Accept; documented in Policy 06 |

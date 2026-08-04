@@ -1,11 +1,11 @@
-# Warden tokens & identity — deployment reference
+# Palivane tokens & identity — deployment reference
 
-How authentication and per-person attribution work across Warden's planes, and what
+How authentication and per-person attribution work across Palivane's planes, and what
 you actually need to provision. This is the auth-model companion to
 [claude-deployment.md](./claude-deployment.md) (which is the surface-by-surface how-to).
 
 The short version: **three secrets run the whole company** — one upstream provider key,
-one Warden API key, one ingest token. Issuing tokens *per user* buys you something in
+one Palivane API key, one ingest token. Issuing tokens *per user* buys you something in
 exactly one place (the gateway), and even there it's an attribution choice, not a
 functional requirement.
 
@@ -15,13 +15,13 @@ functional requirement.
 
 | Token | Who holds it | How many | Server-side name |
 | --- | --- | --- | --- |
-| **Upstream provider key** | Warden server only — never users | 1 per provider, per company | `GATEWAY_ANTHROPIC_KEY`, `GATEWAY_GEMINI_KEY`, `GATEWAY_UPSTREAM_KEY` |
-| **Warden API key** (`ak_…`) | Gateway clients (Claude Code, OpenAI/Gemini SDKs) | Your choice — see [below](#do-i-need-a-token-per-user) | minted at `/api/apikeys` |
+| **Upstream provider key** | Palivane server only — never users | 1 per provider, per company | `GATEWAY_ANTHROPIC_KEY`, `GATEWAY_GEMINI_KEY`, `GATEWAY_UPSTREAM_KEY` |
+| **Palivane API key** (`ak_…`) | Gateway clients (Claude Code, OpenAI/Gemini SDKs) | Your choice — see [below](#do-i-need-a-token-per-user) | minted at `/api/apikeys` |
 | **Ingest token** | Browser extension + egress proxy | 1 per company (shared) | `EXTENSION_INGEST_TOKEN` |
 | **Console JWT** | Console/dashboard users (admins, analysts) | per login | signed with `WARDEN_SECRET_KEY` |
 
 ### 1. Upstream provider keys — server-side only
-The real Anthropic/Gemini/OpenAI keys live on the Warden server and are forwarded to
+The real Anthropic/Gemini/OpenAI keys live on the Palivane server and are forwarded to
 the provider on each allowed call (`gateway.py` — Anthropic as `Authorization: Bearer`,
 Gemini as `x-goog-api-key`). Clients never see them. One per provider you front:
 
@@ -31,7 +31,7 @@ GATEWAY_ANTHROPIC_KEY=sk-ant-...   # the REAL Anthropic key
 # GATEWAY_UPSTREAM_KEY=sk-...      # OpenAI-compatible upstream
 ```
 
-### 2. Warden API keys (`ak_…`) — gateway clients
+### 2. Palivane API keys (`ak_…`) — gateway clients
 Prefixed `ak_` (`security.py: API_KEY_PREFIX = "ak_"`), minted by an admin and shown
 once. Validated by prefix lookup + timing-safe hash; accepted via `x-api-key`,
 `Authorization: Bearer`, or `x-goog-api-key`/`?key=` depending on the SDK.
@@ -46,7 +46,7 @@ The `actor` field is the attribution lever — see [below](#do-i-need-a-token-pe
 
 ### 3. Ingest token — shared by extension *and* proxy
 One company-wide secret. The server checks it at `/api/ingest/ai-usage` against
-`EXTENSION_INGEST_TOKEN`, presented by clients as the `X-Warden-Token` header.
+`EXTENSION_INGEST_TOKEN`, presented by clients as the `X-Palivane-Token` header.
 
 ```bash
 EXTENSION_INGEST_TOKEN=$(openssl rand -hex 24)
@@ -108,7 +108,7 @@ Push keys via Claude Code's enterprise `managed-settings.json` (highest preceden
 {
   "env": {
     "ANTHROPIC_BASE_URL": "https://warden.corp.example.com",
-    "ANTHROPIC_AUTH_TOKEN": "ak_<the developer's Warden key>"
+    "ANTHROPIC_AUTH_TOKEN": "ak_<the developer's Palivane key>"
   }
 }
 ```
@@ -136,7 +136,7 @@ one, attribution falls back to the device string (`whoami@hostname`), which won'
 
 **Minimum to function (whole company runs):**
 - 1 upstream provider key (`GATEWAY_ANTHROPIC_KEY` / `…_GEMINI_KEY` / `…_UPSTREAM_KEY`)
-- 1 Warden API key (`ak_…`)
+- 1 Palivane API key (`ak_…`)
 - 1 ingest token (`EXTENSION_INGEST_TOKEN`)
 
 **Recommended for governance value:**

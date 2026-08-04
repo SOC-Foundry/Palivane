@@ -1,12 +1,12 @@
 # Multi-tenant hosting — hardening roadmap
 
-Warden was designed multi-tenant (every query is scoped to `tenant_id`, with cross-tenant
+Palivane was designed multi-tenant (every query is scoped to `tenant_id`, with cross-tenant
 isolation tests). This tracks what's needed to host it as a **shared SaaS** serving many
 orgs, versus a single-org self-host. Done items are shipped; the rest are sequenced tracks.
 
 ## Done
 - **Tenant-scoped login.** Email is unique only *within* a tenant, so login accepts an
-  optional `org` (slug). An email that exists in multiple orgs must specify one — Warden
+  optional `org` (slug). An email that exists in multiple orgs must specify one — Palivane
   never auto-picks a tenant (that would be a cross-tenant hazard). Single-org/demo login
   omits `org`.
 - **Shared-state brute-force throttle.** Failed logins are recorded in the DB

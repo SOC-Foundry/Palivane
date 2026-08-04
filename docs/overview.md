@@ -1,8 +1,8 @@
-# Warden — Overview
+# Palivane — Overview
 
 **Govern how your organization uses AI. DETECT · BLOCK · PROTECT.**
 
-Warden is a **hosted, multi-tenant** security gateway for AI (self-hostable if you prefer).
+Palivane is a **hosted, multi-tenant** security gateway for AI (self-hostable if you prefer).
 It sits between the people and tools in your organization and the large language models they
 talk to — whether that's your own LLM applications or public services like ChatGPT, Claude,
 and Gemini — and it detects, records, and (optionally) blocks risky prompts and data before
@@ -11,7 +11,7 @@ configure every capture plane from **Connect → Quick start**.
 
 ---
 
-## 1. The problem Warden solves
+## 1. The problem Palivane solves
 
 Organizations adopting AI face two distinct risks at the same time:
 
@@ -25,13 +25,13 @@ Employees paste secrets (API keys, AWS credentials, tokens), PII (SSNs, credit c
 contact lists), and proprietary source code into public AI tools — often through
 unsanctioned apps that IT never approved.
 
-Warden addresses both fronts from one control plane. Crucially, it captures this traffic
+Palivane addresses both fronts from one control plane. Crucially, it captures this traffic
 **automatically at the edge** rather than relying on manual review, and it can run in
 **monitor mode** (record and alert) or **enforce mode** (block inline).
 
 ---
 
-## 2. What Warden does
+## 2. What Palivane does
 
 - **Detects** prompt-injection / jailbreak / exfiltration attacks against your LLMs.
 - **Detects** secrets, PII, and source code leaving your org toward external AI tools —
@@ -54,7 +54,7 @@ for novel attacks the rules miss.
 
 ## 3. Architecture at a glance
 
-Warden has a **hosted core** (you run it once) and several **capture planes** at the
+Palivane has a **hosted core** (you run it once) and several **capture planes** at the
 edge (where AI traffic actually happens).
 
 ```
@@ -87,15 +87,15 @@ edge (where AI traffic actually happens).
 
 ### The three capture planes
 
-1. **LLM gateway** — Your first-party apps point their base URL at Warden instead of the
-   provider. Warden inspects every prompt (and, with `GATEWAY_SCAN_RESPONSES`, the model's
+1. **LLM gateway** — Your first-party apps point their base URL at Palivane instead of the
+   provider. Palivane inspects every prompt (and, with `GATEWAY_SCAN_RESPONSES`, the model's
    **output** for secrets/PII — response-side DLP), then forwards allowed calls upstream and
    streams the response back. Speaks four API shapes: OpenAI (`/v1/chat/completions`), the
    **OpenAI Responses API** (`/v1/responses`, used by Codex CLI), Anthropic (`/v1/messages`,
    used by Claude Code), and Gemini (`/v1beta/models/{model}:generateContent`). OpenAI/Gemini
    SDK/CLI clients can be routed here via the MDM pack's `openai.env` / `gemini.txt`.
 2. **Browser extension** — A Manifest V3 extension wraps `window.fetch` on public AI
-   sites, extracts the prompt before it's sent, and asks Warden for a verdict
+   sites, extracts the prompt before it's sent, and asks Palivane for a verdict
    (allow / warn / block). Rolled out org-wide via MDM force-install — from the Chrome Web
    Store (Unlisted) or a **self-hosted CRX** (no store submission; managed devices only).
 3. **Egress proxy** — A mitmproxy addon inspects TLS traffic from desktop apps, IDE
@@ -127,17 +127,17 @@ published or freshly *republished* packages, the postmark-mcp "trusted then troj
 **Unified cross-vendor session audit** (`GET /api/audit/sessions`, `/api/audit/timeline`;
 console **Sessions** view): an enterprise runs Claude Code, Cursor, Codex, Gemini CLI,
 Copilot, browser AI and MCP side by side, each with its own partial log in its own shape.
-Warden captures them all into one store and presents a single **normalized** activity
+Palivane captures them all into one store and presents a single **normalized** activity
 trail — every event mapped to a common shape (when / who / which vendor tool / action /
 verdict / kill-chain stage), grouped per actor into sessions with a rollup (vendors
 touched, event count, stages seen, peak severity, whether an attack chain fired). One
-timeline across every agent product, retained on Warden's schedule — not any vendor's cap.
+timeline across every agent product, retained on Palivane's schedule — not any vendor's cap.
 Exportable to a SIEM / data lake via `GET /api/audit/export` (newline-delimited JSON or
 CEF; whole-tenant or per-actor) and from the console's Export buttons.
 
 **Session behavioral correlation** (surface `session`): every detector above scores one
 event, but the dangerous pattern is a *sequence* — an agent reads credentials, runs a
-shell command, then sends data out. After each finding is stored, Warden looks across the
+shell command, then sends data out. After each finding is stored, Palivane looks across the
 same actor's recent activity (a rolling `WARDEN_SESSION_WINDOW_MIN`-minute window), maps
 each event to a kill-chain stage (recon → manipulation → collection → execution →
 exfiltration), and when the window crosses into a payoff stage across **multiple events**
@@ -145,7 +145,7 @@ it records one escalated `session_correlation` finding scoring the *chain* — t
 "s1ngularity" shape that no single event trips. On by default (`WARDEN_SESSION_CORRELATION`).
 
 The gateway and egress proxy also inspect **agentic tool-use over MCP** (surface `mcp`):
-an AI coding agent's tool calls, arguments, and results ride the LLM traffic, so Warden
+an AI coding agent's tool calls, arguments, and results ride the LLM traffic, so Palivane
 catches sensitive-file access, dangerous commands, tool poisoning, and untrusted servers —
 including **local stdio MCP** — and blocks on the request, response, or mid-stream, with no
 endpoint agent. Enforcement config for managed devices is generated by `/api/policy-pack`
@@ -154,7 +154,7 @@ settings, OpenAI/Gemini gateway routing, Cursor hooks, and a scheduled `warden-s
 scan that drives TruffleHog by default) and applied by the org's MDM.
 
 **Onboarding is managed or self-serve.** Fleets get zero-touch config via MDM; BYOD users
-sign in (login/SSO) to bind their tenant — the extension's **Sign in to Warden** and
+sign in (login/SSO) to bind their tenant — the extension's **Sign in to Palivane** and
 **`warden connect`** for Claude Code mint a per-user, revocable key (no token distribution).
 
 **Agentless by default, with optional local sensors.** The above needs no endpoint agent.
@@ -170,7 +170,7 @@ mode, and the cloud coding agent),
 **`warden-import`** (pipe CI scanner output in). They report on a separate ingest quota so
 they don't consume the gateway quota.
 
-**All planes fail open.** If Warden is unreachable, traffic flows and tools keep
+**All planes fail open.** If Palivane is unreachable, traffic flows and tools keep
 working — security controls never take the business offline.
 
 ---
@@ -262,7 +262,7 @@ detection stays on.
 ```
 1. User pastes a secret into claude.ai
 2. injected.js intercepts fetch, extracts the prompt
-3. → POST /api/ingest/ai-usage  (X-Warden-Token auth)
+3. → POST /api/ingest/ai-usage  (X-Palivane-Token auth)
 4. → ShadowAIDetector + destination check (+ optional judge)
 5. → { action: allow | warn | block }
 6. Extension enforces:  allow = send · warn = send + amber banner · block = don't send + red banner
@@ -281,7 +281,7 @@ detection stays on.
 
 ## 6. Multi-tenancy & security
 
-Warden is multi-tenant by design. Each organization ("tenant") is isolated, and the
+Palivane is multi-tenant by design. Each organization ("tenant") is isolated, and the
 platform ships with SaaS-grade hardening:
 
 - **Tenant-scoped login** — email is unique per org; login takes an optional org slug.
@@ -328,9 +328,9 @@ The security-team UI provides:
 
 ---
 
-## 8. Deploying Warden
+## 8. Deploying Palivane
 
-**Hosted (default).** Warden is a managed SaaS — customers don't run infrastructure. Sign in
+**Hosted (default).** Palivane is a managed SaaS — customers don't run infrastructure. Sign in
 to the console, open **Connect → Quick start**, and push the generated config (MDM pack or a
 per-OS installer). Everything below is for **local development, evaluation, or self-hosting**.
 
@@ -398,7 +398,7 @@ cd frontend && npm install && npm run dev
 ## 10. Design principles
 
 1. **Offline-first** — full detection with no LLM key; the judge is optional enrichment.
-2. **Fail open** — Warden being down never blocks the business.
+2. **Fail open** — Palivane being down never blocks the business.
 3. **Multi-surface routing** — rules apply only where they belong (attacks vs. leakage vs. code).
 4. **Saturating scoring** — weak signals accumulate sensibly; strong ones dominate.
 5. **Redaction & encryption at rest** — the findings DB is not a secret honeypot.

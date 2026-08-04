@@ -9,7 +9,7 @@
   unique credentials.
 - No production Restricted data on endpoints (Policy 07) — operator work uses IDs and
   metadata; secrets are read from Secret Manager at point of use, never saved locally.
-- **Dogfooding as posture evidence:** the operator's own development runs Warden's
+- **Dogfooding as posture evidence:** the operator's own development runs Palivane's
   local planes (hooks, posture reporter, VS Code sensor), so IDE extensions, MCP
   configs, and AI-tool usage on the endpoint are continuously reported to the tachtech
   org — our endpoint monitoring story is the product itself.
@@ -22,10 +22,10 @@ storing customer data outside approved systems, using production data in develop
 
 ## AI tool use (we practice the policy we sell)
 
-AI coding assistants are permitted **through Warden's own governance**: gateway-routed
+AI coding assistants are permitted **through Palivane's own governance**: gateway-routed
 or hook-covered, with findings reviewed in the tachtech org. Pasting Restricted data
 (customer content, keys) into ungoverned AI tools is prohibited — exactly the behavior
-Warden exists to catch.
+Palivane exists to catch.
 
 ## Future personnel
 

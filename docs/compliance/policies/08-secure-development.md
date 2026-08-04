@@ -15,7 +15,7 @@
 - **Secrets hygiene:** no credentials in code, images, or env files — Secret Manager
   only; the repo's own product (warden-secrets) scans for credentials at rest.
 - **Dependencies:** minimal by design (CLI tools are stdlib-only on purpose);
-  lockfiles committed; Warden's own dependency-risk detector and OSV data inform
+  lockfiles committed; Palivane's own dependency-risk detector and OSV data inform
   updates; GitHub alerts triaged as they arrive.
 - **AI-assisted development:** all AI-generated changes flow through the same PR + CI
   gate as human ones; the Founder reviews and owns every merge (sole commit author).
