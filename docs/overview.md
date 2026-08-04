@@ -120,6 +120,15 @@ OSV/CVE lookup), `/api/scan/mcp-config` (shadow/malicious MCP servers in `.mcp.j
 instruction files a coding agent obeys: CLAUDE.md, .cursorrules, .cursor/rules/*.mdc,
 AGENTS.md, copilot-instructions.md, skill SKILL.md).
 
+**Unified cross-vendor session audit** (`GET /api/audit/sessions`, `/api/audit/timeline`;
+console **Sessions** view): an enterprise runs Claude Code, Cursor, Codex, Gemini CLI,
+Copilot, browser AI and MCP side by side, each with its own partial log in its own shape.
+Warden captures them all into one store and presents a single **normalized** activity
+trail — every event mapped to a common shape (when / who / which vendor tool / action /
+verdict / kill-chain stage), grouped per actor into sessions with a rollup (vendors
+touched, event count, stages seen, peak severity, whether an attack chain fired). One
+timeline across every agent product, retained on Warden's schedule — not any vendor's cap.
+
 **Session behavioral correlation** (surface `session`): every detector above scores one
 event, but the dangerous pattern is a *sequence* — an agent reads credentials, runs a
 shell command, then sends data out. After each finding is stored, Warden looks across the
