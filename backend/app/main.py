@@ -177,13 +177,26 @@ app.add_middleware(
     # header (not cookies), so credentials aren't needed and methods/headers are explicit.
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Warden-Token", "x-api-key",
+    allow_headers=["Authorization", "Content-Type", "X-Warden-Token", "X-Palivane-Token",
+                   "X-Warden-Agent", "X-Palivane-Agent", "x-api-key",
                    "anthropic-version", "anthropic-beta"],
 )
 
 
 @app.middleware("http")
 async def _guard(request: Request, call_next):
+    # Header rename backward-compat (Warden -> Palivane): capture clients send the new
+    # X-Palivane-Token / X-Palivane-Agent; already-deployed clients send X-Warden-*. Alias
+    # the new names onto the legacy ones the route handlers read, so both work through the
+    # deprecation window. Done here (once) rather than on all 16 ingest endpoints. New wins.
+    _hdrs = request.scope.get("headers")
+    if _hdrs is not None:
+        present = {k for k, _ in _hdrs}
+        for new, legacy in ((b"x-palivane-token", b"x-warden-token"),
+                            (b"x-palivane-agent", b"x-warden-agent")):
+            nv = next((v for k, v in _hdrs if k == new), None)
+            if nv is not None and legacy not in present:
+                _hdrs.append((legacy, nv))
     # Reject oversized bodies up front (DoS/OOM) — the detectors run many regex passes over
     # request content, so bound it before parsing. Backs the per-field Pydantic caps.
     cl = request.headers.get("content-length")
