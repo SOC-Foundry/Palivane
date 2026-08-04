@@ -33,7 +33,7 @@ const STEPS = [
   { n: "2", title: "Personal and customer data", body: "Social security numbers, payment cards, and customer records — tuned so everyday engineering work doesn't set off alarms." },
   { n: "3", title: "Your code and confidential documents", body: "Proprietary source code, financials, contracts, and anything already marked confidential by your own labeling tools." },
   { n: "4", title: "Risky AI behavior", body: "Attempts to hijack an AI's instructions, talk it past its rules, or get an assistant to run destructive commands or open files it shouldn't — in the tools your team uses, and in any AI feature you ship in your own product." },
-  { n: "5", title: "A second opinion, if you want one", body: "Optionally add Claude, GPT, or Gemini as a reviewer for the unusual cases fixed rules miss. Everything above works without it." },
+  { n: "5", title: "A second opinion, if you want one", body: "Optionally add Claude, GPT, or Gemini as a reviewer for the unusual cases fixed rules miss — running on a Claude Pro or Max subscription your team already has, with no API key or per-request billing to set up. Everything above works without it." },
 ];
 
 const ENTERPRISE = [
