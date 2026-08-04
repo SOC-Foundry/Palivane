@@ -257,6 +257,36 @@ def _build_backends():
     return built
 
 
+# --- BYOK (tenant-owned judge keys) ------------------------------------------------------
+# A tenant can store their OWN judge API key: the judge then runs for them on their key
+# and bill, independent of the operator's judge capacity. Backends are cached per
+# (provider, model, key fingerprint) so key rotation rebuilds; a bad key or missing SDK
+# yields [] — a tenant's key must never fail over to the operator's providers, and its
+# failures must never page ops about the global judge.
+_BYOK_CTORS = {"anthropic": _AnthropicBackend, "openai": _OpenAIBackend,
+               "gemini": _GeminiBackend}
+_BYOK_CACHE: dict[tuple, list] = {}
+_BYOK_CACHE_MAX = 256
+
+
+def byok_backends(provider: str, api_key: str, model: str = "") -> list:
+    """[(provider, backend, model)] for a tenant's own judge key, or [] if unusable."""
+    provider = (provider or "").strip().lower()
+    if provider not in _BYOK_CTORS or not api_key:
+        return []
+    import hashlib
+    cache_key = (provider, model, hashlib.sha256(api_key.encode()).hexdigest()[:16])
+    if cache_key not in _BYOK_CACHE:
+        while len(_BYOK_CACHE) >= _BYOK_CACHE_MAX:      # bound memory across tenants/rotations
+            _BYOK_CACHE.pop(next(iter(_BYOK_CACHE)))
+        try:
+            m = model or _DEFAULT_MODELS[provider]
+            _BYOK_CACHE[cache_key] = [(provider, _BYOK_CTORS[provider](api_key, m), m)]
+        except Exception:                                # SDK missing / malformed key
+            _BYOK_CACHE[cache_key] = []
+    return _BYOK_CACHE[cache_key]
+
+
 class LLMJudgeDetector:
     name = "llm_judge"
     surfaces: set[Surface] = set()  # the analyst reads everything, every surface
@@ -284,31 +314,42 @@ class LLMJudgeDetector:
     def label(self) -> str:
         return _PROVIDER_LABELS.get(self.provider, "LLM judge")
 
-    def _run_with_failover(self, system: str, user: str):
-        """Try each configured provider in order; fall over on any error (billing, outage,
-        rate limit). Returns (verdict, provider_label) or (None, None) if all providers fail.
-        Failures are logged loudly — a dead provider must never silently disable the judge."""
+    def _run_with_failover(self, system: str, user: str, backends=None):
+        """Try each provider in order; fall over on any error (billing, outage, rate
+        limit). Returns (verdict, provider_label) or (None, None) if all providers fail.
+        Failures are logged loudly — a dead provider must never silently disable the judge.
+        `backends` overrides the global list (BYOK: a tenant's own key); overridden runs
+        never touch the global health state, so a tenant's bad key can't page ops."""
+        use = self._backends if backends is None else backends
+        track_health = backends is None
         last_exc = None
-        for provider, backend, model in self._backends:
+        for provider, backend, model in use:
             try:
                 verdict = backend.run(system, user)
                 if last_exc is not None:
                     log.warning("judge: failed over to %s/%s after prior provider error", provider, model)
-                self._health.update(ok=True, last_error="", consecutive_failures=0)
+                if track_health:
+                    self._health.update(ok=True, last_error="", consecutive_failures=0)
                 return verdict, _PROVIDER_LABELS.get(provider, provider)
             except Exception as exc:
                 last_exc = exc
                 log.warning("judge: provider %s/%s failed (%s: %s) — trying next",
                             provider, model, type(exc).__name__, str(exc)[:160])
-        self._health["consecutive_failures"] += 1
-        self._health.update(ok=False, last_error=f"{type(last_exc).__name__}: {str(last_exc)[:160]}")
-        log.error("judge: ALL providers failed (%d configured); last error %s: %s — running "
-                  "offline detectors only", len(self._backends), type(last_exc).__name__,
-                  str(last_exc)[:160])
+        if track_health:
+            self._health["consecutive_failures"] += 1
+            self._health.update(ok=False, last_error=f"{type(last_exc).__name__}: {str(last_exc)[:160]}")
+            log.error("judge: ALL providers failed (%d configured); last error %s: %s — running "
+                      "offline detectors only", len(use), type(last_exc).__name__,
+                      str(last_exc)[:160])
+        else:
+            log.warning("judge: BYOK provider failed (%s: %s) — tenant runs offline detectors only",
+                        type(last_exc).__name__, str(last_exc)[:160])
         return None, None
 
-    def analyze(self, item: AnalysisInput) -> list[Signal]:
-        if not self._backends:
+    def analyze(self, item: AnalysisInput, backends=None) -> list[Signal]:
+        """`backends` overrides the global provider list for this call (BYOK: the
+        tenant's own key). None = the globally configured judge."""
+        if not (backends if backends is not None else self._backends):
             return []
 
         # Give the judge a de-obfuscated view too (homoglyphs/fullwidth/zero-width/leetspeak
@@ -325,7 +366,8 @@ class LLMJudgeDetector:
             f"Subject: {item.subject or '(none)'}\n"
             f"---\n{item.content}{deobf}"
         )
-        verdict, used_label = self._run_with_failover(SYSTEM_PROMPT, user_content)
+        verdict, used_label = self._run_with_failover(SYSTEM_PROMPT, user_content,
+                                                      backends=backends)
         if used_label is None:  # every configured provider errored — degrade, but loudly
             return [Signal(
                 category=Category.AI_GENERATED,

@@ -37,6 +37,12 @@ class Tenant(Base):
     # Per-tenant Claude-judge consent: None = inherit global, True/False = force on/off.
     # The judge ships content to Anthropic, so an org can opt out for data-residency.
     judge_enabled = Column(Boolean, nullable=True, default=None)
+    # BYOK judge: the org's own judge API key (encrypted, write-only). When set, the
+    # judge runs for this tenant on THEIR key and bill — independent of the operator's
+    # judge capacity and exempt from the plan gate (they're paying for the inference).
+    judge_byok_provider = Column(String(16), default="")   # anthropic | openai | gemini
+    judge_byok_key_encrypted = Column(Text, default="")
+    judge_byok_model = Column(String(128), default="")     # empty = provider default
     # Delete this tenant's findings older than N days (0 = keep forever).
     retention_days = Column(Integer, default=0)
     # Gateway requests allowed per minute for this org (0 = inherit global default).

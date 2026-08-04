@@ -303,6 +303,14 @@ class UpstreamConfig(BaseModel):
     key: str = ""
 
 
+class JudgeKeyConfig(BaseModel):
+    provider: str                 # anthropic | openai | gemini
+    # Write-only: the org's own judge API key. Stored encrypted, never returned. Leave
+    # empty on an update to keep the existing key (e.g. when only changing the model).
+    key: str = ""
+    model: str = ""               # empty = the provider's default judge model
+
+
 class ApiKeyCreate(BaseModel):
     label: str = ""
     actor: str = ""               # identity to attribute this key's traffic to

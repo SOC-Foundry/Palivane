@@ -160,6 +160,9 @@ export const api = {
   setUpstream: (provider, payload) =>
     req(`/upstreams/${provider}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteUpstream: (provider) => req(`/upstreams/${provider}`, { method: "DELETE" }),
+  judgeKey: () => req("/judge-key"),
+  setJudgeKey: (payload) => req("/judge-key", { method: "PUT", body: JSON.stringify(payload) }),
+  deleteJudgeKey: () => req("/judge-key", { method: "DELETE" }),
   oidc: () => req("/oidc"),
   setOidc: (payload) => req("/oidc", { method: "PUT", body: JSON.stringify(payload) }),
   deleteOidc: () => req("/oidc", { method: "DELETE" }),
