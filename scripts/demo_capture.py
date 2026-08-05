@@ -1,7 +1,7 @@
 """Collect the REAL verdicts the hero video renders.
 
 Nothing in the video is mocked detection: every risk score, category list, and remediation
-line below comes back from a live Warden backend over its real endpoints. This script
+line below comes back from a live Palivane backend over its real endpoints. This script
 drives that backend and writes one JSON blob that scripts/demo_video.py renders.
 
     ./run-local.sh                 # in another shell
@@ -96,7 +96,7 @@ def main() -> int:
         return 1
     auth = {"Authorization": f"Bearer {session}"}
     key = _post("/api/apikeys", {"label": "demo-video"}, auth)["token"]
-    tok = {"X-Warden-Token": key}
+    tok = {"X-Palivane-Token": key}
 
     out: dict = {}
 

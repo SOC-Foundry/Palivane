@@ -75,7 +75,7 @@ export default function Landing({ onSignIn }) {
           <p className="lp-sub">A hundred seconds: the same customer export and AWS key stopped in
              Claude, ChatGPT and Gemini, in Claude Code, Codex and Cursor, in an S3 bucket and in
              a GitHub Actions run — then a walkthrough of every screen in the console.</p>
-          <Clip lead src="/shots/demo12.mp4" poster="/shots/demo-poster12.png"
+          <Clip lead src="/shots/demo13.mp4" poster="/shots/demo-poster13.png"
                 caption="Eight places the same secret tried to escape, then a tour of every console screen it lands in. Every verdict, risk score and fix in the video is live output from a running Palivane instance." />
           <div className="lp-gallery">
             <Shot src="/shots/discovery.png?v=2" alt="Inventory of AI tools in use" onZoom={(s, a) => setZoom({ src: s, alt: a })}
