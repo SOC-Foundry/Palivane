@@ -22,6 +22,9 @@ extension/*.zip
 deploy/terraform/.terraform/
 deploy/terraform/*.tfstate
 deploy/terraform/*.tfstate.*
+deploy/gke/terraform/.terraform/
+deploy/gke/terraform/*.tfstate
+deploy/gke/terraform/*.tfstate.*
 deploy/terraform/*.tfvars
 deploy/terraform/.terraform.lock.hcl
 !deploy/terraform/terraform.tfvars.example
