@@ -1,4 +1,4 @@
-# Warden for VS Code — in-IDE posture sensor
+# Palivane for VS Code — in-IDE posture sensor
 
 Continuous, event-driven device posture from inside the editor — the always-on version
 of the `palivane-posture` CLI (which reports only when a Claude Code session starts):
@@ -20,14 +20,14 @@ findings to the signed-in user.
 
 Three ways, tried in order:
 
-1. **`Warden: Connect to console`** (command palette or the status-bar shield) — opens
+1. **`Palivane: Connect to console`** (command palette or the status-bar shield) — opens
    the console's `/extension-connect` page, mints a per-user capture key, stores it in
    VS Code SecretStorage. Same flow as the browser extension and `palivane-connect`.
 2. `PALIVANE_URL` / `PALIVANE_TOKEN` in the environment.
 3. The `env` block of `~/.claude/settings.json` — a machine already onboarded by
    `palivane-connect` reports with zero extra setup.
 
-Set `warden.url` in VS Code settings for self-hosted deployments (default: the hosted
+Set `palivane.url` in VS Code settings for self-hosted deployments (default: the hosted
 SaaS, or whatever `~/.claude/settings.json` points at).
 
 ## Build & install
@@ -35,8 +35,8 @@ SaaS, or whatever `~/.claude/settings.json` points at).
 No build step (plain JS). Package with:
 
     cd vscode-extension
-    npx @vscode/vsce package        # -> warden-vscode-0.1.0.vsix
+    npx @vscode/vsce package        # -> palivane-vscode-0.2.0.vsix
 
-Install: `code --install-extension warden-vscode-0.1.0.vsix`, or Extensions view →
+Install: `code --install-extension palivane-vscode-0.2.0.vsix`, or Extensions view →
 `…` → *Install from VSIX*. Marketplace publishing (when ready) follows the same
 publisher flow as the browser extension's `extension/STORE.md`.

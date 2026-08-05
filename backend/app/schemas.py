@@ -373,7 +373,7 @@ class EnrollRequest(BaseModel):
 
 class ProvisionRequest(BaseModel):
     platform: Literal["macos", "windows", "linux", "both"] = "both"
-    base_url: str = Field(min_length=1, description="public Palivane URL devices reach, e.g. https://warden.corp")
+    base_url: str = Field(min_length=1, description="public Palivane URL devices reach, e.g. https://palivane.corp")
     label: str = "device-provision"
     actor: str = ""               # per-user/device identity for attribution
     extension_id: str = ""        # published Chrome/Edge extension id (optional)

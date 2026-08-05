@@ -256,7 +256,7 @@ def title_scene(kicker: str, headline: str, sub: str) -> str:
 <div class="scene" style="background:radial-gradient(1100px 620px at 50% 40%,#161d33,#080b13)">
   <div id="wrap" style="position:absolute;inset:0;display:flex;flex-direction:column;
       align-items:center;justify-content:center;gap:16px;opacity:0">
-    <img src="warden-emblem.png" style="height:76px;width:auto" />
+    <img src="palivane-emblem.png" style="height:76px;width:auto" />
     <div style="color:#7c6cff;font-size:13px;font-weight:800;letter-spacing:.22em">
       {html.escape(kicker)}</div>
     <div style="color:#eef2ff;font-size:44px;font-weight:800;letter-spacing:-1px;text-align:center">

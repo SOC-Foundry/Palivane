@@ -21,7 +21,7 @@ export function SiteNav({ onSignIn }) {
   return (
     <header className="lp-nav">
       <a className="lp-brand" href="/" style={{ color: "inherit", textDecoration: "none" }}>
-        <img src="/warden-emblem.png" alt="Palivane" className="lp-brand-emblem" />
+        <img src="/palivane-emblem.png" alt="Palivane" className="lp-brand-emblem" />
         <span>Palivane</span>
       </a>
       <nav className="lp-nav-links">
@@ -90,7 +90,7 @@ export function Clip({ src, poster = "", caption = "", lead = false }) {
                         maxHeight: "70vh", objectFit: "cover", background: "#0b0f17" }} />
         {!started && (
           <button type="button" className="lp-play" onClick={start} aria-label="Play video">
-            <img src="/warden-emblem.png" alt="" />
+            <img src="/palivane-emblem.png" alt="" />
             <span className="lp-play-tri" />
           </button>
         )}

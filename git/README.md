@@ -21,7 +21,7 @@ Mint a per-tenant **API key** (`ak_…`) in the console's **Connect** page and e
 the scanner:
 
 ```bash
-export PALIVANE_URL=https://warden.corp.example.com
+export PALIVANE_URL=https://palivane.corp.example.com
 export PALIVANE_TOKEN=ak_xxx          # never hard-code; use a secret store / CI secret
 ```
 
@@ -70,7 +70,7 @@ jobs:
         with: { fetch-depth: 0 }        # full history so the PR range diffs correctly
       - uses: TachTech-Engineering/Palivane/git@main
         with:
-          palivane-url: https://warden.corp.example.com
+          palivane-url: https://palivane.corp.example.com
           palivane-token: ${{ secrets.PALIVANE_TOKEN }}
           # strict: "true"               # also fail on warn-level findings
 ```
@@ -95,7 +95,7 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     env:
-      PALIVANE_URL: https://warden.corp.example.com
+      PALIVANE_URL: https://palivane.corp.example.com
       PALIVANE_TOKEN: ${{ secrets.PALIVANE_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -121,7 +121,7 @@ history scanner walks every commit and blob, and `palivane-import` lands the hit
 console:
 
 ```bash
-export PALIVANE_URL=https://warden.corp.example.com PALIVANE_TOKEN=ak_…
+export PALIVANE_URL=https://palivane.corp.example.com PALIVANE_TOKEN=ak_…
 
 # TruffleHog (scans full git history + verifies live credentials):
 trufflehog git file://. --json                     | palivane-import trufflehog
@@ -142,7 +142,7 @@ for r in ~/src/*/.git; do (cd "$r/.." && trufflehog git file://. --json | paliva
 The hook and PR Action scan **what changes**. To sweep **existing contents** at rest:
 
 ```bash
-export PALIVANE_URL=https://warden.corp.example.com PALIVANE_TOKEN=ak_…
+export PALIVANE_URL=https://palivane.corp.example.com PALIVANE_TOKEN=ak_…
 
 # Every tracked file in the current checkout (not just the diff):
 palivane_git_scan.py --all --record
@@ -193,7 +193,7 @@ with history). Fail the job closed so a leak blocks the merge.
 ```yaml
 palivane-secret-scan:
   image: python:3.12-slim
-  variables: { PALIVANE_URL: "https://warden.corp.example.com" }   # PALIVANE_TOKEN via a masked CI variable
+  variables: { PALIVANE_URL: "https://palivane.corp.example.com" }   # PALIVANE_TOKEN via a masked CI variable
   script:
     - curl -sSL https://raw.githubusercontent.com/TachTech-Engineering/Palivane/main/git/palivane_git_scan.py -o palivane_git_scan.py
     - python3 palivane_git_scan.py --range "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME...HEAD" --fail-closed --record

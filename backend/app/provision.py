@@ -107,12 +107,12 @@ def render_windows(base_url: str, enroll_token: str, extension_id: str, proxy_ho
     ext = extension_id or DEFAULT_EXTENSION_ID
     b = _base(base_url)
     if route_gateway:
-        cc_ps = ('@{ env = @{ ANTHROPIC_BASE_URL = "$WardenUrl"; PALIVANE_URL = "$WardenUrl"; '
+        cc_ps = ('@{ env = @{ ANTHROPIC_BASE_URL = "$PalivaneUrl"; PALIVANE_URL = "$PalivaneUrl"; '
                  'PALIVANE_TOKEN = $Key; PALIVANE_ENROLL_TOKEN = $EnrollToken }; '
                  'apiKeyHelper = "powershell -NoProfile -ExecutionPolicy Bypass -File `"$Reenroll`"" }')
         cc_note = "gateway auth via apiKeyHelper — bills the org's provider key"
     else:
-        cc_ps = ('@{ env = @{ PALIVANE_URL = "$WardenUrl"; PALIVANE_TOKEN = $Key; '
+        cc_ps = ('@{ env = @{ PALIVANE_URL = "$PalivaneUrl"; PALIVANE_TOKEN = $Key; '
                  'PALIVANE_ENROLL_TOKEN = $EnrollToken }; forceLoginMethod = "claudeai" }')
         cc_note = "Claude Code keeps its own sign-in (Pro/Max); login locked to claude.ai"
     return f'''# Palivane device setup (Windows, run as Administrator in PowerShell). Carries an
@@ -120,25 +120,25 @@ def render_windows(base_url: str, enroll_token: str, extension_id: str, proxy_ho
 # apiKeyHelper (palivane-reenroll.ps1) re-enrolls automatically if that key is revoked/rotated.
 # The helper is native PowerShell — no Python required.
 $ErrorActionPreference = "Stop"
-$WardenUrl   = "{b}"
+$PalivaneUrl   = "{b}"
 $EnrollToken = "{enroll_token}"
 $Device      = "$env:USERNAME@$env:COMPUTERNAME"
 
 Write-Host "Enrolling this device with Palivane as $Device ..."
-$resp = Invoke-RestMethod -Method Post -Uri "$WardenUrl/api/enroll" -ContentType 'application/json' `
+$resp = Invoke-RestMethod -Method Post -Uri "$PalivaneUrl/api/enroll" -ContentType 'application/json' `
   -Body (@{{ token = $EnrollToken; device = $Device }} | ConvertTo-Json)
 $Key = $resp.token
 if (-not $Key) {{ throw "Enrollment failed" }}
 Write-Host "  device key issued."
 
 Write-Host "Installing palivane-reenroll (apiKeyHelper) ..."
-$WardenDir = "$env:ProgramFiles\\Palivane"
-New-Item -ItemType Directory -Force -Path $WardenDir | Out-Null
-$Reenroll = "$WardenDir\\palivane-reenroll.ps1"
-Invoke-RestMethod -Uri "$WardenUrl/cli/palivane-reenroll.ps1" -OutFile $Reenroll
+$PalivaneDir = "$env:ProgramFiles\\Palivane"
+New-Item -ItemType Directory -Force -Path $PalivaneDir | Out-Null
+$Reenroll = "$PalivaneDir\\palivane-reenroll.ps1"
+Invoke-RestMethod -Uri "$PalivaneUrl/cli/palivane-reenroll.ps1" -OutFile $Reenroll
 $cfgDir = "$env:ProgramData\\Palivane"
 New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
-@{{ url = $WardenUrl; enroll_token = $EnrollToken; device = $Device }} | ConvertTo-Json |
+@{{ url = $PalivaneUrl; enroll_token = $EnrollToken; device = $Device }} | ConvertTo-Json |
   Set-Content -Path "$cfgDir\\enroll.json" -Encoding UTF8
 
 Write-Host "Configuring Claude Code ..."
@@ -152,7 +152,7 @@ Write-Host "Configuring browser extension managed policy (Chrome + Edge) ..."
 foreach ($vendor in @("Google\\Chrome", "Microsoft\\Edge")) {{
   $regkey = "HKLM:\\Software\\Policies\\$vendor\\3rdparty\\extensions\\{ext}\\policy"
   New-Item -Path $regkey -Force | Out-Null
-  Set-ItemProperty -Path $regkey -Name "backendUrl"  -Value $WardenUrl
+  Set-ItemProperty -Path $regkey -Name "backendUrl"  -Value $PalivaneUrl
   Set-ItemProperty -Path $regkey -Name "enrollToken" -Value $EnrollToken
   Set-ItemProperty -Path $regkey -Name "enforce"     -Value 1
 }}

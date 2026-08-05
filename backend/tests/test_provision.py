@@ -8,7 +8,7 @@ from app import provision
 
 
 def test_macos_script_self_enrolls():
-    s = provision.render("macos", "https://warden.corp/", "et_secret123", extension_id="abc123")
+    s = provision.render("macos", "https://palivane.corp/", "et_secret123", extension_id="abc123")
     assert s.startswith("#!/usr/bin/env bash")
     assert "et_secret123" in s                    # carries the enrollment token
     assert "/api/enroll" in s                      # self-enrolls at runtime
@@ -17,7 +17,7 @@ def test_macos_script_self_enrolls():
 
 
 def test_windows_script_self_enrolls():
-    s = provision.render("windows", "https://warden.corp", "et_win", extension_id="xyz")
+    s = provision.render("windows", "https://palivane.corp", "et_win", extension_id="xyz")
     assert "et_win" in s
     assert "/api/enroll" in s
     assert "ClaudeCode" in s and "managed-settings.json" in s
@@ -26,7 +26,7 @@ def test_windows_script_self_enrolls():
 
 
 def test_linux_script_self_enrolls():
-    s = provision.render("linux", "https://warden.corp/", "et_lin", extension_id="lnx123")
+    s = provision.render("linux", "https://palivane.corp/", "et_lin", extension_id="lnx123")
     assert s.startswith("#!/usr/bin/env bash")
     assert "et_lin" in s                                   # carries the enrollment token
     assert "/api/enroll" in s                               # self-enrolls at runtime
@@ -43,7 +43,7 @@ def test_default_keeps_claude_codes_own_auth():
     # The settings block must not touch ANTHROPIC_*, and forceLoginMethod locks login to
     # claude.ai so a fleet can't silently drift onto API-key billing.
     for plat in ("macos", "linux", "windows"):
-        s = provision.render(plat, "https://warden.corp", "et_x", extension_id="e")
+        s = provision.render(plat, "https://palivane.corp", "et_x", extension_id="e")
         assert '"ANTHROPIC_BASE_URL"' not in s and "ANTHROPIC_BASE_URL =" not in s
         assert "ANTHROPIC_AUTH_TOKEN" not in s
         assert "forceLoginMethod" in s and "claudeai" in s
@@ -53,13 +53,13 @@ def test_route_gateway_opt_in_wires_gateway():
     # Opt-in gateway routing: ANTHROPIC_BASE_URL points at the gateway (no /v1 — the SDK
     # appends it) and auth comes from apiKeyHelper, so the org's provider key is billed.
     for plat in ("macos", "linux"):
-        s = provision.render(plat, "https://warden.corp", "et_x", extension_id="e",
+        s = provision.render(plat, "https://palivane.corp", "et_x", extension_id="e",
                              route_gateway=True)
         assert '"ANTHROPIC_BASE_URL": "$PALIVANE_URL"' in s and "$PALIVANE_URL/v1" not in s
         assert "forceLoginMethod" not in s
-    w = provision.render("windows", "https://warden.corp", "et_x", extension_id="e",
+    w = provision.render("windows", "https://palivane.corp", "et_x", extension_id="e",
                          route_gateway=True)
-    assert 'ANTHROPIC_BASE_URL = "$WardenUrl"' in w
+    assert 'ANTHROPIC_BASE_URL = "$PalivaneUrl"' in w
     assert "forceLoginMethod" not in w
 
 
@@ -67,7 +67,7 @@ def test_installers_are_self_healing():
     # Gateway auth goes through apiKeyHelper (palivane-reenroll), not a baked static key, so a
     # revoked device key re-enrolls itself with no re-push.
     for plat, ext in (("macos", "abc"), ("linux", "lnx"), ("windows", "win")):
-        s = provision.render(plat, "https://warden.corp", "et_x", extension_id=ext,
+        s = provision.render(plat, "https://palivane.corp", "et_x", extension_id=ext,
                              route_gateway=True)
         assert "apiKeyHelper" in s and "palivane-reenroll" in s
         assert "ANTHROPIC_AUTH_TOKEN" not in s          # no static gateway key baked in
@@ -78,7 +78,7 @@ def test_windows_apikeyhelper_is_python_free():
     # A Windows fleet can't be assumed to have Python; the apiKeyHelper is native PowerShell
     # (palivane-reenroll.ps1, fetched at install), invoked via powershell -File. Wired into
     # settings only in gateway mode, but the helper itself must always be Python-free.
-    s = provision.render("windows", "https://warden.corp", "et_win", extension_id="xyz",
+    s = provision.render("windows", "https://palivane.corp", "et_win", extension_id="xyz",
                          route_gateway=True)
     assert "palivane-reenroll.ps1" in s                       # native PS helper, not the py CLI
     assert "/cli/palivane-reenroll.ps1" in s                  # fetched from the backend
@@ -89,10 +89,10 @@ def test_windows_apikeyhelper_is_python_free():
 def test_browser_policy_carries_enroll_token_not_static_key():
     # The extension self-enrolls its own per-device key from the enrollment token — the
     # installer no longer bakes a static ingest key into the managed policy.
-    lin = provision.render("linux", "https://warden.corp", "et_lin", extension_id="lnx")
+    lin = provision.render("linux", "https://palivane.corp", "et_lin", extension_id="lnx")
     policy = lin.split("3rdparty", 1)[1]
     assert '"enrollToken": "$ENROLL_TOKEN"' in policy and '"token":' not in policy
-    win = provision.render("windows", "https://warden.corp", "et_win", extension_id="xyz")
+    win = provision.render("windows", "https://palivane.corp", "et_win", extension_id="xyz")
     assert 'Set-ItemProperty -Path $regkey -Name "enrollToken"' in win
 
 
@@ -101,7 +101,7 @@ def test_arch_alias_renders_linux():
 
 
 def test_provision_endpoint_serves_linux(client):
-    r = client.post("/api/provision", json={"platform": "linux", "base_url": "https://warden.corp"})
+    r = client.post("/api/provision", json={"platform": "linux", "base_url": "https://palivane.corp"})
     assert r.status_code == 200, r.text
     assert set(r.json()["scripts"]) == {"linux"}
     s = r.json()["scripts"]["linux"]
@@ -110,7 +110,7 @@ def test_provision_endpoint_serves_linux(client):
 
 
 def test_provision_endpoint_route_gateway_opt_in(client):
-    r = client.post("/api/provision", json={"platform": "linux", "base_url": "https://warden.corp",
+    r = client.post("/api/provision", json={"platform": "linux", "base_url": "https://palivane.corp",
                                             "route_gateway": True})
     assert r.status_code == 200, r.text
     s = r.json()["scripts"]["linux"]
@@ -124,7 +124,7 @@ def test_unknown_platform_rejected():
 
 def test_provision_endpoint_mints_enroll_token_and_returns_scripts(client):
     r = client.post("/api/provision", json={
-        "platform": "both", "base_url": "https://warden.corp", "extension_id": "myextid"})
+        "platform": "both", "base_url": "https://palivane.corp", "extension_id": "myextid"})
     assert r.status_code == 200, r.text
     body = r.json()
     assert set(body["scripts"]) == {"macos", "windows"}
@@ -139,7 +139,7 @@ def test_provision_endpoint_mints_enroll_token_and_returns_scripts(client):
 def test_provisioned_installer_enrolls_a_device_end_to_end(client, raw_client):
     # Generate an installer, extract its embedded enrollment token, and use it as a device
     # would — confirming the whole loop yields a working per-device key.
-    body = client.post("/api/provision", json={"platform": "macos", "base_url": "https://warden.corp"}).json()
+    body = client.post("/api/provision", json={"platform": "macos", "base_url": "https://palivane.corp"}).json()
     import re
     et = re.search(r'ENROLL_TOKEN="(et_[^"]+)"', body["scripts"]["macos"]).group(1)
     r = raw_client.post("/api/enroll", json={"token": et, "device": "mac-42@acme.com"})
@@ -151,10 +151,10 @@ def test_provisioned_installer_enrolls_a_device_end_to_end(client, raw_client):
 def test_provision_uses_configured_extension_id_by_default(client, monkeypatch):
     import app.main as main
     monkeypatch.setattr(main.settings, "extension_id", "storeassignedid123")
-    r = client.post("/api/provision", json={"platform": "windows", "base_url": "https://warden.corp"})
+    r = client.post("/api/provision", json={"platform": "windows", "base_url": "https://palivane.corp"})
     assert "storeassignedid123" in r.json()["scripts"]["windows"]   # no explicit id passed
     # explicit id in the request still overrides the configured default
-    r2 = client.post("/api/provision", json={"platform": "windows", "base_url": "https://warden.corp",
+    r2 = client.post("/api/provision", json={"platform": "windows", "base_url": "https://palivane.corp",
                                              "extension_id": "override99"})
     assert "override99" in r2.json()["scripts"]["windows"]
 

@@ -58,7 +58,7 @@ extension authenticates with.
 1. `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select the
    `extension/` folder.
 2. Open the extension's **Options** and set:
-   - **Backend URL**: `https://warden.corp.example.com`
+   - **Backend URL**: `https://palivane.corp.example.com`
    - **Ingest token**: the `EXTENSION_INGEST_TOKEN` value
    - **Enforce**: on to block, off to warn only
 3. Visit `https://claude.ai`, submit a prompt with a fake SSN `123-45-6789` and an
@@ -73,7 +73,7 @@ extension authenticates with.
    extension's `managed_schema.json` applies these and they **override** user settings:
    ```json
    {
-     "backendUrl": { "Value": "https://warden.corp.example.com" },
+     "backendUrl": { "Value": "https://palivane.corp.example.com" },
      "token":      { "Value": "<EXTENSION_INGEST_TOKEN>" },
      "enforce":    { "Value": true }
    }
@@ -100,7 +100,7 @@ repoint the base URL; the **hook** (Route C) adds what neither network route can
 the agent's local tool calls, before they execute. Run A + C together for full coverage.
 
 > **Self-serve (BYOD / pilots):** a user can connect their own Claude Code without an admin
-> distributing tokens — run **`palivane connect https://app.warden.io`** (see
+> distributing tokens — run **`palivane connect https://app.palivane.io`** (see
 > [`cli/README.md`](../cli/README.md)). It signs them in via the console (login/SSO), mints
 > a per-user tenant-scoped key, writes `~/.claude/settings.json`, and installs the Route C
 > hooks automatically. By default Claude Code **keeps its own sign-in** (Pro/Max
@@ -121,7 +121,7 @@ GATEWAY_ANTHROPIC_KEY=sk-ant-...      # the REAL Anthropic key, server-side only
 
 **Mint an API key per developer** (so findings attribute to them):
 ```bash
-curl -X POST https://warden.corp.example.com/api/apikeys \
+curl -X POST https://palivane.corp.example.com/api/apikeys \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -d '{"label":"alice-laptop","actor":"alice@acme.com"}'   # token shown once: ak_...
 ```
@@ -135,7 +135,7 @@ curl -X POST https://warden.corp.example.com/api/apikeys \
 ```json
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "https://warden.corp.example.com",
+    "ANTHROPIC_BASE_URL": "https://palivane.corp.example.com",
     "ANTHROPIC_AUTH_TOKEN": "ak_<the developer's Palivane key>"
   }
 }
@@ -197,9 +197,9 @@ Route A:
 ```json
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "https://warden.corp.example.com",
+    "ANTHROPIC_BASE_URL": "https://palivane.corp.example.com",
     "ANTHROPIC_AUTH_TOKEN": "ak_<the developer's Palivane key>",
-    "PALIVANE_URL": "https://warden.corp.example.com",
+    "PALIVANE_URL": "https://palivane.corp.example.com",
     "PALIVANE_TOKEN": "ak_<the same key>"
   },
   "hooks": {
@@ -246,10 +246,10 @@ and MDM-deployable). Linux community builds are out of scope.
 ### Run the proxy (once, near your egress)
 ```bash
 pip install mitmproxy
-PALIVANE_URL=https://warden.corp.example.com \
+PALIVANE_URL=https://palivane.corp.example.com \
 PALIVANE_TOKEN=$EXTENSION_INGEST_TOKEN \
 PALIVANE_PROXY_ENFORCE=true \
-mitmdump -s proxy/warden_addon.py --listen-port 8081
+mitmdump -s proxy/palivane_addon.py --listen-port 8081
 ```
 (`PALIVANE_TOKEN` is the `EXTENSION_INGEST_TOKEN` from prerequisites, or a per-tenant
 `ak_…` key. Run it as a service and scale horizontally — the addon is stateless.)
@@ -307,7 +307,7 @@ your IdP/CASB list of who accessed Claude/AI domains and reconcile it against ca
 findings:
 
 ```bash
-curl -X POST https://warden.corp.example.com/api/coverage/reconcile \
+curl -X POST https://palivane.corp.example.com/api/coverage/reconcile \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -d '{"events":[{"actor":"alice@acme.com","tool":"claude.ai"},{"actor":"mallory@acme.com","tool":"claude.ai"}]}'
 # -> {"covered":1,"uncovered_count":1,"uncovered":[{"actor":"mallory@acme.com",...}]}

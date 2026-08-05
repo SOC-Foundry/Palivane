@@ -81,7 +81,7 @@ def main() -> int:
 
     token = os.getenv("PALIVANE_TOKEN", "")
     if not token:
-        print("warden: PALIVANE_TOKEN is not set — skipping scan.", file=sys.stderr)
+        print("palivane: PALIVANE_TOKEN is not set — skipping scan.", file=sys.stderr)
         return 1 if args.fail_closed else 0
 
     mode = "all" if args.all else ("range" if args.rng else "staged")
@@ -99,17 +99,17 @@ def main() -> int:
         with urllib.request.urlopen(req, timeout=30) as r:
             result = json.loads(r.read())
     except urllib.error.HTTPError as e:
-        print(f"warden: backend returned HTTP {e.code} — {e.read().decode('utf-8', 'replace')[:200]}",
+        print(f"palivane: backend returned HTTP {e.code} — {e.read().decode('utf-8', 'replace')[:200]}",
               file=sys.stderr)
         return 1 if args.fail_closed else 0
     except (urllib.error.URLError, OSError, ValueError) as e:
-        print(f"warden: could not reach backend ({e}). {'Failing closed.' if args.fail_closed else 'Failing open.'}",
+        print(f"palivane: could not reach backend ({e}). {'Failing closed.' if args.fail_closed else 'Failing open.'}",
               file=sys.stderr)
         return 1 if args.fail_closed else 0
 
     flagged = result.get("files", [])
     if not flagged:
-        print(f"warden: scanned {result.get('scanned', len(files))} file(s) — clean ✓")
+        print(f"palivane: scanned {result.get('scanned', len(files))} file(s) — clean ✓")
         return 0
 
     blocking = False

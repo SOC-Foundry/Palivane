@@ -544,7 +544,7 @@ def mcp_block_body(verdict: dict) -> bytes:
 
 # --- mitmproxy hook (thin wrapper around the functions above) -------------------------
 
-class WardenGuard:
+class PalivaneGuard:
     def __init__(self) -> None:
         self.enforce = os.getenv("PALIVANE_PROXY_ENFORCE", "").lower() in ("1", "true", "yes")
 
@@ -618,4 +618,4 @@ class WardenGuard:
                 resp.headers["Content-Type"] = "application/json"
 
 
-addons = [WardenGuard()]
+addons = [PalivaneGuard()]

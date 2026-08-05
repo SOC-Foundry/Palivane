@@ -305,7 +305,7 @@ def test_siem(current: User = Depends(require_admin), db: Session = Depends(get_
     fields = siem._fields(
         {"severity": "high", "risk_score": 75, "finding_id": 0,
          "signals": [{"category": "secret_leak"}]},
-        subject="Palivane SIEM test event", actor="warden", surface="test", org=t.slug)
+        subject="Palivane SIEM test event", actor="palivane", surface="test", org=t.slug)
     ok = siem.send_sync(t.siem_url.strip(), t.siem_token or "", t.siem_format or "json", fields)
     return {"ok": ok}
 
@@ -1789,7 +1789,7 @@ def _secret_remediation(it: SecretAtRest) -> list[str]:
 
 @app.get("/api/policy-pack")
 def policy_pack(
-    base_url: str = "https://warden.example.com",
+    base_url: str = "https://palivane.example.com",
     proxy_host: str = "",
     proxy_port: int = 8081,
     hook_path: str = "/usr/local/bin/palivane-hook",

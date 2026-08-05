@@ -4,7 +4,7 @@
 
 ## Purpose & scope
 
-Defines how TachTech protects Palivane (the hosted service at warden.tachtech.net, the
+Defines how TachTech protects Palivane (the hosted service at palivane.tachtech.net, the
 source repository, and all customer data processed by either). Applies to every person
 with access — currently the Founder and any future employee or contractor from their
 first day.

@@ -30,11 +30,11 @@ system path pushed by MDM (Linux /etc/gemini-cli/settings.json, macOS
 C:\\ProgramData\\gemini-cli\\settings.json) — note timeouts are in milliseconds:
 
   {"hooks": {
-     "BeforeAgent": [{"hooks": [{"name": "warden", "type": "command",
+     "BeforeAgent": [{"hooks": [{"name": "palivane", "type": "command",
                                  "command": "/usr/local/bin/palivane-gemini-hook",
                                  "timeout": 10000}]}],
      "BeforeTool":  [{"matcher": ".*",
-                      "hooks": [{"name": "warden", "type": "command",
+                      "hooks": [{"name": "palivane", "type": "command",
                                  "command": "/usr/local/bin/palivane-gemini-hook",
                                  "timeout": 10000}]}]}}
 

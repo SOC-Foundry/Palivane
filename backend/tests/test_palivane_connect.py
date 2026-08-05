@@ -373,7 +373,7 @@ def test_refresh_planes_updates_and_is_atomic(tmp_path, monkeypatch):
     # No proxy addon in this sandboxed HOME, so it isn't fetched.
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
-    msgs = wc._refresh_planes("https://warden.example")
+    msgs = wc._refresh_planes("https://palivane.example")
     for name in wc._PLANE_SCRIPTS:
         p = tmp_path / "bin" / name
         assert p.exists() and os.access(p, os.X_OK)
@@ -389,16 +389,16 @@ def test_refresh_planes_skips_checkout_and_flag(tmp_path, monkeypatch):
     # Source checkout: sibling scripts are authoritative — don't fetch over them.
     monkeypatch.setattr(wc, "_in_repo_checkout", lambda: True)
     monkeypatch.setattr(wc.sys, "argv", ["palivane-connect"])
-    assert any("checkout" in m for m in wc._refresh_planes("https://warden.example"))
+    assert any("checkout" in m for m in wc._refresh_planes("https://palivane.example"))
     # Explicit opt-out.
     monkeypatch.setattr(wc, "_in_repo_checkout", lambda: False)
     monkeypatch.setattr(wc.sys, "argv", ["palivane-connect", "--no-update"])
-    assert wc._refresh_planes("https://warden.example") == []
+    assert wc._refresh_planes("https://palivane.example") == []
     assert calls == []   # never hit the network in either case
 
 
 # --- --uninstall reverses what connect wrote (and only that) -------------------------
-def test_uninstall_strips_only_warden(tmp_path, monkeypatch):
+def test_uninstall_strips_only_palivane(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     claude = tmp_path / ".claude"; claude.mkdir()
     (claude / "settings.json").write_text(json.dumps({

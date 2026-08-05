@@ -14,7 +14,7 @@ import HowItWorks from "./components/HowItWorks.jsx";
 import Setup from "./components/Setup.jsx";
 import UseCases from "./components/UseCases.jsx";
 import Pricing from "./components/Pricing.jsx";
-import WhyWarden from "./components/WhyWarden.jsx";
+import WhyPalivane from "./components/WhyPalivane.jsx";
 import Trust from "./components/Trust.jsx";
 import Docs from "./components/Docs.jsx";
 import Admin from "./components/Admin.jsx";
@@ -132,7 +132,7 @@ export default function App() {
     return <UseCases />;
   }
   if (legalPath === "/why-palivane" || legalPath === "/why-warden") {
-    return <WhyWarden />;
+    return <WhyPalivane />;
   }
   if (legalPath === "/trust") {
     return <Trust />;
@@ -163,7 +163,7 @@ export default function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <img className="sidebar-emblem" src="/warden-emblem.png" alt="Palivane" />
+          <img className="sidebar-emblem" src="/palivane-emblem.png" alt="Palivane" />
           <div>
             <div className="brand-name">Palivane</div>
             <div className="brand-sub">AI Security Gateway</div>

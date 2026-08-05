@@ -22,7 +22,7 @@ const UNINSTALL = [
   { n: "2", title: "Remove the egress proxy",
     body: "Run  palivane-desktop uninstall  to stop the proxy, revert the system-proxy setting, and remove the per-tool CLI shims. The root CA is left in your trust store for safety — delete it manually (macOS Keychain; Linux /usr/local/share/ca-certificates/palivane-mitmproxy.crt then update-ca-certificates) for a full revert." },
   { n: "3", title: "Remove the CLI & extension",
-    body: "rm -rf ~/.warden  removes the CLI and local state, then drop the ~/.warden/bin line from your shell rc. Finally, remove the Palivane extension from Chrome/Edge. On an MDM fleet, pull the policy pack instead — the profile owns every device's settings, so removing it reverts them all." },
+    body: "rm -rf ~/.palivane  removes the CLI and local state, then drop the ~/.palivane/bin line from your shell rc. Finally, remove the Palivane extension from Chrome/Edge. On an MDM fleet, pull the policy pack instead — the profile owns every device's settings, so removing it reverts them all." },
 ];
 
 const ORG = [

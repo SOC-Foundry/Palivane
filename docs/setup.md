@@ -212,7 +212,7 @@ curl -fsSL https://<your-console>/install.sh | bash
 ```
 
 It signs the user in (a browser window opens), installs the governance CLI into
-`~/.warden/bin`, wires prompt + tool-call hooks into Claude Code, Cursor, Codex, and Gemini
+`~/.palivane/bin`, wires prompt + tool-call hooks into Claude Code, Cursor, Codex, and Gemini
 CLI, and stands up the sudo-free egress proxy for everything else — all
 subscription-compatible, no config files. Flags:
 
@@ -321,12 +321,14 @@ palivane-connect --uninstall     # removes the Claude Code / Cursor / Gemini / C
                                # the Palivane env, and the creds files it wrote
 palivane-desktop uninstall       # stops the egress proxy; reverts the system-proxy setting
                                # and removes the CLI capture shims
-rm -rf ~/.warden               # the CLI in ~/.warden/bin + local state (breaker/posture)
+rm -rf ~/.palivane             # the CLI in ~/.palivane/bin + local state (breaker/posture)
 ```
 
-Then drop the `~/.warden/bin` line the installer added to your shell rc (`~/.bashrc` /
-`~/.zshrc` / `~/.profile`, or `~/.config/fish/conf.d/warden.fish`), and remove the **browser
-extension** from Chrome/Edge.
+Then drop the `~/.palivane/bin` line the installer added to your shell rc (`~/.bashrc` /
+`~/.zshrc` / `~/.profile`, or `~/.config/fish/conf.d/palivane.fish`), and remove the **browser
+extension** from Chrome/Edge. A machine installed before the rebrand may also have the old
+`~/.warden` directory, a `~/.warden/bin` rc line, and `~/.config/fish/conf.d/warden.fish` —
+remove those the same way.
 
 Notes:
 

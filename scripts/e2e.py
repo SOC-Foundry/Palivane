@@ -11,7 +11,7 @@ Usage:
     python3 scripts/e2e.py
 
     # against another deployment / creds (env overrides)
-    PALIVANE_E2E_URL=https://warden.corp.example.com \
+    PALIVANE_E2E_URL=https://palivane.corp.example.com \
     PALIVANE_E2E_EMAIL=admin@acme.com PALIVANE_E2E_PASSWORD=… python3 scripts/e2e.py
 
 Exit code is 0 only if every check passes (CI-friendly). Stdlib only. It CREATES findings

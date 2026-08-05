@@ -13,8 +13,8 @@ and browser do the enforcing; Palivane only generates the config.
 An admin calls the generator (the token is a console session or admin API key):
 
 ```bash
-curl -s "https://warden.example.com/api/policy-pack\
-?base_url=https://warden.example.com&proxy_host=proxy.corp.example.com&proxy_port=8081" \
+curl -s "https://palivane.example.com/api/policy-pack\
+?base_url=https://palivane.example.com&proxy_host=proxy.corp.example.com&proxy_port=8081" \
   -H "Authorization: Bearer $ADMIN_TOKEN" | jq -r '.artifacts | keys[]'
 ```
 
@@ -33,13 +33,13 @@ It returns these artifacts (write each to a file):
 | `openai.env` | Environment vars (`OPENAI_BASE_URL`) routing OpenAI SDK/CLI clients through the gateway — agentless, no CA needed. Does **not** cover Codex under ChatGPT-subscription auth — that's `codex-hooks.json` |
 | `codex-hooks.json` | Codex CLI `hooks.json` registering `palivane-codex-hook` on `UserPromptSubmit` + `PreToolUse` (codex 0.116+) — local capture of Codex prompts + tool calls in every auth mode |
 | `codex.txt` | The Codex story: subscription auth ignores `OPENAI_BASE_URL`; distribute the hooks as managed hooks via `requirements.toml` (auto-trusted, can lock out user hooks) |
-| `copilot-hooks.json` | GitHub Copilot hook file registering `palivane-copilot-hook` on `preToolUse` (tool calls — **deniable**) + `userPromptSubmitted` (prompts — observe-only). One file, three surfaces: `~/.copilot/hooks/warden.json` per device (Copilot CLI), or committed as `.github/hooks/warden.json` per repo (VS Code agent mode + the **cloud coding agent**) |
+| `copilot-hooks.json` | GitHub Copilot hook file registering `palivane-copilot-hook` on `preToolUse` (tool calls — **deniable**) + `userPromptSubmitted` (prompts — observe-only). One file, three surfaces: `~/.copilot/hooks/palivane.json` per device (Copilot CLI), or committed as `.github/hooks/palivane.json` per repo (VS Code agent mode + the **cloud coding agent**) |
 | `copilot.txt` | The Copilot story: no base-URL override, proxy sees no tool semantics; hook exit/timeout semantics (non-zero exit denies, timeout allows), the subagent-coverage gap, and why `palivane-mcp` wrapping of `~/.copilot/mcp-config.json` matters (GitHub's cloud-agent firewall doesn't cover MCP) |
 | `gemini.txt` | Gemini coverage: local hooks for the Gemini CLI (below), system proxy + SDK `http_options` snippet for everything else |
 | `gemini-settings.json` | Gemini CLI `settings.json` hooks block registering `palivane-gemini-hook` on `BeforeAgent` + `BeforeTool` (gemini-cli 0.26+) — local capture of Gemini prompts + tool calls in every auth mode, including the Google login that ignores base-URL overrides |
 | `cursor-hooks.json` | Cursor `hooks.json` registering `palivane-cursor-hook` on the security events — local, pinning-proof capture of Cursor prompts + tool calls |
 | `cursor.txt` | The full Cursor story: why chat is proxy-opaque, and how the hooks + MCP wrap + git/gateway close it |
-| `palivane-secrets.plist` / `.cron` / `-task.xml` | Schedule the endpoint credential scan (`palivane-secrets --engine trufflehog`) daily via launchd (macOS) / cron (Linux) / Task Scheduler (Windows) — finds SSH/RSA keys, tokens, `.env` secrets **at rest** before an infostealer does (metadata-only). Drives **TruffleHog** by default (falls back to the built-in regex scan if not installed); set `?secrets_engine=gitleaks` or `?secrets_engine=` on `/api/policy-pack` to change it. On Windows the task invokes `%USERPROFILE%\.warden\bin\palivane-secrets.cmd` — the launcher `palivane-desktop.ps1 install` writes (it resolves a Python 3 and carries the token); pass a Windows `?secrets_path=` to point at your own packaged `palivane-secrets.exe` instead. |
+| `palivane-secrets.plist` / `.cron` / `-task.xml` | Schedule the endpoint credential scan (`palivane-secrets --engine trufflehog`) daily via launchd (macOS) / cron (Linux) / Task Scheduler (Windows) — finds SSH/RSA keys, tokens, `.env` secrets **at rest** before an infostealer does (metadata-only). Drives **TruffleHog** by default (falls back to the built-in regex scan if not installed); set `?secrets_engine=gitleaks` or `?secrets_engine=` on `/api/policy-pack` to change it. On Windows the task invokes `%USERPROFILE%\.palivane\bin\palivane-secrets.cmd` — the launcher `palivane-desktop.ps1 install` writes (it resolves a Python 3 and carries the token); pass a Windows `?secrets_path=` to point at your own packaged `palivane-secrets.exe` instead. |
 | `ca-note.txt` | Where to deploy your root CA (required for TLS inspection) |
 
 The extension allow/deny lists come from this tenant's IDE-vetting config (its
@@ -53,7 +53,7 @@ paths default to `/usr/local/bin/palivane-hook`, `/usr/local/bin/palivane-postur
 Pull one artifact to a file:
 
 ```bash
-curl -s "https://warden.example.com/api/policy-pack?..." -H "Authorization: Bearer $ADMIN_TOKEN" \
+curl -s "https://palivane.example.com/api/policy-pack?..." -H "Authorization: Bearer $ADMIN_TOKEN" \
   | jq -r '.artifacts["vscode-extensions.json"]' > vscode-extensions.json
 ```
 

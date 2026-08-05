@@ -7,7 +7,7 @@
 | Vendor | Purpose | Data exposure | Their attestations |
 |---|---|---|---|
 | Google Cloud | Hosting, database, secrets, build, monitoring (us-central1) | All service data | SOC 1/2/3, ISO 27001 |
-| Cloudflare | Edge/TLS/WAF for warden.tachtech.net | Traffic in transit | SOC 2, ISO 27001 |
+| Cloudflare | Edge/TLS/WAF for palivane.tachtech.net | Traffic in transit | SOC 2, ISO 27001 |
 | Anthropic | LLM judge (detection quality) | Scanned content, only when the org's judge is enabled (per-org opt-out; no training on API data) | SOC 2 |
 | Google Workspace | Transactional email | Email addresses, notification metadata | SOC 2, ISO 27001 |
 

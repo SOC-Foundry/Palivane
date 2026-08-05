@@ -19,7 +19,7 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     env:
-      PALIVANE_URL: https://warden.corp.example.com
+      PALIVANE_URL: https://palivane.corp.example.com
       PALIVANE_TOKEN: ${{ secrets.PALIVANE_TOKEN }}
       # The org to sweep.
       PALIVANE_ORG: your-org
