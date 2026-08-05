@@ -14,6 +14,13 @@ import urllib.request
 _RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}
 
 
+def _envelope(env: dict) -> dict:
+    """Structured payload under both brand keys. "warden" is the pre-rebrand key existing
+    webhook consumers may parse — keep emitting it through the deprecation window (announced
+    2026-08; drop no earlier than 2027-02). New integrations should read "palivane"."""
+    return {"palivane": env, "warden": env}
+
+
 def _payload(verdict: dict, subject: str, actor: str, surface: str) -> dict:
     from .signal_summary import top_signals
     cats = ", ".join(s.get("category", "") for s in verdict.get("signals", [])[:5]) or "—"
@@ -25,11 +32,11 @@ def _payload(verdict: dict, subject: str, actor: str, surface: str) -> dict:
     text = (f":shield: *Palivane {verdict.get('severity', '?').upper()}* — "
             f"{subject or 'finding'} ({actor or 'unknown'})\n"
             f"{cats} · risk {verdict.get('risk_score', '?')} · surface {surface}{lines}")
-    return {"text": text, "warden": {
+    return {"text": text, **_envelope({
         "severity": verdict.get("severity"), "risk_score": verdict.get("risk_score"),
         "categories": cats, "actor": actor, "surface": surface,
         "finding_id": verdict.get("finding_id"), "top_signals": tops,
-    }}
+    })}
 
 
 def send_sync(webhook: str, payload: dict, timeout: float = 8.0) -> bool:
@@ -70,7 +77,7 @@ def notify_judge_down(webhook: str, health: dict) -> bool:
             "(top up API credits, or set a fallback provider key for failover).")
     if not webhook:
         return False
-    return send_sync(webhook, {"text": text, "warden": {"event": "judge_down", **health}})
+    return send_sync(webhook, {"text": text, **_envelope({"event": "judge_down", **health})})
 
 
 def notify_judge_recovered(webhook: str, health: dict) -> bool:
@@ -79,7 +86,7 @@ def notify_judge_recovered(webhook: str, health: dict) -> bool:
         return False
     return send_sync(webhook, {"text": ":white_check_mark: *Palivane: LLM judge recovered* — a "
                               "provider is answering again; full detection restored.",
-                              "warden": {"event": "judge_recovered", **health}})
+                              **_envelope({"event": "judge_recovered", **health})})
 
 
 def notify_upgrade_request(webhook: str, org: str, plan: str, seats: int,
@@ -93,8 +100,8 @@ def notify_upgrade_request(webhook: str, org: str, plan: str, seats: int,
             + f". Contact: {contact or 'unknown'}."
             + (f"\n> {note}" if note else "")
             + "\nWork the queue in the operator console (/admin).")
-    return send_sync(webhook, {"text": text, "warden": {
-        "event": "upgrade_request", "org": org, "plan": plan, "seats": seats}})
+    return send_sync(webhook, {"text": text, **_envelope({
+        "event": "upgrade_request", "org": org, "plan": plan, "seats": seats})})
 
 
 def _realtime_ok(severity: str, min_severity: str, digest: str) -> bool:
@@ -129,8 +136,8 @@ def _digest_payload(tenant, findings: list, since, now) -> dict:
     more = f"\n…and {len(findings) - len(top)} more" if len(findings) > len(top) else ""
     text = (f":shield: *Palivane {tenant.alert_digest} digest* — {len(findings)} finding(s) "
             f"since {since:%Y-%m-%d %H:%M} UTC\n{by_sev}\n{lines}{more}")
-    return {"text": text, "warden": {"digest": tenant.alert_digest, "count": len(findings),
-                                     "by_severity": dict(c), "org": tenant.slug}}
+    return {"text": text, **_envelope({"digest": tenant.alert_digest, "count": len(findings),
+                                       "by_severity": dict(c), "org": tenant.slug})}
 
 
 def run_digests(db, now=None) -> int:

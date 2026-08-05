@@ -2,9 +2,9 @@
 apiVersion: networking.gke.io/v1
 kind: ManagedCertificate
 metadata:
-  name: {{ include "warden.name" . }}-cert
+  name: {{ include "palivane.name" . }}-cert
   labels:
-    {{- include "warden.labels" . | nindent 4 }}
+    {{- include "palivane.labels" . | nindent 4 }}
 spec:
   domains:
     - {{ .Values.host }}
@@ -13,13 +13,13 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "warden.name" . }}
+  name: {{ include "palivane.name" . }}
   labels:
-    {{- include "warden.labels" . | nindent 4 }}
+    {{- include "palivane.labels" . | nindent 4 }}
   annotations:
     kubernetes.io/ingress.class: "gce"
     {{- if .Values.managedCertificate }}
-    networking.gke.io/managed-certificates: {{ include "warden.name" . }}-cert
+    networking.gke.io/managed-certificates: {{ include "palivane.name" . }}-cert
     {{- end }}
 spec:
   rules:
@@ -30,6 +30,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ include "warden.name" . }}
+                name: {{ include "palivane.name" . }}
                 port:
                   number: 80

@@ -43,6 +43,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 
+from .alerts import _envelope as _brand_envelope
 from .config import settings
 from .database import bind_tenant, get_db
 from .detectors import AnalysisInput, Surface
@@ -764,8 +765,8 @@ def _openai_error(verdict: dict) -> JSONResponse:
     return JSONResponse(status_code=403, content={"error": {
         "message": f"Blocked by Palivane: {top} (risk {verdict['risk_score']}/{verdict['severity']}).",
         "type": "palivane_blocked", "code": "prompt_blocked",
-        "warden": {"risk_score": verdict["risk_score"], "severity": verdict["severity"],
-                     "finding_id": verdict.get("finding_id")},
+        **_brand_envelope({"risk_score": verdict["risk_score"], "severity": verdict["severity"],
+                           "finding_id": verdict.get("finding_id")}),
     }})
 
 
@@ -776,7 +777,7 @@ def _openai_stub(model: str, verdict: dict) -> dict:
         "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant",
                      "content": "[Palivane gateway: no upstream configured — prompt passed inspection.]"}}],
         "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-        "warden": {"risk_score": verdict["risk_score"], "severity": verdict["severity"]},
+        **_brand_envelope({"risk_score": verdict["risk_score"], "severity": verdict["severity"]}),
     }
 
 
@@ -937,7 +938,7 @@ def _responses_stub(model: str, verdict: dict) -> dict:
             {"type": "output_text",
              "text": "[Palivane gateway: no upstream configured — prompt passed inspection.]"}]}],
         "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
-        "warden": {"risk_score": verdict["risk_score"], "severity": verdict["severity"]},
+        **_brand_envelope({"risk_score": verdict["risk_score"], "severity": verdict["severity"]}),
     }
 
 
@@ -1021,7 +1022,7 @@ def _anthropic_stub(model: str, verdict: dict) -> dict:
         "id": f"msg_palivane_{int(time.time())}", "type": "message", "role": "assistant", "model": model,
         "content": [{"type": "text", "text": "[Palivane gateway: no upstream configured — prompt passed inspection.]"}],
         "stop_reason": "end_turn", "usage": {"input_tokens": 0, "output_tokens": 0},
-        "warden": {"risk_score": verdict["risk_score"], "severity": verdict["severity"]},
+        **_brand_envelope({"risk_score": verdict["risk_score"], "severity": verdict["severity"]}),
     }
 
 
@@ -1165,7 +1166,7 @@ def _gemini_stub(model: str, verdict: dict) -> dict:
             "finishReason": "STOP", "index": 0}],
         "usageMetadata": {"promptTokenCount": 0, "candidatesTokenCount": 0, "totalTokenCount": 0},
         "modelVersion": model,
-        "warden": {"risk_score": verdict["risk_score"], "severity": verdict["severity"]},
+        **_brand_envelope({"risk_score": verdict["risk_score"], "severity": verdict["severity"]}),
     }
 
 

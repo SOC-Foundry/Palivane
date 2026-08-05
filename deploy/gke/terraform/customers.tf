@@ -1,6 +1,6 @@
 # One dedicated, isolated stack per enterprise customer (see var.customers). Namespace and
 # KSA follow a convention the provisioning script + Helm chart share: ns = <slug>,
-# ksa = warden-<slug>.
+# ksa = palivane-<slug>.
 module "customer" {
   source   = "./modules/customer"
   for_each = var.customers
@@ -17,7 +17,7 @@ module "customer" {
   db_tier       = each.value.db_tier
   db_disk_gb    = each.value.db_disk_gb
   namespace     = each.key
-  ksa_name      = "warden-${each.key}"
+  ksa_name      = "palivane-${each.key}"
 }
 
 output "customers" {

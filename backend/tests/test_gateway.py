@@ -20,6 +20,8 @@ def test_monitor_mode_passes_through_and_records(client, monkeypatch):
     # OpenAI-shaped response, plus our verdict annotation.
     assert body["choices"][0]["message"]["role"] == "assistant"
     assert body["warden"]["severity"] in ("high", "critical")
+    # Both brand keys during the rebrand deprecation window, with identical content.
+    assert body["palivane"] == body["warden"]
 
     # The prompt was captured as an llm_io finding for this tenant.
     findings = client.get("/api/findings").json()["findings"]
@@ -36,6 +38,7 @@ def test_enforce_mode_blocks_injection(client, monkeypatch):
     err = r.json()["error"]
     assert err["type"] == "palivane_blocked"
     assert err["warden"]["finding_id"] is not None
+    assert err["palivane"] == err["warden"]
 
 
 def test_enforce_mode_allows_benign(client, monkeypatch):

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Onboard ONE isolated enterprise customer onto the Warden GKE platform:
+# Onboard ONE isolated enterprise customer onto the Palivane GKE platform:
 #   dedicated node pool + dedicated Cloud SQL + dedicated GSA (Terraform), then a
-#   single-tenant Warden instance in its own namespace (Helm), on its own subdomain.
+#   single-tenant Palivane instance in its own namespace (Helm), on its own subdomain.
 #
 #   1. add the customer to terraform/*.tfvars `customers` map, then:
 #   2. ./provision-customer.sh <slug> <hostname>
@@ -15,14 +15,14 @@ SLUG="${1:?usage: provision-customer.sh <slug> <hostname>}"
 HOST="${2:?usage: provision-customer.sh <slug> <hostname>}"
 PROJECT="${PROJECT_ID:-erudite-calling-502022-k6}"
 REGION="${REGION:-us-central1}"
-CLUSTER="${CLUSTER:-warden}"
+CLUSTER="${CLUSTER:-warden}"   # live GCP cluster name — deliberately warden (rebrand runbook)
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 echo "==> [1/5] Terraform: create ${SLUG}'s dedicated node pool + Cloud SQL + GSA"
 ( cd "$HERE/terraform" && terraform apply -input=false -auto-approve -target="module.customer[\"$SLUG\"]" )
 read -r GSA CONN < <(cd "$HERE/terraform" && terraform output -json customers | python3 -c "
 import json,sys; d=json.load(sys.stdin)['$SLUG']; print(d['gsa_email'], d['sql_connection_name'])")
-INSTANCE="warden-$SLUG"
+INSTANCE="palivane-$SLUG"
 echo "    GSA=$GSA  instance=$INSTANCE"
 
 echo "==> [2/5] cluster credentials + namespace"
@@ -30,8 +30,8 @@ gcloud container clusters get-credentials "$CLUSTER" --region "$REGION" --projec
 kubectl create namespace "$SLUG" --dry-run=client -o yaml | kubectl apply -f -
 
 echo "==> [3/5] secrets (reuse if present — never rotate the key)"
-sk_secret="warden-$SLUG-secret-key"
-db_secret="warden-$SLUG-db-url"
+sk_secret="palivane-$SLUG-secret-key"
+db_secret="palivane-$SLUG-db-url"
 get_or_create() { # $1=secret name, $2=value-if-new
   if gcloud secrets describe "$1" --project "$PROJECT" >/dev/null 2>&1; then
     gcloud secrets versions access latest --secret="$1" --project "$PROJECT"
@@ -45,31 +45,31 @@ if gcloud secrets describe "$db_secret" --project "$PROJECT" >/dev/null 2>&1; th
   DBURL="$(gcloud secrets versions access latest --secret="$db_secret" --project "$PROJECT")"
 else
   DBPASS="$(openssl rand -hex 24)"
-  gcloud sql users create warden --instance="$INSTANCE" --project "$PROJECT" --password="$DBPASS" 2>/dev/null \
-    || gcloud sql users set-password warden --instance="$INSTANCE" --project "$PROJECT" --password="$DBPASS"
-  DBURL="postgresql+psycopg2://warden:${DBPASS}@127.0.0.1:5432/warden"   # via the Cloud SQL proxy sidecar
+  gcloud sql users create palivane --instance="$INSTANCE" --project "$PROJECT" --password="$DBPASS" 2>/dev/null \
+    || gcloud sql users set-password palivane --instance="$INSTANCE" --project "$PROJECT" --password="$DBPASS"
+  DBURL="postgresql+psycopg2://palivane:${DBPASS}@127.0.0.1:5432/palivane"   # via the Cloud SQL proxy sidecar
   printf '%s' "$DBURL" | gcloud secrets create "$db_secret" --project "$PROJECT" --replication-policy=automatic --data-file=- >/dev/null
 fi
 
 echo "==> [4/5] kubernetes secret"
-kubectl -n "$SLUG" create secret generic "warden-$SLUG-secrets" \
+kubectl -n "$SLUG" create secret generic "palivane-$SLUG-secrets" \
   --from-literal=PALIVANE_SECRET_KEY="$SECRETKEY" \
   --from-literal=DATABASE_URL="$DBURL" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "==> [5/5] helm install the single-tenant instance"
-helm upgrade --install "warden-$SLUG" "$HERE/chart/warden" -n "$SLUG" \
+helm upgrade --install "palivane-$SLUG" "$HERE/chart/palivane" -n "$SLUG" \
   --set customer="$SLUG" --set host="$HOST" \
   --set gcpServiceAccount="$GSA" --set cloudsql.connectionName="$CONN"
 
 cat <<EOF
 
 Provisioned '$SLUG'. Next:
-  - Point DNS: $HOST -> the ingress IP:  kubectl -n $SLUG get ingress warden-$SLUG
+  - Point DNS: $HOST -> the ingress IP:  kubectl -n $SLUG get ingress palivane-$SLUG
     (the Google-managed cert provisions once DNS resolves; ~15-30 min.)
   - Create the first admin:
-      kubectl -n $SLUG exec deploy/warden-$SLUG -c warden -- \\
+      kubectl -n $SLUG exec deploy/palivane-$SLUG -c palivane -- \\
         python -m app.users create-tenant --slug $SLUG --name "$SLUG"
-      kubectl -n $SLUG exec deploy/warden-$SLUG -c warden -- \\
+      kubectl -n $SLUG exec deploy/palivane-$SLUG -c palivane -- \\
         python -m app.users create-user --tenant $SLUG --email admin@$SLUG.example --role admin
 EOF

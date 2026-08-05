@@ -11,9 +11,9 @@ Each customer gets:
 
 | Boundary | Mechanism |
 |----------|-----------|
-| Compute | Dedicated **node pool**, tainted `dedicated=<slug>:NoSchedule` + labeled `warden-customer=<slug>`. Only that customer's pods tolerate the taint, so no other tenant's workload ever lands on their nodes. |
+| Compute | Dedicated **node pool**, tainted `dedicated=<slug>:NoSchedule` + labeled `palivane-customer=<slug>`. Only that customer's pods tolerate the taint, so no other tenant's workload ever lands on their nodes. |
 | Data | Dedicated **Cloud SQL** instance (private IP, own backups + PITR). No shared database. |
-| Identity | Dedicated **Google service account** (`warden-<slug>`) with only `cloudsql.client` + `secretmanager.secretAccessor`, bound to the pod's KSA via **Workload Identity**. |
+| Identity | Dedicated **Google service account** (`palivane-<slug>`) with only `cloudsql.client` + `secretmanager.secretAccessor`, bound to the pod's KSA via **Workload Identity**. |
 | Network | Own **namespace**, own **subdomain** + Google-managed TLS cert, container-native LB (NEG). |
 | Secrets | Own `PALIVANE_SECRET_KEY` (per-instance encryption root) + DB URL in Secret Manager. |
 
@@ -24,7 +24,7 @@ workloads never run on it.
 
 - `terraform/` — the cluster (`cluster.tf`) + a reusable per-customer module
   (`modules/customer/`) instantiated once per entry in the `customers` map (`customers.tf`).
-- `chart/warden/` — Helm chart for one single-tenant instance (Deployment with Cloud SQL
+- `chart/palivane/` — Helm chart for one single-tenant instance (Deployment with Cloud SQL
   proxy sidecar, Service+NEG, Ingress+ManagedCertificate, Workload-Identity ServiceAccount).
 - `provision-customer.sh` — end-to-end onboarding for one customer.
 
@@ -47,7 +47,7 @@ SQL); it creates its own `warden-gke-subnet` with secondary ranges for pods/serv
 #      customers = { acme = { machine_type = "e2-standard-2", min_nodes = 1,
 #                             max_nodes = 3, db_tier = "db-g1-small", db_disk_gb = 10 } }
 # 2. run:
-./provision-customer.sh acme warden-acme.tachtech.net
+./provision-customer.sh acme acme.palivane.tachtech.net
 ```
 
 The script applies the customer's Terraform (node pool + Cloud SQL + GSA), creates the

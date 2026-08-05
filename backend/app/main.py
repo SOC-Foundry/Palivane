@@ -291,7 +291,7 @@ def test_alert(current: User = Depends(require_admin), db: Session = Depends(get
         raise HTTPException(status_code=400, detail="no alert webhook configured")
     ok = alerts.send_sync(t.alert_webhook.strip(), {
         "text": ":shield: Palivane test alert — your webhook is connected.",
-        "warden": {"test": True, "org": t.slug}})
+        **alerts._envelope({"test": True, "org": t.slug})})
     return {"ok": ok}
 
 
