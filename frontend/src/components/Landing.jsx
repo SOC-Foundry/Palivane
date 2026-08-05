@@ -80,7 +80,7 @@ export default function Landing({ onSignIn }) {
           <div className="lp-gallery">
             <Shot src="/shots/discovery.png?v=3" alt="Inventory of AI tools in use" onZoom={(s, a) => setZoom({ src: s, alt: a })}
                   caption="Every AI tool in use, broken down by team — and what data actually went to each one." />
-            <Shot src="/shots/policies.png?v=3" alt="Policy console" onZoom={(s, a) => setZoom({ src: s, alt: a })}
+            <Shot src="/shots/policies.png?v=4" alt="Policy console" onZoom={(s, a) => setZoom({ src: s, alt: a })}
                   caption="Turn individual checks on or off, org-wide or for one team." />
             <Shot src="/shots/agents.png?v=3" alt="AI assistant identity and limits" onZoom={(s, a) => setZoom({ src: s, alt: a })}
                   caption="Give each AI assistant its own identity and limits — watch first, enforce when ready." />
