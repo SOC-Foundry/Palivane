@@ -998,3 +998,13 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 /* Tool-scoped suppression pair (finding detail) */
 .tune-pair { display: inline-flex; align-items: center; gap: 6px; }
 .tune-everywhere { font-size: 11.5px; color: var(--muted); }
+
+/* ---- Large-monitor upscaling --------------------------------------------------------
+   The layout is designed around ~1120-1280px columns with fixed-px type. On wide CSS
+   viewports (1440p/4K/ultrawide at 100% OS scaling) that leaves a small UI in a sea of
+   margin — scale the whole page up instead. `zoom` multiplies px units wholesale and is
+   supported by every current engine (Firefox since 126). Media queries evaluate against
+   the real viewport, so the small-screen breakpoints above are never co-active. */
+   1920-and-below is the design target and stays untouched; scaling starts above it. */
+@media (min-width: 2100px) { html { zoom: 1.25; } }
+@media (min-width: 3000px) { html { zoom: 1.6; } }
