@@ -116,6 +116,26 @@ def test_claude_cli_explicit_is_primary_with_api_fallbacks(monkeypatch):
     assert "anthropic" in providers          # API key still serves as failover
 
 
+def test_claude_cli_logs_deprecation_warning(monkeypatch, caplog):
+    # ToS-driven deprecation (Anthropic restricts subscription auth to its own products,
+    # enforced 2026-04-04): selecting claude-cli must warn loudly at backend build time.
+    monkeypatch.setattr(lj.settings, "judge_provider", "claude-cli")
+    monkeypatch.setattr(lj.settings, "judge_model", "")
+    monkeypatch.setattr(lj, "_resolve_key", lambda p: "")
+    monkeypatch.setattr(lj, "_ClaudeCLIBackend", lambda binary, model: ("cli", model))
+    with caplog.at_level("WARNING", logger="palivane.judge"):
+        lj._build_backends()
+    assert any("DEPRECATED" in r.message for r in caplog.records)
+    # ...and an API-key provider must build silently
+    caplog.clear()
+    monkeypatch.setattr(lj.settings, "judge_provider", "anthropic")
+    monkeypatch.setattr(lj, "_resolve_key", lambda p: "k" if p == "anthropic" else "")
+    _patch_api_ctors(monkeypatch)
+    with caplog.at_level("WARNING", logger="palivane.judge"):
+        lj._build_backends()
+    assert not any("DEPRECATED" in r.message for r in caplog.records)
+
+
 def test_claude_cli_skipped_when_binary_missing(monkeypatch):
     monkeypatch.setattr(lj.settings, "judge_provider", "claude-cli")
     monkeypatch.setattr(lj.settings, "judge_cli_bin", "definitely-not-a-real-binary-xyz")
