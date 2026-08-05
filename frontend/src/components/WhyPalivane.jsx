@@ -74,7 +74,7 @@ export default function WhyPalivane() {
           <p className="lp-sub">An AI assistant with access to your codebase deserves the same
              limits you would give a contractor. Palivane gives each one an identity and a
              boundary — which tools, commands, and data it may touch — and enforces it.</p>
-          <Shot lead src="/shots/agents.png" alt="AI assistant identity and limits" />
+          <Shot lead src="/shots/agents.png?v=3" alt="AI assistant identity and limits" />
         </div>
       </section>
 
