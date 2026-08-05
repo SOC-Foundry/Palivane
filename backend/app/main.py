@@ -2552,7 +2552,7 @@ def _safe_static_file(root: str, full_path: str) -> str | None:
     return cand if (inside and _os.path.isfile(cand)) else None
 
 
-_STATIC_DIR = _env("PALIVANE_STATIC_DIR", "WARDEN_STATIC_DIR", "")
+_STATIC_DIR = _env("PALIVANE_STATIC_DIR", "")
 if _STATIC_DIR and _os.path.isdir(_STATIC_DIR):
     from fastapi.responses import FileResponse  # noqa: E402
     from fastapi.staticfiles import StaticFiles  # noqa: E402
