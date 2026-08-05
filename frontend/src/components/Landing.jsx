@@ -78,11 +78,11 @@ export default function Landing({ onSignIn }) {
           <Clip lead src="/shots/demo13.mp4" poster="/shots/demo-poster13.png"
                 caption="Eight places the same secret tried to escape, then a tour of every console screen it lands in. Every verdict, risk score and fix in the video is live output from a running Palivane instance." />
           <div className="lp-gallery">
-            <Shot src="/shots/discovery.png?v=2" alt="Inventory of AI tools in use" onZoom={(s, a) => setZoom({ src: s, alt: a })}
+            <Shot src="/shots/discovery.png?v=3" alt="Inventory of AI tools in use" onZoom={(s, a) => setZoom({ src: s, alt: a })}
                   caption="Every AI tool in use, broken down by team — and what data actually went to each one." />
-            <Shot src="/shots/policies.png?v=2" alt="Policy console" onZoom={(s, a) => setZoom({ src: s, alt: a })}
+            <Shot src="/shots/policies.png?v=3" alt="Policy console" onZoom={(s, a) => setZoom({ src: s, alt: a })}
                   caption="Turn individual checks on or off, org-wide or for one team." />
-            <Shot src="/shots/agents.png?v=2" alt="AI assistant identity and limits" onZoom={(s, a) => setZoom({ src: s, alt: a })}
+            <Shot src="/shots/agents.png?v=3" alt="AI assistant identity and limits" onZoom={(s, a) => setZoom({ src: s, alt: a })}
                   caption="Give each AI assistant its own identity and limits — watch first, enforce when ready." />
           </div>
         </div>

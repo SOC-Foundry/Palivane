@@ -1,6 +1,6 @@
 # scripts/
 
-Operational and content-production scripts. `e2e.py` and `shot_help.mjs` are documented in
+Operational and content-production scripts. `e2e.py` and `shots.py` are documented in
 their own headers; the demo-video rig is below.
 
 ## The landing-page hero video
