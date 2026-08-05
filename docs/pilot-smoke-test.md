@@ -39,7 +39,7 @@ these will block on every surface. Everything is attributed to your `@tachtech.n
    ```bash
    curl -fsSL https://palivane.tachtech.net/install.sh | bash
    ```
-   - ✅ It installs into `~/.warden/bin`, opens a browser to sign in, then prints success.
+   - ✅ It installs into `~/.palivane/bin`, opens a browser to sign in, then prints success.
 2. [ ] Verify Claude Code was wired:
    ```bash
    cat ~/.claude/settings.json
@@ -93,7 +93,7 @@ these will block on every surface. Everything is attributed to your `@tachtech.n
 
 ## Rollback / cleanup
 - Browser: remove the extension, or click **Disconnect** in the popup.
-- CLI: delete the `hooks`/`env` block from `~/.claude/settings.json` (or `rm -rf ~/.warden`).
+- CLI: delete the `hooks`/`env` block from `~/.claude/settings.json` (or `rm -rf ~/.palivane`).
 - Desktop: `palivane-desktop uninstall` (then optionally remove the mitmproxy CA from the
   keychain / trust store).
 - Revoke any test keys in the console → **Team / API keys**.

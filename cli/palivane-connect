@@ -33,7 +33,7 @@ If Copilot CLI is installed (~/.copilot present), it registers palivane-copilot-
 (observe-only at this plane) locally. Stdlib only.
 
     palivane-connect                              # hosted SaaS (palivane.tachtech.net)
-    palivane-connect https://warden.self-hosted   # or set PALIVANE_URL, for self-hosting
+    palivane-connect https://palivane.self-hosted   # or set PALIVANE_URL, for self-hosting
     palivane-connect --route-gateway              # also route API traffic via the gateway
 """
 
@@ -457,7 +457,7 @@ def _merge_gemini_hook(data: dict, event: str, matcher: str | None, command: str
     entry: dict = {}
     if matcher is not None:
         entry["matcher"] = matcher
-    entry["hooks"] = [{"name": "warden", "type": "command", "command": command,
+    entry["hooks"] = [{"name": "palivane", "type": "command", "command": command,
                        "timeout": 10000}]
     entries.append(entry)
     return True

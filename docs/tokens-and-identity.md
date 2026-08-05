@@ -37,7 +37,7 @@ once. Validated by prefix lookup + timing-safe hash; accepted via `x-api-key`,
 `Authorization: Bearer`, or `x-goog-api-key`/`?key=` depending on the SDK.
 
 ```bash
-curl -X POST https://warden.corp.example.com/api/apikeys \
+curl -X POST https://palivane.corp.example.com/api/apikeys \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -d '{"label":"alice-laptop","actor":"alice@acme.com"}'   # -> token shown once: ak_...
 ```
@@ -59,7 +59,7 @@ Both shadow-AI capture planes authenticate with this **same** secret:
 - **Egress proxy** — the proxy reads it from its own env var `PALIVANE_TOKEN`, which you
   set to the `EXTENSION_INGEST_TOKEN` value:
   ```bash
-  PALIVANE_TOKEN=$EXTENSION_INGEST_TOKEN mitmdump -s proxy/warden_addon.py --listen-port 8081
+  PALIVANE_TOKEN=$EXTENSION_INGEST_TOKEN mitmdump -s proxy/palivane_addon.py --listen-port 8081
   ```
   > Naming gotcha: the proxy's local variable is `PALIVANE_TOKEN`, not
   > `EXTENSION_INGEST_TOKEN`. Same secret, different local name.
@@ -95,7 +95,7 @@ Per-user keys flow `actor` → `Principal.actor` → the finding's `sender`, whi
 same field coverage reconciliation matches on:
 
 ```bash
-curl -X POST https://warden.corp.example.com/api/coverage/reconcile \
+curl -X POST https://palivane.corp.example.com/api/coverage/reconcile \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -d '{"events":[{"actor":"alice@acme.com","tool":"claude.ai"},{"actor":"mallory@acme.com","tool":"claude.ai"}]}'
 # -> {"covered":1,"uncovered_count":1,"uncovered":[{"actor":"mallory@acme.com",...}]}
@@ -107,7 +107,7 @@ Push keys via Claude Code's enterprise `managed-settings.json` (highest preceden
 ```json
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "https://warden.corp.example.com",
+    "ANTHROPIC_BASE_URL": "https://palivane.corp.example.com",
     "ANTHROPIC_AUTH_TOKEN": "ak_<the developer's Palivane key>"
   }
 }

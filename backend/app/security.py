@@ -29,7 +29,7 @@ from .config import settings
 _ph = PasswordHasher()   # argon2id with sensible defaults
 # Precomputed argon2 hash to verify against on a user-miss, so a wrong email costs the
 # same time as a wrong password (no user-enumeration via timing).
-DUMMY_PASSWORD_HASH = _ph.hash("warden-timing-placeholder")
+DUMMY_PASSWORD_HASH = _ph.hash("palivane-timing-placeholder")
 
 
 def hash_password(password: str) -> str:

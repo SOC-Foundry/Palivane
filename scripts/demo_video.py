@@ -210,7 +210,7 @@ def render_scene(pw, name: str, html: str, seconds: float, out_dir: str) -> int:
     with open(path, "w") as f:
         f.write(html)
     # the emblem is referenced relatively by the title card
-    shutil.copy(f"{REPO}/frontend/public/warden-emblem.png", f"{WORK}/warden-emblem.png")
+    shutil.copy(f"{REPO}/frontend/public/palivane-emblem.png", f"{WORK}/palivane-emblem.png")
     b = pw.chromium.launch()
     page = b.new_context(viewport={"width": W, "height": H}).new_page()
     page.goto("file://" + path)

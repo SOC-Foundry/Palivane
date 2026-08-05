@@ -421,7 +421,7 @@ file (and your Panther pipeline) still works:
 ```yaml
 exporters:
   otlphttp/palivane:
-    logs_endpoint: https://warden.example.com/v1/logs
+    logs_endpoint: https://palivane.example.com/v1/logs
     encoding: json
     headers:
       X-Palivane-Token: ak_<a Palivane capture key>

@@ -34,7 +34,7 @@ by default; add `--fail-closed` in a pipeline so a broken sweep is visible.
 ## S3 bucket scanning
 
 ```bash
-export PALIVANE_URL=https://warden.corp.example.com PALIVANE_TOKEN=ak_…
+export PALIVANE_URL=https://palivane.corp.example.com PALIVANE_TOKEN=ak_…
 palivane-s3-scan my-data-bucket --prefix exports/ --record
 palivane-s3-scan my-data-bucket --dry-run        # list what it would scan + public verdict; sends nothing
 ```
@@ -66,7 +66,7 @@ exposure checks):
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "WardenS3ScanBucket",
+      "Sid": "PalivaneS3ScanBucket",
       "Effect": "Allow",
       "Action": [
         "s3:ListBucket",
@@ -77,7 +77,7 @@ exposure checks):
       "Resource": "arn:aws:s3:::my-data-bucket"
     },
     {
-      "Sid": "WardenS3ScanObjects",
+      "Sid": "PalivaneS3ScanObjects",
       "Effect": "Allow",
       "Action": "s3:GetObject",
       "Resource": "arn:aws:s3:::my-data-bucket/*"
@@ -89,10 +89,10 @@ exposure checks):
 Add more bucket ARNs to cover more buckets, or use `arn:aws:s3:::*` and `.../*` for all.
 
 **Setting it up in the AWS Console (UI):**
-1. **IAM → Policies → Create policy → JSON**, paste the above, name it `WardenS3ScanRead`.
+1. **IAM → Policies → Create policy → JSON**, paste the above, name it `PalivaneS3ScanRead`.
 2. Attach it to whatever runs the scan:
    - **Best (keyless): an instance role.** IAM → **Roles → Create role** → **AWS service → EC2**
-     → attach `WardenS3ScanRead`. Then **EC2 → your instance → Actions → Security → Modify IAM
+     → attach `PalivaneS3ScanRead`. Then **EC2 → your instance → Actions → Security → Modify IAM
      role** → select it. The scanner gets temporary creds from instance metadata — nothing to
      store or rotate.
    - **Or an IAM user + access key** (non-EC2): IAM → **Users → Create user** → attach the
@@ -122,7 +122,7 @@ systemctl list-timers 'palivane-s3-scan@*'
 The pre-commit hook and PR Action scan **what changes**. To sweep **existing contents**:
 
 ```bash
-export PALIVANE_URL=https://warden.corp.example.com PALIVANE_TOKEN=ak_…
+export PALIVANE_URL=https://palivane.corp.example.com PALIVANE_TOKEN=ak_…
 
 # Every tracked file in the current checkout (not just the diff):
 palivane_git_scan.py --all --record

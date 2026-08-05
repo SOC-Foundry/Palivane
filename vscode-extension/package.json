@@ -1,12 +1,12 @@
 {
-  "name": "warden-vscode",
-  "displayName": "Warden — AI Security Posture",
-  "description": "Continuous in-IDE posture for Warden: extension inventory drift, MCP config changes, and AI-assistant autonomy settings, reported live to your org's Warden console.",
-  "version": "0.1.0",
+  "name": "palivane-vscode",
+  "displayName": "Palivane — AI Security Posture",
+  "description": "Continuous in-IDE posture for Palivane: extension inventory drift, MCP config changes, and AI-assistant autonomy settings, reported live to your org's Palivane console.",
+  "version": "0.2.0",
   "publisher": "tachtech",
   "license": "MIT",
   "icon": "icon.png",
-  "repository": { "type": "git", "url": "https://github.com/Dkerschieter/Warden" },
+  "repository": { "type": "git", "url": "https://github.com/TachTech-Engineering/Warden" },
   "homepage": "https://palivane.tachtech.net",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Other"],
@@ -16,17 +16,22 @@
   "main": "./extension.js",
   "contributes": {
     "commands": [
-      { "command": "warden.connect", "title": "Warden: Connect to console" },
-      { "command": "warden.reportNow", "title": "Warden: Report posture now" },
-      { "command": "warden.disconnect", "title": "Warden: Disconnect" }
+      { "command": "palivane.connect", "title": "Palivane: Connect to console" },
+      { "command": "palivane.reportNow", "title": "Palivane: Report posture now" },
+      { "command": "palivane.disconnect", "title": "Palivane: Disconnect" }
     ],
     "configuration": {
-      "title": "Warden",
+      "title": "Palivane",
       "properties": {
+        "palivane.url": {
+          "type": "string",
+          "default": "",
+          "description": "Palivane console URL (empty = hosted SaaS or the URL from ~/.claude/settings.json)"
+        },
         "warden.url": {
           "type": "string",
           "default": "",
-          "description": "Warden console URL (empty = hosted SaaS or the URL from ~/.claude/settings.json)"
+          "description": "Deprecated pre-rebrand setting — use palivane.url. Still read as a fallback."
         }
       }
     }

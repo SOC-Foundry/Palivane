@@ -5,7 +5,7 @@ branding:
   color: blue
 inputs:
   palivane-url:
-    description: "Palivane backend base URL (e.g. https://warden.corp.example.com)."
+    description: "Palivane backend base URL (e.g. https://palivane.corp.example.com)."
     required: true
   palivane-token:
     description: "A Palivane API key (ak_…). Pass from a repo/org secret."

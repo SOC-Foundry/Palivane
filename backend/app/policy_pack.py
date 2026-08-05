@@ -241,7 +241,7 @@ def gemini_settings(gemini_hook_path: str) -> str:
     security-relevant events (gemini-cli 0.26+; timeouts are milliseconds). Push to the
     system settings path via MDM or merge into ~/.gemini/settings.json. Local +
     pre-execution, so it works in every auth mode."""
-    entry = {"name": "warden", "type": "command", "command": gemini_hook_path,
+    entry = {"name": "palivane", "type": "command", "command": gemini_hook_path,
              "timeout": 10000}
     return json.dumps({
         "hooks": {

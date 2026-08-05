@@ -24,7 +24,7 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     env:
-      PALIVANE_URL: https://warden.corp.example.com
+      PALIVANE_URL: https://palivane.corp.example.com
       # Only needed without OIDC: a per-tenant API key (ak_…) stored as a secret.
       # PALIVANE_TOKEN: ${{ secrets.PALIVANE_TOKEN }}
     steps:

@@ -41,7 +41,7 @@ const REASONS = [
   },
 ];
 
-export default function WhyWarden() {
+export default function WhyPalivane() {
   return (
     <div className="landing">
       <SiteNav />

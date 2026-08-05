@@ -121,7 +121,7 @@ export default function Login({ onAuthed, onBack }) {
     return (
       <div className="login-screen">
         <div className="login-card">
-          <img className="login-logo" src="/warden-emblem.png" alt="Palivane" />
+          <img className="login-logo" src="/palivane-emblem.png" alt="Palivane" />
           <div className="login-wordmark">PALIVANE</div>
           <p className="login-sub">
             {pendingKind === "verify" ? (
@@ -150,7 +150,7 @@ export default function Login({ onAuthed, onBack }) {
     return (
       <div className="login-screen">
         <form className="login-card" onSubmit={submitMfa}>
-          <img className="login-logo" src="/warden-logo.png" alt="Palivane" width="76" height="76" />
+          <img className="login-logo" src="/palivane-logo.png" alt="Palivane" width="76" height="76" />
           <div className="brand"><span className="logo">◆</span> Palivane</div>
           <p className="login-sub">Enter the 6-digit code from your authenticator app (or a recovery code).</p>
           <input autoFocus inputMode="numeric" placeholder="123456" value={mfaCode}
@@ -169,7 +169,7 @@ export default function Login({ onAuthed, onBack }) {
   return (
     <div className="login-screen">
       <form className="login-card" onSubmit={submit}>
-        <img className="login-logo" src="/warden-emblem.png" alt="Palivane" />
+        <img className="login-logo" src="/palivane-emblem.png" alt="Palivane" />
         <div className="login-wordmark">PALIVANE</div>
         <p className="login-sub">
           {mode === "signup" ? "Create your organization" :

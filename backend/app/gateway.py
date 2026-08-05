@@ -931,7 +931,7 @@ def _stream_tool_use_responses(text: str) -> dict | None:
 def _responses_stub(model: str, verdict: dict) -> dict:
     now = int(time.time())
     return {
-        "id": f"resp_warden_{now}", "object": "response", "created_at": now, "model": model,
+        "id": f"resp_palivane_{now}", "object": "response", "created_at": now, "model": model,
         "status": "completed",
         "output": [{"type": "message", "role": "assistant", "status": "completed", "content": [
             {"type": "output_text",
@@ -1018,7 +1018,7 @@ def _anthropic_error(verdict: dict) -> JSONResponse:
 
 def _anthropic_stub(model: str, verdict: dict) -> dict:
     return {
-        "id": f"msg_warden_{int(time.time())}", "type": "message", "role": "assistant", "model": model,
+        "id": f"msg_palivane_{int(time.time())}", "type": "message", "role": "assistant", "model": model,
         "content": [{"type": "text", "text": "[Palivane gateway: no upstream configured — prompt passed inspection.]"}],
         "stop_reason": "end_turn", "usage": {"input_tokens": 0, "output_tokens": 0},
         "warden": {"risk_score": verdict["risk_score"], "severity": verdict["severity"]},

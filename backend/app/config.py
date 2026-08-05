@@ -84,7 +84,7 @@ class Settings:
     # Current data-processing-agreement version an org accepts (compliance record). Bump
     # when the DPA text changes to prompt re-acceptance.
     dpa_version: str = _env("PALIVANE_DPA_VERSION", "1.0")
-    # Public origin of this deployment (e.g. https://app.warden.io). When set, SSO builds
+    # Public origin of this deployment (e.g. https://app.palivane.io). When set, SSO builds
     # its token-bearing redirect from THIS, not the client Host header — closing a
     # host-header open-redirect / session-token exfil. Also seeds the trusted-host allowlist.
     public_base_url: str = _env("PALIVANE_PUBLIC_URL", "").rstrip("/")

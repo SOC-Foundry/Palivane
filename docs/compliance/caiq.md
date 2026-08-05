@@ -1,9 +1,9 @@
 # Security questionnaire responses (CAIQ-style)
 
 Pre-filled answers to the questions security reviewers ask most, organized by CAIQ v4
-domain. Hand this with the [/trust](https://warden.tachtech.net/trust) page and the
+domain. Hand this with the [/trust](https://palivane.tachtech.net/trust) page and the
 in-product DPA. Company: **TachTech** · Service: **Palivane — AI Security Gateway**
-(hosted at warden.tachtech.net; self-hosted option available). Current as of
+(hosted at palivane.tachtech.net; self-hosted option available). Current as of
 **2026-07-19**; contact security@tachtech.net.
 
 **Context reviewers should know up front:** TachTech is a single-operator company. We

@@ -86,7 +86,7 @@ Push via your MDM / Google Admin / group policy:
 
    ```json
    {
-     "backendUrl": { "Value": "https://warden.corp.example.com" },
+     "backendUrl": { "Value": "https://palivane.corp.example.com" },
      "token":      { "Value": "<EXTENSION_INGEST_TOKEN>" },
      "enforce":    { "Value": true }
    }
@@ -99,7 +99,7 @@ interaction**. Set `user` from SSO if your management layer can template it.
 
    ```json
    {
-     "backendUrl":  { "Value": "https://warden.corp.example.com" },
+     "backendUrl":  { "Value": "https://palivane.corp.example.com" },
      "enrollToken": { "Value": "et_<fleet enrollment token>" },
      "enforce":     { "Value": true }
    }

@@ -1,4 +1,4 @@
-// Warden for VS Code — the continuous in-IDE posture sensor (the "real extension" that
+// Palivane for VS Code — the continuous in-IDE posture sensor (the "real extension" that
 // the palivane-posture CLI was the 80/20 for). Same scan APIs, but event-driven instead of
 // session-triggered:
 //
@@ -23,7 +23,7 @@ const http = require("http");
 const os = require("os");
 const path = require("path");
 
-const UA = "palivane-vscode/0.1.0";   // Cloudflare's front door 403s default/bare UAs
+const UA = "palivane-vscode/0.2.0";   // Cloudflare's front door 403s default/bare UAs
 const DEFAULT_URL = "https://palivane.tachtech.net";
 
 let status;          // status bar item
@@ -38,14 +38,27 @@ function settingsEnv() {
   } catch { return {}; }
 }
 
+// One-time carry-over from the pre-rebrand "warden.*" namespace, so an installed
+// 0.1.x doesn't lose its sign-in when upgraded.
+async function migrateLegacyState() {
+  try {
+    const old = await ctx.secrets.get("warden.token");
+    if (old) {
+      if (!(await ctx.secrets.get("palivane.token"))) await ctx.secrets.store("palivane.token", old);
+      await ctx.secrets.delete("warden.token");
+    }
+  } catch {}
+}
+
 async function resolveConfig() {
   const senv = settingsEnv();
-  let url = vscode.workspace.getConfiguration("warden").get("url") ||
+  let url = vscode.workspace.getConfiguration("palivane").get("url") ||
+            vscode.workspace.getConfiguration("warden").get("url") ||   // pre-rebrand setting
             process.env.PALIVANE_URL || senv.PALIVANE_URL || "";
   if (!url && typeof senv.ANTHROPIC_BASE_URL === "string") {
     url = senv.ANTHROPIC_BASE_URL.replace(/\/v1\/?$/, "");
   }
-  let token = (await ctx.secrets.get("warden.token")) ||
+  let token = (await ctx.secrets.get("palivane.token")) ||
               process.env.PALIVANE_TOKEN || senv.PALIVANE_TOKEN || "";
   if (!token && typeof senv.ANTHROPIC_AUTH_TOKEN === "string" &&
       senv.ANTHROPIC_AUTH_TOKEN.startsWith("ak_")) {
@@ -63,7 +76,7 @@ function connectFlow(consoleUrl) {
       const u = new URL(req.url, "http://127.0.0.1");
       if (u.pathname !== "/cb") { res.statusCode = 404; return res.end(); }
       res.setHeader("content-type", "text/html");
-      res.end("<h2>Warden connected. You can close this tab and return to VS Code.</h2>");
+      res.end("<h2>Palivane connected. You can close this tab and return to VS Code.</h2>");
       const got = Object.fromEntries(u.searchParams);
       server.close();
       if (got.state !== state) return reject(new Error("state mismatch"));
@@ -158,7 +171,7 @@ async function post(cfg, apiPath, body) {
   try {
     const r = await fetch(cfg.url + apiPath, {
       method: "POST",
-      headers: { "content-type": "application/json", "User-Agent": UA, "X-Warden-Token": cfg.token },
+      headers: { "content-type": "application/json", "User-Agent": UA, "X-Palivane-Token": cfg.token },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(10000),
     });
@@ -184,7 +197,7 @@ async function report(force = false) {
                 { content, tool, user, record: true }, content]);
   }
 
-  const cacheKey = `warden.reported.${cfg.url}`;
+  const cacheKey = `palivane.reported.${cfg.url}`;
   const cache = force ? {} : (ctx.globalState.get(cacheKey) || {});
   let posted = 0;
   for (const [key, apiPath, body, canonical] of items) {
@@ -202,15 +215,15 @@ async function report(force = false) {
 function updateStatus(connected, posted) {
   if (!status) return;
   if (!connected) {
-    status.text = "$(shield) Warden: not connected";
-    status.tooltip = "Click to sign in to your Warden console";
-    status.command = "warden.connect";
+    status.text = "$(shield) Palivane: not connected";
+    status.tooltip = "Click to sign in to your Palivane console";
+    status.command = "palivane.connect";
   } else {
-    status.text = "$(shield) Warden";
+    status.text = "$(shield) Palivane";
     status.tooltip = posted
-      ? `Warden posture sensor active — ${posted} report(s) just sent`
-      : "Warden posture sensor active — everything up to date";
-    status.command = "warden.reportNow";
+      ? `Palivane posture sensor active — ${posted} report(s) just sent`
+      : "Palivane posture sensor active — everything up to date";
+    status.command = "palivane.reportNow";
   }
   status.show();
 }
@@ -222,22 +235,24 @@ async function activate(context) {
   status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90);
   context.subscriptions.push(status);
 
+  await migrateLegacyState();
+
   context.subscriptions.push(
-    vscode.commands.registerCommand("warden.connect", async () => {
+    vscode.commands.registerCommand("palivane.connect", async () => {
       const cfg = await resolveConfig();
       try {
         const got = await connectFlow(cfg.url);
-        await ctx.secrets.store("warden.token", got.token);
+        await ctx.secrets.store("palivane.token", got.token);
         vscode.window.showInformationMessage(
-          `Warden connected as ${got.user || "you"} — posture reporting is on.`);
+          `Palivane connected as ${got.user || "you"} — posture reporting is on.`);
         await report(true);
       } catch (e) {
-        vscode.window.showErrorMessage(`Warden sign-in failed: ${e.message || e}`);
+        vscode.window.showErrorMessage(`Palivane sign-in failed: ${e.message || e}`);
       }
     }),
-    vscode.commands.registerCommand("warden.reportNow", () => report(true)),
-    vscode.commands.registerCommand("warden.disconnect", async () => {
-      await ctx.secrets.delete("warden.token");
+    vscode.commands.registerCommand("palivane.reportNow", () => report(true)),
+    vscode.commands.registerCommand("palivane.disconnect", async () => {
+      await ctx.secrets.delete("palivane.token");
       updateStatus(false);
     }),
     // Live drift: a newly installed/removed extension is reported within seconds.

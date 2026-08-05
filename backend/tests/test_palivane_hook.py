@@ -107,7 +107,7 @@ def test_config_reuses_gateway_credentials(monkeypatch, tmp_path):
     assert cfg["token"] == "ak_gateway"
 
 
-def test_config_ignores_non_warden_gateway_token(monkeypatch, tmp_path):
+def test_config_ignores_non_palivane_gateway_token(monkeypatch, tmp_path):
     # A raw provider key (sk-ant-…) must NOT be used as an ingest credential.
     for var in ("PALIVANE_URL", "PALIVANE_TOKEN"):
         monkeypatch.delenv(var, raising=False)
