@@ -337,6 +337,14 @@ Notes:
   store automatically (both the Debian `update-ca-certificates` and the p11-kit
   `update-ca-trust` families — Arch, Fedora/RHEL, openSUSE) as well as the per-user NSS store.
   On **macOS** the CA is left in the Keychain for safety — delete it manually for a full revert.
+- `palivane-desktop uninstall` scrubs the proxy from **every layer it was set in**: the
+  `environment.d` session file, the live systemd user environment, the D-Bus activation
+  environment, and the KDE proxy config (`kioslaverc` — the proxy URLs are deleted, not just
+  switched off). Pre-rebrand `warden-*` artifacts (service unit, env file, CA names, shims)
+  are cleaned up too. **Caveat:** apps already running keep the proxy environment they started
+  with, and long-lived desktop processes (plasmashell) re-inject it into anything they launch —
+  log out and back in, or on KDE run
+  `systemctl --user restart plasma-plasmashell.service && pkill -x krunner`.
 - On an **MDM-managed fleet**, remove the pushed policy pack instead — the profile owns the
   extension force-install, proxy, and managed settings, so pulling it reverts every device.
 
