@@ -7,14 +7,10 @@ from dataclasses import dataclass
 
 
 
-def _env(new_name: str, legacy_name: str, default: str = "") -> str:
-    """Read a PALIVANE_* env var, falling back to the legacy WARDEN_* name (backward
-    compatibility during the Palivane->Palivane rename), then to `default`. New name wins."""
-    import os as _os
-    v = _os.getenv(new_name)
-    if not v:
-        v = _os.getenv(legacy_name)
-    return v if v else default
+def _env(name: str, default: str = "") -> str:
+    """Read a PALIVANE_* env var, or `default`. (The legacy WARDEN_* fallback was
+    removed once prod migrated fully to the PALIVANE_ names — see the rebrand batches.)"""
+    return os.getenv(name) or default
 
 
 @dataclass
@@ -39,12 +35,12 @@ class Settings:
     # is operator-funded, so it is bundled only into the paid tier(s) that carry the "judge"
     # feature (see app/plans.py). Self-hosted leaves this off (default): the operator sets
     # their own provider key and the judge runs for everyone whenever a key is configured.
-    judge_plan_gated: bool = _env("PALIVANE_JUDGE_PLAN_GATED", "WARDEN_JUDGE_PLAN_GATED", "").lower() in ("1", "true", "yes")
+    judge_plan_gated: bool = _env("PALIVANE_JUDGE_PLAN_GATED", "").lower() in ("1", "true", "yes")
     # Session behavioral correlation: after a finding is stored, look across the actor's
     # recent activity for an escalating attack CHAIN (recon → collection → exfil) that no
     # single event trips. On by default; window is how far back to look (minutes).
-    session_correlation: bool = _env("PALIVANE_SESSION_CORRELATION", "WARDEN_SESSION_CORRELATION", "true").lower() in ("1", "true", "yes")
-    session_window_min: int = int(_env("PALIVANE_SESSION_WINDOW_MIN", "WARDEN_SESSION_WINDOW_MIN", "30"))
+    session_correlation: bool = _env("PALIVANE_SESSION_CORRELATION", "true").lower() in ("1", "true", "yes")
+    session_window_min: int = int(_env("PALIVANE_SESSION_WINDOW_MIN", "30"))
     # MCP server reputation/provenance (beyond allowlist + TOFU pinning): a known-bad
     # denylist (server names or packages, comma-separated), and an opt-in registry
     # freshness check that flags freshly-published / freshly-republished packages — the
@@ -56,56 +52,56 @@ class Settings:
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./warden.db")
     cors_origins: str = os.getenv("CORS_ORIGINS", "http://localhost:5173")
     # Reject request bodies larger than this (DoS/OOM guard); ~12 MB default.
-    max_body_bytes: int = int(_env("PALIVANE_MAX_BODY_BYTES", "WARDEN_MAX_BODY_BYTES", "12000000"))
+    max_body_bytes: int = int(_env("PALIVANE_MAX_BODY_BYTES", "12000000"))
     # Auth. Set WARDEN_SECRET_KEY in production (signs JWTs). Empty => an insecure
     # dev fallback is used and the API logs a warning at startup.
-    auth_secret_key: str = _env("PALIVANE_SECRET_KEY", "WARDEN_SECRET_KEY", "")
+    auth_secret_key: str = _env("PALIVANE_SECRET_KEY", "")
     auth_token_ttl: int = int(os.getenv("AUTH_TOKEN_TTL", "43200"))  # seconds (12h)
     # Brute-force protection: after this many failed logins for an email within the
     # window (seconds), further attempts are refused (HTTP 429) until it elapses.
-    login_max_fails: int = int(_env("PALIVANE_LOGIN_MAX_FAILS", "WARDEN_LOGIN_MAX_FAILS", "5"))
+    login_max_fails: int = int(_env("PALIVANE_LOGIN_MAX_FAILS", "5"))
     # A single IP hammering many emails is blocked at a higher threshold (a shared office
     # NAT has several legit users, so it's looser than the per-email limit).
-    login_ip_max_fails: int = int(_env("PALIVANE_LOGIN_IP_MAX_FAILS", "WARDEN_LOGIN_IP_MAX_FAILS", "20"))
-    login_window: int = int(_env("PALIVANE_LOGIN_WINDOW", "WARDEN_LOGIN_WINDOW", "300"))
+    login_ip_max_fails: int = int(_env("PALIVANE_LOGIN_IP_MAX_FAILS", "20"))
+    login_window: int = int(_env("PALIVANE_LOGIN_WINDOW", "300"))
     # Redact secrets/PII from stored finding content so Palivane's own DB isn't a
     # plaintext-secret honeypot. Detection still runs on the raw content.
-    redact_findings: bool = _env("PALIVANE_REDACT_FINDINGS", "WARDEN_REDACT_FINDINGS", "true").lower() in ("1", "true", "yes")
+    redact_findings: bool = _env("PALIVANE_REDACT_FINDINGS", "true").lower() in ("1", "true", "yes")
     # Encrypt stored finding content at rest (decrypted on read for authorized admins).
     # Opt-in: requires a durable WARDEN_ENCRYPTION_KEY/WARDEN_SECRET_KEY (key loss = data loss).
-    encrypt_findings: bool = _env("PALIVANE_ENCRYPT_FINDINGS", "WARDEN_ENCRYPT_FINDINGS", "").lower() in ("1", "true", "yes")
+    encrypt_findings: bool = _env("PALIVANE_ENCRYPT_FINDINGS", "").lower() in ("1", "true", "yes")
     # Persist the raw prompt PROSE in findings? Default OFF: store the verdict, signal
     # categories, redacted evidence, and attribution — but not the natural-language content,
     # which can't be redacted for concepts/IP and would make the store a honeypot. A tenant
     # can opt in (store_content column) for richer triage of its own data.
-    store_content: bool = _env("PALIVANE_STORE_CONTENT", "WARDEN_STORE_CONTENT", "").lower() in ("1", "true", "yes")
+    store_content: bool = _env("PALIVANE_STORE_CONTENT", "").lower() in ("1", "true", "yes")
     # For tenants that DO store content, scrub it (keep metadata) after this many days.
     # Bounds the exposure window instead of keeping prose forever. 0 = never scrub.
-    content_ttl_days: int = int(_env("PALIVANE_CONTENT_TTL_DAYS", "WARDEN_CONTENT_TTL_DAYS", "30"))
+    content_ttl_days: int = int(_env("PALIVANE_CONTENT_TTL_DAYS", "30"))
     # Self-serve signup: anyone can create a new org (tenant). Set false on a
     # single-org self-hosted deployment to lock it down after bootstrapping.
-    allow_signup: bool = _env("PALIVANE_ALLOW_SIGNUP", "WARDEN_ALLOW_SIGNUP", "true").lower() in ("1", "true", "yes")
+    allow_signup: bool = _env("PALIVANE_ALLOW_SIGNUP", "true").lower() in ("1", "true", "yes")
     # Current data-processing-agreement version an org accepts (compliance record). Bump
     # when the DPA text changes to prompt re-acceptance.
-    dpa_version: str = _env("PALIVANE_DPA_VERSION", "WARDEN_DPA_VERSION", "1.0")
+    dpa_version: str = _env("PALIVANE_DPA_VERSION", "1.0")
     # Public origin of this deployment (e.g. https://app.warden.io). When set, SSO builds
     # its token-bearing redirect from THIS, not the client Host header — closing a
     # host-header open-redirect / session-token exfil. Also seeds the trusted-host allowlist.
-    public_base_url: str = _env("PALIVANE_PUBLIC_URL", "WARDEN_PUBLIC_URL", "").rstrip("/")
+    public_base_url: str = _env("PALIVANE_PUBLIC_URL", "").rstrip("/")
     # Build identity, surfaced to clients so they can tell whether their installed copies
     # of the hooks/proxy addon are current (see /cli/manifest.json). The deploy sets it to
     # the image tag; "dev" locally. Clients compare FILE HASHES from the manifest, not this
     # string — it's for display, fleet inventory, and staging an update.
-    version: str = _env("PALIVANE_VERSION", "WARDEN_VERSION", "dev")
+    version: str = _env("PALIVANE_VERSION", "dev")
     # Hosted signups start a full-featured trial of this many days; 0 puts new orgs on the
     # free (self-host equivalent) tier instead — set that for a self-hosted deployment where
     # every org is local and there is nothing to sell.
-    trial_days: int = int(_env("PALIVANE_TRIAL_DAYS", "WARDEN_TRIAL_DAYS", "14"))
+    trial_days: int = int(_env("PALIVANE_TRIAL_DAYS", "14"))
     # Refuse to serve self-updates (clients keep whatever they have). For fleets that
     # manage the scripts via MDM and don't want devices pulling their own updates.
-    self_update_enabled: bool = _env("PALIVANE_SELF_UPDATE", "WARDEN_SELF_UPDATE", "true").lower() in ("1", "true", "yes")
+    self_update_enabled: bool = _env("PALIVANE_SELF_UPDATE", "true").lower() in ("1", "true", "yes")
     # Comma-separated Host allowlist for TrustedHostMiddleware (empty = disabled).
-    allowed_hosts: str = _env("PALIVANE_ALLOWED_HOSTS", "WARDEN_ALLOWED_HOSTS", "")
+    allowed_hosts: str = _env("PALIVANE_ALLOWED_HOSTS", "")
     # Tenant that capture clients (extension/proxy) attribute findings to (slug or id).
     ingest_tenant: str = os.getenv("INGEST_TENANT", "")
     # Default gateway requests-per-minute limit per tenant (0 = unlimited). A tenant's own
@@ -126,30 +122,30 @@ class Settings:
     # Per-tenant resource quotas for open multi-tenant signup (0 = unlimited). A tenant's
     # own quota_* column (operator-set via `python -m app.users set-quota`) overrides the
     # global default — tenant admins can NOT raise their own quotas through the API.
-    quota_users: int = int(_env("PALIVANE_QUOTA_USERS", "WARDEN_QUOTA_USERS", "25"))
-    quota_api_keys: int = int(_env("PALIVANE_QUOTA_API_KEYS", "WARDEN_QUOTA_API_KEYS", "100"))
-    quota_ingest_per_day: int = int(_env("PALIVANE_QUOTA_INGEST_PER_DAY", "WARDEN_QUOTA_INGEST_PER_DAY", "50000"))
+    quota_users: int = int(_env("PALIVANE_QUOTA_USERS", "25"))
+    quota_api_keys: int = int(_env("PALIVANE_QUOTA_API_KEYS", "100"))
+    quota_ingest_per_day: int = int(_env("PALIVANE_QUOTA_INGEST_PER_DAY", "50000"))
     # Persist benign MCP-surface findings (warden-hook/warden-mcp tool calls)? Default off:
     # the vast majority of tool calls are benign noise; only warn+ verdicts are stored.
-    mcp_persist_benign: bool = _env("PALIVANE_MCP_PERSIST_BENIGN", "WARDEN_MCP_PERSIST_BENIGN", "").lower() in ("1", "true", "yes")
+    mcp_persist_benign: bool = _env("PALIVANE_MCP_PERSIST_BENIGN", "").lower() in ("1", "true", "yes")
     # Persist benign usage-capture findings (ai-usage ingest / OTLP prompts, gateway prompt
     # capture + response DLP)? Default off — benign traffic is volume, not findings; the
     # discovery inventory and usage counters are fed independently of persistence. Turn on
     # for a full per-event egress audit trail.
-    usage_persist_benign: bool = _env("PALIVANE_USAGE_PERSIST_BENIGN", "WARDEN_USAGE_PERSIST_BENIGN", "").lower() in ("1", "true", "yes")
+    usage_persist_benign: bool = _env("PALIVANE_USAGE_PERSIST_BENIGN", "").lower() in ("1", "true", "yes")
     # If set, /metrics requires this token (Bearer or ?token=); empty = open (bind it to
     # an internal network / scrape it privately). Stripped: secret-manager values often
     # carry a trailing newline (echo | secrets create), which no pasted token can match.
     # Do NOT strip WARDEN_SECRET_KEY — its exact bytes are baked into every session
     # signature and the encryption-key derivation.
-    metrics_token: str = _env("PALIVANE_METRICS_TOKEN", "WARDEN_METRICS_TOKEN", "").strip()
+    metrics_token: str = _env("PALIVANE_METRICS_TOKEN", "").strip()
     # Operator (instance-level) alert webhook — Slack-compatible. Currently used to page when
     # the LLM judge goes down (all providers erroring, e.g. exhausted API credits). Distinct
     # from per-tenant alert_webhook; empty = log/health only.
-    ops_webhook: str = _env("PALIVANE_OPS_WEBHOOK", "WARDEN_OPS_WEBHOOK", "").strip()
+    ops_webhook: str = _env("PALIVANE_OPS_WEBHOOK", "").strip()
     # Where in-console upgrade requests and trial emails point buyers. One knob so a
     # self-hosted reseller (or a future address change) doesn't chase hardcoded strings.
-    sales_email: str = _env("PALIVANE_SALES_EMAIL", "WARDEN_SALES_EMAIL", "sales@tachtech.net").strip()
+    sales_email: str = _env("PALIVANE_SALES_EMAIL", "sales@tachtech.net").strip()
 
     # --- LLM gateway (protect our AI) ---
     # enforce=block risky prompts; otherwise monitor (observe + record only). Block when
@@ -170,7 +166,7 @@ class Settings:
     # sees). Requires pytesseract + Pillow AND the tesseract binary; default off. When
     # enabled, OCR text is appended to the scanned content for detection only — it is
     # never stored beyond normal finding evidence.
-    gateway_ocr: bool = _env("PALIVANE_OCR", "WARDEN_OCR", "").lower() in ("1", "true", "yes")
+    gateway_ocr: bool = _env("PALIVANE_OCR", "").lower() in ("1", "true", "yes")
     # OpenAI-compatible upstream for /v1/chat/completions (empty = stub reply offline).
     gateway_upstream_base: str = os.getenv("GATEWAY_UPSTREAM_BASE", "")
     gateway_upstream_key: str = os.getenv("GATEWAY_UPSTREAM_KEY", "")
@@ -196,7 +192,7 @@ class Settings:
     gateway_tool_suppress: str = os.getenv("GATEWAY_TOOL_SUPPRESS", "")
     # Published Chrome/Edge extension id — set once the extension is on the store so
     # generated installers write the browser managed policy under the right id.
-    extension_id: str = _env("PALIVANE_EXTENSION_ID", "WARDEN_EXTENSION_ID", "")
+    extension_id: str = _env("PALIVANE_EXTENSION_ID", "")
 
     # --- MCP inspection (agentic tool-use, via the egress proxy) ---
     # enforce=block risky MCP calls; otherwise monitor. Block when severity >= block_severity.

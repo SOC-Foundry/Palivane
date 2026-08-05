@@ -1,38 +1,35 @@
-"""Rename backward-compat: PALIVANE_* env vars and X-Palivane-* headers work as the new
-canonical names, while the legacy WARDEN_* / X-Palivane-* keep working through the migration."""
+"""Clean-break rename: PALIVANE_* env vars and X-Palivane-* headers are the ONLY
+canonical names — the legacy WARDEN_* / X-Warden-* are no longer read."""
 
 from __future__ import annotations
 
 import importlib
 
 
-def test_env_prefers_palivane_falls_back_to_warden(monkeypatch):
+def test_env_reads_palivane_only(monkeypatch):
     import app.config as cfg
-    # legacy only
+    # The retired WARDEN_* name is ignored (no fallback anymore).
     monkeypatch.delenv("PALIVANE_TRIAL_DAYS", raising=False)
     monkeypatch.setenv("WARDEN_TRIAL_DAYS", "99")
     importlib.reload(cfg)
-    assert cfg.settings.trial_days == 99
-    # new name wins over legacy
+    assert cfg.settings.trial_days == 14        # default — WARDEN_ not consulted
+    # The PALIVANE_ name is honored.
     monkeypatch.setenv("PALIVANE_TRIAL_DAYS", "7")
     importlib.reload(cfg)
     assert cfg.settings.trial_days == 7
-    # restore module state for the rest of the suite
     monkeypatch.delenv("PALIVANE_TRIAL_DAYS", raising=False)
     monkeypatch.delenv("WARDEN_TRIAL_DAYS", raising=False)
     importlib.reload(cfg)
 
 
-def test_env_helper_precedence():
+def test_env_helper_reads_name_or_default():
     from app.config import _env
     import os
-    os.environ.pop("PALIVANE_XTEST", None); os.environ.pop("WARDEN_XTEST", None)
-    assert _env("PALIVANE_XTEST", "WARDEN_XTEST", "d") == "d"      # neither set -> default
-    os.environ["WARDEN_XTEST"] = "legacy"
-    assert _env("PALIVANE_XTEST", "WARDEN_XTEST", "d") == "legacy"  # legacy fallback
-    os.environ["PALIVANE_XTEST"] = "new"
-    assert _env("PALIVANE_XTEST", "WARDEN_XTEST", "d") == "new"     # new wins
-    os.environ.pop("PALIVANE_XTEST", None); os.environ.pop("WARDEN_XTEST", None)
+    os.environ.pop("PALIVANE_XTEST", None)
+    assert _env("PALIVANE_XTEST", "d") == "d"      # unset -> default
+    os.environ["PALIVANE_XTEST"] = "set"
+    assert _env("PALIVANE_XTEST", "d") == "set"    # present -> value
+    os.environ.pop("PALIVANE_XTEST", None)
 
 
 def test_ingest_uses_palivane_token_header(client, raw_client):
