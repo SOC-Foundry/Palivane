@@ -13,8 +13,10 @@ const TABS = [
   { href: "/how-it-works", label: "How it works" },
   { href: "/setup", label: "Setup" },
   { href: "/docs", label: "Docs" },
-  // Pricing last: it reads as the natural next step, adjacent to the sign-in CTA.
-  { href: "/pricing", label: "Pricing" },
+  // Pricing tab hidden for now (2026-08-05, David) — the /pricing page itself stays
+  // reachable by direct URL. Restore by uncommenting; it goes last, adjacent to the
+  // sign-in CTA, where it reads as the natural next step.
+  // { href: "/pricing", label: "Pricing" },
 ];
 
 export function SiteNav({ onSignIn }) {
