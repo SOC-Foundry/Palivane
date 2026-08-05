@@ -25,48 +25,48 @@ gcloud builds submit --project "$PROJECT_ID" \
   --suppress-logs \
   --substitutions "_REGION=${REGION},_REPO=${REPO},_IMAGE=${IMAGE_NAME},_TAG=${TAG}" .
 
-# Non-secret runtime config. Secrets (DATABASE_URL, WARDEN_SECRET_KEY, provider keys) come
+# Non-secret runtime config. Secrets (DATABASE_URL, PALIVANE_SECRET_KEY, provider keys) come
 # from Secret Manager via --set-secrets below.
-# "|"-separated (passed as ^|^...) so values may contain commas (WARDEN_ALLOWED_HOSTS) AND
+# "|"-separated (passed as ^|^...) so values may contain commas (PALIVANE_ALLOWED_HOSTS) AND
 # "@" (SMTP_USER/MAIL_FROM email addresses). "|" appears in none of the values.
 ENV_VARS="GATEWAY_ENFORCE=${GATEWAY_ENFORCE:-true}"
 # Build identity (the image tag = git short sha). Served at /cli/manifest.json so devices
 # can tell whether their installed hooks/addon are current, and shown in the Fleet view.
-ENV_VARS+="|WARDEN_VERSION=${TAG}"
+ENV_VARS+="|PALIVANE_VERSION=${TAG}"
 ENV_VARS+="|GATEWAY_BLOCK_SEVERITY=${GATEWAY_BLOCK_SEVERITY:-high}"
 ENV_VARS+="|GATEWAY_ANTHROPIC_BASE=${GATEWAY_ANTHROPIC_BASE:-https://api.anthropic.com}"
 ENV_VARS+="|JUDGE_PROVIDER=${JUDGE_PROVIDER:-auto}"
 # Judge model override (e.g. a Haiku-class model to keep per-verdict cost small).
 [ -n "${JUDGE_MODEL:-}" ] && ENV_VARS+="|JUDGE_MODEL=${JUDGE_MODEL}"
 # Judge plan gating (SaaS: the operator-funded judge is an Enterprise entitlement).
-[ -n "${WARDEN_JUDGE_PLAN_GATED:-}" ] && ENV_VARS+="|WARDEN_JUDGE_PLAN_GATED=${WARDEN_JUDGE_PLAN_GATED}"
+[ -n "${PALIVANE_JUDGE_PLAN_GATED:-}" ] && ENV_VARS+="|PALIVANE_JUDGE_PLAN_GATED=${PALIVANE_JUDGE_PLAN_GATED}"
 # Public deploy: signup OFF by default (else the internet can self-register orgs). Set
-# WARDEN_ALLOW_SIGNUP=true explicitly for an open multi-tenant deployment.
-ENV_VARS+="|WARDEN_ALLOW_SIGNUP=${WARDEN_ALLOW_SIGNUP:-false}"
+# PALIVANE_ALLOW_SIGNUP=true explicitly for an open multi-tenant deployment.
+ENV_VARS+="|PALIVANE_ALLOW_SIGNUP=${PALIVANE_ALLOW_SIGNUP:-false}"
 ENV_VARS+="|SEED_ON_START=${SEED_ON_START:-false}"
-# WARDEN_ALLOWED_HOSTS may need more than DOMAIN (e.g. the *.run.app hostname when a
+# PALIVANE_ALLOWED_HOSTS may need more than DOMAIN (e.g. the *.run.app hostname when a
 # fronting proxy/Worker reaches the service by its run.app origin) — allow an override.
-[ -n "$DOMAIN" ] && ENV_VARS+="|CORS_ORIGINS=https://${DOMAIN}|WARDEN_PUBLIC_URL=https://${DOMAIN}|WARDEN_ALLOWED_HOSTS=${WARDEN_ALLOWED_HOSTS:-$DOMAIN}"
+[ -n "$DOMAIN" ] && ENV_VARS+="|CORS_ORIGINS=https://${DOMAIN}|PALIVANE_PUBLIC_URL=https://${DOMAIN}|PALIVANE_ALLOWED_HOSTS=${PALIVANE_ALLOWED_HOSTS:-$DOMAIN}"
 # Email plane (password reset / join verification / invites). SMTP_PASS rides in via the
 # optional-secrets loop below (create secret 'warden-smtp-pass' to enable).
 [ -n "${SMTP_HOST:-}" ] && ENV_VARS+="|SMTP_HOST=${SMTP_HOST}|SMTP_PORT=${SMTP_PORT:-587}|SMTP_USER=${SMTP_USER:-}|MAIL_FROM=${MAIL_FROM:-}"
-# Encrypt stored finding content at rest (needs a durable WARDEN_SECRET_KEY — key loss =
+# Encrypt stored finding content at rest (needs a durable PALIVANE_SECRET_KEY — key loss =
 # data loss). Opt-in per deploy; threaded through when set.
-[ -n "${WARDEN_ENCRYPT_FINDINGS:-}" ] && ENV_VARS+="|WARDEN_ENCRYPT_FINDINGS=${WARDEN_ENCRYPT_FINDINGS}"
+[ -n "${PALIVANE_ENCRYPT_FINDINGS:-}" ] && ENV_VARS+="|PALIVANE_ENCRYPT_FINDINGS=${PALIVANE_ENCRYPT_FINDINGS}"
 [ -n "${INGEST_TENANT:-}" ] && ENV_VARS+="|INGEST_TENANT=${INGEST_TENANT}"
-[ -n "${WARDEN_EXTENSION_ID:-}" ] && ENV_VARS+="|WARDEN_EXTENSION_ID=${WARDEN_EXTENSION_ID}"
+[ -n "${PALIVANE_EXTENSION_ID:-}" ] && ENV_VARS+="|PALIVANE_EXTENSION_ID=${PALIVANE_EXTENSION_ID}"
 
 # Secrets — must exist in Secret Manager (see README). Optional ones are added if present.
-SECRETS="WARDEN_SECRET_KEY=warden-secret-key:latest,DATABASE_URL=warden-database-url:latest"
+SECRETS="PALIVANE_SECRET_KEY=warden-secret-key:latest,DATABASE_URL=warden-database-url:latest"
 for pair in \
   "GATEWAY_ANTHROPIC_KEY=gateway-anthropic-key" \
   "ANTHROPIC_API_KEY=judge-anthropic-key" \
   "OPENAI_API_KEY=openai-api-key" \
   "GEMINI_API_KEY=gemini-api-key" \
-  "WARDEN_METRICS_TOKEN=warden-metrics-token" \
+  "PALIVANE_METRICS_TOKEN=warden-metrics-token" \
   "EXTENSION_INGEST_TOKEN=extension-ingest-token" \
   "SMTP_PASS=warden-smtp-pass" \
-  "WARDEN_LICENSE_SIGNING_KEY=warden-license-signing-key"; do
+  "PALIVANE_LICENSE_SIGNING_KEY=warden-license-signing-key"; do
   name="${pair##*=}"
   if gcloud secrets describe "$name" --project "$PROJECT_ID" >/dev/null 2>&1; then
     SECRETS+=",${pair}:latest"

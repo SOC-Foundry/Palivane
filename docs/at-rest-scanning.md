@@ -34,7 +34,7 @@ by default; add `--fail-closed` in a pipeline so a broken sweep is visible.
 ## S3 bucket scanning
 
 ```bash
-export WARDEN_URL=https://warden.corp.example.com WARDEN_TOKEN=ak_…
+export PALIVANE_URL=https://warden.corp.example.com PALIVANE_TOKEN=ak_…
 palivane-s3-scan my-data-bucket --prefix exports/ --record
 palivane-s3-scan my-data-bucket --dry-run        # list what it would scan + public verdict; sends nothing
 ```
@@ -105,14 +105,14 @@ The instanced units [`deploy/palivane-s3-scan@.service`](../deploy/palivane-s3-s
 [`.timer`](../deploy/palivane-s3-scan@.timer) run **one scan per bucket, daily** (`%i` = bucket):
 
 ```bash
-curl -fsSL "$WARDEN_URL/cli/palivane-s3-scan" -o /opt/warden/bin/palivane-s3-scan && sudo chmod +x $_
+curl -fsSL "$PALIVANE_URL/cli/palivane-s3-scan" -o /opt/warden/bin/palivane-s3-scan && sudo chmod +x $_
 sudo -u warden /opt/warden/backend/.venv/bin/pip install boto3      # the scanner needs boto3
 sudo cp deploy/palivane-s3-scan@.{service,timer} /etc/systemd/system/ && sudo systemctl daemon-reload
 sudo systemctl enable --now palivane-s3-scan@my-data-bucket.timer     # repeat per bucket
 systemctl list-timers 'palivane-s3-scan@*'
 ```
 
-`WARDEN_URL` + `WARDEN_TOKEN` go in `/etc/warden/warden.env`; with an instance role you set
+`PALIVANE_URL` + `PALIVANE_TOKEN` go in `/etc/warden/warden.env`; with an instance role you set
 **zero** AWS values there. A cron alternative is in [`deploy/README.md`](../deploy/README.md#scheduled-s3-scanning).
 
 ---
@@ -122,7 +122,7 @@ systemctl list-timers 'palivane-s3-scan@*'
 The pre-commit hook and PR Action scan **what changes**. To sweep **existing contents**:
 
 ```bash
-export WARDEN_URL=https://warden.corp.example.com WARDEN_TOKEN=ak_…
+export PALIVANE_URL=https://warden.corp.example.com PALIVANE_TOKEN=ak_…
 
 # Every tracked file in the current checkout (not just the diff):
 palivane_git_scan.py --all --record
@@ -155,7 +155,7 @@ Pass it as `GITHUB_TOKEN`. `--github-api` points at a GitHub Enterprise host if 
 Copy [`git/palivane-org-scan.yml`](../git/palivane-org-scan.yml) into a repo as
 `.github/workflows/palivane-org-scan.yml` (a dedicated security/ops repo is a good home). It
 runs `palivane-github-scan --org` on a **cron** (weekly by default) + on demand. Set two Actions
-secrets: `WARDEN_TOKEN` (a Palivane `ak_…` key) and `WARDEN_ORG_READ_TOKEN` (the org-read PAT
+secrets: `PALIVANE_TOKEN` (a Palivane `ak_…` key) and `PALIVANE_ORG_READ_TOKEN` (the org-read PAT
 above). Trigger it once from the **Actions tab → Run workflow** to verify — a green run means
 the tokens are right; a 401/403 in the log means the PAT lacks org read or needs approval.
 

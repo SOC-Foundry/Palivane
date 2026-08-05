@@ -16,7 +16,7 @@
 These are code paths, not habits:
 
 - **Redaction-first:** detected secrets become `«redacted:label»` and PII is masked
-  *before* a finding row is written (`WARDEN_REDACT_FINDINGS`, default on).
+  *before* a finding row is written (`PALIVANE_REDACT_FINDINGS`, default on).
 - **Metadata-only default:** raw prompt prose is stored only if an org opts in
   (`store_content`), and then encrypted under that org's DEK (`enc:v2`).
 - **Evidence minimization:** signal evidence carries labels or short prefixes, never

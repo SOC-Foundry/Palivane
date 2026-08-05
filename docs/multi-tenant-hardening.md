@@ -13,12 +13,12 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   (`login_attempts`) and limited per **email** and per **IP** within a window — so the
   limit holds across workers/replicas, not per-process.
 - **Redaction at rest.** Stored finding content masks secrets/PII so one shared DB isn't a
-  plaintext-secret honeypot (`WARDEN_REDACT_FINDINGS`).
+  plaintext-secret honeypot (`PALIVANE_REDACT_FINDINGS`).
 - **Tenant isolation.** Data endpoints scope to the caller's tenant; API keys are
   tenant-scoped; cross-tenant access returns 404. Covered by tests.
 - **Per-tenant upstream provider keys.** Each org can set its own OpenAI / Anthropic /
   Gemini base URL + key (`PUT /api/upstreams/{provider}`), stored **encrypted at rest**
-  (`crypto.py`, Fernet keyed from `WARDEN_ENCRYPTION_KEY`/`WARDEN_SECRET_KEY`). The
+  (`crypto.py`, Fernet keyed from `PALIVANE_ENCRYPTION_KEY`/`PALIVANE_SECRET_KEY`). The
   gateway resolves the calling tenant's config per request and forwards allowed calls with
   *its* key — so gateway traffic bills to each org's own provider account, not one shared
   account. Falls back to the global env config when a tenant hasn't set one.
@@ -27,12 +27,12 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   + `POST /api/findings/purge`, scheduler-friendly), and **delete-my-org**
   (`DELETE /api/tenant`, slug-confirmed, cascades **everything**: findings, users, keys,
   enrollment tokens, upstreams, audit log, usage, OIDC/SAML). Stored finding content is
-  already redacted at rest (`WARDEN_REDACT_FINDINGS`).
+  already redacted at rest (`PALIVANE_REDACT_FINDINGS`).
 - **Self-serve data export + DPA record.** `GET /api/export/tenant` returns the org's whole
   footprint as one JSON doc (config, users, keys, findings, audit log, SSO/upstream config,
   DPA record) — secrets excluded, finding content only with `?include_content=true`.
   `GET/POST /api/tenant/dpa` records data-processing-agreement acceptance (version/who/when,
-  `WARDEN_DPA_VERSION`; stale on version bump), audit-logged. Both admin-only, in Settings.
+  `PALIVANE_DPA_VERSION`; stale on version bump), audit-logged. Both admin-only, in Settings.
 - **Password hashing & session revocation.** Passwords use **argon2id** (legacy PBKDF2
   hashes still verified and auto-upgraded on login). Sessions carry a `token_version`;
   `POST /api/auth/logout-all` bumps it to revoke all of a user's existing JWTs.
@@ -48,9 +48,9 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   (palivane-hook/palivane-mcp) can't starve real LLM traffic. Over-limit → provider-shaped
   **429** (gateway) or `429 + Retry-After` (ingest); 0 = unlimited. The same counter is the
   metering source: `GET /api/usage` reports gateway current/24h/per-day plus `ingest_*`
-  totals. Benign MCP tool calls aren't persisted by default (`WARDEN_MCP_PERSIST_BENIGN`),
+  totals. Benign MCP tool calls aren't persisted by default (`PALIVANE_MCP_PERSIST_BENIGN`),
   and neither are benign usage captures — proxy/extension `ai-usage` ingest, OTLP prompts,
-  gateway prompt capture and response DLP (`WARDEN_USAGE_PERSIST_BENIGN`). Allow-level
+  gateway prompt capture and response DLP (`PALIVANE_USAGE_PERSIST_BENIGN`). Allow-level
   traffic still feeds discovery and usage metering; only warn+ verdicts become findings.
 - **Admin console (Settings page).** A self-serve UI for all of the above: org settings
   (name, judge consent, retention, rate limit), a usage panel, per-provider upstream keys,
@@ -68,14 +68,14 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   OIDC, tenant settings, MFA, session revoke, findings purge) are recorded per tenant
   (`audit_log`) and shown in a console **Audit** view; readable at `GET /api/audit`
   (admin, filterable by action).
-- **Content encryption at rest.** Opt-in (`WARDEN_ENCRYPT_FINDINGS`): stored finding
+- **Content encryption at rest.** Opt-in (`PALIVANE_ENCRYPT_FINDINGS`): stored finding
   content is sealed with Fernet (`crypto.seal`, tagged `enc:v1:`) and decrypted on read for
   authorized admins (`to_detail`, corpus export). Composes with redaction (redact → encrypt);
   a tagged wrapper lets a column hold mixed plaintext/ciphertext rows.
 - **Observability.** `/livez` (liveness), `/readyz` (DB-reachability, 503 if down), and a
   Prometheus `/metrics` endpoint — HTTP request counts + latency histogram labelled by
   route template (bounded cardinality), via middleware. `/metrics` is optionally gated by
-  `WARDEN_METRICS_TOKEN`.
+  `PALIVANE_METRICS_TOKEN`.
 - **Alerting & SIEM (per tenant).** A Slack-compatible webhook (real-time, or hourly/daily
   **digest** — criticals always real-time), a pull-based JSONL **findings export**, and a
   real-time **SIEM push forwarder** (generic JSON / Splunk HEC / CEF). The webhook and SIEM
@@ -83,7 +83,7 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   All outbound sends are fire-and-forget and fail open — a down collector never blocks capture.
 
 - **Input / DoS bounds + outbound-fetch hardening.** A server-side request-body limit
-  (`WARDEN_MAX_BODY_BYTES`, ~12 MB → 413) plus per-field `max_length`/`max_items` caps on all
+  (`PALIVANE_MAX_BODY_BYTES`, ~12 MB → 413) plus per-field `max_length`/`max_items` caps on all
   ingest/scan/analyze content, so a hostile payload can't OOM a worker or amplify regex cost;
   the scanner importer caps normalized findings. SSRF guard extended to the OIDC issuer/token/
   JWKS fetches. `alert_webhook` is write-only (may embed a Slack token — API returns only
@@ -99,7 +99,7 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
 - (Done: self-serve data export + DPA/consent record — see above.)
 
 ### 2. Auth for SaaS (remaining)
-- Per-tenant signup/onboarding controls (the global `WARDEN_ALLOW_SIGNUP` isn't enough).
+- Per-tenant signup/onboarding controls (the global `PALIVANE_ALLOW_SIGNUP` isn't enough).
 - Optional: swap the hardened stdlib HS256 JWT for a vetted library (PyJWT); sign SP
   AuthnRequests + validate SAML `InResponseTo` (needs a per-request store).
 

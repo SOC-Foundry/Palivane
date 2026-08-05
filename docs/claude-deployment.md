@@ -18,7 +18,7 @@ secrets** (data leaving), and either recorded (monitor) or blocked inline (enfor
 
 1. **Run Palivane.** From the repo root:
    ```bash
-   cp .env.docker.example .env       # set WARDEN_SECRET_KEY (openssl rand -hex 32)
+   cp .env.docker.example .env       # set PALIVANE_SECRET_KEY (openssl rand -hex 32)
    docker compose up --build         # API+UI at http://<host>:8080 (8090 in our dev setup)
    ```
    Put it on an internal host behind your SSO/reverse proxy. Use Postgres (the compose
@@ -187,7 +187,7 @@ allowlist. **UserPromptSubmit**: the typed prompt is scanned *before it leaves t
 device* — the only prompt-level control under subscription auth. Monitor by default
 (tool calls report with zero added latency; prompts are scanned inline so a **confirmed
 secret/PII leak hard-blocks even in monitor mode** — "block the certain, monitor the
-fuzzy", same rule as the proxy); `WARDEN_ENFORCE=true` also denies ordinary high-risk
+fuzzy", same rule as the proxy); `PALIVANE_ENFORCE=true` also denies ordinary high-risk
 verdicts, with the reason shown to the model (tool calls) or the user (prompts). The org
 sets that stance centrally in the console (Settings → *Device enforcement*):
 `palivane-connect` provisions it at connect time and every verdict carries it live.
@@ -199,8 +199,8 @@ Route A:
   "env": {
     "ANTHROPIC_BASE_URL": "https://warden.corp.example.com",
     "ANTHROPIC_AUTH_TOKEN": "ak_<the developer's Palivane key>",
-    "WARDEN_URL": "https://warden.corp.example.com",
-    "WARDEN_TOKEN": "ak_<the same key>"
+    "PALIVANE_URL": "https://warden.corp.example.com",
+    "PALIVANE_TOKEN": "ak_<the same key>"
   },
   "hooks": {
     "PreToolUse":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/usr/local/bin/palivane-hook", "timeout": 10 }]}],
@@ -213,7 +213,7 @@ Route A:
 deployed Claude Code version honors `hooks` in managed settings.)
 
 **`palivane-mcp`** — wraps any **local stdio MCP server** for inline inspection (tool
-calls, resource reads, tool-poisoning in descriptions); `WARDEN_MCP_ENFORCE=true` blocks
+calls, resource reads, tool-poisoning in descriptions); `PALIVANE_MCP_ENFORCE=true` blocks
 with a JSON-RPC error. In `.mcp.json` / `~/.claude.json`:
 
 ```json
@@ -246,12 +246,12 @@ and MDM-deployable). Linux community builds are out of scope.
 ### Run the proxy (once, near your egress)
 ```bash
 pip install mitmproxy
-WARDEN_URL=https://warden.corp.example.com \
-WARDEN_TOKEN=$EXTENSION_INGEST_TOKEN \
-WARDEN_PROXY_ENFORCE=true \
+PALIVANE_URL=https://warden.corp.example.com \
+PALIVANE_TOKEN=$EXTENSION_INGEST_TOKEN \
+PALIVANE_PROXY_ENFORCE=true \
 mitmdump -s proxy/warden_addon.py --listen-port 8081
 ```
-(`WARDEN_TOKEN` is the `EXTENSION_INGEST_TOKEN` from prerequisites, or a per-tenant
+(`PALIVANE_TOKEN` is the `EXTENSION_INGEST_TOKEN` from prerequisites, or a per-tenant
 `ak_…` key. Run it as a service and scale horizontally — the addon is stateless.)
 
 ### Single machine (pilot / testing)
@@ -332,7 +332,7 @@ your follow-up list (enroll the device, or block it via conditional access).
 ## Notes & limitations
 
 - **Attribution:** set `actor` on each API key (gateway), pass `user` from the extension
-  Options, and `WARDEN_PROXY_USER` on the proxy — so findings and coverage are per-person.
+  Options, and `PALIVANE_PROXY_USER` on the proxy — so findings and coverage are per-person.
 - **Managed browser config:** the extension supports Chrome `storage.managed`, so
   enterprise policy configures it automatically and overrides user settings (zero-touch).
   On a single pilot machine, set the Options page instead.
