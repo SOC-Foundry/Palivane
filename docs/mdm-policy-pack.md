@@ -44,7 +44,7 @@ It returns these artifacts (write each to a file):
 
 The extension allow/deny lists come from this tenant's IDE-vetting config (its
 `ide_ext_allowed` / `ide_ext_denylist`, else the global `IDE_EXT_ALLOWED` /
-`IDE_EXT_DENYLIST`); the browser extension id from `WARDEN_EXTENSION_ID`. The hook script
+`IDE_EXT_DENYLIST`); the browser extension id from `PALIVANE_EXTENSION_ID`. The hook script
 paths default to `/usr/local/bin/palivane-hook`, `/usr/local/bin/palivane-posture`,
 `/usr/local/bin/palivane-cursor-hook`, `/usr/local/bin/palivane-gemini-hook`,
 `/usr/local/bin/palivane-codex-hook`, and `/usr/local/bin/palivane-copilot-hook` — override with

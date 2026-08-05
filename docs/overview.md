@@ -138,11 +138,11 @@ CEF; whole-tenant or per-actor) and from the console's Export buttons.
 **Session behavioral correlation** (surface `session`): every detector above scores one
 event, but the dangerous pattern is a *sequence* — an agent reads credentials, runs a
 shell command, then sends data out. After each finding is stored, Palivane looks across the
-same actor's recent activity (a rolling `WARDEN_SESSION_WINDOW_MIN`-minute window), maps
+same actor's recent activity (a rolling `PALIVANE_SESSION_WINDOW_MIN`-minute window), maps
 each event to a kill-chain stage (recon → manipulation → collection → execution →
 exfiltration), and when the window crosses into a payoff stage across **multiple events**
 it records one escalated `session_correlation` finding scoring the *chain* — the Nx
-"s1ngularity" shape that no single event trips. On by default (`WARDEN_SESSION_CORRELATION`).
+"s1ngularity" shape that no single event trips. On by default (`PALIVANE_SESSION_CORRELATION`).
 
 The gateway and egress proxy also inspect **agentic tool-use over MCP** (surface `mcp`):
 an AI coding agent's tool calls, arguments, and results ride the LLM traffic, so Palivane
@@ -300,7 +300,7 @@ platform ships with SaaS-grade hardening:
   excluded), and one-click delete-my-org.
 - **SSRF-guarded** — user-set URLs the server fetches (alert webhook, SIEM collector,
   per-tenant gateway upstream) reject private/loopback/metadata hosts.
-- **No forgeable keys** — the app refuses to boot without `WARDEN_SECRET_KEY` on a
+- **No forgeable keys** — the app refuses to boot without `PALIVANE_SECRET_KEY` on a
   production (non-SQLite) deployment.
 
 ---
@@ -360,7 +360,7 @@ cd frontend && npm install && npm run dev
 
 | Variable | Purpose |
 |----------|---------|
-| `WARDEN_SECRET_KEY` | Signs JWTs — required in production |
+| `PALIVANE_SECRET_KEY` | Signs JWTs — required in production |
 | `DATABASE_URL` | Postgres connection string |
 | `JUDGE_PROVIDER` | `auto` / `anthropic` / `openai` / `gemini` / `claude-cli` / `none` |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` | LLM judge keys |

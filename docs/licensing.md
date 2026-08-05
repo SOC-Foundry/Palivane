@@ -28,7 +28,7 @@ You don't have to watch trials by hand — two things surface buyers:
   configured): the org's admins get a 7-days-left, 2-days-left, and expiry email. Each
   points at the console's "Request upgrade" form.
 - **Upgrade requests**: an org admin hits "Request upgrade" on Settings → Your plan. It
-  pages the ops webhook (`WARDEN_OPS_WEBHOOK`), emails `WARDEN_SALES_EMAIL`, and lands
+  pages the ops webhook (`PALIVANE_OPS_WEBHOOK`), emails `PALIVANE_SALES_EMAIL`, and lands
   in the operator console (`/admin` → Upgrade requests).
 
 Working the queue: agree terms with the contact → `set-plan` (SaaS) or issue a license
@@ -57,14 +57,14 @@ almost always want, because it makes the license visible and revocable):
 - `--contract-months` — the hard stop: renewals are refused past this (0 = no stop).
 - prints the `WDN1.…` blob to send the customer AND records `lic_…` in the registry.
 
-The customer sets `WARDEN_LICENSE` to the blob (or a file path) and restarts;
+The customer sets `PALIVANE_LICENSE` to the blob (or a file path) and restarts;
 `GET /api/health` shows `{org, plan, expires}`. `python -m app.licensing issue …` (no
 registry) still exists for a one-off untracked blob, and `verify` sanity-checks any blob.
 
 ## See, renew, cancel
 
 - **See every license:** `python -m app.users license-list`, or `GET /api/admin/licenses`
-  (token-gated by `WARDEN_METRICS_TOKEN`, same as the plan roster / funnel). SaaS orgs use
+  (token-gated by `PALIVANE_METRICS_TOKEN`, same as the plan roster / funnel). SaaS orgs use
   the plan column instead — see them with `python -m app.users plans`.
 - **Renewal is automatic:** the customer's instance re-fetches from `POST /api/license/renew`
   (presenting its current blob; the signature is the credential) before its term ends and

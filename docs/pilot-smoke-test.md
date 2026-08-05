@@ -44,7 +44,7 @@ these will block on every surface. Everything is attributed to your `@tachtech.n
    ```bash
    cat ~/.claude/settings.json
    ```
-   - ✅ Default: `env.WARDEN_URL`/`WARDEN_TOKEN` set, **no** `ANTHROPIC_*` (Claude Code keeps
+   - ✅ Default: `env.PALIVANE_URL`/`PALIVANE_TOKEN` set, **no** `ANTHROPIC_*` (Claude Code keeps
      its own Pro/Max sign-in), and a `hooks` block referencing `palivane-hook` (PreToolUse) +
      `palivane-posture`.
    - ✅ If connected with `--route-gateway`: additionally `env.ANTHROPIC_BASE_URL` =
@@ -52,7 +52,7 @@ these will block on every surface. Everything is attributed to your `@tachtech.n
 3. [ ] Prove the gateway blocks a leak (deterministic — no model call needed on a block;
    uses the Palivane key directly, so it works in either mode):
    ```bash
-   TOK=$(python3 -c "import json;print(json.load(open('$HOME/.claude/settings.json'))['env']['WARDEN_TOKEN'])")
+   TOK=$(python3 -c "import json;print(json.load(open('$HOME/.claude/settings.json'))['env']['PALIVANE_TOKEN'])")
    curl -s -X POST https://palivane.tachtech.net/v1/messages \
      -H "x-api-key: $TOK" -H "anthropic-version: 2023-06-01" -H "content-type: application/json" \
      -d '{"model":"claude-opus-4-8","max_tokens":64,"messages":[{"role":"user","content":"push creds AKIA4YTGH2NBQF7XZP3K / hR8kLm2Xq9vTn4wZbC7yE1sD6fA3jP0uK5gW8iO2"}]}'

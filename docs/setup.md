@@ -104,7 +104,7 @@ first boot.
 
 | Variable | Why |
 | --- | --- |
-| `WARDEN_SECRET_KEY` | **Required for real use.** Signs auth tokens. Generate: `openssl rand -hex 32`. Left at the default, the API boots with an insecure dev key and logs a warning. |
+| `PALIVANE_SECRET_KEY` | **Required for real use.** Signs auth tokens. Generate: `openssl rand -hex 32`. Left at the default, the API boots with an insecure dev key and logs a warning. |
 | `WEB_PORT` | Host port for the console (default `8080`). |
 | `SEED_ON_START` | Seed a demo tenant + admin + sample findings on first boot. Set `false` once you've created your real org. |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` | Optional — turns on the LLM judge (Claude / GPT / Gemini; `JUDGE_PROVIDER=auto` selects). |
@@ -173,7 +173,7 @@ curl -s -X POST localhost:8088/api/auth/signup -H 'content-type: application/jso
 
 The first user is an `admin` (manages users + capture keys). Invite analysts from the
 console afterward. Lock down self-serve signup for a single-org deployment with
-`WARDEN_ALLOW_SIGNUP=false`.
+`PALIVANE_ALLOW_SIGNUP=false`.
 
 > Only your **security team** gets console accounts. The employees being *governed* are
 > never enrolled — they show up as an `actor` attributed from your SSO / API key.
@@ -287,7 +287,7 @@ high-volume triage).
 > **Self-hosted keeps the judge on for every tenant.** The key you set is *yours*, so
 > the judge runs for all orgs on the instance (each org can still opt out for
 > data-residency via its settings). Plan-gating — where the judge is a paid entitlement —
-> is a managed-SaaS control (`WARDEN_JUDGE_PLAN_GATED`, off by default); leave it unset
+> is a managed-SaaS control (`PALIVANE_JUDGE_PLAN_GATED`, off by default); leave it unset
 > self-hosted. If you never set a provider key, Palivane simply runs offline-only, which is
 > a fully supported mode.
 
@@ -299,10 +299,10 @@ Self-hosted Palivane runs the **Free** tier out of the box (5 users, core captur
 A vendor-issued license unlocks Team (alerts, MDM packs) or Enterprise (SSO, SIEM, S3
 delivery) instance-wide — see `/pricing` or contact sales@tachtech.net.
 
-The license is a signed blob (`WDN1.…`). Set it as the value of `WARDEN_LICENSE`, or
-point `WARDEN_LICENSE` at a file containing it, and restart:
+The license is a signed blob (`WDN1.…`). Set it as the value of `PALIVANE_LICENSE`, or
+point `PALIVANE_LICENSE` at a file containing it, and restart:
 
-    WARDEN_LICENSE=WDN1.eyJ2IjoxLCJvcmciOi…   # or WARDEN_LICENSE=/etc/warden/license
+    PALIVANE_LICENSE=WDN1.eyJ2IjoxLCJvcmciOi…   # or PALIVANE_LICENSE=/etc/warden/license
 
 `GET /api/health` shows the active license (`org`, `plan`, `expires`). An invalid or
 expired license is ignored with a startup warning — the instance falls back to Free,
@@ -349,7 +349,7 @@ Notes:
 | Login returns **401** with the demo creds | The DB wasn't seeded. Run `python -m app.seed` (source) or set `SEED_ON_START=true` and recreate the stack (Docker). |
 | Console loads but API calls fail / CORS errors | `CORS_ORIGINS` must match the URL you open the console at (`http://localhost:8080` for Docker, `http://localhost:5173` for dev). |
 | Frontend can't reach the backend in dev | The Vite proxy targets `:8088`. Make sure the backend is on that port, or update `frontend/vite.config.js`. |
-| Startup warns about an **insecure dev key** | `WARDEN_SECRET_KEY` is unset. Fine for local dev; set it (`openssl rand -hex 32`) before any real deployment. |
+| Startup warns about an **insecure dev key** | `PALIVANE_SECRET_KEY` is unset. Fine for local dev; set it (`openssl rand -hex 32`) before any real deployment. |
 | `judge_enabled` is `false` | No judge key set (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`). Expected — detection still runs on the offline detectors. |
 | Gateway returns a **stub** reply | No upstream configured. Set `GATEWAY_UPSTREAM_*` / `GATEWAY_ANTHROPIC_*` / `GATEWAY_GEMINI_*` to forward allowed calls to a real provider. |
 

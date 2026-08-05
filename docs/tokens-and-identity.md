@@ -18,7 +18,7 @@ functional requirement.
 | **Upstream provider key** | Palivane server only — never users | 1 per provider, per company | `GATEWAY_ANTHROPIC_KEY`, `GATEWAY_GEMINI_KEY`, `GATEWAY_UPSTREAM_KEY` |
 | **Palivane API key** (`ak_…`) | Gateway clients (Claude Code, OpenAI/Gemini SDKs) | Your choice — see [below](#do-i-need-a-token-per-user) | minted at `/api/apikeys` |
 | **Ingest token** | Browser extension + egress proxy | 1 per company (shared) | `EXTENSION_INGEST_TOKEN` |
-| **Console JWT** | Console/dashboard users (admins, analysts) | per login | signed with `WARDEN_SECRET_KEY` |
+| **Console JWT** | Console/dashboard users (admins, analysts) | per login | signed with `PALIVANE_SECRET_KEY` |
 
 ### 1. Upstream provider keys — server-side only
 The real Anthropic/Gemini/OpenAI keys live on the Palivane server and are forwarded to
@@ -56,16 +56,16 @@ INGEST_TENANT=acme
 Both shadow-AI capture planes authenticate with this **same** secret:
 - **Browser extension** — set as the *Ingest token* in Options, or pushed via managed
   policy (`token` field).
-- **Egress proxy** — the proxy reads it from its own env var `WARDEN_TOKEN`, which you
+- **Egress proxy** — the proxy reads it from its own env var `PALIVANE_TOKEN`, which you
   set to the `EXTENSION_INGEST_TOKEN` value:
   ```bash
-  WARDEN_TOKEN=$EXTENSION_INGEST_TOKEN mitmdump -s proxy/warden_addon.py --listen-port 8081
+  PALIVANE_TOKEN=$EXTENSION_INGEST_TOKEN mitmdump -s proxy/warden_addon.py --listen-port 8081
   ```
-  > Naming gotcha: the proxy's local variable is `WARDEN_TOKEN`, not
+  > Naming gotcha: the proxy's local variable is `PALIVANE_TOKEN`, not
   > `EXTENSION_INGEST_TOKEN`. Same secret, different local name.
 
 ### 4. Console JWT — dashboard users
-HS256 JWTs signed with `WARDEN_SECRET_KEY`, carrying `sub` / `tenant_id` / `role`
+HS256 JWTs signed with `PALIVANE_SECRET_KEY`, carrying `sub` / `tenant_id` / `role`
 claims (`auth.py`). This is the standard login path for **every** console user; the
 `role` claim (admin vs analyst) is what gates access — there is no separate
 "security-team" token type. End users of the AI tools never get a JWT; they're on the
@@ -79,7 +79,7 @@ claims (`auth.py`). This is the standard login path for **every** console user; 
 `EXTENSION_INGEST_TOKEN`. Per-person attribution there does **not** come from the
 token — it comes from a separate `user` field in the request body:
 - **Extension:** the `user` field, templated from SSO via managed config.
-- **Proxy:** the `WARDEN_PROXY_USER` env var.
+- **Proxy:** the `PALIVANE_PROXY_USER` env var.
 
 So: one token, many users, still attributed per person. The server records that `user`
 value as the finding's `sender`.
