@@ -270,6 +270,9 @@ class TenantUpdate(BaseModel):
     siem_s3_region: str | None = Field(None, max_length=32)
     siem_s3_key_id: str | None = Field(None, max_length=128)   # AWS access key id (write-only)
     siem_s3_secret: str | None = Field(None, max_length=256)   # AWS secret (write-only)
+    archive_s3_enabled: bool | None = None      # archive ALL events (NDJSON) to the S3 sink
+    archive_s3_raw_content: bool | None = None  # ship unredacted prose (default: redacted)
+    archive_s3_daily_mb: int | None = None      # daily byte budget, MB (0 = global default)
     # Policy posture (per-org monitor/enforce): "on"/"off" force it, "inherit" follows
     # the global GATEWAY_ENFORCE. Severities: "" = inherit the global threshold.
     gateway_enforce: Literal["on", "off", "inherit"] | None = None

@@ -135,6 +135,10 @@ async def lifespan(_app: FastAPI):
         yield
     finally:
         task.cancel()
+        # Ship any buffered archive events before the instance goes away (Cloud Run
+        # SIGTERM grace period) — the in-memory batch must not die with the process.
+        from . import archive_s3
+        await asyncio.to_thread(archive_s3.flush_all)
 
 
 app = FastAPI(
@@ -321,6 +325,21 @@ def test_siem_s3(current: User = Depends(require_admin), db: Session = Depends(g
     ok, detail = siem_s3.test(t.siem_s3_bucket.strip(), t.siem_s3_prefix or "",
                               t.siem_s3_region or "", t.siem_s3_key_id or "", t.siem_s3_secret or "",
                               naming=t.siem_naming or "warden")
+    return {"ok": ok, "detail": detail}
+
+
+@app.post("/api/siem/s3/archive/test")
+def test_archive_s3(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Write a sample NDJSON object to the events/ path of the tenant's S3 sink, so the
+    console can validate the archive layout (and Athena/Panther tables can be pointed at
+    a real object). Uses the same bucket + credentials as findings delivery."""
+    from . import archive_s3
+    t = db.get(Tenant, current.tenant_id)
+    if not t or not (t.siem_s3_bucket or "").strip():
+        raise HTTPException(status_code=400, detail="no S3 bucket configured")
+    ok, detail = archive_s3.test(t.siem_s3_bucket.strip(), t.siem_s3_prefix or "",
+                                 t.siem_s3_region or "", t.siem_s3_key_id or "",
+                                 t.siem_s3_secret or "", naming=t.siem_naming or "warden")
     return {"ok": ok, "detail": detail}
 
 

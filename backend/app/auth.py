@@ -1076,6 +1076,8 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
     if any((getattr(body, f) or "").strip() for f in
            ("siem_s3_bucket", "siem_s3_key_id", "siem_s3_secret")):
         require_feature(tenant, "s3_delivery")
+    if body.archive_s3_enabled:
+        require_feature(tenant, "s3_delivery")
     if body.name is not None:
         tenant.name = body.name.strip() or tenant.name
     if body.judge is not None:
@@ -1152,6 +1154,15 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.siem_s3_key_id = body.siem_s3_key_id.strip()
     if body.siem_s3_secret:
         tenant.siem_s3_secret = body.siem_s3_secret.strip()
+    # Raw event archival (rides the S3 delivery config above; enabling is plan-gated).
+    if body.archive_s3_enabled is not None:
+        tenant.archive_s3_enabled = body.archive_s3_enabled
+    if body.archive_s3_raw_content is not None:
+        tenant.archive_s3_raw_content = body.archive_s3_raw_content
+    if body.archive_s3_daily_mb is not None:
+        if body.archive_s3_daily_mb < 0:
+            raise HTTPException(status_code=400, detail="archive_s3_daily_mb must be >= 0")
+        tenant.archive_s3_daily_mb = body.archive_s3_daily_mb
     if body.gateway_enforce is not None:
         tenant.gateway_enforce = _JUDGE[body.gateway_enforce]  # same tri-state mapping
     if body.client_enforce is not None:

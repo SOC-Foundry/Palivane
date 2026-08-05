@@ -128,20 +128,27 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     bucket: tenant?.siem_s3_bucket || "", prefix: tenant?.siem_s3_prefix || "",
     region: tenant?.siem_s3_region || "", keyId: "", secret: "",
     configured: !!tenant?.siem_s3_configured,
+    archive: !!tenant?.archive_s3_enabled, archiveRaw: !!tenant?.archive_s3_raw_content,
   });
   async function saveS3() {
     try {
-      const payload = { siem_s3_bucket: s3Cfg.bucket, siem_s3_prefix: s3Cfg.prefix, siem_s3_region: s3Cfg.region };
+      const payload = { siem_s3_bucket: s3Cfg.bucket, siem_s3_prefix: s3Cfg.prefix, siem_s3_region: s3Cfg.region,
+                        archive_s3_enabled: s3Cfg.archive, archive_s3_raw_content: s3Cfg.archiveRaw };
       if (s3Cfg.keyId) payload.siem_s3_key_id = s3Cfg.keyId;    // write-only; only send if changed
       if (s3Cfg.secret) payload.siem_s3_secret = s3Cfg.secret;
       const t = await api.updateTenant(payload);
       onTenant?.(t);
-      setS3Cfg((s) => ({ ...s, keyId: "", secret: "", configured: !!t.siem_s3_configured }));
+      setS3Cfg((s) => ({ ...s, keyId: "", secret: "", configured: !!t.siem_s3_configured,
+                         archive: !!t.archive_s3_enabled, archiveRaw: !!t.archive_s3_raw_content }));
       flash("S3 delivery saved.");
     } catch (e) { err(e); }
   }
   async function testS3() {
     try { const r = await api.testSiemS3(); flash(r.ok ? "Test object written to S3." : `S3 write failed: ${r.detail || "check config"}`, !!r.ok); }
+    catch (e) { err(e); }
+  }
+  async function testArchive() {
+    try { const r = await api.testArchiveS3(); flash(r.ok ? "Test object written under events/." : `S3 write failed: ${r.detail || "check config"}`, !!r.ok); }
     catch (e) { err(e); }
   }
   function _download(text, name, type) {
@@ -614,11 +621,30 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
             <input type="password" placeholder={s3Cfg.configured ? "••••••••" : "secret"}
                    value={s3Cfg.secret} onChange={(e) => setS3Cfg((s) => ({ ...s, secret: e.target.value }))} /></label>
         </div>
+        <div className="settings-sub" style={{ marginTop: 12 }}>
+          <h3 style={{ margin: "0 0 6px" }}>Raw event archive</h3>
+          <p className="muted" style={{ fontSize: 12 }}>Beyond findings: archive <strong>every
+             captured event</strong> (benign included) to the same bucket as NDJSON micro-batches
+             under <code>&lt;prefix&gt;/{siemCfg.naming}/events/YYYY/MM/DD/HH/…ndjson</code> —
+             a complete, hour-partitioned capture record for Athena / Panther / Snowflake.</p>
+          <label style={{ fontSize: 13, display: "block" }}>
+            <input type="checkbox" checked={s3Cfg.archive}
+                   onChange={(e) => setS3Cfg((s) => ({ ...s, archive: e.target.checked }))} /> archive all events
+          </label>
+          {s3Cfg.archive && (
+            <label style={{ fontSize: 13, display: "block" }}>
+              <input type="checkbox" checked={s3Cfg.archiveRaw}
+                     onChange={(e) => setS3Cfg((s) => ({ ...s, archiveRaw: e.target.checked }))} /> include
+              unredacted content (default: secrets/PII are masked, as in stored findings)
+            </label>
+          )}
+        </div>
         <div className="form-row" style={{ gap: 10 }}>
           <button type="button" className="primary-btn slim" onClick={saveS3}>Save S3 delivery</button>
           <button type="button" className="mini-btn" onClick={testS3}>Write test object</button>
+          {s3Cfg.archive && <button type="button" className="mini-btn" onClick={testArchive}>Write test event</button>}
         </div>
-        <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Objects are written under
+        <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Findings are written under
            <code> &lt;prefix&gt;/{siemCfg.naming}/findings/YYYY/MM/DD/…json</code> (path follows the
            SIEM event-naming setting above). Credentials are stored write-only. Grant the key
            <code> s3:PutObject</code> on the bucket only.</p>

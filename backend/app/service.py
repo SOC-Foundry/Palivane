@@ -143,6 +143,12 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             sigs = f(sigs)
         verdict = score(sigs)
     result = verdict.to_dict()
+    # Raw event archival: EVERY analyzed event (benign included, findings or not) streams
+    # to the tenant's S3 lake when enabled — the complete capture record, independent of
+    # the severity-gated findings sinks below. Buffered + fire-and-forget inside archive().
+    if tenant is not None and getattr(tenant, "archive_s3_enabled", False):
+        from . import archive_s3
+        archive_s3.archive(tenant, item, result, agent)
     finding_id = None
     if persist and not persist_benign and verdict.severity in _ALLOW_LEVEL:
         persist = False  # drop benign sensor noise

@@ -86,6 +86,13 @@ class Tenant(Base):
     siem_s3_region = Column(String(32), default="")
     siem_s3_key_id = Column(String(128), default="")   # AWS access key id (write-only via API)
     siem_s3_secret = Column(String(256), default="")   # AWS secret access key (write-only)
+    # Raw event archival to the same S3 sink (archive_s3.py): EVERY analyzed event (benign
+    # included) as NDJSON micro-batches under <prefix>/<naming>/events/… — the audit-trail
+    # complement to the findings feed above. Content ships redacted unless the org opts
+    # into raw prose; daily_mb caps bytes/day (0 = the PALIVANE_ARCHIVE_DAILY_MB default).
+    archive_s3_enabled = Column(Boolean, default=False)
+    archive_s3_raw_content = Column(Boolean, default=False)
+    archive_s3_daily_mb = Column(Integer, default=0)
     # Per-tenant policy posture (each org picks its own monitor/enforce stance; empty/None
     # = inherit the global env default, same tri-state pattern as judge_enabled).
     gateway_enforce = Column(Boolean, nullable=True, default=None)
@@ -177,6 +184,9 @@ class Tenant(Base):
                 "siem_s3_configured": bool((self.siem_s3_bucket or "").strip()
                                            and (self.siem_s3_key_id or "").strip()
                                            and (self.siem_s3_secret or "").strip()),
+                "archive_s3_enabled": bool(self.archive_s3_enabled),
+                "archive_s3_raw_content": bool(self.archive_s3_raw_content),
+                "archive_s3_daily_mb": self.archive_s3_daily_mb or 0,
                 "siem_token_set": bool((self.siem_token or "").strip()),
                 "gateway_enforce": self.gateway_enforce,
                 "client_enforce": self.client_enforce,
