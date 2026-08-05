@@ -209,12 +209,11 @@ into a **verdict**.
   likelihood, indicators, recommended action). It's the semantic catch-all for what regex
   can't classify — notably **unmarked confidential business content** (financials, contracts,
   roadmaps, M&A) which it emits as `confidential_data`. Provider is pluggable
-  (`JUDGE_PROVIDER=auto|anthropic|openai|gemini|claude-cli|none`). `claude-cli` runs
-  verdicts through the locally signed-in **Claude Code CLI** — a Claude Pro/Max/Team
-  subscription carries the cost, so a self-hosted org needs no API key or credit
-  balance. It is never chosen by `auto` (it routes content through the signed-in Claude
-  account, so opting in must be explicit), and configured API keys still serve as
-  failover behind it. On a multi-tenant deployment, an org can also **bring its own
+  (`JUDGE_PROVIDER=auto|anthropic|openai|gemini|none`). `claude-cli` (verdicts through
+  the locally signed-in Claude Code CLI on a subscription) is **deprecated** — Anthropic's
+  terms (enforced 2026-04-04) restrict subscription auth to Anthropic's own products; it
+  still runs with a startup warning, is never chosen by `auto`, and will be removed —
+  migrate to an API key. On a multi-tenant deployment, an org can also **bring its own
   judge key** (Settings → LLM judge, stored encrypted, write-only): verdicts then bill
   that org's provider account, run independently of the operator's judge capacity, and
   are exempt from plan gating — the org's judge consent setting still applies.
@@ -362,9 +361,9 @@ cd frontend && npm install && npm run dev
 |----------|---------|
 | `PALIVANE_SECRET_KEY` | Signs JWTs — required in production |
 | `DATABASE_URL` | Postgres connection string |
-| `JUDGE_PROVIDER` | `auto` / `anthropic` / `openai` / `gemini` / `claude-cli` / `none` |
+| `JUDGE_PROVIDER` | `auto` / `anthropic` / `openai` / `gemini` / `none` (`claude-cli` deprecated — see LLMJudgeDetector) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` | LLM judge keys |
-| `JUDGE_CLI_BIN` / `JUDGE_CLI_TIMEOUT` | Claude Code binary + per-verdict timeout for `claude-cli` (subscription-auth judge, self-hosted) |
+| `JUDGE_CLI_BIN` / `JUDGE_CLI_TIMEOUT` | Claude Code binary + per-verdict timeout for the deprecated `claude-cli` provider |
 | `GATEWAY_ENFORCE` | `true` = block risky prompts; `false` = monitor only |
 | `GATEWAY_BLOCK_SEVERITY` | Severity threshold for blocking |
 | `EXTENSION_INGEST_TOKEN` | Shared auth token for extension/proxy |
