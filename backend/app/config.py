@@ -36,6 +36,12 @@ class Settings:
     # feature (see app/plans.py). Self-hosted leaves this off (default): the operator sets
     # their own provider key and the judge runs for everyone whenever a key is configured.
     judge_plan_gated: bool = _env("PALIVANE_JUDGE_PLAN_GATED", "").lower() in ("1", "true", "yes")
+    # Raw event archival to the tenant's S3 sink (archive_s3.py): NDJSON micro-batch flush
+    # thresholds, and the default per-tenant daily byte budget (MB; a tenant column > 0
+    # overrides). Events go to AWS from GCP — internet egress — so the cap is a cost guard.
+    archive_flush_kb: int = int(_env("PALIVANE_ARCHIVE_FLUSH_KB", "64"))
+    archive_flush_secs: int = int(_env("PALIVANE_ARCHIVE_FLUSH_SECS", "5"))
+    archive_daily_mb: int = int(_env("PALIVANE_ARCHIVE_DAILY_MB", "512"))
     # Session behavioral correlation: after a finding is stored, look across the actor's
     # recent activity for an escalating attack CHAIN (recon → collection → exfil) that no
     # single event trips. On by default; window is how far back to look (minutes).

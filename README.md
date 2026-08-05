@@ -70,7 +70,10 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
   **SIEM integration** — pull-based JSONL export, real-time push forwarding (Splunk HEC
   / generic JSON / CEF), *and* **S3 data-lake delivery** — severity-gated, date-partitioned
   JSON objects written with the tenant's own AWS key, ready for a Panther S3 log source,
-  Athena, or a Snowflake external stage.
+  Athena, or a Snowflake external stage. Enterprise orgs can additionally enable a **raw
+  event archive**: *every* captured event (benign included) streamed to the same bucket as
+  hour-partitioned NDJSON micro-batches under `…/events/YYYY/MM/DD/HH/`, content redacted
+  by default (raw is an explicit opt-in), with a per-day byte budget.
 - **Self-serve multi-tenant onboarding** — public signup with **domain capture**: an org
   claims its email domain (DNS-TXT verified), and teammates who sign up with a matching
   address become join requests — admin-approved or auto-joined after an emailed mailbox
@@ -463,6 +466,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/alerts/digest/run` | Send this tenant's alert digest now if one is due (also runs automatically every few minutes) (admin). |
 | POST   | `/api/siem/test`         | Send a sample event to the tenant's SIEM collector in its configured format (admin). |
 | POST   | `/api/siem/s3/test`      | Write a sample finding object to the tenant's S3 data-lake sink to validate the config (admin). |
+| POST   | `/api/siem/s3/archive/test` | Write a sample NDJSON object under the raw event archive's `events/` path (admin). |
 | *      | `/api/domains…`          | Claim, DNS-TXT-verify, and manage the org's signup-capture email domains (admin). |
 | *      | `/api/join-requests…`    | List and approve/deny signups captured by a claimed domain (admin). |
 | POST   | `/api/auth/forgot` / `reset` | Email a password-reset link; set a new password from it (single-use, revokes sessions). |
