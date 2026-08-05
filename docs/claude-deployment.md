@@ -100,7 +100,7 @@ repoint the base URL; the **hook** (Route C) adds what neither network route can
 the agent's local tool calls, before they execute. Run A + C together for full coverage.
 
 > **Self-serve (BYOD / pilots):** a user can connect their own Claude Code without an admin
-> distributing tokens — run **`warden connect https://app.warden.io`** (see
+> distributing tokens — run **`palivane connect https://app.warden.io`** (see
 > [`cli/README.md`](../cli/README.md)). It signs them in via the console (login/SSO), mints
 > a per-user tenant-scoped key, writes `~/.claude/settings.json`, and installs the Route C
 > hooks automatically. By default Claude Code **keeps its own sign-in** (Pro/Max
@@ -232,7 +232,7 @@ IDE extensions, MCP configs) reported at session start, deduplicated client-side
 The desktop app makes its own HTTPS calls to `api.anthropic.com` and has **no
 custom-base-URL setting**, so it can't use the gateway (Section 2) — it's captured at the
 **network egress** with the [`proxy/`](../proxy/) mitmproxy addon. For the same reason there
-is **no per-user `warden connect` sign-in for Desktop**: capture is at the proxy (system
+is **no per-user `palivane connect` sign-in for Desktop**: capture is at the proxy (system
 proxy + CA), an admin/MDM setup — not an in-app login. This section is for the
 **official macOS/Windows** app (it's Electron, and on those OSes it uses the **system
 proxy** and the **OS certificate store** natively — which is what makes this work cleanly

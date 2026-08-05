@@ -7,7 +7,7 @@ drives that backend and writes one JSON blob that scripts/demo_video.py renders.
     ./run-local.sh                 # in another shell
     backend/.venv/bin/python scripts/demo_capture.py
 
-Env: WARDEN_URL (default http://localhost:8088), plus the run-local seed credentials.
+Env: PALIVANE_URL (default http://localhost:8088), plus the run-local seed credentials.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-BASE = os.getenv("WARDEN_URL", "http://localhost:8088").rstrip("/")
+BASE = os.getenv("PALIVANE_URL", "http://localhost:8088").rstrip("/")
 EMAIL = os.getenv("SEED_ADMIN_EMAIL", "admin@demo.local")
 PASSWORD = os.getenv("SEED_ADMIN_PASSWORD", "changeme123")
 OUT = os.getenv("DEMO_DATA", "/tmp/warden-demo/verdicts.json")
@@ -82,11 +82,11 @@ def _post(path: str, body: dict, headers: dict | None = None) -> dict:
 
 def main() -> int:
     # This script POSTs recorded findings, so it must never be pointed at a real tenant by
-    # a stray WARDEN_URL in someone's shell (mine was set to production). Local only,
+    # a stray PALIVANE_URL in someone's shell (mine was set to production). Local only,
     # unless the caller opts out on purpose.
     host = urllib.parse.urlparse(BASE).hostname or ""
     if host not in ("localhost", "127.0.0.1", "::1") and not os.getenv("DEMO_ALLOW_REMOTE"):
-        print(f"refusing to write demo findings to {BASE} — set WARDEN_URL to a local "
+        print(f"refusing to write demo findings to {BASE} — set PALIVANE_URL to a local "
               "instance (or DEMO_ALLOW_REMOTE=1 if you really mean it).", file=sys.stderr)
         return 2
     try:

@@ -50,7 +50,7 @@ class Tenant(Base):
     # Sensor/ingest requests per minute (capture planes), counted separately from the
     # gateway so agentic tool-call volume can't starve real LLM traffic (0 = inherit global).
     ingest_rate_limit = Column(Integer, default=0)
-    # Resource quotas (0 = inherit the WARDEN_QUOTA_* global). Operator-set only — not
+    # Resource quotas (0 = inherit the PALIVANE_QUOTA_* global). Operator-set only — not
     # writable through the tenant API, or orgs could raise their own caps.
     quota_users = Column(Integer, default=0)
     quota_api_keys = Column(Integer, default=0)
@@ -131,7 +131,7 @@ class Tenant(Base):
     # marker for app/trial.py, claimed via conditional update so workers can't double-send.
     trial_notice = Column(String(16), default="", nullable=False)
     # Persist raw prompt prose in this tenant's findings? None = inherit the global default
-    # (WARDEN_STORE_CONTENT, off). Off = metadata-only (verdict + signals + redacted
+    # (PALIVANE_STORE_CONTENT, off). Off = metadata-only (verdict + signals + redacted
     # evidence, no natural-language content).
     store_content = Column(Boolean, nullable=True, default=None)
     # Per-tenant data key (DEK) wrapped by the master KEK — content is enc:v2: sealed under

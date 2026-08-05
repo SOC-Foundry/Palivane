@@ -72,7 +72,7 @@ echo "  device key issued."
 
 # Self-heal helper: Claude Code's apiKeyHelper runs this to fetch a live gateway key and
 # re-enrolls if the device key is revoked. Reads config from /etc/warden/enroll.json (and
-# inherits WARDEN_* from managed-settings). Prime its cache with the key we just minted.
+# inherits PALIVANE_* from managed-settings). Prime its cache with the key we just minted.
 echo "Installing palivane-reenroll (apiKeyHelper) ..."
 curl -fsSL "$PALIVANE_URL/cli/palivane-reenroll" -o /tmp/palivane-reenroll
 sudo install -m 0755 /tmp/palivane-reenroll /usr/local/bin/palivane-reenroll
@@ -196,7 +196,7 @@ echo "  device key issued."
 
 # Self-heal helper: Claude Code's apiKeyHelper runs this to fetch a live gateway key and
 # re-enrolls if the device key is revoked. Reads config from /etc/warden/enroll.json (and
-# inherits WARDEN_* from managed-settings). Prime its cache with the key we just minted.
+# inherits PALIVANE_* from managed-settings). Prime its cache with the key we just minted.
 echo "Installing palivane-reenroll (apiKeyHelper) ..."
 curl -fsSL "$PALIVANE_URL/cli/palivane-reenroll" -o /tmp/palivane-reenroll
 sudo install -m 0755 /tmp/palivane-reenroll /usr/local/bin/palivane-reenroll

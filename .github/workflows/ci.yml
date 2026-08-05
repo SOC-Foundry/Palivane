@@ -62,7 +62,7 @@ jobs:
       - name: Bring up the stack
         if: steps.changes.outputs.img == 'true'
         run: |
-          printf 'WARDEN_SECRET_KEY=%s\nSEED_ON_START=true\n' "$(openssl rand -hex 32)" > .env
+          printf 'PALIVANE_SECRET_KEY=%s\nSEED_ON_START=true\n' "$(openssl rand -hex 32)" > .env
           docker compose up -d --build --wait --wait-timeout 300
       - name: Health check + core detection
         if: steps.changes.outputs.img == 'true'

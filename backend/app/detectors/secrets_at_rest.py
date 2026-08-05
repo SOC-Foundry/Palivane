@@ -2,7 +2,7 @@
 
 Infostealers (RedLine, Lumma, Raccoon) don't phish — they grab credentials already
 sitting on the box: `~/.ssh/id_rsa`, `~/.aws/credentials`, `.git-credentials`, `.env`,
-CI tokens in shell history. This detector scores what the local `warden-secrets` scanner
+CI tokens in shell history. This detector scores what the local `palivane-secrets` scanner
 found *at rest* on a device and reports it as a `credential_at_rest` finding so the org
 can rotate/lock down before a stealer gets there.
 

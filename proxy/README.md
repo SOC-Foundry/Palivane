@@ -82,7 +82,7 @@ curl -x http://localhost:8081 https://api.openai.com/v1/chat/completions \
 
 **Attribution:** on a per-device install (`palivane-desktop`), leave `PALIVANE_PROXY_USER`
 unset — the proxy authenticates with the device's per-user `ak_…` key (from
-`warden connect`), and the backend attributes findings to that key's owner
+`palivane connect`), and the backend attributes findings to that key's owner
 automatically. `PALIVANE_PROXY_USER` matters only for a *central* egress proxy running
 with the shared `EXTENSION_INGEST_TOKEN`, where one process serves many people: it can
 only carry a single static identity, so per-user attribution needs either per-device

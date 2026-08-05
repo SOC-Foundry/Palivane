@@ -11,16 +11,16 @@ const SELF = [
   { n: "3", title: "Finish the browser extension",
     body: "Install the Palivane extension for Chrome/Edge from the Web Store, then click “Sign in to Palivane” in its popup to bind it to your org. Now claude.ai, ChatGPT, and Gemini are covered too." },
   { n: "4", title: "Route through your provider account (optional · admin)",
-    body: "Want a hard, unbypassable gateway instead of the local proxy? In Settings → Gateway upstreams, paste your org's Anthropic (or OpenAI / Gemini) API key and warden-connect will point Claude Code at the gateway. This bills to your API account rather than each user's subscription — leave it unset to keep the subscription-friendly proxy path above." },
+    body: "Want a hard, unbypassable gateway instead of the local proxy? In Settings → Gateway upstreams, paste your org's Anthropic (or OpenAI / Gemini) API key and palivane-connect will point Claude Code at the gateway. This bills to your API account rather than each user's subscription — leave it unset to keep the subscription-friendly proxy path above." },
   { n: "5", title: "Watch findings roll in",
     body: "The Findings view shows live risk verdicts from the gateway, the browser extension, and the egress proxy (CLIs + desktop apps) — allow, warn, or block, by surface and severity." },
 ];
 
 const UNINSTALL = [
   { n: "1", title: "Remove the editor & CLI hooks",
-    body: "Run  warden-connect --uninstall . It strips the Claude Code, Cursor, Gemini, and Codex hooks, the Palivane env, and the creds files it wrote — and leaves any hooks you added yourself untouched. Safe to run anytime; a no-op if nothing's installed." },
+    body: "Run  palivane-connect --uninstall . It strips the Claude Code, Cursor, Gemini, and Codex hooks, the Palivane env, and the creds files it wrote — and leaves any hooks you added yourself untouched. Safe to run anytime; a no-op if nothing's installed." },
   { n: "2", title: "Remove the egress proxy",
-    body: "Run  warden-desktop uninstall  to stop the proxy, revert the system-proxy setting, and remove the per-tool CLI shims. The root CA is left in your trust store for safety — delete it manually (macOS Keychain; Linux /usr/local/share/ca-certificates/warden-mitmproxy.crt then update-ca-certificates) for a full revert." },
+    body: "Run  palivane-desktop uninstall  to stop the proxy, revert the system-proxy setting, and remove the per-tool CLI shims. The root CA is left in your trust store for safety — delete it manually (macOS Keychain; Linux /usr/local/share/ca-certificates/palivane-mitmproxy.crt then update-ca-certificates) for a full revert." },
   { n: "3", title: "Remove the CLI & extension",
     body: "rm -rf ~/.warden  removes the CLI and local state, then drop the ~/.warden/bin line from your shell rc. Finally, remove the Palivane extension from Chrome/Edge. On an MDM fleet, pull the policy pack instead — the profile owns every device's settings, so removing it reverts them all." },
 ];
@@ -36,9 +36,9 @@ const ORG = [
 
 const CI = [
   { n: "1", title: "Add one workflow file",
-    body: "Copy Palivane's GitHub Actions template into your repo as .github/workflows/warden-ci-scan.yml. It fetches the scanner from your console at run time, so there's nothing to vendor and nothing to keep updated." },
+    body: "Copy Palivane's GitHub Actions template into your repo as .github/workflows/palivane-ci-scan.yml. It fetches the scanner from your console at run time, so there's nothing to vendor and nothing to keep updated." },
   { n: "2", title: "Let the runner authenticate as itself",
-    body: "The template asks GitHub for a short-lived OIDC token (permissions: id-token: write) and presents that to Palivane — so no long-lived Palivane key has to live in your repository secrets. Register the GitHub issuer once under Agents → workload identity. Prefer a key? Set WARDEN_TOKEN as a secret instead." },
+    body: "The template asks GitHub for a short-lived OIDC token (permissions: id-token: write) and presents that to Palivane — so no long-lived Palivane key has to live in your repository secrets. Register the GitHub issuer once under Agents → workload identity. Prefer a key? Set PALIVANE_TOKEN as a secret instead." },
   { n: "3", title: "Choose what fails a pull request",
     body: "By default an exploitable workflow fails the check, while hardening debt — unpinned actions, over-broad token permissions — is recorded and warns, so the gate doesn't fail a pull request over problems its author didn't introduce. Settings → CI scan block severity changes that line for your whole org." },
   { n: "4", title: "Sweep every repo (optional · admin)",

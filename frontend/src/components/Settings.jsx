@@ -148,7 +148,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   }
   async function exportFindings() {
-    try { _download(await api.exportFindings(), "warden-findings.jsonl", "application/x-ndjson"); }
+    try { _download(await api.exportFindings(), "palivane-findings.jsonl", "application/x-ndjson"); }
     catch (e) { err(e); }
   }
 
@@ -162,7 +162,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   }
   async function exportTenant() {
     try {
-      _download(await api.exportTenant(inclContent), `warden-export-${tenant?.slug || "org"}.json`,
+      _download(await api.exportTenant(inclContent), `palivane-export-${tenant?.slug || "org"}.json`,
                 "application/json");
     } catch (e) { err(e); }
   }
@@ -588,7 +588,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
            Athena, or Snowflake. Uses the <strong>same severity threshold</strong> as SIEM forwarding.</p>
         <div className="field-grid">
           <label className="field-wide">Bucket
-            <input placeholder="my-warden-logs"
+            <input placeholder="my-palivane-logs"
                    value={s3Cfg.bucket} onChange={(e) => setS3Cfg((s) => ({ ...s, bucket: e.target.value }))} /></label>
           <label>Prefix (optional)
             <input placeholder="warden/"

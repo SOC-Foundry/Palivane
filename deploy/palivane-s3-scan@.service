@@ -1,8 +1,8 @@
 # Instanced oneshot: scan one S3 bucket (%i) for secrets/PII at rest + public exposure.
 # Enable a schedule per bucket with the companion timer:
-#   systemctl enable --now warden-s3-scan@my-bucket.timer
+#   systemctl enable --now palivane-s3-scan@my-bucket.timer
 # For a bucket whose name isn't a valid unit instance (has "/", etc.), escape it:
-#   systemctl enable --now "warden-s3-scan@$(systemd-escape my.bucket).timer"
+#   systemctl enable --now "palivane-s3-scan@$(systemd-escape my.bucket).timer"
 [Unit]
 Description=Warden S3 secret & PII scan — bucket %i
 Documentation=https://github.com/your-org/warden
@@ -13,13 +13,13 @@ Wants=network-online.target
 Type=oneshot
 User=warden
 Group=warden
-# WARDEN_URL + WARDEN_TOKEN live here. AWS credentials are best provided by the box's
+# PALIVANE_URL + PALIVANE_TOKEN live here. AWS credentials are best provided by the box's
 # instance role / attached identity; otherwise add AWS_* (or AWS_PROFILE/AWS_REGION) to
 # this env file too. See deploy/warden.env.example.
 EnvironmentFile=/etc/warden/warden.env
-# warden-s3-scan installed alongside the other CLIs (curl <console>/cli/warden-s3-scan).
+# palivane-s3-scan installed alongside the other CLIs (curl <console>/cli/palivane-s3-scan).
 # --record persists findings; --fail-closed makes an unreachable backend a visible failure.
-ExecStart=/opt/warden/bin/warden-s3-scan %i --record --fail-closed
+ExecStart=/opt/warden/bin/palivane-s3-scan %i --record --fail-closed
 
 # Hardening — read-only host, no home access, private tmp.
 NoNewPrivileges=true

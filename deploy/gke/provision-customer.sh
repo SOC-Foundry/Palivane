@@ -6,7 +6,7 @@
 #   1. add the customer to terraform/*.tfvars `customers` map, then:
 #   2. ./provision-customer.sh <slug> <hostname>
 #
-# Idempotent: re-running reuses the existing WARDEN_SECRET_KEY / DB password from Secret
+# Idempotent: re-running reuses the existing PALIVANE_SECRET_KEY / DB password from Secret
 # Manager (never rotates them — that would orphan encrypted findings). Needs: gcloud,
 # kubectl, helm, terraform, python3.
 set -euo pipefail
@@ -53,7 +53,7 @@ fi
 
 echo "==> [4/5] kubernetes secret"
 kubectl -n "$SLUG" create secret generic "warden-$SLUG-secrets" \
-  --from-literal=WARDEN_SECRET_KEY="$SECRETKEY" \
+  --from-literal=PALIVANE_SECRET_KEY="$SECRETKEY" \
   --from-literal=DATABASE_URL="$DBURL" \
   --dry-run=client -o yaml | kubectl apply -f -
 

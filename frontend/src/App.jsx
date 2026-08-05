@@ -131,7 +131,7 @@ export default function App() {
   if (legalPath === "/use-cases") {
     return <UseCases />;
   }
-  if (legalPath === "/why-warden") {
+  if (legalPath === "/why-palivane" || legalPath === "/why-warden") {
     return <WhyWarden />;
   }
   if (legalPath === "/trust") {

@@ -105,7 +105,7 @@ edge (where AI traffic actually happens).
 4. **Cursor (local hook)** — Cursor's chat pins its cert (the proxy can't read it) and
    ignores `OPENAI_BASE_URL` (the gateway can't interpose), so **`palivane-cursor-hook`** uses
    Cursor's Hooks API to inspect the prompt, shell/MCP calls, and file reads/edits locally
-   *before they run* — immune to the pinning. Auto-installed by `warden connect`.
+   *before they run* — immune to the pinning. Auto-installed by `palivane connect`.
 5. **Endpoint credential hygiene** — **`palivane-secrets`** scans where infostealers look
    (SSH/RSA keys, `~/.aws/credentials`, `.git-credentials`, `.env`, shell history) and reports
    credentials **at rest** (surface `secrets`). Detection runs locally; only masked metadata
@@ -155,7 +155,7 @@ scan that drives TruffleHog by default) and applied by the org's MDM.
 
 **Onboarding is managed or self-serve.** Fleets get zero-touch config via MDM; BYOD users
 sign in (login/SSO) to bind their tenant — the extension's **Sign in to Palivane** and
-**`warden connect`** for Claude Code mint a per-user, revocable key (no token distribution).
+**`palivane connect`** for Claude Code mint a per-user, revocable key (no token distribution).
 
 **Agentless by default, with optional local sensors.** The above needs no endpoint agent.
 For deeper local coverage (e.g. local stdio MCP servers the network can't see), opt-in

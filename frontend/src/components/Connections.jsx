@@ -70,7 +70,7 @@ export default function Connections() {
         {visibleKeys.length === 0 ? (
           keys.length === 0
             ? <p className="muted">No keys yet. Mint one on the Connect page, or let
-                users sign in from the extension / <code>warden connect</code>.</p>
+                users sign in from the extension / <code>palivane connect</code>.</p>
             : <p className="muted">No active keys. {hiddenKeys} revoked — tick “Show revoked” to see them.</p>
         ) : (
           <table className="data-table">

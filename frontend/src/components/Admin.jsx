@@ -1,7 +1,7 @@
 // Vendor operator console at /admin — the owner's back-office over the /api/admin/*
 // endpoints (funnel, plan roster, license registry with issue/revoke). Deliberately a
 // STANDALONE route, not part of the tenant app shell and not in any public nav: it is
-// gated by the operator token (WARDEN_METRICS_TOKEN), NOT a tenant session, because it is
+// gated by the operator token (PALIVANE_METRICS_TOKEN), NOT a tenant session, because it is
 // cross-tenant. A normal tenant admin has no path here — the page is inert without the
 // token, and every endpoint 401s without it.
 import { useCallback, useEffect, useState } from "react";
@@ -93,7 +93,7 @@ export default function Admin() {
       <div className="login-screen">
         <div className="login-card" style={{ maxWidth: 420 }}>
           <h1 style={{ fontSize: 20, marginTop: 0 }}>Palivane operator console</h1>
-          <p className="login-sub">Vendor-only. Enter the operator token (WARDEN_METRICS_TOKEN).</p>
+          <p className="login-sub">Vendor-only. Enter the operator token (PALIVANE_METRICS_TOKEN).</p>
           <form onSubmit={(e) => { e.preventDefault(); load(entered.trim()); }}>
             <input type="password" autoFocus placeholder="operator token" value={entered}
                    onChange={(e) => setEntered(e.target.value)}
@@ -191,7 +191,7 @@ export default function Admin() {
         </form>
         {issued && (
           <div className="flash-ok" style={{ marginBottom: 16 }}>
-            Issued <strong>{issued.id}</strong> for {issued.org}. Send the customer this WARDEN_LICENSE
+            Issued <strong>{issued.id}</strong> for {issued.org}. Send the customer this PALIVANE_LICENSE
             value (shown once):
             <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", marginTop: 8 }}>{issued.license}</pre>
           </div>

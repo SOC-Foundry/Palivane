@@ -173,7 +173,7 @@ export const api = {
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `warden-audit.${format === "cef" ? "cef" : "jsonl"}`;
+    a.href = url; a.download = `palivane-audit.${format === "cef" ? "cef" : "jsonl"}`;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
   },

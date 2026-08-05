@@ -3,7 +3,7 @@
 # endpoints, all on one port. Building the canonical image (not a separate backend+nginx
 # pair) means a self-hosted deployment always includes exactly what the SaaS runs.
 #
-#   cp .env.docker.example .env   # set WARDEN_SECRET_KEY (openssl rand -hex 32)
+#   cp .env.docker.example .env   # set PALIVANE_SECRET_KEY (openssl rand -hex 32)
 #   docker compose up --build
 # Then open http://localhost:8080  (login: admin@demo.local / changeme123 when seeded).
 
@@ -32,16 +32,16 @@ services:
     environment:
       PORT: "8080"
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warden}:${POSTGRES_PASSWORD:-warden}@db:5432/${POSTGRES_DB:-warden}
-      WARDEN_SECRET_KEY: "${WARDEN_SECRET_KEY:?set a strong WARDEN_SECRET_KEY in .env (openssl rand -hex 32)}"
+      PALIVANE_SECRET_KEY: "${PALIVANE_SECRET_KEY:?set a strong PALIVANE_SECRET_KEY in .env (openssl rand -hex 32)}"
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
-      WARDEN_PUBLIC_URL: ${WARDEN_PUBLIC_URL:-http://localhost:8080}
+      PALIVANE_PUBLIC_URL: ${PALIVANE_PUBLIC_URL:-http://localhost:8080}
       SEED_ON_START: ${SEED_ON_START:-false}
-      WARDEN_ALLOW_SIGNUP: ${WARDEN_ALLOW_SIGNUP:-true}
+      PALIVANE_ALLOW_SIGNUP: ${PALIVANE_ALLOW_SIGNUP:-true}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@demo.local}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-changeme123}
       # Findings-at-rest posture (self-host can choose to keep content).
-      WARDEN_ENCRYPT_FINDINGS: ${WARDEN_ENCRYPT_FINDINGS:-true}
-      WARDEN_STORE_CONTENT: ${WARDEN_STORE_CONTENT:-false}
+      PALIVANE_ENCRYPT_FINDINGS: ${PALIVANE_ENCRYPT_FINDINGS:-true}
+      PALIVANE_STORE_CONTENT: ${PALIVANE_STORE_CONTENT:-false}
       # Optional: LLM judge (bring your own key).
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -53,7 +53,7 @@ services:
       GATEWAY_ANTHROPIC_KEY: ${GATEWAY_ANTHROPIC_KEY:-}
       EXTENSION_INGEST_TOKEN: ${EXTENSION_INGEST_TOKEN:-}
       INGEST_TENANT: ${INGEST_TENANT:-demo}
-      WARDEN_EXTENSION_ID: ${WARDEN_EXTENSION_ID:-}
+      PALIVANE_EXTENSION_ID: ${PALIVANE_EXTENSION_ID:-}
       # Optional: email plane (SMTP) for reset / verification / invites.
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_USER: ${SMTP_USER:-}

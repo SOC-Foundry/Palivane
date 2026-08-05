@@ -74,7 +74,7 @@ variable "encrypt_findings" {
 variable "public_domain" {
   type        = string
   default     = ""
-  description = "Public hostname (e.g. warden.example.com). Sets WARDEN_PUBLIC_URL / CORS_ORIGINS."
+  description = "Public hostname (e.g. warden.example.com). Sets PALIVANE_PUBLIC_URL / CORS_ORIGINS."
 }
 
 variable "allowed_hosts" {
@@ -115,7 +115,7 @@ variable "max_instances" {
 }
 
 # Set true when importing an existing, hand-built deployment (see import.sh): skips
-# generating secret VERSIONS (so prod's real WARDEN_SECRET_KEY / DATABASE_URL / metrics
+# generating secret VERSIONS (so prod's real PALIVANE_SECRET_KEY / DATABASE_URL / metrics
 # values are left intact) and runs the service as the default compute SA instead of
 # creating warden-run. With this on, import.sh -> plan should be a clean no-op.
 variable "adopt_existing" {

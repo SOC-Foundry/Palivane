@@ -231,7 +231,7 @@ def detect_tool(user_agent: str) -> str:
 # HTTP 401/403 means THIS token is dead (revoked or invalid) — a permanent signal, so we
 # stop calling out on every intercepted request. We fingerprint the token, stand down (fail
 # open, no network) for _DEAUTH_SECS, and re-probe hourly in case the 401 was transient. A
-# fresh token from `warden connect` has a different fingerprint, so a stale marker never
+# fresh token from `palivane connect` has a different fingerprint, so a stale marker never
 # suppresses it. Repeated transient errors (timeouts/5xx) trip a shorter cooldown so we
 # don't retry-storm an unreachable backend either.
 _DEAUTH_SECS = 3600
@@ -290,7 +290,7 @@ def _breaker_record(token: str, status) -> None:
         _breaker_save({"deauth_fp": fp, "deauth_until": now + _DEAUTH_SECS})
         if first:
             sys.stderr.write("warden: capture key rejected (revoked or invalid) — standing "
-                             "down; re-run `warden connect` to re-issue.\n")
+                             "down; re-run `palivane connect` to re-issue.\n")
         return
     fails = int(st.get("fails", 0)) + 1
     if fails >= _FAIL_THRESHOLD:

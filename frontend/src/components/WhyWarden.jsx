@@ -1,4 +1,4 @@
-// Public "Why Palivane" page at /why-warden. The differentiators — what sets Palivane apart.
+// Public "Why Palivane" page at /why-palivane (legacy /why-warden still routes). The differentiators — what sets Palivane apart.
 // Reuses the landing (lp-*) design language.
 import { SiteNav, SiteFooter, Shot } from "./SiteChrome.jsx";
 import { IconShield, IconTarget, IconPlug, IconInbox, IconClipboard, IconAlert } from "./icons.jsx";

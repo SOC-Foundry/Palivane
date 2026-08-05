@@ -41,7 +41,7 @@ def effective_ingest_limit(tenant: Tenant | None) -> int:
 
 def effective_quota(tenant: Tenant | None, name: str) -> int:
     """Resource quota `name` (users | api_keys | ingest_per_day) for this tenant: its own
-    override column when set, else its plan's default, else the WARDEN_QUOTA_* global.
+    override column when set, else its plan's default, else the PALIVANE_QUOTA_* global.
     0 = unlimited."""
     if tenant is not None and getattr(tenant, f"quota_{name}", 0):
         return getattr(tenant, f"quota_{name}")

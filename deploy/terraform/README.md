@@ -38,9 +38,9 @@ the Cloudflare Worker can invoke the service. Build/push an image and deploy it 
 `deploy/cloudrun` script or CI); TF won't overwrite the running image.
 
 ## State holds sensitive values
-`WARDEN_SECRET_KEY`, the DB password (in `DATABASE_URL`), and the metrics token are written
+`PALIVANE_SECRET_KEY`, the DB password (in `DATABASE_URL`), and the metrics token are written
 to state. **Use the encrypted GCS backend** (uncomment it in `versions.tf`) — don't keep
-local state. Losing/rotating `WARDEN_SECRET_KEY` means data loss (it encrypts findings and
+local state. Losing/rotating `PALIVANE_SECRET_KEY` means data loss (it encrypts findings and
 signs sessions), so treat the state + backend as secrets.
 
 ## Adopting the EXISTING production (don't clobber it)

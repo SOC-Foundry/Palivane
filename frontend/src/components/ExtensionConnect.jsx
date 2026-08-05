@@ -8,7 +8,7 @@ import { api, getToken } from "../api.js";
 import Login from "./Login.jsx";
 
 // Only ever redirect the token to a Chrome extension's callback (chromiumapp.org) or a
-// loopback address (the `warden connect` CLI's local server, for Claude Code onboarding).
+// loopback address (the `palivane connect` CLI's local server, for Claude Code onboarding).
 function redirectKind(uri) {
   try {
     const u = new URL(uri);
@@ -24,7 +24,7 @@ export default function ExtensionConnect() {
   const params = new URLSearchParams(window.location.search);
   const redirectUri = params.get("redirect_uri") || "";
   const state = params.get("state") || "";
-  // Which device is connecting (browser deviceId / warden-connect hostname) — relayed to the
+  // Which device is connecting (browser deviceId / palivane-connect hostname) — relayed to the
   // token endpoint so re-connecting the same device rotates its key instead of piling up rows.
   const device = params.get("device") || "";
   const [authed, setAuthed] = useState(!!getToken());
@@ -49,7 +49,7 @@ export default function ExtensionConnect() {
                        // Can the gateway forward Claude Code to a real model, or does the
                        // org still need a provider key? The CLI warns on upstream=0.
                        `&upstream=${r.upstream_forwards === false ? "0" : "1"}` +
-                       // Org enforce stance (Settings → Enforcement) — warden-connect
+                       // Org enforce stance (Settings → Enforcement) — palivane-connect
                        // provisions it into the hooks it installs.
                        `&enforce=${r.enforce ? "1" : "0"}`;
         if (kind === "fragment") u.hash = params;   // extension (launchWebAuthFlow)

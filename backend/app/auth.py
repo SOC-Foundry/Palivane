@@ -116,7 +116,7 @@ def signup(body: SignupRequest, request: Request, db: Session = Depends(get_db))
     """Self-serve onboarding: create a new org (tenant) + its first admin, and log in.
 
     The first user of a new tenant is its admin; they then invite analysts via /api/users
-    and configure the capture planes. Disabled when WARDEN_ALLOW_SIGNUP=false.
+    and configure the capture planes. Disabled when PALIVANE_ALLOW_SIGNUP=false.
 
     Domain capture: when the email's domain is claimed + verified by an existing tenant,
     no new org is created — the signup becomes a join request for that tenant (approved

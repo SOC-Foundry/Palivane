@@ -79,7 +79,7 @@ def main(argv: list[str]) -> int:
     lu.add_argument("--tenant", required=True)
 
     # Quota overrides are operator-only on purpose: there is no API for a tenant admin
-    # to raise their own caps. 0 (or omitted) = inherit the WARDEN_QUOTA_* global.
+    # to raise their own caps. 0 (or omitted) = inherit the PALIVANE_QUOTA_* global.
     sq = sub.add_parser("set-quota")
     sq.add_argument("--tenant", required=True)
     sq.add_argument("--users", type=int, default=None)
@@ -242,7 +242,7 @@ def main(argv: list[str]) -> int:
             print(f"issued {lic_id} — {args.org} / {args.plan} / {args.seats or 'plan-default'} seats"
                   f", term {term}d"
                   f"{', contract ' + contract.strftime('%Y-%m-%d') if contract else ''}")
-            print("send the customer this WARDEN_LICENSE value:")
+            print("send the customer this PALIVANE_LICENSE value:")
             print(blob)
         elif args.cmd == "license-list":
             from .models import License

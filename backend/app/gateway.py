@@ -156,7 +156,7 @@ def _resolve_gateway_agent(request: Request, primary: str, tenant_id: int,
     ("", 0) otherwise. The name is never self-asserted — it's resolved from a hashed token,
     so a caller can't claim a more-privileged agent to widen its role."""
     from .security import hash_token, looks_like_agent_token
-    tok = (request.headers.get("x-warden-agent") or "").strip() or primary
+    tok = (request.headers.get("x-palivane-agent") or "").strip() or primary
     if not looks_like_agent_token(tok):
         return "", 0
     ag = (db.query(Agent).filter(Agent.token_hash == hash_token(tok), Agent.active.is_(True))
@@ -279,7 +279,7 @@ def _scan_messages(messages: list, system=None) -> str:
 
 
 def _with_image_text(prompt: str, body: dict) -> str:
-    """Opt-in image DLP (WARDEN_OCR): OCR base64 images in the request body (Anthropic
+    """Opt-in image DLP (PALIVANE_OCR): OCR base64 images in the request body (Anthropic
     `source.data`, OpenAI `image_url` data: URIs, Gemini `inline_data`) and append the
     recovered text to the scannable prompt so screenshots can't smuggle secrets/PII past
     the text-only scan. No-op unless enabled AND pytesseract/Pillow are installed; OCR is
@@ -772,7 +772,7 @@ def _openai_error(verdict: dict) -> JSONResponse:
 def _openai_stub(model: str, verdict: dict) -> dict:
     now = int(time.time())
     return {
-        "id": f"warden-{now}", "object": "chat.completion", "created": now, "model": model,
+        "id": f"palivane-{now}", "object": "chat.completion", "created": now, "model": model,
         "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant",
                      "content": "[Palivane gateway: no upstream configured — prompt passed inspection.]"}}],
         "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
@@ -788,7 +788,7 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
         return limited
     payload = await request.json()
     model = payload.get("model", "unknown")
-    tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
+    tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
     prompt = _with_image_text(_scan_messages(payload.get("messages", [])), payload)
     verdict = _capture(prompt, model, tool, principal, db)
     pol = _effective_policy(principal, db)
@@ -949,7 +949,7 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
         return limited
     payload = await request.json()
     model = payload.get("model", "unknown")
-    tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
+    tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
     verdict = _capture(_responses_user_text(payload.get("input")), model, tool, principal, db)
     pol = _effective_policy(principal, db)
 
@@ -1033,7 +1033,7 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
         return limited
     payload = await request.json()
     model = payload.get("model", "unknown")
-    tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
+    tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
     prompt = _with_image_text(_scan_messages(payload.get("messages", []), payload.get("system")), payload)
     verdict = _capture(prompt, model, tool, principal, db)
     pol = _effective_policy(principal, db)
@@ -1188,7 +1188,7 @@ async def _gemini_entry(model: str, method: str, request: Request,
     if limited:
         return limited
     payload = await request.json()
-    tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-warden-tool", ""))
+    tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
     prompt = _with_image_text(
         _scan_gemini(payload.get("contents", []), payload.get("systemInstruction") or payload.get("system_instruction")),
         payload)

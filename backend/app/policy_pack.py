@@ -153,7 +153,7 @@ def claude_managed_settings(base_url: str, hook_path: str, posture_path: str,
     without baking it in, use Claude Code's apiKeyHelper. The two scripts must be deployed
     to `hook_path` / `posture_path` on the device (push via the same MDM)."""
     b = base_url.rstrip("/")
-    token = "ak_REPLACE_WITH_PER_USER_WARDEN_KEY"
+    token = "ak_REPLACE_WITH_PER_USER_PALIVANE_KEY"
     env = {
         "PALIVANE_URL": b,
         "PALIVANE_TOKEN": token,
@@ -191,7 +191,7 @@ def openai_env(base_url: str) -> str:
         "# per-user Palivane capture key and doubles as the gateway auth token.\n"
         f'OPENAI_BASE_URL="{b}/v1"\n'
         f'OPENAI_API_BASE="{b}/v1"\n'
-        'OPENAI_API_KEY="ak_REPLACE_WITH_PER_USER_WARDEN_KEY"\n'
+        'OPENAI_API_KEY="ak_REPLACE_WITH_PER_USER_PALIVANE_KEY"\n'
     )
 
 
@@ -217,7 +217,7 @@ def gemini_config(base_url: str, gemini_hook_path: str = "/usr/local/bin/palivan
         "/Library/Application Support/GeminiCli/settings.json, Windows\n"
         "C:\\ProgramData\\gemini-cli\\settings.json) or merge into ~/.gemini/settings.json.\n"
         "Monitor by default (confirmed secret/PII leaks in prompts still hard-block); set\n"
-        "WARDEN_ENFORCE=true to block on any high-risk verdict. Provide PALIVANE_URL/\n"
+        "PALIVANE_ENFORCE=true to block on any high-risk verdict. Provide PALIVANE_URL/\n"
         f"PALIVANE_TOKEN via machine env (PALIVANE_URL={b}) or ~/.gemini/palivane.json.\n\n"
         "Gemini SDK/API clients — the SYSTEM PROXY in this pack. It inspects all three\n"
         "modes once your root CA is trusted (see ca-note.txt):\n"
@@ -229,7 +229,7 @@ def gemini_config(base_url: str, gemini_hook_path: str = "/usr/local/bin/palivan
         "  from google import genai\n"
         "  from google.genai.types import HttpOptions\n"
         f'  client = genai.Client(\n'
-        f'      api_key="ak_REPLACE_WITH_PER_USER_WARDEN_KEY",\n'
+        f'      api_key="ak_REPLACE_WITH_PER_USER_PALIVANE_KEY",\n'
         f'      http_options=HttpOptions(base_url="{b}"),  # SDK appends /v1beta/models/...\n'
         "  )\n\n"
         f"Gateway Gemini endpoint: {b}/v1beta/models/{{model}}:generateContent\n"
@@ -282,7 +282,7 @@ def codex_note(base_url: str, codex_hook_path: str) -> str:
         "requirements.toml (auto-trusted; add allow_managed_hooks_only = true to lock out\n"
         "user-defined hooks). User-level hooks need a one-time /hooks trust approval.\n"
         "Monitor by default (confirmed secret/PII leaks in prompts still hard-block); set\n"
-        "WARDEN_ENFORCE=true to block on any high-risk verdict. Provide PALIVANE_URL/\n"
+        "PALIVANE_ENFORCE=true to block on any high-risk verdict. Provide PALIVANE_URL/\n"
         f"PALIVANE_TOKEN via machine env (PALIVANE_URL={b}) or ~/.codex/palivane.json.\n"
     )
 
@@ -332,7 +332,7 @@ def copilot_note(base_url: str, copilot_hook_path: str) -> str:
         "(github/copilot-cli#2392) — don't claim subagent coverage yet.\n"
         "Monitor by default. Tool calls scan inline, so the org's enforce stance\n"
         "(console Settings → Enforcement, stageable per user/tool) denies high-risk tool\n"
-        "calls centrally — prompts can't block at this plane. Set WARDEN_ENFORCE=true to\n"
+        "calls centrally — prompts can't block at this plane. Set PALIVANE_ENFORCE=true to\n"
         f"also enforce from device-local config. Provide PALIVANE_URL/PALIVANE_TOKEN via\n"
         f"machine env (PALIVANE_URL={b}) or ~/.copilot/palivane.json.\n"
     )
@@ -375,7 +375,7 @@ def cursor_note(base_url: str, hook_path: str) -> str:
         "     - afterFileEdit        -> secrets/PII written (monitor-only)\n"
         f"   Deploy palivane-cursor-hook to {hook_path} and push cursor-hooks.json to Cursor's\n"
         "   enterprise hooks path (or ~/.cursor/hooks.json). Monitor by default; set\n"
-        "   WARDEN_ENFORCE=true to block. Provide PALIVANE_URL/PALIVANE_TOKEN via machine env\n"
+        "   PALIVANE_ENFORCE=true to block. Provide PALIVANE_URL/PALIVANE_TOKEN via machine env\n"
         f"   (PALIVANE_URL={b}) or ~/.cursor/palivane.json.\n"
         "2. MCP servers — wrap Cursor's .cursor/mcp.json stdio servers with palivane-mcp for\n"
         "   inline tool inspection (belt-and-suspenders with beforeMCPExecution).\n"
@@ -519,7 +519,7 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         f"   ({hook_path}, {posture_path})"
         + (" and replace the ak_ placeholder with each dev's key\n"
            "   (or use apiKeyHelper)" if route_gateway else "")
-        + ". Set WARDEN_ENFORCE=true in env to block locally; default monitors.\n"
+        + ". Set PALIVANE_ENFORCE=true in env to block locally; default monitors.\n"
         "   Paths: macOS /Library/Application Support/ClaudeCode/, Linux /etc/claude-code/,\n"
         "   Windows C:\\Program Files\\ClaudeCode\\.\n"
         "6. openai.env -> environment variables that route OpenAI SDK/CLI clients through the\n"

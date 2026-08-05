@@ -1,5 +1,5 @@
 // Warden for VS Code — the continuous in-IDE posture sensor (the "real extension" that
-// the warden-posture CLI was the 80/20 for). Same scan APIs, but event-driven instead of
+// the palivane-posture CLI was the 80/20 for). Same scan APIs, but event-driven instead of
 // session-triggered:
 //
 //   - installed extension inventory  -> POST /api/scan/ide-extensions
@@ -8,10 +8,10 @@
 //     (workspace .mcp.json watched live; user-level configs on activation/report)
 //   - AI-assistant autonomy settings -> POST /api/scan/agent-config
 //
-// Sign-in mirrors warden-connect: a loopback server + the console's /extension-connect
+// Sign-in mirrors palivane-connect: a loopback server + the console's /extension-connect
 // page mint a per-user capture key, stored in VS Code SecretStorage. Config falls back
-// to WARDEN_URL/WARDEN_TOKEN in the environment or ~/.claude/settings.json, so a machine
-// already onboarded by warden-connect reports with zero extra setup.
+// to PALIVANE_URL/PALIVANE_TOKEN in the environment or ~/.claude/settings.json, so a machine
+// already onboarded by palivane-connect reports with zero extra setup.
 //
 // Everything is fail-open and deduplicated (sha256 per report key in globalState) — the
 // sensor never interferes with the editor and never spams unchanged state.
@@ -23,8 +23,8 @@ const http = require("http");
 const os = require("os");
 const path = require("path");
 
-const UA = "warden-vscode/0.1.0";   // Cloudflare's front door 403s default/bare UAs
-const DEFAULT_URL = "https://warden.tachtech.net";
+const UA = "palivane-vscode/0.1.0";   // Cloudflare's front door 403s default/bare UAs
+const DEFAULT_URL = "https://palivane.tachtech.net";
 
 let status;          // status bar item
 let ctx;             // extension context
@@ -41,12 +41,12 @@ function settingsEnv() {
 async function resolveConfig() {
   const senv = settingsEnv();
   let url = vscode.workspace.getConfiguration("warden").get("url") ||
-            process.env.WARDEN_URL || senv.WARDEN_URL || "";
+            process.env.PALIVANE_URL || senv.PALIVANE_URL || "";
   if (!url && typeof senv.ANTHROPIC_BASE_URL === "string") {
     url = senv.ANTHROPIC_BASE_URL.replace(/\/v1\/?$/, "");
   }
   let token = (await ctx.secrets.get("warden.token")) ||
-              process.env.WARDEN_TOKEN || senv.WARDEN_TOKEN || "";
+              process.env.PALIVANE_TOKEN || senv.PALIVANE_TOKEN || "";
   if (!token && typeof senv.ANTHROPIC_AUTH_TOKEN === "string" &&
       senv.ANTHROPIC_AUTH_TOKEN.startsWith("ak_")) {
     token = senv.ANTHROPIC_AUTH_TOKEN;
@@ -54,7 +54,7 @@ async function resolveConfig() {
   return { url: (url || DEFAULT_URL).replace(/\/+$/, ""), token };
 }
 
-// --- sign-in (loopback + /extension-connect, same flow as warden-connect) ---------------
+// --- sign-in (loopback + /extension-connect, same flow as palivane-connect) ---------------
 
 function connectFlow(consoleUrl) {
   return new Promise((resolve, reject) => {
@@ -81,7 +81,7 @@ function connectFlow(consoleUrl) {
   });
 }
 
-// --- collectors (mirrors cli/warden-posture) ---------------------------------------------
+// --- collectors (mirrors cli/palivane-posture) ---------------------------------------------
 
 function collectExtensions() {
   const ids = vscode.extensions.all
@@ -178,7 +178,7 @@ async function report(force = false) {
     items.push([`mcp:${label}`, "/api/scan/mcp-config",
                 { content, path: label, record: true }, content]);
   }
-  const user = process.env.WARDEN_USER || os.userInfo().username || "";
+  const user = process.env.PALIVANE_USER || os.userInfo().username || "";
   for (const [label, content, tool] of collectAgentConfigs()) {
     items.push([`agent:${label}`, "/api/scan/agent-config",
                 { content, tool, user, record: true }, content]);

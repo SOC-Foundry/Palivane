@@ -3,9 +3,9 @@
 // the same 1440@2x geometry as the other README shots.
 import { chromium } from "playwright";
 
-const BASE = process.env.WARDEN_BASE || "http://localhost:8090";
-const EMAIL = process.env.WARDEN_E2E_EMAIL || "admin@demo.local";
-const PASSWORD = process.env.WARDEN_E2E_PASSWORD || "changeme123";
+const BASE = process.env.PALIVANE_BASE || "http://localhost:8090";
+const EMAIL = process.env.PALIVANE_E2E_EMAIL || "admin@demo.local";
+const PASSWORD = process.env.PALIVANE_E2E_PASSWORD || "changeme123";
 const OUT = process.env.OUT || "assets/help.png";
 
 const login = await fetch(`${BASE}/api/auth/login`, {

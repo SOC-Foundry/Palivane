@@ -28,7 +28,7 @@ function Readiness() {
           still capture; Claude Code keeps its own account), and manually configured gateway
           clients get a stub reply. An admin can add your org's Anthropic API key under{" "}
           <strong>Settings → Gateway upstreams</strong>, then users re-run{" "}
-          <code>warden-connect</code> to enable routing.
+          <code>palivane-connect</code> to enable routing.
         </div>
       )}
       <span className="muted">Reporting (last 24h):</span>
@@ -110,7 +110,7 @@ export default function Connect({ tenant }) {
         route_gateway: routeGateway,
       });
       const ext = platform === "windows" ? "ps1" : "sh";
-      download(`warden-install-${platform}.${ext}`, res.scripts[platform]);
+      download(`palivane-install-${platform}.${ext}`, res.scripts[platform]);
     } catch (e) { setErr(String(e.message || e)); }
     finally { setProvBusy(""); }
   }
@@ -131,24 +131,24 @@ export default function Connect({ tenant }) {
   const installDesktop = `curl -fsSL ${origin}/install.sh | bash -s -- --desktop`;
 
   const proxyCmd =
-    `WARDEN_URL=${origin} WARDEN_TOKEN=${K} WARDEN_PROXY_ENFORCE=true \\\n` +
-    `  mitmdump -s proxy/warden_addon.py --listen-port 8081`;
+    `PALIVANE_URL=${origin} PALIVANE_TOKEN=${K} PALIVANE_PROXY_ENFORCE=true \\\n` +
+    `  mitmdump -s proxy/palivane_addon.py --listen-port 8081`;
 
   const hooksSettings = JSON.stringify({
-    env: { WARDEN_URL: origin, WARDEN_TOKEN: K },
+    env: { PALIVANE_URL: origin, PALIVANE_TOKEN: K },
     hooks: {
-      PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "/usr/local/bin/warden-hook", timeout: 10 }] }],
-      SessionStart: [{ matcher: "*", hooks: [{ type: "command", command: "/usr/local/bin/warden-posture --async --quiet" }] }],
+      PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "/usr/local/bin/palivane-hook", timeout: 10 }] }],
+      SessionStart: [{ matcher: "*", hooks: [{ type: "command", command: "/usr/local/bin/palivane-posture --async --quiet" }] }],
     },
   }, null, 2);
 
   const mcpWrap = JSON.stringify({
-    mcpServers: { github: { command: "warden-mcp", args: ["--", "npx", "-y", "@modelcontextprotocol/server-github"] } },
+    mcpServers: { github: { command: "palivane-mcp", args: ["--", "npx", "-y", "@modelcontextprotocol/server-github"] } },
   }, null, 2);
 
   const otelCmd =
-    `WARDEN_URL=${origin} WARDEN_TOKEN=${K} \\\n` +
-    `  warden-otel            # sidecar next to the claude-otel collector (--once for cron)`;
+    `PALIVANE_URL=${origin} PALIVANE_TOKEN=${K} \\\n` +
+    `  palivane-otel            # sidecar next to the claude-otel collector (--once for cron)`;
 
   return (
     <div className="connect">
@@ -247,7 +247,7 @@ export default function Connect({ tenant }) {
            <code>/etc/claude-code/</code>, macOS <code>/Library/Application Support/ClaudeCode/</code>).</p>
         <Block text={claudeCode} />
         <p className="muted" style={{ marginTop: 10 }}>Or self-serve (BYOD / pilots) — the user
-           runs <code>warden-connect {origin}</code> to sign in and wire up the local hooks;
+           runs <code>palivane-connect {origin}</code> to sign in and wire up the local hooks;
            Claude Code keeps its own sign-in (Pro/Max subscription or API account). Add
            <code> --route-gateway</code> to also reroute API traffic through the gateway.
            No token distribution.</p>
@@ -262,7 +262,7 @@ export default function Connect({ tenant }) {
         <p className="muted">One-line installer — no clone required. Defaults to <strong>CLI
            governance</strong>: per-tool shims route the AI CLIs (Claude Code, Codex, Gemini)
            through the proxy, <em>no sudo</em>. The right fit for small orgs without MDM; the
-           user signs in via browser (<code>warden connect</code>), no token to distribute.</p>
+           user signs in via browser (<code>palivane connect</code>), no token to distribute.</p>
         <Block text={installCli} />
         <p className="muted" style={{ marginTop: 10 }}>Add <code>--desktop</code> to also govern the
            Claude/ChatGPT <strong>desktop apps</strong> and browsers system-wide (system proxy + CA
@@ -278,19 +278,19 @@ export default function Connect({ tenant }) {
         <p className="muted">What the network planes can't see: the agent's <em>local</em> actions —
            shell commands, file access, stdio MCP servers — inspected before execution. Merge into
            <code> ~/.claude/settings.json</code> or the managed settings above (deploy
-           <code> warden-hook</code>/<code>warden-posture</code> from <code>cli/</code> to a fixed
-           path first). Monitor by default; <code>WARDEN_ENFORCE=true</code> blocks.</p>
+           <code> palivane-hook</code>/<code>palivane-posture</code> from <code>cli/</code> to a fixed
+           path first). Monitor by default; <code>PALIVANE_ENFORCE=true</code> blocks.</p>
         <Block text={hooksSettings} />
         <p className="muted" style={{ marginTop: 10 }}>Wrap any stdio MCP server with
-           <code> warden-mcp</code> for inline inspection (<code>WARDEN_MCP_ENFORCE=true</code> blocks):</p>
+           <code> palivane-mcp</code> for inline inspection (<code>PALIVANE_MCP_ENFORCE=true</code> blocks):</p>
         <Block text={mcpWrap} />
-        <p className="muted" style={{ marginTop: 8 }}>Self-serve: <code>warden-connect {origin}</code> installs
+        <p className="muted" style={{ marginTop: 8 }}>Self-serve: <code>palivane-connect {origin}</code> installs
            the hooks automatically (add <code>--route-gateway</code> for gateway routing).</p>
       </div>
 
       <div className="connect-card">
         <h3>⑤ claude-otel telemetry bridge (optional)</h3>
-        <p className="muted">Already running <code>claude-otel</code>? <code>warden-otel</code> tails its
+        <p className="muted">Already running <code>claude-otel</code>? <code>palivane-otel</code> tails its
            OTEL log and forwards Claude Code's prompts and tool calls to Palivane — a capture plane with
            <em> no proxy, CA, or hook</em>. Monitor-only (telemetry is post-hoc, so it observes but can't
            block); depth follows the claude-otel privacy profile.</p>

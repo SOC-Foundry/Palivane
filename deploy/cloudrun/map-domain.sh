@@ -37,5 +37,5 @@ Then:
         --format='value(status.conditions[].type, status.conditions[].status)'
   - Set the app's allowed origin to the domain and redeploy:
       GATEWAY... DOMAIN=$DOMAIN ./deploy/cloudrun/deploy.sh      # sets CORS_ORIGINS=https://$DOMAIN
-  - Point the clients at https://$DOMAIN (extension prod build, warden-connect, managed policy).
+  - Point the clients at https://$DOMAIN (extension prod build, palivane-connect, managed policy).
 NEXT

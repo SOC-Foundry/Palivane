@@ -101,8 +101,8 @@ Done. Set these in GitHub (Settings -> Secrets and variables -> Actions):
     GCP_SQL_CONNECTION             = ${PROJECT_ID}:${REGION}:warden-db
     VPC_NETWORK                    = warden-vpc
     VPC_SUBNET                     = warden-subnet
-    DOMAIN, WARDEN_ALLOWED_HOSTS, WARDEN_EXTENSION_ID, GATEWAY_ENFORCE,
-    WARDEN_ALLOW_SIGNUP, WARDEN_ENCRYPT_FINDINGS, SMTP_HOST, SMTP_USER, MAIL_FROM
+    DOMAIN, PALIVANE_ALLOWED_HOSTS, PALIVANE_EXTENSION_ID, GATEWAY_ENFORCE,
+    PALIVANE_ALLOW_SIGNUP, PALIVANE_ENCRYPT_FINDINGS, SMTP_HOST, SMTP_USER, MAIL_FROM
                                    = (match your current deploy command)
 
   Repository SECRETS:

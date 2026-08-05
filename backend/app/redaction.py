@@ -3,7 +3,7 @@
 Palivane blocks a prompt *because* it contains an AWS key or an SSN — so persisting that
 prompt verbatim would turn the findings DB into a plaintext-secret honeypot. Detection
 runs on the raw content; only the *stored* copy is masked. Toggle with
-`WARDEN_REDACT_FINDINGS` (default on).
+`PALIVANE_REDACT_FINDINGS` (default on).
 """
 from __future__ import annotations
 
