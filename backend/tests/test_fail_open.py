@@ -1,12 +1,12 @@
 """Part 2 -- the capture-plane circuit breaker must FAIL OPEN under a backend outage.
 
-`cli/warden-hook`'s `scan()` calls a Warden ingest endpoint inline in Claude Code's
+`cli/palivane-hook`'s `scan()` calls a Warden ingest endpoint inline in Claude Code's
 PreToolUse hook. If the backend is unreachable, slow, or returns an error, the hook
 must return `action: allow` so it NEVER blocks a developer on a Warden outage -- a
 security monitor that takes the dev's editor down with it wouldn't survive a week.
 
 The breaker also has to stand down after repeated failures (stop hammering a dead
-backend) without ever escalating to a block. `tests/test_warden_hook.py` already
+backend) without ever escalating to a block. `tests/test_palivane_hook.py` already
 covers the 401/timeout/threshold paths; this file adds the specific "network
 unreachable" (URLError / connection refused / DNS failure) fault the task calls out,
 plus an explicit assertion that no failure mode ever yields a block-shaped verdict.
@@ -22,17 +22,17 @@ from pathlib import Path
 
 import pytest
 
-_path = Path(__file__).resolve().parents[2] / "cli" / "warden-hook"
+_path = Path(__file__).resolve().parents[2] / "cli" / "palivane-hook"
 _spec = importlib.util.spec_from_loader(
-    "warden_hook", SourceFileLoader("warden_hook", str(_path)))
+    "palivane_hook", SourceFileLoader("palivane_hook", str(_path)))
 hook = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(hook)
 
 
 @pytest.fixture(autouse=True)
 def _isolated_state(tmp_path, monkeypatch):
-    """Keep breaker state out of the real ~/.warden."""
-    monkeypatch.setenv("WARDEN_STATE_DIR", str(tmp_path / "state"))
+    """Keep breaker state out of the real ~/.palivane."""
+    monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path / "state"))
 
 
 # --- every unreachable-backend fault fails OPEN -------------------------------------

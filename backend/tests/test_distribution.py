@@ -13,43 +13,43 @@ def test_install_sh_served_public_with_baked_url(raw_client, monkeypatch):
     body = r.text
     assert body.startswith("#!/usr/bin/env bash")
     assert "https://warden.tachtech.net" in body
-    assert "warden-connect" in body and "--desktop" in body
-    assert ".warden/bin" in body
+    assert "palivane-connect" in body and "--desktop" in body
+    assert ".palivane/bin" in body
     # cli-only is the default proxy mode; --desktop and --no-proxy are the overrides
     assert 'PROXY_MODE="cli-only"' in body
     assert "--no-proxy" in body
     # cli-only threads through to the sudo-free proxy install
-    assert 'warden-desktop" install --cli-only' in body
+    assert 'palivane-desktop" install --cli-only' in body
 
 
 def test_cli_scripts_served(raw_client):
-    for name in ("warden-connect", "warden-reenroll", "warden-reenroll.ps1", "warden-hook",
-                 "warden-desktop", "warden-desktop.ps1", "warden_addon.py"):
+    for name in ("palivane-connect", "palivane-reenroll", "palivane-reenroll.ps1", "palivane-hook",
+                 "palivane-desktop", "palivane-desktop.ps1", "palivane_addon.py"):
         r = raw_client.get(f"/cli/{name}")
         assert r.status_code == 200, name
         assert len(r.text) > 100
-    # warden-connect is a python CLI; warden-desktop is bash; both start with a shebang
-    assert raw_client.get("/cli/warden-connect").text.startswith("#!")
-    assert raw_client.get("/cli/warden-desktop").text.startswith("#!/usr/bin/env bash")
+    # palivane-connect is a python CLI; palivane-desktop is bash; both start with a shebang
+    assert raw_client.get("/cli/palivane-connect").text.startswith("#!")
+    assert raw_client.get("/cli/palivane-desktop").text.startswith("#!/usr/bin/env bash")
     # the Windows desktop installer is PowerShell (comment-block header, not a shebang)
-    assert raw_client.get("/cli/warden-desktop.ps1").text.startswith("<#")
+    assert raw_client.get("/cli/palivane-desktop.ps1").text.startswith("<#")
 
 
 def test_windows_scripts_not_in_bash_installer(raw_client):
     # install.sh is bash — the PowerShell endpoints are served but never auto-installed;
-    # the header points Windows users at warden-desktop.ps1 instead.
+    # the header points Windows users at palivane-desktop.ps1 instead.
     body = raw_client.get("/install.sh").text
-    assert 'curl -fsSL "$WARDEN_URL/cli/$t"' in body
+    assert 'curl -fsSL "$PALIVANE_URL/cli/$t"' in body
     tools_line = [ln for ln in body.splitlines() if ln.startswith("TOOLS=")][0]
     assert ".ps1" not in tools_line
-    assert "warden-desktop.ps1" in body  # Windows one-liner note in the header comment
+    assert "palivane-desktop.ps1" in body  # Windows one-liner note in the header comment
 
 
 def test_unknown_and_traversal_rejected(raw_client):
-    assert raw_client.get("/cli/warden-nope").status_code == 404
+    assert raw_client.get("/cli/palivane-nope").status_code == 404
     assert raw_client.get("/cli/secrets.py").status_code == 404
     # path traversal never resolves to an allowlisted entry
-    for bad in ("..%2f..%2fetc%2fpasswd", "../config.py", "warden-connect/../main.py"):
+    for bad in ("..%2f..%2fetc%2fpasswd", "../config.py", "palivane-connect/../main.py"):
         assert raw_client.get(f"/cli/{bad}").status_code in (404, 400)
 
 

@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 _spec = importlib.util.spec_from_file_location(
-    "warden_addon", Path(__file__).resolve().parents[2] / "proxy" / "warden_addon.py")
+    "palivane_addon", Path(__file__).resolve().parents[2] / "proxy" / "palivane_addon.py")
 addon = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(addon)
 
@@ -251,7 +251,7 @@ def test_scan_circuit_breaker(tmp_path, monkeypatch):
     """A 401 arms the breaker so the egress proxy stops re-scanning every intercepted
     request with a dead key; a fresh token is not suppressed; 200 clears it."""
     import urllib.error
-    monkeypatch.setenv("WARDEN_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path))
     calls = {"n": 0}
 
     def revoked(req, timeout=None):

@@ -1,4 +1,4 @@
-"""Warden — AI Security Gateway API.
+"""Palivane — AI Security Gateway API.
 
 Detects attacks on the org's own LLMs (prompt injection / jailbreak / exfiltration)
 and sensitive data leaving for AI tools (secrets / PII / source code), across the
@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from .auth import get_current_user, require_admin, router as auth_router
 from .distribution import router as distribution_router
 from .domains import router as domains_router
-from .config import settings
+from .config import settings, _env
 from .gateway import gemini_router, router as gateway_router
 from .database import Base, engine as db_engine, get_db
 from .detectors import AnalysisInput, Surface
@@ -138,7 +138,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="Warden — AI Security Gateway",
+    title="Palivane — AI Security Gateway",
     description="Detects attacks on your LLMs and stops sensitive data leaking to AI tools.",
     version="0.1.0",
     lifespan=lifespan,
@@ -177,16 +177,16 @@ app.add_middleware(
     # header (not cookies), so credentials aren't needed and methods/headers are explicit.
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Warden-Token", "X-Palivane-Token",
-                   "X-Warden-Agent", "X-Palivane-Agent", "x-api-key",
+    allow_headers=["Authorization", "Content-Type", "X-Palivane-Token", "X-Palivane-Token",
+                   "X-Palivane-Agent", "X-Palivane-Agent", "x-api-key",
                    "anthropic-version", "anthropic-beta"],
 )
 
 
 @app.middleware("http")
 async def _guard(request: Request, call_next):
-    # Header rename backward-compat (Warden -> Palivane): capture clients send the new
-    # X-Palivane-Token / X-Palivane-Agent; already-deployed clients send X-Warden-*. Alias
+    # Header rename backward-compat (Palivane -> Palivane): capture clients send the new
+    # X-Palivane-Token / X-Palivane-Agent; already-deployed clients send X-Palivane-*. Alias
     # the new names onto the legacy ones the route handlers read, so both work through the
     # deprecation window. Done here (once) rather than on all 16 ingest endpoints. New wins.
     _hdrs = request.scope.get("headers")
@@ -283,7 +283,7 @@ def setup_status(current: User = Depends(get_current_user), db: Session = Depend
             "gateway": by_surface.get("llm_io", 0),      # first-party LLM (gateway)
             "shadow_ai": by_surface.get("ai_usage", 0),  # extension / proxy
             "mcp": by_surface.get("mcp", 0),             # agentic tool-use
-            "secrets": by_surface.get("secrets", 0),     # credentials at rest (warden-secrets)
+            "secrets": by_surface.get("secrets", 0),     # credentials at rest (palivane-secrets)
         },
         # Which providers the gateway will actually forward for this org (vs. the stub) —
         # the console warns when Claude Code is routed here but anthropic can't forward.
@@ -302,7 +302,7 @@ def test_alert(current: User = Depends(require_admin), db: Session = Depends(get
     if not t or not (t.alert_webhook or "").strip():
         raise HTTPException(status_code=400, detail="no alert webhook configured")
     ok = alerts.send_sync(t.alert_webhook.strip(), {
-        "text": ":shield: Warden test alert — your webhook is connected.",
+        "text": ":shield: Palivane test alert — your webhook is connected.",
         "warden": {"test": True, "org": t.slug}})
     return {"ok": ok}
 
@@ -317,7 +317,7 @@ def test_siem(current: User = Depends(require_admin), db: Session = Depends(get_
     fields = siem._fields(
         {"severity": "high", "risk_score": 75, "finding_id": 0,
          "signals": [{"category": "secret_leak"}]},
-        subject="Warden SIEM test event", actor="warden", surface="test", org=t.slug)
+        subject="Palivane SIEM test event", actor="warden", surface="test", org=t.slug)
     ok = siem.send_sync(t.siem_url.strip(), t.siem_token or "", t.siem_format or "json", fields)
     return {"ok": ok}
 
@@ -359,7 +359,7 @@ def export_findings(
     rows = q.order_by(Finding.created_at.desc()).limit(min(limit, 20000)).all()
     body = "\n".join(_json.dumps(r.to_summary()) for r in rows)
     return _Resp(content=body, media_type="application/x-ndjson",
-                 headers={"Content-Disposition": "attachment; filename=warden-findings.jsonl"})
+                 headers={"Content-Disposition": "attachment; filename=palivane-findings.jsonl"})
 
 
 @app.get("/api/export/tenant")
@@ -378,7 +378,7 @@ def export_tenant(
     audit_log.record(db, current.tenant_id, current.email, "tenant.export",
                      detail={"include_content": bool(include_content),
                              "findings": doc["counts"]["findings"]})
-    fname = f"warden-export-{tenant.slug}.json"
+    fname = f"palivane-export-{tenant.slug}.json"
     return _Resp(content=_json.dumps(doc, indent=2), media_type="application/json",
                  headers={"Content-Disposition": f"attachment; filename={fname}"})
 
@@ -499,7 +499,7 @@ def upgrade_request_create(body: dict, current: User = Depends(require_admin),
                                   current.email, note)
     if email_mod.enabled():
         email_mod.send(
-            settings.sales_email, f"Warden upgrade request: {org} → {PLANS[plan]['label']}",
+            settings.sales_email, f"Palivane upgrade request: {org} → {PLANS[plan]['label']}",
             f"Org: {org}\nPlan: {PLANS[plan]['label']}\nSeats: {seats or 'unspecified'}\n"
             f"Contact: {current.email}\nNote: {note or '—'}\n\n"
             "Recorded in the operator console (/admin → Upgrade requests).")
@@ -797,7 +797,7 @@ def _resolve_agent_jwt(token: str, db: Session):
 
 
 def _capture_agent(x_warden_token: str, x_warden_agent: str, tenant_id, db: Session) -> str:
-    """Best-effort agent name for attribution: an `X-Warden-Agent` header or the primary token
+    """Best-effort agent name for attribution: an `X-Palivane-Agent` header or the primary token
     when it's an `ag_…` or an OIDC/workload JWT. Returns "" if none/mismatched (never raises)."""
     from .security import hash_token, looks_like_agent_token, looks_like_jwt
     tok = (x_warden_agent or "").strip() or (x_warden_token or "")
@@ -887,7 +887,7 @@ def ingest_ai_usage(
         # Approved AI tools to offer the user instead of a hard "no" (shown in the block UI).
         "sanctioned_tools": _sanctioned_list(meta["sanctioned_tools"]),
         # What this client SHOULD be running, so a stale install is visible in its own logs
-        # (the actual refresh happens at session start via warden-posture, never mid-call).
+        # (the actual refresh happens at session start via palivane-posture, never mid-call).
         "client_latest": _client_latest(user_agent),
     }
 
@@ -947,10 +947,10 @@ async def otlp_logs(
     x_warden_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
-    """OTLP/HTTP logs receiver (JSON) — the fileless alternative to the `warden-otel` CLI.
+    """OTLP/HTTP logs receiver (JSON) — the fileless alternative to the `palivane-otel` CLI.
 
     Point a claude-otel collector's `otlphttp` logs exporter (encoding: json) here with an
-    `X-Warden-Token` header; Claude Code's user_prompt / tool_result / mcp_server_connection
+    `X-Palivane-Token` header; Claude Code's user_prompt / tool_result / mcp_server_connection
     events are mapped to the same detection as the ingest API. **Monitor-only** — OTEL is
     post-hoc, so this records but can't block. Always returns OTLP success: a telemetry
     export must never back up because of us (bad records are skipped, not rejected)."""
@@ -1086,11 +1086,11 @@ def _client_latest(ua: str) -> str:
 
 
 def _parse_client_ua(ua: str) -> tuple[str, str]:
-    """('warden-hook', '1.1.0') from a client User-Agent; ('', '') for anything else.
-    Only Warden's own clients are recorded — a browser UA carries no build we own."""
+    """('palivane-hook', '1.1.0') from a client User-Agent; ('', '') for anything else.
+    Only Palivane's own clients are recorded — a browser UA carries no build we own."""
     token = (ua or "").strip().split()[0] if (ua or "").strip() else ""
     name, _, version = token.partition("/")
-    if not name.startswith("warden"):
+    if not name.startswith("palivane"):
         return "", ""
     return name[:48], version[:24]
 
@@ -1180,7 +1180,7 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
     if authz["enforce"] and authz["denied"]:
         action = "block"
     # Feed shadow-AI discovery: the MCP surface has no destination domain, so the plane's
-    # User-Agent (warden-cursor-hook / -hook / -gemini / -codex / -mcp) names the tool. This
+    # User-Agent (palivane-cursor-hook / -hook / -gemini / -codex / -mcp) names the tool. This
     # is how Cursor, Claude Code, Gemini CLI and Codex show up in the inventory at all.
     from .ai_catalog import classify_client
     from .discovery import record_capture_client
@@ -1207,7 +1207,7 @@ def ingest_mcp(
     user_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
-    """Score an MCP JSON-RPC activity a capture client (proxy, warden-hook, warden-mcp)
+    """Score an MCP JSON-RPC activity a capture client (proxy, palivane-hook, palivane-mcp)
     saw (agentic tool-use). Token-gated; returns an action the client enforces on the
     `mcp` surface: allow/warn/block. Benign verdicts aren't persisted by default."""
     tenant_id, default_actor = _ingest_auth(x_warden_token, db)
@@ -1228,7 +1228,7 @@ def ingest_mcp_batch(
     db: Session = Depends(get_db),
 ):
     """Score many MCP activities in one request — for long-lived capture clients
-    (warden-mcp) that would otherwise post per tool call. Counts as a single ingest
+    (palivane-mcp) that would otherwise post per tool call. Counts as a single ingest
     request against the tenant's sensor quota. Returns per-item verdicts, index-aligned."""
     tenant_id, default_actor = _ingest_auth(x_warden_token, db)
     _enforce_rate(db, tenant_id)
@@ -1417,7 +1417,7 @@ def scan_s3(
     x_warden_token: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
-    """Scan an S3 bucket's objects for secrets & PII at rest (warden-s3-scan streams them
+    """Scan an S3 bucket's objects for secrets & PII at rest (palivane-s3-scan streams them
     here). Same data-loss detection as the code scanner, plus the bucket's public-exposure
     flag: a world-readable bucket holding sensitive data is the crown-jewel case, so a
     non-clean object in a public bucket is escalated to `block` and tagged for alerting.
@@ -1708,7 +1708,7 @@ def scan_secrets(
     x_warden_token: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
-    """Record credentials the local `warden-secrets` scanner found AT REST on a device
+    """Record credentials the local `palivane-secrets` scanner found AT REST on a device
     (SSH/RSA keys, cloud/VCS tokens, .env, .git-credentials). Privacy-preserving: the
     scanner sends only metadata (type, path, masked preview, world-readability) — never
     the raw secret. Each file is scored as a `credential_at_rest` finding; the response
@@ -1726,7 +1726,7 @@ def scan_secrets(
 def _record_secret(it: SecretAtRest, host: str, actor: str, tenant_id, record: bool,
                    db: Session) -> dict:
     """Score + (optionally) persist one at-rest credential finding; shared by the
-    warden-secrets scan and the third-party scanner importer."""
+    palivane-secrets scan and the third-party scanner importer."""
     item = AnalysisInput(
         content=f"{it.path}\n{it.masked}", subject=it.path,
         sender=actor, channel=host or "endpoint", surface=Surface.SECRETS,
@@ -1751,7 +1751,7 @@ def scan_import(
     db: Session = Depends(get_db),
 ):
     """Ingest a third-party secret scanner's output (TruffleHog / Gitleaks / GitGuardian)
-    and turn it into Warden `credential_at_rest` findings — one console, one scoring model,
+    and turn it into Palivane `credential_at_rest` findings — one console, one scoring model,
     one alert/SIEM path across every scanner. The raw secret is masked at ingest and never
     persisted; TruffleHog's `Verified` flag escalates a finding to critical. Token-gated."""
     from . import scanner_import
@@ -1804,12 +1804,12 @@ def policy_pack(
     base_url: str = "https://warden.example.com",
     proxy_host: str = "",
     proxy_port: int = 8081,
-    hook_path: str = "/usr/local/bin/warden-hook",
-    posture_path: str = "/usr/local/bin/warden-posture",
-    cursor_hook_path: str = "/usr/local/bin/warden-cursor-hook",
-    gemini_hook_path: str = "/usr/local/bin/warden-gemini-hook",
-    codex_hook_path: str = "/usr/local/bin/warden-codex-hook",
-    copilot_hook_path: str = "/usr/local/bin/warden-copilot-hook",
+    hook_path: str = "/usr/local/bin/palivane-hook",
+    posture_path: str = "/usr/local/bin/palivane-posture",
+    cursor_hook_path: str = "/usr/local/bin/palivane-cursor-hook",
+    gemini_hook_path: str = "/usr/local/bin/palivane-gemini-hook",
+    codex_hook_path: str = "/usr/local/bin/palivane-codex-hook",
+    copilot_hook_path: str = "/usr/local/bin/palivane-copilot-hook",
     secrets_engine: str = "trufflehog",
     ext_update_url: str = "",
     ext_crx_url: str = "",
@@ -1827,7 +1827,7 @@ def policy_pack(
     keeps its own sign-in with forceLoginMethod=claudeai — pass route_gateway=true to
     route prompts through the gateway and bill the org's provider key instead).
 
-    Applied by the org's MDM (Jamf/Intune/GPO) — no Warden agent on the device. The
+    Applied by the org's MDM (Jamf/Intune/GPO) — no Palivane agent on the device. The
     extension allow/deny lists use this tenant's IDE-vetting config, else the global."""
     from . import policy_pack as pp
     from .plans import require_feature
@@ -1977,9 +1977,9 @@ def export_corpus(current: User = Depends(require_admin), db: Session = Depends(
 @app.post("/api/coverage/reconcile")
 def coverage_reconcile(body: CoverageRequest, current: User = Depends(require_admin),
                        db: Session = Depends(get_db)):
-    """Reconcile an IdP/CASB list of who used AI tools against Warden's capture.
+    """Reconcile an IdP/CASB list of who used AI tools against Palivane's capture.
 
-    Returns the actors using AI that Warden never saw — likely on unmanaged devices or
+    Returns the actors using AI that Palivane never saw — likely on unmanaged devices or
     bypassing the capture planes (the shadow set)."""
     from datetime import datetime, timedelta, timezone
 
@@ -2001,7 +2001,7 @@ def coverage_reconcile(body: CoverageRequest, current: User = Depends(require_ad
 @app.get("/api/activity/users")
 def activity_users(current: User = Depends(require_admin), db: Session = Depends(get_db),
                    limit: int = 200):
-    """Per-registered-user scan log: each actor Warden has findings for, with counts,
+    """Per-registered-user scan log: each actor Palivane has findings for, with counts,
     severity mix, the categories they trip, and last-seen — the 'who is doing what' view."""
     _RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}
     rows = (db.query(Finding)
@@ -2052,7 +2052,7 @@ def audit_timeline(actor: str, current: User = Depends(require_admin),
                    db: Session = Depends(get_db), days: int = 7, limit: int = 500):
     """The normalized chronological timeline of one actor's activity across every vendor
     plane — each event in a common shape (when / vendor / action / verdict / kill-chain
-    stage), newest first. Retention is Warden's own, independent of any vendor's cap."""
+    stage), newest first. Retention is Palivane's own, independent of any vendor's cap."""
     from . import session_audit
     return {"actor": actor, "days": days,
             "events": session_audit.timeline(db, current.tenant_id, actor, days, limit)}
@@ -2063,7 +2063,7 @@ def audit_export(current: User = Depends(require_admin), db: Session = Depends(g
                  days: int = 7, actor: str = "", format: str = "jsonl"):
     """Export the normalized cross-vendor audit trail for a SIEM / data lake — the whole
     tenant's agent activity (or one actor's) over the window, as newline-delimited JSON
-    (`jsonl`) or `cef`. Same normalized shape as the console, retained on Warden's schedule
+    (`jsonl`) or `cef`. Same normalized shape as the console, retained on Palivane's schedule
     (past any single vendor's log cap). Downloads as a file."""
     from fastapi.responses import PlainTextResponse
     from . import session_audit
@@ -2073,7 +2073,7 @@ def audit_export(current: User = Depends(require_admin), db: Session = Depends(g
                                 actor=actor, days=days, fmt=fmt)
     ext, media = ("cef", "text/plain") if fmt == "cef" else ("jsonl", "application/x-ndjson")
     return PlainTextResponse(body, media_type=media, headers={
-        "Content-Disposition": f'attachment; filename="warden-audit.{ext}"'})
+        "Content-Disposition": f'attachment; filename="palivane-audit.{ext}"'})
 
 
 @app.post("/api/discovery/ingest")
@@ -2081,7 +2081,7 @@ def discovery_ingest(body: DiscoveryIngest, current: User = Depends(require_admi
                      db: Session = Depends(get_db)):
     """Classify AI usage from CASB / SWG / proxy / DNS logs into the discovery inventory.
 
-    Each log line (actor + destination) is matched against Warden's AI-tool catalog; matches
+    Each log line (actor + destination) is matched against Palivane's AI-tool catalog; matches
     are attributed to the actor (and team, if present). No content is inspected here — this
     is how you discover shadow AI on devices the capture planes never touched."""
     from .discovery import ingest_logs
@@ -2564,7 +2564,7 @@ def _safe_static_file(root: str, full_path: str) -> str | None:
     return cand if (inside and _os.path.isfile(cand)) else None
 
 
-_STATIC_DIR = _os.getenv("WARDEN_STATIC_DIR", "")
+_STATIC_DIR = _env("PALIVANE_STATIC_DIR", "WARDEN_STATIC_DIR", "")
 if _STATIC_DIR and _os.path.isdir(_STATIC_DIR):
     from fastapi.responses import FileResponse  # noqa: E402
     from fastapi.staticfiles import StaticFiles  # noqa: E402

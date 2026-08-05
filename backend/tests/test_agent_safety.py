@@ -53,7 +53,7 @@ def test_agent_config_endpoint_and_per_user_attribution(client, raw_client):
     r = raw_client.post("/api/scan/agent-config",
                         json={"content": '{"cursor.general.enableYoloMode": true}',
                               "user": "dev@acme.com", "tool": "cursor"},
-                        headers={"X-Warden-Token": key})
+                        headers={"X-Palivane-Token": key})
     assert r.status_code == 200
     assert any(s["category"] == "unsafe_autonomy" for s in r.json()["signals"])
     # Attributed to the user -> shows per-registered-user in findings.
@@ -64,10 +64,10 @@ def test_agent_config_endpoint_and_per_user_attribution(client, raw_client):
 def test_policy_toggle_disables_yolo(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "p", "actor": "p@acme.com"}).json()["token"]
     payload = {"content": '{"autoRun": true}', "user": "dev@acme.com", "tool": "cursor"}
-    before = raw_client.post("/api/scan/agent-config", json=payload, headers={"X-Warden-Token": key}).json()
+    before = raw_client.post("/api/scan/agent-config", json=payload, headers={"X-Palivane-Token": key}).json()
     assert any(s["category"] == "unsafe_autonomy" for s in before["signals"])
 
     client.patch("/api/tenant", json={"disabled_checks": ["yolo_mode"]})
-    after = raw_client.post("/api/scan/agent-config", json=payload, headers={"X-Warden-Token": key}).json()
+    after = raw_client.post("/api/scan/agent-config", json=payload, headers={"X-Palivane-Token": key}).json()
     assert not any(s["category"] == "unsafe_autonomy" for s in after["signals"])
     client.patch("/api/tenant", json={"disabled_checks": []})

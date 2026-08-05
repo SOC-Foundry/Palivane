@@ -56,13 +56,13 @@ def test_enroll_token_mgmt_is_admin_only(client, db_factory):
 
 
 def test_enroll_check_validates_key(client, raw_client):
-    # /api/enroll/check is the cheap liveness probe warden-reenroll uses: 200 while the
+    # /api/enroll/check is the cheap liveness probe palivane-reenroll uses: 200 while the
     # device key is live, 401 once it's revoked/rotated (its signal to re-enroll).
     et = _mint_enroll(client)["token"]
     key = raw_client.post("/api/enroll", json={"token": et, "device": "laptop@acme.com"}).json()["token"]
-    ok = raw_client.get("/api/enroll/check", headers={"X-Warden-Token": key})
+    ok = raw_client.get("/api/enroll/check", headers={"X-Palivane-Token": key})
     assert ok.status_code == 200 and ok.json()["ok"] is True
-    bad = raw_client.get("/api/enroll/check", headers={"X-Warden-Token": "ak_deadbeefdead"})
+    bad = raw_client.get("/api/enroll/check", headers={"X-Palivane-Token": "ak_deadbeefdead"})
     assert bad.status_code == 401
 
 

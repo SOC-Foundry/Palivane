@@ -120,7 +120,7 @@ user's `ak_…` dynamically. See
 **Self-serve installers do this automatically** (when generated with `route_gateway=true` —
 by default they leave Claude Code on its own Pro/Max sign-in with
 `forceLoginMethod: "claudeai"` and install only the hooks). In gateway mode the
-`/api/provision` installer wires `apiKeyHelper` to the bundled **`warden-reenroll`**
+`/api/provision` installer wires `apiKeyHelper` to the bundled **`palivane-reenroll`**
 helper instead of baking a static `ANTHROPIC_AUTH_TOKEN`. On each call the helper returns a live per-device key, and if that
 key is revoked/rotated it re-enrolls from the on-disk enrollment token (`GET /api/enroll/check`
 tells it "dead, re-enroll" vs "still good") — so a revoked key self-heals with no re-push.

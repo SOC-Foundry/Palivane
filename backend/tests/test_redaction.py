@@ -1,4 +1,4 @@
-"""Redaction of secrets/PII from stored finding content (WARDEN_REDACT_FINDINGS)."""
+"""Redaction of secrets/PII from stored finding content (PALIVANE_REDACT_FINDINGS)."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def test_stored_finding_content_is_redacted(client, raw_client, monkeypatch):
         "/api/ingest/ai-usage",
         json={"content": "deploy with AKIAIOSFODNN7EXAMPLE and SSN 123-45-6789",
               "destination": "https://chat.openai.com/"},
-        headers={"X-Warden-Token": key},
+        headers={"X-Palivane-Token": key},
     )
     findings = client.get("/api/findings").json()["findings"]
     detail = client.get(f"/api/findings/{findings[0]['id']}").json()
@@ -48,7 +48,7 @@ def test_redaction_can_be_disabled(client, raw_client, monkeypatch):
     raw_client.post(
         "/api/ingest/ai-usage",
         json={"content": "raw AKIAIOSFODNN7EXAMPLE kept", "destination": "https://chat.openai.com/"},
-        headers={"X-Warden-Token": key},
+        headers={"X-Palivane-Token": key},
     )
     findings = client.get("/api/findings").json()["findings"]
     detail = client.get(f"/api/findings/{findings[0]['id']}").json()

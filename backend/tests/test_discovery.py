@@ -58,7 +58,7 @@ def test_capture_records_sensitive_exposure(client, raw_client):
     raw_client.post("/api/ingest/ai-usage",
                     json={"content": "SSN 123-45-6789 key AKIAABCDEFGHIJKLMNOP",
                           "destination": "https://chatgpt.com/", "user": "erin@acme.com"},
-                    headers={"X-Warden-Token": key})
+                    headers={"X-Palivane-Token": key})
     inv = client.get("/api/discovery/inventory").json()
     chatgpt = next(t for t in inv["tools"] if t["tool"] == "ChatGPT")
     assert chatgpt["sensitive_events"] >= 1
@@ -80,12 +80,12 @@ def test_is_sanctioned_boundary_match():
 
 def test_classify_client_maps_planes():
     from app.ai_catalog import classify_client
-    assert classify_client("warden-cursor-hook/1.0")["tool"] == "Cursor"
-    assert classify_client("warden-hook/1.0")["tool"] == "Claude Code"
-    assert classify_client("warden-gemini-hook/1.0")["tool"] == "Gemini CLI"
-    assert classify_client("warden-codex-hook/1.0")["tool"] == "Codex CLI"
-    assert classify_client("warden-mcp/1.0")["tool"] == "MCP client"
-    assert classify_client("warden-proxy/1.0") is None   # egress proxy fronts many tools
+    assert classify_client("palivane-cursor-hook/1.0")["tool"] == "Cursor"
+    assert classify_client("palivane-hook/1.0")["tool"] == "Claude Code"
+    assert classify_client("palivane-gemini-hook/1.0")["tool"] == "Gemini CLI"
+    assert classify_client("palivane-codex-hook/1.0")["tool"] == "Codex CLI"
+    assert classify_client("palivane-mcp/1.0")["tool"] == "MCP client"
+    assert classify_client("palivane-proxy/1.0") is None   # egress proxy fronts many tools
     assert classify_client("") is None
 
 
@@ -103,7 +103,7 @@ def test_mcp_capture_attributes_tool_by_plane_ua(client, raw_client):
     r = raw_client.post("/api/ingest/mcp",
                         json={"method": "tools/call", "server": "shell", "tool": "shell",
                               "args_text": "ls ~", "user": "cara@acme.com"},
-                        headers={"X-Warden-Token": key, "User-Agent": "warden-cursor-hook/1.0"})
+                        headers={"X-Palivane-Token": key, "User-Agent": "palivane-cursor-hook/1.0"})
     assert r.status_code == 200
     inv = client.get("/api/discovery/inventory").json()
     cursor = next((t for t in inv["tools"] if t["tool"] == "Cursor"), None)
@@ -116,6 +116,6 @@ def test_mcp_capture_unknown_plane_not_recorded(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "p", "actor": "p@acme.com"}).json()["token"]
     raw_client.post("/api/ingest/mcp",
                     json={"method": "tools/call", "server": "s", "tool": "t", "args_text": "hi"},
-                    headers={"X-Warden-Token": key, "User-Agent": "warden-proxy/1.0"})
+                    headers={"X-Palivane-Token": key, "User-Agent": "palivane-proxy/1.0"})
     inv = client.get("/api/discovery/inventory").json()
     assert all(t["tool"] not in ("MCP client",) or t["events"] for t in inv["tools"])

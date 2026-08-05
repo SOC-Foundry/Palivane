@@ -16,7 +16,7 @@ def _scan(raw_client, files, token="ext-secret", record=False):
     return raw_client.post(
         "/api/scan/code",
         json={"files": files, "record": record},
-        headers={"X-Warden-Token": token},
+        headers={"X-Palivane-Token": token},
     )
 
 

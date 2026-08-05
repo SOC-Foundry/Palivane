@@ -33,7 +33,7 @@ tool isn't stopped — the call isn't malicious content, it's just unauthorized.
 - A verifiable **agent identity** distinct from the human/tenant, carried on every request.
 - A **least-privilege policy**: role → allowed tools / MCP servers / data scopes / commands.
 - **Enforcement at the choke points Palivane already owns** — the LLM gateway and the MCP path
-  (proxy + `warden-mcp` sensor + Cursor hook) — returning a clean *deny* with a reason.
+  (proxy + `palivane-mcp` sensor + Cursor hook) — returning a clean *deny* with a reason.
 - Reuse the existing **Policies** console and **per-user/group override** model.
 - Full **audit** of every allow/deny (we already have findings + audit + SIEM).
 
@@ -95,7 +95,7 @@ Design choices:
 At each choke point Palivane already intercepts:
 
 ```
-request (gateway / MCP proxy / warden-mcp / cursor-hook)
+request (gateway / MCP proxy / palivane-mcp / cursor-hook)
   → resolve Agent from credential           (401 if unknown/disabled)
   → derive intended action:
        tool call → tool name + server + args

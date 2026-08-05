@@ -258,7 +258,7 @@ def _make_key(client) -> str:
 
 def test_scan_ci_endpoint_records_and_feeds_discovery(client, raw_client, db_factory):
     key = _make_key(client)
-    r = raw_client.post("/api/scan/ci", headers={"X-Warden-Token": key}, json={
+    r = raw_client.post("/api/scan/ci", headers={"X-Palivane-Token": key}, json={
         "repo": "acme/api", "ref": "abc123",
         "workflows": [{"path": ".github/workflows/pwn.yml", "content": PWN_WF},
                       {"path": ".github/workflows/ok.yml", "content": SAFE_WF}],
@@ -301,7 +301,7 @@ jobs:
 
 
 def _scan(raw_client, key, content=UNPINNED_PRIVILEGED):
-    r = raw_client.post("/api/scan/ci", headers={"X-Warden-Token": key}, json={
+    r = raw_client.post("/api/scan/ci", headers={"X-Palivane-Token": key}, json={
         "repo": "acme/api", "workflows": [{"path": "wf.yml", "content": content}],
         "record": False})
     assert r.status_code == 200, r.text
@@ -347,7 +347,7 @@ def test_scan_ci_policy_toggle_suppresses_check(client, raw_client):
                         json={"disabled_checks": ["ci_unpinned_action"]}).status_code == 200
     key = _make_key(client)
     wf = "on: push\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: tj-actions/changed-files@v44\n"
-    r = raw_client.post("/api/scan/ci", headers={"X-Warden-Token": key}, json={
+    r = raw_client.post("/api/scan/ci", headers={"X-Palivane-Token": key}, json={
         "repo": "acme/api", "workflows": [{"path": "wf.yml", "content": wf}], "record": False})
     assert r.status_code == 200
     checks = {s["check"] for w in r.json()["workflows"] for s in w["signals"]}

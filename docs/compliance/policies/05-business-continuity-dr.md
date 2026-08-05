@@ -24,7 +24,7 @@ loss is accepted risk at current scale (documented in the risk register).
 - **App regression** → shift Cloud Run traffic to the prior revision (minutes).
 - **Data corruption/loss** → PITR clone to a fresh instance at the last good moment,
   verify (tenants/users/findings counts + alembic head, as drilled), repoint
-  `warden-database-url`, redeploy.
+  `palivane-database-url`, redeploy.
 - **Full project loss** → Terraform apply in a new project + restore from backup +
   re-create secrets; expected within a business day.
 

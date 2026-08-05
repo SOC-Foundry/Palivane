@@ -38,14 +38,14 @@ only; the plan change is always set-plan / a license.
 ## Self-hosted: issue a license file
 
 The Ed25519 **signing key** lives only in Secret Manager
-(`warden-license-signing-key`, project `erudite-calling-502022-k6`) — never in the
+(`palivane-license-signing-key`, project `erudite-calling-502022-k6`) — never in the
 repo, image, or a customer environment. The matching public key is embedded in
 `app/licensing.py`, so every Palivane build can verify but only the vendor can sign.
 
 **Issue + record it in the registry** (short-term + renewal model — this is what you
 almost always want, because it makes the license visible and revocable):
 
-    gcloud secrets versions access latest --secret warden-license-signing-key \
+    gcloud secrets versions access latest --secret palivane-license-signing-key \
         --project erudite-calling-502022-k6 | \
       python -m app.users license-issue --key - \
         --org "Acme Corp" --plan enterprise --seats 200 --contract-months 12
@@ -69,7 +69,7 @@ registry) still exists for a one-off untracked blob, and `verify` sanity-checks 
 - **Renewal is automatic:** the customer's instance re-fetches from `POST /api/license/renew`
   (presenting its current blob; the signature is the credential) before its term ends and
   gets a fresh short-term blob. Enabled only when the signing key is mounted in the app via
-  the `warden-license-signing-key` secret (deploy.sh wires it; the endpoint 503s otherwise).
+  the `palivane-license-signing-key` secret (deploy.sh wires it; the endpoint 503s otherwise).
   NOTE: mounting the signing key lets the running app sign — acceptable because a forged
   self-hosted license only unlocks features on the forger's own instance (no tenant-data or
   SaaS impact), but it is the reason the key is opt-in per deployment.

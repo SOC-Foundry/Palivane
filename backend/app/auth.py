@@ -169,9 +169,9 @@ def signup(body: SignupRequest, request: Request, db: Session = Depends(get_db))
             # confirm link. Even auto-approve waits for the click (that's the point).
             token = create_token({"typ": "join", "sub": str(req.id)}, ttl=86400)
             email_mod.send(
-                email, f"Confirm your request to join {tenant.name or tenant.slug} on Warden",
+                email, f"Confirm your request to join {tenant.name or tenant.slug} on Palivane",
                 f"Someone (hopefully you) asked to join the \"{tenant.name or tenant.slug}\" "
-                f"organization on Warden as {email}.\n\n"
+                f"organization on Palivane as {email}.\n\n"
                 f"Confirm it here (link valid for 24 hours):\n"
                 f"{email_mod.base_url()}/api/auth/join/confirm?token={token}\n\n"
                 "If this wasn't you, ignore this email and nothing will happen.")
@@ -203,8 +203,8 @@ def signup(body: SignupRequest, request: Request, db: Session = Depends(get_db))
     if verify:
         token = create_token({"typ": "email_verify", "sub": str(user.id)}, ttl=86400)
         email_mod.send(
-            email, "Verify your Warden account",
-            f"Welcome to Warden. Confirm this address to activate your new organization "
+            email, "Verify your Palivane account",
+            f"Welcome to Palivane. Confirm this address to activate your new organization "
             f"\"{tenant.name or tenant.slug}\" (link valid for 24 hours):\n\n"
             f"{email_mod.base_url()}/api/auth/verify?token={token}\n\n"
             "If you didn't sign up, ignore this email.")
@@ -320,8 +320,8 @@ def forgot_password(body: ForgotRequest, request: Request, db: Session = Depends
         token = create_token({"typ": "pwreset", "sub": str(user.id),
                               "tv": user.token_version}, ttl=1800)
         email_mod.send(
-            user.email, "Reset your Warden password",
-            f"A password reset was requested for your Warden account "
+            user.email, "Reset your Palivane password",
+            f"A password reset was requested for your Palivane account "
             f"({user.email}, organization \"{tenant.slug}\").\n\n"
             f"Reset it here (link valid for 30 minutes):\n"
             f"{email_mod.base_url()}/#reset={token}\n\n"
@@ -527,9 +527,9 @@ def create_user(body: UserCreate, current: User = Depends(require_admin), db: Se
         token = create_token({"typ": "pwreset", "sub": str(user.id),
                               "tv": user.token_version}, ttl=259200)   # 3 days
         email_mod.send(
-            email, f"You've been invited to {tenant.name or tenant.slug} on Warden",
+            email, f"You've been invited to {tenant.name or tenant.slug} on Palivane",
             f"{current.email} invited you to the \"{tenant.name or tenant.slug}\" "
-            f"organization on Warden as {body.role}.\n\n"
+            f"organization on Palivane as {body.role}.\n\n"
             f"Set your password to activate the account (link valid for 3 days):\n"
             f"{email_mod.base_url()}/#reset={token}\n\n"
             "If you weren't expecting this, you can ignore it.")
@@ -590,7 +590,7 @@ def extension_token(device: str = "", current: User = Depends(get_current_user),
     hands the token back to the extension via the OAuth redirect.
 
     Dedup: re-connecting the same device rotates that device's existing key in place instead
-    of piling up a new row on every sign-in. `device` (browser deviceId / warden-connect
+    of piling up a new row on every sign-in. `device` (browser deviceId / palivane-connect
     hostname) scopes the key so separate machines keep separate, independently-revocable keys;
     when it's absent we fall back to a single per-user "browser-extension" key."""
     dev = (device or "").strip()[:64]
@@ -618,9 +618,9 @@ def extension_token(device: str = "", current: User = Depends(get_current_user),
     audit_log.record(db, current.tenant_id, current.email, action,
                      target=current.email)
     # upstream_forwards: whether gateway-routed Claude Code will reach a real model or the
-    # inspection stub — warden-connect relays this as a "set your provider key" warning.
+    # inspection stub — palivane-connect relays this as a "set your provider key" warning.
     # enforce: the org's stance for the local capture planes (Settings → Enforcement) —
-    # warden-connect provisions it into the hooks it installs.
+    # palivane-connect provisions it into the hooks it installs.
     tenant = db.get(Tenant, current.tenant_id)
     enforce = tenant.client_enforce if tenant and tenant.client_enforce is not None \
         else settings.client_enforce
@@ -931,7 +931,7 @@ def enroll(body: EnrollRequest, db: Session = Depends(get_db)):
 @router.get("/enroll/check")
 def enroll_check(x_warden_token: str = Header(default=""), db: Session = Depends(get_db)):
     """Cheap liveness check for a device key (`ak_…`): 200 if still valid, 401 if revoked
-    or rotated. Lets the CLI apiKeyHelper (warden-reenroll) tell "my cached key is dead,
+    or rotated. Lets the CLI apiKeyHelper (palivane-reenroll) tell "my cached key is dead,
     re-enroll" from "still good" without spending a gateway/ingest call or burning quota."""
     from .gateway import _resolve_api_key
     principal = _resolve_api_key(x_warden_token, db)   # raises 401 on a bad/expired key
@@ -1335,7 +1335,7 @@ def oidc_login(org: str, request: Request, db: Session = Depends(get_db)):
 def oidc_callback(org: str, request: Request, code: str = "", state: str = "",
                   db: Session = Depends(get_db)):
     """IdP redirect target: validate state, exchange the code, validate the ID token,
-    map/provision the user, and hand a Warden session back to the console (URL fragment)."""
+    map/provision the user, and hand a Palivane session back to the console (URL fragment)."""
     try:
         payload = decode_token(state)
     except TokenError:

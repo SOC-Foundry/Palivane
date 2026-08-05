@@ -104,7 +104,7 @@ def _seed_via_api(c: TestClient, prompt: str):
     key_id, token = k["id"], k["token"]
     body = c.post("/api/ingest/ai-usage",
                   json={"content": prompt, "tool": "chatgpt", "destination": "chatgpt"},
-                  headers={"X-Warden-Token": token}).json()
+                  headers={"X-Palivane-Token": token}).json()
     fid = body.get("finding_id")
     assert fid is not None, f"ingest did not persist a finding: {body}"
     return key_id, fid

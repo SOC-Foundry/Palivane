@@ -14,7 +14,7 @@ def _key(client):
 def _scan(raw_client, key, config):
     return raw_client.post("/api/scan/mcp-config",
                            json={"content": json.dumps(config), "path": ".mcp.json"},
-                           headers={"X-Warden-Token": key}).json()
+                           headers={"X-Palivane-Token": key}).json()
 
 
 def test_requires_token(raw_client):

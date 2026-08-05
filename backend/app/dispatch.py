@@ -14,12 +14,13 @@ import logging
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from .config import _env
 
 log = logging.getLogger("uvicorn.error")
 
-_MAX_WORKERS = max(1, int(os.getenv("WARDEN_DISPATCH_WORKERS", "8")))
-_MAX_PENDING = max(1, int(os.getenv("WARDEN_DISPATCH_QUEUE", "256")))
-_executor = ThreadPoolExecutor(max_workers=_MAX_WORKERS, thread_name_prefix="warden-dispatch")
+_MAX_WORKERS = max(1, int(_env("PALIVANE_DISPATCH_WORKERS", "WARDEN_DISPATCH_WORKERS", "8")))
+_MAX_PENDING = max(1, int(_env("PALIVANE_DISPATCH_QUEUE", "WARDEN_DISPATCH_QUEUE", "256")))
+_executor = ThreadPoolExecutor(max_workers=_MAX_WORKERS, thread_name_prefix="palivane-dispatch")
 # ThreadPoolExecutor's internal work queue is unbounded, so the real cap is this
 # semaphore: running + queued jobs may never exceed workers + _MAX_PENDING.
 _slots = threading.BoundedSemaphore(_MAX_WORKERS + _MAX_PENDING)

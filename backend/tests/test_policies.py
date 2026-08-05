@@ -19,7 +19,7 @@ def test_rejects_unknown_check(client):
 def _post(raw_client, key, content, dest="https://chatgpt.com/"):
     return raw_client.post("/api/ingest/ai-usage",
                            json={"content": content, "destination": dest, "user": "u@acme.com"},
-                           headers={"X-Warden-Token": key}).json()
+                           headers={"X-Palivane-Token": key}).json()
 
 
 def test_disabling_a_check_drops_its_signals(client, raw_client):

@@ -34,7 +34,7 @@ def test_agent_jwt_authenticates_and_attributes(client, raw_client, monkeypatch)
 
     r = raw_client.post("/api/ingest/ai-usage",
                         json={"content": "SSN 123-45-6789", "destination": "https://chatgpt.com/"},
-                        headers={"X-Warden-Token": tok})
+                        headers={"X-Palivane-Token": tok})
     assert r.status_code == 200
     findings = client.get("/api/findings").json()["findings"]
     assert any(f.get("agent") == "wl-bot" for f in findings)
@@ -43,7 +43,7 @@ def test_agent_jwt_authenticates_and_attributes(client, raw_client, monkeypatch)
 def test_unknown_issuer_rejected(raw_client):
     tok = _jwt({"iss": "https://evil.example", "sub": "x"})
     r = raw_client.post("/api/ingest/ai-usage", json={"content": "hi"},
-                        headers={"X-Warden-Token": tok})
+                        headers={"X-Palivane-Token": tok})
     assert r.status_code == 401
 
 
@@ -53,7 +53,7 @@ def test_issuer_without_audience_rejected(client, raw_client):
     client.patch("/api/tenant", json={"agent_oidc_issuer": "https://idp.example"})
     tok = _jwt({"iss": "https://idp.example", "sub": "x"})
     r = raw_client.post("/api/ingest/ai-usage", json={"content": "hi"},
-                        headers={"X-Warden-Token": tok})
+                        headers={"X-Palivane-Token": tok})
     assert r.status_code == 401
 
 
@@ -67,7 +67,7 @@ def test_invalid_signature_rejected(client, raw_client, monkeypatch):
     monkeypatch.setattr(oidc, "validate_agent_jwt", _boom)
     tok = _jwt({"iss": "https://idp.example", "aud": "warden", "sub": "spn-2"})
     r = raw_client.post("/api/ingest/ai-usage", json={"content": "hi"},
-                        headers={"X-Warden-Token": tok})
+                        headers={"X-Palivane-Token": tok})
     assert r.status_code == 401
 
 
@@ -78,7 +78,7 @@ def test_valid_jwt_but_no_matching_agent(client, raw_client, monkeypatch):
                         lambda iss, aud, token, jwks_uri="": {"iss": iss, "sub": "nobody"})
     tok = _jwt({"iss": "https://idp.example", "aud": "warden", "sub": "nobody"})
     r = raw_client.post("/api/ingest/ai-usage", json={"content": "hi"},
-                        headers={"X-Warden-Token": tok})
+                        headers={"X-Palivane-Token": tok})
     assert r.status_code == 401   # audience validated, but no agent maps to that subject
 
 
@@ -117,7 +117,7 @@ def test_shared_issuer_resolves_by_audience(client, raw_client, db_factory, monk
     tok = _jwt({"iss": ISS, "aud": "aud-b", "sub": "spn-b"})
     r = raw_client.post("/api/ingest/ai-usage",
                         json={"content": "SSN 123-45-6789", "destination": "https://chatgpt.com/"},
-                        headers={"X-Warden-Token": tok})
+                        headers={"X-Palivane-Token": tok})
     assert r.status_code == 200
     # It landed in B's tenant, attributed to b-bot — and NOT in A's findings.
     assert any(f.get("agent") == "b-bot" for f in c2.get("/api/findings").json()["findings"])

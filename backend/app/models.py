@@ -92,7 +92,7 @@ class Tenant(Base):
     client_enforce = Column(Boolean, nullable=True, default=None)
     # Block threshold for capture-plane verdicts (/api/ingest/mcp action). Empty = global.
     mcp_block_severity = Column(String(16), default="")
-    # Block threshold for CI-runner scans (/api/scan/ci action -> warden-ci-scan exit code).
+    # Block threshold for CI-runner scans (/api/scan/ci action -> palivane-ci-scan exit code).
     # Empty = inherit the global CI_BLOCK_SEVERITY, which defaults to `critical`: confirmed
     # exposure (pwn-request, secrets handed to an agent) fails a build, while posture debt
     # (unpinned actions, write-all) warns — a gate on pre-existing debt gets switched off.
@@ -680,9 +680,9 @@ class SensorHeartbeat(Base):
     last_seen = Column(DateTime, default=_utcnow, index=True)
     count = Column(Integer, default=0)
     # Client build the sensor last reported (parsed from its User-Agent, e.g.
-    # "warden-hook/1.1.0"). Lets the console spot devices running stale plumbing —
+    # "palivane-hook/1.1.0"). Lets the console spot devices running stale plumbing —
     # server-side detection updates instantly, but installed scripts don't.
-    client = Column(String(48), default="")           # warden-hook | warden-proxy | …
+    client = Column(String(48), default="")           # palivane-hook | palivane-proxy | …
     client_version = Column(String(24), default="")
 
     def to_dict(self) -> dict:

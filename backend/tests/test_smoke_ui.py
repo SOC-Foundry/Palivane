@@ -9,9 +9,9 @@ Chromium installed:
 
     pip install playwright && playwright install chromium
     docker compose up --build           # or run the dev servers
-    WARDEN_SMOKE_URL=http://localhost:8090 \
-    WARDEN_SMOKE_EMAIL=admin@demo.local \
-    WARDEN_SMOKE_PASSWORD=changeme123 \
+    PALIVANE_SMOKE_URL=http://localhost:8090 \
+    PALIVANE_SMOKE_EMAIL=admin@demo.local \
+    PALIVANE_SMOKE_PASSWORD=changeme123 \
     pytest backend/tests/test_smoke_ui.py
 """
 
@@ -21,11 +21,11 @@ import os
 
 import pytest
 
-URL = os.getenv("WARDEN_SMOKE_URL")
-EMAIL = os.getenv("WARDEN_SMOKE_EMAIL", "admin@demo.local")
-PASSWORD = os.getenv("WARDEN_SMOKE_PASSWORD", "changeme123")
+URL = os.getenv("PALIVANE_SMOKE_URL")
+EMAIL = os.getenv("PALIVANE_SMOKE_EMAIL", "admin@demo.local")
+PASSWORD = os.getenv("PALIVANE_SMOKE_PASSWORD", "changeme123")
 
-pytestmark = pytest.mark.skipif(not URL, reason="set WARDEN_SMOKE_URL to run the UI smoke test")
+pytestmark = pytest.mark.skipif(not URL, reason="set PALIVANE_SMOKE_URL to run the UI smoke test")
 
 
 def test_login_and_dashboard_render():

@@ -63,7 +63,7 @@ class MCPIngest(BaseModel):
     tool_descriptions: list[str] = Field(default_factory=list, max_length=200)  # advertised tools
     transport: str = "http"                            # http | stdio | via-llm-api
     user: str = ""                                     # end-user identity
-    # Local-server supply-chain verification (warden-mcp): the wrapped command line, the
+    # Local-server supply-chain verification (palivane-mcp): the wrapped command line, the
     # sha256 of its resolved binary, and how it compared to the recorded pin (TOFU).
     command: str = Field("", max_length=1024)          # wrapped command line (stdio servers)
     binary_sha256: str = Field("", max_length=64)      # sha256 of the resolved executable
@@ -71,7 +71,7 @@ class MCPIngest(BaseModel):
 
 
 class MCPBatchIngest(BaseModel):
-    """A batch of MCP activities from a long-lived capture client (warden-mcp), so many
+    """A batch of MCP activities from a long-lived capture client (palivane-mcp), so many
     tool calls cost one request against the tenant's ingest quota."""
     items: list[MCPIngest] = Field(min_length=1, max_length=200)
 
@@ -91,7 +91,7 @@ class IDEExtScan(BaseModel):
 
 
 class SecretAtRest(BaseModel):
-    """One credential the local `warden-secrets` scanner found at rest — METADATA ONLY.
+    """One credential the local `palivane-secrets` scanner found at rest — METADATA ONLY.
     The raw secret never leaves the device; `masked` is a redacted preview."""
     path: str = Field(min_length=1)
     secret_types: list[str] = Field(default_factory=list)
@@ -105,7 +105,7 @@ class SecretAtRest(BaseModel):
 
 
 class SecretScan(BaseModel):
-    """A batch of at-rest credential findings from a device (from `warden-secrets`)."""
+    """A batch of at-rest credential findings from a device (from `palivane-secrets`)."""
     items: list[SecretAtRest] = Field(default_factory=list, max_length=10000)
     host: str = ""               # device identifier for attribution
     record: bool = True          # persist findings (on by default — this is the point)
@@ -143,7 +143,7 @@ class CodeScanRequest(BaseModel):
 
 class CIScan(BaseModel):
     """GitHub Actions runner/workflow posture scan: the repo's workflow files, sent by
-    `warden-ci-scan` (from inside a runner, or sweeping repos via the GitHub API)."""
+    `palivane-ci-scan` (from inside a runner, or sweeping repos via the GitHub API)."""
     repo: str = ""                # owner/name — provenance for findings + discovery actor
     ref: str = ""                 # branch/sha the workflows came from (informational)
     workflows: list[CodeFile] = Field(default_factory=list, max_length=500)
@@ -156,7 +156,7 @@ class S3Object(BaseModel):
 
 
 class S3Scan(BaseModel):
-    # warden-s3-scan streams a bucket's objects here to scan for secrets/PII at rest, plus
+    # palivane-s3-scan streams a bucket's objects here to scan for secrets/PII at rest, plus
     # whether the bucket is publicly reachable — public + sensitive is the crown-jewel case.
     bucket: str = ""
     region: str = ""

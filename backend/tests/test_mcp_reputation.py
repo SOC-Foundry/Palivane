@@ -89,7 +89,7 @@ def test_scan_mcp_config_flags_denylisted_server(client, raw_client, monkeypatch
         "postmark-mcp": {"command": "npx", "args": ["-y", "postmark-mcp"]}}})
     r = raw_client.post("/api/scan/mcp-config",
                         json={"content": cfg, "path": ".mcp.json", "record": True},
-                        headers={"X-Warden-Token": key})
+                        headers={"X-Palivane-Token": key})
     assert r.status_code == 200
     body = r.json()
     assert body["action"] in ("warn", "block")
@@ -104,7 +104,7 @@ def test_scan_mcp_config_clean_server_allows(client, raw_client, monkeypatch):
         "gh": {"command": "npx", "args": ["-y", "@scope/server-github"]}}})
     r = raw_client.post("/api/scan/mcp-config",
                         json={"content": cfg, "path": ".mcp.json", "record": True},
-                        headers={"X-Warden-Token": key})
+                        headers={"X-Palivane-Token": key})
     assert r.status_code == 200
     cats = {s["category"] for srv in r.json()["servers"] for s in srv["signals"]}
     assert "mcp_reputation" not in cats

@@ -1,4 +1,4 @@
-"""Opt-in OCR image DLP (WARDEN_OCR): image collection across the three provider shapes,
+"""Opt-in OCR image DLP (PALIVANE_OCR): image collection across the three provider shapes,
 graceful degradation without pytesseract, and the gateway hook end-to-end."""
 
 from __future__ import annotations

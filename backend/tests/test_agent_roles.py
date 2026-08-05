@@ -39,7 +39,7 @@ def _mkagent(client, name, role=""):
 def _mcp(raw_client, tok, server, tool):
     return raw_client.post("/api/ingest/mcp",
                            json={"method": "tools/call", "server": server, "tool": tool},
-                           headers={"X-Warden-Token": tok}).json()
+                           headers={"X-Palivane-Token": tok}).json()
 
 
 def test_monitor_role_warns_but_allows(client, raw_client):

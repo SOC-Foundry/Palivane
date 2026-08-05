@@ -42,7 +42,7 @@ def test_no_allowlist_allows_unknown():
 
 def test_endpoint_flags_bad_extension(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "ide", "actor": "ci@acme.com"}).json()["token"]
-    r = raw_client.post("/api/scan/ide-extensions", headers={"X-Warden-Token": key},
+    r = raw_client.post("/api/scan/ide-extensions", headers={"X-Palivane-Token": key},
                         json={"content": json.dumps({"recommendations": ["ahban.shshshsh", "ok.ok"]})})
     body = r.json()
     assert body["action"] in ("warn", "block")
@@ -51,6 +51,6 @@ def test_endpoint_flags_bad_extension(client, raw_client):
 
 def test_endpoint_accepts_list(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "ide2", "actor": "ci@acme.com"}).json()["token"]
-    r = raw_client.post("/api/scan/ide-extensions", headers={"X-Warden-Token": key},
+    r = raw_client.post("/api/scan/ide-extensions", headers={"X-Palivane-Token": key},
                         json={"extensions": ["ms-python.python", "esbenp.prettier-vscode"]})
     assert r.json()["action"] == "allow"

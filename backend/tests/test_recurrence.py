@@ -9,7 +9,7 @@ def _ingest(raw_client, key, content, user="dev@acme.com"):
     return raw_client.post(
         "/api/ingest/ai-usage",
         json={"content": content, "destination": "https://chatgpt.com/", "user": user},
-        headers={"X-Warden-Token": key},
+        headers={"X-Palivane-Token": key},
     ).json()
 
 

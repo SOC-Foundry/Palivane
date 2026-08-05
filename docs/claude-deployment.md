@@ -147,7 +147,7 @@ curl -X POST https://warden.corp.example.com/api/apikeys \
   sent as `x-api-key` — the gateway accepts either. For per-user keys without baking them
   into the file, use Claude Code's `apiKeyHelper` to fetch the key dynamically. The
   self-serve `/api/provision` installer does exactly this when generated with
-  `route_gateway=true`: it sets `apiKeyHelper` to the bundled **`warden-reenroll`** helper
+  `route_gateway=true`: it sets `apiKeyHelper` to the bundled **`palivane-reenroll`** helper
   (no static `ANTHROPIC_AUTH_TOKEN`), which returns a live per-device key and re-enrolls
   automatically if the key is ever revoked/rotated — so a revoked key self-heals without
   re-pushing config to the fleet. **By default** (no `route_gateway`) the installer and the
@@ -165,7 +165,7 @@ curl -X POST https://warden.corp.example.com/api/apikeys \
 Use the proxy (Section 3) and set, in the same `managed-settings.json`:
 ```json
 { "env": {
-  "HTTPS_PROXY": "http://warden-proxy.corp:8081",
+  "HTTPS_PROXY": "http://palivane-proxy.corp:8081",
   "NODE_EXTRA_CA_CERTS": "/etc/ssl/certs/corp-ca.pem"
 } }
 ```
@@ -180,7 +180,7 @@ shell commands, file access, and stdio MCP servers never leave the device. Route
 both with app-scoped sensors from [`cli/`](../cli/README.md) (hooks and a shim — not an
 endpoint agent):
 
-**`warden-hook`** — a Claude Code hook, registered on two events. **PreToolUse**: every
+**`palivane-hook`** — a Claude Code hook, registered on two events. **PreToolUse**: every
 tool call (built-ins and MCP tools) is inspected *before execution* for dangerous
 commands, sensitive-resource access, secrets in arguments, and the org's MCP-server
 allowlist. **UserPromptSubmit**: the typed prompt is scanned *before it leaves the
@@ -190,8 +190,8 @@ secret/PII leak hard-blocks even in monitor mode** — "block the certain, monit
 fuzzy", same rule as the proxy); `WARDEN_ENFORCE=true` also denies ordinary high-risk
 verdicts, with the reason shown to the model (tool calls) or the user (prompts). The org
 sets that stance centrally in the console (Settings → *Device enforcement*):
-`warden-connect` provisions it at connect time and every verdict carries it live.
-Installed by `warden-connect`, or fleet-wide in the same `managed-settings.json` as
+`palivane-connect` provisions it at connect time and every verdict carries it live.
+Installed by `palivane-connect`, or fleet-wide in the same `managed-settings.json` as
 Route A:
 
 ```json
@@ -203,26 +203,26 @@ Route A:
     "WARDEN_TOKEN": "ak_<the same key>"
   },
   "hooks": {
-    "PreToolUse":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/usr/local/bin/warden-hook", "timeout": 10 }]}],
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/warden-hook", "timeout": 10 }]}],
-    "SessionStart":     [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/usr/local/bin/warden-posture --async --quiet" }]}]
+    "PreToolUse":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/usr/local/bin/palivane-hook", "timeout": 10 }]}],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/palivane-hook", "timeout": 10 }]}],
+    "SessionStart":     [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/usr/local/bin/palivane-posture --async --quiet" }]}]
   }
 }
 ```
 (Deploy the two scripts to a fixed path via MDM alongside the settings file. Verify the
 deployed Claude Code version honors `hooks` in managed settings.)
 
-**`warden-mcp`** — wraps any **local stdio MCP server** for inline inspection (tool
+**`palivane-mcp`** — wraps any **local stdio MCP server** for inline inspection (tool
 calls, resource reads, tool-poisoning in descriptions); `WARDEN_MCP_ENFORCE=true` blocks
 with a JSON-RPC error. In `.mcp.json` / `~/.claude.json`:
 
 ```json
 { "mcpServers": { "github": {
-    "command": "warden-mcp",
+    "command": "palivane-mcp",
     "args": ["--", "npx", "-y", "@modelcontextprotocol/server-github"] }}}
 ```
 
-The `SessionStart` entry above also runs **`warden-posture`** — device drift (installed
+The `SessionStart` entry above also runs **`palivane-posture`** — device drift (installed
 IDE extensions, MCP configs) reported at session start, deduplicated client-side.
 
 ---

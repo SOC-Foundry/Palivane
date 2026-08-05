@@ -12,11 +12,11 @@ import os
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from .config import settings
+from .config import settings, _env
 
 
 def _fernet() -> Fernet:
-    secret = (os.getenv("WARDEN_ENCRYPTION_KEY") or settings.auth_secret_key
+    secret = (_env("PALIVANE_ENCRYPTION_KEY", "WARDEN_ENCRYPTION_KEY") or settings.auth_secret_key
               or "dev-insecure-change-me").encode()
     # Fernet needs a 32-byte urlsafe-base64 key; derive one deterministically.
     return Fernet(base64.urlsafe_b64encode(hashlib.sha256(secret).digest()))

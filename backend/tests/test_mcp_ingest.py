@@ -10,7 +10,7 @@ def _key(client):
 
 
 def _post(raw_client, key, **body):
-    return raw_client.post("/api/ingest/mcp", json=body, headers={"X-Warden-Token": key})
+    return raw_client.post("/api/ingest/mcp", json=body, headers={"X-Palivane-Token": key})
 
 
 def test_requires_token(raw_client):
@@ -77,7 +77,7 @@ def test_benign_call_allowed(client, raw_client):
 
 
 def test_verdict_carries_org_enforce_stance(client, raw_client):
-    # Same field as ai-usage verdicts — warden-hook honors it for tool-call denies.
+    # Same field as ai-usage verdicts — palivane-hook honors it for tool-call denies.
     key = _key(client)
     body = _post(raw_client, key, method="tools/call", tool="list_files",
                  args_text="path=./src").json()

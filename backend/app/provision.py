@@ -3,18 +3,18 @@
 Renders a single, prefilled setup script per OS. The script carries a **reusable
 enrollment token** (not a device key): at runtime each machine self-enrolls
 (`POST /api/enroll` with its hostname/user) and receives its **own** per-device API key,
-then configures the endpoints Warden governs — Claude Code (managed-settings.json), the
+then configures the endpoints Palivane governs — Claude Code (managed-settings.json), the
 browser extension (managed policy), and optionally the desktop proxy.
 
 By default Claude Code **keeps its own sign-in** (Pro/Max subscription or API account):
-managed-settings carries only the Warden credentials for the local planes plus
+managed-settings carries only the Palivane credentials for the local planes plus
 `forceLoginMethod: "claudeai"` so users land on subscription login. With
 `route_gateway=True` the installer instead reroutes Claude Code's API traffic through the
-Warden gateway (`ANTHROPIC_BASE_URL` + `apiKeyHelper`) — that bills the org's provider
+Palivane gateway (`ANTHROPIC_BASE_URL` + `apiKeyHelper`) — that bills the org's provider
 key, not personal subscriptions.
 
 Crucially the artifacts stay self-healing after install: with gateway routing, Claude
-Code's gateway auth goes through `apiKeyHelper` (warden-reenroll), and the browser
+Code's gateway auth goes through `apiKeyHelper` (palivane-reenroll), and the browser
 extension gets the enrollment token (not a static ingest key). So if a device key is
 revoked/rotated, the machine re-enrolls on its own — no re-push to the fleet. One
 installer serves everyone, and every device gets an independently-revocable, attributed
@@ -38,12 +38,12 @@ def _cc_settings_sh(route_gateway: bool) -> tuple[str, str]:
     """managed-settings.json body + install echo for the bash installers.
     Values are shell variables expanded by the heredoc at runtime."""
     if route_gateway:
-        return ('{ "env": { "ANTHROPIC_BASE_URL": "$WARDEN_URL", "WARDEN_URL": "$WARDEN_URL", '
-                '"WARDEN_TOKEN": "$KEY", "WARDEN_ENROLL_TOKEN": "$ENROLL_TOKEN" }, '
-                '"apiKeyHelper": "/usr/local/bin/warden-reenroll" }',
+        return ('{ "env": { "ANTHROPIC_BASE_URL": "$PALIVANE_URL", "PALIVANE_URL": "$PALIVANE_URL", '
+                '"PALIVANE_TOKEN": "$KEY", "PALIVANE_ENROLL_TOKEN": "$ENROLL_TOKEN" }, '
+                '"apiKeyHelper": "/usr/local/bin/palivane-reenroll" }',
                 "gateway auth via apiKeyHelper — bills the org's provider key")
-    return ('{ "env": { "WARDEN_URL": "$WARDEN_URL", "WARDEN_TOKEN": "$KEY", '
-            '"WARDEN_ENROLL_TOKEN": "$ENROLL_TOKEN" }, "forceLoginMethod": "claudeai" }',
+    return ('{ "env": { "PALIVANE_URL": "$PALIVANE_URL", "PALIVANE_TOKEN": "$KEY", '
+            '"PALIVANE_ENROLL_TOKEN": "$ENROLL_TOKEN" }, "forceLoginMethod": "claudeai" }',
             "Claude Code keeps its own sign-in (Pro/Max); login locked to claude.ai")
 
 
@@ -53,18 +53,18 @@ def render_macos(base_url: str, enroll_token: str, extension_id: str, proxy_host
     b = _base(base_url)
     cc_json, cc_note = _cc_settings_sh(route_gateway)
     return f'''#!/usr/bin/env bash
-# Warden device setup (macOS). Carries an ENROLLMENT token; each machine self-enrolls for
-# its own per-device key. Claude Code's apiKeyHelper (warden-reenroll) re-enrolls
+# Palivane device setup (macOS). Carries an ENROLLMENT token; each machine self-enrolls for
+# its own per-device key. Claude Code's apiKeyHelper (palivane-reenroll) re-enrolls
 # automatically if that key is ever revoked/rotated, so a revoked key self-heals without a
 # re-push. Safe to run on many machines; treat the file as a secret.
 set -euo pipefail
-WARDEN_URL="{b}"
+PALIVANE_URL="{b}"
 ENROLL_TOKEN="{enroll_token}"
 EXT_ID="{ext}"
 DEVICE="$(whoami)@$(hostname -s 2>/dev/null || hostname)"
 
-echo "Enrolling this device with Warden as $DEVICE ..."
-RESP=$(curl -fsS -X POST "$WARDEN_URL/api/enroll" -H 'content-type: application/json' \\
+echo "Enrolling this device with Palivane as $DEVICE ..."
+RESP=$(curl -fsS -X POST "$PALIVANE_URL/api/enroll" -H 'content-type: application/json' \\
   -d "{{\\"token\\":\\"$ENROLL_TOKEN\\",\\"device\\":\\"$DEVICE\\"}}")
 KEY=$(printf '%s' "$RESP" | sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
 if [ -z "$KEY" ]; then echo "Enrollment failed: $RESP" >&2; exit 1; fi
@@ -73,14 +73,14 @@ echo "  device key issued."
 # Self-heal helper: Claude Code's apiKeyHelper runs this to fetch a live gateway key and
 # re-enrolls if the device key is revoked. Reads config from /etc/warden/enroll.json (and
 # inherits WARDEN_* from managed-settings). Prime its cache with the key we just minted.
-echo "Installing warden-reenroll (apiKeyHelper) ..."
-curl -fsSL "$WARDEN_URL/cli/warden-reenroll" -o /tmp/warden-reenroll
-sudo install -m 0755 /tmp/warden-reenroll /usr/local/bin/warden-reenroll
+echo "Installing palivane-reenroll (apiKeyHelper) ..."
+curl -fsSL "$PALIVANE_URL/cli/palivane-reenroll" -o /tmp/palivane-reenroll
+sudo install -m 0755 /tmp/palivane-reenroll /usr/local/bin/palivane-reenroll
 sudo mkdir -p /etc/warden
 sudo tee /etc/warden/enroll.json >/dev/null <<JSON
-{{ "url": "$WARDEN_URL", "enroll_token": "$ENROLL_TOKEN", "device": "$DEVICE" }}
+{{ "url": "$PALIVANE_URL", "enroll_token": "$ENROLL_TOKEN", "device": "$DEVICE" }}
 JSON
-mkdir -p "$HOME/.warden"; printf '%s' "$KEY" > "$HOME/.warden/device-key"; chmod 600 "$HOME/.warden/device-key"
+mkdir -p "$HOME/.palivane"; printf '%s' "$KEY" > "$HOME/.palivane/device-key"; chmod 600 "$HOME/.palivane/device-key"
 
 echo "Configuring Claude Code ..."
 CC_DIR="/Library/Application Support/ClaudeCode"
@@ -94,10 +94,10 @@ echo "  Claude Code -> $CC_DIR/managed-settings.json ({cc_note})"
 # extension id $EXT_ID. It carries the ENROLLMENT token — the extension self-enrolls its
 # own per-device key and re-enrolls if revoked (no static ingest key baked in):
 cat <<POLICY
-  {{ "backendUrl": {{"Value": "$WARDEN_URL"}}, "enrollToken": {{"Value": "$ENROLL_TOKEN"}}, "enforce": {{"Value": true}} }}
+  {{ "backendUrl": {{"Value": "$PALIVANE_URL"}}, "enrollToken": {{"Value": "$ENROLL_TOKEN"}}, "enforce": {{"Value": true}} }}
 POLICY
 
-# Desktop app (egress proxy) — optional; needs the Warden CA + admin. See docs.
+# Desktop app (egress proxy) — optional; needs the Palivane CA + admin. See docs.
 echo "Done. Restart Claude Code and your browser to apply."
 '''
 
@@ -107,36 +107,36 @@ def render_windows(base_url: str, enroll_token: str, extension_id: str, proxy_ho
     ext = extension_id or DEFAULT_EXTENSION_ID
     b = _base(base_url)
     if route_gateway:
-        cc_ps = ('@{ env = @{ ANTHROPIC_BASE_URL = "$WardenUrl"; WARDEN_URL = "$WardenUrl"; '
-                 'WARDEN_TOKEN = $Key; WARDEN_ENROLL_TOKEN = $EnrollToken }; '
+        cc_ps = ('@{ env = @{ ANTHROPIC_BASE_URL = "$WardenUrl"; PALIVANE_URL = "$WardenUrl"; '
+                 'PALIVANE_TOKEN = $Key; PALIVANE_ENROLL_TOKEN = $EnrollToken }; '
                  'apiKeyHelper = "powershell -NoProfile -ExecutionPolicy Bypass -File `"$Reenroll`"" }')
         cc_note = "gateway auth via apiKeyHelper — bills the org's provider key"
     else:
-        cc_ps = ('@{ env = @{ WARDEN_URL = "$WardenUrl"; WARDEN_TOKEN = $Key; '
-                 'WARDEN_ENROLL_TOKEN = $EnrollToken }; forceLoginMethod = "claudeai" }')
+        cc_ps = ('@{ env = @{ PALIVANE_URL = "$WardenUrl"; PALIVANE_TOKEN = $Key; '
+                 'PALIVANE_ENROLL_TOKEN = $EnrollToken }; forceLoginMethod = "claudeai" }')
         cc_note = "Claude Code keeps its own sign-in (Pro/Max); login locked to claude.ai"
-    return f'''# Warden device setup (Windows, run as Administrator in PowerShell). Carries an
+    return f'''# Palivane device setup (Windows, run as Administrator in PowerShell). Carries an
 # ENROLLMENT token; each machine self-enrolls for its own per-device key, and Claude Code's
-# apiKeyHelper (warden-reenroll.ps1) re-enrolls automatically if that key is revoked/rotated.
+# apiKeyHelper (palivane-reenroll.ps1) re-enrolls automatically if that key is revoked/rotated.
 # The helper is native PowerShell — no Python required.
 $ErrorActionPreference = "Stop"
 $WardenUrl   = "{b}"
 $EnrollToken = "{enroll_token}"
 $Device      = "$env:USERNAME@$env:COMPUTERNAME"
 
-Write-Host "Enrolling this device with Warden as $Device ..."
+Write-Host "Enrolling this device with Palivane as $Device ..."
 $resp = Invoke-RestMethod -Method Post -Uri "$WardenUrl/api/enroll" -ContentType 'application/json' `
   -Body (@{{ token = $EnrollToken; device = $Device }} | ConvertTo-Json)
 $Key = $resp.token
 if (-not $Key) {{ throw "Enrollment failed" }}
 Write-Host "  device key issued."
 
-Write-Host "Installing warden-reenroll (apiKeyHelper) ..."
-$WardenDir = "$env:ProgramFiles\\Warden"
+Write-Host "Installing palivane-reenroll (apiKeyHelper) ..."
+$WardenDir = "$env:ProgramFiles\\Palivane"
 New-Item -ItemType Directory -Force -Path $WardenDir | Out-Null
-$Reenroll = "$WardenDir\\warden-reenroll.ps1"
-Invoke-RestMethod -Uri "$WardenUrl/cli/warden-reenroll.ps1" -OutFile $Reenroll
-$cfgDir = "$env:ProgramData\\Warden"
+$Reenroll = "$WardenDir\\palivane-reenroll.ps1"
+Invoke-RestMethod -Uri "$WardenUrl/cli/palivane-reenroll.ps1" -OutFile $Reenroll
+$cfgDir = "$env:ProgramData\\Palivane"
 New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
 @{{ url = $WardenUrl; enroll_token = $EnrollToken; device = $Device }} | ConvertTo-Json |
   Set-Content -Path "$cfgDir\\enroll.json" -Encoding UTF8
@@ -158,7 +158,7 @@ foreach ($vendor in @("Google\\Chrome", "Microsoft\\Edge")) {{
 }}
 Write-Host "  Browser policy set for extension {ext}"
 
-# Desktop app (egress proxy) — optional; needs the Warden CA + admin. See docs.
+# Desktop app (egress proxy) — optional; needs the Palivane CA + admin. See docs.
 Write-Host "Done. Restart Claude Code and your browser to apply."
 '''
 
@@ -169,12 +169,12 @@ def render_linux(base_url: str, enroll_token: str, extension_id: str, proxy_host
     b = _base(base_url)
     cc_json, cc_note = _cc_settings_sh(route_gateway)
     return f'''#!/usr/bin/env bash
-# Warden device setup (Linux — Arch and derivatives; also Debian/Fedora). Carries an
+# Palivane device setup (Linux — Arch and derivatives; also Debian/Fedora). Carries an
 # ENROLLMENT token; each machine self-enrolls for its own per-device key, and Claude Code's
-# apiKeyHelper (warden-reenroll) re-enrolls automatically if that key is revoked/rotated.
+# apiKeyHelper (palivane-reenroll) re-enrolls automatically if that key is revoked/rotated.
 # Safe to run on many machines; treat the file as a secret. Needs sudo for system config.
 set -euo pipefail
-WARDEN_URL="{b}"
+PALIVANE_URL="{b}"
 ENROLL_TOKEN="{enroll_token}"
 EXT_ID="{ext}"
 DEVICE="$(whoami)@$(hostname -s 2>/dev/null || hostname)"
@@ -187,8 +187,8 @@ if ! command -v curl >/dev/null 2>&1; then
   else echo "curl not found and no supported package manager (pacman/apt/dnf)" >&2; exit 1; fi
 fi
 
-echo "Enrolling this device with Warden as $DEVICE ..."
-RESP=$(curl -fsS -X POST "$WARDEN_URL/api/enroll" -H 'content-type: application/json' \\
+echo "Enrolling this device with Palivane as $DEVICE ..."
+RESP=$(curl -fsS -X POST "$PALIVANE_URL/api/enroll" -H 'content-type: application/json' \\
   -d "{{\\"token\\":\\"$ENROLL_TOKEN\\",\\"device\\":\\"$DEVICE\\"}}")
 KEY=$(printf '%s' "$RESP" | sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
 if [ -z "$KEY" ]; then echo "Enrollment failed: $RESP" >&2; exit 1; fi
@@ -197,12 +197,12 @@ echo "  device key issued."
 # Self-heal helper: Claude Code's apiKeyHelper runs this to fetch a live gateway key and
 # re-enrolls if the device key is revoked. Reads config from /etc/warden/enroll.json (and
 # inherits WARDEN_* from managed-settings). Prime its cache with the key we just minted.
-echo "Installing warden-reenroll (apiKeyHelper) ..."
-curl -fsSL "$WARDEN_URL/cli/warden-reenroll" -o /tmp/warden-reenroll
-sudo install -m 0755 /tmp/warden-reenroll /usr/local/bin/warden-reenroll
+echo "Installing palivane-reenroll (apiKeyHelper) ..."
+curl -fsSL "$PALIVANE_URL/cli/palivane-reenroll" -o /tmp/palivane-reenroll
+sudo install -m 0755 /tmp/palivane-reenroll /usr/local/bin/palivane-reenroll
 sudo mkdir -p /etc/warden
-printf '%s\\n' "{{ \\"url\\": \\"$WARDEN_URL\\", \\"enroll_token\\": \\"$ENROLL_TOKEN\\", \\"device\\": \\"$DEVICE\\" }}" | sudo tee /etc/warden/enroll.json >/dev/null
-mkdir -p "$HOME/.warden"; printf '%s' "$KEY" > "$HOME/.warden/device-key"; chmod 600 "$HOME/.warden/device-key"
+printf '%s\\n' "{{ \\"url\\": \\"$PALIVANE_URL\\", \\"enroll_token\\": \\"$ENROLL_TOKEN\\", \\"device\\": \\"$DEVICE\\" }}" | sudo tee /etc/warden/enroll.json >/dev/null
+mkdir -p "$HOME/.palivane"; printf '%s' "$KEY" > "$HOME/.palivane/device-key"; chmod 600 "$HOME/.palivane/device-key"
 
 echo "Configuring Claude Code ..."
 CC_DIR="/etc/claude-code"
@@ -217,7 +217,7 @@ echo "  Claude Code -> $CC_DIR/managed-settings.json ({cc_note})"
 # the ENROLLMENT token — the extension self-enrolls its own per-device key (no static key).
 echo "Configuring browser extension managed policy ..."
 POLICY_JSON=$(cat <<JSON
-{{ "3rdparty": {{ "extensions": {{ "$EXT_ID": {{ "backendUrl": "$WARDEN_URL", "enrollToken": "$ENROLL_TOKEN", "enforce": true }} }} }} }}
+{{ "3rdparty": {{ "extensions": {{ "$EXT_ID": {{ "backendUrl": "$PALIVANE_URL", "enrollToken": "$ENROLL_TOKEN", "enforce": true }} }} }} }}
 JSON
 )
 for DIR in /etc/opt/chrome/policies/managed /etc/chromium/policies/managed /etc/opt/edge/policies/managed; do
@@ -225,11 +225,11 @@ for DIR in /etc/opt/chrome/policies/managed /etc/chromium/policies/managed /etc/
   root="${{DIR%/policies/managed}}"
   [ -d "$root" ] || continue
   sudo mkdir -p "$DIR"
-  printf '%s\\n' "$POLICY_JSON" | sudo tee "$DIR/warden.json" >/dev/null
-  echo "  policy -> $DIR/warden.json"
+  printf '%s\\n' "$POLICY_JSON" | sudo tee "$DIR/palivane.json" >/dev/null
+  echo "  policy -> $DIR/palivane.json"
 done
 
-# Desktop app (egress proxy) — optional; needs the Warden CA + admin. See docs.
+# Desktop app (egress proxy) — optional; needs the Palivane CA + admin. See docs.
 echo "Done. Restart Claude Code and your browser to apply."
 '''
 

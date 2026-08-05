@@ -2,9 +2,9 @@
 
 RLS only exists on Postgres, and is only *enforced* for a non-superuser role (superusers
 and, without FORCE, table owners bypass it). So this test is skipped unless pointed at a
-Postgres reachable as a non-superuser via WARDEN_RLS_TEST_URL, e.g.:
+Postgres reachable as a non-superuser via PALIVANE_RLS_TEST_URL, e.g.:
 
-    WARDEN_RLS_TEST_URL=postgresql://warden:pw@127.0.0.1:5433/warden \\
+    PALIVANE_RLS_TEST_URL=postgresql://warden:pw@127.0.0.1:5433/warden \\
         pytest tests/test_rls.py
 
 It assumes migrations (incl. a9f1c3e5b7d0) have been applied to that database. All rows it
@@ -16,8 +16,8 @@ import pytest
 
 psycopg2 = pytest.importorskip("psycopg2")
 
-URL = os.getenv("WARDEN_RLS_TEST_URL")
-pytestmark = pytest.mark.skipif(not URL, reason="set WARDEN_RLS_TEST_URL to a non-superuser Postgres")
+URL = os.getenv("PALIVANE_RLS_TEST_URL")
+pytestmark = pytest.mark.skipif(not URL, reason="set PALIVANE_RLS_TEST_URL to a non-superuser Postgres")
 
 
 def _scope(cur, val):

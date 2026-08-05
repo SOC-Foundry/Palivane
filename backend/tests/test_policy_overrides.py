@@ -34,7 +34,7 @@ def test_resolution_precedence():
 def _post(raw_client, key, content, user):
     return raw_client.post("/api/ingest/ai-usage",
                            json={"content": content, "destination": "https://chatgpt.com/", "user": user},
-                           headers={"X-Warden-Token": key}).json()
+                           headers={"X-Palivane-Token": key}).json()
 
 
 def test_group_override_applies_end_to_end(client, raw_client):
@@ -114,13 +114,13 @@ def test_channel_scoped_override_end_to_end(client, raw_client):
     scoped = raw_client.post("/api/ingest/ai-usage",
                              json={"content": payload, "destination": "https://chatgpt.com/",
                                    "user": "dave@acme.com", "tool": "claude-code"},
-                             headers={"X-Warden-Token": key}).json()
+                             headers={"X-Palivane-Token": key}).json()
     assert "pii_exposure" not in {s["category"] for s in scoped["signals"]}
 
     other_tool = raw_client.post("/api/ingest/ai-usage",
                                  json={"content": payload, "destination": "https://chatgpt.com/",
                                        "user": "dave@acme.com", "tool": "cursor"},
-                                 headers={"X-Warden-Token": key}).json()
+                                 headers={"X-Palivane-Token": key}).json()
     assert "pii_exposure" in {s["category"] for s in other_tool["signals"]}
 
 

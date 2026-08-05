@@ -15,7 +15,7 @@ def _claim(client, domain="acme.com"):
 def _claim_verified(client, monkeypatch, domain="acme.com", auto_approve=False):
     d = _claim(client, domain)
     monkeypatch.setattr(domains, "_lookup_txt",
-                        lambda name: [f"warden-domain-verify={d['token']}"])
+                        lambda name: [f"palivane-domain-verify={d['token']}"])
     r = client.post(f"/api/domains/{d['id']}/verify")
     assert r.status_code == 200 and r.json()["verified"] is True
     if auto_approve:
@@ -27,8 +27,8 @@ def _claim_verified(client, monkeypatch, domain="acme.com", auto_approve=False):
 def test_claim_validation_and_txt_shape(client):
     d = _claim(client)
     assert d["verified"] is False
-    assert d["txt"]["name"] == "_warden-verify.acme.com"
-    assert d["txt"]["value"] == f"warden-domain-verify={d['token']}"
+    assert d["txt"]["name"] == "_palivane-verify.acme.com"
+    assert d["txt"]["value"] == f"palivane-domain-verify={d['token']}"
     assert client.post("/api/domains", json={"domain": "not a domain"}).status_code == 422
     assert client.post("/api/domains", json={"domain": "gmail.com"}).status_code == 422
     assert client.post("/api/domains", json={"domain": "ACME.com."}).status_code == 409  # dup, normalized
@@ -39,7 +39,7 @@ def test_verify_requires_matching_txt(client, monkeypatch):
     monkeypatch.setattr(domains, "_lookup_txt", lambda name: ["something-else"])
     assert client.post(f"/api/domains/{d['id']}/verify").status_code == 409
     monkeypatch.setattr(domains, "_lookup_txt",
-                        lambda name: [f"warden-domain-verify={d['token']}"])
+                        lambda name: [f"palivane-domain-verify={d['token']}"])
     assert client.post(f"/api/domains/{d['id']}/verify").json()["verified"] is True
 
 

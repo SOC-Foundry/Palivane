@@ -46,6 +46,6 @@ def test_ingest_warns_on_unformatted_ssn(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "ssn", "actor": "u@acme.com"}).json()["token"]
     r = raw_client.post("/api/ingest/ai-usage",
                         json={"content": "here is the number 123456789", "destination": "https://claude.ai/"},
-                        headers={"X-Warden-Token": key}).json()
+                        headers={"X-Palivane-Token": key}).json()
     assert r["action"] == "warn"
     assert "pii_exposure" in {s["category"] for s in r["signals"]}

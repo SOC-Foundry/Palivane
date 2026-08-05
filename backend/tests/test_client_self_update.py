@@ -1,4 +1,4 @@
-"""Client self-update: the manifest endpoint, version inventory, and warden-posture's
+"""Client self-update: the manifest endpoint, version inventory, and palivane-posture's
 hash-verified script refresh."""
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from app.distribution import _ALLOW, client_versions
 
 _CLI = Path(__file__).resolve().parents[2] / "cli"
 _spec = importlib.util.spec_from_loader(
-    "warden_posture", SourceFileLoader("warden_posture", str(_CLI / "warden-posture")))
+    "palivane_posture", SourceFileLoader("palivane_posture", str(_CLI / "palivane-posture")))
 wp = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(wp)
 
@@ -29,7 +29,7 @@ def test_manifest_is_public_and_hashes_match_served_files(raw_client):
     assert body["files"] and "version" in body and body["self_update"] is True
     # Every advertised hash must match what /cli/<name> actually serves, or clients would
     # download a file, fail verification, and never update.
-    for name in ("warden-hook", "warden-posture", "warden_addon.py"):
+    for name in ("palivane-hook", "palivane-posture", "palivane_addon.py"):
         served = raw_client.get(f"/cli/{name}")
         assert served.status_code == 200
         got = hashlib.sha256(served.text.encode()).hexdigest()
@@ -48,17 +48,17 @@ def test_manifest_route_not_shadowed_by_script_route(raw_client):
 
 def test_client_versions_cover_every_reporting_client():
     v = client_versions()
-    for name in ("warden-hook", "warden-posture", "warden-cursor-hook",
-                 "warden-gemini-hook", "warden-codex-hook", "warden-proxy"):
+    for name in ("palivane-hook", "palivane-posture", "palivane-cursor-hook",
+                 "palivane-gemini-hook", "palivane-codex-hook", "palivane-proxy"):
         assert v.get(name), name
 
 
 # --- User-Agent parsing / fleet inventory ------------------------------------------------
 
 def test_parse_client_ua():
-    assert main._parse_client_ua("warden-hook/1.1.0") == ("warden-hook", "1.1.0")
-    assert main._parse_client_ua("warden-proxy/2.0 extra") == ("warden-proxy", "2.0")
-    assert main._parse_client_ua("warden-posture") == ("warden-posture", "")
+    assert main._parse_client_ua("palivane-hook/1.1.0") == ("palivane-hook", "1.1.0")
+    assert main._parse_client_ua("palivane-proxy/2.0 extra") == ("palivane-proxy", "2.0")
+    assert main._parse_client_ua("palivane-posture") == ("palivane-posture", "")
     # Not ours: a browser or curl must never be recorded as a Warden client build.
     assert main._parse_client_ua("Mozilla/5.0 (X11)") == ("", "")
     assert main._parse_client_ua("curl/8.4.0") == ("", "")
@@ -67,22 +67,22 @@ def test_parse_client_ua():
 
 def test_heartbeat_records_client_build_and_fleet_flags_stale(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "v", "actor": "v@acme.com"}).json()["token"]
-    latest = client_versions()["warden-hook"]
+    latest = client_versions()["palivane-hook"]
     payload = {"content": "hi", "tool": "claude-code", "destination": "claude-code",
                "user": "v@acme.com"}
 
     raw_client.post("/api/ingest/ai-usage", json=payload,
-                    headers={"X-Warden-Token": key, "User-Agent": "warden-hook/0.0.1"})
+                    headers={"X-Palivane-Token": key, "User-Agent": "palivane-hook/0.0.1"})
     fleet = client.get("/api/fleet").json()
     row = [s for s in fleet["sensors"] if s["actor"] == "v@acme.com"][0]
-    assert row["client"] == "warden-hook" and row["client_version"] == "0.0.1"
+    assert row["client"] == "palivane-hook" and row["client_version"] == "0.0.1"
     assert row["client_current"] is False
     assert fleet["summary"]["stale_clients"] >= 1
-    assert fleet["latest_client_versions"]["warden-hook"] == latest
+    assert fleet["latest_client_versions"]["palivane-hook"] == latest
 
     # Reporting the current build clears the stale flag.
     raw_client.post("/api/ingest/ai-usage", json=payload,
-                    headers={"X-Warden-Token": key, "User-Agent": f"warden-hook/{latest}"})
+                    headers={"X-Palivane-Token": key, "User-Agent": f"palivane-hook/{latest}"})
     row = [s for s in client.get("/api/fleet").json()["sensors"]
            if s["actor"] == "v@acme.com"][0]
     assert row["client_version"] == latest and row["client_current"] is True
@@ -92,15 +92,15 @@ def test_verdict_tells_the_client_its_target_version(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "v2", "actor": "v2@acme.com"}).json()["token"]
     r = raw_client.post("/api/ingest/ai-usage",
                         json={"content": "hi", "tool": "claude-code"},
-                        headers={"X-Warden-Token": key, "User-Agent": "warden-hook/0.0.1"})
-    assert r.json()["client_latest"] == client_versions()["warden-hook"]
+                        headers={"X-Palivane-Token": key, "User-Agent": "palivane-hook/0.0.1"})
+    assert r.json()["client_latest"] == client_versions()["palivane-hook"]
     # A non-Warden client gets no version hint rather than a misleading one.
     r = raw_client.post("/api/ingest/ai-usage", json={"content": "hi"},
-                        headers={"X-Warden-Token": key, "User-Agent": "Mozilla/5.0"})
+                        headers={"X-Palivane-Token": key, "User-Agent": "Mozilla/5.0"})
     assert r.json()["client_latest"] == ""
 
 
-# --- warden-posture self_update ----------------------------------------------------------
+# --- palivane-posture self_update ----------------------------------------------------------
 
 def _fake_server(files: dict[str, bytes], version="9.9.9", self_update=True, fail=()):
     """A stand-in for _fetch: serves a manifest + file bodies, optionally failing some."""
@@ -121,7 +121,7 @@ def _fake_server(files: dict[str, bytes], version="9.9.9", self_update=True, fai
 
 
 def _installed(tmp_path, name, body=b"#!/usr/bin/env python3\n# old\n"):
-    d = tmp_path / ".warden" / "bin"
+    d = tmp_path / ".palivane" / "bin"
     d.mkdir(parents=True, exist_ok=True)
     p = d / name
     p.write_bytes(body)
@@ -130,24 +130,24 @@ def _installed(tmp_path, name, body=b"#!/usr/bin/env python3\n# old\n"):
 
 
 def test_self_update_replaces_changed_file_and_keeps_mode(tmp_path, monkeypatch):
-    p = _installed(tmp_path, "warden-hook")
+    p = _installed(tmp_path, "palivane-hook")
     new = b"#!/usr/bin/env python3\n# new build\n"
-    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".warden" / "bin"),))
-    monkeypatch.setattr(wp, "_fetch", _fake_server({"warden-hook": new}))
+    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".palivane" / "bin"),))
+    monkeypatch.setattr(wp, "_fetch", _fake_server({"palivane-hook": new}))
     cache: dict = {}
     n = wp.self_update({"url": "https://w", "token": "t"}, cache, say=lambda *a: None)
     assert n == 1
     assert p.read_bytes() == new
     assert os.stat(p).st_mode & 0o111          # still executable
     assert cache["update_checked_at_epoch"] > 0
-    assert not list(p.parent.glob("*.warden-new"))   # no temp files left behind
+    assert not list(p.parent.glob("*.palivane-new"))   # no temp files left behind
 
 
 def test_self_update_skips_unchanged(tmp_path, monkeypatch):
     body = b"#!/usr/bin/env python3\n# current\n"
-    _installed(tmp_path, "warden-hook", body)
-    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".warden" / "bin"),))
-    monkeypatch.setattr(wp, "_fetch", _fake_server({"warden-hook": body}))
+    _installed(tmp_path, "palivane-hook", body)
+    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".palivane" / "bin"),))
+    monkeypatch.setattr(wp, "_fetch", _fake_server({"palivane-hook": body}))
     assert wp.self_update({"url": "https://w", "token": "t"}, {}, say=lambda *a: None) == 0
 
 
@@ -156,7 +156,7 @@ def test_self_update_rejects_content_that_fails_hash_check(tmp_path, monkeypatch
     and the working copy is left untouched."""
     old = b"#!/usr/bin/env python3\n# old\n"
     p = _installed(tmp_path, "tampered", old)
-    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".warden" / "bin"),))
+    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".palivane" / "bin"),))
     # manifest advertises one body; the server returns different bytes for "tampered"
     monkeypatch.setattr(wp, "_fetch", _fake_server({"tampered": b"promised bytes\n"}))
     assert wp.self_update({"url": "https://w", "token": "t"}, {}, say=lambda *a: None) == 0
@@ -164,36 +164,36 @@ def test_self_update_rejects_content_that_fails_hash_check(tmp_path, monkeypatch
 
 
 def test_self_update_never_installs_files_not_already_present(tmp_path, monkeypatch):
-    _installed(tmp_path, "warden-hook")
-    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".warden" / "bin"),))
+    _installed(tmp_path, "palivane-hook")
+    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".palivane" / "bin"),))
     monkeypatch.setattr(wp, "_fetch", _fake_server({
-        "warden-hook": b"new\n", "warden-secrets": b"brand new tool\n"}))
+        "palivane-hook": b"new\n", "palivane-secrets": b"brand new tool\n"}))
     wp.self_update({"url": "https://w", "token": "t"}, {}, say=lambda *a: None)
-    assert not (tmp_path / ".warden" / "bin" / "warden-secrets").exists()
+    assert not (tmp_path / ".palivane" / "bin" / "palivane-secrets").exists()
 
 
 def test_self_update_honors_server_kill_switch(tmp_path, monkeypatch):
-    p = _installed(tmp_path, "warden-hook")
-    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".warden" / "bin"),))
+    p = _installed(tmp_path, "palivane-hook")
+    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".palivane" / "bin"),))
     monkeypatch.setattr(wp, "_fetch",
-                        _fake_server({"warden-hook": b"new\n"}, self_update=False))
+                        _fake_server({"palivane-hook": b"new\n"}, self_update=False))
     assert wp.self_update({"url": "https://w", "token": "t"}, {}, say=lambda *a: None) == 0
     assert b"old" in p.read_bytes()
 
 
 def test_self_update_honors_env_opt_out(tmp_path, monkeypatch):
-    p = _installed(tmp_path, "warden-hook")
-    monkeypatch.setenv("WARDEN_NO_SELF_UPDATE", "1")
-    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".warden" / "bin"),))
-    monkeypatch.setattr(wp, "_fetch", _fake_server({"warden-hook": b"new\n"}))
+    p = _installed(tmp_path, "palivane-hook")
+    monkeypatch.setenv("PALIVANE_NO_SELF_UPDATE", "1")
+    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".palivane" / "bin"),))
+    monkeypatch.setattr(wp, "_fetch", _fake_server({"palivane-hook": b"new\n"}))
     assert wp.self_update({"url": "https://w", "token": "t"}, {}, say=lambda *a: None) == 0
     assert b"old" in p.read_bytes()
 
 
 def test_self_update_throttled_to_once_a_day(tmp_path, monkeypatch):
-    _installed(tmp_path, "warden-hook")
-    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".warden" / "bin"),))
-    monkeypatch.setattr(wp, "_fetch", _fake_server({"warden-hook": b"new\n"}))
+    _installed(tmp_path, "palivane-hook")
+    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".palivane" / "bin"),))
+    monkeypatch.setattr(wp, "_fetch", _fake_server({"palivane-hook": b"new\n"}))
     from datetime import datetime, timezone
     cache = {"update_checked_at_epoch": int(datetime.now(timezone.utc).timestamp())}
     assert wp.self_update({"url": "https://w", "token": "t"}, cache, say=lambda *a: None) == 0
@@ -203,19 +203,19 @@ def test_self_update_throttled_to_once_a_day(tmp_path, monkeypatch):
 
 
 def test_self_update_survives_unreachable_backend(tmp_path, monkeypatch):
-    p = _installed(tmp_path, "warden-hook")
-    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".warden" / "bin"),))
+    p = _installed(tmp_path, "palivane-hook")
+    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".palivane" / "bin"),))
     monkeypatch.setattr(wp, "_fetch", lambda *a, **k: None)   # every request fails
     assert wp.self_update({"url": "https://w", "token": "t"}, {}, say=lambda *a: None) == 0
     assert b"old" in p.read_bytes()          # fail-open: working copy preserved
 
 
 def test_self_update_skips_unwritable_copies(tmp_path, monkeypatch):
-    p = _installed(tmp_path, "warden-hook")
+    p = _installed(tmp_path, "palivane-hook")
     os.chmod(p, 0o555)                        # e.g. an MDM-managed, root-owned install
     try:
-        monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".warden" / "bin"),))
-        monkeypatch.setattr(wp, "_fetch", _fake_server({"warden-hook": b"new\n"}))
+        monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".palivane" / "bin"),))
+        monkeypatch.setattr(wp, "_fetch", _fake_server({"palivane-hook": b"new\n"}))
         assert wp.self_update({"url": "https://w", "token": "t"}, {},
                               say=lambda *a: None) == 0
         assert b"old" in p.read_bytes()
@@ -224,6 +224,6 @@ def test_self_update_skips_unwritable_copies(tmp_path, monkeypatch):
 
 
 def test_posture_ua_and_version_are_consistent():
-    src = (_CLI / "warden-posture").read_text()
-    assert 'f"warden-posture/{VERSION}"' in src
-    assert wp.VERSION == client_versions()["warden-posture"]
+    src = (_CLI / "palivane-posture").read_text()
+    assert 'f"palivane-posture/{VERSION}"' in src
+    assert wp.VERSION == client_versions()["palivane-posture"]

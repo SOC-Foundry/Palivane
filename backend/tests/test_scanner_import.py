@@ -85,7 +85,7 @@ def test_scan_import_endpoint_records(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "imp", "actor": "ci@acme.com"}).json()["token"]
     r = raw_client.post("/api/scan/import",
                         json={"tool": "trufflehog", "results": _TRUFFLEHOG_JSONL, "host": "ci-1"},
-                        headers={"X-Warden-Token": key}).json()
+                        headers={"X-Palivane-Token": key}).json()
     assert r["scanned"] == 2
     assert r["verified_live"] == 1
     by_path = {f["path"]: f for f in r["findings"]}
@@ -98,5 +98,5 @@ def test_scan_import_endpoint_records(client, raw_client):
 def test_scan_import_unknown_tool_400(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "imp2", "actor": "ci@acme.com"}).json()["token"]
     r = raw_client.post("/api/scan/import", json={"tool": "nope", "results": "[]"},
-                        headers={"X-Warden-Token": key})
+                        headers={"X-Palivane-Token": key})
     assert r.status_code == 400

@@ -31,7 +31,7 @@ def test_mcp_config_flags_pinned_cve(client, raw_client, monkeypatch):
         "files": {"command": "npx", "args": ["-y", "@acme/mcp-files@1.0.0"]},   # pinned -> OSV
     }})
     r = raw_client.post("/api/scan/mcp-config", json={"content": cfg},
-                        headers={"X-Warden-Token": key})
+                        headers={"X-Palivane-Token": key})
     assert r.status_code == 200
     srv = next((s for s in r.json()["servers"] if s["name"] == "files"), None)
     assert srv is not None and srv["severity"] == "critical"
@@ -42,5 +42,5 @@ def test_clean_unpinned_config_still_allowed(client, raw_client):
     # Unpinned npx (the common case) must NOT be flagged — no noise.
     key = client.post("/api/apikeys", json={"label": "ci", "actor": "ci@acme.com"}).json()["token"]
     cfg = json.dumps({"mcpServers": {"files": {"command": "npx", "args": ["-y", "server-fs", "./data"]}}})
-    r = raw_client.post("/api/scan/mcp-config", json={"content": cfg}, headers={"X-Warden-Token": key})
+    r = raw_client.post("/api/scan/mcp-config", json={"content": cfg}, headers={"X-Palivane-Token": key})
     assert r.status_code == 200 and r.json()["action"] == "allow"

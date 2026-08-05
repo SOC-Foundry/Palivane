@@ -1,6 +1,6 @@
 """MCP server reputation / provenance — beyond the allowlist and TOFU pinning.
 
-The allowlist answers "is this server approved?"; the warden-mcp binary pin answers "did
+The allowlist answers "is this server approved?"; the palivane-mcp binary pin answers "did
 this server change since first run?". Neither catches the **postmark-mcp** shape: a
 *trusted, named* package whose ownership is taken over and a malicious version published —
 the config looks unchanged and the pin is first-seen. This adds provenance + freshness
@@ -61,7 +61,7 @@ def registry_freshness(eco: str, name: str, timeout: float = 4.0) -> dict | None
         return None
     try:
         url = f"https://registry.npmjs.org/{urllib.parse.quote(name, safe='@/')}"
-        req = urllib.request.Request(url, headers={"User-Agent": "warden-mcp-reputation/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "palivane-mcp-reputation/1.0"})
         with urllib.request.urlopen(req, timeout=timeout) as r:
             doc = json.loads(r.read())
         times = doc.get("time") or {}
