@@ -81,6 +81,10 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   real-time **SIEM push forwarder** (generic JSON / Splunk HEC / CEF). The webhook and SIEM
   URLs are SSRF-guarded; the SIEM token is write-only (`siem_token_set` is the only readback).
   All outbound sends are fire-and-forget and fail open — a down collector never blocks capture.
+  `siem_naming` (per tenant) picks the brand key in the wire format — Splunk sourcetype
+  `<naming>:finding` and the S3 path `<naming>/findings/…`. Tenants from before the Palivane
+  rebrand stay on `warden` (their dashboards/pipelines key on it); new tenants get
+  `palivane`; switchable in Settings → SIEM.
 
 - **Input / DoS bounds + outbound-fetch hardening.** A server-side request-body limit
   (`PALIVANE_MAX_BODY_BYTES`, ~12 MB → 413) plus per-field `max_length`/`max_items` caps on all

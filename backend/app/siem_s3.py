@@ -41,23 +41,26 @@ def _client(region: str, key_id: str, secret: str):
         return c
 
 
-def _key(prefix: str) -> str:
+def _key(prefix: str, naming: str = "warden") -> str:
     p = (prefix or "").strip().strip("/")
     now = time.gmtime()
     day = time.strftime("%Y/%m/%d", now)
     uid = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
-    base = f"warden/findings/{day}/{uid}.json"
+    # Tenant-selected brand segment: existing tenants' pipelines (Panther/Athena/Glue)
+    # point at the pre-rebrand warden/findings/ prefix; new tenants use palivane/findings/.
+    base = f"{naming}/findings/{day}/{uid}.json"
     return f"{p}/{base}" if p else base
 
 
-def _put(bucket: str, prefix: str, region: str, key_id: str, secret: str, fields: dict) -> tuple[bool, str]:
+def _put(bucket: str, prefix: str, region: str, key_id: str, secret: str, fields: dict,
+         naming: str = "warden") -> tuple[bool, str]:
     """PUT one finding object to S3. Returns (ok, detail). boto3 imported lazily."""
     try:
         s3 = _client(region, key_id, secret)
     except Exception as e:      # boto3 not installed
         return False, f"boto3 unavailable: {e}"
     try:
-        s3.put_object(Bucket=bucket, Key=_key(prefix),
+        s3.put_object(Bucket=bucket, Key=_key(prefix, naming),
                       Body=json.dumps(fields).encode(), ContentType="application/json")
         return True, ""
     except Exception as e:
@@ -66,7 +69,7 @@ def _put(bucket: str, prefix: str, region: str, key_id: str, secret: str, fields
 
 def forward_s3(bucket: str, prefix: str, region: str, key_id: str, secret: str,
                min_severity: str, verdict: dict, subject: str = "", actor: str = "",
-               surface: str = "", org: str = "") -> None:
+               surface: str = "", org: str = "", naming: str = "warden") -> None:
     """Deliver a finding to the tenant's S3 sink if configured and severity >= min_severity.
     Non-blocking; failures are swallowed (delivery is best-effort, like the HTTP push)."""
     if not (bucket and key_id and secret):
@@ -75,10 +78,11 @@ def forward_s3(bucket: str, prefix: str, region: str, key_id: str, secret: str,
         return
     fields = siem._fields(verdict, subject, actor, surface, org)
     from .dispatch import submit
-    submit(_put, bucket, prefix, region, key_id, secret, fields)
+    submit(_put, bucket, prefix, region, key_id, secret, fields, naming=naming)
 
 
-def test(bucket: str, prefix: str, region: str, key_id: str, secret: str) -> tuple[bool, str]:
+def test(bucket: str, prefix: str, region: str, key_id: str, secret: str,
+         naming: str = "warden") -> tuple[bool, str]:
     """Synchronously write a sample object so the console can validate the config."""
     if not (bucket and key_id and secret):
         return False, "bucket + AWS key id + secret are required"
@@ -86,4 +90,4 @@ def test(bucket: str, prefix: str, region: str, key_id: str, secret: str) -> tup
                            "signals": [{"category": "secret_leak"}]},
                           subject="Palivane S3 test event", actor="warden", surface="test", org="")
     fields["event"] = "test"
-    return _put(bucket, prefix, region, key_id, secret, fields)
+    return _put(bucket, prefix, region, key_id, secret, fields, naming=naming)

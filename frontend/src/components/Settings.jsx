@@ -105,14 +105,17 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   // --- SIEM forwarding ---
   const [siemCfg, setSiemCfg] = useState({
     url: tenant?.siem_url || "", token: "", min: tenant?.siem_min_severity || "high",
-    format: tenant?.siem_format || "json", tokenSet: !!tenant?.siem_token_set,
+    format: tenant?.siem_format || "json", naming: tenant?.siem_naming || "warden",
+    tokenSet: !!tenant?.siem_token_set,
   });
   async function saveSiem() {
     try {
-      const payload = { siem_url: siemCfg.url, siem_min_severity: siemCfg.min, siem_format: siemCfg.format };
+      const payload = { siem_url: siemCfg.url, siem_min_severity: siemCfg.min,
+                        siem_format: siemCfg.format, siem_naming: siemCfg.naming };
       if (siemCfg.token) payload.siem_token = siemCfg.token;   // write-only; only send if changed
       const t = await api.updateTenant(payload);
-      onTenant?.(t); setSiemCfg((s) => ({ ...s, token: "", tokenSet: !!t.siem_token_set })); flash("SIEM saved.");
+      onTenant?.(t); setSiemCfg((s) => ({ ...s, token: "", tokenSet: !!t.siem_token_set,
+                                          naming: t.siem_naming || "warden" })); flash("SIEM saved.");
     } catch (e) { err(e); }
   }
   async function testSiem() {
@@ -562,6 +565,11 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
               <option value="splunk_hec">Splunk HEC</option>
               <option value="cef">CEF (syslog)</option>
             </select></label>
+          <label>Event naming
+            <select value={siemCfg.naming} onChange={(e) => setSiemCfg((s) => ({ ...s, naming: e.target.value }))}>
+              <option value="palivane">palivane (current brand)</option>
+              <option value="warden">warden (legacy, pre-rebrand)</option>
+            </select></label>
           <label>Forward severity ≥
             <select value={siemCfg.min} onChange={(e) => setSiemCfg((s) => ({ ...s, min: e.target.value }))}>
               <option value="low">low</option>
@@ -576,7 +584,10 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         </div>
         <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Pushes each finding at/above
            the threshold as it's captured; SSRF-guarded and fail-open (a down collector never
-           blocks capture). Internal/private endpoints are blocked — use a reachable collector.</p>
+           blocks capture). Internal/private endpoints are blocked — use a reachable collector.
+           Event naming sets the Splunk sourcetype (<code>{siemCfg.naming}:finding</code>) and the
+           S3 object path below — keep <em>warden</em> if your dashboards/pipelines already
+           key on it.</p>
       </div>
 
       {/* SIEM S3 / data-lake delivery */}
@@ -591,7 +602,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
             <input placeholder="my-palivane-logs"
                    value={s3Cfg.bucket} onChange={(e) => setS3Cfg((s) => ({ ...s, bucket: e.target.value }))} /></label>
           <label>Prefix (optional)
-            <input placeholder="warden/"
+            <input placeholder="acme/"
                    value={s3Cfg.prefix} onChange={(e) => setS3Cfg((s) => ({ ...s, prefix: e.target.value }))} /></label>
           <label>Region
             <input placeholder="us-east-1"
@@ -608,8 +619,9 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <button type="button" className="mini-btn" onClick={testS3}>Write test object</button>
         </div>
         <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Objects are written under
-           <code> &lt;prefix&gt;/warden/findings/YYYY/MM/DD/…json</code>. Credentials are stored
-           write-only. Grant the key <code>s3:PutObject</code> on the bucket only.</p>
+           <code> &lt;prefix&gt;/{siemCfg.naming}/findings/YYYY/MM/DD/…json</code> (path follows the
+           SIEM event-naming setting above). Credentials are stored write-only. Grant the key
+           <code> s3:PutObject</code> on the bucket only.</p>
       </div>
 
       {/* Usage */}

@@ -75,6 +75,10 @@ class Tenant(Base):
     siem_token = Column(String(1024), default="")     # bearer / HEC token (write-only via API)
     siem_min_severity = Column(String(16), default="high")
     siem_format = Column(String(16), default="json")  # json | splunk_hec | cef
+    # Brand key in the SIEM wire format: Splunk sourcetype "<naming>:finding" and the S3
+    # object path "<naming>/findings/…". Existing tenants stay "warden" (their dashboards/
+    # pipelines key on it — migration backfill); new tenants get "palivane".
+    siem_naming = Column(String(16), default="palivane")
     # SIEM/data-lake delivery to S3 (independent of the HTTP push above): batched-ish per-
     # finding JSON objects to a bucket a Panther S3 log source / Athena / Snowflake can ingest.
     siem_s3_bucket = Column(String(255), default="")
@@ -165,6 +169,7 @@ class Tenant(Base):
                 "siem_url": self.siem_url or "",
                 "siem_min_severity": self.siem_min_severity or "high",
                 "siem_format": self.siem_format or "json",
+                "siem_naming": self.siem_naming or "warden",
                 "siem_s3_bucket": self.siem_s3_bucket or "",
                 "siem_s3_prefix": self.siem_s3_prefix or "",
                 "siem_s3_region": self.siem_s3_region or "",
