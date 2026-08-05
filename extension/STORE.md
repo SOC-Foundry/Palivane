@@ -1,4 +1,4 @@
-# Publishing the Warden extension to the Chrome Web Store / Edge Add-ons
+# Publishing the Palivane extension to the Chrome Web Store / Edge Add-ons
 
 This is the listing copy, the review answers (permissions + privacy), and the
 step-by-step submission. The repo ships everything a reviewer needs; what's left is
@@ -10,7 +10,7 @@ account-bound and must be done from your own developer account.
   `action.default_icon`). The 128px icon is what the store requires.
 - **Manifest V3**, single-purpose, no remote code — `injected.js` is packaged and loaded
   via `web_accessible_resources` (reviewers reject extensions that fetch remote JS).
-- **Packaging** — `./build.sh` produces `warden-shadow-ai-guard-<version>.zip` with the
+- **Packaging** — `./build.sh` produces `palivane-shadow-ai-guard-<version>.zip` with the
   icons included (and fails if the 128px icon is missing).
 
 ## What only you can do (account-bound)
@@ -40,7 +40,7 @@ but a private/unlisted store item is the easiest install path.
 
 ## Listing copy (paste into the dashboard)
 
-**Name:** Warden — Shadow-AI Guard
+**Name:** Palivane — Shadow-AI Guard
 
 **Summary (≤132 chars):** Stops secrets, PII, and proprietary data from being pasted into
 AI tools — scans prompts and warns or blocks before they're sent.
@@ -48,18 +48,18 @@ AI tools — scans prompts and warns or blocks before they're sent.
 **Category:** Productivity (or Developer Tools)
 
 **Detailed description:**
-> Warden — Shadow-AI Guard inspects prompts you send to external AI tools (ChatGPT,
+> Palivane — Shadow-AI Guard inspects prompts you send to external AI tools (ChatGPT,
 > Claude, Gemini, Microsoft Copilot, Perplexity, Mistral, DeepSeek, Grok, Google AI
 > Studio, Poe) for secrets, credentials, PII, and proprietary source code, and warns or
 > blocks **before the prompt leaves your browser**.
 >
-> Detection runs on your organization's self-hosted Warden backend; the extension is the
+> Detection runs on your organization's self-hosted Palivane backend; the extension is the
 > capture client. It fails open — if the backend is unreachable, your AI tools keep
 > working untouched. Configuration (backend URL, token, enforce mode) is set by your
 > administrator via Options or managed enterprise policy.
 >
 > This is an organizational security tool. It is intended to be deployed by an
-> administrator against a Warden backend you operate.
+> administrator against a Palivane backend you operate.
 
 ---
 
@@ -74,9 +74,9 @@ AI tools — scans prompts and warns or blocks before they're sent.
 | Permission | Why it's needed |
 | --- | --- |
 | `storage` | Store the admin's configuration (backend URL, ingest token, enforce flag) and read enterprise **managed** policy. |
-| `identity` | Self-serve sign-in: `chrome.identity.launchWebAuthFlow` opens the organization's Warden console so the user authenticates (login/SSO) and the extension receives a per-user, tenant-scoped token. No Google account data is read; it's only the OAuth-style redirect back to the extension. |
+| `identity` | Self-serve sign-in: `chrome.identity.launchWebAuthFlow` opens the organization's Palivane console so the user authenticates (login/SSO) and the extension receives a per-user, tenant-scoped token. No Google account data is read; it's only the OAuth-style redirect back to the extension. |
 | `host_permissions` — `claude.ai`, `chatgpt.com`, `chat.openai.com`, `gemini.google.com`, `copilot.microsoft.com`, `m365.cloud.microsoft`, `www.bing.com`, `perplexity.ai`, `chat.mistral.ai`, `chat.deepseek.com`, `grok.com`, `aistudio.google.com`, `poe.com` | Run the content/injected script on these AI tools to read the prompt text before submission so it can be scanned. The extension acts **only** on these AI hosts. |
-| `host_permissions` — `localhost` / `127.0.0.1` | Allow talking to a Warden backend running locally during evaluation. Remove these two from `manifest.json` before a public listing if you only use a hosted backend. |
+| `host_permissions` — `localhost` / `127.0.0.1` | Allow talking to a Palivane backend running locally during evaluation. Remove these two from `manifest.json` before a public listing if you only use a hosted backend. |
 
 **Remote code:** No. The extension executes no remotely-hosted code — all logic ships in
 the package. It sends prompt text to an admin-configured backend and receives a JSON
@@ -85,7 +85,7 @@ verdict; no code is fetched or evaluated.
 **Data use disclosures (Chrome "Privacy practices" tab):**
 - **What's collected:** the text of prompts the user submits to the supported AI tools
   (so it can be scanned), plus an optional user identifier set by the admin.
-- **Where it goes:** **only** to the Warden backend your organization operates
+- **Where it goes:** **only** to the Palivane backend your organization operates
   (`POST /api/ingest/ai-usage`). It is **not** sent to the extension's developer or any
   third party.
 - Check: *not sold to third parties*, *not used for purposes unrelated to the single
@@ -118,10 +118,10 @@ require users to re-accept permissions, so call the host change out explicitly.
 ## Submit — Chrome Web Store
 
 ```bash
-cd extension && ./build.sh          # -> warden-shadow-ai-guard-<version>.zip  (dev: localhost)
+cd extension && ./build.sh          # -> palivane-shadow-ai-guard-<version>.zip  (dev: localhost)
 
 # PROD build for hosted SaaS — bakes your console/ingest URL and drops localhost:
-WARDEN_SAAS_URL=https://app.warden.io ./build.sh   # -> ...-<version>-prod.zip
+PALIVANE_SAAS_URL=https://app.palivane.io ./build.sh   # -> ...-<version>-prod.zip
 ```
 
 The prod build sets the extension's default `backendUrl` + `consoleUrl` to your SaaS URL
@@ -146,7 +146,7 @@ TOKEN=$(curl -s -X POST https://oauth2.googleapis.com/token \
   -d client_id=$CWS_CLIENT_ID -d client_secret=$CWS_SECRET \
   -d refresh_token=$CWS_REFRESH -d grant_type=refresh_token | jq -r .access_token)
 curl -X PUT -H "Authorization: Bearer $TOKEN" -H "x-goog-api-version: 2" \
-  -T warden-shadow-ai-guard-<version>.zip \
+  -T palivane-shadow-ai-guard-<version>.zip \
   "https://www.googleapis.com/upload/chromewebstore/v1.1/items/$CWS_ITEM_ID"
 curl -X POST -H "Authorization: Bearer $TOKEN" -H "x-goog-api-version: 2" \
   "https://www.googleapis.com/chromewebstore/v1.1/items/$CWS_ITEM_ID/publish"
@@ -164,11 +164,11 @@ The store assigns a **permanent extension ID** on first upload (visible in the d
 item URL — you don't have to publish to see it). That ID connects publishing to the rest
 of the deploy pipeline:
 
-1. **Tell Warden the ID** so generated installers write the browser managed policy under
+1. **Tell Palivane the ID** so generated installers write the browser managed policy under
    the right key. Set it once on the backend and every `/api/provision` installer + the
    Connect page uses it automatically:
    ```
-   WARDEN_EXTENSION_ID=<the store item id>
+   PALIVANE_EXTENSION_ID=<the store item id>
    ```
    (env var; passed through `docker-compose.yml`). Restart the backend.
 

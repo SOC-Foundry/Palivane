@@ -26,7 +26,7 @@ def test_normalize_trufflehog_masks_and_maps():
     out = si.normalize_trufflehog(_TRUFFLEHOG_JSONL)
     assert len(out) == 2
     gh = out[0]
-    assert gh["secret_types"] == ["GitHub token"]        # detector name -> Warden label
+    assert gh["secret_types"] == ["GitHub token"]        # detector name -> Palivane label
     assert gh["path"] == "/repo/.env" and gh["line"] == 4
     assert gh["verified"] is True and gh["source"] == "trufflehog"
     assert "LIVEabcdefghijklmnop" not in gh["masked"] and "••••" in gh["masked"]  # masked

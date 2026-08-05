@@ -929,12 +929,12 @@ def enroll(body: EnrollRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/enroll/check")
-def enroll_check(x_warden_token: str = Header(default=""), db: Session = Depends(get_db)):
+def enroll_check(x_palivane_token: str = Header(default=""), db: Session = Depends(get_db)):
     """Cheap liveness check for a device key (`ak_…`): 200 if still valid, 401 if revoked
     or rotated. Lets the CLI apiKeyHelper (palivane-reenroll) tell "my cached key is dead,
     re-enroll" from "still good" without spending a gateway/ingest call or burning quota."""
     from .gateway import _resolve_api_key
-    principal = _resolve_api_key(x_warden_token, db)   # raises 401 on a bad/expired key
+    principal = _resolve_api_key(x_palivane_token, db)   # raises 401 on a bad/expired key
     return {"ok": True, "actor": principal.actor}
 
 

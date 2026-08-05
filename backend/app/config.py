@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 def _env(new_name: str, legacy_name: str, default: str = "") -> str:
     """Read a PALIVANE_* env var, falling back to the legacy WARDEN_* name (backward
-    compatibility during the Warden->Palivane rename), then to `default`. New name wins."""
+    compatibility during the Palivane->Palivane rename), then to `default`. New name wins."""
     import os as _os
     v = _os.getenv(new_name)
     if not v:
@@ -68,7 +68,7 @@ class Settings:
     # NAT has several legit users, so it's looser than the per-email limit).
     login_ip_max_fails: int = int(_env("PALIVANE_LOGIN_IP_MAX_FAILS", "WARDEN_LOGIN_IP_MAX_FAILS", "20"))
     login_window: int = int(_env("PALIVANE_LOGIN_WINDOW", "WARDEN_LOGIN_WINDOW", "300"))
-    # Redact secrets/PII from stored finding content so Warden's own DB isn't a
+    # Redact secrets/PII from stored finding content so Palivane's own DB isn't a
     # plaintext-secret honeypot. Detection still runs on the raw content.
     redact_findings: bool = _env("PALIVANE_REDACT_FINDINGS", "WARDEN_REDACT_FINDINGS", "true").lower() in ("1", "true", "yes")
     # Encrypt stored finding content at rest (decrypted on read for authorized admins).

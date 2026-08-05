@@ -177,26 +177,14 @@ app.add_middleware(
     # header (not cookies), so credentials aren't needed and methods/headers are explicit.
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Palivane-Token", "X-Palivane-Token",
-                   "X-Palivane-Agent", "X-Palivane-Agent", "x-api-key",
+    allow_headers=["Authorization", "Content-Type", "X-Palivane-Token",
+                   "X-Palivane-Agent", "x-api-key",
                    "anthropic-version", "anthropic-beta"],
 )
 
 
 @app.middleware("http")
 async def _guard(request: Request, call_next):
-    # Header rename backward-compat (Palivane -> Palivane): capture clients send the new
-    # X-Palivane-Token / X-Palivane-Agent; already-deployed clients send X-Palivane-*. Alias
-    # the new names onto the legacy ones the route handlers read, so both work through the
-    # deprecation window. Done here (once) rather than on all 16 ingest endpoints. New wins.
-    _hdrs = request.scope.get("headers")
-    if _hdrs is not None:
-        present = {k for k, _ in _hdrs}
-        for new, legacy in ((b"x-palivane-token", b"x-warden-token"),
-                            (b"x-palivane-agent", b"x-warden-agent")):
-            nv = next((v for k, v in _hdrs if k == new), None)
-            if nv is not None and legacy not in present:
-                _hdrs.append((legacy, nv))
     # Reject oversized bodies up front (DoS/OOM) — the detectors run many regex passes over
     # request content, so bound it before parsing. Backs the per-field Pydantic caps.
     cl = request.headers.get("content-length")
@@ -696,26 +684,26 @@ def _enforce_rate(db: Session, tenant_id: int | None) -> None:
                                 headers={"Retry-After": "3600"})
 
 
-def _ingest_auth(x_warden_token: str, db: Session) -> tuple[int | None, str]:
+def _ingest_auth(x_palivane_token: str, db: Session) -> tuple[int | None, str]:
     """Resolve (tenant_id, default_actor) from a per-tenant API key (`ak_…`) or the
     shared EXTENSION_INGEST_TOKEN. Used by the token-gated ingest & scan endpoints, which
     are deployed via policy/CI and so authenticate with a capture token, not a user JWT."""
     from .security import looks_like_agent_token, looks_like_api_key, looks_like_jwt
 
-    if looks_like_api_key(x_warden_token):
+    if looks_like_api_key(x_palivane_token):
         from .gateway import _resolve_api_key
-        principal = _resolve_api_key(x_warden_token, db)   # 401s on bad/expired key
+        principal = _resolve_api_key(x_palivane_token, db)   # 401s on bad/expired key
         return principal.tenant_id, principal.actor
-    if looks_like_agent_token(x_warden_token):
-        ag = _resolve_agent_token(x_warden_token, db)      # 401s on bad/disabled agent
+    if looks_like_agent_token(x_palivane_token):
+        ag = _resolve_agent_token(x_palivane_token, db)      # 401s on bad/disabled agent
         return ag.tenant_id, ag.name
-    if looks_like_jwt(x_warden_token):                     # OIDC/workload agent identity
-        ag = _resolve_agent_jwt(x_warden_token, db)
+    if looks_like_jwt(x_palivane_token):                     # OIDC/workload agent identity
+        ag = _resolve_agent_jwt(x_palivane_token, db)
         if ag is None:
             raise HTTPException(status_code=401, detail="unrecognized or invalid agent JWT")
         return ag.tenant_id, ag.name
     token = settings.extension_ingest_token
-    if not token or not hmac.compare_digest(x_warden_token, token):
+    if not token or not hmac.compare_digest(x_palivane_token, token):
         raise HTTPException(status_code=401, detail="invalid or missing ingest token")
     return _ingest_tenant_id(db), ""
 
@@ -796,11 +784,11 @@ def _resolve_agent_jwt(token: str, db: Session):
                         detail=f"agent JWT rejected: {last_err or 'no matching audience'}")
 
 
-def _capture_agent(x_warden_token: str, x_warden_agent: str, tenant_id, db: Session) -> str:
+def _capture_agent(x_palivane_token: str, x_palivane_agent: str, tenant_id, db: Session) -> str:
     """Best-effort agent name for attribution: an `X-Palivane-Agent` header or the primary token
     when it's an `ag_…` or an OIDC/workload JWT. Returns "" if none/mismatched (never raises)."""
     from .security import hash_token, looks_like_agent_token, looks_like_jwt
-    tok = (x_warden_agent or "").strip() or (x_warden_token or "")
+    tok = (x_palivane_agent or "").strip() or (x_palivane_token or "")
     if looks_like_agent_token(tok):
         row = (db.query(Agent)
                  .filter(Agent.token_hash == hash_token(tok), Agent.active.is_(True))
@@ -850,8 +838,8 @@ def _score_ai_usage(content: str, actor: str, tool: str, destination: str,
 @app.post("/api/ingest/ai-usage")
 def ingest_ai_usage(
     body: AIUsageIngest,
-    x_warden_token: str = Header(default=""),
-    x_warden_agent: str = Header(default=""),
+    x_palivane_token: str = Header(default=""),
+    x_palivane_agent: str = Header(default=""),
     user_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
@@ -860,10 +848,10 @@ def ingest_ai_usage(
     Authenticated by a per-tenant API key (`ak_…`, minted in the console) or the shared
     static EXTENSION_INGEST_TOKEN — not a user JWT — so it can be deployed via policy.
     Returns an action the client enforces: allow / warn / block."""
-    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     actor = body.user or default_actor
-    agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
+    agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool, user_agent)
     result, meta = _score_ai_usage(body.content, actor, body.tool, body.destination,
                                    tenant_id, agent, db)
@@ -909,14 +897,14 @@ def _sanctioned_list(raw: str) -> list[dict]:
 @app.post("/api/exception-request")
 def exception_request(
     body: ExceptionRequest,
-    x_warden_token: str = Header(default=""),
+    x_palivane_token: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """A user asking their security team to allow a blocked send (from the extension's block
     modal). Recorded to the audit log so an admin can review/act — turns a hard wall into a
     request, which reduces shadow-AI workarounds. Token-gated (the extension's capture key)."""
     from . import audit_log
-    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     audit_log.record(
         db, tenant_id, body.user or default_actor, "exception_requested",
@@ -943,8 +931,8 @@ _OTLP_MAX_RECORDS = 1000   # cap Claude-Code events processed per OTLP export (D
 @app.post("/v1/logs")
 async def otlp_logs(
     request: Request,
-    x_warden_token: str = Header(default=""),
-    x_warden_agent: str = Header(default=""),
+    x_palivane_token: str = Header(default=""),
+    x_palivane_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """OTLP/HTTP logs receiver (JSON) — the fileless alternative to the `palivane-otel` CLI.
@@ -955,9 +943,9 @@ async def otlp_logs(
     post-hoc, so this records but can't block. Always returns OTLP success: a telemetry
     export must never back up because of us (bad records are skipped, not rejected)."""
     from . import otel
-    tenant_id, default_actor = _ingest_auth(x_warden_token, db)   # 401 on a bad token
+    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)   # 401 on a bad token
     _enforce_rate(db, tenant_id)
-    agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
+    agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     try:
         doc = await request.json()
     except Exception:
@@ -1202,17 +1190,17 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
 @app.post("/api/ingest/mcp")
 def ingest_mcp(
     body: MCPIngest,
-    x_warden_token: str = Header(default=""),
-    x_warden_agent: str = Header(default=""),
+    x_palivane_token: str = Header(default=""),
+    x_palivane_agent: str = Header(default=""),
     user_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Score an MCP JSON-RPC activity a capture client (proxy, palivane-hook, palivane-mcp)
     saw (agentic tool-use). Token-gated; returns an action the client enforces on the
     `mcp` surface: allow/warn/block. Benign verdicts aren't persisted by default."""
-    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
-    agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
+    agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     _record_heartbeat(db, tenant_id, body.user or default_actor, "mcp", body.tool, user_agent)
     return _score_mcp(body, tenant_id, default_actor, _tenant_mcp_allow(tenant_id, db),
                       _tenant_mcp_block_severity(tenant_id, db), db, agent=agent,
@@ -1222,17 +1210,17 @@ def ingest_mcp(
 @app.post("/api/ingest/mcp/batch")
 def ingest_mcp_batch(
     body: MCPBatchIngest,
-    x_warden_token: str = Header(default=""),
-    x_warden_agent: str = Header(default=""),
+    x_palivane_token: str = Header(default=""),
+    x_palivane_agent: str = Header(default=""),
     user_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Score many MCP activities in one request — for long-lived capture clients
     (palivane-mcp) that would otherwise post per tool call. Counts as a single ingest
     request against the tenant's sensor quota. Returns per-item verdicts, index-aligned."""
-    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
-    agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
+    agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     if body.items:
         _record_heartbeat(db, tenant_id, body.items[0].user or default_actor, "mcp",
                           body.items[0].tool, user_agent)
@@ -1268,7 +1256,7 @@ def _parse_mcp_servers(content: str) -> list[dict]:
 @app.post("/api/scan/mcp-config")
 def scan_mcp_config(
     body: MCPConfigScan,
-    x_warden_token: str = Header(default=""),
+    x_palivane_token: str = Header(default=""),
     user_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
@@ -1279,7 +1267,7 @@ def scan_mcp_config(
     sensitive paths, and secrets committed in the config. Agentless: it reads config, not
     a running process. Token-gated; returns an overall action + per-server detail."""
     from urllib.parse import urlparse
-    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     _record_heartbeat(db, tenant_id, default_actor, "posture", "mcp-config", user_agent)
 
@@ -1378,7 +1366,7 @@ def _vcs_filter(signals: list) -> list:
 @app.post("/api/scan/code")
 def scan_code(
     body: CodeScanRequest,
-    x_warden_token: str = Header(default=""),
+    x_palivane_token: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Scan code/diffs (pre-commit hook, CI) for secrets & PII before they reach a repo.
@@ -1386,7 +1374,7 @@ def scan_code(
     Reuses the detection engine but keeps only data-loss categories — a repo is meant to
     hold code, so source_code_leak is ignored. Token-gated like the ingest endpoint.
     Returns an overall action plus per-file detail for files that aren't clean."""
-    tenant_id, _ = _ingest_auth(x_warden_token, db)
+    tenant_id, _ = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
 
     flagged: list[dict] = []
@@ -1414,7 +1402,7 @@ def scan_code(
 @app.post("/api/scan/s3")
 def scan_s3(
     body: S3Scan,
-    x_warden_token: str = Header(default=""),
+    x_palivane_token: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Scan an S3 bucket's objects for secrets & PII at rest (palivane-s3-scan streams them
@@ -1422,7 +1410,7 @@ def scan_s3(
     flag: a world-readable bucket holding sensitive data is the crown-jewel case, so a
     non-clean object in a public bucket is escalated to `block` and tagged for alerting.
     Token-gated. Returns an overall action + per-object detail; `public` echoes exposure."""
-    tenant_id, _ = _ingest_auth(x_warden_token, db)
+    tenant_id, _ = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
 
     flagged: list[dict] = []
@@ -1458,7 +1446,7 @@ def scan_s3(
 @app.post("/api/scan/deps")
 def scan_deps(
     body: CodeScanRequest,
-    x_warden_token: str = Header(default=""),
+    x_palivane_token: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Vet dependency manifests (package.json, requirements.txt) for supply-chain risk in
@@ -1469,7 +1457,7 @@ def scan_deps(
     Token-gated; returns an overall action plus per-file detail for manifests that aren't clean."""
     from .detectors.dep_guard import extract_pinned
     from . import osv
-    tenant_id, _ = _ingest_auth(x_warden_token, db)
+    tenant_id, _ = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
 
     files = body.files[:1000]
@@ -1517,14 +1505,14 @@ def scan_deps(
 @app.post("/api/scan/ide-extensions")
 def scan_ide_extensions(
     body: IDEExtScan,
-    x_warden_token: str = Header(default=""),
+    x_palivane_token: str = Header(default=""),
     user_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Vet a list of IDE extensions (from `.vscode/extensions.json` in CI, or an MDM software
     inventory) for known-bad / unapproved editor plugins. Agentless — reads a list, not a
     running IDE. Token-gated; returns an action plus the flagged extensions."""
-    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     _record_heartbeat(db, tenant_id, default_actor, "posture", "ide-extensions", user_agent)
     content = body.content or "\n".join(body.extensions)
@@ -1547,8 +1535,8 @@ def scan_ide_extensions(
 @app.post("/api/scan/agent-config")
 def scan_agent_config(
     body: AgentConfigScan,
-    x_warden_token: str = Header(default=""),
-    x_warden_agent: str = Header(default=""),
+    x_palivane_token: str = Header(default=""),
+    x_palivane_agent: str = Header(default=""),
     user_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
@@ -1556,10 +1544,10 @@ def scan_agent_config(
     flags) for unsafe autonomy — YOLO / auto-apply / auto-run / skip-permissions. Attributed
     to the submitting user, so findings show per-registered-user. Token-gated for the posture
     sensor / cursor hook."""
-    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     actor = body.user or default_actor
-    agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
+    agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     _record_heartbeat(db, tenant_id, actor, "posture", body.tool or "agent-config", user_agent)
     item = AnalysisInput(content=body.content, sender=actor,
                          channel=f"{body.tool or 'agent'}-config", surface=Surface.IDE,
@@ -1578,8 +1566,8 @@ def scan_agent_config(
 @app.post("/api/scan/agent-rules")
 def scan_agent_rules(
     body: AgentRulesScan,
-    x_warden_token: str = Header(default=""),
-    x_warden_agent: str = Header(default=""),
+    x_palivane_token: str = Header(default=""),
+    x_palivane_agent: str = Header(default=""),
     user_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
@@ -1589,10 +1577,10 @@ def scan_agent_rules(
     comment), exfiltration or hide-from-user directives, and tool-poisoning preambles.
     These files are authority the agent obeys on every turn but a reviewer skims, so they
     are a distinct attack surface. Token-gated for the posture sensor / git plane."""
-    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     actor = body.user or default_actor
-    agent = _capture_agent(x_warden_token, x_warden_agent, tenant_id, db)
+    agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     _record_heartbeat(db, tenant_id, actor, "posture", "agent-rules", user_agent)
     item = AnalysisInput(
         content=body.content, sender=actor,
@@ -1614,7 +1602,7 @@ def scan_agent_rules(
 @app.post("/api/scan/ci")
 def scan_ci(
     body: CIScan,
-    x_warden_token: str = Header(default=""),
+    x_palivane_token: str = Header(default=""),
     user_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
@@ -1628,7 +1616,7 @@ def scan_ci(
     pipeline should fail: it honors the org's ci_block_severity, which defaults to
     `critical` so confirmed exposure fails a build while posture debt warns."""
     from . import discovery
-    tenant_id, default_actor = _ingest_auth(x_warden_token, db)
+    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     repo = (body.repo or "").strip()
     actor = repo or default_actor
@@ -1670,14 +1658,14 @@ def scan_ci(
 @app.post("/api/scan/oversharing")
 def scan_oversharing(
     body: OversharingScan,
-    x_warden_token: str = Header(default=""),
+    x_palivane_token: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Need-to-know check: given an LLM response and the user who received it, flag when it
     surfaced restricted data (confidential / PII / keywords) the recipient isn't permitted to
     see — the "LLM oversharing" problem. Rules come from the tenant's need-to-know config.
     For enterprise search / Copilot / RAG integrations to call with each answer."""
-    tenant_id, _default_actor = _ingest_auth(x_warden_token, db)
+    tenant_id, _default_actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     # Need-to-know authorization uses ONLY the explicitly-supplied recipient — never the
     # token's own actor. Falling back to default_actor here let the integration's API-key
@@ -1705,7 +1693,7 @@ def scan_oversharing(
 @app.post("/api/scan/secrets")
 def scan_secrets(
     body: SecretScan,
-    x_warden_token: str = Header(default=""),
+    x_palivane_token: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Record credentials the local `palivane-secrets` scanner found AT REST on a device
@@ -1713,7 +1701,7 @@ def scan_secrets(
     scanner sends only metadata (type, path, masked preview, world-readability) — never
     the raw secret. Each file is scored as a `credential_at_rest` finding; the response
     carries a per-item remediation plan. Token-gated."""
-    tenant_id, actor = _ingest_auth(x_warden_token, db)
+    tenant_id, actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     host = (body.host or "").strip()
     results = []
@@ -1747,7 +1735,7 @@ def _record_secret(it: SecretAtRest, host: str, actor: str, tenant_id, record: b
 @app.post("/api/scan/import")
 def scan_import(
     body: ScannerImport,
-    x_warden_token: str = Header(default=""),
+    x_palivane_token: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
     """Ingest a third-party secret scanner's output (TruffleHog / Gitleaks / GitGuardian)
@@ -1755,7 +1743,7 @@ def scan_import(
     one alert/SIEM path across every scanner. The raw secret is masked at ingest and never
     persisted; TruffleHog's `Verified` flag escalates a finding to critical. Token-gated."""
     from . import scanner_import
-    tenant_id, actor = _ingest_auth(x_warden_token, db)
+    tenant_id, actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     normalized = scanner_import.normalize(body.tool, body.results)
     if not normalized:

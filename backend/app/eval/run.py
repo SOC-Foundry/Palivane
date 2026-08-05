@@ -95,7 +95,7 @@ def _fmt_row(label: str, m: dict) -> str:
 
 
 def print_report(rep: dict) -> None:
-    print(f"Warden detection evaluation  (judge: {'on' if rep['judge_enabled'] else 'off'})")
+    print(f"Palivane detection evaluation  (judge: {'on' if rep['judge_enabled'] else 'off'})")
     print(f"corpus: {rep['count']} examples\n")
     print(f"operating point: severity >= {rep['cutoff']}")
     print(f"  {'surface':<12} {'prec':<8} {'recall':<7} {'f1':<7} pos/total")
@@ -126,7 +126,7 @@ def print_report(rep: dict) -> None:
 
 
 def main(argv: list[str]) -> int:
-    p = argparse.ArgumentParser(prog="app.eval", description="Warden detection evaluation")
+    p = argparse.ArgumentParser(prog="app.eval", description="Palivane detection evaluation")
     p.add_argument("--surface", choices=[s.value for s in Surface])
     p.add_argument("--cutoff", choices=CUTOFF_ORDER, default="suspicious")
     p.add_argument("--corpus", help="path to a corpus directory (default: bundled)")

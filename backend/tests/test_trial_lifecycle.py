@@ -84,9 +84,9 @@ def test_stages_progress_as_clock_runs(db_factory, monkeypatch):
     assert trial_mod.run_notices(db, now=NOW + timedelta(days=5)) == 1   # d2
     assert trial_mod.run_notices(db, now=NOW + timedelta(days=7)) == 1   # expired
     assert [s[1] for s in sent] == [
-        "Your Warden trial for Trialco ends in 6 days",
-        "Your Warden trial for Trialco ends in 1 day",
-        "Your Warden trial for Trialco has ended",
+        "Your Palivane trial for Trialco ends in 6 days",
+        "Your Palivane trial for Trialco ends in 1 day",
+        "Your Palivane trial for Trialco has ended",
     ]
 
 

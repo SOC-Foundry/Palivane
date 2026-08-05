@@ -1,7 +1,7 @@
 """Red-team bench: obfuscate clearly-malicious payloads and measure detection.
 
 Runs each base malicious payload through a battery of evasion transforms and scores
-it with the real Warden engine (`run_analysis`, offline detectors only — the LLM
+it with the real Palivane engine (`run_analysis`, offline detectors only — the LLM
 judge is off unless an API key is configured). Prints a payload x transform matrix
 and, prominently, the list of BYPASSES (a transform that dropped the verdict to
 allow-level: benign/low).

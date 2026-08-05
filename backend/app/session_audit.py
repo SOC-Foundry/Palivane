@@ -3,12 +3,12 @@ agent product.
 
 An enterprise runs Claude Code, Cursor, Codex, Gemini CLI, Copilot, browser AI, and MCP
 side by side, and each keeps its own partial log in its own shape (Cursor omits tool
-arguments; GitHub caps retention at 180 days; a browser leaves none). Warden already
+arguments; GitHub caps retention at 180 days; a browser leaves none). Palivane already
 captures all of them into one findings store — this module reframes that store as a single
 **normalized, cross-vendor audit trail**: every captured event mapped to a common shape
 (when / who / which vendor tool / what action / on what / verdict / kill-chain stage), and
 grouped per actor into sessions with a rollup. It's the "one console for every agent's
-activity" view no single-vendor tool can produce, and Warden's own retention
+activity" view no single-vendor tool can produce, and Palivane's own retention
 (`retention_days`) is independent of any vendor's cap.
 
 Read-only over existing findings; the session grouping key is (tenant, actor) within a
@@ -147,7 +147,7 @@ def export(db: Session, tenant_id: int, org: str, actor: str = "", days: int = 7
            fmt: str = "jsonl", limit: int = 5000) -> str:
     """Serialize the normalized cross-vendor audit trail for a SIEM/data lake — the whole
     tenant's activity, or one actor's — as newline-delimited JSON or CEF. This is the same
-    normalized shape the console shows; retention is Warden's, so it spans past any single
+    normalized shape the console shows; retention is Palivane's, so it spans past any single
     vendor's log cap. Chronological (oldest first — a timeline a SIEM appends to)."""
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max(1, days))
     q = db.query(Finding).filter(Finding.tenant_id == tenant_id, Finding.sender != "",
@@ -162,7 +162,7 @@ def export(db: Session, tenant_id: int, org: str, actor: str = "", days: int = 7
         lines = []
         for e in events:
             lines.append(_cef({
-                "vendor": "TachTech", "product": "Warden",
+                "vendor": "TachTech", "product": "Palivane",
                 "categories": e["categories"] or [e["surface"]],
                 "subject": f"[{e['vendor']}] {e['action']}",
                 "severity": e["severity"], "surface": e["surface"],

@@ -8,10 +8,10 @@ from __future__ import annotations
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
 REQUESTS = Counter(
-    "warden_http_requests_total", "HTTP requests", ["method", "path", "status"],
+    "palivane_http_requests_total", "HTTP requests", ["method", "path", "status"],
 )
 LATENCY = Histogram(
-    "warden_http_request_duration_seconds", "HTTP request latency (s)", ["method", "path"],
+    "palivane_http_request_duration_seconds", "HTTP request latency (s)", ["method", "path"],
 )
 
 

@@ -1,4 +1,4 @@
-"""OTLP-logs receiver (POST /v1/logs): the fileless claude-otel bridge into Warden."""
+"""OTLP-logs receiver (POST /v1/logs): the fileless claude-otel bridge into Palivane."""
 
 from __future__ import annotations
 

@@ -55,27 +55,27 @@ def due_stage(tenant: Tenant, now: datetime) -> str:
 
 
 def _compose(stage: str, tenant: Tenant, days_left: int) -> tuple[str, str]:
-    """(subject, body) for one notice. Plain text, like every other Warden email."""
+    """(subject, body) for one notice. Plain text, like every other Palivane email."""
     org = tenant.name or tenant.slug
     console = email_mod.base_url()
     upgrade = (f"To keep everything: open the console ({console}), go to Settings → Your "
                f"plan, and hit \"Request upgrade\" — or just reply to {settings.sales_email}.")
     if stage == "expired":
         return (
-            f"Your Warden trial for {org} has ended",
-            f"The Warden trial for \"{org}\" ended today.\n\n"
+            f"Your Palivane trial for {org} has ended",
+            f"The Palivane trial for \"{org}\" ended today.\n\n"
             "Your fleet is still protected: capture and detection keep running, and your "
             "findings are intact. But paid features (alerts, the MDM pack, SSO, SIEM and "
             "S3 delivery, the LLM judge) can no longer be configured, and user/API-key/"
             f"ingest limits are reduced.\n\n{upgrade}\n")
     when = f"{days_left} day{'s' if days_left != 1 else ''}"
     return (
-        f"Your Warden trial for {org} ends in {when}",
-        f"The Warden trial for \"{org}\" ends in {when}.\n\n"
+        f"Your Palivane trial for {org} ends in {when}",
+        f"The Palivane trial for \"{org}\" ends in {when}.\n\n"
         "After that, capture and detection keep running (a lapsed trial never stops "
         "protecting your fleet), but alerts, the MDM pack, SSO, SIEM/S3 delivery, and the "
         "LLM judge switch off, and user/API-key/ingest limits tighten.\n\n"
-        f"{upgrade}\n\nIf Warden isn't a fit, no action is needed — this is the "
+        f"{upgrade}\n\nIf Palivane isn't a fit, no action is needed — this is the "
         f"{'last reminder before expiry' if stage == 'd2' else 'halfway reminder'}.\n")
 
 

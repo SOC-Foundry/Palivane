@@ -2,7 +2,7 @@
 
 Each check maps to one or more signal keys (a Signal's `effective_check` — an explicit
 `check` string or its category). Disabling a check drops its signals before scoring, so a
-tenant can tune exactly what Warden flags. The catalog is the single source of truth for
+tenant can tune exactly what Palivane flags. The catalog is the single source of truth for
 the console's Policies page and for validating tenant updates.
 """
 

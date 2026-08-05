@@ -122,7 +122,7 @@ class ExceptionRequest(BaseModel):
 
 class ScannerImport(BaseModel):
     """Raw output from a third-party secret scanner (TruffleHog / Gitleaks / GitGuardian)
-    to normalize into Warden findings. `results` may be parsed JSON or the raw string the
+    to normalize into Palivane findings. `results` may be parsed JSON or the raw string the
     tool emits (JSON array or JSONL). The raw secret is masked at ingest, never persisted."""
     tool: str = Field(min_length=1)
     results: object = None
@@ -373,12 +373,12 @@ class EnrollRequest(BaseModel):
 
 class ProvisionRequest(BaseModel):
     platform: Literal["macos", "windows", "linux", "both"] = "both"
-    base_url: str = Field(min_length=1, description="public Warden URL devices reach, e.g. https://warden.corp")
+    base_url: str = Field(min_length=1, description="public Palivane URL devices reach, e.g. https://warden.corp")
     label: str = "device-provision"
     actor: str = ""               # per-user/device identity for attribution
     extension_id: str = ""        # published Chrome/Edge extension id (optional)
     proxy_host: str = ""          # host:port of the egress proxy (optional, desktop app)
-    # Reroute Claude Code's API traffic through the Warden gateway — bills the org's
+    # Reroute Claude Code's API traffic through the Palivane gateway — bills the org's
     # provider key. Default off: Claude Code keeps its own sign-in (Pro/Max subscription
     # or API account) and managed-settings locks login to claude.ai (forceLoginMethod).
     route_gateway: bool = False

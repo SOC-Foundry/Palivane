@@ -1,4 +1,4 @@
-"""Vendor-signed licenses for self-hosted Warden (Team / Enterprise tiers).
+"""Vendor-signed licenses for self-hosted Palivane (Team / Enterprise tiers).
 
 On the hosted SaaS the license IS the `tenant.plan` column (vendor ops runs
 `python -m app.users set-plan` when a deal closes). Self-hosted deployments can't be
@@ -171,7 +171,7 @@ def licensed_seats() -> int:
 
 def _cli(argv: list[str]) -> int:
     import argparse
-    p = argparse.ArgumentParser(prog="app.licensing", description="Warden vendor license tool")
+    p = argparse.ArgumentParser(prog="app.licensing", description="Palivane vendor license tool")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     kg = sub.add_parser("keygen", help="generate the vendor Ed25519 signing keypair")

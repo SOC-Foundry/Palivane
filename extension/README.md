@@ -1,10 +1,10 @@
-# Warden — Shadow-AI Guard (browser extension)
+# Palivane — Shadow-AI Guard (browser extension)
 
 A Manifest V3 extension that catches **secrets, PII, and proprietary data being pasted
 into external AI tools** (ChatGPT, Claude, Gemini, Microsoft Copilot, Perplexity, Mistral
 Le Chat, DeepSeek, Grok, Google AI Studio, Poe) — and warns or blocks **before the prompt
 is sent**. It's the Module C (`ai_usage`) capture client; all detection happens in the
-Warden backend (`POST /api/ingest/ai-usage`).
+Palivane backend (`POST /api/ingest/ai-usage`).
 
 > **Coverage caveat.** Capture keys off per-vendor request shapes (`SEND_PATTERNS` +
 > `extractPrompt` in `injected.js`). The newer hosts (Perplexity, Mistral, DeepSeek,
@@ -25,7 +25,7 @@ Warden backend (`POST /api/ingest/ai-usage`).
 
 `content.js` injects `injected.js` into the page, which wraps `window.fetch`. When the
 page submits a prompt, the interceptor extracts the prompt text, asks the background
-worker for a verdict (which calls Warden), and:
+worker for a verdict (which calls Palivane), and:
 
 - **allow** → sends normally,
 - **warn** → sends, but shows an amber banner,
@@ -41,7 +41,7 @@ through untouched — the extension never breaks the user's tool.
 
 ## Backend setup
 
-Set a shared token and the tenant on the Warden backend, then restart it:
+Set a shared token and the tenant on the Palivane backend, then restart it:
 
 ```
 EXTENSION_INGEST_TOKEN=<a long random string>
@@ -51,7 +51,7 @@ INGEST_TENANT=<tenant slug, e.g. acme>
 ## Build a package
 
 ```bash
-./build.sh            # -> warden-shadow-ai-guard-<version>.zip
+./build.sh            # -> palivane-shadow-ai-guard-<version>.zip
 ```
 
 ## Install — pilot (one machine)

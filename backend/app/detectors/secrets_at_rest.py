@@ -8,7 +8,7 @@ can rotate/lock down before a stealer gets there.
 
 Privacy by design: the scanner detects locally and sends only **metadata** — the secret
 *type*, file path, line, a masked preview, and whether the file is world/group-readable.
-The raw secret never leaves the device, so Warden itself never becomes the exfil path.
+The raw secret never leaves the device, so Palivane itself never becomes the exfil path.
 This detector reads that metadata (item.metadata) and emits the scored signal.
 """
 

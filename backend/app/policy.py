@@ -6,7 +6,7 @@ matter — credentials and PII. This lets you sanction such a tool for *code* wh
 catching secrets/PII leaving through it.
 
 Suppressions are keyed by a tool id derived from the request (User-Agent or an explicit
-`x-warden-tool` header / `tool` field). Defaults below; override per deployment with
+`x-palivane-tool` header / `tool` field). Defaults below; override per deployment with
 `GATEWAY_TOOL_SUPPRESS="claude-code:source_code_leak;cursor:source_code_leak"`.
 """
 

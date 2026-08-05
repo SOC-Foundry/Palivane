@@ -1,6 +1,6 @@
-"""False-positive benchmark for Warden's detection engine.
+"""False-positive benchmark for Palivane's detection engine.
 
-Warden runs in *monitor mode*: benign employee prompts, ordinary code, and normal
+Palivane runs in *monitor mode*: benign employee prompts, ordinary code, and normal
 tool calls flow through the engine every day. Every time a genuinely clean input is
 escalated to warn (`monitor`/`quarantine`) or block, or tagged with a data-loss
 signal (secret_leak / pii_exposure / confidential_data / source_code_leak / ...),

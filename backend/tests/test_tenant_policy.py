@@ -52,7 +52,7 @@ def test_tenant_enforce_on_while_global_off(client, monkeypatch):
     client.patch("/api/tenant", json={"gateway_enforce": "on"})       # tenant enforces
     r = client.post("/v1/chat/completions", json=INJECTION)
     assert r.status_code == 403
-    assert r.json()["error"]["type"] == "warden_blocked"
+    assert r.json()["error"]["type"] == "palivane_blocked"
 
 
 def test_tenant_enforce_on_anthropic_route(client, monkeypatch):
@@ -61,7 +61,7 @@ def test_tenant_enforce_on_anthropic_route(client, monkeypatch):
     r = client.post("/v1/messages", json=ANTHROPIC_INJECTION)
     assert r.status_code == 400
     assert r.json()["error"]["type"] == "invalid_request_error"
-    assert "Blocked by Warden" in r.json()["error"]["message"]
+    assert "Blocked by Palivane" in r.json()["error"]["message"]
 
 
 def test_tenant_monitor_off_while_global_on(client, monkeypatch):

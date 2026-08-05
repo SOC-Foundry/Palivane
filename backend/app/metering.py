@@ -64,7 +64,7 @@ def check_resource_quota(db: Session, tenant_id: int, name: str, current_count: 
         from .plans import plan_of  # noqa: PLC0415
         hint = ("contact sales@tachtech.net to raise it"
                 if plan_of(tenant) != "enterprise"
-                else "contact your Warden operator to raise it")
+                else "contact your Palivane operator to raise it")
         raise HTTPException(
             status_code=403,
             detail=f"{name.replace('_', ' ')} quota reached ({limit}) — {hint}")

@@ -33,7 +33,7 @@ def test_forward_gated_by_config_and_severity(monkeypatch):
     assert len(calls) == 1
     bucket, prefix, region, kid, sec, fields = calls[0]
     assert bucket == "b" and region == "us-east-1"
-    assert fields["product"] == "Warden" and fields["severity"] == "critical" and fields["org"] == "acme"
+    assert fields["product"] == "Palivane" and fields["severity"] == "critical" and fields["org"] == "acme"
     # below threshold -> dropped
     calls.clear()
     s3.forward_s3("b", "p", "us-east-1", "AKIA_x", "sek", "high",

@@ -85,7 +85,7 @@ def chrome_forcelist(extension_id: str, update_url: str = "") -> str:
     return f"{eid};{update_url.strip() or _WEBSTORE_UPDATE_URL}"
 
 
-def browser_extension_policy(warden_id: str, warden_update_url: str = "", lockdown: bool = False,
+def browser_extension_policy(palivane_id: str, palivane_update_url: str = "", lockdown: bool = False,
                              blocked_ids: list[str] | None = None, allowed_ids: list[str] | None = None,
                              blocked_hosts: list[str] | None = None) -> str:
     """Chrome/Edge `ExtensionSettings` policy — govern *third-party* browser extensions,
@@ -106,9 +106,9 @@ def browser_extension_policy(warden_id: str, warden_update_url: str = "", lockdo
         default["runtime_blocked_hosts"] = blocked_hosts
     settings: dict = {"*": default}
 
-    settings[warden_id or "REPLACE_WITH_WARDEN_EXTENSION_ID"] = {
+    settings[palivane_id or "REPLACE_WITH_PALIVANE_EXTENSION_ID"] = {
         "installation_mode": "force_installed",
-        "update_url": (warden_update_url.strip() or _WEBSTORE_UPDATE_URL)}
+        "update_url": (palivane_update_url.strip() or _WEBSTORE_UPDATE_URL)}
     for i in allowed_ids:
         settings[i] = {"installation_mode": "allowed"}
     for i in blocked_ids:
@@ -218,7 +218,7 @@ def gemini_config(base_url: str, gemini_hook_path: str = "/usr/local/bin/palivan
         "C:\\ProgramData\\gemini-cli\\settings.json) or merge into ~/.gemini/settings.json.\n"
         "Monitor by default (confirmed secret/PII leaks in prompts still hard-block); set\n"
         "WARDEN_ENFORCE=true to block on any high-risk verdict. Provide PALIVANE_URL/\n"
-        f"PALIVANE_TOKEN via machine env (PALIVANE_URL={b}) or ~/.gemini/warden.json.\n\n"
+        f"PALIVANE_TOKEN via machine env (PALIVANE_URL={b}) or ~/.gemini/palivane.json.\n\n"
         "Gemini SDK/API clients — the SYSTEM PROXY in this pack. It inspects all three\n"
         "modes once your root CA is trusted (see ca-note.txt):\n"
         "  - API-key mode  -> generativelanguage.googleapis.com\n"
@@ -283,7 +283,7 @@ def codex_note(base_url: str, codex_hook_path: str) -> str:
         "user-defined hooks). User-level hooks need a one-time /hooks trust approval.\n"
         "Monitor by default (confirmed secret/PII leaks in prompts still hard-block); set\n"
         "WARDEN_ENFORCE=true to block on any high-risk verdict. Provide PALIVANE_URL/\n"
-        f"PALIVANE_TOKEN via machine env (PALIVANE_URL={b}) or ~/.codex/warden.json.\n"
+        f"PALIVANE_TOKEN via machine env (PALIVANE_URL={b}) or ~/.codex/palivane.json.\n"
     )
 
 
@@ -291,8 +291,8 @@ def copilot_hooks(copilot_hook_path: str) -> str:
     """GitHub Copilot hook file registering palivane-copilot-hook on its two lifecycle
     events (Copilot's schema: version: 1, lowerCamelCase events, a `bash` command,
     per-hook timeoutSec). One file serves all three Copilot surfaces: drop in
-    ~/.copilot/hooks/warden.json per device (Copilot CLI), or commit/push as
-    .github/hooks/warden.json per repo — where it also drives VS Code agent mode and
+    ~/.copilot/hooks/palivane.json per device (Copilot CLI), or commit/push as
+    .github/hooks/palivane.json per repo — where it also drives VS Code agent mode and
     the CLOUD coding agent (hooks run inside the Actions environment; deploy the hook
     script in a setup step there)."""
     entry = {"type": "command", "bash": copilot_hook_path, "timeoutSec": 10}
@@ -320,9 +320,9 @@ def copilot_note(base_url: str, copilot_hook_path: str) -> str:
         "                           output here; the proxy remains the prompt-DLP backstop)\n"
         "One hook file covers all three Copilot surfaces:\n"
         f"  - Copilot CLI: deploy palivane-copilot-hook to {copilot_hook_path} and drop\n"
-        "    copilot-hooks.json in ~/.copilot/hooks/warden.json (or push via MDM).\n"
+        "    copilot-hooks.json in ~/.copilot/hooks/palivane.json (or push via MDM).\n"
         "  - VS Code agent mode + the CLOUD coding agent: commit copilot-hooks.json as\n"
-        "    .github/hooks/warden.json in each governed repo — the cloud agent runs it\n"
+        "    .github/hooks/palivane.json in each governed repo — the cloud agent runs it\n"
         "    inside the Actions environment (install the hook script in a setup step).\n"
         "    Note: GitHub's own cloud-agent firewall does NOT cover MCP servers; this\n"
         "    hook plus palivane-mcp wrapping of ~/.copilot/mcp-config.json closes that.\n"
@@ -334,7 +334,7 @@ def copilot_note(base_url: str, copilot_hook_path: str) -> str:
         "(console Settings → Enforcement, stageable per user/tool) denies high-risk tool\n"
         "calls centrally — prompts can't block at this plane. Set WARDEN_ENFORCE=true to\n"
         f"also enforce from device-local config. Provide PALIVANE_URL/PALIVANE_TOKEN via\n"
-        f"machine env (PALIVANE_URL={b}) or ~/.copilot/warden.json.\n"
+        f"machine env (PALIVANE_URL={b}) or ~/.copilot/palivane.json.\n"
     )
 
 
@@ -376,7 +376,7 @@ def cursor_note(base_url: str, hook_path: str) -> str:
         f"   Deploy palivane-cursor-hook to {hook_path} and push cursor-hooks.json to Cursor's\n"
         "   enterprise hooks path (or ~/.cursor/hooks.json). Monitor by default; set\n"
         "   WARDEN_ENFORCE=true to block. Provide PALIVANE_URL/PALIVANE_TOKEN via machine env\n"
-        f"   (PALIVANE_URL={b}) or ~/.cursor/warden.json.\n"
+        f"   (PALIVANE_URL={b}) or ~/.cursor/palivane.json.\n"
         "2. MCP servers — wrap Cursor's .cursor/mcp.json stdio servers with palivane-mcp for\n"
         "   inline tool inspection (belt-and-suspenders with beforeMCPExecution).\n"
         "3. Git plane — secrets/PII in the code Cursor commits (pre-commit hook + Action).\n"
@@ -426,7 +426,7 @@ def secrets_cron(base_url: str, secrets_path: str, engine: str = "trufflehog") -
     b = base_url.rstrip("/")
     cmd = " ".join([secrets_path, *_engine_args(engine)])
     return (f"# Palivane endpoint credential scan — daily. Runs as the target user so it can\n"
-            f"# read ~/.ssh etc. Token resolves from ~/.claude/settings.json / ~/.cursor/warden.json.\n"
+            f"# read ~/.ssh etc. Token resolves from ~/.claude/settings.json / ~/.cursor/palivane.json.\n"
             f"PALIVANE_URL={b}\n"
             f"0 3 * * * {os.getenv('USER', '<user>')} {cmd}\n")
 
@@ -529,7 +529,7 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         f"   Deploy the hook to {codex_hook_path}; see codex.txt for managed-hooks distribution.\n"
         "6c. copilot-hooks.json + copilot.txt -> GitHub Copilot hooks (palivane-copilot-hook —\n"
         "   deniable tool-call inspection; prompts observe-only at this plane). One file covers\n"
-        "   Copilot CLI (~/.copilot/hooks/), and — committed as .github/hooks/warden.json —\n"
+        "   Copilot CLI (~/.copilot/hooks/), and — committed as .github/hooks/palivane.json —\n"
         f"   VS Code agent mode + the cloud coding agent. Deploy the hook to {copilot_hook_path}.\n"
         "7. gemini.txt + gemini-settings.json -> Gemini CLI local hooks (palivane-gemini-hook —\n"
         "   prompt + tool-call inspection in every auth mode; deploy the hook to\n"

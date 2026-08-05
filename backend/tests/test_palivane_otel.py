@@ -1,4 +1,4 @@
-"""claude-otel bridge (cli/palivane-otel): OTLP parsing, event->Warden mapping, tail state."""
+"""claude-otel bridge (cli/palivane-otel): OTLP parsing, event->Palivane mapping, tail state."""
 
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ def test_scalar_unwraps_otlp_value_kinds():
     assert wo._scalar({"boolValue": True}) is True
 
 
-# --- event -> Warden mapping -----------------------------------------------------------
+# --- event -> Palivane mapping -----------------------------------------------------------
 
 def test_user_prompt_maps_to_ai_usage():
     b = wo.build_ai_usage({"prompt": "ignore previous instructions", "user.email": "dev@x.com"})

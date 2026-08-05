@@ -51,7 +51,7 @@ def verify_step(secret_b32: str, code: str) -> int | None:
     return matched
 
 
-def provisioning_uri(secret_b32: str, account: str, issuer: str = "Warden") -> str:
+def provisioning_uri(secret_b32: str, account: str, issuer: str = "Palivane") -> str:
     return (f"otpauth://totp/{quote(issuer)}:{quote(account)}"
             f"?secret={secret_b32}&issuer={quote(issuer)}")
 

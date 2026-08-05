@@ -2,7 +2,7 @@
 # Package the extension into a zip for the Chrome Web Store / Edge Add-ons / self-hosting.
 #
 #   ./build.sh                                  # dev build (localhost defaults, as source)
-#   WARDEN_SAAS_URL=https://app.warden.io ./build.sh   # PROD build for hosted SaaS:
+#   PALIVANE_SAAS_URL=https://app.palivane.io ./build.sh   # PROD build for hosted SaaS:
 #       - background.js  backendUrl + consoleUrl  -> the SaaS URL
 #       - manifest host_permissions: drop localhost/127.0.0.1, add the SaaS origin
 #   Source files are never modified; the prod transform happens in a temp staging copy.
@@ -10,9 +10,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 ver=$(grep -o '"version": *"[^"]*"' manifest.json | head -1 | sed 's/.*"\([0-9.]*\)"/\1/')
-saas="${WARDEN_SAAS_URL:-}"
+saas="${PALIVANE_SAAS_URL:-}"
 suffix=""; [ -n "$saas" ] && suffix="-prod"
-out="warden-shadow-ai-guard-${ver}${suffix}.zip"
+out="palivane-shadow-ai-guard-${ver}${suffix}.zip"
 out_abs="$PWD/$out"
 rm -f "$out"
 

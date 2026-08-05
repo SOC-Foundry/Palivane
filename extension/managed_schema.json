@@ -2,7 +2,7 @@
   "type": "object",
   "properties": {
     "backendUrl": {
-      "title": "Warden backend URL",
+      "title": "Palivane backend URL",
       "type": "string"
     },
     "token": {

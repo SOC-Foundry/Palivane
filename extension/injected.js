@@ -1,5 +1,5 @@
 // Runs in the PAGE context. Wraps window.fetch so we can inspect a prompt *before*
-// it's sent to the AI tool, ask Warden for a verdict, and block/warn inline.
+// it's sent to the AI tool, ask Palivane for a verdict, and block/warn inline.
 // Communicates with the content script (isolated world) via window.postMessage.
 (() => {
   const PENDING = new Map();
@@ -56,8 +56,8 @@
     return new Promise((resolve) => {
       const id = ++SEQ;
       PENDING.set(id, resolve);
-      window.postMessage({ __warden: true, kind: "scan", id, content, destination }, "*");
-      // Fail OPEN: never break the user's tool if Warden is slow/unreachable.
+      window.postMessage({ __palivane: true, kind: "scan", id, content, destination }, "*");
+      // Fail OPEN: never break the user's tool if Palivane is slow/unreachable.
       setTimeout(() => {
         if (PENDING.has(id)) { PENDING.delete(id); resolve({ action: "allow" }); }
       }, 4000);
@@ -95,24 +95,24 @@
     const OrigWS = window.WebSocket;
     if (OrigWS) {
       const WrappedWS = function (url, protocols) {
-        if (DEBUG) console.debug("[Warden] WebSocket open", url);
+        if (DEBUG) console.debug("[Palivane] WebSocket open", url);
         const ws = protocols === undefined ? new OrigWS(url) : new OrigWS(url, protocols);
         const origWsSend = ws.send.bind(ws);
         ws.send = function (data) {
           try {
             const prompt = wsPrompt(data);
             if (prompt) {
-              if (DEBUG) console.log("[Warden] ws user-send captured chars=", prompt.length,
+              if (DEBUG) console.log("[Palivane] ws user-send captured chars=", prompt.length,
                 "snippet=", prompt.slice(0, 80));
               scan(prompt, location.origin).then((verdict) => {
-                if (DEBUG) console.log("[Warden] ws verdict", verdict.action, verdict.severity, verdict.risk_score);
+                if (DEBUG) console.log("[Palivane] ws verdict", verdict.action, verdict.severity, verdict.risk_score);
                 if (verdict.action === "block") {
                   // Drop the frame — the prompt never leaves — and show the block UI.
-                  window.postMessage({ __warden: true, kind: "blocked", verdict }, "*");
+                  window.postMessage({ __palivane: true, kind: "blocked", verdict }, "*");
                   return;
                 }
                 if (verdict.action === "warn") {
-                  window.postMessage({ __warden: true, kind: "warn", verdict }, "*");
+                  window.postMessage({ __palivane: true, kind: "warn", verdict }, "*");
                 }
                 origWsSend(data);   // allowed → send the frame for real
               });
@@ -153,23 +153,23 @@
       const method = ((init && init.method) || (input && input.method) || "GET").toUpperCase();
       const bodyText = bodyToText(init && init.body);
       if (DEBUG && method === "POST") {
-        console.debug("[Warden] fetch POST", url, "match=", looksLikeSend(url),
+        console.debug("[Palivane] fetch POST", url, "match=", looksLikeSend(url),
           "bodyChars=", bodyText.length);
       }
       if (method === "POST" && looksLikeSend(url) && bodyText) {
         const prompt = extractPrompt(bodyText);
-        if (DEBUG) console.log("[Warden] captured", url, "promptChars=", (prompt || "").length,
+        if (DEBUG) console.log("[Palivane] captured", url, "promptChars=", (prompt || "").length,
           "snippet=", (prompt || "").slice(0, 80));
         if (prompt && prompt.trim()) {
           const verdict = await scan(prompt, location.origin);
-          if (DEBUG) console.log("[Warden] verdict", verdict.action, verdict.severity, verdict.risk_score);
+          if (DEBUG) console.log("[Palivane] verdict", verdict.action, verdict.severity, verdict.risk_score);
           if (verdict.action === "block") {
-            window.postMessage({ __warden: true, kind: "blocked", verdict }, "*");
-            return new Response(JSON.stringify({ error: "Blocked by Warden: sensitive data detected." }),
+            window.postMessage({ __palivane: true, kind: "blocked", verdict }, "*");
+            return new Response(JSON.stringify({ error: "Blocked by Palivane: sensitive data detected." }),
               { status: 451, headers: { "content-type": "application/json" } });
           }
           if (verdict.action === "warn") {
-            window.postMessage({ __warden: true, kind: "warn", verdict }, "*");
+            window.postMessage({ __palivane: true, kind: "warn", verdict }, "*");
           }
         }
       }
@@ -193,14 +193,14 @@
       const info = this.__warden;
       if (info && info.method === "POST" && looksLikeSend(info.url)) {
         const bodyText = bodyToText(body);
-        if (DEBUG) console.debug("[Warden] xhr POST", info.url, "match= true bodyChars=", bodyText.length);
+        if (DEBUG) console.debug("[Palivane] xhr POST", info.url, "match= true bodyChars=", bodyText.length);
         const prompt = bodyText ? extractPrompt(bodyText) : "";
         if (prompt && prompt.trim()) {
           const xhr = this, args = arguments;
           scan(prompt, location.origin).then((verdict) => {
-            if (DEBUG) console.log("[Warden] xhr verdict", verdict.action, verdict.severity, verdict.risk_score);
+            if (DEBUG) console.log("[Palivane] xhr verdict", verdict.action, verdict.severity, verdict.risk_score);
             if (verdict.action === "block") {
-              window.postMessage({ __warden: true, kind: "blocked", verdict }, "*");
+              window.postMessage({ __palivane: true, kind: "blocked", verdict }, "*");
               // Don't send. Signal a network failure so the app's error path runs;
               // the sensitive body never left the browser.
               try {
@@ -213,7 +213,7 @@
               return;
             }
             if (verdict.action === "warn") {
-              window.postMessage({ __warden: true, kind: "warn", verdict }, "*");
+              window.postMessage({ __palivane: true, kind: "warn", verdict }, "*");
             }
             origSend.apply(xhr, args);   // allowed → send for real
           });
