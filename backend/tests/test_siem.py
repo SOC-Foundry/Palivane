@@ -21,7 +21,7 @@ def test_json_format():
     req = siem._request("https://collector/x", "tok", "json", _fields())
     assert req.headers["Authorization"] == "Bearer tok"
     body = json.loads(req.data)
-    assert body["product"] == "Warden" and body["severity"] == "high"
+    assert body["product"] == "Palivane" and body["severity"] == "high"
     assert body["categories"] == ["secret_leak", "pii_exposure"] and body["org"] == "acme"
 
 
@@ -36,7 +36,7 @@ def test_cef_format():
     req = siem._request("https://collector/x", "", "cef", _fields())
     assert req.get_header("Content-type") == "text/plain"
     line = req.data.decode()
-    assert line.startswith("CEF:0|TachTech|Warden|1.0|")
+    assert line.startswith("CEF:0|TachTech|Palivane|1.0|")
     assert "secret_leak" in line and "cn1=75" in line and "suser=bob@acme.com" in line
 
 

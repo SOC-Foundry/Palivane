@@ -285,7 +285,7 @@ def test_write_copilot_installs_hooks_and_creds(monkeypatch, tmp_path):
 
 
 def test_write_copilot_owns_its_file_only(monkeypatch, tmp_path):
-    # A user hook file in ~/.copilot/hooks/ is never touched — Warden owns palivane.json.
+    # A user hook file in ~/.copilot/hooks/ is never touched — Palivane owns palivane.json.
     monkeypatch.setenv("HOME", str(tmp_path))
     hooks_dir = tmp_path / ".copilot" / "hooks"
     hooks_dir.mkdir(parents=True)

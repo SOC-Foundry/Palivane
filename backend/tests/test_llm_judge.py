@@ -43,7 +43,7 @@ def test_all_providers_failed_degrades_loudly(caplog):
     det = LLMJudgeDetector()
     det._backends = [("anthropic", _Boom(), "claude-x"), ("openai", _Boom(), "gpt-4o")]
     import logging
-    with caplog.at_level(logging.ERROR, logger="warden.judge"):
+    with caplog.at_level(logging.ERROR, logger="palivane.judge"):
         sigs = det.analyze(_ITEM)
     # Fails open (a single zero-weight marker, request not sunk) but logs an ERROR — not silent.
     assert len(sigs) == 1 and sigs[0].title == "LLM judge unavailable"

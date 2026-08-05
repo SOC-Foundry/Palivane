@@ -43,7 +43,7 @@ def test_browser_extension_policy_governed():
     es = pol["ExtensionSettings"]
     assert es["*"]["installation_mode"] == "allowed"                    # governed default
     assert es["*"]["runtime_blocked_hosts"] == ["*://*.corp.example.com"]
-    assert es["wardenid"]["installation_mode"] == "force_installed"      # Warden always on
+    assert es["wardenid"]["installation_mode"] == "force_installed"      # Palivane always on
     assert es["claudeforchromeid"]["installation_mode"] == "blocked"     # AI ext blocked by ID
 
 
@@ -106,7 +106,7 @@ def test_secrets_schedule_artifacts_default_to_trufflehog():
     assert "<string>--engine</string><string>trufflehog</string>" in plist
     cron = pp.secrets_cron("https://w.acme.com", "/opt/palivane-secrets")
     assert "0 3 * * *" in cron and "/opt/palivane-secrets --engine trufflehog" in cron
-    xml = pp.secrets_win_task("https://w.acme.com", r"C:\Program Files\Warden\palivane-secrets.exe")
+    xml = pp.secrets_win_task("https://w.acme.com", r"C:\Program Files\Palivane\palivane-secrets.exe")
     assert "ScheduleByDay" in xml and "<Arguments>--engine trufflehog</Arguments>" in xml
 
 
@@ -200,7 +200,7 @@ def test_claude_managed_settings_default_keeps_own_auth():
 def test_claude_managed_settings_route_gateway_opt_in():
     s = json.loads(pp.claude_managed_settings("https://w.acme.com/", "/opt/palivane-hook",
                                               "/opt/palivane-posture", route_gateway=True))
-    # Gateway routing + Warden credentials in env (the ak_ token doubles as ingest auth).
+    # Gateway routing + Palivane credentials in env (the ak_ token doubles as ingest auth).
     # No /v1 suffix: the Anthropic SDK appends /v1/messages, so the base is the bare origin.
     assert s["env"]["ANTHROPIC_BASE_URL"] == "https://w.acme.com"
     assert s["env"]["ANTHROPIC_AUTH_TOKEN"] == s["env"]["PALIVANE_TOKEN"]

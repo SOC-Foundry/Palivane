@@ -19,7 +19,7 @@ from .models import (
     TenantSAML, TenantUpstream, User,
 )
 
-SUSPENDED_DETAIL = "this organization is suspended — contact your Warden operator"
+SUSPENDED_DETAIL = "this organization is suspended — contact your Palivane operator"
 
 
 def ensure_active(db: Session, tenant_id: int | None) -> None:

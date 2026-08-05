@@ -1,10 +1,10 @@
-// Service worker: calls the Warden AI-usage ingest endpoint and returns a verdict.
+// Service worker: calls the Palivane AI-usage ingest endpoint and returns a verdict.
 // Config (backend URL, token or enrollToken, user, enforce) comes from chrome.storage — in
 // a managed rollout these are pushed via enterprise policy (managed storage).
 
 const DEFAULTS = {
   backendUrl: "http://localhost:8090",
-  // Warden console URL for self-serve sign-in (set to your SaaS app URL before publishing;
+  // Palivane console URL for self-serve sign-in (set to your SaaS app URL before publishing;
   // in a managed rollout it's pushed via policy). Falls back to backendUrl.
   consoleUrl: "",
   token: "",
@@ -63,13 +63,13 @@ async function isManaged() {
   catch (_) { return false; }
 }
 
-// Self-serve / BYOD sign-in: open the Warden console, let the user authenticate (login or
+// Self-serve / BYOD sign-in: open the Palivane console, let the user authenticate (login or
 // SSO), and receive a per-user tenant-scoped token via the OAuth redirect. Not used on
 // managed devices (policy config wins).
 async function signIn() {
   const c = await config();
   const consoleUrl = (c.consoleUrl || c.backendUrl || "").replace(/\/$/, "");
-  if (!consoleUrl) throw new Error("Set your Warden URL first (Options).");
+  if (!consoleUrl) throw new Error("Set your Palivane URL first (Options).");
   const redirectUri = chrome.identity.getRedirectURL();          // https://<id>.chromiumapp.org/
   const state = Math.random().toString(36).slice(2);
   // device scopes the capture key so re-signing-in this browser rotates one key instead of
@@ -130,7 +130,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         if (!key) { sendResponse({ ok: false }); return; }
         const res = await fetch(c.backendUrl.replace(/\/$/, "") + "/api/exception-request", {
           method: "POST",
-          headers: { "content-type": "application/json", "X-Warden-Token": key },
+          headers: { "content-type": "application/json", "X-Palivane-Token": key },
           body: JSON.stringify({ ...msg.payload, user: c.user }),
         });
         sendResponse({ ok: res.ok });
@@ -146,7 +146,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (!key) { sendResponse({ action: "allow", reason: "unconfigured" }); return; }
       const call = (k) => fetch(c.backendUrl.replace(/\/$/, "") + "/api/ingest/ai-usage", {
         method: "POST",
-        headers: { "content-type": "application/json", "X-Warden-Token": k },
+        headers: { "content-type": "application/json", "X-Palivane-Token": k },
         body: JSON.stringify({ content: msg.content, destination: msg.destination, user: c.user }),
       });
       let res = await call(key);

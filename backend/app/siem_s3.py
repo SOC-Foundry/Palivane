@@ -84,6 +84,6 @@ def test(bucket: str, prefix: str, region: str, key_id: str, secret: str) -> tup
         return False, "bucket + AWS key id + secret are required"
     fields = siem._fields({"severity": "high", "risk_score": 75, "finding_id": 0,
                            "signals": [{"category": "secret_leak"}]},
-                          subject="Warden S3 test event", actor="warden", surface="test", org="")
+                          subject="Palivane S3 test event", actor="warden", surface="test", org="")
     fields["event"] = "test"
     return _put(bucket, prefix, region, key_id, secret, fields)

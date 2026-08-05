@@ -21,7 +21,7 @@ Covers non-streaming replies, enforce-mode buffered streams, AND monitor-mode li
 
 It also inspects **agentic tool-use** on the `mcp` surface: an AI coding agent's tool
 calls, their arguments, and their results all round-trip the model, so they're visible in
-this LLM traffic even when the tool is a *local* stdio MCP server — letting Warden catch
+this LLM traffic even when the tool is a *local* stdio MCP server — letting Palivane catch
 sensitive-file access, dangerous commands, tool poisoning, and secrets-in-results with no
 endpoint agent. This runs on the **request** (the tool_use/tool_result already in history)
 *and* on the **response** (the tool_use the model just requested) — so a dangerous action
@@ -152,7 +152,7 @@ def get_gateway_principal(request: Request, db: Session = Depends(get_db)) -> Pr
 def _resolve_gateway_agent(request: Request, primary: str, tenant_id: int,
                            db: Session) -> tuple[str, int]:
     """Authenticated agent (name, id) for least-privilege authz on the gateway: an `ag_…`
-    token in `X-Warden-Agent` (or as the primary credential) that belongs to this tenant.
+    token in `X-Palivane-Agent` (or as the primary credential) that belongs to this tenant.
     ("", 0) otherwise. The name is never self-asserted — it's resolved from a hashed token,
     so a caller can't claim a more-privileged agent to widen its role."""
     from .security import hash_token, looks_like_agent_token
@@ -222,7 +222,7 @@ def _rate_limited(db: Session, principal: "Principal", shape: str) -> JSONRespon
                             content={"error": {"message": SUSPENDED_DETAIL,
                                                "type": "forbidden", "code": "suspended"}})
     allowed, count, limit = record_and_check(db, principal.tenant_id)
-    msg = f"Warden rate limit exceeded ({limit}/min)."
+    msg = f"Palivane rate limit exceeded ({limit}/min)."
     if allowed and principal.agent_id:
         # Per-agent budget on top of the tenant's: an agent with its own rate_limit gets
         # its own minute-bucket (kind=agN), so one runaway agent can't drain the org.
@@ -230,7 +230,7 @@ def _rate_limited(db: Session, principal: "Principal", shape: str) -> JSONRespon
         if ag is not None and (ag.rate_limit or 0) > 0:
             allowed, count, limit = record_and_check(
                 db, principal.tenant_id, kind=f"ag{principal.agent_id}", limit=ag.rate_limit)
-            msg = f"Warden agent rate limit exceeded ({limit}/min for {principal.agent})."
+            msg = f"Palivane agent rate limit exceeded ({limit}/min for {principal.agent})."
     if allowed:
         return None
     if shape == "anthropic":
@@ -762,8 +762,8 @@ def _passthrough_stream(url: str, payload: dict, headers: dict, model: str = "",
 def _openai_error(verdict: dict) -> JSONResponse:
     top = verdict["signals"][0]["title"] if verdict.get("signals") else "policy violation"
     return JSONResponse(status_code=403, content={"error": {
-        "message": f"Blocked by Warden: {top} (risk {verdict['risk_score']}/{verdict['severity']}).",
-        "type": "warden_blocked", "code": "prompt_blocked",
+        "message": f"Blocked by Palivane: {top} (risk {verdict['risk_score']}/{verdict['severity']}).",
+        "type": "palivane_blocked", "code": "prompt_blocked",
         "warden": {"risk_score": verdict["risk_score"], "severity": verdict["severity"],
                      "finding_id": verdict.get("finding_id")},
     }})
@@ -774,7 +774,7 @@ def _openai_stub(model: str, verdict: dict) -> dict:
     return {
         "id": f"warden-{now}", "object": "chat.completion", "created": now, "model": model,
         "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant",
-                     "content": "[Warden gateway: no upstream configured — prompt passed inspection.]"}}],
+                     "content": "[Palivane gateway: no upstream configured — prompt passed inspection.]"}}],
         "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
         "warden": {"risk_score": verdict["risk_score"], "severity": verdict["severity"]},
     }
@@ -935,7 +935,7 @@ def _responses_stub(model: str, verdict: dict) -> dict:
         "status": "completed",
         "output": [{"type": "message", "role": "assistant", "status": "completed", "content": [
             {"type": "output_text",
-             "text": "[Warden gateway: no upstream configured — prompt passed inspection.]"}]}],
+             "text": "[Palivane gateway: no upstream configured — prompt passed inspection.]"}]}],
         "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
         "warden": {"risk_score": verdict["risk_score"], "severity": verdict["severity"]},
     }
@@ -1011,7 +1011,7 @@ def _anthropic_error(verdict: dict) -> JSONResponse:
     # the message directly. 403 stays reserved for genuine auth problems (bad/missing key).
     return JSONResponse(status_code=400, content={"type": "error", "error": {
         "type": "invalid_request_error",
-        "message": (f"Blocked by Warden: {sigs} (risk {verdict['risk_score']}/{verdict['severity']}). "
+        "message": (f"Blocked by Palivane: {sigs} (risk {verdict['risk_score']}/{verdict['severity']}). "
                     f"Remove the secret/PII — run /clear to reset the conversation."),
     }})
 
@@ -1019,7 +1019,7 @@ def _anthropic_error(verdict: dict) -> JSONResponse:
 def _anthropic_stub(model: str, verdict: dict) -> dict:
     return {
         "id": f"msg_warden_{int(time.time())}", "type": "message", "role": "assistant", "model": model,
-        "content": [{"type": "text", "text": "[Warden gateway: no upstream configured — prompt passed inspection.]"}],
+        "content": [{"type": "text", "text": "[Palivane gateway: no upstream configured — prompt passed inspection.]"}],
         "stop_reason": "end_turn", "usage": {"input_tokens": 0, "output_tokens": 0},
         "warden": {"risk_score": verdict["risk_score"], "severity": verdict["severity"]},
     }
@@ -1154,14 +1154,14 @@ def _gemini_error(verdict: dict) -> JSONResponse:
     sigs = ", ".join(s["category"] for s in verdict.get("signals", [])[:4]) or "policy violation"
     return JSONResponse(status_code=403, content={"error": {
         "code": 403, "status": "PERMISSION_DENIED",
-        "message": f"Blocked by Warden: {sigs} (risk {verdict['risk_score']}/{verdict['severity']}).",
+        "message": f"Blocked by Palivane: {sigs} (risk {verdict['risk_score']}/{verdict['severity']}).",
     }})
 
 
 def _gemini_stub(model: str, verdict: dict) -> dict:
     return {
         "candidates": [{"content": {"role": "model", "parts": [
-            {"text": "[Warden gateway: no upstream configured — prompt passed inspection.]"}]},
+            {"text": "[Palivane gateway: no upstream configured — prompt passed inspection.]"}]},
             "finishReason": "STOP", "index": 0}],
         "usageMetadata": {"promptTokenCount": 0, "candidatesTokenCount": 0, "totalTokenCount": 0},
         "modelVersion": model,

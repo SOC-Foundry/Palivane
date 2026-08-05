@@ -27,8 +27,8 @@ function renderConn(s) {
       `${s.managed ? " (managed by your organization)" : ""}.</div>`;
   } else {
     el.className = "conn muted";
-    el.innerHTML = `<div>Not connected to Warden.</div>` +
-      (s && s.managed ? "" : `<button id="signin">Sign in to Warden</button>`);
+    el.innerHTML = `<div>Not connected to Palivane.</div>` +
+      (s && s.managed ? "" : `<button id="signin">Sign in to Palivane</button>`);
   }
 }
 

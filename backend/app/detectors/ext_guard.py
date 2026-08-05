@@ -5,7 +5,7 @@ from a repo's `.vscode/extensions.json` (recommendations) scanned in CI, or an M
 software inventory — flag the ones that are known-bad or not on the org's allowlist.
 
 It reads a *list*, not a running IDE, so it needs no endpoint agent. Enforcement of the
-allowlist on the device is done by an MDM-pushed editor policy (config Warden can emit),
+allowlist on the device is done by an MDM-pushed editor policy (config Palivane can emit),
 not by this scan.
 """
 

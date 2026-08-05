@@ -2,7 +2,7 @@
 prompts before they leave the browser, with verdicts from a running backend.
 
 Loads the real `extension/injected.js` into a Chromium page that mimics how
-ChatGPT/Claude submit a prompt; the 'background' relay calls the live Warden
+ChatGPT/Claude submit a prompt; the 'background' relay calls the live Palivane
 ai-usage endpoint. Skipped unless pointed at a running backend:
 
     EXTENSION_INGEST_TOKEN=ext-demo-token-123 INGEST_TENANT=demo  # on the backend

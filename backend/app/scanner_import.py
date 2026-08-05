@@ -1,6 +1,6 @@
-"""Normalize third-party secret-scanner output into Warden's at-rest finding shape.
+"""Normalize third-party secret-scanner output into Palivane's at-rest finding shape.
 
-Warden's own regex engine is one detector; TruffleHog (~800 detectors + live
+Palivane's own regex engine is one detector; TruffleHog (~800 detectors + live
 *verification*), Gitleaks, and GitGuardian bring breadth and, in TruffleHog's case, proof
 that a secret is actually active. This module lets any of them feed the same finding
 pipeline (unified console, scoring, dedup, alerts, SIEM) via POST /api/scan/import.
@@ -22,7 +22,7 @@ def mask(secret: str) -> str:
     return f"{s[:4]}••••{s[-4:]}"
 
 
-# TruffleHog / Gitleaks detector names -> Warden's canonical secret labels, so the at-rest
+# TruffleHog / Gitleaks detector names -> Palivane's canonical secret labels, so the at-rest
 # scorer weights them like a native match. Unmapped detectors keep their own name (still
 # scored, just at the medium default unless verified).
 _TRUFFLEHOG_MAP = {

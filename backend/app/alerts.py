@@ -22,7 +22,7 @@ def _payload(verdict: dict, subject: str, actor: str, surface: str) -> dict:
     tops = top_signals(verdict.get("signals"), 3)
     lines = "".join(f"\n  • {t['title']}" + (f" — `{t['evidence']}`" if t["evidence"] else "")
                     for t in tops)
-    text = (f":shield: *Warden {verdict.get('severity', '?').upper()}* — "
+    text = (f":shield: *Palivane {verdict.get('severity', '?').upper()}* — "
             f"{subject or 'finding'} ({actor or 'unknown'})\n"
             f"{cats} · risk {verdict.get('risk_score', '?')} · surface {surface}{lines}")
     return {"text": text, "warden": {
@@ -61,12 +61,12 @@ def notify(webhook: str, min_severity: str, verdict: dict,
 
 def notify_judge_down(webhook: str, health: dict) -> bool:
     """Page the operator that the LLM judge is failing — all configured providers erroring
-    (e.g. exhausted API credits), so Warden is running offline detectors only. Best-effort;
+    (e.g. exhausted API credits), so Palivane is running offline detectors only. Best-effort;
     returns True if a webhook was configured and the POST was attempted."""
-    text = (":rotating_light: *Warden: LLM judge is DOWN* — all configured providers are "
+    text = (":rotating_light: *Palivane: LLM judge is DOWN* — all configured providers are "
             f"failing ({health.get('consecutive_failures', '?')} consecutive calls). "
             f"Last error: {health.get('last_error') or 'unknown'}.\n"
-            "Warden is running offline detectors only. Restore a judge provider "
+            "Palivane is running offline detectors only. Restore a judge provider "
             "(top up API credits, or set a fallback provider key for failover).")
     if not webhook:
         return False
@@ -77,7 +77,7 @@ def notify_judge_recovered(webhook: str, health: dict) -> bool:
     """Tell the operator the LLM judge is back (a provider is answering again)."""
     if not webhook:
         return False
-    return send_sync(webhook, {"text": ":white_check_mark: *Warden: LLM judge recovered* — a "
+    return send_sync(webhook, {"text": ":white_check_mark: *Palivane: LLM judge recovered* — a "
                               "provider is answering again; full detection restored.",
                               "warden": {"event": "judge_recovered", **health}})
 
@@ -88,7 +88,7 @@ def notify_upgrade_request(webhook: str, org: str, plan: str, seats: int,
     signal that should never wait for someone to check /admin. Best-effort."""
     if not webhook:
         return False
-    text = (f":moneybag: *Warden: upgrade request* — \"{org}\" wants the *{plan}* plan"
+    text = (f":moneybag: *Palivane: upgrade request* — \"{org}\" wants the *{plan}* plan"
             + (f" ({seats} seats)" if seats else "")
             + f". Contact: {contact or 'unknown'}."
             + (f"\n> {note}" if note else "")
@@ -127,7 +127,7 @@ def _digest_payload(tenant, findings: list, since, now) -> dict:
         f"• *{f.severity}* · {f.surface} · {(f.subject or 'finding')[:70]} ({f.sender or '—'}){_what(f)}"
         for f in top)
     more = f"\n…and {len(findings) - len(top)} more" if len(findings) > len(top) else ""
-    text = (f":shield: *Warden {tenant.alert_digest} digest* — {len(findings)} finding(s) "
+    text = (f":shield: *Palivane {tenant.alert_digest} digest* — {len(findings)} finding(s) "
             f"since {since:%Y-%m-%d %H:%M} UTC\n{by_sev}\n{lines}{more}")
     return {"text": text, "warden": {"digest": tenant.alert_digest, "count": len(findings),
                                      "by_severity": dict(c), "org": tenant.slug}}

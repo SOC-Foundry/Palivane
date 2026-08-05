@@ -21,8 +21,8 @@ def test_metrics_exposition_and_request_counter(raw_client):
     assert r.status_code == 200
     assert "text/plain" in r.headers["content-type"]
     body = r.text
-    assert "warden_http_requests_total" in body
-    assert "warden_http_request_duration_seconds" in body
+    assert "palivane_http_requests_total" in body
+    assert "palivane_http_request_duration_seconds" in body
     # route is labelled by template (here the concrete /livez path)
     assert "/livez" in body
 

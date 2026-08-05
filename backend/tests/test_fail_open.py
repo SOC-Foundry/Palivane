@@ -1,8 +1,8 @@
 """Part 2 -- the capture-plane circuit breaker must FAIL OPEN under a backend outage.
 
-`cli/palivane-hook`'s `scan()` calls a Warden ingest endpoint inline in Claude Code's
+`cli/palivane-hook`'s `scan()` calls a Palivane ingest endpoint inline in Claude Code's
 PreToolUse hook. If the backend is unreachable, slow, or returns an error, the hook
-must return `action: allow` so it NEVER blocks a developer on a Warden outage -- a
+must return `action: allow` so it NEVER blocks a developer on a Palivane outage -- a
 security monitor that takes the dev's editor down with it wouldn't survive a week.
 
 The breaker also has to stand down after repeated failures (stop hammering a dead

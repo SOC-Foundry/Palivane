@@ -1,8 +1,8 @@
-"""Coverage reconciliation — find AI usage Warden never saw.
+"""Coverage reconciliation — find AI usage Palivane never saw.
 
 You can't monitor a device you don't manage, so you detect the gap by *what's missing*:
 take the org's record of who accessed AI tools (IdP sign-in logs, CASB/SWG egress logs)
-and subtract the actors Warden actually captured. Whoever's left is using AI on an
+and subtract the actors Palivane actually captured. Whoever's left is using AI on an
 unmanaged device or otherwise bypassing the capture planes — the shadow set.
 """
 
@@ -15,7 +15,7 @@ def _norm(actor: str) -> str:
 
 def reconcile(events, covered_actors) -> dict:
     """`events` have .actor (+ optional .tool, .last_seen); `covered_actors` is the set
-    of actors Warden has findings for. Returns the coverage report."""
+    of actors Palivane has findings for. Returns the coverage report."""
     covered = {_norm(a) for a in covered_actors if _norm(a)}
 
     seen: dict[str, dict] = {}

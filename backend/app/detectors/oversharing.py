@@ -3,7 +3,7 @@
 Answers a question the other detectors don't: was restricted data returned to a person who
 shouldn't see it? Enterprise LLMs (M365 Copilot, Glean, internal RAG bots) will happily
 surface HR files, salary data, or confidential documents to any employee who asks — the
-"LLM oversharing" problem. Warden already inspects the *response* content; this adds the
+"LLM oversharing" problem. Palivane already inspects the *response* content; this adds the
 *who* dimension.
 
 A tenant defines need-to-know rules (Tenant.oversharing_rules), one per line:

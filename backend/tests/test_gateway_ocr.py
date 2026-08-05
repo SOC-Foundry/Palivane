@@ -121,7 +121,7 @@ def test_messages_image_ssn_flagged_when_ocr_on(client, monkeypatch):
     # A confirmed PII leak (dashed SSN) hard-blocks even under monitor mode
     # (gateway_enforce_secrets default) — proof the OCR text reached the scanner.
     assert r.status_code == 400
-    assert "Blocked by Warden" in r.json()["error"]["message"]
+    assert "Blocked by Palivane" in r.json()["error"]["message"]
 
     findings = client.get("/api/findings").json()["findings"]
     assert any(f["surface"] == "llm_io" and "pii_exposure" in f["categories"]

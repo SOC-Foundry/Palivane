@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 from ..config import settings
 from .base import AnalysisInput, Category, Signal, Surface
 
-log = logging.getLogger("warden.judge")
+log = logging.getLogger("palivane.judge")
 
 _CATEGORY_MAP = {
     "ai_generated": Category.AI_GENERATED,

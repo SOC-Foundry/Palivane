@@ -6,7 +6,7 @@
 window.addEventListener("message", async (e) => {
   // Only accept messages from the interceptor in THIS window (injected.js runs in the
   // MAIN world of the same window). Rejecting other sources/origins stops a hostile page
-  // script from spoofing verdicts or summoning a fake Warden block/warn UI (phishing).
+  // script from spoofing verdicts or summoning a fake Palivane block/warn UI (phishing).
   if (e.source !== window) return;
   const d = e.data;
   if (!d || !d.__warden) return;
@@ -18,7 +18,7 @@ window.addEventListener("message", async (e) => {
         type: "scan", content: d.content, destination: d.destination,
       });
     } catch (_) { verdict = { action: "allow" }; }
-    window.postMessage({ __warden: true, kind: "verdict", id: d.id, verdict: verdict || { action: "allow" } }, "*");
+    window.postMessage({ __palivane: true, kind: "verdict", id: d.id, verdict: verdict || { action: "allow" } }, "*");
   } else if (d.kind === "blocked") {
     showBlockModal(d.verdict);
   } else if (d.kind === "warn") {
@@ -60,7 +60,7 @@ function reasonText(verdict) {
 
 // --- Block: a prominent, explanatory modal (so claude.ai's own fetch error reads as expected) ---
 function showBlockModal(verdict) {
-  document.getElementById("warden-modal")?.remove();
+  document.getElementById("palivane-modal")?.remove();
   const rows = dataSignals(verdict).map((s) => {
     const label = CATEGORY_LABELS[s.category] || s.category;
     const ev = s.evidence ? ` — <span style="opacity:.7">${escapeHtml(s.evidence)}</span>` : "";
@@ -95,7 +95,7 @@ function showBlockModal(verdict) {
     </div>` : "";
 
   const wrap = document.createElement("div");
-  wrap.id = "warden-modal";
+  wrap.id = "palivane-modal";
   wrap.style.cssText = [
     "position:fixed", "inset:0", "z-index:2147483647",
     "background:rgba(10,12,18,.55)", "backdrop-filter:blur(2px)",
@@ -108,7 +108,7 @@ function showBlockModal(verdict) {
         border:1px solid #2a3346;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.5);
         padding:22px 24px">
       <div style="display:flex;align-items:center;gap:10px;font-size:17px;font-weight:800">
-        <span style="color:#ff5d6c">🛡</span> Warden blocked this message
+        <span style="color:#ff5d6c">🛡</span> Palivane blocked this message
       </div>
       <p style="color:#c4ccdb;margin:12px 0 6px">
         It was <strong>not sent</strong> to the AI tool because it contained ${reasonText(verdict)}.
@@ -121,12 +121,12 @@ function showBlockModal(verdict) {
         the AI tool may show a "failed to send" error — that's the block working.
       </div>
       <div style="display:flex;gap:8px;margin-top:18px">
-        <button id="warden-modal-x" style="
+        <button id="palivane-modal-x" style="
           flex:1;padding:11px;border:none;border-radius:8px;
           background:#4da3ff;color:#04101f;font-weight:700;font-size:14px;cursor:pointer">
           Edit my message
         </button>
-        <button id="warden-modal-exc" style="
+        <button id="palivane-modal-exc" style="
           padding:11px 14px;border:1px solid #2a3346;border-radius:8px;background:transparent;
           color:#c4ccdb;font-size:13px;cursor:pointer">
           Request exception
@@ -136,11 +136,11 @@ function showBlockModal(verdict) {
   const close = () => wrap.remove();
   wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
   document.documentElement.appendChild(wrap);
-  const btn = document.getElementById("warden-modal-x");
+  const btn = document.getElementById("palivane-modal-x");
   btn.addEventListener("click", close);
   btn.focus();
 
-  document.getElementById("warden-modal-exc").addEventListener("click", async (e) => {
+  document.getElementById("palivane-modal-exc").addEventListener("click", async (e) => {
     const b = e.currentTarget;
     b.disabled = true; b.textContent = "Sending…";
     try {
@@ -165,7 +165,7 @@ function showBlockModal(verdict) {
 
 // --- Warn: a lightweight top banner (content was sent, just flagged) ---
 function showWarnBanner(verdict) {
-  const id = "warden-banner";
+  const id = "palivane-banner";
   document.getElementById(id)?.remove();
   const el = document.createElement("div");
   el.id = id;
@@ -175,7 +175,7 @@ function showWarnBanner(verdict) {
     "box-shadow:0 2px 14px rgba(0,0,0,.45)", "background:#b8791f",
   ].join(";");
   el.innerHTML =
-    `<strong>⚠ Warden warning</strong> ` +
+    `<strong>⚠ Palivane warning</strong> ` +
     `<span style="opacity:.95">Detected ${reasonText(verdict)} ` +
     `(risk ${riskText(verdict)}). Review before sending sensitive data.</span>`;
   const close = document.createElement("span");

@@ -60,7 +60,7 @@ def create_user(db, tenant_ref: str, email: str, password: str, role: str) -> Us
 
 def main(argv: list[str]) -> int:
     Base.metadata.create_all(bind=db_engine)
-    p = argparse.ArgumentParser(prog="app.users", description="Warden tenant/user admin")
+    p = argparse.ArgumentParser(prog="app.users", description="Palivane tenant/user admin")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     ct = sub.add_parser("create-tenant")

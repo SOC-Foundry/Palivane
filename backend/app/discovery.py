@@ -8,7 +8,7 @@ Two intake paths feed one store (DiscoveredUsage):
 
 build_inventory() rolls the store up two ways — by tool and by team/department — and marks
 each tool sanctioned/unsanctioned against the tenant's live allowlist. Unlike a log-only
-tool, Warden knows the *actual* sensitive data each tool received (sensitive_count), because
+tool, Palivane knows the *actual* sensitive data each tool received (sensitive_count), because
 it inspects content at the capture planes — that's the exposure column competitors can't fill.
 """
 

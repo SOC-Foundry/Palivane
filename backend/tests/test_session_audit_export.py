@@ -49,7 +49,7 @@ def test_export_cef_lines(db_factory):
     db = db_factory(); _seed(db, tid)
     out = sa.export(db, tid, org="acme", days=7, fmt="cef")
     lines = [l for l in out.splitlines() if l.strip()]
-    assert lines and all(l.startswith("CEF:0|TachTech|Warden|") for l in lines)
+    assert lines and all(l.startswith("CEF:0|TachTech|Palivane|") for l in lines)
     assert any("Claude Code" in l for l in lines)                 # vendor in the CEF name
     db.close()
 

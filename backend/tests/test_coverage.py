@@ -1,4 +1,4 @@
-"""Coverage reconciliation: find AI usage Warden never captured."""
+"""Coverage reconciliation: find AI usage Palivane never captured."""
 
 from __future__ import annotations
 

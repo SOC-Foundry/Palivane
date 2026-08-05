@@ -1,4 +1,4 @@
-"""End-to-end policy-coverage suite: exercises 8 Warden policies through their REAL
+"""End-to-end policy-coverage suite: exercises 8 Palivane policies through their REAL
 HTTP endpoints (not the detector units), each as a paired malicious/benign case.
 
 Methodology: a malicious case MUST be flagged by its endpoint and a benign control MUST

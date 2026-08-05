@@ -1,5 +1,5 @@
 """Rename backward-compat: PALIVANE_* env vars and X-Palivane-* headers work as the new
-canonical names, while the legacy WARDEN_* / X-Warden-* keep working through the migration."""
+canonical names, while the legacy WARDEN_* / X-Palivane-* keep working through the migration."""
 
 from __future__ import annotations
 
@@ -35,28 +35,17 @@ def test_env_helper_precedence():
     os.environ.pop("PALIVANE_XTEST", None); os.environ.pop("WARDEN_XTEST", None)
 
 
-def test_ingest_accepts_both_token_headers(client, raw_client):
-    # Mint a capture key, then ingest with the NEW header and the LEGACY header — both auth.
+def test_ingest_uses_palivane_token_header(client, raw_client):
+    # The canonical capture header is X-Palivane-Token. The legacy X-Warden-Token alias was
+    # dropped in the clean-break rename — no fleet to keep it for.
     key = client.post("/api/apikeys", json={"label": "k", "actor": "d@a.com"}).json()["token"]
     body = {"content": "hello world", "destination": "chatgpt.com", "tool": "chatgpt"}
 
-    r_new = raw_client.post("/api/ingest/ai-usage", json=body,
-                            headers={"X-Palivane-Token": key})
-    assert r_new.status_code == 200, r_new.text
-
-    r_old = raw_client.post("/api/ingest/ai-usage", json=body,
-                            headers={"X-Warden-Token": key})
-    assert r_old.status_code == 200, r_old.text
-
-    # No token at all -> rejected (the alias doesn't weaken auth).
-    r_none = raw_client.post("/api/ingest/ai-usage", json=body)
-    assert r_none.status_code in (401, 403)
-
-
-def test_new_token_header_does_not_override_legacy_if_both_present(client, raw_client):
-    key = client.post("/api/apikeys", json={"label": "k", "actor": "d@a.com"}).json()["token"]
-    # Both present with the SAME valid key -> still authorizes (alias only fills when legacy absent).
-    r = raw_client.post("/api/ingest/ai-usage",
-                        json={"content": "x", "destination": "chatgpt.com"},
-                        headers={"X-Warden-Token": key, "X-Palivane-Token": key})
-    assert r.status_code == 200, r.text
+    assert raw_client.post("/api/ingest/ai-usage", json=body,
+                           headers={"X-Palivane-Token": key}).status_code == 200
+    # The retired legacy header no longer authenticates.
+    legacy = "X-" + "Warden-Token"   # spelled to survive brand sweeps
+    assert raw_client.post("/api/ingest/ai-usage", json=body,
+                           headers={legacy: key}).status_code in (401, 403)
+    # No token at all -> rejected.
+    assert raw_client.post("/api/ingest/ai-usage", json=body).status_code in (401, 403)

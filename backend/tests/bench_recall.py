@@ -1,4 +1,4 @@
-"""RECALL benchmark for Warden's detection engine.
+"""RECALL benchmark for Palivane's detection engine.
 
 Runs a labelled corpus of KNOWN-MALICIOUS samples through the real analysis path
 (`app.service.run_analysis` over `engine.analyze`) and measures the per-category
@@ -23,7 +23,7 @@ overall recall stays above a low floor so it never flakes on heuristic tuning):
 
 NB: the LLM judge is only active when an API key is configured. In CI / local dev it
 is disabled, so these numbers reflect the OFFLINE heuristic detectors alone — the
-honest floor of what Warden catches with zero network calls.
+honest floor of what Palivane catches with zero network calls.
 
 All keys / SSNs / cards below are OBVIOUSLY FAKE, documented test values. Never real.
 """

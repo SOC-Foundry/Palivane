@@ -59,7 +59,7 @@ def test_parse_client_ua():
     assert main._parse_client_ua("palivane-hook/1.1.0") == ("palivane-hook", "1.1.0")
     assert main._parse_client_ua("palivane-proxy/2.0 extra") == ("palivane-proxy", "2.0")
     assert main._parse_client_ua("palivane-posture") == ("palivane-posture", "")
-    # Not ours: a browser or curl must never be recorded as a Warden client build.
+    # Not ours: a browser or curl must never be recorded as a Palivane client build.
     assert main._parse_client_ua("Mozilla/5.0 (X11)") == ("", "")
     assert main._parse_client_ua("curl/8.4.0") == ("", "")
     assert main._parse_client_ua("") == ("", "")
@@ -94,7 +94,7 @@ def test_verdict_tells_the_client_its_target_version(client, raw_client):
                         json={"content": "hi", "tool": "claude-code"},
                         headers={"X-Palivane-Token": key, "User-Agent": "palivane-hook/0.0.1"})
     assert r.json()["client_latest"] == client_versions()["palivane-hook"]
-    # A non-Warden client gets no version hint rather than a misleading one.
+    # A non-Palivane client gets no version hint rather than a misleading one.
     r = raw_client.post("/api/ingest/ai-usage", json={"content": "hi"},
                         headers={"X-Palivane-Token": key, "User-Agent": "Mozilla/5.0"})
     assert r.json()["client_latest"] == ""

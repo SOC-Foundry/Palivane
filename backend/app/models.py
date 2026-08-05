@@ -523,7 +523,7 @@ class Finding(Base):
 
 
 class DiscoveredUsage(Base):
-    """One (actor, AI tool) pair Warden has observed — the substrate for shadow-AI
+    """One (actor, AI tool) pair Palivane has observed — the substrate for shadow-AI
     discovery. Rows come from two sources:
       - `capture`: a capture plane (extension / gateway / proxy) actually saw content go
         to this tool, so we also know whether it carried sensitive data.

@@ -1,1 +1,1 @@
-"""Warden backend package."""
+"""Palivane backend package."""

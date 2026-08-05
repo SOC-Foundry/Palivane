@@ -161,7 +161,7 @@ CODE_MARKERS = [
 # --- Destination: known external AI tools -----------------------------------------------
 
 # The local capture planes label their own client as the destination (`claude-code`,
-# `cursor`, …). Those are the FIRST-PARTY tools Warden is installed to govern — not shadow-AI
+# `cursor`, …). Those are the FIRST-PARTY tools Palivane is installed to govern — not shadow-AI
 # destinations — so they must never count as "unsanctioned" (otherwise every governed prompt
 # carries a spurious baseline). Sensitive-data signals still fire on the content regardless.
 _FIRST_PARTY_CLIENTS = {"claude-code", "claude code", "cursor", "gemini-cli", "codex-cli"}
@@ -275,7 +275,7 @@ class ShadowAIDetector:
         """Tier-2 generic secret heuristic: a long, high-entropy token with no recognized
         format. Lower weight so it *warns* on its own and only blocks when it combines
         with another signal (e.g. an unsanctioned destination)."""
-        # NB: `tool` is client-asserted (User-Agent / x-warden-tool / ingest body), so it
+        # NB: `tool` is client-asserted (User-Agent / x-palivane-tool / ingest body), so it
         # must NOT gate secret detection — else a caller declaring tool=claude-code could
         # exfiltrate a format-less credential with zero signals. This is warn-level, so it
         # doesn't hard-block routine code from a real coding assistant on its own.
@@ -411,7 +411,7 @@ class ShadowAIDetector:
             dest = str(item.metadata.get("destination") or item.metadata.get("tool") or "")
         dest = dest.lower().strip()
         if not dest or dest in _FIRST_PARTY_CLIENTS:
-            return []   # no destination, or Warden's own governed client — not shadow AI
+            return []   # no destination, or Palivane's own governed client — not shadow AI
 
         override = item.metadata.get("sanctioned_tools") if item.metadata else None
         sanctioned = _sanctioned(override)
