@@ -24,7 +24,7 @@ import demo_scenes as S   # noqa: E402
 
 FPS = 25
 W, H = S.W, S.H
-BASE = os.getenv("WARDEN_URL", "http://localhost:8088").rstrip("/")
+BASE = os.getenv("PALIVANE_URL", "http://localhost:8088").rstrip("/")
 EMAIL = os.getenv("SEED_ADMIN_EMAIL", "admin@demo.local")
 PASSWORD = os.getenv("SEED_ADMIN_PASSWORD", "changeme123")
 WORK = os.getenv("DEMO_WORK", "/tmp/warden-demo")
@@ -116,8 +116,8 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
         obj_lines.append(("err" if o.get("action") == "block" else "warn",
                           f"  {mark}  {o.get('key')}  [{cats}]" + (f"  — {ev}" if ev else "")))
     scenes.append(("aws", S.terminal_scene(
-        "ops@bastion — warden-s3-scan", [
-            ("cmd", "$ warden-s3-scan northgate-data-exports --record"),
+        "ops@bastion — palivane-s3-scan", [
+            ("cmd", "$ palivane-s3-scan northgate-data-exports --record"),
             ("dim", ""),
             ("warn", f"Bucket: s3://{aws.get('bucket')}  [⚠ PUBLIC BUCKET — world-readable]"),
             ("out", f"Listed {aws.get('scanned')} object(s); scanning {aws.get('scanned')}."),
@@ -134,8 +134,8 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
     sig_lines = [("err", f"       · {s.get('title')} — {s.get('evidence','')}")
                  for s in wf.get("signals", [])[:5]]
     scenes.append(("github", S.terminal_scene(
-        "github-actions · warden-ci-scan", [
-            ("cmd", "$ warden-ci-scan --path . --github-oidc --fail-closed"),
+        "github-actions · palivane-ci-scan", [
+            ("cmd", "$ palivane-ci-scan --path . --github-oidc --fail-closed"),
             ("dim", ""),
             ("out", "  authenticating with the runner's GitHub OIDC token…"),
             ("dim", ""),

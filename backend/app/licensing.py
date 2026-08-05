@@ -20,9 +20,9 @@ Vendor side (TachTech) — this module doubles as the issuing CLI:
 
 The production signing key lives in Secret Manager (warden-license-signing-key) — it
 never ships in the repo or image. Only the PUBLIC key is embedded below; a self-hosted
-instance verifies with it out of the box (override: WARDEN_LICENSE_PUBKEY).
+instance verifies with it out of the box (override: PALIVANE_LICENSE_PUBKEY).
 
-Customer side: set WARDEN_LICENSE to the blob itself or a path to a file containing it.
+Customer side: set PALIVANE_LICENSE to the blob itself or a path to a file containing it.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from datetime import date, datetime, timedelta, timezone
 from .config import _env
 
 # TachTech's vendor license public key (Ed25519). The matching private key is held by
-# the vendor only. Replaceable for testing/forks via WARDEN_LICENSE_PUBKEY.
+# the vendor only. Replaceable for testing/forks via PALIVANE_LICENSE_PUBKEY.
 VENDOR_PUBKEY_PEM = """-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAtVA/cNp4QTKPiU70WZcopZzwOSNe1z47GouPSGT2s3I=
 -----END PUBLIC KEY-----
@@ -77,7 +77,7 @@ def issue(private_key_pem: bytes, org: str, plan: str, seats: int, expires: str,
 
 
 def signing_key() -> bytes | None:
-    """The vendor signing key from WARDEN_LICENSE_SIGNING_KEY (PEM), for server-side
+    """The vendor signing key from PALIVANE_LICENSE_SIGNING_KEY (PEM), for server-side
     renewal. None when unset — the renewal endpoint then reports itself disabled, keeping
     the key out of the app on deployments that don't need auto-renewal."""
     pem = _env("PALIVANE_LICENSE_SIGNING_KEY", "").strip()
@@ -122,7 +122,7 @@ def _pubkey_pem() -> str:
 
 
 def _license_blob() -> str:
-    """WARDEN_LICENSE is the blob itself, or a path to a file containing it."""
+    """PALIVANE_LICENSE is the blob itself, or a path to a file containing it."""
     raw = _env("PALIVANE_LICENSE", "").strip()
     if raw and not raw.startswith(_PREFIX) and os.path.exists(raw):
         try:
@@ -151,7 +151,7 @@ def current() -> dict | None:
         _cached = verify(blob)
     except LicenseError as exc:
         import logging
-        logging.getLogger("uvicorn.error").warning("WARDEN_LICENSE ignored: %s", exc)
+        logging.getLogger("uvicorn.error").warning("PALIVANE_LICENSE ignored: %s", exc)
         _cached = None
     return _cached
 
@@ -202,7 +202,7 @@ def _cli(argv: list[str]) -> int:
         os.chmod(args.out, 0o600)
         pub = key.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
         print(f"private key written to {args.out} — keep it secret (Secret Manager / offline)")
-        print("public key (embed as VENDOR_PUBKEY_PEM / WARDEN_LICENSE_PUBKEY):")
+        print("public key (embed as VENDOR_PUBKEY_PEM / PALIVANE_LICENSE_PUBKEY):")
         print(pub.decode(), end="")
     elif args.cmd == "issue":
         import sys as _sys

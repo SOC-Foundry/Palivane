@@ -223,7 +223,7 @@ subscription-compatible, no config files. Flags:
 | `--no-proxy` | Editor/CLI hooks only; skip the egress proxy. |
 
 Finish the browser surface by installing the Palivane extension (Chrome/Edge) and clicking
-**Sign in to Palivane** in its popup. Re-running the installer — or just `warden connect` —
+**Sign in to Palivane** in its popup. Re-running the installer — or just `palivane connect` —
 **upgrades the capture-plane scripts in place**, so shipping a fix to a small fleet is just
 "have everyone re-run it." To remove Palivane from a machine, see
 [Uninstalling](#uninstalling-from-a-machine).
@@ -236,7 +236,7 @@ one plane at a time. Pick whichever matches how your org uses AI:
 | Your own apps / CLIs / Claude Code / Codex CLI | **LLM gateway** (`/v1`) | Point the client's base URL at Palivane — see below. |
 | Browser web UIs (claude.ai, chatgpt.com, Microsoft Copilot) | **Browser extension** | [`extension/README.md`](../extension/README.md) |
 | Desktop apps, IDE assistants, 3rd-party CLIs (GitHub Copilot, Gemini CLI) | **Egress proxy** | [`proxy/README.md`](../proxy/README.md) |
-| **Cursor** (cert-pinned chat) | **Local hook** (`palivane-cursor-hook`) | [`cli/README.md`](../cli/README.md) — auto-installed by `warden connect` |
+| **Cursor** (cert-pinned chat) | **Local hook** (`palivane-cursor-hook`) | [`cli/README.md`](../cli/README.md) — auto-installed by `palivane connect` |
 | Secrets/PII reaching a **Git repo** (commit / PR) | **Pre-commit hook + GitHub Action** | [`git/README.md`](../git/README.md) |
 | Credentials **at rest** on a device (SSH/RSA keys, `.env`, tokens) | **`palivane-secrets`** (`secrets` surface) | [`cli/README.md`](../cli/README.md); schedule via the MDM pack |
 | Existing **TruffleHog / Gitleaks / GitGuardian** jobs | **`palivane-import`** / `palivane-secrets --engine` | [`git/README.md`](../git/README.md), [`cli/README.md`](../cli/README.md) |

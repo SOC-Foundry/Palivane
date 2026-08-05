@@ -142,7 +142,7 @@ Modes mirror the rest of Palivane: **monitor** (log would-deny, allow through) �
 ## 8. Open questions / risks
 
 - **Identity bootstrap** for local/desktop agents that can't hold an OAuth secret — likely the
-  `ag_…` token provisioned by `warden connect`, scoped to that machine+user.
+  `ag_…` token provisioned by `palivane connect`, scoped to that machine+user.
 - **Args-level authorization** (e.g. "may read `invoices/*` but not `payroll/*`") needs a small
   per-tool argument policy; start coarse (tool/server) and refine.
 - **Latency**: authz is an in-memory policy check on data we already parse — negligible.

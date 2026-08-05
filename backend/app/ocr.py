@@ -1,4 +1,4 @@
-"""Opt-in OCR for image DLP (WARDEN_OCR=true).
+"""Opt-in OCR for image DLP (PALIVANE_OCR=true).
 
 Prompts increasingly carry screenshots — and screenshots carry secrets and PII that the
 text-only scan never sees. When enabled, the gateway extracts base64 image payloads from

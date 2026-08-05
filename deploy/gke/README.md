@@ -15,7 +15,7 @@ Each customer gets:
 | Data | Dedicated **Cloud SQL** instance (private IP, own backups + PITR). No shared database. |
 | Identity | Dedicated **Google service account** (`warden-<slug>`) with only `cloudsql.client` + `secretmanager.secretAccessor`, bound to the pod's KSA via **Workload Identity**. |
 | Network | Own **namespace**, own **subdomain** + Google-managed TLS cert, container-native LB (NEG). |
-| Secrets | Own `WARDEN_SECRET_KEY` (per-instance encryption root) + DB URL in Secret Manager. |
+| Secrets | Own `PALIVANE_SECRET_KEY` (per-instance encryption root) + DB URL in Secret Manager. |
 
 The shared cluster itself only hosts a small `system` node pool for add-ons; customer
 workloads never run on it.

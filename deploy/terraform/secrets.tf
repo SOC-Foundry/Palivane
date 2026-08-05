@@ -1,10 +1,10 @@
-# Secrets. WARDEN_SECRET_KEY and the metrics token are generated here and DATABASE_URL is
+# Secrets. PALIVANE_SECRET_KEY and the metrics token are generated here and DATABASE_URL is
 # composed from the SQL instance + db_password, so `apply` yields a working service. These
 # values land in TF STATE — use the encrypted remote backend in versions.tf. The SMTP
 # password is an external credential: its container is created here, but the value is added
 # out-of-band (gcloud secrets versions add) so it never touches state.
 #
-# WARNING: WARDEN_SECRET_KEY encrypts findings at rest and signs sessions. Losing/rotating
+# WARNING: PALIVANE_SECRET_KEY encrypts findings at rest and signs sessions. Losing/rotating
 # it = data loss + all sessions invalid. random_password keeps it stable in state; treat
 # the state (and its backend) as sensitive.
 

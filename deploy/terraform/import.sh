@@ -10,7 +10,7 @@
 # Run with adopt_existing=true (a tfvars line or -var) for every plan/apply against prod:
 #     echo 'adopt_existing = true' >> terraform.tfvars
 # That flag makes the config prod-safe automatically — it skips generating the secret
-# VERSIONS (so prod's real WARDEN_SECRET_KEY / DATABASE_URL / metrics values are untouched)
+# VERSIONS (so prod's real PALIVANE_SECRET_KEY / DATABASE_URL / metrics values are untouched)
 # and runs the service as the default compute SA instead of creating warden-run. No manual
 # editing needed.
 #

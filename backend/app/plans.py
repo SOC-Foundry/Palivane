@@ -16,7 +16,7 @@ Two different kinds of "free" exist, deliberately:
     here indefinitely (see app/licensing.py). Kept fully functional on purpose: running it
     yourself is the honest free option, and it costs the vendor nothing.
 
-Quota precedence: tenant override column > plan default > WARDEN_QUOTA_* global.
+Quota precedence: tenant override column > plan default > PALIVANE_QUOTA_* global.
 Feature gates are enforced server-side at the endpoints that *configure* a gated
 feature (an org that configured SSO while Enterprise keeps working if the plan record
 ever lapses operationally — we gate setup, not day-to-day auth of existing users).
@@ -35,7 +35,7 @@ from .models import Tenant
 #   siem         — SIEM HTTP forwarding (Splunk/CEF/...) (Enterprise)
 #   s3_delivery  — findings delivery to S3               (Enterprise)
 #   judge        — managed LLM judge (operator-funded)    (Enterprise; SaaS only, when
-#                  WARDEN_JUDGE_PLAN_GATED is on — self-hosted brings its own key)
+#                  PALIVANE_JUDGE_PLAN_GATED is on — self-hosted brings its own key)
 _ALL_FEATURES = frozenset({"alerts", "mdm", "sso", "siem", "s3_delivery", "judge",
                            "device_setup"})
 

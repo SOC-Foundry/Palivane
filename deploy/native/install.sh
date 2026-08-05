@@ -9,8 +9,8 @@
 #   sudo ./install.sh
 set -euo pipefail
 
-PREFIX="${WARDEN_PREFIX:-/opt/warden}"
-DATADIR="${WARDEN_DATADIR:-/var/lib/warden}"
+PREFIX="${PALIVANE_PREFIX:-/opt/warden}"
+DATADIR="${PALIVANE_DATADIR:-/var/lib/warden}"
 ENVDIR=/etc/warden
 ENVFILE="$ENVDIR/warden.env"
 SVCUSER=warden
@@ -45,10 +45,17 @@ if [ ! -f "$ENVFILE" ]; then
   install -m 600 "$SRC/warden.env.example" "$ENVFILE"
   sed -i "s#replace-me-with-a-long-random-secret#$(openssl rand -hex 32)#" "$ENVFILE"
   sed -i "s#^DATABASE_URL=.*#DATABASE_URL=sqlite:///$DATADIR/warden.db#" "$ENVFILE"
-  grep -q '^WARDEN_STATIC_DIR=' "$ENVFILE" || echo "WARDEN_STATIC_DIR=$PREFIX/static" >> "$ENVFILE"
+  grep -q '^PALIVANE_STATIC_DIR=' "$ENVFILE" || echo "PALIVANE_STATIC_DIR=$PREFIX/static" >> "$ENVFILE"
   echo "   wrote $ENVFILE — EDIT IT: point DATABASE_URL at your Postgres for production."
 else
-  echo "   $ENVFILE exists — leaving it untouched."
+  # Upgrade from a pre-rename install: the app reads PALIVANE_* only, so migrate any
+  # legacy WARDEN_* names in place (values untouched — sessions and encryption keys survive).
+  if grep -q '^WARDEN_' "$ENVFILE"; then
+    sed -i 's/^WARDEN_/PALIVANE_/' "$ENVFILE"
+    echo "   $ENVFILE: renamed legacy WARDEN_* vars to PALIVANE_* (values unchanged)."
+  else
+    echo "   $ENVFILE exists — leaving it untouched."
+  fi
 fi
 
 chown -R "$SVCUSER:$SVCUSER" "$PREFIX" "$DATADIR" "$ENVDIR"
@@ -56,7 +63,7 @@ chown -R "$SVCUSER:$SVCUSER" "$PREFIX" "$DATADIR" "$ENVDIR"
 echo "==> database migrations"
 ( cd "$PREFIX/backend"
   set -a; . "$ENVFILE"; set +a
-  sudo -u "$SVCUSER" env DATABASE_URL="$DATABASE_URL" WARDEN_SECRET_KEY="$WARDEN_SECRET_KEY" \
+  sudo -u "$SVCUSER" env DATABASE_URL="$DATABASE_URL" PALIVANE_SECRET_KEY="$PALIVANE_SECRET_KEY" \
     "$PREFIX/backend/.venv/bin/alembic" upgrade head )
 
 echo "==> systemd service"
@@ -70,7 +77,7 @@ systemctl is-active --quiet warden-api && echo "   warden-api is running" || { e
 cat > /usr/local/bin/warden-admin <<WRAP
 #!/usr/bin/env bash
 set -a; . $ENVFILE; set +a
-exec sudo -u $SVCUSER env DATABASE_URL="\$DATABASE_URL" WARDEN_SECRET_KEY="\$WARDEN_SECRET_KEY" \\
+exec sudo -u $SVCUSER env DATABASE_URL="\$DATABASE_URL" PALIVANE_SECRET_KEY="\$PALIVANE_SECRET_KEY" \\
   $PREFIX/backend/.venv/bin/python -m app.users "\$@"
 WRAP
 chmod +x /usr/local/bin/warden-admin

@@ -186,7 +186,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         # Session behavioral correlation: this event alone is stored; now look across the
         # actor's recent activity for an escalating attack CHAIN and record it if present.
         # Runs only for a real (non-recurrence) finding that itself touches a chain stage;
-        # correlate() self-gates on the WARDEN_SESSION_CORRELATION setting (read there so a
+        # correlate() self-gates on the PALIVANE_SESSION_CORRELATION setting (read there so a
         # config reload is respected, not stale-bound).
         if tenant is not None and item.sender and is_chain_relevant(result["signals"]):
             try:

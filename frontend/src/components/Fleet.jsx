@@ -14,7 +14,7 @@ function fmtWhen(ts) {
 
 // A sensor's installed build. Detection/policy is server-side and always current, so a
 // lagging build only means stale *plumbing* (hooks, addon, scanner patterns) — it
-// self-updates at the next session start via warden-posture.
+// self-updates at the next session start via palivane-posture.
 function clientCell(row) {
   if (!row.client) return "—";
   const label = `${row.client} ${row.client_version || "?"}`;
@@ -98,7 +98,7 @@ export default function Fleet() {
               <h2>Devices presenting revoked keys</h2>
               <p style={{ color: "var(--crit)", marginTop: 0 }}>
                 These devices keep sending events with a revoked key. They <strong>fail open</strong> —
-                their traffic is no longer inspected. Re-run <code>warden-connect</code> on each
+                their traffic is no longer inspected. Re-run <code>palivane-connect</code> on each
                 device to enroll a fresh key.
               </p>
               <table className="data-table">

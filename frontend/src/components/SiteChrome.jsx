@@ -1,4 +1,4 @@
-// Shared nav + footer for the public marketing pages (landing, why-warden, use-cases,
+// Shared nav + footer for the public marketing pages (landing, why-palivane, use-cases,
 // how-it-works, legal). Centralizes the tab set so every page stays consistent.
 //
 // Sign-in: on the landing we have an in-SPA handler (onSignIn) that flips to the login
@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 
 const TABS = [
-  { href: "/why-warden", label: "Why Palivane" },
+  { href: "/why-palivane", label: "Why Palivane" },
   { href: "/use-cases", label: "Use cases" },
   { href: "/how-it-works", label: "How it works" },
   { href: "/setup", label: "Setup" },
@@ -40,7 +40,7 @@ export function Shot({ src, alt = "", caption = "", lead = false, onZoom = null 
   return (
     <figure className={`lp-shot ${lead ? "lp-shot-lead" : ""}`}>
       <div className="lp-frame">
-        <span className="lp-frame-bar"><i /><i /><i /><span className="lp-frame-url">warden.tachtech.net</span></span>
+        <span className="lp-frame-bar"><i /><i /><i /><span className="lp-frame-url">palivane.tachtech.net</span></span>
         <img src={src} alt={alt} loading="lazy"
              onClick={onZoom ? () => onZoom(src, alt) : undefined}
              style={onZoom ? { cursor: "zoom-in" } : undefined} />
@@ -83,7 +83,7 @@ export function Clip({ src, poster = "", caption = "", lead = false }) {
   return (
     <figure className={`lp-shot ${lead ? "lp-shot-lead" : ""}`}>
       <div className="lp-frame" style={{ position: "relative" }}>
-        <span className="lp-frame-bar"><i /><i /><i /><span className="lp-frame-url">warden.tachtech.net</span></span>
+        <span className="lp-frame-bar"><i /><i /><i /><span className="lp-frame-url">palivane.tachtech.net</span></span>
         <video ref={ref} src={src} poster={poster} controls={started} playsInline preload="metadata"
                onPlay={() => setStarted(true)}
                style={{ display: "block", width: "100%", aspectRatio: "16 / 10",

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 
 def _env(name: str, default: str = "") -> str:
-    """Read a PALIVANE_* env var, or `default`. (The legacy WARDEN_* fallback was
+    """Read a PALIVANE_* env var, or `default`. (The legacy PALIVANE_* fallback was
     removed once prod migrated fully to the PALIVANE_ names — see the rebrand batches.)"""
     return os.getenv(name) or default
 
@@ -53,7 +53,7 @@ class Settings:
     cors_origins: str = os.getenv("CORS_ORIGINS", "http://localhost:5173")
     # Reject request bodies larger than this (DoS/OOM guard); ~12 MB default.
     max_body_bytes: int = int(_env("PALIVANE_MAX_BODY_BYTES", "12000000"))
-    # Auth. Set WARDEN_SECRET_KEY in production (signs JWTs). Empty => an insecure
+    # Auth. Set PALIVANE_SECRET_KEY in production (signs JWTs). Empty => an insecure
     # dev fallback is used and the API logs a warning at startup.
     auth_secret_key: str = _env("PALIVANE_SECRET_KEY", "")
     auth_token_ttl: int = int(os.getenv("AUTH_TOKEN_TTL", "43200"))  # seconds (12h)
@@ -68,7 +68,7 @@ class Settings:
     # plaintext-secret honeypot. Detection still runs on the raw content.
     redact_findings: bool = _env("PALIVANE_REDACT_FINDINGS", "true").lower() in ("1", "true", "yes")
     # Encrypt stored finding content at rest (decrypted on read for authorized admins).
-    # Opt-in: requires a durable WARDEN_ENCRYPTION_KEY/WARDEN_SECRET_KEY (key loss = data loss).
+    # Opt-in: requires a durable PALIVANE_ENCRYPTION_KEY/PALIVANE_SECRET_KEY (key loss = data loss).
     encrypt_findings: bool = _env("PALIVANE_ENCRYPT_FINDINGS", "").lower() in ("1", "true", "yes")
     # Persist the raw prompt PROSE in findings? Default OFF: store the verdict, signal
     # categories, redacted evidence, and attribution — but not the natural-language content,
@@ -125,7 +125,7 @@ class Settings:
     quota_users: int = int(_env("PALIVANE_QUOTA_USERS", "25"))
     quota_api_keys: int = int(_env("PALIVANE_QUOTA_API_KEYS", "100"))
     quota_ingest_per_day: int = int(_env("PALIVANE_QUOTA_INGEST_PER_DAY", "50000"))
-    # Persist benign MCP-surface findings (warden-hook/warden-mcp tool calls)? Default off:
+    # Persist benign MCP-surface findings (palivane-hook/palivane-mcp tool calls)? Default off:
     # the vast majority of tool calls are benign noise; only warn+ verdicts are stored.
     mcp_persist_benign: bool = _env("PALIVANE_MCP_PERSIST_BENIGN", "").lower() in ("1", "true", "yes")
     # Persist benign usage-capture findings (ai-usage ingest / OTLP prompts, gateway prompt
@@ -136,7 +136,7 @@ class Settings:
     # If set, /metrics requires this token (Bearer or ?token=); empty = open (bind it to
     # an internal network / scrape it privately). Stripped: secret-manager values often
     # carry a trailing newline (echo | secrets create), which no pasted token can match.
-    # Do NOT strip WARDEN_SECRET_KEY — its exact bytes are baked into every session
+    # Do NOT strip PALIVANE_SECRET_KEY — its exact bytes are baked into every session
     # signature and the encryption-key derivation.
     metrics_token: str = _env("PALIVANE_METRICS_TOKEN", "").strip()
     # Operator (instance-level) alert webhook — Slack-compatible. Currently used to page when

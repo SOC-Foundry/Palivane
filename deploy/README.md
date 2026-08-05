@@ -34,12 +34,12 @@ sudo -u warden .venv/bin/pip install -r requirements.txt
 sudo cp /opt/warden/deploy/warden.env.example /etc/warden/warden.env
 sudo chown warden:warden /etc/warden/warden.env
 sudo chmod 600 /etc/warden/warden.env
-sudoedit /etc/warden/warden.env     # set DATABASE_URL, WARDEN_SECRET_KEY, gateway/keys
+sudoedit /etc/warden/warden.env     # set DATABASE_URL, PALIVANE_SECRET_KEY, gateway/keys
 ```
 
 `DATABASE_URL` should point at `/var/lib/warden` (the only path the hardened units
 may write to), e.g. `sqlite:////var/lib/warden/warden.db`. Set a strong
-`WARDEN_SECRET_KEY` (`openssl rand -hex 32`) — auth tokens are signed with it.
+`PALIVANE_SECRET_KEY` (`openssl rand -hex 32`) — auth tokens are signed with it.
 
 ## 3b. Create the first tenant and admin
 
@@ -78,35 +78,35 @@ For most deployments you'd run the full stack with `docker compose up` instead (
 
 ## Scheduled S3 scanning
 
-`warden-s3-scan` sweeps an S3 bucket's objects for secrets/PII at rest and flags public
+`palivane-s3-scan` sweeps an S3 bucket's objects for secrets/PII at rest and flags public
 exposure — but nothing triggers it until you schedule it. The instanced units
-[`warden-s3-scan@.service`](./warden-s3-scan@.service) + [`warden-s3-scan@.timer`](./warden-s3-scan@.timer)
+[`palivane-s3-scan@.service`](./palivane-s3-scan@.service) + [`palivane-s3-scan@.timer`](./palivane-s3-scan@.timer)
 run **one scan per bucket, daily** (the `%i` instance is the bucket name).
 
 ```bash
 # On a box that can reach Warden and the buckets (a "security" instance is ideal):
-curl -fsSL "$WARDEN_URL/cli/warden-s3-scan" -o /opt/warden/bin/warden-s3-scan
-sudo chmod +x /opt/warden/bin/warden-s3-scan
+curl -fsSL "$PALIVANE_URL/cli/palivane-s3-scan" -o /opt/warden/bin/palivane-s3-scan
+sudo chmod +x /opt/warden/bin/palivane-s3-scan
 sudo -u warden /opt/warden/backend/.venv/bin/pip install boto3   # the scanner needs boto3
 
-# WARDEN_URL + WARDEN_TOKEN go in /etc/warden/warden.env; AWS creds are best supplied by the
+# PALIVANE_URL + PALIVANE_TOKEN go in /etc/warden/warden.env; AWS creds are best supplied by the
 # box's instance role (else add AWS_* / AWS_REGION to the same env file).
-sudo cp /opt/warden/deploy/warden-s3-scan@.service /opt/warden/deploy/warden-s3-scan@.timer \
+sudo cp /opt/warden/deploy/palivane-s3-scan@.service /opt/warden/deploy/palivane-s3-scan@.timer \
         /etc/systemd/system/
 sudo systemctl daemon-reload
 
 # Enable a daily scan per bucket (repeat per bucket; systemd-escape names with '/' or '.'):
-sudo systemctl enable --now warden-s3-scan@my-data-bucket.timer
-sudo systemctl enable --now warden-s3-scan@my-exports-bucket.timer
+sudo systemctl enable --now palivane-s3-scan@my-data-bucket.timer
+sudo systemctl enable --now palivane-s3-scan@my-exports-bucket.timer
 
-systemctl list-timers 'warden-s3-scan@*'                 # confirm the schedule
-journalctl -u 'warden-s3-scan@my-data-bucket.service'    # see a run's output
+systemctl list-timers 'palivane-s3-scan@*'                 # confirm the schedule
+journalctl -u 'palivane-s3-scan@my-data-bucket.service'    # see a run's output
 ```
 
-Prefer cron? The equivalent one-liner (e.g. in `/etc/cron.d/warden-s3-scan`):
+Prefer cron? The equivalent one-liner (e.g. in `/etc/cron.d/palivane-s3-scan`):
 
 ```cron
-17 3 * * *  warden  WARDEN_URL=https://warden.corp.example.com WARDEN_TOKEN=ak_… /opt/warden/bin/warden-s3-scan my-data-bucket --record --fail-closed
+17 3 * * *  warden  PALIVANE_URL=https://palivane.corp.example.com PALIVANE_TOKEN=ak_… /opt/warden/bin/palivane-s3-scan my-data-bucket --record --fail-closed
 ```
 
 For the org-wide **GitHub** sweep, use the scheduled Action template

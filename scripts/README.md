@@ -11,9 +11,9 @@ so every re-cut started over. Everything here is reproducible.
 
 ```bash
 ./run-local.sh                                              # terminal 1: a local Warden
-WARDEN_URL=http://localhost:8088 \
+PALIVANE_URL=http://localhost:8088 \
   backend/.venv/bin/python scripts/demo_capture.py          # real verdicts -> JSON
-WARDEN_URL=http://localhost:8088 \
+PALIVANE_URL=http://localhost:8088 \
   backend/.venv/bin/python scripts/demo_video.py            # scenes -> silent.mp4
 python scripts/demo_score.py                                # score.wav (needs numpy+scipy)
 ffmpeg -i /tmp/warden-demo/silent.mp4 -i /tmp/warden-demo/score.wav \
@@ -23,7 +23,7 @@ ffmpeg -i /tmp/warden-demo/silent.mp4 -i /tmp/warden-demo/score.wav \
 
 | Script | Does |
 | --- | --- |
-| `demo_capture.py` | Drives a live backend over its real endpoints and writes every verdict the video shows. Refuses any non-localhost `WARDEN_URL` (it records findings). |
+| `demo_capture.py` | Drives a live backend over its real endpoints and writes every verdict the video shows. Refuses any non-localhost `PALIVANE_URL` (it records findings). |
 | `demo_scenes.py` | The HTML for each scene. Each page exposes `setT(t)`, `t` in 0..1. |
 | `demo_icons.py` | Simplified tool marks (Claude, Gemini, OpenAI, Cursor, GitHub, AWS). Drop a real SVG at `scripts/brand-icons/<key>.svg` to override — check the vendor's brand terms first. |
 | `demo_video.py` | Steps `setT` frame by frame, screenshots, encodes each scene, crossfades them, and captures the closing console tour against the live console. |

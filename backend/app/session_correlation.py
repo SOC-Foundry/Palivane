@@ -9,7 +9,7 @@ an escalating cross-stage chain — records ONE correlated finding that scores t
 not the step.
 
 There is no explicit session id in the ingest stream, so the correlation key is
-(tenant, actor): a rolling `WARDEN_SESSION_WINDOW_MIN`-minute window of that actor's
+(tenant, actor): a rolling `PALIVANE_SESSION_WINDOW_MIN`-minute window of that actor's
 activity. Cheap: one indexed lookback query (ix_findings_tenant_last_seen) per
 chain-relevant event, bounded and read-only except for the single correlated row.
 

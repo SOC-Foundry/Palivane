@@ -25,7 +25,7 @@ cloudsql:
   proxyImage: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.13.0
 
 # Secret material. Provisioner creates the k8s Secret (from Secret Manager) named
-# "<release>-secrets" with keys WARDEN_SECRET_KEY and DATABASE_URL; set create=false so the
+# "<release>-secrets" with keys PALIVANE_SECRET_KEY and DATABASE_URL; set create=false so the
 # chart references it rather than templating secrets into values.
 secret:
   create: false

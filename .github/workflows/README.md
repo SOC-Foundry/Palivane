@@ -20,8 +20,8 @@ bucket), plus the roles Terraform needs to manage the resources (`roles/cloudsql
 **Repository variables (`vars.`)** — non-sensitive:
 `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_SQL_CONNECTION`, `GCP_WORKLOAD_IDENTITY_PROVIDER`,
 `GCP_DEPLOY_SA`, `TF_STATE_BUCKET`, `VPC_NETWORK`, `VPC_SUBNET`, `GATEWAY_ENFORCE`,
-`WARDEN_ALLOW_SIGNUP`, `WARDEN_ENCRYPT_FINDINGS`, `DOMAIN`, `WARDEN_ALLOWED_HOSTS`,
-`WARDEN_EXTENSION_ID`, `SMTP_HOST`, `SMTP_USER`, `MAIL_FROM`, `DEPLOY_IMAGE`.
+`PALIVANE_ALLOW_SIGNUP`, `PALIVANE_ENCRYPT_FINDINGS`, `DOMAIN`, `PALIVANE_ALLOWED_HOSTS`,
+`PALIVANE_EXTENSION_ID`, `SMTP_HOST`, `SMTP_USER`, `MAIL_FROM`, `DEPLOY_IMAGE`.
 
 **Repository secrets (`secrets.`)** — sensitive:
 `TF_DB_PASSWORD` (Postgres user password for Terraform).
@@ -29,5 +29,5 @@ bucket), plus the roles Terraform needs to manage the resources (`roles/cloudsql
 **Environments** — create `production` (deploy) and `production-infra` (terraform apply)
 and add required reviewers for a manual approval gate before anything hits prod.
 
-> App secrets themselves (WARDEN_SECRET_KEY, warden-smtp-pass, provider keys) live in
+> App secrets themselves (PALIVANE_SECRET_KEY, warden-smtp-pass, provider keys) live in
 > Secret Manager, not GitHub — the workflows never handle them.

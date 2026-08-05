@@ -1,8 +1,8 @@
 """Symmetric encryption for secrets stored at rest (per-tenant upstream provider keys).
 
-Uses Fernet (AES-CBC + HMAC, authenticated) with a key derived from WARDEN_ENCRYPTION_KEY,
-falling back to WARDEN_SECRET_KEY. Deriving from the existing secret means a self-host
-gets encryption for free; set a dedicated WARDEN_ENCRYPTION_KEY to rotate independently.
+Uses Fernet (AES-CBC + HMAC, authenticated) with a key derived from PALIVANE_ENCRYPTION_KEY,
+falling back to PALIVANE_SECRET_KEY. Deriving from the existing secret means a self-host
+gets encryption for free; set a dedicated PALIVANE_ENCRYPTION_KEY to rotate independently.
 """
 from __future__ import annotations
 

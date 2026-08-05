@@ -1,5 +1,5 @@
 # Daily schedule for the per-bucket S3 scan. Enable one per bucket:
-#   systemctl enable --now warden-s3-scan@my-bucket.timer
+#   systemctl enable --now palivane-s3-scan@my-bucket.timer
 [Unit]
 Description=Daily Warden S3 scan — bucket %i
 

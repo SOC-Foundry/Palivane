@@ -89,7 +89,7 @@ gcloud beta run domain-mappings describe --domain app.warden.io --region "$REGIO
   --format='value(status.conditions[].type, status.conditions[].status)'
 ```
 
-Then redeploy so `CORS_ORIGINS=https://app.warden.io` (the `deploy.sh` `DOMAIN` var sets it).
+Then redeploy so `CORS_ORIGINS=https://palivane.tachtech.net` (the `deploy.sh` `DOMAIN` var sets it).
 Because SPA + API share this one origin, that's the only origin you need — and it's what the
 extension/CLI sign-in hands back as the backend.
 
@@ -98,8 +98,8 @@ extension/CLI sign-in hands back as the backend.
 > Load Balancer** instead — same container, no app changes.
 
 ## Wire the clients to this domain
-- **Extension (prod build):** `WARDEN_SAAS_URL=https://app.warden.io ./extension/build.sh`
-- **Claude Code (self-serve):** `warden-connect https://app.warden.io`
+- **Extension (prod build):** `PALIVANE_SAAS_URL=https://palivane.tachtech.net ./extension/build.sh`
+- **Claude Code (self-serve):** `palivane-connect https://palivane.tachtech.net`
 - **Managed fleets:** point `managed-settings.json` / managed policy / `/api/policy-pack` at it.
 
 ## Notes

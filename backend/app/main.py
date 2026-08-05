@@ -79,10 +79,10 @@ async def lifespan(_app: FastAPI):
             # unset OR well-known/short key both let anyone forge an admin session for any
             # tenant. (SQLite = local dev, where the dev key is allowed with a warning.)
             raise RuntimeError(
-                "WARDEN_SECRET_KEY is unset or weak. On a non-SQLite (production) deployment "
+                "PALIVANE_SECRET_KEY is unset or weak. On a non-SQLite (production) deployment "
                 "JWTs would be forgeable and anyone could mint an admin session. Set "
-                "WARDEN_SECRET_KEY to a strong random value (openssl rand -hex 32) and restart.")
-        log.warning("WARDEN_SECRET_KEY is unset/weak — using an insecure dev key (SQLite dev only).")
+                "PALIVANE_SECRET_KEY to a strong random value (openssl rand -hex 32) and restart.")
+        log.warning("PALIVANE_SECRET_KEY is unset/weak — using an insecure dev key (SQLite dev only).")
 
     # Periodic alert digests: tick every few minutes and send any tenant digests that are due.
     # Each send is claimed via a conditional DB update, so multiple workers won't duplicate.
@@ -390,7 +390,7 @@ def readyz(db: Session = Depends(get_db)):
 
 @app.get("/metrics")
 def metrics_endpoint(request: Request):
-    """Prometheus exposition. If WARDEN_METRICS_TOKEN is set, require it (Bearer or ?token=)."""
+    """Prometheus exposition. If PALIVANE_METRICS_TOKEN is set, require it (Bearer or ?token=)."""
     from fastapi.responses import Response as _Resp
     from . import metrics
     tok = settings.metrics_token
@@ -407,7 +407,7 @@ def metrics_endpoint(request: Request):
 def admin_funnel(request: Request, days: int | None = None,
                  include_internal: bool = False, db: Session = Depends(get_db)):
     """Vendor product-analytics funnel (signup → activation). Operator-only: gated by the
-    same WARDEN_METRICS_TOKEN as /metrics (Bearer or ?token=), NOT a tenant session — it
+    same PALIVANE_METRICS_TOKEN as /metrics (Bearer or ?token=), NOT a tenant session — it
     aggregates across all tenants. Returns 404 when no metrics token is configured, so it
     can't be left open by accident on a deployment that never set one up."""
     from . import funnel
@@ -418,7 +418,7 @@ def admin_funnel(request: Request, days: int | None = None,
 @app.get("/api/admin/plans")
 def admin_plans(request: Request, db: Session = Depends(get_db)):
     """Operator plan roster: every org with its plan and whether it's activated. Cross-
-    tenant, so — like the funnel — gated by WARDEN_METRICS_TOKEN, NOT a tenant session (a
+    tenant, so — like the funnel — gated by PALIVANE_METRICS_TOKEN, NOT a tenant session (a
     tenant admin must never see other orgs). 404 when no metrics token is configured."""
     from .plans import PLANS, plan_of
     from .models import Finding
@@ -524,7 +524,7 @@ def admin_upgrade_request_close(rid: int, request: Request, db: Session = Depend
 @app.get("/api/admin/licenses")
 def admin_licenses(request: Request, db: Session = Depends(get_db)):
     """Owner license registry — every issued self-hosted license and its status. Vendor-
-    only: gated by WARDEN_METRICS_TOKEN (not a tenant session); 404 without a token."""
+    only: gated by PALIVANE_METRICS_TOKEN (not a tenant session); 404 without a token."""
     from .models import License
     _require_operator(request)
     rows = db.query(License).order_by(License.issued_at.desc()).all()
@@ -586,7 +586,7 @@ def license_renew(body: dict, db: Session = Depends(get_db)):
     session — the presented blob's signature IS the credential). Verifies the blob, looks
     it up in the registry, and re-signs a fresh term UNLESS it's revoked or past its
     contract end — that's how the owner cancels a self-hosted license. Disabled (503) on
-    deployments without the signing key mounted (WARDEN_LICENSE_SIGNING_KEY)."""
+    deployments without the signing key mounted (PALIVANE_LICENSE_SIGNING_KEY)."""
     from datetime import date, datetime, timedelta
     from . import licensing
     from .models import License
@@ -714,7 +714,7 @@ def _naive_now():
 
 
 def _require_operator(request: Request) -> None:
-    """Gate the vendor /api/admin/* surface on WARDEN_METRICS_TOKEN (Bearer or ?token=) —
+    """Gate the vendor /api/admin/* surface on PALIVANE_METRICS_TOKEN (Bearer or ?token=) —
     a cross-tenant operator credential, NOT a tenant session. 404 when no token is
     configured so the surface can't be left open by accident on a deployment that never
     set one up (and isn't even discoverable there)."""
@@ -1045,7 +1045,7 @@ def _tenant_client_enforce(tenant_id: int | None, db: Session) -> bool:
     """Effective enforce stance for the local capture planes (CLI hooks + desktop proxy):
     the tenant's tri-state client_enforce if set, else the global CLIENT_ENFORCE default.
     Returned in ingest verdicts so the console governs clients without any per-device
-    config; clients may still force enforce locally via WARDEN_ENFORCE."""
+    config; clients may still force enforce locally via PALIVANE_ENFORCE."""
     if tenant_id is not None:
         t = db.get(Tenant, tenant_id)
         if t is not None and t.client_enforce is not None:
@@ -1133,7 +1133,7 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
                client_ua: str = "") -> dict:
     """Score one MCP activity on the `mcp` surface and return the client verdict.
 
-    Benign (allow-level) verdicts aren't persisted unless WARDEN_MCP_PERSIST_BENIGN is set
+    Benign (allow-level) verdicts aren't persisted unless PALIVANE_MCP_PERSIST_BENIGN is set
     — most tool calls are benign noise, not findings. Shared by the single + batch endpoints
     so their behavior can't drift."""
     actor = body.user or default_actor
@@ -1936,7 +1936,7 @@ def dismiss_benign_findings(current: User = Depends(require_admin),
                             db: Session = Depends(get_db)):
     """Bulk-dismiss this tenant's open allow-level (benign/low) findings — one-time cleanup
     for backlogs recorded before benign captures stopped persisting (see
-    WARDEN_USAGE_PERSIST_BENIGN). Idempotent; verdicts and content are kept."""
+    PALIVANE_USAGE_PERSIST_BENIGN). Idempotent; verdicts and content are kept."""
     n = (db.query(Finding)
          .filter(Finding.tenant_id == current.tenant_id, Finding.status == "open",
                  Finding.severity.in_(["benign", "low"]))
@@ -2535,7 +2535,7 @@ def stats(current: User = Depends(get_current_user), db: Session = Depends(get_d
 
 
 # --- Single-origin SPA serving (Cloud Run / any single-container deploy) --------------
-# When WARDEN_STATIC_DIR points at a built frontend (dist), serve it from this same app so
+# When PALIVANE_STATIC_DIR points at a built frontend (dist), serve it from this same app so
 # the SPA + API share one origin (no nginx). No-op in dev/tests (var unset). Registered
 # last so it never shadows the API routers/routes above.
 import os as _os  # noqa: E402

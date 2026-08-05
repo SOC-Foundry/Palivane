@@ -209,7 +209,7 @@ add_path "$HOME/.bashrc"; add_path "$HOME/.zshrc"; add_path "$HOME/.profile"
 # fish doesn't read POSIX rc files; drop a conf.d snippet (fish sources every *.fish there).
 if [ -d "$HOME/.config/fish" ] || command -v fish >/dev/null 2>&1; then
   mkdir -p "$HOME/.config/fish/conf.d"
-  printf 'fish_add_path -g "$HOME/.palivane/bin"\\n' > "$HOME/.config/fish/conf.d/warden.fish"
+  printf 'fish_add_path -g "$HOME/.palivane/bin"\\n' > "$HOME/.config/fish/conf.d/palivane.fish"
 fi
 export PATH="$BIN:$PATH"
 

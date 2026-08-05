@@ -8,7 +8,7 @@ const PLANES = [
   ["Gateway", "A drop-in API endpoint your CLIs and apps point at instead of the provider (OpenAI, Anthropic, Gemini). Scans every request — and, optionally, the model's response — in monitor or enforce mode."],
   ["Egress proxy", "A forward proxy for traffic you can't reconfigure per-app; inspects AI-bound requests at the network edge."],
   ["Git plane", "A pre-commit hook + CI check (and history sweep) that stops secrets and PII from reaching your repos."],
-  ["Endpoint sensors", "Lightweight CLIs (warden-connect, warden-secrets, warden-posture, warden-mcp) that scan for credentials at rest, MCP config, and AI-tool posture on managed machines."],
+  ["Endpoint sensors", "Lightweight CLIs (palivane-connect, palivane-secrets, palivane-posture, palivane-mcp) that scan for credentials at rest, MCP config, and AI-tool posture on managed machines."],
 ];
 
 const CATEGORIES = [
@@ -17,7 +17,7 @@ const CATEGORIES = [
   ["source_code_leak", "Source / IP leak", "Proprietary source code. Suppressed for sanctioned coding tools (Claude Code, Cursor, Copilot…) where code is expected."],
   ["confidential_data", "Confidential data", "Business-sensitive material — financials, contracts, roadmaps, M&A, HR — including content carrying a classification label (TLP, Purview/MIP banners)."],
   ["unsanctioned_ai", "Unsanctioned AI", "Use of an AI tool that isn't on your approved list. The block screen offers your sanctioned alternatives."],
-  ["credential_at_rest", "Credential at rest", "Secrets found sitting on an endpoint (cloud keys, .npmrc, .git-credentials, key files) by warden-secrets."],
+  ["credential_at_rest", "Credential at rest", "Secrets found sitting on an endpoint (cloud keys, .npmrc, .git-credentials, key files) by palivane-secrets."],
   ["dangerous_command", "Dangerous command", "Destructive or high-risk shell/tool actions surfaced from agent/MCP traffic."],
 ];
 
@@ -134,7 +134,7 @@ export default function Help({ isAdmin = false, onNavigate }) {
           <li><strong>Overview & architecture</strong> — <code>docs/overview.md</code></li>
           <li><strong>Fleet rollout (MDM pack)</strong> — Connect page → “Deploy to a fleet”, and <code>docs/</code></li>
           <li><strong>Git capture plane</strong> — <code>git/README.md</code> (pre-commit, CI, history sweep)</li>
-          <li><strong>Endpoint CLIs</strong> — <code>cli/README.md</code> (warden-secrets, warden-import, warden-posture)</li>
+          <li><strong>Endpoint CLIs</strong> — <code>cli/README.md</code> (palivane-secrets, palivane-import, palivane-posture)</li>
         </ul>
         <p className="muted" style={{ marginBottom: 0 }}>Need something that isn't here? Contact your Palivane administrator or the security team.</p>
       </Card>

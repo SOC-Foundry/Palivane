@@ -1,7 +1,7 @@
 # Warden for VS Code — in-IDE posture sensor
 
 Continuous, event-driven device posture from inside the editor — the always-on version
-of the `warden-posture` CLI (which reports only when a Claude Code session starts):
+of the `palivane-posture` CLI (which reports only when a Claude Code session starts):
 
 - **Extension inventory drift** — the installed-extension list is reported to
   `POST /api/scan/ide-extensions` on startup and *the moment it changes*
@@ -22,10 +22,10 @@ Three ways, tried in order:
 
 1. **`Warden: Connect to console`** (command palette or the status-bar shield) — opens
    the console's `/extension-connect` page, mints a per-user capture key, stores it in
-   VS Code SecretStorage. Same flow as the browser extension and `warden-connect`.
-2. `WARDEN_URL` / `WARDEN_TOKEN` in the environment.
+   VS Code SecretStorage. Same flow as the browser extension and `palivane-connect`.
+2. `PALIVANE_URL` / `PALIVANE_TOKEN` in the environment.
 3. The `env` block of `~/.claude/settings.json` — a machine already onboarded by
-   `warden-connect` reports with zero extra setup.
+   `palivane-connect` reports with zero extra setup.
 
 Set `warden.url` in VS Code settings for self-hosted deployments (default: the hosted
 SaaS, or whatever `~/.claude/settings.json` points at).

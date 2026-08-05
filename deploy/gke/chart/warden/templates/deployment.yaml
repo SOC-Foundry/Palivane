@@ -46,25 +46,25 @@ spec:
           env:
             - name: PORT
               value: {{ .Values.port | quote }}
-            - name: WARDEN_PUBLIC_URL
+            - name: PALIVANE_PUBLIC_URL
               value: "https://{{ .Values.host }}"
             - name: CORS_ORIGINS
               value: "https://{{ .Values.host }}"
-            - name: WARDEN_ALLOWED_HOSTS
+            - name: PALIVANE_ALLOWED_HOSTS
               value: {{ .Values.host | quote }}
             - name: GATEWAY_ENFORCE
               value: {{ .Values.config.gatewayEnforce | quote }}
-            - name: WARDEN_ALLOW_SIGNUP
+            - name: PALIVANE_ALLOW_SIGNUP
               value: {{ .Values.config.allowSignup | quote }}
-            - name: WARDEN_ENCRYPT_FINDINGS
+            - name: PALIVANE_ENCRYPT_FINDINGS
               value: {{ .Values.config.encryptFindings | quote }}
-            - name: WARDEN_STORE_CONTENT
+            - name: PALIVANE_STORE_CONTENT
               value: {{ .Values.config.storeContent | quote }}
-            - name: WARDEN_SECRET_KEY
+            - name: PALIVANE_SECRET_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "warden.secretName" . }}
-                  key: WARDEN_SECRET_KEY
+                  key: PALIVANE_SECRET_KEY
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
