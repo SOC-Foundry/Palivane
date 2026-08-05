@@ -59,7 +59,7 @@ def _cef(f: dict) -> str:
     return header + "|" + " ".join(f"{k}={esc(v)}" for k, v in ext.items())
 
 
-def _request(url: str, token: str, fmt: str, f: dict) -> urllib.request.Request:
+def _request(url: str, token: str, fmt: str, f: dict, naming: str = "warden") -> urllib.request.Request:
     """Build the HTTP request for the chosen format (body + headers)."""
     headers = {}
     if fmt == "cef":
@@ -68,7 +68,9 @@ def _request(url: str, token: str, fmt: str, f: dict) -> urllib.request.Request:
         if token:
             headers["Authorization"] = f"Bearer {token}"
     elif fmt == "splunk_hec":
-        body = json.dumps({"event": f, "sourcetype": "warden:finding", "source": "warden"}).encode()
+        # Tenant-selected brand key: existing tenants' Splunk dashboards key on the
+        # pre-rebrand "warden:finding" sourcetype; new tenants use "palivane:finding".
+        body = json.dumps({"event": f, "sourcetype": f"{naming}:finding", "source": naming}).encode()
         headers["content-type"] = "application/json"
         if token:
             headers["Authorization"] = f"Splunk {token}"   # HEC scheme
@@ -80,20 +82,22 @@ def _request(url: str, token: str, fmt: str, f: dict) -> urllib.request.Request:
     return urllib.request.Request(url, method="POST", data=body, headers=headers)
 
 
-def send_sync(url: str, token: str, fmt: str, fields: dict, timeout: float = 8.0) -> bool:
+def send_sync(url: str, token: str, fmt: str, fields: dict, timeout: float = 8.0,
+              naming: str = "warden") -> bool:
     from .netguard import is_safe_url
     if not url or not is_safe_url(url):     # SSRF guard: no internal/metadata targets
         return False
     try:
-        urllib.request.urlopen(_request(url, token, fmt if fmt in FORMATS else "json", fields),
-                               timeout=timeout)
+        urllib.request.urlopen(_request(url, token, fmt if fmt in FORMATS else "json", fields,
+                                        naming=naming), timeout=timeout)
         return True
     except Exception:
         return False
 
 
 def forward(url: str, token: str, min_severity: str, fmt: str, verdict: dict,
-            subject: str = "", actor: str = "", surface: str = "", org: str = "") -> None:
+            subject: str = "", actor: str = "", surface: str = "", org: str = "",
+            naming: str = "warden") -> None:
     """Push a finding to the tenant's SIEM if configured and severity >= min_severity. Non-blocking."""
     if not url:
         return
@@ -101,4 +105,4 @@ def forward(url: str, token: str, min_severity: str, fmt: str, verdict: dict,
         return
     fields = _fields(verdict, subject, actor, surface, org)
     from .dispatch import submit
-    submit(send_sync, url, token, fmt or "json", fields)   # bounded shared pool
+    submit(send_sync, url, token, fmt or "json", fields, naming=naming)   # bounded shared pool

@@ -306,7 +306,8 @@ def test_siem(current: User = Depends(require_admin), db: Session = Depends(get_
         {"severity": "high", "risk_score": 75, "finding_id": 0,
          "signals": [{"category": "secret_leak"}]},
         subject="Palivane SIEM test event", actor="palivane", surface="test", org=t.slug)
-    ok = siem.send_sync(t.siem_url.strip(), t.siem_token or "", t.siem_format or "json", fields)
+    ok = siem.send_sync(t.siem_url.strip(), t.siem_token or "", t.siem_format or "json", fields,
+                        naming=t.siem_naming or "warden")
     return {"ok": ok}
 
 
@@ -318,7 +319,8 @@ def test_siem_s3(current: User = Depends(require_admin), db: Session = Depends(g
     if not t or not (t.siem_s3_bucket or "").strip():
         raise HTTPException(status_code=400, detail="no S3 bucket configured")
     ok, detail = siem_s3.test(t.siem_s3_bucket.strip(), t.siem_s3_prefix or "",
-                              t.siem_s3_region or "", t.siem_s3_key_id or "", t.siem_s3_secret or "")
+                              t.siem_s3_region or "", t.siem_s3_key_id or "", t.siem_s3_secret or "",
+                              naming=t.siem_naming or "warden")
     return {"ok": ok, "detail": detail}
 
 

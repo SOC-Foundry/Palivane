@@ -264,6 +264,7 @@ class TenantUpdate(BaseModel):
     siem_token: str | None = None           # bearer / Splunk-HEC token (write-only)
     siem_min_severity: str | None = None    # minimum severity to forward
     siem_format: str | None = None          # json | splunk_hec | cef
+    siem_naming: str | None = None          # palivane | warden (brand key in sourcetype/S3 path)
     siem_s3_bucket: str | None = Field(None, max_length=255)   # S3 delivery bucket
     siem_s3_prefix: str | None = Field(None, max_length=255)   # key prefix
     siem_s3_region: str | None = Field(None, max_length=32)
