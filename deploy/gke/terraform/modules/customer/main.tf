@@ -15,7 +15,7 @@ resource "google_container_node_pool" "this" {
     machine_type    = var.machine_type
     oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
     service_account = var.node_sa_email
-    labels          = { warden-customer = var.customer }
+    labels          = { palivane-customer = var.customer }
     taint {
       key    = "dedicated"
       value  = var.customer
@@ -27,7 +27,7 @@ resource "google_container_node_pool" "this" {
 
 # Dedicated private Cloud SQL instance for this customer.
 resource "google_sql_database_instance" "this" {
-  name                = "warden-${var.customer}"
+  name                = "palivane-${var.customer}"
   region              = var.region
   database_version    = "POSTGRES_16"
   deletion_protection = true
@@ -48,14 +48,14 @@ resource "google_sql_database_instance" "this" {
 }
 
 resource "google_sql_database" "this" {
-  name     = "warden"
+  name     = "palivane"
   instance = google_sql_database_instance.this.name
 }
 
 # Per-pod Google SA: Cloud SQL client + secret access, bound to the customer's KSA.
 resource "google_service_account" "app" {
-  account_id   = "warden-${var.customer}"
-  display_name = "Warden app (${var.customer})"
+  account_id   = "palivane-${var.customer}"
+  display_name = "Palivane app (${var.customer})"
 }
 resource "google_project_iam_member" "cloudsql" {
   project = var.project_id

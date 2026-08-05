@@ -1,9 +1,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "warden.name" . }}
+  name: {{ include "palivane.name" . }}
   labels:
-    {{- include "warden.labels" . | nindent 4 }}
+    {{- include "palivane.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicas }}
   selector:
@@ -12,13 +12,13 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "warden.labels" . | nindent 8 }}
+        {{- include "palivane.labels" . | nindent 8 }}
     spec:
-      serviceAccountName: {{ include "warden.name" . }}
+      serviceAccountName: {{ include "palivane.name" . }}
       {{- if .Values.nodePool.isolate }}
       # Land only on this customer's dedicated node pool (Terraform taints + labels it).
       nodeSelector:
-        warden-customer: {{ .Values.customer | quote }}
+        palivane-customer: {{ .Values.customer | quote }}
       tolerations:
         - key: dedicated
           operator: Equal
@@ -39,7 +39,7 @@ spec:
           resources:
             requests: { cpu: "50m", memory: "64Mi" }
       containers:
-        - name: warden
+        - name: palivane
           image: "{{ .Values.image.repo }}:{{ .Values.image.tag }}"
           ports:
             - containerPort: {{ .Values.port }}
@@ -63,12 +63,12 @@ spec:
             - name: PALIVANE_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "warden.secretName" . }}
+                  name: {{ include "palivane.secretName" . }}
                   key: PALIVANE_SECRET_KEY
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "warden.secretName" . }}
+                  name: {{ include "palivane.secretName" . }}
                   key: DATABASE_URL
           readinessProbe:
             httpGet: { path: /api/health, port: {{ .Values.port }} }
