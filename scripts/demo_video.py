@@ -47,8 +47,8 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
     # Subtitle claims only what is true: the verdicts, scores and remediation are real
     # output from a live backend. The third-party app frames are illustrative.
     scenes.append(("title", S.title_scene(
-        "WARDEN", "One policy. Everywhere AI touches your data.",
-        "Every verdict in this video came from a live Warden instance."), 4.0))
+        "PALIVANE", "One policy. Everywhere AI touches your data.",
+        "Every verdict in this video came from a live Palivane instance."), 4.0))
 
     # 1-3 · the browser planes
     for key, brand, accent, bg, panel, items in (
@@ -74,7 +74,7 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
             ("dim", ""),
             ("err", f"API Error 400: {msg}"),
             ("dim", ""),
-            ("dim", "  The prompt never reached Anthropic. Warden scored it at the"),
+            ("dim", "  The prompt never reached Anthropic. Palivane scored it at the"),
             ("dim", "  gateway and refused the request."),
         ], "claudecode", "Claude Code", "#d97757"), 10.0))
 
@@ -86,7 +86,7 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
         "dana@laptop — codex", [
             ("cmd", "$ codex \"wire the billing reconciler up to prod\""),
             ("dim", ""),
-            ("err", f"Blocked by Warden: {cats} in your prompt — "
+            ("err", f"Blocked by Palivane: {cats} in your prompt — "
                     f"risk {cx.get('risk_score')}/{cx.get('severity')}."),
             ("err", "The prompt was not sent."),
             ("dim", ""),
@@ -124,7 +124,7 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
             ("dim", ""),
             ("err", "  🔴 This bucket is PUBLIC and holds sensitive data — the crown-jewel case."),
             ("dim", ""),
-            ("warn", f"  ⚠ Warden flagged {len(aws.get('objects', []))} object(s):"),
+            ("warn", f"  ⚠ Palivane flagged {len(aws.get('objects', []))} object(s):"),
             *obj_lines,
         ], "aws", "AWS S3 at rest", "#ff9900"), 10.0))
 
@@ -162,7 +162,7 @@ def console_tour_frames(pw, out_dir: str, seconds: float) -> int:
             "Policies", "Simulator", "Report", "Settings", "Audit"]
     per = seconds / len(tabs)
     frames_per = max(1, int(per * FPS))
-    b = pw.chromium.launch()
+    b = pw.chromium.launch(args=["--disable-dev-shm-usage", "--no-sandbox"])   # tiny /dev/shm in CI/sandboxes breaks captureScreenshot
     page = b.new_context(viewport={"width": W, "height": H}).new_page()
     page.add_init_script(f"localStorage.setItem('warden_token', {json.dumps(token)})")
     # A drawn cursor that glides to each tab, so the tour reads as someone using the app.
@@ -211,7 +211,7 @@ def render_scene(pw, name: str, html: str, seconds: float, out_dir: str) -> int:
         f.write(html)
     # the emblem is referenced relatively by the title card
     shutil.copy(f"{REPO}/frontend/public/palivane-emblem.png", f"{WORK}/palivane-emblem.png")
-    b = pw.chromium.launch()
+    b = pw.chromium.launch(args=["--disable-dev-shm-usage", "--no-sandbox"])   # tiny /dev/shm in CI/sandboxes breaks captureScreenshot
     page = b.new_context(viewport={"width": W, "height": H}).new_page()
     page.goto("file://" + path)
     page.wait_for_timeout(250)

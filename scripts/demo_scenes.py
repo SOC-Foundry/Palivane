@@ -85,7 +85,7 @@ def block_modal(verdict: dict) -> str:
           border:1px solid #2a3346;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.5);
           padding:22px 24px;transform:translateY(10px) scale(.97)">
         <div style="display:flex;align-items:center;gap:10px;font-size:17px;font-weight:800">
-          <span style="color:#ff5d6c">&#128737;</span> Warden blocked this message
+          <span style="color:#ff5d6c">&#128737;</span> Palivane blocked this message
         </div>
         <p style="color:#c4ccdb;margin:12px 0 6px">
           It was <strong>not sent</strong> to the AI tool because it contained {html.escape(reason)}.

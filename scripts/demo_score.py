@@ -1,4 +1,4 @@
-"""Lofi score for the Warden marketing videos (scripts/demo_video.py renders the picture).
+"""Lofi score for the Palivane marketing videos (scripts/demo_video.py renders the picture).
 
 v3: 'less synthy, more lofi'. The sustained detuned-sine pads are gone; the bed is now
 Rhodes-style keys comping 7th chords with tape wow/flutter, a plucked bass, a soft
