@@ -315,8 +315,12 @@ ENV
     dbus-update-activation-environment \
       "http_proxy=http://127.0.0.1:$PORT" "https_proxy=http://127.0.0.1:$PORT" \
       "HTTP_PROXY=http://127.0.0.1:$PORT" "HTTPS_PROXY=http://127.0.0.1:$PORT" 2>/dev/null || true
-  log "session proxy env written (environment.d) — Chromium/Electron desktop apps route through"
-  log "Palivane on next login. For apps already open, quit and reopen them (or log out/in)."
+  log "session proxy env written (environment.d) and pushed into the live session managers."
+  log "CAPTURE IS NOT FULLY ON YET: the desktop shell (plasmashell/gnome-shell) keeps the"
+  log "env it had at login and injects it into apps launched from the taskbar/menu — those"
+  log "launches may bypass the proxy until you log out and back in. Quit+reopen can be"
+  log "enough for some launch paths, but don't trust it for a security control: verify each"
+  log "app's traffic actually shows in the Palivane console, and re-login if it doesn't."
 }
 
 unset_session_proxy_env() {
@@ -484,9 +488,11 @@ cmd_install() {
     log "done. CLIs (${CLI_SHIM_TOOLS}) now route through Palivane. Enforce mode: ${PALIVANE_PROXY_ENFORCE:-false} (monitor)."
     log "Verify: open a NEW terminal and run 'claude'; check findings in the console."
   else
-    log "done. Desktop AI apps + CLIs now route through Palivane. Enforce mode: ${PALIVANE_PROXY_ENFORCE:-false} (monitor)."
-    log "Verify: CLIs work in a new terminal now; desktop apps (Claude/ChatGPT) route after you"
-    log "        log out and back in (or quit+reopen them), since GUI proxy env applies at login."
+    log "done. CLIs route through Palivane now. Enforce mode: ${PALIVANE_PROXY_ENFORCE:-false} (monitor)."
+    log "Desktop apps (Claude/ChatGPT) route AFTER YOU LOG OUT AND BACK IN: the desktop shell"
+    log "keeps its login-time env and injects it into taskbar/menu launches, so until re-login"
+    log "those launches can silently bypass the proxy. Quit+reopen may work for some launch"
+    log "paths — verify in the Palivane console (traffic visible = captured); don't assume."
   fi
 }
 
