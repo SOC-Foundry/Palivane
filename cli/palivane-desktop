@@ -223,7 +223,11 @@ nss_trust_ca() {
     return 0
   fi
   [ -d "${HOME_DIR}/.pki/nssdb" ] || mkdir -p "${HOME_DIR}/.pki/nssdb"
-  certutil -d "$NSS_DB" -D -n "$CA_NICK" 2>/dev/null || true   # replace any prior copy
+  # Replace any prior copy under EITHER nickname: a pre-rebrand install stored the same
+  # CA as warden-mitmproxy, and certutil -A silently no-ops when the cert already sits
+  # in the store under another name — so the palivane nickname was never created.
+  certutil -d "$NSS_DB" -D -n "$CA_NICK" 2>/dev/null || true
+  certutil -d "$NSS_DB" -D -n warden-mitmproxy 2>/dev/null || true
   if certutil -d "$NSS_DB" -A -n "$CA_NICK" -t C,, -i "$CA" 2>/dev/null; then
     log "trusted the CA in the NSS store — Chromium/Electron desktop apps now verify through the proxy."
   else
@@ -407,13 +411,17 @@ UNIT
   esac
 }
 
-# Resolve the real executable for a tool, skipping our own shim dir so a shim never
-# exec's itself. Prints the path; returns non-zero if not found.
+# Resolve the real executable for a tool, skipping our own shim dir — and any capture
+# shim from either brand generation elsewhere on PATH: a stale ~/.warden/bin shim
+# otherwise gets wired as the "real" binary, and the new shim exec's a path that dies
+# the moment that leftover dir is cleaned up. Prints the path; non-zero if not found.
 real_bin() {
   local name="$1" p IFS=:
   for p in $PATH; do
     [ "$p" = "$SHIM_DIR" ] && continue
-    [ -x "$p/$name" ] && { printf '%s' "$p/$name"; return 0; }
+    [ -x "$p/$name" ] || continue
+    grep -qE "(palivane|warden)-desktop CLI capture shim" "$p/$name" 2>/dev/null && continue
+    printf '%s' "$p/$name"; return 0
   done
   return 1
 }
@@ -424,6 +432,9 @@ real_bin() {
 # (NODE_EXTRA_CA_CERTS is read once at Node startup, so it must precede launch), then
 # exec the real binary. Surgical + reversible (uninstall removes the shims).
 wire_cli_capture() {
+  # Sweep shims from BOTH generations first (we rewrite ours anyway): a leftover
+  # ~/.warden/bin shim earlier on PATH would keep shadowing the fresh one forever.
+  unwire_cli_capture
   mkdir -p "$SHIM_DIR"
   case ":$PATH:" in
     *":$SHIM_DIR:"*) : ;;
