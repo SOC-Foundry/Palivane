@@ -95,71 +95,71 @@ def test_forcelist_and_pack():
                          "claude-managed-settings.json", "openai.env", "gemini.txt",
                          "gemini-settings.json", "codex-hooks.json", "codex.txt",
                          "copilot-hooks.json", "copilot.txt",
-                         "cursor-hooks.json", "cursor.txt", "warden-secrets.plist",
-                         "warden-secrets.cron", "warden-secrets-task.xml", "ca-note.txt"}
+                         "cursor-hooks.json", "cursor.txt", "palivane-secrets.plist",
+                         "palivane-secrets.cron", "palivane-secrets-task.xml", "ca-note.txt"}
 
 
 def test_secrets_schedule_artifacts_default_to_trufflehog():
     # Default engine drives TruffleHog on the scheduled run.
-    plist = pp.secrets_launchd("https://w.acme.com/", "/opt/warden-secrets")
-    assert "net.tachtech.warden.secrets" in plist and "/opt/warden-secrets" in plist
+    plist = pp.secrets_launchd("https://w.acme.com/", "/opt/palivane-secrets")
+    assert "net.tachtech.palivane.secrets" in plist and "/opt/palivane-secrets" in plist
     assert "<string>--engine</string><string>trufflehog</string>" in plist
-    cron = pp.secrets_cron("https://w.acme.com", "/opt/warden-secrets")
-    assert "0 3 * * *" in cron and "/opt/warden-secrets --engine trufflehog" in cron
-    xml = pp.secrets_win_task("https://w.acme.com", r"C:\Program Files\Warden\warden-secrets.exe")
+    cron = pp.secrets_cron("https://w.acme.com", "/opt/palivane-secrets")
+    assert "0 3 * * *" in cron and "/opt/palivane-secrets --engine trufflehog" in cron
+    xml = pp.secrets_win_task("https://w.acme.com", r"C:\Program Files\Warden\palivane-secrets.exe")
     assert "ScheduleByDay" in xml and "<Arguments>--engine trufflehog</Arguments>" in xml
 
 
 def test_secrets_schedule_engine_configurable():
-    assert "gitleaks" in pp.secrets_cron("https://w", "/opt/warden-secrets", "gitleaks")
+    assert "gitleaks" in pp.secrets_cron("https://w", "/opt/palivane-secrets", "gitleaks")
     # An unknown/empty engine emits the plain built-in command (no --engine).
-    assert "--engine" not in pp.secrets_cron("https://w", "/opt/warden-secrets", "")
+    assert "--engine" not in pp.secrets_cron("https://w", "/opt/palivane-secrets", "")
 
 
 def test_policy_pack_endpoint_secrets_engine(client):
     r = client.get("/api/policy-pack?secrets_engine=gitleaks")
     assert r.status_code == 200
-    assert "gitleaks" in r.json()["artifacts"]["warden-secrets.cron"]
+    assert "gitleaks" in r.json()["artifacts"]["palivane-secrets.cron"]
 
 
 def test_cursor_hooks_registers_security_events():
-    h = json.loads(pp.cursor_hooks("/opt/warden-cursor-hook"))
+    h = json.loads(pp.cursor_hooks("/opt/palivane-cursor-hook"))
     assert h["version"] == 1
     for ev in ("beforeSubmitPrompt", "beforeShellExecution", "beforeMCPExecution",
                "beforeReadFile", "afterFileEdit"):
-        assert h["hooks"][ev][0]["command"] == "/opt/warden-cursor-hook"
+        assert h["hooks"][ev][0]["command"] == "/opt/palivane-cursor-hook"
 
 
 def test_cursor_note_explains_pinning_and_planes():
-    note = pp.cursor_note("https://w.acme.com/", "/opt/warden-cursor-hook")
+    note = pp.cursor_note("https://w.acme.com/", "/opt/palivane-cursor-hook")
     assert "pins" in note.lower() and "beforeSubmitPrompt" in note
-    assert "warden-mcp" in note and "git" in note.lower()
+    assert "palivane-mcp" in note and "git" in note.lower()
     assert "https://w.acme.com/v1" in note                        # optional override URL
 
 
 def test_gemini_settings_registers_prompt_and_tool_hooks():
-    s = json.loads(pp.gemini_settings("/opt/warden-gemini-hook"))
+    s = json.loads(pp.gemini_settings("/opt/palivane-gemini-hook"))
     ba = s["hooks"]["BeforeAgent"][0]
     assert "matcher" not in ba                       # BeforeAgent takes no matcher
-    assert ba["hooks"][0]["command"] == "/opt/warden-gemini-hook"
+    assert ba["hooks"][0]["command"] == "/opt/palivane-gemini-hook"
     assert ba["hooks"][0]["timeout"] == 10000        # Gemini timeouts are milliseconds
     assert s["hooks"]["BeforeTool"][0]["matcher"] == ".*"
 
 
 def test_codex_hooks_registers_prompt_and_tool_hooks():
-    h = json.loads(pp.codex_hooks("/opt/warden-codex-hook"))
+    h = json.loads(pp.codex_hooks("/opt/palivane-codex-hook"))
     ups = h["hooks"]["UserPromptSubmit"][0]
     assert "matcher" not in ups                      # UserPromptSubmit takes no matcher
-    assert ups["hooks"][0] == {"type": "command", "command": "/opt/warden-codex-hook",
+    assert ups["hooks"][0] == {"type": "command", "command": "/opt/palivane-codex-hook",
                                "timeout": 10}
     assert h["hooks"]["PreToolUse"][0]["matcher"] == ".*"
 
 
 def test_codex_note_explains_subscription_gap():
-    note = pp.codex_note("https://w.acme.com/", "/opt/warden-codex-hook")
+    note = pp.codex_note("https://w.acme.com/", "/opt/palivane-codex-hook")
     assert "OPENAI_BASE_URL" in note                 # why the env route isn't enough
     assert "requirements.toml" in note               # managed-hooks distribution
-    assert "/opt/warden-codex-hook" in note
+    assert "/opt/palivane-codex-hook" in note
 
 
 def test_openai_env_routes_to_gateway():
@@ -177,33 +177,33 @@ def test_gemini_config_points_at_v1beta():
 
 
 def test_claude_managed_settings_default_keeps_own_auth():
-    s = json.loads(pp.claude_managed_settings("https://w.acme.com/", "/opt/warden-hook",
-                                              "/opt/warden-posture"))
+    s = json.loads(pp.claude_managed_settings("https://w.acme.com/", "/opt/palivane-hook",
+                                              "/opt/palivane-posture"))
     # Default: no gateway routing — Claude Code keeps its own sign-in, and forceLoginMethod
     # locks login to claude.ai (Pro/Max) so the fleet can't drift onto API-key billing.
     assert "ANTHROPIC_BASE_URL" not in s["env"]
     assert "ANTHROPIC_AUTH_TOKEN" not in s["env"]
     assert s["forceLoginMethod"] == "claudeai"
-    assert s["env"]["WARDEN_URL"] == "https://w.acme.com"
-    assert s["env"]["WARDEN_TOKEN"].startswith("ak_")
+    assert s["env"]["PALIVANE_URL"] == "https://w.acme.com"
+    assert s["env"]["PALIVANE_TOKEN"].startswith("ak_")
     # Route C hooks at the deployed script paths.
     pre = s["hooks"]["PreToolUse"][0]["hooks"][0]
-    assert pre["command"] == "/opt/warden-hook" and pre["timeout"] == 10
+    assert pre["command"] == "/opt/palivane-hook" and pre["timeout"] == 10
     # Prompt-level coverage: same script, UserPromptSubmit event (no matcher).
     ups = s["hooks"]["UserPromptSubmit"][0]
     assert "matcher" not in ups
-    assert ups["hooks"][0]["command"] == "/opt/warden-hook"
+    assert ups["hooks"][0]["command"] == "/opt/palivane-hook"
     sess = s["hooks"]["SessionStart"][0]["hooks"][0]["command"]
-    assert sess == "/opt/warden-posture --async --quiet"
+    assert sess == "/opt/palivane-posture --async --quiet"
 
 
 def test_claude_managed_settings_route_gateway_opt_in():
-    s = json.loads(pp.claude_managed_settings("https://w.acme.com/", "/opt/warden-hook",
-                                              "/opt/warden-posture", route_gateway=True))
+    s = json.loads(pp.claude_managed_settings("https://w.acme.com/", "/opt/palivane-hook",
+                                              "/opt/palivane-posture", route_gateway=True))
     # Gateway routing + Warden credentials in env (the ak_ token doubles as ingest auth).
     # No /v1 suffix: the Anthropic SDK appends /v1/messages, so the base is the bare origin.
     assert s["env"]["ANTHROPIC_BASE_URL"] == "https://w.acme.com"
-    assert s["env"]["ANTHROPIC_AUTH_TOKEN"] == s["env"]["WARDEN_TOKEN"]
+    assert s["env"]["ANTHROPIC_AUTH_TOKEN"] == s["env"]["PALIVANE_TOKEN"]
     assert "forceLoginMethod" not in s        # login method is moot when routing
 
 

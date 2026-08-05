@@ -54,11 +54,11 @@ def test_ingest_verdict_enforce_staged_per_user(client, raw_client):
     payload = {"content": "hello", "destination": "claude-code", "tool": "claude-code"}
     r = raw_client.post("/api/ingest/ai-usage",
                         json={**payload, "user": "dev@acme.com"},
-                        headers={"X-Warden-Token": key})
+                        headers={"X-Palivane-Token": key})
     assert r.json()["enforce"] is True
     r = raw_client.post("/api/ingest/ai-usage",
                         json={**payload, "user": "other@acme.com"},
-                        headers={"X-Warden-Token": key})
+                        headers={"X-Palivane-Token": key})
     assert r.json()["enforce"] is False
 
 
@@ -80,7 +80,7 @@ def test_heartbeat_recorded_and_fleet_lists_it(client, raw_client):
     raw_client.post("/api/ingest/ai-usage",
                     json={"content": "hi", "destination": "claude-code",
                           "tool": "claude-code", "user": "hb@acme.com"},
-                    headers={"X-Warden-Token": key})
+                    headers={"X-Palivane-Token": key})
     fleet = client.get("/api/fleet").json()
     mine = [s for s in fleet["sensors"] if s["actor"] == "hb@acme.com"]
     assert mine and mine[0]["plane"] == "ai-usage" and mine[0]["health"] == "fresh"
@@ -91,7 +91,7 @@ def test_revoked_key_presentation_is_surfaced(client, raw_client):
     made = client.post("/api/apikeys", json={"label": "laptop", "actor": "gone@acme.com"}).json()
     client.delete(f"/api/apikeys/{made['id']}")   # revoke
     r = raw_client.post("/api/ingest/ai-usage", json={"content": "hi"},
-                        headers={"X-Warden-Token": made["token"]})
+                        headers={"X-Palivane-Token": made["token"]})
     assert r.status_code == 401
     fleet = client.get("/api/fleet").json()
     assert any(k["prefix"] == made["prefix"] for k in fleet["dead_keys"])
@@ -106,7 +106,7 @@ def test_exception_request_approve_creates_override(client, raw_client):
                         json={"finding_id": None, "destination": "chat.openai.com",
                               "reason": "need it for a customer escalation",
                               "categories": ["unsanctioned_ai"], "user": "blocked@acme.com"},
-                        headers={"X-Warden-Token": key})
+                        headers={"X-Palivane-Token": key})
     req_id = r.json()["id"]
     assert r.json()["ok"] is True
 
@@ -130,7 +130,7 @@ def test_exception_deny_leaves_no_override(client, raw_client):
     req_id = raw_client.post("/api/exception-request",
                              json={"reason": "why not", "categories": ["secret_leak"],
                                    "user": "denied@acme.com"},
-                             headers={"X-Warden-Token": key}).json()["id"]
+                             headers={"X-Palivane-Token": key}).json()["id"]
     res = client.post(f"/api/exceptions/{req_id}/resolve",
                       json={"action": "deny", "note": "no"}).json()
     assert res["status"] == "denied" and res["applied_override_id"] is None
@@ -176,7 +176,7 @@ def test_policies_analytics_counts_checks(client, raw_client):
     raw_client.post("/api/ingest/ai-usage",
                     json={"content": "key AKIAABCDEFGHIJKLMNOP", "tool": "claude-code",
                           "destination": "claude-code", "user": "an@acme.com"},
-                    headers={"X-Warden-Token": key})
+                    headers={"X-Palivane-Token": key})
     checks = client.get("/api/policies/analytics").json()["checks"]
     assert any(c["check"] == "secret_leak" and c["findings"] >= 1 for c in checks)
 
@@ -186,7 +186,7 @@ def test_report_summary_shape(client, raw_client):
     raw_client.post("/api/ingest/ai-usage",
                     json={"content": "SSN 123-45-6789", "tool": "claude-code",
                           "destination": "claude-code", "user": "rep@acme.com"},
-                    headers={"X-Warden-Token": key})
+                    headers={"X-Palivane-Token": key})
     rep = client.get("/api/reports/summary?days=30").json()
     assert rep["findings"] >= 1 and rep["prevented_blocks"] >= 1
     assert rep["by_severity"] and rep["by_category"]

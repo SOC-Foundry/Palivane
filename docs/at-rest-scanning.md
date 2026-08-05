@@ -6,27 +6,27 @@ scanning data that's already sitting somewhere: **S3 buckets**, **entire reposit
 **whole GitHub orgs**. They reuse the same detection engine; the only new part is *reaching*
 the data.
 
-All three send Palivane only what it needs — for `warden-secrets` (device at rest) nothing but
+All three send Palivane only what it needs — for `palivane-secrets` (device at rest) nothing but
 masked metadata leaves the machine; for the S3 and code scanners, object/file **contents**
 are streamed to your Palivane backend's detection engine (self-hosted — the content stays in
 your infrastructure) and only findings are stored.
 
 | Scanner | Scans | Trigger |
 | --- | --- | --- |
-| [`warden-secrets`](../cli/README.md) | Credentials at rest on a **device** (SSH keys, `.env`, cloud creds) | on-demand / MDM-scheduled |
-| **`warden-s3-scan`** | **S3 bucket** objects + public-exposure | on-demand / systemd timer |
-| **`warden-github-scan`** | **Whole repos / an entire GitHub org** (via the API) | on-demand / scheduled Action |
-| **`warden-ci-scan`** | **GitHub Actions workflows / CI runners** (posture, not content): pwn-request triggers, unpinned actions, write-all permissions, self-hosted runners on PRs, AI agents in CI | on-demand / PR gate / scheduled Action |
-| `warden_git_scan.py --all` | Every tracked file in a **local checkout** | on-demand / CI |
+| [`palivane-secrets`](../cli/README.md) | Credentials at rest on a **device** (SSH keys, `.env`, cloud creds) | on-demand / MDM-scheduled |
+| **`palivane-s3-scan`** | **S3 bucket** objects + public-exposure | on-demand / systemd timer |
+| **`palivane-github-scan`** | **Whole repos / an entire GitHub org** (via the API) | on-demand / scheduled Action |
+| **`palivane-ci-scan`** | **GitHub Actions workflows / CI runners** (posture, not content): pwn-request triggers, unpinned actions, write-all permissions, self-hosted runners on PRs, AI agents in CI | on-demand / PR gate / scheduled Action |
+| `palivane_git_scan.py --all` | Every tracked file in a **local checkout** | on-demand / CI |
 
 > These are **content** sweeps (secrets/PII in current files & objects). Secrets buried in
 > **git history** are a separate job — use the TruffleHog/Gitleaks import path in
 > [`git/README.md`](../git/README.md). Cloud **posture** (IAM, CloudTrail, bucket
 > misconfiguration beyond public-read) is out of scope.
 
-Both `warden-s3-scan` and `warden-github-scan` are **ops/admin tools** — run them from CI or
+Both `palivane-s3-scan` and `palivane-github-scan` are **ops/admin tools** — run them from CI or
 a security box, not on every developer machine. Download them from the console:
-`https://<your-console>/cli/warden-s3-scan` and `.../warden-github-scan`. Both fail **open**
+`https://<your-console>/cli/palivane-s3-scan` and `.../palivane-github-scan`. Both fail **open**
 by default; add `--fail-closed` in a pipeline so a broken sweep is visible.
 
 ---
@@ -35,8 +35,8 @@ by default; add `--fail-closed` in a pipeline so a broken sweep is visible.
 
 ```bash
 export WARDEN_URL=https://warden.corp.example.com WARDEN_TOKEN=ak_…
-warden-s3-scan my-data-bucket --prefix exports/ --record
-warden-s3-scan my-data-bucket --dry-run        # list what it would scan + public verdict; sends nothing
+palivane-s3-scan my-data-bucket --prefix exports/ --record
+palivane-s3-scan my-data-bucket --dry-run        # list what it would scan + public verdict; sends nothing
 ```
 
 It streams the bucket's **text** objects (skips binary and anything over `--max-object-bytes`,
@@ -53,7 +53,7 @@ AuthenticatedUsers groups — and a *fully-enabled* Block Public Access then ove
 
 ### AWS credentials & IAM
 
-`warden-s3-scan` uses the **standard boto3 credential chain** — no AWS keys are ever passed
+`palivane-s3-scan` uses the **standard boto3 credential chain** — no AWS keys are ever passed
 as flags. On a scheduled security box the clean, keyless option is an **instance role**;
 otherwise a named profile (`AWS_PROFILE`) or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`
 (+ `AWS_REGION`) work too.
@@ -101,15 +101,15 @@ Add more bucket ARNs to cover more buckets, or use `arn:aws:s3:::*` and `.../*` 
 
 ### Scheduling (systemd timer)
 
-The instanced units [`deploy/warden-s3-scan@.service`](../deploy/warden-s3-scan@.service) +
-[`.timer`](../deploy/warden-s3-scan@.timer) run **one scan per bucket, daily** (`%i` = bucket):
+The instanced units [`deploy/palivane-s3-scan@.service`](../deploy/palivane-s3-scan@.service) +
+[`.timer`](../deploy/palivane-s3-scan@.timer) run **one scan per bucket, daily** (`%i` = bucket):
 
 ```bash
-curl -fsSL "$WARDEN_URL/cli/warden-s3-scan" -o /opt/warden/bin/warden-s3-scan && sudo chmod +x $_
+curl -fsSL "$WARDEN_URL/cli/palivane-s3-scan" -o /opt/warden/bin/palivane-s3-scan && sudo chmod +x $_
 sudo -u warden /opt/warden/backend/.venv/bin/pip install boto3      # the scanner needs boto3
-sudo cp deploy/warden-s3-scan@.{service,timer} /etc/systemd/system/ && sudo systemctl daemon-reload
-sudo systemctl enable --now warden-s3-scan@my-data-bucket.timer     # repeat per bucket
-systemctl list-timers 'warden-s3-scan@*'
+sudo cp deploy/palivane-s3-scan@.{service,timer} /etc/systemd/system/ && sudo systemctl daemon-reload
+sudo systemctl enable --now palivane-s3-scan@my-data-bucket.timer     # repeat per bucket
+systemctl list-timers 'palivane-s3-scan@*'
 ```
 
 `WARDEN_URL` + `WARDEN_TOKEN` go in `/etc/warden/warden.env`; with an instance role you set
@@ -125,15 +125,15 @@ The pre-commit hook and PR Action scan **what changes**. To sweep **existing con
 export WARDEN_URL=https://warden.corp.example.com WARDEN_TOKEN=ak_…
 
 # Every tracked file in the current checkout (not just the diff):
-warden_git_scan.py --all --record
+palivane_git_scan.py --all --record
 
 # Every repo in a GitHub org (or --user, or explicit --repo owner/name), via the API —
 # no local clone. Skips archived/fork repos by default.
-GITHUB_TOKEN=ghp_… warden-github-scan --org acme --record
-GITHUB_TOKEN=ghp_… warden-github-scan --repo acme/api --repo acme/web
+GITHUB_TOKEN=ghp_… palivane-github-scan --org acme --record
+GITHUB_TOKEN=ghp_… palivane-github-scan --repo acme/api --repo acme/web
 ```
 
-`warden-github-scan` enumerates the org's/user's/explicit repos, walks each default-branch
+`palivane-github-scan` enumerates the org's/user's/explicit repos, walks each default-branch
 tree, fetches + decodes the text blobs, and scores them — no checkout required.
 
 ### GitHub token
@@ -152,9 +152,9 @@ Pass it as `GITHUB_TOKEN`. `--github-api` points at a GitHub Enterprise host if 
 
 ### Scheduling (GitHub Action)
 
-Copy [`git/warden-org-scan.yml`](../git/warden-org-scan.yml) into a repo as
-`.github/workflows/warden-org-scan.yml` (a dedicated security/ops repo is a good home). It
-runs `warden-github-scan --org` on a **cron** (weekly by default) + on demand. Set two Actions
+Copy [`git/palivane-org-scan.yml`](../git/palivane-org-scan.yml) into a repo as
+`.github/workflows/palivane-org-scan.yml` (a dedicated security/ops repo is a good home). It
+runs `palivane-github-scan --org` on a **cron** (weekly by default) + on demand. Set two Actions
 secrets: `WARDEN_TOKEN` (a Palivane `ak_…` key) and `WARDEN_ORG_READ_TOKEN` (the org-read PAT
 above). Trigger it once from the **Actions tab → Run workflow** to verify — a green run means
 the tokens are right; a 401/403 in the log means the PAT lacks org read or needs approval.

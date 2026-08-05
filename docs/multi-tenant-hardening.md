@@ -45,7 +45,7 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   (`gateway_usage`), split by `kind`: the **gateway** budget (`rate_limit`, else global
   `GATEWAY_RATE_LIMIT`) and a **separate sensor/ingest** budget (`ingest_rate_limit`, else
   `INGEST_RATE_LIMIT`) for `/api/ingest/*` + `/api/scan/*` — so high-volume agentic capture
-  (warden-hook/warden-mcp) can't starve real LLM traffic. Over-limit → provider-shaped
+  (palivane-hook/palivane-mcp) can't starve real LLM traffic. Over-limit → provider-shaped
   **429** (gateway) or `429 + Retry-After` (ingest); 0 = unlimited. The same counter is the
   metering source: `GET /api/usage` reports gateway current/24h/per-day plus `ingest_*`
   totals. Benign MCP tool calls aren't persisted by default (`WARDEN_MCP_PERSIST_BENIGN`),

@@ -33,7 +33,7 @@ def _agent(client, name, role="", deny=None):
 def _mcp(raw_client, tok, server="mcp", tool="", args_text=""):
     return raw_client.post("/api/ingest/mcp",
                            json={"method": "tools/call", "server": server, "tool": tool,
-                                 "args_text": args_text}, headers={"X-Warden-Token": tok}).json()
+                                 "args_text": args_text}, headers={"X-Palivane-Token": tok}).json()
 
 
 def test_shell_command_enforced(client, raw_client):

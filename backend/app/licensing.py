@@ -32,6 +32,7 @@ import json
 import os
 import secrets
 from datetime import date, datetime, timedelta, timezone
+from .config import _env
 
 # TachTech's vendor license public key (Ed25519). The matching private key is held by
 # the vendor only. Replaceable for testing/forks via WARDEN_LICENSE_PUBKEY.
@@ -79,7 +80,7 @@ def signing_key() -> bytes | None:
     """The vendor signing key from WARDEN_LICENSE_SIGNING_KEY (PEM), for server-side
     renewal. None when unset — the renewal endpoint then reports itself disabled, keeping
     the key out of the app on deployments that don't need auto-renewal."""
-    pem = os.getenv("WARDEN_LICENSE_SIGNING_KEY", "").strip()
+    pem = _env("PALIVANE_LICENSE_SIGNING_KEY", "WARDEN_LICENSE_SIGNING_KEY", "").strip()
     return pem.encode() if pem else None
 
 
@@ -117,12 +118,12 @@ def verify(blob: str, pubkey_pem: str | None = None, allow_expired: bool = False
 
 
 def _pubkey_pem() -> str:
-    return os.getenv("WARDEN_LICENSE_PUBKEY", "").strip() or VENDOR_PUBKEY_PEM
+    return _env("PALIVANE_LICENSE_PUBKEY", "WARDEN_LICENSE_PUBKEY", "").strip() or VENDOR_PUBKEY_PEM
 
 
 def _license_blob() -> str:
     """WARDEN_LICENSE is the blob itself, or a path to a file containing it."""
-    raw = os.getenv("WARDEN_LICENSE", "").strip()
+    raw = _env("PALIVANE_LICENSE", "WARDEN_LICENSE", "").strip()
     if raw and not raw.startswith(_PREFIX) and os.path.exists(raw):
         try:
             raw = open(raw).read().strip()

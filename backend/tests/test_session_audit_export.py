@@ -79,7 +79,7 @@ def test_export_endpoint_cef_and_bad_format_falls_back(client):
     assert client.get("/api/audit/export?format=cef").headers["content-type"].startswith("text/plain")
     # unknown format falls back to jsonl, doesn't error
     r = client.get("/api/audit/export?format=bogus")
-    assert r.status_code == 200 and "warden-audit.jsonl" in r.headers.get("content-disposition", "")
+    assert r.status_code == 200 and "palivane-audit.jsonl" in r.headers.get("content-disposition", "")
 
 
 def test_export_endpoint_admin_gated(raw_client):

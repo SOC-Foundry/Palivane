@@ -18,7 +18,7 @@ supports it, and quarterly reviews with written evidence.
 | Palivane app — tenant admin | Founder (tachtech org) | password (argon2id) + TOTP |
 | Production DB | No human path — private IP only; operator tasks run as auditable one-off Cloud Run jobs | IAM |
 
-Service accounts are single-purpose (`warden-front` for the edge, the compute SA for
+Service accounts are single-purpose (`palivane-front` for the edge, the compute SA for
 runtime) and hold only the roles they need.
 
 ## In-product access control

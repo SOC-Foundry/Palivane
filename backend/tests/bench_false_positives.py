@@ -187,7 +187,7 @@ def build_corpus() -> list[Sample]:
         # long hex digest (sha256 of empty)
         "Checksum: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         # a version-ish / build identifier
-        "Build artifact: warden-backend-2026.07.19-rc4-linux-amd64 published to the registry.",
+        "Build artifact: palivane-backend-2026.07.19-rc4-linux-amd64 published to the registry.",
         # kebab-case slug that is long
         "The feature flag is called enable-new-onboarding-flow-for-enterprise-tenants-v2.",
         # dotted id

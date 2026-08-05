@@ -19,7 +19,7 @@ def test_export_is_complete_and_scoped(client):
     client.post("/api/analyze", json={"content": "hello world", "persist": True})
     r = client.get("/api/export/tenant")
     assert r.status_code == 200
-    assert r.headers["content-disposition"].endswith("warden-export-acme.json")
+    assert r.headers["content-disposition"].endswith("palivane-export-acme.json")
     doc = r.json()
     assert doc["tenant"]["slug"] == "acme"
     assert doc["counts"]["findings"] >= 1 and doc["counts"]["api_keys"] >= 1

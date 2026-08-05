@@ -46,7 +46,7 @@ def test_evidence_never_leaks_raw_secret():
     assert "ghp_" not in s.detail  # nothing that looks like a raw token
 
 
-# --- endpoint: warden-secrets -> /api/scan/secrets -----------------------------------
+# --- endpoint: palivane-secrets -> /api/scan/secrets -----------------------------------
 
 def test_scan_secrets_endpoint_records_and_scores(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "sec", "actor": "dev@acme.com"}).json()["token"]
@@ -56,7 +56,7 @@ def test_scan_secrets_endpoint_records_and_scores(client, raw_client):
         {"path": "/home/dev/proj/.env", "secret_types": ["GitHub token"],
          "masked": "ghp_••••4f2a", "line": 3, "world_readable": False},
     ]}
-    r = raw_client.post("/api/scan/secrets", json=body, headers={"X-Warden-Token": key}).json()
+    r = raw_client.post("/api/scan/secrets", json=body, headers={"X-Palivane-Token": key}).json()
     assert r["scanned"] == 2 and r["flagged"] == 2
     by_path = {f["path"]: f for f in r["findings"]}
     assert by_path["/home/dev/.ssh/id_rsa"]["severity"] == "critical"   # world-readable priv key

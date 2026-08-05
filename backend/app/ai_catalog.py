@@ -98,17 +98,17 @@ CATEGORY_LABEL = {
 # shell/tool calls, Claude Code / Gemini / Codex hooks, agent MCP) carry no destination
 # domain, so the *plane's identity* (its User-Agent) is what names the tool for discovery.
 CLIENT_TOOLS: dict[str, tuple[str, str]] = {
-    "warden-cursor-hook": ("Cursor", "coding"),
-    "warden-hook": ("Claude Code", "coding"),
-    "warden-gemini-hook": ("Gemini CLI", "coding"),
-    "warden-codex-hook": ("Codex CLI", "coding"),
-    "warden-copilot-hook": ("GitHub Copilot", "coding"),
-    "warden-mcp": ("MCP client", "agent"),
+    "palivane-cursor-hook": ("Cursor", "coding"),
+    "palivane-hook": ("Claude Code", "coding"),
+    "palivane-gemini-hook": ("Gemini CLI", "coding"),
+    "palivane-codex-hook": ("Codex CLI", "coding"),
+    "palivane-copilot-hook": ("GitHub Copilot", "coding"),
+    "palivane-mcp": ("MCP client", "agent"),
 }
 
 
 def classify_client(user_agent: str) -> dict | None:
-    """Map a capture-plane User-Agent (e.g. 'warden-cursor-hook/1.0') to the AI tool it
+    """Map a capture-plane User-Agent (e.g. 'palivane-cursor-hook/1.0') to the AI tool it
     governs — for discovery of MCP-surface usage that has no destination domain. None if the
     UA isn't a recognized local plane (e.g. the egress proxy, which fronts many tools)."""
     ua = (user_agent or "").strip().lower()

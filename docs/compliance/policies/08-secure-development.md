@@ -13,7 +13,7 @@
   all user-supplied URLs (webhooks, SIEM, upstreams) at write time and send time;
   size caps on content fields.
 - **Secrets hygiene:** no credentials in code, images, or env files — Secret Manager
-  only; the repo's own product (warden-secrets) scans for credentials at rest.
+  only; the repo's own product (palivane-secrets) scans for credentials at rest.
 - **Dependencies:** minimal by design (CLI tools are stdlib-only on purpose);
   lockfiles committed; Palivane's own dependency-risk detector and OSV data inform
   updates; GitHub alerts triaged as they arrive.

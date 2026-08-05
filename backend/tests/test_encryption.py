@@ -1,4 +1,4 @@
-"""Content encryption at rest (WARDEN_ENCRYPT_FINDINGS): DB holds ciphertext, reads decrypt."""
+"""Content encryption at rest (PALIVANE_ENCRYPT_FINDINGS): DB holds ciphertext, reads decrypt."""
 
 from __future__ import annotations
 

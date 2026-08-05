@@ -66,7 +66,7 @@ def test_join_confirm_flow_manual_approval(client, raw_client, monkeypatch):
     sent = _enable_email(monkeypatch)
     d = client.post("/api/domains", json={"domain": "acme.com"}).json()
     monkeypatch.setattr(domains, "_lookup_txt",
-                        lambda name: [f"warden-domain-verify={d['token']}"])
+                        lambda name: [f"palivane-domain-verify={d['token']}"])
     client.post(f"/api/domains/{d['id']}/verify")
 
     r = raw_client.post("/api/auth/signup", json={
@@ -93,7 +93,7 @@ def test_join_confirm_auto_approve_creates_account_only_after_click(client, raw_
     sent = _enable_email(monkeypatch)
     d = client.post("/api/domains", json={"domain": "acme.com"}).json()
     monkeypatch.setattr(domains, "_lookup_txt",
-                        lambda name: [f"warden-domain-verify={d['token']}"])
+                        lambda name: [f"palivane-domain-verify={d['token']}"])
     client.post(f"/api/domains/{d['id']}/verify")
     client.patch(f"/api/domains/{d['id']}", json={"auto_approve": True})
 

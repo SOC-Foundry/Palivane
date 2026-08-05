@@ -79,7 +79,7 @@ def test_usage_ingest_end_to_end(client, raw_client):
     r = raw_client.post("/api/ingest/ai-usage",
                         json={"content": INJECTION, "destination": "https://chat.openai.com/",
                               "user": "dev@acme.com"},
-                        headers={"X-Warden-Token": key})
+                        headers={"X-Palivane-Token": key})
     assert r.status_code == 200
     body = r.json()
     assert body["action"] in ("warn", "block")

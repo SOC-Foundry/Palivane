@@ -29,25 +29,25 @@ It returns these artifacts (write each to a file):
 | `chrome-edge-forcelist.txt` | `ExtensionInstallForcelist` value for the browser extension. Defaults to the **Chrome Web Store** (extension published there — Unlisted is fine). Pass `?ext_update_url=…` (+ `?ext_crx_url=…`) to `/api/policy-pack` for a **self-hosted CRX** with no Web Store submission (managed devices only) — that also emits `extension-updates.xml` below. |
 | `chrome-extension-settings.json` | Chrome/Edge **`ExtensionSettings`** to govern *third-party* browser extensions — including agentic AI ones (e.g. Claude for Chrome) that Palivane's own extension can't inspect. Blocks unsanctioned AI extensions by ID and/or keeps permitted ones off sensitive origins (`runtime_blocked_hosts`); Palivane's extension is always force-installed. Query params: `?browser_ext_lockdown=true` (deny-all + allowlist), `?browser_ext_blocklist=`/`?browser_ext_allowlist=` (comma-sep IDs), `?browser_ext_blocked_hosts=`. |
 | `extension-updates.xml` | *(self-hosted only)* Omaha update manifest to host next to your signed `.crx`; the forcelist points at its URL. |
-| `claude-managed-settings.json` | Claude Code `managed-settings.json`: Route C hooks (warden-hook on PreToolUse **and UserPromptSubmit** — tool calls + the typed prompt, which nothing network-side sees under subscription auth — plus warden-posture); subscription sign-in by default (`forceLoginMethod`), gateway routing with `route_gateway=true` |
+| `claude-managed-settings.json` | Claude Code `managed-settings.json`: Route C hooks (palivane-hook on PreToolUse **and UserPromptSubmit** — tool calls + the typed prompt, which nothing network-side sees under subscription auth — plus palivane-posture); subscription sign-in by default (`forceLoginMethod`), gateway routing with `route_gateway=true` |
 | `openai.env` | Environment vars (`OPENAI_BASE_URL`) routing OpenAI SDK/CLI clients through the gateway — agentless, no CA needed. Does **not** cover Codex under ChatGPT-subscription auth — that's `codex-hooks.json` |
-| `codex-hooks.json` | Codex CLI `hooks.json` registering `warden-codex-hook` on `UserPromptSubmit` + `PreToolUse` (codex 0.116+) — local capture of Codex prompts + tool calls in every auth mode |
+| `codex-hooks.json` | Codex CLI `hooks.json` registering `palivane-codex-hook` on `UserPromptSubmit` + `PreToolUse` (codex 0.116+) — local capture of Codex prompts + tool calls in every auth mode |
 | `codex.txt` | The Codex story: subscription auth ignores `OPENAI_BASE_URL`; distribute the hooks as managed hooks via `requirements.toml` (auto-trusted, can lock out user hooks) |
-| `copilot-hooks.json` | GitHub Copilot hook file registering `warden-copilot-hook` on `preToolUse` (tool calls — **deniable**) + `userPromptSubmitted` (prompts — observe-only). One file, three surfaces: `~/.copilot/hooks/warden.json` per device (Copilot CLI), or committed as `.github/hooks/warden.json` per repo (VS Code agent mode + the **cloud coding agent**) |
-| `copilot.txt` | The Copilot story: no base-URL override, proxy sees no tool semantics; hook exit/timeout semantics (non-zero exit denies, timeout allows), the subagent-coverage gap, and why `warden-mcp` wrapping of `~/.copilot/mcp-config.json` matters (GitHub's cloud-agent firewall doesn't cover MCP) |
+| `copilot-hooks.json` | GitHub Copilot hook file registering `palivane-copilot-hook` on `preToolUse` (tool calls — **deniable**) + `userPromptSubmitted` (prompts — observe-only). One file, three surfaces: `~/.copilot/hooks/warden.json` per device (Copilot CLI), or committed as `.github/hooks/warden.json` per repo (VS Code agent mode + the **cloud coding agent**) |
+| `copilot.txt` | The Copilot story: no base-URL override, proxy sees no tool semantics; hook exit/timeout semantics (non-zero exit denies, timeout allows), the subagent-coverage gap, and why `palivane-mcp` wrapping of `~/.copilot/mcp-config.json` matters (GitHub's cloud-agent firewall doesn't cover MCP) |
 | `gemini.txt` | Gemini coverage: local hooks for the Gemini CLI (below), system proxy + SDK `http_options` snippet for everything else |
-| `gemini-settings.json` | Gemini CLI `settings.json` hooks block registering `warden-gemini-hook` on `BeforeAgent` + `BeforeTool` (gemini-cli 0.26+) — local capture of Gemini prompts + tool calls in every auth mode, including the Google login that ignores base-URL overrides |
-| `cursor-hooks.json` | Cursor `hooks.json` registering `warden-cursor-hook` on the security events — local, pinning-proof capture of Cursor prompts + tool calls |
+| `gemini-settings.json` | Gemini CLI `settings.json` hooks block registering `palivane-gemini-hook` on `BeforeAgent` + `BeforeTool` (gemini-cli 0.26+) — local capture of Gemini prompts + tool calls in every auth mode, including the Google login that ignores base-URL overrides |
+| `cursor-hooks.json` | Cursor `hooks.json` registering `palivane-cursor-hook` on the security events — local, pinning-proof capture of Cursor prompts + tool calls |
 | `cursor.txt` | The full Cursor story: why chat is proxy-opaque, and how the hooks + MCP wrap + git/gateway close it |
-| `warden-secrets.plist` / `.cron` / `-task.xml` | Schedule the endpoint credential scan (`warden-secrets --engine trufflehog`) daily via launchd (macOS) / cron (Linux) / Task Scheduler (Windows) — finds SSH/RSA keys, tokens, `.env` secrets **at rest** before an infostealer does (metadata-only). Drives **TruffleHog** by default (falls back to the built-in regex scan if not installed); set `?secrets_engine=gitleaks` or `?secrets_engine=` on `/api/policy-pack` to change it. On Windows the task invokes `%USERPROFILE%\.warden\bin\warden-secrets.cmd` — the launcher `warden-desktop.ps1 install` writes (it resolves a Python 3 and carries the token); pass a Windows `?secrets_path=` to point at your own packaged `warden-secrets.exe` instead. |
+| `palivane-secrets.plist` / `.cron` / `-task.xml` | Schedule the endpoint credential scan (`palivane-secrets --engine trufflehog`) daily via launchd (macOS) / cron (Linux) / Task Scheduler (Windows) — finds SSH/RSA keys, tokens, `.env` secrets **at rest** before an infostealer does (metadata-only). Drives **TruffleHog** by default (falls back to the built-in regex scan if not installed); set `?secrets_engine=gitleaks` or `?secrets_engine=` on `/api/policy-pack` to change it. On Windows the task invokes `%USERPROFILE%\.warden\bin\palivane-secrets.cmd` — the launcher `palivane-desktop.ps1 install` writes (it resolves a Python 3 and carries the token); pass a Windows `?secrets_path=` to point at your own packaged `palivane-secrets.exe` instead. |
 | `ca-note.txt` | Where to deploy your root CA (required for TLS inspection) |
 
 The extension allow/deny lists come from this tenant's IDE-vetting config (its
 `ide_ext_allowed` / `ide_ext_denylist`, else the global `IDE_EXT_ALLOWED` /
 `IDE_EXT_DENYLIST`); the browser extension id from `WARDEN_EXTENSION_ID`. The hook script
-paths default to `/usr/local/bin/warden-hook`, `/usr/local/bin/warden-posture`,
-`/usr/local/bin/warden-cursor-hook`, `/usr/local/bin/warden-gemini-hook`,
-`/usr/local/bin/warden-codex-hook`, and `/usr/local/bin/warden-copilot-hook` — override with
+paths default to `/usr/local/bin/palivane-hook`, `/usr/local/bin/palivane-posture`,
+`/usr/local/bin/palivane-cursor-hook`, `/usr/local/bin/palivane-gemini-hook`,
+`/usr/local/bin/palivane-codex-hook`, and `/usr/local/bin/palivane-copilot-hook` — override with
 `&hook_path=…&posture_path=…&cursor_hook_path=…&gemini_hook_path=…&codex_hook_path=…&copilot_hook_path=…`.
 
 Pull one artifact to a file:
@@ -87,8 +87,8 @@ Routes egress through the proxy so MCP + AI traffic is inspected (and enforced).
   Task, CLI shims — with no admin rights:
 
   ```powershell
-  iwr https://palivane.tachtech.net/cli/warden-desktop.ps1 -OutFile warden-desktop.ps1
-  powershell -ExecutionPolicy Bypass -File warden-desktop.ps1 install
+  iwr https://palivane.tachtech.net/cli/palivane-desktop.ps1 -OutFile palivane-desktop.ps1
+  powershell -ExecutionPolicy Bypass -File palivane-desktop.ps1 install
   ```
 
 ## 4. VS Code extension allowlist
@@ -133,16 +133,16 @@ no re-push.
 ## Claude Code hooks (MDM-pushable, same model)
 
 The pack now generates this for you: **`claude-managed-settings.json`** carries Palivane's
-**local planes** — `PreToolUse` + `UserPromptSubmit` hooks (`warden-hook` — pre-execution
+**local planes** — `PreToolUse` + `UserPromptSubmit` hooks (`palivane-hook` — pre-execution
 tool-call inspection, and the typed prompt scanned before it leaves the device) and a
-`SessionStart` hook (`warden-posture` — device drift). By default Claude Code keeps
+`SessionStart` hook (`palivane-posture` — device drift). By default Claude Code keeps
 its own sign-in and `forceLoginMethod: "claudeai"` locks login to claude.ai (Pro/Max
 subscriptions) — devs' prompts bill their plans, not an org API key. Under that
 subscription default no network plane sees the prompt, which is exactly why the
 `UserPromptSubmit` hook exists: confirmed secret/PII leaks in prompts hard-block even in
 monitor mode. The same model covers the other agent CLIs: `codex-hooks.json`
-(`warden-codex-hook`), `gemini-settings.json` (`warden-gemini-hook`), and
-`copilot-hooks.json` (`warden-copilot-hook` — note Copilot's inverse geometry: prompts
+(`palivane-codex-hook`), `gemini-settings.json` (`palivane-gemini-hook`), and
+`copilot-hooks.json` (`palivane-copilot-hook` — note Copilot's inverse geometry: prompts
 observe-only, tool calls deniable). Generate the pack with
 `route_gateway=true` (console checkbox or query param) to instead route prompts through the
 Palivane gateway (`ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`), billing the org's provider
@@ -150,7 +150,7 @@ key. Deploy it to Claude Code's managed-settings path (macOS `/Library/Applicati
 Support/ClaudeCode/`, Linux `/etc/claude-code/`, Windows `C:\Program Files\ClaudeCode\`),
 push the two scripts to the referenced paths with your MDM's file-deployment, and — in
 gateway mode — replace the `ak_` placeholder with each developer's key (or wire
-`apiKeyHelper` — the `/api/provision` installer wires it to `warden-reenroll` for a
+`apiKeyHelper` — the `/api/provision` installer wires it to `palivane-reenroll` for a
 self-healing per-device key). See
 [`docs/claude-deployment.md`](claude-deployment.md) (Route C) for the field-by-field
 breakdown. Same philosophy as the rest of the pack: config the app enforces, no resident
@@ -177,7 +177,7 @@ gateway redirect:
   config, no Palivane agent.
 - ⚠️ **Gathering** a live per-device inventory (what's installed/running right now) needs
   your MDM's inventory feed — Palivane can *vet* that list (`/api/scan/ide-extensions`) but
-  doesn't collect it (on developer machines, [`warden-posture`](claude-deployment.md)
+  doesn't collect it (on developer machines, [`palivane-posture`](claude-deployment.md)
   closes most of this gap by reporting installed IDE extensions and MCP configs).
   Cert-pinned clients bypass TLS inspection — inherent to the network plane; the Claude
   Code hooks above see local tool activity regardless of pinning.

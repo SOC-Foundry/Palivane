@@ -43,16 +43,16 @@ def test_forward_gated_by_config_and_severity(monkeypatch):
 
 def test_s3_sink_runs_from_run_analysis(client, raw_client, monkeypatch):
     # Configure the tenant's S3 sink, then an ingest should trigger a put.
-    client.patch("/api/tenant", json={"siem_s3_bucket": "warden-lake", "siem_s3_region": "us-east-1",
+    client.patch("/api/tenant", json={"siem_s3_bucket": "palivane-lake", "siem_s3_region": "us-east-1",
                                       "siem_s3_key_id": "AKIAEXAMPLE", "siem_s3_secret": "shh",
                                       "siem_min_severity": "high"})
     calls = _capture_puts(monkeypatch)
     key = client.post("/api/apikeys", json={"label": "ext", "actor": "e@acme.com"}).json()["token"]
     raw_client.post("/api/ingest/ai-usage",
                     json={"content": "SSN 123-45-6789 key AKIAABCDEFGHIJKLMNOP", "destination": "https://chatgpt.com/"},
-                    headers={"X-Warden-Token": key})
+                    headers={"X-Palivane-Token": key})
     assert len(calls) >= 1
-    assert calls[0][0] == "warden-lake"
+    assert calls[0][0] == "palivane-lake"
 
 
 def test_config_is_write_only_in_tenant_dict(client):

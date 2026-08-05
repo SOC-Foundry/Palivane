@@ -1,17 +1,17 @@
 """MDM policy-pack generator — agentless enforcement config.
 
 Produces the config artifacts an organization's **MDM** pushes to managed devices so the
-*enforcement* side of Warden is handled without any Warden agent on the box:
+*enforcement* side of Palivane is handled without any Palivane agent on the box:
 
 - **VS Code extension allowlist** (`extensions.allowed`) — lets only approved extensions
   install and blocks known-bad ones (the enforcement counterpart to /api/scan/ide-extensions);
 - **system proxy** (macOS `.mobileconfig`, Windows `.reg`) — routes egress through the
-  Warden proxy so MCP/AI traffic is inspected;
+  Palivane proxy so MCP/AI traffic is inspected;
 - **browser extension force-install** (Chrome/Edge `ExtensionInstallForcelist`);
 - a **CA deployment note** — the corporate/egress-proxy root CA must be trusted for TLS
   inspection (the cert itself is the org's; we only say where it goes).
 
-Everything here is applied by the customer's MDM (Jamf/Intune/GPO), not by a Warden
+Everything here is applied by the customer's MDM (Jamf/Intune/GPO), not by a Palivane
 process — so it's agentless. Pure string templating, unit-testable.
 """
 
@@ -41,14 +41,14 @@ def macos_proxy_profile(host: str, port: int) -> str:
 <plist version="1.0">
 <dict>
   <key>PayloadType</key><string>Configuration</string>
-  <key>PayloadIdentifier</key><string>net.tachtech.warden.proxy</string>
-  <key>PayloadDisplayName</key><string>Warden egress proxy</string>
+  <key>PayloadIdentifier</key><string>net.tachtech.palivane.proxy</string>
+  <key>PayloadDisplayName</key><string>Palivane egress proxy</string>
   <key>PayloadVersion</key><integer>1</integer>
   <key>PayloadContent</key>
   <array>
     <dict>
       <key>PayloadType</key><string>com.apple.proxy.http.global</string>
-      <key>PayloadIdentifier</key><string>net.tachtech.warden.proxy.http</string>
+      <key>PayloadIdentifier</key><string>net.tachtech.palivane.proxy.http</string>
       <key>PayloadVersion</key><integer>1</integer>
       <key>ProxyType</key><string>Manual</string>
       <key>HTTPEnable</key><integer>1</integer>
@@ -76,7 +76,7 @@ _WEBSTORE_UPDATE_URL = "https://clients2.google.com/service/update2/crx"
 
 
 def chrome_forcelist(extension_id: str, update_url: str = "") -> str:
-    """ExtensionInstallForcelist value for Chrome/Edge (force-install the Warden extension).
+    """ExtensionInstallForcelist value for Chrome/Edge (force-install the Palivane extension).
 
     Default pulls from the Chrome Web Store (the extension must be published there —
     Unlisted is fine). Pass a self-hosted `update_url` (your updates.xml) to force-install
@@ -89,14 +89,14 @@ def browser_extension_policy(warden_id: str, warden_update_url: str = "", lockdo
                              blocked_ids: list[str] | None = None, allowed_ids: list[str] | None = None,
                              blocked_hosts: list[str] | None = None) -> str:
     """Chrome/Edge `ExtensionSettings` policy — govern *third-party* browser extensions,
-    including agentic AI ones (e.g. Claude for Chrome) that Warden's own extension can't
+    including agentic AI ones (e.g. Claude for Chrome) that Palivane's own extension can't
     inspect (Chrome sandboxes extensions from each other). Two stances:
 
     - default (governed): everything `allowed`, but a denylist of AI extensions is `blocked`
       and permitted extensions are kept off sensitive origins via `runtime_blocked_hosts`.
-    - lockdown: default `blocked`; only the allowlist (+ Warden's own) may install.
+    - lockdown: default `blocked`; only the allowlist (+ Palivane's own) may install.
 
-    Warden's own extension is always force-installed. Applied by MDM (Chrome/Edge enterprise)."""
+    Palivane's own extension is always force-installed. Applied by MDM (Chrome/Edge enterprise)."""
     blocked_ids = blocked_ids or []
     allowed_ids = allowed_ids or []
     blocked_hosts = blocked_hosts or []
@@ -130,7 +130,7 @@ def extension_updates_xml(extension_id: str, crx_url: str, version: str = "0.5.0
      Point ExtensionInstallForcelist at THIS file's URL: "{eid};https://your.host/updates.xml". -->
 <gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
   <app appid="{eid}">
-    <updatecheck codebase="{crx_url or 'https://your.host/warden-extension.crx'}" version="{version}" />
+    <updatecheck codebase="{crx_url or 'https://your.host/palivane-extension.crx'}" version="{version}" />
   </app>
 </gupdate>
 '''
@@ -139,24 +139,24 @@ def extension_updates_xml(extension_id: str, crx_url: str, version: str = "0.5.0
 def claude_managed_settings(base_url: str, hook_path: str, posture_path: str,
                             route_gateway: bool = False) -> str:
     """Claude Code enterprise `managed-settings.json` — installs the local planes (Route C)
-    fleet-wide: PreToolUse + UserPromptSubmit hooks (warden-hook — pre-execution tool-call
+    fleet-wide: PreToolUse + UserPromptSubmit hooks (palivane-hook — pre-execution tool-call
     inspection, and the typed prompt before it leaves the device: under subscription
-    sign-in no network plane sees it) and a SessionStart hook (warden-posture, device
+    sign-in no network plane sees it) and a SessionStart hook (palivane-posture, device
     drift). Managed settings take precedence over user settings.
 
     By default Claude Code keeps its own sign-in (Pro/Max subscription or API account)
     and `forceLoginMethod: "claudeai"` locks the login flow to subscription accounts.
-    With `route_gateway=True` it instead routes prompts through the Warden gateway
+    With `route_gateway=True` it instead routes prompts through the Palivane gateway
     (`ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`) — billing the org's provider key.
 
-    The `ak_…` placeholder is one per-developer Warden key; for per-user attribution
+    The `ak_…` placeholder is one per-developer Palivane key; for per-user attribution
     without baking it in, use Claude Code's apiKeyHelper. The two scripts must be deployed
     to `hook_path` / `posture_path` on the device (push via the same MDM)."""
     b = base_url.rstrip("/")
     token = "ak_REPLACE_WITH_PER_USER_WARDEN_KEY"
     env = {
-        "WARDEN_URL": b,
-        "WARDEN_TOKEN": token,
+        "PALIVANE_URL": b,
+        "PALIVANE_TOKEN": token,
     }
     if route_gateway:
         # No /v1 suffix: the Anthropic SDK appends /v1/messages itself, so a base of
@@ -180,22 +180,22 @@ def claude_managed_settings(base_url: str, hook_path: str, posture_path: str,
 
 
 def openai_env(base_url: str) -> str:
-    """Drop-in env for OpenAI SDK / CLI clients — routes them through the Warden gateway's
+    """Drop-in env for OpenAI SDK / CLI clients — routes them through the Palivane gateway's
     OpenAI-compatible endpoint (`/v1/chat/completions`) instead of api.openai.com. Covers
     clients that pin certs or otherwise bypass the egress proxy. `OPENAI_BASE_URL` is the
     current var; `OPENAI_API_BASE` is the legacy name older SDKs still read."""
     b = base_url.rstrip("/")
     return (
-        "# Route OpenAI SDK/CLI clients through the Warden gateway (agentless — no proxy CA\n"
+        "# Route OpenAI SDK/CLI clients through the Palivane gateway (agentless — no proxy CA\n"
         "# needed). Push via MDM as machine/user environment variables. The ak_ value is a\n"
-        "# per-user Warden capture key and doubles as the gateway auth token.\n"
+        "# per-user Palivane capture key and doubles as the gateway auth token.\n"
         f'OPENAI_BASE_URL="{b}/v1"\n'
         f'OPENAI_API_BASE="{b}/v1"\n'
         'OPENAI_API_KEY="ak_REPLACE_WITH_PER_USER_WARDEN_KEY"\n'
     )
 
 
-def gemini_config(base_url: str, gemini_hook_path: str = "/usr/local/bin/warden-gemini-hook") -> str:
+def gemini_config(base_url: str, gemini_hook_path: str = "/usr/local/bin/palivane-gemini-hook") -> str:
     """Gemini routing note + SDK snippet. Google's google-genai SDK has no universal base-url
     *env var*, so the agentless paths for Gemini are the system proxy (this pack's proxy
     profile inspects generativelanguage.googleapis.com) and, for the Gemini CLI itself,
@@ -208,24 +208,24 @@ def gemini_config(base_url: str, gemini_hook_path: str = "/usr/local/bin/warden-
         "===============\n"
         "Gemini CLI (the agent) — LOCAL HOOKS, the primary plane. The CLI's endpoint depends\n"
         "on its auth mode and the default 'log in with Google' mode ignores base-URL\n"
-        "overrides, so gemini-settings.json in this pack registers warden-gemini-hook\n"
+        "overrides, so gemini-settings.json in this pack registers palivane-gemini-hook\n"
         "(gemini-cli 0.26+) inside the CLI instead:\n"
         "  - BeforeAgent -> prompt data-loss (secrets/PII/shadow-AI), before it leaves\n"
         "  - BeforeTool  -> shell/file/MCP tool calls (dangerous commands, allowlist)\n"
-        f"Deploy warden-gemini-hook to {gemini_hook_path} and push gemini-settings.json to\n"
+        f"Deploy palivane-gemini-hook to {gemini_hook_path} and push gemini-settings.json to\n"
         "the system settings path (Linux /etc/gemini-cli/settings.json, macOS\n"
         "/Library/Application Support/GeminiCli/settings.json, Windows\n"
         "C:\\ProgramData\\gemini-cli\\settings.json) or merge into ~/.gemini/settings.json.\n"
         "Monitor by default (confirmed secret/PII leaks in prompts still hard-block); set\n"
-        "WARDEN_ENFORCE=true to block on any high-risk verdict. Provide WARDEN_URL/\n"
-        f"WARDEN_TOKEN via machine env (WARDEN_URL={b}) or ~/.gemini/warden.json.\n\n"
+        "WARDEN_ENFORCE=true to block on any high-risk verdict. Provide PALIVANE_URL/\n"
+        f"PALIVANE_TOKEN via machine env (PALIVANE_URL={b}) or ~/.gemini/warden.json.\n\n"
         "Gemini SDK/API clients — the SYSTEM PROXY in this pack. It inspects all three\n"
         "modes once your root CA is trusted (see ca-note.txt):\n"
         "  - API-key mode  -> generativelanguage.googleapis.com\n"
         "  - OAuth / Code Assist (default 'log in with Google') -> cloudcode-pa.googleapis.com\n"
         "  - Vertex mode   -> aiplatform.googleapis.com\n\n"
         "For clients you can configure in code, point the Python google-genai SDK at the\n"
-        "Warden gateway's Gemini-shaped endpoint:\n\n"
+        "Palivane gateway's Gemini-shaped endpoint:\n\n"
         "  from google import genai\n"
         "  from google.genai.types import HttpOptions\n"
         f'  client = genai.Client(\n'
@@ -237,7 +237,7 @@ def gemini_config(base_url: str, gemini_hook_path: str = "/usr/local/bin/warden-
 
 
 def gemini_settings(gemini_hook_path: str) -> str:
-    """Gemini CLI `settings.json` hooks block registering warden-gemini-hook on the two
+    """Gemini CLI `settings.json` hooks block registering palivane-gemini-hook on the two
     security-relevant events (gemini-cli 0.26+; timeouts are milliseconds). Push to the
     system settings path via MDM or merge into ~/.gemini/settings.json. Local +
     pre-execution, so it works in every auth mode."""
@@ -252,7 +252,7 @@ def gemini_settings(gemini_hook_path: str) -> str:
 
 
 def codex_hooks(codex_hook_path: str) -> str:
-    """Codex CLI `hooks.json` registering warden-codex-hook on the two security-relevant
+    """Codex CLI `hooks.json` registering palivane-codex-hook on the two security-relevant
     lifecycle events (codex 0.116+; the schema mirrors Claude Code's). Drop in
     ~/.codex/hooks.json, or push as MANAGED hooks via requirements.toml — managed hooks
     are auto-trusted, and `allow_managed_hooks_only = true` there locks out user hooks."""
@@ -266,29 +266,29 @@ def codex_hooks(codex_hook_path: str) -> str:
 
 
 def codex_note(base_url: str, codex_hook_path: str) -> str:
-    """How Warden covers Codex CLI — and why the network planes can't."""
+    """How Palivane covers Codex CLI — and why the network planes can't."""
     b = base_url.rstrip("/")
     return (
         "Codex CLI coverage\n"
         "==================\n"
         "Under the default ChatGPT-subscription sign-in, Codex talks to the ChatGPT backend\n"
         "and IGNORES OPENAI_BASE_URL (custom providers require API-key auth), so the gateway\n"
-        "env in openai.env only covers API-key installs. Warden covers subscription-auth\n"
+        "env in openai.env only covers API-key installs. Palivane covers subscription-auth\n"
         "Codex with LOCAL hooks instead (codex-hooks.json in this pack, codex 0.116+):\n"
         "  - UserPromptSubmit -> prompt data-loss (secrets/PII/shadow-AI), before it leaves\n"
         "  - PreToolUse       -> shell/MCP tool calls (dangerous commands, allowlist)\n"
-        f"Deploy warden-codex-hook to {codex_hook_path} and drop codex-hooks.json in\n"
+        f"Deploy palivane-codex-hook to {codex_hook_path} and drop codex-hooks.json in\n"
         "~/.codex/hooks.json — or better, push it as managed hooks via Codex's\n"
         "requirements.toml (auto-trusted; add allow_managed_hooks_only = true to lock out\n"
         "user-defined hooks). User-level hooks need a one-time /hooks trust approval.\n"
         "Monitor by default (confirmed secret/PII leaks in prompts still hard-block); set\n"
-        "WARDEN_ENFORCE=true to block on any high-risk verdict. Provide WARDEN_URL/\n"
-        f"WARDEN_TOKEN via machine env (WARDEN_URL={b}) or ~/.codex/warden.json.\n"
+        "WARDEN_ENFORCE=true to block on any high-risk verdict. Provide PALIVANE_URL/\n"
+        f"PALIVANE_TOKEN via machine env (PALIVANE_URL={b}) or ~/.codex/warden.json.\n"
     )
 
 
 def copilot_hooks(copilot_hook_path: str) -> str:
-    """GitHub Copilot hook file registering warden-copilot-hook on its two lifecycle
+    """GitHub Copilot hook file registering palivane-copilot-hook on its two lifecycle
     events (Copilot's schema: version: 1, lowerCamelCase events, a `bash` command,
     per-hook timeoutSec). One file serves all three Copilot surfaces: drop in
     ~/.copilot/hooks/warden.json per device (Copilot CLI), or commit/push as
@@ -306,40 +306,40 @@ def copilot_hooks(copilot_hook_path: str) -> str:
 
 
 def copilot_note(base_url: str, copilot_hook_path: str) -> str:
-    """How Warden covers GitHub Copilot — and what this plane can/can't block."""
+    """How Palivane covers GitHub Copilot — and what this plane can/can't block."""
     b = base_url.rstrip("/")
     return (
         "GitHub Copilot coverage\n"
         "=======================\n"
         "Copilot has no base-URL override, so the gateway can't be interposed and the\n"
-        "egress proxy sees only TLS to GitHub — not tool calls. Warden covers Copilot\n"
+        "egress proxy sees only TLS to GitHub — not tool calls. Palivane covers Copilot\n"
         "with its native hooks (copilot-hooks.json in this pack):\n"
         "  - preToolUse          -> shell/edit/MCP tool calls, DENIABLE pre-execution\n"
         "                           (dangerous commands, MCP allowlist, secrets in args)\n"
         "  - userPromptSubmitted -> prompt record — OBSERVE-ONLY (Copilot ignores hook\n"
         "                           output here; the proxy remains the prompt-DLP backstop)\n"
         "One hook file covers all three Copilot surfaces:\n"
-        f"  - Copilot CLI: deploy warden-copilot-hook to {copilot_hook_path} and drop\n"
+        f"  - Copilot CLI: deploy palivane-copilot-hook to {copilot_hook_path} and drop\n"
         "    copilot-hooks.json in ~/.copilot/hooks/warden.json (or push via MDM).\n"
         "  - VS Code agent mode + the CLOUD coding agent: commit copilot-hooks.json as\n"
         "    .github/hooks/warden.json in each governed repo — the cloud agent runs it\n"
         "    inside the Actions environment (install the hook script in a setup step).\n"
         "    Note: GitHub's own cloud-agent firewall does NOT cover MCP servers; this\n"
-        "    hook plus warden-mcp wrapping of ~/.copilot/mcp-config.json closes that.\n"
+        "    hook plus palivane-mcp wrapping of ~/.copilot/mcp-config.json closes that.\n"
         "Semantics to know: Copilot DENIES on a hook's non-zero exit (fail-closed) but\n"
-        "ALLOWS on timeout (fail-open) — warden-copilot-hook always exits 0 and lets the\n"
+        "ALLOWS on timeout (fail-open) — palivane-copilot-hook always exits 0 and lets the\n"
         "verdict speak. Known upstream gap: subagent tool calls may not fire preToolUse\n"
         "(github/copilot-cli#2392) — don't claim subagent coverage yet.\n"
         "Monitor by default. Tool calls scan inline, so the org's enforce stance\n"
         "(console Settings → Enforcement, stageable per user/tool) denies high-risk tool\n"
         "calls centrally — prompts can't block at this plane. Set WARDEN_ENFORCE=true to\n"
-        f"also enforce from device-local config. Provide WARDEN_URL/WARDEN_TOKEN via\n"
-        f"machine env (WARDEN_URL={b}) or ~/.copilot/warden.json.\n"
+        f"also enforce from device-local config. Provide PALIVANE_URL/PALIVANE_TOKEN via\n"
+        f"machine env (PALIVANE_URL={b}) or ~/.copilot/warden.json.\n"
     )
 
 
 def cursor_hooks(hook_path: str) -> str:
-    """Cursor `hooks.json` registering warden-cursor-hook on the security-relevant agent
+    """Cursor `hooks.json` registering palivane-cursor-hook on the security-relevant agent
     events. Push to the enterprise path via MDM (macOS /Library/Application Support/Cursor/,
     Linux /etc/cursor/, Windows C:\\ProgramData\\Cursor\\) or drop in ~/.cursor/hooks.json.
     Local + pre-execution, so it works despite Cursor's cert pinning."""
@@ -357,32 +357,32 @@ def cursor_hooks(hook_path: str) -> str:
 
 
 def cursor_note(base_url: str, hook_path: str) -> str:
-    """How Warden covers Cursor — and the one thing it can't."""
+    """How Palivane covers Cursor — and the one thing it can't."""
     b = base_url.rstrip("/")
     return (
         "Cursor coverage\n"
         "===============\n"
         "Cursor's model/chat endpoint (api2.cursor.sh) PINS its certificate, so the egress\n"
         "proxy can't read its prompts, and Cursor ignores OPENAI_BASE_URL, so the gateway\n"
-        "can't be interposed. Warden covers Cursor with LOCAL planes instead, which are\n"
+        "can't be interposed. Palivane covers Cursor with LOCAL planes instead, which are\n"
         "immune to the pinning:\n\n"
-        "1. Cursor hooks (cursor-hooks.json in this pack) — warden-cursor-hook runs inside\n"
+        "1. Cursor hooks (cursor-hooks.json in this pack) — palivane-cursor-hook runs inside\n"
         "   Cursor before each action and reports/blocks:\n"
         "     - beforeSubmitPrompt   -> prompt data-loss (secrets/PII/shadow-AI)\n"
         "     - beforeShellExecution -> dangerous commands\n"
         "     - beforeMCPExecution   -> MCP tool calls (server allowlist, tool poisoning)\n"
         "     - beforeReadFile       -> secrets/PII pulled into context\n"
         "     - afterFileEdit        -> secrets/PII written (monitor-only)\n"
-        f"   Deploy warden-cursor-hook to {hook_path} and push cursor-hooks.json to Cursor's\n"
+        f"   Deploy palivane-cursor-hook to {hook_path} and push cursor-hooks.json to Cursor's\n"
         "   enterprise hooks path (or ~/.cursor/hooks.json). Monitor by default; set\n"
-        "   WARDEN_ENFORCE=true to block. Provide WARDEN_URL/WARDEN_TOKEN via machine env\n"
-        f"   (WARDEN_URL={b}) or ~/.cursor/warden.json.\n"
-        "2. MCP servers — wrap Cursor's .cursor/mcp.json stdio servers with warden-mcp for\n"
+        "   WARDEN_ENFORCE=true to block. Provide PALIVANE_URL/PALIVANE_TOKEN via machine env\n"
+        f"   (PALIVANE_URL={b}) or ~/.cursor/warden.json.\n"
+        "2. MCP servers — wrap Cursor's .cursor/mcp.json stdio servers with palivane-mcp for\n"
         "   inline tool inspection (belt-and-suspenders with beforeMCPExecution).\n"
         "3. Git plane — secrets/PII in the code Cursor commits (pre-commit hook + Action).\n"
         "4. Gateway — for any first-party AI your org routes explicitly.\n\n"
         "Optional (pilots): Cursor Settings -> Models -> Override OpenAI Base URL =\n"
-        f"  {b}/v1  (key = an ak_ Warden key). This routes Cursor's OpenAI-compatible calls\n"
+        f"  {b}/v1  (key = an ak_ Palivane key). This routes Cursor's OpenAI-compatible calls\n"
         "  through the gateway, but disables Agent/Composer/Tab — most orgs prefer the hooks.\n\n"
         "What is NOT captured: nothing, once the hooks are installed — beforeSubmitPrompt\n"
         "sees the prompt locally before it leaves. Without the hooks, Cursor's cloud chat is\n"
@@ -391,7 +391,7 @@ def cursor_note(base_url: str, hook_path: str) -> str:
 
 
 def _engine_args(engine: str) -> list[str]:
-    """['--engine', 'trufflehog'] when an external scanner is chosen, else []. warden-secrets
+    """['--engine', 'trufflehog'] when an external scanner is chosen, else []. palivane-secrets
     falls back to its built-in regex scan if the tool isn't installed, so this is safe to
     ship fleet-wide even on devices that don't have TruffleHog/Gitleaks."""
     e = (engine or "").strip().lower()
@@ -399,22 +399,22 @@ def _engine_args(engine: str) -> list[str]:
 
 
 def secrets_launchd(base_url: str, secrets_path: str, engine: str = "trufflehog") -> str:
-    """macOS LaunchAgent — runs warden-secrets daily (3am) as the signed-in user, so it
-    can read ~/.ssh etc. and the warden-connect creds. Push to ~/Library/LaunchAgents via MDM."""
+    """macOS LaunchAgent — runs palivane-secrets daily (3am) as the signed-in user, so it
+    can read ~/.ssh etc. and the palivane-connect creds. Push to ~/Library/LaunchAgents via MDM."""
     b = base_url.rstrip("/")
     argv = "".join(f"<string>{a}</string>" for a in [secrets_path, *_engine_args(engine)])
     return f'''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>net.tachtech.warden.secrets</string>
+  <key>Label</key><string>net.tachtech.palivane.secrets</string>
   <key>ProgramArguments</key>
   <array>{argv}</array>
   <key>StartCalendarInterval</key>
   <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>
   <key>EnvironmentVariables</key>
-  <dict><key>WARDEN_URL</key><string>{b}</string></dict>
-  <key>StandardErrorPath</key><string>/tmp/warden-secrets.log</string>
+  <dict><key>PALIVANE_URL</key><string>{b}</string></dict>
+  <key>StandardErrorPath</key><string>/tmp/palivane-secrets.log</string>
 </dict>
 </plist>
 '''
@@ -422,25 +422,25 @@ def secrets_launchd(base_url: str, secrets_path: str, engine: str = "trufflehog"
 
 def secrets_cron(base_url: str, secrets_path: str, engine: str = "trufflehog") -> str:
     """Linux cron fragment (drop in /etc/cron.d/ or a user crontab) — daily at 03:00.
-    WARDEN_TOKEN comes from the warden-connect creds file the scanner reads, or set it here."""
+    PALIVANE_TOKEN comes from the palivane-connect creds file the scanner reads, or set it here."""
     b = base_url.rstrip("/")
     cmd = " ".join([secrets_path, *_engine_args(engine)])
-    return (f"# Warden endpoint credential scan — daily. Runs as the target user so it can\n"
+    return (f"# Palivane endpoint credential scan — daily. Runs as the target user so it can\n"
             f"# read ~/.ssh etc. Token resolves from ~/.claude/settings.json / ~/.cursor/warden.json.\n"
-            f"WARDEN_URL={b}\n"
+            f"PALIVANE_URL={b}\n"
             f"0 3 * * * {os.getenv('USER', '<user>')} {cmd}\n")
 
 
 def secrets_win_task(base_url: str, secrets_path: str, engine: str = "trufflehog") -> str:
     """Windows Task Scheduler XML — daily at 03:00. Import with schtasks /create /xml.
 
-    Runs the scanner through the launcher `warden-desktop.ps1 install` writes
-    (%USERPROFILE%\\.warden\\bin\\warden-secrets.cmd), which resolves an interpreter and
-    carries WARDEN_URL/WARDEN_TOKEN. An explicit Windows `secrets_path` (containing a
-    backslash) overrides it — e.g. a packaged warden-secrets.exe you deploy yourself."""
+    Runs the scanner through the launcher `palivane-desktop.ps1 install` writes
+    (%USERPROFILE%\\.warden\\bin\\palivane-secrets.cmd), which resolves an interpreter and
+    carries PALIVANE_URL/PALIVANE_TOKEN. An explicit Windows `secrets_path` (containing a
+    backslash) overrides it — e.g. a packaged palivane-secrets.exe you deploy yourself."""
     b = base_url.rstrip("/")
     win = (secrets_path if "\\" in secrets_path
-           else r"%USERPROFILE%\.warden\bin\warden-secrets.cmd")
+           else r"%USERPROFILE%\.warden\bin\palivane-secrets.cmd")
     args = _engine_args(engine)
     args_xml = f"\n      <Arguments>{' '.join(args)}</Arguments>" if args else ""
     return f'''<?xml version="1.0" encoding="UTF-16"?>
@@ -456,7 +456,7 @@ def secrets_win_task(base_url: str, secrets_path: str, engine: str = "trufflehog
   <Actions>
     <Exec>
       <Command>{win}</Command>{args_xml}
-      <Environment><Variable name="WARDEN_URL">{b}</Variable></Environment>
+      <Environment><Variable name="PALIVANE_URL">{b}</Variable></Environment>
     </Exec>
   </Actions>
 </Task>
@@ -476,13 +476,13 @@ def ca_note() -> str:
 
 def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: int,
                 allowed_exts: list[str], denied_exts: list[str],
-                hook_path: str = "/usr/local/bin/warden-hook",
-                posture_path: str = "/usr/local/bin/warden-posture",
-                cursor_hook_path: str = "/usr/local/bin/warden-cursor-hook",
-                gemini_hook_path: str = "/usr/local/bin/warden-gemini-hook",
-                codex_hook_path: str = "/usr/local/bin/warden-codex-hook",
-                copilot_hook_path: str = "/usr/local/bin/warden-copilot-hook",
-                secrets_path: str = "/usr/local/bin/warden-secrets",
+                hook_path: str = "/usr/local/bin/palivane-hook",
+                posture_path: str = "/usr/local/bin/palivane-posture",
+                cursor_hook_path: str = "/usr/local/bin/palivane-cursor-hook",
+                gemini_hook_path: str = "/usr/local/bin/palivane-gemini-hook",
+                codex_hook_path: str = "/usr/local/bin/palivane-codex-hook",
+                copilot_hook_path: str = "/usr/local/bin/palivane-copilot-hook",
+                secrets_path: str = "/usr/local/bin/palivane-secrets",
                 secrets_engine: str = "trufflehog",
                 ext_update_url: str = "", ext_crx_url: str = "",
                 ext_version: str = "0.5.0",
@@ -493,15 +493,15 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
     b = base_url.rstrip("/")
     self_host_ext = bool(ext_update_url.strip())
     readme = (
-        "Warden MDM policy pack — apply these with your MDM (Jamf/Intune/GPO). No Warden\n"
+        "Palivane MDM policy pack — apply these with your MDM (Jamf/Intune/GPO). No Palivane\n"
         "agent is installed; the OS/editor/browser/Claude Code enforce the policy.\n\n"
-        f"Warden backend: {b}\n"
+        f"Palivane backend: {b}\n"
         f"Egress proxy:   {proxy_host or '<set proxy_host>'}:{proxy_port}\n\n"
         "1. vscode-extensions.json  -> push as VS Code machine settings (locks extensions.allowed).\n"
-        "2. macos-proxy.mobileconfig / windows-proxy.reg -> system proxy to the Warden proxy.\n"
+        "2. macos-proxy.mobileconfig / windows-proxy.reg -> system proxy to the Palivane proxy.\n"
         "3. chrome-edge-forcelist.txt -> ExtensionInstallForcelist (force-install the extension).\n"
         "3c. chrome-extension-settings.json -> Chrome/Edge ExtensionSettings: govern THIRD-PARTY\n"
-        "    browser extensions (e.g. agentic AI ones like Claude for Chrome that Warden can't\n"
+        "    browser extensions (e.g. agentic AI ones like Claude for Chrome that Palivane can't\n"
         "    inspect). Block unsanctioned AI extensions by ID, and/or keep permitted ones off\n"
         "    sensitive origins via runtime_blocked_hosts. Edit the placeholders with your IDs.\n"
         + ("   Points at the Chrome Web Store (extension must be published there; Unlisted is fine).\n"
@@ -515,7 +515,7 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
            if route_gateway else
            "   hooks; Claude Code keeps its own sign-in — forceLoginMethod locks login to\n"
            "   claude.ai Pro/Max subscriptions. Re-generate with route_gateway for gateway billing.\n")
-        + "   Deploy warden-hook/warden-posture to the paths it references\n"
+        + "   Deploy palivane-hook/palivane-posture to the paths it references\n"
         f"   ({hook_path}, {posture_path})"
         + (" and replace the ak_ placeholder with each dev's key\n"
            "   (or use apiKeyHelper)" if route_gateway else "")
@@ -524,23 +524,23 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "   Windows C:\\Program Files\\ClaudeCode\\.\n"
         "6. openai.env -> environment variables that route OpenAI SDK/CLI clients through the\n"
         "   gateway (OPENAI_BASE_URL). Push as machine/user env via MDM; agentless, no CA needed.\n"
-        "6b. codex-hooks.json + codex.txt -> Codex CLI local hooks (warden-codex-hook — prompt +\n"
+        "6b. codex-hooks.json + codex.txt -> Codex CLI local hooks (palivane-codex-hook — prompt +\n"
         "   tool-call inspection; covers ChatGPT-subscription auth, which ignores OPENAI_BASE_URL).\n"
         f"   Deploy the hook to {codex_hook_path}; see codex.txt for managed-hooks distribution.\n"
-        "6c. copilot-hooks.json + copilot.txt -> GitHub Copilot hooks (warden-copilot-hook —\n"
+        "6c. copilot-hooks.json + copilot.txt -> GitHub Copilot hooks (palivane-copilot-hook —\n"
         "   deniable tool-call inspection; prompts observe-only at this plane). One file covers\n"
         "   Copilot CLI (~/.copilot/hooks/), and — committed as .github/hooks/warden.json —\n"
         f"   VS Code agent mode + the cloud coding agent. Deploy the hook to {copilot_hook_path}.\n"
-        "7. gemini.txt + gemini-settings.json -> Gemini CLI local hooks (warden-gemini-hook —\n"
+        "7. gemini.txt + gemini-settings.json -> Gemini CLI local hooks (palivane-gemini-hook —\n"
         "   prompt + tool-call inspection in every auth mode; deploy the hook to\n"
         f"   {gemini_hook_path}) and SDK routing notes. The system proxy above covers\n"
         "   Gemini SDK/API clients the hooks don't.\n"
-        "8. cursor-hooks.json -> Cursor hooks.json registering warden-cursor-hook (local,\n"
-        "   pinning-proof). Deploy warden-cursor-hook to the path it references\n"
+        "8. cursor-hooks.json -> Cursor hooks.json registering palivane-cursor-hook (local,\n"
+        "   pinning-proof). Deploy palivane-cursor-hook to the path it references\n"
         f"   ({cursor_hook_path}); push to Cursor's enterprise hooks path or ~/.cursor/hooks.json.\n"
         "   See cursor.txt for the full Cursor story (chat pins its cert; hooks close the gap).\n"
-        "9. warden-secrets.plist / .cron / -task.xml -> schedule the endpoint credential scan\n"
-        f"   (warden-secrets at {secrets_path}"
+        "9. palivane-secrets.plist / .cron / -task.xml -> schedule the endpoint credential scan\n"
+        f"   (palivane-secrets at {secrets_path}"
         + (f" --engine {secrets_engine}" if secrets_engine in ("trufflehog", "gitleaks") else "")
         + ") daily via launchd (macOS) / cron (Linux) /\n"
         "   Task Scheduler (Windows). Finds SSH/RSA keys, tokens, and .env secrets at rest\n"
@@ -573,9 +573,9 @@ def render_pack(base_url: str, extension_id: str, proxy_host: str, proxy_port: i
         "gemini-settings.json": gemini_settings(gemini_hook_path),
         "cursor-hooks.json": cursor_hooks(cursor_hook_path),
         "cursor.txt": cursor_note(b, cursor_hook_path),
-        "warden-secrets.plist": secrets_launchd(b, secrets_path, secrets_engine),
-        "warden-secrets.cron": secrets_cron(b, secrets_path, secrets_engine),
-        "warden-secrets-task.xml": secrets_win_task(b, secrets_path, secrets_engine),
+        "palivane-secrets.plist": secrets_launchd(b, secrets_path, secrets_engine),
+        "palivane-secrets.cron": secrets_cron(b, secrets_path, secrets_engine),
+        "palivane-secrets-task.xml": secrets_win_task(b, secrets_path, secrets_engine),
         "ca-note.txt": ca_note(),
     }
     # Self-hosted extension path (no Web Store): ship the update manifest to host next to the CRX.

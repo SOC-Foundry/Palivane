@@ -81,7 +81,7 @@ def test_plan_default_quotas_and_precedence():
     # A tenant override column beats the plan default.
     free.quota_users = 50
     assert effective_quota(free, "users") == 50
-    # Team/enterprise have no plan defaults — fall through to the WARDEN_QUOTA_* global.
+    # Team/enterprise have no plan defaults — fall through to the PALIVANE_QUOTA_* global.
     from app.config import settings
     assert effective_quota(Tenant(slug="t", plan="team"), "users") == settings.quota_users
 

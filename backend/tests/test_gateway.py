@@ -707,7 +707,7 @@ def test_enforce_secrets_can_be_disabled(client, monkeypatch):
     assert client.post("/v1/chat/completions", json=body).status_code == 200
 
 
-# --- benign persistence policy (default: drop; WARDEN_USAGE_PERSIST_BENIGN opts in) -----
+# --- benign persistence policy (default: drop; PALIVANE_USAGE_PERSIST_BENIGN opts in) -----
 
 def test_benign_prompt_not_persisted_by_default(client, monkeypatch):
     from app import gateway

@@ -21,7 +21,7 @@ def test_agent_jwt_rejected_without_configured_audience(client, raw_client, monk
     client.post("/api/agents", json={"name": "no-aud-bot", "oidc_subject": "spn-x"})
     monkeypatch.setattr(oidc, "validate_agent_jwt", lambda *a, **k: {"sub": "spn-x"})  # would pass if reached
     r = raw_client.post("/api/ingest/ai-usage", json={"content": "hi"},
-                        headers={"X-Warden-Token": _jwt({"iss": "https://idp.example", "sub": "spn-x"})})
+                        headers={"X-Palivane-Token": _jwt({"iss": "https://idp.example", "sub": "spn-x"})})
     assert r.status_code == 401
 
 

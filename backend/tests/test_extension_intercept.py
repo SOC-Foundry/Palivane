@@ -6,7 +6,7 @@ ChatGPT/Claude submit a prompt; the 'background' relay calls the live Warden
 ai-usage endpoint. Skipped unless pointed at a running backend:
 
     EXTENSION_INGEST_TOKEN=ext-demo-token-123 INGEST_TENANT=demo  # on the backend
-    WARDEN_EXT_URL=http://localhost:8090 WARDEN_EXT_TOKEN=ext-demo-token-123 \
+    PALIVANE_EXT_URL=http://localhost:8090 PALIVANE_EXT_TOKEN=ext-demo-token-123 \
     pytest backend/tests/test_extension_intercept.py
 """
 
@@ -19,11 +19,11 @@ from pathlib import Path
 
 import pytest
 
-URL = os.getenv("WARDEN_EXT_URL")
-TOKEN = os.getenv("WARDEN_EXT_TOKEN", "")
+URL = os.getenv("PALIVANE_EXT_URL")
+TOKEN = os.getenv("PALIVANE_EXT_TOKEN", "")
 INJECTED = Path(__file__).resolve().parents[2] / "extension" / "injected.js"
 
-pytestmark = pytest.mark.skipif(not URL, reason="set WARDEN_EXT_URL to run the extension interceptor test")
+pytestmark = pytest.mark.skipif(not URL, reason="set PALIVANE_EXT_URL to run the extension interceptor test")
 
 SETUP = """
 () => {
@@ -58,7 +58,7 @@ def _scan(content, destination):
     req = urllib.request.Request(
         URL.rstrip("/") + "/api/ingest/ai-usage", method="POST",
         data=json.dumps({"content": content, "destination": destination, "user": "tester"}).encode(),
-        headers={"content-type": "application/json", "X-Warden-Token": TOKEN},
+        headers={"content-type": "application/json", "X-Palivane-Token": TOKEN},
     )
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.loads(r.read())

@@ -1,8 +1,8 @@
 """Domain capture: tenants claim email domains so self-serve signup can't fragment one
 company into many single-user orgs.
 
-Flow: an admin claims a domain -> we hand them a DNS TXT record (name `_warden-verify.<domain>`,
-value `warden-domain-verify=<token>`) -> verify does a TXT lookup and flips the claim to
+Flow: an admin claims a domain -> we hand them a DNS TXT record (name `_palivane-verify.<domain>`,
+value `palivane-domain-verify=<token>`) -> verify does a TXT lookup and flips the claim to
 verified. From then on, /api/auth/signup with a matching email creates a JoinRequest for
 that tenant (approved by an admin, or instantly when the domain has auto_approve) instead
 of a fresh org. Free-mail providers can never be claimed.
@@ -45,8 +45,8 @@ def normalize(domain: str) -> str:
 
 
 def txt_record_for(d: TenantDomain) -> dict:
-    return {"name": f"_warden-verify.{d.domain}", "type": "TXT",
-            "value": f"warden-domain-verify={d.token}"}
+    return {"name": f"_palivane-verify.{d.domain}", "type": "TXT",
+            "value": f"palivane-domain-verify={d.token}"}
 
 
 def _lookup_txt(name: str) -> list[str]:
@@ -111,16 +111,16 @@ def verify_domain(domain_id: int, current: User = Depends(require_admin),
         raise HTTPException(status_code=404, detail="domain not found")
     if d.verified:
         return d.to_dict()
-    expect = f"warden-domain-verify={d.token}"
+    expect = f"palivane-domain-verify={d.token}"
     try:
-        found = _lookup_txt(f"_warden-verify.{d.domain}")
+        found = _lookup_txt(f"_palivane-verify.{d.domain}")
     except Exception:
         raise HTTPException(status_code=502, detail="DNS lookup failed — try again")
     if expect not in found:
         raise HTTPException(
             status_code=409,
             detail="TXT record not found (or not propagated yet) — "
-                   f"expected {expect!r} at _warden-verify.{d.domain}")
+                   f"expected {expect!r} at _palivane-verify.{d.domain}")
     d.verified = True
     d.verified_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
@@ -224,9 +224,9 @@ def confirm_join(token: str, db: Session = Depends(get_db)):
                                     User.active.is_(True)).all())
     for a in admins:
         email_mod.send(
-            a.email, f"Warden join request: {req.email}",
+            a.email, f"Palivane join request: {req.email}",
             f"{req.email} verified their address and requests to join your "
-            f"\"{tenant.name or tenant.slug}\" organization on Warden.\n\n"
+            f"\"{tenant.name or tenant.slug}\" organization on Palivane.\n\n"
             f"Approve or deny it on the Team page: {email_mod.base_url()}\n\n"
             "(Their mailbox ownership is confirmed — they clicked a link sent to it.)")
     return bounce("verified")

@@ -25,9 +25,9 @@ def keypair():
 
 def _fresh(monkeypatch, blob="", pubkey=""):
     """Point the module at a test license and reset its process-wide cache."""
-    monkeypatch.setenv("WARDEN_LICENSE", blob)
+    monkeypatch.setenv("PALIVANE_LICENSE", blob)
     if pubkey:
-        monkeypatch.setenv("WARDEN_LICENSE_PUBKEY", pubkey)
+        monkeypatch.setenv("PALIVANE_LICENSE_PUBKEY", pubkey)
     monkeypatch.setattr(licensing, "_cached", None)
     monkeypatch.setattr(licensing, "_checked", False)
 
@@ -110,8 +110,8 @@ def test_health_reports_license(keypair, monkeypatch, client):
 
 def _keypair_env(monkeypatch, keypair):
     priv, pub = keypair
-    monkeypatch.setenv("WARDEN_LICENSE_SIGNING_KEY", priv.decode())
-    monkeypatch.setenv("WARDEN_LICENSE_PUBKEY", pub)
+    monkeypatch.setenv("PALIVANE_LICENSE_SIGNING_KEY", priv.decode())
+    monkeypatch.setenv("PALIVANE_LICENSE_PUBKEY", pub)
     monkeypatch.setattr(licensing, "_cached", None)
     monkeypatch.setattr(licensing, "_checked", False)
     return priv, pub
@@ -140,7 +140,7 @@ def test_issue_reuses_id_and_verify_allows_expired(keypair):
 
 
 def test_renew_disabled_without_signing_key(raw_client, monkeypatch):
-    monkeypatch.delenv("WARDEN_LICENSE_SIGNING_KEY", raising=False)
+    monkeypatch.delenv("PALIVANE_LICENSE_SIGNING_KEY", raising=False)
     r = raw_client.post("/api/license/renew", json={"license": "WDN1.x.y"})
     assert r.status_code == 503
 
@@ -217,7 +217,7 @@ def test_admin_issue_and_revoke_endpoints(client, raw_client, monkeypatch, keypa
 
 def test_admin_issue_503_without_signing_key(raw_client, monkeypatch):
     from app import main
-    monkeypatch.delenv("WARDEN_LICENSE_SIGNING_KEY", raising=False)
+    monkeypatch.delenv("PALIVANE_LICENSE_SIGNING_KEY", raising=False)
     monkeypatch.setattr(main.settings, "metrics_token", "op-tok")
     r = raw_client.post("/api/admin/licenses", json={"org": "X", "plan": "team"},
                         headers={"Authorization": "Bearer op-tok"})

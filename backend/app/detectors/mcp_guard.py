@@ -123,7 +123,7 @@ class MCPGuardDetector:
                 detector=self.name, evidence=f"server={server} transport={transport}",
             ))
 
-        # 1b) Local-server integrity (warden-mcp supply-chain pin): the wrapped server's
+        # 1b) Local-server integrity (palivane-mcp supply-chain pin): the wrapped server's
         # resolved binary no longer matches the hash recorded on first use — an update,
         # or a swapped/trojaned server. High-signal either way: it should be re-vetted.
         if m.get("pin_status") == "mismatch":

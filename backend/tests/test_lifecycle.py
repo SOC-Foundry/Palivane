@@ -27,7 +27,7 @@ def test_suspension_blocks_session_login_and_ingest(client, raw_client, db_facto
     # capture ingest -> 403
     ing = raw_client.post("/api/ingest/ai-usage",
                           json={"content": "hi", "destination": "https://chatgpt.com/"},
-                          headers={"X-Warden-Token": key})
+                          headers={"X-Palivane-Token": key})
     assert ing.status_code == 403
 
     # resume restores everything, nothing was deleted

@@ -8,7 +8,7 @@ import importlib
 
 
 def test_compared_tokens_are_stripped(monkeypatch):
-    monkeypatch.setenv("WARDEN_METRICS_TOKEN", "op-token\n")
+    monkeypatch.setenv("PALIVANE_METRICS_TOKEN", "op-token\n")
     monkeypatch.setenv("EXTENSION_INGEST_TOKEN", " ext-token\n")
     import app.config as config
     importlib.reload(config)

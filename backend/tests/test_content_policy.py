@@ -11,7 +11,7 @@ def _ingest_leak(client, raw_client, content="my AWS key AKIA4YTGH2NBQF7XZP3K he
     client.patch("/api/tenant", json={})  # ensure tenant row exists
     key = client.post("/api/apikeys", json={"label": "k", "actor": "a@acme.com"}).json()["token"]
     raw_client.post("/api/ingest/ai-usage", json={"content": content, "destination": "https://chatgpt.com/"},
-                    headers={"X-Warden-Token": key})
+                    headers={"X-Palivane-Token": key})
 
 
 def test_metadata_only_by_default_stores_no_prose(client, raw_client, db_factory, monkeypatch):

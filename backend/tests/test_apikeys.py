@@ -81,16 +81,16 @@ def test_extension_token_self_serve(client, raw_client):
     assert r.status_code == 200
     body = r.json()
     assert body["token"].startswith("ak_") and "@" in body["actor"]
-    # Tells warden-connect whether the gateway can forward Claude Code to a real model
+    # Tells palivane-connect whether the gateway can forward Claude Code to a real model
     # (vs. the inspection stub) so it can warn "set your provider key".
     assert isinstance(body["upstream_forwards"], bool)
-    # The org's enforce stance for the local planes — warden-connect provisions it into
+    # The org's enforce stance for the local planes — palivane-connect provisions it into
     # the hooks it installs (default: monitor).
     assert body["enforce"] is False
     # The minted key works as an ingest token (bound to the caller's tenant).
     ing = raw_client.post("/api/ingest/ai-usage",
                           json={"content": "hello world", "destination": "https://claude.ai/"},
-                          headers={"X-Warden-Token": body["token"]})
+                          headers={"X-Palivane-Token": body["token"]})
     assert ing.status_code == 200
 
 
@@ -109,11 +109,11 @@ def test_extension_token_dedups_per_device(client, raw_client):
     # The old token stops working; the fresh one ingests fine.
     dead = raw_client.post("/api/ingest/ai-usage",
                            json={"content": "hi", "destination": "https://claude.ai/"},
-                           headers={"X-Warden-Token": first})
+                           headers={"X-Palivane-Token": first})
     assert dead.status_code == 401
     live = raw_client.post("/api/ingest/ai-usage",
                            json={"content": "hi", "destination": "https://claude.ai/"},
-                           headers={"X-Warden-Token": second})
+                           headers={"X-Palivane-Token": second})
     assert live.status_code == 200
 
 

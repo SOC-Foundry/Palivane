@@ -48,7 +48,7 @@ def test_judge_off_is_honored_end_to_end(client, db_factory):
 
 
 def test_managed_judge_is_plan_gated(db_factory, monkeypatch):
-    # On the managed SaaS the judge is operator-funded, so WARDEN_JUDGE_PLAN_GATED makes it
+    # On the managed SaaS the judge is operator-funded, so PALIVANE_JUDGE_PLAN_GATED makes it
     # a paid entitlement: a Free tenant runs offline-only; an Enterprise tenant gets it.
     from app import service, users as users_cli
     fake = Signal(category=Category.AI_GENERATED, title="judge ran", detail="",

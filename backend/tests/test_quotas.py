@@ -25,7 +25,7 @@ def test_user_quota_blocks_join_approval(client, raw_client, monkeypatch):
     import app.domains as domains
     d = client.post("/api/domains", json={"domain": "acme.com"}).json()
     monkeypatch.setattr(domains, "_lookup_txt",
-                        lambda name: [f"warden-domain-verify={d['token']}"])
+                        lambda name: [f"palivane-domain-verify={d['token']}"])
     client.post(f"/api/domains/{d['id']}/verify")
     raw_client.post("/api/auth/signup", json={
         "org_name": "Some Org", "email": "late@acme.com", "password": "password123"})
@@ -54,7 +54,7 @@ def test_daily_ingest_quota(client, raw_client, monkeypatch):
     _set_quota(monkeypatch, ingest_per_day=2)
     key = client.post("/api/apikeys", json={"label": "ext", "actor": "e@acme.com"}).json()["token"]
     payload = {"content": "hello", "destination": "https://chatgpt.com/"}
-    hdrs = {"X-Warden-Token": key}
+    hdrs = {"X-Palivane-Token": key}
     assert raw_client.post("/api/ingest/ai-usage", json=payload, headers=hdrs).status_code == 200
     assert raw_client.post("/api/ingest/ai-usage", json=payload, headers=hdrs).status_code == 200
     over = raw_client.post("/api/ingest/ai-usage", json=payload, headers=hdrs)

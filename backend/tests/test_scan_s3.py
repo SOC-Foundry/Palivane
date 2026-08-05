@@ -17,7 +17,7 @@ def _scan(raw_client, objects, public=False, token="ext-secret", record=False):
         "/api/scan/s3",
         json={"bucket": "data-bkt", "region": "us-east-1", "public": public,
               "objects": objects, "record": record},
-        headers={"X-Warden-Token": token},
+        headers={"X-Palivane-Token": token},
     )
 
 

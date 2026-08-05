@@ -50,13 +50,13 @@ def test_endpoint_records_and_respects_toggle(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "copilot", "actor": "c@acme.com"}).json()["token"]
     body = {"content": "Here are the salary figures you asked for.", "user": "dev@acme.com",
             "source": "m365-copilot"}
-    r = raw_client.post("/api/scan/oversharing", json=body, headers={"X-Warden-Token": key})
+    r = raw_client.post("/api/scan/oversharing", json=body, headers={"X-Palivane-Token": key})
     assert r.status_code == 200
     assert any(s["category"] == "data_oversharing" for s in r.json()["signals"])
 
     # Disabling the check turns it off.
     client.patch("/api/tenant", json={"disabled_checks": ["data_oversharing"]})
-    r2 = raw_client.post("/api/scan/oversharing", json=body, headers={"X-Warden-Token": key})
+    r2 = raw_client.post("/api/scan/oversharing", json=body, headers={"X-Palivane-Token": key})
     assert not any(s["category"] == "data_oversharing" for s in r2.json()["signals"])
     client.patch("/api/tenant", json={"disabled_checks": []})
 
@@ -68,7 +68,7 @@ def test_oversharing_recipient_required(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "copilot", "actor": "c@acme.com"}).json()["token"]
     r = raw_client.post("/api/scan/oversharing",
                         json={"content": "salary data", "source": "rag"},
-                        headers={"X-Warden-Token": key})
+                        headers={"X-Palivane-Token": key})
     assert r.status_code == 422
 
 
@@ -80,6 +80,6 @@ def test_oversharing_ignores_token_actor_for_authz(client, raw_client):
     key = client.post("/api/apikeys",
                       json={"label": "copilot", "actor": "svc@hr.acme.com"}).json()["token"]
     body = {"content": "Here are the salary figures.", "user": "dev@acme.com", "source": "rag"}
-    r = raw_client.post("/api/scan/oversharing", json=body, headers={"X-Warden-Token": key})
+    r = raw_client.post("/api/scan/oversharing", json=body, headers={"X-Palivane-Token": key})
     assert r.status_code == 200
     assert any(s["category"] == "data_oversharing" for s in r.json()["signals"])

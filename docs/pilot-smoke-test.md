@@ -45,8 +45,8 @@ these will block on every surface. Everything is attributed to your `@tachtech.n
    cat ~/.claude/settings.json
    ```
    - ✅ Default: `env.WARDEN_URL`/`WARDEN_TOKEN` set, **no** `ANTHROPIC_*` (Claude Code keeps
-     its own Pro/Max sign-in), and a `hooks` block referencing `warden-hook` (PreToolUse) +
-     `warden-posture`.
+     its own Pro/Max sign-in), and a `hooks` block referencing `palivane-hook` (PreToolUse) +
+     `palivane-posture`.
    - ✅ If connected with `--route-gateway`: additionally `env.ANTHROPIC_BASE_URL` =
      `https://palivane.tachtech.net` (no `/v1` — the SDK adds it) and `ANTHROPIC_AUTH_TOKEN` set.
 3. [ ] Prove the gateway blocks a leak (deterministic — no model call needed on a block;
@@ -60,7 +60,7 @@ these will block on every surface. Everything is attributed to your `@tachtech.n
    - ✅ Response is `400` with `"Blocked by Palivane: secret_leak … (risk …/critical)"`.
 4. [ ] Real Claude Code: start `claude`, ask it to do something that would echo the test
    payload into a file. ✅ It surfaces the same Palivane block instead of sending.
-5. [ ] (Cursor, if installed) confirm `~/.cursor/hooks.json` has a `warden-cursor-hook` entry.
+5. [ ] (Cursor, if installed) confirm `~/.cursor/hooks.json` has a `palivane-cursor-hook` entry.
 6. [ ] Console → **Findings**: an `llm_io` finding from the gateway, attributed to you.
 
 ---
@@ -69,10 +69,10 @@ these will block on every surface. Everything is attributed to your `@tachtech.n
 > Do this on one machine first; it trusts a local CA and sets the system HTTPS proxy.
 1. [ ] Set it up (reuses the token from step 2; asks for sudo twice — CA + proxy):
    ```bash
-   warden-desktop install
+   palivane-desktop install
    ```
    - ✅ Ends with “Desktop AI apps now route through Palivane.”
-   - [ ] `warden-desktop status` → `running`.
+   - [ ] `palivane-desktop status` → `running`.
 2. [ ] Open the **Claude desktop app** (or ChatGPT desktop), send a prompt containing the
    test payload.
    - ✅ In enforce mode the send fails; in monitor a finding is still recorded.
@@ -80,7 +80,7 @@ these will block on every surface. Everything is attributed to your `@tachtech.n
    / `chatgpt.com` (i.e. the desktop app, not the browser).
 4. [ ] Revert when done testing:
    ```bash
-   warden-desktop uninstall     # turns off the system proxy + service
+   palivane-desktop uninstall     # turns off the system proxy + service
    ```
 
 ---
@@ -94,7 +94,7 @@ these will block on every surface. Everything is attributed to your `@tachtech.n
 ## Rollback / cleanup
 - Browser: remove the extension, or click **Disconnect** in the popup.
 - CLI: delete the `hooks`/`env` block from `~/.claude/settings.json` (or `rm -rf ~/.warden`).
-- Desktop: `warden-desktop uninstall` (then optionally remove the mitmproxy CA from the
+- Desktop: `palivane-desktop uninstall` (then optionally remove the mitmproxy CA from the
   keychain / trust store).
 - Revoke any test keys in the console → **Team / API keys**.
 

@@ -106,11 +106,11 @@ def test_mcp_block_severity_downgrades_to_warn(client, raw_client):
     client.patch("/api/tenant", json={"mcp_allowed_servers": "mcp.acme.com"})
     key = _key(client)
     activity = {"method": "initialize", "server": "mcp.random.dev", "transport": "stdio"}
-    base = raw_client.post("/api/ingest/mcp", json=activity, headers={"X-Warden-Token": key}).json()
+    base = raw_client.post("/api/ingest/mcp", json=activity, headers={"X-Palivane-Token": key}).json()
     assert base["action"] == "block" and base["severity"] == "high"
     # Raise the tenant's bar to critical -> the same high finding is only a warn.
     client.patch("/api/tenant", json={"mcp_block_severity": "critical"})
-    raised = raw_client.post("/api/ingest/mcp", json=activity, headers={"X-Warden-Token": key}).json()
+    raised = raw_client.post("/api/ingest/mcp", json=activity, headers={"X-Palivane-Token": key}).json()
     assert raised["action"] == "warn"
 
 
@@ -123,12 +123,12 @@ def test_sanctioned_tools_per_tenant(client, raw_client, monkeypatch):
     client.patch("/api/tenant", json={"sanctioned_ai_tools": "claude.ai"})
     approved = raw_client.post("/api/ingest/ai-usage",
                                json={"content": "hello there", "destination": "https://claude.ai/chat"},
-                               headers={"X-Warden-Token": key}).json()
+                               headers={"X-Palivane-Token": key}).json()
     assert "unsanctioned_ai" not in {s["category"] for s in approved["signals"]}
     # A different, unapproved destination still flags.
     other = raw_client.post("/api/ingest/ai-usage",
                             json={"content": "hello there", "destination": "https://chat.openai.com/"},
-                            headers={"X-Warden-Token": key}).json()
+                            headers={"X-Palivane-Token": key}).json()
     assert "unsanctioned_ai" in {s["category"] for s in other["signals"]}
 
 
@@ -148,7 +148,7 @@ def test_sanctioned_tools_isolated_between_tenants(client, raw_client, db_factor
     key2 = c2.post("/api/apikeys", json={"label": "pol", "actor": "b@beta.com"}).json()["token"]
     beta = TestClient(app).post("/api/ingest/ai-usage",
                                 json={"content": "hi", "destination": "https://claude.ai/chat"},
-                                headers={"X-Warden-Token": key2}).json()
+                                headers={"X-Palivane-Token": key2}).json()
     assert "unsanctioned_ai" in {s["category"] for s in beta["signals"]}
 
 
@@ -160,11 +160,11 @@ def test_tool_suppress_per_tenant(client, raw_client, monkeypatch):
     secret = {"content": "here is my key AKIAIOSFODNN7EXAMPLE", "tool": "mytool",
               "destination": "https://mytool.example.com"}
     # Baseline: the secret is flagged.
-    base = raw_client.post("/api/ingest/ai-usage", json=secret, headers={"X-Warden-Token": key}).json()
+    base = raw_client.post("/api/ingest/ai-usage", json=secret, headers={"X-Palivane-Token": key}).json()
     assert "secret_leak" in {s["category"] for s in base["signals"]}
     # Suppress secret_leak for mytool on this tenant.
     client.patch("/api/tenant", json={"tool_suppress": "mytool:secret_leak"})
-    supp = raw_client.post("/api/ingest/ai-usage", json=secret, headers={"X-Warden-Token": key}).json()
+    supp = raw_client.post("/api/ingest/ai-usage", json=secret, headers={"X-Palivane-Token": key}).json()
     assert "secret_leak" not in {s["category"] for s in supp["signals"]}
 
 

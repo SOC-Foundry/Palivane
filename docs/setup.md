@@ -236,16 +236,16 @@ one plane at a time. Pick whichever matches how your org uses AI:
 | Your own apps / CLIs / Claude Code / Codex CLI | **LLM gateway** (`/v1`) | Point the client's base URL at Palivane — see below. |
 | Browser web UIs (claude.ai, chatgpt.com, Microsoft Copilot) | **Browser extension** | [`extension/README.md`](../extension/README.md) |
 | Desktop apps, IDE assistants, 3rd-party CLIs (GitHub Copilot, Gemini CLI) | **Egress proxy** | [`proxy/README.md`](../proxy/README.md) |
-| **Cursor** (cert-pinned chat) | **Local hook** (`warden-cursor-hook`) | [`cli/README.md`](../cli/README.md) — auto-installed by `warden connect` |
+| **Cursor** (cert-pinned chat) | **Local hook** (`palivane-cursor-hook`) | [`cli/README.md`](../cli/README.md) — auto-installed by `warden connect` |
 | Secrets/PII reaching a **Git repo** (commit / PR) | **Pre-commit hook + GitHub Action** | [`git/README.md`](../git/README.md) |
-| Credentials **at rest** on a device (SSH/RSA keys, `.env`, tokens) | **`warden-secrets`** (`secrets` surface) | [`cli/README.md`](../cli/README.md); schedule via the MDM pack |
-| Existing **TruffleHog / Gitleaks / GitGuardian** jobs | **`warden-import`** / `warden-secrets --engine` | [`git/README.md`](../git/README.md), [`cli/README.md`](../cli/README.md) |
+| Credentials **at rest** on a device (SSH/RSA keys, `.env`, tokens) | **`palivane-secrets`** (`secrets` surface) | [`cli/README.md`](../cli/README.md); schedule via the MDM pack |
+| Existing **TruffleHog / Gitleaks / GitGuardian** jobs | **`palivane-import`** / `palivane-secrets --engine` | [`git/README.md`](../git/README.md), [`cli/README.md`](../cli/README.md) |
 
 > **Cursor (AI IDE).** Cursor's model/chat endpoint (`api2.cursor.sh`) **pins its
 > certificate**, so a TLS-inspecting egress proxy can't read its prompts (measured — the
 > handshake is rejected even with a trusted CA), and Cursor ignores `OPENAI_BASE_URL` so
 > the gateway can't be interposed. Cover Cursor with the **local plane**:
-> [`warden-cursor-hook`](../cli/README.md) uses Cursor's Hooks API to inspect the prompt
+> [`palivane-cursor-hook`](../cli/README.md) uses Cursor's Hooks API to inspect the prompt
 > (`beforeSubmitPrompt`), shell commands, MCP calls, and file reads/edits **before they
 > run** — immune to the pinning. The policy pack ships a ready-to-push `cursor-hooks.json`.
 > Pair it with the **git plane** (secrets/PII in committed code) and the **gateway** for
@@ -317,9 +317,9 @@ On the hosted SaaS there is no license file — your plan is managed by the vend
 Reverse of the one-command install, in three steps:
 
 ```bash
-warden-connect --uninstall     # removes the Claude Code / Cursor / Gemini / Codex hooks,
+palivane-connect --uninstall     # removes the Claude Code / Cursor / Gemini / Codex hooks,
                                # the Palivane env, and the creds files it wrote
-warden-desktop uninstall       # stops the egress proxy; reverts the system-proxy setting
+palivane-desktop uninstall       # stops the egress proxy; reverts the system-proxy setting
                                # and removes the CLI capture shims
 rm -rf ~/.warden               # the CLI in ~/.warden/bin + local state (breaker/posture)
 ```
@@ -330,10 +330,10 @@ extension** from Chrome/Edge.
 
 Notes:
 
-- `warden-connect --uninstall` only touches Palivane's own entries — your other hooks and any
+- `palivane-connect --uninstall` only touches Palivane's own entries — your other hooks and any
   `ANTHROPIC_BASE_URL` you set yourself are left intact. It's safe to run anytime and is a
   no-op if nothing is installed.
-- On **Linux**, `warden-desktop uninstall` now **removes the root CA** from the system trust
+- On **Linux**, `palivane-desktop uninstall` now **removes the root CA** from the system trust
   store automatically (both the Debian `update-ca-certificates` and the p11-kit
   `update-ca-trust` families — Arch, Fedora/RHEL, openSUSE) as well as the per-user NSS store.
   On **macOS** the CA is left in the Keychain for safety — delete it manually for a full revert.

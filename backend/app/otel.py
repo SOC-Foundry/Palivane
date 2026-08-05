@@ -1,8 +1,8 @@
 """OTLP-logs parsing + Claude Code event mapping for the direct OTEL receiver.
 
-The `warden-otel` CLI tails claude-otel's logs.jsonl and posts to the ingest API; this is
+The `palivane-otel` CLI tails claude-otel's logs.jsonl and posts to the ingest API; this is
 the *fileless* alternative — a claude-otel collector can `otlphttp`-export logs straight to
-Warden's `/v1/logs` endpoint. Both consume the same Claude Code OTEL events, so this mirrors
+Palivane's `/v1/logs` endpoint. Both consume the same Claude Code OTEL events, so this mirrors
 the CLI's mapping. Pure functions (no DB) — the endpoint in main.py does the scoring.
 
 Events (scope `com.anthropic.claude_code.events`):
@@ -86,7 +86,7 @@ def prompt_fields(attrs: dict) -> dict | None:
 
 
 def mcp_fields(event_name: str, attrs: dict) -> dict | None:
-    """tool_result / mcp_server_connection -> an MCPIngest-shaped dict (mirrors warden-hook:
+    """tool_result / mcp_server_connection -> an MCPIngest-shaped dict (mirrors palivane-hook:
     built-ins send server="" so the allowlist doesn't fire)."""
     user = attrs.get("user.email", "") or ""
     if event_name == "mcp_server_connection":

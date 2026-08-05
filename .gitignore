@@ -28,3 +28,6 @@ deploy/terraform/.terraform.lock.hcl
 
 # Native release tarballs
 /dist/
+
+# hero-video rig deps (not part of the product)
+scripts/hero-video/node_modules/
