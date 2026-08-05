@@ -333,6 +333,28 @@ unset_session_proxy_env() {
   return 0
 }
 
+# Location 4 of 4 (KDE): plasmashell keeps the env it had at LOGIN and passes its own
+# copy into every app launched from the taskbar/menu — bypassing the systemd and D-Bus
+# scrubs above, so a freshly launched app still gets the dead proxy. If it carries the
+# proxy, restart it: windows are untouched (kwin keeps running), panels reload briefly.
+# krunner launches apps the same way; killing it is enough — it respawns on demand with
+# the clean env. GNOME has the same launcher-env problem in gnome-shell, but restarting
+# that kills the whole Wayland session, so there re-login is the only safe flush.
+flush_kde_launcher_env() {
+  local pid
+  pid="$(pgrep -o -x plasmashell 2>/dev/null || true)"
+  [ -n "$pid" ] || return 0
+  tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null \
+    | grep -Eq "^(http_proxy|https_proxy|HTTP_PROXY|HTTPS_PROXY)=.*127\.0\.0\.1:${PORT}\$" || return 0
+  log "plasmashell still carries the proxy env and re-injects it into every app it"
+  log "launches — restarting it so taskbar/menu launches come up clean…"
+  if ! systemctl --user restart plasma-plasmashell.service 2>/dev/null; then
+    # Plasma session not managed by systemd: replace the shell in place instead.
+    (nohup plasmashell --replace >/dev/null 2>&1 &)
+  fi
+  pkill -x krunner 2>/dev/null || true
+}
+
 start_service() {
   local tok; tok="$1"
   case "$OS" in
@@ -509,13 +531,13 @@ cmd_uninstall() {
       nss_untrust_ca
       untrust_ca_system
       unset_session_proxy_env
-      log "stopped. Proxy off; CA untrusted (system trust store + NSS); session proxy env removed"
-      log "         (environment.d file, live systemd user env, D-Bus activation env)."
-      log "IMPORTANT: apps that are ALREADY RUNNING keep the proxy env they started with —"
-      log "           and long-lived desktop processes (plasmashell, your terminal) re-inject"
-      log "           it into anything they launch. Log out and back in to flush everything,"
-      log "           or on KDE, without a re-login:"
-      log "             systemctl --user restart plasma-plasmashell.service && pkill -x krunner"
+      flush_kde_launcher_env
+      log "stopped. Proxy off; CA untrusted (system trust store + NSS); session proxy env"
+      log "         removed from all four locations: environment.d file, live systemd user"
+      log "         env, D-Bus activation env, and the desktop shell's launcher env (KDE)."
+      log "IMPORTANT: terminals/apps that are ALREADY RUNNING keep the proxy env they started"
+      log "           with — anything launched from an old terminal tab still points at the"
+      log "           dead proxy. Log out and back in to flush the last stragglers."
       log "         (If you set HTTPS_PROXY/HTTP_PROXY env vars manually, unset them too.)" ;;
   esac
 }
