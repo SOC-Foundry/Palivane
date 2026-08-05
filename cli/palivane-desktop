@@ -177,19 +177,26 @@ trust_ca_system() {
   fi
 }
 
-# Reverse of trust_ca_system, for both distro families (best-effort; never fails uninstall).
+# Reverse of trust_ca_system, for both distro families and both brand generations —
+# warden-mitmproxy.crt predates the rebrand, and uninstall must clean up installs made
+# before it. Best-effort; never fails uninstall.
 untrust_ca_system() {
-  if [ -f /usr/local/share/ca-certificates/palivane-mitmproxy.crt ]; then
-    sudo rm -f /usr/local/share/ca-certificates/palivane-mitmproxy.crt || true
-    sudo update-ca-certificates --fresh >/dev/null 2>&1 || sudo update-ca-certificates >/dev/null 2>&1 || true
-  fi
-  local d
-  for d in $P11KIT_ANCHOR_DIRS; do
-    if [ -f "$d/palivane-mitmproxy.crt" ]; then
-      sudo rm -f "$d/palivane-mitmproxy.crt" || true
-      command -v update-ca-trust >/dev/null 2>&1 && { sudo update-ca-trust extract || true; }
+  local f d refresh_deb=0 refresh_p11=0
+  for f in palivane-mitmproxy.crt warden-mitmproxy.crt; do
+    if [ -f "/usr/local/share/ca-certificates/$f" ]; then
+      sudo rm -f "/usr/local/share/ca-certificates/$f" || true
+      refresh_deb=1
     fi
+    for d in $P11KIT_ANCHOR_DIRS; do
+      if [ -f "$d/$f" ]; then
+        sudo rm -f "$d/$f" || true
+        refresh_p11=1
+      fi
+    done
   done
+  [ "$refresh_deb" = 1 ] && { sudo update-ca-certificates --fresh >/dev/null 2>&1 || sudo update-ca-certificates >/dev/null 2>&1 || true; }
+  [ "$refresh_p11" = 1 ] && command -v update-ca-trust >/dev/null 2>&1 && { sudo update-ca-trust extract || true; }
+  return 0
 }
 
 trust_ca() {
@@ -227,7 +234,10 @@ nss_trust_ca() {
 nss_untrust_ca() {
   [ "$OS" = "Linux" ] || return 0
   command -v certutil >/dev/null 2>&1 || return 0
-  certutil -d "$NSS_DB" -D -n "$CA_NICK" 2>/dev/null && log "removed the CA from the NSS store." || true
+  local n
+  for n in "$CA_NICK" warden-mitmproxy; do   # second is the pre-rebrand nickname
+    certutil -d "$NSS_DB" -D -n "$n" 2>/dev/null && log "removed the CA from the NSS store ($n)." || true
+  done
 }
 
 set_proxy() {
@@ -291,16 +301,36 @@ HTTPS_PROXY=http://127.0.0.1:$PORT
 no_proxy=localhost,127.0.0.1,::1
 NO_PROXY=localhost,127.0.0.1,::1
 ENV
-  # Best-effort: push into the running systemd user session too (already-open apps won't
-  # pick it up, but newly-launched ones from this session will).
-  systemctl --user import-environment http_proxy https_proxy HTTP_PROXY HTTPS_PROXY no_proxy NO_PROXY 2>/dev/null || true
+  # Best-effort: push into the LIVE session managers too, so things launched from this
+  # session pick it up without a re-login. Two separate managers hold their own env copy:
+  # the systemd user manager (spawns user units) and the D-Bus activation environment
+  # (spawns D-Bus-activated GUI apps). import-environment would read from THIS shell —
+  # where the vars aren't exported — so set explicit values. Already-running apps keep
+  # whatever env they started with until restarted.
+  systemctl --user set-environment \
+    "http_proxy=http://127.0.0.1:$PORT" "https_proxy=http://127.0.0.1:$PORT" \
+    "HTTP_PROXY=http://127.0.0.1:$PORT" "HTTPS_PROXY=http://127.0.0.1:$PORT" \
+    "no_proxy=localhost,127.0.0.1,::1" "NO_PROXY=localhost,127.0.0.1,::1" 2>/dev/null || true
+  command -v dbus-update-activation-environment >/dev/null 2>&1 && \
+    dbus-update-activation-environment \
+      "http_proxy=http://127.0.0.1:$PORT" "https_proxy=http://127.0.0.1:$PORT" \
+      "HTTP_PROXY=http://127.0.0.1:$PORT" "HTTPS_PROXY=http://127.0.0.1:$PORT" 2>/dev/null || true
   log "session proxy env written (environment.d) — Chromium/Electron desktop apps route through"
   log "Palivane on next login. For apps already open, quit and reopen them (or log out/in)."
 }
 
 unset_session_proxy_env() {
-  rm -f "${HOME_DIR}/.config/environment.d/palivane-proxy.conf"
+  # Both brand generations: warden-proxy.conf is the pre-rebrand filename.
+  rm -f "${HOME_DIR}/.config/environment.d/palivane-proxy.conf" \
+        "${HOME_DIR}/.config/environment.d/warden-proxy.conf"
   systemctl --user unset-environment http_proxy https_proxy HTTP_PROXY HTTPS_PROXY no_proxy NO_PROXY 2>/dev/null || true
+  # The D-Bus activation environment is a SEPARATE copy of the session env — GUI apps
+  # launched via D-Bus activation keep getting the dead proxy unless it's scrubbed too.
+  # There's no "unset" for it; setting empty values is the standard way to neutralize.
+  command -v dbus-update-activation-environment >/dev/null 2>&1 && \
+    dbus-update-activation-environment \
+      http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= all_proxy= ALL_PROXY= 2>/dev/null || true
+  return 0
 }
 
 start_service() {
@@ -397,13 +427,17 @@ EOF
 }
 
 unwire_cli_capture() {
-  [ -d "$SHIM_DIR" ] || return 0
-  local name shim removed=""
-  for name in $CLI_SHIM_TOOLS; do
-    shim="$SHIM_DIR/$name"
-    if [ -f "$shim" ] && grep -q "palivane-desktop CLI capture shim" "$shim" 2>/dev/null; then
-      rm -f "$shim"; removed="$removed $name"
-    fi
+  # Sweep the current shim dir AND the pre-rebrand one (~/.warden/bin); match either
+  # generation's marker so an old shim never survives an uninstall.
+  local dir name shim removed=""
+  for dir in "$SHIM_DIR" "${HOME_DIR}/.warden/bin"; do
+    [ -d "$dir" ] || continue
+    for name in $CLI_SHIM_TOOLS; do
+      shim="$dir/$name"
+      if [ -f "$shim" ] && grep -qE "(palivane|warden)-desktop CLI capture shim" "$shim" 2>/dev/null; then
+        rm -f "$shim"; removed="$removed $name"
+      fi
+    done
   done
   [ -n "$removed" ] && log "removed CLI capture shims:$removed" || true
 }
@@ -440,24 +474,48 @@ cmd_uninstall() {
     Darwin)
       local svc; svc="$(networksetup -listnetworkserviceorder | awk -F') ' '/\) /{print $2}' | head -1)"
       sudo networksetup -setsecurewebproxystate "$svc" off 2>/dev/null || true
-      launchctl unload "${HOME_DIR}/Library/LaunchAgents/net.tachtech.palivane-proxy.plist" 2>/dev/null || true
-      rm -f "${HOME_DIR}/Library/LaunchAgents/net.tachtech.palivane-proxy.plist"
+      local pl
+      for pl in net.tachtech.palivane-proxy.plist net.tachtech.warden-proxy.plist; do   # second is pre-rebrand
+        launchctl unload "${HOME_DIR}/Library/LaunchAgents/$pl" 2>/dev/null || true
+        rm -f "${HOME_DIR}/Library/LaunchAgents/$pl"
+      done
       log "stopped. (CA left in the keychain; remove manually if desired.)" ;;
     Linux)
-      systemctl --user disable --now palivane-proxy.service 2>/dev/null || true
+      # Stop + remove the unit — both brand generations. disable alone leaves the unit
+      # file behind, and a pre-rebrand install left warden-proxy.service that the renamed
+      # uninstall never touched.
+      local u
+      for u in palivane-proxy.service warden-proxy.service; do
+        systemctl --user disable --now "$u" 2>/dev/null || true
+        rm -f "${HOME_DIR}/.config/systemd/user/$u"
+      done
+      systemctl --user daemon-reload 2>/dev/null || true
       case "$(linux_de)" in
         *gnome*|*unity*|*cinnamon*|*mate*|*budgie*)
           command -v gsettings >/dev/null 2>&1 && gsettings set org.gnome.system.proxy mode 'none' || true ;;
         *kde*|*plasma*)
           local kw; kw="$(command -v kwriteconfig6 || command -v kwriteconfig5 || true)"
-          [ -n "$kw" ] && "$kw" --file kioslaverc --group "Proxy Settings" --key ProxyType 0 || true
+          if [ -n "$kw" ]; then
+            "$kw" --file kioslaverc --group "Proxy Settings" --key ProxyType 0 2>/dev/null || true
+            # Delete the proxy URLs, not just ProxyType: Chromium/Electron apps read
+            # kioslaverc through their KDE integration and can keep honoring the stale
+            # httpProxy/httpsProxy values even after ProxyType is set back to 0.
+            "$kw" --file kioslaverc --group "Proxy Settings" --key httpProxy  --delete 2>/dev/null || true
+            "$kw" --file kioslaverc --group "Proxy Settings" --key httpsProxy --delete 2>/dev/null || true
+          fi
           command -v dbus-send >/dev/null 2>&1 && \
             dbus-send --type=signal /KIO/Scheduler org.kde.KIO.Scheduler.reparseSlaveConfiguration string:'' 2>/dev/null || true ;;
       esac
       nss_untrust_ca
       untrust_ca_system
       unset_session_proxy_env
-      log "stopped. Proxy off; CA untrusted (system trust store + NSS); session proxy env removed."
+      log "stopped. Proxy off; CA untrusted (system trust store + NSS); session proxy env removed"
+      log "         (environment.d file, live systemd user env, D-Bus activation env)."
+      log "IMPORTANT: apps that are ALREADY RUNNING keep the proxy env they started with —"
+      log "           and long-lived desktop processes (plasmashell, your terminal) re-inject"
+      log "           it into anything they launch. Log out and back in to flush everything,"
+      log "           or on KDE, without a re-login:"
+      log "             systemctl --user restart plasma-plasmashell.service && pkill -x krunner"
       log "         (If you set HTTPS_PROXY/HTTP_PROXY env vars manually, unset them too.)" ;;
   esac
 }
