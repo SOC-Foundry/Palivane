@@ -438,3 +438,104 @@ def test_uninstall_preserves_foreign_gateway_routing(tmp_path, monkeypatch):
     wc._uninstall()
     env = json.loads((claude / "settings.json").read_text())["env"]
     assert env == {"ANTHROPIC_AUTH_TOKEN": "sk-user", "ANTHROPIC_BASE_URL": "https://api.anthropic.com"}
+
+
+# --- pre-rebrand (Warden) scrub ----------------------------------------------------------
+
+def test_scrub_pre_rebrand_migrates_claude_settings(tmp_path, monkeypatch):
+    """Old warden hooks/env go; the user's own hooks and any palivane entries stay."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    claude = tmp_path / ".claude"; claude.mkdir()
+    (claude / "settings.json").write_text(json.dumps({
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "*", "hooks": [{"type": "command", "command": "/home/u/.warden/bin/warden-hook"}]},
+                {"matcher": "*", "hooks": [{"type": "command", "command": "/home/u/.palivane/bin/palivane-hook"}]},
+                {"matcher": "Bash", "hooks": [{"type": "command", "command": "my-linter"}]}],
+            "SessionStart": [
+                {"matcher": "*", "hooks": [{"type": "command", "command": "/home/u/.warden/bin/warden-posture --async --quiet"}]}],
+        },
+        "env": {"WARDEN_URL": "https://w.corp.io", "WARDEN_TOKEN": "ak_old",
+                "WARDEN_ENFORCE": "false", "PALIVANE_TOKEN": "ak_new",
+                "ANTHROPIC_BASE_URL": "https://w.corp.io", "ANTHROPIC_AUTH_TOKEN": "ak_old"},
+    }))
+    msgs = wc._scrub_pre_rebrand()
+    d = json.loads((claude / "settings.json").read_text())
+    dumped = json.dumps(d["hooks"])
+    assert "warden-hook" not in dumped and "warden-posture" not in dumped
+    assert "palivane-hook" in dumped and "my-linter" in dumped
+    assert "SessionStart" not in d["hooks"]              # emptied event pruned
+    env = d["env"]
+    assert not any(k.startswith("WARDEN_") for k in env)
+    # gateway routing owned by old warden (token match) removed with it
+    assert "ANTHROPIC_BASE_URL" not in env and "ANTHROPIC_AUTH_TOKEN" not in env
+    assert env["PALIVANE_TOKEN"] == "ak_new"
+    assert any("Claude Code" in m for m in msgs)
+
+
+def test_scrub_pre_rebrand_leaves_foreign_gateway_alone(tmp_path, monkeypatch):
+    """A user's own ANTHROPIC_* (token != old warden's) is never touched."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    claude = tmp_path / ".claude"; claude.mkdir()
+    (claude / "settings.json").write_text(json.dumps({"env": {
+        "WARDEN_TOKEN": "ak_old",
+        "ANTHROPIC_AUTH_TOKEN": "sk-user", "ANTHROPIC_BASE_URL": "https://api.anthropic.com"}}))
+    wc._scrub_pre_rebrand()
+    env = json.loads((claude / "settings.json").read_text())["env"]
+    assert env == {"ANTHROPIC_AUTH_TOKEN": "sk-user",
+                   "ANTHROPIC_BASE_URL": "https://api.anthropic.com"}
+
+
+def test_scrub_pre_rebrand_tool_hooks_and_creds(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    cur = tmp_path / ".cursor"; cur.mkdir()
+    (cur / "hooks.json").write_text(json.dumps(
+        {"version": 1, "hooks": {"beforeSubmitPrompt": [{"command": "warden-cursor-hook"},
+                                                        {"command": "keep"}]}}))
+    (cur / "warden.json").write_text("{}")
+    (cur / "palivane.json").write_text("{}")
+    cop = tmp_path / ".copilot" / "hooks"; cop.mkdir(parents=True)
+    (cop / "warden.json").write_text("{}")
+    (cop / "palivane.json").write_text("{}")
+
+    msgs = wc._scrub_pre_rebrand()
+
+    c = json.loads((cur / "hooks.json").read_text())
+    assert c["hooks"]["beforeSubmitPrompt"] == [{"command": "keep"}]
+    assert not (cur / "warden.json").exists()
+    assert (cur / "palivane.json").exists()              # new generation untouched
+    assert not (cop / "warden.json").exists()
+    assert (cop / "palivane.json").exists()
+    assert any("Cursor" in m for m in msgs) and any("Copilot" in m for m in msgs)
+
+
+def test_scrub_pre_rebrand_legacy_bin(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    lbin = tmp_path / ".warden" / "bin"; lbin.mkdir(parents=True)
+    (lbin / "warden-hook").write_text("#!/bin/sh\n")
+    (lbin / "warden-connect").write_text("#!/bin/sh\n")
+    (lbin / "claude").write_text("#!/bin/sh\n# warden-desktop CLI capture shim\n")
+    msgs = wc._scrub_pre_rebrand()
+    assert not (tmp_path / ".warden").exists()           # emptied dirs pruned
+    assert any("3 old warden binaries" in m for m in msgs)
+
+
+def test_scrub_pre_rebrand_keeps_foreign_files_in_legacy_bin(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    lbin = tmp_path / ".warden" / "bin"; lbin.mkdir(parents=True)
+    (lbin / "warden-hook").write_text("#!/bin/sh\n")
+    (lbin / "claude").write_text("#!/bin/sh\nexec my-own-wrapper \"$@\"\n")   # not our shim
+    wc._scrub_pre_rebrand()
+    assert not (lbin / "warden-hook").exists()
+    assert (lbin / "claude").exists()                    # unmarked file kept, dir kept
+
+
+def test_scrub_pre_rebrand_noop_on_clean_machine(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert wc._scrub_pre_rebrand() == []
+    # A palivane-only settings file is left byte-identical (no rewrite when nothing matched).
+    claude = tmp_path / ".claude"; claude.mkdir()
+    before = json.dumps({"env": {"PALIVANE_TOKEN": "ak"}, "hooks": {}})
+    (claude / "settings.json").write_text(before)
+    assert wc._scrub_pre_rebrand() == []
+    assert (claude / "settings.json").read_text() == before

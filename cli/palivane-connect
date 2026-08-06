@@ -520,8 +520,16 @@ def _upstream_warning(got: dict, console: str) -> str | None:
 _PALIVANE_SCRIPT_MARKERS = ("palivane-hook", "palivane-posture", "palivane-cursor-hook",
                           "palivane-gemini-hook", "palivane-codex-hook", "palivane-copilot-hook")
 
+# The same planes under their pre-rebrand names — what warden-connect wrote before the
+# 2026-08 rename. Scrubbed on every connect (and on --uninstall) so one palivane install
+# command fully migrates an old-Warden machine: a deleted-old-binary + surviving-old-hook
+# combination breaks the host tool on every prompt (same stale-artifact class as the
+# desktop-proxy field incident), so the old entries must go the moment the new ones land.
+_LEGACY_SCRIPT_MARKERS = ("warden-hook", "warden-posture", "warden-cursor-hook",
+                          "warden-gemini-hook", "warden-codex-hook", "warden-copilot-hook")
 
-def _scrub_hook_entries(hooks: dict) -> int:
+
+def _scrub_hook_entries(hooks: dict, markers: tuple = _PALIVANE_SCRIPT_MARKERS) -> int:
     """Remove Palivane hook entries from a {event: [entry, …]} map, leaving the user's own
     hooks untouched. Handles both the Claude-Code/Codex shape ({matcher, hooks:[{command}]})
     and the flat Cursor shape ({command}); prunes any event left empty. Returns the count."""
@@ -539,7 +547,7 @@ def _scrub_hook_entries(hooks: dict) -> int:
                 inner = entry.get("hooks")
                 if isinstance(inner, list):
                     cmds += [str(h.get("command", "")) for h in inner if isinstance(h, dict)]
-            if any(m in " ".join(cmds) for m in _PALIVANE_SCRIPT_MARKERS):
+            if any(m in " ".join(cmds) for m in markers):
                 removed += 1
             else:
                 kept.append(entry)
@@ -550,12 +558,112 @@ def _scrub_hook_entries(hooks: dict) -> int:
     return removed
 
 
+def _is_legacy_shim(path: str) -> bool:
+    """True when a claude/codex/gemini file in the old ~/.warden/bin is the pre-rebrand
+    capture shim (brand marker in the header) — never a user's own script parked there."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(4096)
+    except OSError:
+        return False
+    return b"warden" in head.lower()
+
+
+def _scrub_pre_rebrand() -> list[str]:
+    """Sweep the pre-rebrand Warden generation off this machine: the hook entries and
+    WARDEN_* env the old warden-connect wrote, its per-tool creds files, and the old
+    ~/.warden/bin binaries/shims. Best-effort and idempotent — a machine that never ran
+    old Warden reports nothing. Desktop-proxy layers (service, CA, proxy env) are
+    palivane-desktop's job; this covers the connect-written config only."""
+    out: list[str] = []
+    claude = os.path.expanduser("~/.claude/settings.json")
+    if os.path.exists(claude):
+        try:
+            data = json.load(open(claude))
+        except (ValueError, OSError):
+            data = None
+        if isinstance(data, dict):
+            n = _scrub_hook_entries(data["hooks"], _LEGACY_SCRIPT_MARKERS) \
+                if isinstance(data.get("hooks"), dict) else 0
+            if isinstance(data.get("hooks"), dict) and not data["hooks"]:
+                data.pop("hooks", None)
+            dropped = 0
+            env = data.get("env")
+            if isinstance(env, dict):
+                tok = env.get("WARDEN_TOKEN")
+                # Gateway routing left by the old generation (auth token == its capture
+                # key); a user's own ANTHROPIC_BASE_URL never matches and is left alone.
+                if tok and env.get("ANTHROPIC_AUTH_TOKEN") == tok:
+                    env.pop("ANTHROPIC_AUTH_TOKEN", None)
+                    env.pop("ANTHROPIC_BASE_URL", None)
+                    dropped += 2
+                for k in ("WARDEN_URL", "WARDEN_TOKEN", "WARDEN_ENFORCE", "WARDEN_USER"):
+                    if env.pop(k, None) is not None:
+                        dropped += 1
+                if not env:
+                    data.pop("env", None)
+            if n or dropped:
+                with open(claude, "w") as f:
+                    json.dump(data, f, indent=2)
+                out.append(f"Claude Code: removed {n} old warden hook(s) + {dropped} "
+                           "stale env key(s) (pre-rebrand cleanup)")
+    for label, hrel, wrel in (("Cursor", "~/.cursor/hooks.json", "~/.cursor/warden.json"),
+                              ("Gemini CLI", "~/.gemini/settings.json", "~/.gemini/warden.json"),
+                              ("Codex CLI", "~/.codex/hooks.json", "~/.codex/warden.json")):
+        hpath = os.path.expanduser(hrel)
+        if os.path.exists(hpath):
+            try:
+                d = json.load(open(hpath))
+            except (ValueError, OSError):
+                d = None
+            if isinstance(d, dict) and isinstance(d.get("hooks"), dict):
+                n = _scrub_hook_entries(d["hooks"], _LEGACY_SCRIPT_MARKERS)
+                if n:
+                    if not d["hooks"]:
+                        d.pop("hooks", None)
+                    with open(hpath, "w") as f:
+                        json.dump(d, f, indent=2)
+                    out.append(f"{label}: removed {n} old warden hook(s)")
+        wpath = os.path.expanduser(wrel)
+        if os.path.exists(wpath):
+            os.remove(wpath)
+            out.append(f"{label}: removed old warden creds file")
+    for rel in ("~/.copilot/hooks/warden.json", "~/.copilot/warden.json"):
+        p = os.path.expanduser(rel)
+        if os.path.exists(p):
+            os.remove(p)
+            out.append(f"Copilot: removed old warden {'hook file' if '/hooks/' in rel else 'creds file'}")
+    legacy_bin = os.path.expanduser("~/.warden/bin")
+    if os.path.isdir(legacy_bin):
+        removed = 0
+        for name in sorted(os.listdir(legacy_bin)):
+            p = os.path.join(legacy_bin, name)
+            if not os.path.isfile(p):
+                continue
+            if name.startswith("warden-") or name == "warden_addon.py" \
+                    or (name in ("claude", "codex", "gemini") and _is_legacy_shim(p)):
+                os.remove(p)
+                removed += 1
+        # Prune the dirs only when the sweep emptied them — anything left isn't ours.
+        for d in (legacy_bin, os.path.dirname(legacy_bin)):
+            try:
+                os.rmdir(d)
+            except OSError:
+                break
+        if removed:
+            out.append(f"removed {removed} old warden binar{'y' if removed == 1 else 'ies'} "
+                       "from ~/.warden/bin (the ~/.warden/bin PATH line in your shell rc "
+                       "can go too)")
+    return out
+
+
 def _uninstall() -> list[str]:
     """Reverse what `palivane connect` wrote on this machine: strip the Palivane hooks + env
     from Claude Code, and the hooks + creds from Cursor / Gemini / Codex. Leaves the CLI in
     ~/.palivane/bin and the egress proxy alone — those are removed separately (see the printed
-    note). Best-effort and idempotent: missing files are simply skipped."""
-    out: list[str] = []
+    note). Also sweeps the pre-rebrand Warden generation (same both-generations contract as
+    palivane-desktop uninstall). Best-effort and idempotent: missing files are simply skipped."""
+    out: list[str] = _scrub_pre_rebrand()
     claude = os.path.expanduser("~/.claude/settings.json")
     if os.path.exists(claude):
         try:
@@ -635,11 +743,16 @@ def main() -> None:
     # Upgrade the installed plane scripts first, so the hooks we (re)register below point at
     # current code (e.g. the auth circuit breaker) rather than a stale install.
     plane_updates = _refresh_planes(console)
+    # Migrate off the pre-rebrand generation before writing the new config, so old warden
+    # hooks/env never coexist with (or shadow) the palivane ones.
+    legacy_cleanup = _scrub_pre_rebrand()
     path, installed = _write_claude_code(got["token"], backend, got.get("user", ""),
                                          route_gateway=route_gateway, enforce=enforce)
     who = got.get("user") or "you"
     print(f"✓ Claude Code connected as {who}")
     for item in plane_updates:
+        print(f"  {item}")
+    for item in legacy_cleanup:
         print(f"  {item}")
     if route_gateway:
         print(f"  routed through the Palivane gateway: {backend.rstrip('/')}/v1")
