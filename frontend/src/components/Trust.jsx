@@ -60,7 +60,7 @@ const SECTIONS = [
 const SUBPROCESSORS = [
   ["Google Cloud Platform", "Application hosting & database (us-central1, United States)"],
   ["Cloudflare", "Edge network, TLS termination, DDoS & WAF"],
-  ["Anthropic", "LLM judge for detection quality — per-organization opt-out; no customer content is used for model training"],
+  ["Anthropic", "Optional LLM judge for detection quality — off unless enabled, per-organization opt-out; no customer content is used for model training"],
   ["Google Workspace", "Transactional email (verification, password reset, invites)"],
 ];
 

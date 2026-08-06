@@ -89,8 +89,9 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
   JWTs) hard-block; a high-entropy heuristic catches novel/unlabeled tokens at warn-level.
 - **Monitor or enforce** — record findings, or block risky prompts/data **before** they
   leave, inline.
-- **Runs offline** — fast regex/heuristic detectors need no API key; add an LLM key
-  (Claude, GPT, or Gemini) to enrich with an LLM judge.
+- **Zero external LLM dependency** — the full detection pipeline is fast regex/heuristic
+  and needs no API key or outbound AI call; optionally add an LLM key (Claude, GPT, or
+  Gemini) to enrich with an LLM judge.
 - **Multi-tenant + self-serve** — org signup, role-based console (admin/analyst), per-org
   API keys, and a **Connect** page that generates copy-paste install config for every
   source.
