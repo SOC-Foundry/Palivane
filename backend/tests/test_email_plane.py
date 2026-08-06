@@ -87,6 +87,14 @@ def test_join_confirm_flow_manual_approval(client, raw_client, monkeypatch):
     bad = raw_client.get("/api/auth/join/confirm?token=garbage", follow_redirects=False)
     assert "#join=invalid" in bad.headers["location"]
 
+    # admin approves -> the requester hears back and can sign in
+    rid = client.get("/api/join-requests").json()["requests"][0]["id"]
+    assert client.post(f"/api/join-requests/{rid}/approve").status_code == 200
+    to, subject, body = sent[-1]
+    assert to == "newbie@acme.com" and "approved" in body.lower()
+    assert raw_client.post("/api/auth/login", json={
+        "email": "newbie@acme.com", "password": "password123"}).status_code == 200
+
 
 def test_join_confirm_auto_approve_creates_account_only_after_click(client, raw_client, monkeypatch):
     import app.domains as domains
