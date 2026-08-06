@@ -205,11 +205,23 @@ self-hosting** — a customer on the hosted service never touches Docker or the 
 
 ## Run it yourself (local dev · evaluation · self-host)
 
-> New here? The **[setup guide](docs/setup.md)** walks through both install paths
-> (Docker and from-source), first sign-in, and connecting your first capture source.
+> New here? The **[setup guide](docs/setup.md)** walks through all three install paths
+> (native, Docker, and from-source), first sign-in, and connecting your first capture source.
 
-The fastest way to a full local deployment — Postgres + backend + an nginx-served
-frontend, one command:
+**Recommended for a real self-hosted deployment: the native install** — a release
+tarball installed as a systemd service, no Docker or container runtime on the server:
+
+```bash
+./deploy/native/build-release.sh          # on your laptop or CI (Python + Node)
+# then on the server (Python 3.12+):
+tar xzf warden-native-<tag>.tar.gz && sudo ./warden/install.sh
+```
+
+One service serves the console, API, and client installers on one port; see
+[`deploy/native/`](deploy/native/README.md) for Postgres, TLS, and upgrade notes.
+
+Prefer containers, or just want a quick local demo? The compose stack brings up
+Postgres + backend + an nginx-served frontend in one command:
 
 ```bash
 cp .env.docker.example .env     # edit secrets (set PALIVANE_SECRET_KEY for real use)
@@ -219,12 +231,8 @@ docker compose up --build
 Open **http://localhost:8080** and sign in with the seeded admin
 (`admin@demo.local` / `changeme123`). The backend container waits for Postgres, runs
 `alembic upgrade head`, and (when `SEED_ON_START=true`) seeds a demo tenant. Change
-the host port with `WEB_PORT` in `.env`.
-
-This is the production-shaped path: Postgres (not SQLite), schema by migration (not
-auto-create), and the frontend served as static assets behind nginx (which proxies
-`/api` to the backend). For managed production hosting see **Cloud Run + Cloud SQL**
-([`deploy/cloudrun/`](deploy/cloudrun/)); for service-style (systemd) see [`deploy/`](deploy/).
+the host port with `WEB_PORT` in `.env`. For managed production hosting see
+**Cloud Run + Cloud SQL** ([`deploy/cloudrun/`](deploy/cloudrun/)).
 
 ### From source (development)
 
@@ -894,7 +902,7 @@ proxy/                # mitmproxy addon — shadow-AI + MCP capture (desktop app
 git/                  # pre-commit hook + GitHub Action — secrets/PII out of repos
                       #   (+ CI import of TruffleHog/Gitleaks/GitGuardian via palivane-import)
 scripts/e2e.py        # end-to-end smoke test — drives a running stack across every plane
-docs/setup.md               # getting started: install (Docker/source), first sign-in, connect a source
+docs/setup.md               # getting started: install (native/Docker/source), first sign-in, connect a source
 docs/claude-deployment.md   # step-by-step: deploy for browser + Claude Code + desktop
 docs/mdm-policy-pack.md     # agentless MDM enforcement (extension allowlist, proxy, CA)
 docs/tokens-and-identity.md # auth-model reference: tokens, attribution, per-user keys
