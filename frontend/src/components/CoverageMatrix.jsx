@@ -122,6 +122,17 @@ const GAPS = [
   ["Mobile apps", "Native mobile AI apps are not covered. The browser extension covers mobile web only where the browser supports extensions."],
 ];
 
+// The threat model, including the bypass list. Every control here runs on a machine the
+// user administers, so a determined insider can defeat it — say so before a buyer's red
+// team does. Framing: Palivane prevents accidents and produces evidence; it is not an
+// insider-threat containment tool.
+const BYPASSES = [
+  ["Local admin can disable the planes", "A developer with root can unset the hooks, remove the proxy and CA, or uninstall the extension. On managed fleets MDM re-applies configuration and the coverage view shows the device going dark — you'll know, but only after the fact."],
+  ["Environment overrides", "Gateway routing rides on a base-URL variable; a shell export can point a tool back at the provider. The local hooks still see prompts and tool calls in the supported coding tools — but a tool we don't hook, run off-fleet, is out of sight."],
+  ["The second screen", "A phone on desk data-egress: reading source on the laptop and retyping it into a personal device never touches any control Palivane (or any endpoint product) has."],
+  ["Novel or self-hosted AI endpoints", "The egress proxy inspects known AI hosts. An unlisted endpoint — a personal VPS running an open-weights model — passes as ordinary HTTPS unless you add it to the inspected list."],
+];
+
 function ModeBadge({ mode }) {
   return mode === "block"
     ? <span className="cov-badge cov-block">can block</span>
@@ -188,6 +199,36 @@ export default function CoverageMatrix() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      <section className="lp-section">
+        <div className="lp-wrap">
+          <h2 className="lp-h2">The threat model — including how to bypass us</h2>
+          <p className="lp-sub">Every control above runs on a machine its user administers, so
+             an honest threat model starts with what a determined person can defeat. Palivane
+             is built to <strong>stop accidents before they happen and produce evidence and
+             coverage visibility for everything else</strong> — the engineer about to paste a
+             customer export into ChatGPT at 6pm, the agent about to run a destructive command,
+             the key that's been sitting in a repo since March. It is not an insider-threat
+             containment tool, and a vendor who claims endpoint controls can contain a
+             malicious insider is describing a product that doesn't exist.</p>
+          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
+            {BYPASSES.map(([title, body]) => (
+              <div className="lp-card" key={title}>
+                <h3>{title}</h3>
+                <p style={{ marginTop: 8 }}>{body}</p>
+              </div>
+            ))}
+          </div>
+          <p className="lp-sub" style={{ textAlign: "left", marginTop: 18 }}>
+            What this buys you in practice: the accidental leak is stopped inline, the risky
+            pattern is visible before it becomes an incident, policy violations carry an audit
+            trail, and the <strong>coverage view names every device and person outside the
+            controls</strong> — so the bypass itself becomes a signal. If your requirement is
+            containing a malicious insider with local admin, you need device attestation and a
+            legal deterrent, not a DLP product — ours or anyone's.
+          </p>
         </div>
       </section>
 
