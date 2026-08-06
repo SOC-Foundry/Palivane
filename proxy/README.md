@@ -22,7 +22,9 @@ secrets and PII.
 
 Beyond prompt capture, the addon inspects **MCP** (Model Context Protocol) — the JSON-RPC
 an AI coding agent uses to call tools and read resources. It's **content-sniffed** (any
-POST whose body is JSON-RPC 2.0), so it works for MCP servers on any host, and posts a
+POST whose body is JSON-RPC 2.0), so it works for MCP servers on any *decrypted* host —
+the AI list by default; add your MCP servers via `PALIVANE_PROXY_INTERCEPT_EXTRA` or set
+`PALIVANE_PROXY_INTERCEPT_ALL=true` (see "Scoped TLS interception") — and posts a
 normalized activity to `POST /api/ingest/mcp` on the **`mcp`** surface. A block verdict
 returns a **JSON-RPC error** so the agent surfaces it cleanly. It flags:
 
@@ -98,23 +100,43 @@ proxies or per-user keys. Prefer per-device installs when attribution matters.
 3. Run `mitmdump` as a service (systemd) near the egress point; scale horizontally —
    the addon is stateless (it calls the Palivane API).
 
-### Scoped TLS interception (recommended)
+### Scoped TLS interception (the default, since addon 1.2.0)
 
 Decrypting *all* TLS is a bigger ask — operationally (more cert-pinning breakage) and
-politically (privacy review, works councils) — than the proxy actually needs. Scope
-interception to the AI domains with mitmproxy's `--allow-hosts`: matching hosts are
-decrypted and inspected; **everything else is tunneled untouched, end-to-end encrypted**.
+politically (privacy review, works councils) — than the proxy actually needs. So the
+addon now **scopes interception itself**: on startup it sets mitmproxy's `allow_hosts`
+to `AI_HOST_SUFFIXES`, so matching hosts are decrypted and inspected and **everything
+else is tunneled untouched, end-to-end encrypted** — no launch flag, no regex to keep in
+sync, and existing installs pick it up via the normal plane self-update. This is also
+what makes the proxy coexist with VPN/ZTNA stacks (Zscaler, Netskope, Tailscale-gated
+services) and cert-pinned or own-CA-bundle tools: their traffic is never terminated.
 
-```bash
-mitmdump -s proxy/palivane_addon.py --listen-port 8081 --allow-hosts \
-  '(^|\.)(api\.openai\.com|chatgpt\.com|chat\.openai\.com|api\.anthropic\.com|claude\.ai|generativelanguage\.googleapis\.com|gemini\.google\.com|api\.cohere\.ai|api\.mistral\.ai|api\.perplexity\.ai|githubcopilot\.com|copilot-proxy\.githubusercontent\.com|copilot\.microsoft\.com|cursor\.sh|cursor\.com)(:443)?$'
-```
+Two env knobs on the proxy service:
 
-Keep the regex in sync with `AI_HOST_SUFFIXES` in `palivane_addon.py` (append your own
-MCP-server domains — content-sniffed MCP detection only sees hosts that are decrypted).
-Full interception remains the fallback when you need MCP inspection on arbitrary,
-unpredictable hosts; scoped is the right default everywhere else — the objection it
-answers changes from "you decrypt everything" to "we inspect a short list of AI domains".
+- `PALIVANE_PROXY_INTERCEPT_EXTRA` — comma-separated host suffixes to *add* (e.g. your
+  remote MCP servers: content-sniffed MCP detection only sees hosts that are decrypted).
+- `PALIVANE_PROXY_INTERCEPT_ALL=true` — restore full interception when you need MCP
+  inspection on arbitrary, unpredictable hosts.
+
+The objection this answers changes from "you decrypt everything" to "we inspect a short
+list of AI domains".
+
+### Fail-open by construction
+
+The proxy must never become the outage. Three layers, all shipped:
+
+- **Scoring fails open** — if the Palivane backend is unreachable or the key is revoked,
+  requests pass (a circuit breaker stops the hammering).
+- **CLI shims fail open** — each shim probes the proxy port at launch and runs the tool
+  *direct* (with a stderr note) if the proxy is down, instead of exporting a dead proxy.
+- **The system proxy fails open** (Linux, `palivane-desktop`) — a systemd user timer
+  checks the port every 20s; after ~60s of proxy death it removes the system-proxy
+  config so the machine keeps working, and re-applies it automatically on recovery.
+  (macOS system-proxy changes need sudo, so there the shim fail-open is the net.)
+
+`no_proxy` defaults also exclude loopback, `.ts.net` + the CGNAT range (Tailscale), and
+RFC1918 — intranet/VPC traffic never takes the proxy hop. Extend at install time with
+`PALIVANE_PROXY_NO_PROXY_EXTRA`.
 
 ## Honest limits
 

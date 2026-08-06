@@ -267,3 +267,37 @@ def test_scan_circuit_breaker(tmp_path, monkeypatch):
     # Fresh token → attempts again.
     addon.scan("secret", "https://claude.ai/", token="tok-B")
     assert calls["n"] == 2
+
+
+# --- TLS interception scope (allow-hosts) ------------------------------------------------
+
+def test_intercept_hosts_default_is_ai_list(monkeypatch):
+    monkeypatch.delenv("PALIVANE_PROXY_INTERCEPT_EXTRA", raising=False)
+    assert addon.intercept_hosts() == list(addon.AI_HOST_SUFFIXES)
+
+
+def test_intercept_hosts_env_extends(monkeypatch):
+    monkeypatch.setenv("PALIVANE_PROXY_INTERCEPT_EXTRA", "mcp.corp.example, Tools.Internal ,")
+    hosts = addon.intercept_hosts()
+    assert hosts[: len(addon.AI_HOST_SUFFIXES)] == list(addon.AI_HOST_SUFFIXES)
+    assert hosts[-2:] == ["mcp.corp.example", "tools.internal"]
+
+
+def test_intercept_patterns_match_host_and_subdomains(monkeypatch):
+    import re
+    monkeypatch.delenv("PALIVANE_PROXY_INTERCEPT_EXTRA", raising=False)
+    pats = [re.compile(p) for p in addon.intercept_patterns()]
+
+    def matches(hostport):
+        return any(p.search(hostport) for p in pats)
+
+    # every AI suffix and its subdomains are intercepted, on any port
+    assert matches("api.anthropic.com:443")
+    assert matches("api.openai.com:443") and matches("chat.openai.com:8443")
+    assert matches("foo.githubcopilot.com:443")
+    # everything else tunnels un-decrypted: banks, VPN portals, tailnets, lookalikes
+    assert not matches("bank.example.com:443")
+    assert not matches("gateway.zscaler.net:443")
+    assert not matches("machine.tail1234.ts.net:443")
+    assert not matches("evil-anthropic.com:443")        # suffix must be a label boundary
+    assert not matches("api.anthropic.com.evil.io:443")  # suffix must be at the end

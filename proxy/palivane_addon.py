@@ -41,7 +41,7 @@ import urllib.request
 # Outbound destinations we inspect (suffix match on the request host).
 
 # Reported in the User-Agent so the console can inventory client builds per device.
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 AI_HOST_SUFFIXES = (
     "api.openai.com", "chatgpt.com", "chat.openai.com",
     "api.anthropic.com", "claude.ai",
@@ -67,6 +67,20 @@ _ACTION_RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4
 def is_ai_host(host: str) -> bool:
     host = (host or "").lower()
     return any(host == s or host.endswith("." + s) or host.endswith(s) for s in AI_HOST_SUFFIXES)
+
+
+def intercept_hosts() -> list[str]:
+    """Host suffixes whose TLS we terminate: the AI list plus any org-added extras
+    (PALIVANE_PROXY_INTERCEPT_EXTRA, comma-separated — e.g. remote MCP servers)."""
+    extra = [h.strip().lower() for h in
+             os.getenv("PALIVANE_PROXY_INTERCEPT_EXTRA", "").split(",") if h.strip()]
+    return list(AI_HOST_SUFFIXES) + extra
+
+
+def intercept_patterns() -> list[str]:
+    """mitmproxy allow_hosts regexes (matched against "host:port"): the suffix itself or
+    any subdomain of it, on any port."""
+    return [r"(^|\.)" + re.escape(h) + r":\d+$" for h in intercept_hosts()]
 
 
 # Hosts whose request shape we reliably parse (messages/contents). On THESE, a body that
@@ -547,6 +561,23 @@ def mcp_block_body(verdict: dict) -> bytes:
 class PalivaneGuard:
     def __init__(self) -> None:
         self.enforce = os.getenv("PALIVANE_PROXY_ENFORCE", "").lower() in ("1", "true", "yes")
+
+    def running(self) -> None:
+        """Scope TLS interception to the hosts we actually inspect. Everything else is
+        tunneled opaquely — never decrypted — so cert-pinned apps, tools with their own CA
+        bundles, and VPN/ZTNA clients that do their own TLS inspection (Zscaler, Netskope,
+        Tailscale-gated services) keep working even with the system proxy pointed at us.
+        PALIVANE_PROXY_INTERCEPT_ALL=true restores full interception for orgs that want it;
+        PALIVANE_PROXY_INTERCEPT_EXTRA adds hosts (e.g. remote MCP servers) to the list."""
+        if os.getenv("PALIVANE_PROXY_INTERCEPT_ALL", "").lower() in ("1", "true", "yes"):
+            return
+        import logging
+
+        from mitmproxy import ctx  # lazy, like the http import below
+        ctx.options.update(allow_hosts=intercept_patterns())
+        logging.info("palivane: TLS interception scoped to %d host suffixes (other traffic "
+                     "tunnels un-decrypted; PALIVANE_PROXY_INTERCEPT_ALL=true to widen)",
+                     len(intercept_hosts()))
 
     def request(self, flow) -> None:
         from mitmproxy import http  # imported lazily so unit tests need no mitmproxy
