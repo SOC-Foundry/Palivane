@@ -837,6 +837,18 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 .hiw-surface span { font-size: 13px; color: var(--muted); }
 .hiw-surface-tag { display: inline-block; color: var(--lp-violet); font-size: 11.5px; font-weight: 700; }
 
+/* Coverage matrix (/coverage) — wide table scrolls inside its own container */
+.cov-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+.cov-table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 13px; }
+.cov-table th { text-align: left; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--muted-2); padding: 12px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.cov-table td { padding: 13px 14px; border-bottom: 1px solid var(--border-soft); vertical-align: top; color: var(--muted); line-height: 1.55; }
+.cov-table tr:last-child td { border-bottom: none; }
+.cov-surface { color: var(--text); font-weight: 600; min-width: 180px; }
+.cov-note { color: var(--muted-2); font-style: italic; }
+.cov-badge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+.cov-block { color: var(--benign); background: rgba(70,201,139,0.12); border: 1px solid rgba(70,201,139,0.3); }
+.cov-observe { color: var(--susp); background: rgba(255,210,77,0.10); border: 1px solid rgba(255,210,77,0.28); }
+
 /* Layered secret tiers */
 .hiw-tiers { display: flex; flex-direction: column; gap: 12px; }
 .hiw-tier { display: flex; gap: 16px; align-items: flex-start; background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--lp-violet); border-radius: 12px; padding: 16px 20px; }

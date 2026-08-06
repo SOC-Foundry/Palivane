@@ -11,6 +11,7 @@ const TABS = [
   { href: "/why-palivane", label: "Why Palivane" },
   { href: "/use-cases", label: "Use cases" },
   { href: "/how-it-works", label: "How it works" },
+  { href: "/coverage", label: "Coverage" },
   { href: "/setup", label: "Setup" },
   { href: "/docs", label: "Docs" },
   // Pricing tab hidden for now (2026-08-05, David) — the /pricing page itself stays
