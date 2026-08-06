@@ -247,7 +247,19 @@ def approve_join(request_id: int, current: User = Depends(require_admin),
         req.decided_by = current.email
         db.commit()
         raise HTTPException(status_code=409, detail="a user with that email already exists")
-    return approve(db, req, current.email).to_dict()
+    user = approve(db, req, current.email)
+    # Close the loop: on the auto_approve path the requester lands in the console
+    # immediately, but a manually approved requester would otherwise never hear back.
+    from . import email as email_mod
+    from .models import Tenant
+    tenant = db.get(Tenant, req.tenant_id)
+    email_mod.send(
+        req.email, f"You're in — {tenant.name or tenant.slug} on Palivane",
+        f"An admin approved your request to join the \"{tenant.name or tenant.slug}\" "
+        f"organization on Palivane.\n\n"
+        f"Sign in with the password you chose when you requested to join:\n"
+        f"{email_mod.base_url()}")
+    return user.to_dict()
 
 
 @router.post("/join-requests/{request_id}/deny")
