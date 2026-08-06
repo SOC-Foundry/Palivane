@@ -27,7 +27,7 @@ const TIERS = [
       "Single sign-on with your identity provider (OIDC & SAML)",
       "Findings forwarded to your SIEM (Splunk HEC · CEF · JSON)",
       "Delivery to your own data lake (S3 for Panther, Athena, Snowflake)",
-      "A managed AI reviewer for the cases fixed rules miss",
+      "Optional LLM judge for the cases fixed rules miss — managed, or on your own provider key",
       "Run it isolated, on infrastructure you control",
       "Custom limits, signed DPA, and help through security reviews",
     ],
@@ -87,7 +87,8 @@ export default function Pricing() {
           </div>
           <p className="lp-sub" style={{ textAlign: "center", marginTop: 28 }}>
             Running it yourself is the free option: Palivane's core is source-available, and an
-            unlicensed instance keeps working indefinitely. Team and Enterprise licenses add
+            unlicensed instance keeps working indefinitely — full detection, with no LLM API key
+            or external AI service required. Team and Enterprise licenses add
             the fleet and compliance features to a self-hosted deployment too.
             Questions: <a href="mailto:sales@tachtech.net">sales@tachtech.net</a>.
           </p>
