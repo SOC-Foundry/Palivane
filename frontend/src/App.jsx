@@ -11,6 +11,7 @@ import Login from "./components/Login.jsx";
 import Landing from "./components/Landing.jsx";
 import Legal from "./components/Legal.jsx";
 import HowItWorks from "./components/HowItWorks.jsx";
+import CoverageMatrix from "./components/CoverageMatrix.jsx";
 import Setup from "./components/Setup.jsx";
 import UseCases from "./components/UseCases.jsx";
 import Pricing from "./components/Pricing.jsx";
@@ -121,6 +122,9 @@ export default function App() {
   }
   if (legalPath === "/how-it-works") {
     return <HowItWorks />;
+  }
+  if (legalPath === "/coverage") {
+    return <CoverageMatrix />;
   }
   if (legalPath === "/setup") {
     return <Setup />;

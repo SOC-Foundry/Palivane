@@ -38,7 +38,7 @@ const STEPS = [
 
 const ENTERPRISE = [
   { icon: <IconPlug />, title: "Onboarding that doesn't need a project plan", body: "Claim your email domain and teammates who sign up land in your org automatically. Invites, password reset, and single sign-on (Okta, Entra, Google) are built in." },
-  { icon: <IconShield />, title: "Nothing to install on laptops", body: "No agent to roll out. If you use Jamf, Intune, or Group Policy, Palivane hands you the config to push and you're done. Optional local helpers add depth on the machines where you want it." },
+  { icon: <IconShield />, title: "Nothing to install by hand", body: <>Some coverage needs something on the machine — a browser extension, a proxy certificate, local hooks. Palivane hands you the config to push with Jamf, Intune, or Group Policy, so nobody installs anything manually. Exactly what each surface needs is published on the <a className="lp-textlink" href="/coverage">coverage page</a>.</> },
   { icon: <IconTarget />, title: "Proof it's actually working", body: "See which people and teams are covered and which aren't. Alerts land in Slack, findings flow to your SIEM or data lake, and a monthly report gives your board the numbers." },
   { icon: <IconClipboard />, title: "Your data stays yours", body: "Choose what gets recorded, export everything at any time, and delete your org in one click. Signed DPA available; content can be scanned without ever being stored." },
 ];
@@ -109,7 +109,9 @@ export default function Landing({ onSignIn }) {
         <div className="lp-wrap">
           <h2 className="lp-h2">It works wherever your team uses AI</h2>
           <p className="lp-sub">Nobody has to remember to run anything. Palivane watches the places AI is
-             actually used, and everything lands in the same console.</p>
+             actually used, and everything lands in the same console. The exact mechanism —
+             and what each surface requires — is published on the <a className="lp-textlink"
+             href="/coverage">coverage page</a>.</p>
           <div className="lp-cards lp-cards-5">
             {CAPTURE.map((c) => (
               <div key={c.title} className="lp-card">
