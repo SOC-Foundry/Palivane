@@ -24,6 +24,16 @@ PALIVANE_URL="${PALIVANE_URL:-https://palivane.tachtech.net}"
 PORT="${PALIVANE_PROXY_PORT:-8081}"
 HOME_DIR="${HOME}"
 WDIR="${HOME_DIR}/.palivane"
+# Hosts that must never route through the local proxy: loopback, tailnets (MagicDNS +
+# CGNAT range), and private ranges — so intranet/VPC traffic on VPN'd machines (Zscaler,
+# Tailscale, corp networks) skips the proxy hop entirely. CIDR entries are honored by
+# curl/Go/requests and harmlessly ignored by clients that don't parse them. Extend at
+# install time with PALIVANE_PROXY_NO_PROXY_EXTRA (comma-separated).
+NO_PROXY_BASE="localhost,127.0.0.1,::1,.ts.net,.internal,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10"
+NO_PROXY_ALL="${NO_PROXY_BASE}${PALIVANE_PROXY_NO_PROXY_EXTRA:+,${PALIVANE_PROXY_NO_PROXY_EXTRA}}"
+# Watchdog state (Linux): consecutive-failure count + "we failed the system proxy open".
+WATCHDOG_FAILS="${WDIR}/proxy-watchdog-fails"
+WATCHDOG_MARKER="${WDIR}/proxy-watchdog-failopen"
 ADDON="${WDIR}/palivane_addon.py"
 CA="${HOME_DIR}/.mitmproxy/mitmproxy-ca-cert.pem"
 SHIM_DIR="${WDIR}/bin"
@@ -302,8 +312,8 @@ http_proxy=http://127.0.0.1:$PORT
 https_proxy=http://127.0.0.1:$PORT
 HTTP_PROXY=http://127.0.0.1:$PORT
 HTTPS_PROXY=http://127.0.0.1:$PORT
-no_proxy=localhost,127.0.0.1,::1
-NO_PROXY=localhost,127.0.0.1,::1
+no_proxy=$NO_PROXY_ALL
+NO_PROXY=$NO_PROXY_ALL
 ENV
   # Best-effort: push into the LIVE session managers too, so things launched from this
   # session pick it up without a re-login. Two separate managers hold their own env copy:
@@ -314,7 +324,7 @@ ENV
   systemctl --user set-environment \
     "http_proxy=http://127.0.0.1:$PORT" "https_proxy=http://127.0.0.1:$PORT" \
     "HTTP_PROXY=http://127.0.0.1:$PORT" "HTTPS_PROXY=http://127.0.0.1:$PORT" \
-    "no_proxy=localhost,127.0.0.1,::1" "NO_PROXY=localhost,127.0.0.1,::1" 2>/dev/null || true
+    "no_proxy=$NO_PROXY_ALL" "NO_PROXY=$NO_PROXY_ALL" 2>/dev/null || true
   command -v dbus-update-activation-environment >/dev/null 2>&1 && \
     dbus-update-activation-environment \
       "http_proxy=http://127.0.0.1:$PORT" "https_proxy=http://127.0.0.1:$PORT" \
@@ -363,6 +373,94 @@ flush_kde_launcher_env() {
   pkill -x krunner 2>/dev/null || true
 }
 
+# --- Watchdog: fail the system proxy OPEN if the proxy process stays dead --------------
+# Restart=always covers crashes, but a persistently broken proxy (bad upgrade, disk full)
+# with the system proxy still pointed at 127.0.0.1:$PORT is a machine-wide outage — the
+# exact failure class of the 2026-08 stale-env field incident. A user timer checks the
+# port every 20s; after 3 consecutive misses it removes the system proxy (leaving the
+# service to keep retrying) and re-applies it automatically when the proxy is back.
+# Linux only: macOS system-proxy changes need sudo, which a background agent can't do —
+# there the CLI shims' per-launch fail-open is the safety net.
+
+proxy_port_open() { (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; }
+
+disable_system_proxy_linux() {
+  case "$(linux_de)" in
+    *gnome*|*unity*|*cinnamon*|*mate*|*budgie*)
+      command -v gsettings >/dev/null 2>&1 && gsettings set org.gnome.system.proxy mode 'none' || true ;;
+    *kde*|*plasma*)
+      local kw; kw="$(command -v kwriteconfig6 || command -v kwriteconfig5 || true)"
+      if [ -n "$kw" ]; then
+        "$kw" --file kioslaverc --group "Proxy Settings" --key ProxyType 0 2>/dev/null || true
+        # Delete the proxy URLs, not just ProxyType: Chromium/Electron apps read
+        # kioslaverc through their KDE integration and can keep honoring the stale
+        # httpProxy/httpsProxy values even after ProxyType is set back to 0.
+        "$kw" --file kioslaverc --group "Proxy Settings" --key httpProxy  --delete 2>/dev/null || true
+        "$kw" --file kioslaverc --group "Proxy Settings" --key httpsProxy --delete 2>/dev/null || true
+      fi
+      command -v dbus-send >/dev/null 2>&1 && \
+        dbus-send --type=signal /KIO/Scheduler org.kde.KIO.Scheduler.reparseSlaveConfiguration string:'' 2>/dev/null || true ;;
+  esac
+}
+
+install_watchdog() {
+  [ "$OS" = "Linux" ] || return 0
+  local dir="${HOME_DIR}/.config/systemd/user" self
+  self="$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")"
+  mkdir -p "$dir"
+  cat > "$dir/palivane-proxy-watchdog.service" <<UNIT
+[Unit]
+Description=Palivane proxy watchdog (fails the system proxy open if the proxy stays dead)
+[Service]
+Type=oneshot
+ExecStart=${self} watchdog-tick
+UNIT
+  cat > "$dir/palivane-proxy-watchdog.timer" <<UNIT
+[Unit]
+Description=Palivane proxy watchdog timer
+[Timer]
+OnBootSec=45
+OnUnitActiveSec=20
+[Install]
+WantedBy=timers.target
+UNIT
+  systemctl --user daemon-reload
+  systemctl --user enable --now palivane-proxy-watchdog.timer 2>/dev/null || true
+  log "watchdog armed: if the proxy stays down ~60s, the system proxy is removed (fail-open)"
+  log "and re-applied automatically when the proxy recovers."
+}
+
+remove_watchdog() {
+  systemctl --user disable --now palivane-proxy-watchdog.timer 2>/dev/null || true
+  rm -f "${HOME_DIR}/.config/systemd/user/palivane-proxy-watchdog.service" \
+        "${HOME_DIR}/.config/systemd/user/palivane-proxy-watchdog.timer" \
+        "$WATCHDOG_FAILS" "$WATCHDOG_MARKER"
+  systemctl --user daemon-reload 2>/dev/null || true
+}
+
+cmd_watchdog_tick() {
+  if proxy_port_open; then
+    rm -f "$WATCHDOG_FAILS"
+    if [ -f "$WATCHDOG_MARKER" ]; then
+      log "proxy is back — re-applying the system proxy (was failed open)."
+      rm -f "$WATCHDOG_MARKER"
+      set_proxy
+    fi
+    return 0
+  fi
+  local n=0
+  [ -f "$WATCHDOG_FAILS" ] && n="$(cat "$WATCHDOG_FAILS" 2>/dev/null || printf 0)"
+  n=$((n + 1)); printf '%s' "$n" > "$WATCHDOG_FAILS"
+  [ "$n" -lt 3 ] && return 0             # give Restart=always a chance to win first
+  [ -f "$WATCHDOG_MARKER" ] && return 0  # already failed open
+  log "proxy has been down for $n consecutive checks — FAILING OPEN: removing the system"
+  log "proxy so the machine keeps working (uncaptured). Re-applies when the proxy is back."
+  touch "$WATCHDOG_MARKER"
+  disable_system_proxy_linux
+  unset_session_proxy_env
+  flush_kde_launcher_env
+}
+
 start_service() {
   local tok; tok="$1"
   case "$OS" in
@@ -383,6 +481,8 @@ start_service() {
     <key>PALIVANE_URL</key><string>${PALIVANE_URL}</string>
     <key>PALIVANE_TOKEN</key><string>${tok}</string>
     <key>PALIVANE_PROXY_ENFORCE</key><string>${PALIVANE_PROXY_ENFORCE:-false}</string>
+    <key>PALIVANE_PROXY_INTERCEPT_EXTRA</key><string>${PALIVANE_PROXY_INTERCEPT_EXTRA:-}</string>
+    <key>PALIVANE_PROXY_INTERCEPT_ALL</key><string>${PALIVANE_PROXY_INTERCEPT_ALL:-}</string>
   </dict>
   <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
 </dict></plist>
@@ -400,6 +500,8 @@ Description=Palivane desktop egress proxy
 Environment=PALIVANE_URL=${PALIVANE_URL}
 Environment=PALIVANE_TOKEN=${tok}
 Environment=PALIVANE_PROXY_ENFORCE=${PALIVANE_PROXY_ENFORCE:-false}
+Environment=PALIVANE_PROXY_INTERCEPT_EXTRA=${PALIVANE_PROXY_INTERCEPT_EXTRA:-}
+Environment=PALIVANE_PROXY_INTERCEPT_ALL=${PALIVANE_PROXY_INTERCEPT_ALL:-}
 ExecStart=$(command -v mitmdump) -q -s ${ADDON} --listen-port ${PORT}
 Restart=always
 [Install]
@@ -447,9 +549,17 @@ wire_cli_capture() {
     cat > "$shim" <<EOF
 #!/usr/bin/env bash
 # palivane-desktop CLI capture shim (auto-generated; 'palivane-desktop uninstall' removes it).
-export HTTPS_PROXY="http://127.0.0.1:${PORT}"
-export HTTP_PROXY="http://127.0.0.1:${PORT}"
-export NODE_EXTRA_CA_CERTS="${CA}"
+# Fail-open: if the local proxy is down, run the tool direct instead of breaking it —
+# a dead security control must never become a dead developer tool.
+if (exec 3<>"/dev/tcp/127.0.0.1/${PORT}") 2>/dev/null; then
+  export HTTPS_PROXY="http://127.0.0.1:${PORT}"
+  export HTTP_PROXY="http://127.0.0.1:${PORT}"
+  export no_proxy="${NO_PROXY_ALL}"
+  export NO_PROXY="${NO_PROXY_ALL}"
+  export NODE_EXTRA_CA_CERTS="${CA}"
+else
+  echo "[palivane] egress proxy is down — running ${name} uncaptured (fail-open)" >&2
+fi
 exec "${real}" "\$@"
 EOF
     chmod +x "$shim"
@@ -493,7 +603,10 @@ cmd_install() {
     trust_ca
   fi
   start_service "$tok"
-  [ "$cli_only" = "1" ] || set_proxy
+  if [ "$cli_only" != "1" ]; then
+    set_proxy
+    install_watchdog    # fail the system proxy open if the proxy process stays dead
+  fi
   wire_cli_capture      # PATH shims for Node CLIs (needed in both modes — Node ignores the OS proxy/trust)
   if [ "$cli_only" = "1" ]; then
     log "done. CLIs (${CLI_SHIM_TOOLS}) now route through Palivane. Enforce mode: ${PALIVANE_PROXY_ENFORCE:-false} (monitor)."
@@ -529,22 +642,8 @@ cmd_uninstall() {
         rm -f "${HOME_DIR}/.config/systemd/user/$u"
       done
       systemctl --user daemon-reload 2>/dev/null || true
-      case "$(linux_de)" in
-        *gnome*|*unity*|*cinnamon*|*mate*|*budgie*)
-          command -v gsettings >/dev/null 2>&1 && gsettings set org.gnome.system.proxy mode 'none' || true ;;
-        *kde*|*plasma*)
-          local kw; kw="$(command -v kwriteconfig6 || command -v kwriteconfig5 || true)"
-          if [ -n "$kw" ]; then
-            "$kw" --file kioslaverc --group "Proxy Settings" --key ProxyType 0 2>/dev/null || true
-            # Delete the proxy URLs, not just ProxyType: Chromium/Electron apps read
-            # kioslaverc through their KDE integration and can keep honoring the stale
-            # httpProxy/httpsProxy values even after ProxyType is set back to 0.
-            "$kw" --file kioslaverc --group "Proxy Settings" --key httpProxy  --delete 2>/dev/null || true
-            "$kw" --file kioslaverc --group "Proxy Settings" --key httpsProxy --delete 2>/dev/null || true
-          fi
-          command -v dbus-send >/dev/null 2>&1 && \
-            dbus-send --type=signal /KIO/Scheduler org.kde.KIO.Scheduler.reparseSlaveConfiguration string:'' 2>/dev/null || true ;;
-      esac
+      remove_watchdog
+      disable_system_proxy_linux
       nss_untrust_ca
       untrust_ca_system
       unset_session_proxy_env
@@ -562,7 +661,10 @@ cmd_uninstall() {
 cmd_status() {
   case "$OS" in
     Darwin) launchctl list 2>/dev/null | grep -q palivane-proxy && echo "proxy: running" || echo "proxy: not running" ;;
-    Linux)  printf 'proxy: %s\n' "$(systemctl --user is-active palivane-proxy.service 2>/dev/null || echo 'not running')" ;;
+    Linux)
+      printf 'proxy: %s\n' "$(systemctl --user is-active palivane-proxy.service 2>/dev/null || echo 'not running')"
+      printf 'watchdog: %s\n' "$(systemctl --user is-active palivane-proxy-watchdog.timer 2>/dev/null || echo 'not installed')"
+      [ -f "$WATCHDOG_MARKER" ] && echo "system proxy: FAILED OPEN (proxy down — re-applies on recovery)" ;;
   esac
   local name active=""
   for name in $CLI_SHIM_TOOLS; do
@@ -572,8 +674,9 @@ cmd_status() {
 }
 
 case "${1:-install}" in
-  install)   shift 2>/dev/null || true; cmd_install "$@" ;;
-  uninstall) cmd_uninstall ;;
-  status)    cmd_status ;;
+  install)       shift 2>/dev/null || true; cmd_install "$@" ;;
+  uninstall)     cmd_uninstall ;;
+  status)        cmd_status ;;
+  watchdog-tick) cmd_watchdog_tick ;;   # invoked by the systemd user timer, not by hand
   *) die "usage: palivane-desktop [install [--cli-only]|uninstall|status]" ;;
 esac
