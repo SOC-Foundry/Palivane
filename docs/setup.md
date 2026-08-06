@@ -1,11 +1,14 @@
 # Setting up Palivane
 
 A start-to-finish guide to getting Palivane running — from zero to a live console with
-findings streaming in. Pick one of two paths:
+findings streaming in. Pick one of three paths:
 
-- **[Docker](#path-a--docker-whole-stack)** — Postgres + backend + nginx-served console,
-  one command. The production-shaped path; recommended for a real deployment or a demo.
-- **[From source](#path-b--from-source-dev)** — run the backend and frontend dev servers
+- **[Native install](#path-a--native-install-recommended)** — a release tarball installed
+  as a systemd service; no Docker or container runtime on the server. **Recommended for
+  real deployments.**
+- **[Docker](#path-b--docker-whole-stack)** — Postgres + backend + nginx-served console,
+  one command. Handy for a quick demo or if your fleet is already compose-based.
+- **[From source](#path-c--from-source-dev)** — run the backend and frontend dev servers
   directly (SQLite, hot reload). Best for iterating on the code.
 
 Once it's up, jump to [first sign-in](#3-first-sign-in), then
@@ -42,10 +45,12 @@ your database. There's no Palivane cloud. It's two layers — **one server you h
    gateway  ─► your upstream LLM provider         └──────────────────────────────────────┘
 ```
 
-- **The server** is the three `docker-compose` services on one host you choose (a VM,
-  on-prem box, or your own cloud): `db` (Postgres), `backend` (FastAPI — the API, the
-  **detection engine**, and the LLM gateway), and `web` (nginx serving the console). Or
-  run `backend` as a systemd service — see [`deploy/`](../deploy/).
+- **The server** is three components on one host you choose (a VM, on-prem box, or your
+  own cloud): Postgres, the backend (FastAPI — the API, the **detection engine**, and the
+  LLM gateway), and the console. The recommended shape is the
+  [native install](#path-a--native-install-recommended) — a single systemd service that
+  serves the console and API together; the same stack also ships as three
+  `docker-compose` services if you prefer containers.
 - **The detection compute runs inside `backend`** — local CPU work (see
   [how detection works](../README.md#how-detection-works)). The only outbound calls are
   *optional*: the LLM judge, and the gateway forwarding allowed calls to your upstream.
@@ -74,6 +79,7 @@ your IdP/CASB "who used AI" list against who Palivane actually captured).
 
 | Path | You need |
 | --- | --- |
+| Native install | On the server: Python 3.12+ only (Postgres for production). To build the release tarball (laptop or CI): Python + Node. |
 | Docker | Docker Engine + the Compose plugin (`docker compose version`). |
 | From source | Python 3.11+ and Node 18+ (`python3 --version`, `node --version`). |
 
@@ -94,7 +100,37 @@ cloud project, and paid **Gemini Flash** is the lowest-cost option per verdict.
 
 ---
 
-## Path A — Docker (whole stack)
+## Path A — native install (recommended)
+
+Runs Palivane directly on a Linux server as a **systemd service** — no Docker, no
+container runtime. One service serves the console, the API, and the client installers
+single-origin on one port.
+
+**1. Build the release tarball** (any box with Python + Node — your laptop or CI):
+
+```bash
+./deploy/native/build-release.sh
+# -> dist/warden-native-<tag>.tar.gz  (console prebuilt; the server needs no Node)
+```
+
+**2. Install on the target server** (Python 3.12+; Postgres for production):
+
+```bash
+tar xzf warden-native-<tag>.tar.gz
+sudo ./warden/install.sh
+sudo warden-admin create-tenant --slug acme --name "Acme"
+sudo warden-admin create-user   --tenant acme --email admin@acme.local --role admin
+```
+
+The installer creates a dedicated system user and venv, writes `/etc/warden/warden.env`
+(with a generated `PALIVANE_SECRET_KEY`), runs migrations, and starts the `warden-api`
+service. For production, switch `DATABASE_URL` to Postgres and front the service with
+nginx/Caddy for TLS — full notes, upgrade flow, and management commands in
+[`deploy/native/README.md`](../deploy/native/README.md).
+
+---
+
+## Path B — Docker (whole stack)
 
 From the repo root:
 
@@ -124,7 +160,7 @@ volume and start fresh).
 
 ---
 
-## Path B — from source (dev)
+## Path C — from source (dev)
 
 Run the two pieces in separate terminals. This uses SQLite and auto-creates the schema.
 
@@ -283,8 +319,9 @@ The offline detectors need no API key. To add the LLM judge for the novel cases 
 rules miss, set one provider key and restart the backend. `JUDGE_PROVIDER=auto` (default)
 picks whichever key is set — Claude, GPT, or Gemini:
 
-- **Docker:** add `ANTHROPIC_API_KEY=sk-ant-...` (or `OPENAI_API_KEY` / `GEMINI_API_KEY`)
-  to `.env`, then `docker compose up -d`.
+- **Native install:** add `ANTHROPIC_API_KEY=sk-ant-...` (or `OPENAI_API_KEY` /
+  `GEMINI_API_KEY`) to `/etc/warden/warden.env`, then `systemctl restart warden-api`.
+- **Docker:** add it to `.env`, then `docker compose up -d`.
 - **From source:** add it to `backend/.env`, then restart `uvicorn`.
 
 Confirm with `curl .../api/health` — `judge_enabled` flips to `true`, and `judge_provider`
@@ -377,4 +414,5 @@ Notes:
 - **[Configuration](../README.md#configuration)** — the full environment-variable table.
 - **[Claude deployment guide](./claude-deployment.md)** — surface-by-surface rollout for Claude.
 - **[Tokens & identity](./tokens-and-identity.md)** — the auth model and what to provision.
-- **Service deployment** — [`deploy/`](../deploy/) has a systemd unit + annotated env file.
+- **Native service details** — [`deploy/native/`](../deploy/native/README.md): release
+  tarball build, installer internals, upgrades, and the systemd unit.
