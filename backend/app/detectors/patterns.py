@@ -146,6 +146,12 @@ def _is_placeholder_conn(match_text: str) -> bool:
     return bool(mm and _PLACEHOLDER_VALUE_RE.match(mm.group(1)))
 
 
+# 8+ identical characters in a row — no real credential looks like this, but dummy/masked
+# placeholders do (`sk_test_xxxxxxxxxxxx`, `AKIA0000000000000000`). Lets us drop the obvious
+# stand-in without weakening detection of a genuine `sk_test_<random>` test-mode key.
+_DUMMY_RUN_RE = re.compile(r"(.)\1{7,}")
+
+
 def find_secrets(text: str) -> list[str]:
     """Return the labels of every secret pattern that matches `text` — canonical formats,
     their separator-stripped (evasion) variants, and any custom patterns. Skips placeholder
@@ -153,6 +159,8 @@ def find_secrets(text: str) -> list[str]:
     out: list[str] = []
     for label, rx in SECRET_PATTERNS + EVASION_PATTERNS + custom_patterns():
         for m in rx.finditer(text):
+            if _DUMMY_RUN_RE.search(m.group(0)):
+                continue   # masked/placeholder stand-in (sk_test_xxxx…), not a real key
             if label == "Credential assignment" and _is_placeholder_assignment(m.group(0)):
                 continue
             if label == "Connection string credential" and _is_placeholder_conn(m.group(0)):
@@ -187,6 +195,17 @@ def custom_pii_patterns(extra: str = "") -> list[tuple[str, re.Pattern]]:
 _TOKEN_CANDIDATE_RE = re.compile(r"[A-Za-z0-9_]{24,80}")
 _HEX_RE = re.compile(r"^[0-9a-fA-F]+$")   # git SHAs / md5 / sha digests — not secrets
 
+# High-entropy base64 that belongs to a recognized NON-secret structure. We mask these
+# spans before the entropy scan so their payloads don't read as bare tokens:
+#   - data: URIs (embedded images/fonts)
+#   - Subresource-Integrity / lockfile hashes (npm/yarn `sha512-…`)
+#   - SSH *public* keys (public by definition — the private half is the secret)
+_NONSECRET_BLOB_RE = re.compile(
+    r"data:[\w.+/-]*;base64,[A-Za-z0-9+/=]+"
+    r"|\bsha(?:256|384|512)-[A-Za-z0-9+/=]+"
+    r"|\bssh-(?:rsa|ed25519|dss)\s+[A-Za-z0-9+/=]+",
+    re.IGNORECASE)
+
 
 def _shannon_entropy(s: str) -> float:
     counts = Counter(s)
@@ -200,10 +219,13 @@ def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
     a plain hex digest. Conservative on purpose — meant to *warn*, not silently pass."""
     out: list[str] = []
     seen: set[str] = set()
+    masked = [(m.start(), m.end()) for m in _NONSECRET_BLOB_RE.finditer(text)]
     for m in _TOKEN_CANDIDATE_RE.finditer(text):
         tok = m.group(0)
         if tok in seen or _HEX_RE.match(tok):
             continue
+        if any(s <= m.start() < e for s, e in masked):
+            continue   # inside a data URI / integrity hash / ssh public key
         classes = (any(c.islower() for c in tok) + any(c.isupper() for c in tok)
                    + any(c.isdigit() for c in tok))
         if classes < 2 or _shannon_entropy(tok) < min_entropy:

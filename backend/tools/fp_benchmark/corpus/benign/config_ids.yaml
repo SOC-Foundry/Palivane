@@ -1,0 +1,8 @@
+# Non-secret identifiers and settings.
+service:
+  account_id: "123456789012"
+  region: us-east-1
+  bucket: prod-assets-public
+  max_connections: 512
+  feature_flags: ["new_ui", "fast_path", "beta_search"]
+  build_hash: 6f4e2c1d

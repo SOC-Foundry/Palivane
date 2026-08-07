@@ -1,0 +1,4 @@
+2026-08-07 09:14:22 INFO  user=jane.doe@example.com action=login ok
+2026-08-07 09:14:23 INFO  order#48213 customer="Acme Corporation" total=$1,204.55
+2026-08-07 09:14:24 DEBUG cache hit ratio 0.982, latency p99=41ms
+2026-08-07 09:14:25 WARN  retrying upstream (attempt 2/3)
