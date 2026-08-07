@@ -1,0 +1,6 @@
+{
+  "login.title": "Sign in to your account",
+  "error.password": "Password must be at least 8 characters",
+  "token.expired": "Your session token has expired, please sign in again",
+  "secret.hint": "Keep your recovery key somewhere safe"
+}

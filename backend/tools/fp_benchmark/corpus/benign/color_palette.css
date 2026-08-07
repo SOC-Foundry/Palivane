@@ -1,0 +1,7 @@
+:root {
+  --bg: #0a0d13;
+  --panel: #131722;
+  --accent: #4da3ff;
+  --crit: #ff4d5e;
+  --gradient: linear-gradient(90deg, #b388ff, #4da3ff, #46c98b, #ffd24d);
+}

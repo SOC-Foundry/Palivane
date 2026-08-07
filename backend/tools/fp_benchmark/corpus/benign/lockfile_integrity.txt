@@ -1,0 +1,4 @@
+# npm package-lock integrity hashes (sha512, base64) — not secrets.
+lodash: sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJ6Z1O3vE1krgXZNrsQ+LFTGHVxVjcXPs17LhbZVGedAJv8XZ1tvj5FvSg==
+react: sha512-y6IAscXH7i2eZ0Nml3Y02Nc9AzqXjxU4tG+PDs+Hfmp0eYb1Xr6XjhCFAaB1YV1WOP4WVj0MjXO7rEQ2mA
+express: sha512-mHJ9O79RqluphRrcw2X/GTh3k9tVv8YcvymZznnyt2C4faZQ+Q9GY
