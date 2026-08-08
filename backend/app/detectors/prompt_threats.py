@@ -27,7 +27,6 @@ import urllib.parse
 
 from .base import AnalysisInput, Category, Signal, Surface
 from .normalize import leet_fold, normalize_for_match
-from .patterns import find_secrets
 
 # --- Prompt injection: hijacking the model's instructions -----------------------------
 
@@ -190,7 +189,9 @@ class PromptThreatDetector:
                 detector=self.name, evidence=evidence,
             ))
 
-        secrets = find_secrets(text) if not precision else []  # shadow_ai owns ai_usage secrets
+        # shadow_ai owns ai_usage secrets; on llm_io reuse the item's cached raw pass rather
+        # than re-scanning the full text (find_secrets is the single most expensive step).
+        secrets = item.secret_labels() if not precision else []
         if secrets:
             signals.append(Signal(
                 category=Category.DATA_EXFILTRATION,

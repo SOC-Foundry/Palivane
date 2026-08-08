@@ -103,3 +103,16 @@ def test_allowlist_never_applies_to_prompt_channels():
     # subject on a prompt isn't a path; a secret in a prompt must always flag
     assert _secret_flagged('password = "hunter2hunter2"', "tests/test_x.py", "claude-code")
     assert _secret_flagged('password = "hunter2hunter2"', "whatever", "gateway")
+
+
+# --- request-scoped secret-pass cache (perf; must not change results) --------------------
+
+def test_secret_labels_cache_memoizes_and_matches():
+    from app.detectors.base import AnalysisInput, Surface
+    from app.detectors.patterns import find_secrets
+    item = AnalysisInput(content='key = "AKIAIOSFODNN7EXAMPLE"', subject="config.py",
+                         channel="git", surface=Surface.AI_USAGE)
+    first = item.secret_labels()
+    assert first is item.secret_labels()                      # memoized: same object
+    assert first == find_secrets("config.py\n" + 'key = "AKIAIOSFODNN7EXAMPLE"')
+    assert "AWS access key id" in first                        # recall intact
