@@ -77,6 +77,21 @@ Palivane's numbers always print. Palivane's engine is imported directly (no serv
 file) and scanned exactly as `/api/scan/code` does — the `secret_leak` data-loss filter.
 Results are written to `results.json`; see `RESULTS.md` for the current run and analysis.
 
+## Real-OSS-repo corpus (non-self-authored FP test)
+
+```bash
+python tools/fp_benchmark/external_corpus.py fetch          # clone pinned repos at their SHAs
+python tools/fp_benchmark/external_corpus.py score --gitleaks … --trufflehog …
+```
+
+Scans a pinned set of mature OSS repos (`corpus_external/repos.json`) — real code we didn't
+write — and reports **alerts per 1,000 files** per tool plus **cross-tool disagreement**
+(files only one tool flags = that tool's likely FP). HEAD-is-benign is a stated assumption,
+not hand-verified ground truth (see RESULTS.md). Positives/recall come from SecretBench,
+which is **DPA-gated** — `secretbench_recall()` is the plug-in point once you have access
+(email the authors, sign the agreement; data lands in BigQuery/GCS). Fetched repos and run
+output are gitignored; the pinned SHA manifest is the reproducible artifact.
+
 ## Latency mode
 
 ```bash

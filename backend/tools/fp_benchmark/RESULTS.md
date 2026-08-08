@@ -63,6 +63,48 @@ Not measured (additive, deployment-dependent): the HTTP round-trip (FastAPI + au
 write) and judge-on (a frontier-model network call, ~100s ms–seconds — the numbers above
 are rules-only).
 
+## Real-OSS-repo corpus — the finding that matters (2026-08-08)
+
+`external_corpus.py` scans a pinned set of 5 mature OSS repos (flask, requests, express,
+gin, sinatra) — 644 real source files, treated as benign — and counts **alerts per 1,000
+files**. This is the non-self-authored test, and it says something very different from the
+24-file corpus above:
+
+| scanner | alerts | per 1,000 files | flagged by no other tool |
+| --- | --- | --- | --- |
+| **palivane** | 98 | **152** | **89** |
+| gitleaks | 7 | 11 | 0 |
+| trufflehog (offline) | 8 | 12 | 1 |
+
+**On real code, Palivane is ~14× noisier than gitleaks, and 89 of its 98 alerts fire on
+files no other scanner flags** — the strong false-positive signal. The 100%/100% on our
+hand-written corpus was corpus bias: we'd tuned away exactly the traps we thought of. This
+is the honest baseline, and the FP-moat claim **does not survive contact with real code
+today.**
+
+### Why it fires (diagnosed)
+
+1. **Tier-2 entropy on long CamelCase identifiers** (the bulk): `SecureCookieSessionInterface`,
+   `TemplateContext`, `debugPrintRouteFunc` — concatenated-word identifiers read as high
+   entropy + mixed character classes. The heuristic excludes hex/UUID but not
+   word-concatenations.
+2. **`Credential assignment` too broad**: fires on `password = request.form[...]` and
+   tutorial code, not just hardcoded literals — the value-side guard misses non-literal
+   right-hand sides.
+3. **Test-fixture private keys** (e.g. `requests/tests/certs/.../server.key`): real key
+   material, but a test fixture — gitleaks/trufflehog suppress these via curated allowlists
+   built over years. This is the FP-tuning gap, and it's real work (the "years-hard" part).
+
+### What this means for the roadmap
+
+The next detection change is **not** a quick tune here — chasing this number by editing
+detectors against these 5 repos is the same overfitting that produced the misleading 100%.
+The correct sequence: (a) fix the identified FP *classes* — a dictionary-word / camelCase
+exclusion in the Tier-2 heuristic (SecretBench's `has_words` flag is prior art), tighten
+`Credential assignment` to literal values, and add a test-fixture/allowlist story; then
+(b) re-measure on a **held-out** repo set (not these five) plus an expanded corpus. Only
+then is any FP number publishable.
+
 ## Caveats before publishing externally
 
 - **Small, synthetic corpus.** 24 files is enough to expose FP *classes*, not to quote a
