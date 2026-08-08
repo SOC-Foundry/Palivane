@@ -94,12 +94,20 @@ EVASION_PATTERNS: list[tuple[str, re.Pattern]] = [
 ]
 
 
+_CUSTOM_PATTERNS_CACHE: tuple[str, list[tuple[str, re.Pattern]]] | None = None
+
+
 def custom_patterns() -> list[tuple[str, re.Pattern]]:
     """Org-specific secret patterns from CUSTOM_SECRET_PATTERNS — one `label=regex` per
     line. Read at call time so deployments can add their own token formats without a code
-    change. Invalid regexes are skipped (a bad pattern must not break detection)."""
+    change; the compiled result is cached and only rebuilt when the env value changes
+    (find_secrets calls this on every scan). Invalid regexes are skipped."""
+    global _CUSTOM_PATTERNS_CACHE
+    raw = os.getenv("CUSTOM_SECRET_PATTERNS", "")
+    if _CUSTOM_PATTERNS_CACHE is not None and _CUSTOM_PATTERNS_CACHE[0] == raw:
+        return _CUSTOM_PATTERNS_CACHE[1]
     out: list[tuple[str, re.Pattern]] = []
-    for line in os.getenv("CUSTOM_SECRET_PATTERNS", "").splitlines():
+    for line in raw.splitlines():
         line = line.strip()
         if not line or "=" not in line:
             continue
@@ -107,6 +115,7 @@ def custom_patterns() -> list[tuple[str, re.Pattern]]:
         pat = _safe_custom_regex(rx.strip())
         if pat is not None:
             out.append((label.strip() or "Custom secret", pat))
+    _CUSTOM_PATTERNS_CACHE = (raw, out)
     return out
 
 

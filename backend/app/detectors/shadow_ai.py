@@ -258,27 +258,32 @@ class ShadowAIDetector:
         # this NEVER applies to prompt/gateway channels (subject there isn't a path).
         low_signal = (item.channel in _FILE_SCAN_CHANNELS
                       and is_low_signal_path(item.subject))
-        if item.surface in (Surface.AI_USAGE, Surface.LLM_IO):
-            signals.extend(self._scan_secrets(text, low_signal))
-            signals.extend(self._scan_high_entropy(text, item.channel, low_signal))
+        # Secrets are data-loss on the gateway (llm_io), external-AI (ai_usage), and agent
+        # tool-use (mcp) surfaces. The raw Tier-1 secret pass is the single most expensive
+        # step and BOTH the secret-leak and the high-entropy detectors need it — _scan_secrets
+        # as its first (unnormalized) attempt, _scan_high_entropy only to avoid double-flagging.
+        # Compute it ONCE here and thread it in, rather than re-scanning the full text twice.
+        if item.surface in (Surface.AI_USAGE, Surface.LLM_IO, Surface.MCP):
+            raw_secrets = item.secret_labels()   # cached raw pass, shared across detectors
+            signals.extend(self._scan_secrets(text, low_signal, raw_secrets))
+            signals.extend(self._scan_high_entropy(text, item.channel, low_signal,
+                                                   has_tier1=bool(raw_secrets)))
+        # Proprietary-code / unsanctioned-destination remain ai_usage-only (sending code to
+        # your *own* LLM is expected; there's no external AI destination on llm_io/mcp).
         if item.surface == Surface.AI_USAGE:
             signals.extend(self._scan_proprietary(text))
             signals.extend(self._scan_destination(item))
-        elif item.surface == Surface.MCP:
-            # An agent's tool-call arguments can carry credentials — secrets are data-loss
-            # here too. Proprietary code / destination don't apply (handling code is normal
-            # for an agent, and MCP has no external AI destination).
-            signals.extend(self._scan_secrets(text, low_signal))
-            signals.extend(self._scan_high_entropy(text, item.channel, low_signal))
         return signals
 
-    def _scan_secrets(self, text: str, low_signal: bool = False) -> list[Signal]:
-        # Scan a normalized view too (homoglyph letters / fullwidth digits: ghp_１２３…), plus a
-        # glued view that removes whitespace immediately AFTER a known secret prefix, catching a
-        # key split with spaces ("ghp_ 1234 5678 …"). Anchored on the prefix so it only reflows
-        # a real key, never merges prose.
-        secrets = (find_secrets(text) or find_secrets(normalize_for_match(text))
-                   or find_secrets(_deglue_secret_spacing(normalize_for_match(text))))
+    def _scan_secrets(self, text: str, low_signal: bool = False,
+                      raw_secrets: list[str] | None = None) -> list[Signal]:
+        # `raw_secrets` is the caller's precomputed find_secrets(text) pass (avoids a
+        # duplicate full-text scan). Fall back to the normalized/deglued views only when the
+        # raw pass found nothing — homoglyph letters / fullwidth digits (ghp_１２３…) and keys
+        # split with spaces ("ghp_ 1234 5678 …"), anchored on the prefix so prose never merges.
+        secrets = (raw_secrets if raw_secrets is not None else find_secrets(text)) \
+            or find_secrets(normalize_for_match(text)) \
+            or find_secrets(_deglue_secret_spacing(normalize_for_match(text)))
         if not secrets:
             return []
         # In a low-signal path, suppress when the ONLY matches are generic (bare
@@ -294,7 +299,8 @@ class ShadowAIDetector:
             evidence=", ".join(secrets[:4]),
         )]
 
-    def _scan_high_entropy(self, text: str, tool: str, low_signal: bool = False) -> list[Signal]:
+    def _scan_high_entropy(self, text: str, tool: str, low_signal: bool = False,
+                           has_tier1: bool = False) -> list[Signal]:
         """Tier-2 generic secret heuristic: a long, high-entropy token with no recognized
         format. Lower weight so it *warns* on its own and only blocks when it combines
         with another signal (e.g. an unsanctioned destination)."""
@@ -306,8 +312,9 @@ class ShadowAIDetector:
         # must NOT gate secret detection — else a caller declaring tool=claude-code could
         # exfiltrate a format-less credential with zero signals. This is warn-level, so it
         # doesn't hard-block routine code from a real coding assistant on its own.
-        # Don't double-flag what a Tier-1 pattern already caught as a definite secret.
-        if find_secrets(text):
+        # Don't double-flag what a Tier-1 pattern already caught (`has_tier1` is the caller's
+        # precomputed find_secrets(text) — same raw pass, computed once).
+        if has_tier1:
             return []
         tokens = find_high_entropy_tokens(text)
         if not tokens:

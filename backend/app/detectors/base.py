@@ -107,6 +107,19 @@ class AnalysisInput:
     channel: str = "email"  # email | chat | sms | document
     surface: Surface = Surface.LLM_IO
     metadata: dict = field(default_factory=dict)
+    # Request-scoped cache for the raw Tier-1 secret pass. find_secrets over the full text is
+    # the most expensive detector step, and multiple detectors (shadow_ai, prompt_threats)
+    # need the same result on the same surface — compute it once per analysis. Lives on the
+    # per-request item (discarded after the request), so no user content is retained globally.
+    _secret_labels: "list[str] | None" = field(default=None, init=False, repr=False, compare=False)
+
+    def secret_labels(self) -> "list[str]":
+        """Cached find_secrets() over `subject\\ncontent` (the raw, unnormalized pass).
+        Read-only for callers — the list is shared across detectors in this analysis."""
+        if self._secret_labels is None:
+            from .patterns import find_secrets
+            self._secret_labels = find_secrets(f"{self.subject}\n{self.content}")
+        return self._secret_labels
 
 
 class Detector(Protocol):
