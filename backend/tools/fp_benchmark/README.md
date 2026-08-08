@@ -76,3 +76,16 @@ Tool paths default to `PATH`; a missing tool is skipped (its column is dropped) 
 Palivane's numbers always print. Palivane's engine is imported directly (no server, no DB
 file) and scanned exactly as `/api/scan/code` does — the `secret_leak` data-loss filter.
 Results are written to `results.json`; see `RESULTS.md` for the current run and analysis.
+
+## Latency mode
+
+```bash
+.venv/bin/python tools/fp_benchmark/run_benchmark.py --latency [--iterations N] [--warmup N]
+```
+
+Measures **per-item detection latency** (p50/p95/p99/max) across three input sizes, at two
+in-process layers — `engine.analyze` (pure detectors) and `run_analysis` (the full scan
+path minus the DB write, judge off) — and prints the machine it ran on. It deliberately
+does **not** time the HTTP round-trip (FastAPI + auth + DB write — additive and
+deployment-dependent) or judge-on (a provider network call); both are called out in the
+output. Writes `latency_results.json`. See `RESULTS.md` for numbers and the read.

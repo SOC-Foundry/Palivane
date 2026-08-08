@@ -36,6 +36,33 @@ Neither touches the Tier-1 known-prefix matchers (AWS/GitHub/Stripe-live/…) th
 recall lead. Full backend suite green (1495 passed); one test fixture that used
 `"a"*64`-style dummy tokens was corrected to realistic bodies.
 
+## Latency (2026-08-08)
+
+Per-item, in-process, judge OFF (how prod runs), Python 3.14 on x86_64 / 22 cores. Full
+scan path (`run_analysis`, engine + policy + verdict, no DB write):
+
+| input | bytes | p50 | p95 | p99 | max |
+| --- | --- | --- | --- | --- | --- |
+| prompt-sized | 128 | 0.28 ms | 0.51 ms | 0.77 ms | 0.92 ms |
+| file-sized | 6,384 | 6.8 ms | 11.5 ms | 13.4 ms | 13.5 ms |
+| large diff | 63,866 | 70 ms | 88 ms | 95 ms | 98 ms |
+
+`engine.analyze` (detectors only) is within noise of these — policy/verdict assembly is
+negligible.
+
+**The read:** on **prompt-sized input — the latency-critical path** (inline gateway
+scoring, and the Cursor tab-completion / sub-50 ms budget the reviewer raised) — scoring is
+**sub-millisecond** (p99 0.77 ms), with comfortable headroom. Cost is **O(n) in content**:
+~13 ms p99 at 6 KB (fine for a file scan), but a 64 KB single item runs **~70–100 ms**,
+which **exceeds a 50 ms inline budget**. That's a non-issue for the pre-commit/CI scan path
+(not latency-critical) and for normal prompts, but a *very* large single prompt hitting the
+inline gateway would feel it — so large-input scoring is the optimization target if it ever
+lands on the interactive path (the entropy sweep over big content is the likely hotspot).
+
+Not measured (additive, deployment-dependent): the HTTP round-trip (FastAPI + auth + one DB
+write) and judge-on (a frontier-model network call, ~100s ms–seconds — the numbers above
+are rules-only).
+
 ## Caveats before publishing externally
 
 - **Small, synthetic corpus.** 24 files is enough to expose FP *classes*, not to quote a
