@@ -579,6 +579,13 @@ class PalivaneGuard:
                      "tunnels un-decrypted; PALIVANE_PROXY_INTERCEPT_ALL=true to widen)",
                      len(intercept_hosts()))
 
+    def responseheaders(self, flow) -> None:
+        """AI responses are long-lived SSE streams the response() hook never inspects —
+        stream them through unbuffered, or clients stall on the buffered body and time
+        out (Claude Code retries in a loop). Request-side scanning is unaffected."""
+        if is_ai_host(flow.request.pretty_host):
+            flow.response.stream = True
+
     def request(self, flow) -> None:
         from mitmproxy import http  # imported lazily so unit tests need no mitmproxy
 
