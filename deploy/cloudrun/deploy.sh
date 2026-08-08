@@ -66,7 +66,8 @@ for pair in \
   "PALIVANE_METRICS_TOKEN=warden-metrics-token" \
   "EXTENSION_INGEST_TOKEN=extension-ingest-token" \
   "SMTP_PASS=warden-smtp-pass" \
-  "PALIVANE_LICENSE_SIGNING_KEY=warden-license-signing-key"; do
+  "PALIVANE_LICENSE_SIGNING_KEY=warden-license-signing-key" \
+  "PALIVANE_RELEASE_SIGNING_KEY=palivane-release-signing-key"; do
   name="${pair##*=}"
   if gcloud secrets describe "$name" --project "$PROJECT_ID" >/dev/null 2>&1; then
     SECRETS+=",${pair}:latest"

@@ -12,6 +12,7 @@ import mdmMd from "../../../docs/mdm-policy-pack.md?raw";
 import tokensMd from "../../../docs/tokens-and-identity.md?raw";
 import atRestMd from "../../../docs/at-rest-scanning.md?raw";
 import dataFlowsMd from "../../../docs/data-flows.md?raw";
+import verifyMd from "../../../docs/verifying-downloads.md?raw";
 import pilotMd from "../../../docs/pilot-smoke-test.md?raw";
 
 const DOCS = [
@@ -22,6 +23,7 @@ const DOCS = [
   { slug: "tokens-and-identity", title: "Tokens & identity", md: tokensMd },
   { slug: "at-rest-scanning", title: "S3 & repo scanning", md: atRestMd },
   { slug: "data-flows", title: "Data flows: what leaves the machine", md: dataFlowsMd },
+  { slug: "verifying-downloads", title: "Verifying what you install", md: verifyMd },
   { slug: "pilot", title: "Pilot smoke test", md: pilotMd },
 ];
 

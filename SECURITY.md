@@ -23,3 +23,10 @@ You'll get an acknowledgment within 2 business days and a status update at least
 
 See https://palivane.tachtech.net/trust for the current public summary (encryption,
 tenant isolation, backups, subprocessors, compliance status).
+
+## Verifying downloads
+
+The CLI installer verifies a signed release manifest (ECDSA P-256) and each script's
+SHA-256 before running anything, and the served scripts are reproducible from a source
+checkout. To verify by hand, see
+https://palivane.tachtech.net/docs/verifying-downloads.
