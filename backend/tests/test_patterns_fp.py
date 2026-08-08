@@ -56,3 +56,50 @@ def test_known_format_secrets_still_detected():
     assert "AWS access key id" in find_secrets("key = AKIAIOSFODNN7EXAMPLE")
     assert "GitHub token" in find_secrets("t = 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")
     assert "Stripe secret key" in find_secrets("k = sk_live_4eC39HqLyjWDarjtT1zdp7dcABCDEFGH")
+
+
+# --- path allowlist: demote generic matches in test/docs/example paths --------------------
+
+from app.detectors.patterns import is_low_signal_path, only_generic_secrets  # noqa: E402
+
+
+def test_low_signal_path_classification():
+    for p in ("tests/test_x.py", "src/pkg/__tests__/a.js", "docs/guide.md",
+              "examples/demo.py", "fixtures/data.json", "vendor/lib/x.go",
+              "node_modules/pkg/i.js", "app/foo.md", "conftest.py", "a_test.go"):
+        assert is_low_signal_path(p), p
+    for p in ("src/app/config.py", "main.go", "lib/client.rb", "app/auth.py"):
+        assert not is_low_signal_path(p), p
+
+
+def test_only_generic_secrets_classification():
+    assert only_generic_secrets(["Credential assignment"])
+    assert only_generic_secrets(["JWT", "Credential assignment"])
+    assert not only_generic_secrets(["AWS access key id"])
+    assert not only_generic_secrets(["Credential assignment", "AWS access key id"])
+    assert not only_generic_secrets([])
+
+
+def _secret_flagged(content, subject, channel):
+    from app.detectors.base import AnalysisInput, Surface
+    from app.detectors.shadow_ai import ShadowAIDetector
+    sigs = ShadowAIDetector().analyze(
+        AnalysisInput(content=content, subject=subject, channel=channel, surface=Surface.AI_USAGE))
+    return any(s.category.value == "secret_leak" for s in sigs)
+
+
+def test_allowlist_demotes_generic_only_in_low_signal_file_paths():
+    # generic hardcoded credential: suppressed in a test path, kept in production code
+    assert not _secret_flagged('password = "hunter2hunter2"', "tests/test_x.py", "git")
+    assert _secret_flagged('password = "hunter2hunter2"', "src/app/config.py", "git")
+
+
+def test_allowlist_never_demotes_distinctive_keys():
+    # a real vendor key leaks wherever it is — test path or not
+    assert _secret_flagged('k = "AKIAIOSFODNN7EXAMPLE"', "tests/test_x.py", "git")
+
+
+def test_allowlist_never_applies_to_prompt_channels():
+    # subject on a prompt isn't a path; a secret in a prompt must always flag
+    assert _secret_flagged('password = "hunter2hunter2"', "tests/test_x.py", "claude-code")
+    assert _secret_flagged('password = "hunter2hunter2"', "whatever", "gateway")

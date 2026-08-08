@@ -161,6 +161,37 @@ def _is_placeholder_conn(match_text: str) -> bool:
 _DUMMY_RUN_RE = re.compile(r"(.)\1{7,}")
 
 
+# Low-signal file locations: test suites, fixtures, examples, docs, samples, mocks, and
+# vendored third-party trees. Credentials here are overwhelmingly illustrative, not
+# production leaks — mature scanners (gitleaks/trufflehog) suppress them via curated path
+# allowlists. We use this ONLY to demote GENERIC matches (see GENERIC_SECRET_LABELS) on the
+# file-scan surfaces; a distinctive vendor key (AWS/GitHub/Stripe/…) still fires anywhere.
+_LOW_SIGNAL_PATH_RE = re.compile(
+    r"(^|/)(tests?|__tests__|testing|spec|specs|fixtures?|testdata|test[_-]?data|"
+    r"examples?|samples?|mocks?|__mocks__|docs?|documentation|demo|demos|tutorials?|"
+    r"vendor|third[_-]?party|node_modules|site-packages|\.venv|dist|build)(/|$)"
+    r"|(^|/)(conftest|test_[^/]*|[^/]*_test|[^/]*\.test|[^/]*\.spec)\.[a-z0-9]+$"
+    r"|\.(md|rst|txt|ipynb|example|sample|dist|tmpl|template)$", re.IGNORECASE)
+
+
+def is_low_signal_path(path: str) -> bool:
+    """True when `path` is a test/fixture/example/docs/vendored location — where a generic
+    secret match is far more likely illustrative than a real leak."""
+    return bool(path) and bool(_LOW_SIGNAL_PATH_RE.search(path.replace("\\", "/")))
+
+
+# Secret labels that are LOW-distinctiveness: a generic `password = "…"` assignment or a
+# bare JWT (example tokens are rife in docs/tests). Everything else find_secrets emits is a
+# distinctive vendor format (AWS/GitHub/Stripe/Slack/private key/connection string/…) that
+# is a real leak wherever it appears and is NEVER demoted by path.
+GENERIC_SECRET_LABELS = {"Credential assignment", "JWT"}
+
+
+def only_generic_secrets(labels: list[str]) -> bool:
+    """The matches are all low-distinctiveness (safe to demote in a low-signal path)."""
+    return bool(labels) and all(lbl in GENERIC_SECRET_LABELS for lbl in labels)
+
+
 def find_secrets(text: str) -> list[str]:
     """Return the labels of every secret pattern that matches `text` — canonical formats,
     their separator-stripped (evasion) variants, and any custom patterns. Skips placeholder

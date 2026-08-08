@@ -138,9 +138,36 @@ in tutorial/README code, which a scanner *should* flag and which gitleaks/truffl
 mostly suppress via **curated path allowlists** (test/, docs/, examples/) built over years;
 and (b) long snake_case constants the wordlist doesn't cover. Closing to parity is the
 **allowlist/path-context increment** (suppress known test-fixture and example paths) — a
-deliberate next step, not more wordlist-stuffing against these repos. **Still not for
-external publication until parity is closer and a non-self-authored positive set
-(SecretBench, DPA-gated) measures recall.**
+deliberate next step, not more wordlist-stuffing against these repos.
+
+## Path-allowlist increment — parity reached (2026-08-08)
+
+Added path context (`shadow_ai`, `patterns.is_low_signal_path`): on the **file-scan
+channels only** (git / s3 / repo — never prompts/gateway), a *generic* match (bare
+`password = "…"`, an example JWT, or a Tier-2 high-entropy token) in a test / fixture /
+example / docs / vendored path is suppressed the way gitleaks/trufflehog allowlist those
+paths. A **distinctive vendor key** (AWS/GitHub/Stripe/private key/…) is never demoted —
+a real key leaks wherever it sits, including a test file.
+
+Alerts per 1,000 files, tuning-set fixes (§ above) → + path allowlist:
+
+| set | original | after §-fixes | + allowlist | gitleaks | trufflehog |
+| --- | --- | --- | --- | --- | --- |
+| tuning | 152 | 26 | **10.9** | 10.9 | 12.4 |
+| **held-out** | 116 | 37 | **8.9** | 6.1 | 10.3 |
+
+**Palivane is now at parity on real code** — tuning-set rate equals gitleaks exactly
+(10.9), held-out sits between gitleaks (6.1) and trufflehog (10.3), and *below* trufflehog.
+Recall/precision on the synthetic corpus stays 100%/100%; safety is unit-tested
+(`tests/test_patterns_fp.py`): an AWS key in `tests/` still flags, a generic
+`password=` is suppressed in `tests/` but kept in `src/`, and the path logic **never**
+touches prompt/gateway channels (a secret in a prompt always flags). Full suite 1516.
+
+**Publication readiness:** the FP side is now credible on non-self-authored code across a
+tuning and a held-out set. What still gates an external benchmark is **recall on a
+non-self-authored positive set** — SecretBench (DPA-gated; needs an access request). The
+FP numbers here treat HEAD-of-popular-repo as benign (not hand-verified), so quote them as
+"alerts per 1,000 real files at parity with gitleaks/trufflehog," not as a proven FP rate.
 
 ## Caveats before publishing externally
 

@@ -20,7 +20,18 @@ import re
 from ..config import settings
 from .base import AnalysisInput, Category, Signal, Surface
 from .normalize import normalize_for_match
-from .patterns import custom_pii_patterns, find_high_entropy_tokens, find_secrets
+from .patterns import (
+    custom_pii_patterns,
+    find_high_entropy_tokens,
+    find_secrets,
+    is_low_signal_path,
+    only_generic_secrets,
+)
+
+# Channels that carry a real FILE PATH in item.subject (the code/at-rest scanners). Path-
+# based demotion applies ONLY here — never to prompt/gateway channels, where item.subject
+# isn't a path and a secret must always flag.
+_FILE_SCAN_CHANNELS = {"git", "s3", "github", "repo"}
 
 # Title of the warn-level heuristic secret signal (distinct from known-format Tier-1
 # secrets) — used to exclude it from confirmed_leak()'s hard-block set.
@@ -240,9 +251,16 @@ class ShadowAIDetector:
         # credential in a prompt to your own LLM is still a leak (and is force-blocked by
         # default). Proprietary-code / unsanctioned-destination remain ai_usage-only (sending
         # code to your *own* LLM is expected; there's no external AI destination on llm_io).
+        # File-scan surfaces (pre-commit/CI/at-rest): in a test/fixture/example/docs path a
+        # GENERIC match (bare `password=…` / example JWT / high-entropy token) is almost
+        # always illustrative, not a leak — demote it the way gitleaks/trufflehog allowlist
+        # such paths. Distinctive vendor keys (AWS/GitHub/Stripe/…) are never demoted, and
+        # this NEVER applies to prompt/gateway channels (subject there isn't a path).
+        low_signal = (item.channel in _FILE_SCAN_CHANNELS
+                      and is_low_signal_path(item.subject))
         if item.surface in (Surface.AI_USAGE, Surface.LLM_IO):
-            signals.extend(self._scan_secrets(text))
-            signals.extend(self._scan_high_entropy(text, item.channel))
+            signals.extend(self._scan_secrets(text, low_signal))
+            signals.extend(self._scan_high_entropy(text, item.channel, low_signal))
         if item.surface == Surface.AI_USAGE:
             signals.extend(self._scan_proprietary(text))
             signals.extend(self._scan_destination(item))
@@ -250,11 +268,11 @@ class ShadowAIDetector:
             # An agent's tool-call arguments can carry credentials — secrets are data-loss
             # here too. Proprietary code / destination don't apply (handling code is normal
             # for an agent, and MCP has no external AI destination).
-            signals.extend(self._scan_secrets(text))
-            signals.extend(self._scan_high_entropy(text, item.channel))
+            signals.extend(self._scan_secrets(text, low_signal))
+            signals.extend(self._scan_high_entropy(text, item.channel, low_signal))
         return signals
 
-    def _scan_secrets(self, text: str) -> list[Signal]:
+    def _scan_secrets(self, text: str, low_signal: bool = False) -> list[Signal]:
         # Scan a normalized view too (homoglyph letters / fullwidth digits: ghp_１２３…), plus a
         # glued view that removes whitespace immediately AFTER a known secret prefix, catching a
         # key split with spaces ("ghp_ 1234 5678 …"). Anchored on the prefix so it only reflows
@@ -262,6 +280,11 @@ class ShadowAIDetector:
         secrets = (find_secrets(text) or find_secrets(normalize_for_match(text))
                    or find_secrets(_deglue_secret_spacing(normalize_for_match(text))))
         if not secrets:
+            return []
+        # In a low-signal path, suppress when the ONLY matches are generic (bare
+        # credential-assignment / example JWT). A distinctive vendor key in the same file
+        # still fires — real keys leak in test fixtures too.
+        if low_signal and only_generic_secrets(secrets):
             return []
         return [Signal(
             category=Category.SECRET_LEAK,
@@ -271,10 +294,14 @@ class ShadowAIDetector:
             evidence=", ".join(secrets[:4]),
         )]
 
-    def _scan_high_entropy(self, text: str, tool: str) -> list[Signal]:
+    def _scan_high_entropy(self, text: str, tool: str, low_signal: bool = False) -> list[Signal]:
         """Tier-2 generic secret heuristic: a long, high-entropy token with no recognized
         format. Lower weight so it *warns* on its own and only blocks when it combines
         with another signal (e.g. an unsanctioned destination)."""
+        # The entropy net is generic by definition — in a test/fixture/example/docs path an
+        # unrecognized high-entropy token is noise (random test data, example ids), so skip.
+        if low_signal:
+            return []
         # NB: `tool` is client-asserted (User-Agent / x-palivane-tool / ingest body), so it
         # must NOT gate secret detection — else a caller declaring tool=claude-code could
         # exfiltrate a format-less credential with zero signals. This is warn-level, so it
