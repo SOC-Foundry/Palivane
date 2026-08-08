@@ -1,0 +1,10 @@
+{
+  "_comment": "HELD-OUT validation set — different orgs/languages from repos.json. Detector FP fixes are tuned against repos.json and validated here; an FP drop that appears only on repos.json (not here) is overfitting and must be rejected. Same alerts-per-1000-files methodology (see RESULTS.md).",
+  "repos": [
+    {"name": "fastapi",   "url": "https://github.com/fastapi/fastapi",  "sha": "15410ee4bfd14e3e5048628a0a0b54b07ac9f553", "lang": "python"},
+    {"name": "starlette", "url": "https://github.com/encode/starlette", "sha": "9c500db197859dba4a8db13fa8e7d2c55de8152c", "lang": "python"},
+    {"name": "httpx",     "url": "https://github.com/encode/httpx",     "sha": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254", "lang": "python"},
+    {"name": "axios",     "url": "https://github.com/axios/axios",      "sha": "a339fe124a4b120ac419f9c8c11b6e9ba74b9421", "lang": "javascript"},
+    {"name": "chi",       "url": "https://github.com/go-chi/chi",       "sha": "8b258c7bb28f97a5f2a856ff7ef962578fec9215", "lang": "go"}
+  ]
+}

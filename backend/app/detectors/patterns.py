@@ -129,14 +129,23 @@ _ENV_EXPR_RE = re.compile(
     r"params[\.\[]|env[\.\[]|var\.|data\.|secrets[\.\[]|\$\{|\$[a-z_])")
 
 
+# A value that is a code EXPRESSION, not a literal — `request.form["pw"]`, `self.secret`,
+# `getenv(...)`, `cfg[...]`. A hardcoded credential is a literal; an attribute access,
+# index, or call is a reference to one, not the secret itself. Measured against real repos,
+# `password = <expr>` in ordinary code was a large false-positive source.
+_EXPR_VALUE_RE = re.compile(r"^[A-Za-z_][\w]*\s*[.\[(]|[.\[(]")
+
+
 def _is_placeholder_assignment(match_text: str) -> bool:
     """The matched 'KEY = value' isn't a real hardcoded secret: a placeholder/template value
-    (`your-api-key-here`, `changeme`), OR a code expression that reads it from env/config."""
+    (`your-api-key-here`, `changeme`), a code expression that reads it from env/config, or
+    any other code expression (attribute access / index / call) rather than a literal."""
     mm = re.search(r"[:=]\s*[\"']?([^\s\"']+)", match_text)
     if not mm:
         return False
     val = mm.group(1)
-    return bool(_PLACEHOLDER_VALUE_RE.match(val) or _ENV_EXPR_RE.match(val) or "(" in val)
+    return bool(_PLACEHOLDER_VALUE_RE.match(val) or _ENV_EXPR_RE.match(val)
+                or _EXPR_VALUE_RE.search(val))
 
 
 def _is_placeholder_conn(match_text: str) -> bool:
@@ -203,7 +212,11 @@ _HEX_RE = re.compile(r"^[0-9a-fA-F]+$")   # git SHAs / md5 / sha digests — not
 _NONSECRET_BLOB_RE = re.compile(
     r"data:[\w.+/-]*;base64,[A-Za-z0-9+/=]+"
     r"|\bsha(?:256|384|512)-[A-Za-z0-9+/=]+"
-    r"|\bssh-(?:rsa|ed25519|dss)\s+[A-Za-z0-9+/=]+",
+    r"|\bssh-(?:rsa|ed25519|dss)\s+[A-Za-z0-9+/=]+"
+    # Public PEM blocks — an X.509 certificate or a PUBLIC key is not a secret (the private
+    # half is; that stays caught by the "Private key block" pattern). Mask the base64 body
+    # so cert files don't read as high-entropy tokens.
+    r"|-----BEGIN (?:CERTIFICATE|[A-Z ]*PUBLIC KEY)-----[A-Za-z0-9+/=\s]*?-----END (?:CERTIFICATE|[A-Z ]*PUBLIC KEY)-----",
     re.IGNORECASE)
 
 
@@ -211,6 +224,48 @@ def _shannon_entropy(s: str) -> float:
     counts = Counter(s)
     n = len(s)
     return -sum((c / n) * math.log2(c / n) for c in counts.values())
+
+
+# Common English + programming words (google-10000-english, len>=3, plus a tech supplement)
+# — used to recognize code identifiers so the entropy heuristic doesn't flag them. Measured
+# against real OSS repos, `OAuth2PasswordRequestForm` / `getOwnPropertyDescriptor`-style
+# identifiers were ~all of its false positives (tools/fp_benchmark/RESULTS.md).
+_WORDS: set[str] | None = None
+# Segment a token the way source identifiers are built: camelCase humps, ALLCAPS runs,
+# lowercase runs, digit runs.
+_ID_SEGMENT_RE = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z]+|[a-z]+|[A-Z]+|[0-9]+")
+
+
+def _load_words() -> set[str]:
+    global _WORDS
+    if _WORDS is None:
+        path = os.path.join(os.path.dirname(__file__), "common_words.txt")
+        try:
+            with open(path, encoding="utf-8") as f:
+                _WORDS = {w.strip().lower() for w in f if len(w.strip()) >= 3}
+        except OSError:
+            _WORDS = set()
+    return _WORDS
+
+
+def _is_dictionary_identifier(tok: str) -> bool:
+    """A high-entropy token is really a source-code identifier (not a secret) when it's
+    mostly letters AND most of its length is covered by real dictionary words after
+    camelCase/underscore splitting — `OAuth2PasswordRequestForm`, `getOwnPropertyDescriptor`.
+
+    Deliberately conservative to protect recall: real credentials are digit/symbol-heavy
+    (fails the letter-ratio gate) or don't decompose into English words (fails coverage),
+    so they still fire. A genuinely word-shaped secret is indistinguishable from an
+    identifier and is an accepted blind spot (gitleaks/trufflehog miss those too)."""
+    words = _load_words()
+    if not words:
+        return False
+    letters = sum(c.isalpha() for c in tok)
+    if letters / len(tok) < 0.75:            # secrets carry digits/symbols; identifiers don't
+        return False
+    covered = sum(len(s) for s in _ID_SEGMENT_RE.findall(tok)
+                  if len(s) >= 3 and s.lower() in words)
+    return covered / len(tok) >= 0.66
 
 
 def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
@@ -230,6 +285,15 @@ def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
                    + any(c.isdigit() for c in tok))
         if classes < 2 or _shannon_entropy(tok) < min_entropy:
             continue
+        # Real generic secrets (API keys, tokens) are randomized and carry digits; long
+        # all-letter tokens are overwhelmingly source-code identifiers (CamelCase class/
+        # symbol names). Requiring a digit for this last-resort heuristic removes that whole
+        # false-positive class. Known-format secrets never depend on this path — they're
+        # caught by their Tier-1 prefix, a credential assignment, or a connection string.
+        if not any(c.isdigit() for c in tok):
+            continue
+        if _is_dictionary_identifier(tok):
+            continue   # a code identifier (camelCase words), not a secret
         seen.add(tok)
         out.append(tok[:10] + "…")
     return out

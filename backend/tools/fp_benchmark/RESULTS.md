@@ -99,11 +99,48 @@ today.**
 
 The next detection change is **not** a quick tune here — chasing this number by editing
 detectors against these 5 repos is the same overfitting that produced the misleading 100%.
-The correct sequence: (a) fix the identified FP *classes* — a dictionary-word / camelCase
-exclusion in the Tier-2 heuristic (SecretBench's `has_words` flag is prior art), tighten
-`Credential assignment` to literal values, and add a test-fixture/allowlist story; then
-(b) re-measure on a **held-out** repo set (not these five) plus an expanded corpus. Only
-then is any FP number publishable.
+The correct sequence: (a) fix the identified FP *classes*; then (b) re-measure on a
+**held-out** repo set (not these five). That's what the next section reports.
+
+## FP-class fixes + held-out validation (2026-08-08)
+
+Three principled changes in `app/detectors/patterns.py`, each targeting a *class* (not a
+sample), tuned against the 5 repos above and **validated on a separate held-out set**
+(`corpus_external/repos_heldout.json` — fastapi, starlette, httpx, axios, chi):
+
+1. **Dictionary-identifier exclusion** in the Tier-2 entropy heuristic — a token dominated
+   by real English/tech words after camelCase/underscore splitting is a code identifier,
+   not a secret (SecretBench's `has_words`; wordlist bundled at
+   `app/detectors/common_words.txt`).
+2. **Digit requirement** for the generic entropy heuristic — real API keys/tokens are
+   randomized and carry digits; long all-letter tokens are CamelCase symbol names.
+   (Known-format secrets never use this path — they're caught by their Tier-1 prefix, a
+   credential assignment, or a connection string, so recall is unaffected.)
+3. **Credential-assignment literal-only** — `password = request.form[...]` / `= self.x` /
+   `= cfg[...]` is a reference, not a hardcoded secret; only literal values fire.
+   Plus public PEM blocks (X.509 certs, PUBLIC KEY) masked like SSH public keys.
+
+Alerts per 1,000 files, before → after:
+
+| set | before | after | reduction |
+| --- | --- | --- | --- |
+| tuning (flask/requests/express/gin/sinatra) | 152 | **26** | −83% |
+| **held-out (fastapi/starlette/httpx/axios/chi)** | 116 | **37** | **−68%** |
+
+The held-out reduction (−68%, on repos never looked at during tuning) confirms the fixes
+attack the FP *class*, not memorized samples. Synthetic corpus stays 100%/100% (F1 1.00);
+recall guards in `tests/test_patterns_fp.py`; full backend suite green (1504).
+
+**Still not at parity.** gitleaks is ~6–11/1k and trufflehog ~10–12/1k; Palivane at 37/1k
+held-out is ~3–5× higher, down from ~14–19×. The remaining residual is two things: (a)
+**arguably-true positives** — hardcoded example secrets, JWTs, and `SECRET_KEY = "<hex>"`
+in tutorial/README code, which a scanner *should* flag and which gitleaks/trufflehog
+mostly suppress via **curated path allowlists** (test/, docs/, examples/) built over years;
+and (b) long snake_case constants the wordlist doesn't cover. Closing to parity is the
+**allowlist/path-context increment** (suppress known test-fixture and example paths) — a
+deliberate next step, not more wordlist-stuffing against these repos. **Still not for
+external publication until parity is closer and a non-self-authored positive set
+(SecretBench, DPA-gated) measures recall.**
 
 ## Caveats before publishing externally
 

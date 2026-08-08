@@ -84,10 +84,13 @@ python tools/fp_benchmark/external_corpus.py fetch          # clone pinned repos
 python tools/fp_benchmark/external_corpus.py score --gitleaks … --trufflehog …
 ```
 
-Scans a pinned set of mature OSS repos (`corpus_external/repos.json`) — real code we didn't
-write — and reports **alerts per 1,000 files** per tool plus **cross-tool disagreement**
-(files only one tool flags = that tool's likely FP). HEAD-is-benign is a stated assumption,
-not hand-verified ground truth (see RESULTS.md). Positives/recall come from SecretBench,
+Scans a pinned set of mature OSS repos — real code we didn't write — and reports **alerts
+per 1,000 files** per tool plus **cross-tool disagreement** (files only one tool flags =
+that tool's likely FP). Two manifests: `--manifest repos.json` (the tuning set, default)
+and `--manifest repos_heldout.json` (the validation set — different orgs/languages; detector
+FP fixes are tuned on the first and validated on the second, so a gain that shows only on
+the tuning set is caught as overfitting). HEAD-is-benign is a stated assumption, not
+hand-verified ground truth (see RESULTS.md). Positives/recall come from SecretBench,
 which is **DPA-gated** — `secretbench_recall()` is the plug-in point once you have access
 (email the authors, sign the agreement; data lands in BigQuery/GCS). Fetched repos and run
 output are gitignored; the pinned SHA manifest is the reproducible artifact.
