@@ -1,5 +1,7 @@
+.external-corpus-*/
 .external-corpus/
 external_results.json
+external_results_*.json
 .gitleaks-ext.json
 .gitleaks-report.json
 latency_results.json
