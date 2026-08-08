@@ -1,0 +1,10 @@
+{
+  "_comment": "Pinned real-OSS-repo NEGATIVE corpus for the false-positive benchmark. These are mature, permissively-licensed projects across languages; HEAD at the pinned SHA is treated as benign production code (popular repos very rarely carry a live secret in HEAD). fetch.py clones each at its exact SHA. Ground-truth caveat: this measures ALERTS PER 1,000 REAL FILES, not hand-verified FP rate — a small fraction of alerts could be genuine leaks; cross-tool disagreement (a file only one tool flags) is the strong FP signal. See RESULTS.md.",
+  "repos": [
+    {"name": "flask",   "url": "https://github.com/pallets/flask",       "sha": "6a2f545bfd8ed31e19066a299296917e034aca58", "lang": "python"},
+    {"name": "requests", "url": "https://github.com/psf/requests",       "sha": "1f6589ec3a1ee910f9a65cc3ceac60b26677bc0e", "lang": "python"},
+    {"name": "express",  "url": "https://github.com/expressjs/express",  "sha": "a3714473feb3d2908add734d340e7755fd85e0a3", "lang": "javascript"},
+    {"name": "gin",      "url": "https://github.com/gin-gonic/gin",      "sha": "34dac209ffb6ef85cc78c5d217bbb7ad001d68fd", "lang": "go"},
+    {"name": "sinatra",  "url": "https://github.com/sinatra/sinatra",    "sha": "cb22afd7902b566b6eaba6c4ea89739494a65d12", "lang": "ruby"}
+  ]
+}
