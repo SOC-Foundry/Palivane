@@ -9,7 +9,7 @@ const SECTIONS = [
     items: [
       ["Encryption in transit", "TLS everywhere: Cloudflare terminates public TLS; origin traffic is authenticated (IAM-signed) service-to-service."],
       ["Encryption at rest", "Cloud SQL disk encryption plus application-layer encryption of finding content under a per-tenant data key (envelope encryption)."],
-      ["Redaction before storage", "Detected secrets are replaced with labels and PII is masked before a finding is written — the default posture is metadata-only, with full-content storage an explicit per-org opt-in."],
+      ["Redaction before storage", "Detected secrets are replaced with labels and PII is masked before a finding is written — the default posture is metadata-only, with full-content storage an explicit per-org opt-in. See the data-flows page for exactly what leaves the machine, per mode."],
       ["Retention & deletion", "Per-org findings retention (down to days), self-serve full data export (JSON), and self-serve organization deletion that removes every row the org owns."],
       ["DPA", "A data-processing agreement is presented in-product and acceptance is recorded with version history."],
     ],
