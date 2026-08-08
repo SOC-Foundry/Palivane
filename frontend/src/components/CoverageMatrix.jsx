@@ -181,7 +181,9 @@ export default function CoverageMatrix() {
             Every plane above starts in <strong>monitor mode</strong> — you see findings before
             anything is ever blocked, and blocking is a per-org switch (confirmed secret leaks
             hard-block even in monitor mode, by design). Deployment details for each plane are
-            on the <a className="lp-textlink" href="/setup">Setup page</a>.
+            on the <a className="lp-textlink" href="/setup">Setup page</a>; exactly what leaves
+            the machine, per mode, is on the <a className="lp-textlink" href="/docs/data-flows">data-flows
+            page</a>.
           </p>
         </div>
       </section>
