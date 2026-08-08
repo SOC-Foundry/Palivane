@@ -138,6 +138,27 @@ The proxy must never become the outage. Three layers, all shipped:
 RFC1918 — intranet/VPC traffic never takes the proxy hop. Extend at install time with
 `PALIVANE_PROXY_NO_PROXY_EXTRA`.
 
+### Chaining through a corporate proxy (Zscaler / Netskope / SWG)
+
+On a fleet behind a mandatory egress proxy, mitmdump can't reach the internet directly —
+it has to forward through that proxy. `palivane-desktop` runs mitmdump in mitmproxy's
+`--mode upstream:` for this, so the local capture proxy sits *in front of* the corporate
+one: apps → Palivane (inspects AI hosts) → corporate proxy → internet.
+
+- `PALIVANE_UPSTREAM_PROXY=http://corp-proxy:port` — the upstream proxy (MDM-pushed). If
+  unset, the installer **auto-adopts an ambient `https_proxy`** so a device already
+  configured for the corporate proxy works out of the box.
+- `PALIVANE_UPSTREAM_CA=/path/to/corp-root.pem` — when the corporate proxy TLS-inspects,
+  point this at its root bundle so mitmproxy trusts the *upstream* leg
+  (`ssl_verify_upstream_trusted_ca`). Without it, chained HTTPS to an inspecting proxy
+  fails cert verification.
+- `PALIVANE_UPSTREAM_AUTH=user:pass` — for an authenticated proxy.
+- `PALIVANE_UPSTREAM_INSECURE=1` — skip upstream cert verification (last resort; prefer
+  `PALIVANE_UPSTREAM_CA`).
+
+Scoped interception still applies over the chain: AI hosts are decrypted and inspected,
+everything else is CONNECT-tunnelled to the corporate proxy untouched.
+
 ## Honest limits
 
 - **TLS inspection required** to read request bodies. Apps that **certificate-pin**

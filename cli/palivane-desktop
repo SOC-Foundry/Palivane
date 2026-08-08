@@ -31,6 +31,17 @@ WDIR="${HOME_DIR}/.palivane"
 # install time with PALIVANE_PROXY_NO_PROXY_EXTRA (comma-separated).
 NO_PROXY_BASE="localhost,127.0.0.1,::1,.ts.net,.internal,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10"
 NO_PROXY_ALL="${NO_PROXY_BASE}${PALIVANE_PROXY_NO_PROXY_EXTRA:+,${PALIVANE_PROXY_NO_PROXY_EXTRA}}"
+# Corporate-proxy chaining. On fleets behind a mandatory egress proxy / PAC (Zscaler,
+# Netskope, corp SWG) mitmdump can't reach the internet directly — it must forward through
+# that proxy. Set PALIVANE_UPSTREAM_PROXY=http://corp-proxy:port (MDM-pushed) to run mitmdump
+# in `--mode upstream:`; if the corp proxy TLS-inspects, point PALIVANE_UPSTREAM_CA at its
+# root bundle so mitmproxy trusts the upstream leg. When unset, we auto-adopt an ambient
+# https_proxy at install time (below) so a machine already configured for the corp proxy
+# just works. PALIVANE_UPSTREAM_AUTH=user:pass for an authenticated proxy.
+UPSTREAM_PROXY="${PALIVANE_UPSTREAM_PROXY:-}"
+UPSTREAM_AUTH="${PALIVANE_UPSTREAM_AUTH:-}"
+UPSTREAM_CA="${PALIVANE_UPSTREAM_CA:-}"
+UPSTREAM_INSECURE="${PALIVANE_UPSTREAM_INSECURE:-}"   # skip upstream cert verify (last resort)
 # Watchdog state (Linux): consecutive-failure count + "we failed the system proxy open".
 WATCHDOG_FAILS="${WDIR}/proxy-watchdog-fails"
 WATCHDOG_MARKER="${WDIR}/proxy-watchdog-failopen"
@@ -461,8 +472,33 @@ cmd_watchdog_tick() {
   flush_kde_launcher_env
 }
 
+# Extra mitmdump flags for corporate-proxy chaining, as a plain space-separated string
+# (for the systemd ExecStart line). Empty when no upstream proxy is configured.
+mitm_upstream_flags() {
+  [ -n "$UPSTREAM_PROXY" ] || return 0
+  printf ' --mode upstream:%s' "$UPSTREAM_PROXY"
+  [ -n "$UPSTREAM_AUTH" ] && printf ' --upstream-auth %s' "$UPSTREAM_AUTH"
+  [ -n "$UPSTREAM_CA" ] && printf ' --set ssl_verify_upstream_trusted_ca=%s' "$UPSTREAM_CA"
+  [ -n "$UPSTREAM_INSECURE" ] && printf ' --ssl-insecure'
+  return 0
+}
+
+# Same flags as launchd <string> elements (one XML line per token).
+mitm_upstream_plist() {
+  [ -n "$UPSTREAM_PROXY" ] || return 0
+  printf '    <string>--mode</string><string>upstream:%s</string>\n' "$UPSTREAM_PROXY"
+  [ -n "$UPSTREAM_AUTH" ] && printf '    <string>--upstream-auth</string><string>%s</string>\n' "$UPSTREAM_AUTH"
+  [ -n "$UPSTREAM_CA" ] && printf '    <string>--set</string><string>ssl_verify_upstream_trusted_ca=%s</string>\n' "$UPSTREAM_CA"
+  [ -n "$UPSTREAM_INSECURE" ] && printf '    <string>--ssl-insecure</string>\n'
+  return 0
+}
+
 start_service() {
   local tok; tok="$1"
+  local up_flags up_plist
+  up_flags="$(mitm_upstream_flags)"
+  up_plist="$(mitm_upstream_plist)"
+  [ -n "$UPSTREAM_PROXY" ] && log "chaining egress through upstream proxy: ${UPSTREAM_PROXY}$([ -n "$UPSTREAM_CA" ] && printf ' (trusting %s upstream)' "$UPSTREAM_CA")"
   case "$OS" in
     Darwin)
       local plist="${HOME_DIR}/Library/LaunchAgents/net.tachtech.palivane-proxy.plist"
@@ -476,7 +512,7 @@ start_service() {
     <string>$(command -v mitmdump)</string>
     <string>-q</string><string>-s</string><string>${ADDON}</string>
     <string>--listen-port</string><string>${PORT}</string>
-  </array>
+${up_plist}  </array>
   <key>EnvironmentVariables</key><dict>
     <key>PALIVANE_URL</key><string>${PALIVANE_URL}</string>
     <key>PALIVANE_TOKEN</key><string>${tok}</string>
@@ -502,7 +538,7 @@ Environment=PALIVANE_TOKEN=${tok}
 Environment=PALIVANE_PROXY_ENFORCE=${PALIVANE_PROXY_ENFORCE:-false}
 Environment=PALIVANE_PROXY_INTERCEPT_EXTRA=${PALIVANE_PROXY_INTERCEPT_EXTRA:-}
 Environment=PALIVANE_PROXY_INTERCEPT_ALL=${PALIVANE_PROXY_INTERCEPT_ALL:-}
-ExecStart=$(command -v mitmdump) -q -s ${ADDON} --listen-port ${PORT}
+ExecStart=$(command -v mitmdump) -q -s ${ADDON} --listen-port ${PORT}${up_flags}
 Restart=always
 [Install]
 WantedBy=default.target
@@ -594,6 +630,17 @@ cmd_install() {
   for a in "$@"; do [ "$a" = "--cli-only" ] && cli_only=1; done
   command -v curl >/dev/null 2>&1 || die "curl is required."
   local tok; tok="$(read_token)"; [ -n "$tok" ] || die "empty Palivane token; run 'palivane connect' first."
+  # If the machine is already behind a corporate egress proxy (ambient https_proxy) and no
+  # explicit upstream was set, adopt it — so a Zscaler/Netskope-configured device works out
+  # of the box. Skip loopback (that's us, from a prior install).
+  if [ -z "$UPSTREAM_PROXY" ]; then
+    local amb="${https_proxy:-${HTTPS_PROXY:-}}"
+    case "$amb" in
+      ""|*127.0.0.1:*|*localhost:*|*::1:*) : ;;
+      *) UPSTREAM_PROXY="$amb"
+         log "detected an existing egress proxy in the environment ($amb) — chaining through it." ;;
+    esac
+  fi
   ensure_mitm
   fetch_addon
   bootstrap_ca          # generates the CA (also the one NODE_EXTRA_CA_CERTS points at)
