@@ -147,6 +147,19 @@ def cli_manifest():
     return JSONResponse(_manifest(), headers={"Cache-Control": "no-cache"})
 
 
+@router.get("/cli/manifest.sig")
+def cli_manifest_sig():
+    """Ed25519 signature over the manifest's canonical {name: sha256} digest, base64 in a
+    text/plain body. 404 when this deployment has no signing key set — the installer then
+    treats the release as unsigned (warns, proceeds). See release_signing.py."""
+    from . import release_signing
+    sig = release_signing.sign_files(_manifest()["files"])
+    if sig is None:
+        raise HTTPException(status_code=404, detail="release signing not configured")
+    return PlainTextResponse(sig, media_type="text/plain",
+                             headers={"Cache-Control": "no-cache"})
+
+
 @router.get("/cli/{name}")
 def get_script(name: str):
     rel = _ALLOW.get(name)
@@ -162,8 +175,14 @@ def get_script(name: str):
 
 @router.get("/install.sh")
 def install_sh():
+    from . import release_signing
     base = _base_url()
     tools = " ".join(_CLI_TOOLS)
+    pubkey = release_signing.release_pubkey_pem().strip()
+    # When this deployment signs releases, the generated installer REQUIRES a valid
+    # signature (fail closed). Until the key is provisioned it serves require_sig=0, so the
+    # verify step warns-but-proceeds instead of blocking every install.
+    require_sig = "1" if release_signing.signing_enabled() else "0"
     script = f"""#!/usr/bin/env bash
 # Palivane onboarding installer. Installs the governance CLI into ~/.palivane/bin and runs
 # `palivane connect` (browser sign-in -> Claude Code + local hooks + Cursor), then stands
@@ -184,18 +203,78 @@ set -euo pipefail
 PALIVANE_URL="{base}"
 BIN="$HOME/.palivane/bin"
 TOOLS="{tools}"
+REQUIRE_SIG="{require_sig}"   # 1 when this deployment signs releases (fail closed)
 PROXY_MODE="cli-only"   # cli-only (default) | desktop | none
 for a in "$@"; do
   [ "$a" = "--desktop" ] && PROXY_MODE="desktop"
   [ "$a" = "--cli-only" ] && PROXY_MODE="cli-only"
   [ "$a" = "--no-proxy" ] && PROXY_MODE="none"
+  [ "$a" = "--no-verify" ] && REQUIRE_SIG="skip"   # opt out of integrity checks (not advised)
 done
+
+# The release-signing public key this installer pins. A signature that doesn't verify
+# against THIS key is rejected — so a network attacker who can rewrite the served scripts
+# still can't forge a release.
+PALIVANE_RELEASE_PUBKEY="{pubkey}"
+
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+sha256_of() {{ if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d" " -f1;
+  else shasum -a 256 "$1" | cut -d" " -f1; fi; }}
+
+# --- Integrity: verify the signed manifest, then check every file against it -----------
+verify_release() {{
+  [ "$REQUIRE_SIG" = "skip" ] && {{ echo "  ! integrity check skipped (--no-verify)"; return 0; }}
+  curl -fsSL "$PALIVANE_URL/cli/manifest.json" -o "$TMP/manifest.json" || {{
+    echo "  ! could not fetch manifest"; [ "$REQUIRE_SIG" = "1" ] && return 1 || return 0; }}
+  local sig_http
+  sig_http="$(curl -fsS -o "$TMP/manifest.sig" -w '%{{http_code}}' "$PALIVANE_URL/cli/manifest.sig" || echo 000)"
+  if [ "$sig_http" != "200" ]; then
+    if [ "$REQUIRE_SIG" = "1" ]; then echo "  ! release signature required but not served"; return 1; fi
+    echo "  ! this release is unsigned — proceeding (set up release signing to enforce)"; return 0
+  fi
+  # Canonical digest = the {{name: sha256}} map as compact sorted JSON — must match
+  # release_signing.canonical_files_digest on the server.
+  if ! command -v python3 >/dev/null 2>&1 || ! command -v openssl >/dev/null 2>&1; then
+    echo "  ! python3+openssl needed to verify the signature"; [ "$REQUIRE_SIG" = "1" ] && return 1 || return 0
+  fi
+  python3 - "$TMP/manifest.json" > "$TMP/digest" <<'PY'
+import json, sys
+files = json.load(open(sys.argv[1]))["files"]
+sys.stdout.write(json.dumps({{k: v["sha256"] for k, v in files.items()}},
+                            separators=(",", ":"), sort_keys=True))
+PY
+  printf '%s' "$PALIVANE_RELEASE_PUBKEY" > "$TMP/pub.pem"
+  openssl base64 -d -A -in "$TMP/manifest.sig" -out "$TMP/sig.der" 2>/dev/null || {{ echo "  ! bad signature encoding"; return 1; }}
+  # ECDSA P-256 / SHA-256 — verifiable by the stock openssl dgst CLI on any machine.
+  if openssl dgst -sha256 -verify "$TMP/pub.pem" -signature "$TMP/sig.der" "$TMP/digest" >/dev/null 2>&1; then
+    echo "  ✓ release signature verified"
+  else
+    echo "  ✗ release signature INVALID — refusing to install (possible tampering)"; return 1
+  fi
+  return 0
+}}
+
+file_matches_manifest() {{  # $1=name $2=path ; needs $TMP/manifest.json
+  [ -f "$TMP/manifest.json" ] || return 0   # no manifest fetched (unsigned/offline path)
+  command -v python3 >/dev/null 2>&1 || return 0
+  local want got
+  want="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["files"].get(sys.argv[2],{{}}).get("sha256",""))' "$TMP/manifest.json" "$1")"
+  [ -n "$want" ] || return 0
+  got="$(sha256_of "$2")"
+  [ "$want" = "$got" ]
+}}
+
+echo "Verifying release integrity ..."
+verify_release || {{ echo "Aborting install."; exit 1; }}
 
 echo "Installing Palivane CLI into $BIN ..."
 mkdir -p "$BIN"
 for t in $TOOLS; do
-  curl -fsSL "$PALIVANE_URL/cli/$t" -o "$BIN/$t"
-  chmod +x "$BIN/$t"
+  curl -fsSL "$PALIVANE_URL/cli/$t" -o "$TMP/$t"
+  if ! file_matches_manifest "$t" "$TMP/$t"; then
+    echo "  ✗ $t failed its SHA-256 check — refusing to install (possible tampering)"; exit 1
+  fi
+  install -m 0755 "$TMP/$t" "$BIN/$t"
 done
 echo "  installed: $TOOLS"
 
