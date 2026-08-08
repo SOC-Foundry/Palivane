@@ -81,7 +81,7 @@ def text_files(workdir: Path, manifest: Path) -> list[Path]:
     return out
 
 
-def palivane_flagged(files: list[Path]) -> set[Path]:
+def palivane_flagged(files: list[Path], workdir: Path) -> set[Path]:
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
@@ -103,7 +103,14 @@ def palivane_flagged(files: list[Path]) -> set[Path]:
             content = p.read_text(errors="replace")
         except OSError:
             continue
-        r = run_analysis(AnalysisInput(content=content, subject=p.name, channel="git",
+        # Pass the repo-relative PATH (not just the filename) as subject — the code scanner
+        # (`/api/scan/code`) sends the real path, and path context drives allowlisting of
+        # test/fixture/example/docs locations.
+        try:
+            subject = str(p.relative_to(workdir))
+        except ValueError:
+            subject = p.name
+        r = run_analysis(AnalysisInput(content=content, subject=subject, channel="git",
                                        surface=Surface.AI_USAGE),
                          persist=False, db=db, tenant_id=None, signal_filter=secret_only)
         if r["signals"]:
@@ -159,7 +166,7 @@ def cmd_score(workdir: Path, manifest: Path, gitleaks: str | None, trufflehog: s
     print(f"Scanning {n} real files across {len(repos(manifest))} pinned OSS repos "
           "(treated as benign — alerts are candidate false positives)\n")
 
-    flags = {"palivane": palivane_flagged(files)}
+    flags = {"palivane": palivane_flagged(files, workdir)}
     if gitleaks:
         flags["gitleaks"] = gitleaks_flagged(gitleaks, workdir, scanned)
     if trufflehog:
