@@ -43,7 +43,7 @@ CACHE_PATH = "~/.palivane/posture-cache.json"
 
 # Reported in the User-Agent so the console's Fleet view can show which client build each
 # device runs (and flag the stale ones). Bump when the client contract changes.
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 # MCP config files posted raw (path label → filesystem path).
 _RAW_MCP_CONFIGS = (
@@ -243,6 +243,90 @@ def find_mcp_configs(cwd: str = ".") -> list[tuple[str, str]]:
     return found
 
 
+# --- device health (capture-plane collisions & coverage gaps) ---------------------------
+# Raw state only — the device_posture detector server-side decides what's a finding, so
+# the rules update fleet-wide on a backend deploy. Everything here is best-effort and
+# bounded; a check that can't run reports nothing rather than failing the posture run.
+
+def _proxy_port() -> int:
+    try:
+        return int(os.getenv("PALIVANE_PROXY_PORT", "") or 8081)
+    except ValueError:
+        return 8081
+
+
+def _port_listening(port: int) -> bool:
+    import socket
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def _listener_name(port: int) -> str:
+    """Best-effort name of the process listening on `port` (ss on Linux, lsof on macOS)."""
+    for cmd in ([shutil.which("ss") or "", "-tlnp"],
+                [shutil.which("lsof") or "", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"]):
+        if not cmd[0]:
+            continue
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=3).stdout
+        except Exception:
+            continue
+        for line in out.splitlines():
+            if f":{port}" not in line:
+                continue
+            if 'users:(("' in line:                      # ss: users:(("name",pid=…,fd=…))
+                return line.split('users:(("', 1)[1].split('"', 1)[0]
+            if not line.startswith("COMMAND"):           # lsof: first column is the command
+                return line.split()[0]
+    return ""
+
+
+def _strip_cred(url: str) -> str:
+    """Proxy URLs can carry basic-auth credentials — never report those."""
+    scheme, sep, rest = url.partition("://")
+    if sep and "@" in rest:
+        rest = rest.rsplit("@", 1)[1]
+    return f"{scheme}{sep}{rest}"
+
+
+def _breaker_state() -> dict:
+    try:
+        with open(os.path.expanduser("~/.palivane/proxy-breaker.json")) as f:
+            data = json.load(f)
+    except Exception:
+        return {"cooldown_active": False, "deauth_active": False}
+    now = datetime.now(timezone.utc).timestamp()
+    # Booleans only (not the raw timestamps): the report stays byte-stable while a state
+    # holds, so the dedup cache posts on transitions instead of every re-run.
+    return {"cooldown_active": now < (data.get("cooldown_until") or 0),
+            "deauth_active": now < (data.get("deauth_until") or 0)}
+
+
+def collect_device_health() -> dict:
+    port = _proxy_port()
+    listening = _port_listening(port)
+    proxy_env = _strip_cred(
+        os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")
+        or os.getenv("HTTP_PROXY") or os.getenv("http_proxy") or "")
+    points_local = any(f"{h}:{port}" in proxy_env for h in ("127.0.0.1", "localhost"))
+    try:
+        with open("/proc/version") as f:
+            wsl = "microsoft" in f.read().lower()
+    except OSError:
+        wsl = False
+    return {
+        "proxy": {"port": port, "listening": listening,
+                  "listener": _listener_name(port) if listening else "",
+                  "env_proxy": proxy_env, "env_points_local": points_local},
+        "breaker": _breaker_state(),
+        "gaps": {"wsl": wsl, "docker_present": shutil.which("docker") is not None,
+                 "in_container": os.path.exists("/.dockerenv")},
+    }
+
+
 # --- change-dedup cache -----------------------------------------------------------------
 
 def digest(content: str) -> str:
@@ -438,6 +522,9 @@ def run(cfg: dict, cache_path: str = CACHE_PATH, cwd: str = ".",
         items.append((f"rules:{label}", "/api/scan/agent-rules",
                       {"content": content, "path": path, "tool": tool, "user": user,
                        "record": True}, content))
+    health = json.dumps(collect_device_health(), sort_keys=True)
+    items.append(("device-posture", "/api/scan/device-posture",
+                  {"content": health, "user": user, "record": True}, health))
 
     for key, api_path, body, canonical in items:
         dig = digest(canonical)

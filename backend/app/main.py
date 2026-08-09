@@ -34,6 +34,7 @@ from .schemas import (
     CIScan,
     CodeScanRequest,
     CoverageRequest,
+    DevicePostureScan,
     DiscoveryIngest,
     IDEExtScan,
     OversharingScan,
@@ -1581,6 +1582,36 @@ def scan_agent_config(
         "risk_score": result["risk_score"],
         "signals": result["signals"],
         "remediation": remediation_for(result["signals"]),
+    }
+
+
+@app.post("/api/scan/device-posture")
+def scan_device_posture(
+    body: DevicePostureScan,
+    x_palivane_token: str = Header(default=""),
+    x_palivane_agent: str = Header(default=""),
+    user_agent: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Vet a device-health report from palivane-posture: the egress proxy dead while the
+    system proxy still routes through it (AI tools hard-down, governance off), a port
+    collision displacing the capture plane, the scan breaker failing open (backend outage
+    or revoked capture key = DLP silently suspended), and traffic sources the network
+    plane can't see (WSL/containers). Token-gated for the posture sensor."""
+    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
+    _enforce_rate(db, tenant_id)
+    actor = body.user or default_actor
+    agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
+    _record_heartbeat(db, tenant_id, actor, "posture", "device-posture", user_agent)
+    item = AnalysisInput(content=body.content, sender=actor, channel="device-posture",
+                         surface=Surface.DEVICE, metadata={"kind": "device_posture"})
+    result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
+                          db=db, tenant_id=tenant_id, agent=agent)
+    return {
+        "action": _action_for(result["severity"]),
+        "severity": result["severity"],
+        "risk_score": result["risk_score"],
+        "signals": result["signals"],
     }
 
 

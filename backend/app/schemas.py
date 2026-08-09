@@ -90,6 +90,15 @@ class IDEExtScan(BaseModel):
     record: bool = False
 
 
+class DevicePostureScan(BaseModel):
+    """A device-health report from palivane-posture: capture-plane state (proxy port/
+    listener, scan-breaker fail-open) and coverage gaps (WSL/containers). JSON in
+    `content`; the device_posture detector derives the findings server-side."""
+    content: str = Field(min_length=1, max_length=MAX_CONTENT)
+    user: str = ""
+    record: bool = False
+
+
 class SecretAtRest(BaseModel):
     """One credential the local `palivane-secrets` scanner found at rest — METADATA ONLY.
     The raw secret never leaves the device; `masked` is a redacted preview."""

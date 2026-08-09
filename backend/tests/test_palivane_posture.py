@@ -85,7 +85,8 @@ def test_run_posts_once_then_skips(tmp_path, monkeypatch):
     cfg = {"url": "https://w.io", "token": "ak_x"}
 
     wp.run(cfg, cache_path=cache_path, cwd=str(tmp_path), quiet=True)
-    assert sorted(posts) == ["/api/scan/ide-extensions", "/api/scan/mcp-config"]
+    assert sorted(posts) == ["/api/scan/device-posture", "/api/scan/ide-extensions",
+                             "/api/scan/mcp-config"]
 
     posts.clear()
     wp.run(cfg, cache_path=cache_path, cwd=str(tmp_path), quiet=True)
@@ -93,7 +94,7 @@ def test_run_posts_once_then_skips(tmp_path, monkeypatch):
 
     posts.clear()
     wp.run(cfg, cache_path=cache_path, cwd=str(tmp_path), quiet=True, force=True)
-    assert len(posts) == 2  # --force overrides the cache
+    assert len(posts) == 3  # --force overrides the cache
 
 
 def test_run_failed_post_retries_next_run(tmp_path, monkeypatch):
@@ -108,7 +109,7 @@ def test_run_failed_post_retries_next_run(tmp_path, monkeypatch):
     calls: list[str] = []
     monkeypatch.setattr(wp, "_post", lambda cfg, path, body, timeout=10.0: calls.append(path) or True)
     wp.run(cfg, cache_path=cache_path, cwd=str(tmp_path), quiet=True)
-    assert calls == ["/api/scan/ide-extensions"]
+    assert sorted(calls) == ["/api/scan/device-posture", "/api/scan/ide-extensions"]
 
 
 # --- integration: collected payloads accepted by the real scan endpoints ---------------
@@ -183,3 +184,44 @@ def test_agent_rules_payload_accepted_end_to_end(client, raw_client, tmp_path, m
                         headers={"X-Palivane-Token": key})
     assert r.status_code == 200
     assert r.json()["action"] in ("warn", "block")
+
+
+# --- device health (capture-plane collisions & coverage gaps) ----------------------------
+
+def test_collect_device_health_shape(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("HTTPS_PROXY", "http://user:secret@127.0.0.1:8081")
+    monkeypatch.setattr(wp, "_port_listening", lambda port: True)
+    monkeypatch.setattr(wp, "_listener_name", lambda port: "mitmdump")
+    h = wp.collect_device_health()
+    assert h["proxy"]["port"] == 8081 and h["proxy"]["listening"] is True
+    assert h["proxy"]["env_points_local"] is True
+    assert "secret" not in h["proxy"]["env_proxy"]          # credentials never reported
+    assert set(h["breaker"]) == {"cooldown_active", "deauth_active"}
+    assert set(h["gaps"]) == {"wsl", "docker_present", "in_container"}
+
+
+def test_breaker_state_reads_active_cooldown(monkeypatch, tmp_path):
+    import json as _json
+    home = tmp_path / "home"
+    (home / ".palivane").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    far = 4102444800  # 2100-01-01
+    (home / ".palivane" / "proxy-breaker.json").write_text(
+        _json.dumps({"cooldown_until": far}))
+    st = wp._breaker_state()
+    assert st == {"cooldown_active": True, "deauth_active": False}
+
+
+def test_device_posture_payload_end_to_end(client, raw_client, monkeypatch):
+    key = _key(client)
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:8081")
+    monkeypatch.setattr(wp, "_port_listening", lambda port: False)  # dead-but-routed
+    body = wp.json.dumps(wp.collect_device_health(), sort_keys=True)
+    r = raw_client.post("/api/scan/device-posture",
+                        json={"content": body, "record": True},
+                        headers={"X-Palivane-Token": key})
+    assert r.status_code == 200
+    out = r.json()
+    assert out["action"] in ("warn", "block")
+    assert any(s.get("category") == "posture_gap" for s in out["signals"])
