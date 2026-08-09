@@ -39,8 +39,8 @@ from .config import _env
 # vendor's alone (Secret Manager: palivane-release-signing-key). Override for forks/tests
 # via PALIVANE_RELEASE_PUBKEY.
 VENDOR_RELEASE_PUBKEY_PEM = """-----BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEpJPi60i2koK+QeU/hJOpMnCH1TIQ
-DOr+Qjb3j446+61ofaZGRQNI68sEG6g+N7z4f78mArB2tshax27gy41enA==
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEYzLBG9xT5RSIKJoCrD/OMV/YXnjz
+ubjJD5E+aWPwopHCPTuMajbqwJaEN7rJZ+ULhyN/ff9DrzSUYTXuHrXJEw==
 -----END PUBLIC KEY-----
 """
 
