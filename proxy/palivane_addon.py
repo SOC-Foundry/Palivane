@@ -42,7 +42,7 @@ import urllib.request
 # Outbound destinations we inspect (suffix match on the request host).
 
 # Reported in the User-Agent so the console can inventory client builds per device.
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 AI_HOST_SUFFIXES = (
     "api.openai.com", "chatgpt.com", "chat.openai.com",
     "api.anthropic.com", "claude.ai",
