@@ -36,28 +36,34 @@ Neither touches the Tier-1 known-prefix matchers (AWS/GitHub/Stripe-live/…) th
 recall lead. Full backend suite green (1495 passed); one test fixture that used
 `"a"*64`-style dummy tokens was corrected to realistic bodies.
 
-## Latency (2026-08-08)
+## Latency (2026-08-08, refreshed post-#152)
 
 Per-item, in-process, judge OFF (how prod runs), Python 3.14 on x86_64 / 22 cores. Full
-scan path (`run_analysis`, engine + policy + verdict, no DB write):
+scan path (`run_analysis`, engine + policy + verdict, no DB write). These reflect the
+shared-Tier-1-pass optimization in #152 (`AnalysisInput.secret_labels()` — the 39-regex
+secret scan ran redundantly across `shadow_ai` + `prompt_threats` + the entropy self-gate;
+now once per item), which lowered every bucket vs. the pre-#152 numbers noted below:
 
-| input | bytes | p50 | p95 | p99 | max |
-| --- | --- | --- | --- | --- | --- |
-| prompt-sized | 128 | 0.28 ms | 0.51 ms | 0.77 ms | 0.92 ms |
-| file-sized | 6,384 | 6.8 ms | 11.5 ms | 13.4 ms | 13.5 ms |
-| large diff | 63,866 | 70 ms | 88 ms | 95 ms | 98 ms |
+| input | bytes | p50 | p95 | p99 | max | (was p50 → now) |
+| --- | --- | --- | --- | --- | --- | --- |
+| prompt-sized | 128 | 0.24 ms | 0.33 ms | 0.55 ms | 0.74 ms | 0.28 → 0.24 |
+| file-sized | 6,384 | 5.3 ms | 8.4 ms | 10.5 ms | 10.6 ms | 6.8 → 5.3 |
+| large diff | 63,866 | 55 ms | 74 ms | 85 ms | 92 ms | 70 → 55 |
 
 `engine.analyze` (detectors only) is within noise of these — policy/verdict assembly is
 negligible.
 
 **The read:** on **prompt-sized input — the latency-critical path** (inline gateway
 scoring, and the Cursor tab-completion / sub-50 ms budget the reviewer raised) — scoring is
-**sub-millisecond** (p99 0.77 ms), with comfortable headroom. Cost is **O(n) in content**:
-~13 ms p99 at 6 KB (fine for a file scan), but a 64 KB single item runs **~70–100 ms**,
-which **exceeds a 50 ms inline budget**. That's a non-issue for the pre-commit/CI scan path
-(not latency-critical) and for normal prompts, but a *very* large single prompt hitting the
-inline gateway would feel it — so large-input scoring is the optimization target if it ever
-lands on the interactive path (the entropy sweep over big content is the likely hotspot).
+**sub-millisecond** (p99 0.55 ms), with comfortable headroom. Cost is **O(n) in content**:
+~10 ms p99 at 6 KB (fine for a file scan). A 64 KB single item is now **~55 ms p50 / ~85 ms
+p99** (down from ~70 / ~95), so at p50 it still **edges over a strict 50 ms inline budget** —
+closer after #152 but not under it, because at that size the **Tier-2 entropy sweep**, not
+the now-deduplicated Tier-1 pass, is the dominant cost. That's a non-issue for the
+pre-commit/CI scan path (not latency-critical) and for normal prompts, but a *very* large
+single prompt hitting the inline gateway would still feel it — so the entropy sweep over big
+content is the remaining optimization target if large input ever lands on the interactive
+path.
 
 Not measured (additive, deployment-dependent): the HTTP round-trip (FastAPI + auth + one DB
 write) and judge-on (a frontier-model network call, ~100s ms–seconds — the numbers above
