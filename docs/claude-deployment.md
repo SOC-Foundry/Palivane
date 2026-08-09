@@ -254,6 +254,11 @@ mitmdump -s proxy/palivane_addon.py --listen-port 8081
 (`PALIVANE_TOKEN` is the `EXTENSION_INGEST_TOKEN` from prerequisites, or a per-tenant
 `ak_…` key. Run it as a service and scale horizontally — the addon is stateless.)
 
+> **Version floor:** the addon uses async hooks with `asyncio.to_thread`, so it needs
+> **mitmproxy ≥ 8 on Python ≥ 3.9**. The desktop launchers install a current
+> self-contained binary automatically; this only matters for manual `pip install`s and
+> `PALIVANE_MITM_VERSION` pins — don't pin below 8.
+
 ### Single machine (pilot / testing)
 
 **macOS**

@@ -17,7 +17,7 @@ Local *stdio* MCP servers never touch the network; those are governed by policy 
 allowlist) and surfaced via the tool definitions the agent sends to the LLM API, which we
 *can* see here.
 
-Run:
+Run (mitmproxy >= 8 on Python >= 3.9 — the hooks are async and use asyncio.to_thread):
     pip install mitmproxy
     PALIVANE_URL=http://localhost:8090 PALIVANE_TOKEN=ext-demo-token-123 \
     PALIVANE_PROXY_ENFORCE=true \
