@@ -29,6 +29,7 @@ standalone; the mitmproxy hook is a thin wrapper.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -586,7 +587,11 @@ class PalivaneGuard:
         if is_ai_host(flow.request.pretty_host):
             flow.response.stream = True
 
-    def request(self, flow) -> None:
+    async def request(self, flow) -> None:
+        # Async so backend scan calls run in a worker thread: a sync hook blocks
+        # mitmproxy's whole event loop, so one slow/unreachable Palivane backend froze
+        # EVERY proxied connection (clients saw dead sockets and retry-stormed). Async
+        # holds only this flow for its verdict; all other traffic keeps moving.
         from mitmproxy import http  # imported lazily so unit tests need no mitmproxy
 
         req = flow.request
@@ -603,7 +608,8 @@ class PalivaneGuard:
                 prompt = harvest_prompt(raw)
             if prompt.strip():
                 tool = detect_tool(req.headers.get("user-agent", ""))
-                verdict = scan(prompt, f"https://{req.pretty_host}", tool=tool)
+                verdict = await asyncio.to_thread(
+                    scan, prompt, f"https://{req.pretty_host}", tool=tool)
                 if should_block(verdict, self.enforce):
                     flow.response = http.Response.make(
                         400, ai_block_body(verdict), {"Content-Type": "application/json"})
@@ -612,7 +618,7 @@ class PalivaneGuard:
             #    the LLM traffic even for local stdio MCP (agentless).
             act = extract_agentic(raw)
             if act:
-                va = scan_mcp(act, transport="via-llm-api")
+                va = await asyncio.to_thread(scan_mcp, act, transport="via-llm-api")
                 if should_block(va, self.enforce):
                     flow.response = http.Response.make(
                         400, ai_block_body(va), {"Content-Type": "application/json"})
@@ -621,9 +627,10 @@ class PalivaneGuard:
             #    agentless handle on local (stdio) MCP servers we can't otherwise see.
             defs = extract_tool_defs(raw)
             if defs:
-                v = scan_mcp({"method": "tools/advertised",
-                              "tool_descriptions": [d["description"] for d in defs]},
-                             transport="via-llm-api")
+                v = await asyncio.to_thread(
+                    scan_mcp, {"method": "tools/advertised",
+                               "tool_descriptions": [d["description"] for d in defs]},
+                    transport="via-llm-api")
                 if should_block(v, self.enforce):
                     flow.response = http.Response.make(
                         400, ai_block_body(v), {"Content-Type": "application/json"})
@@ -633,14 +640,16 @@ class PalivaneGuard:
         if is_mcp(raw):
             activity = extract_mcp_activity(raw)
             if activity:
-                verdict = scan_mcp(activity, server=req.pretty_host, transport="http")
+                verdict = await asyncio.to_thread(
+                    scan_mcp, activity, server=req.pretty_host, transport="http")
                 if should_block(verdict, self.enforce):
                     flow.response = http.Response.make(
                         200, mcp_block_body(verdict), {"Content-Type": "application/json"})
 
-    def response(self, flow) -> None:
+    async def response(self, flow) -> None:
         # Tool poisoning lives in the server's tools/list *response* — vet it, and in
         # enforce mode replace a poisoned listing so those tools never reach the agent.
+        # Async for the same event-loop reason as request() above.
         req, resp = flow.request, flow.response
         if req.method != "POST" or resp is None or is_ai_host(req.pretty_host):
             return
@@ -649,7 +658,8 @@ class PalivaneGuard:
             return
         activity = extract_mcp_activity(body)
         if activity and activity.get("method") == "tools/list.result":
-            verdict = scan_mcp(activity, server=req.pretty_host, transport="http")
+            verdict = await asyncio.to_thread(
+                scan_mcp, activity, server=req.pretty_host, transport="http")
             if should_block(verdict, self.enforce):
                 resp.status_code = 200
                 resp.content = mcp_block_body(verdict)
