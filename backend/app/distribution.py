@@ -268,14 +268,16 @@ echo "Verifying release integrity ..."
 verify_release || {{ echo "Aborting install."; exit 1; }}
 
 echo "Installing Palivane CLI into $BIN ..."
-mkdir -p "$BIN"
+# Stage + verify EVERYTHING before touching $BIN: a hash mismatch on any file must leave
+# no partial install behind, not just block the one tampered file.
 for t in $TOOLS; do
   curl -fsSL "$PALIVANE_URL/cli/$t" -o "$TMP/$t"
   if ! file_matches_manifest "$t" "$TMP/$t"; then
     echo "  ✗ $t failed its SHA-256 check — refusing to install (possible tampering)"; exit 1
   fi
-  install -m 0755 "$TMP/$t" "$BIN/$t"
 done
+mkdir -p "$BIN"
+for t in $TOOLS; do install -m 0755 "$TMP/$t" "$BIN/$t"; done
 echo "  installed: $TOOLS"
 
 # Put ~/.palivane/bin on PATH for future shells (bash, zsh, fish), and this one.
