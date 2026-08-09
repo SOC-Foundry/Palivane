@@ -43,6 +43,9 @@ Windows-specific notes (deliberate choices, mirrored from the bash version's pos
 Config (env): PALIVANE_URL, PALIVANE_PROXY_PORT (8081), PALIVANE_PROXY_ENFORCE (false),
 PALIVANE_MITM_VERSION, PALIVANE_CLI_TOOLS ("claude codex gemini"),
 PALIVANE_SECRETS_ENGINE (trufflehog|gitleaks; default = built-in patterns).
+Corporate-proxy chaining: PALIVANE_UPSTREAM_PROXY (http://corp:port; auto-adopts the
+machine's WinINET/HTTPS_PROXY when unset), PALIVANE_UPSTREAM_CA, PALIVANE_UPSTREAM_AUTH,
+PALIVANE_UPSTREAM_INSECURE.
 PowerShell 5.1+ (ships with Windows 10/11); no modules beyond the in-box ones.
 #>
 [CmdletBinding()]
@@ -82,6 +85,25 @@ $SecretsCmd      = Join-Path $ShimDir "palivane-secrets.cmd"
 $SecretsEngine   = if ($env:PALIVANE_SECRETS_ENGINE) { $env:PALIVANE_SECRETS_ENGINE } else { "" }
 $InetKey     = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
 $ShimMarker  = "palivane-desktop CLI capture shim"
+# Corporate-proxy chaining. On a fleet behind a mandatory egress proxy (Zscaler/Netskope/
+# corp SWG) mitmdump can't reach the internet directly — it must forward through that proxy.
+# Set PALIVANE_UPSTREAM_PROXY=http://corp:port to run mitmdump in `--mode upstream:`; point
+# PALIVANE_UPSTREAM_CA at the corp root bundle if it TLS-inspects. When unset, Invoke-Install
+# auto-adopts the machine's existing WinINET / HTTPS_PROXY setting.
+$UpstreamProxy    = $env:PALIVANE_UPSTREAM_PROXY
+$UpstreamAuth     = $env:PALIVANE_UPSTREAM_AUTH
+$UpstreamCA       = $env:PALIVANE_UPSTREAM_CA
+$UpstreamInsecure = $env:PALIVANE_UPSTREAM_INSECURE
+
+# Extra mitmdump flags for corporate-proxy chaining, appended to the launcher command line.
+function Get-UpstreamArgs {
+    if (-not $UpstreamProxy) { return "" }
+    $a = " --mode upstream:$UpstreamProxy"
+    if ($UpstreamAuth)     { $a += " --upstream-auth $UpstreamAuth" }
+    if ($UpstreamCA)       { $a += ' --set "ssl_verify_upstream_trusted_ca=' + $UpstreamCA + '"' }
+    if ($UpstreamInsecure) { $a += " --ssl-insecure" }
+    return $a
+}
 
 function Log([string]$msg) { Write-Host "[palivane-desktop] $msg" -ForegroundColor Cyan }
 function Die([string]$msg) { Write-Host "[palivane-desktop] $msg" -ForegroundColor Red; exit 1 }
@@ -309,7 +331,7 @@ function Write-Launcher([string]$mitmdump, [string]$palivaneUrl, [string]$token,
         "set ""PALIVANE_TOKEN=$token""",
         "set ""PALIVANE_PROXY_ENFORCE=$enforce""",
         "set ""PALIVANE_PROXY_USER=$user""",
-        """$mitmdump"" -q -s ""$Addon"" --listen-port $Port"
+        """$mitmdump"" -q -s ""$Addon"" --listen-port $Port$(Get-UpstreamArgs)"
     ) -join "`r`n"
     Set-Content -LiteralPath $LauncherCmd -Value $cmd -Encoding ascii
     # wscript launcher: runs the .cmd with window style 0, so no console window flashes
@@ -568,6 +590,28 @@ function Invoke-Install {
         Log "CLI-only mode: skipping CA-store trust + WinINET user proxy."
     } else {
         Trust-CA
+    }
+    # If the machine is already behind a corporate egress proxy and no explicit upstream was
+    # set, adopt it — so a Zscaler/Netskope-configured device works out of the box. Prefer an
+    # HTTPS_PROXY env var, else the WinINET user proxy (skip loopback = us from a prior run).
+    if (-not $UpstreamProxy -and -not $CliOnly) {
+        $amb = $env:HTTPS_PROXY; if (-not $amb) { $amb = $env:https_proxy }
+        if (-not $amb) {
+            try {
+                $cur = Get-ItemProperty -Path $InetKey -ErrorAction SilentlyContinue
+                if ($cur.ProxyEnable -eq 1 -and $cur.ProxyServer) { $amb = $cur.ProxyServer }
+            } catch {}
+        }
+        # WinINET may store a per-protocol list ("http=h:p;https=h:p"); pull the https entry.
+        if ($amb -match "https=([^;]+)") { $amb = $Matches[1] }
+        if ($amb -and $amb -notmatch "127\.0\.0\.1|localhost|::1") {
+            if ($amb -notmatch "^\w+://") { $amb = "http://$amb" }   # mitmproxy wants a URL
+            $script:UpstreamProxy = $amb
+            Log "detected an existing egress proxy ($amb) — chaining through it."
+        }
+    }
+    if ($UpstreamProxy) {
+        Log "chaining egress through upstream proxy: $UpstreamProxy$(if ($UpstreamCA) { " (trusting $UpstreamCA upstream)" })"
     }
     $enforce = Write-Launcher $mitmdump $palivaneUrl $settings.Token $settings.User
     Start-ProxyTask           # dies (and rolls the task back) if the proxy never comes up
