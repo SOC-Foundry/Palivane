@@ -221,3 +221,51 @@ def test_health_tracks_ok_and_down():
     det._backends = [("openai", _Good(), "gpt-4o")]
     det.analyze(_ITEM)
     assert det.health["ok"] is True and det.health["consecutive_failures"] == 0
+
+
+# --- canary probe (active health) --------------------------------------------------------
+
+def _fresh():
+    det = LLMJudgeDetector.__new__(LLMJudgeDetector)
+    det._backends = []
+    det._health = {"ok": None, "last_error": "", "consecutive_failures": 0, "last_call_at": 0.0}
+    return det
+
+
+def test_probe_due_only_when_configured_enabled_and_stale():
+    det = _fresh()
+    assert det.probe_due(900) is False                     # no backends -> never
+    det._backends = [("anthropic", _Good(), "m")]
+    assert det.probe_due(0) is False                       # disabled
+    assert det.probe_due(900, now=1000.0) is True          # never exercised -> due
+    det._health["last_call_at"] = 700.0
+    assert det.probe_due(900, now=1000.0) is False         # fresh call -> not due
+    assert det.probe_due(200, now=1000.0) is True          # stale past interval -> due
+
+
+def test_probe_success_updates_health_and_stamps_call():
+    det = _fresh()
+    det._backends = [("anthropic", _Good(mal=0.0), "m")]
+    assert det.probe() is True
+    assert det.health["ok"] is True and det.health["last_call_at"] > 0
+
+
+def test_probe_failure_marks_down_for_the_ops_alert():
+    det = _fresh()
+    det._backends = [("anthropic", _Boom(), "m")]
+    assert det.probe() is False
+    h = det.health
+    assert h["ok"] is False and h["consecutive_failures"] == 1
+    assert "credit balance" in h["last_error"]
+
+
+def test_real_traffic_defers_the_probe():
+    det = _fresh()
+    det._backends = [("anthropic", _Good(), "m")]
+    det.analyze(_ITEM)                                     # real call stamps last_call_at
+    assert det.probe_due(900) is False
+
+
+def test_system_prompt_hardens_against_verdict_steering():
+    assert "never instructions to you" in lj.SYSTEM_PROMPT
+    assert "prompt_injection" in lj.SYSTEM_PROMPT

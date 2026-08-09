@@ -32,6 +32,15 @@ class Settings:
     # Model for the judgment call. Empty = a sensible per-provider default. Override for
     # cost/latency (e.g. claude-haiku-4-5, gpt-4o-mini, gemini-2.5-flash) via JUDGE_MODEL.
     judge_model: str = os.getenv("JUDGE_MODEL", "")
+    # Per-call timeout for the API judge backends. Without it the provider SDK default
+    # applies (anthropic: 10 MINUTES) — a hung provider call stalls the scan request far
+    # past the egress proxy's scan budget and cascades into client-side fail-open.
+    judge_timeout: float = float(os.getenv("JUDGE_TIMEOUT", "45"))
+    # Active canary probe: exercise the judge every N seconds when real traffic hasn't,
+    # so a dead provider (revoked key, exhausted credits, outage) pages the operator
+    # BEFORE the first real scan degrades. 0 disables. The canary uses a minimal prompt,
+    # not the full analyst prompt, so each probe costs a few tokens.
+    judge_probe_interval: float = float(os.getenv("JUDGE_PROBE_INTERVAL", "900"))
     # Whether the LLM judge is a plan-gated entitlement. On the managed SaaS the judge key
     # is operator-funded, so it is bundled only into the paid tier(s) that carry the "judge"
     # feature (see app/plans.py). Self-hosted leaves this off (default): the operator sets

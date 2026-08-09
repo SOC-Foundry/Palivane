@@ -98,6 +98,12 @@ async def lifespan(_app: FastAPI):
             try:
                 await asyncio.sleep(300)   # 5-minute tick; per-tenant hourly/daily gating in run_digests
                 ticks += 1
+                # Active canary: exercise the judge when nothing (real traffic or a prior
+                # canary) has within the probe interval, so a provider that died during a
+                # quiet period is discovered — and paged just below — before a real scan
+                # pays for the discovery.
+                if engine.judge.probe_due(settings.judge_probe_interval):
+                    await asyncio.to_thread(engine.judge.probe)
                 # Judge health: page the operator (once) when the judge goes down and once
                 # when it recovers — so exhausted credits / an outage can't sit silent.
                 jh = engine.judge.health
