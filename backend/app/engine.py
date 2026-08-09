@@ -15,6 +15,7 @@ from .detectors import (
     AnalysisInput,
     CIGuardDetector,
     DepGuardDetector,
+    DevicePostureDetector,
     OversharingDetector,
     ExtGuardDetector,
     LLMJudgeDetector,
@@ -39,11 +40,12 @@ class Engine:
         self.agent_rules = AgentRulesDetector()
         self.oversharing = OversharingDetector()
         self.ci_guard = CIGuardDetector()
+        self.device_posture = DevicePostureDetector()
         self.judge = LLMJudgeDetector()
         self.detectors = [self.prompt_threats, self.shadow_ai, self.mcp_guard,
                           self.dep_guard, self.ext_guard, self.secrets_at_rest,
                           self.agent_safety, self.agent_rules, self.oversharing,
-                          self.ci_guard, self.judge]
+                          self.ci_guard, self.device_posture, self.judge]
 
     @property
     def judge_enabled(self) -> bool:

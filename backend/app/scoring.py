@@ -76,6 +76,9 @@ _ATTACK_CATEGORIES = {
     Category.DATA_OVERSHARING,
     # Agent authorization — an agent acting outside its least-privilege role is the risk.
     Category.AGENT_AUTHZ,
+    # Device health — a capture plane that is down/conflicted/failing-open IS the exposure
+    # (traffic passing ungoverned), even though no attacker is present in the content.
+    Category.POSTURE_GAP,
 }
 
 

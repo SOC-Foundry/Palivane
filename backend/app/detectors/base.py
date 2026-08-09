@@ -30,6 +30,7 @@ class Surface(str, Enum):
     CI = "ci"             # CI runners — GitHub Actions workflow posture & AI agents in CI
     AGENT_RULES = "agent_rules"  # Agent instruction files (CLAUDE.md/.cursorrules/skills) — hidden-instruction injection
     SESSION = "session"          # Correlated attack chains across an actor's recent activity
+    DEVICE = "device"            # Device health — capture-plane collisions & coverage gaps
 
 
 class Category(str, Enum):
@@ -66,6 +67,8 @@ class Category(str, Enum):
     AGENT_AUTHZ = "agent_authz"                        # agent took an action outside its least-privilege role
     # --- Session behavioral correlation (session) ---
     SESSION_CORRELATION = "session_correlation"        # a sequence of actions forms an attack chain
+    # --- Device health (device) ---
+    POSTURE_GAP = "posture_gap"                        # capture plane down/conflicted or a coverage gap
 
 
 @dataclass(frozen=True)
