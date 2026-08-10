@@ -53,6 +53,17 @@ class AIUsageIngest(BaseModel):
     tool: str = ""          # capturing tool id (e.g. "claude-code") for per-tool policy
 
 
+class A2AIngest(BaseModel):
+    """One agent-to-agent message — an orchestrator handing a sub-agent a task, or a peer
+    agent's output fed to another. Scanned for a poisoned/injected instruction (OWASP
+    Agentic T12) or sensitive data crossing the hop, and correlated into the receiving
+    agent's session so a poisoned message → later exfiltration reads as one chain."""
+    content: str = Field(min_length=1, max_length=MAX_CONTENT)   # the message body
+    from_agent: str = ""     # sending agent identity
+    to_agent: str = ""       # receiving agent identity — the session actor for correlation
+    protocol: str = ""       # a2a | mcp-sampling | orchestrator | … (informational)
+
+
 class MCPIngest(BaseModel):
     """A normalized MCP JSON-RPC activity the egress proxy captured (agentic tool-use)."""
     method: str = ""                                   # tools/call, resources/read, initialize, tools/list.result

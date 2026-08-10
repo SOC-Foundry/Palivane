@@ -126,7 +126,7 @@ class PromptThreatDetector:
     name = "prompt_threats"
     # AGENT_RULES: instruction files are prompt context the agent obeys, so injection
     # phrasing there is a rules-file backdoor — the same detection as a live prompt.
-    surfaces = {Surface.LLM_IO, Surface.AI_USAGE, Surface.AGENT_RULES}
+    surfaces = {Surface.LLM_IO, Surface.AI_USAGE, Surface.AGENT_RULES, Surface.A2A}
 
     def analyze(self, item: AnalysisInput) -> list[Signal]:
         precision = item.surface == Surface.AI_USAGE  # code-heavy: high-precision subset
