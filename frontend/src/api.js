@@ -87,6 +87,14 @@ export const api = {
   agentRoleUpsert: (payload) => req("/agent-roles", { method: "POST", body: JSON.stringify(payload) }),
   agentRoleDelete: (id) => req(`/agent-roles/${id}`, { method: "DELETE" }),
   policies: () => req("/policies"),
+  complianceReport: () => req("/compliance/report"),
+  complianceCsv: async () => {
+    const token = getToken();
+    const res = await fetch(BASE + "/compliance/report?format=csv",
+      { headers: token ? { authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) throw new Error(`${res.status}`);
+    return res.text();
+  },
   policyOverrideUpsert: (payload) =>
     req("/policies/overrides", { method: "POST", body: JSON.stringify(payload) }),
   policyOverrideDelete: (id) =>

@@ -2150,6 +2150,36 @@ def policies_catalog(current: User = Depends(require_admin), db: Session = Depen
     return out
 
 
+@app.get("/api/compliance/report")
+def compliance_report_endpoint(request: Request, format: str = "json",
+                               current: User = Depends(require_admin),
+                               db: Session = Depends(get_db)):
+    """Framework-coverage report for this tenant's live policy — OWASP LLM Top 10, OWASP
+    Agentic, NIST AI RMF, and EU AI Act. Generated from the checks the org actually has
+    enabled, so it's an evidence artifact for a security questionnaire, not a static claim.
+    `format=csv` returns a flat control-by-control CSV for pasting into an RFP response."""
+    from .policies import compliance_report as build_report, FRAMEWORK_LABELS, parse_disabled
+    tenant = db.get(Tenant, current.tenant_id)
+    disabled = parse_disabled(getattr(tenant, "disabled_checks", "") if tenant else "")
+    report = build_report(disabled)
+    report["org"] = (tenant.name or tenant.slug) if tenant else ""
+    if format == "csv":
+        import csv, io
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["framework", "control", "control_name", "status",
+                    "enabled_checks", "all_mapped_checks"])
+        for fw in report["frameworks"]:
+            for c in fw["controls"]:
+                w.writerow([fw["framework"], c["code"], c["name"], c["status"],
+                            "; ".join(c["enabled_checks"]), "; ".join(c["checks"])])
+        from fastapi.responses import Response
+        return Response(buf.getvalue(), media_type="text/csv",
+                        headers={"Content-Disposition": 'attachment; filename="palivane-compliance.csv"'})
+    report["framework_labels"] = FRAMEWORK_LABELS
+    return report
+
+
 @app.post("/api/policies/overrides")
 def policy_override_upsert(body: PolicyOverrideIn, current: User = Depends(require_admin),
                            db: Session = Depends(get_db)):

@@ -939,6 +939,13 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 .policy-state.on { background: rgba(70,201,139,0.14); color: var(--benign); }
 .policy-state.off { background: rgba(138,147,166,0.14); color: var(--muted); }
 .policy-desc { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin-top: 3px; }
+.policy-frameworks { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.fw-chip { font-size: 10.5px; font-weight: 700; letter-spacing: .2px; border-radius: 5px;
+  padding: 1px 6px; border: 1px solid; white-space: nowrap; }
+.fw-owasp  { color: #63b3ed; border-color: rgba(99,179,237,.4);  background: rgba(99,179,237,.10); }
+.fw-agentic{ color: #b388ff; border-color: rgba(179,136,255,.4); background: rgba(179,136,255,.10); }
+.fw-nist   { color: #48bb78; border-color: rgba(72,187,120,.4);  background: rgba(72,187,120,.10); }
+.fw-eu     { color: #ffcf6b; border-color: rgba(255,207,107,.4); background: rgba(255,207,107,.10); }
 .toggle { flex: none; width: 42px; height: 24px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel-2); position: relative; cursor: pointer; transition: background .14s, border-color .14s; padding: 0; }
 .toggle:disabled { opacity: .6; cursor: default; }
 .toggle-knob { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: transform .14s, background .14s; }
