@@ -216,6 +216,41 @@ export default function CoverageMatrix() {
 
       <section className="lp-section alt">
         <div className="lp-wrap">
+          <h2 className="lp-h2">Measured detection quality</h2>
+          <p className="lp-sub" style={{ textAlign: "left" }}>
+            Numbers from our own labeled corpora, offline detectors only (the optional LLM
+            judge disabled), measured 2026-08-10. The corpora and the harnesses that produce
+            these are in the repo — reproduce it yourself:
+            {" "}<code>pytest tests/bench_recall.py tests/bench_false_positives.py tests/bench_evasion.py -s</code>.
+            We publish the weak numbers too; a benchmark that only flatters is a brochure.
+          </p>
+          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+            <div className="lp-card">
+              <div className="bench-stat">95.9%</div>
+              <h3>Recall</h3>
+              <p>93 of 97 malicious payloads detected and actioned across injection,
+                 jailbreak, exfiltration, PII, secrets, dangerous commands.</p>
+            </div>
+            <div className="lp-card">
+              <div className="bench-stat">5.8%</div>
+              <h3>False-positive rate</h3>
+              <p>6 of ~100 benign samples. Zero on prose, business/legal, AI prompts, and
+                 benign MCP — concentrated in real source code (26.7%), which is the honest
+                 weak spot we're still driving down.</p>
+            </div>
+            <div className="lp-card">
+              <div className="bench-stat">19</div>
+              <h3>Known evasion bypasses</h3>
+              <p>Adversarial transforms (leetspeak, homoglyphs, spacing, translation) that
+                 still defeat the offline detectors in our own evasion matrix. Tracked, not
+                 hidden — the LLM judge closes most of these when enabled.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="lp-section">
+        <div className="lp-wrap">
           <h2 className="lp-h2">Known gaps</h2>
           <p className="lp-sub">Where the visibility ends. If a vendor tells you their coverage
              has no edges, ask harder questions.</p>
@@ -230,7 +265,7 @@ export default function CoverageMatrix() {
         </div>
       </section>
 
-      <section className="lp-section">
+      <section className="lp-section alt">
         <div className="lp-wrap">
           <h2 className="lp-h2">The threat model — including how to bypass us</h2>
           <p className="lp-sub">Every control above runs on a machine its user administers, so
