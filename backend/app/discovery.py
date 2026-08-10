@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from .ai_catalog import CATEGORY_LABEL, classify
+from .ai_catalog import CATEGORY_LABEL, classify, classify_name
 from .detectors.shadow_ai import _PERSONAL_EMAIL_DOMAINS
 from .models import DiscoveredUsage, TenantDomain
 
@@ -167,6 +167,38 @@ def ingest_logs(db, tenant_id, events) -> dict:
     db.commit()
     return {"events": len(events), "matched": matched, "unrecognized": unknown,
             "tools_seen": sorted(tools), "new_pairs": new_actors_tools}
+
+
+# OAuth scopes that give a third-party app broad reach into the SaaS tenant's data —
+# an AI app holding these is reading mail/files/chat, not just a name/email.
+_BROAD_SCOPE_MARKERS = ("mail", "gmail", "drive", "files.read", "files.readwrite",
+                        "documents", "spreadsheets", "calendar", "contacts", "chat",
+                        "channels:history", "im:history", "sites.read", "full_access")
+
+
+def ingest_oauth_grants(db, tenant_id, grants) -> dict:
+    """Discover AI tools reached via OAuth grants into a SaaS platform — the channel a
+    proxy/extension can't see. Classify each granted app against the catalog; an AI app is
+    recorded as discovered usage (source='oauth'), flagged as sensitive when it holds broad
+    data scopes. Returns a summary."""
+    matched = unknown = broad = 0
+    for g in grants:
+        name = (getattr(g, "app_name", "") or "").strip()
+        hit = classify_name(name)
+        if not hit:
+            unknown += 1
+            continue
+        matched += 1
+        scopes = [str(s).lower() for s in (getattr(g, "scopes", []) or [])]
+        is_broad = any(any(m in s for m in _BROAD_SCOPE_MARKERS) for s in scopes)
+        if is_broad:
+            broad += 1
+        actor_n = _norm(getattr(g, "user", "")) or "unknown"
+        # A broad-scope AI grant is the sensitive case — it's actively reading SaaS data.
+        _upsert(db, tenant_id, actor_n, hit, source="oauth",
+                sensitive=is_broad, risk=70 if is_broad else 0)
+    db.commit()
+    return {"grants": len(grants), "ai_apps": matched, "broad_scope": broad, "unknown": unknown}
 
 
 def build_inventory(db, tenant_id, sanctioned_raw: str) -> dict:

@@ -497,5 +497,20 @@ class DiscoveryEvent(BaseModel):
     last_seen: str = ""                  # ISO timestamp (optional)
 
 
+class OAuthGrant(BaseModel):
+    """One third-party OAuth app a user granted access to a SaaS platform (Google Workspace,
+    Microsoft 365, Slack, …). Where AI tools plug into SaaS via OAuth, they leave no network
+    traffic a proxy/extension would see — this is the channel network capture misses."""
+    app_name: str = ""                   # the OAuth app's display name
+    app_id: str = ""                     # client id, if the export carries it
+    user: str = ""                       # the granting user
+    provider: str = ""                   # google | microsoft | slack | … (informational)
+    scopes: list[str] = Field(default_factory=list, max_length=200)
+
+
+class OAuthGrantIngest(BaseModel):
+    grants: list[OAuthGrant] = Field(min_length=1, max_length=50000)
+
+
 class DiscoveryIngest(BaseModel):
     events: list[DiscoveryEvent] = Field(min_length=1, max_length=50000)

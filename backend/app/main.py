@@ -37,6 +37,7 @@ from .schemas import (
     CoverageRequest,
     DevicePostureScan,
     DiscoveryIngest,
+    OAuthGrantIngest,
     IDEExtScan,
     OversharingScan,
     PolicyOverrideIn,
@@ -2209,6 +2210,18 @@ def discovery_ingest(body: DiscoveryIngest, current: User = Depends(require_admi
     is how you discover shadow AI on devices the capture planes never touched."""
     from .discovery import ingest_logs
     return ingest_logs(db, current.tenant_id, body.events)
+
+
+@app.post("/api/discovery/oauth-grants")
+def discovery_oauth_grants(body: OAuthGrantIngest, current: User = Depends(require_admin),
+                           db: Session = Depends(get_db)):
+    """Discover AI tools reached via OAuth grants into your SaaS (Google Workspace, M365,
+    Slack, …) — AI embedded in SaaS leaves no network traffic the proxy/extension sees, so
+    it's invisible to capture. Feed an admin OAuth-app export; matches against the AI-tool
+    catalog are recorded as discovered usage, flagged sensitive when the app holds broad
+    data scopes (mail/drive/chat). Admin-only."""
+    from .discovery import ingest_oauth_grants
+    return ingest_oauth_grants(db, current.tenant_id, body.grants)
 
 
 @app.get("/api/policies")
