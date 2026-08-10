@@ -288,6 +288,7 @@ class TenantUpdate(BaseModel):
     # Local capture planes (CLI hooks + desktop proxy): "on"/"off" force it, "inherit"
     # follows the global CLIENT_ENFORCE (default monitor).
     client_enforce: Literal["on", "off", "inherit"] | None = None
+    redact_mode: Literal["on", "off", "inherit"] | None = None   # coaching mode (tri-state)
     gateway_block_severity: str | None = None  # ""|low|suspicious|high|critical
     mcp_block_severity: str | None = None      # block threshold for capture-plane verdicts
     ci_block_severity: str | None = None       # block threshold for CI-runner scans

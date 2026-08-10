@@ -1099,6 +1099,8 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.judge_enabled = _JUDGE[body.judge]
     if body.store_content is not None:
         tenant.store_content = _JUDGE[body.store_content]   # reuse on/off/inherit -> True/False/None
+    if body.redact_mode is not None:
+        tenant.redact_mode = _JUDGE[body.redact_mode]       # coaching mode (tri-state)
     if body.retention_days is not None:
         if body.retention_days < 0:
             raise HTTPException(status_code=400, detail="retention_days must be >= 0")

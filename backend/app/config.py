@@ -93,6 +93,11 @@ class Settings:
     # Redact secrets/PII from stored finding content so Palivane's own DB isn't a
     # plaintext-secret honeypot. Detection still runs on the raw content.
     redact_findings: bool = _env("PALIVANE_REDACT_FINDINGS", "true").lower() in ("1", "true", "yes")
+    # Coaching mode: turn a redactable data-loss BLOCK into a WARN that shows the cleaned
+    # version + a sanctioned-tool redirect, instead of a hard stop. Off by default (blocking
+    # is the safe default); a tenant opts in. Named "redact" because the coaching UI surfaces
+    # the redacted prompt the user can send instead.
+    redact_mode: bool = _env("PALIVANE_REDACT_MODE", "").lower() in ("1", "true", "yes")
     # Encrypt stored finding content at rest (decrypted on read for authorized admins).
     # Opt-in: requires a durable PALIVANE_ENCRYPTION_KEY/PALIVANE_SECRET_KEY (key loss = data loss).
     encrypt_findings: bool = _env("PALIVANE_ENCRYPT_FINDINGS", "").lower() in ("1", "true", "yes")

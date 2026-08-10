@@ -47,6 +47,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     dep_denylist: tenant?.dep_denylist || "",
     gateway_enforce: enforceValue(tenant),
     client_enforce: clientEnforceValue(tenant),
+    redact_mode: tenant?.redact_mode === true ? "on" : tenant?.redact_mode === false ? "off" : "inherit",
     gateway_block_severity: tenant?.gateway_block_severity || "",
     mcp_block_severity: tenant?.mcp_block_severity || "",
     ci_block_severity: tenant?.ci_block_severity || "",
@@ -70,6 +71,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         dep_denylist: org.dep_denylist,
         gateway_enforce: org.gateway_enforce,
         client_enforce: org.client_enforce,
+        redact_mode: org.redact_mode,
         gateway_block_severity: org.gateway_block_severity,
         mcp_block_severity: org.mcp_block_severity,
         ci_block_severity: org.ci_block_severity,
@@ -481,6 +483,18 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
               <option value="on">Enforce (block risky prompts & tool calls)</option>
               <option value="off">Monitor (confirmed secret/PII leaks still block)</option>
             </select>
+          </label>
+          <label>Coaching mode (secrets / PII)
+            <select value={org.redact_mode} onChange={setField("redact_mode")}>
+              <option value="inherit">Inherit (global)</option>
+              <option value="on">Coach — warn + show cleaned version</option>
+              <option value="off">Block (hard stop)</option>
+            </select>
+            <span className="muted" style={{ fontSize: 11.5, marginTop: 3 }}>
+              When on, a prompt blocked <em>only</em> for a secret or PII becomes a warning that
+              shows the redacted version and points to a sanctioned tool — the user chooses.
+              Injection, source-code, and unsanctioned-destination blocks are unaffected.
+            </span>
           </label>
           <label>Gateway block severity
             <select value={org.gateway_block_severity} onChange={setField("gateway_block_severity")}>
