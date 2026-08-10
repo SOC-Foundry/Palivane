@@ -240,7 +240,7 @@ class ShadowAIDetector:
     # Also runs on the gateway's llm_io surface so first-party LLM calls get data-loss
     # detection on top of Module B attack detection, and on the mcp surface so secrets/PII
     # in an agent's tool-call arguments are caught alongside the MCP-guard action checks.
-    surfaces = {Surface.AI_USAGE, Surface.LLM_IO, Surface.MCP}
+    surfaces = {Surface.AI_USAGE, Surface.LLM_IO, Surface.MCP, Surface.A2A}
 
     def analyze(self, item: AnalysisInput) -> list[Signal]:
         text = f"{item.subject}\n{item.content}"
@@ -263,7 +263,7 @@ class ShadowAIDetector:
         # step and BOTH the secret-leak and the high-entropy detectors need it — _scan_secrets
         # as its first (unnormalized) attempt, _scan_high_entropy only to avoid double-flagging.
         # Compute it ONCE here and thread it in, rather than re-scanning the full text twice.
-        if item.surface in (Surface.AI_USAGE, Surface.LLM_IO, Surface.MCP):
+        if item.surface in (Surface.AI_USAGE, Surface.LLM_IO, Surface.MCP, Surface.A2A):
             raw_secrets = item.secret_labels()   # cached raw pass, shared across detectors
             signals.extend(self._scan_secrets(text, low_signal, raw_secrets))
             signals.extend(self._scan_high_entropy(text, item.channel, low_signal,

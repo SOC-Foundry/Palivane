@@ -26,6 +26,7 @@ from .detectors import AnalysisInput, Surface
 from .engine import engine
 from .models import Agent, AgentRole, Finding, PolicyOverride, Tenant, User
 from .schemas import (
+    A2AIngest,
     AIUsageIngest,
     AnalyzeRequest,
     BatchAnalyzeRequest,
@@ -927,6 +928,45 @@ def ingest_ai_usage(
         # What this client SHOULD be running, so a stale install is visible in its own logs
         # (the actual refresh happens at session start via palivane-posture, never mid-call).
         "client_latest": _client_latest(user_agent),
+    }
+
+
+@app.post("/api/ingest/a2a")
+def ingest_a2a(
+    body: A2AIngest,
+    x_palivane_token: str = Header(default=""),
+    x_palivane_agent: str = Header(default=""),
+    user_agent: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Scan one agent-to-agent message. As multi-agent systems spread, the dangerous hop is
+    one agent's output becoming another's instruction — a poisoned message (OWASP Agentic
+    T12) or sensitive data crossing between agents that no single agent's own logs show.
+
+    Attributed to the RECEIVING agent (to_agent) as the session actor, so it folds into that
+    agent's behavioral chain: a poisoned inbound message followed by that agent exfiltrating
+    reads as one correlated attack, not two unrelated events. Token-gated like other ingest."""
+    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
+    _enforce_rate(db, tenant_id)
+    to_agent = (body.to_agent or "").strip() or default_actor
+    frm = (body.from_agent or "").strip() or "unknown-agent"
+    agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
+    _record_heartbeat(db, tenant_id, to_agent, "a2a", frm, user_agent)
+    item = AnalysisInput(
+        content=body.content, sender=to_agent,
+        subject=f"A2A: {frm} → {to_agent}", channel="a2a", surface=Surface.A2A,
+        metadata={"from_agent": frm, "to_agent": to_agent, "protocol": body.protocol or "a2a"},
+    )
+    result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id, agent=agent,
+                          persist_benign=settings.usage_persist_benign)
+    return {
+        "action": _action_for(result["severity"]),
+        "risk_score": result["risk_score"],
+        "severity": result["severity"],
+        "signals": result["signals"],
+        "finding_id": result["finding_id"],
+        "remediation": remediation_for(result["signals"]),
+        "enforce": _client_enforce_for(tenant_id, to_agent, "a2a", db),
     }
 
 

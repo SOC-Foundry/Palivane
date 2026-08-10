@@ -48,6 +48,7 @@ _SURFACE_VENDOR = {
     "secrets": "Endpoint",
     "agent_rules": "Agent rules file",
     "oversharing": "Enterprise LLM",
+    "a2a": "Agent-to-agent",
 }
 
 
