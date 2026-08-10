@@ -58,6 +58,12 @@ each in **Policies → Checks**.
   + proxy both see Claude Code traffic. Overlap is by design (defense in depth), but in
   enforce mode users get two different block UXs and the console counts twice. Pick the
   primary plane per surface, or accept the duplication knowingly.
+- [ ] **Subscription-first is the default posture**: developers stay signed in on their
+  Pro/Max/Enterprise Claude seats; hooks + proxy/extension govern without touching
+  sign-in or billing, and no Anthropic API account is needed for capture. The gateway
+  route is for orgs that deliberately want API-key billing. For the LLM judge, the
+  enterprise options are the org's cloud contract (`JUDGE_PROVIDER=vertex|bedrock`) or
+  BYOK — developer seats are never used for judging (ToS).
 
 ## 5. Fail-open is a policy statement
 
