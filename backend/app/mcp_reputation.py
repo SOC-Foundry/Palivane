@@ -106,6 +106,10 @@ def assess(server_name: str, command: str, args: list,
             "weight": 0.95, "confidence": 0.98, "detector": "mcp_reputation",
             "evidence": ", ".join(sorted(hit))})
 
+    # 1b. Scored reputation feed (opt-in dataset): the server name + any package names.
+    from .mcp_feed import feed_signals
+    signals.extend(feed_signals([server_name] + [p[1] for p in packages if p[1]]))
+
     # 2. Non-registry (mutable) source.
     src = non_registry_source(command, args)
     if src:
