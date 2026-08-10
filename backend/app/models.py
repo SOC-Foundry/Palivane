@@ -569,6 +569,11 @@ class DiscoveredUsage(Base):
     max_risk = Column(Integer, default=0)                 # peak risk score seen (capture)
     first_seen = Column(DateTime, default=_utcnow)
     last_seen = Column(DateTime, default=_utcnow, index=True)
+    # Whether the actor reached the tool under a CORPORATE identity (email on a tenant-
+    # verified domain) or a PERSONAL one (free-mail) — the Netskope-style distinction. A
+    # sanctioned tool used from a personal account is still shadow AI. "" / "unknown" when
+    # the actor isn't an email or the domain isn't classifiable.
+    account_type = Column(String(16), default="")         # corporate | personal | unknown
 
 
 class Agent(Base):
