@@ -86,8 +86,12 @@ your IdP/CASB "who used AI" list against who Palivane actually captured).
 An **LLM API key is optional** — Palivane runs fully on its offline regex/heuristic
 detectors with no key. To enrich detection with the LLM judge, bring an **API key** for
 any supported provider (`JUDGE_PROVIDER=anthropic|openai|gemini` with the matching
-`*_API_KEY`); Claude via Vertex AI or Bedrock also works by pointing the key/env at your
-cloud project, and paid **Gemini Flash** is the lowest-cost option per verdict.
+`*_API_KEY`), and paid **Gemini Flash** is the lowest-cost option per verdict. **No API
+account at all?** Orgs on subscription/marketplace procurement can run Claude through
+their existing cloud agreement instead: `JUDGE_PROVIDER=vertex` (GCP Vertex AI,
+Application Default Credentials) or `JUDGE_PROVIDER=bedrock` (AWS, standard credential
+chain) — set `JUDGE_MODEL` to your catalog's dated model id. Developer Pro/Max/Enterprise
+*seats* are never used for judging (see the deprecation below).
 
 > **Deprecated: `JUDGE_PROVIDER=claude-cli`.** Earlier versions recommended running
 > verdicts through the machine's signed-in Claude Code CLI on a Pro/Max/Team
@@ -323,6 +327,13 @@ picks whichever key is set — Claude, GPT, or Gemini:
   `GEMINI_API_KEY`) to `/etc/warden/warden.env`, then `systemctl restart warden-api`.
 - **Docker:** add it to `.env`, then `docker compose up -d`.
 - **From source:** add it to `backend/.env`, then restart `uvicorn`.
+- **Cloud contract instead of an API account** (enterprise/marketplace procurement):
+  `JUDGE_PROVIDER=vertex` with `JUDGE_VERTEX_PROJECT`/`JUDGE_VERTEX_REGION` (auth =
+  Application Default Credentials — on Cloud Run the runtime service account, no key
+  material), or `JUDGE_PROVIDER=bedrock` with `JUDGE_BEDROCK_REGION` (auth = the AWS
+  credential chain). Both require `JUDGE_MODEL` set to the dated catalog id (e.g.
+  `claude-opus-4-8@20260115` on Vertex, `us.anthropic.claude-opus-4-8-20260115-v1:0` on
+  Bedrock). Usage bills the GCP/AWS agreement — no Anthropic API credits involved.
 
 Confirm with `curl .../api/health` — `judge_enabled` flips to `true`, and `judge_provider`
 / `judge_model` show the selection. Switch models with `JUDGE_MODEL` (e.g. `claude-haiku-4-5` for cheap

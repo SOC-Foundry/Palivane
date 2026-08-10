@@ -94,10 +94,18 @@ proxy (Section 3) or surfaced by [coverage reconciliation](#verify-coverage).
 
 ## 2. Claude Code
 
-Three routes, complementary. The **gateway** (Route A) is recommended for prompts — no
-certificates, one config block; the **proxy** (Route B) is the fallback when you can't
-repoint the base URL; the **hook** (Route C) adds what neither network route can see:
-the agent's local tool calls, before they execute. Run A + C together for full coverage.
+**Default posture: developers stay on their Claude subscription (Pro/Max/Enterprise).**
+Most orgs license Claude by seat, not by API credits — so the default deployment governs
+Claude Code *without touching how it signs in or bills*: the **hooks** (Route C) see the
+agent's local tool calls, and the **proxy** (Route B) / browser extension see the
+traffic. No Anthropic API account is required anywhere in that path.
+
+Three routes, complementary. The **gateway** (Route A) is for orgs that *want* API-key
+billing and central control — it reroutes Claude Code through Palivane on the org's own
+provider key (no certificates, one config block); the **proxy** (Route B) inspects
+traffic without touching sign-in; the **hook** (Route C) adds what neither network route
+can see: the agent's local tool calls, before they execute. Subscription-first fleets
+run B/extension + C; API-billing fleets run A + C.
 
 > **Self-serve (BYOD / pilots):** a user can connect their own Claude Code without an admin
 > distributing tokens — run **`palivane connect https://app.palivane.io`** (see
@@ -109,7 +117,7 @@ the agent's local tool calls, before they execute. Run A + C together for full c
 > fleets**, prefer the zero-touch `managed-settings.json` below (it takes precedence over
 > the user file).
 
-### Route A — gateway (recommended)
+### Route A — gateway (for API-billing orgs)
 
 **Backend** `.env`:
 ```bash
