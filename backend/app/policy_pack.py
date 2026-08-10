@@ -81,7 +81,8 @@ def chrome_forcelist(extension_id: str, update_url: str = "") -> str:
     Default pulls from the Chrome Web Store (the extension must be published there —
     Unlisted is fine). Pass a self-hosted `update_url` (your updates.xml) to force-install
     a self-hosted CRX with no Web Store submission — managed devices only."""
-    eid = extension_id or "REPLACE_WITH_PUBLISHED_EXTENSION_ID"
+    from .config import settings
+    eid = extension_id or settings.extension_id   # the configured published id (single source)
     return f"{eid};{update_url.strip() or _WEBSTORE_UPDATE_URL}"
 
 

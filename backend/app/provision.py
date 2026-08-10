@@ -26,8 +26,11 @@ enrollment token and serves the result.
 
 from __future__ import annotations
 
-# Chrome/Edge extension id once the extension is published (Web Store / self-hosted CRX).
-DEFAULT_EXTENSION_ID = "REPLACE_WITH_PUBLISHED_EXTENSION_ID"
+# Fallback extension id when a caller passes none — the configured published id (see
+# config.extension_id, the single source of truth). Read lazily so an env override applies.
+def _default_extension_id() -> str:
+    from .config import settings
+    return settings.extension_id
 
 
 def _base(base_url: str) -> str:
@@ -49,7 +52,7 @@ def _cc_settings_sh(route_gateway: bool) -> tuple[str, str]:
 
 def render_macos(base_url: str, enroll_token: str, extension_id: str, proxy_host: str = "",
                  route_gateway: bool = False) -> str:
-    ext = extension_id or DEFAULT_EXTENSION_ID
+    ext = extension_id or _default_extension_id()
     b = _base(base_url)
     cc_json, cc_note = _cc_settings_sh(route_gateway)
     return f'''#!/usr/bin/env bash
@@ -104,7 +107,7 @@ echo "Done. Restart Claude Code and your browser to apply."
 
 def render_windows(base_url: str, enroll_token: str, extension_id: str, proxy_host: str = "",
                    route_gateway: bool = False) -> str:
-    ext = extension_id or DEFAULT_EXTENSION_ID
+    ext = extension_id or _default_extension_id()
     b = _base(base_url)
     if route_gateway:
         cc_ps = ('@{ env = @{ ANTHROPIC_BASE_URL = "$PalivaneUrl"; PALIVANE_URL = "$PalivaneUrl"; '
@@ -165,7 +168,7 @@ Write-Host "Done. Restart Claude Code and your browser to apply."
 
 def render_linux(base_url: str, enroll_token: str, extension_id: str, proxy_host: str = "",
                  route_gateway: bool = False) -> str:
-    ext = extension_id or DEFAULT_EXTENSION_ID
+    ext = extension_id or _default_extension_id()
     b = _base(base_url)
     cc_json, cc_note = _cc_settings_sh(route_gateway)
     return f'''#!/usr/bin/env bash
