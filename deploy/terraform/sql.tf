@@ -5,8 +5,19 @@ resource "google_sql_database_instance" "warden" {
   name             = "${var.service_name}-db"
   region           = var.region
   database_version = "POSTGRES_16"
-  # Guard against an accidental `terraform destroy` wiping the database.
+  # Guard against an accidental `terraform destroy` wiping the database. This is the Cloud
+  # SQL API's own flag, so it also blocks a console/gcloud delete — but it fails during
+  # APPLY, i.e. partway through a run.
   deletion_protection = true
+
+  # Second, earlier guard: fail at PLAN time on anything that would destroy OR replace this
+  # instance. `name` is immutable, so editing var.service_name (e.g. a "rename to palivane"
+  # sweep) plans a destroy+create — which is total data loss for every tenant. With this,
+  # that plan is refused before a single resource is touched. Removing this line is a
+  # deliberate, reviewable act; see docs/rebrand-batch-d-runbook.md item 4.
+  lifecycle {
+    prevent_destroy = true
+  }
 
   depends_on = [google_service_networking_connection.psa]
 
@@ -36,6 +47,13 @@ resource "google_sql_database_instance" "warden" {
 resource "google_sql_database" "warden" {
   name     = "warden"
   instance = google_sql_database_instance.warden.name
+
+  # The instance's deletion_protection does NOT cover the database inside it: dropping this
+  # resource (or renaming it — `name` is immutable here too) deletes every table without
+  # touching the instance. Same plan-time refusal.
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # The DB password is provided out-of-band (var, not committed) and NOT emitted to any

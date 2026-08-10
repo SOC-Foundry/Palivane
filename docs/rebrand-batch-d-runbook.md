@@ -88,14 +88,22 @@ instance or a database in place** — Terraform would destroy and recreate it, w
 **total data loss** (all tenants, users, findings, licenses). There is no benefit worth this.
 **Leave `warden-db` and the `warden` database named as they are, permanently.**
 
-> **The suggested guardrail is not in place** (checked 2026-08-10). This runbook has said
-> "pin it with `lifecycle { prevent_destroy = true }` if you want a guardrail" since it was
-> written, and nobody did — the only `lifecycle` block in `sql.tf` is `ignore_changes =
-> [password]` on the SQL *user* (`sql.tf:55`), which does nothing to protect the instance.
-> On the one item flagged DATA LOSS, the protection is a sentence in a document. Worth
-> adding for real: a `prevent_destroy` on `google_sql_database_instance.warden` (and on the
-> `google_sql_database`) makes an accidental rename or a stray `var.service_name` edit fail
-> the plan instead of dropping every tenant, user, finding, and license.
+> **Both guardrails are now in place** (added 2026-08-10). Two different mechanisms, and it
+> is worth knowing why both:
+>
+> - `deletion_protection = true` on the instance — the Cloud SQL API's own flag, so it also
+>   blocks a console/`gcloud` delete. It was always there. But it refuses during **apply**,
+>   partway through a run.
+> - `lifecycle { prevent_destroy = true }` on the instance **and on the database** — refuses
+>   at **plan** time, and covers *replacement*, not just deletion. This is the one that
+>   matters for a rename: `name` is immutable, so editing `var.service_name` plans a
+>   destroy+create, and that plan is now rejected before anything is touched. The database
+>   needs its own guard because the instance's `deletion_protection` does not cover the
+>   database inside it — dropping that resource deletes every table while the instance
+>   survives.
+>
+> Removing either line is a deliberate, reviewable act. If you ever genuinely must replace
+> the instance, take the guard off in its own commit so the intent is on the record.
 
 ### Item 2 — Cloud Run service `warden` → `palivane`
 
@@ -213,6 +221,4 @@ are high-effort, zero-visibility changes.
 |---|---|---|
 | 2026-08-10 | 2 — Cloud Run service name | **Skipped.** Internal-only benefit against an outage window, a silent deploy-drift trap, and a Terraform-state prerequisite that isn't met. Revisit only alongside a planned infra change. |
 
-Open follow-up, unrelated to any rename: add `prevent_destroy` to the Cloud SQL instance and
-database (see item 4). It is the only guardrail on the one action that would lose all customer
-data, and it is currently documented rather than enforced.
+| 2026-08-10 | 4 — Cloud SQL guardrail | **Done.** `prevent_destroy` added to the instance and the database, so a rename-driven replace fails at plan time rather than during apply. `deletion_protection` was already set on the instance. |
