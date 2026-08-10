@@ -112,6 +112,85 @@ _ALIASES = {"ide_extension": "dependency_risk"}
 
 VALID_KEYS = {c["key"] for c in CATALOG}
 
+# --- Compliance-framework mapping ------------------------------------------------------
+# Each check maps to the external frameworks enterprise evaluations now ask about. Kept in
+# one table (not inline on every check) so the mapping is auditable in one place and the
+# catalog stays readable. Granularity is what each framework publishes: OWASP LLM/Agentic
+# have per-risk codes; NIST AI RMF and the EU AI Act are mapped at the function / article
+# level, which is the standard for control-to-framework mapping.
+#
+#   owasp_llm     — OWASP Top 10 for LLM Applications 2025 (LLM01–LLM10)
+#   owasp_agentic — OWASP Agentic AI: Threats & Mitigations (T1–T15)
+#   nist_ai_rmf   — NIST AI RMF 1.0 core functions (GOVERN / MAP / MEASURE / MANAGE)
+#   eu_ai_act     — EU AI Act obligations by article (high-risk system requirements)
+FRAMEWORK_LABELS: dict[str, dict[str, str]] = {
+    "owasp_llm": {
+        "LLM01": "Prompt Injection", "LLM02": "Sensitive Information Disclosure",
+        "LLM03": "Supply Chain", "LLM04": "Data and Model Poisoning",
+        "LLM05": "Improper Output Handling", "LLM06": "Excessive Agency",
+        "LLM07": "System Prompt Leakage", "LLM08": "Vector and Embedding Weaknesses",
+        "LLM09": "Misinformation", "LLM10": "Unbounded Consumption",
+    },
+    "owasp_agentic": {
+        "T2": "Tool Misuse", "T3": "Privilege Compromise", "T6": "Intent Breaking & Goal Manipulation",
+        "T8": "Repudiation & Untraceability", "T10": "Overwhelming Human-in-the-Loop",
+        "T12": "Agent Communication Poisoning", "T13": "Rogue Agents in the System",
+    },
+    "nist_ai_rmf": {
+        "GOVERN": "Govern — policies, roles, accountability",
+        "MAP": "Map — context and risk identification",
+        "MEASURE": "Measure — analyze, assess, track risk",
+        "MANAGE": "Manage — respond to and act on risk",
+    },
+    "eu_ai_act": {
+        "Art.10": "Data & data governance", "Art.12": "Record-keeping / logging",
+        "Art.14": "Human oversight", "Art.15": "Accuracy, robustness & cybersecurity",
+    },
+}
+
+# check key -> {framework: [codes]}. A check with no entry maps to nothing (and the report
+# says so, rather than silently claiming coverage).
+_FW = "owasp_llm"; _AG = "owasp_agentic"; _NI = "nist_ai_rmf"; _EU = "eu_ai_act"
+FRAMEWORK_MAP: dict[str, dict[str, list[str]]] = {
+    "prompt_injection":  {_FW: ["LLM01"], _NI: ["MEASURE", "MANAGE"], _EU: ["Art.15"]},
+    "jailbreak":         {_FW: ["LLM01"], _NI: ["MEASURE", "MANAGE"], _EU: ["Art.15"]},
+    "data_exfiltration": {_FW: ["LLM07", "LLM02"], _NI: ["MEASURE", "MANAGE"], _EU: ["Art.15"]},
+    "hidden_characters": {_FW: ["LLM01"], _NI: ["MEASURE"], _EU: ["Art.15"]},
+    "secret_leak":       {_FW: ["LLM02"], _NI: ["MANAGE"], _EU: ["Art.10", "Art.15"]},
+    "pii_exposure":      {_FW: ["LLM02"], _NI: ["MANAGE"], _EU: ["Art.10"]},
+    "source_code_leak":  {_FW: ["LLM02"], _NI: ["MANAGE"], _EU: ["Art.10"]},
+    "confidential_data": {_FW: ["LLM02"], _NI: ["MANAGE"], _EU: ["Art.10"]},
+    "unsanctioned_ai":   {_FW: ["LLM02"], _NI: ["GOVERN", "MAP"], _EU: ["Art.10"]},
+    "tool_poisoning":    {_FW: ["LLM01"], _AG: ["T2", "T12"], _NI: ["MEASURE"], _EU: ["Art.15"]},
+    "mcp_untrusted_server": {_FW: ["LLM03"], _AG: ["T2", "T13"], _NI: ["MAP", "MANAGE"], _EU: ["Art.15"]},
+    "dangerous_command": {_FW: ["LLM06"], _AG: ["T2"], _NI: ["MANAGE"], _EU: ["Art.14", "Art.15"]},
+    "sensitive_resource_access": {_FW: ["LLM06"], _AG: ["T2"], _NI: ["MANAGE"], _EU: ["Art.15"]},
+    "yolo_mode":         {_FW: ["LLM06"], _AG: ["T2", "T10"], _NI: ["GOVERN", "MANAGE"], _EU: ["Art.14"]},
+    "cursor_chat":       {_FW: ["LLM05", "LLM06"], _AG: ["T2"], _NI: ["MEASURE", "MANAGE"], _EU: ["Art.14"]},
+    "dependency_risk":   {_FW: ["LLM03"], _NI: ["MAP", "MANAGE"], _EU: ["Art.15"]},
+    "ide_extension":     {_FW: ["LLM03"], _NI: ["MAP"], _EU: ["Art.15"]},
+    "credential_at_rest": {_FW: ["LLM02"], _NI: ["MANAGE"], _EU: ["Art.15"]},
+    "ci_unsafe_trigger": {_FW: ["LLM03"], _AG: ["T3"], _NI: ["MAP", "MANAGE"], _EU: ["Art.15"]},
+    "ci_unpinned_action": {_FW: ["LLM03"], _NI: ["MAP", "MANAGE"], _EU: ["Art.15"]},
+    "ci_excessive_permissions": {_FW: ["LLM06", "LLM03"], _AG: ["T3"], _NI: ["GOVERN", "MANAGE"], _EU: ["Art.15"]},
+    "ci_secrets_inherit": {_FW: ["LLM02", "LLM03"], _NI: ["MANAGE"], _EU: ["Art.15"]},
+    "ci_self_hosted_runner": {_FW: ["LLM03"], _NI: ["MAP", "MANAGE"], _EU: ["Art.15"]},
+    "ci_ai_agent":       {_FW: ["LLM06"], _AG: ["T2"], _NI: ["MAP", "GOVERN"], _EU: ["Art.14"]},
+    "ci_secrets_to_ai":  {_FW: ["LLM02", "LLM06"], _AG: ["T2"], _NI: ["MANAGE"], _EU: ["Art.10", "Art.15"]},
+    "data_oversharing":  {_FW: ["LLM02", "LLM06"], _NI: ["MANAGE"], _EU: ["Art.10", "Art.14"]},
+    "agent_authz":       {_FW: ["LLM06"], _AG: ["T3"], _NI: ["GOVERN", "MANAGE"], _EU: ["Art.14"]},
+}
+# Fail loudly if a check ever ships without a mapping — an unmapped check would silently
+# understate coverage in the compliance report.
+assert set(FRAMEWORK_MAP) == VALID_KEYS, (
+    "policies FRAMEWORK_MAP out of sync with CATALOG: "
+    f"missing {VALID_KEYS - set(FRAMEWORK_MAP)}, extra {set(FRAMEWORK_MAP) - VALID_KEYS}")
+
+
+def frameworks_for(key: str) -> dict[str, list[str]]:
+    """The framework codes a check maps to (empty dict if none)."""
+    return FRAMEWORK_MAP.get(key, {})
+
 # Presets: the set of checks each preset DISABLES (everything else on).
 PRESETS: dict[str, list[str]] = {
     "strict": [],  # everything on
@@ -206,7 +285,43 @@ def checks_signal_filter(disabled: set[str]):
 
 
 def catalog_for(disabled: set[str]) -> dict:
-    """The catalog annotated with each check's current enabled state, grouped, + presets."""
-    checks = [{**c, "enabled": c["key"] not in disabled} for c in CATALOG]
+    """The catalog annotated with each check's current enabled state, grouped, + presets.
+    Each check carries its framework mapping so the console can show OWASP/NIST/EU tags."""
+    checks = [{**c, "enabled": c["key"] not in disabled, "frameworks": frameworks_for(c["key"])}
+              for c in CATALOG]
     return {"checks": checks, "groups": list(dict.fromkeys(c["group"] for c in CATALOG)),
             "presets": list(PRESETS.keys())}
+
+
+def compliance_report(disabled: set[str]) -> dict:
+    """A framework-coverage report for this tenant's active policy: for every framework
+    control, which Palivane checks cover it and whether they are currently enabled.
+
+    This is the artifact an enterprise eval asks for — "show me your OWASP LLM Top 10 /
+    NIST AI RMF / EU AI Act coverage." It is generated from the live policy, so it reflects
+    what the org actually has switched on, not a static claim."""
+    frameworks = []
+    for fw_key, labels in FRAMEWORK_LABELS.items():
+        controls = []
+        for code, name in labels.items():
+            covering = [c["key"] for c in CATALOG
+                        if code in frameworks_for(c["key"]).get(fw_key, [])]
+            enabled = [k for k in covering if k not in disabled]
+            controls.append({
+                "code": code, "name": name,
+                "checks": covering,
+                "enabled_checks": enabled,
+                # covered = at least one mapped check is on; a control with mapped-but-all-
+                # disabled checks is reported as a gap, not silently "covered".
+                "status": ("covered" if enabled else "gap" if covering else "not_mapped"),
+            })
+        covered = sum(1 for c in controls if c["status"] == "covered")
+        mapped = sum(1 for c in controls if c["status"] != "not_mapped")
+        frameworks.append({
+            "framework": fw_key,
+            "controls": controls,
+            "covered": covered, "mapped": mapped, "total": len(controls),
+        })
+    return {"frameworks": frameworks,
+            "checks_total": len(CATALOG),
+            "checks_enabled": len([c for c in CATALOG if c["key"] not in disabled])}

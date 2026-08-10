@@ -87,6 +87,18 @@ export default function Policies({ tenant, onTenant }) {
     d.has(key) ? d.delete(key) : d.add(key);
     persist(d, key);
   }
+
+  async function downloadCompliance() {
+    setErr(null);
+    try {
+      const csv = await api.complianceCsv();
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = "palivane-compliance.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { setErr("Couldn't build the compliance report: " + String(e.message || e)); }
+  }
   function applyPreset(name) {
     persist(new Set(PRESET_DISABLED[name] || []), `preset:${name}`);
   }
@@ -134,6 +146,10 @@ export default function Policies({ tenant, onTenant }) {
               {p}
             </button>
           ))}
+          <button className="ghost-btn" onClick={downloadCompliance}
+                  title="OWASP LLM Top 10, OWASP Agentic, NIST AI RMF, EU AI Act — coverage from your live policy">
+            Compliance report (CSV)
+          </button>
         </div>
       </div>
 
@@ -154,6 +170,22 @@ export default function Policies({ tenant, onTenant }) {
                     </span>
                   </div>
                   <div className="policy-desc">{c.desc}</div>
+                  {c.frameworks && Object.keys(c.frameworks).length > 0 && (
+                    <div className="policy-frameworks">
+                      {(c.frameworks.owasp_llm || []).map((code) => (
+                        <span key={code} className="fw-chip fw-owasp" title="OWASP Top 10 for LLM Applications">{code}</span>
+                      ))}
+                      {(c.frameworks.owasp_agentic || []).map((code) => (
+                        <span key={code} className="fw-chip fw-agentic" title="OWASP Agentic AI: Threats & Mitigations">Agentic {code}</span>
+                      ))}
+                      {(c.frameworks.nist_ai_rmf || []).map((code) => (
+                        <span key={code} className="fw-chip fw-nist" title="NIST AI RMF 1.0">NIST {code}</span>
+                      ))}
+                      {(c.frameworks.eu_ai_act || []).map((code) => (
+                        <span key={code} className="fw-chip fw-eu" title="EU AI Act (high-risk obligations)">EU {code}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <button
                   role="switch" aria-checked={c.enabled} aria-label={`Toggle ${c.label}`}
