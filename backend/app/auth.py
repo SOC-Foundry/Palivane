@@ -1008,9 +1008,24 @@ _JUDGE_BYOK_PROVIDERS = ("anthropic", "openai", "gemini")
 
 
 def _judge_key_state(tenant) -> dict:
+    # `health` is this key's live judge state (ok False = the org's key is failing and
+    # its verdicts run on offline detectors only) — surfaced HERE, to the tenant,
+    # because BYOK failures deliberately never page the operator. None until a scan
+    # has exercised the key on this instance.
+    health = None
+    if tenant.judge_byok_key_encrypted:
+        from .crypto import decrypt
+        from .detectors.llm_judge import byok_health
+        try:
+            health = byok_health(tenant.judge_byok_provider or "",
+                                 decrypt(tenant.judge_byok_key_encrypted),
+                                 tenant.judge_byok_model or "")
+        except Exception:
+            health = None
     return {"provider": tenant.judge_byok_provider or "",
             "model": tenant.judge_byok_model or "",
-            "key_set": bool(tenant.judge_byok_key_encrypted)}
+            "key_set": bool(tenant.judge_byok_key_encrypted),
+            "health": health}
 
 
 @router.get("/judge-key")

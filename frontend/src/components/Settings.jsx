@@ -750,8 +750,17 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
       {/* BYOK judge key */}
       <form className="panel settings-card" onSubmit={saveJudgeKey}>
         <h2>LLM judge — bring your own key
-          {judgeKey?.key_set && <span className="chip chip-on">active</span>}
+          {judgeKey?.key_set && (judgeKey?.health?.ok === false
+            ? <span className="chip chip-warn">key failing</span>
+            : <span className="chip chip-on">active</span>)}
         </h2>
+        {judgeKey?.key_set && judgeKey?.health?.ok === false && (
+          <div className="judge-health-warn">
+            Your judge key is failing — scans are running on offline detectors only, without
+            the LLM judge. Last error: <code>{judgeKey.health.last_error || "unknown"}</code>.
+            Check the provider account (billing, key revocation) or save a new key below.
+          </div>
+        )}
         <p className="muted">Run the LLM judge on your org's own provider key: verdicts bill
           your account, work regardless of the platform's judge capacity, and aren't plan-gated.
           The key is stored encrypted and never shown again. Your "LLM judge" consent setting
