@@ -884,8 +884,26 @@ def ingest_ai_usage(
     result, meta = _score_ai_usage(body.content, actor, body.tool, body.destination,
                                    tenant_id, agent, db)
     from .detectors.shadow_ai import confirmed_leak
+    action = _action_for(result["severity"])
+    force_block = settings.gateway_enforce_secrets and confirmed_leak(result["signals"])
+    coached = redacted_content = None
+    # Coaching mode: if this would block ONLY because of redactable data loss (secrets/PII),
+    # downgrade to a warn and hand back the cleaned prompt + the sanctioned-tool redirect.
+    # The user stays in the loop — they see what was flagged and send the clean version or
+    # switch tools — rather than being hard-stopped or silently trusting the redactor.
+    if action == "block" and _tenant_redact_mode(tenant_id, db):
+        cats = {s.get("category") for s in result["signals"] if s.get("category")}
+        # Only coach when EVERY flagged category is redactable. If an injection, an
+        # unsanctioned-AI destination, source code, or confidential prose is also present,
+        # redaction can't make it safe — keep the hard block.
+        if cats and cats <= _REDACTABLE:
+            from .redaction import redact_text
+            action = "warn"
+            force_block = False
+            coached = True
+            redacted_content = redact_text(body.content)
     return {
-        "action": _action_for(result["severity"]),
+        "action": action,
         "risk_score": result["risk_score"],
         "severity": result["severity"],
         "signals": result["signals"],
@@ -893,9 +911,13 @@ def ingest_ai_usage(
         # >1 when this event folded into an already-recorded finding (its seen_count).
         "recurrence": result.get("recurrence"),
         "remediation": remediation_for(result["signals"]),
+        # Coaching: when set, the client should warn (not block), show `redacted_content` as
+        # the safe-to-send version, and offer the sanctioned tools below.
+        "coached": coached,
+        "redacted_content": redacted_content,
         # A confirmed secret/PII leak: the client should block regardless of its local
-        # enforce flag ("block the certain" — monitor everything else).
-        "force_block": settings.gateway_enforce_secrets and confirmed_leak(result["signals"]),
+        # enforce flag ("block the certain" — monitor everything else). Off under coaching.
+        "force_block": force_block,
         # The org's enforce stance for local capture planes (Settings → Enforcement),
         # staged per actor/tool via policy overrides: clients honor "block" verdicts
         # when true, without any per-device flag.
@@ -1067,6 +1089,21 @@ def _tenant_or_global(tenant_id: int | None, db: Session, attr: str, global_valu
         if t and (getattr(t, attr, "") or "").strip():
             return getattr(t, attr).strip()
     return global_value
+
+
+def _tenant_redact_mode(tenant_id: int | None, db: Session) -> bool:
+    """Whether coaching mode is on for this tenant (tri-state override, else global)."""
+    if tenant_id is not None:
+        t = db.get(Tenant, tenant_id)
+        if t is not None and t.redact_mode is not None:
+            return bool(t.redact_mode)
+    return settings.redact_mode
+
+
+# The data-loss categories redact_text() can actually strip. Coaching only downgrades a
+# block to a warn when the block is driven by these — a prompt-injection or an unsanctioned-
+# AI destination can't be "redacted" into safety, so those still block.
+_REDACTABLE = {"secret_leak", "pii_exposure"}
 
 
 def _tenant_client_enforce(tenant_id: int | None, db: Session) -> bool:

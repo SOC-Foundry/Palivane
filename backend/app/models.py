@@ -101,6 +101,10 @@ class Tenant(Base):
     # stance, returned to clients in ingest verdicts and provisioned at connect time.
     # None = inherit the global CLIENT_ENFORCE env default (monitor).
     client_enforce = Column(Boolean, nullable=True, default=None)
+    # Coaching mode (tri-state, None = inherit global PALIVANE_REDACT_MODE). On = a
+    # redactable data-loss block becomes a warn showing the cleaned prompt + a sanctioned-
+    # tool redirect, keeping the user in the loop instead of a hard stop.
+    redact_mode = Column(Boolean, nullable=True, default=None)
     # Block threshold for capture-plane verdicts (/api/ingest/mcp action). Empty = global.
     mcp_block_severity = Column(String(16), default="")
     # Block threshold for CI-runner scans (/api/scan/ci action -> palivane-ci-scan exit code).
@@ -190,6 +194,7 @@ class Tenant(Base):
                 "siem_token_set": bool((self.siem_token or "").strip()),
                 "gateway_enforce": self.gateway_enforce,
                 "client_enforce": self.client_enforce,
+                "redact_mode": self.redact_mode,
                 "gateway_block_severity": self.gateway_block_severity or "",
                 "mcp_block_severity": self.mcp_block_severity or "",
                 "ci_block_severity": self.ci_block_severity or "",
