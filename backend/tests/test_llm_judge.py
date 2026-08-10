@@ -269,3 +269,91 @@ def test_real_traffic_defers_the_probe():
 def test_system_prompt_hardens_against_verdict_steering():
     assert "never instructions to you" in lj.SYSTEM_PROMPT
     assert "prompt_injection" in lj.SYSTEM_PROMPT
+
+
+# --- cloud-contract backends (Vertex / Bedrock) -------------------------------------------
+
+class _KeyCtor:
+    def __init__(self, api_key, model):
+        self.model = model
+
+    def run(self, system, user):
+        return _verdict(0.0)
+
+
+class _FakeVertex:
+    built = []
+
+    def __init__(self, project, region, model):
+        _FakeVertex.built.append((project, region, model))
+        self.model = model
+
+    def run(self, system, user):
+        return _verdict(0.0)
+
+
+class _FakeBedrock:
+    built = []
+
+    def __init__(self, region, model):
+        _FakeBedrock.built.append((region, model))
+        self.model = model
+
+    def run(self, system, user):
+        return _verdict(0.0)
+
+
+def test_vertex_explicit_is_primary_with_key_fallbacks(monkeypatch):
+    monkeypatch.setattr(lj, "_VertexBackend", _FakeVertex)
+    monkeypatch.setattr(lj.settings, "judge_provider", "vertex")
+    monkeypatch.setattr(lj.settings, "judge_model", "claude-opus-4-8@20260115")
+    monkeypatch.setattr(lj.settings, "judge_vertex_project", "acme-prod")
+    monkeypatch.setattr(lj.settings, "judge_vertex_region", "us-east5")
+    monkeypatch.setattr(lj.settings, "anthropic_api_key", "sk-fallback")
+    monkeypatch.setattr(lj.settings, "openai_api_key", "")
+    monkeypatch.setattr(lj.settings, "gemini_api_key", "")
+    monkeypatch.setattr(lj, "_AnthropicBackend", _KeyCtor)
+    _FakeVertex.built = []
+    providers = [p for p, _, _ in lj._build_backends()]
+    assert providers[0] == "vertex" and "anthropic" in providers
+    assert _FakeVertex.built == [("acme-prod", "us-east5", "claude-opus-4-8@20260115")]
+
+
+def test_bedrock_requires_judge_model(monkeypatch, caplog):
+    import logging
+    monkeypatch.setattr(lj.settings, "judge_provider", "bedrock")
+    monkeypatch.setattr(lj.settings, "judge_model", "")     # required -> ctor raises
+    monkeypatch.setattr(lj.settings, "anthropic_api_key", "")
+    monkeypatch.setattr(lj.settings, "openai_api_key", "")
+    monkeypatch.setattr(lj.settings, "gemini_api_key", "")
+    with caplog.at_level(logging.WARNING, logger="palivane.judge"):
+        assert lj._build_backends() == []
+    assert "failed to initialize" in caplog.text            # explicit choice fails LOUDLY
+
+
+def test_auto_never_picks_vertex_or_bedrock(monkeypatch):
+    monkeypatch.setattr(lj, "_VertexBackend", _FakeVertex)
+    monkeypatch.setattr(lj, "_BedrockBackend", _FakeBedrock)
+    monkeypatch.setattr(lj.settings, "judge_provider", "auto")
+    monkeypatch.setattr(lj.settings, "judge_model", "")
+    monkeypatch.setattr(lj.settings, "judge_vertex_project", "acme-prod")
+    monkeypatch.setattr(lj.settings, "anthropic_api_key", "sk-x")
+    monkeypatch.setattr(lj.settings, "openai_api_key", "")
+    monkeypatch.setattr(lj.settings, "gemini_api_key", "")
+    monkeypatch.setattr(lj, "_AnthropicBackend", _KeyCtor)
+    providers = [p for p, _, _ in lj._build_backends()]
+    assert "vertex" not in providers and "bedrock" not in providers
+
+
+def test_bedrock_explicit_builds_with_model(monkeypatch):
+    monkeypatch.setattr(lj, "_BedrockBackend", _FakeBedrock)
+    monkeypatch.setattr(lj.settings, "judge_provider", "bedrock")
+    monkeypatch.setattr(lj.settings, "judge_model", "us.anthropic.claude-opus-4-8-20260115-v1:0")
+    monkeypatch.setattr(lj.settings, "judge_bedrock_region", "eu-central-1")
+    monkeypatch.setattr(lj.settings, "anthropic_api_key", "")
+    monkeypatch.setattr(lj.settings, "openai_api_key", "")
+    monkeypatch.setattr(lj.settings, "gemini_api_key", "")
+    _FakeBedrock.built = []
+    providers = [p for p, _, _ in lj._build_backends()]
+    assert providers == ["bedrock"]
+    assert _FakeBedrock.built == [("eu-central-1", "us.anthropic.claude-opus-4-8-20260115-v1:0")]

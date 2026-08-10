@@ -6,10 +6,14 @@ sensitive data phrased in a way the regexes miss. A frontier model reads the con
 like an analyst and returns a structured verdict: an attack on the model (injection /
 jailbreak / exfiltration) or sensitive data leaving for an AI tool.
 
-Provider-agnostic: works with Anthropic (Claude), OpenAI (GPT), or Google (Gemini),
-selected by JUDGE_PROVIDER (default "auto" — whichever API key is configured).
-Degrades gracefully: if no key/SDK is available the detector is a no-op and the
-platform runs on the offline detectors alone.
+Provider-agnostic: works with Anthropic (Claude), OpenAI (GPT), or Google (Gemini) via
+API keys, and with Claude through an org's CLOUD CONTRACT — JUDGE_PROVIDER=vertex (GCP
+Vertex AI, Application Default Credentials) or =bedrock (AWS Bedrock, standard
+credential chain) — for enterprises that don't hold an Anthropic API account at all.
+Default "auto" picks whichever API key is configured; vertex/bedrock are explicit-only
+(their auth is ambient, so presence can't be inferred). Degrades gracefully: if no
+key/SDK is available the detector is a no-op and the platform runs on the offline
+detectors alone.
 
 DEPRECATED — JUDGE_PROVIDER=claude-cli (subscription-auth via the signed-in Claude Code
 CLI, PR #102): Anthropic's terms (docs updated 2026-02-19, enforced 2026-04-04) restrict
@@ -48,16 +52,23 @@ _DEFAULT_MODELS = {
     "anthropic": "claude-opus-4-8",
     "openai": "gpt-4o",
     "gemini": "gemini-2.5-pro",
+    # Cloud-contract providers have NO safe default: their model ids are dated per
+    # catalog ("claude-opus-4-8@20260115" / "us.anthropic.claude-...-v1:0"), so
+    # JUDGE_MODEL is required and the backend refuses to build without it.
+    "vertex": "",
+    "bedrock": "",
     "claude-cli": "",
 }
 _PROVIDER_LABELS = {"anthropic": "Claude", "openai": "GPT", "gemini": "Gemini",
+                    "vertex": "Claude (Vertex)", "bedrock": "Claude (Bedrock)",
                     "claude-cli": "Claude (subscription — deprecated)"}
 
 _CLI_DEPRECATION = (
     "JUDGE_PROVIDER=claude-cli is DEPRECATED and will be removed: Anthropic's terms "
     "(enforced 2026-04-04) restrict subscription auth to Anthropic's own products, and "
-    "an automated judge driving the Claude Code CLI falls outside that. Switch to an "
-    "API key (JUDGE_PROVIDER=anthropic|openai|gemini) or per-tenant BYOK.")
+    "an automated judge driving the Claude Code CLI falls outside that. Switch to your "
+    "cloud contract (JUDGE_PROVIDER=vertex|bedrock), an API key "
+    "(JUDGE_PROVIDER=anthropic|openai|gemini), or per-tenant BYOK.")
 
 SYSTEM_PROMPT = """You are a senior AI-security analyst. You review content flowing \
 through an organization's AI usage for two intertwined risks: (1) attacks on the \
@@ -174,6 +185,61 @@ class _GeminiBackend:
         return resp.parsed
 
 
+class _VertexBackend:
+    """Claude on GCP Vertex AI — for orgs with a Google Cloud agreement instead of an
+    Anthropic API account (enterprise/marketplace procurement). Auth is Application
+    Default Credentials: on Cloud Run/GKE the runtime service account, locally
+    `gcloud auth application-default login` — no key material stored anywhere.
+    Usage bills the org's GCP contract."""
+
+    def __init__(self, project: str, region: str, model: str) -> None:
+        if not project:
+            raise ValueError("JUDGE_VERTEX_PROJECT (or GOOGLE_CLOUD_PROJECT) is required")
+        if not model:
+            raise ValueError("JUDGE_MODEL is required for vertex (dated catalog ids, "
+                             "e.g. claude-opus-4-8@20260115)")
+        from anthropic import AnthropicVertex
+        self._client = AnthropicVertex(project_id=project, region=region,
+                                       timeout=settings.judge_timeout)
+        self.model = model
+
+    def run(self, system: str, user: str) -> JudgeVerdict | None:
+        resp = self._client.messages.parse(
+            model=self.model,
+            max_tokens=2048,
+            thinking={"type": "adaptive"},
+            system=system,
+            messages=[{"role": "user", "content": user}],
+            output_format=JudgeVerdict,
+        )
+        return resp.parsed_output
+
+
+class _BedrockBackend:
+    """Claude on AWS Bedrock — the AWS-contract counterpart to _VertexBackend. Auth is
+    the standard AWS credential chain (instance role / env / profile); usage bills the
+    org's AWS agreement."""
+
+    def __init__(self, region: str, model: str) -> None:
+        if not model:
+            raise ValueError("JUDGE_MODEL is required for bedrock (dated catalog ids, "
+                             "e.g. us.anthropic.claude-opus-4-8-20260115-v1:0)")
+        from anthropic import AnthropicBedrock
+        self._client = AnthropicBedrock(aws_region=region, timeout=settings.judge_timeout)
+        self.model = model
+
+    def run(self, system: str, user: str) -> JudgeVerdict | None:
+        resp = self._client.messages.parse(
+            model=self.model,
+            max_tokens=2048,
+            thinking={"type": "adaptive"},
+            system=system,
+            messages=[{"role": "user", "content": user}],
+            output_format=JudgeVerdict,
+        )
+        return resp.parsed_output
+
+
 class _ClaudeCLIBackend:
     """Judge via the locally signed-in Claude Code CLI (`claude -p`) — subscription auth.
 
@@ -244,10 +310,11 @@ def _build_backends():
 
     A specific JUDGE_PROVIDER is primary; the rest (whichever also have keys) become
     fallbacks so a billing/outage error on one provider doesn't silently take the judge
-    offline. 'auto' orders anthropic > openai > gemini — "claude-cli" (the signed-in
-    Claude Code subscription) is never chosen by auto; it participates only when named
-    explicitly, because it routes content through the operator's Claude account.
-    Returns [(provider, backend, model)]."""
+    offline. 'auto' orders anthropic > openai > gemini. Never chosen by auto:
+    "vertex"/"bedrock" (cloud-contract Claude — auth is ambient GCP/AWS credentials, so
+    presence can't be inferred from a key; name them explicitly) and "claude-cli" (the
+    signed-in Claude Code subscription — deprecated; routes content through the
+    operator's Claude account). Returns [(provider, backend, model)]."""
     want = (settings.judge_provider or "auto").strip().lower()
     if want == "none":
         return []
@@ -269,13 +336,25 @@ def _build_backends():
                 log.warning(_CLI_DEPRECATION)
                 built.append((provider, _ClaudeCLIBackend(settings.judge_cli_bin, model), model))
                 continue
+            if provider == "vertex":
+                built.append((provider, _VertexBackend(
+                    settings.judge_vertex_project, settings.judge_vertex_region, model), model))
+                continue
+            if provider == "bedrock":
+                built.append((provider, _BedrockBackend(settings.judge_bedrock_region, model), model))
+                continue
             key = _resolve_key(provider)
             if not key:
                 continue
             ctors = {"anthropic": _AnthropicBackend, "openai": _OpenAIBackend,
                      "gemini": _GeminiBackend}
             built.append((provider, ctors[provider](key, model), model))
-        except Exception:  # SDK/CLI missing / bad key — skip this candidate
+        except Exception as exc:  # SDK/CLI missing / bad key — skip this candidate
+            if provider == want:
+                # The operator EXPLICITLY chose this provider; a silent skip would look
+                # like "judge off" with no clue why (missing extras, no ADC, no model).
+                log.warning("judge: configured provider %s failed to initialize (%s: %s)",
+                            provider, type(exc).__name__, str(exc)[:160])
             continue
     return built
 

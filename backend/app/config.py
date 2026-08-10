@@ -32,6 +32,16 @@ class Settings:
     # Model for the judgment call. Empty = a sensible per-provider default. Override for
     # cost/latency (e.g. claude-haiku-4-5, gpt-4o-mini, gemini-2.5-flash) via JUDGE_MODEL.
     judge_model: str = os.getenv("JUDGE_MODEL", "")
+    # Claude via cloud contracts — for orgs WITHOUT an Anthropic API account (enterprise
+    # subscription / marketplace procurement). JUDGE_PROVIDER=vertex bills the org's GCP
+    # agreement (auth = Application Default Credentials — on Cloud Run/GKE the runtime
+    # service account, no key material at all); JUDGE_PROVIDER=bedrock bills AWS (auth =
+    # the standard credential chain). Both REQUIRE JUDGE_MODEL: cloud model ids are dated
+    # per catalog (e.g. "claude-opus-4-8@20260115" on Vertex,
+    # "us.anthropic.claude-opus-4-8-20260115-v1:0" on Bedrock), so there is no safe default.
+    judge_vertex_project: str = os.getenv("JUDGE_VERTEX_PROJECT", "") or os.getenv("GOOGLE_CLOUD_PROJECT", "")
+    judge_vertex_region: str = os.getenv("JUDGE_VERTEX_REGION", "us-east5")
+    judge_bedrock_region: str = os.getenv("JUDGE_BEDROCK_REGION", "us-east-1")
     # Per-call timeout for the API judge backends. Without it the provider SDK default
     # applies (anthropic: 10 MINUTES) — a hung provider call stalls the scan request far
     # past the egress proxy's scan budget and cascades into client-side fail-open.
