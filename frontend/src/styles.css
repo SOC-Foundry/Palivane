@@ -849,6 +849,18 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 .cov-table tr:last-child td { border-bottom: none; }
 .cov-surface { color: var(--text); font-weight: 600; min-width: 180px; }
 .cov-note { color: var(--muted-2); font-style: italic; }
+/* Reads the Enforcement column for you — set apart from the tables it explains. Capped
+   near the prose measure so the card doesn't sit half-empty beside its own text. */
+.cov-explainer {
+  border: 1px solid var(--border); border-left: 3px solid var(--lp-violet);
+  border-radius: 12px; background: var(--panel); padding: 20px 24px; margin-bottom: 34px;
+  max-width: 78ch;
+}
+.cov-explainer .lp-sub { max-width: none; }
+.cov-explainer code {
+  background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: 5px;
+  padding: 1px 5px; font-size: 12.5px;
+}
 .cov-badge { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
 .cov-block { color: var(--benign); background: rgba(70,201,139,0.12); border: 1px solid rgba(70,201,139,0.3); }
 .cov-observe { color: var(--susp); background: rgba(255,210,77,0.10); border: 1px solid rgba(255,210,77,0.28); }
