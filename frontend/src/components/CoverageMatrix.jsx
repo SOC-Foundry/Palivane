@@ -35,7 +35,7 @@ const GROUPS = [
       {
         surface: "Browser AI (claude.ai, ChatGPT, Gemini, Microsoft Copilot web)",
         how: "Manifest V3 browser extension — intercepts the prompt before it's sent",
-        needs: "Extension install: browser-policy force-install (Chrome Web Store or self-hosted CRX), or manual on unmanaged machines.",
+        needs: "Extension install: browser-policy force-install via self-hosted CRX (public Web Store listing coming), or manual on unmanaged machines.",
         mode: "block",
       },
       {
