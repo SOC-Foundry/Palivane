@@ -75,6 +75,11 @@ class Settings:
     mcp_server_denylist: str = os.getenv("MCP_SERVER_DENYLIST", "")
     mcp_reputation_enabled: bool = os.getenv("MCP_REPUTATION_ENABLED", "").lower() in ("1", "true", "yes")
     mcp_reputation_fresh_days: int = int(os.getenv("MCP_REPUTATION_FRESH_DAYS", "14"))
+    # Path to a scored MCP-server reputation feed (JSON: name -> {tier, score, reason}).
+    # Empty = feed disabled (denylist + provenance + freshness still run). The feed itself
+    # — e.g. a curated/licensed dataset seeded from the official MCP registry — is an
+    # out-of-band data artifact the operator points this at; the code is the consumer.
+    mcp_reputation_feed: str = os.getenv("MCP_REPUTATION_FEED", "").strip()
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./warden.db")
     cors_origins: str = os.getenv("CORS_ORIGINS", "http://localhost:5173")
     # Reject request bodies larger than this (DoS/OOM guard); ~12 MB default.
