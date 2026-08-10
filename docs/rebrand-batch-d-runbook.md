@@ -19,7 +19,7 @@ Cloudflare worker, the `*.run.app` origin, and the legacy domain. This runbook c
 | # | Item | User-visible? | Effort | Risk | Recommendation |
 |---|------|:---:|:---:|:---:|---|
 | 1 | **Legacy domain `warden.tachtech.net`** | **Yes** | Low | Low | **Decide: keep the 301-redirect (recommended) or hard-retire.** |
-| 2 | Cloud Run service name `warden` | No | High | Medium | **Skip.** Internal only; Terraform state move + IAM re-bind + worker repoint + redeploy for zero user benefit. |
+| 2 | Cloud Run service name `warden` | No | High | Medium | **Skipped — decided 2026-08-10.** Internal only; Terraform state move + IAM re-bind + worker repoint + redeploy for zero user benefit. See the decision note under item 2. |
 | 3 | Secret *resource* names `warden-*` | No | Medium | Low–Med | **Skip** (or do lazily). Internal; needs new secret versions + deploy + TF. |
 | 4 | **SQL instance `warden-db` / database `warden`** | No | — | **DATA LOSS** | **Never.** Cloud SQL instances/DBs can't be renamed in place — a rename recreates = total data loss. Leave as-is permanently. |
 | 5 | Cloudflare worker name `warden-front` | No | Low | Low | Optional cosmetic; skip unless you want the dashboard tidy. |
@@ -86,8 +86,16 @@ is the exact procedure and the risk on each. **Read item 4 first.**
 (= `warden-db`) and the database as `"warden"`. **Cloud SQL does not support renaming an
 instance or a database in place** — Terraform would destroy and recreate it, which means
 **total data loss** (all tenants, users, findings, licenses). There is no benefit worth this.
-**Leave `warden-db` and the `warden` database named as they are, permanently.** Pin it with a
-`lifecycle { prevent_destroy = true }` on the resource if you want a guardrail.
+**Leave `warden-db` and the `warden` database named as they are, permanently.**
+
+> **The suggested guardrail is not in place** (checked 2026-08-10). This runbook has said
+> "pin it with `lifecycle { prevent_destroy = true }` if you want a guardrail" since it was
+> written, and nobody did — the only `lifecycle` block in `sql.tf` is `ignore_changes =
+> [password]` on the SQL *user* (`sql.tf:55`), which does nothing to protect the instance.
+> On the one item flagged DATA LOSS, the protection is a sentence in a document. Worth
+> adding for real: a `prevent_destroy` on `google_sql_database_instance.warden` (and on the
+> `google_sql_database`) makes an accidental rename or a stray `var.service_name` edit fail
+> the plan instead of dropping every tenant, user, finding, and license.
 
 ### Item 2 — Cloud Run service `warden` → `palivane`
 
@@ -115,6 +123,33 @@ a *new* service and delete the old. Full procedure:
 
 Effort: ~1–2 hrs with careful verification. Benefit: an internal service name nobody sees.
 **Recommendation: skip.**
+
+#### Decision — 2026-08-10: skipped, deliberately
+
+Raised again and declined. Nothing about the analysis changed: `palivane.tachtech.net` is
+already the primary host, the worker already routes it, and the service name is visible only
+in the GCP console. Two things found while re-checking it are worth recording, because both
+are traps in the procedure above.
+
+**The step order hides a silent failure.** `deploy/cloudrun/deploy.sh:14` is
+`SERVICE="${SERVICE:-warden}"`. If that default (or the workflow's service name) is changed
+to `palivane` *before* step 5 repoints the worker, the next merge to main deploys the new
+image to the new service while every request still reaches the old one. Production stops
+receiving updates and **nothing fails** — no red check, no error, just a frozen site. If you
+ever do this, repoint the worker (step 5) and change `SERVICE` in the *same* window, and
+confirm a real deploy lands by watching a version string change through the public host, not
+by reading the workflow's green tick.
+
+**Step 2 assumes Terraform state that does not exist.** `terraform state mv` presumes the
+service is in state; production was built by hand and still isn't. `.github/workflows/
+terraform-apply.yml` remains `workflow_dispatch`-only for exactly this reason ("the existing
+production infra was built by hand and is NOT yet in Terraform state"). So anyone following
+this runbook literally will fail at step 2 and should either import prod into state first, or
+treat items 2/3/7 as pure `gcloud` operations with the Terraform files updated afterward.
+
+**Cutover access:** step 5 needs Cloudflare credentials (`wrangler login` or
+`CLOUDFLARE_API_TOKEN`). GCP owner alone is not enough to move traffic — the origin and the
+ID-token audience both live in the worker.
 
 ### Item 3 — Secret *resource* names `warden-*` → `palivane-*`
 
@@ -171,3 +206,13 @@ invisible resource names; the single decision worth making is **item 1 — keep 
 a redirect (recommended) or retire it.** Everything else (service, secrets, SQL, worker,
 registry names) should stay as-is: the SQL instance *must* (data loss otherwise), and the rest
 are high-effort, zero-visibility changes.
+
+## Decision log
+
+| Date | Item | Decision |
+|---|---|---|
+| 2026-08-10 | 2 — Cloud Run service name | **Skipped.** Internal-only benefit against an outage window, a silent deploy-drift trap, and a Terraform-state prerequisite that isn't met. Revisit only alongside a planned infra change. |
+
+Open follow-up, unrelated to any rename: add `prevent_destroy` to the Cloud SQL instance and
+database (see item 4). It is the only guardrail on the one action that would lose all customer
+data, and it is currently documented rather than enforced.
