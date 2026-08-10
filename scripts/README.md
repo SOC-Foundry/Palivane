@@ -10,13 +10,13 @@ the previous video (and its score) were produced ad hoc and only the `.mp4` was 
 so every re-cut started over. Everything here is reproducible.
 
 ```bash
-./run-local.sh                                              # terminal 1: a local Warden
+./run-local.sh                                              # terminal 1: a local Palivane
 PALIVANE_URL=http://localhost:8088 \
   backend/.venv/bin/python scripts/demo_capture.py          # real verdicts -> JSON
 PALIVANE_URL=http://localhost:8088 \
   backend/.venv/bin/python scripts/demo_video.py            # scenes -> silent.mp4
 python scripts/demo_score.py                                # score.wav (needs numpy+scipy)
-ffmpeg -i /tmp/warden-demo/silent.mp4 -i /tmp/warden-demo/score.wav \
+ffmpeg -i /tmp/palivane-demo/silent.mp4 -i /tmp/palivane-demo/score.wav \
   -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k -shortest \
   -movflags +faststart frontend/public/shots/demoN.mp4
 ```
@@ -30,7 +30,7 @@ ffmpeg -i /tmp/warden-demo/silent.mp4 -i /tmp/warden-demo/score.wav \
 | `demo_score.py` | Synthesizes the lofi bed. Section map at the bottom — match it to the cut's length. |
 
 **What is real and what is not.** Every risk score, signal, evidence string, remediation
-line, gateway error and CLI output in the video is live output from a running Warden — that
+line, gateway error and CLI output in the video is live output from a running Palivane — that
 is the point of `demo_capture.py`, and why the title card can claim it. The third-party app
 frames (the Claude / ChatGPT / Gemini chat windows) are simplified illustrations drawn in
 `demo_scenes.py`, not screenshots of those products. Keep it that way: never make a scene
