@@ -88,6 +88,7 @@ export const api = {
   agentRoleDelete: (id) => req(`/agent-roles/${id}`, { method: "DELETE" }),
   policies: () => req("/policies"),
   complianceReport: () => req("/compliance/report"),
+  redteamSelftest: () => req("/redteam/selftest", { method: "POST" }),
   complianceCsv: async () => {
     const token = getToken();
     const res = await fetch(BASE + "/compliance/report?format=csv",

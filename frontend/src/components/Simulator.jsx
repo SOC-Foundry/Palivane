@@ -28,6 +28,15 @@ export default function Simulator() {
   const [res, setRes] = useState(null);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [redteam, setRedteam] = useState(null);
+  const [rtBusy, setRtBusy] = useState(false);
+
+  async function runRedteam() {
+    setErr(null); setRedteam(null); setRtBusy(true);
+    try { setRedteam(await api.redteamSelftest()); }
+    catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
+    finally { setRtBusy(false); }
+  }
 
   async function run() {
     setErr(null); setRes(null);
@@ -75,6 +84,41 @@ export default function Simulator() {
         <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>
           Runs the real pipeline with your org's policy — nothing is recorded.
         </p>
+      </div>
+
+      <div className="panel settings-card">
+        <h2 style={{ marginTop: 0 }}>Attack self-test</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Replay the known injection / jailbreak / exfiltration playbook through your live
+          policy and see what's caught — the answer to a security eval's "throw the playbook
+          at it." Runs in-process; nothing is recorded.
+        </p>
+        <button className="ghost-btn" onClick={runRedteam} disabled={rtBusy}>
+          {rtBusy ? "Running…" : "Run attack self-test"}
+        </button>
+        {redteam && (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+              <span className={`badge ${redteam.detection_rate >= 0.9 ? "sev-benign" : redteam.detection_rate >= 0.7 ? "sev-suspicious" : "sev-critical"}`}
+                    style={{ fontSize: 13, padding: "8px 14px" }}>
+                {Math.round(redteam.detection_rate * 100)}% caught
+              </span>
+              <span className="muted">{redteam.caught} of {redteam.total} attacks caught · {redteam.missed} would slip through</span>
+            </div>
+            {redteam.misses.length > 0 && (
+              <table className="data-table" style={{ marginTop: 12 }}>
+                <thead><tr><th>Missed attack</th><th>Expected</th><th>Verdict</th></tr></thead>
+                <tbody>{redteam.misses.map((m) => (
+                  <tr key={m.id}>
+                    <td>{m.note || m.id}</td>
+                    <td className="muted">{m.expected.join(", ")}</td>
+                    <td><span className="badge sev-benign">{m.action}</span></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            )}
+          </div>
+        )}
       </div>
 
       {res && (

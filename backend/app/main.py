@@ -2227,6 +2227,16 @@ def policies_catalog(current: User = Depends(require_admin), db: Session = Depen
     return out
 
 
+@app.post("/api/redteam/selftest")
+def redteam_selftest(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Replay the known injection/jailbreak/exfil corpus through this org's live detection
+    policy and report what's caught vs. what would slip through. A self-test for a security
+    eval — runs in-process (persist=False, no findings written), reflecting the tenant's
+    enabled checks and judge setting. Admin-only."""
+    from . import redteam
+    return redteam.selftest(db, current.tenant_id)
+
+
 @app.get("/api/compliance/report")
 def compliance_report_endpoint(request: Request, format: str = "json",
                                current: User = Depends(require_admin),
