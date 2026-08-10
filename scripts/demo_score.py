@@ -216,7 +216,7 @@ def render(duration, sections, out_path):
 
 
 import os
-BASE = os.getenv("DEMO_WORK", "/tmp/warden-demo")
+BASE = os.getenv("DEMO_WORK", "/tmp/palivane-demo")
 os.makedirs(BASE, exist_ok=True)
 
 # 90.28s hero cut. Sections follow the story: title, the three browser blocks, the three

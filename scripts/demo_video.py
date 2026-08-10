@@ -7,7 +7,7 @@ concatenates with short crossfades and mixes the score.
     ./run-local.sh                                             # terminal 1
     backend/.venv/bin/python scripts/demo_capture.py           # real verdicts
     backend/.venv/bin/python scripts/demo_video.py             # this
-    # -> /tmp/warden-demo/demo.mp4  (1280x800, 25fps, h264+faststart, AAC)
+    # -> /tmp/palivane-demo/demo.mp4  (1280x800, 25fps, h264+faststart, AAC)
 
 The console tour at the end is captured against the LIVE local console, not a mock.
 """
@@ -27,7 +27,7 @@ W, H = S.W, S.H
 BASE = os.getenv("PALIVANE_URL", "http://localhost:8088").rstrip("/")
 EMAIL = os.getenv("SEED_ADMIN_EMAIL", "admin@demo.local")
 PASSWORD = os.getenv("SEED_ADMIN_PASSWORD", "changeme123")
-WORK = os.getenv("DEMO_WORK", "/tmp/warden-demo")
+WORK = os.getenv("DEMO_WORK", "/tmp/palivane-demo")
 DATA = os.getenv("DEMO_DATA", f"{WORK}/verdicts.json")
 OUT = os.getenv("DEMO_OUT", f"{WORK}/demo.mp4")
 XFADE = 0.4           # crossfade between scenes
@@ -164,6 +164,9 @@ def console_tour_frames(pw, out_dir: str, seconds: float) -> int:
     frames_per = max(1, int(per * FPS))
     b = pw.chromium.launch(args=["--disable-dev-shm-usage", "--no-sandbox"])   # tiny /dev/shm in CI/sandboxes breaks captureScreenshot
     page = b.new_context(viewport={"width": W, "height": H}).new_page()
+    # 'warden_token' is deliberate: it is still api.js's TOKEN_KEY. The rebrand left it
+    # alone because renaming it would sign out every existing session — don't "fix" it here
+    # without changing the app first.
     page.add_init_script(f"localStorage.setItem('warden_token', {json.dumps(token)})")
     # A drawn cursor that glides to each tab, so the tour reads as someone using the app.
     page.add_init_script("""

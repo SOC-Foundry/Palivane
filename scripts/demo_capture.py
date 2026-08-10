@@ -21,7 +21,7 @@ import urllib.request
 BASE = os.getenv("PALIVANE_URL", "http://localhost:8088").rstrip("/")
 EMAIL = os.getenv("SEED_ADMIN_EMAIL", "admin@demo.local")
 PASSWORD = os.getenv("SEED_ADMIN_PASSWORD", "changeme123")
-OUT = os.getenv("DEMO_DATA", "/tmp/warden-demo/verdicts.json")
+OUT = os.getenv("DEMO_DATA", "/tmp/palivane-demo/verdicts.json")
 
 # --- the payloads each scene sends. Realistic, and every one is genuinely detectable. ---
 AWS_KEY = "AKIA" + "IOSFODNN7EXAMPLE"          # AWS's own documented example key id
