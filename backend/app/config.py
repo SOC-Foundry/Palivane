@@ -218,7 +218,10 @@ class Settings:
     gateway_tool_suppress: str = os.getenv("GATEWAY_TOOL_SUPPRESS", "")
     # Published Chrome/Edge extension id — set once the extension is on the store so
     # generated installers write the browser managed policy under the right id.
-    extension_id: str = _env("PALIVANE_EXTENSION_ID", "")
+    # The published (Unlisted) Chrome/Edge extension id — the single source of truth for it.
+    # Feeds the CORS allowlist (so the extension can reach the backend), the MDM force-install
+    # policy, and the device installers. Override per deployment with a self-hosted CRX id.
+    extension_id: str = _env("PALIVANE_EXTENSION_ID", "hoikdfmlhoakggmofeapanfnnbmoaghh")
 
     # --- MCP inspection (agentic tool-use, via the egress proxy) ---
     # enforce=block risky MCP calls; otherwise monitor. Block when severity >= block_severity.
