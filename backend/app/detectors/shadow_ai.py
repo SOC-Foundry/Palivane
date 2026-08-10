@@ -107,6 +107,83 @@ _PII_CONTEXT = [
     ("NPI (health provider)", re.compile(r"\b(npi|provider\s+id)\b", re.I), re.compile(r"\b\d{10}\b"), 0.6),
     ("Aadhaar", re.compile(r"\baadhaar\b", re.I), re.compile(r"\b\d{4}\s?\d{4}\s?\d{4}\b"), 0.7),
 ]
+
+# --- International national IDs (EU / APAC / Americas) ----------------------------------
+# Digit-run formats are ambiguous, so each carries a check-digit validator (or a
+# self-identifying alphanumeric structure) rather than matching bare numbers — the same
+# discipline as the Luhn card check, to keep locale coverage from becoming FP noise. A
+# non-None context regex additionally requires a nearby keyword.
+
+
+def _digits(s: str) -> str:
+    return re.sub(r"\D", "", s)
+
+
+def _sin_ok(s: str) -> bool:            # Canada SIN — Luhn over 9 digits
+    d = _digits(s)
+    return len(d) == 9 and _luhn_ok(d)
+
+
+def _bsn_ok(s: str) -> bool:            # Netherlands BSN — weighted 11-test
+    d = _digits(s)
+    if len(d) not in (8, 9):
+        return False
+    d = d.zfill(9)
+    total = sum(int(n) * w for n, w in zip(d, (9, 8, 7, 6, 5, 4, 3, 2, -1)))
+    return total % 11 == 0
+
+
+def _cpf_ok(s: str) -> bool:            # Brazil CPF — two check digits
+    d = _digits(s)
+    if len(d) != 11 or d == d[0] * 11:
+        return False
+    for n in (9, 10):
+        chk = sum(int(d[i]) * (n + 1 - i) for i in range(n)) * 10 % 11 % 10
+        if chk != int(d[n]):
+            return False
+    return True
+
+
+def _nric_ok(s: str) -> bool:           # Singapore NRIC/FIN — checksum letter
+    m = re.fullmatch(r"([STFGM])(\d{7})([A-Z])", s.upper())
+    if not m:
+        return False
+    pre, digits, chk = m.groups()
+    w = (2, 7, 6, 5, 4, 3, 2)
+    total = sum(int(digits[i]) * w[i] for i in range(7))
+    total += {"T": 4, "G": 4, "M": 3}.get(pre, 0)
+    tables = {
+        "ST": "JZIHGFEDCBA", "FG": "XWUTRQPNMLK", "M": "XWUTRQPNJLK",
+    }
+    table = tables["ST"] if pre in "ST" else tables["FG"] if pre in "FG" else tables["M"]
+    return chk == table[total % 11]
+
+
+def _dni_ok(s: str) -> bool:            # Spain DNI/NIE — control letter mod 23
+    s = s.upper()
+    m = re.fullmatch(r"([XYZ]?)(\d{7,8})([A-Z])", s)
+    if not m:
+        return False
+    pre, num, chk = m.groups()
+    n = int({"X": "0", "Y": "1", "Z": "2"}.get(pre, "") + num)
+    return chk == "TRWAGMYFPDXBNJZSQVHLCKE"[n % 23]
+
+
+# (label, context_re or None, candidate_re, validator, weight)
+_PII_VALIDATED = [
+    ("Canada SIN", re.compile(r"\b(sin|social insurance)\b", re.I),
+     re.compile(r"\b\d{3}[- ]?\d{3}[- ]?\d{3}\b"), _sin_ok, 0.7),
+    ("Netherlands BSN", re.compile(r"\b(bsn|burgerservice)\b", re.I),
+     re.compile(r"\b\d{8,9}\b"), _bsn_ok, 0.7),
+    ("Brazil CPF", None, re.compile(r"\b\d{3}\.\d{3}\.\d{3}-\d{2}\b"), _cpf_ok, 0.75),
+    ("Singapore NRIC/FIN", None, re.compile(r"\b[STFGM]\d{7}[A-Z]\b"), _nric_ok, 0.75),
+    ("Spain DNI/NIE", None, re.compile(r"\b[XYZ]?\d{7,8}[A-Z]\b"), _dni_ok, 0.7),
+]
+# Self-identifying alphanumeric IDs — structure is distinctive enough to flag on sight.
+_PII_STRUCT = [
+    ("Mexico CURP", re.compile(r"\b[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d\b"), 0.75),
+    ("Italy Codice Fiscale", re.compile(r"\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b"), 0.7),
+]
 # --- Single-record context (C): a lone email/phone/DOB is PII when it sits in a record ---
 _RECORD_CTX_RE = re.compile(
     r"\b(full[ -]?name|first name|last name|d\.?o\.?b\.?|date of birth|patient|customer|"
@@ -376,6 +453,17 @@ class ShadowAIDetector:
                 weight = max(weight, w)
         for label, ctx_re, val_re, w in _PII_CONTEXT:
             if ctx_re.search(text) and val_re.search(text):
+                found.append(label)
+                weight = max(weight, w)
+        # International national IDs, each check-digit-validated (or self-identifying).
+        for label, ctx_re, cand_re, valid, w in _PII_VALIDATED:
+            if ctx_re is not None and not ctx_re.search(text):
+                continue
+            if any(valid(m.group(0)) for m in cand_re.finditer(text)):
+                found.append(label)
+                weight = max(weight, w)
+        for label, rx, w in _PII_STRUCT:
+            if rx.search(text):
                 found.append(label)
                 weight = max(weight, w)
 
