@@ -485,6 +485,10 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 .chip { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); }
 .chip-on { color: var(--benign); border-color: rgba(70,201,139,0.4); }
 .chip-off { color: var(--muted-2); }
+.chip-warn { color: var(--high); border-color: rgba(255,138,61,0.4); }
+.judge-health-warn { background: rgba(255,138,61,0.12); border: 1px solid rgba(255,138,61,0.35);
+  color: var(--high); border-radius: 8px; padding: 10px 12px; margin: 8px 0 12px; font-size: 13px; }
+.judge-health-warn code { color: inherit; }
 .ta-right { text-align: right; }
 .ut-email { font-weight: 600; }
 .row-inactive .ut-email, .row-inactive td { color: var(--muted); }

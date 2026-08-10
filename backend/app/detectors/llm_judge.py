@@ -290,6 +290,21 @@ _BYOK_CTORS = {"anthropic": _AnthropicBackend, "openai": _OpenAIBackend,
                "gemini": _GeminiBackend}
 _BYOK_CACHE: dict[tuple, list] = {}
 _BYOK_CACHE_MAX = 256
+# Per-key judge health, so the TENANT console can show "your judge key is failing" —
+# BYOK failures deliberately never page ops, which also meant nobody saw them at all.
+# Keyed like the cache (rotating the key resets health). In-memory per instance: a
+# best-effort banner, not an audit trail.
+_BYOK_HEALTH: dict[tuple, dict] = {}
+
+
+class _ByokBackends(list):
+    """Backends plus the mutable health record _run_with_failover updates for them."""
+    health: dict | None = None
+
+
+def _byok_cache_key(provider: str, api_key: str, model: str) -> tuple:
+    import hashlib
+    return (provider, model, hashlib.sha256(api_key.encode()).hexdigest()[:16])
 
 
 def byok_backends(provider: str, api_key: str, model: str = "") -> list:
@@ -297,17 +312,32 @@ def byok_backends(provider: str, api_key: str, model: str = "") -> list:
     provider = (provider or "").strip().lower()
     if provider not in _BYOK_CTORS or not api_key:
         return []
-    import hashlib
-    cache_key = (provider, model, hashlib.sha256(api_key.encode()).hexdigest()[:16])
+    cache_key = _byok_cache_key(provider, api_key, model)
     if cache_key not in _BYOK_CACHE:
         while len(_BYOK_CACHE) >= _BYOK_CACHE_MAX:      # bound memory across tenants/rotations
             _BYOK_CACHE.pop(next(iter(_BYOK_CACHE)))
+            _BYOK_HEALTH.pop(next(iter(_BYOK_HEALTH)), None) if _BYOK_HEALTH else None
         try:
             m = model or _DEFAULT_MODELS[provider]
             _BYOK_CACHE[cache_key] = [(provider, _BYOK_CTORS[provider](api_key, m), m)]
         except Exception:                                # SDK missing / malformed key
             _BYOK_CACHE[cache_key] = []
-    return _BYOK_CACHE[cache_key]
+    out = _ByokBackends(_BYOK_CACHE[cache_key])
+    if out:
+        out.health = _BYOK_HEALTH.setdefault(
+            cache_key, {"ok": None, "last_error": "", "consecutive_failures": 0,
+                        "last_call_at": 0.0})
+    return out
+
+
+def byok_health(provider: str, api_key: str, model: str = "") -> dict | None:
+    """This key's live judge health for the tenant console, or None if never exercised
+    on this instance. `ok` False = the tenant's own key is failing (they run offline
+    detectors only) — surfaced to THEM, never to ops."""
+    provider = (provider or "").strip().lower()
+    if provider not in _BYOK_CTORS or not api_key:
+        return None
+    return _BYOK_HEALTH.get(_byok_cache_key(provider, api_key, model))
 
 
 class LLMJudgeDetector:
@@ -371,26 +401,30 @@ class LLMJudgeDetector:
         `backends` overrides the global list (BYOK: a tenant's own key); overridden runs
         never touch the global health state, so a tenant's bad key can't page ops."""
         use = self._backends if backends is None else backends
-        track_health = backends is None
-        if track_health:
+        track_global = backends is None
+        # Global runs update the detector's own health (paged by ops); BYOK runs update
+        # the per-key record attached to the backends list (shown to the TENANT).
+        health = self._health if track_global else getattr(backends, "health", None)
+        if health is not None:
             import time
-            self._health["last_call_at"] = time.time()
+            health["last_call_at"] = time.time()
         last_exc = None
         for provider, backend, model in use:
             try:
                 verdict = backend.run(system, user)
                 if last_exc is not None:
                     log.warning("judge: failed over to %s/%s after prior provider error", provider, model)
-                if track_health:
-                    self._health.update(ok=True, last_error="", consecutive_failures=0)
+                if health is not None:
+                    health.update(ok=True, last_error="", consecutive_failures=0)
                 return verdict, _PROVIDER_LABELS.get(provider, provider)
             except Exception as exc:
                 last_exc = exc
                 log.warning("judge: provider %s/%s failed (%s: %s) — trying next",
                             provider, model, type(exc).__name__, str(exc)[:160])
-        if track_health:
-            self._health["consecutive_failures"] += 1
-            self._health.update(ok=False, last_error=f"{type(last_exc).__name__}: {str(last_exc)[:160]}")
+        if health is not None:
+            health["consecutive_failures"] += 1
+            health.update(ok=False, last_error=f"{type(last_exc).__name__}: {str(last_exc)[:160]}")
+        if track_global:
             log.error("judge: ALL providers failed (%d configured); last error %s: %s — running "
                       "offline detectors only", len(use), type(last_exc).__name__,
                       str(last_exc)[:160])

@@ -36,9 +36,11 @@ class _FakeBackend:
 @pytest.fixture(autouse=True)
 def _fresh_byok_cache():
     lj._BYOK_CACHE.clear()
+    lj._BYOK_HEALTH.clear()
     _FakeBackend.built_with = []
     yield
     lj._BYOK_CACHE.clear()
+    lj._BYOK_HEALTH.clear()
 
 
 # --- byok_backends builder ----------------------------------------------------------------
@@ -47,7 +49,8 @@ def test_byok_backends_builds_and_caches(monkeypatch):
     monkeypatch.setitem(lj._BYOK_CTORS, "anthropic", _FakeBackend)
     b1 = lj.byok_backends("anthropic", "sk-tenant-key", "")
     b2 = lj.byok_backends("anthropic", "sk-tenant-key", "")
-    assert b1 and b1 is b2                                # cached — one construction
+    assert b1 and b1 == b2                                # cached — one construction
+    assert b1.health is b2.health                         # shared per-key health record
     assert len(_FakeBackend.built_with) == 1
     provider, backend, model = b1[0]
     assert provider == "anthropic"
@@ -88,14 +91,16 @@ def test_byok_failure_never_touches_global_health(monkeypatch):
 # --- /api/judge-key endpoints ---------------------------------------------------------------
 
 def test_judge_key_roundtrip_write_only(client, db_factory):
-    assert client.get("/api/judge-key").json() == {"provider": "", "model": "", "key_set": False}
+    assert client.get("/api/judge-key").json() == {"provider": "", "model": "",
+                                                   "key_set": False, "health": None}
 
     r = client.put("/api/judge-key", json={"provider": "anthropic",
                                            "key": "sk-ant-tenant-own",
                                            "model": "claude-haiku-4-5"})
     assert r.status_code == 200
     body = r.json()
-    assert body == {"provider": "anthropic", "model": "claude-haiku-4-5", "key_set": True}
+    assert body == {"provider": "anthropic", "model": "claude-haiku-4-5",
+                    "key_set": True, "health": None}
     assert "sk-ant-tenant-own" not in r.text              # never echoed
 
     db = db_factory()
@@ -106,11 +111,11 @@ def test_judge_key_roundtrip_write_only(client, db_factory):
 
     # Update model only: empty key keeps the stored one.
     r = client.put("/api/judge-key", json={"provider": "anthropic", "model": ""})
-    assert r.json() == {"provider": "anthropic", "model": "", "key_set": True}
+    assert r.json() == {"provider": "anthropic", "model": "", "key_set": True, "health": None}
 
     # Delete clears everything.
     r = client.delete("/api/judge-key")
-    assert r.json() == {"provider": "", "model": "", "key_set": False}
+    assert r.json() == {"provider": "", "model": "", "key_set": False, "health": None}
 
 
 def test_judge_key_requires_key_and_valid_provider(client):
@@ -166,3 +171,56 @@ def test_byok_bypasses_plan_gate_but_not_consent(client, db_factory, monkeypatch
     out = _run_for_tenant(db, t.id)
     db.close()
     assert not any("byok verdict" in s.get("detail", "") for s in out["signals"])
+
+
+# --- per-key health (the tenant's "your judge key is failing" banner) ---------------------
+
+class _DeadBackend:
+    def __init__(self, api_key: str, model: str) -> None:
+        self.model = model
+
+    def run(self, system, user):
+        raise RuntimeError("credit balance is too low")
+
+
+def _analyze_with(backends):
+    from app.detectors.base import AnalysisInput, Surface
+    from app.detectors.llm_judge import LLMJudgeDetector
+    det = LLMJudgeDetector.__new__(LLMJudgeDetector)
+    det._backends = []
+    det._health = {"ok": None, "last_error": "", "consecutive_failures": 0, "last_call_at": 0.0}
+    det.analyze(AnalysisInput(content="x" * 20, surface=Surface.LLM_IO, channel="gateway"),
+                backends=backends)
+    return det
+
+
+def test_byok_failure_recorded_per_key_not_globally(monkeypatch):
+    monkeypatch.setitem(lj._BYOK_CTORS, "anthropic", _DeadBackend)
+    backends = lj.byok_backends("anthropic", "sk-dead")
+    det = _analyze_with(backends)
+    assert det.health["ok"] is None                        # global health untouched
+    h = lj.byok_health("anthropic", "sk-dead")
+    assert h and h["ok"] is False and "credit balance" in h["last_error"]
+
+
+def test_byok_success_clears_key_health(monkeypatch):
+    monkeypatch.setitem(lj._BYOK_CTORS, "anthropic", _FakeBackend)
+    _analyze_with(lj.byok_backends("anthropic", "sk-live"))
+    h = lj.byok_health("anthropic", "sk-live")
+    assert h and h["ok"] is True and h["last_call_at"] > 0
+
+
+def test_byok_health_none_for_unknown_or_rotated_key():
+    assert lj.byok_health("anthropic", "sk-never-used") is None
+    assert lj.byok_health("", "") is None
+
+
+def test_judge_key_endpoint_surfaces_health(client, monkeypatch):
+    monkeypatch.setitem(lj._BYOK_CTORS, "anthropic", _DeadBackend)
+    client.put("/api/judge-key", json={"provider": "anthropic", "key": "sk-banner"})
+    out = client.get("/api/judge-key").json()
+    assert out["key_set"] is True and out["health"] is None   # not exercised yet
+    _analyze_with(lj.byok_backends("anthropic", "sk-banner"))
+    out = client.get("/api/judge-key").json()
+    assert out["health"]["ok"] is False
+    assert "credit balance" in out["health"]["last_error"]
