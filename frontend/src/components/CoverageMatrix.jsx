@@ -107,7 +107,8 @@ const GROUPS = [
       {
         surface: "S3 buckets & GitHub repos at rest",
         how: "Scheduled server-side scans of configured buckets/repos",
-        needs: "Read credentials for the target. Nothing on devices.",
+        note: "Read-only by design: it reports what is already exposed and how to fix it — it never deletes an object, rewrites history, or changes a bucket policy.",
+        needs: "Read credentials for the target (s3:GetObject / a read token). Nothing on devices.",
         mode: "observe",
       },
     ],
@@ -154,6 +155,31 @@ export default function CoverageMatrix() {
 
       <section className="lp-section">
         <div className="lp-wrap">
+          <div className="cov-explainer">
+            <h2 className="lp-h2" style={{ fontSize: 19, marginBottom: 8 }}>
+              What the Enforcement column means</h2>
+            <p className="lp-sub" style={{ textAlign: "left", margin: "0 0 10px" }}>
+              <strong>Can block</strong> means the check sits in front of an action that hasn't
+              happened yet — the API request, the paste, the prompt, the merge — so refusing it
+              prevents the thing. <strong>Observe-only</strong> means the action already
+              happened and the check reports on it.
+            </p>
+            <p className="lp-sub" style={{ textAlign: "left", margin: "0 0 10px" }}>
+              It's a question of <em>when you look</em>, not of how good the detection is. The
+              same workflow scan that fails a pull request before merge becomes observe-only
+              once that code is in the repo, because there is nothing left to refuse — only a
+              fact to hand you, with the fix.
+            </p>
+            <p className="lp-sub" style={{ textAlign: "left", margin: 0 }}>
+              That's why scanning at rest is deliberately read-only. Palivane reads your bucket
+              with <code>s3:GetObject</code> and your repositories with a read token; it cannot
+              delete an object or rewrite a branch, because it is never given the access to do
+              so. Handing a detection tool write access to production so it could "remediate"
+              on a match is a worse failure mode than a finding you action yourself. The
+              enforcement point for <em>new</em> secrets is earlier — the pre-commit hook and
+              the pull-request gate, both of which can block.
+            </p>
+          </div>
           {GROUPS.map((g) => (
             <div key={g.title} style={{ marginBottom: 36 }}>
               <h2 className="lp-h2" style={{ fontSize: 21 }}>{g.title}</h2>
