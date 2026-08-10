@@ -17,7 +17,28 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from .ai_catalog import CATEGORY_LABEL, classify
-from .models import DiscoveredUsage
+from .detectors.shadow_ai import _PERSONAL_EMAIL_DOMAINS
+from .models import DiscoveredUsage, TenantDomain
+
+
+def _account_type(db, tenant_id, actor: str) -> str:
+    """Classify the identity an actor used to reach an AI tool: corporate (email on one of
+    the tenant's DNS-verified domains), personal (a free-mail domain), or unknown. Best
+    proxy for personal-vs-corporate ACCOUNT without OAuth introspection — a sanctioned tool
+    reached from a personal account is still shadow AI."""
+    at = (actor or "").strip().lower()
+    if "@" not in at:
+        return "unknown"
+    domain = at.rsplit("@", 1)[-1]
+    if not domain:
+        return "unknown"
+    if domain in _PERSONAL_EMAIL_DOMAINS:
+        return "personal"
+    if tenant_id is not None and db.query(TenantDomain).filter(
+            TenantDomain.tenant_id == tenant_id,
+            TenantDomain.domain == domain).first() is not None:
+        return "corporate"
+    return "unknown"
 
 _SENSITIVE = {"secret_leak", "pii_exposure", "source_code_leak", "confidential_data", "credential_at_rest"}
 
@@ -67,6 +88,8 @@ def _upsert(db, tenant_id, actor, hit, *, source, inc=1, sensitive=False, risk=0
         )
         db.add(row)
         db.flush()
+    if not row.account_type:                # classify once; cheap, and stable per actor
+        row.account_type = _account_type(db, tenant_id, actor_n)
     row.event_count = (row.event_count or 0) + inc
     if sensitive:
         row.sensitive_count = (row.sensitive_count or 0) + 1
@@ -159,8 +182,13 @@ def build_inventory(db, tenant_id, sanctioned_raw: str) -> dict:
             "tool": r.tool, "category": r.category, "category_label": CATEGORY_LABEL.get(r.category, r.category),
             "domain": r.domain, "sanctioned": san, "users": set(), "events": 0,
             "sensitive_events": 0, "max_risk": 0, "sources": set(), "last_seen": "",
+            "personal_users": set(), "corporate_users": set(),
         })
         t["users"].add(r.actor)
+        if r.account_type == "personal":
+            t["personal_users"].add(r.actor)
+        elif r.account_type == "corporate":
+            t["corporate_users"].add(r.actor)
         t["events"] += r.event_count or 0
         t["sensitive_events"] += r.sensitive_count or 0
         t["max_risk"] = max(t["max_risk"], r.max_risk or 0)
@@ -194,9 +222,11 @@ def build_inventory(db, tenant_id, sanctioned_raw: str) -> dict:
     tool_list = []
     for t in tools.values():
         t["user_count"] = len(t["users"])
+        t["personal_user_count"] = len(t["personal_users"])
+        t["corporate_user_count"] = len(t["corporate_users"])
         t["risk"] = _tool_risk(t)
         t["sources"] = sorted(t["sources"])
-        del t["users"]
+        del t["users"], t["personal_users"], t["corporate_users"]
         tool_list.append(t)
     tool_list.sort(key=lambda x: (not x["sanctioned"], x["risk"], x["events"]), reverse=True)
 
@@ -210,6 +240,10 @@ def build_inventory(db, tenant_id, sanctioned_raw: str) -> dict:
     team_list.sort(key=lambda x: (x["unsanctioned_count"], x["sensitive_events"], x["max_risk"]), reverse=True)
 
     unsanctioned = [t for t in tool_list if not t["sanctioned"]]
+    # The Netskope-style headline: distinct actors reaching ANY tool via a personal account,
+    # and the sharper risk — personal accounts on UNsanctioned tools.
+    personal_actors = {r.actor for r in rows if r.account_type == "personal"}
+    personal_on_unsanctioned = len([t for t in unsanctioned if t["personal_user_count"]])
     return {
         "summary": {
             "tools": len(tool_list),
@@ -217,6 +251,8 @@ def build_inventory(db, tenant_id, sanctioned_raw: str) -> dict:
             "users": len({r.actor for r in rows}),
             "sensitive_events": sum(t["sensitive_events"] for t in tool_list),
             "teams": len([g for g in team_list if g["team"] != "Unassigned"]),
+            "personal_account_users": len(personal_actors),
+            "personal_on_unsanctioned_tools": personal_on_unsanctioned,
         },
         "tools": tool_list,
         "teams": team_list,

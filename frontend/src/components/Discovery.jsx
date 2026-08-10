@@ -80,6 +80,9 @@ export default function Discovery({ tenant, onTenant }) {
             <div><span className="usage-n" style={{ color: "var(--crit)" }}>{s.unsanctioned_tools}</span><span className="usage-l">unsanctioned</span></div>
             <div><span className="usage-n">{s.users}</span><span className="usage-l">users</span></div>
             <div><span className="usage-n" style={{ color: "var(--high)" }}>{s.sensitive_events}</span><span className="usage-l">sensitive exposures</span></div>
+            <div title="Distinct users reaching an AI tool from a personal (free-mail) account rather than a corporate identity">
+              <span className="usage-n" style={{ color: "var(--high)" }}>{s.personal_account_users ?? 0}</span>
+              <span className="usage-l">personal accounts</span></div>
             <div><span className="usage-n">{s.teams}</span><span className="usage-l">teams</span></div>
           </div>
         </div>
@@ -97,7 +100,13 @@ export default function Discovery({ tenant, onTenant }) {
             <tbody>
               {inv.tools.map((t) => (
                 <tr key={t.tool}>
-                  <td><strong>{t.tool}</strong><div className="muted" style={{ fontSize: 11 }}>{t.domain}</div></td>
+                  <td><strong>{t.tool}</strong><div className="muted" style={{ fontSize: 11 }}>{t.domain}</div>
+                    {t.personal_user_count > 0 && (
+                      <span className="cat cat-pii_exposure" style={{ fontSize: 10, marginTop: 3, display: "inline-block" }}
+                            title="Users on this tool via a personal (free-mail) account">
+                        {t.personal_user_count} personal
+                      </span>)}
+                  </td>
                   <td className="muted">{t.category_label}</td>
                   <td>{t.sanctioned
                     ? <span className="cat cat-unsanctioned_ai">Sanctioned</span>
