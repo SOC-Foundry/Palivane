@@ -131,3 +131,26 @@ def classify(text: str) -> dict | None:
             name, cat = CATALOG[key]
             return {"tool": name, "category": cat, "domain": key}
     return None
+
+
+# Canonical tool name (lowercased) -> (name, category), longest first — for matching a
+# display NAME ("ChatGPT", "Claude for Sheets") rather than a domain. Built once.
+_NAME_INDEX = sorted(
+    {v[0].lower(): v for v in CATALOG.values()}.items(),
+    key=lambda kv: len(kv[0]), reverse=True)
+
+
+def classify_name(text: str) -> dict | None:
+    """Resolve an app DISPLAY NAME to a catalog tool. Tries the domain matcher first (a name
+    may embed a domain), then matches against canonical tool names — 'ChatGPT for Slack'
+    resolves to ChatGPT. None if unknown."""
+    hit = classify(text)
+    if hit:
+        return hit
+    low = (text or "").strip().lower()
+    if not low:
+        return None
+    for nm, (name, cat) in _NAME_INDEX:
+        if len(nm) >= 3 and nm in low:
+            return {"tool": name, "category": cat, "domain": ""}
+    return None

@@ -121,6 +121,7 @@ const GAPS = [
   ["Copilot prompts", "Copilot's hook API allows inspecting tool calls (deniable) but exposes prompts observe-only — we can see them, not stop them."],
   ["OTEL-bridge capture", "Orgs using the claude-otel bridge get monitor-only, post-hoc capture — the event has already happened when it's scored."],
   ["Mobile apps", "Native mobile AI apps are not covered. The browser extension covers mobile web only where the browser supports extensions."],
+  ["Agentic browsers", "In browsers where the agent IS the browser (Atlas, Comet, Dia), the model call originates from the browser itself, not a page fetch the extension wraps — so we discover the usage where it hits a known model host, but can't yet intercept it inline. First-class support is planned; it's called out here rather than implied."],
 ];
 
 // The threat model, including the bypass list. Every control here runs on a machine the
