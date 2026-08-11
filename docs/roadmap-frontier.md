@@ -39,10 +39,13 @@ per-browser work (each exposes different hooks, if any). Listed as a known gap o
 Next step: verify extension behavior in each and evaluate a native-messaging or
 browser-policy path.
 
-## SaaS-AI OAuth discovery — shipped (seed), expandable
+## SaaS-AI OAuth discovery — live pulls shipping, per-platform buildout
 
-The OAuth-grant ingest (`POST /api/discovery/oauth-grants`) covers the mechanism: classify
-AI apps granted into a SaaS tenant and flag broad-scope grants. Expanding to **live** pulls
-from the top-20 SaaS admin APIs (Google Workspace, M365, Slack, Salesforce, Notion, …) is
-per-platform integration work — each is an OAuth app + admin API + token storage — and is
-the natural follow-on to the ingest path that exists now.
+The OAuth-grant ingest (`POST /api/discovery/oauth-grants`) covers the mechanism, and the
+connector framework (`backend/app/saas_connectors.py` + `/api/discovery/connectors`) now
+does **live pulls**: store a platform admin credential (encrypted at rest), sync on demand
+or from an operator cron, grants land through the same ingest path as a manual export.
+First connector: **Google Workspace** (service account with domain-wide delegation).
+Remaining work is per-platform fetchers in the PLATFORMS registry — M365 (Graph
+`servicePrincipals`/`oauth2PermissionGrants`), Slack, Salesforce, Notion, … — each an
+admin-API client that normalizes to the same grant shape.

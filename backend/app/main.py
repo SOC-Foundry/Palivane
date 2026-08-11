@@ -24,7 +24,7 @@ from .gateway import gemini_router, router as gateway_router
 from .database import Base, engine as db_engine, get_db
 from .detectors import AnalysisInput, Surface
 from .engine import engine
-from .models import Agent, AgentRole, Finding, PolicyOverride, Tenant, User
+from .models import Agent, AgentRole, Finding, PolicyOverride, SaasConnector, Tenant, User
 from .schemas import (
     A2AIngest,
     AIUsageIngest,
@@ -36,6 +36,7 @@ from .schemas import (
     CodeScanRequest,
     CoverageRequest,
     DevicePostureScan,
+    ConnectorCreate,
     DiscoveryIngest,
     OAuthGrantIngest,
     IDEExtScan,
@@ -2222,6 +2223,69 @@ def discovery_oauth_grants(body: OAuthGrantIngest, current: User = Depends(requi
     data scopes (mail/drive/chat). Admin-only."""
     from .discovery import ingest_oauth_grants
     return ingest_oauth_grants(db, current.tenant_id, body.grants)
+
+
+@app.get("/api/discovery/connectors")
+def connectors_list(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """The tenant's live-pull SaaS connectors (credentials redacted) plus the platform
+    registry, so the UI can render setup forms for platforms not yet configured."""
+    from .saas_connectors import PLATFORMS
+    rows = db.query(SaasConnector).filter(SaasConnector.tenant_id == current.tenant_id).all()
+    return {"connectors": [c.to_dict() for c in rows],
+            "platforms": {k: {"label": v["label"], "credential_fields": v["credential_fields"],
+                              "setup": v["setup"]} for k, v in PLATFORMS.items()}}
+
+
+@app.post("/api/discovery/connectors")
+def connectors_create(body: ConnectorCreate, current: User = Depends(require_admin),
+                      db: Session = Depends(get_db)):
+    """Store a SaaS admin credential for recurring OAuth-grant pulls (encrypted at rest).
+    Same-platform+label upserts, so re-submitting a rotated credential just replaces it."""
+    from .saas_connectors import PLATFORMS, store_credentials
+    if body.platform not in PLATFORMS:
+        raise HTTPException(400, f"unknown platform (have: {', '.join(sorted(PLATFORMS))})")
+    row = (db.query(SaasConnector)
+             .filter(SaasConnector.tenant_id == current.tenant_id,
+                     SaasConnector.platform == body.platform,
+                     SaasConnector.label == body.label).first())
+    if not row:
+        row = SaasConnector(tenant_id=current.tenant_id, platform=body.platform, label=body.label)
+        db.add(row)
+    store_credentials(row, body.credentials)
+    row.active = True
+    db.commit()
+    db.refresh(row)
+    return row.to_dict()
+
+
+@app.post("/api/discovery/connectors/{connector_id}/sync")
+def connectors_sync(connector_id: int, current: User = Depends(require_admin),
+                    db: Session = Depends(get_db)):
+    """Pull the platform's current OAuth grants and ingest them — identical outcome to
+    uploading a manual export. Trigger from the console or an operator cron."""
+    from .saas_connectors import ConnectorError, sync_connector
+    row = (db.query(SaasConnector)
+             .filter(SaasConnector.tenant_id == current.tenant_id,
+                     SaasConnector.id == connector_id, SaasConnector.active.is_(True)).first())
+    if not row:
+        raise HTTPException(404, "connector not found")
+    try:
+        return sync_connector(db, row)
+    except ConnectorError as e:
+        raise HTTPException(502, str(e))
+
+
+@app.delete("/api/discovery/connectors/{connector_id}")
+def connectors_delete(connector_id: int, current: User = Depends(require_admin),
+                      db: Session = Depends(get_db)):
+    row = (db.query(SaasConnector)
+             .filter(SaasConnector.tenant_id == current.tenant_id,
+                     SaasConnector.id == connector_id).first())
+    if not row:
+        raise HTTPException(404, "connector not found")
+    db.delete(row)
+    db.commit()
+    return {"deleted": connector_id}
 
 
 @app.get("/api/policies")
