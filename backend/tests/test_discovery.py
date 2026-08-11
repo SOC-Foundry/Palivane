@@ -14,6 +14,17 @@ def test_catalog_classifies_domains_urls_and_names():
     assert classify("totally-unknown-saas.example") is None
 
 
+def test_catalog_short_keys_respect_label_boundaries():
+    # 'x.ai' (Grok) and 'pi.ai' (Pi) must not swallow longer domains that merely end in
+    # the same characters — these were misattributed before boundary anchoring.
+    assert classify("llamaindex.ai")["tool"] == "LlamaIndex"
+    assert classify("vapi.ai")["tool"] == "Vapi"
+    assert classify("hix.ai")["tool"] == "HIX.AI"
+    assert classify("netflix.ai") is None          # unlisted *x.ai is unknown, not Grok
+    assert classify("x.ai")["tool"] == "Grok"      # the real domain still matches
+    assert classify("https://api.x.ai/v1")["tool"] == "Grok"
+
+
 def test_ingest_and_inventory(client):
     # A CASB/proxy log: two people on ChatGPT (unsanctioned), one on Otter, one junk line.
     r = client.post("/api/discovery/ingest", json={"events": [

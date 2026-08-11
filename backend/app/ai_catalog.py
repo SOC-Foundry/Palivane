@@ -7,8 +7,9 @@ category. Used by:
 
 Intentionally broad and easy to extend — "stay updated as new AI tools emerge" is a first-
 class requirement. Add a row to CATALOG (domain-or-alias -> (name, category)); matching is
-case-insensitive substring, so "chatgpt.com", "https://chatgpt.com/c/…", and a bare
-"chatgpt" all resolve to the same tool.
+case-insensitive substring anchored at label boundaries, so "chatgpt.com",
+"https://chatgpt.com/c/…", and a bare "chatgpt" all resolve to the same tool, but "x.ai"
+does not claim "llamaindex.ai".
 """
 
 from __future__ import annotations
@@ -29,12 +30,65 @@ CATALOG: dict[str, tuple[str, str]] = {
     "claude.com": ("Claude", "assistant"), "qwen.ai": ("Qwen", "assistant"),
     "kimi.moonshot.cn": ("Kimi", "assistant"), "doubao.com": ("Doubao", "assistant"),
     "hailuo.ai": ("Hailuo", "assistant"), "clovax.naver.com": ("CLOVA X", "assistant"),
+    "duck.ai": ("Duck.ai (DuckDuckGo)", "assistant"),
+    "venice.ai": ("Venice AI", "assistant"),
+    "inflection.ai": ("Inflection Pi", "assistant"),
+    "monica.im": ("Monica", "assistant"),
+    "sider.ai": ("Sider", "assistant"),
+    "getmerlin.in": ("Merlin AI", "assistant"),
+    "maxai.me": ("MaxAI", "assistant"),
+    "getliner.com": ("Liner", "assistant"),
+    "mammouth.ai": ("Mammouth AI", "assistant"),
+    "t3.chat": ("T3 Chat", "assistant"),
+    "abacus.ai": ("Abacus.AI ChatLLM", "assistant"),
+    "typingmind.com": ("TypingMind", "assistant"),
+    "lobehub.com": ("LobeChat", "assistant"),
+    "chatpdf.com": ("ChatPDF", "assistant"),
+    "askyourpdf.com": ("AskYourPDF", "assistant"),
+    "humata.ai": ("Humata", "assistant"),
+    "julius.ai": ("Julius AI", "assistant"),
+    "replika.com": ("Replika", "assistant"),
+    "nomi.ai": ("Nomi", "assistant"),
+    "janitorai.com": ("JanitorAI", "assistant"),
+    "lmarena.ai": ("LMArena", "assistant"),
+    "reka.ai": ("Reka", "assistant"),
+    "notebooklm.google": ("NotebookLM", "assistant"),
+    "moveworks.com": ("Moveworks", "assistant"),
+    "harvey.ai": ("Harvey", "assistant"),
+    "casetext.com": ("CoCounsel (Casetext)", "assistant"),
+    "spellbook.legal": ("Spellbook", "assistant"),
+    "chatglm.cn": ("ChatGLM (Zhipu)", "assistant"),
+    "zhipuai.cn": ("Zhipu AI", "assistant"),
+    "yiyan.baidu.com": ("ERNIE Bot", "assistant"),
+    "tongyi.aliyun.com": ("Tongyi Qianwen", "assistant"),
+    "xinghuo.xfyun.cn": ("iFlytek Spark", "assistant"),
+    "hunyuan.tencent.com": ("Tencent Hunyuan", "assistant"),
+    "yuanbao.tencent.com": ("Tencent Yuanbao", "assistant"),
+    "stepfun.com": ("StepFun", "assistant"),
+    "minimaxi.com": ("MiniMax", "assistant"),
+    "baichuan-ai.com": ("Baichuan", "assistant"),
+    "moonshot.cn": ("Moonshot (Kimi)", "assistant"),
+    "kimi.com": ("Kimi", "assistant"),
 
     # --- Search / answer engines ---
     "perplexity.ai": ("Perplexity", "search"), "you.com": ("You.com", "search"),
     "phind.com": ("Phind", "search"), "komo.ai": ("Komo", "search"),
     "andi.com": ("Andi", "search"), "consensus.app": ("Consensus", "search"),
     "elicit.com": ("Elicit", "search"), "scholarai.io": ("ScholarAI", "search"),
+    "kagi.com": ("Kagi Assistant", "search"),
+    "exa.ai": ("Exa", "search"),
+    "iask.ai": ("iAsk", "search"),
+    "andisearch.com": ("Andi", "search"),
+    "genspark.ai": ("Genspark", "search"),
+    "myninja.ai": ("Ninja AI", "search"),
+    "glean.com": ("Glean", "search"),
+    "dashworks.ai": ("Dashworks", "search"),
+    "hebbia.com": ("Hebbia", "search"),
+    "alphasense.com": ("AlphaSense", "search"),
+    "openevidence.com": ("OpenEvidence", "search"),
+    "scite.ai": ("Scite", "search"),
+    "typeset.io": ("SciSpace", "search"),
+    "felo.ai": ("Felo", "search"),
 
     # --- Coding assistants / agents ---
     "github.com/copilot": ("GitHub Copilot", "coding"), "githubcopilot.com": ("GitHub Copilot", "coding"),
@@ -46,6 +100,37 @@ CATALOG: dict[str, tuple[str, str]] = {
     "bolt.new": ("Bolt", "coding"), "v0.dev": ("v0", "coding"), "lovable.dev": ("Lovable", "coding"),
     "aws.amazon.com/q": ("Amazon Q", "coding"), "blackbox.ai": ("Blackbox AI", "coding"),
     "codegeex.cn": ("CodeGeeX", "coding"), "continue.dev": ("Continue", "coding"),
+    "devv.ai": ("Devv", "coding"),
+    "jetbrains.com/ai": ("JetBrains AI", "coding"),
+    "augmentcode.com": ("Augment Code", "coding"),
+    "supermaven.com": ("Supermaven", "coding"),
+    "aider.chat": ("Aider", "coding"),
+    "cline.bot": ("Cline", "coding"),
+    "roocode.com": ("Roo Code", "coding"),
+    "kilocode.ai": ("Kilo Code", "coding"),
+    "warp.dev": ("Warp AI", "coding"),
+    "zed.dev": ("Zed AI", "coding"),
+    "trae.ai": ("Trae", "coding"),
+    "factory.ai": ("Factory", "coding"),
+    "all-hands.dev": ("OpenHands", "coding"),
+    "qodo.ai": ("Qodo", "coding"),
+    "tabbyml.com": ("TabbyML", "coding"),
+    "sweep.dev": ("Sweep AI", "coding"),
+    "ellipsis.dev": ("Ellipsis", "coding"),
+    "coderabbit.ai": ("CodeRabbit", "coding"),
+    "greptile.com": ("Greptile", "coding"),
+    "graphite.dev": ("Graphite", "coding"),
+    "codegen.com": ("Codegen", "coding"),
+    "cognition.ai": ("Cognition (Devin)", "coding"),
+    "jules.google.com": ("Jules", "coding"),
+    "firebase.studio": ("Firebase Studio", "coding"),
+    "idx.dev": ("Project IDX", "coding"),
+    "ampcode.com": ("Amp (Sourcegraph)", "coding"),
+    "pieces.app": ("Pieces", "coding"),
+    "bito.ai": ("Bito", "coding"),
+    "refact.ai": ("Refact", "coding"),
+    "opencode.ai": ("opencode", "coding"),
+    "kiro.dev": ("Kiro", "coding"),
 
     # --- Agents / automation ---
     "manus.im": ("Manus", "agent"), "devin.ai": ("Devin", "agent"),
@@ -53,6 +138,36 @@ CATALOG: dict[str, tuple[str, str]] = {
     "relevanceai.com": ("Relevance AI", "agent"), "crewai.com": ("CrewAI", "agent"),
     "n8n.io": ("n8n (AI)", "agent"), "make.com": ("Make (AI)", "agent"),
     "zapier.com/ai": ("Zapier AI", "agent"),
+    "browser-use.com": ("Browser Use", "agent"),
+    "hcompany.ai": ("H Company (Runner H)", "agent"),
+    "adept.ai": ("Adept", "agent"),
+    "gumloop.com": ("Gumloop", "agent"),
+    "wordware.ai": ("Wordware", "agent"),
+    "dust.tt": ("Dust", "agent"),
+    "lutra.ai": ("Lutra", "agent"),
+    "bardeen.ai": ("Bardeen", "agent"),
+    "taskade.com": ("Taskade AI", "agent"),
+    "ada.cx": ("Ada", "agent"),
+    "fin.ai": ("Fin (Intercom)", "agent"),
+    "sierra.ai": ("Sierra", "agent"),
+    "decagon.ai": ("Decagon", "agent"),
+    "11x.ai": ("11x", "agent"),
+    "artisan.co": ("Artisan", "agent"),
+    "langflow.org": ("Langflow", "agent"),
+    "flowiseai.com": ("Flowise", "agent"),
+    "stack-ai.com": ("StackAI", "agent"),
+    "voiceflow.com": ("Voiceflow", "agent"),
+    "botpress.com": ("Botpress", "agent"),
+    "chatbase.co": ("Chatbase", "agent"),
+    "composio.dev": ("Composio", "agent"),
+    "vapi.ai": ("Vapi", "agent"),
+    "retellai.com": ("Retell AI", "agent"),
+    "bland.ai": ("Bland", "agent"),
+    "synthflow.ai": ("Synthflow", "agent"),
+    "forethought.ai": ("Forethought", "agent"),
+    "kore.ai": ("Kore.ai", "agent"),
+    "yellow.ai": ("Yellow.ai", "agent"),
+    "clay.com": ("Clay", "agent"),
 
     # --- Writing / productivity ---
     "jasper.ai": ("Jasper", "writing"), "copy.ai": ("Copy.ai", "writing"),
@@ -61,6 +176,29 @@ CATALOG: dict[str, tuple[str, str]] = {
     "notion.so/ai": ("Notion AI", "writing"), "notion.ai": ("Notion AI", "writing"),
     "sudowrite.com": ("Sudowrite", "writing"), "wordtune.com": ("Wordtune", "writing"),
     "gamma.app": ("Gamma", "writing"), "tome.app": ("Tome", "writing"),
+    "writer.com": ("Writer", "writing"),
+    "hyperwriteai.com": ("HyperWrite", "writing"),
+    "lex.page": ("Lex", "writing"),
+    "anyword.com": ("Anyword", "writing"),
+    "simplified.com": ("Simplified", "writing"),
+    "frase.io": ("Frase", "writing"),
+    "surferseo.com": ("Surfer", "writing"),
+    "scalenut.com": ("Scalenut", "writing"),
+    "deepl.com": ("DeepL", "writing"),
+    "languagetool.org": ("LanguageTool", "writing"),
+    "prowritingaid.com": ("ProWritingAid", "writing"),
+    "superhuman.com": ("Superhuman AI", "writing"),
+    "shortwave.com": ("Shortwave", "writing"),
+    "mem.ai": ("Mem", "writing"),
+    "reflect.app": ("Reflect", "writing"),
+    "slidesai.io": ("SlidesAI", "writing"),
+    "beautiful.ai": ("Beautiful.ai", "writing"),
+    "decktopus.com": ("Decktopus", "writing"),
+    "presentations.ai": ("Presentations.AI", "writing"),
+    "napkin.ai": ("Napkin", "writing"),
+    "lavender.ai": ("Lavender", "writing"),
+    "regie.ai": ("Regie.ai", "writing"),
+    "hix.ai": ("HIX.AI", "writing"),
 
     # --- Image / video / audio ---
     "midjourney.com": ("Midjourney", "image_video"), "labs.openai.com": ("DALL·E", "image_video"),
@@ -71,12 +209,70 @@ CATALOG: dict[str, tuple[str, str]] = {
     "suno.com": ("Suno", "image_video"), "udio.com": ("Udio", "image_video"),
     "ideogram.ai": ("Ideogram", "image_video"), "krea.ai": ("Krea", "image_video"),
     "civitai.com": ("Civitai", "image_video"), "kling.ai": ("Kling", "image_video"),
+    "sora.com": ("Sora", "image_video"),
+    "labs.google": ("Google Labs (ImageFX/Flow)", "image_video"),
+    "firefly.adobe.com": ("Adobe Firefly", "image_video"),
+    "lumalabs.ai": ("Luma Dream Machine", "image_video"),
+    "pixverse.ai": ("PixVerse", "image_video"),
+    "haiper.ai": ("Haiper", "image_video"),
+    "genmo.ai": ("Genmo", "image_video"),
+    "kaiber.ai": ("Kaiber", "image_video"),
+    "opus.pro": ("OpusClip", "image_video"),
+    "veed.io": ("VEED", "image_video"),
+    "capcut.com": ("CapCut", "image_video"),
+    "invideo.io": ("InVideo", "image_video"),
+    "fliki.ai": ("Fliki", "image_video"),
+    "pictory.ai": ("Pictory", "image_video"),
+    "d-id.com": ("D-ID", "image_video"),
+    "colossyan.com": ("Colossyan", "image_video"),
+    "blackforestlabs.ai": ("Black Forest Labs (FLUX)", "image_video"),
+    "recraft.ai": ("Recraft", "image_video"),
+    "playground.com": ("Playground", "image_video"),
+    "getimg.ai": ("Getimg", "image_video"),
+    "nightcafe.studio": ("NightCafe", "image_video"),
+    "openart.ai": ("OpenArt", "image_video"),
+    "seaart.ai": ("SeaArt", "image_video"),
+    "tensor.art": ("TensorArt", "image_video"),
+    "dreamstudio.ai": ("DreamStudio", "image_video"),
+    "clipdrop.co": ("Clipdrop", "image_video"),
+    "photoroom.com": ("PhotoRoom", "image_video"),
+    "remove.bg": ("remove.bg", "image_video"),
+    "cutout.pro": ("Cutout.Pro", "image_video"),
+    "fotor.com": ("Fotor AI", "image_video"),
+    "canva.com": ("Canva (AI)", "image_video"),
+    "topazlabs.com": ("Topaz Labs", "image_video"),
+    "magnific.ai": ("Magnific", "image_video"),
+    "freepik.com": ("Freepik AI", "image_video"),
+    "lexica.art": ("Lexica", "image_video"),
+    "resemble.ai": ("Resemble AI", "image_video"),
+    "murf.ai": ("Murf", "image_video"),
+    "wellsaidlabs.com": ("WellSaid", "image_video"),
+    "lovo.ai": ("LOVO", "image_video"),
+    "speechify.com": ("Speechify", "image_video"),
+    "mubert.com": ("Mubert", "image_video"),
+    "soundraw.io": ("Soundraw", "image_video"),
+    "aiva.ai": ("AIVA", "image_video"),
+    "podcast.adobe.com": ("Adobe Podcast", "image_video"),
+    "rask.ai": ("Rask", "image_video"),
 
     # --- Meeting / transcription notetakers (high data-exposure risk) ---
     "otter.ai": ("Otter.ai", "meeting"), "fireflies.ai": ("Fireflies.ai", "meeting"),
     "fathom.video": ("Fathom", "meeting"), "read.ai": ("Read AI", "meeting"),
     "tldv.io": ("tl;dv", "meeting"), "avoma.com": ("Avoma", "meeting"),
     "gong.io": ("Gong", "meeting"), "sembly.ai": ("Sembly", "meeting"),
+    "granola.ai": ("Granola", "meeting"),
+    "krisp.ai": ("Krisp", "meeting"),
+    "circleback.ai": ("Circleback", "meeting"),
+    "fellow.app": ("Fellow", "meeting"),
+    "notta.ai": ("Notta", "meeting"),
+    "chorus.ai": ("Chorus", "meeting"),
+    "meetjamie.ai": ("Jamie", "meeting"),
+    "tactiq.io": ("Tactiq", "meeting"),
+    "supernormal.com": ("Supernormal", "meeting"),
+    "nabla.com": ("Nabla", "meeting"),
+    "abridge.com": ("Abridge", "meeting"),
+    "suki.ai": ("Suki", "meeting"),
+    "heidihealth.com": ("Heidi Health", "meeting"),
 
     # --- ML platforms / model hubs / API providers ---
     "huggingface.co": ("Hugging Face", "ml_platform"), "replicate.com": ("Replicate", "ml_platform"),
@@ -86,6 +282,55 @@ CATALOG: dict[str, tuple[str, str]] = {
     "api.anthropic.com": ("Anthropic API", "api"), "api.openai.com": ("OpenAI API", "api"),
     "generativelanguage.googleapis.com": ("Gemini API", "api"),
     "bedrock.amazonaws.com": ("Amazon Bedrock", "api"), "perplexity.ai/api": ("Perplexity API", "api"),
+    "langchain.com": ("LangChain / LangSmith", "ml_platform"),
+    "llamaindex.ai": ("LlamaIndex", "ml_platform"),
+    "ollama.com": ("Ollama", "ml_platform"),
+    "lmstudio.ai": ("LM Studio", "ml_platform"),
+    "modal.com": ("Modal", "ml_platform"),
+    "baseten.co": ("Baseten", "ml_platform"),
+    "anyscale.com": ("Anyscale", "ml_platform"),
+    "databricks.com": ("Databricks (AI)", "ml_platform"),
+    "wandb.ai": ("Weights & Biases", "ml_platform"),
+    "comet.com": ("Comet ML", "ml_platform"),
+    "runpod.io": ("RunPod", "ml_platform"),
+    "vast.ai": ("Vast.ai", "ml_platform"),
+    "lambdalabs.com": ("Lambda", "ml_platform"),
+    "coreweave.com": ("CoreWeave", "ml_platform"),
+    "paperspace.com": ("Paperspace", "ml_platform"),
+    "nebius.com": ("Nebius", "ml_platform"),
+    "pinecone.io": ("Pinecone", "ml_platform"),
+    "weaviate.io": ("Weaviate", "ml_platform"),
+    "qdrant.tech": ("Qdrant", "ml_platform"),
+    "trychroma.com": ("Chroma", "ml_platform"),
+    "zilliz.com": ("Zilliz", "ml_platform"),
+    "unstructured.io": ("Unstructured", "ml_platform"),
+    "langfuse.com": ("Langfuse", "ml_platform"),
+    "helicone.ai": ("Helicone", "ml_platform"),
+    "braintrust.dev": ("Braintrust", "ml_platform"),
+    "humanloop.com": ("Humanloop", "ml_platform"),
+    "promptlayer.com": ("PromptLayer", "ml_platform"),
+    "arize.com": ("Arize", "ml_platform"),
+    "fiddler.ai": ("Fiddler", "ml_platform"),
+    "scale.com": ("Scale AI", "ml_platform"),
+    "labelbox.com": ("Labelbox", "ml_platform"),
+    "snorkel.ai": ("Snorkel", "ml_platform"),
+    "predibase.com": ("Predibase", "ml_platform"),
+    "openai.azure.com": ("Azure OpenAI", "api"),
+    "aiplatform.googleapis.com": ("Vertex AI API", "api"),
+    "build.nvidia.com": ("NVIDIA NIM", "api"),
+    "cerebras.ai": ("Cerebras", "api"),
+    "sambanova.ai": ("SambaNova", "api"),
+    "deepinfra.com": ("DeepInfra", "api"),
+    "hyperbolic.xyz": ("Hyperbolic", "api"),
+    "novita.ai": ("Novita", "api"),
+    "siliconflow.cn": ("SiliconFlow", "api"),
+    "open.bigmodel.cn": ("Zhipu API", "api"),
+    "fal.ai": ("fal", "api"),
+    "e2b.dev": ("E2B", "api"),
+    "deepgram.com": ("Deepgram", "api"),
+    "assemblyai.com": ("AssemblyAI", "api"),
+    "cartesia.ai": ("Cartesia", "api"),
+    "tavily.com": ("Tavily", "api"),
 }
 
 CATEGORY_LABEL = {
@@ -120,6 +365,23 @@ def classify_client(user_agent: str) -> dict | None:
     return None
 
 
+def _key_matches(key: str, low: str) -> bool:
+    """Substring match anchored at label boundaries: the char before/after the hit must not
+    be part of a hostname label ([a-z0-9-]). Without this, short domain keys swallow longer
+    unrelated ones — 'x.ai' (Grok) would claim 11x.ai, hix.ai, and llamaindex.ai, and
+    'pi.ai' (Pi) would claim vapi.ai. '/'-delimited hits (URLs, path keys) still match."""
+    i = low.find(key)
+    while i != -1:
+        before = low[i - 1] if i > 0 else ""
+        after_i = i + len(key)
+        after = low[after_i] if after_i < len(low) else ""
+        if (not (before.isalnum() or before == "-")
+                and not (after.isalnum() or after == "-")):
+            return True
+        i = low.find(key, i + 1)
+    return False
+
+
 def classify(text: str) -> dict | None:
     """Resolve a destination (URL / domain / tool name) to {tool, category, domain}.
     Longest key first so 'github.com/copilot' wins over a bare 'github.com'. None if unknown."""
@@ -127,7 +389,7 @@ def classify(text: str) -> dict | None:
         return None
     low = text.strip().lower()
     for key in sorted(CATALOG, key=len, reverse=True):
-        if key in low:
+        if _key_matches(key, low):
             name, cat = CATALOG[key]
             return {"tool": name, "category": cat, "domain": key}
     return None
@@ -151,6 +413,6 @@ def classify_name(text: str) -> dict | None:
     if not low:
         return None
     for nm, (name, cat) in _NAME_INDEX:
-        if len(nm) >= 3 and nm in low:
+        if len(nm) >= 3 and _key_matches(nm, low):
             return {"tool": name, "category": cat, "domain": ""}
     return None
