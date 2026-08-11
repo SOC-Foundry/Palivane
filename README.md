@@ -814,7 +814,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: TachTech-Engineering/Warden/git@main
+      - uses: TachTech-Engineering/Palivane/git@main
         with:
           palivane-url: https://palivane.corp.example.com
           palivane-token: ${{ secrets.PALIVANE_TOKEN }}
