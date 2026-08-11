@@ -684,6 +684,36 @@ class PolicyOverride(Base):
                 "disabled_checks": [c for c in (self.disabled_checks or "").split(",") if c]}
 
 
+class SaasConnector(Base):
+    """A stored credential for pulling OAuth-grant inventories live from a SaaS platform's
+    admin API (Google Workspace, M365, Slack, …) — the recurring version of the one-shot
+    POST /api/discovery/oauth-grants ingest. Credentials are encrypted at rest (crypto.encrypt);
+    only a redacted summary ever leaves the API."""
+
+    __tablename__ = "saas_connectors"
+    __table_args__ = (UniqueConstraint("tenant_id", "platform", "label",
+                                       name="uq_connector_tenant_platform_label"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    platform = Column(String(32), nullable=False)        # google_workspace | … (registry key)
+    label = Column(String(128), default="")              # "prod workspace"
+    credentials_enc = Column(Text, default="")           # encrypted JSON, platform-specific
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+    last_sync_at = Column(DateTime, nullable=True)
+    last_sync_status = Column(String(16), default="")    # ok | error | ""
+    last_sync_detail = Column(String(512), default="")   # summary counts or the error
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "platform": self.platform, "label": self.label or "",
+                "active": self.active, "configured": bool(self.credentials_enc),
+                "created_at": self.created_at.isoformat() if self.created_at else None,
+                "last_sync_at": self.last_sync_at.isoformat() if self.last_sync_at else None,
+                "last_sync_status": self.last_sync_status or "",
+                "last_sync_detail": self.last_sync_detail or ""}
+
+
 class SensorHeartbeat(Base):
     """Last-seen per (actor, plane, tool) — the fleet-health ledger.
 

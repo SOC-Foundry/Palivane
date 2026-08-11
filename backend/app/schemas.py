@@ -512,5 +512,13 @@ class OAuthGrantIngest(BaseModel):
     grants: list[OAuthGrant] = Field(min_length=1, max_length=50000)
 
 
+class ConnectorCreate(BaseModel):
+    """A live-pull SaaS connector: platform key from saas_connectors.PLATFORMS plus the
+    platform-specific credential fields (stored encrypted; never returned)."""
+    platform: str
+    label: str = Field("", max_length=128)
+    credentials: dict = Field(default_factory=dict)
+
+
 class DiscoveryIngest(BaseModel):
     events: list[DiscoveryEvent] = Field(min_length=1, max_length=50000)
