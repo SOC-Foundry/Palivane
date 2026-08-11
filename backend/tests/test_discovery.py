@@ -23,6 +23,10 @@ def test_catalog_short_keys_respect_label_boundaries():
     assert classify("netflix.ai") is None          # unlisted *x.ai is unknown, not Grok
     assert classify("x.ai")["tool"] == "Grok"      # the real domain still matches
     assert classify("https://api.x.ai/v1")["tool"] == "Grok"
+    # ultra-short keys are only safe because of the anchoring:
+    assert classify("chat.z.ai")["tool"] == "Z.ai (Zhipu)"
+    assert classify("buzz.ai") is None
+    assert classify("beta101.ai") is None
 
 
 def test_ingest_and_inventory(client):

@@ -99,7 +99,7 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
   built from CASB/SWG/proxy/DNS **logs** (`/api/discovery/ingest`) *and* live capture, rolled
   up **by tool and by team** with a risk score. Because Palivane inspects content, the inventory
   shows the **actual sensitive data** each tool received — and you can **sanction a tool in one
-  click**. A ~350-tool catalog keeps it current.
+  click**. A ~470-tool catalog keeps it current.
 - **Granular policy console** — enable/disable each detection **check** per tenant with
   Strict/Balanced/Monitor **presets**, plus **per-user and per-group overrides**
   (`alice@acme.com` or a glob like `*@contractors.acme.com`) that replace the org default for
