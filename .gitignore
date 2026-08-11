@@ -34,3 +34,7 @@ deploy/terraform/.terraform.lock.hcl
 
 # hero-video rig deps (not part of the product)
 scripts/hero-video/node_modules/
+
+# Local no-Docker dev rig (see RUNNING-LOCALLY.md)
+.env.local
+/warden-local.db

@@ -4,7 +4,7 @@
 # GitHub OIDC provider (locked to THIS repo), the Terraform state bucket, and prints the
 # values to paste into GitHub (Settings -> Secrets and variables -> Actions).
 #
-#   PROJECT_ID=erudite-calling-502022-k6 REPO=TachTech-Engineering/Warden ./deploy/gcp/setup-wif.sh
+#   PROJECT_ID=erudite-calling-502022-k6 REPO=TachTech-Engineering/Palivane ./deploy/gcp/setup-wif.sh
 #
 # HIGH PRIVILEGE: the deploy SA gets project-admin-level roles so Terraform can manage the
 # stack. The WIF provider is restricted to `attribute.repository == <REPO>`, so only Actions
