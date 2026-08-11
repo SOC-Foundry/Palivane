@@ -1,0 +1,62 @@
+name: Catalog growth (auto-PR)
+
+# The recurring half of catalog growth: weekly, pull candidate hosts from the public
+# tools lists in scripts/catalog_sources.txt, run them through the classification pipeline,
+# and open a PR proposing new ai_catalog.py rows. The PR review is the human gate — names
+# and categories in the diff are heuristics to correct, not decisions already made.
+#
+# Note: PRs opened with the default GITHUB_TOKEN do not trigger CI (GitHub prevents
+# workflow recursion). Set a CATALOG_GROWTH_TOKEN repo secret (fine-grained PAT with
+# contents+PR write) to get CI on these PRs automatically; without it, close/reopen the
+# PR or push any tweak to run the required checks before merging.
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"   # Mondays 09:00 UTC
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max candidates this run"
+        default: "40"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: catalog-growth
+  cancel-in-progress: false
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Fetch + classify candidates
+        run: |
+          python scripts/fetch_candidates.py --limit "${{ inputs.limit || 40 }}" > /tmp/candidates.txt
+          python scripts/merge_catalog_rows.py /tmp/candidates.txt | tee /tmp/summary.md
+
+      - name: Open / refresh the proposal PR
+        env:
+          GH_TOKEN: ${{ secrets.CATALOG_GROWTH_TOKEN || github.token }}
+        run: |
+          if git diff --quiet; then
+            echo "No new rows this week."
+            exit 0
+          fi
+          git config user.name "palivane-catalog-bot"
+          git config user.email "catalog-bot@users.noreply.github.com"
+          BRANCH="catalog-growth-auto"
+          git checkout -B "$BRANCH"
+          git add backend/app/ai_catalog.py README.md
+          git commit -m "catalog: weekly growth proposals (auto)"
+          git push -f origin "$BRANCH"
+          gh pr create --head "$BRANCH" \
+            --title "catalog: weekly growth proposals (auto)" \
+            --body-file /tmp/summary.md \
+            || gh pr edit "$BRANCH" --body-file /tmp/summary.md

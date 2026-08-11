@@ -1,0 +1,7 @@
+# Recurring candidate sources for the catalog growth pipeline — one raw URL per line.
+# Community-maintained "awesome AI tools" lists: broad, updated weekly-ish, and public.
+# fetch_candidates.py tolerates a dead source (warns and moves on) and tries the other
+# of master/main if a raw.githubusercontent.com URL 404s.
+https://raw.githubusercontent.com/steven2358/awesome-generative-ai/master/README.md
+https://raw.githubusercontent.com/mahseema/awesome-ai-tools/main/README.md
+https://raw.githubusercontent.com/e2b-dev/awesome-ai-agents/main/README.md
