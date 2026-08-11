@@ -8,19 +8,18 @@ four are the remainder.
 
 ## Local ML classifiers — the biggest bet
 
-**Status: greenfield. Not started in code, deliberately.** There is zero ML in the
-detection path today (no numpy/sklearn/onnx/torch); detection is regex/heuristic plus the
-optional API-based LLM judge. Competitors ship trained classifiers (Lakera, Nightfall,
-Harmonic, PANW). Shipping our own is a real investment, not a sprint:
+**Status: pipeline built and benchmarked; shipping gated on a real corpus — see
+[ml-classifier-baseline.md](ml-classifier-baseline.md).** Rather than scaffold a no-op hook,
+this track now has a *working* offline classifier (`backend/app/ml/`: stdlib feature-hashing
++ logistic regression, no numpy/onnx/torch, ~0.07 ms/example — well under the inline budget),
+a training-corpus builder, and an honest held-out benchmark against the regex baseline.
 
-- a labeled **training** corpus far larger than the ~100-item eval corpus (which is sized
-  to *measure*, not train);
-- a lightweight offline inference path (ONNX/quantized) that preserves the no-API-key
-  promise and a per-request latency budget (the gateway is inline);
-- retraining + drift monitoring as an ongoing cost.
-
-Do not scaffold a no-op ML hook to look done — that's cargo-cult. Start it as a scoped
-project with a corpus and a latency target, or not at all.
+The measured result: on synthetic paraphrase data the linear model catches injection
+phrasings the regex list misses (regex recall 0.34 → the competitive gap is real), but the
+numbers are inflated by train/test sharing one synthetic distribution. **Go/no-go: do not
+wire it into the live path or commit weights until a real labeled corpus (consented captures,
+analyst-labeled, held-out by time window) shows it beats regex with a low FP rate.** The
+machinery is proven; the remaining investment is data, exactly as scoped.
 
 ## MCP Enterprise-Managed Authorization (EMA)
 
