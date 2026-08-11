@@ -24,20 +24,47 @@ project with a corpus and a latency target, or not at all.
 
 ## MCP Enterprise-Managed Authorization (EMA)
 
-**Status: positioning decision.** The MCP 2026-07-28 spec makes EMA an official extension —
-IdPs govern client-to-server access natively, which erodes standalone identity value. The
-move is to integrate rather than compete: act as the **PEP / audit layer** for EMA policy
-(Palivane's agent identity + session audit already sit in the right place). This is a design
-+ partnership decision to make before writing code, not a detector to add.
+**Status: decision made — see [mcp-ema-integration.md](mcp-ema-integration.md).** The IdP
+is the PDP for *connections*; Palivane is the decision + enforcement point for *actions*
+and the audit plane for both. Key fact from the spec's own text: EMA's visibility "does
+not extend to the actual MCP traffic" — the per-call gap is stated normatively, and it is
+exactly where Palivane sits. Build list (small, ordered) is in the doc: accept EMA-minted
+tokens as actor identity, audit the ID-JAG issuance leg, document role precedence, Okta
+partnership motion. Workload/agent identity stays Palivane's — EMA only covers humans.
 
-## Agentic browsers (Atlas / Comet / Dia)
+## Agentic browsers (Comet / Dia / ChatGPT desktop)
 
-**Status: partial — discovered, not inline-intercepted.** These browsers run the agent
-themselves, so the model call doesn't come through a page fetch the extension wraps. Today
-we discover the usage where it reaches a known model host; inline interception needs
-per-browser work (each exposes different hooks, if any). Listed as a known gap on /coverage.
-Next step: verify extension behavior in each and evaluate a native-messaging or
-browser-policy path.
+**Status: per-browser plan, researched Aug 2026.** These products run the agent
+themselves, so the model call doesn't come through a page fetch the extension wraps. The
+cross-cutting conclusion: **the egress proxy, not the extension, is the realistic inline
+path for all of them** — every one is Chromium/Electron-derived and should honor system
+proxy + OS trust store, the mechanism we already deploy for desktop apps. The per-browser
+work is protocol parsing, and none of it is verifiable on Linux (no Linux builds exist).
+
+- **Perplexity Comet — the priority.** macOS/Windows/mobile. Agent prompts flow as SSE to
+  `www.perplexity.ai/rest/sse/perplexity_ask` and automation over
+  `wss://www.perplexity.ai/agent` (Zenity Labs teardown) — hosts the catalog already
+  covers, so discovery works today. The sidecar originates prompts from an extension/WebUI
+  context our MAIN-world fetch wrap can't see, so the extension won't capture assistant
+  prompts even though it installs fine — but Comet supports the full Chromium enterprise
+  policy suite incl. `ExtensionInstallForcelist` (MDM target `ai.perplexity.comet`), so
+  the managed rollout ports directly and still covers ordinary in-tab AI use. **Verify on
+  macOS/Windows:** managed-storage flow, sidecar invisibility (expected), and whether the
+  SSE body is plaintext-inspectable through the proxy with no pinning — if yes, Comet
+  inline enforcement ships via the egress proxy alone.
+- **ChatGPT desktop (Atlas's successor).** OpenAI discontinued Atlas as a standalone
+  browser on 2026-07-09 and folded it into the ChatGPT desktop app (Chat/Work/Codex modes
+  with built-in browser; Mac + Windows). Not an extension host — the egress proxy is the
+  only path; traffic is the `chatgpt.com` backend the catalog and proxy already know.
+  **Verify on macOS/Windows:** system-proxy + trust-store behavior of the desktop app.
+- **Dia (The Browser Company / Atlassian) — least visible, least urgent.** macOS-only
+  (Windows "fall 2026", no Linux signal). The AI sidebar talks to Dia's hosted backend,
+  which relays to model partners — egress never sees model-provider hosts, only Dia's, and
+  the actual API hostnames are unverified (our `diabrowser.com` catalog row is
+  provisional). No documented enterprise-policy surface. **Verify on Apple-Silicon macOS:**
+  mitmproxy capture of the sidebar's real API hosts, add catalog rows, check pinning.
+
+Listed as a known gap on /coverage (copy updated for the Atlas sunset).
 
 ## SaaS-AI OAuth discovery — live pulls shipping, per-platform buildout
 
