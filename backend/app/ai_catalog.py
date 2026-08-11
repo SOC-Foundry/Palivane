@@ -78,6 +78,14 @@ CATALOG: dict[str, tuple[str, str]] = {
     "luminance.com": ("Luminance", "assistant"),
     "diabrowser.com": ("Dia (Browser Co)", "assistant"),
     "flowgpt.com": ("FlowGPT", "assistant"),
+    "ai.meta.com": ("Meta AI", "assistant"),
+    "deepmind.google": ("Google DeepMind", "assistant"),
+    "lmsys.org": ("LMSYS (Chatbot Arena)", "assistant"),
+    "minimax.io": ("MiniMax", "assistant"),
+    "chat.qwenlm.ai": ("Qwen Chat", "assistant"),
+    "librechat.ai": ("LibreChat", "assistant"),
+    "chatbotui.com": ("Chatbot UI", "assistant"),
+    "sharegpt.com": ("ShareGPT", "assistant"),
 
     # --- Search / answer engines ---
     "perplexity.ai": ("Perplexity", "search"), "you.com": ("You.com", "search"),
@@ -251,6 +259,12 @@ CATALOG: dict[str, tuple[str, str]] = {
     "mintlify.com": ("Mintlify", "writing"),
     "tana.inc": ("Tana", "writing"),
     "fyxer.com": ("Fyxer", "writing"),
+    "copysmith.ai": ("Copysmith", "writing"),
+    "jetwriter.ai": ("JetWriter", "writing"),
+    "gomoonbeam.com": ("Moonbeam", "writing"),
+    "hypotenuse.ai": ("Hypotenuse AI", "writing"),
+    "postwise.ai": ("Postwise", "writing"),
+    "editgpt.app": ("editGPT", "writing"),
 
     # --- Image / video / audio ---
     "midjourney.com": ("Midjourney", "image_video"), "labs.openai.com": ("DALL·E", "image_video"),
@@ -445,6 +459,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "hume.ai": ("Hume", "api"),
     "rime.ai": ("Rime", "api"),
     "serper.dev": ("Serper", "api"),
+    "llama.com": ("Meta Llama", "ml_platform"),
 }
 
 CATEGORY_LABEL = {
