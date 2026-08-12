@@ -1099,6 +1099,9 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.judge_enabled = _JUDGE[body.judge]
     if body.store_content is not None:
         tenant.store_content = _JUDGE[body.store_content]   # reuse on/off/inherit -> True/False/None
+    if body.ml_capture is not None:
+        # Explicit consent flag for ML-corpus capture (no inherit; audit-logged below).
+        tenant.ml_capture = body.ml_capture
     if body.redact_mode is not None:
         tenant.redact_mode = _JUDGE[body.redact_mode]       # coaching mode (tri-state)
     if body.retention_days is not None:

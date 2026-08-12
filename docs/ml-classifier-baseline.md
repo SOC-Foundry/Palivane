@@ -1,8 +1,10 @@
 # Local ML classifiers — scoped kickoff and honest baseline
 
-*Status: pipeline built and proven; shipping is gated on a real labeled corpus, not code.
-This is the "scoped project with a corpus and a latency target" the frontier roadmap asked
-for — not a no-op hook.*
+*Status: model machinery AND the real-data pipeline are built (consented capture, analyst
+labeling, public-dataset import, time-windowed gate benchmark). The gate itself is NOT
+cleared — no real labels have accumulated yet, so the model stays out of the live path and
+no weights are committed. What remains is operational: opt tenants in, label, re-run the
+benchmark.*
 
 ## What exists now
 
@@ -62,18 +64,91 @@ commit a `model.json` trained on synthetic data.**
 ## Go / no-go
 
 **Green-lighting a shipped classifier requires a real labeled corpus** — captured (opt-in,
-consented) prompts and tool-calls, labeled by analysts, in the hundreds-to-thousands, with a
-held-out slice from a *different* time window than training. With that in hand the pipeline
-here runs unchanged: build → train → benchmark → (if it beats regex on real held-out data and
-holds a low FP rate) ship the JSON weights behind a flag as an **additional signal** into the
-engine, never a standalone authority.
+consented) prompts, labeled by analysts, in the hundreds-to-thousands, with a held-out
+slice from a *different* time window than training. With that in hand the pipeline here
+runs unchanged: capture → label → export → train → benchmark → (if the gate passes) ship
+the JSON weights behind a flag as an **additional signal** into the engine, never a
+standalone authority.
 
-Until then this is scaffolding that is *proven to work*, not a detector claimed as done —
-which is the line the roadmap drew.
+The gate, as the benchmark now measures it (`GATE:` line in `scripts/train_classifier.py`):
+
+1. **Time-windowed holdout** (`--holdout-after` / `--time-split`): train on older windows,
+   evaluate on a newer one. A random split prints `GATE: NOT EVALUABLE`.
+2. **No synthetic rows in the holdout.** Rows tagged `source: "synthetic"` (the corpus
+   builder tags its template expansions) disqualify the evaluation.
+3. **ML beats regex on held-out F1.**
+4. **ML false-positive rate ≤ 2%** on held-out benign traffic (`--fp-max`, default 0.02) —
+   a shipped classifier lives or dies on the long tail of genuine business prose.
+
+`GATE: PASS` is necessary, not sufficient: the script can verify the split, not that the
+data is real traffic in meaningful volume. That judgment call stays human.
+
+## The data pipeline (built; accumulating data is what remains)
+
+### 1. Consented capture — `Tenant.ml_capture` + `corpus_samples`
+
+Tenants that **explicitly opt in** (`PATCH /api/tenant {"ml_capture": true}`; plain boolean,
+off by default, deliberately *not* inheritable from a global default) get a sample of
+prompts already flowing through the live scan path staged into the `corpus_samples` table
+(`backend/app/ml/capture.py`, called best-effort from `service.run_analysis`). Properties:
+
+- **No new collection surface** — only prompts that were being scanned anyway; `llm_io`
+  surface only (prompts, not tool-call payloads).
+- **Sampling + caps bound volume, not consent**: `PALIVANE_ML_CAPTURE_PCT` (default 10%)
+  and `PALIVANE_ML_CAPTURE_MAX_PER_DAY` (default 200/tenant/UTC-day).
+- **Content is protected exactly like finding content**: redacted per
+  `PALIVANE_REDACT_FINDINGS`, sealed under the tenant's own DEK when
+  `PALIVANE_ENCRYPT_FINDINGS` is on.
+- **The regex verdict is stored as a WEAK label only** (`weak_label`, using the same
+  suspicious+ cutoff the benchmark uses); the `label` column starts NULL.
+- **Unlabeled rows expire** with the content TTL (`PALIVANE_CONTENT_TTL_DAYS`, via
+  `scrub_expired_content`) — prose nobody triaged is exposure, not data. Labeled rows are
+  the corpus and are kept.
+
+### 2. Analyst labeling workflow
+
+- `GET /api/ml/corpus?labeled=false` — the labeling queue (content decrypted for the analyst)
+- `POST /api/ml/corpus/{id}/label` `{"label": "injection"|"benign"}` — records the ground
+  truth with attribution (`labeled_by`, `labeled_at`) and an audit-log entry
+- `GET /api/ml/corpus/stats` — progress + `weak_label_disagreements` (where the analyst
+  overruled the regex — the most valuable training signal)
+- `GET /api/ml/corpus/export` (admin) — labeled rows only, as training JSONL:
+  `{"content", "label": malicious|benign, "ts", "source": "capture"}` — `ts` is the
+  time-window holdout key; weak labels are never exported as labels.
+
+### 3. Public labeled datasets — an interim real-distribution eval set
+
+`scripts/import_public_corpus.py` converts a public dataset the operator downloads
+themselves (nothing is vendored into the repo; nothing is fetched at runtime) from CSV or
+JSONL into the corpus format. Candidate sources:
+
+- **deepset/prompt-injections** (Hugging Face) — ~660 examples, `text`/`label` (1 =
+  injection), multilingual; the de-facto small benchmark.
+- **jayavibhav/prompt-injection** (HF) — larger (~250k, synthetic-heavy; use as train
+  augmentation, not as the eval set).
+- **Lakera Gandalf ignore-instructions** (`Lakera/gandalf_ignore_instructions`, HF) —
+  real user-written attack attempts from the Gandalf game; injections only (pair with
+  your own benign traffic).
+- **qualifire/prompt-injections-benchmark** (HF) — labeled benign/jailbreak pairs.
+
+```bash
+python scripts/import_public_corpus.py ~/Downloads/deepset_test.csv \
+    --source deepset/prompt-injections --out /tmp/eval_public.jsonl
+```
+
+These measure generalization to *human-written* injections we didn't author — a real
+distribution, but still not *your* traffic, and mostly without timestamps, so they can
+sharpen the model and sanity-check FP rate but cannot clear the time-window gate alone.
 
 ## Reproduce
 
 ```bash
+# synthetic iteration loop (can never clear the gate — prints GATE: NOT EVALUABLE)
 python scripts/build_training_corpus.py --out /tmp/train.jsonl
-python scripts/train_classifier.py --corpus /tmp/train.jsonl   # add --save to write weights
+python scripts/train_classifier.py --corpus /tmp/train.jsonl
+
+# the real loop, once consented captures are labeled:
+curl -s $HOST/api/ml/corpus/export -H "Authorization: Bearer $TOKEN" > /tmp/real.jsonl
+python scripts/train_classifier.py --corpus /tmp/real.jsonl --holdout-after 2026-09-01
+# ship only on GATE: PASS (and only ever as an additional engine signal behind a flag)
 ```

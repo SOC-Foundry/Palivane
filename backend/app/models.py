@@ -152,6 +152,11 @@ class Tenant(Base):
     # Per-tenant data key (DEK) wrapped by the master KEK — content is enc:v2: sealed under
     # it. Generated lazily on first content store. Dropping this revokes the tenant's content.
     dek_wrapped = Column(Text, default="")
+    # Consented ML-corpus capture (docs/ml-classifier-baseline.md): stage a sample of this
+    # tenant's scanned gateway prompts for analyst labeling. Deliberately NOT tri-state —
+    # consent to contribute prompt prose must be an explicit per-tenant opt-in, never
+    # inherited from a global default. Off unless the org turns it on.
+    ml_capture = Column(Boolean, default=False)
 
     def to_dict(self) -> dict:
         from .plans import PLANS, features_of, plan_of, trial_days_left
@@ -165,6 +170,7 @@ class Tenant(Base):
                 # Client-side hints for the console (lock badges); the API is the authority.
                 "plan_features": features_of(self),
                 "store_content": self.store_content,
+                "ml_capture": bool(self.ml_capture),
                 "judge_enabled": self.judge_enabled, "retention_days": self.retention_days,
                 "rate_limit": self.rate_limit, "ingest_rate_limit": self.ingest_rate_limit or 0,
                 "mcp_allowed_servers": self.mcp_allowed_servers or "",
@@ -540,6 +546,55 @@ class Finding(Base):
         d["content_retained"] = bool(self.content)
         d["signals"] = self.signals or []
         return d
+
+
+class CorpusSample(Base):
+    """One consented, sampled prompt from the live scan path, staged for analyst labeling —
+    the raw material for the ML classifier's REAL training corpus (the go/no-go gate in
+    docs/ml-classifier-baseline.md requires consented captures, analyst labels, and a
+    time-windowed holdout before any model ships).
+
+    Rows exist only for tenants that explicitly opted in (Tenant.ml_capture). Content is
+    treated exactly like Finding content: redacted per PALIVANE_REDACT_FINDINGS and sealed
+    under the tenant's DEK when PALIVANE_ENCRYPT_FINDINGS is on. The regex engine's verdict
+    rides along as a WEAK label only; `label` starts NULL (= unlabeled) and is set solely by
+    a human analyst, with attribution. Unlabeled rows age out with the content TTL —
+    unreviewed prose is exposure, not data."""
+
+    __tablename__ = "corpus_samples"
+    # created_at is the time-window holdout key (train on old windows, eval on new ones),
+    # so the hot queries are (tenant, created_at) scans and the unlabeled queue.
+    __table_args__ = (Index("ix_corpus_tenant_created", "tenant_id", "created_at"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, index=True)
+    channel = Column(String(64), default="")         # tool that sent the prompt
+    surface = Column(String(32), default="llm_io")
+    content = Column(Text, default="")               # redacted + sealed like Finding.content
+    # The regex engine's verdict at capture time — a weak label and a drift reference,
+    # never ground truth (that would just re-teach the model the regexes).
+    regex_severity = Column(String(16), default="")
+    regex_score = Column(Integer, default=0)
+    weak_label = Column(String(16), default="")      # injection | benign (from regex verdict)
+    # Analyst ground truth. NULL = unlabeled (the labeling queue); set only by a human.
+    label = Column(String(16), nullable=True, default=None)   # injection | benign
+    labeled_by = Column(String(320), default="")
+    labeled_at = Column(DateTime, nullable=True)
+
+    def to_dict(self, dek: str | None = None) -> dict:
+        """`dek` is the tenant's unwrapped data key (needed for enc:v2: content)."""
+        from .crypto import unseal_with
+        return {"id": self.id,
+                "created_at": self.created_at.isoformat() if self.created_at else None,
+                "channel": self.channel or "", "surface": self.surface or "llm_io",
+                "content": unseal_with(self.content, dek) if self.content else "",
+                "regex_severity": self.regex_severity or "",
+                "regex_score": self.regex_score or 0,
+                "weak_label": self.weak_label or "",
+                "label": self.label,
+                "labeled_by": self.labeled_by or "",
+                "labeled_at": self.labeled_at.isoformat() if self.labeled_at else None}
 
 
 class DiscoveredUsage(Base):

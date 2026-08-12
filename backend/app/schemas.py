@@ -199,6 +199,11 @@ class BulkStatusUpdate(BaseModel):
     status: Literal["open", "triaged", "dismissed"]
 
 
+class CorpusLabel(BaseModel):
+    """An analyst's ground-truth label for one staged corpus sample (ML data pipeline)."""
+    label: Literal["injection", "benign"]
+
+
 # --- auth / tenancy ---
 
 class LoginRequest(BaseModel):
@@ -276,6 +281,10 @@ class TenantUpdate(BaseModel):
     # Persist raw prompt prose in findings: "on"/"off" force it, "inherit" follows the global
     # default (off). None = leave unchanged. Off = metadata-only (recommended).
     store_content: Literal["on", "off", "inherit"] | None = None
+    # Consented ML-corpus capture: stage a sample of scanned prompts for analyst labeling
+    # (docs/ml-classifier-baseline.md). Plain bool, NOT tri-state — consent to contribute
+    # prompt prose must be explicit per tenant, never inherited. None = leave unchanged.
+    ml_capture: bool | None = None
     rate_limit: int | None = None       # gateway requests/min (0 = inherit global default)
     ingest_rate_limit: int | None = None  # sensor/ingest requests/min (0 = inherit global)
     mcp_allowed_servers: str | None = None  # comma-separated approved MCP server hosts
