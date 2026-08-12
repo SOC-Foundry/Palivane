@@ -135,6 +135,108 @@ def validate_agent_jwt(issuer: str, audience: str, token: str, jwks_uri: str = "
     return dict(claims)
 
 
+# --- MCP Enterprise-Managed Authorization (EMA) — capture-plane token inspection -------
+# EMA (MCP 2026-07-28, `io.modelcontextprotocol/enterprise-managed-authorization`, from
+# SEP-990) has the client exchange its SSO assertion at the IdP for an ID-JAG — a
+# short-lived JWT authorization grant with header `typ: oauth-id-jag+jwt`, one per target
+# MCP server — then redeem it (RFC 7523 JWT-bearer) at the server's AS for the actual MCP
+# access token. Where those artifacts are inspectable on the capture plane, we can lift an
+# IdP-governed actor identity (`sub`/`email`) for session attribution.
+#
+# HONESTY (normative — see docs/mcp-ema-integration.md "Honest constraints"): the ID-JAG
+# format is normative but the final MCP access token is whatever the server's AS issues —
+# for third-party SaaS servers it may be opaque, or signed by keys we have no trust in.
+# `inspect_ema_token` therefore NEVER claims validation it didn't do: `verified` is True
+# only when the token's signature checked out against the JWKS of a *configured, trusted*
+# issuer; everything else is best-effort unverified parsing for attribution, and anything
+# unparseable degrades to kind="opaque". Enforcement rests on inline placement, not on
+# cryptography we may not have.
+
+ID_JAG_TYP = "oauth-id-jag+jwt"
+
+
+def _jwt_segment(token: str, index: int) -> dict:
+    """Decode one compact-JWS segment (0=header, 1=payload) WITHOUT verification.
+    {} on any failure — never raises. Claims read this way must not be trusted for
+    authentication, only for attribution/audit metadata."""
+    import base64
+    import json
+    try:
+        seg = token.split(".")[index]
+        seg += "=" * (-len(seg) % 4)
+        out = json.loads(base64.urlsafe_b64decode(seg))
+        return out if isinstance(out, dict) else {}
+    except Exception:
+        return {}
+
+
+def _claim_str(claims: dict, key: str) -> str:
+    """A claim as a display string — RFC 8693/8707 allow `aud`/`resource` to be arrays."""
+    v = claims.get(key)
+    if isinstance(v, (list, tuple)):
+        return " ".join(str(x) for x in v)
+    return str(v) if v not in (None, "") else ""
+
+
+def inspect_ema_token(token: str, trusted_issuer: str = "", jwks_uri: str = "") -> dict:
+    """Best-effort identity/metadata extraction from a Bearer credential seen on captured
+    MCP traffic (EMA-minted MCP access token or ID-JAG). Never raises.
+
+    Returns a dict with:
+      kind      "id-jag" (header `typ: oauth-id-jag+jwt`) | "jwt" (parseable JWT of any
+                other typ, e.g. an `at+jwt` access token) | "opaque" (non-JWT or
+                unparseable — common for third-party AS tokens; not an error)
+      verified  True ONLY when the signature validated against `trusted_issuer`'s JWKS
+                (the token's `iss` must match). False everywhere else — including
+                perfectly well-formed JWTs from issuers we have no trust anchor for.
+      sub/email/iss/client_id  actor-identity claims (unverified unless `verified`)
+      typ/aud/resource/scope   audience & scope metadata for the audit trail
+
+    Opaque tokens yield {"kind": "opaque", "verified": False} — callers must treat that
+    as a normal, attributable-as-opaque outcome, never a failure."""
+    opaque = {"kind": "opaque", "verified": False}
+    try:
+        t = (token or "").strip()
+        if not (t.startswith("eyJ") and t.count(".") == 2):
+            return opaque
+        header, claims = _jwt_segment(t, 0), _jwt_segment(t, 1)
+        if not claims:
+            return opaque
+        typ = str(header.get("typ") or "")
+        out = {
+            "kind": "id-jag" if typ.lower() == ID_JAG_TYP else "jwt",
+            "verified": False,
+            "typ": typ,
+            "iss": _claim_str(claims, "iss"),
+            "sub": _claim_str(claims, "sub"),
+            "email": _claim_str(claims, "email"),
+            "client_id": _claim_str(claims, "client_id") or _claim_str(claims, "azp"),
+            "aud": _claim_str(claims, "aud"),
+            "resource": _claim_str(claims, "resource"),
+            "scope": _claim_str(claims, "scope"),
+        }
+        # Signature check — only against an issuer the tenant has explicitly configured
+        # (their own IdP). No audience option: the token's audience is the MCP server /
+        # its AS, not us; audience is recorded above, not enforced here.
+        if trusted_issuer and out["iss"].rstrip("/") == trusted_issuer.rstrip("/"):
+            try:
+                uri = jwks_uri or _discover_cached(trusted_issuer).get("jwks_uri", "")
+                if uri:
+                    verified = jwt.decode(t, _key_set(uri), claims_options={
+                        "iss": {"essential": True, "value": out["iss"]},
+                        "exp": {"essential": True},
+                    })
+                    verified.validate()
+                    out["verified"] = True
+                    out["sub"] = _claim_str(dict(verified), "sub")
+                    out["email"] = _claim_str(dict(verified), "email")
+            except Exception:
+                pass  # stays verified=False; unverified claims still attribute
+        return out
+    except Exception:
+        return opaque
+
+
 def validate_id_token(meta: dict, issuer: str, client_id: str, id_token: str,
                       nonce: str) -> dict:
     """Validate the ID token's signature (via the IdP JWKS) and claims, and return them.

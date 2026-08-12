@@ -10,6 +10,20 @@ Rules:
     allow_servers, each vacuously true when its list is empty);
   - with no allow-lists set, fall back to `default_allow` (default: deny).
 Globs are fnmatch, case-insensitive.
+
+Precedence vs. EMA (enterprise-managed authorization — docs/mcp-ema-integration.md):
+where a tenant's IdP governs MCP server access via EMA, the IdP is the PRIMARY gate for
+*connections* — it decides, at token issuance, which user/client may reach which server;
+servers it denies never produce traffic for us to evaluate. A role's `allow_servers` is
+then a *tightening overlay*: it can further narrow (deny) what the IdP allowed, but can
+never widen it — nothing here mints credentials or opens a connection, so an allow verdict
+from this module grants nothing the IdP didn't already grant. That deny-only property is
+by construction and must be preserved. For non-EMA tenants (or non-EMA servers — fleets
+stay mixed) `allow_servers` remains the primary connection-policy gate, unchanged. In both
+cases per-*action* authorization (tool globs, shell commands, data scopes, evaluated
+against request content on every call) is exclusively this module's — EMA's decision
+happens once, at issuance, at OAuth-scope granularity, and the spec itself says its
+visibility "does not extend to the actual MCP traffic".
 """
 
 from __future__ import annotations

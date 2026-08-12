@@ -79,6 +79,11 @@ class MCPIngest(BaseModel):
     command: str = Field("", max_length=1024)          # wrapped command line (stdio servers)
     binary_sha256: str = Field("", max_length=64)      # sha256 of the resolved executable
     pin_status: str = ""                               # "" | new | ok | mismatch
+    # EMA (enterprise-managed authorization): the Bearer credential the capture plane saw
+    # on the MCP request. Inspected server-side (oidc.inspect_ema_token) to lift an
+    # IdP-governed actor identity (sub/email); opaque tokens attribute as opaque-token.
+    # The raw credential is never persisted — only extracted metadata reaches the finding.
+    authorization: str = Field("", max_length=8192)
 
 
 class MCPBatchIngest(BaseModel):

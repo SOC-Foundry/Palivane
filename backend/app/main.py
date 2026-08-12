@@ -1235,15 +1235,38 @@ def _tenant_mcp_block_severity(tenant_id: int | None, db: Session) -> str:
                              settings.mcp_block_severity) or "high"
 
 
+def _tenant_sso_issuer(tenant_id: int | None, db: Session) -> str:
+    """The tenant's enabled SSO OIDC issuer, or "". Used as the trust anchor for EMA
+    artifact inspection: an ID-JAG minted by the tenant's own IdP can actually be
+    signature-checked; anything else is attributed on unverified/opaque metadata only."""
+    if tenant_id is None:
+        return ""
+    from .models import TenantOIDC
+    row = db.query(TenantOIDC).filter(TenantOIDC.tenant_id == tenant_id).one_or_none()
+    return (row.issuer or "").strip() if row is not None and row.enabled else ""
+
+
 def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
                allowed_servers: str, block_severity: str, db: Session, agent: str = "",
                client_ua: str = "") -> dict:
     """Score one MCP activity on the `mcp` surface and return the client verdict.
 
     Benign (allow-level) verdicts aren't persisted unless PALIVANE_MCP_PERSIST_BENIGN is set
-    — most tool calls are benign noise, not findings. Shared by the single + batch endpoints
-    so their behavior can't drift."""
-    actor = body.user or default_actor
+    — most tool calls are benign noise, not findings. Exception: EMA `auth/*` events (the
+    ID-JAG issuance/redemption leg) are always persisted — they ARE the audit trail, not
+    sensor noise. Shared by the single + batch endpoints so their behavior can't drift."""
+    # EMA actor identity: when the capture plane saw a Bearer credential on the MCP
+    # request, lift the IdP-governed identity off it (sub/email — EMA-minted access token
+    # or ID-JAG). That upgrades attribution from "whoever holds the capture key / a static
+    # proxy user" to the identity the IdP issued for. Degrades gracefully: an opaque or
+    # unparseable token contributes metadata only (kind=opaque) and never breaks scoring;
+    # the raw credential itself is never stored.
+    ema: dict = {}
+    if body.authorization:
+        from . import oidc
+        ema = oidc.inspect_ema_token(body.authorization,
+                                     trusted_issuer=_tenant_sso_issuer(tenant_id, db))
+    actor = ema.get("email") or ema.get("sub") or body.user or default_actor
     # Synthesize the scannable text: tool arguments, resource URI, and advertised tool
     # descriptions — so shadow-AI catches secrets/PII in args and the finding has context.
     content = "\n".join(p for p in [
@@ -1261,6 +1284,9 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
             "allowed_servers": allowed_servers,
             "command": body.command, "binary_sha256": body.binary_sha256,
             "pin_status": body.pin_status,
+            # Extracted EMA metadata only (kind/verified/typ/iss/aud/resource/scope/
+            # sub/email) — the raw Bearer credential never reaches the finding.
+            **({"ema_token": {k: v for k, v in ema.items() if v}} if ema else {}),
         },
     )
     # Least-privilege: fold agent role authz (action + shell command + data-scope) into the
@@ -1268,9 +1294,12 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
     # below — independent of severity and of the disabled-checks/override filter, so authz is
     # a control, not a mutable signal.
     authz_filter, authz = _agent_authz_probe(agent, tenant_id, body, db)
+    # EMA issuance-leg audit events (auth/id-jag.*) are benign by design but must persist
+    # — they're the per-server grant trail the spec calls a use case and nobody else logs.
+    is_ema_auth_event = body.method.startswith("auth/")
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
-                          signal_filter=authz_filter,
-                          agent=agent, persist_benign=settings.mcp_persist_benign)
+                          signal_filter=authz_filter, agent=agent,
+                          persist_benign=settings.mcp_persist_benign or is_ema_auth_event)
     action = _action_for(result["severity"], block_severity)
     if authz["enforce"] and authz["denied"]:
         action = "block"

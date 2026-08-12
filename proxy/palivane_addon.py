@@ -663,9 +663,106 @@ def extract_agentic(body: bytes | str) -> dict | None:
             "args_text": ("\n".join(args_parts) + "\n" + "\n".join(result_parts))[:20000]}
 
 
+# --- EMA ID-JAG issuance audit (enterprise-managed authorization) ---------------------
+# Under EMA (MCP 2026-07-28 / SEP-990; Okta "Cross App Access") the client swaps its SSO
+# assertion at the IdP for an ID-JAG — a per-server, ~5-min JWT grant (RFC 8693 token
+# exchange, requested_token_type …:id-jag) — then redeems it at the MCP server's AS
+# (RFC 7523 jwt-bearer) for the actual access token. The IdP logs issuance in its own
+# console; nothing standardized logs it as part of the *session*. When those token
+# endpoints route through this proxy (their hosts added via PALIVANE_PROXY_INTERCEPT_EXTRA),
+# we record audience/resource/scope of each leg as session events. Audit-only — the IdP is
+# the connection PDP; we never block this leg.
+
+TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange"
+JWT_BEARER_GRANT = "urn:ietf:params:oauth:grant-type:jwt-bearer"
+ID_JAG_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:id-jag"
+ID_JAG_TYP = "oauth-id-jag+jwt"
+
+
+def _jwt_segment(token: str, index: int) -> dict:
+    """Unverified decode of one compact-JWS segment (0=header, 1=payload); {} on failure.
+    Metadata extraction only — nothing here verifies a signature or trusts a claim."""
+    import base64
+    try:
+        seg = token.split(".")[index]
+        seg += "=" * (-len(seg) % 4)
+        out = json.loads(base64.urlsafe_b64decode(seg))
+        return out if isinstance(out, dict) else {}
+    except Exception:
+        return {}
+
+
+def extract_token_exchange(body: bytes | str) -> dict | None:
+    """Detect an EMA ID-JAG leg in a form-encoded OAuth token-endpoint POST.
+
+    Recognizes:
+      - client -> IdP:    RFC 8693 token exchange requesting an ID-JAG
+                          (grant_type=…token-exchange, requested_token_type=…id-jag)
+                          -> method "auth/id-jag.issuance"
+      - client -> MCP AS: RFC 7523 redemption whose assertion is an ID-JAG
+                          (grant_type=…jwt-bearer, assertion header typ oauth-id-jag+jwt)
+                          -> method "auth/id-jag.redemption"
+
+    Returns an mcp-activity dict whose args_text carries audience/resource/scope (never
+    the assertion/token material itself), or None for anything else."""
+    from urllib.parse import parse_qs
+    if isinstance(body, bytes):
+        body = body.decode("utf-8", "replace")
+    if not body or body.lstrip()[:1] in ("{", "["):    # token endpoints are form-encoded
+        return None
+    if "grant_type=" not in body:
+        return None
+    try:
+        form = {k: v[0] for k, v in parse_qs(body, keep_blank_values=True).items() if v}
+    except Exception:
+        return None
+    grant = form.get("grant_type", "")
+    fields: list[str] = []
+
+    def _put(name: str, value: str) -> None:
+        if value:
+            fields.append(f"{name}={value}")
+
+    if grant == TOKEN_EXCHANGE_GRANT and form.get("requested_token_type") == ID_JAG_TOKEN_TYPE:
+        _put("audience", form.get("audience", ""))
+        _put("resource", form.get("resource", ""))
+        _put("scope", form.get("scope", ""))
+        _put("requested_token_type", form.get("requested_token_type", ""))
+        _put("client_id", form.get("client_id", ""))
+        return {"method": "auth/id-jag.issuance", "args_text": "\n".join(fields)}
+
+    if grant == JWT_BEARER_GRANT:
+        assertion = form.get("assertion", "")
+        header = _jwt_segment(assertion, 0)
+        if str(header.get("typ") or "").lower() != ID_JAG_TYP:
+            return None                          # ordinary jwt-bearer, not an EMA artifact
+        claims = _jwt_segment(assertion, 1)      # unverified — audit metadata only
+        aud = claims.get("aud")
+        _put("audience", " ".join(aud) if isinstance(aud, list) else str(aud or ""))
+        _put("resource", str(claims.get("resource") or ""))
+        _put("scope", form.get("scope", "") or str(claims.get("scope") or ""))
+        _put("subject", str(claims.get("sub") or ""))
+        _put("issuer", str(claims.get("iss") or ""))
+        return {"method": "auth/id-jag.redemption", "args_text": "\n".join(fields)}
+
+    return None
+
+
+def bearer_token(header_value: str) -> str:
+    """The credential part of an `Authorization: Bearer …` header, else ''."""
+    scheme, _, tok = (header_value or "").strip().partition(" ")
+    return tok.strip() if scheme.lower() == "bearer" else ""
+
+
 def scan_mcp(activity: dict, server: str = "", transport: str = "http",
-             url: str | None = None, token: str | None = None, timeout: float = 8.0) -> dict:
-    """Call the Palivane MCP ingest endpoint; fail open (action=allow) on any error."""
+             url: str | None = None, token: str | None = None, timeout: float = 8.0,
+             authorization: str = "") -> dict:
+    """Call the Palivane MCP ingest endpoint; fail open (action=allow) on any error.
+
+    `authorization` is the Bearer credential the intercepted MCP request carried (EMA-
+    minted access token / ID-JAG where the tenant runs enterprise-managed authorization).
+    The backend inspects it for IdP-governed actor identity; an opaque token is fine —
+    it's attributed as opaque-token, never an error."""
     base = (url or os.getenv("PALIVANE_URL", "http://localhost:8090")).rstrip("/")
     tok = token if token is not None else os.getenv("PALIVANE_TOKEN", "")
     skip = _breaker_skip(tok)
@@ -673,6 +770,8 @@ def scan_mcp(activity: dict, server: str = "", transport: str = "http",
         return {"action": "allow", "reason": f"scan-skipped:{skip}"}
     payload = {"server": server, "transport": transport,
                "user": os.getenv("PALIVANE_PROXY_USER", ""), **activity}
+    if authorization:
+        payload["authorization"] = authorization
     try:
         req = urllib.request.Request(
             base + "/api/ingest/mcp", method="POST",
@@ -832,14 +931,26 @@ class PalivaneGuard:
             return
 
         # 4) MCP over HTTP to any server (remote/Streamable-HTTP) — inspect the call.
+        #    The request's Bearer credential rides along so the backend can attribute the
+        #    session to the EMA/IdP-governed identity (opaque tokens degrade gracefully).
         if is_mcp(raw):
             activity = extract_mcp_activity(raw)
             if activity:
                 verdict = await asyncio.to_thread(
-                    scan_mcp, activity, server=req.pretty_host, transport="http")
+                    scan_mcp, activity, server=req.pretty_host, transport="http",
+                    authorization=bearer_token(req.headers.get("authorization", "")))
                 if should_block(verdict, self.enforce):
                     flow.response = http.Response.make(
                         200, mcp_block_body(verdict), {"Content-Type": "application/json"})
+            return
+
+        # 5) EMA ID-JAG issuance/redemption (client -> IdP / client -> MCP AS token
+        #    endpoints) — record audience/resource/scope as a session event. Visible only
+        #    when the IdP/AS host is intercepted (PALIVANE_PROXY_INTERCEPT_EXTRA).
+        #    Audit-only: the IdP is the connection PDP, so this leg is never blocked.
+        tx = extract_token_exchange(raw)
+        if tx:
+            await asyncio.to_thread(scan_mcp, tx, server=req.pretty_host, transport="http")
 
     async def response(self, flow) -> None:
         # Comet SSE response: the teed stream (responseheaders) has finished — scan the

@@ -109,9 +109,13 @@ class MCPGuardDetector:
 
         # 1) Untrusted MCP server (policy-flag). Only when an allowlist is configured.
         # Prefer the per-tenant allowlist passed in metadata; else the global default.
+        # EMA `auth/*` events are exempt: their `server` is the IdP / MCP-AS *token
+        # endpoint* host (the ID-JAG issuance leg being audited), not an MCP server —
+        # connection authority for that leg belongs to the IdP, not this allowlist.
         allow = _parse_allow(m["allowed_servers"]) if "allowed_servers" in m \
             else _parse_allow(settings.mcp_allowed_servers)
-        if server and allow and not _server_allowed(server, allow):
+        if server and allow and not method.startswith("auth/") \
+                and not _server_allowed(server, allow):
             local = transport in ("stdio", "via-llm-api")
             signals.append(Signal(
                 category=Category.MCP_UNTRUSTED_SERVER,

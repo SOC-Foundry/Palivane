@@ -1,8 +1,10 @@
 # MCP Enterprise-Managed Authorization (EMA) — Palivane's position
 
-*Status: positioning decision, made. Palivane integrates as the enforcement + audit layer
-for EMA-governed fleets; it does not compete with the IdP for connection-level authority.
-This doc records the reasoning and the (small) code changes the posture implies.*
+*Status: positioning decision, made; build-list items 1–3 shipped (Aug 2026 — EMA actor
+identity, ID-JAG issuance-leg audit, role-precedence semantics). Item 4 (partnership) is
+open. Palivane integrates as the enforcement + audit layer for EMA-governed fleets; it
+does not compete with the IdP for connection-level authority. This doc records the
+reasoning and the (small) code changes the posture implies.*
 
 ## What EMA actually does
 
@@ -96,17 +98,40 @@ Palivane is the decision + enforcement point for *actions*, and the audit plane 
 - **Teleport** has the same PEP-shaped instinct anchored in infra access (short-lived
   certs); lane-adjacent rather than head-on.
 
+## Role precedence under EMA
+
+Where a tenant's IdP governs MCP server access via EMA, the IdP is the **primary gate for
+connections**: it decides at issuance which user/client may reach which server, and servers
+it denies never produce traffic. A Palivane role's `allow_servers` is then a **tightening
+overlay** — it can further narrow (deny) what the IdP allowed, but can never widen it,
+because nothing in Palivane mints credentials or opens connections. That deny-only property
+holds by construction in `backend/app/authz.py` (an allow verdict there grants nothing the
+IdP didn't already grant) and must be preserved. For non-EMA tenants and non-EMA servers —
+fleets stay mixed for years — `allow_servers` remains the primary connection-policy gate,
+with identical behavior. Per-*action* authorization (tool globs, shell-command allowlists,
+data scopes, decided per call against request content) is Palivane's in both worlds; EMA
+has no view of it.
+
 ## What to build (small, in order)
 
-1. **Accept EMA-minted tokens as actor identity** on the MCP capture paths: extend
-   `oidc.py` validation to recognize the MCP access-token/ID-JAG shapes where inspectable
-   (`typ: oauth-id-jag+jwt`, audience/resource claims) and map `sub`/`email` to the
-   session actor. Degrade gracefully to opaque-token logging.
-2. **Audit the issuance leg** where the egress proxy can see it (client → IdP token
-   endpoint, client → MCP AS): record audience/resource/scope of ID-JAG exchanges as
-   session events — the trail the spec calls a use case but doesn't require anyone to log.
-3. **Roles reference EMA reality**: where a tenant's IdP governs server access, the
-   Palivane role's `allow_servers` becomes a *tightening* overlay, not the primary gate —
-   document the precedence.
-4. **Partnership motion** (not code): Okta XAA validation, and presence in the MCP AS
-   vendors' compatibility stories.
+1. **Accept EMA-minted tokens as actor identity** — **shipped.** `oidc.inspect_ema_token`
+   recognizes the ID-JAG shape (`typ: oauth-id-jag+jwt`) and JWT access tokens
+   (audience/resource claims), maps `sub`/`email` to the session actor on the MCP ingest
+   path (`MCPIngest.authorization`, forwarded by the egress-proxy addon from the request's
+   Bearer header). Honest by design: `verified` is set only when the signature checks out
+   against the tenant's own configured IdP JWKS; third-party AS tokens parse unverified or
+   degrade to opaque-token attribution — never an error, never a claimed validation.
+2. **Audit the issuance leg** — **shipped.** The addon detects the two legs where the
+   token endpoints route through the proxy (`PALIVANE_PROXY_INTERCEPT_EXTRA`): RFC 8693
+   token exchange requesting `…:token-type:id-jag` (client → IdP) and RFC 7523 jwt-bearer
+   redemption whose assertion carries the ID-JAG `typ` (client → MCP AS). Audience/
+   resource/scope are recorded as always-persisted `auth/id-jag.*` session events through
+   the existing MCP ingest pipeline; the leg is audit-only, never blocked — the IdP is the
+   connection PDP.
+3. **Roles reference EMA reality** — **shipped.** Precedence documented above and in
+   `authz.py` / the `AgentRole` model; the tightening-overlay semantics required no
+   behavior change (the role model was already deny-only) and non-EMA tenants are
+   unaffected. The EMA `auth/*` audit events are exempt from the MCP server allowlist
+   check — their host is a token endpoint, not an MCP server.
+4. **Partnership motion** (not code, still open): Okta XAA validation, and presence in
+   the MCP AS vendors' compatibility stories.

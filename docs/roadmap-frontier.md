@@ -23,13 +23,18 @@ machinery is proven; the remaining investment is data, exactly as scoped.
 
 ## MCP Enterprise-Managed Authorization (EMA)
 
-**Status: decision made — see [mcp-ema-integration.md](mcp-ema-integration.md).** The IdP
-is the PDP for *connections*; Palivane is the decision + enforcement point for *actions*
-and the audit plane for both. Key fact from the spec's own text: EMA's visibility "does
-not extend to the actual MCP traffic" — the per-call gap is stated normatively, and it is
-exactly where Palivane sits. Build list (small, ordered) is in the doc: accept EMA-minted
-tokens as actor identity, audit the ID-JAG issuance leg, document role precedence, Okta
-partnership motion. Workload/agent identity stays Palivane's — EMA only covers humans.
+**Status: decision made; build items 1–3 shipped — see
+[mcp-ema-integration.md](mcp-ema-integration.md).** The IdP is the PDP for *connections*;
+Palivane is the decision + enforcement point for *actions* and the audit plane for both.
+Key fact from the spec's own text: EMA's visibility "does not extend to the actual MCP
+traffic" — the per-call gap is stated normatively, and it is exactly where Palivane sits.
+Shipped: EMA-minted tokens (ID-JAG / JWT access tokens) attribute the session actor on the
+MCP capture path with honest opaque-token fallback; the ID-JAG issuance/redemption legs
+are recorded as session events where the proxy sees the token endpoints; role
+`allow_servers` precedence (tightening overlay under EMA) is documented in `authz.py` and
+the doc. Remaining: the partnership motion (Okta XAA validation, MCP-AS vendor
+compatibility stories) — not code. Workload/agent identity stays Palivane's — EMA only
+covers humans.
 
 ## Agentic browsers (Comet / Dia / ChatGPT desktop)
 

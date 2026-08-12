@@ -616,7 +616,11 @@ class AgentRole(Base):
     """A least-privilege role for AI agents (Phase 1). Allow-lists are globs matched against
     the MCP server / tool an agent calls; `deny` wins over allow; `default_allow` is the
     posture when no allow-list matches (default: deny). `enforce=False` = monitor (log a
-    would-deny finding but let it through); `enforce=True` = block the action."""
+    would-deny finding but let it through); `enforce=True` = block the action.
+
+    Where the tenant's IdP governs MCP server access via EMA, `allow_servers` is a
+    tightening overlay on the IdP's connection grants, not the primary gate — see the
+    precedence note in authz.py and docs/mcp-ema-integration.md."""
 
     __tablename__ = "agent_roles"
     __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_agentrole_tenant_name"),)
