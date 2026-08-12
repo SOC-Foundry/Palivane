@@ -240,11 +240,12 @@ export default function CoverageMatrix() {
                  keeps 25 of 25 generic snippets benign while flagging 12 of 12 proprietary ones.</p>
             </div>
             <div className="lp-card">
-              <div className="bench-stat">11</div>
+              <div className="bench-stat">7</div>
               <h3>Known evasion bypasses</h3>
-              <p>Adversarial transforms (leetspeak, word-splitting, translation, encoded PII)
+              <p>Adversarial transforms (leetspeak, word-splitting, translation, secret spacing)
                  that still defeat the offline detectors in our own evasion matrix. Tracked, not
-                 hidden — the LLM judge closes most of these when enabled.</p>
+                 hidden — the LLM judge closes most of these when enabled. Encoded-payload
+                 wrappers (base64/hex/url) are now decoded and re-scanned.</p>
             </div>
           </div>
         </div>

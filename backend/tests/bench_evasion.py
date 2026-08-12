@@ -323,11 +323,22 @@ def run_bench():
 
 # Regression guard. Started at 37 bypasses; hex/URL decode + newline-collapse brought it to
 # 22, then MCP-command leet/decode folding, secret homoglyph/case (upper-view) folding, and
-# NFKC PII folding brought it to 11. The remaining 11 are FP-risky folds (single-space
-# word-splitting, injection leetspeak — the 1↔l/i collision), the plain AWS-line detector gap,
-# offline translation, and encoded-PII wrappers — each left documented rather than trade away
-# the 0% false-positive rate. This fails only if a change RE-OPENS a bypass.
-BYPASS_CEILING = 13
+# NFKC PII folding brought it to 11. A decode-and-rescan pass then closed four encoded
+# wrappers for free (no FP): jailbreak/base64_wrap (a <60-char blob that decodes to an attack
+# phrase — caught by a separate lower-threshold decode-check that only emits on a real decoded
+# hit) and pii_ssn via base64/hex/url_encode (decode the blob, re-run the EXISTING PII/secret
+# finders on the >85%-printable decoding) — bringing it to 7.
+#
+# The remaining 7 are left documented rather than trade away the 0% false-positive rate:
+#   * prompt_injection/leetspeak  — folding 1↔l/i collides with ordinary text (prose FP).
+#   * prompt_injection/word_split — de-spacing split words is prose-FP-prone.
+#   * dangerous_command/word_split — same de-spacing FP risk.
+#   * pii_ssn/word_split          — de-spacing digit runs invents SSNs in prose.
+#   * secret_aws/secret_spacing   — value is AWS's documented EXAMPLE key; degluing it FPs.
+#   * secret_sk/secret_spacing    — degluing reintroduces a prose FP (see test_space_split).
+#   * jailbreak/translate_es      — offline detectors are English-only; the LLM judge's job.
+# This fails only if a change RE-OPENS a bypass.
+BYPASS_CEILING = 7
 
 
 def test_evasion_bench():
