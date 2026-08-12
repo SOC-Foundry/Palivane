@@ -222,7 +222,7 @@ export default function CoverageMatrix() {
             Numbers from our own labeled corpora, offline detectors only (the optional LLM
             judge disabled), measured 2026-08-12. The corpora and the harnesses that produce
             these are in the repo — reproduce it yourself:
-            {" "}<code>pytest tests/bench_recall.py tests/bench_false_positives.py tests/bench_evasion.py -s</code>.
+            {" "}<code>pytest tests/bench_recall.py tests/bench_false_positives.py tests/bench_evasion.py tests/bench_code_discrimination.py -s</code>.
             We publish the weak numbers too; a benchmark that only flatters is a brochure.
           </p>
           <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
@@ -235,9 +235,9 @@ export default function CoverageMatrix() {
             <div className="lp-card">
               <div className="bench-stat">0%</div>
               <h3>False-positive rate</h3>
-              <p>0 of 103 benign samples. A proprietary-vs-generic code discriminator now
-                 separates internal IP from stdlib/tutorial boilerplate, clearing the source-code
-                 false positives while still flagging leaked internal code.</p>
+              <p>0 of 103 benign samples. A structural proprietary-vs-generic code discriminator
+                 separates internal IP from stdlib/tutorial boilerplate — on a held-out corpus it
+                 keeps 25 of 25 generic snippets benign while flagging 12 of 12 proprietary ones.</p>
             </div>
             <div className="lp-card">
               <div className="bench-stat">11</div>
