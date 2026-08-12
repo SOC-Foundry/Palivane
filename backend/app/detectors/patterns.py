@@ -7,6 +7,8 @@ patterns live here once rather than being duplicated per detector.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import math
 import os
 import re
@@ -65,8 +67,13 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
         r"clickhouse|cockroachdb|ftp)://[^\s:/@]+:([^\s:/@]{3,})@[^\s/]+", re.IGNORECASE)),
     ("Private key block", re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")),
     ("JWT", re.compile(r"\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{6,}")),
+    # Assignment-form credential: a `password`/`secret`/`token`/`api_key`-like LHS assigned a
+    # non-trivial literal. `\b\w*` before the keyword lets an identifier PREFIX count too
+    # (`db_password`, `DATABASE_PASSWORD`, `client_api_key`) — a bare `\bpassword\b` missed
+    # those because the `_` inside `db_password` is a word char (no boundary before "password").
     ("Credential assignment", re.compile(
-        r"(?i)\b(password|passwd|api[_-]?key|secret|access[_-]?token|client[_-]?secret)\b"
+        r"(?i)\b\w*(?:password|passwd|pwd|secret|api[_-]?key|access[_-]?key|"
+        r"access[_-]?token|client[_-]?secret|auth[_-]?token|token)"
         r"\s*[:=]\s*[\"']?[^\s\"']{8,}")),
 ]
 
@@ -266,6 +273,46 @@ def _shannon_entropy(s: str) -> float:
     return -sum((c / n) * math.log2(c / n) for c in counts.values())
 
 
+def printable_text(raw: bytes) -> str:
+    """Decode bytes to text only if it looks like real text (not binary). Shared with the
+    prompt-threats encoded-payload decoder."""
+    text = raw.decode("utf-8", "replace")
+    printable = sum(c.isprintable() or c.isspace() for c in text)
+    return text if text and printable / len(text) > 0.85 else ""
+
+
+def try_decode_b64(blob: str) -> str:
+    """Best-effort decode of a base64 blob to text; '' if it isn't decodable text."""
+    for decoder in (base64.b64decode, base64.urlsafe_b64decode):
+        try:
+            raw = decoder(blob + "=" * (-len(blob) % 4))
+        except (binascii.Error, ValueError):
+            continue
+        if (t := printable_text(raw)):
+            return t
+    return ""
+
+
+def _decodes_to_natural_language(tok: str) -> bool:
+    """A base64-ish token that DECODES to plain natural-language text (mostly dictionary
+    words / spaces) is not a secret — e.g. base64('hello world, this is a benign test
+    string!'). A real credential base64-decodes to random bytes (fails the printable gate)
+    or to a non-word blob (fails the dictionary-coverage gate), so this stays conservative."""
+    dec = try_decode_b64(tok)
+    if not dec:
+        return False
+    words = re.findall(r"[A-Za-z]{2,}", dec)
+    if len(words) < 3:
+        return False
+    dictw = _load_words()
+    if not dictw:
+        return False
+    if find_secrets(dec):  # base64 that HIDES a credential is not benign — keep flagging
+        return False
+    hits = sum(1 for w in words if w.lower() in dictw)
+    return hits / len(words) >= 0.6
+
+
 # Common English + programming words (google-10000-english, len>=3, plus a tech supplement)
 # — used to recognize code identifiers so the entropy heuristic doesn't flag them. Measured
 # against real OSS repos, `OAuth2PasswordRequestForm` / `getOwnPropertyDescriptor`-style
@@ -334,6 +381,8 @@ def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
             continue
         if _is_dictionary_identifier(tok):
             continue   # a code identifier (camelCase words), not a secret
+        if _decodes_to_natural_language(tok):
+            continue   # base64 of ordinary English/text, not a credential
         seen.add(tok)
         out.append(tok[:10] + "…")
     return out

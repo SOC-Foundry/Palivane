@@ -370,13 +370,11 @@ def main() -> int:
     return 0
 
 
-# Regression ceiling for the pytest entry. The bare-confidential-term and env-expression
-# placeholder fixes took the baseline from ~19% down to ~5.8%; the remaining FPs are
-# context-dependent judge-territory cases (a test card number is identical whether it's
-# discussed or leaked) and the unlabeled-source-code edge. This is a *regression guard*: it
-# fails only if a NEW false positive pushes the rate materially above today's ~6%, while the
-# report always prints the full breakdown.
-FP_REGRESSION_CEILING = 9.0
+# Regression ceiling for the pytest entry. The proprietary-vs-generic code discriminator,
+# base64→natural-language suppression, and illustrative-context test-card suppression took the
+# rate from ~5.8% to 0/103 = 0.0%. This is a *regression guard*: it fails only if a NEW false
+# positive pushes the rate materially up, while the report always prints the full breakdown.
+FP_REGRESSION_CEILING = 6.0
 
 
 def test_false_positive_rate_under_threshold():

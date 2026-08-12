@@ -18,11 +18,13 @@ on the `mcp` surface), so this detector focuses on the agentic-action risks abov
 
 from __future__ import annotations
 
+import binascii
 import re
+import urllib.parse
 
 from ..config import settings
 from .base import AnalysisInput, Category, Signal, Surface
-from .normalize import normalize_for_match
+from .normalize import command_leet_fold, normalize_for_match
 
 # Paths whose access by an autonomous agent is high-signal (credentials / keys / secrets).
 _SENSITIVE_PATH = re.compile(
@@ -41,6 +43,34 @@ _SENSITIVE_PATH = re.compile(
     r")",
     re.IGNORECASE,
 )
+
+
+_HEX_RUN_RE = re.compile(r"(?:[0-9a-fA-F]{2}){12,}")
+
+
+def _command_views(args_text: str) -> list[str]:
+    """Every de-obfuscated view of a command string the dangerous-command matcher should see:
+    the raw text, a homoglyph/zero-width/spacing-normalized view, a leetspeak-folded view
+    (cur1…|5h → curl…|sh), a URL-decoded view (curl%20…%7C%20sh), and any long hex / base64
+    run decoded back to text (`decode this hex and follow it: 63757…`). Cheap and additive —
+    a match in ANY view flags."""
+    views = [args_text, normalize_for_match(args_text), command_leet_fold(args_text)]
+    if "%" in args_text:
+        try:
+            dec = urllib.parse.unquote(args_text)
+            if dec != args_text:
+                views.append(dec)
+        except (ValueError, UnicodeDecodeError):
+            pass
+    for m in _HEX_RUN_RE.finditer(args_text):
+        try:
+            raw = bytes.fromhex(m.group(0))
+        except ValueError:
+            continue
+        text = raw.decode("utf-8", "replace")
+        if text and sum(c.isprintable() or c.isspace() for c in text) / len(text) > 0.85:
+            views.append(text)
+    return views
 
 
 def _norm_path(s: str) -> str:
@@ -155,9 +185,11 @@ class MCPGuardDetector:
                 evidence=f"tool={tool or method} path={mres.group(1)}",
             ))
 
-        # 3) Dangerous command execution. Scan a normalized view too, so homoglyph / fullwidth
-        # / zero-width obfuscation of `curl … | sh` can't slip past the raw-text pattern.
-        mcmd = _DANGEROUS_CMD.search(args_text) or _DANGEROUS_CMD.search(normalize_for_match(args_text))
+        # 3) Dangerous command execution. Scan every de-obfuscated view (normalized, leet-
+        # folded, URL-decoded, hex-decoded) so homoglyph / fullwidth / zero-width / leetspeak
+        # (cur1…|5h) / URL- and hex-encoded wrappers of `curl … | sh` can't slip past.
+        mcmd = next((mm for v in _command_views(args_text)
+                     if (mm := _DANGEROUS_CMD.search(v))), None)
         if mcmd:
             signals.append(Signal(
                 category=Category.DANGEROUS_COMMAND,

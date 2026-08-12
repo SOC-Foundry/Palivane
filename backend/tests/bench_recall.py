@@ -532,9 +532,10 @@ def test_recall_floor():
     report = run_bench()
     print_report(report)
     recall = report["detected"] / report["total"]
-    # Regression guard — raised to 0.90 after the file:// sensitive-path fix took overall
-    # recall to ~96.9%. (The remaining misses are terse single-line source_code_leak, a
-    # deliberate FP↔recall tradeoff left to destination-context + the judge.)
+    # Regression guard. Overall recall is currently 97/97 = 100% (offline) after the
+    # proprietary-code discriminator recovered the SQL/arrow-function source_code_leak misses
+    # and the assignment-form credential regex caught `db_password = <literal>`. Floor kept at
+    # 0.90 so heuristic tuning never flakes CI — the printed report is the source of truth.
     assert recall >= 0.90, f"overall recall {recall:.1%} fell below the 90% floor"
 
 

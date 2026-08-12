@@ -39,6 +39,22 @@ def leet_fold(text: str) -> str:
     return normalize_for_match(text).translate(_LEET_TABLE)
 
 
+# Command-keyword leet fold. Identical to _LEET_TABLE except `1`→`l` (not `i`): shell
+# keywords use the letter L (`curl`, `ssl`, `url`), so `cur1`→`curl`, `-551`→`-ssl`,
+# `5h`→`sh`, `h77p`→`http`. Only used by the dangerous-COMMAND matchers, where the URL/
+# argument middle is a wildcard, so an occasional wrong 1→l elsewhere in the string doesn't
+# change what the command regex keys on. Never applied to prose keyword lists (that path
+# keeps _LEET_TABLE with 1→i).
+_CMD_LEET_TABLE = {ord(k): v for k, v in
+                   {"0": "o", "1": "l", "3": "e", "4": "a", "5": "s", "7": "t",
+                    "@": "a", "$": "s"}.items()}
+
+
+def command_leet_fold(text: str) -> str:
+    """A leetspeak-folded view tuned for shell-command keywords ('cur1 … | 5h' → 'curl … | sh')."""
+    return normalize_for_match(text).translate(_CMD_LEET_TABLE)
+
+
 def normalize_for_match(text: str) -> str:
     """Return a folded view of `text` for keyword matching (NFKC, no zero-width,
     homoglyphs→Latin, collapsed whitespace)."""
