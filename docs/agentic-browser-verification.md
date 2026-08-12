@@ -27,7 +27,9 @@ a row flips to verified.
    ```
 
    Leave enforce off for the first pass (`PALIVANE_PROXY_ENFORCE` unset) — you want to
-   observe, not fight blocks while checking plumbing.
+   observe, not fight blocks while checking plumbing. For the actual verification pass,
+   swap in the evidence collector (`-s proxy/verify_browsers.py`, next section) — same
+   env vars and port, runs the addon unchanged, and fills the Results table for you.
 
 3. Trust the mitmproxy CA and point the system proxy at the addon.
 
@@ -57,6 +59,48 @@ a row flips to verified.
 — `Client TLS handshake failed. The client does not trust the proxy's certificate`
 or `tlsv1 alert unknown ca` — immediately after the CONNECT. That is the same signature
 we measured for Cursor's `api2.cursor.sh` (see `proxy/README.md`, "Cursor caveat").
+
+## Automated evidence collector (use this for the pass)
+
+You don't have to eyeball mitmdump output and hand-fill the Results table:
+`proxy/verify_browsers.py` runs the normal addon **plus** an evidence recorder that
+classifies each proxy-observable check below while you perform the browser actions. Be
+clear about what it automates: **evidence capture and classification only** — the
+browser actions themselves (prompts, agentic tasks, policy installs) are still manual,
+and the extension/policy-side checks (Comet 1a forced-install, 1b sidecar invisibility)
+happen outside the proxy's view, so those two are always hand-recorded.
+
+Flow (in place of step 2's bare-addon command; same env vars, same port):
+
+```bash
+# 1. Start the collector (add PALIVANE_PROXY_INTERCEPT_ALL=true for the Dia session):
+PALIVANE_URL=https://palivane.tachtech.net PALIVANE_TOKEN=<capture-key> \
+mitmdump -s proxy/verify_browsers.py --listen-port 8081
+
+# 2. Perform the browser actions for the checks you're exercising (1c, 1d, 2, 3 below).
+
+# 3. Ctrl-C. The collector writes, to the current directory ($PALIVANE_VERIFY_DIR to
+#    override):
+#      verification-report.md    PASS / PARTIAL / FAIL / NOT-EXERCISED per check, plus
+#                                paste-ready rows for the Results table at the bottom
+#                                of this runbook (verbatim column format)
+#      verification-report.json  the raw evidence (per-host CONNECT/TLS tallies with
+#                                handshake-failure signatures, parse counts, WS frames)
+```
+
+What it records, per check: per-host TLS success vs. client-handshake failure (the
+pinning signature above), whether `perplexity_ask` request/SSE bodies parsed via the
+addon's own extractors or parse-missed, whether the `/agent` WebSocket opened and
+produced readable text frames, whether `chatgpt.com` POSTs parsed via `extract_prompt`
+(and any enforce-mode blocks), and every host that traversed the proxy (the Dia
+discovery list). A check you didn't exercise reports NOT-EXERCISED — the collector
+never guesses.
+
+Do the checks one browser at a time (quit other browsers/apps between sections) so the
+evidence attributes cleanly — the proxy sees traffic, not which app sent it.
+
+The **manual fallback** readings are kept in each section below in case you need to
+debug the collector itself or work from a raw `-w` capture.
 
 ## 1. Perplexity Comet (priority)
 
@@ -99,8 +143,18 @@ a prompt containing a synthetic marker (e.g. the fake card `4111 1111 1111 1111`
 
 ### 1c. SSE inspectability / pinning check
 
-With the system proxy up and the addon running, submit an assistant prompt with a
-synthetic marker.
+With the system proxy up and the **collector** running (`mitmdump -s
+proxy/verify_browsers.py`, see above), submit an assistant prompt with a synthetic
+marker, wait for the streamed answer to finish, then stop the collector. The report
+classifies this check as three rows: `comet_1c_request` (request body parsed via
+`extract_comet_ask`), `comet_1c_sse_response` (SSE stream parsed via
+`extract_comet_sse`), and `comet_1c_pinning` (TLS interception vs. the
+handshake-failure pinning signature). Also confirm by hand that a finding with your
+marker landed in the console (`tool=comet`) and that answers still streamed live in
+Comet (the addon tees, it must not buffer/stall) — the collector can't see the console
+or the browser UI.
+
+Manual fallback readings:
 
 - **Pass:**
   - mitmdump shows `POST https://www.perplexity.ai/rest/sse/perplexity_ask`;
@@ -128,8 +182,14 @@ synthetic marker.
 
 ### 1d. Agent WebSocket
 
-Give the assistant an agentic task ("open my cart and check out", anything that drives
-the page).
+With the collector running, give the assistant an agentic task ("open my cart and check
+out", anything that drives the page). The report's `comet_1d_agent_ws` row lands PASS
+(channel opened, readable text frames), PARTIAL (channel opened but frames
+binary/opaque or absent — the runbook's "partial pass"), or NOT-EXERCISED, with frame
+counts in the evidence. Note frame volume from the JSON — if the channel is chatty, we
+may need batching before enforcing.
+
+Manual fallback readings:
 
 - **Pass:** mitmdump/addon logs `Comet agent WebSocket opened: wss://www.perplexity.ai/agent`,
   a channel-open finding lands (`tool=comet`, `wss://` destination), and text frames
@@ -160,6 +220,19 @@ The app (Chat/Work/Codex modes, built-in browser) talks to the `chatgpt.com` bac
 proxy already parses (`{author:{role}}, content.parts` shape). What's unverified is the
 app's *client* behavior, not our parsing.
 
+Collector flow: install the desktop app, set system proxy + trusted CA as in Common
+setup, start the collector, send a marker prompt in **each** mode (Chat, Work, Codex,
+and a page-question in the built-in browser), stop. The report's `chatgpt_proxy_trust`
+row covers steps 2–3 below (traffic observed + no handshake failure = PASS; the pinning
+signature = FAIL; nothing = NOT-EXERCISED — i.e. the app bypassed the system proxy), and
+`chatgpt_parsing` covers step 4 (any POST body parsed via `extract_prompt` = PASS;
+bodies seen but none parsed = FAIL — capture them and check for an `AI_HOST_SUFFIXES`
+gap). Check the host inventory for any host a mode used outside the AI list. Step 5
+(enforce) is a **manual re-run** — the collector notes any observed block in the row but
+can't submit the prompt for you.
+
+Manual fallback steps:
+
 1. Install the desktop app; set system proxy + trusted CA as in Common setup.
 2. **System-proxy check:** send any prompt. Pass: mitmdump shows
    `CONNECT chatgpt.com:443` (or a subdomain — the suffix match covers them all) coming
@@ -185,11 +258,17 @@ code** until real hosts are captured. This is a capture session, not an integrat
 
 ```bash
 # Wide-open capture (interception NOT scoped to the AI list — we don't know Dia's hosts):
-PALIVANE_PROXY_INTERCEPT_ALL=true mitmdump -s proxy/palivane_addon.py \
+PALIVANE_PROXY_INTERCEPT_ALL=true mitmdump -s proxy/verify_browsers.py \
   --listen-port 8081 -w dia.flows
 ```
 
-Use the Dia sidebar for a few varied prompts, then enumerate hosts:
+Use the Dia sidebar for a few varied prompts, then stop the collector. The report's
+host inventory is the deliverable: every host that traversed the proxy with per-host
+CONNECT/request counts and TLS success vs. handshake-failure (the pinning verdict per
+host), with any `*.diabrowser.com` host called out in the `dia_host_capture` row. Keep
+`-w dia.flows` so the raw bodies are preserved for the catalog follow-up.
+
+Manual fallback — enumerate hosts from the raw capture:
 
 ```bash
 mitmdump -nr dia.flows | awk '{print $2}' | sort | uniq -c | sort -rn | head -30
@@ -203,6 +282,10 @@ Deliverables from the session:
 - whether any documented enterprise-policy surface exists yet (none known as of Aug 2026).
 
 ## Results
+
+The collector's `verification-report.md` emits rows in exactly this column format —
+paste them in verbatim (1a/1b rows stay hand-filled; a NOT-EXERCISED row means that
+check still hasn't been performed, don't paste it as a result).
 
 | Check | Platform | Date | Result | Notes |
 |---|---|---|---|---|
