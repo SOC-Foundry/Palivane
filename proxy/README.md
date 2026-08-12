@@ -71,6 +71,13 @@ python3 proxy/palivane_addon.py --selftest-comet          # bundled synthetic fi
 python3 proxy/palivane_addon.py --selftest-comet <dir>    # your captured bodies
 ```
 
+For the on-machine pass itself, run `mitmdump -s proxy/verify_browsers.py` instead of
+the bare addon: it runs the addon unchanged plus an evidence recorder that classifies
+each runbook check (host/TLS-pinning signals, Comet request/SSE parse vs. parse-miss,
+agent-WebSocket frames, ChatGPT desktop parsing, Dia host discovery) and writes
+`verification-report.md` / `.json` on Ctrl-C — evidence capture is automated, the
+browser actions are still manual.
+
 > **Cursor caveat (measured).** Cursor's model/chat endpoint (`api2.cursor.sh`) **pins
 > its certificate** — a TLS-inspecting proxy is rejected (`tlsv1 alert unknown ca`) even
 > with a trusted CA, so **chat prompts can't be intercepted** this way. The proxy can
