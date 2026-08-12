@@ -65,13 +65,30 @@ work is protocol parsing, and none of it is verifiable on Linux (no Linux builds
 
 Listed as a known gap on /coverage (copy updated for the Atlas sunset).
 
-## SaaS-AI OAuth discovery — live pulls shipping, per-platform buildout
+## SaaS-AI OAuth discovery — per-platform fetchers built, real-tenant smoke tests pending
 
 The OAuth-grant ingest (`POST /api/discovery/oauth-grants`) covers the mechanism, and the
 connector framework (`backend/app/saas_connectors.py` + `/api/discovery/connectors`) now
 does **live pulls**: store a platform admin credential (encrypted at rest), sync on demand
 or from an operator cron, grants land through the same ingest path as a manual export.
-First connector: **Google Workspace** (service account with domain-wide delegation).
-Remaining work is per-platform fetchers in the PLATFORMS registry — M365 (Graph
-`servicePrincipals`/`oauth2PermissionGrants`), Slack, Salesforce, Notion, … — each an
-admin-API client that normalizes to the same grant shape.
+Live fetchers in the PLATFORMS registry:
+
+- **Google Workspace** — service account with domain-wide delegation; per-user token
+  inventory from the Admin SDK. Validated against a real tenant.
+- **Microsoft 365 / Entra ID** — Graph client-credentials app; `servicePrincipals` +
+  `oauth2PermissionGrants` (delegated consents, principal resolved to UPN) +
+  `appRoleAssignments` (app-only grants, role GUIDs resolved to names).
+- **Slack** — org-admin token (Enterprise Grid, `admin.apps:read`);
+  `admin.apps.approved.list` gives org-approved apps + scopes (approval-level, no
+  per-granting-user attribution — that's all Slack exposes).
+- **Salesforce** — connected-app client-credentials flow; `OauthToken` sObject gives
+  (app, user) grants. Salesforce exposes no per-token scopes, so broad-scope flagging
+  is unavailable there.
+- **Notion** — registered **manual-export-only**: Notion's public API has no endpoint to
+  enumerate a workspace's installed integrations or their grants (integration-scoped API,
+  SCIM is users/groups only, audit log is a UI/SIEM export — verified Aug 2026). Sync
+  returns an actionable error pointing at the manual ingest.
+
+M365/Slack/Salesforce fetchers are built against the documented API shapes with mocked-
+HTTP tests; each still needs a smoke test against a real admin tenant before we call it
+validated. Grant timestamps are not carried — the ingest grant shape has no time field.
