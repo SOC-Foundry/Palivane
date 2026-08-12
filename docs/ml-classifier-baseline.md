@@ -140,6 +140,42 @@ These measure generalization to *human-written* injections we didn't author — 
 distribution, but still not *your* traffic, and mostly without timestamps, so they can
 sharpen the model and sanity-check FP rate but cannot clear the time-window gate alone.
 
+### Interim public-dataset evaluation (run 2026-08-12)
+
+First evaluation on non-synthetic data: deepset/prompt-injections (546 train / 116 test)
+plus Lakera Gandalf ignore-instructions (777 train / 223 val+test, all injections, labeled
+`1` on import). Held-out eval = deepset test + Gandalf val/test — 339 human-written rows
+(283 injections, 56 benign) never seen in training. `ts` values were assigned as split
+markers (train `2026-01-01`, eval `2026-06-01`), so the script's time-window mechanics run
+but the timestamps are not real capture times. qualifire's benchmark has moved behind a
+gated HF repo (`rogue-security/prompt-injections-benchmark`) and was skipped.
+
+| training corpus | regex recall | ML prec | ML recall | ML F1 | ML FP rate |
+|---|---|---|---|---|---|
+| synthetic only (202) | 0.22 | 0.97 | 0.68 | 0.80 | 0.107 |
+| synthetic + public train (1525) | 0.22 | 1.00 | 0.96 | 0.98 | 0.000 |
+
+What this establishes, honestly:
+
+- **The regex gap is worse on real attacks than on our paraphrases**: 0.22 recall on
+  human-written injections vs the 0.34 measured on synthetic paraphrases. The competitive
+  case for the ML engine strengthened.
+- **Synthetic-only training does not transfer well enough to ship**: 0.68 recall at a
+  10.7% FP rate fails the gate on its own numbers.
+- **Human-written training data closes the gap** — but the second row overstates it:
+  train and eval share the two datasets' distributions (deepset train→test, Gandalf
+  train→val/test), so this is cross-split generalization within known benchmarks, not
+  transfer to unseen traffic. The benign side is only 56 rows, so 0 FP bounds the true
+  rate at roughly ≤5% (rule of three), not at zero.
+- **The `GATE: PASS` printed by the second run does NOT clear the ship gate.** The gate's
+  wording requires real labeled traffic (consented captures, analyst-labeled, real time
+  windows). This run satisfies the mechanics, not the substance; the go/no-go stands
+  until the capture pipeline produces a real corpus.
+
+Takeaway: the architecture is validated on real-world attack phrasings and the remaining
+risk is concentrated exactly where the gate says it is — benign-side FP rate on *your*
+traffic, which no public dataset can measure.
+
 ## Reproduce
 
 ```bash
