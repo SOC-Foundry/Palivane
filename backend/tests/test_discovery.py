@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.ai_catalog import classify
+from app.ai_catalog import PROVISIONAL, classify, classify_name
 
 
 def test_catalog_classifies_domains_urls_and_names():
@@ -27,6 +27,18 @@ def test_catalog_short_keys_respect_label_boundaries():
     assert classify("chat.z.ai")["tool"] == "Z.ai (Zhipu)"
     assert classify("buzz.ai") is None
     assert classify("beta101.ai") is None
+
+
+def test_catalog_provisional_rows_are_flagged():
+    # Dia's real API hostnames are unverified (macOS-only client; see
+    # docs/agentic-browser-verification.md) — the row still classifies, but carries a
+    # provisional flag so reports caveat it and the proxy doesn't intercept on hearsay.
+    assert "diabrowser.com" in PROVISIONAL
+    hit = classify("https://www.diabrowser.com/download")
+    assert hit["tool"] == "Dia (Browser Co)" and hit.get("provisional") is True
+    assert classify_name("Dia (Browser Co)").get("provisional") is True
+    # Verified rows carry no such flag.
+    assert "provisional" not in classify("chatgpt.com")
 
 
 def test_ingest_and_inventory(client):

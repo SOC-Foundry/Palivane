@@ -45,6 +45,32 @@ returns a **JSON-RPC error** so the agent surfaces it cleanly. It flags:
 MCP env vars are read by the **backend** (`MCP_ENFORCE`, `MCP_BLOCK_SEVERITY`,
 `MCP_ALLOWED_SERVERS`), not the proxy — the proxy just relays; the backend decides.
 
+## Agentic browsers (Comet / ChatGPT desktop) — parsing shipped, UNVERIFIED
+
+**Perplexity Comet** runs the agent in the browser, so the extension can't see the
+sidecar's prompts — the proxy is the inline path. The addon parses the assistant
+endpoint (`www.perplexity.ai/rest/sse/perplexity_ask`): the JSON request is scanned and
+blockable like any other prompt (`tool=comet`), and the SSE *response* (the agent's
+steps/answer) is teed off the stream — no buffering, no client stall — and scanned
+observe-only once it completes. The agent-automation WebSocket
+(`wss://www.perplexity.ai/agent`) is flagged on open and its text frames are scanned. A
+body that doesn't match the expected (Zenity-teardown) shape becomes a `[comet
+parse-miss]` finding plus a harvest scan — shape drift degrades, it doesn't crash or go
+silent. The **ChatGPT desktop app** (Atlas's successor, with built-in browser) talks to
+the `chatgpt.com` backend the addon already parses.
+
+**Honesty note:** all of this was built on Linux against synthetic fixtures
+(`fixtures/comet/`) — no Linux builds of these browsers exist, so none of it is verified
+against real traffic yet. The per-browser verification pass (managed-install flow,
+pinning checks, per-mode host inventory) is
+[docs/agentic-browser-verification.md](../docs/agentic-browser-verification.md). Offline
+parser check, for CI or a field engineer with a real capture:
+
+```bash
+python3 proxy/palivane_addon.py --selftest-comet          # bundled synthetic fixtures
+python3 proxy/palivane_addon.py --selftest-comet <dir>    # your captured bodies
+```
+
 > **Cursor caveat (measured).** Cursor's model/chat endpoint (`api2.cursor.sh`) **pins
 > its certificate** — a TLS-inspecting proxy is rejected (`tlsv1 alert unknown ca`) even
 > with a trusted CA, so **chat prompts can't be intercepted** this way. The proxy can

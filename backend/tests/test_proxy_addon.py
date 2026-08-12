@@ -269,6 +269,128 @@ def test_scan_circuit_breaker(tmp_path, monkeypatch):
     assert calls["n"] == 2
 
 
+# --- Agentic browsers: Perplexity Comet -----------------------------------------------
+# Parsers built to the Zenity-teardown shape and the synthetic fixtures in
+# proxy/fixtures/comet/. NOT verified against a real Comet build (no Linux build) —
+# the macOS/Windows pass is docs/agentic-browser-verification.md.
+
+_FIXTURES = Path(__file__).resolve().parents[2] / "proxy" / "fixtures" / "comet"
+
+
+def test_is_ai_host_agentic_browsers():
+    # Comet's assistant/agent host is intercepted; the ChatGPT desktop app (Atlas's
+    # successor) rides the existing chatgpt.com suffix, subdomains included.
+    assert addon.is_ai_host("www.perplexity.ai")
+    assert addon.is_ai_host("chatgpt.com")
+    assert addon.is_ai_host("ab.chatgpt.com")
+    # Dia's hosts are UNVERIFIED (catalog row is provisional) — no interception until a
+    # real capture confirms them.
+    assert not addon.is_ai_host("diabrowser.com")
+
+
+def test_comet_needs_harvest_fallback():
+    # www.perplexity.ai is a proprietary web backend, not a structured API host — the
+    # harvest fallback applies when the dedicated parser misses.
+    assert addon.needs_harvest("www.perplexity.ai") is True
+
+
+def test_is_comet_ask():
+    assert addon.is_comet_ask("www.perplexity.ai", "/rest/sse/perplexity_ask")
+    assert addon.is_comet_ask("www.perplexity.ai", "/rest/sse/perplexity_ask?version=2.13")
+    assert not addon.is_comet_ask("www.perplexity.ai", "/rest/sse/other")
+    assert not addon.is_comet_ask("example.com", "/rest/sse/perplexity_ask")
+
+
+def test_is_comet_agent_ws():
+    assert addon.is_comet_agent_ws("www.perplexity.ai", "/agent")
+    assert addon.is_comet_agent_ws("www.perplexity.ai", "/agent?session=x")
+    assert not addon.is_comet_agent_ws("www.perplexity.ai", "/agents")
+    assert not addon.is_comet_agent_ws("evil.example", "/agent")
+
+
+def test_extract_comet_ask_shapes():
+    top = json.dumps({"query_str": "book a flight"})
+    text, ok = addon.extract_comet_ask(top)
+    assert ok and text == "book a flight"
+    nested = json.dumps({"params": {"query_str": "pay with 4111 1111 1111 1111"}})
+    text, ok = addon.extract_comet_ask(nested)
+    assert ok and "4111 1111 1111 1111" in text
+    # Both present and identical -> deduped, not doubled.
+    both = json.dumps({"query_str": "q", "params": {"query_str": "q"}})
+    assert addon.extract_comet_ask(both) == ("q", True)
+
+
+def test_extract_comet_ask_parse_miss_degrades():
+    # Shape drift must yield ("", False) — the hook then logs a parse-miss and harvests.
+    assert addon.extract_comet_ask(json.dumps({"unexpected": {"shape": True}})) == ("", False)
+    assert addon.extract_comet_ask("not json") == ("", False)
+    assert addon.extract_comet_ask(b"") == ("", False)
+
+
+def test_extract_comet_ask_fixture():
+    body = (_FIXTURES / "perplexity_ask_request.json").read_bytes()
+    text, ok = addon.extract_comet_ask(body)
+    assert ok and "hunter2-SYNTHETIC" in text
+
+
+def test_extract_comet_sse_fixture():
+    # The synthetic Zenity-shape SSE stream: echoed query, cumulative markdown chunks
+    # (deduped), and the JSON-encoded final step all come out scannable.
+    body = (_FIXTURES / "perplexity_ask_response.sse").read_bytes()
+    text, ok = addon.extract_comet_sse(body)
+    assert ok
+    assert "4111 1111 1111 1111" in text                 # echoed query_str
+    assert "filling the payment form" in text            # markdown_block chunks
+    assert "SYNTH-12345" in text                         # step answer inside "text"
+    assert text.count("SYNTHETIC agent step: opening") == 1  # cumulative frames deduped
+
+
+def test_extract_comet_sse_text_field_plain_and_json():
+    plain = 'data: {"text": "just words"}\n\n'
+    text, ok = addon.extract_comet_sse(plain)
+    assert ok and "just words" in text
+    steps = 'data: {"text": "[{\\"content\\": {\\"answer\\": \\"done AKIAABCDEFGHIJKLMNOP\\"}}]"}\n\n'
+    text, ok = addon.extract_comet_sse(steps)
+    assert ok and "AKIAABCDEFGHIJKLMNOP" in text
+
+
+def test_extract_comet_sse_parse_miss():
+    # JSON frames with no recognizable text -> parse-miss, not a crash and not silence.
+    assert addon.extract_comet_sse('data: {"status": 1}\n\n') == ("", False)
+    assert addon.extract_comet_sse("") == ("", False)
+    assert addon.extract_comet_sse("event: ping\n\n") == ("", False)
+
+
+def test_extract_ws_text():
+    # JSON frame -> string values harvested (keys ignored).
+    j = json.dumps({"action": "navigate", "url": "https://intranet.corp/payroll"})
+    out = addon.extract_ws_text(j.encode())
+    assert "intranet.corp/payroll" in out and "action" not in out  # keys aren't harvested
+    # socket.io-style numeric prefix is tolerated.
+    assert "click" in addon.extract_ws_text('42["event", {"cmd": "click"}]')
+    # Plain text passes through; binary yields "" (nothing scannable).
+    assert addon.extract_ws_text("hello agent") == "hello agent"
+    assert addon.extract_ws_text(b"\x88\x99\xff\xfe") == ""
+    assert addon.extract_ws_text(b"") == ""
+
+
+def test_detect_tool_comet():
+    assert addon.detect_tool("Mozilla/5.0 ... Comet/1.4 Chrome/126") == "comet"
+
+
+def test_selftest_comet_passes_on_bundled_fixtures(capsys):
+    # The field-engineer self-test: point the addon at fixture bodies, expect PASS.
+    assert addon.selftest_comet() == 0
+    out = capsys.readouterr().out
+    assert "PASS" in out and "FAIL" not in out
+
+
+def test_selftest_comet_fails_on_bad_fixture(tmp_path, capsys):
+    (tmp_path / "drifted.sse").write_text('data: {"status": 1}\n\n')
+    assert addon.selftest_comet(str(tmp_path)) == 1
+    assert "parse-miss" in capsys.readouterr().out
+
+
 # --- TLS interception scope (allow-hosts) ------------------------------------------------
 
 def test_intercept_hosts_default_is_ai_list(monkeypatch):

@@ -76,7 +76,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "wrtn.ai": ("Wrtn", "assistant"),
     "robinai.com": ("Robin AI", "assistant"),
     "luminance.com": ("Luminance", "assistant"),
-    "diabrowser.com": ("Dia (Browser Co)", "assistant"),
+    "diabrowser.com": ("Dia (Browser Co)", "assistant"),  # PROVISIONAL — see set below
     "flowgpt.com": ("FlowGPT", "assistant"),
     "ai.meta.com": ("Meta AI", "assistant"),
     "deepmind.google": ("Google DeepMind", "assistant"),
@@ -462,6 +462,16 @@ CATALOG: dict[str, tuple[str, str]] = {
     "llama.com": ("Meta Llama", "ml_platform"),
 }
 
+# Rows recorded from vendor marketing/site rather than a verified traffic capture: the
+# tool is real, but the hostnames its client actually talks to are UNVERIFIED. Discovery
+# still names them (a hit is a hit), but classify()/classify_name() mark the hit
+# `provisional: True` so console/report copy can caveat it — and the egress proxy must
+# NOT add these to its intercept/parse list until a real capture confirms the API hosts.
+# Dia: macOS-only (Apple Silicon); its AI sidebar talks to Dia's hosted backend, whose
+# real API hostnames need a mitmproxy capture — runbook in
+# docs/agentic-browser-verification.md ("Dia").
+PROVISIONAL: frozenset[str] = frozenset({"diabrowser.com"})
+
 CATEGORY_LABEL = {
     "assistant": "AI assistant", "coding": "Coding assistant", "image_video": "Image / video / audio",
     "writing": "Writing / docs", "search": "AI search", "meeting": "Meeting notetaker",
@@ -520,7 +530,10 @@ def classify(text: str) -> dict | None:
     for key in sorted(CATALOG, key=len, reverse=True):
         if _key_matches(key, low):
             name, cat = CATALOG[key]
-            return {"tool": name, "category": cat, "domain": key}
+            hit = {"tool": name, "category": cat, "domain": key}
+            if key in PROVISIONAL:
+                hit["provisional"] = True
+            return hit
     return None
 
 
@@ -529,6 +542,9 @@ def classify(text: str) -> dict | None:
 _NAME_INDEX = sorted(
     {v[0].lower(): v for v in CATALOG.values()}.items(),
     key=lambda kv: len(kv[0]), reverse=True)
+
+# Canonical names of PROVISIONAL rows, so name-based hits carry the same caveat.
+_PROVISIONAL_NAMES = frozenset(CATALOG[d][0].lower() for d in PROVISIONAL)
 
 
 def classify_name(text: str) -> dict | None:
@@ -543,5 +559,8 @@ def classify_name(text: str) -> dict | None:
         return None
     for nm, (name, cat) in _NAME_INDEX:
         if len(nm) >= 3 and _key_matches(nm, low):
-            return {"tool": name, "category": cat, "domain": ""}
+            hit = {"tool": name, "category": cat, "domain": ""}
+            if nm in _PROVISIONAL_NAMES:
+                hit["provisional"] = True
+            return hit
     return None

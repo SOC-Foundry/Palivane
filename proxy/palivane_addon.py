@@ -42,8 +42,11 @@ import urllib.request
 # Outbound destinations we inspect (suffix match on the request host).
 
 # Reported in the User-Agent so the console can inventory client builds per device.
-VERSION = "1.2.1"
+VERSION = "1.3.0"
 AI_HOST_SUFFIXES = (
+    # chatgpt.com also covers the ChatGPT *desktop app* (Atlas's successor, with the
+    # built-in browser): its Chat/Work/Codex modes all talk to the chatgpt.com backend,
+    # so the suffix match sweeps in every subdomain the desktop app uses.
     "api.openai.com", "chatgpt.com", "chat.openai.com",
     "api.anthropic.com", "claude.ai",
     "generativelanguage.googleapis.com", "gemini.google.com",
@@ -52,6 +55,11 @@ AI_HOST_SUFFIXES = (
     # aiplatform — both carry the same generateContent body shape.
     "cloudcode-pa.googleapis.com", "aiplatform.googleapis.com",
     "api.cohere.ai", "api.mistral.ai", "api.perplexity.ai",
+    # Perplexity Comet (agentic browser): assistant prompts flow as SSE on
+    # www.perplexity.ai/rest/sse/perplexity_ask, agent automation over
+    # wss://www.perplexity.ai/agent. Only the www host — the api. host above is the
+    # structured API; other perplexity.ai subdomains stay un-decrypted.
+    "www.perplexity.ai",
     # GitHub Copilot (IDE assistants): chat + completions. The suffix
     # "githubcopilot.com" covers api / api.business / api.individual variants.
     "githubcopilot.com", "copilot-proxy.githubusercontent.com",
@@ -228,6 +236,150 @@ def harvest_prompt(body: bytes | str) -> str:
     return _SYSTEM_REMINDER_RE.sub(" ", text).strip()
 
 
+# --- Agentic browsers: Perplexity Comet ------------------------------------------------
+# Comet runs the agent *in the browser*, so the model call never comes through a page
+# fetch the extension wraps — the egress proxy is the inline path. Per the Zenity Labs
+# teardown (Aug 2026): the user/assistant prompt is a JSON POST answered by an SSE stream
+# on www.perplexity.ai/rest/sse/perplexity_ask, and agent automation rides a WebSocket to
+# wss://www.perplexity.ai/agent. The parsers below are built to that teardown shape and
+# degrade gracefully — a body that doesn't match is reported as a parse-miss finding (and
+# harvest-scanned), never a crash. Built on Linux against synthetic fixtures
+# (proxy/fixtures/comet/); NOT yet verified against a real Comet build — no Linux build
+# exists. Verification runbook: docs/agentic-browser-verification.md.
+
+COMET_ASK_PATH = "/rest/sse/perplexity_ask"
+COMET_AGENT_WS_PATH = "/agent"
+_COMET_SSE_CAP = 1 << 20        # tee at most 1 MiB of a streamed SSE response
+
+
+def _is_perplexity_host(host: str) -> bool:
+    host = (host or "").lower()
+    return host == "perplexity.ai" or host.endswith(".perplexity.ai")
+
+
+def _path_only(path: str) -> str:
+    return (path or "").split("?", 1)[0]
+
+
+def is_comet_ask(host: str, path: str) -> bool:
+    """The Comet/Perplexity assistant endpoint (JSON request, SSE response)."""
+    return _is_perplexity_host(host) and _path_only(path) == COMET_ASK_PATH
+
+
+def is_comet_agent_ws(host: str, path: str) -> bool:
+    """The Comet agent-automation WebSocket (wss://www.perplexity.ai/agent)."""
+    return _is_perplexity_host(host) and _path_only(path) == COMET_AGENT_WS_PATH
+
+
+def extract_comet_ask(body: bytes | str) -> tuple[str, bool]:
+    """User/agent prompt from a perplexity_ask *request* body -> (text, parsed_ok).
+
+    Expected shape (Zenity teardown): JSON with `query_str` at the top level and/or
+    under `params`. parsed_ok=False means the body didn't match — the caller records a
+    parse-miss and falls back to harvesting, so shape drift degrades to observe-only
+    scanning instead of silence (or a crash)."""
+    if isinstance(body, bytes):
+        body = body.decode("utf-8", "replace")
+    try:
+        j = json.loads(body or "")
+    except (ValueError, TypeError):
+        return "", False
+    if not isinstance(j, dict):
+        return "", False
+    parts: list[str] = []
+    for container in (j, j.get("params") if isinstance(j.get("params"), dict) else {}):
+        q = container.get("query_str")
+        if isinstance(q, str) and q.strip() and q not in parts:
+            parts.append(q)
+    if not parts:
+        return "", False
+    return "\n".join(parts)[:20000], True
+
+
+def _comet_frame_text(j: dict, parts: list[str]) -> None:
+    """Collect scannable text from one SSE data frame (mutates `parts`)."""
+    q = j.get("query_str")
+    if isinstance(q, str) and q.strip():
+        parts.append(q)
+    # Streamed answer/agent-step markdown: blocks[].markdown_block.chunks[]. Progress
+    # frames are cumulative (each resends all chunks so far) — collect all here; the
+    # caller drops earlier partials that are prefixes of a later, fuller frame.
+    blocks = j.get("blocks")
+    if isinstance(blocks, list):
+        for b in blocks:
+            if not isinstance(b, dict):
+                continue
+            mb = b.get("markdown_block")
+            if isinstance(mb, dict) and isinstance(mb.get("chunks"), list):
+                text = "".join(c for c in mb["chunks"] if isinstance(c, str))
+                if text.strip():
+                    parts.append(text)
+    # Legacy/step shape: "text" is either plain text or a JSON-encoded list of steps
+    # ([{step_type, content:{answer: ...}}]) — harvest whatever strings are inside.
+    t = j.get("text")
+    if isinstance(t, str) and t.strip():
+        try:
+            steps = json.loads(t)
+        except (ValueError, TypeError):
+            parts.append(t)
+        else:
+            harvested: list[str] = []
+            _harvest_strings(steps, harvested)
+            parts.extend(harvested)
+    a = j.get("answer")
+    if isinstance(a, str) and a.strip():
+        parts.append(a)
+
+
+def extract_comet_sse(body: bytes | str) -> tuple[str, bool]:
+    """User query + agent/answer text from a perplexity_ask SSE *response* stream ->
+    (text, parsed_ok). Reuses the `data:`-frame parser; unknown-but-JSON frames with no
+    recognizable text yield ("", False) so the caller logs a parse-miss finding."""
+    if isinstance(body, bytes):
+        body = body.decode("utf-8", "replace")
+    if not (body or "").strip():
+        return "", False
+    parts: list[str] = []
+    frames = _json_objects(body)
+    for j in frames:
+        if isinstance(j, dict):
+            _comet_frame_text(j, parts)
+    if not parts:
+        return "", False
+    # Progress frames are cumulative (each resends all markdown so far): drop exact
+    # duplicates AND any part that is a prefix of a later, fuller part, keeping order.
+    seen: set[str] = set()
+    uniq = [p for p in parts if not (p in seen or seen.add(p))]
+    final = [p for i, p in enumerate(uniq)
+             if not any(q.startswith(p) for q in uniq[i + 1:])]
+    return "\n".join(final)[:20000], True
+
+
+def extract_ws_text(payload: bytes | str) -> str:
+    """Scannable text from a WebSocket frame on the Comet agent channel: harvest string
+    values from a JSON frame, pass a plain-text frame through, and return "" for binary
+    (nothing scannable — the hook still logs the frame's existence + size)."""
+    if isinstance(payload, bytes):
+        try:
+            payload = payload.decode("utf-8")
+        except UnicodeDecodeError:
+            return ""
+    if not (payload or "").strip():
+        return ""
+    # Socket.io-style frames prefix JSON with digits (e.g. `42["event",{...}]`) — strip.
+    stripped = payload.lstrip("0123456789")
+    for candidate in (payload, stripped):
+        if candidate[:1] in ("{", "["):
+            try:
+                j = json.loads(candidate)
+            except (ValueError, TypeError):
+                continue
+            harvested: list[str] = []
+            _harvest_strings(j, harvested)
+            return "\n".join(harvested)[:20000]
+    return payload[:8000]
+
+
 def detect_tool(user_agent: str) -> str:
     """Identify a coding assistant from its User-Agent so per-tool policy can apply."""
     ua = (user_agent or "").lower()
@@ -239,6 +391,10 @@ def detect_tool(user_agent: str) -> str:
         return "copilot"
     if "gemini" in ua or "geminicli" in ua:
         return "gemini-cli"
+    # Comet's UA may be indistinguishable from Chrome (unverified — no Linux build); the
+    # request() hook tags Comet by endpoint (is_comet_ask), this is best-effort backup.
+    if "comet" in ua:
+        return "comet"
     return ""
 
 
@@ -583,8 +739,27 @@ class PalivaneGuard:
     def responseheaders(self, flow) -> None:
         """AI responses are long-lived SSE streams the response() hook never inspects —
         stream them through unbuffered, or clients stall on the buffered body and time
-        out (Claude Code retries in a loop). Request-side scanning is unaffected."""
-        if is_ai_host(flow.request.pretty_host):
+        out (Claude Code retries in a loop). Request-side scanning is unaffected.
+
+        Comet's perplexity_ask SSE response carries the *agent's* steps/answer, so for
+        that one endpoint we tee the stream: chunks pass through unbuffered (no stall),
+        a capped copy accumulates on the flow, and response() scans it once the stream
+        ends. Observe-only by construction — the bytes have already reached the client."""
+        if not is_ai_host(flow.request.pretty_host):
+            return
+        if is_comet_ask(flow.request.pretty_host, flow.request.path):
+            buf: list[bytes] = []
+            flow.metadata["palivane_comet_sse"] = buf
+            size = {"n": 0}
+
+            def tee(chunk: bytes) -> bytes:
+                if chunk and size["n"] < _COMET_SSE_CAP:
+                    buf.append(chunk)
+                    size["n"] += len(chunk)
+                return chunk
+
+            flow.response.stream = tee
+        else:
             flow.response.stream = True
 
     async def request(self, flow) -> None:
@@ -598,6 +773,26 @@ class PalivaneGuard:
         if req.method != "POST":
             return
         raw = req.raw_content or b""
+
+        # Perplexity Comet (agentic browser): the assistant endpoint has its own body
+        # shape, so it gets a dedicated parser. A parse-miss (shape drift, new build)
+        # degrades to the harvest fallback with a visible marker — never a crash.
+        if is_comet_ask(req.pretty_host, req.path):
+            prompt, ok = extract_comet_ask(raw)
+            if not ok and raw.strip():
+                import logging
+                logging.warning("palivane: comet perplexity_ask request did not match the "
+                                "expected shape (parse-miss) — harvest fallback; capture the "
+                                "body and re-run the self-test (docs/agentic-browser-verification.md)")
+                harvested = harvest_prompt(raw)
+                prompt = ("[comet parse-miss] " + harvested).strip() if harvested else ""
+            if prompt.strip():
+                verdict = await asyncio.to_thread(
+                    scan, prompt, f"https://{req.pretty_host}{COMET_ASK_PATH}", tool="comet")
+                if should_block(verdict, self.enforce):
+                    flow.response = http.Response.make(
+                        400, ai_block_body(verdict), {"Content-Type": "application/json"})
+            return
 
         if is_ai_host(req.pretty_host):
             # 1) Prompt content scan (shadow-AI / data-loss). extract_prompt returns the
@@ -647,6 +842,29 @@ class PalivaneGuard:
                         200, mcp_block_body(verdict), {"Content-Type": "application/json"})
 
     async def response(self, flow) -> None:
+        # Comet SSE response: the teed stream (responseheaders) has finished — scan the
+        # agent's steps/answer. Observe-only: the bytes were streamed to the client as
+        # they arrived, so a block verdict here is recorded, not enforced. A parsed-JSON
+        # body with no recognizable text is reported as a parse-miss so shape drift shows
+        # up in the console instead of going silent.
+        buf = flow.metadata.pop("palivane_comet_sse", None)
+        if buf is not None:
+            body = b"".join(buf)
+            text, ok = extract_comet_sse(body)
+            if not ok and body.strip():
+                import logging
+                logging.warning("palivane: comet perplexity_ask SSE response did not match "
+                                "the expected shape (parse-miss) — capture the stream and "
+                                "re-run the self-test (docs/agentic-browser-verification.md)")
+                harvested = harvest_prompt(body)
+                text = ("[comet parse-miss] " + harvested).strip() if harvested else ""
+            if text.strip():
+                await asyncio.to_thread(
+                    scan, text,
+                    f"https://{flow.request.pretty_host}{COMET_ASK_PATH}#sse-response",
+                    tool="comet")
+            return
+
         # Tool poisoning lives in the server's tools/list *response* — vet it, and in
         # enforce mode replace a poisoned listing so those tools never reach the agent.
         # Async for the same event-loop reason as request() above.
@@ -665,5 +883,80 @@ class PalivaneGuard:
                 resp.content = mcp_block_body(verdict)
                 resp.headers["Content-Type"] = "application/json"
 
+    # --- Comet agent WebSocket (wss://www.perplexity.ai/agent) --------------------------
+    # The automation channel the Comet agent drives the browser over (Zenity teardown).
+    # Observe-only: we flag the channel opening and scan each text frame's content;
+    # in-stream blocking of a WS message is a verification-pass question (mitmproxy can
+    # drop frames, but killing an opaque automation protocol mid-session needs testing
+    # against a real build before we ship it as enforcement).
+
+    async def websocket_start(self, flow) -> None:
+        if not is_comet_agent_ws(flow.request.pretty_host, flow.request.path):
+            return
+        import logging
+        logging.warning("palivane: Comet agent WebSocket opened: wss://%s%s",
+                        flow.request.pretty_host, COMET_AGENT_WS_PATH)
+        # Record the channel itself as a usage finding — agentic automation is running on
+        # this device even if every frame turns out to be binary/opaque.
+        await asyncio.to_thread(
+            scan, "[comet] agent automation WebSocket channel opened",
+            f"wss://{flow.request.pretty_host}{COMET_AGENT_WS_PATH}", tool="comet")
+
+    async def websocket_message(self, flow) -> None:
+        if not is_comet_agent_ws(flow.request.pretty_host, flow.request.path):
+            return
+        msg = flow.websocket.messages[-1]
+        text = extract_ws_text(msg.content)
+        if not text.strip():
+            return  # binary/empty frame — websocket_start already flagged the channel
+        await asyncio.to_thread(
+            scan, text,
+            f"wss://{flow.request.pretty_host}{COMET_AGENT_WS_PATH}", tool="comet")
+
 
 addons = [PalivaneGuard()]
+
+
+# --- Offline self-test (no mitmproxy, no backend) ---------------------------------------
+
+def selftest_comet(fixture_dir: str | None = None) -> int:
+    """Run the Comet parsers against recorded/synthetic fixture bodies and print
+    PASS/FAIL per file. For a field engineer verifying a real capture: export the bodies
+    from mitmproxy (request body -> .json, SSE response -> .sse) into a directory and
+    point this at it. Exit 0 iff every fixture parses.
+
+        python3 proxy/palivane_addon.py --selftest-comet [fixture-dir]
+
+    Defaults to the synthetic fixtures in proxy/fixtures/comet/ (Zenity-teardown shape).
+    """
+    d = fixture_dir or os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "fixtures", "comet")
+    files = sorted(f for f in os.listdir(d) if f.endswith((".json", ".sse")))
+    if not files:
+        print(f"selftest-comet: no .json/.sse fixtures in {d}")
+        return 1
+    failures = 0
+    for name in files:
+        with open(os.path.join(d, name), "rb") as fh:
+            body = fh.read()
+        if name.endswith(".json"):
+            text, ok = extract_comet_ask(body)
+            kind = "request (extract_comet_ask)"
+        else:
+            text, ok = extract_comet_sse(body)
+            kind = "SSE response (extract_comet_sse)"
+        status = "PASS" if ok and text.strip() else "FAIL (parse-miss)"
+        if status != "PASS":
+            failures += 1
+        excerpt = " | ".join(text.splitlines())[:120]
+        print(f"[{status}] {name}: {kind}\n         extracted: {excerpt!r}")
+    print(f"selftest-comet: {len(files) - failures}/{len(files)} fixtures parsed")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    if "--selftest-comet" in sys.argv:
+        i = sys.argv.index("--selftest-comet")
+        arg = sys.argv[i + 1] if len(sys.argv) > i + 1 else None
+        sys.exit(selftest_comet(arg))
+    print(__doc__)

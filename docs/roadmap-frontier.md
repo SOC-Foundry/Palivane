@@ -33,37 +33,49 @@ partnership motion. Workload/agent identity stays Palivane's — EMA only covers
 
 ## Agentic browsers (Comet / Dia / ChatGPT desktop)
 
-**Status: per-browser plan, researched Aug 2026.** These products run the agent
-themselves, so the model call doesn't come through a page fetch the extension wraps. The
-cross-cutting conclusion: **the egress proxy, not the extension, is the realistic inline
-path for all of them** — every one is Chromium/Electron-derived and should honor system
-proxy + OS trust store, the mechanism we already deploy for desktop apps. The per-browser
-work is protocol parsing, and none of it is verifiable on Linux (no Linux builds exist).
+**Status: parsing shipped in the egress proxy (addon ≥ 1.3.0); pending the macOS/Windows
+verification pass — [agentic-browser-verification.md](agentic-browser-verification.md).**
+These products run the agent themselves, so the model call doesn't come through a page
+fetch the extension wraps. The cross-cutting conclusion held: **the egress proxy, not the
+extension, is the realistic inline path for all of them** — every one is
+Chromium/Electron-derived and should honor system proxy + OS trust store, the mechanism
+we already deploy for desktop apps. The protocol parsing is now built; what remains is
+verifying it against real builds, and none of that is possible on Linux (no Linux builds
+exist).
 
-- **Perplexity Comet — the priority.** macOS/Windows/mobile. Agent prompts flow as SSE to
-  `www.perplexity.ai/rest/sse/perplexity_ask` and automation over
-  `wss://www.perplexity.ai/agent` (Zenity Labs teardown) — hosts the catalog already
-  covers, so discovery works today. The sidecar originates prompts from an extension/WebUI
-  context our MAIN-world fetch wrap can't see, so the extension won't capture assistant
-  prompts even though it installs fine — but Comet supports the full Chromium enterprise
-  policy suite incl. `ExtensionInstallForcelist` (MDM target `ai.perplexity.comet`), so
-  the managed rollout ports directly and still covers ordinary in-tab AI use. **Verify on
-  macOS/Windows:** managed-storage flow, sidecar invisibility (expected), and whether the
-  SSE body is plaintext-inspectable through the proxy with no pinning — if yes, Comet
-  inline enforcement ships via the egress proxy alone.
-- **ChatGPT desktop (Atlas's successor).** OpenAI discontinued Atlas as a standalone
-  browser on 2026-07-09 and folded it into the ChatGPT desktop app (Chat/Work/Codex modes
-  with built-in browser; Mac + Windows). Not an extension host — the egress proxy is the
-  only path; traffic is the `chatgpt.com` backend the catalog and proxy already know.
-  **Verify on macOS/Windows:** system-proxy + trust-store behavior of the desktop app.
-- **Dia (The Browser Company / Atlassian) — least visible, least urgent.** macOS-only
-  (Windows "fall 2026", no Linux signal). The AI sidebar talks to Dia's hosted backend,
-  which relays to model partners — egress never sees model-provider hosts, only Dia's, and
-  the actual API hostnames are unverified (our `diabrowser.com` catalog row is
-  provisional). No documented enterprise-policy surface. **Verify on Apple-Silicon macOS:**
-  mitmproxy capture of the sidebar's real API hosts, add catalog rows, check pinning.
+- **Perplexity Comet — the priority. Parsing shipped, unverified.** macOS/Windows/mobile.
+  Agent prompts flow as SSE to `www.perplexity.ai/rest/sse/perplexity_ask` and automation
+  over `wss://www.perplexity.ai/agent` (Zenity Labs teardown). The proxy now parses both:
+  the ask request/response (dedicated parser, blockable on the request side, tee-and-scan
+  on the streamed SSE response, parse-miss findings on shape drift) and the agent
+  WebSocket (channel-open flag + per-frame scanning). Synthetic Zenity-shape fixtures +
+  an offline self-test (`python3 proxy/palivane_addon.py --selftest-comet`) let a field
+  engineer validate against a real capture. The sidecar originates prompts from an
+  extension/WebUI context our MAIN-world fetch wrap can't see, so the extension won't
+  capture assistant prompts even though it installs fine — but Comet supports the full
+  Chromium enterprise policy suite incl. `ExtensionInstallForcelist` (MDM target
+  `ai.perplexity.comet`), so the managed rollout ports directly and still covers ordinary
+  in-tab AI use. **Verify on macOS/Windows** (runbook §1): managed-storage flow, sidecar
+  invisibility (expected), SSE plaintext-inspectability/pinning — if the pinning check
+  passes, Comet inline enforcement ships via the egress proxy alone.
+- **ChatGPT desktop (Atlas's successor). Covered by existing parsing, client behavior
+  unverified.** OpenAI discontinued Atlas as a standalone browser on 2026-07-09 and folded
+  it into the ChatGPT desktop app (Chat/Work/Codex modes with built-in browser; Mac +
+  Windows). Not an extension host — the egress proxy is the only path; traffic is the
+  `chatgpt.com` backend the catalog and proxy already know, and the suffix match covers
+  every subdomain the app uses. **Verify on macOS/Windows** (runbook §2): system-proxy +
+  trust-store behavior of the desktop app, and per-mode host inventory.
+- **Dia (The Browser Company / Atlassian) — least visible, least urgent. Discovery only,
+  deliberately no parsing.** macOS-only (Windows "fall 2026", no Linux signal). The AI
+  sidebar talks to Dia's hosted backend, which relays to model partners — egress never
+  sees model-provider hosts, only Dia's, and the actual API hostnames are unverified: the
+  `diabrowser.com` catalog row is now explicitly flagged (`PROVISIONAL` in
+  `backend/app/ai_catalog.py`, surfaced on classify hits) and the proxy does not intercept
+  it. No documented enterprise-policy surface. **Verify on Apple-Silicon macOS** (runbook
+  §3): mitmproxy capture of the sidebar's real API hosts, then add catalog rows, drop the
+  provisional flag, check pinning — parsing only after that.
 
-Listed as a known gap on /coverage (copy updated for the Atlas sunset).
+Listed as a known gap on /coverage (copy reflects: parsing shipped, verification pending).
 
 ## SaaS-AI OAuth discovery — per-platform fetchers built, real-tenant smoke tests pending
 
