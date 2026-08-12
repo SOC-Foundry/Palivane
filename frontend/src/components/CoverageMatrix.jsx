@@ -121,7 +121,7 @@ const GAPS = [
   ["Copilot prompts", "Copilot's hook API allows inspecting tool calls (deniable) but exposes prompts observe-only — we can see them, not stop them."],
   ["OTEL-bridge capture", "Orgs using the claude-otel bridge get monitor-only, post-hoc capture — the event has already happened when it's scored."],
   ["Mobile apps", "Native mobile AI apps are not covered. The browser extension covers mobile web only where the browser supports extensions."],
-  ["Agentic browsers", "Where the agent IS the browser (Perplexity Comet, Dia, the ChatGPT desktop app that absorbed Atlas), the model call originates from the browser itself, not a page fetch the extension wraps — so we discover the usage where it hits a known model host, but can't yet intercept it inline. The per-browser plan (egress-proxy path) is in docs/roadmap-frontier.md; it's called out here rather than implied."],
+  ["Agentic browsers", "Where the agent IS the browser (Perplexity Comet, Dia, the ChatGPT desktop app that absorbed Atlas), the model call originates from the browser itself, not a page fetch the extension wraps. The egress proxy now parses Comet's assistant SSE and flags its agent WebSocket, and the ChatGPT desktop app rides the proxy's existing chatgpt.com handling — but none of it has been verified against a real build yet (no Linux builds exist; the macOS/Windows pass is docs/agentic-browser-verification.md). Until that pass lands, treat these as discover-only: we see the usage, inline interception is built but unproven. Dia stays discovery-only by design — its real API hosts are unverified (catalog row flagged provisional)."],
 ];
 
 // The threat model, including the bypass list. Every control here runs on a machine the
