@@ -321,11 +321,13 @@ def run_bench():
     return baseline_ok, rows, bypasses
 
 
-# Regression guard. Started at 37 bypasses; the hex/URL decode, newline-collapse, and
-# MCP-command + secret surface normalization brought it to 22. The rest are FP-risky folds
-# (single-space word-splitting, leetspeak) and non-English keywords — left for later. This
-# fails only if a change RE-OPENS a bypass, pushing the count back up.
-BYPASS_CEILING = 20
+# Regression guard. Started at 37 bypasses; hex/URL decode + newline-collapse brought it to
+# 22, then MCP-command leet/decode folding, secret homoglyph/case (upper-view) folding, and
+# NFKC PII folding brought it to 11. The remaining 11 are FP-risky folds (single-space
+# word-splitting, injection leetspeak — the 1↔l/i collision), the plain AWS-line detector gap,
+# offline translation, and encoded-PII wrappers — each left documented rather than trade away
+# the 0% false-positive rate. This fails only if a change RE-OPENS a bypass.
+BYPASS_CEILING = 13
 
 
 def test_evasion_bench():

@@ -21,6 +21,7 @@ from __future__ import annotations
 import re
 
 from .base import AnalysisInput, Category, Signal, Surface
+from .normalize import command_leet_fold, normalize_for_match
 
 # Dangerous autonomy settings/flags — Cursor, MCP clients, and agent CLIs. `yolo` matches
 # inside camelCase keys too (e.g. enableYoloMode), so no word boundary on it.
@@ -92,7 +93,11 @@ class AgentSafetyDetector:
 
         # --- Cursor chat analysis: dangerous commands in a chat / generated code block ---
         if _is_coding_tool(item) and not _is_config(item):
-            dm = _DANGEROUS_CMD.search(text)
+            # Scan de-obfuscated views too (homoglyph/zero-width normalized + command-leet
+            # folded), so `cur1 … | 5h` in a generated code block is still caught.
+            dm = (_DANGEROUS_CMD.search(text)
+                  or _DANGEROUS_CMD.search(normalize_for_match(text))
+                  or _DANGEROUS_CMD.search(command_leet_fold(text)))
             if dm:
                 signals.append(Signal(
                     category=Category.DANGEROUS_COMMAND,

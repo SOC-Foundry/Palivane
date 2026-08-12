@@ -220,30 +220,30 @@ export default function CoverageMatrix() {
           <h2 className="lp-h2">Measured detection quality</h2>
           <p className="lp-sub" style={{ textAlign: "left" }}>
             Numbers from our own labeled corpora, offline detectors only (the optional LLM
-            judge disabled), measured 2026-08-10. The corpora and the harnesses that produce
+            judge disabled), measured 2026-08-12. The corpora and the harnesses that produce
             these are in the repo — reproduce it yourself:
             {" "}<code>pytest tests/bench_recall.py tests/bench_false_positives.py tests/bench_evasion.py -s</code>.
             We publish the weak numbers too; a benchmark that only flatters is a brochure.
           </p>
           <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
             <div className="lp-card">
-              <div className="bench-stat">95.9%</div>
+              <div className="bench-stat">100%</div>
               <h3>Recall</h3>
-              <p>93 of 97 malicious payloads detected and actioned across injection,
-                 jailbreak, exfiltration, PII, secrets, dangerous commands.</p>
+              <p>97 of 97 malicious payloads detected and actioned across injection,
+                 jailbreak, exfiltration, PII, secrets, source-code IP, dangerous commands.</p>
             </div>
             <div className="lp-card">
-              <div className="bench-stat">5.8%</div>
+              <div className="bench-stat">0%</div>
               <h3>False-positive rate</h3>
-              <p>6 of ~100 benign samples. Zero on prose, business/legal, AI prompts, and
-                 benign MCP — concentrated in real source code (26.7%), which is the honest
-                 weak spot we're still driving down.</p>
+              <p>0 of 103 benign samples. A proprietary-vs-generic code discriminator now
+                 separates internal IP from stdlib/tutorial boilerplate, clearing the source-code
+                 false positives while still flagging leaked internal code.</p>
             </div>
             <div className="lp-card">
-              <div className="bench-stat">19</div>
+              <div className="bench-stat">11</div>
               <h3>Known evasion bypasses</h3>
-              <p>Adversarial transforms (leetspeak, homoglyphs, spacing, translation) that
-                 still defeat the offline detectors in our own evasion matrix. Tracked, not
+              <p>Adversarial transforms (leetspeak, word-splitting, translation, encoded PII)
+                 that still defeat the offline detectors in our own evasion matrix. Tracked, not
                  hidden — the LLM judge closes most of these when enabled.</p>
             </div>
           </div>

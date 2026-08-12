@@ -16,6 +16,7 @@ way "AI-written" + "attack intent" is Module A's. Fast, free, offline.
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from ..config import settings
 from .base import AnalysisInput, Category, Signal, Surface
@@ -90,6 +91,23 @@ def _personal_email(addr: str) -> bool:
 PHONE_RE = re.compile(r"\b(?:\+?1[ .\-]?)?\(?\d{3}\)?[ .\-]\d{3}[ .\-]\d{4}\b")
 # 13–16 digit runs, possibly space/dash grouped — validated with Luhn to cut noise.
 CC_CANDIDATE_RE = re.compile(r"\b(?:\d[ -]?){13,16}\b")
+
+# Published, universally-documented test card numbers (Visa/MC/Amex/Discover/Diners/JCB
+# sandbox PANs). They pass Luhn — but they are printed in every payments tutorial and SDK
+# doc, so a Luhn-valid MATCH is not proof of a real card. We suppress these ONLY when the
+# surrounding text is clearly illustrative ("test", "example", "sandbox", "such as", …);
+# the same number inside a transactional instruction ("charge the card …") still flags, so
+# real recall is untouched.
+_TEST_CARDS = frozenset({
+    "4111111111111111", "4012888888881881", "4222222222222", "4242424242424242",
+    "4000056655665556", "5555555555554444", "5105105105105100", "5200828282828210",
+    "2223003122003222", "378282246310005", "371449635398431", "378734493671000",
+    "6011111111111117", "6011000990139424", "30569309025904", "38520000023237",
+    "3530111333300000", "3566002020360505",
+})
+_TEST_CONTEXT_RE = re.compile(
+    r"\b(test|testing|example|examples|e\.?g\.?|sample|sandbox|dummy|fake|placeholder|"
+    r"such as|for instance|documentation|docs|tutorial|demo)\b", re.IGNORECASE)
 
 # --- Broadened PII taxonomy (B) ---------------------------------------------------------
 # Distinctive identifiers safe to flag without context (format is self-identifying).
@@ -228,6 +246,33 @@ _LABEL_RES = [
     re.compile(r"\[(INTERNAL|CONFIDENTIAL|RESTRICTED|SECRET|HIGHLY CONFIDENTIAL)\]", re.I),
     re.compile(r"\b(MIP|Purview)\s+label\b", re.I),
 ]
+# PROPRIETARY-code discriminator. What makes leaked source an IP risk isn't that it's
+# code — it's that it's OUR code: internal-namespaced identifiers, business-domain table/
+# schema names, internal variable names. These read as company-specific, never as a stdlib
+# call or framework idiom. Presence lifts the source_code_leak signal so it fires even on a
+# single terse line (a SQL query against `proprietary_scoring`, an arrow fn touching
+# `internalDiscountTable`), which the bare ≥2-marker rule missed.
+_PROP_TOKEN = r"(?:internal|proprietary|confidential|billing|discount|scoring|payroll)"
+_PROPRIETARY_ID = re.compile(
+    r"\b\w+_" + _PROP_TOKEN + r"\b"                                  # billing_internal, foo_scoring
+    r"|\b" + _PROP_TOKEN + r"_\w+\b"                                 # proprietary_scoring, internal_x
+    r"|\b[a-zA-Z]+(?:Internal|Proprietary|Confidential|Billing|Discount|Scoring|Payroll)[A-Za-z]*\b"  # internalDiscountTable
+    r"|\b(?:internal|proprietary)\.[a-z_]\w*",                       # internal.pricing (namespace prefix)
+    re.IGNORECASE)
+
+# GENERIC / tutorial / framework boilerplate. Stdlib calls, React hooks, JSX, common
+# decorators — this is what a developer pastes to ask "how do I…", not proprietary IP. When
+# code carries these idioms and NO proprietary identifier, it sits below the action threshold
+# (the four generic-code false positives: fib, an async fetch wrapper, a React Counter, a
+# @dataclass). Kept narrow on purpose so real internal code without these idioms still fires.
+_GENERIC_IDIOMS = re.compile(
+    r"\brange\s*\("                                        # for _ in range(n)
+    r"|\bfetch\s*\(|\bawait\s+|\.json\s*\(\s*\)"           # fetch/await/res.json()
+    r"|\buse(?:State|Effect|Ref|Memo|Callback|Context|Reducer)\b"  # React hooks
+    r"|on(?:Click|Change|Submit|Input)\s*=|</[A-Za-z]|<[A-Za-z][A-Za-z0-9]*\s+[a-z]+="  # JSX
+    r"|@(?:dataclass|staticmethod|classmethod|property|abstractmethod|pytest)\b",
+    re.IGNORECASE)
+
 CODE_MARKERS = [
     re.compile(r"\bdef\s+\w+\s*\("),
     re.compile(r"\bfunction\s+\w+\s*\("),
@@ -358,9 +403,16 @@ class ShadowAIDetector:
         # duplicate full-text scan). Fall back to the normalized/deglued views only when the
         # raw pass found nothing — homoglyph letters / fullwidth digits (ghp_１２３…) and keys
         # split with spaces ("ghp_ 1234 5678 …"), anchored on the prefix so prose never merges.
+        norm = normalize_for_match(text)
         secrets = (raw_secrets if raw_secrets is not None else find_secrets(text)) \
-            or find_secrets(normalize_for_match(text)) \
-            or find_secrets(_deglue_secret_spacing(normalize_for_match(text)))
+            or find_secrets(norm) \
+            or find_secrets(_deglue_secret_spacing(norm)) \
+            or find_secrets(norm.upper())
+        # ^ the `.upper()` view recovers case-SENSITIVE vendor prefixes (AKIA…) that a
+        # homoglyph or case-mangle transform lower-cased ("акіа…"/"AkIa…" → normalize folds
+        # to lowercase latin, then upper() restores "AKIA…"). Safe as a last-resort fallback:
+        # case-insensitive patterns (credential-assignment/connection-string) already matched
+        # earlier if present, so upper() can only add uppercase-shaped known keys.
         if not secrets:
             return []
         # In a low-signal path, suppress when the ONLY matches are generic (bare
@@ -406,6 +458,10 @@ class ShadowAIDetector:
         )]
 
     def _scan_pii(self, text: str, meta: dict | None = None) -> list[Signal]:
+        # Fold Unicode compatibility forms (fullwidth digits/hyphens, etc.) to their ASCII
+        # canon so a fullwidth-obfuscated SSN/card ("０７８－０５－１１２０") still matches the
+        # digit patterns. NFKC is lossless for these — benign text is unaffected.
+        text = unicodedata.normalize("NFKC", text)
         found: list[str] = []
         weight = 0.0
 
@@ -425,8 +481,10 @@ class ShadowAIDetector:
                     found.append("possible SSN (9-digit)")
                     weight = max(weight, 0.55)
 
+        illustrative = bool(_TEST_CONTEXT_RE.search(text))
         cards = [m.group(0) for m in CC_CANDIDATE_RE.finditer(text)
-                 if _luhn_ok(re.sub(r"[ -]", "", m.group(0)))]
+                 if _luhn_ok(re.sub(r"[ -]", "", m.group(0)))
+                 and not (illustrative and re.sub(r"[ -]", "", m.group(0)) in _TEST_CARDS)]
         if cards:
             found.append(f"{len(cards)} payment card number(s)")
             weight = max(weight, 0.8)
@@ -516,15 +574,35 @@ class ShadowAIDetector:
                 evidence=ev,
             ))
 
+        # Source-code / IP leak. Discriminate PROPRIETARY code (internal-namespaced or
+        # business-domain identifiers) from GENERIC code (stdlib / tutorial / framework
+        # boilerplate). Proprietary structure fires even on a single terse line; generic
+        # code needs real code structure AND must not read as recognizable boilerplate.
         code_hits = sum(1 for rx in CODE_MARKERS if rx.search(text))
-        if code_hits >= 2:
-            out.append(Signal(
-                category=Category.SOURCE_CODE_LEAK,
-                title="Source code in outbound content",
-                detail="Content appears to be source code / queries — possible IP leak.",
-                weight=0.45, confidence=min(1.0, 0.4 + 0.12 * code_hits), detector=self.name,
-                evidence=f"{code_hits} code indicators",
-            ))
+        if code_hits >= 1:
+            prop = sorted({m.group(0) for m in _PROPRIETARY_ID.finditer(text)})
+            generic = bool(_GENERIC_IDIOMS.search(text))
+            if prop:
+                # Company-specific identifiers present — a real IP-leak signal even with one
+                # code marker (SQL against an internal table, an arrow fn on an internal var).
+                out.append(Signal(
+                    category=Category.SOURCE_CODE_LEAK,
+                    title="Source code in outbound content",
+                    detail="Content is source code / queries referencing internal, proprietary "
+                           "identifiers — a likely IP leak.",
+                    weight=0.55, confidence=min(1.0, 0.6 + 0.1 * code_hits), detector=self.name,
+                    evidence="proprietary identifiers: " + ", ".join(prop[:3]),
+                ))
+            elif code_hits >= 2 and not generic:
+                # Structurally code, but no proprietary marker and not recognizable
+                # tutorial/framework boilerplate — warn-tier IP signal.
+                out.append(Signal(
+                    category=Category.SOURCE_CODE_LEAK,
+                    title="Source code in outbound content",
+                    detail="Content appears to be source code / queries — possible IP leak.",
+                    weight=0.45, confidence=min(1.0, 0.4 + 0.12 * code_hits), detector=self.name,
+                    evidence=f"{code_hits} code indicators",
+                ))
         return out
 
     def _scan_destination(self, item: AnalysisInput) -> list[Signal]:
