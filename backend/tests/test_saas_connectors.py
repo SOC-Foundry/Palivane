@@ -114,3 +114,187 @@ def test_google_token_requires_complete_credentials():
         sc._google_access_token({"admin_email": "a@b.c"})   # no service account
     with pytest.raises(sc.ConnectorError):
         sc._google_access_token({"service_account_json": "not-json{", "admin_email": "a@b.c"})
+
+
+# --- Microsoft 365 / Entra ID -------------------------------------------------------------
+
+_MS_CREDS = {"tenant_id": "t1", "client_id": "app", "client_secret": "s3cret"}
+
+
+def test_microsoft_normalizer_shapes_grants(monkeypatch):
+    """fetch_microsoft_365: token + SP enumeration + delegated grants (principal resolved
+    to UPN) + app-role assignments (role GUIDs resolved to names) -> grant dicts."""
+    def fake_http(url, **kw):
+        if "login.microsoftonline.com" in url:
+            return {"access_token": "at"}
+        if "/servicePrincipals?" in url:
+            return {"value": [
+                {"id": "sp1", "appId": "aaa-111", "displayName": "ChatGPT", "appRoles": []},
+                {"id": "sp-graph", "appId": "00000003-0000-0000-c000-000000000000",
+                 "displayName": "Microsoft Graph",
+                 "appRoles": [{"id": "role-1", "value": "Mail.Read"}]},
+            ]}
+        if "/oauth2PermissionGrants" in url:
+            return {"value": [
+                {"clientId": "sp1", "consentType": "Principal", "principalId": "u1",
+                 "scope": "Files.Read offline_access"},
+                {"clientId": "sp1", "consentType": "AllPrincipals", "principalId": None,
+                 "scope": "User.Read"},
+            ]}
+        if "/users/u1" in url:
+            return {"userPrincipalName": "alice@acme.com"}
+        if "/servicePrincipals/sp1/appRoleAssignments" in url:
+            return {"value": [{"resourceId": "sp-graph", "appRoleId": "role-1"}]}
+        if "/appRoleAssignments" in url:
+            return {"value": []}
+        raise AssertionError(f"unexpected URL {url}")
+    monkeypatch.setattr(sc, "_http_json", fake_http)
+    grants = sc.fetch_microsoft_365(_MS_CREDS)
+    assert grants == [
+        {"app_name": "ChatGPT", "app_id": "aaa-111", "user": "alice@acme.com",
+         "provider": "microsoft", "scopes": ["Files.Read", "offline_access"]},
+        {"app_name": "ChatGPT", "app_id": "aaa-111", "user": "",
+         "provider": "microsoft", "scopes": ["User.Read"]},   # tenant-wide consent, no user
+        {"app_name": "ChatGPT", "app_id": "aaa-111", "user": "",
+         "provider": "microsoft", "scopes": ["Mail.Read"]},   # application grant
+    ]
+
+
+def test_microsoft_empty_tenant(monkeypatch):
+    def fake_http(url, **kw):
+        if "login.microsoftonline.com" in url:
+            return {"access_token": "at"}
+        return {"value": []}
+    monkeypatch.setattr(sc, "_http_json", fake_http)
+    assert sc.fetch_microsoft_365(_MS_CREDS) == []
+
+
+def test_microsoft_auth_failures(monkeypatch):
+    with pytest.raises(sc.ConnectorError):                    # incomplete credentials
+        sc._microsoft_access_token({"tenant_id": "t1", "client_id": "app"})
+    monkeypatch.setattr(sc, "_http_json",
+                        lambda url, **kw: {"error": "invalid_client"})
+    with pytest.raises(sc.ConnectorError):                    # token exchange denied
+        sc.fetch_microsoft_365(_MS_CREDS)
+
+
+# --- Slack ---------------------------------------------------------------------------------
+
+def test_slack_normalizer_shapes_grants(monkeypatch):
+    """fetch_slack: admin.apps.approved.list pages via cursor; org-level approvals carry
+    no granting user."""
+    pages = [
+        {"ok": True,
+         "approved_apps": [{"app": {"id": "A1", "name": "Claude"},
+                            "scopes": [{"name": "channels:history"}, {"name": "chat:write"}]}],
+         "response_metadata": {"next_cursor": "c2"}},
+        {"ok": True,
+         "approved_apps": [{"app": {"id": "A2", "name": "Some CRM"}, "scopes": []}],
+         "response_metadata": {"next_cursor": ""}},
+    ]
+    seen = []
+    def fake_http(url, **kw):
+        seen.append(url)
+        return pages[len(seen) - 1]
+    monkeypatch.setattr(sc, "_http_json", fake_http)
+    grants = sc.fetch_slack({"admin_token": "xoxp-admin", "team_id": "T123"})
+    assert grants == [
+        {"app_name": "Claude", "app_id": "A1", "user": "", "provider": "slack",
+         "scopes": ["channels:history", "chat:write"]},
+        {"app_name": "Some CRM", "app_id": "A2", "user": "", "provider": "slack", "scopes": []},
+    ]
+    assert "team_id=T123" in seen[0] and "cursor=c2" in seen[1]
+
+
+def test_slack_empty(monkeypatch):
+    monkeypatch.setattr(sc, "_http_json", lambda url, **kw: {"ok": True, "approved_apps": []})
+    assert sc.fetch_slack({"admin_token": "xoxp-admin"}) == []
+
+
+def test_slack_auth_failures(monkeypatch):
+    with pytest.raises(sc.ConnectorError):
+        sc.fetch_slack({})                                    # no token at all
+    monkeypatch.setattr(sc, "_http_json",
+                        lambda url, **kw: {"ok": False, "error": "missing_scope"})
+    with pytest.raises(sc.ConnectorError, match="admin.apps:read"):
+        sc.fetch_slack({"admin_token": "xoxp-weak"})          # ok:false carries a hint
+
+
+# --- Salesforce ----------------------------------------------------------------------------
+
+_SF_CREDS = {"instance_url": "https://acme.my.salesforce.com",
+             "client_id": "cid", "client_secret": "cs"}
+
+
+def test_salesforce_normalizer_shapes_grants(monkeypatch):
+    """fetch_salesforce: client-credentials token, then OauthToken query with pagination.
+    Salesforce exposes no per-token scopes, so scopes is always []."""
+    def fake_http(url, **kw):
+        if url.endswith("/services/oauth2/token"):
+            return {"access_token": "at", "instance_url": "https://acme.my.salesforce.com"}
+        if "/query?" in url:
+            return {"done": False, "nextRecordsUrl": "/services/data/v60.0/query/next-1",
+                    "records": [{"AppName": "Gong", "AppMenuItemId": "0Sc1",
+                                 "User": {"Username": "alice@acme.com"}}]}
+        if url.endswith("/query/next-1"):
+            return {"done": True,
+                    "records": [{"AppName": "Data Loader", "AppMenuItemId": None, "User": None}]}
+        raise AssertionError(f"unexpected URL {url}")
+    monkeypatch.setattr(sc, "_http_json", fake_http)
+    grants = sc.fetch_salesforce(_SF_CREDS)
+    assert grants == [
+        {"app_name": "Gong", "app_id": "0Sc1", "user": "alice@acme.com",
+         "provider": "salesforce", "scopes": []},
+        {"app_name": "Data Loader", "app_id": "", "user": "",
+         "provider": "salesforce", "scopes": []},
+    ]
+
+
+def test_salesforce_empty(monkeypatch):
+    def fake_http(url, **kw):
+        if url.endswith("/services/oauth2/token"):
+            return {"access_token": "at"}
+        return {"done": True, "records": []}
+    monkeypatch.setattr(sc, "_http_json", fake_http)
+    assert sc.fetch_salesforce(_SF_CREDS) == []
+
+
+def test_salesforce_auth_failures(monkeypatch):
+    with pytest.raises(sc.ConnectorError):                    # incomplete credentials
+        sc.fetch_salesforce({"instance_url": "https://acme.my.salesforce.com"})
+    monkeypatch.setattr(sc, "_http_json",
+                        lambda url, **kw: {"error": "invalid_grant"})
+    with pytest.raises(sc.ConnectorError):                    # token exchange denied
+        sc.fetch_salesforce(_SF_CREDS)
+
+
+# --- Notion (manual export only) -----------------------------------------------------------
+
+def test_notion_is_manual_only():
+    """No admin API exists for enumerating Notion OAuth grants — the registered stub must
+    say so and point at the manual ingest, never pretend to sync."""
+    assert sc.PLATFORMS["notion"]["manual_only"] is True
+    assert sc.PLATFORMS["notion"]["credential_fields"] == []
+    with pytest.raises(sc.ConnectorError, match="oauth-grants"):
+        sc.fetch_notion({})
+
+
+def test_notion_sync_surfaces_manual_only_error(client):
+    r = client.post("/api/discovery/connectors", json={"platform": "notion", "credentials": {}})
+    assert r.status_code == 200
+    out = client.post(f"/api/discovery/connectors/{r.json()['id']}/sync")
+    assert out.status_code == 502 and "oauth-grants" in out.json()["detail"]
+
+
+# --- registry ------------------------------------------------------------------------------
+
+def test_platform_registry_is_well_formed(client):
+    for key, p in sc.PLATFORMS.items():
+        assert callable(p["fetch"]) and p["label"] and p["setup"], key
+        assert isinstance(p["credential_fields"], list), key
+    listing = client.get("/api/discovery/connectors").json()["platforms"]
+    assert set(listing) == set(sc.PLATFORMS)
+    assert listing["notion"]["manual_only"] is True
+    assert listing["microsoft_365"]["manual_only"] is False
+    assert listing["microsoft_365"]["credential_fields"] == ["tenant_id", "client_id",
+                                                             "client_secret"]

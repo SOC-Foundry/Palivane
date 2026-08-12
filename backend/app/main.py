@@ -2233,7 +2233,8 @@ def connectors_list(current: User = Depends(require_admin), db: Session = Depend
     rows = db.query(SaasConnector).filter(SaasConnector.tenant_id == current.tenant_id).all()
     return {"connectors": [c.to_dict() for c in rows],
             "platforms": {k: {"label": v["label"], "credential_fields": v["credential_fields"],
-                              "setup": v["setup"]} for k, v in PLATFORMS.items()}}
+                              "setup": v["setup"], "manual_only": bool(v.get("manual_only"))}
+                          for k, v in PLATFORMS.items()}}
 
 
 @app.post("/api/discovery/connectors")
