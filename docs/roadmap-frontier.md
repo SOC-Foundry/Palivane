@@ -91,7 +91,7 @@ exist).
 
 Listed as a known gap on /coverage (copy reflects: parsing shipped, verification pending).
 
-## SaaS-AI OAuth discovery — per-platform fetchers built, real-tenant smoke tests pending
+## SaaS-AI OAuth discovery — fetchers + smoke harness built, real-tenant runs pending
 
 The OAuth-grant ingest (`POST /api/discovery/oauth-grants`) covers the mechanism, and the
 connector framework (`backend/app/saas_connectors.py` + `/api/discovery/connectors`) now
@@ -116,5 +116,10 @@ Live fetchers in the PLATFORMS registry:
   returns an actionable error pointing at the manual ingest.
 
 M365/Slack/Salesforce fetchers are built against the documented API shapes with mocked-
-HTTP tests; each still needs a smoke test against a real admin tenant before we call it
-validated. Grant timestamps are not carried — the ingest grant shape has no time field.
+HTTP tests, and the real-tenant smoke harness is shipped: `scripts/connector_smoke.py`
+runs one live fetch per platform — auth leg, grant count, truncation-sentinel presence,
+redacted row sample, ingest-shape validation, final `SMOKE: PASS/FAIL` — with the
+per-platform tenant-setup runbook (app registrations, tokens, permissions, gotchas) in
+`docs/connector-smoke-tests.md`. What's still pending is the actual runs: each of
+M365/Slack/Salesforce stays unvalidated until its smoke passes against a real admin
+tenant. Grant timestamps are not carried — the ingest grant shape has no time field.
