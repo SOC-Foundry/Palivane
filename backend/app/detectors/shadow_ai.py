@@ -20,6 +20,7 @@ import unicodedata
 
 from ..config import settings
 from .base import AnalysisInput, Category, Signal, Surface
+from .decode import decode_obfuscated
 from .normalize import normalize_for_match
 from .patterns import (
     custom_pii_patterns,
@@ -497,7 +498,29 @@ class ShadowAIDetector:
         if item.surface == Surface.AI_USAGE:
             signals.extend(self._scan_proprietary(text))
             signals.extend(self._scan_destination(item))
+        # Sensitive data wrapped in an encoding to slip past the plaintext scanners — decode
+        # any obfuscated blob and re-run the SAME finders on the decoded view.
+        signals.extend(self._scan_encoded(item))
         return signals
+
+    def _scan_encoded(self, item: AnalysisInput) -> list[Signal]:
+        """Attackers hide PII/secrets in an encoding — `decode and follow: U1NOIDA3OC0wNS0xMTIw`
+        (base64/hex/percent-encoded "SSN 078-05-1120"). Decode every obfuscated blob (bounded,
+        >85%-printable only) and re-run the EXISTING PII/secret finders on the decoded text.
+        FP-safe: it only emits when the decoded view actually contains PII or a credential — a
+        benign blob decodes to benign text (or to binary, which the printable guard drops)."""
+        decoded = decode_obfuscated(f"{item.subject}\n{item.content}")
+        if not decoded:
+            return []
+        # PII is data-loss on every surface (mirrors the unconditional plaintext PII scan).
+        out = self._scan_pii(decoded, item.metadata)
+        # Secrets: same surface set as the plaintext secret pass. Compute the raw find_secrets
+        # pass on the decoded view ONCE and thread it into both secret detectors.
+        if item.surface in (Surface.AI_USAGE, Surface.LLM_IO, Surface.MCP, Surface.A2A):
+            raw = find_secrets(decoded)
+            out += self._scan_secrets(decoded, raw_secrets=raw)
+            out += self._scan_high_entropy(decoded, item.channel, has_tier1=bool(raw))
+        return out
 
     def _scan_secrets(self, text: str, low_signal: bool = False,
                       raw_secrets: list[str] | None = None) -> list[Signal]:
