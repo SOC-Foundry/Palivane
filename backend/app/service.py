@@ -13,6 +13,10 @@ from .detectors import AnalysisInput
 from .engine import engine
 from .models import Finding, Tenant
 from .crypto import seal
+# Imported at module level (not lazily) so capture binds the same config `settings` object
+# as the rest of the scan path — a late import would bind a different instance if the
+# config module was ever reloaded.
+from .ml import capture as ml_capture
 from .redaction import redact_text
 from .session_correlation import correlate, is_chain_relevant
 
@@ -29,6 +33,13 @@ def scrub_expired_content(db) -> int:
     n = (db.query(Finding)
          .filter(Finding.created_at < cutoff, Finding.content != "")
          .update({Finding.content: ""}, synchronize_session=False))
+    # UNLABELED corpus samples age out on the same clock — raw prose nobody triaged is
+    # exposure, not data. Labeled rows ARE the corpus and are kept (deleting a tenant's
+    # samples wholesale still works via normal tenant data deletion).
+    from .models import CorpusSample
+    n += (db.query(CorpusSample)
+          .filter(CorpusSample.created_at < cutoff, CorpusSample.label.is_(None))
+          .delete(synchronize_session=False))
     db.commit()
     return n
 
@@ -149,6 +160,15 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     if tenant is not None and getattr(tenant, "archive_s3_enabled", False):
         from . import archive_s3
         archive_s3.archive(tenant, item, result, agent)
+    # Consented ML-corpus capture: tenants that explicitly opted in (ml_capture, off by
+    # default) stage a sample of scanned prompts for analyst labeling — the data path to
+    # the classifier go/no-go gate (docs/ml-classifier-baseline.md). Additive and
+    # best-effort like archival; nothing here scores traffic with the model.
+    if tenant is not None and getattr(tenant, "ml_capture", False):
+        try:
+            ml_capture.maybe_capture(db, tenant, item, result)
+        except Exception:
+            pass  # corpus capture must never sink the primary analysis
     finding_id = None
     if persist and not persist_benign and verdict.severity in _ALLOW_LEVEL:
         persist = False  # drop benign sensor noise

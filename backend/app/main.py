@@ -24,7 +24,8 @@ from .gateway import gemini_router, router as gateway_router
 from .database import Base, engine as db_engine, get_db
 from .detectors import AnalysisInput, Surface
 from .engine import engine
-from .models import Agent, AgentRole, Finding, PolicyOverride, SaasConnector, Tenant, User
+from .models import (Agent, AgentRole, CorpusSample, Finding, PolicyOverride, SaasConnector,
+                     Tenant, User)
 from .schemas import (
     A2AIngest,
     AIUsageIngest,
@@ -34,6 +35,7 @@ from .schemas import (
     AgentRulesScan,
     CIScan,
     CodeScanRequest,
+    CorpusLabel,
     CoverageRequest,
     DevicePostureScan,
     ConnectorCreate,
@@ -2126,6 +2128,99 @@ def export_corpus(current: User = Depends(require_admin), db: Session = Depends(
 
     examples = export_examples(db, current.tenant_id)
     return PlainTextResponse(to_jsonl(examples), media_type="application/x-ndjson")
+
+
+# --- ML labeled-corpus staging (consented capture -> analyst labels) -------------------
+# The data pipeline for the classifier go/no-go gate (docs/ml-classifier-baseline.md):
+# capture happens in service.run_analysis for opted-in tenants; these endpoints are the
+# analyst labeling workflow and the training export. Nothing here runs the model.
+
+
+def _tenant_dek_unwrapped(db: Session, tenant_id: int) -> str | None:
+    from .crypto import unwrap_dek
+    tenant = db.get(Tenant, tenant_id)
+    return unwrap_dek(tenant.dek_wrapped) if tenant and tenant.dek_wrapped else None
+
+
+@app.get("/api/ml/corpus")
+def ml_corpus_list(current: User = Depends(get_current_user), db: Session = Depends(get_db),
+                   labeled: bool | None = None, limit: int = 50):
+    """This tenant's staged corpus samples (content decrypted for the analyst).
+    `labeled=false` is the labeling queue; `labeled=true` reviews recorded labels."""
+    q = db.query(CorpusSample).filter(CorpusSample.tenant_id == current.tenant_id)
+    if labeled is True:
+        q = q.filter(CorpusSample.label.isnot(None))
+    elif labeled is False:
+        q = q.filter(CorpusSample.label.is_(None))
+    rows = q.order_by(CorpusSample.id.desc()).limit(min(limit, 500)).all()
+    dek = _tenant_dek_unwrapped(db, current.tenant_id)
+    return {"samples": [r.to_dict(dek) for r in rows]}
+
+
+@app.get("/api/ml/corpus/stats")
+def ml_corpus_stats(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Corpus progress: how much is staged, how much a human has labeled, and how often
+    the analyst disagreed with the regex weak label (the interesting training signal)."""
+    base = db.query(CorpusSample).filter(CorpusSample.tenant_id == current.tenant_id)
+    total = base.count()
+    labeled = base.filter(CorpusSample.label.isnot(None)).count()
+    by_label = dict(db.query(CorpusSample.label, func.count(CorpusSample.id))
+                    .filter(CorpusSample.tenant_id == current.tenant_id,
+                            CorpusSample.label.isnot(None))
+                    .group_by(CorpusSample.label).all())
+    disagreements = base.filter(CorpusSample.label.isnot(None),
+                                CorpusSample.label != CorpusSample.weak_label).count()
+    return {"total": total, "labeled": labeled, "unlabeled": total - labeled,
+            "by_label": by_label, "weak_label_disagreements": disagreements}
+
+
+@app.post("/api/ml/corpus/{sample_id}/label")
+def ml_corpus_label(sample_id: int, body: CorpusLabel,
+                    current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Record an analyst's ground-truth label (injection | benign), with attribution.
+    Relabeling is allowed — the latest analyst decision wins; the audit log keeps history."""
+    row = db.get(CorpusSample, sample_id)
+    if not row or row.tenant_id != current.tenant_id:
+        raise HTTPException(status_code=404, detail="sample not found")
+    from datetime import datetime, timezone
+    row.label = body.label
+    row.labeled_by = current.email
+    row.labeled_at = datetime.now(timezone.utc)
+    db.commit()
+    from . import audit_log
+    audit_log.record(db, current.tenant_id, current.email, "ml_corpus.label",
+                     target=str(sample_id), detail={"label": body.label,
+                                                    "weak_label": row.weak_label or ""})
+    return {"id": sample_id, "label": row.label, "labeled_by": row.labeled_by,
+            "labeled_at": row.labeled_at.isoformat()}
+
+
+@app.get("/api/ml/corpus/export")
+def ml_corpus_export(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """LABELED samples as training JSONL for scripts/train_classifier.py:
+    {"content", "label" (malicious|benign, mapped from the analyst's injection|benign),
+    "ts" (capture time — the time-window holdout key), "source": "capture"}.
+    Unlabeled rows are never exported; weak labels are not labels."""
+    import json as _json
+    from fastapi.responses import PlainTextResponse
+    rows = (db.query(CorpusSample)
+            .filter(CorpusSample.tenant_id == current.tenant_id,
+                    CorpusSample.label.isnot(None))
+            .order_by(CorpusSample.created_at.asc(), CorpusSample.id.asc()).all())
+    dek = _tenant_dek_unwrapped(db, current.tenant_id)
+    from .crypto import unseal_with
+    lines = [_json.dumps({
+        "content": unseal_with(r.content, dek) if r.content else "",
+        "label": "malicious" if r.label == "injection" else "benign",
+        "ts": r.created_at.isoformat() if r.created_at else "",
+        "source": "capture",
+        "weak_label": r.weak_label or "",
+    }) for r in rows]
+    from . import audit_log
+    audit_log.record(db, current.tenant_id, current.email, "ml_corpus.export",
+                     detail={"rows": len(lines)})
+    return PlainTextResponse("\n".join(lines) + ("\n" if lines else ""),
+                             media_type="application/x-ndjson")
 
 
 @app.post("/api/coverage/reconcile")

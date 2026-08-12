@@ -110,20 +110,23 @@ def _seed_examples() -> list[dict]:
                 continue
             ex = json.loads(line)
             rows.append({"content": ex.get("content", ""),
-                         "label": "malicious" if ex.get("label") == "malicious" else "benign"})
+                         "label": "malicious" if ex.get("label") == "malicious" else "benign",
+                         "source": "eval-seed"})
     return rows
 
 
 def build(per_template: int = 12, benign_repeat: int = 6) -> list[dict]:
+    # Every row carries a "source" tag so downstream honesty checks work: the benchmark's
+    # go/no-go GATE refuses to evaluate when "synthetic" rows land in the holdout.
     rows = _seed_examples()
     for c in _expand(_INJECTION + _EXFIL, per_template):
-        rows.append({"content": c, "label": "malicious"})
+        rows.append({"content": c, "label": "malicious", "source": "synthetic"})
     # repeat benign templates with light suffixes to balance classes without exact dupes
     for i in range(benign_repeat):
         for b in _BENIGN:
             suffix = ["", " Thanks!", " Let me know.", " No rush.", " (see attached)",
                       " — end of message"][i % 6]
-            rows.append({"content": b + suffix, "label": "benign"})
+            rows.append({"content": b + suffix, "label": "benign", "source": "synthetic"})
     return [r for r in rows if r["content"].strip()]
 
 

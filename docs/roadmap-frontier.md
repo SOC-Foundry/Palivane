@@ -8,18 +8,27 @@ four are the remainder.
 
 ## Local ML classifiers — the biggest bet
 
-**Status: pipeline built and benchmarked; shipping gated on a real corpus — see
-[ml-classifier-baseline.md](ml-classifier-baseline.md).** Rather than scaffold a no-op hook,
-this track now has a *working* offline classifier (`backend/app/ml/`: stdlib feature-hashing
-+ logistic regression, no numpy/onnx/torch, ~0.07 ms/example — well under the inline budget),
-a training-corpus builder, and an honest held-out benchmark against the regex baseline.
+**Status: model machinery AND the data pipeline are built; the gate is NOT cleared — see
+[ml-classifier-baseline.md](ml-classifier-baseline.md).** The track has a *working* offline
+classifier (`backend/app/ml/`: stdlib feature-hashing + logistic regression, no
+numpy/onnx/torch, ~0.07 ms/example — well under the inline budget), a training-corpus
+builder, and an honest held-out benchmark against the regex baseline.
 
 The measured result: on synthetic paraphrase data the linear model catches injection
 phrasings the regex list misses (regex recall 0.34 → the competitive gap is real), but the
-numbers are inflated by train/test sharing one synthetic distribution. **Go/no-go: do not
-wire it into the live path or commit weights until a real labeled corpus (consented captures,
-analyst-labeled, held-out by time window) shows it beats regex with a low FP rate.** The
-machinery is proven; the remaining investment is data, exactly as scoped.
+numbers are inflated by train/test sharing one synthetic distribution. **Go/no-go
+(unchanged): do not wire it into the live path or commit weights until a real labeled
+corpus (consented captures, analyst-labeled, held-out by time window) shows it beats regex
+with a low FP rate.**
+
+The path to that corpus now exists end-to-end: a consented capture pipeline (per-tenant
+`ml_capture` opt-in, off by default; sampled prompts staged with the regex verdict as a
+weak label), an analyst labeling API (`/api/ml/corpus*`, attributed ground truth + training
+export), a public-dataset importer (deepset/prompt-injections and friends, operator-
+downloaded, as an interim real-distribution eval set), and a time-windowed holdout in the
+benchmark that prints an explicit `GATE: PASS/FAIL` against the documented criteria (beats
+regex F1, FP rate ≤ 2%, no synthetic rows in the holdout). What remains is not code: opt
+pilot tenants in, accumulate and label captures, and let the gate decide.
 
 ## MCP Enterprise-Managed Authorization (EMA)
 

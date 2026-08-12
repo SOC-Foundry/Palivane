@@ -113,7 +113,14 @@ class Settings:
     store_content: bool = _env("PALIVANE_STORE_CONTENT", "").lower() in ("1", "true", "yes")
     # For tenants that DO store content, scrub it (keep metadata) after this many days.
     # Bounds the exposure window instead of keeping prose forever. 0 = never scrub.
+    # UNLABELED ml-corpus samples (consented capture, see ml/capture.py) are deleted on
+    # the same clock — prose nobody triaged is exposure, not data. Labeled rows are kept.
     content_ttl_days: int = int(_env("PALIVANE_CONTENT_TTL_DAYS", "30"))
+    # Consented ML-corpus capture, for tenants that set ml_capture=true (off by default):
+    # sample this percent of scanned gateway prompts into the labeling queue, capped per
+    # tenant per UTC day. Both bound volume, not consent — consent is the tenant flag.
+    ml_capture_sample_pct: int = int(_env("PALIVANE_ML_CAPTURE_PCT", "10"))
+    ml_capture_max_per_day: int = int(_env("PALIVANE_ML_CAPTURE_MAX_PER_DAY", "200"))
     # Self-serve signup: anyone can create a new org (tenant). Set false on a
     # single-org self-hosted deployment to lock it down after bootstrapping.
     allow_signup: bool = _env("PALIVANE_ALLOW_SIGNUP", "true").lower() in ("1", "true", "yes")
