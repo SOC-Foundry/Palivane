@@ -83,8 +83,14 @@ def test_record_context_honors_any_email_domain():
 
 
 def test_source_code_leak():
-    code = "def run(x):\n    import os\n    return os.system(x)"
+    # Structural proprietary code — a query against an internal, business-domain schema —
+    # fires source_code_leak. Plain stdlib/tutorial code (a bare os.system wrapper) does
+    # NOT; that is generic and is the discriminator's job to leave benign (see the module
+    # notes in shadow_ai.py and bench_code_discrimination.py).
+    code = "SELECT user_id, ltv FROM analytics.customer_retention_scores WHERE segment = 'ent';"
     assert Category.SOURCE_CODE_LEAK in _cats(code)
+    generic = "def run(x):\n    import os\n    return os.system(x)"
+    assert Category.SOURCE_CODE_LEAK not in _cats(generic)
 
 
 def test_confidential_marking():

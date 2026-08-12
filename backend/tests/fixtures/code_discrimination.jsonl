@@ -1,0 +1,53 @@
+# code_discrimination.jsonl — held-out generic vs proprietary code corpus.
+#
+# ALL SAMPLES ARE SYNTHETIC AND ILLUSTRATIVE. No real company code, schema,
+# customer, or credential appears here; identifiers were written by hand to exercise
+# the structural source-code discriminator (schema.table refs, internal-service calls,
+# business-domain identifiers) versus generic tutorial/framework code.
+#
+# label = generic     -> must stay benign (no source_code_leak)
+# label = proprietary -> must fire source_code_leak
+# label = ambiguous   -> informational only (monitor/low acceptable, not graded)
+#
+# Regression gate lives in tests/bench_code_discrimination.py. Do not relabel to make
+# a detector change pass — fix the detector.
+{"id": "gen-py-quicksort", "label": "generic", "text": "def qsort(a):\n    if len(a) <= 1: return a\n    p = a[0]\n    return qsort([x for x in a[1:] if x < p]) + [p] + qsort([x for x in a[1:] if x >= p])"}
+{"id": "gen-py-stack", "label": "generic", "text": "class Stack:\n    def __init__(self): self.items = []\n    def push(self, x): self.items.append(x)\n    def pop(self): return self.items.pop()"}
+{"id": "gen-py-binsearch", "label": "generic", "text": "def bsearch(arr, target):\n    lo, hi = 0, len(arr) - 1\n    while lo <= hi:\n        mid = (lo + hi) // 2\n        if arr[mid] == target: return mid\n        if arr[mid] < target: lo = mid + 1\n        else: hi = mid - 1\n    return -1"}
+{"id": "gen-py-decorator", "label": "generic", "text": "def memoize(fn):\n    cache = {}\n    def wrapper(*args):\n        if args not in cache: cache[args] = fn(*args)\n        return cache[args]\n    return wrapper"}
+{"id": "gen-py-context", "label": "generic", "text": "class Timer:\n    def __enter__(self):\n        self.start = time.time()\n        return self\n    def __exit__(self, *a):\n        print(time.time() - self.start)"}
+{"id": "gen-go-struct", "label": "generic", "text": "type Server struct {\n\tAddr string\n\tPort int\n}\nfunc (s *Server) Start() error { return nil }"}
+{"id": "gen-go-worker", "label": "generic", "text": "func worker(jobs <-chan int, results chan<- int) {\n\tfor j := range jobs {\n\t\tresults <- j * 2\n\t}\n}"}
+{"id": "gen-rust-fold", "label": "generic", "text": "fn sum(v: &[i32]) -> i32 {\n    v.iter().fold(0, |a, b| a + b)\n}"}
+{"id": "gen-rust-enum", "label": "generic", "text": "enum Shape {\n    Circle(f64),\n    Rect(f64, f64),\n}\nfn area(s: &Shape) -> f64 {\n    match s {\n        Shape::Circle(r) => 3.14 * r * r,\n        Shape::Rect(w, h) => w * h,\n    }\n}"}
+{"id": "gen-js-debounce", "label": "generic", "text": "function debounce(fn, ms) {\n  let t;\n  return (...args) => {\n    clearTimeout(t);\n    t = setTimeout(() => fn(...args), ms);\n  };\n}"}
+{"id": "gen-js-express", "label": "generic", "text": "app.get('/health', (req, res) => res.json({ ok: true }));"}
+{"id": "gen-ts-generic", "label": "generic", "text": "function identity<T>(x: T): T {\n  return x;\n}\nconst pair = <A, B>(a: A, b: B): [A, B] => [a, b];"}
+{"id": "gen-sql-users", "label": "generic", "text": "CREATE TABLE users (id SERIAL PRIMARY KEY, email TEXT NOT NULL, created_at TIMESTAMP DEFAULT now());"}
+{"id": "gen-sql-select-generic", "label": "generic", "text": "SELECT id, name, email FROM users WHERE active = true ORDER BY created_at DESC LIMIT 10;"}
+{"id": "gen-sql-join-generic", "label": "generic", "text": "SELECT o.id, o.total FROM orders o JOIN customers c ON o.customer_id = c.id WHERE o.status = 'paid';"}
+{"id": "gen-bash-loop", "label": "generic", "text": "for f in *.txt; do\n  echo \"processing $f\"\n  wc -l \"$f\"\ndone"}
+{"id": "gen-bash-func", "label": "generic", "text": "backup() {\n  local src=$1 dst=$2\n  rsync -a \"$src\" \"$dst\" && echo done\n}"}
+{"id": "gen-html", "label": "generic", "text": "<div class='card'><h2>Title</h2><p>Some descriptive text here.</p><button>Click</button></div>"}
+{"id": "gen-css", "label": "generic", "text": ".btn { display: flex; padding: 8px 12px; border-radius: 6px; background: #333; }"}
+{"id": "gen-yaml", "label": "generic", "text": "server:\n  host: localhost\n  port: 8080\n  timeout: 30\nlogging:\n  level: info"}
+{"id": "gen-dockerfile", "label": "generic", "text": "FROM python:3.12-slim\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install -r requirements.txt\nCMD [\"python\", \"main.py\"]"}
+{"id": "gen-py-fastapi", "label": "generic", "text": "@app.get('/items/{item_id}')\ndef read_item(item_id: int):\n    return {'item_id': item_id}"}
+{"id": "gen-py-sort-key", "label": "generic", "text": "sorted_users = sorted(users, key=lambda u: u.name.lower())"}
+{"id": "gen-java-pojo", "label": "generic", "text": "public class Point {\n    private int x, y;\n    public int getX() { return x; }\n    public void setX(int x) { this.x = x; }\n}"}
+{"id": "gen-py-fib", "label": "generic", "text": "def fib(n):\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a"}
+{"id": "prop-sql-churn", "label": "proprietary", "text": "SELECT user_id, churn_probability, ltv FROM analytics.customer_retention_scores WHERE segment = 'enterprise' ORDER BY churn_probability DESC;"}
+{"id": "prop-sql-pricing", "label": "proprietary", "text": "UPDATE pricing_engine.tier_multipliers SET factor = 1.4 WHERE plan_code = 'ENT_GOLD' AND region = 'us-west';"}
+{"id": "prop-sql-fraud", "label": "proprietary", "text": "SELECT account_id, fraud_risk_score FROM risk_models.account_fraud_v3 WHERE fraud_risk_score > 0.85;"}
+{"id": "prop-py-margin", "label": "proprietary", "text": "def price(order):\n    return order.total * acme_margin_lookup[order.sku] - loyalty_rebate(order.customer_tier)"}
+{"id": "prop-py-scoring", "label": "proprietary", "text": "def underwrite(app):\n    score = internal_credit_model.predict(app.features)\n    return score * regional_risk_weights[app.zip_prefix]"}
+{"id": "prop-js-discount", "label": "proprietary", "text": "const applyDiscount = (o) => o.total - enterpriseDiscountTable[o.accountTier] * seasonalPromoFactor;"}
+{"id": "prop-py-secret-algo", "label": "proprietary", "text": "def rank_leads(leads):\n    # our proprietary lead-scoring weights\n    return sorted(leads, key=lambda l: 0.4*l.intent + 0.35*l.fit + 0.25*l.engagement, reverse=True)"}
+{"id": "prop-sql-payroll", "label": "proprietary", "text": "SELECT employee_id, base_salary, equity_grant, bonus_target FROM hr_confidential.compensation_bands WHERE level >= 6;"}
+{"id": "prop-py-internal-api", "label": "proprietary", "text": "resp = internal_billing_client.charge(subscription_id, amount_cents, idempotency_key=key)\nledger.record(resp.transaction_id, resp.settled_at)"}
+{"id": "prop-py-model-weights", "label": "proprietary", "text": "RECOMMENDER_WEIGHTS = {'recency': 0.42, 'category_affinity': 0.31, 'margin_boost': 0.27}\ndef rerank(items, user): return score_with(items, RECOMMENDER_WEIGHTS, user.segment)"}
+{"id": "prop-go-internal-svc", "label": "proprietary", "text": "res, err := riskEngine.Evaluate(ctx, &pb.LoanApplication{Ssn: app.Ssn, RequestedAmount: app.Amount})\nif res.Decision == pb.Decision_DECLINE { return declineWithReason(res.InternalReasonCode) }"}
+{"id": "prop-sql-inventory", "label": "proprietary", "text": "SELECT sku, cost_basis, wholesale_margin FROM supply_chain.vendor_cost_sheet WHERE vendor_id = 4471;"}
+{"id": "amb-py-plainfn", "label": "ambiguous", "text": "def process(records):\n    out = []\n    for r in records:\n        if r.valid: out.append(transform(r))\n    return out"}
+{"id": "amb-sql-plain", "label": "ambiguous", "text": "SELECT a, b, c FROM t WHERE x = 1;"}
+{"id": "amb-py-config-load", "label": "ambiguous", "text": "config = load_config()\nclient = Client(config.endpoint, timeout=config.timeout)"}

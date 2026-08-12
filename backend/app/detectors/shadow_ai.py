@@ -246,32 +246,134 @@ _LABEL_RES = [
     re.compile(r"\[(INTERNAL|CONFIDENTIAL|RESTRICTED|SECRET|HIGHLY CONFIDENTIAL)\]", re.I),
     re.compile(r"\b(MIP|Purview)\s+label\b", re.I),
 ]
-# PROPRIETARY-code discriminator. What makes leaked source an IP risk isn't that it's
-# code — it's that it's OUR code: internal-namespaced identifiers, business-domain table/
-# schema names, internal variable names. These read as company-specific, never as a stdlib
-# call or framework idiom. Presence lifts the source_code_leak signal so it fires even on a
-# single terse line (a SQL query against `proprietary_scoring`, an arrow fn touching
-# `internalDiscountTable`), which the bare ≥2-marker rule missed.
-_PROP_TOKEN = r"(?:internal|proprietary|confidential|billing|discount|scoring|payroll)"
-_PROPRIETARY_ID = re.compile(
-    r"\b\w+_" + _PROP_TOKEN + r"\b"                                  # billing_internal, foo_scoring
-    r"|\b" + _PROP_TOKEN + r"_\w+\b"                                 # proprietary_scoring, internal_x
-    r"|\b[a-zA-Z]+(?:Internal|Proprietary|Confidential|Billing|Discount|Scoring|Payroll)[A-Za-z]*\b"  # internalDiscountTable
-    r"|\b(?:internal|proprietary)\.[a-z_]\w*",                       # internal.pricing (namespace prefix)
-    re.IGNORECASE)
+# --- STRUCTURAL source-code / IP-leak discriminator -----------------------------------
+# What makes leaked source an IP risk isn't that it's code — it's that it's OUR code. We
+# separate proprietary code from generic tutorial/framework code by STRUCTURE, not by a
+# literal wordlist. (The old approach kept two hand-tuned lists — a 7-token proprietary set
+# and a whitelist of "generic idioms" — and overfit badly: it fired on plain quicksort / a
+# Stack class / a Java POJO / a decorator, and missed `analytics.customer_retention_scores`,
+# `pricing_engine.tier_multipliers`, internal-service calls, and other real IP whose domain
+# words simply weren't on the 7-token list.)
+#
+# The structural signal that distinguishes "our code" from "tutorial code" generalizes:
+#   * qualified schema references — `schema.table` in a SQL position where the schema is a
+#     real namespace (multi-word snake_case, or the table is itself a long descriptive
+#     identifier), NOT a bare common table (users/orders) or a one-letter alias (`o.id`).
+#   * internal-service / client calls — `receiver.Method(...)` where the receiver is a
+#     multi-segment DOMAIN object (internal_billing_client.charge, riskEngine.Evaluate),
+#     not a stdlib/framework handle (res.json(), time.time(), app.get()).
+#   * domain identifiers — snake_case/camelCase names with >=2 content-bearing segments
+#     (or one long descriptive segment) that are NOT ordinary programming words. This is
+#     what makes `customer_retention_scores` / `enterpriseDiscountTable` read as company IP
+#     while `created_at` / `customer_id` / `read_item` / `sorted_users` read as generic.
+# A small curated hint set (internal/proprietary/confidential/payroll) contributes ONE
+# point — one lever among several, never the sole trigger. Template/example text
+# (`${VAR}`, `<your-secret>`, `changeme`) is treated as illustrative and suppressed, the
+# same discipline the PII/secret scanners use for placeholders.
+#
+# Scoring: qualified-schema and internal-service each score 2 (they imply code on their
+# own); each domain identifier scores 1 (capped at 3) and the hint scores 1, but those
+# weaker signals only count inside real code (a code marker present). Total >=2 fires the
+# leak at action level; a lone weak signal (total 1) lands at monitor — enough to log an
+# ambiguous internal-looking snippet without blocking it.
 
-# GENERIC / tutorial / framework boilerplate. Stdlib calls, React hooks, JSX, common
-# decorators — this is what a developer pastes to ask "how do I…", not proprietary IP. When
-# code carries these idioms and NO proprietary identifier, it sits below the action threshold
-# (the four generic-code false positives: fib, an async fetch wrapper, a React Counter, a
-# @dataclass). Kept narrow on purpose so real internal code without these idioms still fires.
-_GENERIC_IDIOMS = re.compile(
-    r"\brange\s*\("                                        # for _ in range(n)
-    r"|\bfetch\s*\(|\bawait\s+|\.json\s*\(\s*\)"           # fetch/await/res.json()
-    r"|\buse(?:State|Effect|Ref|Memo|Callback|Context|Reducer)\b"  # React hooks
-    r"|on(?:Click|Change|Submit|Input)\s*=|</[A-Za-z]|<[A-Za-z][A-Za-z0-9]*\s+[a-z]+="  # JSX
-    r"|@(?:dataclass|staticmethod|classmethod|property|abstractmethod|pytest)\b",
-    re.IGNORECASE)
+# Ordinary programming + English vocabulary. A segment found here carries no business-
+# domain signal on its own, so multi-word identifiers built only from these read as generic.
+_COMMON_SEG = frozenset({
+    # generic nouns / vars
+    "id", "ids", "name", "names", "key", "keys", "val", "value", "values", "item", "items",
+    "index", "idx", "count", "num", "number", "list", "arr", "array", "args", "kwargs",
+    "self", "this", "obj", "data", "result", "results", "res", "req", "request", "requests",
+    "response", "responses", "ctx", "context", "err", "error", "errs", "tmp", "temp",
+    "foo", "bar", "baz", "qux", "row", "rows", "col", "cols", "column", "columns", "field",
+    "fields", "record", "records", "entry", "entries", "dict", "node", "nodes", "tree",
+    "head", "tail", "stack", "queue", "buffer", "cache", "pool", "batch", "chunk",
+    # verbs / actions
+    "get", "set", "add", "put", "del", "delete", "remove", "new", "old", "create", "created",
+    "update", "updated", "insert", "read", "write", "load", "save", "open", "close", "start",
+    "stop", "end", "init", "run", "exec", "call", "make", "build", "parse", "format",
+    "render", "handle", "process", "fetch", "send", "recv", "push", "pop", "peek", "find",
+    "search", "match", "filter", "map", "reduce", "fold", "sort", "sorted", "each", "apply",
+    "print", "log", "test", "mock", "sample", "demo", "example", "main", "check", "validate",
+    "valid", "clear", "reset", "copy", "move", "join", "split", "merge", "append", "extend",
+    "enter", "exit", "compute", "lookup", "connect", "scan", "dot", "greet", "greeting",
+    # adjectives / misc
+    "min", "max", "sum", "avg", "mean", "total", "first", "last", "next", "prev", "prior",
+    "left", "right", "lo", "hi", "mid", "low", "high", "true", "false", "null", "none", "ok",
+    "active", "enabled", "disabled", "status", "state", "flag", "flags", "size", "len",
+    "length", "width", "height", "depth", "level", "limit", "offset", "page", "pages",
+    "time", "times", "date", "dates", "timestamp", "timeout", "current", "default", "custom",
+    "global", "local", "shared", "public", "private", "done", "health", "ping", "version",
+    "build", "release", "stage", "step", "phase", "mode", "kind",
+    # domain-neutral tutorial entities
+    "user", "users", "order", "orders", "product", "products", "customer", "customers",
+    "email", "phone", "address", "account", "accounts", "price", "amount", "qty", "quantity",
+    "title", "body", "text", "label", "tag", "tags", "type", "group", "groups", "rate",
+    "target", "table", "model", "point", "shape", "circle", "rect", "square", "color",
+    # web / framework
+    "app", "api", "http", "url", "uri", "path", "route", "routes", "host", "hostname",
+    "port", "addr", "server", "client", "service", "handler", "controller", "router",
+    "middleware", "config", "conf", "settings", "option", "options", "param", "params",
+    "query", "json", "html", "css", "div", "span", "button", "click", "change", "submit",
+    "input", "form", "props", "ref", "effect", "hook", "component", "element", "view",
+    "worker", "job", "jobs", "task", "tasks", "timer", "backup", "src", "dst", "dest",
+    "source",
+    # security-config words (generic, not business-domain)
+    "database", "db", "password", "passwd", "pwd", "secret", "token", "tokens", "auth",
+    "credential", "credentials", "apikey",
+    # language keywords-ish
+    "func", "function", "def", "class", "struct", "enum", "interface", "impl", "trait",
+    "return", "yield", "await", "async", "const", "let", "var", "static", "int", "str",
+    "string", "bool", "float", "double", "char", "byte", "void", "object", "chan", "range",
+    # function words
+    "and", "or", "not", "is", "has", "for", "in", "on", "by", "at", "as", "if", "else",
+    "then", "do", "while", "with", "of", "the", "to", "from", "a", "an",
+})
+
+# Curated proprietary-hint words — ONE signal among several, never the sole lever.
+_CODE_HINT_RE = re.compile(
+    r"(?<![A-Za-z])(?:internal|proprietary|confidential|payroll)(?![A-Za-z])", re.I)
+# Illustrative/template markers — an example or config skeleton, not real IP. Same
+# placeholder discipline the PII/secret scanners use.
+_CODE_TEMPLATE_RE = re.compile(
+    r"\$\{|<[a-z][\w-]*>|\bchangeme\b|your-[\w-]*-here|\bplaceholder\b|sk_test_|\.env\.example",
+    re.I)
+# `schema.table` in a SQL position (a qualified reference, not a bare table / alias.column).
+_SCHEMA_REF_RE = re.compile(
+    r"\b(?:FROM|JOIN|INTO|UPDATE|TABLE)[ \t]+([A-Za-z_]\w*)\.([A-Za-z_]\w*)", re.I)
+# `receiver.Method(` — an internal-service / client call shape.
+_CALL_RE = re.compile(r"\b([A-Za-z_]\w*)\.([A-Za-z_]\w*)[ \t]*\(")
+_IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# Bounded identifier-segment split (snake_case parts, then camelCase / CAPS runs / digits).
+_SEG_RE = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|\d+")
+_VER_SEG_RE = re.compile(r"v\d+")
+
+
+def _ident_segments(ident: str) -> list[str]:
+    """Split an identifier into lowercased word segments. Bounded per-identifier work
+    (no cross-line spans) — ReDoS-safe on the ai_usage surface."""
+    segs: list[str] = []
+    for part in ident.split("_"):
+        segs.extend(m.group(0).lower() for m in _SEG_RE.finditer(part))
+    return segs
+
+
+def _is_domain_ident(ident: str) -> bool:
+    """True for a multi-segment identifier carrying real business-domain vocabulary —
+    `customer_retention_scores`, `enterpriseDiscountTable`, `internal_billing_client` —
+    as opposed to a generic compound (`created_at`, `customer_id`, `read_item`)."""
+    segs = _ident_segments(ident)
+    if len(segs) < 2:
+        return False
+    content = [s for s in segs
+               if len(s) >= 3 and not s.isdigit() and not _VER_SEG_RE.fullmatch(s)
+               and s not in _COMMON_SEG]
+    if not content:
+        return False
+    # Descriptive if it has real substance beyond ordinary words: three+ segments, two+
+    # content words, or one long descriptive word (idempotency, compensation, retention).
+    return len(segs) >= 3 or len(content) >= 2 or sum(len(s) for s in content) >= 7
+
 
 CODE_MARKERS = [
     re.compile(r"\bdef\s+\w+\s*\("),
@@ -574,36 +676,81 @@ class ShadowAIDetector:
                 evidence=ev,
             ))
 
-        # Source-code / IP leak. Discriminate PROPRIETARY code (internal-namespaced or
-        # business-domain identifiers) from GENERIC code (stdlib / tutorial / framework
-        # boilerplate). Proprietary structure fires even on a single terse line; generic
-        # code needs real code structure AND must not read as recognizable boilerplate.
+        # Source-code / IP leak. Score STRUCTURAL proprietary tells (qualified schema refs,
+        # internal-service calls, business-domain identifiers, a curated hint) rather than
+        # matching literal snippets — so it generalizes to internal code it has never seen and
+        # stays quiet on generic tutorial/framework code. See the module-level notes above.
+        out.extend(self._scan_source_code(text))
+        return out
+
+    def _scan_source_code(self, text: str) -> list[Signal]:
+        # Illustrative template / example (placeholders, `${VAR}`, `changeme`) — not real IP.
+        if _CODE_TEMPLATE_RE.search(text):
+            return []
+
+        score = 0
+        evidence: list[str] = []
+
+        # Strong, self-evidently-code signals (worth 2 each; they imply code on their own).
+        for m in _SCHEMA_REF_RE.finditer(text):
+            schema, tbl = m.group(1), m.group(2)
+            if len(schema) > 1 and ("_" in schema or _is_domain_ident(schema)
+                                    or _is_domain_ident(tbl)):
+                score += 2
+                evidence.append(f"schema ref {schema}.{tbl}")
+                break
+        for m in _CALL_RE.finditer(text):
+            if _is_domain_ident(m.group(1)):
+                score += 2
+                evidence.append(f"internal call {m.group(1)}.{m.group(2)}()")
+                break
+
+        strong = score  # schema/service already imply a code/query context
+
+        # Weaker signals — business-domain identifiers and the curated hint. Only count
+        # inside real code (a code marker present), so domain words in plain prose don't fire.
         code_hits = sum(1 for rx in CODE_MARKERS if rx.search(text))
         if code_hits >= 1:
-            prop = sorted({m.group(0) for m in _PROPRIETARY_ID.finditer(text)})
-            generic = bool(_GENERIC_IDIOMS.search(text))
-            if prop:
-                # Company-specific identifiers present — a real IP-leak signal even with one
-                # code marker (SQL against an internal table, an arrow fn on an internal var).
-                out.append(Signal(
-                    category=Category.SOURCE_CODE_LEAK,
-                    title="Source code in outbound content",
-                    detail="Content is source code / queries referencing internal, proprietary "
-                           "identifiers — a likely IP leak.",
-                    weight=0.55, confidence=min(1.0, 0.6 + 0.1 * code_hits), detector=self.name,
-                    evidence="proprietary identifiers: " + ", ".join(prop[:3]),
-                ))
-            elif code_hits >= 2 and not generic:
-                # Structurally code, but no proprietary marker and not recognizable
-                # tutorial/framework boilerplate — warn-tier IP signal.
-                out.append(Signal(
-                    category=Category.SOURCE_CODE_LEAK,
-                    title="Source code in outbound content",
-                    detail="Content appears to be source code / queries — possible IP leak.",
-                    weight=0.45, confidence=min(1.0, 0.4 + 0.12 * code_hits), detector=self.name,
-                    evidence=f"{code_hits} code indicators",
-                ))
-        return out
+            domain: list[str] = []
+            seen: set[str] = set()
+            for m in _IDENT_RE.finditer(text):
+                w = m.group(0)
+                if w in seen:
+                    continue
+                seen.add(w)
+                if _is_domain_ident(w):
+                    domain.append(w)
+            score += min(3, len(domain))
+            evidence.extend(f"domain id {d}" for d in domain[:3])
+            if _CODE_HINT_RE.search(text):
+                score += 1
+                evidence.append("proprietary/internal hint")
+
+        # Nothing but plain prose (no code, no strong structural signal) — stay silent.
+        if code_hits == 0 and strong < 2:
+            return []
+
+        if score >= 2:
+            # Confident proprietary structure — a likely IP leak, fired at action level.
+            return [Signal(
+                category=Category.SOURCE_CODE_LEAK,
+                title="Source code in outbound content",
+                detail="Content is source code / queries referencing internal, business-domain "
+                       "identifiers (schemas, service calls, descriptive names) — a likely IP leak.",
+                weight=0.55, confidence=min(1.0, 0.55 + 0.1 * score), detector=self.name,
+                evidence="; ".join(evidence[:4]),
+            )]
+        if score >= 1:
+            # A lone internal-looking signal — genuinely ambiguous. Monitor, don't block.
+            return [Signal(
+                category=Category.SOURCE_CODE_LEAK,
+                title="Source code in outbound content",
+                detail="Content appears to be source code / queries with a single internal-looking "
+                       "identifier — ambiguous; recorded for review.",
+                weight=0.35, confidence=0.55, detector=self.name,
+                evidence="; ".join(evidence[:4]),
+            )]
+        return []
 
     def _scan_destination(self, item: AnalysisInput) -> list[Signal]:
         dest = ""

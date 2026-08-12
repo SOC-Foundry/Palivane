@@ -48,10 +48,14 @@ def test_benign_content_allowed(raw_client, db_factory, monkeypatch):
     assert r.json()["action"] == "allow"
 
 
+# Proprietary code: a query against an INTERNAL, business-domain schema. The structural
+# discriminator fires source_code_leak on this (an internal namespace), while leaving plain
+# stdlib/tutorial code benign — so this fixture must carry a real domain signal, not just
+# generic boilerplate. (See bench_code_discrimination.py for the full generic/proprietary set.)
 CONF_CODE = ("import os\n"
              "class Runner:\n"
              "    def run(self, x):\n"
-             "        rows = self.db.execute('SELECT id FROM users')\n"
+             "        rows = self.db.execute('SELECT id FROM finance_internal.revenue_ledger')\n"
              "        return os.system(x)")
 
 
