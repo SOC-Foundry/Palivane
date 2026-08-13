@@ -57,6 +57,17 @@ def test_scan_finds_phi_and_maps_actor(client, monkeypatch):
     assert "phi_exposure" in f["categories"]
 
 
+def test_scan_finds_pii_on_collab_surface(client, monkeypatch):
+    _fake_slack(monkeypatch, [
+        {"user": "U1", "ts": "1755100004.000100",
+         "text": "customer SSN 078-05-1120, card 4242 4242 4242 4242"},
+    ])
+    cid = _mk(client)
+    assert client.post(f"/api/discovery/connectors/{cid}/sync").json()["findings"] == 1
+    rows = client.get("/api/findings?surface=collab").json()["findings"]
+    assert "pii_exposure" in rows[0]["categories"]
+
+
 def test_scan_finds_secrets_on_collab_surface(client, monkeypatch):
     _fake_slack(monkeypatch, [
         {"user": "U1", "ts": "1755100003.000100",
