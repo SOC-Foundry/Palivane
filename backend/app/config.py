@@ -62,6 +62,11 @@ class Settings:
     archive_flush_kb: int = int(_env("PALIVANE_ARCHIVE_FLUSH_KB", "64"))
     archive_flush_secs: int = int(_env("PALIVANE_ARCHIVE_FLUSH_SECS", "5"))
     archive_daily_mb: int = int(_env("PALIVANE_ARCHIVE_DAILY_MB", "512"))
+    # Palivane's own AWS principal (IAM user/role ARN) that customer-side delivery roles
+    # trust for role-based S3 delivery (STS AssumeRole). Operator-level: it names THIS
+    # deployment's AWS identity, and the console's role-setup helper embeds it in the
+    # trust policy it hands tenant admins. Empty = the helper shows a placeholder.
+    aws_delivery_principal: str = _env("PALIVANE_AWS_DELIVERY_PRINCIPAL", "").strip()
     # Session behavioral correlation: after a finding is stored, look across the actor's
     # recent activity for an escalating attack CHAIN (recon → collection → exfil) that no
     # single event trips. On by default; window is how far back to look (minutes).

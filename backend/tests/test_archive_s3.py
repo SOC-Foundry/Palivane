@@ -77,7 +77,7 @@ def test_batches_and_flushes_ndjson(cap):
     assert cap == []                       # buffered, below the size threshold
     a.flush_all()
     assert len(cap) == 1 and cap[0][2] == 2
-    assert cap[0][0] == ("lake", "p", "us-east-1", "AKIA_x", "sek", "palivane")
+    assert cap[0][0] == ("lake", "p", "us-east-1", "AKIA_x", "sek", "palivane", "", "")
     ev = _lines(cap)
     assert [e["schema"] for e in ev] == [1, 1]
     assert ev[0]["actor"] == "e@acme.com" and ev[0]["agent"] == "copilot"
@@ -157,7 +157,7 @@ def test_ingest_e2e_and_settings_roundtrip(client, raw_client, cap):
 
 def test_archive_test_endpoint(client, monkeypatch):
     keys = []
-    monkeypatch.setattr(a, "_client", lambda *args: type(
+    monkeypatch.setattr(a, "_client", lambda *args, **kw: type(
         "S3", (), {"put_object": lambda self, **kw: keys.append(kw["Key"])})())
     assert client.post("/api/siem/s3/archive/test").status_code == 400   # nothing configured
     client.patch("/api/tenant", json={"siem_s3_bucket": "b", "siem_s3_key_id": "AKIA",

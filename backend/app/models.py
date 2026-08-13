@@ -89,6 +89,14 @@ class Tenant(Base):
     siem_s3_key_id = Column(String(128), default="")   # AWS access key id (write-only via API)
     # AWS secret access key: write-only via the API and sealed at rest (crypto.seal).
     siem_s3_secret = Column(String(512), default="")
+    # Cross-account delivery via STS AssumeRole — the preferred auth over static keys
+    # (no long-lived secret stored; the customer can revoke by editing their trust
+    # policy). The customer's role trusts this deployment's AWS principal
+    # (PALIVANE_AWS_DELIVERY_PRINCIPAL), scoped by a per-tenant external ID (generated
+    # server-side; a confused-deputy guard, not a secret). Role takes precedence over
+    # the key pair when both are set.
+    siem_s3_role_arn = Column(String(512), default="")
+    siem_s3_external_id = Column(String(64), default="")
     # Raw event archival to the same S3 sink (archive_s3.py): EVERY analyzed event (benign
     # included) as NDJSON micro-batches under <prefix>/<naming>/events/… — the audit-trail
     # complement to the findings feed above. Content ships redacted unless the org opts
@@ -193,10 +201,17 @@ class Tenant(Base):
                 "siem_s3_bucket": self.siem_s3_bucket or "",
                 "siem_s3_prefix": self.siem_s3_prefix or "",
                 "siem_s3_region": self.siem_s3_region or "",
-                # creds are write-only; expose only whether S3 delivery is fully configured.
+                # Role-based delivery config is not secret (the ARN names the customer's
+                # own role; the external ID only guards confused-deputy) — returned so
+                # the console can render it, unlike the write-only key pair.
+                "siem_s3_role_arn": self.siem_s3_role_arn or "",
+                "siem_s3_external_id": self.siem_s3_external_id or "",
+                # creds are write-only; expose only whether S3 delivery is fully
+                # configured (an assumable role, or the full static key pair).
                 "siem_s3_configured": bool((self.siem_s3_bucket or "").strip()
-                                           and (self.siem_s3_key_id or "").strip()
-                                           and (self.siem_s3_secret or "").strip()),
+                                           and ((self.siem_s3_role_arn or "").strip()
+                                                or ((self.siem_s3_key_id or "").strip()
+                                                    and (self.siem_s3_secret or "").strip()))),
                 "archive_s3_enabled": bool(self.archive_s3_enabled),
                 "archive_s3_raw_content": bool(self.archive_s3_raw_content),
                 "archive_s3_daily_mb": self.archive_s3_daily_mb or 0,
