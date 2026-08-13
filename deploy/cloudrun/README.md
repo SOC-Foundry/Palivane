@@ -41,6 +41,9 @@ printf '%s' "postgresql+psycopg2://warden:CHOOSE-A-STRONG-PASSWORD@/warden?host=
 # printf '%s' "sk-ant-…" | gcloud secrets create gateway-anthropic-key --data-file=-
 # printf '%s' "sk-…"     | gcloud secrets create openai-api-key --data-file=-
 # printf '%s' "…"        | gcloud secrets create gemini-api-key --data-file=-
+# Published Slack app ("Add to Slack" message-scanning install; pair with the
+# PALIVANE_SLACK_CLIENT_ID env var):
+# printf '%s' "…"        | gcloud secrets create palivane-slack-client-secret --data-file=-
 
 # 5. Let Cloud Run's service account read secrets + reach Cloud SQL
 SA="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')-compute@developer.gserviceaccount.com"
