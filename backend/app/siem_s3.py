@@ -35,11 +35,27 @@ _STS_REFRESH_SLACK = 300     # rebuild when < 5 min of the session remains
 _STS_SESSION_SECS = 3600
 
 
+def _sts_client(region: str):
+    """The STS client that assumes customer roles. Its identity is, in order: the
+    GCP→AWS federated session (aws_wif, when PALIVANE_AWS_WIF_ROLE_ARN is set — no
+    stored secret), else boto3's default chain (instance/task role on AWS self-host,
+    or static env keys as the legacy bootstrap)."""
+    import boto3  # noqa: PLC0415
+    from . import aws_wif
+
+    base = aws_wif.base_credentials()
+    if base:
+        return boto3.client("sts", region_name=(region or None),
+                            aws_access_key_id=base["AccessKeyId"],
+                            aws_secret_access_key=base["SecretAccessKey"],
+                            aws_session_token=base["SessionToken"])
+    return boto3.client("sts", region_name=(region or None))
+
+
 def _role_client(region: str, role_arn: str, external_id: str):
     """S3 client via STS AssumeRole — the no-stored-secret path. The deployment's own
-    AWS identity (default boto3 credential chain: instance/task role on AWS, or
-    AWS_WEB_IDENTITY_TOKEN_FILE / AWS_* env for a federated GCP runtime) assumes the
-    customer's delivery role, pinned by their per-tenant external ID."""
+    AWS identity (_sts_client: WIF-federated on GCP, default chain elsewhere) assumes
+    the customer's delivery role, pinned by their per-tenant external ID."""
     import boto3  # noqa: PLC0415
 
     ck = (region or "", role_arn, external_id)
@@ -50,7 +66,7 @@ def _role_client(region: str, role_arn: str, external_id: str):
             return hit[0]
     # AssumeRole is a network call — do it outside the lock. A concurrent duplicate
     # assume is harmless (last one wins the cache slot).
-    sts = boto3.client("sts", region_name=(region or None))
+    sts = _sts_client(region)
     kwargs = {"RoleArn": role_arn, "RoleSessionName": "palivane-s3-delivery",
               "DurationSeconds": _STS_SESSION_SECS}
     if external_id:

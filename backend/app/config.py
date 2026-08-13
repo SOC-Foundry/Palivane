@@ -67,6 +67,13 @@ class Settings:
     # deployment's AWS identity, and the console's role-setup helper embeds it in the
     # trust policy it hands tenant admins. Empty = the helper shows a placeholder.
     aws_delivery_principal: str = _env("PALIVANE_AWS_DELIVERY_PRINCIPAL", "").strip()
+    # GCP→AWS web-identity federation (aws_wif.py): the AWS role this runtime assumes
+    # with its GCP identity token — the no-stored-secret alternative to static AWS env
+    # keys for a GCP-hosted deployment. Empty = fall back to boto3's default chain.
+    # The audience must match the accounts.google.com:oaud condition in that role's
+    # trust policy (and is otherwise arbitrary).
+    aws_wif_role_arn: str = _env("PALIVANE_AWS_WIF_ROLE_ARN", "").strip()
+    aws_wif_audience: str = _env("PALIVANE_AWS_WIF_AUDIENCE", "palivane-aws-delivery").strip()
     # Session behavioral correlation: after a finding is stored, look across the actor's
     # recent activity for an escalating attack CHAIN (recon → collection → exfil) that no
     # single event trips. On by default; window is how far back to look (minutes).
