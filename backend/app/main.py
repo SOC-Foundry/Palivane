@@ -2502,6 +2502,43 @@ def connectors_create(body: ConnectorCreate, current: User = Depends(require_adm
     return row.to_dict()
 
 
+def _slack_redirect_uri(request: Request) -> str:
+    """The OAuth callback URL Slack must redirect to — env override first (proxies can
+    rewrite the scheme/host the app sees), else derived from this deployment's URL."""
+    return settings.slack_redirect_url or str(request.url_for("slack_oauth_callback"))
+
+
+@app.get("/api/slack/install")
+def slack_install_url(request: Request, current: User = Depends(require_admin)):
+    """The "Add to Slack" authorize URL for this org (Settings button). The signed state
+    binds the install to the admin's tenant across the OAuth redirect. 404 when the
+    operator hasn't registered a published Slack app (self-host without one: tenants
+    create their own app and paste the bot token into a slack_messages connector)."""
+    from . import slack_install
+    if not slack_install.configured():
+        raise HTTPException(status_code=404, detail="Slack app not configured on this deployment")
+    return {"url": slack_install.install_url(current.tenant_id, _slack_redirect_uri(request))}
+
+
+@app.get("/api/slack/oauth/callback")
+def slack_oauth_callback(request: Request, code: str = "", state: str = "",
+                         error: str = "", db: Session = Depends(get_db)):
+    """Slack's OAuth redirect target. Unauthenticated by necessity (the admin's browser
+    arrives here from slack.com) — the signed state carries the tenant. Always redirects
+    back into the console; failures become a query flag, never a stack trace."""
+    from fastapi.responses import RedirectResponse
+    from . import slack_install
+    if error:                                    # admin clicked "Cancel" on Slack's screen
+        return RedirectResponse("/?slack=denied")
+    if not slack_install.configured():
+        return RedirectResponse("/?slack=error")
+    try:
+        slack_install.complete_install(db, code, state, _slack_redirect_uri(request))
+    except slack_install.InstallError:
+        return RedirectResponse("/?slack=error")
+    return RedirectResponse("/?slack=installed")
+
+
 @app.post("/api/discovery/connectors/{connector_id}/sync")
 def connectors_sync(connector_id: int, current: User = Depends(require_admin),
                     db: Session = Depends(get_db)):

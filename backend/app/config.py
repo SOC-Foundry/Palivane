@@ -74,6 +74,15 @@ class Settings:
     # trust policy (and is otherwise arbitrary).
     aws_wif_role_arn: str = _env("PALIVANE_AWS_WIF_ROLE_ARN", "").strip()
     aws_wif_audience: str = _env("PALIVANE_AWS_WIF_AUDIENCE", "palivane-aws-delivery").strip()
+    # The published "Palivane" Slack app (operator registers ONE app at api.slack.com):
+    # client id/secret drive the per-tenant "Add to Slack" OAuth install flow, which
+    # stores each workspace's bot token as a slack_messages connector. Empty = the
+    # install flow is off; tenants can still paste a hand-built app's bot token.
+    # redirect_url overrides the auto-derived callback (set it when a proxy rewrites
+    # the scheme/host the app sees).
+    slack_client_id: str = _env("PALIVANE_SLACK_CLIENT_ID", "").strip()
+    slack_client_secret: str = _env("PALIVANE_SLACK_CLIENT_SECRET", "").strip()
+    slack_redirect_url: str = _env("PALIVANE_SLACK_REDIRECT_URL", "").strip()
     # Session behavioral correlation: after a finding is stored, look across the actor's
     # recent activity for an escalating attack CHAIN (recon → collection → exfil) that no
     # single event trips. On by default; window is how far back to look (minutes).
