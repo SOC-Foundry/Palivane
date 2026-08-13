@@ -55,4 +55,11 @@ jobs:
           SMTP_HOST: ${{ vars.SMTP_HOST }}
           SMTP_USER: ${{ vars.SMTP_USER }}
           MAIL_FROM: ${{ vars.MAIL_FROM }}
+          # Role-based S3 delivery (AWS identity via GCP web-identity federation) and the
+          # published Slack app. All non-sensitive; the Slack client SECRET comes from
+          # Secret Manager (palivane-slack-client-secret) inside deploy.sh.
+          PALIVANE_AWS_WIF_ROLE_ARN: ${{ vars.PALIVANE_AWS_WIF_ROLE_ARN }}
+          PALIVANE_AWS_DELIVERY_PRINCIPAL: ${{ vars.PALIVANE_AWS_DELIVERY_PRINCIPAL }}
+          PALIVANE_SLACK_CLIENT_ID: ${{ vars.PALIVANE_SLACK_CLIENT_ID }}
+          PALIVANE_SLACK_REDIRECT_URL: ${{ vars.PALIVANE_SLACK_REDIRECT_URL }}
         run: ./deploy/cloudrun/deploy.sh

@@ -55,6 +55,16 @@ ENV_VARS+="|SEED_ON_START=${SEED_ON_START:-false}"
 [ -n "${PALIVANE_ENCRYPT_FINDINGS:-}" ] && ENV_VARS+="|PALIVANE_ENCRYPT_FINDINGS=${PALIVANE_ENCRYPT_FINDINGS}"
 [ -n "${INGEST_TENANT:-}" ] && ENV_VARS+="|INGEST_TENANT=${INGEST_TENANT}"
 [ -n "${PALIVANE_EXTENSION_ID:-}" ] && ENV_VARS+="|PALIVANE_EXTENSION_ID=${PALIVANE_EXTENSION_ID}"
+# Role-based S3 delivery: this deployment's AWS identity. The WIF role is assumed with
+# the runtime's GCP identity token (no stored AWS secret); the principal is what customer
+# trust policies name (usually the same role ARN).
+[ -n "${PALIVANE_AWS_WIF_ROLE_ARN:-}" ] && ENV_VARS+="|PALIVANE_AWS_WIF_ROLE_ARN=${PALIVANE_AWS_WIF_ROLE_ARN}"
+[ -n "${PALIVANE_AWS_DELIVERY_PRINCIPAL:-}" ] && ENV_VARS+="|PALIVANE_AWS_DELIVERY_PRINCIPAL=${PALIVANE_AWS_DELIVERY_PRINCIPAL}"
+# Published Slack app ("Add to Slack" install for message scanning). Client id is not a
+# secret; the client secret rides in via the optional-secrets loop below (create secret
+# 'palivane-slack-client-secret' to enable). Redirect override for proxied deployments.
+[ -n "${PALIVANE_SLACK_CLIENT_ID:-}" ] && ENV_VARS+="|PALIVANE_SLACK_CLIENT_ID=${PALIVANE_SLACK_CLIENT_ID}"
+[ -n "${PALIVANE_SLACK_REDIRECT_URL:-}" ] && ENV_VARS+="|PALIVANE_SLACK_REDIRECT_URL=${PALIVANE_SLACK_REDIRECT_URL}"
 
 # Secrets — must exist in Secret Manager (see README). Optional ones are added if present.
 SECRETS="PALIVANE_SECRET_KEY=warden-secret-key:latest,DATABASE_URL=warden-database-url:latest"
@@ -67,7 +77,8 @@ for pair in \
   "EXTENSION_INGEST_TOKEN=extension-ingest-token" \
   "SMTP_PASS=warden-smtp-pass" \
   "PALIVANE_LICENSE_SIGNING_KEY=warden-license-signing-key" \
-  "PALIVANE_RELEASE_SIGNING_KEY=palivane-release-signing-key"; do
+  "PALIVANE_RELEASE_SIGNING_KEY=palivane-release-signing-key" \
+  "PALIVANE_SLACK_CLIENT_SECRET=palivane-slack-client-secret"; do
   name="${pair##*=}"
   if gcloud secrets describe "$name" --project "$PROJECT_ID" >/dev/null 2>&1; then
     SECRETS+=",${pair}:latest"
