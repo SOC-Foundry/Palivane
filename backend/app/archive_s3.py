@@ -60,25 +60,28 @@ def _event_key(prefix: str, naming: str) -> str:
     return f"{p}/{base}" if p else base
 
 
-def _put_batch(cfg: tuple, body: bytes, count: int) -> None:
+def _put_batch(cfg: tuple, body: bytes, count: int, tid: int = 0) -> None:
+    from . import sink_health
     bucket, prefix, region, key_id, secret, naming = cfg
     try:
         s3 = _client(region, key_id, secret)
         s3.put_object(Bucket=bucket, Key=_event_key(prefix, naming), Body=body,
                       ContentType="application/x-ndjson")
         _stats["batches"] += 1
+        sink_health.record(tid, "archive_s3", True)
     except Exception as e:
         _stats["put_failures"] += 1
+        sink_health.record(tid, "archive_s3", False, str(e)[:300])
         log.warning("event archive: S3 put of %d event(s) to %s failed: %s",
                     count, bucket, str(e)[:200])
 
 
-def _pop_locked(tid: int) -> tuple[tuple, bytes, int] | None:
+def _pop_locked(tid: int) -> tuple[tuple, bytes, int, int] | None:
     """Detach a tenant's pending batch (caller holds _lock)."""
     buf = _buffers.pop(tid, None)
     if not buf or not buf["lines"]:
         return None
-    return buf["cfg"], b"\n".join(buf["lines"]) + b"\n", len(buf["lines"])
+    return buf["cfg"], b"\n".join(buf["lines"]) + b"\n", len(buf["lines"]), tid
 
 
 def _flusher() -> None:
@@ -93,15 +96,15 @@ def _flusher() -> None:
                         batch = _pop_locked(tid)
                         if batch:
                             due.append(batch)
-            for cfg, body, count in due:
-                _submit(cfg, body, count)
+            for cfg, body, count, tid in due:
+                _submit(cfg, body, count, tid)
         except Exception as e:                      # the flusher must never die
             log.warning("event archive flusher: %s", e)
 
 
-def _submit(cfg: tuple, body: bytes, count: int) -> None:
+def _submit(cfg: tuple, body: bytes, count: int, tid: int = 0) -> None:
     from .dispatch import submit
-    submit(_put_batch, cfg, body, count)
+    submit(_put_batch, cfg, body, count, tid)
 
 
 def _ensure_flusher() -> None:
@@ -136,9 +139,10 @@ def archive(tenant, item, result: dict, agent: str = "") -> None:
     try:
         if tenant is None or not getattr(tenant, "archive_s3_enabled", False):
             return
+        from .crypto import unseal
         bucket = (tenant.siem_s3_bucket or "").strip()
         key_id = (tenant.siem_s3_key_id or "").strip()
-        secret = (tenant.siem_s3_secret or "").strip()
+        secret = unseal((tenant.siem_s3_secret or "").strip())
         if not (bucket and key_id and secret):
             return
         raw = bool(getattr(tenant, "archive_s3_raw_content", False))
@@ -192,8 +196,8 @@ def flush_all() -> None:
     a scale-to-zero instance ships its tail within the SIGTERM grace period."""
     with _lock:
         batches = [b for b in (_pop_locked(tid) for tid in list(_buffers)) if b]
-    for cfg, body, count in batches:
-        _put_batch(cfg, body, count)
+    for cfg, body, count, tid in batches:
+        _put_batch(cfg, body, count, tid)
 
 
 def test(bucket: str, prefix: str, region: str, key_id: str, secret: str,

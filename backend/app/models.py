@@ -72,7 +72,9 @@ class Tenant(Base):
     # SIEM forwarding: push findings >= siem_min_severity to a collector (Splunk HEC / generic
     # HTTP / CEF). Vendor-neutral — the SIEM specifics are the customer's URL + token + format.
     siem_url = Column(String(1024), default="")
-    siem_token = Column(String(1024), default="")     # bearer / HEC token (write-only via API)
+    # Bearer / HEC token: write-only via the API and sealed at rest (crypto.seal, enc:v1:
+    # tag). Width covers a 1024-char raw token after Fernet + base64 expansion.
+    siem_token = Column(String(2048), default="")
     siem_min_severity = Column(String(16), default="high")
     siem_format = Column(String(16), default="json")  # json | splunk_hec | cef
     # Brand key in the SIEM wire format: Splunk sourcetype "<naming>:finding" and the S3
@@ -85,7 +87,8 @@ class Tenant(Base):
     siem_s3_prefix = Column(String(255), default="")
     siem_s3_region = Column(String(32), default="")
     siem_s3_key_id = Column(String(128), default="")   # AWS access key id (write-only via API)
-    siem_s3_secret = Column(String(256), default="")   # AWS secret access key (write-only)
+    # AWS secret access key: write-only via the API and sealed at rest (crypto.seal).
+    siem_s3_secret = Column(String(512), default="")
     # Raw event archival to the same S3 sink (archive_s3.py): EVERY analyzed event (benign
     # included) as NDJSON micro-batches under <prefix>/<naming>/events/… — the audit-trail
     # complement to the findings feed above. Content ships redacted unless the org opts

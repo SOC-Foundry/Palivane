@@ -35,6 +35,7 @@ def submit(fn, *args, **kwargs) -> None:
     # semaphore — leaking a permit there while deadlocking a slot here.
     slots, executor = _slots, _executor
     if not slots.acquire(blocking=False):
+        _count_drop()
         log.debug("dispatch dropped a background job: %d jobs already pending",
                   _MAX_WORKERS + _MAX_PENDING)
         return
@@ -49,4 +50,15 @@ def submit(fn, *args, **kwargs) -> None:
         executor.submit(_run)
     except Exception as e:              # interpreter shutting down, or anything else —
         slots.release()                 # never let delivery scheduling break capture
+        _count_drop()
         log.debug("dispatch dropped a background job: %s", e)
+
+
+def _count_drop() -> None:
+    """Make shedding observable (palivane_dispatch_dropped_total) — dropping under
+    overload is the designed trade, but it must show up on a dashboard, not vanish."""
+    try:
+        from . import metrics
+        metrics.DISPATCH_DROPPED.inc()
+    except Exception:
+        pass

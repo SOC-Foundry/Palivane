@@ -295,7 +295,9 @@ class TenantUpdate(BaseModel):
     alert_min_severity: str | None = None   # minimum severity to alert on
     alert_digest: str | None = None         # off | hourly | daily (batch non-critical alerts)
     siem_url: str | None = None             # SIEM collector endpoint (push findings)
-    siem_token: str | None = None           # bearer / Splunk-HEC token (write-only)
+    # Bearer / Splunk-HEC token (write-only; sealed at rest). Cap keeps the sealed form
+    # (Fernet + base64, ~1.5x + overhead) inside the 2048-char column.
+    siem_token: str | None = Field(None, max_length=1024)
     siem_min_severity: str | None = None    # minimum severity to forward
     siem_format: str | None = None          # json | splunk_hec | cef
     siem_naming: str | None = None          # palivane | warden (brand key in sourcetype/S3 path)

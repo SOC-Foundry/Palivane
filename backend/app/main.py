@@ -313,8 +313,10 @@ def test_alert(current: User = Depends(require_admin), db: Session = Depends(get
 
 @app.post("/api/siem/test")
 def test_siem(current: User = Depends(require_admin), db: Session = Depends(get_db)):
-    """Send a sample event to the tenant's configured SIEM collector (Settings → SIEM)."""
+    """Send a sample event to the tenant's configured SIEM collector (Settings → SIEM).
+    Returns the failure detail so the console can distinguish DNS/timeout from a 401."""
     from . import siem
+    from .crypto import unseal
     t = db.get(Tenant, current.tenant_id)
     if not t or not (t.siem_url or "").strip():
         raise HTTPException(status_code=400, detail="no SIEM endpoint configured")
@@ -322,20 +324,23 @@ def test_siem(current: User = Depends(require_admin), db: Session = Depends(get_
         {"severity": "high", "risk_score": 75, "finding_id": 0,
          "signals": [{"category": "secret_leak"}]},
         subject="Palivane SIEM test event", actor="palivane", surface="test", org=t.slug)
-    ok = siem.send_sync(t.siem_url.strip(), t.siem_token or "", t.siem_format or "json", fields,
-                        naming=t.siem_naming or "warden")
-    return {"ok": ok}
+    ok, detail = siem.send_detail(t.siem_url.strip(), unseal(t.siem_token or ""),
+                                  t.siem_format or "json", fields,
+                                  naming=t.siem_naming or "warden")
+    return {"ok": ok, "detail": detail}
 
 
 @app.post("/api/siem/s3/test")
 def test_siem_s3(current: User = Depends(require_admin), db: Session = Depends(get_db)):
     """Write a sample object to the tenant's configured S3 delivery bucket (Settings → SIEM)."""
     from . import siem_s3
+    from .crypto import unseal
     t = db.get(Tenant, current.tenant_id)
     if not t or not (t.siem_s3_bucket or "").strip():
         raise HTTPException(status_code=400, detail="no S3 bucket configured")
     ok, detail = siem_s3.test(t.siem_s3_bucket.strip(), t.siem_s3_prefix or "",
-                              t.siem_s3_region or "", t.siem_s3_key_id or "", t.siem_s3_secret or "",
+                              t.siem_s3_region or "", t.siem_s3_key_id or "",
+                              unseal(t.siem_s3_secret or ""),
                               naming=t.siem_naming or "warden")
     return {"ok": ok, "detail": detail}
 
@@ -346,13 +351,27 @@ def test_archive_s3(current: User = Depends(require_admin), db: Session = Depend
     console can validate the archive layout (and Athena/Panther tables can be pointed at
     a real object). Uses the same bucket + credentials as findings delivery."""
     from . import archive_s3
+    from .crypto import unseal
     t = db.get(Tenant, current.tenant_id)
     if not t or not (t.siem_s3_bucket or "").strip():
         raise HTTPException(status_code=400, detail="no S3 bucket configured")
     ok, detail = archive_s3.test(t.siem_s3_bucket.strip(), t.siem_s3_prefix or "",
                                  t.siem_s3_region or "", t.siem_s3_key_id or "",
-                                 t.siem_s3_secret or "", naming=t.siem_naming or "warden")
+                                 unseal(t.siem_s3_secret or ""),
+                                 naming=t.siem_naming or "warden")
     return {"ok": ok, "detail": detail}
+
+
+@app.get("/api/siem/status")
+def siem_status(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Delivery health for this tenant's out-of-band sinks (SIEM HTTP push, S3 findings,
+    S3 event archive): attempt/failure counts and the last error per sink, plus the event
+    archive's buffer counters. Per-instance and since process start — an observability
+    aid for 'is my SIEM actually receiving events', not a billing meter."""
+    from . import archive_s3, sink_health
+    return {"sinks": sink_health.snapshot(current.tenant_id),
+            "archive": archive_s3.stats(),
+            "scope": "this API instance, since process start"}
 
 
 @app.post("/api/alerts/digest/run")
@@ -364,12 +383,63 @@ def run_digest_now(current: User = Depends(require_admin), db: Session = Depends
     return {"sent": sent}
 
 
+class _ExportPrincipal:
+    """Who is pulling an export: a console admin or a machine (`ak_…`) API key."""
+
+    def __init__(self, tenant_id: int, actor: str):
+        self.tenant_id, self.actor = tenant_id, actor
+
+
+def require_export_auth(
+    authorization: str = Header(default=""),
+    x_palivane_token: str = Header(default=""),
+    db: Session = Depends(get_db),
+) -> _ExportPrincipal:
+    """Auth for the pull/export surface (SIEM ingest): an `ak_…` API key — the machine
+    credential a scheduled poller can hold, via `Authorization: Bearer` or
+    `X-Palivane-Token` — or an admin session JWT (the console's download buttons).
+    Deliberately NOT the full-org /api/export/tenant, which stays session-admin-only."""
+    from .security import looks_like_api_key
+    scheme, _, bearer = authorization.partition(" ")
+    token = (x_palivane_token or "").strip() or (bearer.strip() if scheme.lower() == "bearer" else "")
+    if looks_like_api_key(token):
+        from .gateway import _resolve_api_key
+        principal = _resolve_api_key(token, db)          # 401s on bad/expired/revoked
+        from .lifecycle import ensure_active
+        ensure_active(db, principal.tenant_id)
+        from .database import bind_tenant
+        bind_tenant(db, principal.tenant_id)             # RLS scoping, like every auth path
+        return _ExportPrincipal(principal.tenant_id, principal.actor)
+    user = require_admin(get_current_user(authorization=authorization, db=db))
+    return _ExportPrincipal(user.tenant_id, user.email)
+
+
+def _parse_since(since: str):
+    """Parse an ISO-8601 `since` watermark to the naive-UTC shape timestamps are stored in."""
+    from datetime import datetime, timezone
+    try:
+        dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=400,
+                            detail="since must be an ISO 8601 timestamp (e.g. 2026-08-13T00:00:00Z)")
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
 @app.get("/api/export/findings")
 def export_findings(
-    current: User = Depends(require_admin), db: Session = Depends(get_db),
+    current: _ExportPrincipal = Depends(require_export_auth), db: Session = Depends(get_db),
     severity: str | None = None, surface: str | None = None, limit: int = 5000,
+    since: str | None = None,
 ):
-    """Export findings as JSONL (SIEM ingest). Admin; filterable by severity/surface."""
+    """Export findings as JSONL (SIEM ingest). Console admin or an `ak_…` API key, so a
+    SIEM's scheduled poller can authenticate. Filterable by severity/surface.
+
+    Incremental pull: pass `since` (ISO 8601) to get only findings active at/after the
+    watermark, oldest first; the response's X-Palivane-Next-Since header is the watermark
+    for the next poll. The filter is inclusive (a boundary tie is re-sent rather than
+    skipped), so consumers dedupe on (finding_id, last_seen)."""
     import json as _json
     from fastapi.responses import Response as _Resp
     q = db.query(Finding).filter(Finding.tenant_id == current.tenant_id)
@@ -377,10 +447,18 @@ def export_findings(
         q = q.filter(Finding.severity == severity)
     if surface:
         q = q.filter(Finding.surface == surface)
-    rows = q.order_by(Finding.created_at.desc()).limit(min(limit, 20000)).all()
+    headers = {"Content-Disposition": "attachment; filename=palivane-findings.jsonl"}
+    if since is not None:
+        q = q.filter(Finding.last_seen >= _parse_since(since))
+        rows = (q.order_by(Finding.last_seen.asc(), Finding.id.asc())
+                 .limit(min(limit, 20000)).all())
+        marks = [r.last_seen for r in rows if r.last_seen]
+        if marks:
+            headers["X-Palivane-Next-Since"] = max(marks).isoformat() + "Z"
+    else:
+        rows = q.order_by(Finding.created_at.desc()).limit(min(limit, 20000)).all()
     body = "\n".join(_json.dumps(r.to_summary()) for r in rows)
-    return _Resp(content=body, media_type="application/x-ndjson",
-                 headers={"Content-Disposition": "attachment; filename=palivane-findings.jsonl"})
+    return _Resp(content=body, media_type="application/x-ndjson", headers=headers)
 
 
 @app.get("/api/export/tenant")
@@ -2308,21 +2386,30 @@ def audit_timeline(actor: str, current: User = Depends(require_admin),
 
 
 @app.get("/api/audit/export")
-def audit_export(current: User = Depends(require_admin), db: Session = Depends(get_db),
-                 days: int = 7, actor: str = "", format: str = "jsonl"):
+def audit_export(current: _ExportPrincipal = Depends(require_export_auth),
+                 db: Session = Depends(get_db),
+                 days: int = 7, actor: str = "", format: str = "jsonl",
+                 since: str | None = None):
     """Export the normalized cross-vendor audit trail for a SIEM / data lake — the whole
     tenant's agent activity (or one actor's) over the window, as newline-delimited JSON
     (`jsonl`) or `cef`. Same normalized shape as the console, retained on Palivane's schedule
-    (past any single vendor's log cap). Downloads as a file."""
+    (past any single vendor's log cap). Downloads as a file.
+
+    Console admin or an `ak_…` API key (machine pull). `since` (ISO 8601) overrides `days`
+    for incremental polling; X-Palivane-Next-Since carries the next watermark."""
     from fastapi.responses import PlainTextResponse
     from . import session_audit
     fmt = format if format in session_audit.EXPORT_FORMATS else "jsonl"
     tenant = db.get(Tenant, current.tenant_id)
-    body = session_audit.export(db, current.tenant_id, org=(tenant.slug if tenant else ""),
-                                actor=actor, days=days, fmt=fmt)
+    body, next_since = session_audit.export(
+        db, current.tenant_id, org=(tenant.slug if tenant else ""),
+        actor=actor, days=days, fmt=fmt,
+        since_dt=_parse_since(since) if since is not None else None)
     ext, media = ("cef", "text/plain") if fmt == "cef" else ("jsonl", "application/x-ndjson")
-    return PlainTextResponse(body, media_type=media, headers={
-        "Content-Disposition": f'attachment; filename="palivane-audit.{ext}"'})
+    headers = {"Content-Disposition": f'attachment; filename="palivane-audit.{ext}"'}
+    if since is not None and next_since:
+        headers["X-Palivane-Next-Since"] = next_since
+    return PlainTextResponse(body, media_type=media, headers=headers)
 
 
 @app.post("/api/discovery/ingest")

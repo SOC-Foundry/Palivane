@@ -145,18 +145,27 @@ EXPORT_FORMATS = ("jsonl", "cef")
 
 
 def export(db: Session, tenant_id: int, org: str, actor: str = "", days: int = 7,
-           fmt: str = "jsonl", limit: int = 5000) -> str:
+           fmt: str = "jsonl", limit: int = 5000,
+           since_dt: datetime | None = None) -> tuple[str, str | None]:
     """Serialize the normalized cross-vendor audit trail for a SIEM/data lake — the whole
     tenant's activity, or one actor's — as newline-delimited JSON or CEF. This is the same
     normalized shape the console shows; retention is Palivane's, so it spans past any single
-    vendor's log cap. Chronological (oldest first — a timeline a SIEM appends to)."""
-    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max(1, days))
+    vendor's log cap. Chronological (oldest first — a timeline a SIEM appends to).
+
+    `since_dt` (naive UTC) overrides the `days` window for incremental polling — the
+    filter is inclusive, so a boundary tie re-sends rather than skips. Returns
+    (body, next_since): the high-watermark ISO timestamp for the next poll (None when
+    the window is empty)."""
+    since = since_dt if since_dt is not None else (
+        datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max(1, days)))
     q = db.query(Finding).filter(Finding.tenant_id == tenant_id, Finding.sender != "",
                                  Finding.last_seen >= since)
     if actor:
         q = q.filter(Finding.sender == actor)
     rows = q.order_by(Finding.last_seen.asc()).limit(min(limit, 20000)).all()
     events = [normalize(f) for f in rows]
+    marks = [f.last_seen for f in rows if f.last_seen]
+    next_since = (max(marks).isoformat() + "Z") if marks else None
 
     if fmt == "cef":
         from .siem import _cef
@@ -172,6 +181,6 @@ def export(db: Session, tenant_id: int, org: str, actor: str = "", days: int = 7
                 "top_signals": [{"title": "stages", "evidence": ", ".join(e["stages"])}]
                 if e["stages"] else [],
             }))
-        return "\n".join(lines)
+        return "\n".join(lines), next_since
     # jsonl (default): the normalized event verbatim, one per line
-    return "\n".join(json.dumps({**e, "org": org}) for e in events)
+    return "\n".join(json.dumps({**e, "org": org}) for e in events), next_since

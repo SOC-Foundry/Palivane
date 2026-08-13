@@ -61,17 +61,16 @@ def test_cef_header_escapes_pipe_no_injection():
 
 def test_forward_gates_on_severity(monkeypatch):
     sent = []
-    monkeypatch.setattr(siem, "send_sync", lambda *a, **k: sent.append(a) or True)
+    monkeypatch.setattr(siem, "send_detail", lambda *a, **k: (sent.append(a) or True, ""))
     # below threshold -> not forwarded
     siem.forward("https://c/x", "", "high", "json",
                  {"severity": "suspicious", "risk_score": 40, "signals": []})
     assert sent == []
-    # at threshold -> forwarded (send_sync runs in a daemon thread; join briefly)
-    import threading, time
-    before = threading.active_count()
+    # at threshold -> forwarded (delivery runs on the dispatch pool; join briefly)
+    import time
     siem.forward("https://c/x", "", "high", "json", _VERDICT)
     time.sleep(0.1)
-    # the thread called our stub
+    # the pool job called our stub
     assert sent, "expected a forward at/above threshold"
 
 

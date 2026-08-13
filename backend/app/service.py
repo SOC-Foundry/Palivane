@@ -234,16 +234,20 @@ def _dispatch_sinks(tenant, payload: dict, subject: str, actor: str, surface: st
         alerts.notify(tenant.alert_webhook.strip(), tenant.alert_min_severity, payload,
                       subject=subject, actor=actor, surface=surface,
                       digest=tenant.alert_digest or "off")
+    # SIEM credentials are sealed at rest (crypto.seal in update_tenant); unseal passes
+    # legacy plaintext rows through unchanged.
+    from .crypto import unseal
     if (tenant.siem_url or "").strip():
         from . import siem
-        siem.forward(tenant.siem_url.strip(), tenant.siem_token or "",
+        siem.forward(tenant.siem_url.strip(), unseal(tenant.siem_token or ""),
                      tenant.siem_min_severity, tenant.siem_format, payload,
                      subject=subject, actor=actor, surface=surface, org=tenant.slug,
-                     naming=tenant.siem_naming or "warden")
+                     naming=tenant.siem_naming or "warden", tenant_id=tenant.id)
     if (tenant.siem_s3_bucket or "").strip():
         from . import siem_s3
         siem_s3.forward_s3(tenant.siem_s3_bucket.strip(), tenant.siem_s3_prefix or "",
                            tenant.siem_s3_region or "", tenant.siem_s3_key_id or "",
-                           tenant.siem_s3_secret or "", tenant.siem_min_severity, payload,
-                           subject=subject, actor=actor, surface=surface, org=tenant.slug,
-                           naming=tenant.siem_naming or "warden")
+                           unseal(tenant.siem_s3_secret or ""), tenant.siem_min_severity,
+                           payload, subject=subject, actor=actor, surface=surface,
+                           org=tenant.slug, naming=tenant.siem_naming or "warden",
+                           tenant_id=tenant.id)

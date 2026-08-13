@@ -14,11 +14,14 @@ even where boto3 isn't installed (tests mock the put).
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 import uuid
 
 from . import siem  # reuse _fields + _RANK for a consistent event shape/threshold
+
+log = logging.getLogger("uvicorn.error")
 
 # boto3 clients are thread-safe once built, but building one per put costs a fresh TLS
 # handshake — cache per credential set. Small hard cap: on overflow just clear (clients
@@ -67,18 +70,30 @@ def _put(bucket: str, prefix: str, region: str, key_id: str, secret: str, fields
         return False, str(e)[:300]
 
 
+def _deliver(bucket: str, prefix: str, region: str, key_id: str, secret: str, fields: dict,
+             naming: str, tenant_id: int) -> None:
+    """Pool job: put + record the outcome, so a broken bucket/credential is visible."""
+    ok, detail = _put(bucket, prefix, region, key_id, secret, fields, naming=naming)
+    from . import sink_health
+    sink_health.record(tenant_id, "siem_s3", ok, detail)
+    if not ok:
+        log.warning("SIEM S3 delivery failed (tenant %s, bucket %s): %s",
+                    tenant_id, bucket, detail)
+
+
 def forward_s3(bucket: str, prefix: str, region: str, key_id: str, secret: str,
                min_severity: str, verdict: dict, subject: str = "", actor: str = "",
-               surface: str = "", org: str = "", naming: str = "warden") -> None:
+               surface: str = "", org: str = "", naming: str = "warden",
+               tenant_id: int = 0) -> None:
     """Deliver a finding to the tenant's S3 sink if configured and severity >= min_severity.
-    Non-blocking; failures are swallowed (delivery is best-effort, like the HTTP push)."""
+    Non-blocking and best-effort, but failures are logged + counted (sink_health)."""
     if not (bucket and key_id and secret):
         return
     if siem._RANK.get(verdict.get("severity"), 0) < siem._RANK.get(min_severity or "high", 3):
         return
     fields = siem._fields(verdict, subject, actor, surface, org)
     from .dispatch import submit
-    submit(_put, bucket, prefix, region, key_id, secret, fields, naming=naming)
+    submit(_deliver, bucket, prefix, region, key_id, secret, fields, naming, tenant_id)
 
 
 def test(bucket: str, prefix: str, region: str, key_id: str, secret: str,

@@ -121,9 +121,34 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     } catch (e) { err(e); }
   }
   async function testSiem() {
-    try { const r = await api.testSiem(); flash(r.ok ? "Test event sent to SIEM." : "SIEM endpoint unreachable.", !!r.ok); }
-    catch (e) { err(e); }
+    try {
+      const r = await api.testSiem();
+      flash(r.ok ? "Test event sent to SIEM." : `SIEM send failed: ${r.detail || "endpoint unreachable"}`, !!r.ok);
+      loadSinkHealth();
+    } catch (e) { err(e); }
   }
+
+  // --- Sink delivery health (per-instance counters + last error, from /api/siem/status) ---
+  const [sinkHealth, setSinkHealth] = useState(null);
+  const loadSinkHealth = useCallback(async () => {
+    try { setSinkHealth(await api.siemStatus()); } catch { /* non-admin or older API */ }
+  }, []);
+  const SinkHealth = ({ sink, label = "Delivery health" }) => {
+    const s = sinkHealth?.sinks?.[sink];
+    if (!s) return null;
+    if (!s.attempted) return (
+      <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>{label}: no deliveries
+         attempted yet (since this instance started).</p>
+    );
+    const ok = !s.last_error_at || (s.last_ok && s.last_ok > s.last_error_at);
+    return (
+      <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+        {label}: {s.ok} delivered · {s.failed} failed{" "}
+        {ok ? <span style={{ color: "var(--ok, #2e7d32)" }}>✓ last delivery succeeded{s.last_ok ? ` (${s.last_ok})` : ""}</span>
+            : <span style={{ color: "var(--danger, #c62828)" }}>✗ last error {s.last_error_at}: {s.last_error}</span>}
+      </p>
+    );
+  };
 
   // --- SIEM S3 / data-lake delivery ---
   const [s3Cfg, setS3Cfg] = useState({
@@ -146,12 +171,18 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     } catch (e) { err(e); }
   }
   async function testS3() {
-    try { const r = await api.testSiemS3(); flash(r.ok ? "Test object written to S3." : `S3 write failed: ${r.detail || "check config"}`, !!r.ok); }
-    catch (e) { err(e); }
+    try {
+      const r = await api.testSiemS3();
+      flash(r.ok ? "Test object written to S3." : `S3 write failed: ${r.detail || "check config"}`, !!r.ok);
+      loadSinkHealth();
+    } catch (e) { err(e); }
   }
   async function testArchive() {
-    try { const r = await api.testArchiveS3(); flash(r.ok ? "Test object written under events/." : `S3 write failed: ${r.detail || "check config"}`, !!r.ok); }
-    catch (e) { err(e); }
+    try {
+      const r = await api.testArchiveS3();
+      flash(r.ok ? "Test object written under events/." : `S3 write failed: ${r.detail || "check config"}`, !!r.ok);
+      loadSinkHealth();
+    } catch (e) { err(e); }
   }
   function _download(text, name, type) {
     const url = URL.createObjectURL(new Blob([text], { type }));
@@ -316,8 +347,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     } catch (e) { err(e); }
   }
 
-  useEffect(() => { loadUsage(); loadUps(); loadJudgeKey(); loadOidc(); loadSaml(); loadDpa(); loadCatalog(); loadUpgrade(); },
-    [loadUsage, loadUps, loadJudgeKey, loadOidc, loadSaml, loadDpa, loadCatalog, loadUpgrade]);
+  useEffect(() => { loadUsage(); loadUps(); loadJudgeKey(); loadOidc(); loadSaml(); loadDpa(); loadCatalog(); loadUpgrade(); loadSinkHealth(); },
+    [loadUsage, loadUps, loadJudgeKey, loadOidc, loadSaml, loadDpa, loadCatalog, loadUpgrade, loadSinkHealth]);
 
   async function logoutEverywhere() {
     try { await api.logoutAll(); } catch { /* ignore */ }
@@ -603,6 +634,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <button type="button" className="primary-btn slim" onClick={saveSiem}>Save SIEM</button>
           <button type="button" className="mini-btn" onClick={testSiem}>Send test event</button>
         </div>
+        <SinkHealth sink="siem_http" />
         <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Pushes each finding at/above
            the threshold as it's captured; SSRF-guarded and fail-open (a down collector never
            blocks capture). Internal/private endpoints are blocked — use a reachable collector.
@@ -658,6 +690,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <button type="button" className="mini-btn" onClick={testS3}>Write test object</button>
           {s3Cfg.archive && <button type="button" className="mini-btn" onClick={testArchive}>Write test event</button>}
         </div>
+        <SinkHealth sink="siem_s3" label="Findings delivery" />
+        {s3Cfg.archive && <SinkHealth sink="archive_s3" label="Event archive" />}
         <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Findings are written under
            <code> &lt;prefix&gt;/{siemCfg.naming}/findings/YYYY/MM/DD/…json</code> (path follows the
            SIEM event-naming setting above). Credentials are stored write-only. Grant the key
