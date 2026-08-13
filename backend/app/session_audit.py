@@ -36,6 +36,7 @@ _CHANNEL_VENDOR = (
     ("gemini", "Gemini CLI"),
     ("copilot", "GitHub Copilot"),
     ("claude", "Claude"),
+    ("slack", "Slack"),
 )
 # Surface → vendor when the channel doesn't name a tool (git/CI, deps, IDE, endpoint, MCP,
 # the correlation engine itself).
@@ -49,6 +50,7 @@ _SURFACE_VENDOR = {
     "agent_rules": "Agent rules file",
     "oversharing": "Enterprise LLM",
     "a2a": "Agent-to-agent",
+    "collab": "Collaboration",
 }
 
 

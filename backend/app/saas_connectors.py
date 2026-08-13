@@ -282,6 +282,129 @@ def fetch_slack(creds: dict) -> list[dict]:
     return grants
 
 
+# --- Slack message scanning (collab-surface DLP) ------------------------------------------
+#
+# Where fetch_slack inventories which AI apps are INSTALLED, this scans what the AI can
+# READ: message content in the channels the scan bot is invited to, run through the same
+# PII/PHI/secret engine as every other plane (Surface.COLLAB — Slack AI, bots, and MCP
+# Slack servers all read this content). Cursor-incremental: connector.sync_state keeps a
+# per-channel last-message-ts high-water mark, so each sync pulls only new messages.
+# Rules-only (use_judge=False): a 2000-message backfill must not fan out 2000 LLM calls.
+
+_MAX_MESSAGES_PER_SYNC = 2000     # bounds one sync; the cursor resumes where it stopped
+_SCAN_LOOKBACK_SECS = 7 * 86400   # first sync reaches back a week, then cursor-incremental
+
+
+def _slack_pages(url_base: str, params: dict, hdrs: dict, list_key: str):
+    """Iterate a cursor-paginated Slack list method, yielding items. Raises ConnectorError
+    on Slack's in-band (HTTP 200 + ok:false) errors."""
+    cursor = ""
+    while True:
+        q = dict(params)
+        if cursor:
+            q["cursor"] = cursor
+        data = _http_json(f"{url_base}?{urllib.parse.urlencode(q)}", headers=hdrs)
+        if not data.get("ok"):
+            err = data.get("error", "unknown_error")
+            raise ConnectorError(f"Slack API error {err} from {url_base.rsplit('/', 1)[-1]}")
+        yield from data.get(list_key, [])
+        cursor = (data.get("response_metadata") or {}).get("next_cursor", "")
+        if not cursor:
+            break
+
+
+def _slack_actor(cache: dict, user_id: str, hdrs: dict) -> str:
+    """Slack user id -> email (users:read.email), falling back to real name / the id.
+    Cached per sync — a channel's messages share a handful of authors."""
+    if user_id in cache:
+        return cache[user_id]
+    try:
+        data = _http_json(f"{_SLACK_API_BASE}/users.info?"
+                          + urllib.parse.urlencode({"user": user_id}), headers=hdrs)
+        prof = (data.get("user") or {}).get("profile") or {} if data.get("ok") else {}
+        actor = prof.get("email") or (data.get("user") or {}).get("real_name") or user_id
+    except ConnectorError:
+        actor = user_id
+    cache[user_id] = actor
+    return actor
+
+
+def scan_slack_messages(db, connector, creds: dict) -> dict:
+    """Scan new Slack messages for PII/PHI/secrets and persist findings on the collab
+    surface. Covers the channels the bot is a member of (invite it to scan a channel).
+    Returns {channels, messages, findings, truncated?} for last_sync_detail."""
+    token = (creds.get("bot_token") or "").strip()
+    if not token:
+        raise ConnectorError("slack_messages needs bot_token (xoxb-… with channels:read, "
+                             "groups:read, channels:history, groups:history, users:read, "
+                             "users:read.email)")
+    hdrs = {"Authorization": f"Bearer {token}"}
+    from .detectors import AnalysisInput, Surface
+    from .models import Tenant
+    from .service import run_analysis
+
+    tenant = db.get(Tenant, connector.tenant_id)
+    custom_pii = (getattr(tenant, "custom_pii_patterns", "") or "") if tenant else ""
+    state = connector.state
+    marks: dict[str, str] = dict(state.get("channels") or {})
+    default_oldest = f"{time.time() - _SCAN_LOOKBACK_SECS:.6f}"
+
+    channels = list(_slack_pages(
+        f"{_SLACK_API_BASE}/users.conversations",
+        {"types": "public_channel,private_channel", "limit": "200"}, hdrs, "channels"))
+
+    users: dict[str, str] = {}
+    scanned = findings = 0
+    truncated = False
+    for ch in channels:
+        cid, cname = ch.get("id", ""), ch.get("name", "")
+        if not cid:
+            continue
+        remaining = _MAX_MESSAGES_PER_SYNC - scanned
+        if remaining <= 0:
+            truncated = True
+            break
+        # Slack returns history newest-first, so a partially-scanned window CANNOT
+        # advance the watermark — the unfetched messages are the OLDER ones, and moving
+        # the cursor past them would skip them forever. Over-budget channels scan what
+        # fits and keep their cursor; the rescan next sync folds as recurrences.
+        window, over = [], False
+        for m in _slack_pages(f"{_SLACK_API_BASE}/conversations.history",
+                              {"channel": cid, "limit": "200",
+                               "oldest": marks.get(cid, default_oldest)},
+                              hdrs, "messages"):
+            if m.get("subtype") or not m.get("user") or not (m.get("text") or "").strip():
+                continue          # bots, joins, edits-without-text — not user content
+            window.append(m)
+            if len(window) > remaining:
+                over = True
+                window.pop()      # keep exactly the budget's worth (the newest ones)
+                break
+        # Oldest-first so the watermark only ever moves past messages actually scanned.
+        for m in sorted(window, key=lambda x: float(x.get("ts", "0"))):
+            actor = _slack_actor(users, m["user"], hdrs)
+            result = run_analysis(
+                AnalysisInput(content=m["text"], sender=actor, channel="slack",
+                              subject=f"#{cname}" if cname else cid,
+                              surface=Surface.COLLAB,
+                              metadata={"custom_pii": custom_pii}),
+                persist=True, db=db, tenant_id=connector.tenant_id,
+                persist_benign=False, use_judge=False)
+            scanned += 1
+            if not over:
+                marks[cid] = m["ts"]
+            if result.get("finding_id") is not None:
+                findings += 1
+        if over:
+            truncated = True
+
+    connector.state = {**state, "channels": marks}
+    summary = {"channels": len(channels), "messages": scanned, "findings": findings}
+    if truncated:
+        summary["truncated"] = True   # budget hit; the cursor resumes next sync
+    return summary
+
+
 # --- Salesforce --------------------------------------------------------------------------
 
 _SF_API_VERSION = "v60.0"
@@ -372,6 +495,17 @@ PLATFORMS: dict[str, dict] = {
                  "team_id is optional — set it to limit the pull to one workspace. Lists "
                  "org-approved apps and their scopes via admin.apps.approved.list.",
     },
+    "slack_messages": {
+        "label": "Slack message scanning",
+        "scan": scan_slack_messages,
+        "credential_fields": ["bot_token"],
+        "setup": "Bot token (xoxb-…) with channels:read, groups:read, channels:history, "
+                 "groups:history, users:read, users:read.email. Invite the bot to each "
+                 "channel to scan. Every sync pulls messages newer than the per-channel "
+                 "cursor (first sync looks back 7 days) and runs them through PII/PHI/"
+                 "secret detection on the collab surface — findings alert and export "
+                 "like any other plane. Detection is rules-only (no LLM judge).",
+    },
     "salesforce": {
         "label": "Salesforce",
         "fetch": fetch_salesforce,
@@ -402,18 +536,25 @@ def store_credentials(connector, credentials: dict) -> None:
 
 
 def sync_connector(db, connector) -> dict:
-    """Pull grants for one connector and run them through the standard ingest. Updates the
-    connector's last_sync_* fields (committed by the caller alongside the ingest)."""
+    """Run one connector sync: grant-inventory pull (`fetch` platforms) or content scan
+    (`scan` platforms, e.g. Slack message scanning). Updates the connector's
+    last_sync_* fields (committed by the caller alongside the ingest)."""
     connector.last_sync_at = datetime.now(timezone.utc).replace(tzinfo=None)
     try:
         creds = json.loads(decrypt(connector.credentials_enc) or "{}")
-        fetched = PLATFORMS[connector.platform]["fetch"](creds)
-        # the sentinel row reports truncation without polluting discovery
-        truncated = any(g["app_name"].startswith("__truncated_") for g in fetched)
-        grants = [OAuthGrant(**g) for g in fetched if not g["app_name"].startswith("__truncated_")]
-        summary = ingest_oauth_grants(db, connector.tenant_id, grants)
-        if truncated:
-            summary["truncated"] = True
+        spec = PLATFORMS[connector.platform]
+        if "scan" in spec:
+            # Content scanner: persists findings itself (and advances its own cursor).
+            summary = spec["scan"](db, connector, creds)
+        else:
+            fetched = spec["fetch"](creds)
+            # the sentinel row reports truncation without polluting discovery
+            truncated = any(g["app_name"].startswith("__truncated_") for g in fetched)
+            grants = [OAuthGrant(**g) for g in fetched
+                      if not g["app_name"].startswith("__truncated_")]
+            summary = ingest_oauth_grants(db, connector.tenant_id, grants)
+            if truncated:
+                summary["truncated"] = True
         connector.last_sync_status = "ok"
         connector.last_sync_detail = json.dumps(summary)[:512]
         db.commit()
