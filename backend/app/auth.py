@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from . import audit_log, oidc, saml, totp
 from .config import settings
-from .crypto import decrypt, encrypt
+from .crypto import decrypt, encrypt, seal
 from .database import get_db
 from .models import (
     Agent, AgentRole, ApiKey, AuditLog, DiscoveredUsage, EnrollmentToken, Finding,
@@ -1150,7 +1150,9 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
                                     detail="siem_url must be a public http(s) URL (no internal/loopback/metadata hosts)")
         tenant.siem_url = siem
     if body.siem_token is not None:
-        tenant.siem_token = body.siem_token.strip()
+        # Sealed at rest (enc:v1: tag) like other stored secrets; unsealed at send time.
+        # Legacy plaintext rows keep working — unseal passes untagged values through.
+        tenant.siem_token = seal(body.siem_token.strip())
     if body.siem_min_severity is not None:
         if body.siem_min_severity not in ("low", "suspicious", "high", "critical"):
             raise HTTPException(status_code=400, detail="invalid siem_min_severity")
@@ -1173,7 +1175,7 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
     if body.siem_s3_key_id:
         tenant.siem_s3_key_id = body.siem_s3_key_id.strip()
     if body.siem_s3_secret:
-        tenant.siem_s3_secret = body.siem_s3_secret.strip()
+        tenant.siem_s3_secret = seal(body.siem_s3_secret.strip())   # sealed at rest
     # Raw event archival (rides the S3 delivery config above; enabling is plan-gated).
     if body.archive_s3_enabled is not None:
         tenant.archive_s3_enabled = body.archive_s3_enabled

@@ -12,9 +12,12 @@ or down collector never adds latency or breaks capture.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 import urllib.request
+
+log = logging.getLogger("uvicorn.error")
 
 _RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}
 # CEF severity is 0-10; map Palivane's bands onto it.
@@ -82,22 +85,42 @@ def _request(url: str, token: str, fmt: str, f: dict, naming: str = "warden") ->
     return urllib.request.Request(url, method="POST", data=body, headers=headers)
 
 
-def send_sync(url: str, token: str, fmt: str, fields: dict, timeout: float = 8.0,
-              naming: str = "warden") -> bool:
+def send_detail(url: str, token: str, fmt: str, fields: dict, timeout: float = 8.0,
+                naming: str = "warden") -> tuple[bool, str]:
+    """Deliver one event; returns (ok, detail) so callers can surface WHY a send failed
+    (expired token vs unreachable host) instead of a bare boolean."""
     from .netguard import is_safe_url
-    if not url or not is_safe_url(url):     # SSRF guard: no internal/metadata targets
-        return False
+    if not url:
+        return False, "no SIEM URL configured"
+    if not is_safe_url(url):                # SSRF guard: no internal/metadata targets
+        return False, "URL blocked (internal/loopback/metadata host)"
     try:
         urllib.request.urlopen(_request(url, token, fmt if fmt in FORMATS else "json", fields,
                                         naming=naming), timeout=timeout)
-        return True
-    except Exception:
-        return False
+        return True, ""
+    except Exception as e:
+        return False, str(e)[:300]
+
+
+def send_sync(url: str, token: str, fmt: str, fields: dict, timeout: float = 8.0,
+              naming: str = "warden") -> bool:
+    ok, _detail = send_detail(url, token, fmt, fields, timeout=timeout, naming=naming)
+    return ok
+
+
+def _deliver(url: str, token: str, fmt: str, fields: dict, naming: str,
+             tenant_id: int) -> None:
+    """Pool job: send + record the outcome (a silently-lost finding defeats the sink)."""
+    ok, detail = send_detail(url, token, fmt, fields, naming=naming)
+    from . import sink_health
+    sink_health.record(tenant_id, "siem_http", ok, detail)
+    if not ok:
+        log.warning("SIEM push failed (tenant %s): %s", tenant_id, detail)
 
 
 def forward(url: str, token: str, min_severity: str, fmt: str, verdict: dict,
             subject: str = "", actor: str = "", surface: str = "", org: str = "",
-            naming: str = "warden") -> None:
+            naming: str = "warden", tenant_id: int = 0) -> None:
     """Push a finding to the tenant's SIEM if configured and severity >= min_severity. Non-blocking."""
     if not url:
         return
@@ -105,4 +128,4 @@ def forward(url: str, token: str, min_severity: str, fmt: str, verdict: dict,
         return
     fields = _fields(verdict, subject, actor, surface, org)
     from .dispatch import submit
-    submit(send_sync, url, token, fmt or "json", fields, naming=naming)   # bounded shared pool
+    submit(_deliver, url, token, fmt or "json", fields, naming, tenant_id)  # bounded shared pool

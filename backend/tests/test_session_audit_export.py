@@ -31,7 +31,7 @@ def _seed(db, tid):
 def test_export_jsonl_is_ndjson_normalized(db_factory):
     tid = _tid(db_factory)
     db = db_factory(); _seed(db, tid)
-    out = sa.export(db, tid, org="acme", days=7, fmt="jsonl")
+    out, _next = sa.export(db, tid, org="acme", days=7, fmt="jsonl")
     lines = [l for l in out.splitlines() if l.strip()]
     assert len(lines) >= 2
     ev = [json.loads(l) for l in lines]
@@ -47,7 +47,7 @@ def test_export_jsonl_is_ndjson_normalized(db_factory):
 def test_export_cef_lines(db_factory):
     tid = _tid(db_factory)
     db = db_factory(); _seed(db, tid)
-    out = sa.export(db, tid, org="acme", days=7, fmt="cef")
+    out, _next = sa.export(db, tid, org="acme", days=7, fmt="cef")
     lines = [l for l in out.splitlines() if l.strip()]
     assert lines and all(l.startswith("CEF:0|TachTech|Palivane|") for l in lines)
     assert any("Claude Code" in l for l in lines)                 # vendor in the CEF name
@@ -60,7 +60,7 @@ def test_export_actor_filter(db_factory):
     run_analysis(AnalysisInput(content="aws key AKIAIOSFODNN7EXAMPLE", sender="other@acme.com",
                  channel="chatgpt.com", surface=Surface.AI_USAGE,
                  metadata={"destination": "chatgpt.com"}), persist=True, db=db, tenant_id=tid)
-    out = sa.export(db, tid, org="acme", days=7, fmt="jsonl", actor="dev@acme.com")
+    out, _next = sa.export(db, tid, org="acme", days=7, fmt="jsonl", actor="dev@acme.com")
     ev = [json.loads(l) for l in out.splitlines() if l.strip()]
     assert ev and all(e["actor"] == "dev@acme.com" for e in ev)
     db.close()

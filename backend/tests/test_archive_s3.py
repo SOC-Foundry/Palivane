@@ -22,8 +22,10 @@ SECRETY = "SSN 123-45-6789 key AKIAABCDEFGHIJKLMNOP"
 def cap(monkeypatch):
     """Capture batches synchronously and neutralize the background flusher/timers."""
     calls = []
-    monkeypatch.setattr(a, "_put_batch", lambda cfg, body, count: calls.append((cfg, body, count)))
-    monkeypatch.setattr(a, "_submit", lambda cfg, body, count: calls.append((cfg, body, count)))
+    monkeypatch.setattr(a, "_put_batch",
+                        lambda cfg, body, count, tid=0: calls.append((cfg, body, count)))
+    monkeypatch.setattr(a, "_submit",
+                        lambda cfg, body, count, tid=0: calls.append((cfg, body, count)))
     monkeypatch.setattr(a, "_ensure_flusher", lambda: None)
     monkeypatch.setattr(settings, "archive_flush_secs", 3600)
     a._buffers.clear()

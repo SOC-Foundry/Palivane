@@ -67,7 +67,9 @@ at an LLM gateway, a browser extension, and a network egress proxy, and either r
 - **Per-tenant policy & compliance** — each org sets monitor/enforce, block severity,
   sanctioned tools, and suppressions; plus a signed DPA, full data export, delete-my-org,
   Slack alerts (real-time, or **hourly/daily digests** with criticals still real-time), and
-  **SIEM integration** — pull-based JSONL export, real-time push forwarding (Splunk HEC
+  **SIEM integration** — pull-based JSONL export (console download *or* an `ak_…` API key
+  with an incremental `since` watermark, so a SIEM's scheduled poller can authenticate),
+  real-time push forwarding (Splunk HEC
   / generic JSON / CEF), *and* **S3 data-lake delivery** — severity-gated, date-partitioned
   JSON objects written with the tenant's own AWS key, ready for a Panther S3 log source,
   Athena, or a Snowflake external stage. Enterprise orgs can additionally enable a **raw
@@ -469,7 +471,8 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | GET    | `/api/usage`             | Gateway usage for the tenant: current-minute count, last-24h, per-day totals, effective limit (admin). |
 | GET    | `/api/audit`             | The tenant's admin audit trail (who did what, when); filterable by `action` (admin). |
 | GET    | `/api/export/tenant`     | Full self-serve data export (JSON): tenant config, users, keys, findings, audit log, SSO/upstream config, DPA record. Secrets excluded; `?include_content=true` decrypts finding content (admin). |
-| GET    | `/api/export/findings`   | Export findings as JSONL for SIEM ingest (pull); filter by `severity`/`surface` (admin). |
+| GET    | `/api/export/findings`   | Export findings as JSONL for SIEM ingest (pull); filter by `severity`/`surface`. Admin session or an `ak_…` API key; `?since=<ISO 8601>` makes the pull incremental (oldest-first, next watermark in `X-Palivane-Next-Since`). |
+| GET    | `/api/siem/status`       | Delivery health for the out-of-band sinks (SIEM push / S3 findings / event archive): attempt & failure counts and the last error per sink (admin). |
 | GET    | `/api/setup-status`      | Per-plane activity (findings in last 24h) + enforce/judge state, for the console health card. |
 | POST   | `/api/alerts/test`       | Send a sample alert to the tenant's configured webhook (admin). |
 | POST   | `/api/alerts/digest/run` | Send this tenant's alert digest now if one is due (also runs automatically every few minutes) (admin). |

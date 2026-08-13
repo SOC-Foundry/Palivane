@@ -140,6 +140,7 @@ export const api = {
   testSiem: () => req("/siem/test", { method: "POST" }),
   testSiemS3: () => req("/siem/s3/test", { method: "POST" }),
   testArchiveS3: () => req("/siem/s3/archive/test", { method: "POST" }),
+  siemStatus: () => req("/siem/status"),
   exportFindings: async () => {
     const token = getToken();
     const res = await fetch(BASE + "/export/findings",
