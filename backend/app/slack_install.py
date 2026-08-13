@@ -79,7 +79,9 @@ def complete_install(db, code: str, state: str, redirect_uri: str):
     token = (data.get("access_token") or "").strip()   # xoxb-… bot token
     if not token:
         raise InstallError("Slack returned no bot token")
-    team = data.get("team") or {}
+    # Workspace installs carry `team`; Enterprise Grid org-wide installs carry
+    # `enterprise` instead (team is null) — the app is org-deploy-enabled, so both arrive.
+    team = data.get("team") or data.get("enterprise") or {}
     label = (team.get("name") or team.get("id") or "workspace").strip()
 
     from .models import SaasConnector

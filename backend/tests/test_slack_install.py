@@ -97,6 +97,22 @@ def test_callback_failure_paths_redirect_never_500(client, raw_client, monkeypat
     assert r.headers["location"] == "/?slack=error"
 
 
+def test_org_wide_install_labels_from_enterprise(client, raw_client, monkeypatch):
+    # Enterprise Grid org-wide install: team is null, enterprise carries the identity.
+    _configure(monkeypatch)
+    _fake_exchange(monkeypatch, response={
+        "ok": True, "access_token": "xoxb-org-token",
+        "team": None, "enterprise": {"id": "E1", "name": "Acme Health Org"}})
+    state = urllib.parse.parse_qs(urllib.parse.urlparse(
+        client.get("/api/slack/install").json()["url"]).query)["state"][0]
+    r = raw_client.get(f"/api/slack/oauth/callback?code=c0de&state={state}",
+                       follow_redirects=False)
+    assert r.headers["location"] == "/?slack=installed"
+    rows = client.get("/api/discovery/connectors").json()["connectors"]
+    conn = next(c for c in rows if c["platform"] == "slack_messages")
+    assert conn["label"] == "Acme Health Org"
+
+
 def test_installed_token_feeds_the_scanner(client, raw_client, monkeypatch, db_factory):
     """End-to-end: OAuth install stores the token the scanner then uses to pull Slack."""
     _configure(monkeypatch)
