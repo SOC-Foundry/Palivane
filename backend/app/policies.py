@@ -30,6 +30,10 @@ CATALOG: list[dict] = [
     {"key": "pii_exposure", "label": "PII exposure",
      "desc": "SSNs, payment cards, national IDs, and single-record personal data.",
      "group": "Data loss"},
+    {"key": "phi_exposure", "label": "PHI exposure (HIPAA)",
+     "desc": "Protected health information: MRNs, Medicare/insurance IDs, NPI/DEA numbers, "
+             "diagnosis codes, and patient records with identity in clinical context.",
+     "group": "Data loss"},
     {"key": "source_code_leak", "label": "Source / IP leak",
      "desc": "Proprietary source code sent to an AI tool (auto-suppressed for sanctioned coding tools).",
      "group": "Data loss"},
@@ -158,6 +162,7 @@ FRAMEWORK_MAP: dict[str, dict[str, list[str]]] = {
     "hidden_characters": {_FW: ["LLM01"], _NI: ["MEASURE"], _EU: ["Art.15"]},
     "secret_leak":       {_FW: ["LLM02"], _NI: ["MANAGE"], _EU: ["Art.10", "Art.15"]},
     "pii_exposure":      {_FW: ["LLM02"], _NI: ["MANAGE"], _EU: ["Art.10"]},
+    "phi_exposure":      {_FW: ["LLM02"], _NI: ["MANAGE"], _EU: ["Art.10"]},
     "source_code_leak":  {_FW: ["LLM02"], _NI: ["MANAGE"], _EU: ["Art.10"]},
     "confidential_data": {_FW: ["LLM02"], _NI: ["MANAGE"], _EU: ["Art.10"]},
     "unsanctioned_ai":   {_FW: ["LLM02"], _NI: ["GOVERN", "MAP"], _EU: ["Art.10"]},

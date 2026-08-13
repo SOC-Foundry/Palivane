@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 
 from .detectors.patterns import SECRET_PATTERNS
-from .detectors.shadow_ai import CC_CANDIDATE_RE, SSN_RE, _luhn_ok
+from .detectors.shadow_ai import CC_CANDIDATE_RE, SSN_RE, _PHI_STRONG, _PHI_VALIDATED, _luhn_ok
 
 MAX_STORED = 20_000   # also cap stored content so a huge paste can't bloat the row
 
@@ -29,6 +29,14 @@ def redact_text(text: str) -> str:
         text = rx.sub(f"«redacted:{label}»", text)
     text = SSN_RE.sub("«redacted:SSN»", text)
     text = CC_CANDIDATE_RE.sub(_mask_card, text)
+    # PHI: structural identifiers (MBI) mask on sight; checksummed ones (NPI/DEA) mask
+    # only when the check digit validates, mirroring the card treatment — context-gated
+    # PHI (MRN etc.) is too ambiguous to rewrite without its context and stays as-is.
+    for _label, rx, _w in _PHI_STRONG:
+        text = rx.sub("«redacted:PHI»", text)
+    for _label, _ctx, cand_re, valid, _w in _PHI_VALIDATED:
+        text = cand_re.sub(lambda m: "«redacted:PHI»" if valid(m.group(0)) else m.group(0),
+                           text)
     # Entropy backstop: the finder returns "<prefix>…" evidence, so mask the whole token(s)
     # that start with each prefix. Conservative (24–80 chars, mixed classes, high entropy).
     from .detectors.patterns import find_high_entropy_tokens

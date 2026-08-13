@@ -53,6 +53,7 @@ _CATEGORY_STAGE = {
     # collection — gathering the secrets/data itself
     "secret_leak": "collection",
     "pii_exposure": "collection",
+    "phi_exposure": "collection",
     "source_code_leak": "collection",
     "confidential_data": "collection",
     "data_oversharing": "collection",

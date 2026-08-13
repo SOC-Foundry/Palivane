@@ -33,7 +33,7 @@ import fnmatch
 # Tools whose argument is a shell command (authorized against allow_commands).
 SHELL_TOOLS = {"shell", "bash", "sh", "run", "exec", "execute", "run_command", "run_shell_command"}
 # Data categories a role's data_scopes can gate (need-to-know over agent-handled content).
-RESTRICTED_DATA = {"secret_leak", "pii_exposure", "source_code_leak",
+RESTRICTED_DATA = {"secret_leak", "pii_exposure", "phi_exposure", "source_code_leak",
                    "confidential_data", "credential_at_rest"}
 
 

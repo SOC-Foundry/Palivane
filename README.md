@@ -142,7 +142,10 @@ the signals into one risk verdict:
    injection, jailbreak & guardrail-evasion personas, system-prompt or secret
    exfiltration (incl. leaked API-key/JWT patterns), and smuggled payloads (long base64
    blobs, zero-width/Unicode tag characters).
-2. **Shadow-AI detector** (`ai_usage`, offline) — credentials/keys, PII (SSN, Luhn-valid
+2. **Shadow-AI detector** (`ai_usage`, offline) — credentials/keys, **PHI**
+   (`phi_exposure`: Medicare MBIs, checksum-validated NPI/DEA numbers, context-gated
+   MRNs/ICD-10 codes/health-plan member IDs, and patient identity in clinical context —
+   toggleable per tenant, hard-blocked like secrets/PII when confirmed), PII (SSN, Luhn-valid
    payment cards, contact lists, **IBAN / UK NINO**, and keyword-confirmed **passport / EIN
    / routing / SWIFT / NPI / Aadhaar**, plus **single-record** detection — a lone email/DOB
    in a record — and **per-tenant custom PII/confidential patterns**), proprietary source
@@ -311,7 +314,7 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `CORS_ORIGINS`      | `http://localhost:5173`    | Comma-separated.                                   |
 | `SANCTIONED_AI_TOOLS` | *(empty)*                | Allowlist — comma-separated AI tools/domains the org approves (e.g. `claude.ai,copilot.microsoft.com`). |
 | `GATEWAY_ENFORCE`   | `false`                    | LLM gateway: `true` blocks risky prompts inline; otherwise monitor-only. |
-| `GATEWAY_ENFORCE_SECRETS` | `true`               | Even in monitor mode, hard-block a **confirmed** secret/PII leak (known-format credential or PII) to an AI tool — "block the certain, monitor the fuzzy". Applies to the gateway, extension, and proxy (via `force_block`). |
+| `GATEWAY_ENFORCE_SECRETS` | `true`               | Even in monitor mode, hard-block a **confirmed** secret/PII/PHI leak (known-format credential, PII, or health identifier) to an AI tool — "block the certain, monitor the fuzzy". Applies to the gateway, extension, and proxy (via `force_block`). |
 | `GATEWAY_BLOCK_SEVERITY` | `high`                | Block when a prompt's verdict severity is at/above this. |
 | `GATEWAY_SCAN_RESPONSES` | `true`                | Response-side DLP: scan the model's output for secrets/PII (records; blocks in enforce). |
 | `GATEWAY_UPSTREAM_BASE` / `GATEWAY_UPSTREAM_KEY` | *(unset)* | OpenAI-compatible upstream for allowed calls (empty = stub reply). |

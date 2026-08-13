@@ -1257,7 +1257,7 @@ def _tenant_redact_mode(tenant_id: int | None, db: Session) -> bool:
 # The data-loss categories redact_text() can actually strip. Coaching only downgrades a
 # block to a warn when the block is driven by these — a prompt-injection or an unsanctioned-
 # AI destination can't be "redacted" into safety, so those still block.
-_REDACTABLE = {"secret_leak", "pii_exposure"}
+_REDACTABLE = {"secret_leak", "pii_exposure", "phi_exposure"}
 
 
 def _tenant_client_enforce(tenant_id: int | None, db: Session) -> bool:
@@ -1604,7 +1604,7 @@ def scan_mcp_config(
 
 # Categories that matter for a repo commit: a repo is *expected* to contain code, so
 # drop source_code_leak; there's no external destination, so drop unsanctioned_ai.
-_VCS_KEEP = {"secret_leak", "pii_exposure"}
+_VCS_KEEP = {"secret_leak", "pii_exposure", "phi_exposure"}
 
 
 def _vcs_filter(signals: list) -> list:

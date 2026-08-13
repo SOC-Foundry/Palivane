@@ -30,7 +30,7 @@ const SURFACE = {
 const CAT_LABEL = {
   prompt_injection: "Prompt injection", jailbreak: "Jailbreak",
   data_exfiltration: "Data exfiltration", secret_leak: "Secret leak",
-  pii_exposure: "PII exposure", source_code_leak: "Source/IP leak",
+  pii_exposure: "PII exposure", phi_exposure: "PHI (HIPAA)", source_code_leak: "Source/IP leak",
   confidential_data: "Confidential data", unsanctioned_ai: "Unsanctioned AI",
   mcp_untrusted_server: "Untrusted MCP server", sensitive_resource_access: "Sensitive resource",
   dangerous_command: "Dangerous command", tool_poisoning: "Tool poisoning",

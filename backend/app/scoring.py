@@ -56,6 +56,7 @@ _ATTACK_CATEGORIES = {
     # Shadow-AI governance — sensitive data leaving for an AI tool is the risk.
     Category.SECRET_LEAK,
     Category.PII_EXPOSURE,
+    Category.PHI_EXPOSURE,
     Category.SOURCE_CODE_LEAK,
     Category.CONFIDENTIAL_DATA,
     Category.UNSANCTIONED_AI,

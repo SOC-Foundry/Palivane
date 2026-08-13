@@ -123,7 +123,6 @@ _PII_CONTEXT = [
     ("employer ID (EIN)", re.compile(r"\b(ein|employer\s+id|tax\s+id)\b", re.I), re.compile(r"\b\d{2}-\d{7}\b"), 0.6),
     ("bank routing number", re.compile(r"\b(routing|aba)\b", re.I), re.compile(r"\b\d{9}\b"), 0.6),
     ("SWIFT/BIC", re.compile(r"\b(swift|bic)\b", re.I), re.compile(r"\b[A-Z]{6}[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b"), 0.6),
-    ("NPI (health provider)", re.compile(r"\b(npi|provider\s+id)\b", re.I), re.compile(r"\b\d{10}\b"), 0.6),
     ("Aadhaar", re.compile(r"\baadhaar\b", re.I), re.compile(r"\b\d{4}\s?\d{4}\s?\d{4}\b"), 0.7),
 ]
 
@@ -208,6 +207,64 @@ _RECORD_CTX_RE = re.compile(
     r"\b(full[ -]?name|first name|last name|d\.?o\.?b\.?|date of birth|patient|customer|"
     r"member|home address|mailing address|nationality|policy number)\b", re.I)
 _DOB_RE = re.compile(r"\b(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4})\b")
+
+# --- PHI (protected health information) --------------------------------------------------
+# HIPAA-grade identifiers get their own category (phi_exposure) so a healthcare org can
+# gate/block/report on health data independently of generic PII. Same FP discipline as
+# the PII tables: distinctive structures flag on sight, checksummed formats validate,
+# ambiguous formats require nearby clinical context. Tenant-specific formats (custom MRN
+# shapes, plan IDs) ride custom_pii_patterns as before.
+
+
+def _npi_ok(s: str) -> bool:            # US NPI — Luhn over "80840" + 10 digits (CMS spec)
+    d = _digits(s)
+    return len(d) == 10 and _luhn_ok("80840" + d)
+
+
+def _dea_ok(s: str) -> bool:            # DEA registration — checksum digit (7th)
+    m = re.fullmatch(r"[A-Za-z][A-Za-z9](\d{7})", s)
+    if not m:
+        return False
+    d = [int(c) for c in m.group(1)]
+    return (d[0] + d[2] + d[4] + 2 * (d[1] + d[3] + d[5])) % 10 == d[6]
+
+
+# Self-identifying structure — the Medicare Beneficiary Identifier's strict positional
+# alphabet (no S/L/O/I/B/Z) makes a random 11-char collision unlikely. Uppercase-only
+# on purpose: MBIs are issued uppercase, and matching lowercase would FP on prose.
+_PHI_STRONG = [
+    ("Medicare beneficiary ID (MBI)",
+     re.compile(r"\b[1-9][AC-HJKMNP-RT-Y][AC-HJKMNP-RT-Y0-9]\d[- ]?"
+                r"[AC-HJKMNP-RT-Y][AC-HJKMNP-RT-Y0-9]\d[- ]?[AC-HJKMNP-RT-Y]{2}\d{2}\b"), 0.8),
+]
+# (label, context_re, value_re, weight) — keyword-confirmed, like _PII_CONTEXT.
+_PHI_CONTEXT = [
+    ("MRN (medical record number)",
+     re.compile(r"\b(mrn|medical record(?:\s+(?:number|no\.?))?|chart\s+(?:number|no\.?))\b", re.I),
+     re.compile(r"\b[A-Z]{0,3}\d{5,10}\b"), 0.7),
+    ("health-plan member ID",
+     re.compile(r"\b(subscriber\s+(?:id|number)|health\s+plan\s+(?:id|number)|"
+                r"insurance\s+(?:member|id)|medicaid\s+(?:id|number))\b", re.I),
+     re.compile(r"\b[A-Z0-9]{6,14}\b"), 0.6),
+    ("ICD-10 diagnosis code",
+     re.compile(r"\b(icd[- ]?10|icd[- ]?9|icd|diagnos(?:is|es|ed)|dx\s+code)\b", re.I),
+     re.compile(r"\b[A-TV-Z]\d{2}(?:\.\d{1,4})?\b"), 0.6),
+]
+# (label, context_re or None, candidate_re, validator, weight) — like _PII_VALIDATED.
+# NPI lived in _PII_CONTEXT pre-PHI; it moves here WITH its CMS check digit, so it both
+# recategorizes and gets stricter.
+_PHI_VALIDATED = [
+    ("NPI (health provider)", re.compile(r"\b(npi|provider\s+(?:id|number))\b", re.I),
+     re.compile(r"\b\d{10}\b"), _npi_ok, 0.7),
+    ("DEA registration number", re.compile(r"\bdea\b", re.I),
+     re.compile(r"\b[ABFGMPRXabfgmprx][A-Za-z9]\d{7}\b"), _dea_ok, 0.75),
+]
+# Identity + clinical context = a patient record even without a formal health identifier
+# (HIPAA's definition is health information LINKED to a person, not a magic number).
+_CLINICAL_CTX_RE = re.compile(
+    r"\b(patient|diagnos(?:is|es|ed|tic)|prescri(?:ption|bed|bing)|medication|dosage|"
+    r"treatment plan|clinical|discharge summary|admission date|lab result|pathology|"
+    r"hipaa|health record|ehr|emr|icu|oncology|psychiatr\w+)\b", re.I)
 
 # --- Confidential / proprietary -------------------------------------------------------
 
@@ -454,7 +511,7 @@ def confirmed_leak(signals) -> bool:
     for s in signals:
         cat = s.get("category") if isinstance(s, dict) else getattr(s.category, "value", "")
         title = s.get("title") if isinstance(s, dict) else getattr(s, "title", "")
-        if (cat in ("secret_leak", "pii_exposure")
+        if (cat in ("secret_leak", "pii_exposure", "phi_exposure")
                 and title not in (HIGH_ENTROPY_TITLE, CONTACT_LIST_TITLE)):
             return True
     return False
@@ -470,8 +527,9 @@ class ShadowAIDetector:
     def analyze(self, item: AnalysisInput) -> list[Signal]:
         text = f"{item.subject}\n{item.content}"
         signals: list[Signal] = []
-        # PII is data-loss regardless of where it's going — flag on every surface.
+        # PII/PHI are data-loss regardless of where they're going — flag on every surface.
         signals.extend(self._scan_pii(text, item.metadata))
+        signals.extend(self._scan_phi(text))
         # Secrets are data-loss on ANY surface — including the gateway (llm_io): an actual
         # credential in a prompt to your own LLM is still a leak (and is force-blocked by
         # default). Proprietary-code / unsanctioned-destination remain ai_usage-only (sending
@@ -512,8 +570,9 @@ class ShadowAIDetector:
         decoded = decode_obfuscated(f"{item.subject}\n{item.content}")
         if not decoded:
             return []
-        # PII is data-loss on every surface (mirrors the unconditional plaintext PII scan).
+        # PII/PHI are data-loss on every surface (mirrors the unconditional plaintext scans).
         out = self._scan_pii(decoded, item.metadata)
+        out += self._scan_phi(decoded)
         # Secrets: same surface set as the plaintext secret pass. Compute the raw find_secrets
         # pass on the decoded view ONCE and thread it into both secret detectors.
         if item.surface in (Surface.AI_USAGE, Surface.LLM_IO, Surface.MCP, Surface.A2A):
@@ -678,6 +737,52 @@ class ShadowAIDetector:
                 evidence="; ".join(found[:4]),
             ))
         return out
+
+    def _scan_phi(self, text: str) -> list[Signal]:
+        """Protected health information — HIPAA-grade identifiers and patient records.
+        Separate from _scan_pii so healthcare orgs can gate, block, and report on health
+        data as its own policy check (phi_exposure), with the same NFKC fold so fullwidth-
+        obfuscated identifiers still match."""
+        text = unicodedata.normalize("NFKC", text)
+        found: list[str] = []
+        weight = 0.0
+
+        for label, rx, w in _PHI_STRONG:
+            if rx.search(text):
+                found.append(label)
+                weight = max(weight, w)
+        for label, ctx_re, val_re, w in _PHI_CONTEXT:
+            if ctx_re.search(text) and val_re.search(text):
+                found.append(label)
+                weight = max(weight, w)
+        for label, ctx_re, cand_re, valid, w in _PHI_VALIDATED:
+            if ctx_re is not None and not ctx_re.search(text):
+                continue
+            if any(valid(m.group(0)) for m in cand_re.finditer(text)):
+                found.append(label)
+                weight = max(weight, w)
+        # A person's identity co-occurring with clinical context is PHI even without a
+        # formal identifier — "Jane's chemo starts Tuesday, reach her at jane@gmail.com".
+        if _CLINICAL_CTX_RE.search(text) and (
+                SSN_RE.search(text) or _DOB_RE.search(text)
+                or EMAIL_RE.search(text) or PHONE_RE.search(text)):
+            found.append("patient record (identity + clinical context)")
+            weight = max(weight, 0.65)
+
+        if not found:
+            return []
+        # Two independent PHI markers (e.g. MRN + diagnosis code) is a patient record,
+        # not an ambiguous stray identifier — escalate to block tier.
+        if len(found) >= 2:
+            weight = max(weight, 0.8)
+        return [Signal(
+            category=Category.PHI_EXPOSURE,
+            title="Protected health information in outbound content",
+            detail="HIPAA-regulated health data (patient identifiers, medical record or "
+                   "insurance numbers, diagnosis codes) is about to leave for an AI tool.",
+            weight=weight, confidence=0.75, detector=self.name,
+            evidence="; ".join(found[:4]),
+        )]
 
     def _scan_proprietary(self, text: str) -> list[Signal]:
         out: list[Signal] = []
