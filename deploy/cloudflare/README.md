@@ -1,6 +1,6 @@
 # Cloudflare Worker front door
 
-Public entry for Warden at `warden.tachtech.net` without granting `allUsers`
+Public entry for Palivane at `warden.tachtech.net` without granting `allUsers`
 run.invoker (forbidden by the org's domain-restricted-sharing policy). The Worker
 attaches a Google ID token for the `warden-front` service account to every request,
 so the Cloud Run service stays IAM-locked: direct `*.run.app` access is 403 for
@@ -56,5 +56,5 @@ gcloud iam service-accounts keys delete <OLD_KEY_ID> \
   uses `X-Serverless-Authorization`, which Cloud Run validates and strips.
 - Real client IPs arrive in `CF-Connecting-IP` (Cloud Run's `X-Forwarded-For` will
   show Cloudflare egress IPs).
-- Team access no longer needs per-user `run.invoker`/IAP grants — auth is Warden's
+- Team access no longer needs per-user `run.invoker`/IAP grants — auth is Palivane's
   own login. GCP-side access for teammates is only about deploy/admin rights.

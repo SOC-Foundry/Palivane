@@ -1,6 +1,6 @@
-# Warden — native install (no Docker)
+# Palivane — native install (no Docker)
 
-Run Warden directly on a Linux server as a systemd service — no Docker, no container
+Run Palivane directly on a Linux server as a systemd service — no Docker, no container
 runtime. Same app as the SaaS/compose image; just installed on the host. Serves the SPA +
 API + the `/install.sh` & `/cli` endpoints single-origin on one port.
 

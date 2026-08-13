@@ -1,6 +1,6 @@
-# Warden — Terraform (GCP)
+# Palivane — Terraform (GCP)
 
-Infrastructure-as-code for a Warden environment on Cloud Run: VPC + private Cloud SQL,
+Infrastructure-as-code for a Palivane environment on Cloud Run: VPC + private Cloud SQL,
 Artifact Registry, Secret Manager, service accounts/IAM, and the Cloud Run v2 service.
 Use it to stand up a **new** environment (staging, a customer self-host) or to codify the
 existing production by importing.

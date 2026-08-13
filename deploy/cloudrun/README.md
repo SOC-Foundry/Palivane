@@ -1,4 +1,4 @@
-# Deploy Warden to Cloud Run + Cloud SQL
+# Deploy Palivane to Cloud Run + Cloud SQL
 
 Runs the whole app as **one Cloud Run service** (FastAPI serves the built SPA *and* the
 API — single origin, no nginx), backed by **Cloud SQL (Postgres)**. This is the recommended

@@ -1,6 +1,6 @@
-# Warden on GKE — per-customer isolation
+# Palivane on GKE — per-customer isolation
 
-For enterprise customers that require **hard tenant isolation**, Warden runs a dedicated,
+For enterprise customers that require **hard tenant isolation**, Palivane runs a dedicated,
 single-tenant instance per customer on a shared GKE Standard cluster. This is the isolated
 tier alongside the multi-tenant Cloud Run SaaS (`deploy/cloudrun`, `deploy/terraform`) —
 same container image, isolated infrastructure.

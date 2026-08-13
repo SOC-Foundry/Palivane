@@ -1,4 +1,4 @@
-# Deploying Warden
+# Deploying Palivane
 
 A systemd unit for running the API as a service. Adjust paths/user to taste; this
 assumes the layout below. (The browser extension and egress proxy are deployed
@@ -84,7 +84,7 @@ exposure — but nothing triggers it until you schedule it. The instanced units
 run **one scan per bucket, daily** (the `%i` instance is the bucket name).
 
 ```bash
-# On a box that can reach Warden and the buckets (a "security" instance is ideal):
+# On a box that can reach Palivane and the buckets (a "security" instance is ideal):
 curl -fsSL "$PALIVANE_URL/cli/palivane-s3-scan" -o /opt/warden/bin/palivane-s3-scan
 sudo chmod +x /opt/warden/bin/palivane-s3-scan
 sudo -u warden /opt/warden/backend/.venv/bin/pip install boto3   # the scanner needs boto3
