@@ -290,7 +290,9 @@ def test_notion_sync_surfaces_manual_only_error(client):
 
 def test_platform_registry_is_well_formed(client):
     for key, p in sc.PLATFORMS.items():
-        assert callable(p["fetch"]) and p["label"] and p["setup"], key
+        # grant-inventory platforms carry `fetch`; content scanners carry `scan`
+        assert callable(p.get("fetch") or p.get("scan")), key
+        assert p["label"] and p["setup"], key
         assert isinstance(p["credential_fields"], list), key
     listing = client.get("/api/discovery/connectors").json()["platforms"]
     assert set(listing) == set(sc.PLATFORMS)

@@ -781,6 +781,23 @@ class SaasConnector(Base):
     last_sync_at = Column(DateTime, nullable=True)
     last_sync_status = Column(String(16), default="")    # ok | error | ""
     last_sync_detail = Column(String(512), default="")   # summary counts or the error
+    # Incremental-scan watermark for content-scanning connectors (JSON; e.g. Slack keeps
+    # a per-channel last-message-ts map so each sync pulls only new messages). Empty for
+    # grant-inventory connectors, which are stateless snapshots.
+    sync_state = Column(Text, default="")
+
+    @property
+    def state(self) -> dict:
+        import json
+        try:
+            return json.loads(self.sync_state or "{}")
+        except ValueError:
+            return {}
+
+    @state.setter
+    def state(self, value: dict) -> None:
+        import json
+        self.sync_state = json.dumps(value)
 
     def to_dict(self) -> dict:
         return {"id": self.id, "platform": self.platform, "label": self.label or "",

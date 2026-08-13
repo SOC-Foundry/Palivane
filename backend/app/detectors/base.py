@@ -29,6 +29,8 @@ class Surface(str, Enum):
     OVERSHARING = "oversharing"  # Need-to-know: an LLM response returning restricted data
     CI = "ci"             # CI runners — GitHub Actions workflow posture & AI agents in CI
     A2A = "a2a"           # Agent-to-agent messages — one agent's output feeding another
+    COLLAB = "collab"     # Collaboration content (Slack, …) — data-loss scan of messages
+                          # that AI integrations (Slack AI, bots, MCP servers) can read
     AGENT_RULES = "agent_rules"  # Agent instruction files (CLAUDE.md/.cursorrules/skills) — hidden-instruction injection
     SESSION = "session"          # Correlated attack chains across an actor's recent activity
     DEVICE = "device"            # Device health — capture-plane collisions & coverage gaps

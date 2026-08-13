@@ -142,7 +142,7 @@ the signals into one risk verdict:
    injection, jailbreak & guardrail-evasion personas, system-prompt or secret
    exfiltration (incl. leaked API-key/JWT patterns), and smuggled payloads (long base64
    blobs, zero-width/Unicode tag characters).
-2. **Shadow-AI detector** (`ai_usage`, offline) — credentials/keys, **PHI**
+2. **Shadow-AI detector** (`ai_usage` + `collab`, offline) — credentials/keys, **PHI**
    (`phi_exposure`: Medicare MBIs, checksum-validated NPI/DEA numbers, context-gated
    MRNs/ICD-10 codes/health-plan member IDs, and patient identity in clinical context —
    toggleable per tenant, hard-blocked like secrets/PII when confirmed), PII (SSN, Luhn-valid
@@ -522,6 +522,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/coverage/reconcile`| Compare an IdP/CASB "who used AI" list to captured findings; returns the uncovered actors (admin). |
 | POST   | `/api/discovery/ingest`  | Classify AI usage from CASB/SWG/proxy/DNS logs into the shadow-AI inventory (admin). |
 | GET    | `/api/discovery/inventory` | The shadow-AI inventory: AI tools by tool and by team, sanctioned/unsanctioned + real exposure (admin). |
+| *      | `/api/discovery/connectors…` | Live SaaS connectors: recurring OAuth-grant pulls (Google Workspace, M365, Slack, Salesforce) **and Slack message scanning** — cursor-incremental PII/PHI/secret detection over channel content on the `collab` surface (admin; sync via console/cron). |
 | GET    | `/api/activity/users`    | Per-registered-user scan log — findings count, severity mix, top categories, last-seen (admin). |
 | GET    | `/api/policies`          | Detection-policy catalog: every check grouped, enabled state, presets, and per-user/group overrides (admin). |
 | POST/DELETE | `/api/policies/overrides[/{id}]` | Per-user (email) / per-group (glob) policy overrides that replace the tenant default (admin). |

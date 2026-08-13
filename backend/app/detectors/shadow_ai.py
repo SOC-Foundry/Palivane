@@ -520,9 +520,11 @@ def confirmed_leak(signals) -> bool:
 class ShadowAIDetector:
     name = "shadow_ai"
     # Also runs on the gateway's llm_io surface so first-party LLM calls get data-loss
-    # detection on top of Module B attack detection, and on the mcp surface so secrets/PII
-    # in an agent's tool-call arguments are caught alongside the MCP-guard action checks.
-    surfaces = {Surface.AI_USAGE, Surface.LLM_IO, Surface.MCP, Surface.A2A}
+    # detection on top of Module B attack detection, on the mcp surface so secrets/PII
+    # in an agent's tool-call arguments are caught alongside the MCP-guard action checks,
+    # and on collab (Slack message scanning) — content every AI integration in the
+    # workspace can read gets the same PII/PHI/secret treatment.
+    surfaces = {Surface.AI_USAGE, Surface.LLM_IO, Surface.MCP, Surface.A2A, Surface.COLLAB}
 
     def analyze(self, item: AnalysisInput) -> list[Signal]:
         text = f"{item.subject}\n{item.content}"
@@ -546,7 +548,8 @@ class ShadowAIDetector:
         # step and BOTH the secret-leak and the high-entropy detectors need it — _scan_secrets
         # as its first (unnormalized) attempt, _scan_high_entropy only to avoid double-flagging.
         # Compute it ONCE here and thread it in, rather than re-scanning the full text twice.
-        if item.surface in (Surface.AI_USAGE, Surface.LLM_IO, Surface.MCP, Surface.A2A):
+        if item.surface in (Surface.AI_USAGE, Surface.LLM_IO, Surface.MCP, Surface.A2A,
+                            Surface.COLLAB):
             raw_secrets = item.secret_labels()   # cached raw pass, shared across detectors
             signals.extend(self._scan_secrets(text, low_signal, raw_secrets))
             signals.extend(self._scan_high_entropy(text, item.channel, low_signal,
@@ -575,7 +578,8 @@ class ShadowAIDetector:
         out += self._scan_phi(decoded)
         # Secrets: same surface set as the plaintext secret pass. Compute the raw find_secrets
         # pass on the decoded view ONCE and thread it into both secret detectors.
-        if item.surface in (Surface.AI_USAGE, Surface.LLM_IO, Surface.MCP, Surface.A2A):
+        if item.surface in (Surface.AI_USAGE, Surface.LLM_IO, Surface.MCP, Surface.A2A,
+                            Surface.COLLAB):
             raw = find_secrets(decoded)
             out += self._scan_secrets(decoded, raw_secrets=raw)
             out += self._scan_high_entropy(decoded, item.channel, has_tier1=bool(raw))

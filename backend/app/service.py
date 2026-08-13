@@ -101,17 +101,20 @@ def _fold_recurrence(db: Session, tenant_id, fp: str) -> Finding | None:
 
 def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                  tenant_id: int | None = None, signal_filter=None,
-                 persist_benign: bool = True, agent: str = "") -> dict:
+                 persist_benign: bool = True, agent: str = "",
+                 use_judge: bool = True) -> dict:
     """Analyze one item, optionally persist a Finding, return the API payload.
 
     `tenant_id` attributes the stored finding to an organization (data isolation).
     `signal_filter` (list[Signal] -> list[Signal]) lets a per-tool policy drop expected
     categories before scoring (e.g. source code from a sanctioned coding assistant).
     `persist_benign=False` skips storing allow-level (benign/low) verdicts — used for
-    high-volume sensor capture where benign tool calls are noise, not findings."""
+    high-volume sensor capture where benign tool calls are noise, not findings.
+    `use_judge=False` forces rules-only regardless of judge config — for bulk background
+    scans (connector backfills) where per-item LLM inference would be a cost blowup."""
     # A tenant can opt out of the LLM judge (it ships content to the judge provider).
     tenant = db.get(Tenant, tenant_id) if tenant_id is not None else None
-    include_judge = not (tenant is not None and tenant.judge_enabled is False)
+    include_judge = use_judge and not (tenant is not None and tenant.judge_enabled is False)
     # BYOK: a tenant's OWN judge key runs on their bill — it works even when the global
     # judge is off, and is exempt from the plan gate (they pay for the inference). The
     # opt-out above still wins: consent to ship content is a separate decision.
