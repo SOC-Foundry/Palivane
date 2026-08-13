@@ -8,6 +8,7 @@ const CAT_LABEL = {
   data_exfiltration: "Data exfiltration",
   secret_leak: "Secret leak",
   pii_exposure: "PII exposure",
+  phi_exposure: "PHI exposure (HIPAA)",
   source_code_leak: "Source/IP leak",
   confidential_data: "Confidential data",
   unsanctioned_ai: "Unsanctioned AI",

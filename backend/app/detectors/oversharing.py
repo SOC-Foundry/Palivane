@@ -28,7 +28,7 @@ import fnmatch
 from .base import AnalysisInput, Category, Signal, Surface
 from .shadow_ai import ShadowAIDetector
 
-_CATEGORY_KEYS = {"confidential_data", "pii_exposure", "source_code_leak", "secret_leak"}
+_CATEGORY_KEYS = {"confidential_data", "pii_exposure", "phi_exposure", "source_code_leak", "secret_leak"}
 
 
 def parse_rules(raw: str) -> list[tuple[str, list[str]]]:

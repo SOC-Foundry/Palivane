@@ -5,7 +5,7 @@ import { api } from "../api.js";
 
 const RISK_CLASS = (r) => (r >= 80 ? "critical" : r >= 60 ? "high" : r >= 35 ? "suspicious" : r >= 15 ? "low" : "benign");
 const CAT_LABEL = {
-  secret_leak: "secrets", pii_exposure: "PII", source_code_leak: "source", confidential_data: "confidential",
+  secret_leak: "secrets", pii_exposure: "PII", phi_exposure: "PHI", source_code_leak: "source", confidential_data: "confidential",
   unsanctioned_ai: "unsanctioned AI", prompt_injection: "injection", jailbreak: "jailbreak",
   data_exfiltration: "exfiltration", dangerous_command: "dangerous cmd", unsafe_autonomy: "YOLO",
   data_oversharing: "oversharing", credential_at_rest: "creds at rest", dependency_risk: "deps",

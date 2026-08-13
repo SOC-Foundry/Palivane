@@ -272,6 +272,7 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
 .cat-data_exfiltration { background: rgba(255,77,94,0.13); color: var(--crit); }
 .cat-secret_leak { background: rgba(255,77,94,0.13); color: var(--crit); }
 .cat-pii_exposure { background: rgba(255,138,61,0.13); color: var(--high); }
+.cat-phi_exposure { background: rgba(255,99,132,0.13); color: var(--high); }
 .cat-source_code_leak { background: rgba(255,210,77,0.12); color: var(--susp); }
 .cat-unsanctioned_ai { background: rgba(72,187,120,0.14); color: #48bb78; }
 .cat-confidential_data { background: rgba(179,136,255,0.15); color: var(--ai); }

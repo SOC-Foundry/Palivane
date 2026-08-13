@@ -28,6 +28,8 @@ def remediation_for(signals: list[dict]) -> list[str]:
             steps.append("Remove the secret, rotate it, and store it in a secret manager — never paste it into an AI tool.")
     if "pii_exposure" in cats:
         steps.append("Redact the personal data before sending; for regulated data use only an approved, contracted tool.")
+    if "phi_exposure" in cats:
+        steps.append("Remove the patient identifiers/health details — PHI may only go to a HIPAA-eligible tool under a BAA; report the disclosure to your privacy officer if it left already.")
     if "source_code_leak" in cats or "confidential_data" in cats:
         steps.append("Share only what's needed; for confidential/classified material use an approved AI tool, not a consumer one.")
     if "unsanctioned_ai" in cats:

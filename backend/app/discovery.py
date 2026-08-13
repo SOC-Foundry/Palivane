@@ -40,7 +40,7 @@ def _account_type(db, tenant_id, actor: str) -> str:
         return "corporate"
     return "unknown"
 
-_SENSITIVE = {"secret_leak", "pii_exposure", "source_code_leak", "confidential_data", "credential_at_rest"}
+_SENSITIVE = {"secret_leak", "pii_exposure", "phi_exposure", "source_code_leak", "confidential_data", "credential_at_rest"}
 
 
 def _norm(s: str) -> str:

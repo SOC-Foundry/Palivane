@@ -14,6 +14,7 @@ const PLANES = [
 const CATEGORIES = [
   ["secret_leak", "Secret leak", "API keys, tokens, private keys, DB URLs — anything that authenticates. Verified-live credentials escalate to critical."],
   ["pii_exposure", "PII exposure", "SSNs (with or without dashes), cards, IBANs, passports, national IDs, and single-record combinations (name+DOB, etc.)."],
+  ["phi_exposure", "PHI exposure (HIPAA)", "Protected health information: MRNs, Medicare/insurance member IDs, NPI/DEA numbers, diagnosis codes, and patient identity in clinical context."],
   ["source_code_leak", "Source / IP leak", "Proprietary source code. Suppressed for sanctioned coding tools (Claude Code, Cursor, Copilot…) where code is expected."],
   ["confidential_data", "Confidential data", "Business-sensitive material — financials, contracts, roadmaps, M&A, HR — including content carrying a classification label (TLP, Purview/MIP banners)."],
   ["unsanctioned_ai", "Unsanctioned AI", "Use of an AI tool that isn't on your approved list. The block screen offers your sanctioned alternatives."],
