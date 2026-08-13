@@ -206,6 +206,36 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     catch (e) { err(e); }
   }
 
+  // --- Slack scanning (collab-surface DLP via the published Slack app) ---
+  const [slackConns, setSlackConns] = useState([]);
+  const loadSlack = useCallback(async () => {
+    try {
+      const r = await api.connectors();
+      setSlackConns((r.connectors || []).filter((c) => c.platform === "slack_messages"));
+    } catch { /* older API or non-admin */ }
+  }, []);
+  async function addToSlack() {
+    try { const { url } = await api.slackInstallUrl(); window.location.href = url; }
+    catch { flash("No published Slack app on this deployment — create a workspace app and register its bot token as a slack_messages connector.", false); }
+  }
+  async function syncSlack(id) {
+    try {
+      const s = await api.syncConnector(id);
+      flash(`Scanned ${s.messages} message(s) across ${s.channels} channel(s) — ${s.findings} finding(s).`);
+      loadSlack();
+    } catch (e) { err(e); }
+  }
+  useEffect(() => {   // OAuth callback lands back here with ?slack=<result>
+    const p = new URLSearchParams(window.location.search).get("slack");
+    if (p) {
+      flash(p === "installed" ? "Slack workspace connected — invite the bot to the channels to scan, then hit Scan now."
+        : p === "denied" ? "Slack install was cancelled." : "Slack install failed — try again.",
+        p === "installed");
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // --- Data & compliance ---
   const [dpa, setDpa] = useState(null);
   const [inclContent, setInclContent] = useState(false);
@@ -358,8 +388,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     } catch (e) { err(e); }
   }
 
-  useEffect(() => { loadUsage(); loadUps(); loadJudgeKey(); loadOidc(); loadSaml(); loadDpa(); loadCatalog(); loadUpgrade(); loadSinkHealth(); },
-    [loadUsage, loadUps, loadJudgeKey, loadOidc, loadSaml, loadDpa, loadCatalog, loadUpgrade, loadSinkHealth]);
+  useEffect(() => { loadUsage(); loadUps(); loadJudgeKey(); loadOidc(); loadSaml(); loadDpa(); loadCatalog(); loadUpgrade(); loadSinkHealth(); loadSlack(); },
+    [loadUsage, loadUps, loadJudgeKey, loadOidc, loadSaml, loadDpa, loadCatalog, loadUpgrade, loadSinkHealth, loadSlack]);
 
   async function logoutEverywhere() {
     try { await api.logoutAll(); } catch { /* ignore */ }
@@ -727,6 +757,35 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
            SIEM event-naming setting above). Static credentials are stored write-only and
            encrypted; role-based delivery stores no secret at all. Grant the role or key
            <code> s3:PutObject</code> on the bucket only.</p>
+      </div>
+
+      {/* Slack scanning */}
+      <div className="panel settings-card">
+        <h2>Slack scanning</h2>
+        <p className="muted" style={{ fontSize: 12 }}>Scan Slack message content for PII, PHI, and
+           secrets — the same detection engine as every other plane, on the <code>collab</code>
+           surface. Slack AI, bots, and MCP servers can read whatever sits in your channels;
+           this finds the regulated data before an AI rollout indexes it.</p>
+        {slackConns.map((c) => (
+          <div key={c.id} className="form-row" style={{ gap: 10, alignItems: "center" }}>
+            <span><strong>{c.label || "workspace"}</strong>{" "}
+              <span className="muted" style={{ fontSize: 12 }}>
+                {c.last_sync_at ? `last scan ${c.last_sync_at.slice(0, 16).replace("T", " ")}` : "never scanned"}
+                {c.last_sync_status === "error" && " — last scan failed"}
+              </span></span>
+            <button type="button" className="mini-btn" onClick={() => syncSlack(c.id)}>Scan now</button>
+          </div>
+        ))}
+        <div className="form-row" style={{ gap: 10, marginTop: slackConns.length ? 8 : 0 }}>
+          <button type="button" className={slackConns.length ? "mini-btn" : "primary-btn slim"}
+                  onClick={addToSlack}>
+            {slackConns.length ? "Add another workspace" : "Add to Slack"}</button>
+        </div>
+        <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Read-only scopes; the bot never
+           posts. Invite it to each channel to scan. Every scan pulls messages since the last
+           cursor (first scan looks back 7 days); findings land under the <code>collab</code>
+           surface with alerts and SIEM export as usual. Detection only — Slack offers no
+           pre-delivery block outside Enterprise Grid DLP.</p>
       </div>
 
       {/* Usage */}

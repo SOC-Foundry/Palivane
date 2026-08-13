@@ -328,6 +328,7 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `PALIVANE_METRICS_TOKEN` | *(empty = open)*         | If set, `/metrics` requires it (Bearer or `?token=`); scrape it privately otherwise. |
 | `PALIVANE_AWS_DELIVERY_PRINCIPAL` | *(empty)*      | This deployment's AWS identity ARN — what customer S3-delivery trust policies name. Embedded in the console's role-setup helper. |
 | `PALIVANE_AWS_WIF_ROLE_ARN` / `PALIVANE_AWS_WIF_AUDIENCE` | *(empty)* / `palivane-aws-delivery` | GCP→AWS web-identity federation: the AWS role this runtime assumes with its GCP identity token (no stored AWS secret), then chains into customer delivery roles. Empty = boto3 default chain (instance/task role, or static env keys). Audience must match the role's `accounts.google.com:oaud` trust condition. |
+| `PALIVANE_SLACK_CLIENT_ID` / `PALIVANE_SLACK_CLIENT_SECRET` | *(empty)* | The published Palivane Slack app, driving the per-tenant "Add to Slack" install for message scanning. Empty = the button is off; tenants can still register a hand-built app's bot token as a `slack_messages` connector. `PALIVANE_SLACK_REDIRECT_URL` overrides the derived OAuth callback when a proxy rewrites scheme/host. |
 | `CUSTOM_SECRET_PATTERNS` | *(empty)*             | Org-specific secret formats — one `label=regex` per line; merged into detection. |
 | `CUSTOM_PII_PATTERNS` | *(empty)*             | Org-specific PII/confidential formats (customer IDs, MRNs, codenames) — one `label=regex` per line. Per-tenant override in Settings. |
 | `EXTENSION_INGEST_TOKEN` | *(unset)*             | Shared token the browser extension presents to `/api/ingest/ai-usage` (empty = endpoint disabled). |
@@ -523,6 +524,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/discovery/ingest`  | Classify AI usage from CASB/SWG/proxy/DNS logs into the shadow-AI inventory (admin). |
 | GET    | `/api/discovery/inventory` | The shadow-AI inventory: AI tools by tool and by team, sanctioned/unsanctioned + real exposure (admin). |
 | *      | `/api/discovery/connectors…` | Live SaaS connectors: recurring OAuth-grant pulls (Google Workspace, M365, Slack, Salesforce) **and Slack message scanning** — cursor-incremental PII/PHI/secret detection over channel content on the `collab` surface (admin; sync via console/cron). |
+| GET    | `/api/slack/install`     | The "Add to Slack" authorize URL for this org — one-click install of the published Palivane app; the callback stores the workspace bot token as a `slack_messages` connector (admin). |
 | GET    | `/api/activity/users`    | Per-registered-user scan log — findings count, severity mix, top categories, last-seen (admin). |
 | GET    | `/api/policies`          | Detection-policy catalog: every check grouped, enabled state, presets, and per-user/group overrides (admin). |
 | POST/DELETE | `/api/policies/overrides[/{id}]` | Per-user (email) / per-group (glob) policy overrides that replace the tenant default (admin). |
