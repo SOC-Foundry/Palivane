@@ -250,4 +250,6 @@ def _dispatch_sinks(tenant, payload: dict, subject: str, actor: str, surface: st
                            unseal(tenant.siem_s3_secret or ""), tenant.siem_min_severity,
                            payload, subject=subject, actor=actor, surface=surface,
                            org=tenant.slug, naming=tenant.siem_naming or "warden",
-                           tenant_id=tenant.id)
+                           tenant_id=tenant.id,
+                           role_arn=getattr(tenant, "siem_s3_role_arn", "") or "",
+                           external_id=getattr(tenant, "siem_s3_external_id", "") or "")

@@ -341,7 +341,9 @@ def test_siem_s3(current: User = Depends(require_admin), db: Session = Depends(g
     ok, detail = siem_s3.test(t.siem_s3_bucket.strip(), t.siem_s3_prefix or "",
                               t.siem_s3_region or "", t.siem_s3_key_id or "",
                               unseal(t.siem_s3_secret or ""),
-                              naming=t.siem_naming or "warden")
+                              naming=t.siem_naming or "warden",
+                              role_arn=t.siem_s3_role_arn or "",
+                              external_id=t.siem_s3_external_id or "")
     return {"ok": ok, "detail": detail}
 
 
@@ -358,8 +360,38 @@ def test_archive_s3(current: User = Depends(require_admin), db: Session = Depend
     ok, detail = archive_s3.test(t.siem_s3_bucket.strip(), t.siem_s3_prefix or "",
                                  t.siem_s3_region or "", t.siem_s3_key_id or "",
                                  unseal(t.siem_s3_secret or ""),
-                                 naming=t.siem_naming or "warden")
+                                 naming=t.siem_naming or "warden",
+                                 role_arn=t.siem_s3_role_arn or "",
+                                 external_id=t.siem_s3_external_id or "")
     return {"ok": ok, "detail": detail}
+
+
+@app.get("/api/siem/s3/role-setup")
+def siem_s3_role_setup(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Everything a customer needs to create the cross-account S3 delivery role: this
+    deployment's AWS principal (PALIVANE_AWS_DELIVERY_PRINCIPAL), the org's external ID
+    (minted here on first call, then stable — their trust policy pins it), and a
+    ready-to-paste trust policy. The external ID is a confused-deputy guard, not a
+    secret; the role needs only s3:PutObject on the delivery bucket."""
+    import secrets as _secrets
+    t = db.get(Tenant, current.tenant_id)
+    if not (t.siem_s3_external_id or "").strip():
+        t.siem_s3_external_id = "plv-" + _secrets.token_hex(16)
+        db.commit()
+    principal = settings.aws_delivery_principal
+    return {
+        "principal": principal,
+        "external_id": t.siem_s3_external_id,
+        "trust_policy": {
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Effect": "Allow",
+                "Principal": {"AWS": principal or "<palivane-delivery-principal-arn>"},
+                "Action": "sts:AssumeRole",
+                "Condition": {"StringEquals": {"sts:ExternalId": t.siem_s3_external_id}},
+            }],
+        },
+    }
 
 
 @app.get("/api/siem/status")

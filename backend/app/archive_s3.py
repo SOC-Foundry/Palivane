@@ -62,9 +62,9 @@ def _event_key(prefix: str, naming: str) -> str:
 
 def _put_batch(cfg: tuple, body: bytes, count: int, tid: int = 0) -> None:
     from . import sink_health
-    bucket, prefix, region, key_id, secret, naming = cfg
+    bucket, prefix, region, key_id, secret, naming, role_arn, external_id = cfg
     try:
-        s3 = _client(region, key_id, secret)
+        s3 = _client(region, key_id, secret, role_arn=role_arn, external_id=external_id)
         s3.put_object(Bucket=bucket, Key=_event_key(prefix, naming), Body=body,
                       ContentType="application/x-ndjson")
         _stats["batches"] += 1
@@ -143,7 +143,9 @@ def archive(tenant, item, result: dict, agent: str = "") -> None:
         bucket = (tenant.siem_s3_bucket or "").strip()
         key_id = (tenant.siem_s3_key_id or "").strip()
         secret = unseal((tenant.siem_s3_secret or "").strip())
-        if not (bucket and key_id and secret):
+        role_arn = (getattr(tenant, "siem_s3_role_arn", "") or "").strip()
+        external_id = (getattr(tenant, "siem_s3_external_id", "") or "").strip()
+        if not (bucket and (role_arn or (key_id and secret))):
             return
         raw = bool(getattr(tenant, "archive_s3_raw_content", False))
         content = item.content or ""
@@ -170,7 +172,7 @@ def archive(tenant, item, result: dict, agent: str = "") -> None:
             _stats["dropped_cap"] += 1
             return
         cfg = (bucket, tenant.siem_s3_prefix or "", tenant.siem_s3_region or "",
-               key_id, secret, tenant.siem_naming or "warden")
+               key_id, secret, tenant.siem_naming or "warden", role_arn, external_id)
         flush_bytes = max(1, settings.archive_flush_kb) * 1024
         ready = None
         with _lock:
@@ -201,18 +203,18 @@ def flush_all() -> None:
 
 
 def test(bucket: str, prefix: str, region: str, key_id: str, secret: str,
-         naming: str = "warden") -> tuple[bool, str]:
+         naming: str = "warden", role_arn: str = "", external_id: str = "") -> tuple[bool, str]:
     """Synchronously write one sample events object so the console can validate the path
     (and the customer can point an Athena/Panther table at it)."""
-    if not (bucket and key_id and secret):
-        return False, "bucket + AWS key id + secret are required"
+    if not (bucket and (role_arn or (key_id and secret))):
+        return False, "bucket plus an IAM role ARN or an AWS key id + secret are required"
     line = json.dumps({"schema": 1, "ts": _iso_now(), "event": "test", "org": "",
                        "surface": "test", "channel": "test", "actor": "palivane",
                        "agent": "", "subject": "Palivane event-archive test", "severity": "low",
                        "risk_score": 0, "signals": [], "content": "", "content_redacted": True},
                       separators=(",", ":")).encode()
     try:
-        s3 = _client(region, key_id, secret)
+        s3 = _client(region, key_id, secret, role_arn=role_arn, external_id=external_id)
         s3.put_object(Bucket=bucket, Key=_event_key(prefix, naming), Body=line + b"\n",
                       ContentType="application/x-ndjson")
         return True, ""

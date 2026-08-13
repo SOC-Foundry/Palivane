@@ -306,6 +306,10 @@ class TenantUpdate(BaseModel):
     siem_s3_region: str | None = Field(None, max_length=32)
     siem_s3_key_id: str | None = Field(None, max_length=128)   # AWS access key id (write-only)
     siem_s3_secret: str | None = Field(None, max_length=256)   # AWS secret (write-only)
+    # IAM role for cross-account delivery (preferred over the static key pair; takes
+    # precedence when both are set). "" clears it. The external ID is server-generated —
+    # there is deliberately no field to set it.
+    siem_s3_role_arn: str | None = Field(None, max_length=512)
     archive_s3_enabled: bool | None = None      # archive ALL events (NDJSON) to the S3 sink
     archive_s3_raw_content: bool | None = None  # ship unredacted prose (default: redacted)
     archive_s3_daily_mb: int | None = None      # daily byte budget, MB (0 = global default)

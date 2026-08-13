@@ -1089,7 +1089,7 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
     if (body.siem_url or "").strip() or (body.siem_token or "").strip():
         require_feature(tenant, "siem")
     if any((getattr(body, f) or "").strip() for f in
-           ("siem_s3_bucket", "siem_s3_key_id", "siem_s3_secret")):
+           ("siem_s3_bucket", "siem_s3_key_id", "siem_s3_secret", "siem_s3_role_arn")):
         require_feature(tenant, "s3_delivery")
     if body.archive_s3_enabled:
         require_feature(tenant, "s3_delivery")
@@ -1176,6 +1176,20 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.siem_s3_key_id = body.siem_s3_key_id.strip()
     if body.siem_s3_secret:
         tenant.siem_s3_secret = seal(body.siem_s3_secret.strip())   # sealed at rest
+    if body.siem_s3_role_arn is not None:
+        arn = body.siem_s3_role_arn.strip()
+        # Any AWS partition (aws / aws-us-gov / aws-cn), but it must be an IAM *role* —
+        # a user/root ARN here would just fail at AssumeRole time with a worse message.
+        if arn and not re.match(r"^arn:aws[a-z-]*:iam::\d{12}:role/.+", arn):
+            raise HTTPException(status_code=400,
+                                detail="siem_s3_role_arn must be an IAM role ARN "
+                                       "(arn:aws:iam::<account-id>:role/<name>)")
+        if arn and not (tenant.siem_s3_external_id or "").strip():
+            # First role config: mint the external ID the customer's trust policy pins
+            # (confused-deputy guard). Never regenerated on later saves — the trust
+            # policy references it.
+            tenant.siem_s3_external_id = "plv-" + secrets.token_hex(16)
+        tenant.siem_s3_role_arn = arn    # "" clears -> static keys (if set) take over
     # Raw event archival (rides the S3 delivery config above; enabling is plan-gated).
     if body.archive_s3_enabled is not None:
         tenant.archive_s3_enabled = body.archive_s3_enabled
