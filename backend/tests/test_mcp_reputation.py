@@ -4,8 +4,15 @@ allowlist + TOFU pinning."""
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 
 import app.mcp_reputation as mr
+
+
+def _ago(days: int) -> str:
+    """npm-style timestamp `days` before now. Relative, not hardcoded: registry_freshness
+    measures against the real clock, so fixed dates silently age out of the window."""
+    return (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
 # --- non-registry source (offline) --------------------------------------------------------
@@ -52,8 +59,7 @@ def _mock_npm(monkeypatch, created, latest_ts, latest="2.0.0"):
 
 def test_freshness_flags_republished_old_package(monkeypatch):
     # Established package (created years ago) with a version shipped 2 days ago = takeover shape.
-    _mock_npm(monkeypatch, created="2021-01-01T00:00:00.000Z",
-              latest_ts="2026-08-02T00:00:00.000Z")
+    _mock_npm(monkeypatch, created=_ago(1800), latest_ts=_ago(2))
     monkeypatch.setattr(mr.settings, "mcp_reputation_fresh_days", 14)
     info = mr.registry_freshness("npm", "postmark-mcp")
     assert info["republished"] is True and info["age_days"] > 90
@@ -64,8 +70,7 @@ def test_freshness_flags_republished_old_package(monkeypatch):
 
 
 def test_freshness_flags_brand_new_package(monkeypatch):
-    _mock_npm(monkeypatch, created="2026-07-31T00:00:00.000Z",
-              latest_ts="2026-07-31T00:00:00.000Z")
+    _mock_npm(monkeypatch, created=_ago(3), latest_ts=_ago(3))
     monkeypatch.setattr(mr.settings, "mcp_reputation_fresh_days", 14)
     sigs = mr.assess("newthing", "npx", ["-y", "newthing"],
                      [("npm", "newthing", "")], check_registry=True)
