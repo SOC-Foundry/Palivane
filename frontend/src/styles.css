@@ -591,9 +591,24 @@ h4 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spa
   border-radius: 8px; padding: 9px 11px; font-size: 13px; width: 160px;
 }
 .mfa-confirm-row input:focus { outline: none; border-color: var(--accent); }
-.audit-table { font-size: 12.5px; }
+/* Audit log geometry. The Detail column holds arbitrary "key: value" text, and real values
+   (host lists, user agents, IAM ARNs) carry no natural break points — so with the default
+   auto layout the browser hands Detail a huge intrinsic width, pushes the table past the
+   panel, and starves Target until it shatters at every hyphen. Fixed layout + explicit
+   widths keep it inside the panel; the break rules let long values wrap instead of forcing
+   width; .audit-scroll is the fallback below min-width rather than clipping. */
+.audit-scroll { overflow-x: auto; }
+.audit-table { font-size: 12.5px; table-layout: fixed; min-width: 700px; }
+.audit-table th:nth-child(1), .audit-table td:nth-child(1) { width: 18%; }
+.audit-table th:nth-child(2), .audit-table td:nth-child(2) { width: 20%; }
+.audit-table th:nth-child(3), .audit-table td:nth-child(3) { width: 14%; }
+.audit-table th:nth-child(4), .audit-table td:nth-child(4) { width: 20%; }
+.audit-table td { vertical-align: top; }
+/* break-word on the identifier columns (breaks at hyphens only when a word cannot fit),
+   anywhere on Detail (whose values are single unbroken tokens far wider than the column). */
+.audit-table td:nth-child(2), .audit-table td:nth-child(4) { overflow-wrap: break-word; }
 .audit-when { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.audit-detail { color: var(--muted); font-size: 12px; }
+.audit-detail { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 
 .recovery-codes {
   list-style: none; margin: 10px 0 0; padding: 12px; display: grid;

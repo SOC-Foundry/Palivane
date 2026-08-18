@@ -82,6 +82,7 @@ export default function Audit() {
         ) : entries.length === 0 ? (
           <div className="empty">No admin activity recorded yet.</div>
         ) : (
+          <div className="audit-scroll">
           <table className="users-table audit-table">
             <thead>
               <tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th></tr>
@@ -99,6 +100,7 @@ export default function Audit() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

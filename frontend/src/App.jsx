@@ -35,7 +35,12 @@ import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, Ico
 
 export default function App() {
   const [auth, setAuth] = useState(null);        // { user, tenant }
-  const [showLogin, setShowLogin] = useState(() => window.location.hash === "#signin");
+  // Open the console view directly for any hash the Login screen owns — #signin, plus the
+  // emailed #reset=TOKEN and #join=STATUS links. Landing is the "/" route, and it does not
+  // read those fragments, so without this a reset link silently renders the marketing page
+  // and the token is never consumed (Login.jsx parses the hash on mount).
+  const [showLogin, setShowLogin] = useState(
+    () => /^#(signin|reset=.+|join=\w+)$/.test(window.location.hash));
   const [booting, setBooting] = useState(true);
   const [health, setHealth] = useState(null);
   const [stats, setStats] = useState(null);

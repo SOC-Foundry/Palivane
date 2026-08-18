@@ -20,16 +20,30 @@ async function req(path, opts = {}) {
   const token = getToken();
   if (token) headers.authorization = `Bearer ${token}`;
   const res = await fetch(BASE + path, { ...opts, headers });
+  if (res.ok) return res.json();
+
+  // Prefer the server's own explanation. FastAPI puts it in `detail` — a string for our
+  // HTTPExceptions, a list for 422 validation errors (left to the raw fallback below).
+  const body = await res.text();
+  let detail = "";
+  try {
+    const parsed = JSON.parse(body);
+    if (typeof parsed.detail === "string") detail = parsed.detail;
+  } catch { /* not JSON — fall through to the raw body */ }
+
   if (res.status === 401) {
-    setToken(null);
-    onUnauthorized();
-    throw new Error("session expired — please sign in again");
+    // Distinguish a dead session from a refused sign-in. A 401 while holding a token means
+    // the token is no longer good; a 401 with no token in hand is a failed login attempt,
+    // and calling that "session expired" hides the real reason (wrong password, unknown
+    // email) and sends people off debugging their session instead of their credentials.
+    if (token) {
+      setToken(null);
+      onUnauthorized();
+      throw new Error(detail || "session expired — please sign in again");
+    }
+    throw new Error(detail || "invalid credentials");
   }
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`${res.status}: ${body}`);
-  }
-  return res.json();
+  throw new Error(detail || `${res.status}: ${body}`);
 }
 
 export const api = {
