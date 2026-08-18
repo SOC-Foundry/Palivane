@@ -19,6 +19,12 @@ function clientCell(row) {
   if (!row.client) return "—";
   const label = `${row.client} ${row.client_version || "?"}`;
   if (row.client_current) return label;
+  // A RETIRED build will never self-update — nothing publishes that name any more, so the
+  // "refreshes at next session start" promise below would be a lie. It needs a re-connect.
+  if (row.client_retired) {
+    return <span style={{ color: "var(--crit)" }}
+                 title="A retired client build — this name is no longer published, so it will never self-update. Re-run `palivane connect` on this device.">{label} · retired</span>;
+  }
   return <span style={{ color: "var(--susp)" }} title="Older than this deployment ships — refreshes at next session start">{label} · stale</span>;
 }
 
