@@ -227,3 +227,40 @@ def test_posture_ua_and_version_are_consistent():
     src = (_CLI / "palivane-posture").read_text()
     assert 'f"palivane-posture/{VERSION}"' in src
     assert wp.VERSION == client_versions()["palivane-posture"]
+
+
+def test_retired_client_name_is_not_reported_current(client, raw_client):
+    """A client build this deployment no longer ships must read as stale, not current.
+
+    Regression for a real fleet-view bug: `latest.get(name, "")` returned "" for any
+    unrecognised name, and the `not cur` branch then declared it CURRENT. A retired
+    client name (e.g. from an older generation) should be reported as retired.
+    """
+    key = client.post("/api/apikeys", json={"label": "r", "actor": "r@acme.com"}).json()["token"]
+    payload = {"content": "hi", "tool": "claude-code", "destination": "claude-code",
+               "user": "r@acme.com"}
+    # A retired generation still calling in, reporting a version that was current for IT.
+    raw_client.post("/api/ingest/ai-usage", json=payload,
+                    headers={"X-Palivane-Token": key, "User-Agent": "warden-proxy/1.3.0"})
+    fleet = client.get("/api/fleet").json()
+    rows = [s for s in fleet["sensors"] if s["actor"] == "r@acme.com"]
+    assert rows, "the retired client's heartbeat was not recorded at all"
+    row = rows[0]
+    assert row["client"] == "warden-proxy"
+    assert row["client_current"] is False, "a retired client must not read as current"
+    assert row["client_retired"] is True
+    assert fleet["summary"]["retired_clients"] >= 1
+    assert fleet["summary"]["stale_clients"] >= 1   # retired counts toward stale, too
+
+
+def test_sensor_with_no_client_name_is_exempt(client, raw_client):
+    # A browser or curl declares no client build; it must not be judged stale.
+    key = client.post("/api/apikeys", json={"label": "n", "actor": "n@acme.com"}).json()["token"]
+    raw_client.post("/api/ingest/ai-usage",
+                    json={"content": "hi", "tool": "chatgpt", "destination": "chatgpt.com",
+                          "user": "n@acme.com"},
+                    headers={"X-Palivane-Token": key, "User-Agent": "Mozilla/5.0 (X11)"})
+    row = [s for s in client.get("/api/fleet").json()["sensors"]
+           if s["actor"] == "n@acme.com"][0]
+    assert row["client"] == "" and row["client_current"] is True
+    assert row["client_retired"] is False

@@ -1292,12 +1292,18 @@ def _client_latest(ua: str) -> str:
     return client_versions().get(name, "") if name else ""
 
 
+# Client-build name prefixes we own. Both "palivane" and "warden" are recognised
+# so clients from either generation are properly tracked and reported in fleet view.
+_CLIENT_UA_PREFIXES = ("palivane", "warden")
+
+
 def _parse_client_ua(ua: str) -> tuple[str, str]:
     """('palivane-hook', '1.1.0') from a client User-Agent; ('', '') for anything else.
-    Only Palivane's own clients are recorded — a browser UA carries no build we own."""
+    Only our own clients are recorded — a browser UA carries no build we own. Retired
+    generations are recognised so they can be reported as retired, not as absent."""
     token = (ua or "").strip().split()[0] if (ua or "").strip() else ""
     name, _, version = token.partition("/")
-    if not name.startswith("palivane"):
+    if not name.startswith(_CLIENT_UA_PREFIXES):
         return "", ""
     return name[:48], version[:24]
 
@@ -2819,17 +2825,32 @@ def fleet_health(current: User = Depends(require_admin), db: Session = Depends(g
     # Client builds: sensors reporting a version older than this deployment serves have
     # stale plumbing (hooks/addon/scanner). Server-side detection is already current for
     # them — this is only about the installed scripts, which self-update at session start.
+    #
+    # A client name this deployment does not ship is NOT current: that is exactly what a
+    # RETIRED client looks like (the palivane-* generation after the 2026-08 rename), and it
+    # can never reach the current version because nothing publishes it any more. Treating an
+    # unknown name as current hid 20 of 43 sensors from stale_clients — the most stale ones
+    # in the fleet. Only a sensor that reports no client name at all is exempt.
     from .distribution import client_versions
     latest = client_versions()
     for s in sensors:
-        cur = latest.get(s.get("client", ""), "")
-        s["client_current"] = (not s.get("client")) or (not cur) or (s["client_version"] == cur)
+        name = s.get("client") or ""
+        if not name:
+            s["client_current"] = True          # nothing declared — cannot judge
+            s["client_retired"] = False
+        elif name not in latest:
+            s["client_current"] = False         # retired/unrecognised build
+            s["client_retired"] = True
+        else:
+            s["client_current"] = s["client_version"] == latest[name]
+            s["client_retired"] = False
     summary = {"actors": len({s["actor"] for s in sensors}),
                "fresh": sum(1 for s in sensors if s["health"] == "fresh"),
                "stale": sum(1 for s in sensors if s["health"] == "stale"),
                "dark": sum(1 for s in sensors if s["health"] == "dark"),
                "dead_keys": len(dead),
-               "stale_clients": sum(1 for s in sensors if not s["client_current"])}
+               "stale_clients": sum(1 for s in sensors if not s["client_current"]),
+               "retired_clients": sum(1 for s in sensors if s["client_retired"])}
     return {"summary": summary, "sensors": sensors,
             "server_version": settings.version, "latest_client_versions": latest,
             "dead_keys": [k.to_dict() for k in dead]}
