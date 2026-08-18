@@ -2,13 +2,26 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
 from app import gateway, metering
 
 BENIGN = {"model": "gpt-4o", "messages": [{"role": "user", "content": "Summarize this report."}]}
+
+
+def _pin_minute(monkeypatch):
+    """Freeze metering's clock for the duration of a test.
+
+    `current_window` counts only rows whose window_start == _minute(now) — writes stamp the
+    minute at write time, the /api/usage read recomputes it at read time. A test that writes
+    at :59.9 and reads at :00.1 straddles the boundary and sees 0, which is a ~1-in-60 flake
+    per run (it took out CI on 2026-08-18 at 17:22:21). Pinning the clock mid-minute makes
+    both sides agree without changing the product's real per-minute semantics."""
+    pinned = datetime.now(timezone.utc).replace(second=30, microsecond=0, tzinfo=None)
+    monkeypatch.setattr(metering, "_now", lambda: pinned)
+    return pinned
 
 
 @pytest.fixture
@@ -41,6 +54,7 @@ def test_rate_limit_negative_rejected(client):
 
 
 def test_usage_endpoint_reports_counts(client, monkeypatch):
+    _pin_minute(monkeypatch)
     monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
     client.patch("/api/tenant", json={"rate_limit": 100})
     for _ in range(3):
@@ -101,6 +115,7 @@ def test_batch_counts_as_one_ingest_request(client, raw_client):
 
 
 def test_usage_reports_gateway_and_ingest_separately(client, raw_client, monkeypatch):
+    _pin_minute(monkeypatch)
     monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
     client.patch("/api/tenant", json={"rate_limit": 100, "ingest_rate_limit": 100})
     key = client.post("/api/apikeys", json={"label": "u", "actor": "agent"}).json()["token"]
