@@ -116,3 +116,54 @@ def test_secret_labels_cache_memoizes_and_matches():
     assert first is item.secret_labels()                      # memoized: same object
     assert first == find_secrets("config.py\n" + 'key = "AKIAIOSFODNN7EXAMPLE"')
     assert "AWS access key id" in first                        # recall intact
+
+
+# --- Tier-2 entropy: provider ids, public keys, word runs -------------------------------
+# Measured against production data 2026-08-18: the generic entropy heuristic was ~36% of all
+# findings, and its evidence was dominated by AI-provider correlation ids, base64 public keys
+# and prose — not credentials. Each class below is pinned with a recall guard alongside.
+
+def test_provider_correlation_ids_not_flagged():
+    # A tool_use / request / message id is emitted once per AI tool call: prefix + random
+    # suffix, so it clears every entropy gate while carrying no credential.
+    for tok in ("toolu_01VWabcdEFgh2345IJklMNop",
+                "req_011CeQwErTy456UiOpAsDf789",
+                "msg_01A9bCdEfGhIjKlMnOpQrStU",
+                "call_9aBcDeFgHiJkLmNoPqRsTuVw",
+                "chatcmpl-9xYzAbCdEfGh12345678",
+                "thread_abc123DEF456ghi789JKL"):
+        assert find_high_entropy_tokens(tok) == [], tok
+
+
+def test_bare_base64_public_keys_not_flagged():
+    # PEM-armoured public keys were already masked; MCP/JSON payloads carry the bare SPKI
+    # body with no -----BEGIN----- header. A PUBLIC key is not a secret.
+    for tok in ("MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEq7Bt3xY9zK2mNpQ4",   # EC P-256
+                "MCowBQYDK2VwAyEA1x9KpQ7mZ4nB6cF2hJ5sD0gAtR8vL3yW7uX",   # Ed25519
+                "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2xK9mQ"):   # RSA-2048
+        assert find_high_entropy_tokens(tok) == [], tok
+
+
+def test_private_key_body_still_flagged_despite_public_key_guard():
+    # Recall guard for the rule above: the PRIVATE half must never be suppressed.
+    assert "Private key block" in find_secrets(
+        "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIF7q1x9KpQ7mZ4nB6cF2\n-----END EC PRIVATE KEY-----")
+
+
+def test_concatenated_word_runs_not_flagged():
+    # Prose with no camelCase or underscore boundary: _ID_SEGMENT_RE sees one long segment,
+    # so the camelCase dictionary check cannot fire. These come from docs and comments.
+    for tok in ("1whenthisdocumentwasreviewed",
+                "thequickbrownfoxjumpsoverthelazydog7",
+                "seetheconfigurationsectionbelow2"):
+        assert find_high_entropy_tokens(tok) == [], tok
+
+
+def test_random_secrets_still_flagged_after_new_guards():
+    # The recall contract for all three guards above: high-entropy tokens that do NOT look
+    # like an id, a public key or prose must still surface.
+    for tok in ("TWz8wkfno8vQ2xR7pL4mB9cD1sG5hJ3k",     # bare random
+                "8cV_prtHmvK2wQ9zL4nB7cF1hJ5sD0gA",     # random with underscore
+                "ak_hI28ffF8htyVLy1Wy4GrwYPz9pid4",     # prefixed but genuinely a key
+                "asdkj23kjh12qwe89rty45uio77zxc"):      # keyboard mash
+        assert find_high_entropy_tokens(tok), f"recall regression: {tok}"

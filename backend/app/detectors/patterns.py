@@ -251,6 +251,29 @@ def custom_pii_patterns(extra: str = "") -> list[tuple[str, re.Pattern]]:
 _TOKEN_CANDIDATE_RE = re.compile(r"[A-Za-z0-9_]{24,80}")
 _HEX_RE = re.compile(r"^[0-9a-fA-F]+$")   # git SHAs / md5 / sha digests — not secrets
 
+# Provider-issued correlation ids: prefix + random suffix, so they pass every entropy gate
+# while carrying no credential. They dominate AI-tool traffic (one tool_use id per tool call),
+# and flagging them buried the real findings — measured 2026-08-18 against production data.
+# Bearer-shaped prefixes (sk-, ghp_, xoxb-) are deliberately NOT here: those ARE secrets and
+# are matched by their own Tier-1 patterns.
+_NONSECRET_ID_PREFIXES = (
+    "toolu_",      # Anthropic tool_use block id
+    "req_",        # Anthropic / Stripe-style request id
+    "msg_",        # Anthropic message id
+    "call_",       # OpenAI tool-call id
+    "run_", "step_", "thread_", "asst_",   # OpenAI Assistants objects
+    "evt_",        # webhook event id
+    "chatcmpl-",   # OpenAI completion id
+)
+
+# base64 DER/SubjectPublicKeyInfo headers. A PUBLIC key is not a secret — the PEM-wrapped
+# form is already masked above, but MCP/JSON payloads carry the bare base64 body with no
+# -----BEGIN----- armour, so match the SPKI algorithm-identifier prefixes directly.
+#   MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE… = EC P-256      MCowBQYDK2Vw…  = Ed25519
+#   MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A…     = RSA-2048      MFYwEAYHKoZIzj0CAQYFK4EEAAo… = secp256k1
+_PUBKEY_B64_PREFIXES = ("MFkwEwYHKoZIzj0", "MCowBQYDK2Vw", "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ",
+                        "MFYwEAYHKoZIzj0", "MIGfMA0GCSqGSIb3DQEBAQUAA")
+
 # High-entropy base64 that belongs to a recognized NON-secret structure. We mask these
 # spans before the entropy scan so their payloads don't read as bare tokens:
 #   - data: URIs (embedded images/fonts)
@@ -355,6 +378,35 @@ def _is_dictionary_identifier(tok: str) -> bool:
     return covered / len(tok) >= 0.66
 
 
+def _is_word_run(tok: str) -> bool:
+    """A token that is really concatenated dictionary words with a stray digit —
+    `1whenthisdocumentwasreviewed`, `thequickbrownfoxjumpsoverthelazydog7`. These have no
+    camelCase or underscore boundaries, so _ID_SEGMENT_RE sees one long segment and the
+    dictionary check cannot fire. Greedily consume dictionary words from the left and require
+    most of the token to be covered.
+
+    Same conservatism as _is_dictionary_identifier: a digit-heavy token fails the letter gate
+    and real credentials do not decompose into English, so recall is preserved."""
+    words = _load_words()
+    if not words:
+        return False
+    letters = sum(c.isalpha() for c in tok)
+    if letters / len(tok) < 0.75:
+        return False
+    body = "".join(c for c in tok.lower() if c.isalpha())
+    covered, i = 0, 0
+    while i < len(body):
+        # Longest dictionary word starting here (>=3 chars, so "a"/"is" cannot pave anything).
+        for end in range(min(len(body), i + 18), i + 2, -1):
+            if body[i:end] in words:
+                covered += end - i
+                i = end
+                break
+        else:
+            i += 1
+    return covered / len(body) >= 0.8 if body else False
+
+
 def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
     """Return truncated evidence for token-like substrings that look like secrets:
     24–80 chars of [A-Za-z0-9_], mixed character classes, high Shannon entropy, and not
@@ -379,8 +431,14 @@ def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
         # caught by their Tier-1 prefix, a credential assignment, or a connection string.
         if not any(c.isdigit() for c in tok):
             continue
+        if tok.startswith(_NONSECRET_ID_PREFIXES):
+            continue   # provider-issued correlation id (tool_use, request, message), not a key
+        if tok.startswith(_PUBKEY_B64_PREFIXES):
+            continue   # bare base64 SubjectPublicKeyInfo — a PUBLIC key is not a secret
         if _is_dictionary_identifier(tok):
             continue   # a code identifier (camelCase words), not a secret
+        if _is_word_run(tok):
+            continue   # concatenated dictionary words (no camelCase boundaries), not a secret
         if _decodes_to_natural_language(tok):
             continue   # base64 of ordinary English/text, not a credential
         seen.add(tok)
