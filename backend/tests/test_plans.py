@@ -251,3 +251,22 @@ def test_catalog_shows_the_callers_own_tier_alongside_what_they_can_buy(db_facto
     assert set(tiers) == {"trial", "team", "enterprise"}
     assert tiers["trial"]["purchasable"] is False
     assert tiers["team"]["purchasable"] is True
+
+
+def test_tenant_patch_reports_ignored_unknown_fields(client):
+    """A misspelled setting must not read as applied.
+
+    pydantic drops unknown keys by default, so PATCH /api/tenant returned 200 having changed
+    nothing and the caller believed it had worked — the same lookup-miss-as-success shape that
+    hid retired fleet clients and empty Actions variables. Unknown keys are now reported.
+    """
+    r = client.patch("/api/tenant", json={"name": "Acme", "alert_min_severty": "critical"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["name"] == "Acme"                       # the real field still applied
+    assert body["ignored_fields"] == ["alert_min_severty"]
+    # A clean request must not grow the key at all.
+    r2 = client.patch("/api/tenant", json={"name": "Acme2"})
+    assert r2.status_code == 200 and "ignored_fields" not in r2.json()
+    # A wrong TYPE on a known field is still a hard 422, not a silent ignore.
+    assert client.patch("/api/tenant", json={"store_content": True}).status_code == 422
