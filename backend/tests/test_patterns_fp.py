@@ -167,3 +167,44 @@ def test_random_secrets_still_flagged_after_new_guards():
                 "ak_hI28ffF8htyVLy1Wy4GrwYPz9pid4",     # prefixed but genuinely a key
                 "asdkj23kjh12qwe89rty45uio77zxc"):      # keyboard mash
         assert find_high_entropy_tokens(tok), f"recall regression: {tok}"
+
+
+# --- AWS secret access key: the half with no prefix -------------------------------------
+
+def test_aws_secret_access_key_detected_and_redacted():
+    """The SECRET half of an AWS credential pair was invisible to every layer.
+
+    Found 2026-08-18 by posting a real credential pair through /api/ingest/ai-usage and
+    reading the stored row: the AKIA id and the SSN were masked, the 40-char secret was
+    persisted verbatim. No Tier-1 pattern covered it, and the entropy backstop structurally
+    cannot — _TOKEN_CANDIDATE_RE is [A-Za-z0-9_]{24,80}, so a base64 secret's "/" splits it
+    into sub-24-char pieces. Since redact_text() iterates SECRET_PATTERNS, detecting it is
+    what makes it redactable.
+    """
+    from app.redaction import redact_text
+    secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    sample = f"deploy with AWS key AKIAIOSFODNN7EXAMPLE and secret {secret} plus ssn 078-05-1120"
+    found = find_secrets(sample)
+    assert "AWS secret access key" in found
+    assert "AWS access key id" in found          # the pair, not one or the other
+    out = redact_text(sample)
+    assert secret not in out, "the secret survived redaction"
+    assert "AKIAIOSFODNN7EXAMPLE" not in out and "078-05-1120" not in out
+
+
+def test_aws_secret_spellings_all_detected():
+    secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    for text in (f"aws_secret_access_key={secret}",          # "_" is a word char: needs a
+                 f"AWS Secret Access Key: {secret}",         # lookbehind, not \b
+                 f"secret-key {secret}",
+                 f'"SecretAccessKey": "{secret}"'):
+        assert "AWS secret access key" in find_secrets(text), text
+
+
+def test_bare_base64_without_a_secret_label_is_not_an_aws_secret():
+    # The value alone is indistinguishable from any 40-char base64 run, so the label gates it.
+    for text in ("integrity 9f2b7c1de4a08356bb17f0c9d4e2a1f8c33b6e5a7d90142f",
+                 "payload dGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBs",
+                 "keep this secret, please do not share it with anyone at all",
+                 "kind: Secret\nmetadata:\n  name: my-app-credentials-config"):
+        assert "AWS secret access key" not in find_secrets(text), text
