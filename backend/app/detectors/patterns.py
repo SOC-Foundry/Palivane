@@ -40,6 +40,16 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("OpenAI API key", re.compile(r"sk-(?:proj|svcacct|admin)-[A-Za-z0-9_\-]{20,}")),
     ("Anthropic API key", re.compile(r"sk-ant-[a-zA-Z0-9_\-]{16,}")),
     ("AWS access key id", re.compile(r"AKIA[0-9A-Z]{16}")),
+    # The SECRET half. It has no distinguishing prefix — 40 chars of base64 — so it is
+    # gated on an adjacent "secret[ access][ key]" label. Ungated it would match any 40-char
+    # base64 run (hashes, blob chunks). Note the entropy backstop cannot cover this at all:
+    # _TOKEN_CANDIDATE_RE is [A-Za-z0-9_]{24,80}, and a base64 secret's "/" and "+" split it
+    # into sub-24-char pieces, so a pasted AWS secret was invisible to every layer and
+    # therefore survived verbatim into stored content (found 2026-08-18).
+    ("AWS secret access key",
+     # (?<![A-Za-z0-9]) not \b: "_" is a word char, so \bsecret cannot match inside the
+     # commonest spelling of all, aws_secret_access_key=…
+     re.compile(r"(?i)(?<![A-Za-z0-9])secret(?:[_ -]?access)?(?:[_ -]?key)?\W{0,4}[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+=])")),
     ("GitHub token", re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}")),
     ("GitHub fine-grained PAT", re.compile(r"github_pat_[A-Za-z0-9_]{22,}")),
     ("GitLab PAT", re.compile(r"glpat-[A-Za-z0-9_\-]{20,}")),
