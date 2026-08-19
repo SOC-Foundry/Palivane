@@ -307,3 +307,22 @@ def test_config_parses_exclude_dirs(monkeypatch):
     monkeypatch.setenv("PALIVANE_HOOK_EXCLUDE_DIRS", "/a/repo,/b/dir")
     ex = hook.read_config()["exclude"]
     assert hook.os.path.realpath("/a/repo") in ex and hook.os.path.realpath("/b/dir") in ex
+
+
+def test_auth_rejection_is_flagged_but_transient_failure_is_not():
+    """A refused key must be distinguishable from a flaky network.
+
+    The hook fails open on both, but only a REFUSED key means governance is off for this
+    machine until someone re-connects. main() turns that case into a non-zero exit, because
+    a host discards a hook's stderr unless it exits non-zero — so the existing stderr notice
+    in _breaker_record was invisible in practice (this is how a dead key went unnoticed for
+    hours on 2026-08-18). A transient error must NOT raise that alarm.
+    """
+    assert hook._auth_rejected({"action": "allow", "reason": "scan-failed:401"}) is True
+    assert hook._auth_rejected({"action": "allow", "reason": "scan-failed:403"}) is True
+    # Everything else is either healthy or transient — stay quiet.
+    for reason in ("scan-failed:500", "scan-failed:502", "scan-failed",
+                   "scan-skipped:deauthorized", "scan-skipped:backoff", ""):
+        assert hook._auth_rejected({"action": "allow", "reason": reason}) is False, reason
+    assert hook._auth_rejected({"action": "allow"}) is False          # no reason at all
+    assert hook._auth_rejected({"action": "block", "severity": "critical"}) is False

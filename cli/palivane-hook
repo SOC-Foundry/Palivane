@@ -281,6 +281,18 @@ def scan_mcp(activity: dict, url: str, token: str, user: str = "", timeout: floa
     return scan("/api/ingest/mcp", activity, url, token, user, timeout)
 
 
+def _auth_rejected(verdict: dict) -> bool:
+    """True when this verdict is a fail-open caused by the backend REFUSING our key.
+
+    Distinct from a transient network failure: a rejected key means governance is off for
+    this machine until someone re-connects, and nothing else will say so. The stderr notice
+    in _breaker_record is invisible in practice — hosts (Claude Code among them) discard a
+    hook's stderr unless it exits non-zero — so main() turns this into a non-zero exit,
+    which surfaces as a NON-BLOCKING hook error. The tool call still proceeds either way.
+    """
+    return str(verdict.get("reason", "")).startswith(("scan-failed:401", "scan-failed:403"))
+
+
 def should_block(verdict: dict, enforce: bool) -> bool:
     """Mirror of the proxy's rule: a confirmed secret/PII leak (force_block) is blocked
     even in monitor mode — block the certain, monitor the fuzzy. Everything else blocks
@@ -365,7 +377,7 @@ def main() -> int:
                        cfg["user"], cfg["timeout"])
         if should_block(verdict, cfg["enforce"]):
             print(json.dumps(prompt_block_output(verdict)))
-        return 0
+        return 1 if _auth_rejected(verdict) else 0
 
     activity = build_activity(event.get("tool_name", ""), event.get("tool_input") or {})
     if activity is None:
@@ -379,6 +391,7 @@ def main() -> int:
         if should_block(verdict, True):
             print(json.dumps(deny_output(verdict)))
             return 0
+        return 1 if _auth_rejected(verdict) else 0
     else:
         _send_detached("/api/ingest/mcp", activity, cfg)
     return 0
