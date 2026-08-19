@@ -1244,9 +1244,19 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.custom_pii_patterns = body.custom_pii_patterns.strip()
     db.commit()
     db.refresh(tenant)
-    changed = body.model_dump(exclude_none=True)
-    audit_log.record(db, current.tenant_id, current.email, "tenant.update", detail=changed)
-    return tenant.to_dict()
+    # Unknown keys are accepted by the schema but never written. Report them rather than
+    # dropping them in silence: a misspelled setting used to return 200 having changed
+    # nothing, so the caller believed it applied — the same lookup-miss-as-success shape
+    # that hid retired fleet clients and empty Actions variables.
+    ignored = sorted(body.model_extra or {})
+    changed = {k: v for k, v in body.model_dump(exclude_none=True).items()
+               if k in TenantUpdate.model_fields}
+    audit_log.record(db, current.tenant_id, current.email, "tenant.update",
+                     detail={**changed, **({"ignored_fields": ignored} if ignored else {})})
+    out = tenant.to_dict()
+    if ignored:
+        out["ignored_fields"] = ignored
+    return out
 
 
 @router.delete("/tenant")

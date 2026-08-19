@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Loose email shape for identity fields that feed attribution/authorization decisions
 # (not full RFC validation — just "looks like a person, not a wildcard or free-form label").
@@ -273,6 +273,12 @@ class SAMLConfig(BaseModel):
 
 
 class TenantUpdate(BaseModel):
+    # extra="allow" so unknown keys land in model_extra instead of being dropped: pydantic's
+    # default silently discards them, so a misspelled setting returned 200 with nothing
+    # changed and the caller believed it applied. The handler never writes an extra — it
+    # reports them back as `ignored_fields`.
+    model_config = ConfigDict(extra="allow")
+
     name: str | None = None
     # LLM judge for this org: "on"/"off" force it; "inherit" follows the global key.
     # None (field omitted) = leave unchanged.
