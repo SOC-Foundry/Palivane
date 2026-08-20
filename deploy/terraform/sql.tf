@@ -22,6 +22,10 @@ resource "google_sql_database_instance" "warden" {
   depends_on = [google_service_networking_connection.psa]
 
   settings {
+    # Pin the edition. Left unset, the API now defaults new instances to ENTERPRISE_PLUS,
+    # which rejects shared-core tiers (db-f1-micro) outright — so a fresh apply fails at
+    # instance creation. ENTERPRISE is what the db_tier default assumes.
+    edition                     = var.db_edition
     tier                        = var.db_tier
     disk_size                   = var.db_disk_gb
     availability_type           = "ZONAL"

@@ -137,3 +137,10 @@ variable "invoker_members" {
   type    = list(string)
   default = []
 }
+
+# Cloud SQL edition. ENTERPRISE supports shared-core tiers (db-f1-micro); ENTERPRISE_PLUS
+# requires db-perf-optimized-N-*. Must be set explicitly — the API default has changed.
+variable "db_edition" {
+  type    = string
+  default = "ENTERPRISE"
+}
