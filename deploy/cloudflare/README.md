@@ -42,12 +42,12 @@ The SA key lives only in the Worker secret. To rotate:
 
 ```sh
 gcloud iam service-accounts keys create key.json \
-  --iam-account warden-front@erudite-calling-502022-k6.iam.gserviceaccount.com
+  --iam-account warden-front@palivane.iam.gserviceaccount.com
 npx wrangler secret put GCP_SA_KEY < key.json && rm key.json
 gcloud iam service-accounts keys list \
-  --iam-account warden-front@erudite-calling-502022-k6.iam.gserviceaccount.com
+  --iam-account warden-front@palivane.iam.gserviceaccount.com
 gcloud iam service-accounts keys delete <OLD_KEY_ID> \
-  --iam-account warden-front@erudite-calling-502022-k6.iam.gserviceaccount.com
+  --iam-account warden-front@palivane.iam.gserviceaccount.com
 ```
 
 ## Notes
