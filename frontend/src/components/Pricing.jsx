@@ -6,7 +6,7 @@ const TIERS = [
   {
     name: "Team", price: "$12", per: "per user / month ($10 annual)",
     blurb: "The plan most companies run. Covers everyone and tells you when something happens.",
-    cta: { label: "Talk to us →", href: "mailto:sales@tachtech.net?subject=Palivane%20Team%20plan" },
+    cta: { label: "Talk to us →", href: "mailto:sales@palivane.io?subject=Palivane%20Team%20plan" },
     featured: true,
     features: [
       "Up to 25 people (more on request)",
@@ -21,7 +21,7 @@ const TIERS = [
   {
     name: "Enterprise", price: "Custom", per: "annual license",
     blurb: "For when identity, audit, and a security review are part of the deal.",
-    cta: { label: "Talk to sales →", href: "mailto:sales@tachtech.net?subject=Palivane%20Enterprise" },
+    cta: { label: "Talk to sales →", href: "mailto:sales@palivane.io?subject=Palivane%20Enterprise" },
     features: [
       "Everything in Team, without the seat cap",
       "Single sign-on with your identity provider (OIDC & SAML)",
@@ -90,7 +90,7 @@ export default function Pricing() {
             unlicensed instance keeps working indefinitely — full detection, with no LLM API key
             or external AI service required. Team and Enterprise licenses add
             the fleet and compliance features to a self-hosted deployment too.
-            Questions: <a href="mailto:sales@tachtech.net">sales@tachtech.net</a>.
+            Questions: <a href="mailto:sales@palivane.io">sales@palivane.io</a>.
           </p>
         </div>
       </section>

@@ -15,7 +15,7 @@ one and is reconstructed from existing timestamps:
 Also surfaces median time-to-activate and the list of stuck orgs (verified but never
 activated) with their age — the actionable "who to reach out to" output.
 
-Internal orgs (tachtech, demo) skew a tiny funnel, so they're excluded by default.
+Internal orgs (palivane, demo) skew a tiny funnel, so they're excluded by default.
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 
 from .models import ApiKey, EnrollmentToken, Finding, Tenant, User
 
-INTERNAL_SLUGS = ("tachtech", "demo")
+INTERNAL_SLUGS = ("palivane", "demo")
 
 
 def _now() -> datetime:

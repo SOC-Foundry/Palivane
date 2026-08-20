@@ -64,7 +64,7 @@ function PrivacyBody() {
       </p>
 
       <h2>Contact</h2>
-      <p>Questions about this policy: <strong>privacy@tachtech.net</strong>.</p>
+      <p>Questions about this policy: <strong>privacy@palivane.io</strong>.</p>
     </>
   );
 }
@@ -103,7 +103,7 @@ function TermsBody() {
 
       <h2>4. Limitation of liability</h2>
       <p>
-        To the maximum extent permitted by law, TachTech shall not be liable for any
+        To the maximum extent permitted by law, Palivane shall not be liable for any
         indirect, incidental, special, consequential, or punitive damages, or any loss of
         data, arising out of or related to your use of the extension.
       </p>
@@ -115,7 +115,7 @@ function TermsBody() {
       </p>
 
       <h2>6. Contact</h2>
-      <p>Questions about these terms: <strong>hello@tachtech.net</strong>.</p>
+      <p>Questions about these terms: <strong>hello@palivane.io</strong>.</p>
     </>
   );
 }

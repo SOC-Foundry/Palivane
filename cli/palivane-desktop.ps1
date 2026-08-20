@@ -137,7 +137,7 @@ function Read-PalivaneSettings {
 function Resolve-PalivaneUrl([object]$settings) {
     $url = $env:PALIVANE_URL
     if (-not $url -and $settings) { $url = $settings.Url }
-    if (-not $url) { $url = "https://palivane.tachtech.net" }
+    if (-not $url) { $url = "https://app.palivane.io" }
     return $url.TrimEnd("/")
 }
 

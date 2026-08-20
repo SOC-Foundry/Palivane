@@ -43,7 +43,7 @@ export function Shot({ src, alt = "", caption = "", lead = false, onZoom = null 
   return (
     <figure className={`lp-shot ${lead ? "lp-shot-lead" : ""}`}>
       <div className="lp-frame">
-        <span className="lp-frame-bar"><i /><i /><i /><span className="lp-frame-url">palivane.tachtech.net</span></span>
+        <span className="lp-frame-bar"><i /><i /><i /><span className="lp-frame-url">app.palivane.io</span></span>
         <img src={src} alt={alt} loading="lazy"
              onClick={onZoom ? () => onZoom(src, alt) : undefined}
              style={onZoom ? { cursor: "zoom-in" } : undefined} />
@@ -86,7 +86,7 @@ export function Clip({ src, poster = "", caption = "", lead = false }) {
   return (
     <figure className={`lp-shot ${lead ? "lp-shot-lead" : ""}`}>
       <div className="lp-frame" style={{ position: "relative" }}>
-        <span className="lp-frame-bar"><i /><i /><i /><span className="lp-frame-url">palivane.tachtech.net</span></span>
+        <span className="lp-frame-bar"><i /><i /><i /><span className="lp-frame-url">app.palivane.io</span></span>
         <video ref={ref} src={src} poster={poster} controls={started} playsInline preload="metadata"
                onPlay={() => setStarted(true)}
                style={{ display: "block", width: "100%", aspectRatio: "16 / 10",

@@ -4,8 +4,8 @@ Serves a one-line installer (`GET /install.sh`) and the allowlisted script files
 (`GET /cli/<name>`) so a user can set up Claude Code/Cursor governance — and, with
 `--desktop`, the desktop-app egress proxy — without cloning the repo:
 
-    curl -fsSL https://palivane.tachtech.net/install.sh | bash
-    curl -fsSL https://palivane.tachtech.net/install.sh | bash -s -- --desktop
+    curl -fsSL https://app.palivane.io/install.sh | bash
+    curl -fsSL https://app.palivane.io/install.sh | bash -s -- --desktop
 
 Public by design (same posture as the published browser extension): the scripts carry no
 secrets, and `palivane connect` mints a per-user token via browser sign-in at runtime. Only
@@ -73,7 +73,7 @@ def _resolve(rel: str) -> str | None:
 
 
 def _base_url() -> str:
-    return (settings.public_base_url or "https://palivane.tachtech.net").rstrip("/")
+    return (settings.public_base_url or "https://app.palivane.io").rstrip("/")
 
 
 def _manifest() -> dict:

@@ -80,7 +80,7 @@ managed service today the judge is off.
 
 ## Per mode
 
-| | Managed SaaS (palivane.tachtech.net) | Self-hosted |
+| | Managed SaaS (app.palivane.io) | Self-hosted |
 | --- | --- | --- |
 | Where the backend runs | our GCP project | **your infrastructure** |
 | Hop 1 (endpoint → backend) | leaves the device to our service, over TLS | leaves the device but **stays inside your network** |

@@ -209,7 +209,7 @@ class Settings:
     ops_webhook: str = _env("PALIVANE_OPS_WEBHOOK", "").strip()
     # Where in-console upgrade requests and trial emails point buyers. One knob so a
     # self-hosted reseller (or a future address change) doesn't chase hardcoded strings.
-    sales_email: str = _env("PALIVANE_SALES_EMAIL", "sales@tachtech.net").strip()
+    sales_email: str = _env("PALIVANE_SALES_EMAIL", "sales@palivane.io").strip()
 
     # --- LLM gateway (protect our AI) ---
     # enforce=block risky prompts; otherwise monitor (observe + record only). Block when

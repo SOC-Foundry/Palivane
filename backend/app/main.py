@@ -748,7 +748,7 @@ def license_renew(body: dict, db: Session = Depends(get_db)):
     if row.status != "active":
         raise HTTPException(status_code=403, detail="license revoked")
     if row.contract_until and row.contract_until < now:
-        raise HTTPException(status_code=403, detail="license contract ended — contact sales@tachtech.net")
+        raise HTTPException(status_code=403, detail="license contract ended — contact sales@palivane.io")
     new_expiry = date.today() + timedelta(days=licensing.DEFAULT_TERM_DAYS)
     fresh = licensing.issue(key, row.org, row.plan, row.seats or 0,
                             new_expiry.isoformat(), lic_id=row.id)

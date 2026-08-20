@@ -22,7 +22,7 @@ a row flips to verified.
 2. Start the addon against a reachable Palivane backend (or a dev one):
 
    ```bash
-   PALIVANE_URL=https://palivane.tachtech.net PALIVANE_TOKEN=<capture-key> \
+   PALIVANE_URL=https://app.palivane.io PALIVANE_TOKEN=<capture-key> \
    mitmdump -s proxy/palivane_addon.py --listen-port 8081
    ```
 
@@ -74,7 +74,7 @@ Flow (in place of step 2's bare-addon command; same env vars, same port):
 
 ```bash
 # 1. Start the collector (add PALIVANE_PROXY_INTERCEPT_ALL=true for the Dia session):
-PALIVANE_URL=https://palivane.tachtech.net PALIVANE_TOKEN=<capture-key> \
+PALIVANE_URL=https://app.palivane.io PALIVANE_TOKEN=<capture-key> \
 mitmdump -s proxy/verify_browsers.py --listen-port 8081
 
 # 2. Perform the browser actions for the checks you're exercising (1c, 1d, 2, 3 below).

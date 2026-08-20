@@ -6,7 +6,7 @@
 
 Confirmed or suspected: unauthorized access to customer data, tenant-isolation failure,
 credential/secret exposure, malicious code in the supply chain, sustained availability
-loss, or a report to security@tachtech.net that reproduces.
+loss, or a report to security@palivane.io that reproduces.
 
 ## Severities
 
@@ -17,7 +17,7 @@ loss, or a report to security@tachtech.net that reproduces.
 ## Response steps
 
 1. **Detect** — uptime alerts (email), Cloud Run/Cloud SQL logs, Palivane's own audit
-   log and findings, security@tachtech.net reports.
+   log and findings, security@palivane.io reports.
 2. **Contain** — revoke/rotate affected credentials (Secret Manager versions, API key
    revocation, `logout-all`, agent disable — all built for this); suspend affected
    tenants if needed; shift Cloud Run traffic to a known-good revision.
