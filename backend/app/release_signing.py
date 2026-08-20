@@ -35,7 +35,7 @@ import json
 
 from .config import _env
 
-# TachTech's release-signing public key (ECDSA P-256). The matching private key is the
+# Palivane's release-signing public key (ECDSA P-256). The matching private key is the
 # vendor's alone (Secret Manager: palivane-release-signing-key). Override for forks/tests
 # via PALIVANE_RELEASE_PUBKEY.
 VENDOR_RELEASE_PUBKEY_PEM = """-----BEGIN PUBLIC KEY-----

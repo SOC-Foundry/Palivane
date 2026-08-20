@@ -4,8 +4,8 @@ Status as of the code rename (batches A–C + B-final, including the B-final com
 that moved every deploy surface, doc, client, and console snippet off the `WARDEN_*` names):
 **every user-visible, developer-visible, and client-visible surface is already Palivane.** The console, public site, docs, CLI binaries
 (`palivane-*`), env vars (`PALIVANE_*`), capture header (`X-Palivane-Token`), browser
-extension, metrics, and API responses all say Palivane. `palivane.tachtech.net` is the live
-primary host; `warden.tachtech.net` still serves and 301-redirects human traffic to it.
+extension, metrics, and API responses all say Palivane. `app.palivane.io` is the live
+primary host; `app.palivane.io` still serves and 301-redirects human traffic to it.
 
 What remains is **infrastructure resource names** — GCP service, secrets, SQL instance,
 Cloudflare worker, the `*.run.app` origin, and the legacy domain. This runbook covers them.
@@ -18,7 +18,7 @@ Cloudflare worker, the `*.run.app` origin, and the legacy domain. This runbook c
 
 | # | Item | User-visible? | Effort | Risk | Recommendation |
 |---|------|:---:|:---:|:---:|---|
-| 1 | **Legacy domain `warden.tachtech.net`** | **Yes** | Low | Low | **Decide: keep the 301-redirect (recommended) or hard-retire.** |
+| 1 | **Legacy domain `app.palivane.io`** | **Yes** | Low | Low | **Decide: keep the 301-redirect (recommended) or hard-retire.** |
 | 2 | Cloud Run service name `warden` | No | High | Medium | **Skipped — decided 2026-08-10.** Internal only; Terraform state move + IAM re-bind + worker repoint + redeploy for zero user benefit. See the decision note under item 2. |
 | 3 | Secret *resource* names `warden-*` | No | Medium | Low–Med | **Skip** (or do lazily). Internal; needs new secret versions + deploy + TF. |
 | 4 | **SQL instance `warden-db` / database `warden`** | No | — | **DATA LOSS** | **Never.** Cloud SQL instances/DBs can't be renamed in place — a rename recreates = total data loss. Leave as-is permanently. |
@@ -34,14 +34,14 @@ click), and item 4 would destroy the database. The only decision with real value
 
 ---
 
-## Item 1 — the legacy domain `warden.tachtech.net` (the one that matters)
+## Item 1 — the legacy domain `app.palivane.io` (the one that matters)
 
 Two options. Both are fine; pick by taste.
 
 ### Option A — keep the redirect forever (recommended)
 
-Do nothing. The worker already 301-redirects human navigation on `warden.tachtech.net` →
-`palivane.tachtech.net` (and proxies any stray API call transparently). Leaving it:
+Do nothing. The worker already 301-redirects human navigation on `app.palivane.io` →
+`app.palivane.io` (and proxies any stray API call transparently). Leaving it:
 
 - catches bookmarks, old links, and anyone with muscle memory,
 - preserves any SEO/link equity,
@@ -51,20 +51,20 @@ This is what most renamed products do — the old domain quietly forwards indefi
 
 ### Option B — hard-retire the old domain
 
-Only if you specifically want `warden.tachtech.net` to stop resolving.
+Only if you specifically want `app.palivane.io` to stop resolving.
 
 1. **Remove the worker route** (Cloudflare — needs your `wrangler` login):
    ```
    # edit deploy/cloudflare/wrangler.toml: delete the
-   #   { pattern = "warden.tachtech.net/*", zone_name = "tachtech.net" }
-   # route line, keeping only the palivane.tachtech.net route, then:
+   #   { pattern = "app.palivane.io/*", zone_name = "palivane.io" }
+   # route line, keeping only the app.palivane.io route, then:
    cd deploy/cloudflare && npx wrangler deploy
    ```
-2. **Delete the DNS record** `warden` in the `tachtech.net` Cloudflare zone (dashboard).
-3. **Drop `warden.tachtech.net` from the app's allowlist** so it's no longer trusted:
+2. **Delete the DNS record** `warden` in the `palivane.io` Cloudflare zone (dashboard).
+3. **Drop `app.palivane.io` from the app's allowlist** so it's no longer trusted:
    ```
    gh variable set PALIVANE_ALLOWED_HOSTS --body \
-     "palivane.tachtech.net,warden-442729333907.us-central1.run.app,warden-r6keoxospq-uc.a.run.app"
+     "app.palivane.io,warden-442729333907.us-central1.run.app,warden-r6keoxospq-uc.a.run.app"
    ```
    (and the next deploy propagates it; or update the live service env directly.)
 4. Remove the `LEGACY_HOST`/redirect block from `deploy/cloudflare/worker.js` in a follow-up
@@ -127,14 +127,14 @@ a *new* service and delete the old. Full procedure:
    ```
 5. **Repoint the worker**: set `ORIGIN` in `deploy/cloudflare/worker.js` to the new run.app
    URL, add the new run.app host to `PALIVANE_ALLOWED_HOSTS`, `npx wrangler deploy`.
-6. Verify `palivane.tachtech.net/api/health` → `ok`, then delete the old `warden` service.
+6. Verify `app.palivane.io/api/health` → `ok`, then delete the old `warden` service.
 
 Effort: ~1–2 hrs with careful verification. Benefit: an internal service name nobody sees.
 **Recommendation: skip.**
 
 #### Decision — 2026-08-10: skipped, deliberately
 
-Raised again and declined. Nothing about the analysis changed: `palivane.tachtech.net` is
+Raised again and declined. Nothing about the analysis changed: `app.palivane.io` is
 already the primary host, the worker already routes it, and the service name is visible only
 in the GCP console. Two things found while re-checking it are worth recording, because both
 are traps in the procedure above.

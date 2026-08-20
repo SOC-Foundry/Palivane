@@ -1,18 +1,17 @@
-name = "warden-front"
+name = "palivane-front"
 main = "worker.js"
 compatibility_date = "2026-07-01"
-# The worker lives on the NFR-US-TachTech account (which owns the tachtech.net zone) —
-# pinned so wrangler never deploys to the personal account by mistake.
-account_id = "3d028af29af87d79a8b3245461f04241"
+# The account that owns the palivane.io zone — pinned so wrangler never deploys to
+# another account by mistake.
+account_id = "e877e5d440048df1624a3512143c1281"
 
+# Both routes need PROXIED (orange-cloud) DNS records in the palivane.io zone — the
+# wrangler token can't create DNS, so add them in the Cloudflare dashboard first. Once
+# they exist, `wrangler deploy` activates these routes.
 routes = [
-  { pattern = "warden.tachtech.net/*", zone_name = "tachtech.net" },
-  # Rename dual-serve: the same front-door worker also fronts the new Palivane hostname.
-  # Requires a PROXIED (orange-cloud) DNS record for `palivane` in the tachtech.net zone —
-  # the wrangler token can't create DNS, so that record is added in the Cloudflare
-  # dashboard. Once it exists, `wrangler deploy` activates this route. Both hosts serve the
-  # same Cloud Run backend during the transition; the old host redirects after cutover.
-  { pattern = "palivane.tachtech.net/*", zone_name = "tachtech.net" }
+  { pattern = "app.palivane.io/*", zone_name = "palivane.io" },
+  # Apex proxies the same backend; browser navigation 301s to app.palivane.io (worker.js).
+  { pattern = "palivane.io/*", zone_name = "palivane.io" }
 ]
 
 # Exact per-IP edge rate limiting for auth endpoints (credential-stuffing shield).

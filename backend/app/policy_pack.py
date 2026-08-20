@@ -41,14 +41,14 @@ def macos_proxy_profile(host: str, port: int) -> str:
 <plist version="1.0">
 <dict>
   <key>PayloadType</key><string>Configuration</string>
-  <key>PayloadIdentifier</key><string>net.tachtech.palivane.proxy</string>
+  <key>PayloadIdentifier</key><string>io.palivane.proxy</string>
   <key>PayloadDisplayName</key><string>Palivane egress proxy</string>
   <key>PayloadVersion</key><integer>1</integer>
   <key>PayloadContent</key>
   <array>
     <dict>
       <key>PayloadType</key><string>com.apple.proxy.http.global</string>
-      <key>PayloadIdentifier</key><string>net.tachtech.palivane.proxy.http</string>
+      <key>PayloadIdentifier</key><string>io.palivane.proxy.http</string>
       <key>PayloadVersion</key><integer>1</integer>
       <key>ProxyType</key><string>Manual</string>
       <key>HTTPEnable</key><integer>1</integer>
@@ -408,7 +408,7 @@ def secrets_launchd(base_url: str, secrets_path: str, engine: str = "trufflehog"
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>net.tachtech.palivane.secrets</string>
+  <key>Label</key><string>io.palivane.secrets</string>
   <key>ProgramArguments</key>
   <array>{argv}</array>
   <key>StartCalendarInterval</key>

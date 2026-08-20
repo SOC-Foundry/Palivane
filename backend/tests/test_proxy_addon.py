@@ -135,18 +135,18 @@ def test_strips_injected_system_reminder():
     # Claude Code injects the user's own email/env as a <system-reminder> into the user
     # turn — scaffolding, not egress. Stripped so it doesn't flag every turn.
     body = json.dumps({"messages": [{"role": "user", "content": [
-        {"type": "text", "text": "<system-reminder>The user's email is davidk@tachtech.net.</system-reminder>"},
+        {"type": "text", "text": "<system-reminder>The user's email is davidk@palivane.io.</system-reminder>"},
         {"type": "text", "text": "reply ok"},
     ]}]})
     out = addon.extract_prompt(body)
-    assert out.strip() == "reply ok" and "tachtech.net" not in out
+    assert out.strip() == "reply ok" and "palivane.io" not in out
 
 
 def test_structured_api_telemetry_not_harvested():
     # Claude Code posts analytics (no messages) to api.anthropic.com carrying the user's
     # email — NOT a prompt. extract_prompt returns "" and the host isn't a harvest host,
     # so telemetry is never scanned (this was the every-prompt-blocked bug).
-    telem = json.dumps({"event": "ClaudeCodeInternalEvent", "email": "davidk@tachtech.net"})
+    telem = json.dumps({"event": "ClaudeCodeInternalEvent", "email": "davidk@palivane.io"})
     assert addon.extract_prompt(telem) == ""
     assert addon.needs_harvest("api.anthropic.com") is False
     assert addon.needs_harvest("api2.cursor.sh") is True

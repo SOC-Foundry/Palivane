@@ -41,7 +41,7 @@ def test_funnel_stages_are_monotonic_subsets(db_factory):
 
 def test_funnel_excludes_internal_by_default(db_factory):
     db = db_factory()
-    _seed_tenant(db, "tachtech", verified=True, key=True, finding=True)
+    _seed_tenant(db, "palivane", verified=True, key=True, finding=True)
     _seed_tenant(db, "demo", verified=True, key=True, finding=True)
     _seed_tenant(db, "realco", verified=True, key=True, finding=True)
     assert funnel.compute(db)["stages"]["signed_up"] == 1            # only realco

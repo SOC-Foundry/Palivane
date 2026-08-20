@@ -1,4 +1,4 @@
-// Warden front door: Cloudflare Worker that proxies warden.tachtech.net to the
+// Palivane front door: Cloudflare Worker that proxies app.palivane.io to the
 // IAM-locked Cloud Run service, attaching a Google ID token for the warden-front
 // service account. This keeps Cloud Run private (no allUsers invoker — org policy
 // forbids it) while Cloudflare terminates public TLS and fronts every request;
@@ -132,15 +132,15 @@ function apiOverLimit(ip) {
   return c.n > API_LIMIT;
 }
 
-// Rename cutover: the canonical host is palivane.tachtech.net. The legacy
-// warden.tachtech.net stays live (same worker, both routes) and PROXIES all traffic
-// transparently — but human/browser navigation (GET/HEAD for non-API paths: the console
-// SPA and public site) is 301-redirected to the new host so people land on the new brand.
+// The canonical host is app.palivane.io. The apex palivane.io is also routed here (same
+// worker, both routes) and PROXIES all traffic transparently — but human/browser
+// navigation (GET/HEAD for non-API paths: the console SPA and public site) is
+// 301-redirected to the canonical host so people land on one address.
 // API/gateway traffic (/api/*, /v1) is NEVER redirected: installed CLIs, the extension,
 // and MDM clients POST there, and a 301 wouldn't replay their bodies — they keep hitting
-// the old host transparently until they re-enroll against palivane.
-const CANONICAL_HOST = 'palivane.tachtech.net';
-const LEGACY_HOST = 'warden.tachtech.net';
+// whichever host they enrolled against.
+const CANONICAL_HOST = 'app.palivane.io';
+const LEGACY_HOST = 'palivane.io';
 
 export default {
   async fetch(request, env) {

@@ -5,7 +5,7 @@
 #
 #   ./deploy/native/installer-smoke-docker.sh                    # the default matrix
 #   ./deploy/native/installer-smoke-docker.sh debian:testing fedora:latest
-#   PALIVANE_URL=https://palivane.tachtech.net ./deploy/native/installer-smoke-docker.sh
+#   PALIVANE_URL=https://app.palivane.io ./deploy/native/installer-smoke-docker.sh
 #
 # Each container installs the installer's prerequisites with its native package manager,
 # then runs the smoke as root. Exit non-zero if the smoke FAILs in any distro.

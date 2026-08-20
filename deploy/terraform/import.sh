@@ -64,8 +64,8 @@ imp google_cloud_run_v2_service_iam_member.invoker_front \
     "projects/${PROJECT_ID}/locations/${REGION}/services/warden roles/run.invoker serviceAccount:${FRONT_SA}"
 
 # Human-user invokers, if you set var.invoker_members to include them — one per member, e.g.:
-#   imp 'google_cloud_run_v2_service_iam_member.invokers["user:davidk@tachtech.net"]' \
-#       "projects/${PROJECT_ID}/locations/${REGION}/services/warden roles/run.invoker user:davidk@tachtech.net"
+#   imp 'google_cloud_run_v2_service_iam_member.invokers["user:davidk@palivane.io"]' \
+#       "projects/${PROJECT_ID}/locations/${REGION}/services/warden roles/run.invoker user:davidk@palivane.io"
 
 cat <<DONE
 

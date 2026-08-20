@@ -20,7 +20,7 @@
 # Windows is a separate PowerShell path (see docs).
 set -euo pipefail
 
-PALIVANE_URL="${PALIVANE_URL:-https://palivane.tachtech.net}"
+PALIVANE_URL="${PALIVANE_URL:-https://app.palivane.io}"
 PORT="${PALIVANE_PROXY_PORT:-8081}"
 HOME_DIR="${HOME}"
 WDIR="${HOME_DIR}/.palivane"
@@ -501,13 +501,13 @@ start_service() {
   [ -n "$UPSTREAM_PROXY" ] && log "chaining egress through upstream proxy: ${UPSTREAM_PROXY}$([ -n "$UPSTREAM_CA" ] && printf ' (trusting %s upstream)' "$UPSTREAM_CA")"
   case "$OS" in
     Darwin)
-      local plist="${HOME_DIR}/Library/LaunchAgents/net.tachtech.palivane-proxy.plist"
+      local plist="${HOME_DIR}/Library/LaunchAgents/io.palivane.proxy.plist"
       mkdir -p "${HOME_DIR}/Library/LaunchAgents"
       cat > "$plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>net.tachtech.palivane-proxy</string>
+  <key>Label</key><string>io.palivane.proxy</string>
   <key>ProgramArguments</key><array>
     <string>$(command -v mitmdump)</string>
     <string>-q</string><string>-s</string><string>${ADDON}</string>
@@ -525,7 +525,7 @@ ${up_plist}  </array>
 PLIST
       launchctl unload "$plist" 2>/dev/null || true
       launchctl load "$plist"
-      log "launchd service loaded (net.tachtech.palivane-proxy)." ;;
+      log "launchd service loaded (io.palivane.proxy)." ;;
     Linux)
       local unit="${HOME_DIR}/.config/systemd/user/palivane-proxy.service"
       mkdir -p "${HOME_DIR}/.config/systemd/user"
@@ -674,7 +674,7 @@ cmd_uninstall() {
       local svc; svc="$(networksetup -listnetworkserviceorder | awk -F') ' '/\) /{print $2}' | head -1)"
       sudo networksetup -setsecurewebproxystate "$svc" off 2>/dev/null || true
       local pl
-      for pl in net.tachtech.palivane-proxy.plist net.tachtech.warden-proxy.plist; do   # second is pre-rebrand
+      for pl in io.palivane.proxy.plist; do
         launchctl unload "${HOME_DIR}/Library/LaunchAgents/$pl" 2>/dev/null || true
         rm -f "${HOME_DIR}/Library/LaunchAgents/$pl"
       done

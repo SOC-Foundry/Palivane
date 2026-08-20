@@ -5,7 +5,7 @@ deployment model:
 
 | Deployment | The license is… | You grant it with… |
 |---|---|---|
-| Hosted SaaS (palivane.tachtech.net) | the `tenant.plan` column | `set-plan` (below) |
+| Hosted SaaS (app.palivane.io) | the `tenant.plan` column | `set-plan` (below) |
 | Self-hosted | a signed `WDN1.…` license file | `app.licensing issue` (below) |
 
 Plan gates and quotas live in `backend/app/plans.py`; the license format and

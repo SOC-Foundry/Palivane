@@ -62,7 +62,7 @@ def check_resource_quota(db: Session, tenant_id: int, name: str, current_count: 
     limit = effective_quota(tenant, name)
     if limit and current_count >= limit:
         from .plans import plan_of  # noqa: PLC0415
-        hint = ("contact sales@tachtech.net to raise it"
+        hint = ("contact sales@palivane.io to raise it"
                 if plan_of(tenant) != "enterprise"
                 else "contact your Palivane operator to raise it")
         raise HTTPException(
