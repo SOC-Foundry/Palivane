@@ -24,7 +24,7 @@ Results table — and the raw evidence as `verification-report.json` alongside
 
 Run (in place of the bare addon; everything the addon does still happens):
 
-    PALIVANE_URL=https://palivane.tachtech.net PALIVANE_TOKEN=<capture-key> \
+    PALIVANE_URL=https://app.palivane.io PALIVANE_TOKEN=<capture-key> \
     mitmdump -s proxy/verify_browsers.py --listen-port 8081
 
 Honesty note: this automates *evidence capture and classification only* — the browser

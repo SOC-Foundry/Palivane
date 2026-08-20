@@ -11,7 +11,7 @@ for as long as it's valid. No license = the Free tier, which is fully functional
 The payload is canonical JSON: {v, id, org, plan, seats, issued, expires}. The signature
 covers the exact payload bytes, so any edit (plan bump, seat bump, expiry push) breaks it.
 
-Vendor side (TachTech) — this module doubles as the issuing CLI:
+Vendor side (Palivane) — this module doubles as the issuing CLI:
 
     python -m app.licensing keygen --out vendor-license-key.pem      # once, keep PRIVATE
     python -m app.licensing issue --key vendor-license-key.pem \\
@@ -34,7 +34,7 @@ import secrets
 from datetime import date, datetime, timedelta, timezone
 from .config import _env
 
-# TachTech's vendor license public key (Ed25519). The matching private key is held by
+# Palivane's vendor license public key (Ed25519). The matching private key is held by
 # the vendor only. Replaceable for testing/forks via PALIVANE_LICENSE_PUBKEY.
 VENDOR_PUBKEY_PEM = """-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAtVA/cNp4QTKPiU70WZcopZzwOSNe1z47GouPSGT2s3I=

@@ -102,7 +102,7 @@ def test_forcelist_and_pack():
 def test_secrets_schedule_artifacts_default_to_trufflehog():
     # Default engine drives TruffleHog on the scheduled run.
     plist = pp.secrets_launchd("https://w.acme.com/", "/opt/palivane-secrets")
-    assert "net.tachtech.palivane.secrets" in plist and "/opt/palivane-secrets" in plist
+    assert "io.palivane.secrets" in plist and "/opt/palivane-secrets" in plist
     assert "<string>--engine</string><string>trufflehog</string>" in plist
     cron = pp.secrets_cron("https://w.acme.com", "/opt/palivane-secrets")
     assert "0 3 * * *" in cron and "/opt/palivane-secrets --engine trufflehog" in cron

@@ -1,6 +1,6 @@
 # Cloudflare Worker front door
 
-Public entry for Palivane at `warden.tachtech.net` without granting `allUsers`
+Public entry for Palivane at `app.palivane.io` without granting `allUsers`
 run.invoker (forbidden by the org's domain-restricted-sharing policy). The Worker
 attaches a Google ID token for the `warden-front` service account to every request,
 so the Cloud Run service stays IAM-locked: direct `*.run.app` access is 403 for
@@ -24,7 +24,7 @@ npx wrangler secret put GCP_SA_KEY < warden-front-key.json
 npx wrangler deploy
 ```
 
-Then in the Cloudflare DNS dashboard: set `warden.tachtech.net` to **Proxied**
+Then in the Cloudflare DNS dashboard: set `app.palivane.io` to **Proxied**
 (orange cloud) — the Worker route only fires on proxied traffic.
 
 ## Cutover checklist (from IAP)
@@ -33,8 +33,8 @@ Then in the Cloudflare DNS dashboard: set `warden.tachtech.net` to **Proxied**
 2. Deploy the Worker (above) + flip DNS to Proxied.
 3. Delete the now-unused Cloud Run domain mapping (its Google-managed cert can't
    renew behind the proxy and would sit in a failed state):
-   `gcloud beta run domain-mappings delete --domain warden.tachtech.net --region us-central1`
-4. Verify: `https://warden.tachtech.net` serves the app; `*.run.app` returns 403.
+   `gcloud beta run domain-mappings delete --domain app.palivane.io --region us-central1`
+4. Verify: `https://app.palivane.io` serves the app; `*.run.app` returns 403.
 
 ## Key rotation
 

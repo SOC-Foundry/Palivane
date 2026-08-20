@@ -44,4 +44,4 @@ sent to the AI tool untouched and no data is captured.
 
 ## Contact
 
-Questions about this policy: **privacy@tachtech.net**.
+Questions about this policy: **privacy@palivane.io**.

@@ -43,7 +43,7 @@ def test_cef_format():
     req = siem._request("https://collector/x", "", "cef", _fields())
     assert req.get_header("Content-type") == "text/plain"
     line = req.data.decode()
-    assert line.startswith("CEF:0|TachTech|Palivane|1.0|")
+    assert line.startswith("CEF:0|Palivane|Palivane|1.0|")
     assert "secret_leak" in line and "cn1=75" in line and "suser=bob@acme.com" in line
 
 

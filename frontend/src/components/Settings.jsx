@@ -436,7 +436,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
                 Upgrade to <strong>{upgrade.plan === "team" ? "Team" : "Enterprise"}</strong> requested
                 {upgrade.created_at && <> on {upgrade.created_at.slice(0, 10)}</>} — we'll be in
                 touch at <strong>{upgrade.contact}</strong>. Prefer email?{" "}
-                <a href="mailto:sales@tachtech.net">sales@tachtech.net</a>.
+                <a href="mailto:sales@palivane.io">sales@palivane.io</a>.
               </p>
             ) : (
               <form onSubmit={submitUpgrade}

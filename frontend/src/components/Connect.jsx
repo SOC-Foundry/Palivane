@@ -213,7 +213,7 @@ export default function Connect({ tenant }) {
                system-proxy profile, and Claude Code managed settings + hooks.</p>
             {!hasMdm && (
               <p className="muted">🔒 The MDM policy pack is a Team plan feature —{" "}
-                 <a href="mailto:sales@tachtech.net">contact us</a>. (The setup script on the
+                 <a href="mailto:sales@palivane.io">contact us</a>. (The setup script on the
                  left covers the same sources and is free.)</p>
             )}
             <div className="form-row" style={{ gap: 8 }}>

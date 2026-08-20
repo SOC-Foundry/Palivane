@@ -505,7 +505,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/analyze/batch`     | Analyze up to 500 items in one call. |
 | POST   | `/api/ingest/ai-usage`   | Score content captured by the browser extension / proxy (`ai_usage`); returns allow/warn/block. Token-gated. |
 | POST   | `/api/ingest/mcp`        | Score an MCP tool call / resource read / tool listing captured by the proxy (`mcp`) — sensitive-resource access, dangerous commands, untrusted servers, tool poisoning. Returns allow/warn/block. Token-gated. |
-| POST   | `/v1/logs`               | OTLP/HTTP logs receiver — a [claude-otel](https://github.com/TachTech-Engineering/claude-otel) collector otlphttp-exports Claude Code telemetry here; maps user_prompt→`ai_usage`, tool_result/mcp_server_connection→`mcp`. Monitor-only (post-hoc). Token-gated (`X-Palivane-Token`). |
+| POST   | `/v1/logs`               | OTLP/HTTP logs receiver — a [claude-otel](https://github.com/Palivane-Engineering/claude-otel) collector otlphttp-exports Claude Code telemetry here; maps user_prompt→`ai_usage`, tool_result/mcp_server_connection→`mcp`. Monitor-only (post-hoc). Token-gated (`X-Palivane-Token`). |
 | POST   | `/api/scan/mcp-config`   | Vet an MCP config file (`.mcp.json`, Cursor/VS Code) in CI/console — enumerates declared servers (incl. local stdio) and flags unapproved servers, dangerous launch commands, and secrets in config. Token-gated. |
 | POST   | `/api/scan/deps`         | Vet dependency manifests (`package.json`, `requirements.txt`) for supply-chain risk — install-script abuse, non-registry sources, known-bad packages, and (opt-in) known CVEs for pinned deps via OSV. Token-gated. |
 | POST   | `/api/scan/ide-extensions` | Vet a list of IDE extensions (`.vscode/extensions.json` in CI, or MDM inventory) for known-bad / unapproved editor plugins. Token-gated. |
@@ -650,7 +650,7 @@ Different usage routes need different capture points — all feed the one engine
 | **Gemini CLI prompts + tool calls** (every auth mode, incl. the Google login that ignores base-URL overrides) | `palivane-gemini-hook` (BeforeAgent + BeforeTool, gemini-cli 0.26+) → `ai_usage` + `mcp` ([`cli/`](cli/README.md)) | ✅ |
 | **Local stdio MCP servers** (inline inspect + block) | `palivane-mcp` wrapper → `mcp` ([`cli/`](cli/README.md)) | ✅ |
 | **Device posture** (installed IDE extensions, MCP configs — drift) | `palivane-posture` → `/api/scan/*` ([`cli/`](cli/README.md)) | ✅ |
-| **Claude Code via OTEL** (prompts, tool calls) — for orgs running [claude-otel](https://github.com/TachTech-Engineering/claude-otel) | `palivane-otel` file-tail **or** collector OTLP → `POST /v1/logs` → `ai_usage` + `mcp` ([`cli/`](cli/README.md)) | ✅ monitor-only (post-hoc) |
+| **Claude Code via OTEL** (prompts, tool calls) — for orgs running [claude-otel](https://github.com/Palivane-Engineering/claude-otel) | `palivane-otel` file-tail **or** collector OTLP → `POST /v1/logs` → `ai_usage` + `mcp` ([`cli/`](cli/README.md)) | ✅ monitor-only (post-hoc) |
 | **Cursor** (AI IDE) | Egress proxy (codebase/telemetry) | ⚠️ chat endpoint pins certs — see [`proxy/README.md`](proxy/README.md) |
 | **Source code committed to a Git repo** | Pre-commit hook + GitHub Action → `/api/scan/code` | ✅ |
 
@@ -735,9 +735,9 @@ that route the AI CLIs through the proxy, **no sudo** — which is the right fit
 small orgs without MDM:
 
 ```bash
-curl -fsSL https://palivane.tachtech.net/install.sh | bash              # CLI capture (default, no sudo)
-curl -fsSL https://palivane.tachtech.net/install.sh | bash -s -- --desktop    # + desktop apps/browsers, system-wide (sudo)
-curl -fsSL https://palivane.tachtech.net/install.sh | bash -s -- --no-proxy   # CLI + hooks only, skip the proxy
+curl -fsSL https://app.palivane.io/install.sh | bash              # CLI capture (default, no sudo)
+curl -fsSL https://app.palivane.io/install.sh | bash -s -- --desktop    # + desktop apps/browsers, system-wide (sudo)
+curl -fsSL https://app.palivane.io/install.sh | bash -s -- --no-proxy   # CLI + hooks only, skip the proxy
 ```
 
 On a managed fleet the system proxy + corporate root cert are pushed via MDM instead, so
@@ -827,7 +827,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: TachTech-Engineering/Palivane/git@main
+      - uses: Palivane-Engineering/Palivane/git@main
         with:
           palivane-url: https://palivane.corp.example.com
           palivane-token: ${{ secrets.PALIVANE_TOKEN }}

@@ -117,7 +117,7 @@ def console_page_frames(pw, tab: str, seconds: float, out_dir: str) -> int:
 
 def build_scenes() -> list[tuple[str, str, float]]:
     connect_lines = [
-        ("cmd", "$ palivane-connect https://palivane.tachtech.net"),
+        ("cmd", "$ palivane-connect https://app.palivane.io"),
         ("ok", "✓ Signed in as dev@acme.com · Acme, Inc."),
         ("ok", "✓ Claude Code → gateway configured (managed-settings.json)"),
         ("ok", "✓ Cursor → gateway configured"),

@@ -66,7 +66,7 @@ export default function Docs({ slug }) {
           </nav>
           <p className="muted" style={{ fontSize: 12, marginTop: 18 }}>
             These pages render straight from the repository — they ship with the code
-            they describe. Questions: <a href="mailto:support@tachtech.net">support@tachtech.net</a>
+            they describe. Questions: <a href="mailto:support@palivane.io">support@palivane.io</a>
           </p>
         </aside>
         <main className="docs-prose" dangerouslySetInnerHTML={{ __html: html }} />
