@@ -9,8 +9,11 @@
 //
 // Secret required: GCP_SA_KEY — the warden-front service-account JSON key
 //   (npx wrangler secret put GCP_SA_KEY < warden-front-key.json)
-
-const ORIGIN = 'https://warden-442729333907.us-central1.run.app';
+//
+// Var required: ORIGIN — the Cloud Run service URL this fronts, set per environment in
+// wrangler.toml. It is NOT hardcoded here: the Worker is identical across environments,
+// and baking one project's *.run.app URL into the source is how a stale origin survives
+// a rename. It doubles as the ID token's target_audience, so a wrong value yields 403s.
 
 // Per-isolate token cache; isolates live across many requests, so most requests
 // skip the token exchange entirely.
@@ -30,7 +33,17 @@ function pemToDer(pem) {
   return buf.buffer;
 }
 
+// Fail loudly on a missing/misconfigured ORIGIN rather than proxying to "undefined/...".
+function requireOrigin(env) {
+  const o = env.ORIGIN;
+  if (!o || !/^https:\/\/[^\/]+$/.test(o)) {
+    throw new Error('ORIGIN var missing or malformed (want https://host, no trailing slash)');
+  }
+  return o;
+}
+
 async function idToken(env) {
+  const origin = requireOrigin(env);
   const now = Math.floor(Date.now() / 1000);
   if (cache.token && cache.exp - 120 > now) return cache.token;
 
@@ -41,7 +54,7 @@ async function idToken(env) {
       iss: key.client_email,
       sub: key.client_email,
       aud: 'https://oauth2.googleapis.com/token',
-      target_audience: ORIGIN,
+      target_audience: origin,
       iat: now,
       exp: now + 3600,
     }));
@@ -176,7 +189,7 @@ export default {
     headers.set('X-Serverless-Authorization', 'Bearer ' + (await idToken(env)));
     // redirect: 'manual' so the app's own redirects (login flows) reach the browser
     // instead of being followed inside the Worker.
-    return fetch(ORIGIN + path + url.search, {
+    return fetch(requireOrigin(env) + path + url.search, {
       method: request.method,
       headers,
       body: request.body,
