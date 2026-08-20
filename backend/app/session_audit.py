@@ -174,7 +174,7 @@ def export(db: Session, tenant_id: int, org: str, actor: str = "", days: int = 7
         lines = []
         for e in events:
             lines.append(_cef({
-                "vendor": "TachTech", "product": "Palivane",
+                "vendor": "Palivane", "product": "Palivane",
                 "categories": e["categories"] or [e["surface"]],
                 "subject": f"[{e['vendor']}] {e['action']}",
                 "severity": e["severity"], "surface": e["surface"],

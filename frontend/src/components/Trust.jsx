@@ -52,7 +52,7 @@ const SECTIONS = [
     items: [
       ["Adversarial reviews", "Multiple internal adversarial security audits (authentication, tenant isolation, SSRF, injection, extension surface) with all findings remediated — most recent: July 2026."],
       ["Independent testing", "A third-party penetration test is scheduled as part of the SOC 2 program."],
-      ["Responsible disclosure", "security@tachtech.net — see our security policy for scope and safe-harbor terms."],
+      ["Responsible disclosure", "security@palivane.io — see our security policy for scope and safe-harbor terms."],
     ],
   },
 ];
@@ -74,7 +74,7 @@ export default function Trust() {
         <h1>How Palivane protects your data</h1>
         <p>Palivane inspects your organization's most sensitive traffic, so it's built to be
            the most locked-down thing you run. Everything below is implemented today and
-           verifiable — ask us anything: <a href="mailto:security@tachtech.net">security@tachtech.net</a>.</p>
+           verifiable — ask us anything: <a href="mailto:security@palivane.io">security@palivane.io</a>.</p>
       </section>
 
       <section className="lp-section">
@@ -102,7 +102,7 @@ export default function Trust() {
             Our <strong>SOC 2 Type II</strong> program is underway, with a report expected in
             2027 (Type I sooner). In the meantime this page, our DPA, and a completed CAIQ
             questionnaire are available for security reviews —{" "}
-            <a href="mailto:security@tachtech.net">request the package</a>.
+            <a href="mailto:security@palivane.io">request the package</a>.
           </p>
 
           <h2 className="lp-h2" style={{ marginTop: 36 }}>Subprocessors</h2>

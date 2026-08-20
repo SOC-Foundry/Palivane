@@ -11,7 +11,7 @@
   metadata; secrets are read from Secret Manager at point of use, never saved locally.
 - **Dogfooding as posture evidence:** the operator's own development runs Palivane's
   local planes (hooks, posture reporter, VS Code sensor), so IDE extensions, MCP
-  configs, and AI-tool usage on the endpoint are continuously reported to the tachtech
+  configs, and AI-tool usage on the endpoint are continuously reported to the palivane
   org — our endpoint monitoring story is the product itself.
 
 ## Acceptable use
@@ -23,7 +23,7 @@ storing customer data outside approved systems, using production data in develop
 ## AI tool use (we practice the policy we sell)
 
 AI coding assistants are permitted **through Palivane's own governance**: gateway-routed
-or hook-covered, with findings reviewed in the tachtech org. Pasting Restricted data
+or hook-covered, with findings reviewed in the palivane org. Pasting Restricted data
 (customer content, keys) into ungoverned AI tools is prohibited — exactly the behavior
 Palivane exists to catch.
 

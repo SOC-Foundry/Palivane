@@ -19,7 +19,7 @@
 #
 # Run inside the target distro (or use installer-smoke-docker.sh to spin up a matrix):
 #   sudo ./deploy/native/installer-smoke.sh
-#   PALIVANE_URL=https://palivane.tachtech.net sudo ./deploy/native/installer-smoke.sh
+#   PALIVANE_URL=https://app.palivane.io sudo ./deploy/native/installer-smoke.sh
 #
 # Exit non-zero if any check FAILs (SKIPs don't fail). Root is required for system CA trust.
 set -uo pipefail

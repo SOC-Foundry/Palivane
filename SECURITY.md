@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Email **security@tachtech.net** with a description, reproduction steps, and impact.
+Email **security@palivane.io** with a description, reproduction steps, and impact.
 You'll get an acknowledgment within 2 business days and a status update at least every
 7 days until resolution.
 
@@ -17,11 +17,11 @@ You'll get an acknowledgment within 2 business days and a status update at least
 
 - This repository (backend, frontend, CLI tools, browser and VS Code extensions,
   deploy tooling)
-- The hosted service at palivane.tachtech.net
+- The hosted service at app.palivane.io
 
 ## Security posture
 
-See https://palivane.tachtech.net/trust for the current public summary (encryption,
+See https://app.palivane.io/trust for the current public summary (encryption,
 tenant isolation, backups, subprocessors, compliance status).
 
 ## Verifying downloads
@@ -29,4 +29,4 @@ tenant isolation, backups, subprocessors, compliance status).
 The CLI installer verifies a signed release manifest (ECDSA P-256) and each script's
 SHA-256 before running anything, and the served scripts are reproducible from a source
 checkout. To verify by hand, see
-https://palivane.tachtech.net/docs/verifying-downloads.
+https://app.palivane.io/docs/verifying-downloads.

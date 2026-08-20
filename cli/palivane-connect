@@ -32,7 +32,7 @@ If Copilot CLI is installed (~/.copilot present), it registers palivane-copilot-
 ~/.copilot/palivane.json — covering Copilot's tool calls (deniable) and prompts
 (observe-only at this plane) locally. Stdlib only.
 
-    palivane-connect                              # hosted SaaS (palivane.tachtech.net)
+    palivane-connect                              # hosted SaaS (app.palivane.io)
     palivane-connect https://palivane.self-hosted   # or set PALIVANE_URL, for self-hosting
     palivane-connect --route-gateway              # also route API traffic via the gateway
 """
@@ -54,9 +54,9 @@ import webbrowser
 
 # Hosted Palivane SaaS default: every org shares this URL (the tenant is resolved by who
 # signs in), so `palivane connect` alone just works. Override with an arg or PALIVANE_URL/
-# PALIVANE_URL for a self-hosted deployment. (The legacy warden.tachtech.net host still
+# PALIVANE_URL for a self-hosted deployment. (The legacy app.palivane.io host still
 # serves the API, so already-connected devices keep working until they re-run connect.)
-DEFAULT_URL = "https://palivane.tachtech.net"
+DEFAULT_URL = "https://app.palivane.io"
 
 
 def _console_url(argv) -> str:

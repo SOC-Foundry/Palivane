@@ -87,7 +87,7 @@ Routes egress through the proxy so MCP + AI traffic is inspected (and enforced).
   Task, CLI shims — with no admin rights:
 
   ```powershell
-  iwr https://palivane.tachtech.net/cli/palivane-desktop.ps1 -OutFile palivane-desktop.ps1
+  iwr https://app.palivane.io/cli/palivane-desktop.ps1 -OutFile palivane-desktop.ps1
   powershell -ExecutionPolicy Bypass -File palivane-desktop.ps1 install
   ```
 

@@ -12,10 +12,10 @@ supports it, and quarterly reviews with written evidence.
 | System | Who | Auth |
 |---|---|---|
 | GCP project `erudite-calling-502022-k6` | Founder | Google account + MFA |
-| GitHub `TachTech-Engineering/Palivane` | Founder | GitHub account + MFA |
+| GitHub `Palivane-Engineering/Palivane` | Founder | GitHub account + MFA |
 | Cloudflare (zone + Worker) | Founder | Cloudflare account + MFA |
 | Secret Manager (all secrets incl. license signing key) | Founder + Cloud Run runtime SA | IAM |
-| Palivane app — tenant admin | Founder (tachtech org) | password (argon2id) + TOTP |
+| Palivane app — tenant admin | Founder (palivane org) | password (argon2id) + TOTP |
 | Production DB | No human path — private IP only; operator tasks run as auditable one-off Cloud Run jobs | IAM |
 
 Service accounts are single-purpose (`palivane-front` for the edge, the compute SA for

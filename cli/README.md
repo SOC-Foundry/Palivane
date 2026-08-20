@@ -383,7 +383,7 @@ ggshield secret scan path . --json                    | palivane-import gitguard
 
 ## `palivane-otel` — claude-otel telemetry bridge (optional)
 
-For orgs already running [claude-otel](https://github.com/TachTech-Engineering/claude-otel)
+For orgs already running [claude-otel](https://github.com/Palivane-Engineering/claude-otel)
 (a local OTEL collector capturing Claude Code's native telemetry into `logs.jsonl`), this
 tails that file and forwards the security-relevant events to Palivane — a capture plane with
 **no proxy, no CA, no hook**, from telemetry Claude Code already emits:
@@ -460,8 +460,8 @@ sets it up, and it has two postures:
 The one-line installer runs `--cli-only` by default:
 
 ```bash
-curl -fsSL https://palivane.tachtech.net/install.sh | bash                  # CLI capture (no sudo)
-curl -fsSL https://palivane.tachtech.net/install.sh | bash -s -- --desktop  # + desktop apps/browsers
+curl -fsSL https://app.palivane.io/install.sh | bash                  # CLI capture (no sudo)
+curl -fsSL https://app.palivane.io/install.sh | bash -s -- --desktop  # + desktop apps/browsers
 ```
 
 ### Windows
@@ -473,7 +473,7 @@ the WinINET *user* proxy (WinHTTP/services are MDM territory), persistence is a 
 per-user Scheduled Task, and the CLIs get `.cmd` shims in `%USERPROFILE%\.palivane\bin`:
 
 ```powershell
-iwr https://palivane.tachtech.net/cli/palivane-desktop.ps1 -OutFile palivane-desktop.ps1
+iwr https://app.palivane.io/cli/palivane-desktop.ps1 -OutFile palivane-desktop.ps1
 powershell -ExecutionPolicy Bypass -File palivane-desktop.ps1 install            # or: install -CliOnly
 ```
 

@@ -47,7 +47,7 @@ SQL); it creates its own `warden-gke-subnet` with secondary ranges for pods/serv
 #      customers = { acme = { machine_type = "e2-standard-2", min_nodes = 1,
 #                             max_nodes = 3, db_tier = "db-g1-small", db_disk_gb = 10 } }
 # 2. run:
-./provision-customer.sh acme acme.palivane.tachtech.net
+./provision-customer.sh acme acme.app.palivane.io
 ```
 
 The script applies the customer's Terraform (node pool + Cloud SQL + GSA), creates the

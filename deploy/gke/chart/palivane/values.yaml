@@ -3,7 +3,7 @@
 
 # Customer identity — REQUIRED per install (provisioner sets these).
 customer: ""          # slug, e.g. "acme"; used for names, node-pool pinning, labels
-host: ""              # public hostname, e.g. "acme.palivane.tachtech.net"
+host: ""              # public hostname, e.g. "acme.app.palivane.io"
 
 image:
   repo: us-central1-docker.pkg.dev/erudite-calling-502022-k6/warden/warden

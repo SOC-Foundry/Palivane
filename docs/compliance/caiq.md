@@ -1,12 +1,12 @@
 # Security questionnaire responses (CAIQ-style)
 
 Pre-filled answers to the questions security reviewers ask most, organized by CAIQ v4
-domain. Hand this with the [/trust](https://palivane.tachtech.net/trust) page and the
-in-product DPA. Company: **TachTech** · Service: **Palivane — AI Security Gateway**
-(hosted at palivane.tachtech.net; self-hosted option available). Current as of
-**2026-07-19**; contact security@tachtech.net.
+domain. Hand this with the [/trust](https://app.palivane.io/trust) page and the
+in-product DPA. Company: **Palivane** · Service: **Palivane — AI Security Gateway**
+(hosted at app.palivane.io; self-hosted option available). Current as of
+**2026-07-19**; contact security@palivane.io.
 
-**Context reviewers should know up front:** TachTech is a single-operator company. We
+**Context reviewers should know up front:** Palivane is a single-operator company. We
 compensate with automation-enforced controls (CI-gated protected-branch changes that
 admins cannot bypass, immutable audit logs, externally attested monitoring) rather than
 headcount-based separation of duties. Our SOC 2 Type II program is underway.
@@ -25,7 +25,7 @@ headcount-based separation of duties. Our SOC 2 Type II program is underway.
 | SDLC with security testing? | Yes — 700+ automated tests including dedicated tenant-isolation, authn/z, SSRF, redaction, and encryption suites; CI must pass before any change reaches `main` (branch protection, admins enforced). |
 | Input validation? | Schema validation (Pydantic) at every API boundary; size caps; SSRF guards on all customer-supplied URLs at write AND send time. |
 | API security | All APIs authenticated (JWT sessions, hashed API keys, short-lived agent tokens); per-tenant and per-agent rate limits; per-IP edge limits on auth endpoints. |
-| Vulnerability disclosure? | Public policy in SECURITY.md — security@tachtech.net, ack ≤ 2 business days, 90-day coordinated disclosure. |
+| Vulnerability disclosure? | Public policy in SECURITY.md — security@palivane.io, ack ≤ 2 business days, 90-day coordinated disclosure. |
 
 ## BCR — Business Continuity & Operational Resilience
 
@@ -56,7 +56,7 @@ headcount-based separation of duties. Our SOC 2 Type II program is underway.
 
 | Q | Answer |
 |---|---|
-| Physical security? | Inherited from Google Cloud (us-central1) — SOC 2/ISO 27001 attested. TachTech operates no physical infrastructure. |
+| Physical security? | Inherited from Google Cloud (us-central1) — SOC 2/ISO 27001 attested. Palivane operates no physical infrastructure. |
 
 ## DSP — Data Security & Privacy Lifecycle
 

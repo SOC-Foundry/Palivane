@@ -1,7 +1,7 @@
 # Compliance program
 
 Policy suite and security-questionnaire responses backing the SOC 2 program and the
-public [/trust](https://palivane.tachtech.net/trust) page. Every control cited here is
+public [/trust](https://app.palivane.io/trust) page. Every control cited here is
 implemented; where a policy names a cadence, the calendar below is the commitment.
 
 **Owner:** David Kerschieter (Founder — acts as CEO, CISO, and DPO). Single-operator

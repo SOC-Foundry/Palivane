@@ -6,13 +6,13 @@ from __future__ import annotations
 
 def test_install_sh_served_public_with_baked_url(raw_client, monkeypatch):
     import app.distribution as dist
-    monkeypatch.setattr(dist.settings, "public_base_url", "https://warden.tachtech.net")
+    monkeypatch.setattr(dist.settings, "public_base_url", "https://selfhosted.example.com")
     r = raw_client.get("/install.sh")
     assert r.status_code == 200
     assert "text/x-shellscript" in r.headers["content-type"]
     body = r.text
     assert body.startswith("#!/usr/bin/env bash")
-    assert "https://warden.tachtech.net" in body
+    assert "https://selfhosted.example.com" in body
     assert "palivane-connect" in body and "--desktop" in body
     assert ".palivane/bin" in body
     # cli-only is the default proxy mode; --desktop and --no-proxy are the overrides
@@ -57,7 +57,7 @@ def test_install_falls_back_when_url_unset(raw_client, monkeypatch):
     import app.distribution as dist
     monkeypatch.setattr(dist.settings, "public_base_url", "")
     body = raw_client.get("/install.sh").text
-    assert "https://palivane.tachtech.net" in body   # sensible default (new brand host)
+    assert "https://app.palivane.io" in body   # sensible default (new brand host)
 
 
 def test_installer_covers_fish_path(raw_client):

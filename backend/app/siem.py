@@ -29,7 +29,7 @@ def _fields(verdict: dict, subject: str, actor: str, surface: str, org: str) -> 
     from .signal_summary import top_signals
     cats = [s.get("category", "") for s in verdict.get("signals", []) if s.get("category")]
     return {
-        "vendor": "TachTech", "product": "Palivane",
+        "vendor": "Palivane", "product": "Palivane",
         "event": "finding", "severity": verdict.get("severity"),
         "risk_score": verdict.get("risk_score"), "categories": cats,
         # The concrete cause (strongest signals, redacted evidence) for programmatic consumers.
@@ -48,7 +48,7 @@ def _cef(f: dict) -> str:
         return str(v).replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ")
     sig = hesc(",".join(f["categories"]) or "finding")
     name = hesc((f.get("subject") or "Palivane finding")[:120])
-    header = f"CEF:0|TachTech|Palivane|1.0|{sig}|{name}|{_CEF_SEV.get(f['severity'], 5)}"
+    header = f"CEF:0|Palivane|Palivane|1.0|{sig}|{name}|{_CEF_SEV.get(f['severity'], 5)}"
     tops = f.get("top_signals") or []
     match = "; ".join(t["title"] + (f": {t['evidence']}" if t.get("evidence") else "")
                        for t in tops[:3])

@@ -103,7 +103,7 @@ def main(argv: list[str]) -> int:
 
     fn = sub.add_parser("funnel", help="signup→activation product-analytics funnel")
     fn.add_argument("--days", type=int, default=None, help="only orgs created in the last N days")
-    fn.add_argument("--all", action="store_true", help="include internal orgs (tachtech, demo)")
+    fn.add_argument("--all", action="store_true", help="include internal orgs (palivane, demo)")
 
     sub.add_parser("plans", help="operator plan roster: every org and its plan")
 
