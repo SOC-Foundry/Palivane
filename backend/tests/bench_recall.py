@@ -487,7 +487,7 @@ def _pct(hit: int, n: int) -> str:
 def print_report(report: dict) -> None:
     by_cat = report["by_cat"]
     print("\n" + "=" * 72)
-    print("WARDEN DETECTION-ENGINE RECALL BENCHMARK")
+    print("PALIVANE DETECTION-ENGINE RECALL BENCHMARK")
     print(f"judge_enabled={engine.judge_enabled}  (False = offline heuristics only)")
     print("=" * 72)
     print(f"{'category':<28}{'detected/total':>16}{'recall':>10}{'actioned':>10}")

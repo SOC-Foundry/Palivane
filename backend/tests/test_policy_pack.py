@@ -39,22 +39,22 @@ def test_forcelist_webstore_vs_self_hosted():
 def test_browser_extension_policy_governed():
     import json as _json
     pol = _json.loads(pp.browser_extension_policy(
-        "wardenid", blocked_ids=["claudeforchromeid"], blocked_hosts=["*://*.corp.example.com"]))
+        "palivaneid", blocked_ids=["claudeforchromeid"], blocked_hosts=["*://*.corp.example.com"]))
     es = pol["ExtensionSettings"]
     assert es["*"]["installation_mode"] == "allowed"                    # governed default
     assert es["*"]["runtime_blocked_hosts"] == ["*://*.corp.example.com"]
-    assert es["wardenid"]["installation_mode"] == "force_installed"      # Palivane always on
+    assert es["palivaneid"]["installation_mode"] == "force_installed"      # Palivane always on
     assert es["claudeforchromeid"]["installation_mode"] == "blocked"     # AI ext blocked by ID
 
 
 def test_browser_extension_policy_lockdown():
     import json as _json
     pol = _json.loads(pp.browser_extension_policy(
-        "wardenid", lockdown=True, allowed_ids=["approvedid"]))
+        "palivaneid", lockdown=True, allowed_ids=["approvedid"]))
     es = pol["ExtensionSettings"]
     assert es["*"]["installation_mode"] == "blocked"                     # deny-all default
     assert es["approvedid"]["installation_mode"] == "allowed"
-    assert es["wardenid"]["installation_mode"] == "force_installed"
+    assert es["palivaneid"]["installation_mode"] == "force_installed"
 
 
 def test_pack_includes_browser_extension_settings():
@@ -66,8 +66,8 @@ def test_pack_includes_browser_extension_settings():
 
 
 def test_extension_updates_xml():
-    xml = pp.extension_updates_xml("abc123", "https://cdn.corp/warden.crx", "0.5.0")
-    assert 'appid="abc123"' in xml and 'codebase="https://cdn.corp/warden.crx"' in xml
+    xml = pp.extension_updates_xml("abc123", "https://cdn.corp/palivane.crx", "0.5.0")
+    assert 'appid="abc123"' in xml and 'codebase="https://cdn.corp/palivane.crx"' in xml
     assert 'version="0.5.0"' in xml and "gupdate" in xml
 
 
@@ -79,10 +79,10 @@ def test_pack_self_hosted_extension_opt_in():
     # Self-hosted: updates.xml emitted, forcelist points at it.
     sh = pp.render_pack("https://w", "abc123", "", 8081, [], [],
                         ext_update_url="https://cdn.corp/updates.xml",
-                        ext_crx_url="https://cdn.corp/warden.crx")
+                        ext_crx_url="https://cdn.corp/palivane.crx")
     assert "extension-updates.xml" in sh
     assert sh["chrome-edge-forcelist.txt"] == "abc123;https://cdn.corp/updates.xml"
-    assert "https://cdn.corp/warden.crx" in sh["extension-updates.xml"]
+    assert "https://cdn.corp/palivane.crx" in sh["extension-updates.xml"]
 
 
 def test_forcelist_and_pack():

@@ -22,21 +22,21 @@ gcloud services enable run.googleapis.com sqladmin.googleapis.com \
   artifactregistry.googleapis.com cloudbuild.googleapis.com secretmanager.googleapis.com
 
 # 2. Artifact Registry repo for the image
-gcloud artifacts repositories create warden --repository-format=docker --location="$REGION"
+gcloud artifacts repositories create palivane --repository-format=docker --location="$REGION"
 
 # 3. Cloud SQL Postgres (smallest tier to start)
-gcloud sql instances create warden-db --database-version=POSTGRES_16 \
+gcloud sql instances create palivane-db --database-version=POSTGRES_16 \
   --tier=db-f1-micro --region="$REGION"
-gcloud sql databases create warden --instance=warden-db
-gcloud sql users create warden --instance=warden-db --password='CHOOSE-A-STRONG-PASSWORD'
-#   Connection name (used below): PROJECT:REGION:warden-db
-SQL_CONNECTION="$(gcloud sql instances describe warden-db --format='value(connectionName)')"
+gcloud sql databases create palivane --instance=palivane-db
+gcloud sql users create palivane --instance=palivane-db --password='CHOOSE-A-STRONG-PASSWORD'
+#   Connection name (used below): PROJECT:REGION:palivane-db
+SQL_CONNECTION="$(gcloud sql instances describe palivane-db --format='value(connectionName)')"
 
 # 4. Secrets (Secret Manager). DATABASE_URL uses the Cloud SQL unix socket Cloud Run mounts.
 printf '%s' "$(python3 -c 'import secrets;print(secrets.token_urlsafe(48))')" \
-  | gcloud secrets create warden-secret-key --data-file=-
-printf '%s' "postgresql+psycopg2://warden:CHOOSE-A-STRONG-PASSWORD@/warden?host=/cloudsql/${SQL_CONNECTION}" \
-  | gcloud secrets create warden-database-url --data-file=-
+  | gcloud secrets create palivane-secret-key --data-file=-
+printf '%s' "postgresql+psycopg2://palivane:CHOOSE-A-STRONG-PASSWORD@/palivane?host=/cloudsql/${SQL_CONNECTION}" \
+  | gcloud secrets create palivane-database-url --data-file=-
 # Optional provider keys (added to the deploy automatically if present):
 # printf '%s' "sk-ant-…" | gcloud secrets create gateway-anthropic-key --data-file=-
 # printf '%s' "sk-…"     | gcloud secrets create openai-api-key --data-file=-
@@ -56,7 +56,7 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$S
 ```bash
 PROJECT_ID=my-proj REGION=us-central1 \
 SQL_CONNECTION="$SQL_CONNECTION" \
-DOMAIN=app.warden.io \
+DOMAIN=app.palivane.io \
 GATEWAY_ENFORCE=true \
 ./deploy/cloudrun/deploy.sh
 ```
@@ -71,7 +71,7 @@ Single-origin, streaming-safe, free — no load balancer, no Firebase (Firebase 
 can buffer the gateway's SSE streaming). Run the helper, or the steps by hand:
 
 ```bash
-PROJECT_ID=my-proj REGION=us-central1 DOMAIN=app.warden.io ./deploy/cloudrun/map-domain.sh
+PROJECT_ID=my-proj REGION=us-central1 DOMAIN=app.palivane.io ./deploy/cloudrun/map-domain.sh
 ```
 
 By hand:
@@ -81,14 +81,14 @@ gcloud domains verify palivane.io
 gcloud domains list-user-verified                 # confirm it appears
 
 # 2. Map the domain to the service (auto-provisions a managed TLS cert).
-gcloud beta run domain-mappings create --service warden --domain app.warden.io --region "$REGION"
+gcloud beta run domain-mappings create --service palivane --domain app.palivane.io --region "$REGION"
 
 # 3. Add the DNS records it prints at your registrar (A/AAAA or CNAME to ghs.googlehosted.com).
-gcloud beta run domain-mappings describe --domain app.warden.io --region "$REGION" \
+gcloud beta run domain-mappings describe --domain app.palivane.io --region "$REGION" \
   --format='table(status.resourceRecords[].name, status.resourceRecords[].type, status.resourceRecords[].rrdata)'
 
 # 4. Wait for DNS + cert (~15-60 min); watch:
-gcloud beta run domain-mappings describe --domain app.warden.io --region "$REGION" \
+gcloud beta run domain-mappings describe --domain app.palivane.io --region "$REGION" \
   --format='value(status.conditions[].type, status.conditions[].status)'
 ```
 

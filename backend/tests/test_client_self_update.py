@@ -241,12 +241,12 @@ def test_retired_client_name_is_not_reported_current(client, raw_client):
                "user": "r@acme.com"}
     # A retired generation still calling in, reporting a version that was current for IT.
     raw_client.post("/api/ingest/ai-usage", json=payload,
-                    headers={"X-Palivane-Token": key, "User-Agent": "warden-proxy/1.3.0"})
+                    headers={"X-Palivane-Token": key, "User-Agent": "palivane-oldproxy/1.3.0"})
     fleet = client.get("/api/fleet").json()
     rows = [s for s in fleet["sensors"] if s["actor"] == "r@acme.com"]
     assert rows, "the retired client's heartbeat was not recorded at all"
     row = rows[0]
-    assert row["client"] == "warden-proxy"
+    assert row["client"] == "palivane-oldproxy"
     assert row["client_current"] is False, "a retired client must not read as current"
     assert row["client_retired"] is True
     assert fleet["summary"]["retired_clients"] >= 1

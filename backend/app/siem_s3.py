@@ -101,26 +101,29 @@ def _client(region: str, key_id: str, secret: str, role_arn: str = "",
         return c
 
 
-def _key(prefix: str, naming: str = "warden") -> str:
+BRAND = "palivane"   # brand key in the SIEM sourcetype and S3 object paths
+
+
+def _key(prefix: str) -> str:
     p = (prefix or "").strip().strip("/")
     now = time.gmtime()
     day = time.strftime("%Y/%m/%d", now)
     uid = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
     # Tenant-selected brand segment: existing tenants' pipelines (Panther/Athena/Glue)
-    # point at the pre-rebrand warden/findings/ prefix; new tenants use palivane/findings/.
-    base = f"{naming}/findings/{day}/{uid}.json"
+    # point at the pre-rebrand palivane/findings/ prefix; new tenants use palivane/findings/.
+    base = f"{BRAND}/findings/{day}/{uid}.json"
     return f"{p}/{base}" if p else base
 
 
 def _put(bucket: str, prefix: str, region: str, key_id: str, secret: str, fields: dict,
-         naming: str = "warden", role_arn: str = "", external_id: str = "") -> tuple[bool, str]:
+         role_arn: str = "", external_id: str = "") -> tuple[bool, str]:
     """PUT one finding object to S3. Returns (ok, detail). boto3 imported lazily."""
     try:
         s3 = _client(region, key_id, secret, role_arn=role_arn, external_id=external_id)
     except Exception as e:      # boto3 not installed, or STS refused the AssumeRole
         return False, f"S3 client unavailable: {str(e)[:280]}"
     try:
-        s3.put_object(Bucket=bucket, Key=_key(prefix, naming),
+        s3.put_object(Bucket=bucket, Key=_key(prefix),
                       Body=json.dumps(fields).encode(), ContentType="application/json")
         return True, ""
     except Exception as e:
@@ -128,9 +131,9 @@ def _put(bucket: str, prefix: str, region: str, key_id: str, secret: str, fields
 
 
 def _deliver(bucket: str, prefix: str, region: str, key_id: str, secret: str, fields: dict,
-             naming: str, tenant_id: int, role_arn: str = "", external_id: str = "") -> None:
+             tenant_id: int, role_arn: str = "", external_id: str = "") -> None:
     """Pool job: put + record the outcome, so a broken bucket/credential is visible."""
-    ok, detail = _put(bucket, prefix, region, key_id, secret, fields, naming=naming,
+    ok, detail = _put(bucket, prefix, region, key_id, secret, fields,
                       role_arn=role_arn, external_id=external_id)
     from . import sink_health
     sink_health.record(tenant_id, "siem_s3", ok, detail)
@@ -141,7 +144,7 @@ def _deliver(bucket: str, prefix: str, region: str, key_id: str, secret: str, fi
 
 def forward_s3(bucket: str, prefix: str, region: str, key_id: str, secret: str,
                min_severity: str, verdict: dict, subject: str = "", actor: str = "",
-               surface: str = "", org: str = "", naming: str = "warden",
+               surface: str = "", org: str = "",
                tenant_id: int = 0, role_arn: str = "", external_id: str = "") -> None:
     """Deliver a finding to the tenant's S3 sink if configured (an assumable role, or a
     static key pair) and severity >= min_severity. Non-blocking and best-effort, but
@@ -152,18 +155,18 @@ def forward_s3(bucket: str, prefix: str, region: str, key_id: str, secret: str,
         return
     fields = siem._fields(verdict, subject, actor, surface, org)
     from .dispatch import submit
-    submit(_deliver, bucket, prefix, region, key_id, secret, fields, naming, tenant_id,
+    submit(_deliver, bucket, prefix, region, key_id, secret, fields, tenant_id,
            role_arn, external_id)
 
 
 def test(bucket: str, prefix: str, region: str, key_id: str, secret: str,
-         naming: str = "warden", role_arn: str = "", external_id: str = "") -> tuple[bool, str]:
+         role_arn: str = "", external_id: str = "") -> tuple[bool, str]:
     """Synchronously write a sample object so the console can validate the config."""
     if not (bucket and (role_arn or (key_id and secret))):
         return False, "bucket plus an IAM role ARN or an AWS key id + secret are required"
     fields = siem._fields({"severity": "high", "risk_score": 75, "finding_id": 0,
                            "signals": [{"category": "secret_leak"}]},
-                          subject="Palivane S3 test event", actor="warden", surface="test", org="")
+                          subject="Palivane S3 test event", actor="palivane", surface="test", org="")
     fields["event"] = "test"
-    return _put(bucket, prefix, region, key_id, secret, fields, naming=naming,
+    return _put(bucket, prefix, region, key_id, secret, fields,
                 role_arn=role_arn, external_id=external_id)

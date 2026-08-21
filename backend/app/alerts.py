@@ -15,10 +15,8 @@ _RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}
 
 
 def _envelope(env: dict) -> dict:
-    """Structured payload under both brand keys. "warden" is the pre-rebrand key existing
-    webhook consumers may parse — keep emitting it through the deprecation window (announced
-    2026-08; drop no earlier than 2027-02). New integrations should read "palivane"."""
-    return {"palivane": env, "warden": env}
+    """Structured payload under the product's brand key."""
+    return {"palivane": env}
 
 
 def _payload(verdict: dict, subject: str, actor: str, surface: str) -> dict:

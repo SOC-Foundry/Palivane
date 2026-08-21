@@ -1,0 +1,25 @@
+[Unit]
+Description=Palivane API (FastAPI/uvicorn)
+Documentation=https://github.com/your-org/palivane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=palivane
+Group=palivane
+WorkingDirectory=/opt/palivane/backend
+EnvironmentFile=/etc/palivane/palivane.env
+ExecStart=/opt/palivane/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8088
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/palivane
+
+[Install]
+WantedBy=multi-user.target

@@ -75,7 +75,7 @@ def test_acs_enforces_allowed_domain(client, raw_client, monkeypatch):
 def test_sp_metadata_is_served(client, raw_client):
     _configure(client)
     # Use a real-looking Host so the SAML lib's URL validation accepts the ACS URL.
-    r = raw_client.get("/api/auth/saml/acme/metadata", headers={"host": "warden.example.com"})
+    r = raw_client.get("/api/auth/saml/acme/metadata", headers={"host": "palivane.example.com"})
     assert r.status_code == 200 and "EntityDescriptor" in r.text
     assert "/api/auth/saml/acme/acs" in r.text   # our ACS URL is advertised
 

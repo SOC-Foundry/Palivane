@@ -72,7 +72,7 @@ def main() -> int:
             ctx = b.new_context(viewport={"width": 1440, "height": height},
                                 device_scale_factor=2)
             page = ctx.new_page()
-            page.add_init_script(f"localStorage.setItem('warden_token', {json.dumps(token)})")
+            page.add_init_script(f"localStorage.setItem('palivane_token', {json.dumps(token)})")
             page.goto(BASE, wait_until="networkidle")
             page.wait_for_timeout(1200)
             try:

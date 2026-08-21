@@ -67,7 +67,7 @@
   window.addEventListener("message", (e) => {
     if (e.source !== window) return;   // only our content-script relay, same window
     const d = e.data;
-    if (!d || !d.__warden || d.kind !== "verdict") return;
+    if (!d || !d.__palivane || d.kind !== "verdict") return;
     const resolve = PENDING.get(d.id);
     if (resolve) { PENDING.delete(d.id); resolve(d.verdict || { action: "allow" }); }
   });
@@ -184,13 +184,13 @@
   const origSend = XMLHttpRequest.prototype.send;
 
   XMLHttpRequest.prototype.open = function (method, url) {
-    this.__warden = { method: String(method || "GET").toUpperCase(), url: url || "" };
+    this.__palivane = { method: String(method || "GET").toUpperCase(), url: url || "" };
     return origOpen.apply(this, arguments);
   };
 
   XMLHttpRequest.prototype.send = function (body) {
     try {
-      const info = this.__warden;
+      const info = this.__palivane;
       if (info && info.method === "POST" && looksLikeSend(info.url)) {
         const bodyText = bodyToText(body);
         if (DEBUG) console.debug("[Palivane] xhr POST", info.url, "match= true bodyChars=", bodyText.length);

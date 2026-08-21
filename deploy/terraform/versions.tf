@@ -11,7 +11,7 @@ terraform {
     }
   }
   # Remote state (encrypted at rest by GCS). Partial config: CI passes the bucket via
-  #   terraform init -backend-config="bucket=...  -backend-config="prefix=warden"
+  #   terraform init -backend-config="bucket=...  -backend-config="prefix=palivane"
   # and local validate uses `terraform init -backend=false`.
   backend "gcs" {}
 }

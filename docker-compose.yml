@@ -11,13 +11,13 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-warden}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-warden}
-      POSTGRES_DB: ${POSTGRES_DB:-warden}
+      POSTGRES_USER: ${POSTGRES_USER:-palivane}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-palivane}
+      POSTGRES_DB: ${POSTGRES_DB:-palivane}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-warden}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-palivane}"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -31,7 +31,7 @@ services:
         condition: service_healthy
     environment:
       PORT: "8080"
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warden}:${POSTGRES_PASSWORD:-warden}@db:5432/${POSTGRES_DB:-warden}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-palivane}:${POSTGRES_PASSWORD:-palivane}@db:5432/${POSTGRES_DB:-palivane}
       PALIVANE_SECRET_KEY: "${PALIVANE_SECRET_KEY:?set a strong PALIVANE_SECRET_KEY in .env (openssl rand -hex 32)}"
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
       PALIVANE_PUBLIC_URL: ${PALIVANE_PUBLIC_URL:-http://localhost:8080}

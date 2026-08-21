@@ -17,7 +17,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Parsed from the client User-Agent ("warden-hook/1.1.0") so the console can flag
+    # Parsed from the client User-Agent ("palivane-hook/1.1.0") so the console can flag
     # devices running stale plumbing. Empty for pre-1.1 clients until they next report.
     op.add_column('sensor_heartbeats',
                   sa.Column('client', sa.String(length=48), server_default=''))

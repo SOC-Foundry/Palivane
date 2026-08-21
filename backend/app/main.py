@@ -325,8 +325,7 @@ def test_siem(current: User = Depends(require_admin), db: Session = Depends(get_
          "signals": [{"category": "secret_leak"}]},
         subject="Palivane SIEM test event", actor="palivane", surface="test", org=t.slug)
     ok, detail = siem.send_detail(t.siem_url.strip(), unseal(t.siem_token or ""),
-                                  t.siem_format or "json", fields,
-                                  naming=t.siem_naming or "warden")
+                                  t.siem_format or "json", fields)
     return {"ok": ok, "detail": detail}
 
 
@@ -341,7 +340,6 @@ def test_siem_s3(current: User = Depends(require_admin), db: Session = Depends(g
     ok, detail = siem_s3.test(t.siem_s3_bucket.strip(), t.siem_s3_prefix or "",
                               t.siem_s3_region or "", t.siem_s3_key_id or "",
                               unseal(t.siem_s3_secret or ""),
-                              naming=t.siem_naming or "warden",
                               role_arn=t.siem_s3_role_arn or "",
                               external_id=t.siem_s3_external_id or "")
     return {"ok": ok, "detail": detail}
@@ -360,7 +358,6 @@ def test_archive_s3(current: User = Depends(require_admin), db: Session = Depend
     ok, detail = archive_s3.test(t.siem_s3_bucket.strip(), t.siem_s3_prefix or "",
                                  t.siem_s3_region or "", t.siem_s3_key_id or "",
                                  unseal(t.siem_s3_secret or ""),
-                                 naming=t.siem_naming or "warden",
                                  role_arn=t.siem_s3_role_arn or "",
                                  external_id=t.siem_s3_external_id or "")
     return {"ok": ok, "detail": detail}
@@ -1292,9 +1289,9 @@ def _client_latest(ua: str) -> str:
     return client_versions().get(name, "") if name else ""
 
 
-# Client-build name prefixes we own. Both "palivane" and "warden" are recognised
+# Client-build name prefixes we own. Both "palivane" and "palivane" are recognised
 # so clients from either generation are properly tracked and reported in fleet view.
-_CLIENT_UA_PREFIXES = ("palivane", "warden")
+_CLIENT_UA_PREFIXES = ("palivane",)
 
 
 def _parse_client_ua(ua: str) -> tuple[str, str]:

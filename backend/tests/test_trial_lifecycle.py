@@ -20,7 +20,7 @@ NOW = datetime(2026, 7, 29, 12, 0, 0)
 def _enable_email(monkeypatch):
     sent = []
     monkeypatch.setattr(email_mod.settings, "smtp_host", "smtp.test")
-    monkeypatch.setattr(email_mod.settings, "mail_from", "warden@test")
+    monkeypatch.setattr(email_mod.settings, "mail_from", "palivane@test")
     monkeypatch.setattr(trial_mod.email_mod, "send",
                         lambda to, subject, body: sent.append((to, subject, body)))
     return sent

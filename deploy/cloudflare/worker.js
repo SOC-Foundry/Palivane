@@ -1,5 +1,5 @@
 // Palivane front door: Cloudflare Worker that proxies app.palivane.io to the
-// IAM-locked Cloud Run service, attaching a Google ID token for the warden-front
+// IAM-locked Cloud Run service, attaching a Google ID token for the palivane-front
 // service account. This keeps Cloud Run private (no allUsers invoker — org policy
 // forbids it) while Cloudflare terminates public TLS and fronts every request;
 // hitting the *.run.app URL directly gets 403 because only this Worker's SA may invoke.
@@ -7,8 +7,8 @@
 // The token rides in X-Serverless-Authorization (checked and stripped by Cloud Run's
 // IAM layer) so the app's own Authorization header (agent JWTs) passes through intact.
 //
-// Secret required: GCP_SA_KEY — the warden-front service-account JSON key
-//   (npx wrangler secret put GCP_SA_KEY < warden-front-key.json)
+// Secret required: GCP_SA_KEY — the palivane-front service-account JSON key
+//   (npx wrangler secret put GCP_SA_KEY < palivane-front-key.json)
 //
 // Var required: ORIGIN — the Cloud Run service URL this fronts, set per environment in
 // wrangler.toml. It is NOT hardcoded here: the Worker is identical across environments,
@@ -85,7 +85,7 @@ async function idToken(env) {
 // account, so the counters are ours: a Durable Object for exact global per-IP counts on
 // auth endpoints, and a coarse in-isolate counter for general API floods.)
 
-// Paths Warden never serves — WordPress/PHP probes, dotfile hunts, Exchange scans.
+// Paths Palivane never serves — WordPress/PHP probes, dotfile hunts, Exchange scans.
 const BLOCKED_PATH = new RegExp(
   '^/(?:wp-(?:admin|login|content|includes)|wordpress|xmlrpc\\.php|phpmyadmin|pma|' +
   'cgi-bin|vendor/|\\.git|\\.env|\\.aws|\\.ssh|\\.svn|\\.DS_Store|owa/|autodiscover|' +

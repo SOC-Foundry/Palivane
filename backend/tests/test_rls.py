@@ -4,7 +4,7 @@ RLS only exists on Postgres, and is only *enforced* for a non-superuser role (su
 and, without FORCE, table owners bypass it). So this test is skipped unless pointed at a
 Postgres reachable as a non-superuser via PALIVANE_RLS_TEST_URL, e.g.:
 
-    PALIVANE_RLS_TEST_URL=postgresql://warden:pw@127.0.0.1:5433/warden \\
+    PALIVANE_RLS_TEST_URL=postgresql://palivane:pw@127.0.0.1:5433/palivane \\
         pytest tests/test_rls.py
 
 It assumes migrations (incl. a9f1c3e5b7d0) have been applied to that database. All rows it

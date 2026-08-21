@@ -111,7 +111,7 @@ def test_config_from_env(monkeypatch, tmp_path):
     assert cfg["enforce"] is True
 
 
-def test_config_from_gemini_warden_json(monkeypatch, tmp_path):
+def test_config_from_gemini_palivane_json(monkeypatch, tmp_path):
     for v in ("PALIVANE_URL", "PALIVANE_TOKEN", "PALIVANE_ENFORCE"):
         monkeypatch.delenv(v, raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -156,12 +156,12 @@ def test_shell_dangerous_command_detected_end_to_end(client, raw_client):
 
 # --- Dev-directory exclusion (PALIVANE_HOOK_EXCLUDE_DIRS) ---------------------------------
 def test_is_excluded_and_event_cwd():
-    ex = [hook.os.path.realpath("/repo/warden")]
-    assert hook._is_excluded("/repo/warden", ex) is True
-    assert hook._is_excluded("/repo/warden/backend", ex) is True     # subdir
+    ex = [hook.os.path.realpath("/repo/palivane")]
+    assert hook._is_excluded("/repo/palivane", ex) is True
+    assert hook._is_excluded("/repo/palivane/backend", ex) is True     # subdir
     assert hook._is_excluded("/repo/palivane-other", ex) is False      # sibling prefix only
     assert hook._is_excluded("/repo/other", ex) is False
-    assert hook._is_excluded("/repo/warden", []) is False            # nothing excluded
+    assert hook._is_excluded("/repo/palivane", []) is False            # nothing excluded
     # cwd resolution: event.cwd > tool_input.cwd > process cwd
     assert hook._event_cwd({"cwd": "/x"}) == "/x"
     assert hook._event_cwd({"tool_input": {"cwd": "/y"}}) == "/y"

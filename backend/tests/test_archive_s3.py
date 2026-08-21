@@ -38,7 +38,7 @@ def cap(monkeypatch):
 def _tenant(**kw) -> Tenant:
     base = dict(id=1, slug="acme", siem_s3_bucket="lake", siem_s3_prefix="p",
                 siem_s3_region="us-east-1", siem_s3_key_id="AKIA_x", siem_s3_secret="sek",
-                siem_naming="palivane", archive_s3_enabled=True)
+                archive_s3_enabled=True)
     base.update(kw)
     return Tenant(**base)
 
@@ -55,11 +55,11 @@ def _lines(calls) -> list[dict]:
 
 
 def test_event_key_layout():
-    k = a._event_key("acme/logs", "palivane")
+    k = a._event_key("acme/logs")
     assert k.startswith("acme/logs/palivane/events/") and k.endswith(".ndjson")
     # hour partition: events/YYYY/MM/DD/HH/<uid>.ndjson
     assert len(k.split("/events/")[1].split("/")) == 5
-    assert a._event_key("", "warden").startswith("warden/events/")
+    assert a._event_key("").startswith("palivane/events/")
 
 
 def test_noop_when_disabled_or_unconfigured(cap):
@@ -77,7 +77,7 @@ def test_batches_and_flushes_ndjson(cap):
     assert cap == []                       # buffered, below the size threshold
     a.flush_all()
     assert len(cap) == 1 and cap[0][2] == 2
-    assert cap[0][0] == ("lake", "p", "us-east-1", "AKIA_x", "sek", "palivane", "", "")
+    assert cap[0][0] == ("lake", "p", "us-east-1", "AKIA_x", "sek", "", "")
     ev = _lines(cap)
     assert [e["schema"] for e in ev] == [1, 1]
     assert ev[0]["actor"] == "e@acme.com" and ev[0]["agent"] == "copilot"

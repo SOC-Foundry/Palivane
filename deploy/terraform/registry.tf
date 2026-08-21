@@ -1,4 +1,4 @@
-resource "google_artifact_registry_repository" "warden" {
+resource "google_artifact_registry_repository" "palivane" {
   location      = var.region
   repository_id = var.service_name
   format        = "DOCKER"

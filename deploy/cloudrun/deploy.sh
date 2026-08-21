@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# Build + deploy Warden to Cloud Run (single-origin: SPA + API), connected to Cloud SQL.
+# Build + deploy Palivane to Cloud Run (single-origin: SPA + API), connected to Cloud SQL.
 # Prereqs (once): see deploy/cloudrun/README.md — APIs enabled, Artifact Registry repo,
 # a Cloud SQL Postgres instance, and Secret Manager secrets created.
 #
 #   PROJECT_ID=my-proj REGION=us-central1 \
-#   SQL_CONNECTION=my-proj:us-central1:warden-db \
-#   DOMAIN=app.warden.io \
+#   SQL_CONNECTION=my-proj:us-central1:palivane-db \
+#   DOMAIN=app.palivane.io \
 #   ./deploy/cloudrun/deploy.sh
 set -euo pipefail
 
 : "${PROJECT_ID:?set PROJECT_ID}"
 REGION="${REGION:-us-central1}"
-SERVICE="${SERVICE:-warden}"
-REPO="${REPO:-warden}"
-IMAGE_NAME="${IMAGE_NAME:-warden}"
+SERVICE="${SERVICE:-palivane}"
+REPO="${REPO:-palivane}"
+IMAGE_NAME="${IMAGE_NAME:-palivane}"
 : "${SQL_CONNECTION:?set SQL_CONNECTION (project:region:instance)}"
 DOMAIN="${DOMAIN:-}"
 TAG="$(git rev-parse --short HEAD 2>/dev/null || echo latest)"
@@ -48,7 +48,7 @@ ENV_VARS+="|SEED_ON_START=${SEED_ON_START:-false}"
 # fronting proxy/Worker reaches the service by its run.app origin) — allow an override.
 [ -n "$DOMAIN" ] && ENV_VARS+="|CORS_ORIGINS=https://${DOMAIN}|PALIVANE_PUBLIC_URL=https://${DOMAIN}|PALIVANE_ALLOWED_HOSTS=${PALIVANE_ALLOWED_HOSTS:-$DOMAIN}"
 # Email plane (password reset / join verification / invites). SMTP_PASS rides in via the
-# optional-secrets loop below (create secret 'warden-smtp-pass' to enable).
+# optional-secrets loop below (create secret 'palivane-smtp-pass' to enable).
 [ -n "${SMTP_HOST:-}" ] && ENV_VARS+="|SMTP_HOST=${SMTP_HOST}|SMTP_PORT=${SMTP_PORT:-587}|SMTP_USER=${SMTP_USER:-}|MAIL_FROM=${MAIL_FROM:-}"
 # Encrypt stored finding content at rest (needs a durable PALIVANE_SECRET_KEY — key loss =
 # data loss). Opt-in per deploy; threaded through when set.
@@ -67,16 +67,16 @@ ENV_VARS+="|SEED_ON_START=${SEED_ON_START:-false}"
 [ -n "${PALIVANE_SLACK_REDIRECT_URL:-}" ] && ENV_VARS+="|PALIVANE_SLACK_REDIRECT_URL=${PALIVANE_SLACK_REDIRECT_URL}"
 
 # Secrets — must exist in Secret Manager (see README). Optional ones are added if present.
-SECRETS="PALIVANE_SECRET_KEY=warden-secret-key:latest,DATABASE_URL=warden-database-url:latest"
+SECRETS="PALIVANE_SECRET_KEY=palivane-secret-key:latest,DATABASE_URL=palivane-database-url:latest"
 for pair in \
   "GATEWAY_ANTHROPIC_KEY=gateway-anthropic-key" \
   "ANTHROPIC_API_KEY=judge-anthropic-key" \
   "OPENAI_API_KEY=openai-api-key" \
   "GEMINI_API_KEY=gemini-api-key" \
-  "PALIVANE_METRICS_TOKEN=warden-metrics-token" \
+  "PALIVANE_METRICS_TOKEN=palivane-metrics-token" \
   "EXTENSION_INGEST_TOKEN=extension-ingest-token" \
-  "SMTP_PASS=warden-smtp-pass" \
-  "PALIVANE_LICENSE_SIGNING_KEY=warden-license-signing-key" \
+  "SMTP_PASS=palivane-smtp-pass" \
+  "PALIVANE_LICENSE_SIGNING_KEY=palivane-license-signing-key" \
   "PALIVANE_RELEASE_SIGNING_KEY=palivane-release-signing-key" \
   "PALIVANE_SLACK_CLIENT_SECRET=palivane-slack-client-secret"; do
   name="${pair##*=}"

@@ -69,7 +69,7 @@ class SecretsAtRestDetector:
         perm = (" (world/group-readable)" if world_readable is True
                 else " (file permissions unknown)" if world_readable is None else "")
         vtag = " — VERIFIED LIVE" if verified else ""
-        via = f" [via {source}]" if source and source != "warden" else ""
+        via = f" [via {source}]" if source and source != "palivane" else ""
         return [Signal(
             category=Category.CREDENTIAL_AT_REST,
             title=f"Credential at rest: {kinds}{vtag}",

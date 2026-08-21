@@ -164,11 +164,10 @@ def test_archive_buffers_with_role_only_config(client, monkeypatch):
         siem_s3_bucket = "lake"; siem_s3_prefix = ""; siem_s3_region = ""
         siem_s3_key_id = ""; siem_s3_secret = ""
         siem_s3_role_arn = ROLE; siem_s3_external_id = "plv-x"
-        siem_naming = "palivane"
     item = AnalysisInput(content="hello " * 400, surface=Surface.AI_USAGE,
                          channel="chatgpt.com", sender="dev@acme.com")
     a.archive(_T(), item, {"severity": "benign", "risk_score": 0, "signals": []})
-    assert flushed and flushed[0][6] == ROLE and flushed[0][7] == "plv-x"
+    assert flushed and flushed[0][5] == ROLE and flushed[0][6] == "plv-x"
 
 
 def test_s3_test_endpoint_works_with_role_only(client, monkeypatch):

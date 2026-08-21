@@ -1,5 +1,5 @@
-# Enable the APIs Warden's infra needs. Left enabled on destroy (disable_on_destroy=false)
-# so tearing down Warden doesn't disable a shared service for the rest of the project.
+# Enable the APIs Palivane's infra needs. Left enabled on destroy (disable_on_destroy=false)
+# so tearing down Palivane doesn't disable a shared service for the rest of the project.
 locals {
   services = [
     "run.googleapis.com",
