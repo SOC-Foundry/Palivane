@@ -4,7 +4,10 @@
 #
 #   cd deploy/terraform
 #   terraform init -backend-config="bucket=<STATE_BUCKET>" -backend-config="prefix=warden"
-#   PROJECT_ID=erudite-calling-502022-k6 ./import.sh
+#   PROJECT_ID=<the-hand-built-project> ./import.sh
+#
+# NOT for the `palivane` environment — that was provisioned by this config from empty and
+# is already fully in state; importing it would be a no-op at best.
 #
 # ─────────────────────────────────────────────────────────────────────────────────────
 # Run with adopt_existing=true (a tfvars line or -var) for every plan/apply against prod:

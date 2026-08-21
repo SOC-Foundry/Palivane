@@ -11,7 +11,7 @@ supports it, and quarterly reviews with written evidence.
 
 | System | Who | Auth |
 |---|---|---|
-| GCP project `erudite-calling-502022-k6` | Founder | Google account + MFA |
+| GCP project `palivane` | Founder | Google account + MFA |
 | GitHub `Palivane-Engineering/Palivane` | Founder | GitHub account + MFA |
 | Cloudflare (zone + Worker) | Founder | Cloudflare account + MFA |
 | Secret Manager (all secrets incl. license signing key) | Founder + Cloud Run runtime SA | IAM |
