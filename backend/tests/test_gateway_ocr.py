@@ -140,5 +140,5 @@ def test_messages_image_noop_when_ocr_off(client, monkeypatch):
     r = client.post("/v1/messages", json=IMAGE_ONLY,
                     headers={"x-api-key": _token(client), "Authorization": ""})
     assert r.status_code == 200
-    assert r.json()["warden"]["severity"] in ("benign", "low")
+    assert r.json()["palivane"]["severity"] in ("benign", "low")
     assert not called                                                 # OCR never invoked

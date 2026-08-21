@@ -97,7 +97,7 @@ Add more bucket ARNs to cover more buckets, or use `arn:aws:s3:::*` and `.../*` 
      store or rotate.
    - **Or an IAM user + access key** (non-EC2): IAM → **Users → Create user** → attach the
      policy → **Create access key** → put `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` /
-     `AWS_REGION` into `/etc/warden/warden.env`.
+     `AWS_REGION` into `/etc/palivane/palivane.env`.
 
 ### Scheduling (systemd timer)
 
@@ -105,14 +105,14 @@ The instanced units [`deploy/palivane-s3-scan@.service`](../deploy/palivane-s3-s
 [`.timer`](../deploy/palivane-s3-scan@.timer) run **one scan per bucket, daily** (`%i` = bucket):
 
 ```bash
-curl -fsSL "$PALIVANE_URL/cli/palivane-s3-scan" -o /opt/warden/bin/palivane-s3-scan && sudo chmod +x $_
-sudo -u warden /opt/warden/backend/.venv/bin/pip install boto3      # the scanner needs boto3
+curl -fsSL "$PALIVANE_URL/cli/palivane-s3-scan" -o /opt/palivane/bin/palivane-s3-scan && sudo chmod +x $_
+sudo -u palivane /opt/palivane/backend/.venv/bin/pip install boto3      # the scanner needs boto3
 sudo cp deploy/palivane-s3-scan@.{service,timer} /etc/systemd/system/ && sudo systemctl daemon-reload
 sudo systemctl enable --now palivane-s3-scan@my-data-bucket.timer     # repeat per bucket
 systemctl list-timers 'palivane-s3-scan@*'
 ```
 
-`PALIVANE_URL` + `PALIVANE_TOKEN` go in `/etc/warden/warden.env`; with an instance role you set
+`PALIVANE_URL` + `PALIVANE_TOKEN` go in `/etc/palivane/palivane.env`; with an instance role you set
 **zero** AWS values there. A cron alternative is in [`deploy/README.md`](../deploy/README.md#scheduled-s3-scanning).
 
 ---

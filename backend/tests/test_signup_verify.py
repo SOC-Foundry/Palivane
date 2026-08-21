@@ -11,7 +11,7 @@ import app.email as email_mod
 def _enable_email(monkeypatch):
     sent = []
     monkeypatch.setattr(email_mod.settings, "smtp_host", "smtp.test")
-    monkeypatch.setattr(email_mod.settings, "mail_from", "warden@test")
+    monkeypatch.setattr(email_mod.settings, "mail_from", "palivane@test")
     monkeypatch.setattr(email_mod, "send", lambda to, subj, body: sent.append((to, subj, body)))
     return sent
 

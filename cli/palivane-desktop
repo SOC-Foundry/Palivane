@@ -4,7 +4,7 @@
 #
 # It runs a LOCAL mitmproxy on 127.0.0.1:8081 with Palivane's addon, trusts its CA, and
 # points the machine's system HTTPS proxy at it — so those apps' traffic is inspected and
-# (in enforce mode) blocked before it leaves. Reuses the per-user token that `warden
+# (in enforce mode) blocked before it leaves. Reuses the per-user token that `palivane
 # connect` already stored, so no separate sign-in.
 #
 #   palivane-desktop install              # desktop apps + CLIs (sudo: CA trust + system proxy)
@@ -199,11 +199,11 @@ trust_ca_system() {
 }
 
 # Reverse of trust_ca_system, for both distro families and both brand generations —
-# warden-mitmproxy.crt predates the rebrand, and uninstall must clean up installs made
+# palivane-mitmproxy.crt predates the rebrand, and uninstall must clean up installs made
 # before it. Best-effort; never fails uninstall.
 untrust_ca_system() {
   local f d refresh_deb=0 refresh_p11=0
-  for f in palivane-mitmproxy.crt warden-mitmproxy.crt; do
+  for f in palivane-mitmproxy.crt palivane-mitmproxy.crt; do
     if [ -f "/usr/local/share/ca-certificates/$f" ]; then
       sudo rm -f "/usr/local/share/ca-certificates/$f" || true
       refresh_deb=1
@@ -245,10 +245,10 @@ nss_trust_ca() {
   fi
   [ -d "${HOME_DIR}/.pki/nssdb" ] || mkdir -p "${HOME_DIR}/.pki/nssdb"
   # Replace any prior copy under EITHER nickname: a pre-rebrand install stored the same
-  # CA as warden-mitmproxy, and certutil -A silently no-ops when the cert already sits
+  # CA as palivane-mitmproxy, and certutil -A silently no-ops when the cert already sits
   # in the store under another name — so the palivane nickname was never created.
   certutil -d "$NSS_DB" -D -n "$CA_NICK" 2>/dev/null || true
-  certutil -d "$NSS_DB" -D -n warden-mitmproxy 2>/dev/null || true
+  certutil -d "$NSS_DB" -D -n palivane-mitmproxy 2>/dev/null || true
   if certutil -d "$NSS_DB" -A -n "$CA_NICK" -t C,, -i "$CA" 2>/dev/null; then
     log "trusted the CA in the NSS store — Chromium/Electron desktop apps now verify through the proxy."
   else
@@ -260,7 +260,7 @@ nss_untrust_ca() {
   [ "$OS" = "Linux" ] || return 0
   command -v certutil >/dev/null 2>&1 || return 0
   local n
-  for n in "$CA_NICK" warden-mitmproxy; do   # second is the pre-rebrand nickname
+  for n in "$CA_NICK" palivane-mitmproxy; do   # second is the pre-rebrand nickname
     certutil -d "$NSS_DB" -D -n "$n" 2>/dev/null && log "removed the CA from the NSS store ($n)." || true
   done
 }
@@ -349,9 +349,9 @@ ENV
 }
 
 unset_session_proxy_env() {
-  # Both brand generations: warden-proxy.conf is the pre-rebrand filename.
+  # Both brand generations: palivane-proxy.conf is the pre-rebrand filename.
   rm -f "${HOME_DIR}/.config/environment.d/palivane-proxy.conf" \
-        "${HOME_DIR}/.config/environment.d/warden-proxy.conf"
+        "${HOME_DIR}/.config/environment.d/palivane-proxy.conf"
   systemctl --user unset-environment http_proxy https_proxy HTTP_PROXY HTTPS_PROXY no_proxy NO_PROXY 2>/dev/null || true
   # The D-Bus activation environment is a SEPARATE copy of the session env — GUI apps
   # launched via D-Bus activation keep getting the dead proxy unless it's scrubbed too.
@@ -550,7 +550,7 @@ UNIT
 }
 
 # Resolve the real executable for a tool, skipping our own shim dir — and any capture
-# shim from either brand generation elsewhere on PATH: a stale ~/.warden/bin shim
+# shim from either brand generation elsewhere on PATH: a stale ~/.palivane/bin shim
 # otherwise gets wired as the "real" binary, and the new shim exec's a path that dies
 # the moment that leftover dir is cleaned up. Prints the path; non-zero if not found.
 real_bin() {
@@ -558,7 +558,7 @@ real_bin() {
   for p in $PATH; do
     [ "$p" = "$SHIM_DIR" ] && continue
     [ -x "$p/$name" ] || continue
-    grep -qE "(palivane|warden)-desktop CLI capture shim" "$p/$name" 2>/dev/null && continue
+    grep -qE "(palivane|palivane)-desktop CLI capture shim" "$p/$name" 2>/dev/null && continue
     printf '%s' "$p/$name"; return 0
   done
   return 1
@@ -571,7 +571,7 @@ real_bin() {
 # exec the real binary. Surgical + reversible (uninstall removes the shims).
 wire_cli_capture() {
   # Sweep shims from BOTH generations first (we rewrite ours anyway): a leftover
-  # ~/.warden/bin shim earlier on PATH would keep shadowing the fresh one forever.
+  # ~/.palivane/bin shim earlier on PATH would keep shadowing the fresh one forever.
   unwire_cli_capture
   mkdir -p "$SHIM_DIR"
   case ":$PATH:" in
@@ -610,14 +610,14 @@ EOF
 }
 
 unwire_cli_capture() {
-  # Sweep the current shim dir AND the pre-rebrand one (~/.warden/bin); match either
+  # Sweep the current shim dir AND the pre-rebrand one (~/.palivane/bin); match either
   # generation's marker so an old shim never survives an uninstall.
   local dir name shim removed=""
-  for dir in "$SHIM_DIR" "${HOME_DIR}/.warden/bin"; do
+  for dir in "$SHIM_DIR" "${HOME_DIR}/.palivane/bin"; do
     [ -d "$dir" ] || continue
     for name in $CLI_SHIM_TOOLS; do
       shim="$dir/$name"
-      if [ -f "$shim" ] && grep -qE "(palivane|warden)-desktop CLI capture shim" "$shim" 2>/dev/null; then
+      if [ -f "$shim" ] && grep -qE "(palivane|palivane)-desktop CLI capture shim" "$shim" 2>/dev/null; then
         rm -f "$shim"; removed="$removed $name"
       fi
     done
@@ -681,10 +681,10 @@ cmd_uninstall() {
       log "stopped. (CA left in the keychain; remove manually if desired.)" ;;
     Linux)
       # Stop + remove the unit — both brand generations. disable alone leaves the unit
-      # file behind, and a pre-rebrand install left warden-proxy.service that the renamed
+      # file behind, and a pre-rebrand install left palivane-proxy.service that the renamed
       # uninstall never touched.
       local u
-      for u in palivane-proxy.service warden-proxy.service; do
+      for u in palivane-proxy.service palivane-proxy.service; do
         systemctl --user disable --now "$u" 2>/dev/null || true
         rm -f "${HOME_DIR}/.config/systemd/user/$u"
       done

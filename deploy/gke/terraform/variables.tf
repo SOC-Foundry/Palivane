@@ -8,7 +8,7 @@ variable "region" {
 # private-services-access peering already lets Cloud SQL private IPs live in it.
 variable "network_name" {
   type    = string
-  default = "warden-vpc"
+  default = "palivane-vpc"
 }
 
 variable "gke_subnet_cidr" {
@@ -26,7 +26,7 @@ variable "services_cidr" {
 
 variable "cluster_name" {
   type    = string
-  default = "warden"
+  default = "palivane"
 }
 
 # Enterprise customers that get a dedicated (node pool + Cloud SQL + GSA) single-tenant

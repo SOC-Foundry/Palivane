@@ -382,8 +382,8 @@ function Test-ProxyListening {
 }
 
 function Remove-ProxyTask {
-    # Both brand generations: "WardenProxy" is the pre-rebrand task name.
-    foreach ($tn in @($TaskName, "WardenProxy")) {
+    # Both brand generations: "PalivaneProxy" is the pre-rebrand task name.
+    foreach ($tn in @($TaskName, "PalivaneProxy")) {
         $t = Get-ScheduledTask -TaskName $tn -ErrorAction SilentlyContinue
         if ($t) {
             try { Stop-ScheduledTask -TaskName $tn -ErrorAction SilentlyContinue } catch {}
@@ -464,15 +464,15 @@ function Remove-ShimDirFromUserPath {
 }
 
 function Unwire-CliCapture {
-    # Sweep the current shim dir AND the pre-rebrand one (.warden\bin); match either
+    # Sweep the current shim dir AND the pre-rebrand one (.palivane\bin); match either
     # generation's marker so an old shim never survives an uninstall.
     $removed = @()
-    foreach ($dir in @($ShimDir, (Join-Path $HomeDir ".warden\bin"))) {
+    foreach ($dir in @($ShimDir, (Join-Path $HomeDir ".palivane\bin"))) {
         if (-not (Test-Path -LiteralPath $dir)) { continue }
         foreach ($name in $CliShimTools) {
             $shim = Join-Path $dir "$name.cmd"
             if ((Test-Path -LiteralPath $shim -PathType Leaf) -and
-                (Select-String -LiteralPath $shim -Pattern "(palivane|warden)-desktop CLI capture shim" -Quiet)) {
+                (Select-String -LiteralPath $shim -Pattern "(palivane|palivane)-desktop CLI capture shim" -Quiet)) {
                 Remove-Item -LiteralPath $shim -Force
                 $removed += $name
             }
@@ -571,8 +571,8 @@ function Install-SecretsScan([string]$palivaneUrl, [string]$token, [string]$user
 }
 
 function Remove-SecretsScan {
-    # Both brand generations: "WardenCredentialScan" is the pre-rebrand task name.
-    foreach ($tn in @($SecretsTaskName, "WardenCredentialScan")) {
+    # Both brand generations: "PalivaneCredentialScan" is the pre-rebrand task name.
+    foreach ($tn in @($SecretsTaskName, "PalivaneCredentialScan")) {
         try { Unregister-ScheduledTask -TaskName $tn -Confirm:$false -ErrorAction SilentlyContinue } catch {}
     }
     foreach ($p in @($SecretsCmd, $SecretsScript)) {

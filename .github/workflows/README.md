@@ -29,5 +29,5 @@ bucket), plus the roles Terraform needs to manage the resources (`roles/cloudsql
 **Environments** — create `production` (deploy) and `production-infra` (terraform apply)
 and add required reviewers for a manual approval gate before anything hits prod.
 
-> App secrets themselves (PALIVANE_SECRET_KEY, warden-smtp-pass, provider keys) live in
+> App secrets themselves (PALIVANE_SECRET_KEY, palivane-smtp-pass, provider keys) live in
 > Secret Manager, not GitHub — the workflows never handle them.

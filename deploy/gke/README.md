@@ -37,8 +37,8 @@ terraform init -backend-config="bucket=<tf-state-bucket>"
 terraform apply                                          # creates cluster + system pool
 ```
 
-Reuses the existing `warden-vpc` (with PSA peering already established for private Cloud
-SQL); it creates its own `warden-gke-subnet` with secondary ranges for pods/services.
+Reuses the existing `palivane-vpc` (with PSA peering already established for private Cloud
+SQL); it creates its own `palivane-gke-subnet` with secondary ranges for pods/services.
 
 ## Onboard a customer
 

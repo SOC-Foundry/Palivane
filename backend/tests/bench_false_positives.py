@@ -328,7 +328,7 @@ def run_bench() -> dict:
 def print_report(res: dict) -> None:
     line = "=" * 78
     print(line)
-    print("WARDEN FALSE-POSITIVE BENCHMARK  (offline detectors; judge disabled w/o API key)")
+    print("PALIVANE FALSE-POSITIVE BENCHMARK  (offline detectors; judge disabled w/o API key)")
     print(line)
     print(f"Total benign samples : {res['total']}")
     print(f"False positives      : {res['fp_count']}")

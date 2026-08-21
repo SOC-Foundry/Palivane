@@ -69,7 +69,7 @@ def test_tenant_monitor_off_while_global_on(client, monkeypatch):
     client.patch("/api/tenant", json={"gateway_enforce": "off"})      # tenant monitors
     r = client.post("/v1/chat/completions", json=INJECTION)
     assert r.status_code == 200
-    assert r.json()["warden"]["severity"] in ("high", "critical")
+    assert r.json()["palivane"]["severity"] in ("high", "critical")
 
 
 def test_inherit_clears_override(client, monkeypatch):
@@ -91,7 +91,7 @@ def test_tenant_block_severity_raises_bar(client, monkeypatch):
     r = client.post("/v1/chat/completions", json=HIGH_INJECTION)
     # only passes if the verdict is < critical; this plain override scores high.
     assert r.status_code == 200, r.text
-    assert r.json()["warden"]["severity"] == "high"
+    assert r.json()["palivane"]["severity"] == "high"
 
 
 # --- MCP ingest block severity is per-tenant ------------------------------------------

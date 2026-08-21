@@ -1,4 +1,4 @@
-# Single-origin Warden image for Cloud Run: builds the React SPA and serves it from the
+# Single-origin Palivane image for Cloud Run: builds the React SPA and serves it from the
 # FastAPI backend (SPA + /api + /v1 on one origin, no nginx). Build context = repo root:
 #   gcloud builds submit --config deploy/cloudrun/cloudbuild.yaml
 # syntax=docker/dockerfile:1
@@ -35,8 +35,8 @@ COPY proxy/ ./proxy
 ENV PALIVANE_STATIC_DIR=/app/static
 
 # Run as a non-root user — smaller blast radius if the app is compromised.
-RUN useradd --system --uid 10001 warden && chown -R warden /app
-USER warden
+RUN useradd --system --uid 10001 palivane && chown -R palivane /app
+USER palivane
 
 # Cloud Run injects $PORT (default 8080). The entrypoint waits for the DB, runs
 # `alembic upgrade head`, then execs this CMD.

@@ -10,12 +10,12 @@ variable "region" {
 
 variable "service_name" {
   type    = string
-  default = "warden"
+  default = "palivane"
 }
 
 variable "image" {
   type        = string
-  description = "Full container image ref, e.g. us-central1-docker.pkg.dev/PROJECT/warden/warden:TAG. Build/push out-of-band (deploy/cloudrun) or via CI."
+  description = "Full container image ref, e.g. us-central1-docker.pkg.dev/PROJECT/palivane/palivane:TAG. Build/push out-of-band (deploy/cloudrun) or via CI."
 }
 
 # --- data / networking ---
@@ -26,7 +26,7 @@ variable "subnet_cidr" {
 
 variable "psa_range_name" {
   type    = string
-  default = "warden-psa"
+  default = "palivane-psa"
 }
 
 variable "psa_prefix_length" {
@@ -47,7 +47,7 @@ variable "db_disk_gb" {
 
 variable "db_user" {
   type    = string
-  default = "warden"
+  default = "palivane"
 }
 
 # --- runtime config (non-secret env; secrets come from Secret Manager, see secrets.tf) ---
@@ -74,7 +74,7 @@ variable "encrypt_findings" {
 variable "public_domain" {
   type        = string
   default     = ""
-  description = "Public hostname (e.g. warden.example.com). Sets PALIVANE_PUBLIC_URL / CORS_ORIGINS."
+  description = "Public hostname (e.g. palivane.example.com). Sets PALIVANE_PUBLIC_URL / CORS_ORIGINS."
 }
 
 variable "allowed_hosts" {
@@ -117,7 +117,7 @@ variable "max_instances" {
 # Set true when importing an existing, hand-built deployment (see import.sh): skips
 # generating secret VERSIONS (so prod's real PALIVANE_SECRET_KEY / DATABASE_URL / metrics
 # values are left intact) and runs the service as the default compute SA instead of
-# creating warden-run. With this on, import.sh -> plan should be a clean no-op.
+# creating palivane-run. With this on, import.sh -> plan should be a clean no-op.
 variable "adopt_existing" {
   type    = bool
   default = false

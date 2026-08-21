@@ -267,7 +267,7 @@ def test_scan_circuit_breaker(tmp_path, monkeypatch):
     # Same token now short-circuits with no network call — the storm is dead.
     assert hook.scan("/api/ingest/mcp", {}, "http://x", "tok-A")["reason"] == "scan-skipped:deauthorized"
     assert calls["n"] == 1
-    # A fresh token (re-issued by `warden connect`) has a new fingerprint — not suppressed.
+    # A fresh token (re-issued by `palivane connect`) has a new fingerprint — not suppressed.
     hook.scan("/api/ingest/mcp", {}, "http://x", "tok-B")
     assert calls["n"] == 2
 
@@ -294,13 +294,13 @@ def test_scan_circuit_breaker(tmp_path, monkeypatch):
 
 # --- Dev-directory exclusion: don't inspect tool calls inside an excluded repo ----------
 def test_is_excluded_paths():
-    ex = [hook.os.path.realpath("/repo/warden")]
-    assert hook._is_excluded("/repo/warden", ex) is True
-    assert hook._is_excluded("/repo/warden/backend/app", ex) is True   # subdir
+    ex = [hook.os.path.realpath("/repo/palivane")]
+    assert hook._is_excluded("/repo/palivane", ex) is True
+    assert hook._is_excluded("/repo/palivane/backend/app", ex) is True   # subdir
     assert hook._is_excluded("/repo/palivane-other", ex) is False        # sibling prefix only
     assert hook._is_excluded("/repo/other", ex) is False
     assert hook._is_excluded("", ex) is False
-    assert hook._is_excluded("/repo/warden", []) is False              # nothing excluded
+    assert hook._is_excluded("/repo/palivane", []) is False              # nothing excluded
 
 
 def test_config_parses_exclude_dirs(monkeypatch):

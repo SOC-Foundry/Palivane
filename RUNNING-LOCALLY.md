@@ -1,6 +1,6 @@
-# Running Warden locally (no Docker)
+# Running Palivane locally (no Docker)
 
-Run the **full** Warden app — SPA + API, single-origin — natively on your machine.
+Run the **full** Palivane app — SPA + API, single-origin — natively on your machine.
 No Docker, no container runtime, no Postgres. It uses a Python virtualenv, a prebuilt
 copy of the web UI, and a local **SQLite** database file.
 
@@ -15,7 +15,7 @@ on a fresh clone or another machine.
 - **Python 3.12** — the backend deps are pinned to 3.12 (the version the SaaS image uses).
   We use [`uv`](https://github.com/astral-sh/uv) to fetch a standalone 3.12 so your system
   Python is left alone. (`uv` also just works as a fast `pip`.)
-- **Node 20+** — only to build the web UI once. Not needed to *run* Warden after that.
+- **Node 20+** — only to build the web UI once. Not needed to *run* Palivane after that.
 
 Check:
 ```bash
@@ -49,7 +49,7 @@ Handy variants:
 PORT=9000 ./run-local.sh     # run on a different port
 ```
 
-The first run generates `.env.local` (holding a random `WARDEN_SECRET_KEY` and the SQLite
+The first run generates `.env.local` (holding a random `PALIVANE_SECRET_KEY` and the SQLite
 path), applies DB migrations, and seeds a demo org. Subsequent runs just migrate and start.
 
 ---
@@ -58,7 +58,7 @@ path), applies DB migrations, and seeds a demo org. Subsequent runs just migrate
 
 - **One process**: `uvicorn` serving both the API and the React SPA on `:8088`
   (same single-origin image the SaaS runs — just from source instead of a container).
-- **Database**: `warden-local.db` (SQLite) in the repo root.
+- **Database**: `palivane-local.db` (SQLite) in the repo root.
 - **API docs**: http://localhost:8088/api/docs (FastAPI interactive docs).
 - **Health**: http://localhost:8088/api/health.
 
@@ -85,7 +85,7 @@ cd frontend && npm ci && npm run build && cd ..
 ./run-local.sh
 ```
 
-`.venv-local/`, `.env.local`, `warden-local.db`, and `.seeded` are all git-ignored.
+`.venv-local/`, `.env.local`, `palivane-local.db`, and `.seeded` are all git-ignored.
 
 ---
 
@@ -100,19 +100,19 @@ cd backend
 cd ..
 
 # Start completely fresh (deletes all local data):
-rm -f warden-local.db && ./run-local.sh
+rm -f palivane-local.db && ./run-local.sh
 ```
 
-### Clearing the Warden key / local config
+### Clearing the Palivane key / local config
 
-There are two independent places a "Warden key" lives:
+There are two independent places a "Palivane key" lives:
 
 ```fish
 # 1. Proxy/shell env vars left over from testing the egress proxy (fish syntax):
-set -e WARDEN_TOKEN WARDEN_URL WARDEN_PROXY_ENFORCE WARDEN_PROXY_USER
+set -e PALIVANE_TOKEN PALIVANE_URL PALIVANE_PROXY_ENFORCE PALIVANE_PROXY_USER
 
 # 2. The app's generated secret + local config. Deleting .env.local regenerates a fresh
-#    WARDEN_SECRET_KEY on the next run (this invalidates existing logins — just sign in again):
+#    PALIVANE_SECRET_KEY on the next run (this invalidates existing logins — just sign in again):
 rm -f .env.local && ./run-local.sh
 ```
 
@@ -133,8 +133,8 @@ ANTHROPIC_API_KEY=sk-ant-...
 # or OPENAI_API_KEY=... / GEMINI_API_KEY=...
 
 # Keep the prompt text on findings (default: metadata-only, no prose stored):
-WARDEN_STORE_CONTENT=true
-WARDEN_ENCRYPT_FINDINGS=true   # encrypt that stored content at rest
+PALIVANE_STORE_CONTENT=true
+PALIVANE_ENCRYPT_FINDINGS=true   # encrypt that stored content at rest
 ```
 
 ---
@@ -144,7 +144,7 @@ WARDEN_ENCRYPT_FINDINGS=true   # encrypt that stored content at rest
 There's nothing installed system-wide. To remove all local traces:
 
 ```bash
-rm -rf .venv-local frontend/dist warden-local.db .env.local .seeded
+rm -rf .venv-local frontend/dist palivane-local.db .env.local .seeded
 ```
 
 ---
@@ -154,7 +154,7 @@ rm -rf .venv-local frontend/dist warden-local.db .env.local .seeded
 - **`venv missing`** — run the [one-time setup](#one-time-setup).
 - **`SPA not built`** — `cd frontend && npm ci && npm run build`.
 - **Port 8088 already in use** — `PORT=9000 ./run-local.sh` (note: host `:8080` is used by
-  another app on this machine, and `:8090` by the old Docker Warden stack, so 8088 is the
+  another app on this machine, and `:8090` by the old Docker Palivane stack, so 8088 is the
   default here).
 - **`405 Method Not Allowed` on every prompt in the AI tool (even with no secret/PII)** —
   traffic is being pointed at the **app** port `:8088` as if it were a forward proxy. It
@@ -166,14 +166,14 @@ rm -rf .venv-local frontend/dist warden-local.db .env.local .seeded
       the ingest API directly and never proxies your prompt traffic.
     - **Egress proxy** — a *separate* mitmproxy process on **`:8081`**. Point the
       browser/system proxy at `:8081` (not `:8088`), and give the addon
-      `WARDEN_URL=http://localhost:8088` so it reports back to the app. See `proxy/README.md`.
+      `PALIVANE_URL=http://localhost:8088` so it reports back to the app. See `proxy/README.md`.
 
-  Rule of thumb: **`:8088` = the Warden app; `:8081` = the proxy the browser talks to.** They
+  Rule of thumb: **`:8088` = the Palivane app; `:8081` = the proxy the browser talks to.** They
   are not interchangeable.
-- **Login fails after editing `.env.local`** — changing `WARDEN_SECRET_KEY` invalidates
+- **Login fails after editing `.env.local`** — changing `PALIVANE_SECRET_KEY` invalidates
   existing sessions; just sign in again.
-- **Want Postgres instead of SQLite** — set `DATABASE_URL=postgresql+psycopg2://user:pass@localhost/warden`
-  in `.env.local` and restart (a strong `WARDEN_SECRET_KEY` is enforced on non-SQLite).
+- **Want Postgres instead of SQLite** — set `DATABASE_URL=postgresql+psycopg2://user:pass@localhost/palivane`
+  in `.env.local` and restart (a strong `PALIVANE_SECRET_KEY` is enforced on non-SQLite).
 
 ---
 

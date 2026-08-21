@@ -41,7 +41,7 @@ def test_jailbreak_and_exfil_flagged_on_usage_surface():
 
 def test_yaml_system_key_not_flagged_on_usage():
     # "system:" is everywhere in config/LLM app code — excluded on the code-heavy surface.
-    v = _usage("services:\n  api:\n    image: warden\nsystem:\n  memory: 4g\n")
+    v = _usage("services:\n  api:\n    image: palivane\nsystem:\n  memory: 4g\n")
     assert "prompt_injection" not in _cats(v)
 
 

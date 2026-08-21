@@ -18,7 +18,7 @@ Vendor side (Palivane) — this module doubles as the issuing CLI:
         --org "Acme Corp" --plan enterprise --seats 200 --days 365
     python -m app.licensing verify WDN1....                          # sanity-check a blob
 
-The production signing key lives in Secret Manager (warden-license-signing-key) — it
+The production signing key lives in Secret Manager (palivane-license-signing-key) — it
 never ships in the repo or image. Only the PUBLIC key is embedded below; a self-hosted
 instance verifies with it out of the box (override: PALIVANE_LICENSE_PUBKEY).
 

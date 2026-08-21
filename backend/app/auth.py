@@ -1161,10 +1161,6 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         if body.siem_format not in ("json", "splunk_hec", "cef"):
             raise HTTPException(status_code=400, detail="invalid siem_format")
         tenant.siem_format = body.siem_format
-    if body.siem_naming is not None:
-        if body.siem_naming not in ("palivane", "warden"):
-            raise HTTPException(status_code=400, detail="invalid siem_naming")
-        tenant.siem_naming = body.siem_naming
     # SIEM S3 delivery config (creds set only when a non-empty value is provided → write-only).
     if body.siem_s3_bucket is not None:
         tenant.siem_s3_bucket = body.siem_s3_bucket.strip()

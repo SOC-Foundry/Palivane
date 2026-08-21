@@ -31,10 +31,10 @@ SETUP = """
   window.fetch = async () => new Response('{"ok":true}', {status: 200});
   window.addEventListener('message', async (e) => {
     const d = e.data;
-    if (!d || !d.__warden) return;
+    if (!d || !d.__palivane) return;
     if (d.kind === 'scan') {
-      const verdict = await window.wardenScan(d.content, d.destination);
-      window.postMessage({__warden:true, kind:'verdict', id:d.id, verdict}, '*');
+      const verdict = await window.palivaneScan(d.content, d.destination);
+      window.postMessage({__palivane:true, kind:'verdict', id:d.id, verdict}, '*');
     } else if (d.kind === 'blocked' || d.kind === 'warn') {
       window.__events.push({kind:d.kind, verdict:d.verdict});
     }
@@ -69,7 +69,7 @@ def test_interceptor_blocks_sensitive_prompt():
     with sync_api.sync_playwright() as p:
         browser = p.chromium.launch(args=["--no-sandbox"])
         page = browser.new_page()
-        page.expose_function("wardenScan", _scan)
+        page.expose_function("palivaneScan", _scan)
         page.goto("about:blank")
         page.evaluate(SETUP)
         page.add_script_tag(content=INJECTED.read_text())

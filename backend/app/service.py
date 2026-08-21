@@ -245,14 +245,14 @@ def _dispatch_sinks(tenant, payload: dict, subject: str, actor: str, surface: st
         siem.forward(tenant.siem_url.strip(), unseal(tenant.siem_token or ""),
                      tenant.siem_min_severity, tenant.siem_format, payload,
                      subject=subject, actor=actor, surface=surface, org=tenant.slug,
-                     naming=tenant.siem_naming or "warden", tenant_id=tenant.id)
+                     tenant_id=tenant.id)
     if (tenant.siem_s3_bucket or "").strip():
         from . import siem_s3
         siem_s3.forward_s3(tenant.siem_s3_bucket.strip(), tenant.siem_s3_prefix or "",
                            tenant.siem_s3_region or "", tenant.siem_s3_key_id or "",
                            unseal(tenant.siem_s3_secret or ""), tenant.siem_min_severity,
                            payload, subject=subject, actor=actor, surface=surface,
-                           org=tenant.slug, naming=tenant.siem_naming or "warden",
+                           org=tenant.slug,
                            tenant_id=tenant.id,
                            role_arn=getattr(tenant, "siem_s3_role_arn", "") or "",
                            external_id=getattr(tenant, "siem_s3_external_id", "") or "")

@@ -1,4 +1,4 @@
-# Defaults for one isolated single-tenant Warden instance. Per-customer values are supplied
+# Defaults for one isolated single-tenant Palivane instance. Per-customer values are supplied
 # at install time by provision-customer.sh (customer slug, host, node pool, Cloud SQL, GSA).
 
 # Customer identity — REQUIRED per install (provisioner sets these).
@@ -6,7 +6,7 @@ customer: ""          # slug, e.g. "acme"; used for names, node-pool pinning, la
 host: ""              # public hostname, e.g. "acme.app.palivane.io"
 
 image:
-  repo: us-central1-docker.pkg.dev/palivane/warden/warden
+  repo: us-central1-docker.pkg.dev/palivane/palivane/palivane
   tag: latest
 
 replicas: 1

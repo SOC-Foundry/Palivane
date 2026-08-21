@@ -164,10 +164,10 @@ def console_tour_frames(pw, out_dir: str, seconds: float) -> int:
     frames_per = max(1, int(per * FPS))
     b = pw.chromium.launch(args=["--disable-dev-shm-usage", "--no-sandbox"])   # tiny /dev/shm in CI/sandboxes breaks captureScreenshot
     page = b.new_context(viewport={"width": W, "height": H}).new_page()
-    # 'warden_token' is deliberate: it is still api.js's TOKEN_KEY. The rebrand left it
+    # 'palivane_token' is deliberate: it is still api.js's TOKEN_KEY. The rebrand left it
     # alone because renaming it would sign out every existing session — don't "fix" it here
     # without changing the app first.
-    page.add_init_script(f"localStorage.setItem('warden_token', {json.dumps(token)})")
+    page.add_init_script(f"localStorage.setItem('palivane_token', {json.dumps(token)})")
     # A drawn cursor that glides to each tab, so the tour reads as someone using the app.
     page.add_init_script("""
       window.__cur = () => {

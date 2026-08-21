@@ -8,7 +8,7 @@ module "customer" {
   customer      = each.key
   project_id    = var.project_id
   region        = var.region
-  cluster_id    = google_container_cluster.warden.id
+  cluster_id    = google_container_cluster.palivane.id
   network_id    = data.google_compute_network.vpc.id
   node_sa_email = google_service_account.nodes.email
   machine_type  = each.value.machine_type

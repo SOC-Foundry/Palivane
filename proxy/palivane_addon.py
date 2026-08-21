@@ -460,7 +460,7 @@ def _breaker_record(token: str, status) -> None:
         first = st.get("deauth_fp") != fp
         _breaker_save({"deauth_fp": fp, "deauth_until": now + _DEAUTH_SECS})
         if first:
-            sys.stderr.write("warden: capture key rejected (revoked or invalid) — standing "
+            sys.stderr.write("palivane: capture key rejected (revoked or invalid) — standing "
                              "down; re-run `palivane connect` to re-issue.\n")
         return
     fails = int(st.get("fails", 0)) + 1
