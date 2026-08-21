@@ -14,6 +14,11 @@ routes = [
   { pattern = "palivane.io/*", zone_name = "palivane.io" }
 ]
 
+# The Cloud Run service this fronts. Kept here rather than in worker.js so the Worker
+# source stays environment-agnostic — and doubles as the ID token's target_audience.
+[vars]
+ORIGIN = "https://warden-842236235402.us-central1.run.app"
+
 # Exact per-IP edge rate limiting for auth endpoints (credential-stuffing shield).
 # A Durable Object per source IP — free-plan compatible (SQLite-backed class).
 [durable_objects]

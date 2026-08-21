@@ -38,7 +38,7 @@ only; the plan change is always set-plan / a license.
 ## Self-hosted: issue a license file
 
 The Ed25519 **signing key** lives only in Secret Manager
-(`palivane-license-signing-key`, project `erudite-calling-502022-k6`) — never in the
+(`palivane-license-signing-key`, project `palivane`) — never in the
 repo, image, or a customer environment. The matching public key is embedded in
 `app/licensing.py`, so every Palivane build can verify but only the vendor can sign.
 
@@ -46,7 +46,7 @@ repo, image, or a customer environment. The matching public key is embedded in
 almost always want, because it makes the license visible and revocable):
 
     gcloud secrets versions access latest --secret palivane-license-signing-key \
-        --project erudite-calling-502022-k6 | \
+        --project palivane | \
       python -m app.users license-issue --key - \
         --org "Acme Corp" --plan enterprise --seats 200 --contract-months 12
 
