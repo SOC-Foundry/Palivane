@@ -15,7 +15,7 @@ depends_on = None
 
 
 def upgrade():
-    # Nullable tri-state: NULL = inherit the global WARDEN_STORE_CONTENT (off).
+    # Nullable tri-state: NULL = inherit the global PALIVANE_STORE_CONTENT (off).
     op.add_column("tenants", sa.Column("store_content", sa.Boolean(), nullable=True))
     op.add_column("tenants", sa.Column("dek_wrapped", sa.Text(), server_default=""))
 

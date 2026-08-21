@@ -37,4 +37,4 @@ scripts/hero-video/node_modules/
 
 # Local no-Docker dev rig (see RUNNING-LOCALLY.md)
 .env.local
-/warden-local.db
+/palivane-local.db

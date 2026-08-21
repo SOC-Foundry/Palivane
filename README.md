@@ -221,7 +221,7 @@ tarball installed as a systemd service, no Docker or container runtime on the se
 ```bash
 ./deploy/native/build-release.sh          # on your laptop or CI (Python + Node)
 # then on the server (Python 3.12+):
-tar xzf warden-native-<tag>.tar.gz && sudo ./warden/install.sh
+tar xzf palivane-native-<tag>.tar.gz && sudo ./palivane/install.sh
 ```
 
 One service serves the console, API, and client installers on one port; see
@@ -310,7 +310,7 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `OPENAI_API_KEY`    | *(unset)*                  | Judge key for the GPT backend.                     |
 | `GEMINI_API_KEY`    | *(unset)*                  | Judge key for the Gemini backend (also the gateway Gemini fallback). |
 | `JUDGE_MODEL`       | *(per-provider default)*   | Override the model (defaults: `claude-opus-4-8` / `gpt-4o` / `gemini-2.5-pro`). Use a smaller one for cheap high-volume triage. |
-| `DATABASE_URL`      | `sqlite:///./warden.db`  | Any SQLAlchemy URL.                                |
+| `DATABASE_URL`      | `sqlite:///./palivane.db`  | Any SQLAlchemy URL.                                |
 | `CORS_ORIGINS`      | `http://localhost:5173`    | Comma-separated.                                   |
 | `SANCTIONED_AI_TOOLS` | *(empty)*                | Allowlist — comma-separated AI tools/domains the org approves (e.g. `claude.ai,copilot.microsoft.com`). |
 | `GATEWAY_ENFORCE`   | `false`                    | LLM gateway: `true` blocks risky prompts inline; otherwise monitor-only. |

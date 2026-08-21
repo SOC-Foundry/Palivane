@@ -43,5 +43,5 @@ jobs:
         run: |
           terraform init -input=false \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
-            -backend-config="prefix=warden"
+            -backend-config="prefix=palivane"
           terraform apply -auto-approve -input=false

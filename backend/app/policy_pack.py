@@ -436,12 +436,12 @@ def secrets_win_task(base_url: str, secrets_path: str, engine: str = "trufflehog
     """Windows Task Scheduler XML — daily at 03:00. Import with schtasks /create /xml.
 
     Runs the scanner through the launcher `palivane-desktop.ps1 install` writes
-    (%USERPROFILE%\\.warden\\bin\\palivane-secrets.cmd), which resolves an interpreter and
+    (%USERPROFILE%\\.palivane\\bin\\palivane-secrets.cmd), which resolves an interpreter and
     carries PALIVANE_URL/PALIVANE_TOKEN. An explicit Windows `secrets_path` (containing a
     backslash) overrides it — e.g. a packaged palivane-secrets.exe you deploy yourself."""
     b = base_url.rstrip("/")
     win = (secrets_path if "\\" in secrets_path
-           else r"%USERPROFILE%\.warden\bin\palivane-secrets.cmd")
+           else r"%USERPROFILE%\.palivane\bin\palivane-secrets.cmd")
     args = _engine_args(engine)
     args_xml = f"\n      <Arguments>{' '.join(args)}</Arguments>" if args else ""
     return f'''<?xml version="1.0" encoding="UTF-16"?>

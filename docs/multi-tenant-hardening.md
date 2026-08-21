@@ -83,7 +83,7 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   All outbound sends are fire-and-forget and fail open — a down collector never blocks capture.
   `siem_naming` (per tenant) picks the brand key in the wire format — Splunk sourcetype
   `<naming>:finding` and the S3 path `<naming>/findings/…`. Tenants from before the Palivane
-  rebrand stay on `warden` (their dashboards/pipelines key on it); new tenants get
+  rebrand stay on `palivane` (their dashboards/pipelines key on it); new tenants get
   `palivane`; switchable in Settings → SIEM.
 
 - **Input / DoS bounds + outbound-fetch hardening.** A server-side request-body limit

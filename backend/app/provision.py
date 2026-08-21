@@ -74,13 +74,13 @@ if [ -z "$KEY" ]; then echo "Enrollment failed: $RESP" >&2; exit 1; fi
 echo "  device key issued."
 
 # Self-heal helper: Claude Code's apiKeyHelper runs this to fetch a live gateway key and
-# re-enrolls if the device key is revoked. Reads config from /etc/warden/enroll.json (and
+# re-enrolls if the device key is revoked. Reads config from /etc/palivane/enroll.json (and
 # inherits PALIVANE_* from managed-settings). Prime its cache with the key we just minted.
 echo "Installing palivane-reenroll (apiKeyHelper) ..."
 curl -fsSL "$PALIVANE_URL/cli/palivane-reenroll" -o /tmp/palivane-reenroll
 sudo install -m 0755 /tmp/palivane-reenroll /usr/local/bin/palivane-reenroll
-sudo mkdir -p /etc/warden
-sudo tee /etc/warden/enroll.json >/dev/null <<JSON
+sudo mkdir -p /etc/palivane
+sudo tee /etc/palivane/enroll.json >/dev/null <<JSON
 {{ "url": "$PALIVANE_URL", "enroll_token": "$ENROLL_TOKEN", "device": "$DEVICE" }}
 JSON
 mkdir -p "$HOME/.palivane"; printf '%s' "$KEY" > "$HOME/.palivane/device-key"; chmod 600 "$HOME/.palivane/device-key"
@@ -198,13 +198,13 @@ if [ -z "$KEY" ]; then echo "Enrollment failed: $RESP" >&2; exit 1; fi
 echo "  device key issued."
 
 # Self-heal helper: Claude Code's apiKeyHelper runs this to fetch a live gateway key and
-# re-enrolls if the device key is revoked. Reads config from /etc/warden/enroll.json (and
+# re-enrolls if the device key is revoked. Reads config from /etc/palivane/enroll.json (and
 # inherits PALIVANE_* from managed-settings). Prime its cache with the key we just minted.
 echo "Installing palivane-reenroll (apiKeyHelper) ..."
 curl -fsSL "$PALIVANE_URL/cli/palivane-reenroll" -o /tmp/palivane-reenroll
 sudo install -m 0755 /tmp/palivane-reenroll /usr/local/bin/palivane-reenroll
-sudo mkdir -p /etc/warden
-printf '%s\\n' "{{ \\"url\\": \\"$PALIVANE_URL\\", \\"enroll_token\\": \\"$ENROLL_TOKEN\\", \\"device\\": \\"$DEVICE\\" }}" | sudo tee /etc/warden/enroll.json >/dev/null
+sudo mkdir -p /etc/palivane
+printf '%s\\n' "{{ \\"url\\": \\"$PALIVANE_URL\\", \\"enroll_token\\": \\"$ENROLL_TOKEN\\", \\"device\\": \\"$DEVICE\\" }}" | sudo tee /etc/palivane/enroll.json >/dev/null
 mkdir -p "$HOME/.palivane"; printf '%s' "$KEY" > "$HOME/.palivane/device-key"; chmod 600 "$HOME/.palivane/device-key"
 
 echo "Configuring Claude Code ..."

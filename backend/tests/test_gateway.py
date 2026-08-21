@@ -19,9 +19,9 @@ def test_monitor_mode_passes_through_and_records(client, monkeypatch):
     body = r.json()
     # OpenAI-shaped response, plus our verdict annotation.
     assert body["choices"][0]["message"]["role"] == "assistant"
-    assert body["warden"]["severity"] in ("high", "critical")
+    assert body["palivane"]["severity"] in ("high", "critical")
     # Both brand keys during the rebrand deprecation window, with identical content.
-    assert body["palivane"] == body["warden"]
+    assert body["palivane"] == body["palivane"]
 
     # The prompt was captured as an llm_io finding for this tenant.
     findings = client.get("/api/findings").json()["findings"]
@@ -37,8 +37,8 @@ def test_enforce_mode_blocks_injection(client, monkeypatch):
     assert r.status_code == 403
     err = r.json()["error"]
     assert err["type"] == "palivane_blocked"
-    assert err["warden"]["finding_id"] is not None
-    assert err["palivane"] == err["warden"]
+    assert err["palivane"]["finding_id"] is not None
+    assert err["palivane"] == err["palivane"]
 
 
 def test_enforce_mode_allows_benign(client, monkeypatch):
@@ -47,7 +47,7 @@ def test_enforce_mode_allows_benign(client, monkeypatch):
 
     r = client.post("/v1/chat/completions", json=BENIGN)
     assert r.status_code == 200
-    assert r.json()["warden"]["severity"] in ("benign", "low")
+    assert r.json()["palivane"]["severity"] in ("benign", "low")
 
 
 def test_gateway_requires_auth(raw_client):
@@ -78,7 +78,7 @@ def test_messages_xapikey_auth_and_monitor(client, monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body["type"] == "message"          # Anthropic response shape
-    assert body["warden"]["severity"] in ("high", "critical")
+    assert body["palivane"]["severity"] in ("high", "critical")
 
 
 def test_messages_enforce_blocks(client, monkeypatch):
@@ -99,7 +99,7 @@ def test_messages_allows_benign(client, monkeypatch):
     r = client.post("/v1/messages", json=ANTHROPIC_BENIGN,
                     headers={"x-api-key": _token(client), "Authorization": ""})
     assert r.status_code == 200
-    assert r.json()["warden"]["severity"] in ("benign", "low")
+    assert r.json()["palivane"]["severity"] in ("benign", "low")
 
 
 def test_messages_missing_key_rejected(raw_client):
@@ -304,7 +304,7 @@ def test_gemini_xgoog_auth_and_monitor(client, monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body["candidates"][0]["content"]["role"] == "model"   # Gemini response shape
-    assert body["warden"]["severity"] in ("high", "critical")
+    assert body["palivane"]["severity"] in ("high", "critical")
 
     findings = client.get("/api/findings").json()["findings"]
     assert any(f["surface"] == "llm_io" for f in findings)
@@ -334,7 +334,7 @@ def test_gemini_allows_benign(client, monkeypatch):
     r = client.post(GEMINI_PATH, json=GEMINI_BENIGN,
                     headers={"x-goog-api-key": _token(client), "Authorization": ""})
     assert r.status_code == 200
-    assert r.json()["warden"]["severity"] in ("benign", "low")
+    assert r.json()["palivane"]["severity"] in ("benign", "low")
 
 
 def test_gemini_missing_key_rejected(raw_client):
@@ -370,7 +370,7 @@ def test_gateway_detects_pii(client, monkeypatch):
     ]})
     assert r.status_code == 200
     # PII is flagged on first-party LLM traffic (was benign before).
-    assert r.json()["warden"]["severity"] in ("suspicious", "high", "critical")
+    assert r.json()["palivane"]["severity"] in ("suspicious", "high", "critical")
 
 
 def test_confirmed_pii_blocked_in_monitor_by_default(client, monkeypatch):
@@ -389,7 +389,7 @@ def test_gateway_does_not_flag_code_as_leak(client, monkeypatch):
         {"role": "user", "content": "Refactor this. It's INTERNAL ONLY.\ndef f(x):\n  import os\n  return os.system(x)"}
     ]})
     # Source code / confidentiality markers are NOT treated as a leak to our own LLM.
-    assert r.json()["warden"]["severity"] in ("benign", "low")
+    assert r.json()["palivane"]["severity"] in ("benign", "low")
 
 
 # --- Claude Code compatibility: count_tokens + header forwarding ---
@@ -435,7 +435,7 @@ def test_responses_monitor_records(client, monkeypatch):
     body = r.json()
     assert body["object"] == "response"
     assert body["output"][0]["content"][0]["type"] == "output_text"   # Responses shape
-    assert body["warden"]["severity"] in ("high", "critical")
+    assert body["palivane"]["severity"] in ("high", "critical")
     findings = client.get("/api/findings").json()["findings"]
     assert any(f["surface"] == "llm_io" for f in findings)
 
@@ -454,7 +454,7 @@ def test_responses_enforce_allows_benign(client, monkeypatch):
     monkeypatch.setattr(gateway.settings, "gateway_enforce", True)
     r = client.post("/v1/responses", json=RESP_BENIGN)
     assert r.status_code == 200
-    assert r.json()["warden"]["severity"] in ("benign", "low")
+    assert r.json()["palivane"]["severity"] in ("benign", "low")
 
 
 def test_responses_user_text_latest_turn_only():
@@ -717,7 +717,7 @@ def test_benign_prompt_not_persisted_by_default(client, monkeypatch):
     monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
     r = client.post("/v1/chat/completions", json=BENIGN)
     assert r.status_code == 200
-    assert r.json()["warden"]["severity"] in ("benign", "low")
+    assert r.json()["palivane"]["severity"] in ("benign", "low")
     findings = client.get("/api/findings").json()["findings"]
     assert not any(f["surface"] == "llm_io" for f in findings)
 

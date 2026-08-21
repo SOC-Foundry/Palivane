@@ -23,7 +23,7 @@ resource "random_password" "metrics_token" {
 }
 
 resource "google_secret_manager_secret" "secret_key" {
-  secret_id = "warden-secret-key"
+  secret_id = "palivane-secret-key"
   replication {
     auto {}
   }
@@ -36,7 +36,7 @@ resource "google_secret_manager_secret_version" "secret_key" {
 }
 
 resource "google_secret_manager_secret" "metrics_token" {
-  secret_id = "warden-metrics-token"
+  secret_id = "palivane-metrics-token"
   replication {
     auto {}
   }
@@ -49,7 +49,7 @@ resource "google_secret_manager_secret_version" "metrics_token" {
 }
 
 resource "google_secret_manager_secret" "database_url" {
-  secret_id = "warden-database-url"
+  secret_id = "palivane-database-url"
   replication {
     auto {}
   }
@@ -59,13 +59,13 @@ resource "google_secret_manager_secret_version" "database_url" {
   count  = var.adopt_existing ? 0 : 1
   secret = google_secret_manager_secret.database_url.id
   # psycopg2 unix-socket form the app expects (host=/cloudsql/CONNECTION_NAME).
-  secret_data = "postgresql+psycopg2://${var.db_user}:${var.db_password}@/warden?host=/cloudsql/${google_sql_database_instance.warden.connection_name}"
+  secret_data = "postgresql+psycopg2://${var.db_user}:${var.db_password}@/palivane?host=/cloudsql/${google_sql_database_instance.palivane.connection_name}"
 }
 
 # Container only; add the value with:
-#   printf '%s' 'APP_PASSWORD' | gcloud secrets versions add warden-smtp-pass --data-file=-
+#   printf '%s' 'APP_PASSWORD' | gcloud secrets versions add palivane-smtp-pass --data-file=-
 resource "google_secret_manager_secret" "smtp_pass" {
-  secret_id = "warden-smtp-pass"
+  secret_id = "palivane-smtp-pass"
   replication {
     auto {}
   }

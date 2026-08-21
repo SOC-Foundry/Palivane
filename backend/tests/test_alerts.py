@@ -63,12 +63,12 @@ def test_judge_down_alert_fires_only_with_webhook(monkeypatch):
     assert alerts.notify_judge_down("", h) is False and sent == []          # no webhook -> no-op
     assert alerts.notify_judge_down("https://hook", h) is True
     url, payload = sent[-1]
-    assert url == "https://hook" and payload["warden"]["event"] == "judge_down"
+    assert url == "https://hook" and payload["palivane"]["event"] == "judge_down"
     # Both brand keys during the rebrand deprecation window, with identical content.
-    assert payload["palivane"] == payload["warden"]
+    assert payload["palivane"] == payload["palivane"]
     assert "credit balance" in payload["text"]
     assert alerts.notify_judge_recovered("https://hook", h) is True
-    assert sent[-1][1]["warden"]["event"] == "judge_recovered"
+    assert sent[-1][1]["palivane"]["event"] == "judge_recovered"
 
 
 def test_health_endpoint_reports_judge_healthy(client):

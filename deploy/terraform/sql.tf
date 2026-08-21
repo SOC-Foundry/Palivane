@@ -1,7 +1,7 @@
 # Cloud SQL Postgres 16, PRIVATE IP only (org policy forbids public IPs), with automated
 # backups + point-in-time recovery. Reached from Cloud Run over the VPC peering above.
 
-resource "google_sql_database_instance" "warden" {
+resource "google_sql_database_instance" "palivane" {
   name             = "${var.service_name}-db"
   region           = var.region
   database_version = "POSTGRES_16"
@@ -50,9 +50,9 @@ resource "google_sql_database_instance" "warden" {
   }
 }
 
-resource "google_sql_database" "warden" {
-  name     = "warden"
-  instance = google_sql_database_instance.warden.name
+resource "google_sql_database" "palivane" {
+  name     = "palivane"
+  instance = google_sql_database_instance.palivane.name
 
   # The instance's deletion_protection does NOT cover the database inside it: dropping this
   # resource (or renaming it — `name` is immutable here too) deletes every table without
@@ -67,15 +67,15 @@ resource "google_sql_database" "warden" {
 variable "db_password" {
   type        = string
   sensitive   = true
-  description = "Password for the warden Postgres user. Pass via TF_VAR_db_password or a secret tfvars; never commit it."
+  description = "Password for the palivane Postgres user. Pass via TF_VAR_db_password or a secret tfvars; never commit it."
 }
 
-resource "google_sql_user" "warden" {
+resource "google_sql_user" "palivane" {
   name     = var.db_user
-  instance = google_sql_database_instance.warden.name
+  instance = google_sql_database_instance.palivane.name
   password = var.db_password
   # The API never returns the password, so TF would show a perpetual "update". The password
-  # is owned out-of-band (the warden-database-url secret); don't let TF churn/rotate it.
+  # is owned out-of-band (the palivane-database-url secret); don't let TF churn/rotate it.
   lifecycle {
     ignore_changes = [password]
   }

@@ -4,7 +4,7 @@ Where siem_s3 delivers severity-gated FINDINGS one object at a time, this sink a
 EVERY analyzed event (benign included) so a tenant's data lake holds the complete capture
 record. Volume is orders of magnitude higher than findings, so events are buffered per
 tenant and flushed as NDJSON micro-batches (size- or age-triggered) under
-<prefix>/<naming>/events/YYYY/MM/DD/HH/<ts>-<rand>.ndjson — hour-partitioned for
+<prefix>/palivane/events/YYYY/MM/DD/HH/<ts>-<rand>.ndjson — hour-partitioned for
 Athena/Panther/Snowflake external tables.
 
 Content policy: prompt prose ships REDACTED (same redact_text as stored findings) unless
@@ -34,7 +34,7 @@ from .siem_s3 import _client
 log = logging.getLogger("uvicorn.error")
 
 _lock = threading.Lock()
-# tenant_id -> {"cfg": (bucket, prefix, region, key_id, secret, naming),
+# tenant_id -> {"cfg": (bucket, prefix, region, key_id, secret),
 #               "lines": [bytes], "bytes": int, "first": monotonic}
 _buffers: dict[int, dict] = {}
 # (tenant_id, "YYYY-MM-DD") -> bytes archived today (per-instance, so approximate under
@@ -52,20 +52,23 @@ def _iso_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def _event_key(prefix: str, naming: str) -> str:
+BRAND = "palivane"   # brand key in the SIEM sourcetype and S3 object paths
+
+
+def _event_key(prefix: str) -> str:
     p = (prefix or "").strip().strip("/")
     hour = time.strftime("%Y/%m/%d/%H", time.gmtime())
     uid = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
-    base = f"{naming}/events/{hour}/{uid}.ndjson"
+    base = f"{BRAND}/events/{hour}/{uid}.ndjson"
     return f"{p}/{base}" if p else base
 
 
 def _put_batch(cfg: tuple, body: bytes, count: int, tid: int = 0) -> None:
     from . import sink_health
-    bucket, prefix, region, key_id, secret, naming, role_arn, external_id = cfg
+    bucket, prefix, region, key_id, secret, role_arn, external_id = cfg
     try:
         s3 = _client(region, key_id, secret, role_arn=role_arn, external_id=external_id)
-        s3.put_object(Bucket=bucket, Key=_event_key(prefix, naming), Body=body,
+        s3.put_object(Bucket=bucket, Key=_event_key(prefix), Body=body,
                       ContentType="application/x-ndjson")
         _stats["batches"] += 1
         sink_health.record(tid, "archive_s3", True)
@@ -172,7 +175,7 @@ def archive(tenant, item, result: dict, agent: str = "") -> None:
             _stats["dropped_cap"] += 1
             return
         cfg = (bucket, tenant.siem_s3_prefix or "", tenant.siem_s3_region or "",
-               key_id, secret, tenant.siem_naming or "warden", role_arn, external_id)
+               key_id, secret, role_arn, external_id)
         flush_bytes = max(1, settings.archive_flush_kb) * 1024
         ready = None
         with _lock:
@@ -203,7 +206,7 @@ def flush_all() -> None:
 
 
 def test(bucket: str, prefix: str, region: str, key_id: str, secret: str,
-         naming: str = "warden", role_arn: str = "", external_id: str = "") -> tuple[bool, str]:
+         role_arn: str = "", external_id: str = "") -> tuple[bool, str]:
     """Synchronously write one sample events object so the console can validate the path
     (and the customer can point an Athena/Panther table at it)."""
     if not (bucket and (role_arn or (key_id and secret))):
@@ -215,7 +218,7 @@ def test(bucket: str, prefix: str, region: str, key_id: str, secret: str,
                       separators=(",", ":")).encode()
     try:
         s3 = _client(region, key_id, secret, role_arn=role_arn, external_id=external_id)
-        s3.put_object(Bucket=bucket, Key=_event_key(prefix, naming), Body=line + b"\n",
+        s3.put_object(Bucket=bucket, Key=_event_key(prefix), Body=line + b"\n",
                       ContentType="application/x-ndjson")
         return True, ""
     except Exception as e:

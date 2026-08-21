@@ -1,10 +1,10 @@
 output "service_url" {
-  value       = google_cloud_run_v2_service.warden.uri
+  value       = google_cloud_run_v2_service.palivane.uri
   description = "The Cloud Run service URL (behind invoker IAM / the Cloudflare Worker)."
 }
 
 output "sql_connection_name" {
-  value       = google_sql_database_instance.warden.connection_name
+  value       = google_sql_database_instance.palivane.connection_name
   description = "Cloud SQL connection name (project:region:instance)."
 }
 
@@ -18,5 +18,5 @@ output "front_service_account" {
 }
 
 output "artifact_registry" {
-  value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.warden.repository_id}"
+  value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.palivane.repository_id}"
 }

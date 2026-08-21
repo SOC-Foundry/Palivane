@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Map a custom domain to the Warden Cloud Run service (auto-provisions a managed TLS cert).
+# Map a custom domain to the Palivane Cloud Run service (auto-provisions a managed TLS cert).
 # Prereqs: the service is deployed (deploy.sh), you own the domain, and you've verified
 # ownership once (Search Console) — see the steps this script prints.
 #
-#   PROJECT_ID=my-proj REGION=us-central1 DOMAIN=app.warden.io ./deploy/cloudrun/map-domain.sh
+#   PROJECT_ID=my-proj REGION=us-central1 DOMAIN=app.palivane.io ./deploy/cloudrun/map-domain.sh
 set -euo pipefail
 
 : "${PROJECT_ID:?set PROJECT_ID}"
 REGION="${REGION:-us-central1}"
-SERVICE="${SERVICE:-warden}"
-: "${DOMAIN:?set DOMAIN (e.g. app.warden.io)}"
+SERVICE="${SERVICE:-palivane}"
+: "${DOMAIN:?set DOMAIN (e.g. app.palivane.io)}"
 
 cat <<NOTE
 Before mapping, the domain must be verified to your account (one-time):

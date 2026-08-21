@@ -18,7 +18,7 @@ from app.main import app
 
 
 @pytest.fixture(autouse=True)
-def _isolate_warden_state(tmp_path, monkeypatch):
+def _isolate_palivane_state(tmp_path, monkeypatch):
     """Keep capture-plane circuit-breaker state out of the real ~/.palivane during tests."""
     monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path / "palivane-state"))
     # Session correlation is a global, default-on side effect (it writes an extra

@@ -107,17 +107,17 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   // --- SIEM forwarding ---
   const [siemCfg, setSiemCfg] = useState({
     url: tenant?.siem_url || "", token: "", min: tenant?.siem_min_severity || "high",
-    format: tenant?.siem_format || "json", naming: tenant?.siem_naming || "warden",
+    format: tenant?.siem_format || "json",
     tokenSet: !!tenant?.siem_token_set,
   });
   async function saveSiem() {
     try {
       const payload = { siem_url: siemCfg.url, siem_min_severity: siemCfg.min,
-                        siem_format: siemCfg.format, siem_naming: siemCfg.naming };
+                        siem_format: siemCfg.format };
       if (siemCfg.token) payload.siem_token = siemCfg.token;   // write-only; only send if changed
       const t = await api.updateTenant(payload);
       onTenant?.(t); setSiemCfg((s) => ({ ...s, token: "", tokenSet: !!t.siem_token_set,
-                                          naming: t.siem_naming || "warden" })); flash("SIEM saved.");
+                                           })); flash("SIEM saved.");
     } catch (e) { err(e); }
   }
   async function testSiem() {
@@ -658,11 +658,6 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
               <option value="splunk_hec">Splunk HEC</option>
               <option value="cef">CEF (syslog)</option>
             </select></label>
-          <label>Event naming
-            <select value={siemCfg.naming} onChange={(e) => setSiemCfg((s) => ({ ...s, naming: e.target.value }))}>
-              <option value="palivane">palivane (current brand)</option>
-              <option value="warden">warden (legacy, pre-rebrand)</option>
-            </select></label>
           <label>Forward severity ≥
             <select value={siemCfg.min} onChange={(e) => setSiemCfg((s) => ({ ...s, min: e.target.value }))}>
               <option value="low">low</option>
@@ -679,9 +674,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Pushes each finding at/above
            the threshold as it's captured; SSRF-guarded and fail-open (a down collector never
            blocks capture). Internal/private endpoints are blocked — use a reachable collector.
-           Event naming sets the Splunk sourcetype (<code>{siemCfg.naming}:finding</code>) and the
-           S3 object path below — keep <em>warden</em> if your dashboards/pipelines already
-           key on it.</p>
+           Events arrive with the Splunk sourcetype <code>palivane:finding</code>, which also
+           sets the S3 object path below.</p>
       </div>
 
       {/* SIEM S3 / data-lake delivery */}
@@ -731,7 +725,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <h3 style={{ margin: "0 0 6px" }}>Raw event archive</h3>
           <p className="muted" style={{ fontSize: 12 }}>Beyond findings: archive <strong>every
              captured event</strong> (benign included) to the same bucket as NDJSON micro-batches
-             under <code>&lt;prefix&gt;/{siemCfg.naming}/events/YYYY/MM/DD/HH/…ndjson</code> —
+             under <code>&lt;prefix&gt;/palivane/events/YYYY/MM/DD/HH/…ndjson</code> —
              a complete, hour-partitioned capture record for Athena / Panther / Snowflake.</p>
           <label style={{ fontSize: 13, display: "block" }}>
             <input type="checkbox" checked={s3Cfg.archive}
@@ -753,8 +747,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         <SinkHealth sink="siem_s3" label="Findings delivery" />
         {s3Cfg.archive && <SinkHealth sink="archive_s3" label="Event archive" />}
         <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Findings are written under
-           <code> &lt;prefix&gt;/{siemCfg.naming}/findings/YYYY/MM/DD/…json</code> (path follows the
-           SIEM event-naming setting above). Static credentials are stored write-only and
+           <code> &lt;prefix&gt;/palivane/findings/YYYY/MM/DD/…json</code> (path follows the
+           same brand key). Static credentials are stored write-only and
            encrypted; role-based delivery stores no secret at all. Grant the role or key
            <code> s3:PutObject</code> on the bucket only.</p>
       </div>

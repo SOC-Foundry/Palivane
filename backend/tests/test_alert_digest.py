@@ -54,8 +54,8 @@ def test_run_digests_batches_and_claims(client, db_factory, monkeypatch):
     n = alerts.run_digests(db)
     assert n == 1 and len(sent) == 1
     payload = sent[0]
-    assert payload["warden"]["count"] == 2                 # high + critical, not suspicious
-    assert payload["warden"]["by_severity"] == {"high": 1, "critical": 1}
+    assert payload["palivane"]["count"] == 2                 # high + critical, not suspicious
+    assert payload["palivane"]["by_severity"] == {"high": 1, "critical": 1}
     assert "digest" in payload["text"].lower()
 
     # window claimed -> a second run right away sends nothing

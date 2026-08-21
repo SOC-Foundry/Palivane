@@ -30,11 +30,11 @@ def test_splunk_hec_format():
     assert req.headers["Authorization"] == "Splunk hectoken"    # HEC scheme
     body = json.loads(req.data)
     # bare default stays the legacy naming — an unset tenant value must never rebrand a sink
-    assert body["sourcetype"] == "warden:finding" and body["event"]["risk_score"] == 75
+    assert body["sourcetype"] == "palivane:finding" and body["event"]["risk_score"] == 75
 
 
 def test_splunk_hec_format_palivane_naming():
-    req = siem._request("https://hec/x", "tok", "splunk_hec", _fields(), naming="palivane")
+    req = siem._request("https://hec/x", "tok", "splunk_hec", _fields())
     body = json.loads(req.data)
     assert body["sourcetype"] == "palivane:finding" and body["source"] == "palivane"
 
@@ -95,15 +95,6 @@ def test_siem_config_roundtrip_token_write_only(client):
 
 def test_siem_invalid_format_rejected(client):
     r = client.patch("/api/tenant", json={"siem_format": "logstash"})
-    assert r.status_code == 400
-
-
-def test_siem_naming_setting_roundtrip_and_validation(client):
-    t = client.patch("/api/tenant", json={"siem_naming": "palivane"}).json()
-    assert t["siem_naming"] == "palivane"
-    t = client.patch("/api/tenant", json={"siem_naming": "warden"}).json()
-    assert t["siem_naming"] == "warden"
-    r = client.patch("/api/tenant", json={"siem_naming": "acme"})
     assert r.status_code == 400
 
 

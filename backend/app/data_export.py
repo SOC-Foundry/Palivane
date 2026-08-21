@@ -74,7 +74,7 @@ def build_tenant_export(db: Session, tenant, include_content: bool = False,
 
     return {
         "exported_at": datetime.now(timezone.utc).isoformat(),
-        "warden_dpa_version": settings.dpa_version,
+        "palivane_dpa_version": settings.dpa_version,
         "include_content": bool(include_content),
         "tenant": tenant.to_dict(),
         "users": [u.to_dict() for u in users],

@@ -25,12 +25,12 @@ def test_jwt_helpers():
 
 def test_agent_jwt_authenticates_and_attributes(client, raw_client, monkeypatch):
     client.patch("/api/tenant", json={"agent_oidc_issuer": "https://idp.example",
-                                      "agent_oidc_audience": "warden"})
+                                      "agent_oidc_audience": "palivane"})
     client.post("/api/agents", json={"name": "wl-bot", "oidc_subject": "spn-billing"})
     # Trust the JWKS boundary; validate the mapping logic.
     monkeypatch.setattr(oidc, "validate_agent_jwt",
                         lambda iss, aud, token, jwks_uri="": {"iss": iss, "aud": aud, "sub": "spn-billing"})
-    tok = _jwt({"iss": "https://idp.example", "aud": "warden", "sub": "spn-billing"})
+    tok = _jwt({"iss": "https://idp.example", "aud": "palivane", "sub": "spn-billing"})
 
     r = raw_client.post("/api/ingest/ai-usage",
                         json={"content": "SSN 123-45-6789", "destination": "https://chatgpt.com/"},
@@ -59,13 +59,13 @@ def test_issuer_without_audience_rejected(client, raw_client):
 
 def test_invalid_signature_rejected(client, raw_client, monkeypatch):
     client.patch("/api/tenant", json={"agent_oidc_issuer": "https://idp.example",
-                                      "agent_oidc_audience": "warden"})
+                                      "agent_oidc_audience": "palivane"})
     client.post("/api/agents", json={"name": "wl2", "oidc_subject": "spn-2"})
 
     def _boom(*a, **k):
         raise oidc.OIDCError("bad signature")
     monkeypatch.setattr(oidc, "validate_agent_jwt", _boom)
-    tok = _jwt({"iss": "https://idp.example", "aud": "warden", "sub": "spn-2"})
+    tok = _jwt({"iss": "https://idp.example", "aud": "palivane", "sub": "spn-2"})
     r = raw_client.post("/api/ingest/ai-usage", json={"content": "hi"},
                         headers={"X-Palivane-Token": tok})
     assert r.status_code == 401
@@ -73,10 +73,10 @@ def test_invalid_signature_rejected(client, raw_client, monkeypatch):
 
 def test_valid_jwt_but_no_matching_agent(client, raw_client, monkeypatch):
     client.patch("/api/tenant", json={"agent_oidc_issuer": "https://idp.example",
-                                      "agent_oidc_audience": "warden"})
+                                      "agent_oidc_audience": "palivane"})
     monkeypatch.setattr(oidc, "validate_agent_jwt",
                         lambda iss, aud, token, jwks_uri="": {"iss": iss, "sub": "nobody"})
-    tok = _jwt({"iss": "https://idp.example", "aud": "warden", "sub": "nobody"})
+    tok = _jwt({"iss": "https://idp.example", "aud": "palivane", "sub": "nobody"})
     r = raw_client.post("/api/ingest/ai-usage", json={"content": "hi"},
                         headers={"X-Palivane-Token": tok})
     assert r.status_code == 401   # audience validated, but no agent maps to that subject

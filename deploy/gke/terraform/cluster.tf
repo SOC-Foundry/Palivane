@@ -20,7 +20,7 @@ resource "google_compute_subnetwork" "gke" {
 }
 
 # GKE Standard (not Autopilot) — we need per-customer node pools with taints for isolation.
-resource "google_container_cluster" "warden" {
+resource "google_container_cluster" "palivane" {
   name     = var.cluster_name
   location = var.region
 
@@ -53,7 +53,7 @@ resource "google_container_cluster" "warden" {
 # customer's dedicated (tainted) pool.
 resource "google_container_node_pool" "system" {
   name     = "system"
-  cluster  = google_container_cluster.warden.id
+  cluster  = google_container_cluster.palivane.id
   location = var.region
   autoscaling {
     min_node_count = 1
@@ -69,7 +69,7 @@ resource "google_container_node_pool" "system" {
 # Least-privilege node identity (pods use Workload Identity for real access).
 resource "google_service_account" "nodes" {
   account_id   = "${var.cluster_name}-gke-nodes"
-  display_name = "Warden GKE nodes"
+  display_name = "Palivane GKE nodes"
 }
 resource "google_project_iam_member" "nodes_logging" {
   project = var.project_id

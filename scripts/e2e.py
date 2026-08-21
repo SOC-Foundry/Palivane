@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Warden end-to-end smoke test — drives a RUNNING stack across every capture plane.
+"""Palivane end-to-end smoke test — drives a RUNNING stack across every capture plane.
 
 Unlike the pytest suite (which runs the app in-process), this exercises a live deployment
 over HTTP + the local CLI sensors, so it verifies the whole flow the way a customer hits it:
@@ -70,7 +70,7 @@ def run_cli(script, stdin_text, env):
 
 
 def main() -> int:
-    print(f"Warden E2E against {BASE}\n")
+    print(f"Palivane E2E against {BASE}\n")
 
     print("== 1. AUTH ==")
     _, tok = call("POST", "/api/auth/login", {"email": EMAIL, "password": PASSWORD})
@@ -83,7 +83,7 @@ def main() -> int:
     key = k.get("token", "")
     ck(key.startswith("ak_"), f"mint capture key ({key[:10]}…)")
     AH = {"Authorization": f"Bearer {jwt}"}
-    KH = {"X-Warden-Token": key}
+    KH = {"X-Palivane-Token": key}
 
     print("== 2. GATEWAY (llm_io) — 4 shapes ==")
     s, _ = call("POST", "/v1/chat/completions", {"model": "gpt-4o", "messages": [

@@ -14,7 +14,7 @@ second title card, the MDM push terminal, the LIVE Findings page, and a closing 
 
 Audio: the score is carried over from the previous cut (it is unbranded lofi) — extract it
 before replacing the file, then mux:
-    ffmpeg -i frontend/public/shots/setup4.mp4 -vn -c:a copy /tmp/warden-demo/setup-score.m4a
+    ffmpeg -i frontend/public/shots/setup4.mp4 -vn -c:a copy /tmp/palivane-demo/setup-score.m4a
     ffmpeg -i setup_silent.mp4 -i setup-score.m4a -map 0:v -map 1:a -c:v copy -c:a copy \
       -shortest -movflags +faststart frontend/public/shots/setupN.mp4
 If the cut's length changes materially, synthesize a new bed with demo_score.py instead
@@ -97,7 +97,7 @@ def console_page_frames(pw, tab: str, seconds: float, out_dir: str) -> int:
     token = json.loads(urllib.request.urlopen(req, timeout=30).read())["access_token"]
     b = pw.chromium.launch(args=["--disable-dev-shm-usage", "--no-sandbox"])
     page = b.new_context(viewport={"width": W, "height": H}).new_page()
-    page.add_init_script(f"localStorage.setItem('warden_token', {json.dumps(token)})")
+    page.add_init_script(f"localStorage.setItem('palivane_token', {json.dumps(token)})")
     page.goto(BASE, wait_until="networkidle")
     page.wait_for_timeout(1200)
     try:

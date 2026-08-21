@@ -16,10 +16,10 @@ _spec.loader.exec_module(wc)
 
 def test_merge_hook_adds_then_skips_duplicate():
     data: dict = {}
-    assert wc._merge_hook(data, "PreToolUse", "/opt/warden/palivane-hook", timeout=10) is True
+    assert wc._merge_hook(data, "PreToolUse", "/opt/palivane/palivane-hook", timeout=10) is True
     entry = data["hooks"]["PreToolUse"][0]
     assert entry["matcher"] == "*"
-    assert entry["hooks"][0] == {"type": "command", "command": "/opt/warden/palivane-hook", "timeout": 10}
+    assert entry["hooks"][0] == {"type": "command", "command": "/opt/palivane/palivane-hook", "timeout": 10}
     # Re-run (even from a different install path) is a no-op.
     assert wc._merge_hook(data, "PreToolUse", "/usr/local/bin/palivane-hook", timeout=10) is False
     assert len(data["hooks"]["PreToolUse"]) == 1
@@ -35,7 +35,7 @@ def test_merge_hook_preserves_existing_foreign_hooks():
 
 def test_write_claude_code_env_and_hooks(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/palivane/{name}")
     path, installed = wc._write_claude_code("ak_tok123", "https://w.corp.io", "dev@acme.com",
                                             route_gateway=True)
 
@@ -48,7 +48,7 @@ def test_write_claude_code_env_and_hooks(monkeypatch, tmp_path):
     events = {e for e in data["hooks"]}
     assert events == {"PreToolUse", "UserPromptSubmit", "SessionStart"}
     # The prompt hook runs the same script as the tool-call hook.
-    assert data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == "/opt/warden/palivane-hook"
+    assert data["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"] == "/opt/palivane/palivane-hook"
     assert "--async --quiet" in data["hooks"]["SessionStart"][0]["hooks"][0]["command"]
     assert len(installed) == 3
     assert oct(os.stat(path).st_mode & 0o777) == "0o600"
@@ -64,7 +64,7 @@ def test_write_claude_code_env_and_hooks(monkeypatch, tmp_path):
 def test_default_keeps_claude_codes_own_auth(monkeypatch, tmp_path):
     """Gateway routing is opt-in: the default write never touches ANTHROPIC_*."""
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/palivane/{name}")
     path, _ = wc._write_claude_code("ak_tok", "https://w.corp.io", "dev@acme.com")
     env = json.load(open(path))["env"]
     assert "ANTHROPIC_BASE_URL" not in env and "ANTHROPIC_AUTH_TOKEN" not in env
@@ -74,7 +74,7 @@ def test_default_keeps_claude_codes_own_auth(monkeypatch, tmp_path):
 def test_rerun_without_gateway_cleans_previous_routing(monkeypatch, tmp_path):
     """Re-running connect (no flag) remediates installs a previous version gateway-routed."""
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/palivane/{name}")
     path, _ = wc._write_claude_code("ak_old", "https://w.corp.io", "dev@acme.com",
                                     route_gateway=True)
     path, installed = wc._write_claude_code("ak_new", "https://w.corp.io/", "dev@acme.com")
@@ -87,7 +87,7 @@ def test_rerun_without_gateway_cleans_previous_routing(monkeypatch, tmp_path):
 def test_rerun_leaves_foreign_base_url_alone(monkeypatch, tmp_path):
     """A user's own custom ANTHROPIC_BASE_URL (not our gateway) is never removed."""
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/palivane/{name}")
     home = tmp_path / ".claude"
     home.mkdir()
     (home / "settings.json").write_text(json.dumps(
@@ -114,8 +114,8 @@ def test_write_claude_code_missing_scripts_noted(monkeypatch, tmp_path):
 
 def test_merge_cursor_hook_flat_shape_and_idempotent():
     data: dict = {}
-    assert wc._merge_cursor_hook(data, "beforeSubmitPrompt", "/opt/warden/palivane-cursor-hook") is True
-    assert data["hooks"]["beforeSubmitPrompt"][0] == {"command": "/opt/warden/palivane-cursor-hook"}
+    assert wc._merge_cursor_hook(data, "beforeSubmitPrompt", "/opt/palivane/palivane-cursor-hook") is True
+    assert data["hooks"]["beforeSubmitPrompt"][0] == {"command": "/opt/palivane/palivane-cursor-hook"}
     # Re-run from a different path is a no-op (same script basename).
     assert wc._merge_cursor_hook(data, "beforeSubmitPrompt", "/usr/local/bin/palivane-cursor-hook") is False
     assert len(data["hooks"]["beforeSubmitPrompt"]) == 1
@@ -124,14 +124,14 @@ def test_merge_cursor_hook_flat_shape_and_idempotent():
 def test_write_cursor_installs_hooks_and_creds(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     (tmp_path / ".cursor").mkdir()                      # Cursor "installed"
-    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/palivane/{name}")
     hpath, items = wc._write_cursor("ak_tok", "https://w.corp.io", "dev@acme.com")
 
     hooks = json.load(open(hpath))
     assert hooks["version"] == 1
     assert set(hooks["hooks"]) == set(wc._CURSOR_EVENTS)
     for ev in wc._CURSOR_EVENTS:
-        assert hooks["hooks"][ev][0]["command"] == "/opt/warden/palivane-cursor-hook"
+        assert hooks["hooks"][ev][0]["command"] == "/opt/palivane/palivane-cursor-hook"
     # Creds file the hook reads (Cursor doesn't pass env to hooks).
     creds = json.load(open(tmp_path / ".cursor" / "palivane.json"))
     assert creds == {"url": "https://w.corp.io", "token": "ak_tok", "user": "dev@acme.com"}
@@ -146,7 +146,7 @@ def test_write_cursor_installs_hooks_and_creds(monkeypatch, tmp_path):
 
 def test_write_cursor_skipped_when_cursor_absent(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))            # no ~/.cursor dir
-    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/palivane/{name}")
     hpath, items = wc._write_cursor("ak_tok", "https://w.io", "")
     assert hpath is None
     assert any("Cursor not detected" in i for i in items)
@@ -165,14 +165,14 @@ def test_write_cursor_none_when_hook_missing(monkeypatch, tmp_path):
 def test_write_gemini_installs_hooks_and_creds(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     (tmp_path / ".gemini").mkdir()                      # Gemini CLI "installed"
-    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/palivane/{name}")
     spath, items = wc._write_gemini("ak_tok", "https://w.corp.io", "dev@acme.com")
 
     settings = json.load(open(spath))
     assert set(settings["hooks"]) == {"BeforeAgent", "BeforeTool"}
     ba = settings["hooks"]["BeforeAgent"][0]
     assert "matcher" not in ba                          # BeforeAgent takes no matcher
-    assert ba["hooks"][0]["command"] == "/opt/warden/palivane-gemini-hook"
+    assert ba["hooks"][0]["command"] == "/opt/palivane/palivane-gemini-hook"
     assert ba["hooks"][0]["timeout"] == 10000           # Gemini timeouts are milliseconds
     assert settings["hooks"]["BeforeTool"][0]["matcher"] == ".*"
     creds = json.load(open(tmp_path / ".gemini" / "palivane.json"))
@@ -195,7 +195,7 @@ def test_write_gemini_preserves_existing_settings(monkeypatch, tmp_path):
         {"theme": "dark", "hooks": {"BeforeTool": [
             {"matcher": "write_file", "hooks": [{"name": "lint", "type": "command",
                                                  "command": "my-linter"}]}]}}))
-    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/palivane/{name}")
     spath, _ = wc._write_gemini("ak_tok", "https://w.io", "")
     settings = json.load(open(spath))
     assert settings["theme"] == "dark"
@@ -205,7 +205,7 @@ def test_write_gemini_preserves_existing_settings(monkeypatch, tmp_path):
 
 def test_write_gemini_skipped_when_absent(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))            # no ~/.gemini dir
-    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/palivane/{name}")
     spath, items = wc._write_gemini("ak_tok", "https://w.io", "")
     assert spath is None
     assert any("Gemini CLI not detected" in i for i in items)
@@ -224,7 +224,7 @@ def test_write_gemini_none_when_hook_missing(monkeypatch, tmp_path):
 def test_write_codex_installs_hooks_and_creds(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     (tmp_path / ".codex").mkdir()                        # Codex CLI "installed"
-    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/palivane/{name}")
     hpath, items = wc._write_codex("ak_tok", "https://w.corp.io", "dev@acme.com")
 
     hooks = json.load(open(hpath))
@@ -232,7 +232,7 @@ def test_write_codex_installs_hooks_and_creds(monkeypatch, tmp_path):
     ups = hooks["hooks"]["UserPromptSubmit"][0]
     assert "matcher" not in ups                          # UserPromptSubmit takes no matcher
     assert ups["hooks"][0] == {"type": "command",
-                               "command": "/opt/warden/palivane-codex-hook", "timeout": 10}
+                               "command": "/opt/palivane/palivane-codex-hook", "timeout": 10}
     assert hooks["hooks"]["PreToolUse"][0]["matcher"] == ".*"
     creds = json.load(open(tmp_path / ".codex" / "palivane.json"))
     assert creds == {"url": "https://w.corp.io", "token": "ak_tok", "user": "dev@acme.com"}
@@ -248,7 +248,7 @@ def test_write_codex_installs_hooks_and_creds(monkeypatch, tmp_path):
 
 def test_write_codex_skipped_when_absent(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))            # no ~/.codex dir
-    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/palivane/{name}")
     hpath, items = wc._write_codex("ak_tok", "https://w.io", "")
     assert hpath is None
     assert any("Codex CLI not detected" in i for i in items)
@@ -264,7 +264,7 @@ def test_write_codex_none_when_hook_missing(monkeypatch, tmp_path):
 def test_write_copilot_installs_hooks_and_creds(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     (tmp_path / ".copilot").mkdir()                      # Copilot CLI "installed"
-    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/palivane/{name}")
     hpath, items = wc._write_copilot("ak_tok", "https://w.corp.io", "dev@acme.com")
 
     hooks = json.load(open(hpath))
@@ -272,7 +272,7 @@ def test_write_copilot_installs_hooks_and_creds(monkeypatch, tmp_path):
     assert set(hooks["hooks"]) == {"preToolUse", "userPromptSubmitted"}
     entry = hooks["hooks"]["preToolUse"][0]
     # Copilot's entry shape: a bash command string + timeoutSec (not command/timeout).
-    assert entry == {"type": "command", "bash": "/opt/warden/palivane-copilot-hook",
+    assert entry == {"type": "command", "bash": "/opt/palivane/palivane-copilot-hook",
                      "timeoutSec": 10}
     creds = json.load(open(tmp_path / ".copilot" / "palivane.json"))
     assert creds == {"url": "https://w.corp.io", "token": "ak_tok", "user": "dev@acme.com"}
@@ -291,7 +291,7 @@ def test_write_copilot_owns_its_file_only(monkeypatch, tmp_path):
     hooks_dir.mkdir(parents=True)
     (hooks_dir / "mine.json").write_text(json.dumps(
         {"version": 1, "hooks": {"preToolUse": [{"type": "command", "bash": "my-guard"}]}}))
-    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/palivane/{name}")
     hpath, _ = wc._write_copilot("ak_tok", "https://w.corp.io", "dev@acme.com")
     assert hpath.endswith("palivane.json")
     mine = json.load(open(hooks_dir / "mine.json"))
@@ -300,7 +300,7 @@ def test_write_copilot_owns_its_file_only(monkeypatch, tmp_path):
 
 def test_write_copilot_skipped_when_absent(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))            # no ~/.copilot dir
-    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/palivane/{name}")
     hpath, items = wc._write_copilot("ak_tok", "https://w.io", "")
     assert hpath is None
     assert any("Copilot CLI not detected" in i for i in items)
@@ -339,7 +339,7 @@ def test_upstream_warning_only_when_console_says_no_key():
 
 def test_no_upstream_skips_gateway_routing_keeps_local_planes(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/warden/{name}")
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/palivane/{name}")
     path, installed = wc._write_claude_code("ak_tok", "https://w.io", "dev@a.com",
                                             route_gateway=False)
     env = json.load(open(path))["env"]
@@ -350,7 +350,7 @@ def test_no_upstream_skips_gateway_routing_keeps_local_planes(monkeypatch, tmp_p
     assert len(installed) == 3
 
 
-# --- plane self-update: `warden connect` refreshes installed plane scripts -----------
+# --- plane self-update: `palivane connect` refreshes installed plane scripts -----------
 def test_refresh_planes_updates_and_is_atomic(tmp_path, monkeypatch):
     """A re-connect fetches current plane scripts into ~/.palivane/bin (atomic, executable),
     so new plane code (e.g. the auth circuit breaker) lands without a full reinstall."""
@@ -440,102 +440,8 @@ def test_uninstall_preserves_foreign_gateway_routing(tmp_path, monkeypatch):
     assert env == {"ANTHROPIC_AUTH_TOKEN": "sk-user", "ANTHROPIC_BASE_URL": "https://api.anthropic.com"}
 
 
-# --- pre-rebrand (Warden) scrub ----------------------------------------------------------
-
-def test_scrub_pre_rebrand_migrates_claude_settings(tmp_path, monkeypatch):
-    """Old warden hooks/env go; the user's own hooks and any palivane entries stay."""
-    monkeypatch.setenv("HOME", str(tmp_path))
-    claude = tmp_path / ".claude"; claude.mkdir()
-    (claude / "settings.json").write_text(json.dumps({
-        "hooks": {
-            "PreToolUse": [
-                {"matcher": "*", "hooks": [{"type": "command", "command": "/home/u/.warden/bin/warden-hook"}]},
-                {"matcher": "*", "hooks": [{"type": "command", "command": "/home/u/.palivane/bin/palivane-hook"}]},
-                {"matcher": "Bash", "hooks": [{"type": "command", "command": "my-linter"}]}],
-            "SessionStart": [
-                {"matcher": "*", "hooks": [{"type": "command", "command": "/home/u/.warden/bin/warden-posture --async --quiet"}]}],
-        },
-        "env": {"WARDEN_URL": "https://w.corp.io", "WARDEN_TOKEN": "ak_old",
-                "WARDEN_ENFORCE": "false", "PALIVANE_TOKEN": "ak_new",
-                "ANTHROPIC_BASE_URL": "https://w.corp.io", "ANTHROPIC_AUTH_TOKEN": "ak_old"},
-    }))
-    msgs = wc._scrub_pre_rebrand()
-    d = json.loads((claude / "settings.json").read_text())
-    dumped = json.dumps(d["hooks"])
-    assert "warden-hook" not in dumped and "warden-posture" not in dumped
-    assert "palivane-hook" in dumped and "my-linter" in dumped
-    assert "SessionStart" not in d["hooks"]              # emptied event pruned
-    env = d["env"]
-    assert not any(k.startswith("WARDEN_") for k in env)
-    # gateway routing owned by old warden (token match) removed with it
-    assert "ANTHROPIC_BASE_URL" not in env and "ANTHROPIC_AUTH_TOKEN" not in env
-    assert env["PALIVANE_TOKEN"] == "ak_new"
-    assert any("Claude Code" in m for m in msgs)
+# --- pre-rebrand (Palivane) scrub ----------------------------------------------------------
 
 
-def test_scrub_pre_rebrand_leaves_foreign_gateway_alone(tmp_path, monkeypatch):
-    """A user's own ANTHROPIC_* (token != old warden's) is never touched."""
-    monkeypatch.setenv("HOME", str(tmp_path))
-    claude = tmp_path / ".claude"; claude.mkdir()
-    (claude / "settings.json").write_text(json.dumps({"env": {
-        "WARDEN_TOKEN": "ak_old",
-        "ANTHROPIC_AUTH_TOKEN": "sk-user", "ANTHROPIC_BASE_URL": "https://api.anthropic.com"}}))
-    wc._scrub_pre_rebrand()
-    env = json.loads((claude / "settings.json").read_text())["env"]
-    assert env == {"ANTHROPIC_AUTH_TOKEN": "sk-user",
-                   "ANTHROPIC_BASE_URL": "https://api.anthropic.com"}
 
 
-def test_scrub_pre_rebrand_tool_hooks_and_creds(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path))
-    cur = tmp_path / ".cursor"; cur.mkdir()
-    (cur / "hooks.json").write_text(json.dumps(
-        {"version": 1, "hooks": {"beforeSubmitPrompt": [{"command": "warden-cursor-hook"},
-                                                        {"command": "keep"}]}}))
-    (cur / "warden.json").write_text("{}")
-    (cur / "palivane.json").write_text("{}")
-    cop = tmp_path / ".copilot" / "hooks"; cop.mkdir(parents=True)
-    (cop / "warden.json").write_text("{}")
-    (cop / "palivane.json").write_text("{}")
-
-    msgs = wc._scrub_pre_rebrand()
-
-    c = json.loads((cur / "hooks.json").read_text())
-    assert c["hooks"]["beforeSubmitPrompt"] == [{"command": "keep"}]
-    assert not (cur / "warden.json").exists()
-    assert (cur / "palivane.json").exists()              # new generation untouched
-    assert not (cop / "warden.json").exists()
-    assert (cop / "palivane.json").exists()
-    assert any("Cursor" in m for m in msgs) and any("Copilot" in m for m in msgs)
-
-
-def test_scrub_pre_rebrand_legacy_bin(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path))
-    lbin = tmp_path / ".warden" / "bin"; lbin.mkdir(parents=True)
-    (lbin / "warden-hook").write_text("#!/bin/sh\n")
-    (lbin / "warden-connect").write_text("#!/bin/sh\n")
-    (lbin / "claude").write_text("#!/bin/sh\n# warden-desktop CLI capture shim\n")
-    msgs = wc._scrub_pre_rebrand()
-    assert not (tmp_path / ".warden").exists()           # emptied dirs pruned
-    assert any("3 old warden binaries" in m for m in msgs)
-
-
-def test_scrub_pre_rebrand_keeps_foreign_files_in_legacy_bin(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path))
-    lbin = tmp_path / ".warden" / "bin"; lbin.mkdir(parents=True)
-    (lbin / "warden-hook").write_text("#!/bin/sh\n")
-    (lbin / "claude").write_text("#!/bin/sh\nexec my-own-wrapper \"$@\"\n")   # not our shim
-    wc._scrub_pre_rebrand()
-    assert not (lbin / "warden-hook").exists()
-    assert (lbin / "claude").exists()                    # unmarked file kept, dir kept
-
-
-def test_scrub_pre_rebrand_noop_on_clean_machine(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path))
-    assert wc._scrub_pre_rebrand() == []
-    # A palivane-only settings file is left byte-identical (no rewrite when nothing matched).
-    claude = tmp_path / ".claude"; claude.mkdir()
-    before = json.dumps({"env": {"PALIVANE_TOKEN": "ak"}, "hooks": {}})
-    (claude / "settings.json").write_text(before)
-    assert wc._scrub_pre_rebrand() == []
-    assert (claude / "settings.json").read_text() == before

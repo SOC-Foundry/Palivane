@@ -9,7 +9,7 @@ window.addEventListener("message", async (e) => {
   // script from spoofing verdicts or summoning a fake Palivane block/warn UI (phishing).
   if (e.source !== window) return;
   const d = e.data;
-  if (!d || !d.__warden) return;
+  if (!d || !d.__palivane) return;
 
   if (d.kind === "scan") {
     let verdict = { action: "allow" };
