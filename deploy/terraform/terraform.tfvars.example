@@ -4,7 +4,7 @@ project_id = "your-project-id"
 region     = "us-central1"
 
 # Container image — build/push first (deploy/cloudrun or CI), then reference the tag.
-image = "us-central1-docker.pkg.dev/your-project-id/warden/warden:latest"
+image = "us-central1-docker.pkg.dev/your-project-id/palivane/palivane:latest"
 
 # Postgres user password — prefer TF_VAR_db_password in the environment over this file.
 # db_password = "set-via-env"
@@ -16,18 +16,18 @@ store_content    = false
 encrypt_findings = true
 
 # Fronting (optional)
-public_domain = ""            # e.g. "warden.example.com"
-allowed_hosts = ""            # e.g. "warden.example.com,warden-xxxx.run.app"
+public_domain = ""            # e.g. "palivane.example.com"
+allowed_hosts = ""            # e.g. "palivane.example.com,palivane-xxxx.run.app"
 extension_id  = ""            # published Chrome extension id
 
-# Email (optional; add the warden-smtp-pass secret version before setting smtp_host)
+# Email (optional; add the palivane-smtp-pass secret version before setting smtp_host)
 smtp_host = ""                # "smtp.gmail.com"
-smtp_user = ""                # "warden@example.com"
-mail_from = ""                # "warden@example.com"
+smtp_user = ""                # "palivane@example.com"
+mail_from = ""                # "palivane@example.com"
 
 # Who may invoke the service (NOT allUsers — org policy forbids). Add the Worker SA after
 # first apply (it's an output), plus any human users.
 invoker_members = [
-  # "serviceAccount:warden-front@your-project-id.iam.gserviceaccount.com",
+  # "serviceAccount:palivane-front@your-project-id.iam.gserviceaccount.com",
   # "user:admin@example.com",
 ]

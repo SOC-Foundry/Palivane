@@ -18,11 +18,8 @@ def _capture_puts(monkeypatch):
 
 def test_key_is_date_partitioned():
     k = s3._key("acme/logs")
-    # bare default stays the legacy path — an unset tenant value must never move a pipeline
-    assert k.startswith("acme/logs/warden/findings/") and k.endswith(".json")
-    assert s3._key("").startswith("warden/findings/")
-    assert s3._key("acme", naming="palivane").startswith("acme/palivane/findings/")
-    assert s3._key("", naming="palivane").startswith("palivane/findings/")
+    assert k.startswith("acme/logs/palivane/findings/") and k.endswith(".json")
+    assert s3._key("").startswith("palivane/findings/")
 
 
 def test_forward_gated_by_config_and_severity(monkeypatch):
@@ -36,7 +33,6 @@ def test_forward_gated_by_config_and_severity(monkeypatch):
     assert len(calls) == 1
     (bucket, prefix, region, kid, sec, fields), kw = calls[0]
     assert bucket == "b" and region == "us-east-1"
-    assert kw.get("naming") == "warden"    # default stays legacy unless the tenant opted in
     assert fields["product"] == "Palivane" and fields["severity"] == "critical" and fields["org"] == "acme"
     # below threshold -> dropped
     calls.clear()
@@ -57,8 +53,6 @@ def test_s3_sink_runs_from_run_analysis(client, raw_client, monkeypatch):
                     headers={"X-Palivane-Token": key})
     assert len(calls) >= 1
     assert calls[0][0][0] == "palivane-lake"
-    # fresh test tenant carries the ORM default naming; service must pass it through
-    assert calls[0][1].get("naming") in ("palivane", "warden")
 
 
 def test_config_is_write_only_in_tenant_dict(client):

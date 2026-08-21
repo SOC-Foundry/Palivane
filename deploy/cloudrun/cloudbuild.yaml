@@ -1,10 +1,10 @@
-# Build the single-origin Warden image and push to Artifact Registry.
+# Build the single-origin Palivane image and push to Artifact Registry.
 #   gcloud builds submit --config deploy/cloudrun/cloudbuild.yaml \
-#     --substitutions _REGION=us-central1,_REPO=warden,_IMAGE=warden,_TAG=$(git rev-parse --short HEAD)
+#     --substitutions _REGION=us-central1,_REPO=palivane,_IMAGE=palivane,_TAG=$(git rev-parse --short HEAD)
 substitutions:
   _REGION: us-central1
-  _REPO: warden
-  _IMAGE: warden
+  _REPO: palivane
+  _IMAGE: palivane
   _TAG: latest
 steps:
   - name: gcr.io/cloud-builders/docker

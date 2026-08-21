@@ -16,7 +16,7 @@ REPO="${REPO:?set REPO (e.g. owner/name)}"
 REGION="${REGION:-us-central1}"
 POOL="${POOL:-github-pool}"
 PROVIDER="${PROVIDER:-github-provider}"
-SA_NAME="${SA_NAME:-warden-deploy}"
+SA_NAME="${SA_NAME:-palivane-deploy}"
 STATE_BUCKET="${STATE_BUCKET:-${PROJECT_ID}-tfstate}"
 
 SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
@@ -28,7 +28,7 @@ gcloud services enable iam.googleapis.com sts.googleapis.com iamcredentials.goog
 
 echo "==> Deploy service account: $SA_EMAIL"
 gcloud iam service-accounts create "$SA_NAME" --project "$PROJECT_ID" \
-  --display-name "Warden CI/CD deploy" 2>/dev/null || echo "  (already exists)"
+  --display-name "Palivane CI/CD deploy" 2>/dev/null || echo "  (already exists)"
 
 # Newly-created SAs take a few seconds to be usable in IAM bindings — wait for propagation.
 echo "  waiting for the SA to propagate..."
@@ -98,15 +98,15 @@ Done. Set these in GitHub (Settings -> Secrets and variables -> Actions):
     GCP_PROJECT_ID                 = ${PROJECT_ID}
     GCP_REGION                     = ${REGION}
     TF_STATE_BUCKET                = ${STATE_BUCKET}
-    GCP_SQL_CONNECTION             = ${PROJECT_ID}:${REGION}:warden-db
-    VPC_NETWORK                    = warden-vpc
-    VPC_SUBNET                     = warden-subnet
+    GCP_SQL_CONNECTION             = ${PROJECT_ID}:${REGION}:palivane-db
+    VPC_NETWORK                    = palivane-vpc
+    VPC_SUBNET                     = palivane-subnet
     DOMAIN, PALIVANE_ALLOWED_HOSTS, PALIVANE_EXTENSION_ID, GATEWAY_ENFORCE,
     PALIVANE_ALLOW_SIGNUP, PALIVANE_ENCRYPT_FINDINGS, SMTP_HOST, SMTP_USER, MAIL_FROM
                                    = (match your current deploy command)
 
   Repository SECRETS:
-    TF_DB_PASSWORD                 = (the warden Postgres user password)
+    TF_DB_PASSWORD                 = (the palivane Postgres user password)
 
   Environments: create 'production' and 'production-infra' with required reviewers.
 

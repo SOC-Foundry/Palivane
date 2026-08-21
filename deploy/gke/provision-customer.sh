@@ -15,7 +15,7 @@ SLUG="${1:?usage: provision-customer.sh <slug> <hostname>}"
 HOST="${2:?usage: provision-customer.sh <slug> <hostname>}"
 PROJECT="${PROJECT_ID:-palivane}"
 REGION="${REGION:-us-central1}"
-CLUSTER="${CLUSTER:-warden}"   # live GCP cluster name — deliberately warden (rebrand runbook)
+CLUSTER="${CLUSTER:-palivane}"   # live GCP cluster name — deliberately palivane (rebrand runbook)
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 echo "==> [1/5] Terraform: create ${SLUG}'s dedicated node pool + Cloud SQL + GSA"

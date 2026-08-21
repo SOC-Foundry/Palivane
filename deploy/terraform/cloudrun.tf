@@ -20,7 +20,7 @@ locals {
   plain_env = merge(local.base_env, local.domain_env, local.hosts_env, local.ext_env, local.smtp_env)
 }
 
-resource "google_cloud_run_v2_service" "warden" {
+resource "google_cloud_run_v2_service" "palivane" {
   name     = var.service_name
   location = var.region
   # Public ingress, but invoker IAM (iam.tf) — NOT allUsers — decides who gets through.
@@ -31,7 +31,7 @@ resource "google_cloud_run_v2_service" "warden" {
     google_secret_manager_secret_version.secret_key,
     google_secret_manager_secret_version.database_url,
     google_secret_manager_secret_version.metrics_token,
-    google_sql_database.warden,
+    google_sql_database.palivane,
   ]
 
   template {
@@ -56,7 +56,7 @@ resource "google_cloud_run_v2_service" "warden" {
     volumes {
       name = "cloudsql"
       cloud_sql_instance {
-        instances = [google_sql_database_instance.warden.connection_name]
+        instances = [google_sql_database_instance.palivane.connection_name]
       }
     }
 

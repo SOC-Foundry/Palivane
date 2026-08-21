@@ -27,7 +27,7 @@ function Section({ title, children, right }) {
 }
 
 export default function Admin() {
-  const [token, setTokenState] = useState(() => sessionStorage.getItem("warden_op_token") || "");
+  const [token, setTokenState] = useState(() => sessionStorage.getItem("palivane_op_token") || "");
   const [entered, setEntered] = useState("");
   const [authed, setAuthed] = useState(false);
   const [err, setErr] = useState(null);
@@ -47,7 +47,7 @@ export default function Admin() {
         call("/admin/upgrade-requests", tok),
       ]);
       setFunnel(f); setPlans(p); setLicenses(l); setUpgrades(u); setAuthed(true);
-      sessionStorage.setItem("warden_op_token", tok); setTokenState(tok);
+      sessionStorage.setItem("palivane_op_token", tok); setTokenState(tok);
     } catch (e) {
       setAuthed(false); setErr(String(e.message || e));
     }
@@ -111,7 +111,7 @@ export default function Admin() {
     <div className="admin-console" style={{ maxWidth: 1000, margin: "0 auto", padding: "40px 24px 80px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 28 }}>
         <h1 style={{ margin: 0 }}>Operator console</h1>
-        <button className="link-btn" onClick={() => { sessionStorage.removeItem("warden_op_token"); setAuthed(false); setTokenState(""); }}>
+        <button className="link-btn" onClick={() => { sessionStorage.removeItem("palivane_op_token"); setAuthed(false); setTokenState(""); }}>
           Lock
         </button>
       </div>

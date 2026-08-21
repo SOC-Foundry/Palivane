@@ -126,7 +126,7 @@ class SecretAtRest(BaseModel):
     # lookup unavailable). None must NOT be read as "private" — it carries no signal.
     world_readable: bool | None = False
     verified: bool = False       # a scanner confirmed the credential is live (TruffleHog)
-    source: str = ""             # detection engine: "warden" | "trufflehog" | "gitleaks" | …
+    source: str = ""             # detection engine: "palivane" | "trufflehog" | "gitleaks" | …
 
 
 class SecretScan(BaseModel):
@@ -306,7 +306,6 @@ class TenantUpdate(BaseModel):
     siem_token: str | None = Field(None, max_length=1024)
     siem_min_severity: str | None = None    # minimum severity to forward
     siem_format: str | None = None          # json | splunk_hec | cef
-    siem_naming: str | None = None          # palivane | warden (brand key in sourcetype/S3 path)
     siem_s3_bucket: str | None = Field(None, max_length=255)   # S3 delivery bucket
     siem_s3_prefix: str | None = Field(None, max_length=255)   # key prefix
     siem_s3_region: str | None = Field(None, max_length=32)

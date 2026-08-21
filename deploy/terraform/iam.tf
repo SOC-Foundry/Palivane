@@ -1,12 +1,12 @@
 data "google_project" "this" {}
 
 # Runtime identity for Cloud Run. Fresh deploy: create a dedicated least-privilege
-# `warden-run` SA and bind its roles. adopt_existing: reuse the default compute SA the
+# `palivane-run` SA and bind its roles. adopt_existing: reuse the default compute SA the
 # hand-built prod already runs as (it already holds the needed roles — don't manage them).
 resource "google_service_account" "run" {
   count        = var.adopt_existing ? 0 : 1
   account_id   = "${var.service_name}-run"
-  display_name = "Warden Cloud Run runtime"
+  display_name = "Palivane Cloud Run runtime"
 }
 
 locals {
@@ -33,13 +33,13 @@ resource "google_project_iam_member" "run" {
 # service). The Worker deployment itself is out-of-band (deploy/cloudflare).
 resource "google_service_account" "front" {
   account_id   = "${var.service_name}-front"
-  display_name = "Warden Cloudflare Worker front door"
+  display_name = "Palivane Cloudflare Worker front door"
 }
 
 # Who may invoke the service: the Worker SA always, plus any members from var.invoker_members
 # (human users, etc.). NOT allUsers — org DRS policy forbids it; public access is via the Worker.
 resource "google_cloud_run_v2_service_iam_member" "invoker_front" {
-  name     = google_cloud_run_v2_service.warden.name
+  name     = google_cloud_run_v2_service.palivane.name
   location = var.region
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.front.email}"
@@ -47,7 +47,7 @@ resource "google_cloud_run_v2_service_iam_member" "invoker_front" {
 
 resource "google_cloud_run_v2_service_iam_member" "invokers" {
   for_each = toset(var.invoker_members)
-  name     = google_cloud_run_v2_service.warden.name
+  name     = google_cloud_run_v2_service.palivane.name
   location = var.region
   role     = "roles/run.invoker"
   member   = each.value

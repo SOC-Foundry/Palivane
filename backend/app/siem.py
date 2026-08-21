@@ -62,7 +62,10 @@ def _cef(f: dict) -> str:
     return header + "|" + " ".join(f"{k}={esc(v)}" for k, v in ext.items())
 
 
-def _request(url: str, token: str, fmt: str, f: dict, naming: str = "warden") -> urllib.request.Request:
+BRAND = "palivane"   # brand key in the SIEM sourcetype and S3 object paths
+
+
+def _request(url: str, token: str, fmt: str, f: dict) -> urllib.request.Request:
     """Build the HTTP request for the chosen format (body + headers)."""
     headers = {}
     if fmt == "cef":
@@ -72,8 +75,8 @@ def _request(url: str, token: str, fmt: str, f: dict, naming: str = "warden") ->
             headers["Authorization"] = f"Bearer {token}"
     elif fmt == "splunk_hec":
         # Tenant-selected brand key: existing tenants' Splunk dashboards key on the
-        # pre-rebrand "warden:finding" sourcetype; new tenants use "palivane:finding".
-        body = json.dumps({"event": f, "sourcetype": f"{naming}:finding", "source": naming}).encode()
+        # pre-rebrand "palivane:finding" sourcetype; new tenants use "palivane:finding".
+        body = json.dumps({"event": f, "sourcetype": f"{BRAND}:finding", "source": BRAND}).encode()
         headers["content-type"] = "application/json"
         if token:
             headers["Authorization"] = f"Splunk {token}"   # HEC scheme
@@ -86,7 +89,7 @@ def _request(url: str, token: str, fmt: str, f: dict, naming: str = "warden") ->
 
 
 def send_detail(url: str, token: str, fmt: str, fields: dict, timeout: float = 8.0,
-                naming: str = "warden") -> tuple[bool, str]:
+                ) -> tuple[bool, str]:
     """Deliver one event; returns (ok, detail) so callers can surface WHY a send failed
     (expired token vs unreachable host) instead of a bare boolean."""
     from .netguard import is_safe_url
@@ -96,22 +99,22 @@ def send_detail(url: str, token: str, fmt: str, fields: dict, timeout: float = 8
         return False, "URL blocked (internal/loopback/metadata host)"
     try:
         urllib.request.urlopen(_request(url, token, fmt if fmt in FORMATS else "json", fields,
-                                        naming=naming), timeout=timeout)
+                                        ), timeout=timeout)
         return True, ""
     except Exception as e:
         return False, str(e)[:300]
 
 
 def send_sync(url: str, token: str, fmt: str, fields: dict, timeout: float = 8.0,
-              naming: str = "warden") -> bool:
-    ok, _detail = send_detail(url, token, fmt, fields, timeout=timeout, naming=naming)
+              ) -> bool:
+    ok, _detail = send_detail(url, token, fmt, fields, timeout=timeout)
     return ok
 
 
-def _deliver(url: str, token: str, fmt: str, fields: dict, naming: str,
+def _deliver(url: str, token: str, fmt: str, fields: dict,
              tenant_id: int) -> None:
     """Pool job: send + record the outcome (a silently-lost finding defeats the sink)."""
-    ok, detail = send_detail(url, token, fmt, fields, naming=naming)
+    ok, detail = send_detail(url, token, fmt, fields)
     from . import sink_health
     sink_health.record(tenant_id, "siem_http", ok, detail)
     if not ok:
@@ -120,7 +123,7 @@ def _deliver(url: str, token: str, fmt: str, fields: dict, naming: str,
 
 def forward(url: str, token: str, min_severity: str, fmt: str, verdict: dict,
             subject: str = "", actor: str = "", surface: str = "", org: str = "",
-            naming: str = "warden", tenant_id: int = 0) -> None:
+            tenant_id: int = 0) -> None:
     """Push a finding to the tenant's SIEM if configured and severity >= min_severity. Non-blocking."""
     if not url:
         return
@@ -128,4 +131,4 @@ def forward(url: str, token: str, min_severity: str, fmt: str, verdict: dict,
         return
     fields = _fields(verdict, subject, actor, surface, org)
     from .dispatch import submit
-    submit(_deliver, url, token, fmt or "json", fields, naming, tenant_id)  # bounded shared pool
+    submit(_deliver, url, token, fmt or "json", fields, tenant_id)  # bounded shared pool

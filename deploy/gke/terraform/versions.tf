@@ -6,7 +6,7 @@ terraform {
       version = ">= 5.30, < 7"
     }
   }
-  backend "gcs" {} # partial: -backend-config="bucket=..." -backend-config="prefix=warden-gke"
+  backend "gcs" {} # partial: -backend-config="bucket=..." -backend-config="prefix=palivane-gke"
 }
 
 provider "google" {

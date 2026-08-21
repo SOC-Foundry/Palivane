@@ -27,7 +27,7 @@ _IS_PG = engine.dialect.name == "postgresql"
 
 # Current request's tenant, or None for system/cross-tenant contexts (RLS falls open).
 _tenant_ctx: contextvars.ContextVar[int | None] = contextvars.ContextVar(
-    "warden_tenant_id", default=None
+    "palivane_tenant_id", default=None
 )
 
 

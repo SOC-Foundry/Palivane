@@ -101,7 +101,7 @@ class Settings:
     # — e.g. a curated/licensed dataset seeded from the official MCP registry — is an
     # out-of-band data artifact the operator points this at; the code is the consumer.
     mcp_reputation_feed: str = os.getenv("MCP_REPUTATION_FEED", "").strip()
-    database_url: str = os.getenv("DATABASE_URL", "sqlite:///./warden.db")
+    database_url: str = os.getenv("DATABASE_URL", "sqlite:///./palivane.db")
     cors_origins: str = os.getenv("CORS_ORIGINS", "http://localhost:5173")
     # Reject request bodies larger than this (DoS/OOM guard); ~12 MB default.
     max_body_bytes: int = int(_env("PALIVANE_MAX_BODY_BYTES", "12000000"))

@@ -114,20 +114,20 @@ single-origin on one port.
 
 ```bash
 ./deploy/native/build-release.sh
-# -> dist/warden-native-<tag>.tar.gz  (console prebuilt; the server needs no Node)
+# -> dist/palivane-native-<tag>.tar.gz  (console prebuilt; the server needs no Node)
 ```
 
 **2. Install on the target server** (Python 3.12+; Postgres for production):
 
 ```bash
-tar xzf warden-native-<tag>.tar.gz
-sudo ./warden/install.sh
-sudo warden-admin create-tenant --slug acme --name "Acme"
-sudo warden-admin create-user   --tenant acme --email admin@acme.local --role admin
+tar xzf palivane-native-<tag>.tar.gz
+sudo ./palivane/install.sh
+sudo palivane-admin create-tenant --slug acme --name "Acme"
+sudo palivane-admin create-user   --tenant acme --email admin@acme.local --role admin
 ```
 
-The installer creates a dedicated system user and venv, writes `/etc/warden/warden.env`
-(with a generated `PALIVANE_SECRET_KEY`), runs migrations, and starts the `warden-api`
+The installer creates a dedicated system user and venv, writes `/etc/palivane/palivane.env`
+(with a generated `PALIVANE_SECRET_KEY`), runs migrations, and starts the `palivane-api`
 service. For production, switch `DATABASE_URL` to Postgres and front the service with
 nginx/Caddy for TLS — full notes, upgrade flow, and management commands in
 [`deploy/native/README.md`](../deploy/native/README.md).
@@ -324,7 +324,7 @@ rules miss, set one provider key and restart the backend. `JUDGE_PROVIDER=auto` 
 picks whichever key is set — Claude, GPT, or Gemini:
 
 - **Native install:** add `ANTHROPIC_API_KEY=sk-ant-...` (or `OPENAI_API_KEY` /
-  `GEMINI_API_KEY`) to `/etc/warden/warden.env`, then `systemctl restart warden-api`.
+  `GEMINI_API_KEY`) to `/etc/palivane/palivane.env`, then `systemctl restart palivane-api`.
 - **Docker:** add it to `.env`, then `docker compose up -d`.
 - **From source:** add it to `backend/.env`, then restart `uvicorn`.
 - **Cloud contract instead of an API account** (enterprise/marketplace procurement):
@@ -357,7 +357,7 @@ delivery) instance-wide — see `/pricing` or contact sales@palivane.io.
 The license is a signed blob (`WDN1.…`). Set it as the value of `PALIVANE_LICENSE`, or
 point `PALIVANE_LICENSE` at a file containing it, and restart:
 
-    PALIVANE_LICENSE=WDN1.eyJ2IjoxLCJvcmciOi…   # or PALIVANE_LICENSE=/etc/warden/license
+    PALIVANE_LICENSE=WDN1.eyJ2IjoxLCJvcmciOi…   # or PALIVANE_LICENSE=/etc/palivane/license
 
 `GET /api/health` shows the active license (`org`, `plan`, `expires`). An invalid or
 expired license is ignored with a startup warning — the instance falls back to Free,
@@ -382,7 +382,7 @@ rm -rf ~/.palivane             # the CLI in ~/.palivane/bin + local state (break
 Then drop the `~/.palivane/bin` line the installer added to your shell rc (`~/.bashrc` /
 `~/.zshrc` / `~/.profile`, or `~/.config/fish/conf.d/palivane.fish`), and remove the **browser
 extension** from Chrome/Edge. A machine installed before the rebrand may also have the old
-`~/.warden` directory, a `~/.warden/bin` rc line, and `~/.config/fish/conf.d/warden.fish` —
+`~/.palivane` directory, a `~/.palivane/bin` rc line, and `~/.config/fish/conf.d/palivane.fish` —
 remove those the same way.
 
 Notes:
@@ -397,7 +397,7 @@ Notes:
 - `palivane-desktop uninstall` scrubs the proxy from **every layer it was set in**: the
   `environment.d` session file, the live systemd user environment, the D-Bus activation
   environment, and the KDE proxy config (`kioslaverc` — the proxy URLs are deleted, not just
-  switched off). Pre-rebrand `warden-*` artifacts (service unit, env file, CA names, shims)
+  switched off). Pre-rebrand `palivane-*` artifacts (service unit, env file, CA names, shims)
   are cleaned up too. **Caveat:** apps already running keep the proxy environment they started
   with, and long-lived desktop processes (plasmashell) re-inject it into anything they launch —
   log out and back in, or on KDE run

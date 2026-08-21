@@ -12,7 +12,7 @@ def _enable_email(monkeypatch):
     """Turn the plane 'on' and capture sends instead of touching SMTP."""
     sent = []
     monkeypatch.setattr(email_mod.settings, "smtp_host", "smtp.test")
-    monkeypatch.setattr(email_mod.settings, "mail_from", "warden@test")
+    monkeypatch.setattr(email_mod.settings, "mail_from", "palivane@test")
     monkeypatch.setattr(email_mod, "send",
                         lambda to, subject, body: sent.append((to, subject, body)))
     return sent
@@ -27,7 +27,7 @@ def _token(body: str, kind: str) -> str:
 def test_health_reports_email_enabled(raw_client, monkeypatch):
     assert raw_client.get("/api/health").json()["email_enabled"] is False
     monkeypatch.setattr(email_mod.settings, "smtp_host", "smtp.test")
-    monkeypatch.setattr(email_mod.settings, "mail_from", "warden@test")
+    monkeypatch.setattr(email_mod.settings, "mail_from", "palivane@test")
     assert raw_client.get("/api/health").json()["email_enabled"] is True
 
 

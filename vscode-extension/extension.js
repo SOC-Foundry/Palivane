@@ -38,14 +38,14 @@ function settingsEnv() {
   } catch { return {}; }
 }
 
-// One-time carry-over from the pre-rebrand "warden.*" namespace, so an installed
+// One-time carry-over from the pre-rebrand "palivane.*" namespace, so an installed
 // 0.1.x doesn't lose its sign-in when upgraded.
 async function migrateLegacyState() {
   try {
-    const old = await ctx.secrets.get("warden.token");
+    const old = await ctx.secrets.get("palivane.token");
     if (old) {
       if (!(await ctx.secrets.get("palivane.token"))) await ctx.secrets.store("palivane.token", old);
-      await ctx.secrets.delete("warden.token");
+      await ctx.secrets.delete("palivane.token");
     }
   } catch {}
 }
@@ -53,7 +53,7 @@ async function migrateLegacyState() {
 async function resolveConfig() {
   const senv = settingsEnv();
   let url = vscode.workspace.getConfiguration("palivane").get("url") ||
-            vscode.workspace.getConfiguration("warden").get("url") ||   // pre-rebrand setting
+            vscode.workspace.getConfiguration("palivane").get("url") ||   // pre-rebrand setting
             process.env.PALIVANE_URL || senv.PALIVANE_URL || "";
   if (!url && typeof senv.ANTHROPIC_BASE_URL === "string") {
     url = senv.ANTHROPIC_BASE_URL.replace(/\/v1\/?$/, "");

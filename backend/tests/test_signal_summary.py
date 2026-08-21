@@ -29,7 +29,7 @@ def test_alert_payload_names_the_cause():
     p = alerts._payload({"severity": "high", "risk_score": 90, "signals": _SIGS},
                         subject="deploy.env", actor="dana@acme.com", surface="ai_usage")
     assert "AWS access key id" in p["text"] and "`AKIA…F7XZ`" in p["text"]     # top signal + evidence
-    assert [t["title"] for t in p["warden"]["top_signals"]][:1] == ["AWS access key id"]
+    assert [t["title"] for t in p["palivane"]["top_signals"]][:1] == ["AWS access key id"]
 
 
 def test_siem_fields_and_cef_carry_the_match():
