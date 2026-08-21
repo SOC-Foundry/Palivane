@@ -14,7 +14,9 @@ resource "google_sql_database_instance" "warden" {
   # instance. `name` is immutable, so editing var.service_name (e.g. a "rename to palivane"
   # sweep) plans a destroy+create — which is total data loss for every tenant. With this,
   # that plan is refused before a single resource is touched. Removing this line is a
-  # deliberate, reviewable act; see docs/rebrand-batch-d-runbook.md item 4.
+  # deliberate, reviewable act: a Cloud SQL instance/database cannot be renamed in place,
+  # so there is no rename that preserves the data — the only safe answer is to leave the
+  # resource names alone permanently, however off-brand they read.
   lifecycle {
     prevent_destroy = true
   }

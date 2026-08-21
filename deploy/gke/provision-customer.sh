@@ -13,7 +13,7 @@ set -euo pipefail
 
 SLUG="${1:?usage: provision-customer.sh <slug> <hostname>}"
 HOST="${2:?usage: provision-customer.sh <slug> <hostname>}"
-PROJECT="${PROJECT_ID:-erudite-calling-502022-k6}"
+PROJECT="${PROJECT_ID:-palivane}"
 REGION="${REGION:-us-central1}"
 CLUSTER="${CLUSTER:-warden}"   # live GCP cluster name — deliberately warden (rebrand runbook)
 HERE="$(cd "$(dirname "$0")" && pwd)"
