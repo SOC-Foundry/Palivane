@@ -43,20 +43,23 @@ to state. **Use the encrypted GCS backend** (uncomment it in `versions.tf`) — 
 local state. Losing/rotating `PALIVANE_SECRET_KEY` means data loss (it encrypts findings and
 signs sessions), so treat the state + backend as secrets.
 
-## Adopting the EXISTING production (don't clobber it)
-The live prod was created by hand, so a plain `apply` would try to *create* resources that
-already exist. Set **`adopt_existing = true`** and run **`import.sh`** — the flag makes the
-config prod-safe automatically (skips generating secret versions so prod's real values
-stand, and uses the default compute SA instead of creating `warden-run`), so no hand-editing
-is needed:
+## Adopting a hand-built environment
+Not needed for the `palivane` environment — it was provisioned by this config from empty,
+so everything is already in state. **Do not run `import.sh` against it.**
+
+The path exists for a deployment someone built by hand, where a plain `apply` would try to
+*create* resources that already exist. Set **`adopt_existing = true`** and run **`import.sh`**
+with that project — the flag makes the config safe for a live environment automatically
+(skips generating secret versions so real values stand, and uses the default compute SA
+instead of creating `warden-run`):
 ```bash
 terraform init -backend-config="bucket=<STATE_BUCKET>" -backend-config="prefix=warden"
 echo 'adopt_existing = true' >> terraform.tfvars
-PROJECT_ID=erudite-calling-502022-k6 ./import.sh
+PROJECT_ID=<the-hand-built-project> ./import.sh
 terraform plan   # expect a clean no-op (no destroys, no secret-version creates)
 ```
-Keep `adopt_existing = true` for all future plans/applies against this environment. New
-environments leave it `false` (the default) to provision fresh with a dedicated SA and
+Keep `adopt_existing = true` for all future plans/applies against such an environment.
+Fresh environments leave it `false` (the default) to provision with a dedicated SA and
 generated secrets.
 Caveats when importing prod: it runs as the **default compute SA**, not `warden-run` (either
 keep using it via a variable/import or migrate); `deletion_protection=true` on the SQL
