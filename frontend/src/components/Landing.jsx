@@ -2,49 +2,53 @@ import { useState } from "react";
 import { IconShield, IconPlug, IconTarget, IconAlert, IconInbox, IconClipboard } from "./icons.jsx";
 import { SiteNav, SiteFooter, Shot, Clip, Lightbox } from "./SiteChrome.jsx";
 
-const FRONTS = [
-  {
-    icon: <IconTarget />, tag: "Data protection", cls: "ai",
-    title: "Nothing sensitive leaves by accident",
-    body: "Customer records, passwords and API keys, and your own source code get caught on the way out, whether someone pastes them into ChatGPT or an AI assistant sends them for you.",
-  },
-  {
-    icon: <IconInbox />, tag: "Visibility", cls: "mcp",
-    title: "You finally know which AI tools are in use",
-    body: "Every AI tool your company touches, who (or which repo) is using it, and what data went where, including the ones nobody asked permission for.",
-  },
-  {
-    icon: <IconAlert />, tag: "AI assistants", cls: "atk",
-    title: "AI coding assistants stay inside the lines",
-    body: "Claude Code, Cursor, and Copilot read your files and run your commands. Palivane checks each action before it happens and stops the dangerous ones.",
-  },
+// The page alternates deliberately: a full-bleed band, then a two-column split, then the
+// mirror of that split, then a card row. The previous version stacked five identical
+// centred heading + subhead + grid blocks, which gave a reader no sense of progress and
+// made every section feel equally weighted.
+
+const STATS = [
+  { n: "6", l: "surfaces covered", s: "browser, desktop, CLI, CI, cloud storage, MCP" },
+  { n: "0", l: "content leaves your org", s: "detection runs inside your own deployment" },
+  { n: "28", l: "detection checks", s: "secrets, PII, source code, prompt attacks" },
+  { n: "1", l: "afternoon to set up", s: "one command, nothing to install by hand" },
 ];
 
 const CAPTURE = [
-  { icon: <IconPlug />, title: "In the browser", body: "Covers what people paste into ChatGPT, Claude, Gemini, and Copilot on the web, the most common way data walks out." },
-  { icon: <IconInbox />, title: "In desktop apps", body: "Covers the AI apps that don't run in a browser: Claude and ChatGPT desktop, and the assistants built into editors." },
-  { icon: <IconShield />, title: "In your AI coding tools", body: "Claude Code, Cursor, Codex, and Gemini CLI report what they're about to send or do, so it can be checked first." },
-  { icon: <IconClipboard />, title: "In your code and laptops", body: "Scans commits and dependencies before they land, and finds credentials already sitting on developer machines, where info-stealing malware looks first." },
-  { icon: <IconAlert />, title: "In GitHub Actions", body: "Coding agents increasingly run on CI runners, with your deploy keys in reach and nobody watching. Palivane checks what they can touch, before you merge the workflow that gives it to them." },
+  { icon: <IconPlug />, title: "In the browser", body: "What people paste into ChatGPT, Claude, Gemini, and Copilot on the web." },
+  { icon: <IconInbox />, title: "In desktop apps", body: "The AI apps that never touch a browser: Claude and ChatGPT desktop." },
+  { icon: <IconShield />, title: "In coding tools", body: "Claude Code, Cursor, Codex, and Gemini CLI report every prompt and tool call." },
+  { icon: <IconClipboard />, title: "In code and laptops", body: "Commits and dependencies before they land, and credentials already at rest." },
+  { icon: <IconAlert />, title: "In GitHub Actions", body: "Coding agents running on CI runners with your production credentials." },
 ];
 
-const STEPS = [
-  { n: "1", title: "Passwords, keys, and tokens", body: "Cloud keys, API tokens, private keys, database passwords, in prompts, in what an AI assistant sends, and sitting on laptops." },
-  { n: "2", title: "Personal and customer data", body: "Social security numbers, payment cards, and customer records, tuned so everyday engineering work doesn't set off alarms." },
-  { n: "3", title: "Your code and confidential documents", body: "Proprietary source code, financials, contracts, and anything already marked confidential by your own labeling tools." },
-  { n: "4", title: "Risky AI behavior", body: "Attempts to hijack an AI's instructions, talk it past its rules, or get an assistant to run destructive commands or open files it shouldn't, in the tools your team uses, and in any AI feature you ship in your own product." },
-  { n: "5", title: "A second opinion, if you want one", body: "Everything above runs on Palivane's built-in engine, no API key, no external AI service, no per-request billing. When you want more, add Claude, GPT, or Gemini as an optional reviewer for the unusual cases fixed rules miss, on a provider key you control." },
+const LOOKS_FOR = [
+  { title: "Passwords, keys, and tokens", body: "Cloud keys, API tokens, private keys, and database passwords, in prompts and in what an assistant sends back." },
+  { title: "Personal and customer data", body: "Social security numbers, payment cards, and customer records, tuned so ordinary engineering work does not trip it." },
+  { title: "Code and confidential documents", body: "Proprietary source, financials, contracts, and material carrying a classification label." },
+  { title: "Risky AI behaviour", body: "Attempts to hijack an assistant's instructions, talk it past its rules, or smuggle payloads through hidden characters." },
+  { title: "Dangerous agent actions", body: "File reads and shell commands an assistant proposes, checked before they run rather than logged after." },
+  { title: "A second opinion, optionally", body: "Everything above runs on the built-in engine. An LLM judge can review the ambiguous cases if you want one." },
 ];
 
-const ENTERPRISE = [
-  { icon: <IconPlug />, title: "Onboarding that doesn't need a project plan", body: "Claim your email domain and teammates who sign up land in your org automatically. Invites, password reset, and single sign-on (Okta, Entra, Google) are built in." },
-  { icon: <IconShield />, title: "Nothing to install by hand", body: <>Some coverage needs something on the machine, a browser extension, a proxy certificate, local hooks. Palivane hands you the config to push with Jamf, Intune, or Group Policy, so nobody installs anything manually. Exactly what each surface needs is published on the <a className="lp-textlink" href="/coverage">coverage page</a>.</> },
-  { icon: <IconTarget />, title: "Proof it's actually working", body: "See which people and teams are covered and which aren't. Alerts land in Slack, findings flow to your SIEM or data lake, and a monthly report gives your board the numbers." },
-  { icon: <IconClipboard />, title: "Your data stays yours", body: "Choose what gets recorded, export everything at any time, and delete your org in one click. Signed DPA available; content can be scanned without ever being stored." },
+const FAQ = [
+  { q: "Does anything have to be installed on every laptop?",
+    a: "No. The browser extension can be force-installed by policy and the CLI coverage arrives through one command that a person runs once, or through your MDM. Nothing needs a per-machine visit." },
+  { q: "Do our prompts leave the company?",
+    a: "No. Detection runs inside your own deployment. Content is never sent to a third-party AI service for scoring, and the default posture records metadata only, not prompt text." },
+  { q: "Will it break the AI tools people already pay for?",
+    a: "No. Personal Claude and ChatGPT sign-ins keep working, because the hooks score prompts locally rather than routing them through a gateway. Gateway routing is available, and optional." },
+  { q: "What happens the moment we turn it on?",
+    a: "Nothing is blocked. Palivane starts in monitor mode, so the first thing you get is an inventory of which AI tools are in use and what has been going to them. Enforcement is a switch you flip later." },
+  { q: "What if the backend is unreachable?",
+    a: "Capture fails open. A down collector never blocks a prompt or breaks a developer's tool. Confirmed secret and PII leaks are the exception and still hard-block." },
+  { q: "How much of a team does this need to run?",
+    a: "One person, part time. It is designed to be set up once and then mostly leave you alone: domain claim for onboarding, policy defaults that are sensible on day one, and digests rather than a queue to work." },
 ];
 
 export default function Landing({ onSignIn }) {
   const [zoom, setZoom] = useState(null);   // {src, alt} when a screenshot is enlarged
+  const [openQ, setOpenQ] = useState(0);
   return (
     <div className="landing">
       <Lightbox src={zoom?.src} alt={zoom?.alt} onClose={() => setZoom(null)} />
@@ -57,61 +61,88 @@ export default function Landing({ onSignIn }) {
           <p className="lp-lead">
             Your team uses ChatGPT, Claude, Copilot, and AI coding assistants every day.
             Palivane shows you what they send, and <strong>stops the customer data, passwords,
-            and source code that shouldn't go</strong>. Set up in an afternoon, with nothing
-            to install on anyone's laptop.
+            and source code that shouldn't go</strong>.
           </p>
           <div className="lp-cta">
             <button className="primary-btn slim" onClick={onSignIn}>Open the console →</button>
-            <a className="lp-btn-ghost wide" href="/setup">Set it up</a>
-            <a className="lp-btn-ghost wide" href="/how-it-works">How it works</a>
+            <a className="lp-nav-ghost wide" href="/setup">Set it up</a>
           </div>
-          <span className="lp-cta-note">Start by watching only, turn on blocking when you're ready</span>
+          <div className="lp-hero-cmd">
+            <code>curl -fsSL https://app.palivane.io/install.sh | bash</code>
+            <span>one command, monitor mode, nothing blocked yet</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="lp-stats-band">
+        <div className="lp-wrap lp-stats">
+          {STATS.map((s) => (
+            <div key={s.l} className="lp-stat">
+              <span className="lp-stat-n">{s.n}</span>
+              <span className="lp-stat-l">{s.l}</span>
+              <span className="lp-stat-s">{s.s}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="lp-section">
+        <div className="lp-wrap lp-split">
+          <div className="lp-split-text">
+            <span className="lp-eyebrow">See it work</span>
+            <h2 className="lp-h2">The same secret, stopped eight times</h2>
+            <p className="lp-sub">A hundred seconds: one customer export and one AWS key blocked in
+              Claude, ChatGPT and Gemini, in Claude Code, Codex and Cursor, in an S3 bucket, and in
+              a GitHub Actions run. Then a walkthrough of every screen it lands in.</p>
+            <a className="lp-textlink" href="/how-it-works">How the detection works →</a>
+          </div>
+          <div className="lp-split-media">
+            <Clip src="/shots/demo14.mp4" poster="/shots/demo-poster14.png" />
+          </div>
         </div>
       </section>
 
       <section className="lp-section alt">
-        <div className="lp-wrap">
-          <h2 className="lp-h2">See it stop a real leak</h2>
-          <p className="lp-sub">A hundred seconds: the same customer export and AWS key stopped in
-             Claude, ChatGPT and Gemini, in Claude Code, Codex and Cursor, in an S3 bucket and in
-             a GitHub Actions run, then a walkthrough of every screen in the console.</p>
-          <Clip lead src="/shots/demo14.mp4" poster="/shots/demo-poster14.png"
-                caption="Eight places the same secret tried to escape, then a tour of every console screen it lands in. Every verdict, risk score and fix in the video is live output from a running Palivane instance." />
-          <div className="lp-gallery">
-            <Shot src="/shots/discovery.png?v=3" alt="Inventory of AI tools in use" onZoom={(s, a) => setZoom({ src: s, alt: a })}
-                  caption="Every AI tool in use, broken down by team, and what data actually went to each one." />
-            <Shot src="/shots/policies.png?v=4" alt="Policy console" onZoom={(s, a) => setZoom({ src: s, alt: a })}
-                  caption="Turn individual checks on or off, org-wide or for one team." />
-            <Shot src="/shots/agents.png?v=3" alt="AI assistant identity and limits" onZoom={(s, a) => setZoom({ src: s, alt: a })}
-                  caption="Give each AI assistant its own identity and limits, watch first, enforce when ready." />
+        <div className="lp-wrap lp-split lp-split-rev">
+          <div className="lp-split-text">
+            <span className="lp-eyebrow">Visibility</span>
+            <h2 className="lp-h2">You finally know which AI tools are in use</h2>
+            <p className="lp-sub">Every AI tool your company touches, who or which repo is using it,
+              and what data went where, including the ones nobody asked permission for. Unlike
+              log-only tools, the exposure column shows the real sensitive data each one received.</p>
+            <a className="lp-textlink" href="/coverage">What each surface requires →</a>
+          </div>
+          <div className="lp-split-media">
+            <Shot src="/shots/discovery.png?v=4" alt="Inventory of AI tools in use"
+                  onZoom={(s, a) => setZoom({ src: s, alt: a })} />
           </div>
         </div>
       </section>
 
       <section className="lp-section">
-        <div className="lp-wrap">
-          <h2 className="lp-h2">What changes on day one</h2>
-          <p className="lp-sub">Three problems, one product, and one place to see all of it.</p>
-          <div className="lp-fronts">
-            {FRONTS.map((f) => (
-              <div key={f.tag} className={`lp-front front-${f.cls}`}>
-                <span className="lp-front-icon">{f.icon}</span>
-                <span className={`tag tag-${f.cls}`}>{f.tag}</span>
-                <h3>{f.title}</h3>
-                <p>{f.body}</p>
-              </div>
-            ))}
+        <div className="lp-wrap lp-split">
+          <div className="lp-split-text">
+            <span className="lp-eyebrow">Agents</span>
+            <h2 className="lp-h2">AI coding assistants stay inside the lines</h2>
+            <p className="lp-sub">Claude Code, Cursor, and Copilot read your files and run your
+              commands. Palivane gives each assistant its own identity and boundary, then checks
+              every action before it happens rather than logging it afterwards.</p>
+            <a className="lp-textlink" href="/use-cases#engineering">How engineering teams use it →</a>
+          </div>
+          <div className="lp-split-media">
+            <Shot src="/shots/agents.png?v=4" alt="AI assistant identity and limits"
+                  onZoom={(s, a) => setZoom({ src: s, alt: a })} />
           </div>
         </div>
       </section>
 
       <section className="lp-section alt">
         <div className="lp-wrap">
-          <h2 className="lp-h2">It works wherever your team uses AI</h2>
-          <p className="lp-sub">Nobody has to remember to run anything. Palivane watches the places AI is
-             actually used, and everything lands in the same console. The exact mechanism
-             and what each surface requires, is published on the <a className="lp-textlink"
-             href="/coverage">coverage page</a>.</p>
+          <div className="lp-band-head">
+            <h2 className="lp-h2">It works wherever your team uses AI</h2>
+            <p className="lp-sub">Nobody has to remember to run anything, and everything lands in
+              the same console.</p>
+          </div>
           <div className="lp-cards lp-cards-5">
             {CAPTURE.map((c) => (
               <div key={c.title} className="lp-card">
@@ -125,41 +156,40 @@ export default function Landing({ onSignIn }) {
       </section>
 
       <section className="lp-section">
-        <div className="lp-wrap">
-          <h2 className="lp-h2">What Palivane looks for</h2>
-          <p className="lp-sub">Every check runs inside Palivane in milliseconds, no third-party AI
-             service ever sees your content, then one risk score decides whether to allow,
-             warn, or block.</p>
-          <div className="lp-steps">
-            {STEPS.map((s) => (
-              <div key={s.n} className="lp-step">
-                <span className="lp-step-n">{s.n}</span>
-                <div>
-                  <h3>{s.title}</h3>
-                  <p>{s.body}</p>
-                </div>
-              </div>
-            ))}
+        <div className="lp-wrap lp-split lp-split-narrow">
+          <div className="lp-split-text sticky">
+            <span className="lp-eyebrow">Detection</span>
+            <h2 className="lp-h2">What Palivane looks for</h2>
+            <p className="lp-sub">Every check runs inside your deployment in milliseconds. No
+              third-party AI service ever sees your content. One risk score decides whether to
+              allow, warn, or block.</p>
+            <a className="lp-textlink" href="/how-it-works">The scoring model →</a>
           </div>
-          <p className="lp-sub" style={{ marginTop: 22 }}>
-            <a className="lp-textlink" href="/how-it-works">For the technically minded: the detection
-            surfaces, the two-tier secret engine, the scoring model, and why the core runs
-            offline →</a>
-          </p>
+          <ul className="lp-checklist">
+            {LOOKS_FOR.map((s) => (
+              <li key={s.title}>
+                <h3>{s.title}</h3>
+                <p>{s.body}</p>
+              </li>
+            ))}
+          </ul>
         </div>
       </section>
 
       <section className="lp-section alt">
-        <div className="lp-wrap">
-          <h2 className="lp-h2">Built for a small team to run</h2>
-          <p className="lp-sub">You should not need a dedicated headcount to govern AI. Palivane is
-             designed to be set up once and then mostly leave you alone.</p>
-          <div className="lp-cards">
-            {ENTERPRISE.map((c) => (
-              <div key={c.title} className="lp-card">
-                <span className="lp-card-icon">{c.icon}</span>
-                <h3>{c.title}</h3>
-                <p>{c.body}</p>
+        <div className="lp-wrap lp-faq-wrap">
+          <div className="lp-band-head">
+            <h2 className="lp-h2">Questions people ask first</h2>
+          </div>
+          <div className="lp-faq">
+            {FAQ.map((f, i) => (
+              <div key={f.q} className={`lp-faq-item ${openQ === i ? "is-open" : ""}`}>
+                <button type="button" className="lp-faq-q" aria-expanded={openQ === i}
+                        onClick={() => setOpenQ(openQ === i ? -1 : i)}>
+                  <span>{f.q}</span>
+                  <span className="lp-faq-sign" aria-hidden="true" />
+                </button>
+                {openQ === i && <p className="lp-faq-a">{f.a}</p>}
               </div>
             ))}
           </div>
@@ -168,13 +198,14 @@ export default function Landing({ onSignIn }) {
 
       <section className="lp-cta-band">
         <div className="lp-wrap">
-          <div className="lp-banner">
-            <IconAlert width={22} height={22} />
-            <div>
-              <strong>Start by watching.</strong> Run it in monitor mode to see what your team is
-              really sending, then switch on blocking when you have seen enough.
+          <div className="lp-closing">
+            <h2>Start by watching.</h2>
+            <p>Run it in monitor mode to see what your team is really sending, then switch on
+              blocking when you have seen enough.</p>
+            <div className="lp-cta">
+              <button className="primary-btn slim" onClick={onSignIn}>Open the console →</button>
+              <a className="lp-nav-ghost wide" href="/setup">Set it up</a>
             </div>
-            <button className="primary-btn slim" onClick={onSignIn}>Open the console →</button>
           </div>
         </div>
       </section>
