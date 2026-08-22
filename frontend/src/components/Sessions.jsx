@@ -1,4 +1,4 @@
-// Sessions — the unified cross-vendor session audit. One row per actor summarizing
+// Sessions, the unified cross-vendor session audit. One row per actor summarizing
 // everything they did across EVERY agent product (Claude Code, Cursor, Codex, Gemini CLI,
 // Copilot, browser AI, MCP) in the window; click through to the normalized, chronological
 // timeline of that actor's activity across all of them. The "one console for every agent"
@@ -11,7 +11,7 @@ const SEV = { benign: "sev-benign", low: "sev-benign", suspicious: "sev-suspicio
               high: "sev-high", critical: "sev-critical" };
 
 function fmtWhen(ts) {
-  if (!ts) return "—";
+  if (!ts) return "-";
   const d = new Date(ts);
   return Number.isNaN(d.getTime()) ? String(ts) : d.toLocaleString();
 }
@@ -50,7 +50,7 @@ export default function Sessions() {
       <div className="view-head">
         <div>
           <h1>Sessions</h1>
-          <p className="muted">Unified cross-vendor audit — every actor's activity across
+          <p className="muted">Unified cross-vendor audit, every actor's activity across
             all agent tools in one normalized timeline. Palivane's retention, not any vendor's cap.</p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -106,7 +106,7 @@ export default function Sessions() {
                   {e.is_chain && <span className="chip sev-critical">chain</span>}
                 </div>
               ))}
-              {!(timeline[s.actor] || []).length && <div className="muted">Loading timeline…</div>}
+              {!(timeline[s.actor] || []).length && <div className="muted">Loading timeline...</div>}
             </div>
           )}
         </div>

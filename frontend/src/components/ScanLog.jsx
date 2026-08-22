@@ -1,4 +1,4 @@
-// Scan Log — per-registered-user activity. Who is tripping what, how often, and how risky.
+// Scan Log, per-registered-user activity. Who is tripping what, how often, and how risky.
 // Reuses the findings store (grouped by actor server-side); click a user to see their findings.
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
@@ -35,7 +35,7 @@ export default function ScanLog() {
       <div className="content-head">
         <div>
           <h1 className="page-title">Scan log</h1>
-          <p className="page-sub">Activity per registered user — what each person is tripping, how
+          <p className="page-sub">Activity per registered user, what each person is tripping, how
              often, and how risky. Click a user to see their findings.</p>
         </div>
       </div>
@@ -56,19 +56,19 @@ export default function ScanLog() {
                   <td>{u.high
                     ? <span style={{ color: u.critical ? "var(--crit)" : "var(--high)", fontWeight: 700 }}>{u.high}{u.critical ? ` (${u.critical} crit)` : ""}</span>
                     : <span className="muted">0</span>}</td>
-                  <td className="muted">{u.categories.map((c) => `${CAT_LABEL[c.category] || c.category} ${c.count}`).join(", ") || "—"}</td>
+                  <td className="muted">{u.categories.map((c) => `${CAT_LABEL[c.category] || c.category} ${c.count}`).join(", ") || "-"}</td>
                   <td><span className={`sev sev-${RISK_CLASS(u.max_risk)}`}>{u.max_risk}</span></td>
-                  <td className="muted">{u.last_seen ? u.last_seen.slice(0, 10) : "—"}</td>
+                  <td className="muted">{u.last_seen ? u.last_seen.slice(0, 10) : "-"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        ) : <p className="muted">No user activity yet — findings attributed to a user will appear here.</p>}
+        ) : <p className="muted">No user activity yet, findings attributed to a user will appear here.</p>}
       </div>
 
       {sel && (
         <div className="panel settings-card">
-          <h2>{sel} — recent findings</h2>
+          <h2>{sel}, recent findings</h2>
           {findings.length ? (
             <table className="data-table">
               <thead><tr><th>When</th><th>Surface</th><th>Severity</th><th>Risk</th><th>Subject</th></tr></thead>
@@ -79,7 +79,7 @@ export default function ScanLog() {
                     <td className="muted">{f.surface}</td>
                     <td><span className={`sev sev-${f.severity}`}>{f.severity}</span></td>
                     <td>{f.risk_score}</td>
-                    <td className="muted">{f.subject || "—"}</td>
+                    <td className="muted">{f.subject || "-"}</td>
                   </tr>
                 ))}
               </tbody>

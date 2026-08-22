@@ -1,4 +1,4 @@
-# MDM policy pack — agentless enforcement
+# MDM policy pack, agentless enforcement
 
 Palivane's `/api/scan/*` endpoints *detect* risky MCP servers, dependencies, and IDE
 extensions. This runbook covers the **enforcement** side: the config your MDM pushes to
@@ -23,23 +23,23 @@ It returns these artifacts (write each to a file):
 | File | Purpose |
 | --- | --- |
 | `README.txt` | Summary of the pack + your backend/proxy values |
-| `vscode-extensions.json` | VS Code `extensions.allowed` — allow approved, block known-bad |
+| `vscode-extensions.json` | VS Code `extensions.allowed`, allow approved, block known-bad |
 | `macos-proxy.mobileconfig` | macOS system proxy → the Palivane egress proxy |
 | `windows-proxy.reg` | Windows system proxy → the Palivane egress proxy |
-| `chrome-edge-forcelist.txt` | `ExtensionInstallForcelist` value for the browser extension. Defaults to the **Chrome Web Store** (extension published there — Unlisted is fine). Pass `?ext_update_url=…` (+ `?ext_crx_url=…`) to `/api/policy-pack` for a **self-hosted CRX** with no Web Store submission (managed devices only) — that also emits `extension-updates.xml` below. |
-| `chrome-extension-settings.json` | Chrome/Edge **`ExtensionSettings`** to govern *third-party* browser extensions — including agentic AI ones (e.g. Claude for Chrome) that Palivane's own extension can't inspect. Blocks unsanctioned AI extensions by ID and/or keeps permitted ones off sensitive origins (`runtime_blocked_hosts`); Palivane's extension is always force-installed. Query params: `?browser_ext_lockdown=true` (deny-all + allowlist), `?browser_ext_blocklist=`/`?browser_ext_allowlist=` (comma-sep IDs), `?browser_ext_blocked_hosts=`. |
+| `chrome-edge-forcelist.txt` | `ExtensionInstallForcelist` value for the browser extension. Defaults to the **Chrome Web Store** (extension published there. Unlisted is fine). Pass `?ext_update_url=…` (+ `?ext_crx_url=…`) to `/api/policy-pack` for a **self-hosted CRX** with no Web Store submission (managed devices only), that also emits `extension-updates.xml` below. |
+| `chrome-extension-settings.json` | Chrome/Edge **`ExtensionSettings`** to govern *third-party* browser extensions, including agentic AI ones (e.g. Claude for Chrome) that Palivane's own extension can't inspect. Blocks unsanctioned AI extensions by ID and/or keeps permitted ones off sensitive origins (`runtime_blocked_hosts`); Palivane's extension is always force-installed. Query params: `?browser_ext_lockdown=true` (deny-all + allowlist), `?browser_ext_blocklist=`/`?browser_ext_allowlist=` (comma-sep IDs), `?browser_ext_blocked_hosts=`. |
 | `extension-updates.xml` | *(self-hosted only)* Omaha update manifest to host next to your signed `.crx`; the forcelist points at its URL. |
-| `claude-managed-settings.json` | Claude Code `managed-settings.json`: Route C hooks (palivane-hook on PreToolUse **and UserPromptSubmit** — tool calls + the typed prompt, which nothing network-side sees under subscription auth — plus palivane-posture); subscription sign-in by default (`forceLoginMethod`), gateway routing with `route_gateway=true` |
-| `openai.env` | Environment vars (`OPENAI_BASE_URL`) routing OpenAI SDK/CLI clients through the gateway — agentless, no CA needed. Does **not** cover Codex under ChatGPT-subscription auth — that's `codex-hooks.json` |
-| `codex-hooks.json` | Codex CLI `hooks.json` registering `palivane-codex-hook` on `UserPromptSubmit` + `PreToolUse` (codex 0.116+) — local capture of Codex prompts + tool calls in every auth mode |
+| `claude-managed-settings.json` | Claude Code `managed-settings.json`: Route C hooks (palivane-hook on PreToolUse **and UserPromptSubmit**, tool calls + the typed prompt, which nothing network-side sees under subscription auth, plus palivane-posture); subscription sign-in by default (`forceLoginMethod`), gateway routing with `route_gateway=true` |
+| `openai.env` | Environment vars (`OPENAI_BASE_URL`) routing OpenAI SDK/CLI clients through the gateway, agentless, no CA needed. Does **not** cover Codex under ChatGPT-subscription auth, that's `codex-hooks.json` |
+| `codex-hooks.json` | Codex CLI `hooks.json` registering `palivane-codex-hook` on `UserPromptSubmit` + `PreToolUse` (codex 0.116+), local capture of Codex prompts + tool calls in every auth mode |
 | `codex.txt` | The Codex story: subscription auth ignores `OPENAI_BASE_URL`; distribute the hooks as managed hooks via `requirements.toml` (auto-trusted, can lock out user hooks) |
-| `copilot-hooks.json` | GitHub Copilot hook file registering `palivane-copilot-hook` on `preToolUse` (tool calls — **deniable**) + `userPromptSubmitted` (prompts — observe-only). One file, three surfaces: `~/.copilot/hooks/palivane.json` per device (Copilot CLI), or committed as `.github/hooks/palivane.json` per repo (VS Code agent mode + the **cloud coding agent**) |
+| `copilot-hooks.json` | GitHub Copilot hook file registering `palivane-copilot-hook` on `preToolUse` (tool calls, **deniable**) + `userPromptSubmitted` (prompts, observe-only). One file, three surfaces: `~/.copilot/hooks/palivane.json` per device (Copilot CLI), or committed as `.github/hooks/palivane.json` per repo (VS Code agent mode + the **cloud coding agent**) |
 | `copilot.txt` | The Copilot story: no base-URL override, proxy sees no tool semantics; hook exit/timeout semantics (non-zero exit denies, timeout allows), the subagent-coverage gap, and why `palivane-mcp` wrapping of `~/.copilot/mcp-config.json` matters (GitHub's cloud-agent firewall doesn't cover MCP) |
 | `gemini.txt` | Gemini coverage: local hooks for the Gemini CLI (below), system proxy + SDK `http_options` snippet for everything else |
-| `gemini-settings.json` | Gemini CLI `settings.json` hooks block registering `palivane-gemini-hook` on `BeforeAgent` + `BeforeTool` (gemini-cli 0.26+) — local capture of Gemini prompts + tool calls in every auth mode, including the Google login that ignores base-URL overrides |
-| `cursor-hooks.json` | Cursor `hooks.json` registering `palivane-cursor-hook` on the security events — local, pinning-proof capture of Cursor prompts + tool calls |
+| `gemini-settings.json` | Gemini CLI `settings.json` hooks block registering `palivane-gemini-hook` on `BeforeAgent` + `BeforeTool` (gemini-cli 0.26+), local capture of Gemini prompts + tool calls in every auth mode, including the Google login that ignores base-URL overrides |
+| `cursor-hooks.json` | Cursor `hooks.json` registering `palivane-cursor-hook` on the security events, local, pinning-proof capture of Cursor prompts + tool calls |
 | `cursor.txt` | The full Cursor story: why chat is proxy-opaque, and how the hooks + MCP wrap + git/gateway close it |
-| `palivane-secrets.plist` / `.cron` / `-task.xml` | Schedule the endpoint credential scan (`palivane-secrets --engine trufflehog`) daily via launchd (macOS) / cron (Linux) / Task Scheduler (Windows) — finds SSH/RSA keys, tokens, `.env` secrets **at rest** before an infostealer does (metadata-only). Drives **TruffleHog** by default (falls back to the built-in regex scan if not installed); set `?secrets_engine=gitleaks` or `?secrets_engine=` on `/api/policy-pack` to change it. On Windows the task invokes `%USERPROFILE%\.palivane\bin\palivane-secrets.cmd` — the launcher `palivane-desktop.ps1 install` writes (it resolves a Python 3 and carries the token); pass a Windows `?secrets_path=` to point at your own packaged `palivane-secrets.exe` instead. |
+| `palivane-secrets.plist` / `.cron` / `-task.xml` | Schedule the endpoint credential scan (`palivane-secrets --engine trufflehog`) daily via launchd (macOS) / cron (Linux) / Task Scheduler (Windows), finds SSH/RSA keys, tokens, `.env` secrets **at rest** before an infostealer does (metadata-only). Drives **TruffleHog** by default (falls back to the built-in regex scan if not installed); set `?secrets_engine=gitleaks` or `?secrets_engine=` on `/api/policy-pack` to change it. On Windows the task invokes `%USERPROFILE%\.palivane\bin\palivane-secrets.cmd`, the launcher `palivane-desktop.ps1 install` writes (it resolves a Python 3 and carries the token); pass a Windows `?secrets_path=` to point at your own packaged `palivane-secrets.exe` instead. |
 | `ca-note.txt` | Where to deploy your root CA (required for TLS inspection) |
 
 The extension allow/deny lists come from this tenant's IDE-vetting config (its
@@ -47,7 +47,7 @@ The extension allow/deny lists come from this tenant's IDE-vetting config (its
 `IDE_EXT_DENYLIST`); the browser extension id from `PALIVANE_EXTENSION_ID`. The hook script
 paths default to `/usr/local/bin/palivane-hook`, `/usr/local/bin/palivane-posture`,
 `/usr/local/bin/palivane-cursor-hook`, `/usr/local/bin/palivane-gemini-hook`,
-`/usr/local/bin/palivane-codex-hook`, and `/usr/local/bin/palivane-copilot-hook` — override with
+`/usr/local/bin/palivane-codex-hook`, and `/usr/local/bin/palivane-copilot-hook`, override with
 `&hook_path=…&posture_path=…&cursor_hook_path=…&gemini_hook_path=…&codex_hook_path=…&copilot_hook_path=…`.
 
 Pull one artifact to a file:
@@ -59,7 +59,7 @@ curl -s "https://palivane.example.com/api/policy-pack?..." -H "Authorization: Be
 
 ## 2. Deploy the CA first (required)
 
-TLS inspection — and therefore MCP/AI-traffic inspection through the egress proxy — needs
+TLS inspection, and therefore MCP/AI-traffic inspection through the egress proxy, needs
 your corporate/egress-proxy **root CA** trusted on the device. Palivane doesn't generate the
 cert (it's yours); deploy it to the **system** trust store:
 
@@ -69,7 +69,7 @@ cert (it's yours); deploy it to the **system** trust store:
   Settings → Public Key Policies → *Trusted Root Certification Authorities*.
 
 Without the CA the proxy **fails open** (traffic flows uninspected). Cert-pinned clients
-(e.g. Cursor's chat endpoint) bypass inspection regardless — that's expected.
+(e.g. Cursor's chat endpoint) bypass inspection regardless, that's expected.
 
 ## 3. System proxy → the Palivane egress proxy
 
@@ -83,8 +83,8 @@ Routes egress through the proxy so MCP + AI traffic is inspected (and enforced).
   `ProxyServer`). For system-wide/WinHTTP use `netsh winhttp set proxy proxy_host:port`
   pushed as a startup script.
 - **Windows without MDM (self-serve):** the endpoint can stand up its own *local* egress
-  proxy — CA in the CurrentUser Root store, WinINET user proxy, hidden per-user Scheduled
-  Task, CLI shims — with no admin rights:
+  proxy, CA in the CurrentUser Root store, WinINET user proxy, hidden per-user Scheduled
+  Task, CLI shims, with no admin rights:
 
   ```powershell
   iwr https://app.palivane.io/cli/palivane-desktop.ps1 -OutFile palivane-desktop.ps1
@@ -93,7 +93,7 @@ Routes egress through the proxy so MCP + AI traffic is inspected (and enforced).
 
 ## 4. VS Code extension allowlist
 
-`vscode-extensions.json` contains `extensions.allowed` — in allowlist mode it denies all
+`vscode-extensions.json` contains `extensions.allowed`, in allowlist mode it denies all
 (`"*": false`) except approved ids and explicitly blocks known-bad ones. Deploy it as
 **machine-level** VS Code settings so users can't override:
 
@@ -116,10 +116,10 @@ can't *recommend* a banned extension either.
 - **Edge:** same policy name under the Edge ADMX, with the Edge Add-ons update URL.
 
 This force-installs the Palivane extension; combine with the per-tenant config via managed
-storage (the `/api/provision` installer emits that block prefilled — see
+storage (the `/api/provision` installer emits that block prefilled, see
 [`extension/README.md`](../extension/README.md)). Push an **`enrollToken`** (`et_…`) rather
 than a static ingest `token` and the extension self-enrolls its own per-device key,
-re-enrolling automatically if that key is revoked — per-device attribution and revocation,
+re-enrolling automatically if that key is revoked, per-device attribution and revocation,
 no re-push.
 
 ## 6. Verify
@@ -133,24 +133,24 @@ no re-push.
 ## Claude Code hooks (MDM-pushable, same model)
 
 The pack now generates this for you: **`claude-managed-settings.json`** carries Palivane's
-**local planes** — `PreToolUse` + `UserPromptSubmit` hooks (`palivane-hook` — pre-execution
+**local planes**, `PreToolUse` + `UserPromptSubmit` hooks (`palivane-hook`, pre-execution
 tool-call inspection, and the typed prompt scanned before it leaves the device) and a
-`SessionStart` hook (`palivane-posture` — device drift). By default Claude Code keeps
+`SessionStart` hook (`palivane-posture`, device drift). By default Claude Code keeps
 its own sign-in and `forceLoginMethod: "claudeai"` locks login to claude.ai (Pro/Max
-subscriptions) — devs' prompts bill their plans, not an org API key. Under that
+subscriptions), devs' prompts bill their plans, not an org API key. Under that
 subscription default no network plane sees the prompt, which is exactly why the
 `UserPromptSubmit` hook exists: confirmed secret/PII leaks in prompts hard-block even in
 monitor mode. The same model covers the other agent CLIs: `codex-hooks.json`
 (`palivane-codex-hook`), `gemini-settings.json` (`palivane-gemini-hook`), and
-`copilot-hooks.json` (`palivane-copilot-hook` — note Copilot's inverse geometry: prompts
+`copilot-hooks.json` (`palivane-copilot-hook`, note Copilot's inverse geometry: prompts
 observe-only, tool calls deniable). Generate the pack with
 `route_gateway=true` (console checkbox or query param) to instead route prompts through the
 Palivane gateway (`ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`), billing the org's provider
 key. Deploy it to Claude Code's managed-settings path (macOS `/Library/Application
 Support/ClaudeCode/`, Linux `/etc/claude-code/`, Windows `C:\Program Files\ClaudeCode\`),
-push the two scripts to the referenced paths with your MDM's file-deployment, and — in
-gateway mode — replace the `ak_` placeholder with each developer's key (or wire
-`apiKeyHelper` — the `/api/provision` installer wires it to `palivane-reenroll` for a
+push the two scripts to the referenced paths with your MDM's file-deployment, and, in
+gateway mode, replace the `ak_` placeholder with each developer's key (or wire
+`apiKeyHelper`, the `/api/provision` installer wires it to `palivane-reenroll` for a
 self-healing per-device key). See
 [`docs/claude-deployment.md`](claude-deployment.md) (Route C) for the field-by-field
 breakdown. Same philosophy as the rest of the pack: config the app enforces, no resident
@@ -163,21 +163,21 @@ The proxy profile already inspects `api.openai.com` and `generativelanguage.goog
 API clients that pin certs or otherwise skip the proxy, the pack also ships an explicit
 gateway redirect:
 
-- **`openai.env`** — `OPENAI_BASE_URL` (and the legacy `OPENAI_API_BASE`) pointed at the
+- **`openai.env`**, `OPENAI_BASE_URL` (and the legacy `OPENAI_API_BASE`) pointed at the
   gateway's OpenAI-compatible `/v1/chat/completions`. Push as machine/user env via MDM;
   agentless, no CA required. Set `OPENAI_API_KEY` to each user's `ak_` Palivane key.
-- **`gemini.txt`** — Gemini's SDKs don't honor a standard base-URL env var, so the **system
+- **`gemini.txt`**. Gemini's SDKs don't honor a standard base-URL env var, so the **system
   proxy is Gemini's primary agentless capture**. Where a client is code-configurable, the
   file gives the google-genai `http_options(base_url=…)` snippet pointing at the gateway's
   `/v1beta/models/{model}:generateContent`.
 
 ## What this does and doesn't cover
 
-- ✅ Enforces the proxy, the extension install, the editor allowlist, and CA trust — all by
+- ✅ Enforces the proxy, the extension install, the editor allowlist, and CA trust, all by
   config, no Palivane agent.
 - ⚠️ **Gathering** a live per-device inventory (what's installed/running right now) needs
-  your MDM's inventory feed — Palivane can *vet* that list (`/api/scan/ide-extensions`) but
+  your MDM's inventory feed. Palivane can *vet* that list (`/api/scan/ide-extensions`) but
   doesn't collect it (on developer machines, [`palivane-posture`](claude-deployment.md)
   closes most of this gap by reporting installed IDE extensions and MCP configs).
-  Cert-pinned clients bypass TLS inspection — inherent to the network plane; the Claude
+  Cert-pinned clients bypass TLS inspection, inherent to the network plane; the Claude
   Code hooks above see local tool activity regardless of pinning.

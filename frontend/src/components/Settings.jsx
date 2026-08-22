@@ -22,7 +22,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   const flash = (text, ok = true) => { setMsg({ ok, text }); setTimeout(() => setMsg(null), 3000); };
   const err = (e) => flash(String(e.message || e).replace(/^\d+:\s*/, ""), false);
 
-  // Licensing plan (display hints only — the API enforces the gates).
+  // Licensing plan (display hints only, the API enforces the gates).
   const plan = tenant?.plan || "free";
   // plan_label comes from the server so "Trial expired" / "Free (self-hosted)" read
   // correctly instead of being title-cased from the raw key.
@@ -31,8 +31,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   const can = (f) => (tenant?.plan_features || []).includes(f);
   const NEEDS = { alerts: "Team", mdm: "Team", sso: "Enterprise", siem: "Enterprise", s3_delivery: "Enterprise" };
   const PlanLock = ({ need }) => can(need) ? null : (
-    <p className="muted" style={{ marginTop: 2 }}>🔒 {NEEDS[need]} plan feature — request an
-      upgrade under “Your plan” above to enable.</p>
+    <p className="muted" style={{ marginTop: 2 }}>🔒 {NEEDS[need]} plan feature, request an
+      upgrade under 'Your plan' above to enable.</p>
   );
 
   // --- Organization ---
@@ -216,20 +216,20 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   }, []);
   async function addToSlack() {
     try { const { url } = await api.slackInstallUrl(); window.location.href = url; }
-    catch { flash("No published Slack app on this deployment — create a workspace app and register its bot token as a slack_messages connector.", false); }
+    catch { flash("No published Slack app on this deployment, create a workspace app and register its bot token as a slack_messages connector.", false); }
   }
   async function syncSlack(id) {
     try {
       const s = await api.syncConnector(id);
-      flash(`Scanned ${s.messages} message(s) across ${s.channels} channel(s) — ${s.findings} finding(s).`);
+      flash(`Scanned ${s.messages} message(s) across ${s.channels} channel(s), ${s.findings} finding(s).`);
       loadSlack();
     } catch (e) { err(e); }
   }
   useEffect(() => {   // OAuth callback lands back here with ?slack=<result>
     const p = new URLSearchParams(window.location.search).get("slack");
     if (p) {
-      flash(p === "installed" ? "Slack workspace connected — invite the bot to the channels to scan, then hit Scan now."
-        : p === "denied" ? "Slack install was cancelled." : "Slack install failed — try again.",
+      flash(p === "installed" ? "Slack workspace connected, invite the bot to the channels to scan, then hit Scan now."
+        : p === "denied" ? "Slack install was cancelled." : "Slack install failed, try again.",
         p === "installed");
       window.history.replaceState({}, "", window.location.pathname);
     }
@@ -278,7 +278,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
       const r = await api.requestUpgrade(upDraftPlan.plan, Number(upDraftPlan.seats) || 0,
                                          upDraftPlan.note);
       setUpgrade(r.request);
-      flash("Upgrade requested — we'll be in touch shortly.");
+      flash("Upgrade requested, we'll be in touch shortly.");
     } catch (e2) { err(e2); }
   }
 
@@ -315,7 +315,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
       await api.setJudgeKey({ provider: jkDraft.provider, key: jkDraft.key, model: jkDraft.model });
       setJkDraft((d) => ({ ...d, key: "" }));             // key is write-only
       await loadJudgeKey();
-      flash("Judge key saved — the LLM judge now runs on your org's own key.");
+      flash("Judge key saved, the LLM judge now runs on your org's own key.");
     } catch (e2) { err(e2); }
   }
   async function clearJudgeKey() {
@@ -404,16 +404,16 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
             <span className={`chip ${plan === "enterprise" ? "chip-on" : "chip-off"}`}
                   style={{ marginLeft: 10, verticalAlign: "middle" }}>{planLabel} plan</span>
           </h1>
-          <p className="page-sub">Organization, gateway upstreams, SSO, and usage — admin only.
+          <p className="page-sub">Organization, gateway upstreams, SSO, and usage, admin only.
             {plan !== "enterprise" && (
-              <> &nbsp;Need SSO, SIEM, or higher limits? Request an upgrade under “Your plan” below.</>
+              <> &nbsp;Need SSO, SIEM, or higher limits? Request an upgrade under 'Your plan' below.</>
             )}
           </p>
         </div>
       </div>
       {msg && <div className={msg.ok ? "flash-ok" : "flash-err"}>{msg.text}</div>}
 
-      {/* Your plan — entitlements comparison across tiers, current one highlighted */}
+      {/* Your plan, entitlements comparison across tiers, current one highlighted */}
       {catalog && (
         <div className="panel settings-card">
           <h2>Your plan</h2>
@@ -426,7 +426,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           {plan === "expired" && (
             <p style={{ color: "var(--crit)", marginTop: 0 }}>
               Your trial has ended. Capture and detection keep running, but paid features
-              can no longer be configured and limits are reduced — request an upgrade below
+              can no longer be configured and limits are reduced, request an upgrade below
               to pick a plan.
             </p>
           )}
@@ -434,7 +434,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
             upgrade && upgrade.status === "pending" ? (
               <p className="flash-ok" style={{ marginTop: 0 }}>
                 Upgrade to <strong>{upgrade.plan === "team" ? "Team" : "Enterprise"}</strong> requested
-                {upgrade.created_at && <> on {upgrade.created_at.slice(0, 10)}</>} — we'll be in
+                {upgrade.created_at && <> on {upgrade.created_at.slice(0, 10)}</>}, we'll be in
                 touch at <strong>{upgrade.contact}</strong>. Prefer email?{" "}
                 <a href="mailto:sales@palivane.io">sales@palivane.io</a>.
               </p>
@@ -444,8 +444,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
                 <label>Plan
                   <select value={upDraftPlan.plan}
                           onChange={(e) => setUpDraftPlan((s) => ({ ...s, plan: e.target.value }))}>
-                    <option value="team">Team — $12/user/mo</option>
-                    <option value="enterprise">Enterprise — custom</option>
+                    <option value="team">Team, $12/user/mo</option>
+                    <option value="enterprise">Enterprise, custom</option>
                   </select>
                 </label>
                 <label>Seats
@@ -487,7 +487,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
                     <td className="muted">{f.label}</td>
                     {catalog.tiers.map((t) => (
                       <td key={t.name} className={t.name === catalog.current ? "plan-col-current" : ""}>
-                        {t.includes[f.key] ? "✓" : "—"}
+                        {t.includes[f.key] ? "✓" : "-"}
                       </td>
                     ))}
                   </tr>
@@ -512,8 +512,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           </label>
           <label>Store prompt content
             <select value={org.store_content} onChange={setField("store_content")}>
-              <option value="inherit">Inherit (global — metadata-only)</option>
-              <option value="off">Metadata only (recommended — no prompt text stored)</option>
+              <option value="inherit">Inherit (global, metadata-only)</option>
+              <option value="off">Metadata only (recommended, no prompt text stored)</option>
               <option value="on">Store full content (redacted + encrypted per-tenant)</option>
             </select>
           </label>
@@ -559,12 +559,12 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <label>Coaching mode (secrets / PII)
             <select value={org.redact_mode} onChange={setField("redact_mode")}>
               <option value="inherit">Inherit (global)</option>
-              <option value="on">Coach — warn + show cleaned version</option>
+              <option value="on">Coach, warn + show cleaned version</option>
               <option value="off">Block (hard stop)</option>
             </select>
             <span className="muted" style={{ fontSize: 11.5, marginTop: 3 }}>
               When on, a prompt blocked <em>only</em> for a secret or PII becomes a warning that
-              shows the redacted version and points to a sanctioned tool — the user chooses.
+              shows the redacted version and points to a sanctioned tool, the user chooses.
               Injection, source-code, and unsanctioned-destination blocks are unaffected.
             </span>
           </label>
@@ -595,7 +595,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <label className="field-wide">Custom PII / confidential patterns (one <code>label=regex</code> per line)
             <textarea rows={3} placeholder={"Customer ID=CUST-\\d{8}\nMRN=MRN\\d{7}\nProject codename=(Bluebird|Falcon)"}
                       value={org.custom_pii_patterns} onChange={setField("custom_pii_patterns")} /></label>
-          <label className="field-wide">Need-to-know rules (oversharing) — one <code>restricted = allowed-group</code> per line
+          <label className="field-wide">Need-to-know rules (oversharing), one <code>restricted = allowed-group</code> per line
             <textarea rows={3} placeholder={"confidential_data = *@acme.com\npii_exposure = *@hr.acme.com\nkw:salary = *@hr.acme.com,*@exec.acme.com"}
                       value={org.oversharing_rules} onChange={setField("oversharing_rules")} /></label>
         </div>
@@ -610,8 +610,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         <h2>Alerts &amp; integrations</h2>
         <PlanLock need="alerts" />
         <div className="field-grid">
-          <label className="field-wide">Webhook URL (Slack-compatible — posts findings) {alertCfg.webhookSet && <span className="muted">(set — leave blank to keep)</span>}
-            <input type="password" placeholder={alertCfg.webhookSet ? "••••••••" : "https://hooks.slack.com/services/…"}
+          <label className="field-wide">Webhook URL (Slack-compatible (posts findings) {alertCfg.webhookSet && <span className="muted">(set) leave blank to keep)</span>}
+            <input type="password" placeholder={alertCfg.webhookSet ? "••••••••" : "https://hooks.slack.com/services/..."}
                    value={alertCfg.webhook} onChange={(e) => setAlertCfg((a) => ({ ...a, webhook: e.target.value }))} /></label>
           <label>Alert on severity ≥
             <select value={alertCfg.min} onChange={(e) => setAlertCfg((a) => ({ ...a, min: e.target.value }))}>
@@ -633,9 +633,9 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <button type="button" className="mini-btn" onClick={exportFindings}>Export findings (JSONL)</button>
         </div>
         <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>In digest mode, alertable
-           findings are batched into a rollup on the chosen cadence — <strong>critical findings
+           findings are batched into a rollup on the chosen cadence, <strong>critical findings
            still fire in real time</strong>. Findings export is for SIEM ingest. Alerts fail open
-           — a down webhook never blocks capture.</p>
+          , a down webhook never blocks capture.</p>
       </div>
 
       {/* SIEM forwarding */}
@@ -643,13 +643,13 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         <h2>SIEM forwarding</h2>
         <PlanLock need="siem" />
         <p className="muted" style={{ fontSize: 12 }}>Stream findings to your SIEM in real time
-           (complements the pull-based JSONL export above). Vendor-neutral — point it at any
+           (complements the pull-based JSONL export above). Vendor-neutral, point it at any
            HTTP collector.</p>
         <div className="field-grid">
           <label className="field-wide">Collector URL
             <input placeholder="https://http-inputs.splunkcloud.com/services/collector"
                    value={siemCfg.url} onChange={(e) => setSiemCfg((s) => ({ ...s, url: e.target.value }))} /></label>
-          <label className="field-wide">Token {siemCfg.tokenSet && <span className="muted">(set — leave blank to keep)</span>}
+          <label className="field-wide">Token {siemCfg.tokenSet && <span className="muted">(set, leave blank to keep)</span>}
             <input type="password" placeholder={siemCfg.tokenSet ? "••••••••" : "HEC / bearer token"}
                    value={siemCfg.token} onChange={(e) => setSiemCfg((s) => ({ ...s, token: e.target.value }))} /></label>
           <label>Format
@@ -673,7 +673,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         <SinkHealth sink="siem_http" />
         <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Pushes each finding at/above
            the threshold as it's captured; SSRF-guarded and fail-open (a down collector never
-           blocks capture). Internal/private endpoints are blocked — use a reachable collector.
+           blocks capture). Internal/private endpoints are blocked, use a reachable collector.
            Events arrive with the Splunk sourcetype <code>palivane:finding</code>, which also
            sets the S3 object path below.</p>
       </div>
@@ -682,7 +682,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
       <div className="panel settings-card">
         <h2>S3 / data-lake delivery</h2>
         <PlanLock need="s3_delivery" />
-        <p className="muted" style={{ fontSize: 12 }}>Independent of the HTTP push above — write
+        <p className="muted" style={{ fontSize: 12 }}>Independent of the HTTP push above, write
            each finding as a JSON object to an S3 bucket for a <strong>Panther S3 log source</strong>,
            Athena, or Snowflake. Uses the <strong>same severity threshold</strong> as SIEM forwarding.</p>
         <div className="field-grid">
@@ -695,13 +695,13 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <label>Region
             <input placeholder="us-east-1"
                    value={s3Cfg.region} onChange={(e) => setS3Cfg((s) => ({ ...s, region: e.target.value }))} /></label>
-          <label className="field-wide">IAM role ARN (recommended — no stored secret)
+          <label className="field-wide">IAM role ARN (recommended, no stored secret)
             <input placeholder="arn:aws:iam::123456789012:role/palivane-delivery"
                    value={s3Cfg.roleArn} onChange={(e) => setS3Cfg((s) => ({ ...s, roleArn: e.target.value }))} /></label>
-          <label>AWS access key ID {s3Cfg.configured && <span className="muted">(set — leave blank to keep)</span>}
-            <input placeholder={s3Cfg.configured ? "••••••••" : "AKIA…"}
+          <label>AWS access key ID {s3Cfg.configured && <span className="muted">(set, leave blank to keep)</span>}
+            <input placeholder={s3Cfg.configured ? "••••••••" : "AKIA..."}
                    value={s3Cfg.keyId} onChange={(e) => setS3Cfg((s) => ({ ...s, keyId: e.target.value }))} /></label>
-          <label>AWS secret access key {s3Cfg.configured && <span className="muted">(set — leave blank to keep)</span>}
+          <label>AWS secret access key {s3Cfg.configured && <span className="muted">(set, leave blank to keep)</span>}
             <input type="password" placeholder={s3Cfg.configured ? "••••••••" : "secret"}
                    value={s3Cfg.secret} onChange={(e) => setS3Cfg((s) => ({ ...s, secret: e.target.value }))} /></label>
         </div>
@@ -725,7 +725,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <h3 style={{ margin: "0 0 6px" }}>Raw event archive</h3>
           <p className="muted" style={{ fontSize: 12 }}>Beyond findings: archive <strong>every
              captured event</strong> (benign included) to the same bucket as NDJSON micro-batches
-             under <code>&lt;prefix&gt;/palivane/events/YYYY/MM/DD/HH/…ndjson</code> —
+             under <code>&lt;prefix&gt;/palivane/events/YYYY/MM/DD/HH/...ndjson</code>
              a complete, hour-partitioned capture record for Athena / Panther / Snowflake.</p>
           <label style={{ fontSize: 13, display: "block" }}>
             <input type="checkbox" checked={s3Cfg.archive}
@@ -747,7 +747,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         <SinkHealth sink="siem_s3" label="Findings delivery" />
         {s3Cfg.archive && <SinkHealth sink="archive_s3" label="Event archive" />}
         <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Findings are written under
-           <code> &lt;prefix&gt;/palivane/findings/YYYY/MM/DD/…json</code> (path follows the
+           <code> &lt;prefix&gt;/palivane/findings/YYYY/MM/DD/...json</code> (path follows the
            same brand key). Static credentials are stored write-only and
            encrypted; role-based delivery stores no secret at all. Grant the role or key
            <code> s3:PutObject</code> on the bucket only.</p>
@@ -757,7 +757,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
       <div className="panel settings-card">
         <h2>Slack scanning</h2>
         <p className="muted" style={{ fontSize: 12 }}>Scan Slack message content for PII, PHI, and
-           secrets — the same detection engine as every other plane, on the <code>collab</code>
+           secrets, the same detection engine as every other plane, on the <code>collab</code>
            surface. Slack AI, bots, and MCP servers can read whatever sits in your channels;
            this finds the regulated data before an AI rollout indexes it.</p>
         {slackConns.map((c) => (
@@ -765,7 +765,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
             <span><strong>{c.label || "workspace"}</strong>{" "}
               <span className="muted" style={{ fontSize: 12 }}>
                 {c.last_sync_at ? `last scan ${c.last_sync_at.slice(0, 16).replace("T", " ")}` : "never scanned"}
-                {c.last_sync_status === "error" && " — last scan failed"}
+                {c.last_sync_status === "error" && ", last scan failed"}
               </span></span>
             <button type="button" className="mini-btn" onClick={() => syncSlack(c.id)}>Scan now</button>
           </div>
@@ -778,7 +778,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Read-only scopes; the bot never
            posts. Invite it to each channel to scan. Every scan pulls messages since the last
            cursor (first scan looks back 7 days); findings land under the <code>collab</code>
-           surface with alerts and SIEM export as usual. Detection only — Slack offers no
+           surface with alerts and SIEM export as usual. Detection only. Slack offers no
            pre-delivery block outside Enterprise Grid DLP.</p>
       </div>
 
@@ -817,10 +817,10 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
                 {dpa.accepted_at ? ` on ${dpa.accepted_at.slice(0, 10)}` : ""}
                 {dpa.accepted_by ? ` by ${dpa.accepted_by}` : ""}.</p>
             ) : (
-              <p className="muted">Current version <strong>v{dpa.current_version}</strong> — not yet accepted
+              <p className="muted">Current version <strong>v{dpa.current_version}</strong>: not yet accepted
                 {dpa.version ? ` (last accepted v${dpa.version})` : ""}.</p>
             )
-          ) : <p className="muted">…</p>}
+          ) : <p className="muted">...</p>}
           <button type="button" className="primary-btn slim" onClick={acceptDpa}
                   disabled={dpa?.accepted}>
             {dpa?.accepted ? "DPA accepted" : "Accept DPA"}
@@ -829,7 +829,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
 
         <div className="settings-sub" style={{ marginTop: 16 }}>
           <h3 style={{ margin: "0 0 6px" }}>Data export</h3>
-          <p className="muted" style={{ fontSize: 12 }}>A complete JSON export of this org — config, users,
+          <p className="muted" style={{ fontSize: 12 }}>A complete JSON export of this org, config, users,
              keys, findings, audit log, SSO/upstream settings, DPA record. Secrets are never included.</p>
           <label style={{ fontSize: 13 }}>
             <input type="checkbox" checked={inclContent}
@@ -869,7 +869,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
               </div>
               <input placeholder="base URL (optional)" value={d.base_url ?? u.base_url ?? ""}
                      onChange={(e) => setUpDraft((s) => ({ ...s, [u.provider]: { ...d, base_url: e.target.value } }))} />
-              <input type="password" placeholder={u.key_set ? "key set — enter to replace" : "API key"}
+              <input type="password" placeholder={u.key_set ? "key set, enter to replace" : "API key"}
                      value={d.key || ""}
                      onChange={(e) => setUpDraft((s) => ({ ...s, [u.provider]: { ...d, key: e.target.value } }))} />
               <button type="button" className="mini-btn" onClick={() => saveUpstream(u.provider)}>Save</button>
@@ -881,14 +881,14 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
 
       {/* BYOK judge key */}
       <form className="panel settings-card" onSubmit={saveJudgeKey}>
-        <h2>LLM judge — bring your own key
+        <h2>LLM judge, bring your own key
           {judgeKey?.key_set && (judgeKey?.health?.ok === false
             ? <span className="chip chip-warn">key failing</span>
             : <span className="chip chip-on">active</span>)}
         </h2>
         {judgeKey?.key_set && judgeKey?.health?.ok === false && (
           <div className="judge-health-warn">
-            Your judge key is failing — scans are running on offline detectors only, without
+            Your judge key is failing, scans are running on offline detectors only, without
             the LLM judge. Last error: <code>{judgeKey.health.last_error || "unknown"}</code>.
             Check the provider account (billing, key revocation) or save a new key below.
           </div>
@@ -896,7 +896,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         <p className="muted">Run the LLM judge on your org's own provider key: verdicts bill
           your account, work regardless of the platform's judge capacity, and aren't plan-gated.
           The key is stored encrypted and never shown again. Your "LLM judge" consent setting
-          above still applies — Off disables the judge entirely.</p>
+          above still applies. Off disables the judge entirely.</p>
         <div className="field-grid">
           <label>Provider
             <select value={jkDraft.provider}
@@ -908,7 +908,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           </label>
           <label>API key
             <input type="password" value={jkDraft.key}
-                   placeholder={judgeKey?.key_set ? "key set — enter to replace" : "provider API key"}
+                   placeholder={judgeKey?.key_set ? "key set, enter to replace" : "provider API key"}
                    onChange={(e) => setJkDraft((d) => ({ ...d, key: e.target.value }))} />
           </label>
           <label>Model (optional)
@@ -936,7 +936,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
             <input value={oidcDraft.client_id}
                    onChange={(e) => setOidcDraft((d) => ({ ...d, client_id: e.target.value }))} /></label>
           <label>Client secret
-            <input type="password" placeholder={oidc?.secret_set ? "secret set — enter to replace" : "client secret"}
+            <input type="password" placeholder={oidc?.secret_set ? "secret set, enter to replace" : "client secret"}
                    value={oidcDraft.client_secret}
                    onChange={(e) => setOidcDraft((d) => ({ ...d, client_secret: e.target.value }))} /></label>
           <label>Allowed email domain (optional)
@@ -969,7 +969,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
             <input placeholder="acme.com" value={samlDraft.allowed_domain}
                    onChange={(e) => setSamlDraft((d) => ({ ...d, allowed_domain: e.target.value }))} /></label>
           <label>IdP signing certificate (X.509)
-            <input placeholder={saml?.cert_set ? "cert set — paste to replace" : "MIIC…"}
+            <input placeholder={saml?.cert_set ? "cert set, paste to replace" : "MIIC..."}
                    value={samlDraft.idp_x509_cert}
                    onChange={(e) => setSamlDraft((d) => ({ ...d, idp_x509_cert: e.target.value }))} /></label>
         </div>
@@ -987,7 +987,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
 
         {recovery && (
           <div className="mfa-recovery">
-            <p className="muted">Two-factor is on. Save these one-time recovery codes now — they
+            <p className="muted">Two-factor is on. Save these one-time recovery codes now, they
               won't be shown again.</p>
             <ul className="recovery-codes">{recovery.map((c) => <li key={c}>{c}</li>)}</ul>
           </div>

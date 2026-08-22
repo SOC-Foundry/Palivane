@@ -1,6 +1,6 @@
-// Public documentation at /docs — renders the repo's own markdown (single source of
+// Public documentation at /docs, renders the repo's own markdown (single source of
 // truth: the files under docs/ ship with the code they describe; vite inlines them at
-// build time via ?raw). Curated list only — internal runbooks stay out.
+// build time via ?raw). Curated list only, internal runbooks stay out.
 import { useEffect, useMemo } from "react";
 import { marked } from "marked";
 import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
@@ -44,7 +44,7 @@ export default function Docs({ slug }) {
   const html = useMemo(() => marked.parse(doc.md, { renderer }), [doc]);
 
   useEffect(() => {
-    document.title = `${doc.title} — Palivane docs`;
+    document.title = `${doc.title}, Palivane docs`;
     if (window.location.hash) {
       document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
     } else {
@@ -65,7 +65,7 @@ export default function Docs({ slug }) {
             ))}
           </nav>
           <p className="muted" style={{ fontSize: 12, marginTop: 18 }}>
-            These pages render straight from the repository — they ship with the code
+            These pages render straight from the repository, they ship with the code
             they describe. Questions: <a href="mailto:support@palivane.io">support@palivane.io</a>
           </p>
         </aside>

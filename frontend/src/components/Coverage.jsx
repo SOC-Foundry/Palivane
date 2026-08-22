@@ -1,4 +1,4 @@
-// Coverage — find unmanaged/shadow AI use by comparing an IdP/CASB "who used AI" list to
+// Coverage, find unmanaged/shadow AI use by comparing an IdP/CASB "who used AI" list to
 // the actors Palivane actually captured. The gap = the shadow set. (Agentless: you can't
 // monitor a device you don't manage, so you find it by what's missing.)
 import { useState } from "react";
@@ -26,7 +26,7 @@ export default function Coverage() {
   async function run() {
     setErr(null); setRes(null);
     const events = parseEvents(text);
-    if (events === null) { setErr("Couldn't parse — use CSV lines `actor,tool` or a JSON array."); return; }
+    if (events === null) { setErr("Couldn't parse, use CSV lines `actor,tool` or a JSON array."); return; }
     if (!events.length) { setErr("Paste at least one `actor,tool` line."); return; }
     setBusy(true);
     try { setRes(await api.coverageReconcile(events)); }
@@ -40,20 +40,20 @@ export default function Coverage() {
         <div>
           <h1 className="page-title">Coverage reconciliation</h1>
           <p className="page-sub">Paste your IdP/CASB record of who used AI tools. Palivane subtracts the
-             actors it captured and returns the rest — the unmanaged / shadow set.</p>
+             actors it captured and returns the rest, the unmanaged / shadow set.</p>
         </div>
       </div>
 
       <div className="panel settings-card">
         <label className="field-wide" style={{ display: "block" }}>
-          Access events — one <code>actor,tool</code> per line, or a JSON array
+          Access events, one <code>actor,tool</code> per line, or a JSON array
           <textarea rows={8} style={{ width: "100%", marginTop: 6 }}
             placeholder={"alice@acme.com,ChatGPT\nmallory@acme.com,ChatGPT"}
             value={text} onChange={(e) => setText(e.target.value)} />
         </label>
         {err && <div className="error">{err}</div>}
         <button className="primary-btn slim" onClick={run} disabled={busy}>
-          {busy ? "…" : "Reconcile"}
+          {busy ? "..." : "Reconcile"}
         </button>
       </div>
 
@@ -62,7 +62,7 @@ export default function Coverage() {
           <div className="usage-stats">
             <div><span className="usage-n">{res.covered}</span><span className="usage-l">covered</span></div>
             <div><span className="usage-n">{res.uncovered_count}</span><span className="usage-l">uncovered</span></div>
-            <div><span className="usage-n">{res.coverage_rate != null ? Math.round(res.coverage_rate * 100) + "%" : "—"}</span>
+            <div><span className="usage-n">{res.coverage_rate != null ? Math.round(res.coverage_rate * 100) + "%" : "-"}</span>
               <span className="usage-l">coverage</span></div>
           </div>
           <h2 style={{ marginTop: 14 }}>Uncovered actors</h2>

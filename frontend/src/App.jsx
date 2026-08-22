@@ -35,7 +35,7 @@ import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, Ico
 
 export default function App() {
   const [auth, setAuth] = useState(null);        // { user, tenant }
-  // Open the console view directly for any hash the Login screen owns — #signin, plus the
+  // Open the console view directly for any hash the Login screen owns, #signin, plus the
   // emailed #reset=TOKEN and #join=STATUS links. Landing is the "/" route, and it does not
   // read those fragments, so without this a reset link silently renders the marketing page
   // and the token is never consumed (Login.jsx parses the hash on mount).
@@ -56,7 +56,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // SSO (OIDC) hands the session back in the URL fragment — pick it up, then clean the URL.
+    // SSO (OIDC) hands the session back in the URL fragment, pick it up, then clean the URL.
     const m = window.location.hash.match(/sso_token=([^&]+)/);
     if (m) {
       setToken(decodeURIComponent(m[1]));
@@ -119,7 +119,7 @@ export default function App() {
     setSelectedId(null);
   }
 
-  // Public legal pages — reachable without auth (Chrome Web Store needs a public
+  // Public legal pages, reachable without auth (Chrome Web Store needs a public
   // privacy-policy URL). Checked after hooks so rules-of-hooks hold.
   const legalPath = window.location.pathname.replace(/\/+$/, "");
   if (legalPath === "/privacy" || legalPath === "/terms") {
@@ -149,7 +149,7 @@ export default function App() {
   if (legalPath === "/docs" || legalPath.startsWith("/docs/")) {
     return <Docs slug={legalPath.split("/")[2] || ""} />;
   }
-  // Vendor operator console — standalone, operator-token-gated (not a tenant session),
+  // Vendor operator console, standalone, operator-token-gated (not a tenant session),
   // not linked from any nav. Cross-tenant, so it must never be reachable via tenant auth.
   if (legalPath === "/admin") {
     return <Admin />;
@@ -159,7 +159,7 @@ export default function App() {
     return <ExtensionConnect />;
   }
 
-  if (booting) return <div className="login-screen"><div className="login-sub">Loading…</div></div>;
+  if (booting) return <div className="login-screen"><div className="login-sub">Loading...</div></div>;
   if (!auth) {
     return showLogin
       ? <Login onAuthed={() => api.me().then(setAuth)} onBack={() => setShowLogin(false)} />
@@ -294,7 +294,7 @@ export default function App() {
       </aside>
 
       <main className="content">
-        {/* Trial countdown / expiry — console-wide (Settings alone is not enough: nobody
+        {/* Trial countdown / expiry, console-wide (Settings alone is not enough: nobody
             re-opens Settings in week two). Hidden on Settings itself, where the plan
             panel and upgrade form already carry this. */}
         {view !== "settings" &&
@@ -304,7 +304,7 @@ export default function App() {
           <div className={`trial-banner ${auth.tenant.plan === "expired" ? "trial-banner-expired" : ""}`}>
             <span>
               {auth.tenant.plan === "expired"
-                ? "Your trial has ended — capture and detection keep running, but paid features are off and limits are reduced."
+                ? "Your trial has ended, capture and detection keep running, but paid features are off and limits are reduced."
                 : `Your trial ends in ${auth.tenant.trial_days_left} ${auth.tenant.trial_days_left === 1 ? "day" : "days"}.`}
             </span>
             {isAdmin

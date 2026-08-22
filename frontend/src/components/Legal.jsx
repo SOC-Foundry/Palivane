@@ -8,10 +8,10 @@ function PrivacyBody() {
   return (
     <>
       <h1>Privacy Policy</h1>
-      <p className="legal-updated">Palivane — Shadow-AI Guard · Last updated: {UPDATED}</p>
+      <p className="legal-updated">Palivane. Shadow-AI Guard · Last updated: {UPDATED}</p>
 
       <p>
-        Palivane — Shadow-AI Guard (“the extension”) is an organizational
+        Palivane. Shadow-AI Guard ('the extension') is an organizational
         data-loss-prevention tool. It is deployed by an administrator and connected to a{" "}
         <strong>Palivane backend that your organization operates</strong>.
       </p>
@@ -28,7 +28,7 @@ function PrivacyBody() {
       <h2>What data is processed</h2>
       <ul>
         <li>
-          <strong>Prompt content</strong> you submit to the supported AI tools — sent to
+          <strong>Prompt content</strong> you submit to the supported AI tools, sent to
           your organization's Palivane backend for scanning.
         </li>
         <li>
@@ -73,11 +73,11 @@ function TermsBody() {
   return (
     <>
       <h1>Terms of Use</h1>
-      <p className="legal-updated">Palivane — Shadow-AI Guard · Last updated: {UPDATED}</p>
+      <p className="legal-updated">Palivane. Shadow-AI Guard · Last updated: {UPDATED}</p>
 
       <h2>1. What Palivane is</h2>
       <p>
-        Palivane — Shadow-AI Guard (“the extension”) is an organizational security tool that
+        Palivane. Shadow-AI Guard ('the extension') is an organizational security tool that
         inspects prompts sent to supported AI tools and warns or blocks submissions that
         contain sensitive data. It operates against a Palivane backend that your organization
         deploys and controls.
@@ -94,7 +94,7 @@ function TermsBody() {
 
       <h2>3. No warranty</h2>
       <p>
-        The extension is provided “as is,” without warranty of any kind, express or implied.
+        The extension is provided 'as is,' without warranty of any kind, express or implied.
         Detection is heuristic and may produce false positives or miss sensitive content. It
         is one layer of defense and is not a guarantee that no sensitive data will ever leave
         your environment. The extension fails open: if its backend is unreachable, prompts

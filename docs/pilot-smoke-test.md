@@ -4,11 +4,11 @@ A ~15-minute checklist to prove the three capture planes work on a real machine 
 rolling out to the team. Run it on a Mac (primary) or Linux. Each step says what to do,
 what you should see, and how to confirm in the console.
 
-**Test payload (safe, fake — trips the secret detector without being a real key):**
+**Test payload (safe, fake, trips the secret detector without being a real key):**
 ```
 AKIA4YTGH2NBQF7XZP3K  /  hR8kLm2Xq9vTn4wZbC7yE1sD6fA3jP0uK5gW8iO2
 ```
-Prod is in **monitor** mode, but a *confirmed* secret leak is hard-blocked regardless — so
+Prod is in **monitor** mode, but a *confirmed* secret leak is hard-blocked regardless, so
 these will block on every surface. Everything is attributed to your `@palivane.io` user.
 
 ---
@@ -16,12 +16,12 @@ these will block on every surface. Everything is attributed to your `@palivane.i
 ## 0. Prereqs
 - [ ] You can sign in at <https://app.palivane.io> (email + password; SSO once configured).
 - [ ] Browser zero-config needs extension **v0.6.1** live in the Web Store. If it isn't yet,
-      the store build still works — you'll just set the URL in Options once (noted below).
+      the store build still works, you'll just set the URL in Options once (noted below).
 
 ---
 
 ## 1. Browser extension  (surface: `ai_usage`)
-1. [ ] Install **Palivane — Shadow-AI Guard** from the Chrome Web Store.
+1. [ ] Install **Palivane. Shadow-AI Guard** from the Chrome Web Store.
 2. [ ] Open the toolbar popup:
    - **v0.6.1+:** click **“Sign in to Palivane”** → a tab opens, you authenticate, it closes.
    - **v0.6.0:** open the extension **Options** first, set URL `https://app.palivane.io`,
@@ -48,8 +48,8 @@ these will block on every surface. Everything is attributed to your `@palivane.i
      its own Pro/Max sign-in), and a `hooks` block referencing `palivane-hook` (PreToolUse) +
      `palivane-posture`.
    - ✅ If connected with `--route-gateway`: additionally `env.ANTHROPIC_BASE_URL` =
-     `https://app.palivane.io` (no `/v1` — the SDK adds it) and `ANTHROPIC_AUTH_TOKEN` set.
-3. [ ] Prove the gateway blocks a leak (deterministic — no model call needed on a block;
+     `https://app.palivane.io` (no `/v1`, the SDK adds it) and `ANTHROPIC_AUTH_TOKEN` set.
+3. [ ] Prove the gateway blocks a leak (deterministic, no model call needed on a block;
    uses the Palivane key directly, so it works in either mode):
    ```bash
    TOK=$(python3 -c "import json;print(json.load(open('$HOME/.claude/settings.json'))['env']['PALIVANE_TOKEN'])")
@@ -65,9 +65,9 @@ these will block on every surface. Everything is attributed to your `@palivane.i
 
 ---
 
-## 3. Desktop apps  (surface: `ai_usage` via egress proxy) — the sudo one
+## 3. Desktop apps  (surface: `ai_usage` via egress proxy), the sudo one
 > Do this on one machine first; it trusts a local CA and sets the system HTTPS proxy.
-1. [ ] Set it up (reuses the token from step 2; asks for sudo twice — CA + proxy):
+1. [ ] Set it up (reuses the token from step 2; asks for sudo twice, CA + proxy):
    ```bash
    palivane-desktop install
    ```

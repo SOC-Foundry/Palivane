@@ -1,4 +1,4 @@
-// Agents — verifiable AI-agent identities (Phase 0). Register an agent to mint its ag_
+// Agents, verifiable AI-agent identities (Phase 0). Register an agent to mint its ag_
 // token; the agent presents it on capture requests so its actions are attributed to it.
 // (Least-privilege role enforcement is a later phase; role is captured but not yet enforced.)
 import { useCallback, useEffect, useState } from "react";
@@ -130,7 +130,7 @@ export default function Agents({ tenant, onTenant }) {
       {token && (
         <div className="panel settings-card" style={{ borderColor: "rgba(124,108,255,.5)" }}>
           <h2>Token for {token.name}</h2>
-          <p className="muted" style={{ marginTop: 0 }}>Copy it now — it's shown <strong>once</strong> and only its hash is stored.</p>
+          <p className="muted" style={{ marginTop: 0 }}>Copy it now, it's shown <strong>once</strong> and only its hash is stored.</p>
           <code style={{ display: "block", padding: "10px 12px", background: "var(--panel-2)",
                          border: "1px solid var(--border)", borderRadius: 8, wordBreak: "break-all" }}>{token.token}</code>
           <button className="ghost-btn" style={{ marginTop: 10 }} onClick={() => setToken(null)}>Done</button>
@@ -149,7 +149,7 @@ export default function Agents({ tenant, onTenant }) {
           <input placeholder="OIDC subject (optional)" value={draft.oidc_subject}
                  title="JWT sub/client_id if this agent authenticates with a workload OIDC token"
                  onChange={(e) => setDraft((d) => ({ ...d, oidc_subject: e.target.value }))} />
-          <button className="primary-btn slim" onClick={create} disabled={busy}>{busy ? "…" : "Create agent"}</button>
+          <button className="primary-btn slim" onClick={create} disabled={busy}>{busy ? "..." : "Create agent"}</button>
         </div>
       </div>
 
@@ -161,11 +161,11 @@ export default function Agents({ tenant, onTenant }) {
             <tbody>
               {agents.map((a) => (
                 <tr key={a.id} style={{ opacity: a.active ? 1 : 0.5 }}>
-                  <td><strong>{a.name}</strong><div className="muted" style={{ fontSize: 11 }}>{a.prefix}…</div></td>
+                  <td><strong>{a.name}</strong><div className="muted" style={{ fontSize: 11 }}>{a.prefix}...</div></td>
                   <td className="muted">{a.kind}</td>
                   <td>
                     <select value={a.role || ""} onChange={(e) => setAgentRole(a, e.target.value)}>
-                      <option value="">— none —</option>
+                      <option value="">none</option>
                       {roles.map((r) => <option key={r.id} value={r.name}>{r.name}{r.enforce ? " (enforce)" : ""}</option>)}
                     </select>
                   </td>
@@ -201,7 +201,7 @@ export default function Agents({ tenant, onTenant }) {
                   <td>
                     <button className="link-btn" onClick={() => rotate(a)}>Rotate</button>
                     {a.active && <button className="link-btn" style={{ marginLeft: 12 }}
-                                         title="Mint a 1-hour session token (JWT) — the long-lived ag_ credential stays offline"
+                                         title="Mint a 1-hour session token (JWT), the long-lived ag_ credential stays offline"
                                          onClick={() => mintToken(a)}>Session token</button>}
                     {a.active && <button className="link-btn" style={{ marginLeft: 12, color: "var(--crit)" }}
                                          onClick={() => disable(a)}>Disable</button>}
@@ -228,11 +228,11 @@ export default function Agents({ tenant, onTenant }) {
               {roles.map((r) => (
                 <tr key={r.id}>
                   <td><strong>{r.name}</strong>{r.default_allow && <span className="muted" style={{ fontSize: 11 }}> · default-allow</span>}</td>
-                  <td className="muted">{r.allow_tools.join(", ") || "—"}</td>
-                  <td className="muted">{r.allow_servers.join(", ") || "—"}</td>
-                  <td className="muted">{r.allow_commands.join(", ") || "—"}</td>
-                  <td className="muted">{r.data_scopes.join(", ") || "—"}</td>
-                  <td className="muted">{r.deny.join(", ") || "—"}</td>
+                  <td className="muted">{r.allow_tools.join(", ") || "-"}</td>
+                  <td className="muted">{r.allow_servers.join(", ") || "-"}</td>
+                  <td className="muted">{r.allow_commands.join(", ") || "-"}</td>
+                  <td className="muted">{r.data_scopes.join(", ") || "-"}</td>
+                  <td className="muted">{r.deny.join(", ") || "-"}</td>
                   <td>{r.enforce
                     ? <span className="cat cat-secret_leak">enforce</span>
                     : <span className="cat cat-dangerous_command">monitor</span>}</td>
