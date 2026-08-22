@@ -9,11 +9,11 @@ function render(state) {
     el.textContent = "No prompts inspected yet.";
     return;
   }
-  const sigs = (v.signals || []).map((s) => s.category).join(", ") || "—";
+  const sigs = (v.signals || []).map((s) => s.category).join(", ") || "-";
   const when = v.at ? new Date(v.at).toLocaleTimeString() : "";
   el.className = "verdict";
   el.innerHTML =
-    `<div>last verdict — <span class="sev sev-${v.severity}">${v.action} · ${v.severity}</span> ` +
+    `<div>last verdict, <span class="sev sev-${v.severity}">${v.action} · ${v.severity}</span> ` +
     `(risk ${v.risk_score ?? "?"})</div>` +
     `<div class="sigs">${sigs}</div>` +
     `<div class="muted" style="margin-top:4px;font-size:11px;">${when}</div>`;

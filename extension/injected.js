@@ -43,12 +43,12 @@
       if (typeof j.query_str === "string") return j.query_str;        // perplexity
       if (j.params && typeof j.params.query_str === "string") return j.params.query_str; // perplexity
       if (typeof j.input === "string") return j.input;
-      // Poe (GraphQL): the user's text rides in variables — grab the longest string field.
+      // Poe (GraphQL): the user's text rides in variables, grab the longest string field.
       if (j.variables && typeof j.variables === "object") {
         const v = Object.values(j.variables).filter((x) => typeof x === "string");
         if (v.length) return v.sort((a, b) => b.length - a.length)[0];
       }
-    } catch (_) { /* not JSON — fall through */ }
+    } catch (_) { /* not JSON, fall through */ }
     return String(bodyText).slice(0, 8000);
   }
 
@@ -107,7 +107,7 @@
               scan(prompt, location.origin).then((verdict) => {
                 if (DEBUG) console.log("[Palivane] ws verdict", verdict.action, verdict.severity, verdict.risk_score);
                 if (verdict.action === "block") {
-                  // Drop the frame — the prompt never leaves — and show the block UI.
+                  // Drop the frame, the prompt never leaves, and show the block UI.
                   window.postMessage({ __palivane: true, kind: "blocked", verdict }, "*");
                   return;
                 }

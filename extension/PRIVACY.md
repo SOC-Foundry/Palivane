@@ -1,8 +1,8 @@
-# Palivane — Shadow-AI Guard · Privacy Policy
+# Palivane. Shadow-AI Guard · Privacy Policy
 
 _Last updated: 2026-07-02_
 
-Palivane — Shadow-AI Guard ("the extension") is an organizational data-loss-prevention
+Palivane. Shadow-AI Guard ("the extension") is an organizational data-loss-prevention
 tool. It is deployed by an administrator and connected to a **Palivane backend that your
 organization operates**.
 
@@ -17,7 +17,7 @@ blocks** risky submissions.
 
 ## What data is processed
 
-- **Prompt content** you submit to the supported AI tools — sent to your organization's
+- **Prompt content** you submit to the supported AI tools, sent to your organization's
   Palivane backend for scanning.
 - **An optional user identifier** (e.g. your work email), if your administrator
   configures one, so findings can be attributed.
