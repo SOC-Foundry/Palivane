@@ -1,8 +1,8 @@
-// Vendor operator console at /admin — the owner's back-office over the /api/admin/*
+// Vendor operator console at /admin, the owner's back-office over the /api/admin/*
 // endpoints (funnel, plan roster, license registry with issue/revoke). Deliberately a
 // STANDALONE route, not part of the tenant app shell and not in any public nav: it is
 // gated by the operator token (PALIVANE_METRICS_TOKEN), NOT a tenant session, because it is
-// cross-tenant. A normal tenant admin has no path here — the page is inert without the
+// cross-tenant. A normal tenant admin has no path here, the page is inert without the
 // token, and every endpoint 401s without it.
 import { useCallback, useEffect, useState } from "react";
 
@@ -129,7 +129,7 @@ export default function Admin() {
           </div>
           <p className="muted" style={{ fontSize: 13, marginTop: 10 }}>
             {funnel.conversion.activated_of_signed_up}% end-to-end · median{" "}
-            {funnel.median_days_to_activate ?? "—"} days to activate · {funnel.stuck_orgs.length} stuck
+            {funnel.median_days_to_activate ?? "-"} days to activate · {funnel.stuck_orgs.length} stuck
           </p>
         </Section>
       )}
@@ -141,7 +141,7 @@ export default function Admin() {
           <table className="data-table"><thead><tr><th>Org</th><th>Plan</th><th>Status</th><th>Activated</th></tr></thead>
             <tbody>{plans.tenants.map((t) => (
               <tr key={t.slug}><td><strong>{t.slug}</strong></td><td>{t.plan}</td>
-                <td>{t.status}</td><td>{t.activated ? "✓" : "—"}</td></tr>
+                <td>{t.status}</td><td>{t.activated ? "✓" : "-"}</td></tr>
             ))}</tbody></table>
         </Section>
       )}
@@ -154,10 +154,10 @@ export default function Admin() {
               <tbody>{upgrades.requests.map((r) => (
                 <tr key={r.id} style={{ opacity: r.status === "closed" ? 0.55 : 1 }}>
                   <td><strong>{r.slug}</strong> <span className="muted">({r.current_plan})</span></td>
-                  <td>{r.plan}</td><td>{r.seats || "—"}</td>
+                  <td>{r.plan}</td><td>{r.seats || "-"}</td>
                   <td><a href={`mailto:${r.contact}`}>{r.contact}</a></td>
-                  <td style={{ maxWidth: 260, whiteSpace: "pre-wrap" }}>{r.note || "—"}</td>
-                  <td>{r.created_at ? r.created_at.slice(0, 10) : "—"}</td>
+                  <td style={{ maxWidth: 260, whiteSpace: "pre-wrap" }}>{r.note || "-"}</td>
+                  <td>{r.created_at ? r.created_at.slice(0, 10) : "-"}</td>
                   <td>{r.status === "pending"
                     ? <span className="cat cat-secret_leak">pending</span>
                     : <span className="cat cat-unsanctioned_ai">closed</span>}</td>
@@ -187,7 +187,7 @@ export default function Admin() {
           <label>Contract (months)
             <input type="number" min="0" value={form.contract_months} style={{ width: 80 }}
                    onChange={(e) => setForm((s) => ({ ...s, contract_months: e.target.value }))} /></label>
-          <button className="primary-btn slim" type="submit" disabled={issuing}>{issuing ? "…" : "Issue"}</button>
+          <button className="primary-btn slim" type="submit" disabled={issuing}>{issuing ? "..." : "Issue"}</button>
         </form>
         {issued && (
           <div className="flash-ok" style={{ marginBottom: 16 }}>
@@ -200,8 +200,8 @@ export default function Admin() {
           <table className="data-table"><thead><tr><th>ID</th><th>Org</th><th>Plan</th><th>Seats</th><th>Term ends</th><th>Status</th><th></th></tr></thead>
             <tbody>{licenses.licenses.map((L) => (
               <tr key={L.id} style={{ opacity: L.status === "revoked" ? 0.55 : 1 }}>
-                <td><code>{L.id}</code></td><td>{L.org}</td><td>{L.plan}</td><td>{L.seats || "—"}</td>
-                <td>{L.expires_at ? L.expires_at.slice(0, 10) : "—"}</td>
+                <td><code>{L.id}</code></td><td>{L.org}</td><td>{L.plan}</td><td>{L.seats || "-"}</td>
+                <td>{L.expires_at ? L.expires_at.slice(0, 10) : "-"}</td>
                 <td>{L.status === "revoked"
                   ? <span className="cat cat-secret_leak">revoked</span>
                   : <span className="cat cat-unsanctioned_ai">active</span>}</td>

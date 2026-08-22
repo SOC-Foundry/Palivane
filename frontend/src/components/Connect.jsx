@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../api.js";
 
-// Live "is each plane actually reporting?" strip — turns setup from fire-and-hope into
+// Live "is each plane actually reporting?" strip, turns setup from fire-and-hope into
 // fire-and-watch. Polls /api/setup-status (findings in the last 24h, per surface).
 function Readiness() {
   const [s, setS] = useState(null);
@@ -24,7 +24,7 @@ function Readiness() {
     <div className="readiness">
       {noUpstream && (
         <div className="error" style={{ marginBottom: 8 }}>
-          No model provider key set — self-serve connects skip gateway routing (local hooks
+          No model provider key set, self-serve connects skip gateway routing (local hooks
           still capture; Claude Code keeps its own account), and manually configured gateway
           clients get a stub reply. An admin can add your org's Anthropic API key under{" "}
           <strong>Settings → Gateway upstreams</strong>, then users re-run{" "}
@@ -68,7 +68,7 @@ export default function Connect({ tenant }) {
   const [provBusy, setProvBusy] = useState("");
   const [proxyHost, setProxyHost] = useState("");
   const [packBusy, setPackBusy] = useState(false);
-  // Bound the enrollment token baked into the installer — it's a reusable secret in a file.
+  // Bound the enrollment token baked into the installer, it's a reusable secret in a file.
   const [expiresInDays, setExpiresInDays] = useState("30"); // blank = never (not recommended)
   const [maxUses, setMaxUses] = useState("");               // blank = unlimited within window
   // Off by default: Claude Code keeps its own sign-in (Pro/Max). On = route prompts
@@ -155,18 +155,18 @@ export default function Connect({ tenant }) {
       <div className="connect-head">
         <h2>Connect sources</h2>
         <button className="primary-btn slim" onClick={mint} disabled={busy}>
-          {busy ? "…" : key ? "Generate another key" : "Generate a capture key"}
+          {busy ? "..." : key ? "Generate another key" : "Generate a capture key"}
         </button>
       </div>
       {err && <div className="error">{err}</div>}
-      {key && <p className="key-note">Capture key (shown once — copy it now):<br/><code>{key}</code></p>}
+      {key && <p className="key-note">Capture key (shown once, copy it now):<br/><code>{key}</code></p>}
       <p className="muted">Each source authenticates with this org's key and routes findings here
         (<code>{origin}</code>). Push the config below via your MDM, or paste it during setup.</p>
 
       <div className="quickstart">
-        <h3>⚡ Quick start — cover your whole org in one step</h3>
+        <h3>⚡ Quick start, cover your whole org in one step</h3>
         <p className="muted">Most orgs don't need the per-source setup below. Pick how you deliver
-           software to your fleet — Palivane generates everything (browser + Claude Code + agent
+           software to your fleet. Palivane generates everything (browser + Claude Code + agent
            tool-calls) already pointed here and pre-configured with this org's policy.</p>
         <label className="muted" style={{ fontSize: 12, display: "block", margin: "4px 0 8px" }}>
           <input type="checkbox" checked={routeGateway}
@@ -183,15 +183,15 @@ export default function Connect({ tenant }) {
             <div className="form-row" style={{ gap: 8 }}>
               <button className="primary-btn slim" disabled={!!provBusy}
                       onClick={() => getInstaller("macos")}>
-                {provBusy === "macos" ? "…" : "macOS (.sh)"}
+                {provBusy === "macos" ? "..." : "macOS (.sh)"}
               </button>
               <button className="primary-btn slim" disabled={!!provBusy}
                       onClick={() => getInstaller("windows")}>
-                {provBusy === "windows" ? "…" : "Windows (.ps1)"}
+                {provBusy === "windows" ? "..." : "Windows (.ps1)"}
               </button>
               <button className="primary-btn slim" disabled={!!provBusy}
                       onClick={() => getInstaller("linux")}>
-                {provBusy === "linux" ? "…" : "Linux (.sh)"}
+                {provBusy === "linux" ? "..." : "Linux (.sh)"}
               </button>
             </div>
             <div className="form-row" style={{ gap: 8, marginTop: 8, alignItems: "center" }}>
@@ -212,7 +212,7 @@ export default function Connect({ tenant }) {
             <p className="muted">Agentless. One pack your MDM pushes: extension force-install,
                system-proxy profile, and Claude Code managed settings + hooks.</p>
             {!hasMdm && (
-              <p className="muted">🔒 The MDM policy pack is a Team plan feature —{" "}
+              <p className="muted">🔒 The MDM policy pack is a Team plan feature,{" "}
                  <a href="mailto:sales@palivane.io">contact us</a>. (The setup script on the
                  left covers the same sources and is free.)</p>
             )}
@@ -220,13 +220,13 @@ export default function Connect({ tenant }) {
               <input placeholder="egress proxy host (optional)" value={proxyHost}
                      onChange={(e) => setProxyHost(e.target.value)} />
               <button className="primary-btn slim" disabled={packBusy || !hasMdm} onClick={getPolicyPack}>
-                {packBusy ? "…" : "Download policy pack"}
+                {packBusy ? "..." : "Download policy pack"}
               </button>
             </div>
           </div>
         </div>
         <p className="muted" style={{ marginTop: 4 }}>Each download carries a reusable enrollment
-           token — treat the file as a secret; revoke it anytime under enrollment tokens. MDM
+           token, treat the file as a secret; revoke it anytime under enrollment tokens. MDM
            details: <code>docs/mdm-policy-pack.md</code>.</p>
         <Readiness />
       </div>
@@ -246,27 +246,27 @@ export default function Connect({ tenant }) {
         <p className="muted">Push as Claude Code <code>managed-settings.json</code> (Linux
            <code>/etc/claude-code/</code>, macOS <code>/Library/Application Support/ClaudeCode/</code>).</p>
         <Block text={claudeCode} />
-        <p className="muted" style={{ marginTop: 10 }}>Or self-serve (BYOD / pilots) — the user
+        <p className="muted" style={{ marginTop: 10 }}>Or self-serve (BYOD / pilots), the user
            runs <code>palivane-connect {origin}</code> to sign in and wire up the local hooks;
            Claude Code keeps its own sign-in (Pro/Max subscription or API account). Add
            <code> --route-gateway</code> to also reroute API traffic through the gateway.
            No token distribution.</p>
         <p className="muted" style={{ marginTop: 8 }}>Gateway-routed clients forward with your
-           org's own provider account (API credits, not personal Pro/Max plans) — add your
+           org's own provider account (API credits, not personal Pro/Max plans), add your
            Anthropic API key under
            <strong> Settings → Gateway upstreams</strong> or they'll get a stub reply.</p>
       </div>
 
       <div className="connect-card">
         <h3>③ Desktop apps / CLIs / network (egress proxy)</h3>
-        <p className="muted">One-line installer — no clone required. Defaults to <strong>CLI
+        <p className="muted">One-line installer, no clone required. Defaults to <strong>CLI
            governance</strong>: per-tool shims route the AI CLIs (Claude Code, Codex, Gemini)
            through the proxy, <em>no sudo</em>. The right fit for small orgs without MDM; the
            user signs in via browser (<code>palivane connect</code>), no token to distribute.</p>
         <Block text={installCli} />
         <p className="muted" style={{ marginTop: 10 }}>Add <code>--desktop</code> to also govern the
            Claude/ChatGPT <strong>desktop apps</strong> and browsers system-wide (system proxy + CA
-           trust; asks for sudo). Superset of the default — includes the CLI shims.</p>
+           trust; asks for sudo). Superset of the default, includes the CLI shims.</p>
         <Block text={installDesktop} />
         <p className="muted" style={{ marginTop: 10 }}>Fleets: push the system proxy + corporate CA
            via MDM (the policy pack above), or run the addon directly near your egress:</p>
@@ -275,8 +275,8 @@ export default function Connect({ tenant }) {
 
       <div className="connect-card">
         <h3>④ Claude Code tool calls &amp; local MCP servers (hooks)</h3>
-        <p className="muted">What the network planes can't see: the agent's <em>local</em> actions —
-           shell commands, file access, stdio MCP servers — inspected before execution. Merge into
+        <p className="muted">What the network planes can't see: the agent's <em>local</em> actions
+           shell commands, file access, stdio MCP servers, inspected before execution. Merge into
            <code> ~/.claude/settings.json</code> or the managed settings above (deploy
            <code> palivane-hook</code>/<code>palivane-posture</code> from <code>cli/</code> to a fixed
            path first). Monitor by default; <code>PALIVANE_ENFORCE=true</code> blocks.</p>
@@ -291,7 +291,7 @@ export default function Connect({ tenant }) {
       <div className="connect-card">
         <h3>⑤ claude-otel telemetry bridge (optional)</h3>
         <p className="muted">Already running <code>claude-otel</code>? <code>palivane-otel</code> tails its
-           OTEL log and forwards Claude Code's prompts and tool calls to Palivane — a capture plane with
+           OTEL log and forwards Claude Code's prompts and tool calls to Palivane, a capture plane with
            <em> no proxy, CA, or hook</em>. Monitor-only (telemetry is post-hoc, so it observes but can't
            block); depth follows the claude-otel privacy profile.</p>
         <Block text={otelCmd} />

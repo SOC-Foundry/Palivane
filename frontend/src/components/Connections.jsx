@@ -1,4 +1,4 @@
-// Connections — active capture sources (API keys) + enrollment tokens, with revoke.
+// Connections, active capture sources (API keys) + enrollment tokens, with revoke.
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 
@@ -16,7 +16,7 @@ export default function Connections() {
   const flash = (text, ok = true) => { setMsg({ ok, text }); setTimeout(() => setMsg(null), 3000); };
 
   // Revoked keys/tokens are kept for audit attribution (findings reference the key that
-  // produced them), so they never leave the DB — just hide them from the list by default.
+  // produced them), so they never leave the DB, just hide them from the list by default.
   const visibleKeys = keys.filter((k) => showRevoked || k.active);
   const visibleTokens = tokens.filter((t) => showRevoked || t.active);
   const hiddenKeys = keys.length - keys.filter((k) => k.active).length;
@@ -35,7 +35,7 @@ export default function Connections() {
   }
 
   async function revokeToken(t) {
-    // Revoking the token blocks NEW enrollments only — devices already enrolled keep their
+    // Revoking the token blocks NEW enrollments only, devices already enrolled keep their
     // own capture keys (revoke those above to cut a live device off).
     if (!window.confirm(`Revoke enrollment token "${t.label || t.prefix}"? `
       + `No new devices can enroll with it; already-enrolled devices are unaffected.`)) return;
@@ -48,7 +48,7 @@ export default function Connections() {
       <div className="content-head">
         <div>
           <h1 className="page-title">Connections</h1>
-          <p className="page-sub">Capture sources bound to this org — extension sign-ins, Claude Code,
+          <p className="page-sub">Capture sources bound to this org, extension sign-ins, Claude Code,
              proxy, and per-device keys. Revoke to cut a source off (it fails open).</p>
         </div>
         <div className="head-actions">
@@ -71,14 +71,14 @@ export default function Connections() {
           keys.length === 0
             ? <p className="muted">No keys yet. Mint one on the Connect page, or let
                 users sign in from the extension / <code>palivane connect</code>.</p>
-            : <p className="muted">No active keys. {hiddenKeys} revoked — tick “Show revoked” to see them.</p>
+            : <p className="muted">No active keys. {hiddenKeys} revoked, tick 'Show revoked' to see them.</p>
         ) : (
           <table className="data-table">
             <thead><tr><th>Actor / label</th><th>Prefix</th><th>Last seen</th><th>Created</th><th></th></tr></thead>
             <tbody>
               {visibleKeys.map((k) => (
                 <tr key={k.id} style={{ opacity: k.active ? 1 : 0.5 }}>
-                  <td>{k.actor || k.label || "—"}</td>
+                  <td>{k.actor || k.label || "-"}</td>
                   <td><code>{k.prefix}</code></td>
                   <td>{when(k.last_used_at)}</td>
                   <td>{when(k.created_at)}</td>
@@ -98,14 +98,14 @@ export default function Connections() {
         {visibleTokens.length === 0 ? (
           tokens.length === 0
             ? <p className="muted">None. Downloading a device installer (Connect) mints one.</p>
-            : <p className="muted">No active tokens. {hiddenTokens} revoked — tick “Show revoked” to see them.</p>
+            : <p className="muted">No active tokens. {hiddenTokens} revoked, tick 'Show revoked' to see them.</p>
         ) : (
           <table className="data-table">
             <thead><tr><th>Label</th><th>Prefix</th><th>Uses</th><th>Created</th><th>Status</th></tr></thead>
             <tbody>
               {visibleTokens.map((t) => (
                 <tr key={t.prefix} style={{ opacity: t.active ? 1 : 0.5 }}>
-                  <td>{t.label || "—"}</td>
+                  <td>{t.label || "-"}</td>
                   <td><code>{t.prefix}</code></td>
                   <td>{t.uses}{t.max_uses ? ` / ${t.max_uses}` : ""}</td>
                   <td>{when(t.created_at)}</td>

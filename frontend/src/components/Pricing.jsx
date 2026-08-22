@@ -1,5 +1,5 @@
 // Public pricing page at /pricing. Two purchasable tiers (Team · Enterprise) plus the
-// 14-day trial; mirrors the real plan gates in backend app/plans.py — keep in sync.
+// 14-day trial; mirrors the real plan gates in backend app/plans.py, keep in sync.
 import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
 
 const TIERS = [
@@ -12,7 +12,7 @@ const TIERS = [
       "Up to 25 people (more on request)",
       "Covers the browser, desktop AI apps, AI coding tools, your code, and GitHub Actions",
       "Live findings, every AI tool in use, and who is covered",
-      "Watch-only or blocking — your call",
+      "Watch-only or blocking, your call",
       "Alerts where you already work, plus hourly or daily digests",
       "Push the setup to managed laptops (Jamf · Intune · Group Policy)",
       "Priority email support",
@@ -27,7 +27,7 @@ const TIERS = [
       "Single sign-on with your identity provider (OIDC & SAML)",
       "Findings forwarded to your SIEM (Splunk HEC · CEF · JSON)",
       "Delivery to your own data lake (S3 for Panther, Athena, Snowflake)",
-      "Optional LLM judge for the cases fixed rules miss — managed, or on your own provider key",
+      "Optional LLM judge for the cases fixed rules miss, managed, or on your own provider key",
       "Run it isolated, on infrastructure you control",
       "Custom limits, signed DPA, and help through security reviews",
     ],
@@ -41,7 +41,7 @@ const TIERS = [
       "First findings in about two minutes",
       "No card, no call required to start",
       "Nothing to install on anyone's laptop",
-      "When it ends, capture keeps running — you just stop configuring",
+      "When it ends, capture keeps running, you just stop configuring",
     ],
   },
 ];
@@ -87,7 +87,7 @@ export default function Pricing() {
           </div>
           <p className="lp-sub" style={{ textAlign: "center", marginTop: 28 }}>
             Running it yourself is the free option: Palivane's core is source-available, and an
-            unlicensed instance keeps working indefinitely — full detection, with no LLM API key
+            unlicensed instance keeps working indefinitely, full detection, with no LLM API key
             or external AI service required. Team and Enterprise licenses add
             the fleet and compliance features to a self-hosted deployment too.
             Questions: <a href="mailto:sales@palivane.io">sales@palivane.io</a>.

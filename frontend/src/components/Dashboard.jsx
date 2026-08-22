@@ -7,9 +7,9 @@ function SetupHealth() {
   useEffect(() => { api.setupStatus().then(setS).catch(() => {}); }, []);
   if (!s) return null;
   const planes = [
-    ["Gateway — your LLMs", s.planes.gateway],
-    ["Shadow-AI — extension / proxy", s.planes.shadow_ai],
-    ["Agentic — MCP", s.planes.mcp],
+    ["Gateway, your LLMs", s.planes.gateway],
+    ["Shadow-AI, extension / proxy", s.planes.shadow_ai],
+    ["Agentic, MCP", s.planes.mcp],
     ["Credentials at rest", s.planes.secrets],
   ];
   return (

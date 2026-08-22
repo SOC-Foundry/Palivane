@@ -24,7 +24,7 @@ export default function ExtensionConnect() {
   const params = new URLSearchParams(window.location.search);
   const redirectUri = params.get("redirect_uri") || "";
   const state = params.get("state") || "";
-  // Which device is connecting (browser deviceId / palivane-connect hostname) — relayed to the
+  // Which device is connecting (browser deviceId / palivane-connect hostname), relayed to the
   // token endpoint so re-connecting the same device rotates its key instead of piling up rows.
   const device = params.get("device") || "";
   const [authed, setAuthed] = useState(!!getToken());
@@ -49,7 +49,7 @@ export default function ExtensionConnect() {
                        // Can the gateway forward Claude Code to a real model, or does the
                        // org still need a provider key? The CLI warns on upstream=0.
                        `&upstream=${r.upstream_forwards === false ? "0" : "1"}` +
-                       // Org enforce stance (Settings → Enforcement) — palivane-connect
+                       // Org enforce stance (Settings → Enforcement), palivane-connect
                        // provisions it into the hooks it installs.
                        `&enforce=${r.enforce ? "1" : "0"}`;
         if (kind === "fragment") u.hash = params;   // extension (launchWebAuthFlow)
@@ -68,11 +68,11 @@ export default function ExtensionConnect() {
     <div className="login-screen">
       <div className="login-card" style={{ textAlign: "center" }}>
         <img className="login-logo" src="/palivane-logo.png" alt="Palivane" width="120" height="120" />
-        {status === "connecting" && <p className="login-sub">Connecting your browser extension…</p>}
+        {status === "connecting" && <p className="login-sub">Connecting your browser extension...</p>}
         {status === "done" && (
           <p className="login-sub">Connected as <strong>{detail}</strong>. You can close this tab.</p>
         )}
-        {status === "error" && <div className="error">Couldn’t connect the extension: {detail}</div>}
+        {status === "error" && <div className="error">Couldn't connect the extension: {detail}</div>}
       </div>
     </div>
   );

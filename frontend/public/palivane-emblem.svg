@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Palivane">
+  <!-- Chamfered octagon with a vertical split; the right half is cut into three bars.
+       Redrawn as geometry from the supplied wordmark so it stays crisp at any size —
+       the source was a 42px raster crop. Brand green #239D74. -->
+  <path fill="#239D74" fill-rule="evenodd" d="
+    M 28.6 0 H 71.4 L 100 28.6 V 71.4 L 71.4 100 H 28.6 L 0 71.4 V 28.6 Z
+    M 47.6 0 V 100 H 52.4 V 0 Z
+    M 52.4 28.6 V 35.7 H 100 V 28.6 Z
+    M 52.4 64.3 V 71.4 H 100 V 64.3 Z
+  "/>
+</svg>

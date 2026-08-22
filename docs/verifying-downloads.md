@@ -8,20 +8,20 @@ you can verify the same things by hand.
 
 ## What the installer checks
 
-1. Fetches `/cli/manifest.json` — the version and a **SHA-256 for every script** the
+1. Fetches `/cli/manifest.json`, the version and a **SHA-256 for every script** the
    deployment serves.
-2. Fetches `/cli/manifest.sig` — an **ECDSA P-256 / SHA-256 signature** over the manifest's
+2. Fetches `/cli/manifest.sig`, an **ECDSA P-256 / SHA-256 signature** over the manifest's
    canonical `{name: sha256}` map, and verifies it against a **public key baked into the
    installer** using `openssl dgst -verify`. A signature that doesn't verify against that
-   pinned key is rejected — a network attacker who can rewrite the served files still can't
+   pinned key is rejected, a network attacker who can rewrite the served files still can't
    forge a release.
 3. Downloads each script to a temp dir and checks its SHA-256 against the (now-verified)
-   manifest **before** `chmod +x` — a file that doesn't match is refused.
+   manifest **before** `chmod +x`, a file that doesn't match is refused.
 
 If the deployment signs releases, the installer **fails closed**: a missing or invalid
 signature aborts the install. `--no-verify` opts out (not advised). A deployment that
 hasn't provisioned a signing key yet serves an unsigned manifest, and the installer
-**warns but proceeds** — so integrity checking rolls out without breaking installs, and
+**warns but proceeds**, so integrity checking rolls out without breaking installs, and
 enforcement turns on automatically the moment the key is in place.
 
 ## Verify by hand
@@ -33,7 +33,7 @@ BASE=https://app.palivane.io
 curl -fsSL "$BASE/cli/manifest.json" -o manifest.json
 curl -fsSL "$BASE/cli/manifest.sig" -o manifest.sig
 
-# 2) canonical digest (compact, sorted {name: sha256}) — what is signed
+# 2) canonical digest (compact, sorted {name: sha256}), what is signed
 python3 - manifest.json > digest <<'PY'
 import json, sys
 f = json.load(open(sys.argv[1]))["files"]
@@ -67,7 +67,7 @@ into the installer it generates (`PALIVANE_RELEASE_PUBKEY`).
 ## Reproducible builds
 
 The served scripts are the repository's `cli/*` and `proxy/palivane_addon.py` files
-**verbatim** — the backend serves them unmodified, so the manifest hashes are reproducible
+**verbatim**, the backend serves them unmodified, so the manifest hashes are reproducible
 from source:
 
 ```bash
@@ -87,7 +87,7 @@ clean checkout and confirm the vendor signature over it.
 The extension ships as a committed `.vsix`. Until it's published to the Marketplace (which
 signs and verifies on install) verify it out-of-band: compare its SHA-256 against the value
 in the release notes, and install with `code --install-extension palivane-vscode-<v>.vsix`.
-Marketplace publishing — which gives you signature verification for free — is tracked
+Marketplace publishing, which gives you signature verification for free, is tracked
 separately.
 
 ## Operator: turning on signing

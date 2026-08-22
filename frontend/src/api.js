@@ -22,14 +22,14 @@ async function req(path, opts = {}) {
   const res = await fetch(BASE + path, { ...opts, headers });
   if (res.ok) return res.json();
 
-  // Prefer the server's own explanation. FastAPI puts it in `detail` — a string for our
+  // Prefer the server's own explanation. FastAPI puts it in `detail`, a string for our
   // HTTPExceptions, a list for 422 validation errors (left to the raw fallback below).
   const body = await res.text();
   let detail = "";
   try {
     const parsed = JSON.parse(body);
     if (typeof parsed.detail === "string") detail = parsed.detail;
-  } catch { /* not JSON — fall through to the raw body */ }
+  } catch { /* not JSON, fall through to the raw body */ }
 
   if (res.status === 401) {
     // Distinguish a dead session from a refused sign-in. A 401 while holding a token means
@@ -39,7 +39,7 @@ async function req(path, opts = {}) {
     if (token) {
       setToken(null);
       onUnauthorized();
-      throw new Error(detail || "session expired — please sign in again");
+      throw new Error(detail || "session expired, please sign in again");
     }
     throw new Error(detail || "invalid credentials");
   }
@@ -192,7 +192,7 @@ export const api = {
   auditSessions: (days = 7) => req(`/audit/sessions?days=${days}`),
   auditTimeline: (actor, days = 7) =>
     req(`/audit/timeline?actor=${encodeURIComponent(actor)}&days=${days}`),
-  // Downloads the normalized cross-vendor audit as a file (jsonl | cef) — raw text, not JSON.
+  // Downloads the normalized cross-vendor audit as a file (jsonl | cef), raw text, not JSON.
   downloadAudit: async (days = 7, format = "jsonl") => {
     const headers = {};
     const token = getToken();

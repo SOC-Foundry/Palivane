@@ -1,14 +1,14 @@
 # Setting up Palivane
 
-A start-to-finish guide to getting Palivane running — from zero to a live console with
+A start-to-finish guide to getting Palivane running, from zero to a live console with
 findings streaming in. Pick one of three paths:
 
-- **[Native install](#path-a--native-install-recommended)** — a release tarball installed
+- **[Native install](#path-a--native-install-recommended)**, a release tarball installed
   as a systemd service; no Docker or container runtime on the server. **Recommended for
   real deployments.**
-- **[Docker](#path-b--docker-whole-stack)** — Postgres + backend + nginx-served console,
+- **[Docker](#path-b--docker-whole-stack)**. Postgres + backend + nginx-served console,
   one command. Handy for a quick demo or if your fleet is already compose-based.
-- **[From source](#path-c--from-source-dev)** — run the backend and frontend dev servers
+- **[From source](#path-c--from-source-dev)**, run the backend and frontend dev servers
   directly (SQLite, hot reload). Best for iterating on the code.
 
 Once it's up, jump to [first sign-in](#3-first-sign-in), then
@@ -21,14 +21,14 @@ Once it's up, jump to [first sign-in](#3-first-sign-in), then
 
 ---
 
-## Architecture — where everything runs
+## Architecture, where everything runs
 
 Palivane is **self-hosted**: you run it on your own infrastructure, and findings stay in
-your database. There's no Palivane cloud. It's two layers — **one server you host**, and
+your database. There's no Palivane cloud. It's two layers, **one server you host**, and
 **capture planes at the edge** that feed it.
 
 ```
-  EDGE — where AI is used                          YOUR SERVER (one host you control)
+  EDGE, where AI is used                          YOUR SERVER (one host you control)
  ┌──────────────────────────────┐                ┌──────────────────────────────────────┐
  │ First-party apps / Claude     │   /v1   ─────► │  ┌──────────────┐   ┌──────────────┐  │
  │ Code / OpenAI·Gemini SDKs     │  (config)      │  │ web (nginx)  │   │   backend    │  │
@@ -46,12 +46,12 @@ your database. There's no Palivane cloud. It's two layers — **one server you h
 ```
 
 - **The server** is three components on one host you choose (a VM, on-prem box, or your
-  own cloud): Postgres, the backend (FastAPI — the API, the **detection engine**, and the
+  own cloud): Postgres, the backend (FastAPI, the API, the **detection engine**, and the
   LLM gateway), and the console. The recommended shape is the
-  [native install](#path-a--native-install-recommended) — a single systemd service that
+  [native install](#path-a--native-install-recommended), a single systemd service that
   serves the console and API together; the same stack also ships as three
   `docker-compose` services if you prefer containers.
-- **The detection compute runs inside `backend`** — local CPU work (see
+- **The detection compute runs inside `backend`**, local CPU work (see
   [how detection works](../README.md#how-detection-works)). The only outbound calls are
   *optional*: the LLM judge, and the gateway forwarding allowed calls to your upstream.
 - **Capture planes** sit where AI is actually used and call back to the server's API.
@@ -59,17 +59,17 @@ your database. There's no Palivane cloud. It's two layers — **one server you h
 ### What runs on each end-user's machine?
 
 **Nothing requires a manual, per-user install.** What (if anything) lands on an endpoint
-depends on how that person reaches AI — and it's all admin-deployed and zero-touch:
+depends on how that person reaches AI, and it's all admin-deployed and zero-touch:
 
 | AI is used via… | On the end-user machine | How it's deployed | User action |
 | --- | --- | --- | --- |
-| First-party apps, Claude Code, OpenAI/Gemini SDKs | **Nothing installed** — just a base-URL config pointing at Palivane | Env var, or Claude Code `managed-settings.json` pushed by MDM | None |
+| First-party apps, Claude Code, OpenAI/Gemini SDKs | **Nothing installed**, just a base-URL config pointing at Palivane | Env var, or Claude Code `managed-settings.json` pushed by MDM | None |
 | Browser AI (claude.ai, ChatGPT, Gemini) | A browser **extension** in Chrome/Edge | **Force-installed** via MDM / group policy (`ExtensionInstallForcelist`) + managed config | None |
-| Desktop apps, IDE assistants, CLIs | **No app** — a system-proxy setting + your corporate **root CA** (usually already trusted on managed fleets) | Pushed via MDM / PAC file; the proxy itself runs as a service near egress, not on each machine | None |
+| Desktop apps, IDE assistants, CLIs | **No app**, a system-proxy setting + your corporate **root CA** (usually already trusted on managed fleets) | Pushed via MDM / PAC file; the proxy itself runs as a service near egress, not on each machine | None |
 
-All three **fail open** — if Palivane is unreachable, the user's tools keep working. The
+All three **fail open**, if Palivane is unreachable, the user's tools keep working. The
 catch is reach: these cover **managed / on-network devices**. Unmanaged or personal
-devices can't be captured this way — you find that gap with
+devices can't be captured this way, you find that gap with
 [coverage reconciliation](../README.md#coverage-reconciliation-finding-the-gap) (compare
 your IdP/CASB "who used AI" list against who Palivane actually captured).
 
@@ -83,14 +83,14 @@ your IdP/CASB "who used AI" list against who Palivane actually captured).
 | Docker | Docker Engine + the Compose plugin (`docker compose version`). |
 | From source | Python 3.11+ and Node 18+ (`python3 --version`, `node --version`). |
 
-An **LLM API key is optional** — Palivane runs fully on its offline regex/heuristic
+An **LLM API key is optional**. Palivane runs fully on its offline regex/heuristic
 detectors with no key. To enrich detection with the LLM judge, bring an **API key** for
 any supported provider (`JUDGE_PROVIDER=anthropic|openai|gemini` with the matching
 `*_API_KEY`), and paid **Gemini Flash** is the lowest-cost option per verdict. **No API
 account at all?** Orgs on subscription/marketplace procurement can run Claude through
 their existing cloud agreement instead: `JUDGE_PROVIDER=vertex` (GCP Vertex AI,
 Application Default Credentials) or `JUDGE_PROVIDER=bedrock` (AWS, standard credential
-chain) — set `JUDGE_MODEL` to your catalog's dated model id. Developer Pro/Max/Enterprise
+chain), set `JUDGE_MODEL` to your catalog's dated model id. Developer Pro/Max/Enterprise
 *seats* are never used for judging (see the deprecation below).
 
 > **Deprecated: `JUDGE_PROVIDER=claude-cli`.** Earlier versions recommended running
@@ -98,19 +98,19 @@ chain) — set `JUDGE_MODEL` to your catalog's dated model id. Developer Pro/Max
 > subscription. Anthropic's terms of use (updated 2026-02-19, enforced 2026-04-04)
 > restrict subscription authentication to Anthropic's own products, and an automated
 > judge driving the CLI falls outside that. The provider still functions but logs a
-> deprecation warning and **will be removed** — migrate to an API key. Do not use the
+> deprecation warning and **will be removed**, migrate to an API key. Do not use the
 > free Gemini tier for the judge either: its terms allow training on submitted data,
 > which is exactly the content Palivane exists to protect.
 
 ---
 
-## Path A — native install (recommended)
+## Path A, native install (recommended)
 
-Runs Palivane directly on a Linux server as a **systemd service** — no Docker, no
+Runs Palivane directly on a Linux server as a **systemd service**, no Docker, no
 container runtime. One service serves the console, the API, and the client installers
 single-origin on one port.
 
-**1. Build the release tarball** (any box with Python + Node — your laptop or CI):
+**1. Build the release tarball** (any box with Python + Node, your laptop or CI):
 
 ```bash
 ./deploy/native/build-release.sh
@@ -129,12 +129,12 @@ sudo palivane-admin create-user   --tenant acme --email admin@acme.local --role 
 The installer creates a dedicated system user and venv, writes `/etc/palivane/palivane.env`
 (with a generated `PALIVANE_SECRET_KEY`), runs migrations, and starts the `palivane-api`
 service. For production, switch `DATABASE_URL` to Postgres and front the service with
-nginx/Caddy for TLS — full notes, upgrade flow, and management commands in
+nginx/Caddy for TLS, full notes, upgrade flow, and management commands in
 [`deploy/native/README.md`](../deploy/native/README.md).
 
 ---
 
-## Path B — Docker (whole stack)
+## Path B. Docker (whole stack)
 
 From the repo root:
 
@@ -143,7 +143,7 @@ cp .env.docker.example .env     # then edit secrets (see below)
 docker compose up --build
 ```
 
-Open **http://localhost:8080**. That's it — the backend container waits for Postgres,
+Open **http://localhost:8080**. That's it, the backend container waits for Postgres,
 runs `alembic upgrade head`, and (with `SEED_ON_START=true`) seeds a demo tenant on
 first boot.
 
@@ -154,7 +154,7 @@ first boot.
 | `PALIVANE_SECRET_KEY` | **Required for real use.** Signs auth tokens. Generate: `openssl rand -hex 32`. Left at the default, the API boots with an insecure dev key and logs a warning. |
 | `WEB_PORT` | Host port for the console (default `8080`). |
 | `SEED_ON_START` | Seed a demo tenant + admin + sample findings on first boot. Set `false` once you've created your real org. |
-| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` | Optional — turns on the LLM judge (Claude / GPT / Gemini; `JUDGE_PROVIDER=auto` selects). |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` | Optional, turns on the LLM judge (Claude / GPT / Gemini; `JUDGE_PROVIDER=auto` selects). |
 
 Everything else (`POSTGRES_*`, `CORS_ORIGINS`, gateway/ingest settings) has a working
 default in `.env.docker.example`.
@@ -164,7 +164,7 @@ volume and start fresh).
 
 ---
 
-## Path C — from source (dev)
+## Path C, from source (dev)
 
 Run the two pieces in separate terminals. This uses SQLite and auto-creates the schema.
 
@@ -175,8 +175,8 @@ cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-cp .env.example .env          # optional — set ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY for the judge
-python -m app.seed            # optional — demo tenant + admin + sample findings
+cp .env.example .env          # optional, set ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY for the judge
+python -m app.seed            # optional, demo tenant + admin + sample findings
 uvicorn app.main:app --reload --port 8088
 ```
 
@@ -210,7 +210,7 @@ If you seeded the demo tenant, sign in with:
 
 (Override with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` before seeding.)
 
-**Creating your own org instead** — use *Create a new organization* on the login
+**Creating your own org instead**, use *Create a new organization* on the login
 screen, or:
 
 ```bash
@@ -223,22 +223,22 @@ console afterward. Lock down self-serve signup for a single-org deployment with
 `PALIVANE_ALLOW_SIGNUP=false`.
 
 > Only your **security team** gets console accounts. The employees being *governed* are
-> never enrolled — they show up as an `actor` attributed from your SSO / API key.
+> never enrolled, they show up as an `actor` attributed from your SSO / API key.
 
 ---
 
 ## 4. Connect a source
 
 A fresh org has no findings until you point a capture plane at it. Open the **Connect**
-tab (admin only) — it mints a per-org capture key (`ak_…`) and generates copy-paste
+tab (admin only), it mints a per-org capture key (`ak_…`) and generates copy-paste
 install config for each source.
 
-**Fastest path — Quick start.** The top of the Connect tab covers the whole fleet in
+**Fastest path. Quick start.** The top of the Connect tab covers the whole fleet in
 one step; most orgs don't need the per-source table below. Pick one:
 
 - **You use MDM (Jamf / Intune / GPO)** → *Download policy pack*. An agentless bundle your
   MDM pushes: browser force-install, system-proxy profile, and Claude Code managed settings
-  + hooks — pre-filled with this org's key and approved-extension lists.
+  + hooks, pre-filled with this org's key and approved-extension lists.
 - **You hand out a setup script** → *Download the macOS (`.sh`), Windows (`.ps1`), or Linux
   (`.sh`) installer* (Linux covers Arch and derivatives; Debian/Fedora too).
   Run it on any number of devices; each self-enrolls for its own per-device key, then
@@ -248,10 +248,10 @@ A **Reporting (last 24h)** strip on the same card lights up per plane (Browser �
 Code/gateway · Agent tool-calls) as findings arrive, so you can confirm rollout worked
 without leaving the page.
 
-### Small team — one command per machine (no MDM)
+### Small team, one command per machine (no MDM)
 
 A handful of machines and no MDM? Skip the policy pack and run the one-line installer on
-each device — the same self-serve path as the [Setup page](/setup), just run once per
+each device, the same self-serve path as the [Setup page](/setup), just run once per
 machine:
 
 ```bash
@@ -260,7 +260,7 @@ curl -fsSL https://<your-console>/install.sh | bash
 
 It signs the user in (a browser window opens), installs the governance CLI into
 `~/.palivane/bin`, wires prompt + tool-call hooks into Claude Code, Cursor, Codex, and Gemini
-CLI, and stands up the sudo-free egress proxy for everything else — all
+CLI, and stands up the sudo-free egress proxy for everything else, all
 subscription-compatible, no config files. Flags:
 
 | Flag | Effect |
@@ -270,7 +270,7 @@ subscription-compatible, no config files. Flags:
 | `--no-proxy` | Editor/CLI hooks only; skip the egress proxy. |
 
 Finish the browser surface by installing the Palivane extension (Chrome/Edge) and clicking
-**Sign in to Palivane** in its popup. Re-running the installer — or just `palivane connect` —
+**Sign in to Palivane** in its popup. Re-running the installer, or just `palivane connect`,
 **upgrades the capture-plane scripts in place**, so shipping a fix to a small fleet is just
 "have everyone re-run it." To remove Palivane from a machine, see
 [Uninstalling](#uninstalling-from-a-machine).
@@ -280,25 +280,25 @@ one plane at a time. Pick whichever matches how your org uses AI:
 
 | AI is used via… | Capture plane | Setup |
 | --- | --- | --- |
-| Your own apps / CLIs / Claude Code / Codex CLI | **LLM gateway** (`/v1`) | Point the client's base URL at Palivane — see below. |
+| Your own apps / CLIs / Claude Code / Codex CLI | **LLM gateway** (`/v1`) | Point the client's base URL at Palivane, see below. |
 | Browser web UIs (claude.ai, chatgpt.com, Microsoft Copilot) | **Browser extension** | [`extension/README.md`](../extension/README.md) |
 | Desktop apps, IDE assistants, 3rd-party CLIs (GitHub Copilot, Gemini CLI) | **Egress proxy** | [`proxy/README.md`](../proxy/README.md) |
-| **Cursor** (cert-pinned chat) | **Local hook** (`palivane-cursor-hook`) | [`cli/README.md`](../cli/README.md) — auto-installed by `palivane connect` |
+| **Cursor** (cert-pinned chat) | **Local hook** (`palivane-cursor-hook`) | [`cli/README.md`](../cli/README.md), auto-installed by `palivane connect` |
 | Secrets/PII reaching a **Git repo** (commit / PR) | **Pre-commit hook + GitHub Action** | [`git/README.md`](../git/README.md) |
 | Credentials **at rest** on a device (SSH/RSA keys, `.env`, tokens) | **`palivane-secrets`** (`secrets` surface) | [`cli/README.md`](../cli/README.md); schedule via the MDM pack |
 | Existing **TruffleHog / Gitleaks / GitGuardian** jobs | **`palivane-import`** / `palivane-secrets --engine` | [`git/README.md`](../git/README.md), [`cli/README.md`](../cli/README.md) |
 
 > **Cursor (AI IDE).** Cursor's model/chat endpoint (`api2.cursor.sh`) **pins its
-> certificate**, so a TLS-inspecting egress proxy can't read its prompts (measured — the
+> certificate**, so a TLS-inspecting egress proxy can't read its prompts (measured, the
 > handshake is rejected even with a trusted CA), and Cursor ignores `OPENAI_BASE_URL` so
 > the gateway can't be interposed. Cover Cursor with the **local plane**:
 > [`palivane-cursor-hook`](../cli/README.md) uses Cursor's Hooks API to inspect the prompt
 > (`beforeSubmitPrompt`), shell commands, MCP calls, and file reads/edits **before they
-> run** — immune to the pinning. The policy pack ships a ready-to-push `cursor-hooks.json`.
+> run**, immune to the pinning. The policy pack ships a ready-to-push `cursor-hooks.json`.
 > Pair it with the **git plane** (secrets/PII in committed code) and the **gateway** for
 > first-party AI. See the [`proxy/README.md`](../proxy/README.md) Cursor caveat.
 
-**Quick smoke test of the gateway** (monitor mode, no upstream needed — returns a stub):
+**Quick smoke test of the gateway** (monitor mode, no upstream needed, returns a stub):
 
 ```bash
 # Use a long-lived API key from the Connect page (or an admin JWT) as $TOKEN.
@@ -309,9 +309,9 @@ curl localhost:8088/v1/chat/completions -H "Authorization: Bearer $TOKEN" \
 That prompt records an `llm_io` finding (or returns HTTP 403 in enforce mode); refresh
 the console and it appears in the findings list. The gateway also speaks the **OpenAI
 Responses API** (`/v1/responses`, used by Codex CLI), **Anthropic** (`/v1/messages`), and
-**Gemini** (`/v1beta/models/{model}:generateContent`) — see the README for client snippets.
+**Gemini** (`/v1beta/models/{model}:generateContent`), see the README for client snippets.
 
-**Monitor vs enforce** — by default the gateway *records* risky prompts and passes them
+**Monitor vs enforce**, by default the gateway *records* risky prompts and passes them
 through. Set `GATEWAY_ENFORCE=true` (and `GATEWAY_BLOCK_SEVERITY`, default `high`) to
 **block** them inline.
 
@@ -321,7 +321,7 @@ through. Set `GATEWAY_ENFORCE=true` (and `GATEWAY_BLOCK_SEVERITY`, default `high
 
 The offline detectors need no API key. To add the LLM judge for the novel cases the
 rules miss, set one provider key and restart the backend. `JUDGE_PROVIDER=auto` (default)
-picks whichever key is set — Claude, GPT, or Gemini:
+picks whichever key is set. Claude, GPT, or Gemini:
 
 - **Native install:** add `ANTHROPIC_API_KEY=sk-ant-...` (or `OPENAI_API_KEY` /
   `GEMINI_API_KEY`) to `/etc/palivane/palivane.env`, then `systemctl restart palivane-api`.
@@ -329,30 +329,30 @@ picks whichever key is set — Claude, GPT, or Gemini:
 - **From source:** add it to `backend/.env`, then restart `uvicorn`.
 - **Cloud contract instead of an API account** (enterprise/marketplace procurement):
   `JUDGE_PROVIDER=vertex` with `JUDGE_VERTEX_PROJECT`/`JUDGE_VERTEX_REGION` (auth =
-  Application Default Credentials — on Cloud Run the runtime service account, no key
+  Application Default Credentials, on Cloud Run the runtime service account, no key
   material), or `JUDGE_PROVIDER=bedrock` with `JUDGE_BEDROCK_REGION` (auth = the AWS
   credential chain). Both require `JUDGE_MODEL` set to the dated catalog id (e.g.
   `claude-opus-4-8@20260115` on Vertex, `us.anthropic.claude-opus-4-8-20260115-v1:0` on
-  Bedrock). Usage bills the GCP/AWS agreement — no Anthropic API credits involved.
+  Bedrock). Usage bills the GCP/AWS agreement, no Anthropic API credits involved.
 
-Confirm with `curl .../api/health` — `judge_enabled` flips to `true`, and `judge_provider`
+Confirm with `curl .../api/health`, `judge_enabled` flips to `true`, and `judge_provider`
 / `judge_model` show the selection. Switch models with `JUDGE_MODEL` (e.g. `claude-haiku-4-5` for cheap
 high-volume triage).
 
 > **Self-hosted keeps the judge on for every tenant.** The key you set is *yours*, so
 > the judge runs for all orgs on the instance (each org can still opt out for
-> data-residency via its settings). Plan-gating — where the judge is a paid entitlement —
+> data-residency via its settings). Plan-gating, where the judge is a paid entitlement,
 > is a managed-SaaS control (`PALIVANE_JUDGE_PLAN_GATED`, off by default); leave it unset
 > self-hosted. If you never set a provider key, Palivane simply runs offline-only, which is
 > a fully supported mode.
 
 ---
 
-## 6. (Optional) Apply a license — Team / Enterprise tiers
+## 6. (Optional) Apply a license. Team / Enterprise tiers
 
 Self-hosted Palivane runs the **Free** tier out of the box (5 users, core capture planes).
 A vendor-issued license unlocks Team (alerts, MDM packs) or Enterprise (SSO, SIEM, S3
-delivery) instance-wide — see `/pricing` or contact sales@palivane.io.
+delivery) instance-wide, see `/pricing` or contact sales@palivane.io.
 
 The license is a signed blob (`WDN1.…`). Set it as the value of `PALIVANE_LICENSE`, or
 point `PALIVANE_LICENSE` at a file containing it, and restart:
@@ -360,10 +360,10 @@ point `PALIVANE_LICENSE` at a file containing it, and restart:
     PALIVANE_LICENSE=WDN1.eyJ2IjoxLCJvcmciOi…   # or PALIVANE_LICENSE=/etc/palivane/license
 
 `GET /api/health` shows the active license (`org`, `plan`, `expires`). An invalid or
-expired license is ignored with a startup warning — the instance falls back to Free,
+expired license is ignored with a startup warning, the instance falls back to Free,
 nothing breaks. Licensed seat count becomes the default users quota.
 
-On the hosted SaaS there is no license file — your plan is managed by the vendor.
+On the hosted SaaS there is no license file, your plan is managed by the vendor.
 
 ---
 
@@ -382,27 +382,27 @@ rm -rf ~/.palivane             # the CLI in ~/.palivane/bin + local state (break
 Then drop the `~/.palivane/bin` line the installer added to your shell rc (`~/.bashrc` /
 `~/.zshrc` / `~/.profile`, or `~/.config/fish/conf.d/palivane.fish`), and remove the **browser
 extension** from Chrome/Edge. A machine installed before the rebrand may also have the old
-`~/.palivane` directory, a `~/.palivane/bin` rc line, and `~/.config/fish/conf.d/palivane.fish` —
+`~/.palivane` directory, a `~/.palivane/bin` rc line, and `~/.config/fish/conf.d/palivane.fish`,
 remove those the same way.
 
 Notes:
 
-- `palivane-connect --uninstall` only touches Palivane's own entries — your other hooks and any
+- `palivane-connect --uninstall` only touches Palivane's own entries, your other hooks and any
   `ANTHROPIC_BASE_URL` you set yourself are left intact. It's safe to run anytime and is a
   no-op if nothing is installed.
 - On **Linux**, `palivane-desktop uninstall` now **removes the root CA** from the system trust
   store automatically (both the Debian `update-ca-certificates` and the p11-kit
-  `update-ca-trust` families — Arch, Fedora/RHEL, openSUSE) as well as the per-user NSS store.
-  On **macOS** the CA is left in the Keychain for safety — delete it manually for a full revert.
+  `update-ca-trust` families. Arch, Fedora/RHEL, openSUSE) as well as the per-user NSS store.
+  On **macOS** the CA is left in the Keychain for safety, delete it manually for a full revert.
 - `palivane-desktop uninstall` scrubs the proxy from **every layer it was set in**: the
   `environment.d` session file, the live systemd user environment, the D-Bus activation
-  environment, and the KDE proxy config (`kioslaverc` — the proxy URLs are deleted, not just
+  environment, and the KDE proxy config (`kioslaverc`, the proxy URLs are deleted, not just
   switched off). Pre-rebrand `palivane-*` artifacts (service unit, env file, CA names, shims)
   are cleaned up too. **Caveat:** apps already running keep the proxy environment they started
-  with, and long-lived desktop processes (plasmashell) re-inject it into anything they launch —
+  with, and long-lived desktop processes (plasmashell) re-inject it into anything they launch,
   log out and back in, or on KDE run
   `systemctl --user restart plasma-plasmashell.service && pkill -x krunner`.
-- On an **MDM-managed fleet**, remove the pushed policy pack instead — the profile owns the
+- On an **MDM-managed fleet**, remove the pushed policy pack instead, the profile owns the
   extension force-install, proxy, and managed settings, so pulling it reverts every device.
 
 ---
@@ -415,15 +415,15 @@ Notes:
 | Console loads but API calls fail / CORS errors | `CORS_ORIGINS` must match the URL you open the console at (`http://localhost:8080` for Docker, `http://localhost:5173` for dev). |
 | Frontend can't reach the backend in dev | The Vite proxy targets `:8088`. Make sure the backend is on that port, or update `frontend/vite.config.js`. |
 | Startup warns about an **insecure dev key** | `PALIVANE_SECRET_KEY` is unset. Fine for local dev; set it (`openssl rand -hex 32`) before any real deployment. |
-| `judge_enabled` is `false` | No judge key set (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`). Expected — detection still runs on the offline detectors. |
+| `judge_enabled` is `false` | No judge key set (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`). Expected, detection still runs on the offline detectors. |
 | Gateway returns a **stub** reply | No upstream configured. Set `GATEWAY_UPSTREAM_*` / `GATEWAY_ANTHROPIC_*` / `GATEWAY_GEMINI_*` to forward allowed calls to a real provider. |
 
 ---
 
 ## Next steps
 
-- **[Configuration](../README.md#configuration)** — the full environment-variable table.
-- **[Claude deployment guide](./claude-deployment.md)** — surface-by-surface rollout for Claude.
-- **[Tokens & identity](./tokens-and-identity.md)** — the auth model and what to provision.
-- **Native service details** — [`deploy/native/`](../deploy/native/README.md): release
+- **[Configuration](../README.md#configuration)**, the full environment-variable table.
+- **[Claude deployment guide](./claude-deployment.md)**, surface-by-surface rollout for Claude.
+- **[Tokens & identity](./tokens-and-identity.md)**, the auth model and what to provision.
+- **Native service details**, [`deploy/native/`](../deploy/native/README.md): release
   tarball build, installer internals, upgrades, and the systemd unit.

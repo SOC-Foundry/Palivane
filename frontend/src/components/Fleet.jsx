@@ -1,4 +1,4 @@
-// Fleet — sensor health across the org: which actors/planes are reporting, which have
+// Fleet, sensor health across the org: which actors/planes are reporting, which have
 // gone quiet, and which devices are still presenting revoked (dead) keys.
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
@@ -7,25 +7,25 @@ import { IconRefresh } from "./icons.jsx";
 const HEALTH_CLASS = { fresh: "sev-benign", stale: "sev-suspicious", dark: "sev-critical" };
 
 function fmtWhen(ts) {
-  if (!ts) return "—";
+  if (!ts) return "-";
   const d = new Date(ts);
   return Number.isNaN(d.getTime()) ? String(ts) : d.toLocaleString();
 }
 
 // A sensor's installed build. Detection/policy is server-side and always current, so a
-// lagging build only means stale *plumbing* (hooks, addon, scanner patterns) — it
+// lagging build only means stale *plumbing* (hooks, addon, scanner patterns), it
 // self-updates at the next session start via palivane-posture.
 function clientCell(row) {
-  if (!row.client) return "—";
+  if (!row.client) return "-";
   const label = `${row.client} ${row.client_version || "?"}`;
   if (row.client_current) return label;
-  // A RETIRED build will never self-update — nothing publishes that name any more, so the
+  // A RETIRED build will never self-update, nothing publishes that name any more, so the
   // "refreshes at next session start" promise below would be a lie. It needs a re-connect.
   if (row.client_retired) {
     return <span style={{ color: "var(--crit)" }}
-                 title="A retired client build — this name is no longer published, so it will never self-update. Re-run `palivane connect` on this device.">{label} · retired</span>;
+                 title="A retired client build, this name is no longer published, so it will never self-update. Re-run `palivane connect` on this device.">{label} · retired</span>;
   }
-  return <span style={{ color: "var(--susp)" }} title="Older than this deployment ships — refreshes at next session start">{label} · stale</span>;
+  return <span style={{ color: "var(--susp)" }} title="Older than this deployment ships, refreshes at next session start">{label} · stale</span>;
 }
 
 export default function Fleet() {
@@ -50,7 +50,7 @@ export default function Fleet() {
       <div className="content-head">
         <div>
           <h1 className="page-title">Fleet</h1>
-          <p className="page-sub">Sensor health per actor and plane — who is reporting,
+          <p className="page-sub">Sensor health per actor and plane, who is reporting,
              who has gone quiet, and which devices present revoked keys.</p>
         </div>
         <div className="head-actions">
@@ -66,12 +66,12 @@ export default function Fleet() {
         <>
           <div className="panel settings-card">
             <div className="usage-stats">
-              <div><span className="usage-n">{s.actors ?? "—"}</span><span className="usage-l">actors</span></div>
-              <div><span className="usage-n">{s.fresh ?? "—"}</span><span className="usage-l">fresh &lt;24h</span></div>
-              <div><span className="usage-n">{s.stale ?? "—"}</span><span className="usage-l">stale 24–72h</span></div>
-              <div><span className="usage-n">{s.dark ?? "—"}</span><span className="usage-l">dark &gt;72h</span></div>
-              <div><span className="usage-n">{s.dead_keys ?? "—"}</span><span className="usage-l">dead keys</span></div>
-              <div><span className="usage-n">{s.stale_clients ?? "—"}</span><span className="usage-l">stale builds</span></div>
+              <div><span className="usage-n">{s.actors ?? "-"}</span><span className="usage-l">actors</span></div>
+              <div><span className="usage-n">{s.fresh ?? "-"}</span><span className="usage-l">fresh &lt;24h</span></div>
+              <div><span className="usage-n">{s.stale ?? "-"}</span><span className="usage-l">stale 24-72h</span></div>
+              <div><span className="usage-n">{s.dark ?? "-"}</span><span className="usage-l">dark &gt;72h</span></div>
+              <div><span className="usage-n">{s.dead_keys ?? "-"}</span><span className="usage-l">dead keys</span></div>
+              <div><span className="usage-n">{s.stale_clients ?? "-"}</span><span className="usage-l">stale builds</span></div>
             </div>
           </div>
 
@@ -87,7 +87,7 @@ export default function Fleet() {
                     <tr key={`${row.actor}|${row.plane}|${row.tool}|${i}`}>
                       <td>{row.actor}</td>
                       <td className="muted">{row.plane}</td>
-                      <td className="muted">{row.tool || "—"}</td>
+                      <td className="muted">{row.tool || "-"}</td>
                       <td className="muted">{clientCell(row)}</td>
                       <td className="muted">{fmtWhen(row.last_seen)}</td>
                       <td>{row.count}</td>
@@ -103,7 +103,7 @@ export default function Fleet() {
             <div className="panel settings-card">
               <h2>Devices presenting revoked keys</h2>
               <p style={{ color: "var(--crit)", marginTop: 0 }}>
-                These devices keep sending events with a revoked key. They <strong>fail open</strong> —
+                These devices keep sending events with a revoked key. They <strong>fail open</strong>
                 their traffic is no longer inspected. Re-run <code>palivane-connect</code> on each
                 device to enroll a fresh key.
               </p>
@@ -112,8 +112,8 @@ export default function Fleet() {
                 <tbody>
                   {deadKeys.map((k) => (
                     <tr key={k.id}>
-                      <td>{k.label || "—"}</td>
-                      <td>{k.actor || "—"}</td>
+                      <td>{k.label || "-"}</td>
+                      <td>{k.actor || "-"}</td>
                       <td className="muted"><code>{k.prefix}</code></td>
                       <td className="muted">{fmtWhen(k.last_failed_at)}</td>
                     </tr>
@@ -124,7 +124,7 @@ export default function Fleet() {
           )}
         </>
       )}
-      {!data && !err && <p className="muted">Loading fleet…</p>}
+      {!data && !err && <p className="muted">Loading fleet...</p>}
     </div>
   );
 }

@@ -34,16 +34,16 @@ export default function Login({ onAuthed, onBack }) {
     const j = window.location.hash.match(/^#join=(\w+)$/);
     if (j) {
       window.history.replaceState(null, "", window.location.pathname);
-      if (j[1] === "approved") setNotice("Email confirmed — your account is ready. Sign in with the password you chose.");
-      else if (j[1] === "verified") setNotice("Email confirmed — an admin has been notified and will approve your request.");
-      else setErr("That confirmation link is invalid or has expired — sign up again to get a new one.");
+      if (j[1] === "approved") setNotice("Email confirmed, your account is ready. Sign in with the password you chose.");
+      else if (j[1] === "verified") setNotice("Email confirmed, an admin has been notified and will approve your request.");
+      else setErr("That confirmation link is invalid or has expired, sign up again to get a new one.");
     }
     // New-org signup verify links bounce back as /#verified=ok|bad.
     const v = window.location.hash.match(/^#verified=(\w+)$/);
     if (v) {
       window.history.replaceState(null, "", window.location.pathname);
-      if (v[1] === "ok") setNotice("Email verified — your organization is active. Sign in with your password.");
-      else setErr("That verification link is invalid or has expired — sign up again to get a new one.");
+      if (v[1] === "ok") setNotice("Email verified, your organization is active. Sign in with your password.");
+      else setErr("That verification link is invalid or has expired, sign up again to get a new one.");
     }
   }, []);
 
@@ -63,7 +63,7 @@ export default function Login({ onAuthed, onBack }) {
       }
       if (mode === "reset") {
         await api.resetPassword(resetToken, password);
-        setNotice("Password updated — sign in with your new password.");
+        setNotice("Password updated, sign in with your new password.");
         setMode("signin"); setPassword(""); setResetToken(null);
         return;
       }
@@ -71,25 +71,25 @@ export default function Login({ onAuthed, onBack }) {
         ? await api.signup(org.trim(), email.trim(), password)
         : await api.login(email.trim(), password, org.trim());
       if (res.mfa_required) { setMfaChallenge(res.challenge); return; }   // second-factor step
-      // Domain capture: the email belongs to an org already on Palivane — request queued.
+      // Domain capture: the email belongs to an org already on Palivane, request queued.
       if (res.status === "pending_approval") { setPendingKind("approval"); setPendingOrg(res.org); return; }
       if (res.status === "confirm_email") { setPendingKind("email"); setPendingOrg(res.org); return; }
-      // New-org signup with the email plane on — must verify the mailbox first.
+      // New-org signup with the email plane on, must verify the mailbox first.
       if (res.status === "verify_email") { setPendingKind("verify"); setPendingOrg(res.org); return; }
       setToken(res.access_token);
       onAuthed(res.user);
     } catch (e) {
       const msg = String(e.message || e);
       setErr(
-        mode === "reset" ? "That reset link is invalid or has expired — request a new one." :
+        mode === "reset" ? "That reset link is invalid or has expired, request a new one." :
         msg.includes("401") ? "Invalid email or password." :
         msg.includes("403") && msg.includes("suspended") ? "This organization is suspended." :
         msg.includes("403") ? "Self-serve signup is disabled here." :
         msg.includes("409") && signup && msg.includes("awaiting approval")
           ? "Your join request is still awaiting an admin's approval." :
         msg.includes("409") && signup && msg.includes("sign in instead")
-          ? "You already have an account in your organization — sign in instead." :
-        msg.includes("409") ? "This email belongs to more than one organization — enter your organization." :
+          ? "You already have an account in your organization, sign in instead." :
+        msg.includes("409") ? "This email belongs to more than one organization, enter your organization." :
         msg.includes("429") ? "Too many attempts. Please wait a few minutes and try again." :
         msg
       );
@@ -125,11 +125,11 @@ export default function Login({ onAuthed, onBack }) {
           <div className="login-wordmark">PALIVANE</div>
           <p className="login-sub">
             {pendingKind === "verify" ? (
-              <>Almost there — we emailed a link to verify your address and activate
+              <>Almost there, we emailed a link to verify your address and activate
               <strong> {pendingOrg}</strong>. Click it, then sign in.</>
             ) : pendingKind === "email" ? (
               <><strong>{pendingOrg}</strong> is already on Palivane. We emailed you a
-              confirmation link — click it to verify your address and complete your
+              confirmation link, click it to verify your address and complete your
               request to join.</>
             ) : (
               <><strong>{pendingOrg}</strong> is already on Palivane, so we sent your request to
@@ -156,7 +156,7 @@ export default function Login({ onAuthed, onBack }) {
           <input autoFocus inputMode="numeric" placeholder="123456" value={mfaCode}
                  onChange={(e) => setMfaCode(e.target.value)} required />
           {err && <div className="error">{err}</div>}
-          <button className="primary-btn" disabled={busy || !mfaCode}>{busy ? "…" : "Verify"}</button>
+          <button className="primary-btn" disabled={busy || !mfaCode}>{busy ? "..." : "Verify"}</button>
           <button type="button" className="link-btn link-muted"
                   onClick={() => { setMfaChallenge(null); setMfaCode(""); setErr(null); }}>
             ← Back
@@ -196,7 +196,7 @@ export default function Login({ onAuthed, onBack }) {
         {err && <div className="error">{err}</div>}
         <button className="primary-btn"
                 disabled={busy || (mode === "forgot" ? !email : !password || (mode !== "reset" && !email)) || (signup && !org)}>
-          {busy ? "…" :
+          {busy ? "..." :
            mode === "signup" ? "Create organization" :
            mode === "forgot" ? "Send reset link" :
            mode === "reset" ? "Set new password" : "Sign in"}

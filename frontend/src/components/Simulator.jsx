@@ -1,4 +1,4 @@
-// Simulator — dry-run content through the real detection pipeline with the org's live
+// Simulator, dry-run content through the real detection pipeline with the org's live
 // policy (overrides, disabled checks, enforcement stance). Nothing is persisted.
 import { useState } from "react";
 import { api } from "../api.js";
@@ -56,7 +56,7 @@ export default function Simulator() {
       <div className="content-head">
         <div>
           <h1 className="page-title">Policy simulator</h1>
-          <p className="page-sub">Test what Palivane would do with a prompt, tool call, or paste —
+          <p className="page-sub">Test what Palivane would do with a prompt, tool call, or paste
              using your org's live policy and overrides.</p>
         </div>
       </div>
@@ -65,7 +65,7 @@ export default function Simulator() {
         <label className="field-wide" style={{ display: "block" }}>
           Content
           <textarea rows={7} style={{ width: "100%", marginTop: 6 }}
-            placeholder="Paste a prompt, command, or snippet to test…"
+            placeholder="Paste a prompt, command, or snippet to test..."
             value={content} onChange={(e) => setContent(e.target.value)} />
         </label>
         <div className="override-row" style={{ marginTop: 10 }}>
@@ -79,10 +79,10 @@ export default function Simulator() {
         </div>
         {err && <div className="error">{err}</div>}
         <button className="primary-btn slim" onClick={run} disabled={busy} style={{ marginTop: 10 }}>
-          {busy ? "…" : "Run"}
+          {busy ? "..." : "Run"}
         </button>
         <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>
-          Runs the real pipeline with your org's policy — nothing is recorded.
+          Runs the real pipeline with your org's policy, nothing is recorded.
         </p>
       </div>
 
@@ -90,11 +90,11 @@ export default function Simulator() {
         <h2 style={{ marginTop: 0 }}>Attack self-test</h2>
         <p className="muted" style={{ marginTop: 0 }}>
           Replay the known injection / jailbreak / exfiltration playbook through your live
-          policy and see what's caught — the answer to a security eval's "throw the playbook
+          policy and see what's caught, the answer to a security eval's "throw the playbook
           at it." Runs in-process; nothing is recorded.
         </p>
         <button className="ghost-btn" onClick={runRedteam} disabled={rtBusy}>
-          {rtBusy ? "Running…" : "Run attack self-test"}
+          {rtBusy ? "Running..." : "Run attack self-test"}
         </button>
         {redteam && (
           <div style={{ marginTop: 14 }}>
@@ -137,7 +137,7 @@ export default function Simulator() {
           <p className="muted" style={{ marginBottom: 4 }}>
             Current stance for this actor/tool: <strong>{res.enforce_stance ? "enforce" : "monitor"}</strong>
             {res.matched_override && (
-              <> — override: {res.matched_override.scope} <code>{res.matched_override.match}</code>
+              <>, override: {res.matched_override.scope} <code>{res.matched_override.match}</code>
                  {res.matched_override.channel ? <> on <code>{res.matched_override.channel}</code></> : null}</>
             )}
           </p>
@@ -158,7 +158,7 @@ export default function Simulator() {
                       <div>{sig.title}</div>
                       {sig.detail && <div className="muted" style={{ fontSize: 12.5 }}>{sig.detail}</div>}
                     </td>
-                    <td className="muted">{sig.evidence ? <code>{sig.evidence}</code> : "—"}</td>
+                    <td className="muted">{sig.evidence ? <code>{sig.evidence}</code> : "-"}</td>
                     <td className="muted"><code>{sig.check}</code></td>
                   </tr>
                 ))}

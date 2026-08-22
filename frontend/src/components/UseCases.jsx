@@ -7,12 +7,12 @@ const CASES = [
   {
     icon: <IconTarget />, tag: "The obvious one",
     title: "Someone pastes customer data into ChatGPT",
-    body: "It happens on a deadline, with good intentions. Palivane checks what people send to ChatGPT, Claude, Gemini, and Copilot and stops the customer records, passwords, and source code — then points them at a tool you've approved instead of just saying no.",
+    body: "It happens on a deadline, with good intentions. Palivane checks what people send to ChatGPT, Claude, Gemini, and Copilot and stops the customer records, passwords, and source code, then points them at a tool you've approved instead of just saying no.",
   },
   {
     icon: <IconShield />, tag: "Developers move fast",
     title: "Your engineers want Claude Code and Cursor",
-    body: "Good — they're faster with them. Palivane lets the assistant read the code it's meant to work on, while still catching API keys and credentials hidden in it, flagging the settings that let it act without asking, and stopping destructive commands before they run.",
+    body: "Good, they're faster with them. Palivane lets the assistant read the code it's meant to work on, while still catching API keys and credentials hidden in it, flagging the settings that let it act without asking, and stopping destructive commands before they run.",
   },
   {
     icon: <IconInbox />, tag: "Your own AI overshares",
@@ -22,17 +22,17 @@ const CASES = [
   {
     icon: <IconAlert />, tag: "Assistants that act",
     title: "An AI assistant has real access to your systems",
-    body: "Modern assistants don't just answer — they read files, run commands, and call other services. Palivane gives each one a boundary: which tools it may use, which commands it may run, which files it may open. Anything outside that gets stopped, not just logged.",
+    body: "Modern assistants don't just answer, they read files, run commands, and call other services. Palivane gives each one a boundary: which tools it may use, which commands it may run, which files it may open. Anything outside that gets stopped, not just logged.",
   },
   {
     icon: <IconClipboard />, tag: "Credentials already loose",
     title: "Keys are sitting on laptops and in your repos",
-    body: "Prompts aren't the only way a secret escapes. Palivane finds credentials already sitting on developer machines — the first place info-stealing malware looks — and keeps new ones out of your repositories, with a one-time sweep of what's already committed.",
+    body: "Prompts aren't the only way a secret escapes. Palivane finds credentials already sitting on developer machines (the first place info-stealing malware looks) and keeps new ones out of your repositories, with a one-time sweep of what's already committed.",
   },
   {
     icon: <IconAlert />, tag: "Agents nobody is watching",
     title: "An AI agent runs in CI with your deploy keys",
-    body: "Handing a coding agent a GitHub Actions job is the new normal — and that job often holds cloud credentials no developer would paste into a chat window. Palivane reads your workflows before you merge them: which agents run there, what secrets reach them, whether approvals are switched off, and the trigger and permission mistakes that let a fork's pull request run in your CI at all.",
+    body: "Handing a coding agent a GitHub Actions job is the new normal, and that job often holds cloud credentials no developer would paste into a chat window. Palivane reads your workflows before you merge them: which agents run there, what secrets reach them, whether approvals are switched off, and the trigger and permission mistakes that let a fork's pull request run in your CI at all.",
   },
   {
     icon: <IconInbox />, tag: "You ship AI yourself",
@@ -78,7 +78,7 @@ export default function UseCases() {
         <div className="lp-wrap">
           <h2 className="lp-h2">Start by seeing what is actually happening</h2>
           <p className="lp-sub">Before you write a policy, get the list: every AI tool in use,
-             approved or not, broken down by team — and what sensitive data each one actually
+             approved or not, broken down by team, and what sensitive data each one actually
              received.</p>
           <Shot lead src="/shots/discovery.png?v=3" alt="Inventory of AI tools in use" />
         </div>
