@@ -51,7 +51,7 @@ def _num_badge(n: int, title: str, sub: str) -> str:
         f'border-radius:50%;border:1.6px solid #9db4ff;color:#cdd9ff;font-size:12.5px;'
         f'font-weight:800">{n}</span>'
         f'<span><div style="font-weight:800">{html.escape(title)}</div>'
-        f'<div style="font-size:11px;color:#9aa4b8;font-weight:600">{html.escape(sub)}</div>'
+        f'<div style="font-size:11px;color:#9BA6A0;font-weight:600">{html.escape(sub)}</div>'
         '</span></div>')
 
 
@@ -65,13 +65,13 @@ def terminal_scene_numbered(title: str, lines: list[tuple[str, str]],
 
 def closing_scene() -> str:
     return f"""<!doctype html><meta charset="utf-8"><style>{S.BASE_CSS}</style>
-<div class="scene" style="background:radial-gradient(1100px 620px at 50% 42%,#131a2e,#070a11)">
+<div class="scene" style="background:#0E100F">
   <div id="wrap" style="position:absolute;inset:0;display:flex;flex-direction:column;
       align-items:center;justify-content:center;gap:22px;opacity:0">
     <img src="palivane-emblem.png" style="height:150px;width:auto" />
-    <div style="color:#eef2ff;font-size:46px;font-weight:800;letter-spacing:.42em;
+    <div style="color:#FFFFFF;font-size:46px;font-weight:800;letter-spacing:.42em;
         margin-left:.42em">PALIVANE</div>
-    <div style="color:#9aa4b8;font-size:16px;font-weight:700;letter-spacing:.18em">
+    <div style="color:#9BA6A0;font-size:16px;font-weight:700;letter-spacing:.18em">
       AI SECURITY GATEWAY</div>
   </div>
 </div>
@@ -130,16 +130,16 @@ def build_scenes() -> list[tuple[str, str, float]]:
         ("cmd", '$ intune push palivane-policy-pack.json --group "All Corp Devices"'),
         ("ok", "✓ Extension force-install → 248 devices"),
         ("ok", "✓ Gateway + hooks config → 248 devices"),
-        ("dim", "No agent to install — the pack carries every setting."),
+        ("dim", "No agent to install. The pack carries every setting."),
     ]
     return [
         ("title1", S.title_scene("GET STARTED", "Set up Palivane",
                                  "Part 1 · for you & your team"), 4.5),
-        ("term1", terminal_scene_numbered("zsh — acme-laptop", connect_lines,
+        ("term1", terminal_scene_numbered("zsh - acme-laptop", connect_lines,
                                           1, "One command", "self-serve · any machine"), 9.5),
         ("title2", S.title_scene("SCALE IT", "Roll out to your whole org",
                                  "Part 2 · one pack, your entire fleet via MDM"), 4.5),
-        ("term2", terminal_scene_numbered("admin — mdm-console", mdm_lines,
+        ("term2", terminal_scene_numbered("admin - mdm-console", mdm_lines,
                                           2, "Push it fleet-wide", "agentless · via your MDM"), 9.5),
         ("closing", closing_scene(), 5.4),
     ]

@@ -1,4 +1,4 @@
-// Public "Why Palivane" page at /why-palivane (legacy /why-palivane still routes). The differentiators — what sets Palivane apart.
+// Public "Why Palivane" page at /why-palivane (legacy /why-palivane still routes). The differentiators, what sets Palivane apart.
 // Reuses the landing (lp-*) design language.
 import { SiteNav, SiteFooter, Shot } from "./SiteChrome.jsx";
 import { IconShield, IconTarget, IconPlug, IconInbox, IconClipboard, IconAlert } from "./icons.jsx";
@@ -7,12 +7,12 @@ const REASONS = [
   {
     icon: <IconShield />,
     title: "Nothing to install on laptops",
-    body: "No agent to package, roll out, or explain to your developers. If you already use Jamf, Intune, or Group Policy, Palivane gives you the config to push. Optional local helpers add extra depth on the machines where you want it — your choice, not a requirement.",
+    body: "No agent to package, roll out, or explain to your developers. If you already use Jamf, Intune, or Group Policy, Palivane gives you the config to push. Optional local helpers add extra depth on the machines where you want it, your choice, not a requirement.",
   },
   {
     icon: <IconTarget />,
     title: "No third-party AI sees your content",
-    body: "Detection is Palivane's own engine — it calls no outside AI service to do its job. That keeps it fast, private, and predictable: the same input always gets the same answer. Run it as our hosted service or entirely inside your own infrastructure, and add an AI reviewer for hard cases only if you want one.",
+    body: "Detection is Palivane's own engine, it calls no outside AI service to do its job. That keeps it fast, private, and predictable: the same input always gets the same answer. Run it as our hosted service or entirely inside your own infrastructure, and add an AI reviewer for hard cases only if you want one.",
   },
   {
     icon: <IconInbox />,
@@ -22,12 +22,12 @@ const REASONS = [
   {
     icon: <IconAlert />,
     title: "It actually stops things",
-    body: "Most tools tell you about the leak afterward. Palivane can block it as it happens — the browser refuses the paste, the AI tool gets an error, the commit fails. Start in watch-only mode, see what would have been caught, then turn blocking on when you trust it.",
+    body: "Most tools tell you about the leak afterward. Palivane can block it as it happens, the browser refuses the paste, the AI tool gets an error, the commit fails. Start in watch-only mode, see what would have been caught, then turn blocking on when you trust it.",
   },
   {
     icon: <IconPlug />,
     title: "Works with what you already bought",
-    body: "Claude, GPT, or Gemini — Palivane doesn't care which you use. It sits alongside GitHub secret scanning and your existing security stack rather than replacing them, and pulls results from scanners you already run into the same place.",
+    body: "Claude, GPT, or Gemini. Palivane doesn't care which you use. It sits alongside GitHub secret scanning and your existing security stack rather than replacing them, and pulls results from scanners you already run into the same place.",
   },
   {
     icon: <IconTarget />,
@@ -37,7 +37,7 @@ const REASONS = [
   {
     icon: <IconClipboard />,
     title: "Answers for your auditors and customers",
-    body: "A full audit trail, alerts, exports to your SIEM or data lake, a signed DPA, and a monthly summary you can hand upward. Export everything or delete your org in one click — it stays your data.",
+    body: "A full audit trail, alerts, exports to your SIEM or data lake, a signed DPA, and a monthly summary you can hand upward. Export everything or delete your org in one click, it stays your data.",
   },
 ];
 
@@ -73,7 +73,7 @@ export default function WhyPalivane() {
           <h2 className="lp-h2">AI assistants get their own rules</h2>
           <p className="lp-sub">An AI assistant with access to your codebase deserves the same
              limits you would give a contractor. Palivane gives each one an identity and a
-             boundary — which tools, commands, and data it may touch — and enforces it.</p>
+             boundary (which tools, commands, and data it may touch) and enforces it.</p>
           <Shot lead src="/shots/agents.png?v=3" alt="AI assistant identity and limits" />
         </div>
       </section>

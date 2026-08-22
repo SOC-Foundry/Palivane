@@ -60,7 +60,7 @@ export default function Users({ currentUser }) {
       await api.updateUser(u.id, payload);
       await load();
     } catch (e) {
-      // Surface the backend's guardrail message (last-admin, self-lockout, …).
+      // Surface the backend's guardrail message (last-admin, self-lockout, ...).
       const msg = String(e.message || e).replace(/^\d+:\s*/, "");
       try { setErr(JSON.parse(msg.slice(msg.indexOf("{"))).detail || msg); }
       catch { setErr(msg); }
@@ -113,7 +113,7 @@ export default function Users({ currentUser }) {
                   disabled={adding || !email ||
                             (emailEnabled ? (password.length > 0 && password.length < 8)
                                           : password.length < 8)}>
-            {adding ? "…" : emailEnabled && !password ? "Send invite" : "Add user"}
+            {adding ? "..." : emailEnabled && !password ? "Send invite" : "Add user"}
           </button>
         </div>
       </form>
@@ -125,7 +125,7 @@ export default function Users({ currentUser }) {
           <h3>Join requests</h3>
           <p className="muted" style={{ fontSize: 12 }}>
             People who signed up with an email on one of your verified domains. Approving
-            creates an analyst account with the password they chose — confirm out-of-band
+            creates an analyst account with the password they chose, confirm out-of-band
             that the person actually made the request (mailbox ownership isn't verified).
           </p>
           <table className="users-table">
@@ -168,7 +168,7 @@ export default function Users({ currentUser }) {
           <input placeholder="example.com" value={newDomain}
                  onChange={(e) => setNewDomain(e.target.value)} />
           <button className="primary-btn slim" disabled={domBusy || !newDomain.trim()}>
-            {domBusy ? "…" : "Claim domain"}
+            {domBusy ? "..." : "Claim domain"}
           </button>
         </form>
         {domErr && <div className="error">{domErr}</div>}
@@ -200,7 +200,7 @@ export default function Users({ currentUser }) {
             </div>
             {!d.verified && d.txt && (
               <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-                Add a TXT record — name: <code>{d.txt.name}</code>, value:{" "}
+                Add a TXT record, name: <code>{d.txt.name}</code>, value:{" "}
                 <code>{d.txt.value}</code>, then click Verify now.
               </div>
             )}
@@ -211,7 +211,7 @@ export default function Users({ currentUser }) {
 
       <div className="panel users-list">
         {loading ? (
-          <div className="empty">Loading…</div>
+          <div className="empty">Loading...</div>
         ) : (
           <table className="users-table">
             <thead>

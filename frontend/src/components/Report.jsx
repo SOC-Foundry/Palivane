@@ -1,4 +1,4 @@
-// Report — printable posture summary over a chosen window: what was analyzed, what was
+// Report, printable posture summary over a chosen window: what was analyzed, what was
 // found, what enforcement would have prevented. Markup stays table-based / print-friendly.
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
@@ -39,7 +39,7 @@ export default function Report() {
       <div className="content-head">
         <div>
           <h1 className="page-title">Security report</h1>
-          <p className="page-sub">Posture summary for the selected window — suitable for
+          <p className="page-sub">Posture summary for the selected window, suitable for
              printing or saving as PDF.</p>
         </div>
         <div className="head-actions">
@@ -67,7 +67,7 @@ export default function Report() {
               <div><span className="usage-n">{data.covered_actors}</span><span className="usage-l">covered actors</span></div>
             </div>
             <p className="muted" style={{ marginBottom: 0 }}>
-              Window: last {data.days} days · generated {data.generated_at ? new Date(data.generated_at).toLocaleString() : "—"}
+              Window: last {data.days} days · generated {data.generated_at ? new Date(data.generated_at).toLocaleString() : "-"}
             </p>
           </div>
 
@@ -76,7 +76,7 @@ export default function Report() {
           <BreakdownTable title="Findings by tool" rows={data.by_tool} keyHeader="Tool" />
         </>
       )}
-      {!data && !err && <p className="muted">Loading report…</p>}
+      {!data && !err && <p className="muted">Loading report...</p>}
     </div>
   );
 }

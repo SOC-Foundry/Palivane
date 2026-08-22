@@ -204,7 +204,7 @@ export default function FindingsList({ findings, selectedId, onSelect, filter, o
       {shown.length === 0 && findings.length === 0 && (
         <div className="empty empty-onboard">
           <p><strong>Nothing in the queue.</strong></p>
-          <p>New findings land here as capture sources see risky activity — or loosen the
+          <p>New findings land here as capture sources see risky activity, or loosen the
              status / severity filters to see everything recorded.</p>
           {onConnect && <button className="primary-btn slim" onClick={onConnect}>Connect a source →</button>}
         </div>
