@@ -51,7 +51,7 @@ calls below, or use the dashboard.
 prompt *before send*, scores it, and warns/blocks. Covers managed browsers.
 
 ### Backend
-Already done in prerequisites — `EXTENSION_INGEST_TOKEN` + `INGEST_TENANT` are what the
+Already done in prerequisites, `EXTENSION_INGEST_TOKEN` + `INGEST_TENANT` are what the
 extension authenticates with.
 
 ### Install (pilot / single machine)
@@ -62,12 +62,12 @@ extension authenticates with.
    - **Ingest token**: the `EXTENSION_INGEST_TOKEN` value
    - **Enforce**: on to block, off to warn only
 3. Visit `https://claude.ai`, submit a prompt with a fake SSN `123-45-6789` and an
-   `AKIA…` key — it should be blocked with a red banner.
+   `AKIA…` key, it should be blocked with a red banner.
 
-### Roll out fleet-wide (Chrome/Edge enterprise) — zero-touch
+### Roll out fleet-wide (Chrome/Edge enterprise), zero-touch
 1. Build the package: `extension/build.sh` → a zip for the Chrome Web Store / Edge
    Add-ons (private/unlisted) or a self-hosted CRX.
-2. **Force-install** via policy `ExtensionInstallForcelist` (Intune/Workspace/GPO) — it
+2. **Force-install** via policy `ExtensionInstallForcelist` (Intune/Workspace/GPO), it
    installs automatically, no user action.
 3. **Configure centrally** via managed storage (`3rdparty/extensions/<id>/policy`); the
    extension's `managed_schema.json` applies these and they **override** user settings:
@@ -83,7 +83,7 @@ extension authenticates with.
    > **Prefer `enrollToken` over a static `token`.** Push an enrollment token
    > (`enrollToken: { "Value": "et_…" }`) instead of the shared `EXTENSION_INGEST_TOKEN`
    > and the extension self-enrolls its own per-device key, re-enrolling automatically if
-   > that key is revoked. This is what the `/api/provision` installer emits — it's the
+   > that key is revoked. This is what the `/api/provision` installer emits, it's the
    > self-healing equivalent of the static-key policy above, and gives per-device
    > attribution and revocation.
 
@@ -95,29 +95,29 @@ proxy (Section 3) or surfaced by [coverage reconciliation](#verify-coverage).
 ## 2. Claude Code
 
 **Default posture: developers stay on their Claude subscription (Pro/Max/Enterprise).**
-Most orgs license Claude by seat, not by API credits — so the default deployment governs
+Most orgs license Claude by seat, not by API credits, so the default deployment governs
 Claude Code *without touching how it signs in or bills*: the **hooks** (Route C) see the
 agent's local tool calls, and the **proxy** (Route B) / browser extension see the
 traffic. No Anthropic API account is required anywhere in that path.
 
 Three routes, complementary. The **gateway** (Route A) is for orgs that *want* API-key
-billing and central control — it reroutes Claude Code through Palivane on the org's own
+billing and central control, it reroutes Claude Code through Palivane on the org's own
 provider key (no certificates, one config block); the **proxy** (Route B) inspects
 traffic without touching sign-in; the **hook** (Route C) adds what neither network route
 can see: the agent's local tool calls, before they execute. Subscription-first fleets
 run B/extension + C; API-billing fleets run A + C.
 
 > **Self-serve (BYOD / pilots):** a user can connect their own Claude Code without an admin
-> distributing tokens — run **`palivane connect https://app.palivane.io`** (see
+> distributing tokens, run **`palivane connect https://app.palivane.io`** (see
 > [`cli/README.md`](../cli/README.md)). It signs them in via the console (login/SSO), mints
 > a per-user tenant-scoped key, writes `~/.claude/settings.json`, and installs the Route C
 > hooks automatically. By default Claude Code **keeps its own sign-in** (Pro/Max
-> subscription or API account) — Route A's gateway rerouting is opt-in via
+> subscription or API account). Route A's gateway rerouting is opt-in via
 > `--route-gateway`, since it switches billing to the org's provider key. On **managed
 > fleets**, prefer the zero-touch `managed-settings.json` below (it takes precedence over
 > the user file).
 
-### Route A — gateway (for API-billing orgs)
+### Route A, gateway (for API-billing orgs)
 
 **Backend** `.env`:
 ```bash
@@ -135,7 +135,7 @@ curl -X POST https://palivane.corp.example.com/api/apikeys \
 ```
 
 **Deploy to developer machines** via Claude Code's enterprise `managed-settings.json`
-(highest precedence — users can't override). Paths:
+(highest precedence, users can't override). Paths:
 - macOS: `/Library/Application Support/ClaudeCode/managed-settings.json`
 - Linux/WSL: `/etc/claude-code/managed-settings.json`
 - Windows: `C:\Program Files\ClaudeCode\managed-settings.json`
@@ -152,24 +152,24 @@ curl -X POST https://palivane.corp.example.com/api/apikeys \
   itself, so `…/v1` would resolve to `…/v1/v1/messages` and return **405**. (This differs
   from `OPENAI_BASE_URL`, which *does* take `/v1`.)
 - `ANTHROPIC_AUTH_TOKEN` is sent as `Authorization: Bearer`; `ANTHROPIC_API_KEY` would be
-  sent as `x-api-key` — the gateway accepts either. For per-user keys without baking them
+  sent as `x-api-key`, the gateway accepts either. For per-user keys without baking them
   into the file, use Claude Code's `apiKeyHelper` to fetch the key dynamically. The
   self-serve `/api/provision` installer does exactly this when generated with
   `route_gateway=true`: it sets `apiKeyHelper` to the bundled **`palivane-reenroll`** helper
   (no static `ANTHROPIC_AUTH_TOKEN`), which returns a live per-device key and re-enrolls
-  automatically if the key is ever revoked/rotated — so a revoked key self-heals without
+  automatically if the key is ever revoked/rotated, so a revoked key self-heals without
   re-pushing config to the fleet. **By default** (no `route_gateway`) the installer and the
-  MDM pack leave Claude Code on its own sign-in and set `forceLoginMethod: "claudeai"` —
+  MDM pack leave Claude Code on its own sign-in and set `forceLoginMethod: "claudeai"`,
   devs stay on Pro/Max subscription billing and only the Route C hooks are installed.
 - The gateway implements `/v1/messages`, `/v1/messages/count_tokens`, and forwards the
   `anthropic-version`/`anthropic-beta` headers, so Claude Code works fully.
 - Per-tool policy auto-suppresses `source_code_leak` for `claude-code` (code is its job),
   while **secrets and PII are still blocked**.
 
-> Setting a custom `ANTHROPIC_BASE_URL` disables MCP tool-search by default — set
+> Setting a custom `ANTHROPIC_BASE_URL` disables MCP tool-search by default, set
 > `ENABLE_TOOL_SEARCH=true` in the same `env` block if you rely on it.
 
-### Route B — egress proxy (no base-URL change)
+### Route B, egress proxy (no base-URL change)
 Use the proxy (Section 3) and set, in the same `managed-settings.json`:
 ```json
 { "env": {
@@ -179,22 +179,22 @@ Use the proxy (Section 3) and set, in the same `managed-settings.json`:
 ```
 Claude Code honors both. This catches Claude Code *and* everything else on the device.
 
-### Route C — local hooks (prompts + agentic actions)
+### Route C, local hooks (prompts + agentic actions)
 
-Routes A/B see the *prompts* — but only when they're actually in the path. Under the
+Routes A/B see the *prompts*, but only when they're actually in the path. Under the
 **default subscription sign-in** (no gateway, no proxy) the typed prompt goes straight to
-`api.anthropic.com`, and nothing network-side sees what the agent **does locally** —
+`api.anthropic.com`, and nothing network-side sees what the agent **does locally**,
 shell commands, file access, and stdio MCP servers never leave the device. Route C closes
-both with app-scoped sensors from [`cli/`](../cli/README.md) (hooks and a shim — not an
+both with app-scoped sensors from [`cli/`](../cli/README.md) (hooks and a shim, not an
 endpoint agent):
 
-**`palivane-hook`** — a Claude Code hook, registered on two events. **PreToolUse**: every
+**`palivane-hook`**, a Claude Code hook, registered on two events. **PreToolUse**: every
 tool call (built-ins and MCP tools) is inspected *before execution* for dangerous
 commands, sensitive-resource access, secrets in arguments, and the org's MCP-server
 allowlist. **UserPromptSubmit**: the typed prompt is scanned *before it leaves the
-device* — the only prompt-level control under subscription auth. Monitor by default
+device*, the only prompt-level control under subscription auth. Monitor by default
 (tool calls report with zero added latency; prompts are scanned inline so a **confirmed
-secret/PII leak hard-blocks even in monitor mode** — "block the certain, monitor the
+secret/PII leak hard-blocks even in monitor mode**, "block the certain, monitor the
 fuzzy", same rule as the proxy); `PALIVANE_ENFORCE=true` also denies ordinary high-risk
 verdicts, with the reason shown to the model (tool calls) or the user (prompts). The org
 sets that stance centrally in the console (Settings → *Device enforcement*):
@@ -220,7 +220,7 @@ Route A:
 (Deploy the two scripts to a fixed path via MDM alongside the settings file. Verify the
 deployed Claude Code version honors `hooks` in managed settings.)
 
-**`palivane-mcp`** — wraps any **local stdio MCP server** for inline inspection (tool
+**`palivane-mcp`**, wraps any **local stdio MCP server** for inline inspection (tool
 calls, resource reads, tool-poisoning in descriptions); `PALIVANE_MCP_ENFORCE=true` blocks
 with a JSON-RPC error. In `.mcp.json` / `~/.claude.json`:
 
@@ -230,7 +230,7 @@ with a JSON-RPC error. In `.mcp.json` / `~/.claude.json`:
     "args": ["--", "npx", "-y", "@modelcontextprotocol/server-github"] }}}
 ```
 
-The `SessionStart` entry above also runs **`palivane-posture`** — device drift (installed
+The `SessionStart` entry above also runs **`palivane-posture`**, device drift (installed
 IDE extensions, MCP configs) reported at session start, deduplicated client-side.
 
 ---
@@ -238,16 +238,16 @@ IDE extensions, MCP configs) reported at session start, deduplicated client-side
 ## 3. Claude Desktop app (macOS & Windows)
 
 The desktop app makes its own HTTPS calls to `api.anthropic.com` and has **no
-custom-base-URL setting**, so it can't use the gateway (Section 2) — it's captured at the
+custom-base-URL setting**, so it can't use the gateway (Section 2), it's captured at the
 **network egress** with the [`proxy/`](../proxy/) mitmproxy addon. For the same reason there
 is **no per-user `palivane connect` sign-in for Desktop**: capture is at the proxy (system
-proxy + CA), an admin/MDM setup — not an in-app login. This section is for the
+proxy + CA), an admin/MDM setup, not an in-app login. This section is for the
 **official macOS/Windows** app (it's Electron, and on those OSes it uses the **system
-proxy** and the **OS certificate store** natively — which is what makes this work cleanly
+proxy** and the **OS certificate store** natively, which is what makes this work cleanly
 and MDM-deployable). Linux community builds are out of scope.
 
 > Scope note: this is the awkward surface. Prefer governing Claude via the **gateway**
-> (Claude Code / SDKs) and the **browser extension** — those cooperate at the app layer.
+> (Claude Code / SDKs) and the **browser extension**, those cooperate at the app layer.
 > Use the desktop proxy only where you must, and lean on your **existing corporate
 > proxy/SWG** if you already run one rather than standing up a per-device Palivane proxy.
 
@@ -260,12 +260,12 @@ PALIVANE_PROXY_ENFORCE=true \
 mitmdump -s proxy/palivane_addon.py --listen-port 8081
 ```
 (`PALIVANE_TOKEN` is the `EXTENSION_INGEST_TOKEN` from prerequisites, or a per-tenant
-`ak_…` key. Run it as a service and scale horizontally — the addon is stateless.)
+`ak_…` key. Run it as a service and scale horizontally, the addon is stateless.)
 
 > **Version floor:** the addon uses async hooks with `asyncio.to_thread`, so it needs
 > **mitmproxy ≥ 8 on Python ≥ 3.9**. The desktop launchers install a current
 > self-contained binary automatically; this only matters for manual `pip install`s and
-> `PALIVANE_MITM_VERSION` pins — don't pin below 8.
+> `PALIVANE_MITM_VERSION` pins, don't pin below 8.
 
 ### Single machine (pilot / testing)
 
@@ -288,20 +288,20 @@ mitmdump -s proxy/palivane_addon.py --listen-port 8081
 2. **Settings → Network & internet → Proxy → Manual proxy** = `PROXY_HOST:8081` (HTTPS).
 3. Restart Claude Desktop and test as above.
 
-### Fleet rollout (MDM — the real deployment)
+### Fleet rollout (MDM, the real deployment)
 Don't configure machines by hand; push both via MDM (Intune / Jamf / GPO):
-1. **CA** — deploy the mitmproxy/corporate root CA to the device **system trust store**
+1. **CA**, deploy the mitmproxy/corporate root CA to the device **system trust store**
    (Intune *Trusted Certificate* profile; Jamf *Certificate* payload; GPO *Trusted Root*).
-2. **Proxy** — push a system proxy or **PAC file** scoped to AI domains
+2. **Proxy**, push a system proxy or **PAC file** scoped to AI domains
    (Intune/Jamf network-proxy profile; GPO WinHTTP/WinINET). Claude Desktop inherits it.
 
-On managed devices this is transparent — the app already trusts the CA and uses the system
+On managed devices this is transparent, the app already trusts the CA and uses the system
 proxy, so no per-app config.
 
 ### Caveats (read these)
 - **Certificate pinning is the wildcard.** The proxy needs TLS inspection; if Claude
   Desktop pins `api.anthropic.com`, it refuses the inspected cert and either errors or
-  bypasses — unfixable at the network layer. **Confirm with the single-machine test before
+  bypasses, unfixable at the network layer. **Confirm with the single-machine test before
   committing to a fleet rollout.** If a chat *works but Palivane sees nothing*, the app is
   bypassing the proxy (routing/config); if it *fails to connect after the CA is trusted*,
   it's pinning.
@@ -315,7 +315,7 @@ proxy, so no per-app config.
 
 ## Verify coverage
 
-You can't monitor a device you don't manage — find the gap by what's missing. Export
+You can't monitor a device you don't manage, find the gap by what's missing. Export
 your IdP/CASB list of who accessed Claude/AI domains and reconcile it against captured
 findings:
 
@@ -325,19 +325,19 @@ curl -X POST https://palivane.corp.example.com/api/coverage/reconcile \
   -d '{"events":[{"actor":"alice@acme.com","tool":"claude.ai"},{"actor":"mallory@acme.com","tool":"claude.ai"}]}'
 # -> {"covered":1,"uncovered_count":1,"uncovered":[{"actor":"mallory@acme.com",...}]}
 ```
-The uncovered actors are using Claude on an unmanaged device or bypassing the planes —
+The uncovered actors are using Claude on an unmanaged device or bypassing the planes,
 your follow-up list (enroll the device, or block it via conditional access).
 
 ---
 
 ## Rollout
 
-1. **Monitor first** — `GATEWAY_ENFORCE=false`, extension/proxy in warn mode. Let
+1. **Monitor first**, `GATEWAY_ENFORCE=false`, extension/proxy in warn mode. Let
    findings accumulate.
-2. **Tune** — triage findings in the dashboard; export the labels and re-run the eval to
+2. **Tune**, triage findings in the dashboard; export the labels and re-run the eval to
    pick the right block threshold (`python -m app.eval --corpus ...`). Adjust
    `GATEWAY_TOOL_SUPPRESS` if a sanctioned tool is noisy.
-3. **Enforce** — flip `GATEWAY_ENFORCE=true` and the extension/proxy to enforce. Blocks
+3. **Enforce**, flip `GATEWAY_ENFORCE=true` and the extension/proxy to enforce. Blocks
    are inline; everything is recorded and attributed per user.
 
 ---
@@ -345,11 +345,11 @@ your follow-up list (enroll the device, or block it via conditional access).
 ## Notes & limitations
 
 - **Attribution:** set `actor` on each API key (gateway), pass `user` from the extension
-  Options, and `PALIVANE_PROXY_USER` on the proxy — so findings and coverage are per-person.
+  Options, and `PALIVANE_PROXY_USER` on the proxy, so findings and coverage are per-person.
 - **Managed browser config:** the extension supports Chrome `storage.managed`, so
   enterprise policy configures it automatically and overrides user settings (zero-touch).
   On a single pilot machine, set the Options page instead.
-- **Cert pinning:** the proxy plane depends on TLS inspection; pinned clients bypass it —
+- **Cert pinning:** the proxy plane depends on TLS inspection; pinned clients bypass it,
   rely on the gateway route where you control the client, and on coverage reconciliation
   to catch the rest.
 - **Fail-open everywhere:** capture failures never block legitimate AI use.

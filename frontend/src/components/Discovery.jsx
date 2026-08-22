@@ -1,4 +1,4 @@
-// Shadow-AI Discovery — the inventory of every AI tool in use, sanctioned or not.
+// Shadow-AI Discovery, the inventory of every AI tool in use, sanctioned or not.
 // Ingests CASB/SWG/proxy/DNS logs (attribution) and merges what the capture planes actually
 // saw (real sensitive-data exposure per tool). Rolls up by tool and by team, marks each tool
 // against the live allowlist, and lets an admin sanction/unsanction a tool in one click.
@@ -36,7 +36,7 @@ export default function Discovery({ tenant, onTenant }) {
   async function ingest() {
     setErr(null); setMsg(null);
     const events = parseEvents(text);
-    if (events === null) { setErr("Couldn't parse — use `actor,destination[,team]` lines or a JSON array."); return; }
+    if (events === null) { setErr("Couldn't parse, use `actor,destination[,team]` lines or a JSON array."); return; }
     if (!events.length) { setErr("Paste at least one `actor,destination` line."); return; }
     setBusy(true);
     try {
@@ -67,7 +67,7 @@ export default function Discovery({ tenant, onTenant }) {
       <div className="content-head">
         <div>
           <h1 className="page-title">Shadow-AI discovery</h1>
-          <p className="page-sub">Every AI tool in use — sanctioned or not — from your logs and from
+          <p className="page-sub">Every AI tool in use (sanctioned or not) from your logs and from
              what Palivane actually captured. Unlike log-only tools, the exposure column shows the
              <strong> real sensitive data</strong> each tool received.</p>
         </div>
@@ -115,7 +115,7 @@ export default function Discovery({ tenant, onTenant }) {
                   <td>{t.events}</td>
                   <td>{t.sensitive_events
                     ? <span style={{ color: "var(--high)", fontWeight: 700 }}>{t.sensitive_events} 🔓</span>
-                    : <span className="muted">—</span>}</td>
+                    : <span className="muted">-</span>}</td>
                   <td><span className={`sev sev-${RISK_CLASS(t.risk)}`}>{t.risk}</span></td>
                   <td>
                     <button className="link-btn" onClick={() => toggleSanction(t, t.sanctioned)}>
@@ -144,7 +144,7 @@ export default function Discovery({ tenant, onTenant }) {
                   <td>{g.unsanctioned_count
                     ? <span style={{ color: "var(--crit)", fontWeight: 700 }}>{g.unsanctioned_count}</span>
                     : <span className="muted">0</span>}</td>
-                  <td>{g.sensitive_events || <span className="muted">—</span>}</td>
+                  <td>{g.sensitive_events || <span className="muted">-</span>}</td>
                   <td><span className={`sev sev-${RISK_CLASS(g.max_risk)}`}>{g.max_risk}</span></td>
                 </tr>
               ))}
@@ -166,7 +166,7 @@ export default function Discovery({ tenant, onTenant }) {
         {err && <div className="error">{err}</div>}
         {msg && <div className="hint" style={{ color: "var(--benign)" }}>{msg}</div>}
         <button className="primary-btn slim" onClick={ingest} disabled={busy}>
-          {busy ? "…" : "Ingest logs"}
+          {busy ? "..." : "Ingest logs"}
         </button>
       </div>
     </div>

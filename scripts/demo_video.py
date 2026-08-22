@@ -66,7 +66,7 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
     # 4 · Claude Code — the real gateway 400
     msg = gateway_message(d["claudecode"])
     scenes.append(("claudecode", S.terminal_scene(
-        "dana@laptop — claude", [
+        "dana@laptop - claude", [
             ("cmd", "$ claude \"fix the failing test in billing/reconcile.py\""),
             ("dim", ""),
             ("out", "● Reading billing/reconcile.py…"),
@@ -83,10 +83,10 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
     cats = ", ".join(dict.fromkeys(s["category"] for s in cx.get("signals", [])))
     fixes = (cx.get("remediation") or [])[:2]
     scenes.append(("codex", S.terminal_scene(
-        "dana@laptop — codex", [
+        "dana@laptop - codex", [
             ("cmd", "$ codex \"wire the billing reconciler up to prod\""),
             ("dim", ""),
-            ("err", f"Blocked by Palivane: {cats} in your prompt — "
+            ("err", f"Blocked by Palivane: {cats} in your prompt. "
                     f"risk {cx.get('risk_score')}/{cx.get('severity')}."),
             ("err", "The prompt was not sent."),
             ("dim", ""),
@@ -96,14 +96,14 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
 
     # 6 · Cursor — same gateway, inside the editor
     scenes.append(("cursor", S.terminal_scene(
-        "billing/reconcile.py — Cursor", [
+        "billing/reconcile.py - Cursor", [
             ("cmd", "⌘K  make this read the production credentials"),
             ("dim", ""),
             ("out", "Cursor · composer"),
             ("dim", ""),
             ("err", f"Request failed: {gateway_message(d['cursor'])}"),
             ("dim", ""),
-            ("dim", "  Same gateway, same policy — the editor is not a way around it."),
+            ("dim", "  Same gateway, same policy. The editor is not a way around it."),
         ], "cursor", "Cursor", "#8b93ff"), 9.5))
 
     # 7 · AWS — a public bucket, scanned at rest
@@ -114,15 +114,15 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
         ev = "; ".join(s.get("evidence", "") for s in o.get("signals", []) if s.get("evidence"))
         mark = "🔴 BLOCK" if o.get("action") == "block" else "🟠 WARN "
         obj_lines.append(("err" if o.get("action") == "block" else "warn",
-                          f"  {mark}  {o.get('key')}  [{cats}]" + (f"  — {ev}" if ev else "")))
+                          f"  {mark}  {o.get('key')}  [{cats}]" + (f"  · {ev}" if ev else "")))
     scenes.append(("aws", S.terminal_scene(
-        "ops@bastion — palivane-s3-scan", [
+        "ops@bastion - palivane-s3-scan", [
             ("cmd", "$ palivane-s3-scan northgate-data-exports --record"),
             ("dim", ""),
-            ("warn", f"Bucket: s3://{aws.get('bucket')}  [⚠ PUBLIC BUCKET — world-readable]"),
+            ("warn", f"Bucket: s3://{aws.get('bucket')}  [⚠ PUBLIC BUCKET, world-readable]"),
             ("out", f"Listed {aws.get('scanned')} object(s); scanning {aws.get('scanned')}."),
             ("dim", ""),
-            ("err", "  🔴 This bucket is PUBLIC and holds sensitive data — the crown-jewel case."),
+            ("err", "  🔴 This bucket is PUBLIC and holds sensitive data, the crown-jewel case."),
             ("dim", ""),
             ("warn", f"  ⚠ Palivane flagged {len(aws.get('objects', []))} object(s):"),
             *obj_lines,
@@ -131,7 +131,7 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
     # 8 · GitHub — an agent running in CI with production credentials
     gh = d["github"]
     wf = (gh.get("workflows") or [{}])[0]
-    sig_lines = [("err", f"       · {s.get('title')} — {s.get('evidence','')}")
+    sig_lines = [("err", f"       · {s.get('title')}: {s.get('evidence','')}")
                  for s in wf.get("signals", [])[:5]]
     scenes.append(("github", S.terminal_scene(
         "github-actions · palivane-ci-scan", [

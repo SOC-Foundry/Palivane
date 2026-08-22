@@ -26,7 +26,7 @@ const ACTION_LABELS = {
 };
 
 function actionLabel(action) {
-  if (!action) return "—";
+  if (!action) return "-";
   if (ACTION_LABELS[action]) return ACTION_LABELS[action];
   const words = action.replace(/[._]+/g, " ").trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
@@ -78,7 +78,7 @@ export default function Audit() {
           </select>
         </div>
         {loading ? (
-          <div className="empty">Loading…</div>
+          <div className="empty">Loading...</div>
         ) : entries.length === 0 ? (
           <div className="empty">No admin activity recorded yet.</div>
         ) : (
@@ -94,7 +94,7 @@ export default function Audit() {
                   <td>{e.actor}</td>
                   <td><span className={`audit-act audit-act-${actionKind(e.action)}`}
                             title={e.action}>{actionLabel(e.action)}</span></td>
-                  <td className="ut-email">{e.target || "—"}</td>
+                  <td className="ut-email">{e.target || "-"}</td>
                   <td className="audit-detail">{summarize(e.detail)}</td>
                 </tr>
               ))}

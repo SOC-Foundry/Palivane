@@ -24,7 +24,7 @@ const CAT_LABEL = {
   ci_workflow_risk: "CI workflow risk",
 };
 
-// Concrete "what do I do now" steps, derived from the finding's signals + evidence — mirrors
+// Concrete "what do I do now" steps, derived from the finding's signals + evidence, mirrors
 // the backend remediation guidance so the security team can close the loop from the console.
 function remediationFor(finding) {
   const cats = new Set((finding.signals || []).map((s) => s.category));
@@ -43,11 +43,11 @@ function remediationFor(finding) {
     if (ev.includes("aws"))
       steps.push("Deactivate the access key in IAM and switch to short-lived creds (SSO/STS).");
     if (ev.includes("verified live"))
-      steps.push("This credential is CONFIRMED LIVE — rotate it now; assume it may already be compromised.");
+      steps.push("This credential is CONFIRMED LIVE, rotate it now; assume it may already be compromised.");
     if (!steps.length)
       steps.push("Rotate the credential, revoke the old one, and move it into a secret manager or the OS keychain.");
     if (ev.includes("world/group-readable"))
-      steps.push("Tighten file permissions (chmod 600) — it is readable by other local users.");
+      steps.push("Tighten file permissions (chmod 600), it is readable by other local users.");
   }
   if (cats.has("pii_exposure"))
     steps.push("Remove the personal data; for regulated data use only an approved, contracted tool.");
@@ -60,7 +60,7 @@ function remediationFor(finding) {
   if (cats.has("data_oversharing"))
     steps.push("Restrict the source data's permissions at the origin (SharePoint/Drive/index) so the LLM can't surface it to unauthorized users; verify the need-to-know rule matches your access policy.");
   if (cats.has("agent_authz"))
-    steps.push("This agent acted outside its role. Add the tool/server to the role's allow-list if legitimate, otherwise investigate — the agent may be compromised or misconfigured.");
+    steps.push("This agent acted outside its role. Add the tool/server to the role's allow-list if legitimate, otherwise investigate, the agent may be compromised or misconfigured.");
   if (cats.has("mcp_untrusted_server"))
     steps.push("Add the server to the per-tenant MCP allowlist if trusted, otherwise block it.");
   if (cats.has("dependency_risk"))
@@ -76,7 +76,7 @@ const STATUSES = [
   { key: "dismissed", label: "Dismissed" },
 ];
 
-// The distinct policy checks this finding's signals belong to — what a suppression targets.
+// The distinct policy checks this finding's signals belong to, what a suppression targets.
 const NOT_A_CHECK = new Set(["ai_generated"]);  // verdict signals with no policy toggle
 
 function checksOf(finding) {
@@ -109,7 +109,7 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
   async function suppress(check, label, channel) {
     const who = finding.sender;
     const where = channel ? `via ${channel}` : "on every tool";
-    if (!window.confirm(`Stop flagging "${label}" for ${who} ${where}?\n\nThis adds a per-user policy override (Policies page) — Palivane will no longer record ${label} findings for this user ${where}.`)) return;
+    if (!window.confirm(`Stop flagging "${label}" for ${who} ${where}?\n\nThis adds a per-user policy override (Policies page). Palivane will no longer record ${label} findings for this user ${where}.`)) return;
     const ch = (channel || "").toLowerCase();
     const pol = await api.policies();
     const existing = (pol.overrides || []).find(
@@ -191,21 +191,21 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
                   <>
                     <button className="ghost-btn slim"
                             onClick={() => suppress(check, label, finding.channel)}>
-                      stop flagging “{label}” via {finding.channel}
+                      stop flagging '{label}' via {finding.channel}
                     </button>
                     <button className="link-btn tune-everywhere" title="Suppress on every tool, not just this one"
                             onClick={() => suppress(check, label, "")}>everywhere</button>
                   </>
                 ) : (
                   <button className="ghost-btn slim" onClick={() => suppress(check, label, "")}>
-                    stop flagging “{label}”
+                    stop flagging '{label}'
                   </button>
                 )}
               </span>
             ))}
           </div>
           {suppressed && (
-            <p className="tune-done">✓ {suppressed} suppressed for {finding.sender} — takes
+            <p className="tune-done">✓ {suppressed} suppressed for {finding.sender}, takes
               effect on their next capture.</p>
           )}
         </div>

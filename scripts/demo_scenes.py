@@ -61,7 +61,7 @@ def block_modal(verdict: dict) -> str:
     sigs.sort(key=lambda s: 1 if s["category"] == "unsanctioned_ai" else 0)
     rows = "".join(
         f'<li style="margin:4px 0">{html.escape(CATEGORY_LABELS.get(s["category"], s["category"]))}'
-        + (f' — <span style="opacity:.7">{html.escape(s.get("evidence", ""))}</span>'
+        + (f' · <span style="opacity:.7">{html.escape(s.get("evidence", ""))}</span>'
            if s.get("evidence") else "") + "</li>"
         for s in sigs)
     labels = [CATEGORY_LABELS.get(s["category"], s["category"]).lower()
@@ -93,7 +93,7 @@ def block_modal(verdict: dict) -> str:
         <ul style="margin:8px 0 4px;padding-left:18px;color:#e6e9f0">{rows}</ul>
         {fix}
         <div style="color:#8a93a6;font-size:12px;margin-top:12px">
-          risk {risk} · the AI tool may show a "failed to send" error — that's the block working.
+          risk {risk} · the AI tool may show a "failed to send" error. That's the block working.
         </div>
         <div style="display:flex;gap:8px;margin-top:18px">
           <div style="flex:1;padding:11px;border-radius:8px;background:#4da3ff;color:#04101f;
@@ -138,7 +138,7 @@ def _chat_app(brand: str, accent: str, bg: str, panel: str, sidebar_items: list[
               <div style="width:28px;height:28px;flex:none;display:grid;place-items:center">
                 {icon(icon_key or "chatgpt", 24, accent)}</div>
               <div style="color:#c9d3e6;font-size:14.5px;line-height:1.65">
-                Sure — paste the export and I'll take a look at the totals.</div>
+                Sure, paste the export and I'll take a look at the totals.</div>
             </div>
           </div>
         </div>
@@ -253,15 +253,15 @@ setT(0);
 
 def title_scene(kicker: str, headline: str, sub: str) -> str:
     return f"""<!doctype html><meta charset="utf-8"><style>{BASE_CSS}</style>
-<div class="scene" style="background:radial-gradient(1100px 620px at 50% 40%,#161d33,#080b13)">
+<div class="scene" style="background:#0E100F">
   <div id="wrap" style="position:absolute;inset:0;display:flex;flex-direction:column;
       align-items:center;justify-content:center;gap:16px;opacity:0">
     <img src="palivane-emblem.png" style="height:76px;width:auto" />
-    <div style="color:#7c6cff;font-size:13px;font-weight:800;letter-spacing:.22em">
+    <div style="color:#239D74;font-size:13px;font-weight:800;letter-spacing:.22em">
       {html.escape(kicker)}</div>
-    <div style="color:#eef2ff;font-size:44px;font-weight:800;letter-spacing:-1px;text-align:center">
+    <div style="color:#FFFFFF;font-size:44px;font-weight:800;letter-spacing:-1px;text-align:center">
       {html.escape(headline)}</div>
-    <div style="color:#9aa4b8;font-size:17px;text-align:center;max-width:760px">
+    <div style="color:#9BA6A0;font-size:17px;text-align:center;max-width:760px">
       {html.escape(sub)}</div>
   </div>
 </div>

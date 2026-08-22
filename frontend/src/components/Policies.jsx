@@ -1,4 +1,4 @@
-// Policies — enable/disable each detection check per tenant, grouped by area, with presets.
+// Policies, enable/disable each detection check per tenant, grouped by area, with presets.
 // Toggling writes tenant.disabled_checks (PATCH /api/tenant); the engine drops signals for
 // disabled checks on the next scan. Changes apply immediately.
 import { useCallback, useEffect, useState } from "react";
@@ -6,17 +6,17 @@ import { api } from "../api.js";
 
 // Preset -> the set of checks it DISABLES. "Strict" = everything on. "Balanced" mirrors the
 // common default. "Monitor" keeps every check recording (blocking is governed by mode, not
-// by turning checks off), so it also disables nothing — presets are a quick reset to "all on"
+// by turning checks off), so it also disables nothing, presets are a quick reset to "all on"
 // plus room to grow per-preset later.
 const PRESET_DISABLED = { strict: [], balanced: [], monitor: [] };
 
 const BLANK = { scope: "group", match: "", channel: "", label: "", disabled_checks: [], enforce: "inherit" };
 
-// How long ago an ISO timestamp was, coarsely — for the exceptions queue.
+// How long ago an ISO timestamp was, coarsely, for the exceptions queue.
 function age(ts) {
-  if (!ts) return "—";
+  if (!ts) return "-";
   const ms = Date.now() - new Date(ts).getTime();
-  if (!Number.isFinite(ms) || ms < 0) return "—";
+  if (!Number.isFinite(ms) || ms < 0) return "-";
   const mins = Math.floor(ms / 60000);
   if (mins < 60) return `${mins}m`;
   const hours = Math.floor(mins / 60);
@@ -61,8 +61,8 @@ export default function Policies({ tenant, onTenant }) {
       await api.exceptionResolve(id, payload);
       setNote("");
       await loadExceptions();
-      if (action === "approve") await load();   // approval creates an override — refresh the list
-      setFlash(action === "approve" ? "Exception approved — override created." : "Exception denied.");
+      if (action === "approve") await load();   // approval creates an override, refresh the list
+      setFlash(action === "approve" ? "Exception approved, override created." : "Exception denied.");
       setTimeout(() => setFlash(null), 2500);
     } catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
     finally { setSaving(""); }
@@ -71,12 +71,12 @@ export default function Policies({ tenant, onTenant }) {
   const disabledSet = () => new Set((cat?.checks || []).filter((c) => !c.enabled).map((c) => c.key));
 
   async function persist(nextDisabled, label) {
-    setErr(null); setSaving(label || "…");
+    setErr(null); setSaving(label || "...");
     try {
       const t = await api.updateTenant({ disabled_checks: [...nextDisabled] });
       onTenant?.(t);
       await load();
-      setFlash("Saved — applies to new scans immediately.");
+      setFlash("Saved, applies to new scans immediately.");
       setTimeout(() => setFlash(null), 2500);
     } catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
     finally { setSaving(""); }
@@ -126,7 +126,7 @@ export default function Policies({ tenant, onTenant }) {
   }
   const checkLabel = (key) => (cat?.checks.find((c) => c.key === key)?.label || key);
 
-  if (!cat) return <div className="connect"><p className="muted">Loading policies…</p></div>;
+  if (!cat) return <div className="connect"><p className="muted">Loading policies...</p></div>;
 
   const total = cat.checks.length;
   const on = cat.checks.filter((c) => c.enabled).length;
@@ -137,7 +137,7 @@ export default function Policies({ tenant, onTenant }) {
         <div>
           <h1 className="page-title">Policies</h1>
           <p className="page-sub">Choose which detection checks run for your organization.
-             <strong> {on} of {total}</strong> enabled — changes apply immediately to new scans.</p>
+             <strong> {on} of {total}</strong> enabled, changes apply immediately to new scans.</p>
         </div>
         <div className="head-actions">
           {["strict", "balanced", "monitor"].map((p) => (
@@ -147,7 +147,7 @@ export default function Policies({ tenant, onTenant }) {
             </button>
           ))}
           <button className="ghost-btn" onClick={downloadCompliance}
-                  title="OWASP LLM Top 10, OWASP Agentic, NIST AI RMF, EU AI Act — coverage from your live policy">
+                  title="OWASP LLM Top 10, OWASP Agentic, NIST AI RMF, EU AI Act, coverage from your live policy">
             Compliance report (CSV)
           </button>
         </div>
@@ -204,11 +204,11 @@ export default function Policies({ tenant, onTenant }) {
       <div className="panel settings-card">
         <h2>Per-user &amp; per-group overrides</h2>
         <p className="muted" style={{ marginTop: 0 }}>Give a specific user or group its own check
-           set — it <strong>replaces</strong> the org default for matched people. A user match is
+           set, it <strong>replaces</strong> the org default for matched people. A user match is
            an exact email; a group match is a pattern like <code>*@contractors.acme.com</code>,
            <code> *intern*</code>, or <code>svc-*@acme.com</code>. User beats group; the most
            specific group wins. Optionally scope an override to one tool
-           (e.g. <code>claude-code</code>, <code>claude-*</code>) — it then applies only to
+           (e.g. <code>claude-code</code>, <code>claude-*</code>), it then applies only to
            captures on that tool, and beats an any-tool override for the same person.</p>
 
         {(cat.overrides || []).length > 0 && (
@@ -220,8 +220,8 @@ export default function Policies({ tenant, onTenant }) {
                   <td><span className={`cat ${o.scope === "user" ? "cat-secret_leak" : "cat-unsanctioned_ai"}`}>{o.scope}</span></td>
                   <td><code>{o.match}</code></td>
                   <td className="muted">{o.channel ? <code>{o.channel}</code> : "any"}</td>
-                  <td className="muted">{o.enforce === true ? "enforce" : o.enforce === false ? "monitor" : "—"}</td>
-                  <td className="muted">{o.label || "—"}</td>
+                  <td className="muted">{o.enforce === true ? "enforce" : o.enforce === false ? "monitor" : "-"}</td>
+                  <td className="muted">{o.label || "-"}</td>
                   <td className="muted">{o.disabled_checks.length
                     ? o.disabled_checks.map(checkLabel).join(", ")
                     : <span style={{ color: "var(--benign)" }}>all checks on</span>}</td>
@@ -260,12 +260,12 @@ export default function Policies({ tenant, onTenant }) {
             ))}
           </div>
           <button className="primary-btn slim" onClick={addOverride} disabled={saving === "override"}>
-            {saving === "override" ? "…" : "Add override"}
+            {saving === "override" ? "..." : "Add override"}
           </button>
         </div>
       </div>
 
-      {/* Exception requests — users asking to allow a blocked destination/category. */}
+      {/* Exception requests, users asking to allow a blocked destination/category. */}
       <div className="panel settings-card">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
           <h2 style={{ margin: 0 }}>Exceptions</h2>
@@ -279,7 +279,7 @@ export default function Policies({ tenant, onTenant }) {
            policy flagged. Approving creates a scoped override for the requesting user.</p>
 
         {exceptions === null ? (
-          <p className="muted">Loading exceptions…</p>
+          <p className="muted">Loading exceptions...</p>
         ) : exceptions.length === 0 ? (
           <p className="muted">{showResolved ? "No exception requests." : "No pending exception requests."}</p>
         ) : (
@@ -290,9 +290,9 @@ export default function Policies({ tenant, onTenant }) {
                 {exceptions.map((x) => (
                   <tr key={x.id}>
                     <td>{x.actor}</td>
-                    <td className="muted">{x.destination ? <code>{x.destination}</code> : "—"}</td>
-                    <td className="muted">{(x.categories || []).join(", ") || "—"}</td>
-                    <td className="muted">{x.reason || "—"}</td>
+                    <td className="muted">{x.destination ? <code>{x.destination}</code> : "-"}</td>
+                    <td className="muted">{(x.categories || []).join(", ") || "-"}</td>
+                    <td className="muted">{x.reason || "-"}</td>
                     <td className="muted">{age(x.created_at)}</td>
                     <td>
                       {x.status === "pending"
@@ -317,18 +317,18 @@ export default function Policies({ tenant, onTenant }) {
             </table>
             {exceptions.some((x) => x.status === "pending") && (
               <input style={{ marginTop: 10, width: "100%" }} value={note}
-                     placeholder="Optional note — attached to the next approve/deny"
+                     placeholder="Optional note, attached to the next approve/deny"
                      onChange={(e) => setNote(e.target.value)} />
             )}
           </>
         )}
       </div>
 
-      {/* Check activity — findings vs. dismissals per check over the last 30 days. */}
+      {/* Check activity, findings vs. dismissals per check over the last 30 days. */}
       <div className="panel settings-card">
         <h2>Check activity (30d)</h2>
         <p className="muted" style={{ marginTop: 6 }}>A high dismiss rate means the check is
-           mostly generating noise for your org — a candidate to tune or disable.</p>
+           mostly generating noise for your org, a candidate to tune or disable.</p>
         {analytics === null ? (
           <p className="muted">No activity data available.</p>
         ) : (analytics.checks || []).length === 0 ? (

@@ -4,7 +4,12 @@ v3: 'less synthy, more lofi'. The sustained detuned-sine pads are gone; the bed 
 Rhodes-style keys comping 7th chords with tape wow/flutter, a plucked bass, a soft
 boom-bap kit with swung hats (only in the fuller sections), and a dusty master:
 gentle tape saturation, ~7.5kHz roll-off, and a whisper of vinyl crackle + hiss.
-Same Am-F-C-G progression (now as Am7/Fmaj7/Cmaj7/G7), same section map, same loudness.
+v4: new tune, same room. The production chain is untouched (Rhodes tines, tape wow, plucked
+bass, swung boom-bap, vinyl dust); what changed is the harmony. The old bed looped
+Am-F-C-G, a minor i-VI-III-VII that kept resolving downward. This one turns around
+Dm7-G7-Cmaj7-Am7, the ii-V-I-vi that lofi actually lives on, with an Fmaj7-Em7-Dm7-G7
+descent for the busier middle. Same relative-major tonal centre, so it sits with the old
+cut rather than clashing; slower at 68bpm so the swing has more room.
 """
 import numpy as np
 from scipy.io import wavfile
@@ -17,18 +22,20 @@ A4 = 440.0
 def hz(m):
     return A4 * 2 ** ((m - 69) / 12)
 
-BPM = 72
+BPM = 68
 BEAT = 60 / BPM            # 0.833s
 SWING = 0.58               # off-8ths land late
 
 # 7th voicings (midi): name -> (bass, comp notes)
 CHORDS = {
+    "Dm": (50, [57, 60, 62, 65]),      # Dm7   - the ii the turnaround leans on
+    "G":  (43, [53, 55, 59, 62]),      # G7
+    "C":  (48, [52, 55, 59, 64]),      # Cmaj7 - home
     "Am": (45, [57, 60, 64, 67]),      # Am7
     "F":  (41, [53, 57, 60, 64]),      # Fmaj7
-    "C":  (48, [52, 55, 59, 64]),      # Cmaj7
-    "G":  (43, [55, 59, 62, 65]),      # G7
+    "Em": (52, [55, 59, 62, 67]),      # Em7   - passing chord in the descent
 }
-SCALE = [69, 72, 74, 76, 79, 81, 84]   # A minor pentatonic-ish, mellow octave
+SCALE = [67, 69, 72, 74, 76, 79, 81]   # C major pentatonic-ish, sits over ii-V-I-vi
 
 
 def env(n, a, r, sr=SR):
@@ -222,10 +229,23 @@ os.makedirs(BASE, exist_ok=True)
 # 90.28s hero cut. Sections follow the story: title, the three browser blocks, the three
 # agent blocks, infrastructure (AWS + GitHub), then the console payoff and a settle.
 render(104.24, [
-    (0.0,   4.0,    ["Am"],                       0.15),   # title card
-    (4.0,   32.5,   ["Am", "F", "C", "G"],        0.55),   # browser: claude / chatgpt / gemini
-    (32.5,  61.0,   ["Am", "F", "C", "G"],        0.75),   # agents: claude code / codex / cursor
-    (61.0,  78.0,   ["F", "G", "Am", "C"],        0.85),   # infrastructure: AWS + GitHub
-    (78.0,  99.0,   ["Am", "F", "C", "G"],        0.62),   # console tour
-    (99.0,  104.24, ["Am", "F"],                  0.30),   # settle out
+    (0.0,   4.0,    ["C"],                        0.15),   # title card: sit on home
+    (4.0,   32.5,   ["Dm", "G", "C", "Am"],       0.55),   # browser: claude / chatgpt / gemini
+    (32.5,  61.0,   ["Dm", "G", "C", "Am"],       0.75),   # agents: claude code / codex / cursor
+    (61.0,  78.0,   ["F", "Em", "Dm", "G"],       0.85),   # infrastructure: the descent
+    (78.0,  99.0,   ["Dm", "G", "C", "Am"],       0.62),   # console tour
+    (99.0,  104.24, ["Dm", "C"],                  0.30),   # settle out, unresolved to home
 ], f"{BASE}/score.wav")
+
+# 58.96s setup cut. Its storyboard is calmer than the hero (title, Connect, the install
+# terminal, Settings, a second card, the MDM push, Findings, a closing brand card), so the
+# bed stays lower and only lifts for the two terminal beats.
+render(58.96, [
+    (0.0,   4.5,    ["C"],                        0.15),   # title card
+    (4.5,   17.0,   ["Dm", "G", "C", "Am"],       0.50),   # Connect page
+    (17.0,  27.5,   ["Dm", "G"],                  0.70),   # one-command install terminal
+    (27.5,  36.0,   ["C", "Am"],                  0.52),   # Settings page
+    (36.0,  46.0,   ["F", "Em", "Dm", "G"],       0.72),   # MDM push terminal
+    (46.0,  54.0,   ["Dm", "G", "C", "Am"],       0.58),   # Findings page
+    (54.0,  58.96,  ["Dm", "C"],                  0.28),   # closing brand card
+], f"{BASE}/setup-score.wav")

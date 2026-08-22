@@ -3,7 +3,7 @@
 //
 // Sign-in: on the landing we have an in-SPA handler (onSignIn) that flips to the login
 // view without a navigation. On the standalone subpages there's no such handler, so the
-// button links to "/#signin" — App reads that hash on mount and opens login on the home
+// button links to "/#signin", App reads that hash on mount and opens login on the home
 // route. Pass onSignIn only from the landing.
 import { useEffect, useRef, useState } from "react";
 
@@ -14,7 +14,7 @@ const TABS = [
   { href: "/coverage", label: "Coverage" },
   { href: "/setup", label: "Setup" },
   { href: "/docs", label: "Docs" },
-  // Pricing tab hidden for now (2026-08-05, David) — the /pricing page itself stays
+  // Pricing tab hidden for now (2026-08-05, David), the /pricing page itself stays
   // reachable by direct URL. Restore by uncommenting; it goes last, adjacent to the
   // sign-in CTA, where it reads as the natural next step.
   // { href: "/pricing", label: "Pricing" },
@@ -106,7 +106,7 @@ export function Clip({ src, poster = "", caption = "", lead = false }) {
 export function SiteFooter() {
   return (
     <footer className="lp-foot">
-      <span>◆ Palivane — AI Security Gateway</span>
+      <span>◆ Palivane, AI Security Gateway</span>
       <span className="lp-foot-links">
         {TABS.map((t) => <a key={t.href} href={t.href}>{t.label}</a>)}
         <a href="/trust">Trust &amp; Security</a>
