@@ -6,21 +6,21 @@ account-bound and must be done from your own developer account.
 
 ## What's already done (in the repo)
 
-- **Icons** — `icons/icon-{16,32,48,128}.png`, wired into `manifest.json` (`icons` +
+- **Icons**, `icons/icon-{16,32,48,128}.png`, wired into `manifest.json` (`icons` +
   `action.default_icon`). The 128px icon is what the store requires.
-- **Manifest V3**, single-purpose, no remote code — `injected.js` is packaged and loaded
+- **Manifest V3**, single-purpose, no remote code, `injected.js` is packaged and loaded
   via `web_accessible_resources` (reviewers reject extensions that fetch remote JS).
-- **Packaging** — `./build.sh` produces `palivane-shadow-ai-guard-<version>.zip` with the
+- **Packaging**, `./build.sh` produces `palivane-shadow-ai-guard-<version>.zip` with the
   icons included (and fails if the 128px icon is missing).
 
 ## What only you can do (account-bound)
 
-1. **Register a developer account** — [Chrome Web Store dev dashboard](https://chrome.google.com/webstore/devconsole)
+1. **Register a developer account**, [Chrome Web Store dev dashboard](https://chrome.google.com/webstore/devconsole)
    (one-time **$5** fee) and/or [Edge Partner Center](https://partner.microsoft.com/dashboard/microsoftedge)
    (free).
-2. **Host a privacy policy** at a public URL (use [`PRIVACY.md`](./PRIVACY.md) — paste it
+2. **Host a privacy policy** at a public URL (use [`PRIVACY.md`](./PRIVACY.md), paste it
    on your site or a public Gist) and put that URL in the listing.
-3. **Provide screenshots** — at least one **1280×800** (or 640×400) PNG. Good shots: the
+3. **Provide screenshots**, at least one **1280×800** (or 640×400) PNG. Good shots: the
    amber "warn" banner and the red "block" banner on a prompt containing a fake secret.
 4. **Upload the zip, fill the listing, and submit for review.**
 
@@ -31,7 +31,7 @@ account-bound and must be done from your own developer account.
 | **Public** | Anyone | You want a public security tool. |
 | **Unlisted** | Anyone with the link | Internal rollout without a public listing. |
 | **Private** (Workspace) | Only your Google Workspace domain | Single-org deployment. |
-| **Force-install** (no store review) | Managed devices via MDM / `ExtensionInstallForcelist` | Zero-touch fleet rollout — see [README](./README.md#enterprise-rollout--zero-touch-force-install--managed-config). |
+| **Force-install** (no store review) | Managed devices via MDM / `ExtensionInstallForcelist` | Zero-touch fleet rollout, see [README](./README.md#enterprise-rollout--zero-touch-force-install--managed-config). |
 
 You don't *need* the store for a managed fleet (force-install + self-hosted CRX works),
 but a private/unlisted store item is the easiest install path.
@@ -40,21 +40,21 @@ but a private/unlisted store item is the easiest install path.
 
 ## Listing copy (paste into the dashboard)
 
-**Name:** Palivane — Shadow-AI Guard
+**Name:** Palivane. Shadow-AI Guard
 
 **Summary (≤132 chars):** Stops secrets, PII, and proprietary data from being pasted into
-AI tools — scans prompts and warns or blocks before they're sent.
+AI tools, scans prompts and warns or blocks before they're sent.
 
 **Category:** Productivity (or Developer Tools)
 
 **Detailed description:**
-> Palivane — Shadow-AI Guard inspects prompts you send to external AI tools (ChatGPT,
+> Palivane. Shadow-AI Guard inspects prompts you send to external AI tools (ChatGPT,
 > Claude, Gemini, Microsoft Copilot, Perplexity, Mistral, DeepSeek, Grok, Google AI
 > Studio, Poe) for secrets, credentials, PII, and proprietary source code, and warns or
 > blocks **before the prompt leaves your browser**.
 >
 > Detection runs on your organization's self-hosted Palivane backend; the extension is the
-> capture client. It fails open — if the backend is unreachable, your AI tools keep
+> capture client. It fails open, if the backend is unreachable, your AI tools keep
 > working untouched. Configuration (backend URL, token, enforce mode) is set by your
 > administrator via Options or managed enterprise policy.
 >
@@ -75,10 +75,10 @@ AI tools — scans prompts and warns or blocks before they're sent.
 | --- | --- |
 | `storage` | Store the admin's configuration (backend URL, ingest token, enforce flag) and read enterprise **managed** policy. |
 | `identity` | Self-serve sign-in: `chrome.identity.launchWebAuthFlow` opens the organization's Palivane console so the user authenticates (login/SSO) and the extension receives a per-user, tenant-scoped token. No Google account data is read; it's only the OAuth-style redirect back to the extension. |
-| `host_permissions` — `claude.ai`, `chatgpt.com`, `chat.openai.com`, `gemini.google.com`, `copilot.microsoft.com`, `m365.cloud.microsoft`, `www.bing.com`, `perplexity.ai`, `chat.mistral.ai`, `chat.deepseek.com`, `grok.com`, `aistudio.google.com`, `poe.com` | Run the content/injected script on these AI tools to read the prompt text before submission so it can be scanned. The extension acts **only** on these AI hosts. |
-| `host_permissions` — `localhost` / `127.0.0.1` | Allow talking to a Palivane backend running locally during evaluation. Remove these two from `manifest.json` before a public listing if you only use a hosted backend. |
+| `host_permissions`, `claude.ai`, `chatgpt.com`, `chat.openai.com`, `gemini.google.com`, `copilot.microsoft.com`, `m365.cloud.microsoft`, `www.bing.com`, `perplexity.ai`, `chat.mistral.ai`, `chat.deepseek.com`, `grok.com`, `aistudio.google.com`, `poe.com` | Run the content/injected script on these AI tools to read the prompt text before submission so it can be scanned. The extension acts **only** on these AI hosts. |
+| `host_permissions`, `localhost` / `127.0.0.1` | Allow talking to a Palivane backend running locally during evaluation. Remove these two from `manifest.json` before a public listing if you only use a hosted backend. |
 
-**Remote code:** No. The extension executes no remotely-hosted code — all logic ships in
+**Remote code:** No. The extension executes no remotely-hosted code, all logic ships in
 the package. It sends prompt text to an admin-configured backend and receives a JSON
 verdict; no code is fetched or evaluated.
 
@@ -93,8 +93,8 @@ verdict; no code is fetched or evaluated.
 - **Privacy policy URL:** the public URL where you host [`PRIVACY.md`](./PRIVACY.md).
 
 > Because the extension transmits prompt content, expect Chrome to flag it for a closer
-> review of the data-use disclosures. The honest framing above — *data goes only to the
-> customer's own backend, never to us* — is what reviewers look for.
+> review of the data-use disclosures. The honest framing above, *data goes only to the
+> customer's own backend, never to us*, is what reviewers look for.
 
 ### Version update note (paste into the reviewer notes field)
 
@@ -105,7 +105,7 @@ require users to re-accept permissions, so call the host change out explicitly.
 > Version 0.6.0 adds coverage for six additional AI tools: Perplexity, Mistral (Le Chat),
 > DeepSeek, Grok, Google AI Studio, and Poe. This required adding those domains to
 > `host_permissions` and the content-script matches. **No new API permissions were added**
-> — the change is only additional AI hosts, consistent with the extension's single purpose
+>, the change is only additional AI hosts, consistent with the extension's single purpose
 > (scanning prompts before they're sent to AI tools). No remotely-hosted code; behavior is
 > otherwise unchanged.
 
@@ -115,12 +115,12 @@ require users to re-accept permissions, so call the host change out explicitly.
 
 ---
 
-## Submit — Chrome Web Store
+## Submit. Chrome Web Store
 
 ```bash
 cd extension && ./build.sh          # -> palivane-shadow-ai-guard-<version>.zip  (dev: localhost)
 
-# PROD build for hosted SaaS — bakes your console/ingest URL and drops localhost:
+# PROD build for hosted SaaS, bakes your console/ingest URL and drops localhost:
 PALIVANE_SAAS_URL=https://app.palivane.io ./build.sh   # -> ...-<version>-prod.zip
 ```
 
@@ -136,7 +136,7 @@ Managed-policy deployments still override these defaults per tenant.
 3. Choose visibility (Public / Unlisted / Private) → **Submit for review**.
 4. On later updates: bump `"version"` in `manifest.json`, re-run `./build.sh`, upload.
 
-### Optional — automated upload (CI)
+### Optional, automated upload (CI)
 
 The Chrome Web Store has a [publish API](https://developer.chrome.com/docs/webstore/using-api).
 Once you have an OAuth client + refresh token and the item ID:
@@ -152,7 +152,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "x-goog-api-version: 2" \
   "https://www.googleapis.com/chromewebstore/v1.1/items/$CWS_ITEM_ID/publish"
 ```
 
-## Submit — Edge Add-ons
+## Submit. Edge Add-ons
 
 Same zip. [Edge Partner Center](https://partner.microsoft.com/dashboard/microsoftedge) →
 **New extension** → upload → fill listing + privacy → submit. Edge also has a
@@ -161,7 +161,7 @@ Same zip. [Edge Partner Center](https://partner.microsoft.com/dashboard/microsof
 ## After upload: wire the extension ID into your fleet
 
 The store assigns a **permanent extension ID** on first upload (visible in the dashboard
-item URL — you don't have to publish to see it). That ID connects publishing to the rest
+item URL, you don't have to publish to see it). That ID connects publishing to the rest
 of the deploy pipeline:
 
 1. **Tell Palivane the ID** so generated installers write the browser managed policy under
@@ -172,20 +172,20 @@ of the deploy pipeline:
    ```
    (env var; passed through `docker-compose.yml`). Restart the backend.
 
-2. **Force-install policy** (MDM / Google Admin / GPO) — Chrome `ExtensionInstallForcelist`:
+2. **Force-install policy** (MDM / Google Admin / GPO). Chrome `ExtensionInstallForcelist`:
    ```
    <extension-id>;https://clients2.google.com/service/update2/crx
    ```
    Edge uses the same policy name with the Edge Add-ons update URL. Installs the extension
    automatically on managed devices.
 
-3. **Managed config** is keyed by the ID — push to
+3. **Managed config** is keyed by the ID, push to
    `3rdparty/extensions/<extension-id>/policy` (backendUrl + token + enforce). The
    provisioner emits exactly this block, prefilled.
 
 ### Alternative: self-hosted CRX (you control the ID)
 To fix the ID *before* any store upload (e.g. to pre-stage all policy), pack a CRX with
-your own signing key — the ID is derived deterministically from that key — and
+your own signing key, the ID is derived deterministically from that key, and
 force-install with **your** `update_url`. No store account needed, but you host the CRX +
 `update.xml` and manage updates; Chrome also requires the extension be allow-listed by
 enterprise policy to load off-store.
