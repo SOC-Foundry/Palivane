@@ -1,7 +1,7 @@
 // Isolated-world content script. Relays scan requests from the MAIN-world interceptor
 // (injected.js, registered as a world:MAIN content script) to the background worker,
 // and renders the warn/block UI. injected.js no longer needs to be injected via a
-// <script> tag — that was blocked by strict-CSP sites like Microsoft Copilot.
+// <script> tag, that was blocked by strict-CSP sites like Microsoft Copilot.
 
 window.addEventListener("message", async (e) => {
   // Only accept messages from the interceptor in THIS window (injected.js runs in the
@@ -64,16 +64,16 @@ function showBlockModal(verdict) {
   document.getElementById("palivane-modal")?.remove();
   const rows = dataSignals(verdict).map((s) => {
     const label = CATEGORY_LABELS[s.category] || s.category;
-    const ev = s.evidence ? ` — <span style="opacity:.7">${escapeHtml(s.evidence)}</span>` : "";
+    const ev = s.evidence ? `, <span style="opacity:.7">${escapeHtml(s.evidence)}</span>` : "";
     return `<li style="margin:4px 0">${escapeHtml(label)}${ev}</li>`;
   }).join("");
 
-  // Turn a hard "no" into "no — use this instead": the org's approved AI tools.
+  // Turn a hard "no" into "no, use this instead": the org's approved AI tools.
   const tools = (verdict.sanctioned_tools || []).slice(0, 4);
   const alt = tools.length ? `
     <div style="margin-top:14px;padding:11px 13px;background:rgba(63,185,80,.08);
         border:1px solid rgba(63,185,80,.35);border-radius:10px">
-      <div style="font-weight:700;color:#4ade80;font-size:13px">✓ Approved for sensitive data — use instead:</div>
+      <div style="font-weight:700;color:#4ade80;font-size:13px">✓ Approved for sensitive data, use instead:</div>
       <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px">
         ${tools.map((t) => safeUrl(t.url)
           ? `<a href="${escapeHtml(safeUrl(t.url))}" target="_blank" rel="noopener" style="
@@ -84,7 +84,7 @@ function showBlockModal(verdict) {
       </div>
     </div>` : "";
 
-  // "How to fix" — concrete remediation steps from the verdict, shown inline.
+  // "How to fix", concrete remediation steps from the verdict, shown inline.
   const fixes = (verdict.remediation || []).slice(0, 4);
   const fix = fixes.length ? `
     <div style="margin-top:14px;padding:11px 13px;background:rgba(77,163,255,.08);
@@ -119,7 +119,7 @@ function showBlockModal(verdict) {
       ${alt}
       <div style="color:#8a93a6;font-size:12px;margin-top:12px">
         risk ${riskText(verdict)} ·
-        the AI tool may show a "failed to send" error — that's the block working.
+        the AI tool may show a "failed to send" error, that's the block working.
       </div>
       <div style="display:flex;gap:8px;margin-top:18px">
         <button id="palivane-modal-x" style="
@@ -143,7 +143,7 @@ function showBlockModal(verdict) {
 
   document.getElementById("palivane-modal-exc").addEventListener("click", async (e) => {
     const b = e.currentTarget;
-    b.disabled = true; b.textContent = "Sending…";
+    b.disabled = true; b.textContent = "Sending...";
     try {
       const r = await chrome.runtime.sendMessage({
         type: "exception",
@@ -194,7 +194,7 @@ function escapeHtml(s) {
   ));
 }
 
-// Only allow http(s) links — an org's sanctioned-tool URL is free text, and escapeHtml
+// Only allow http(s) links, an org's sanctioned-tool URL is free text, and escapeHtml
 // does NOT neutralize a `javascript:` scheme, which would run in the AI tool's origin.
 function safeUrl(u) {
   try {

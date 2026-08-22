@@ -1,5 +1,5 @@
 // Service worker: calls the Palivane AI-usage ingest endpoint and returns a verdict.
-// Config (backend URL, token or enrollToken, user, enforce) comes from chrome.storage — in
+// Config (backend URL, token or enrollToken, user, enforce) comes from chrome.storage, in
 // a managed rollout these are pushed via enterprise policy (managed storage).
 
 const DEFAULTS = {
@@ -28,7 +28,7 @@ async function config() {
 }
 
 // Stable per-install device identity, used to attribute the device key. Generated once and
-// cached in local storage (never synced — it's this browser install's identity).
+// cached in local storage (never synced, it's this browser install's identity).
 async function deviceId() {
   const { deviceId } = await chrome.storage.local.get({ deviceId: "" });
   if (deviceId) return deviceId;
@@ -158,7 +158,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
       if (!res.ok) { sendResponse({ action: "allow", reason: "backend " + res.status }); return; }
       const verdict = await res.json();
-      // In monitor mode (enforce off) a "block" is normally downgraded to "warn" — but a
+      // In monitor mode (enforce off) a "block" is normally downgraded to "warn", but a
       // CONFIRMED secret/PII leak (force_block) is hard-blocked regardless: block the
       // certain, monitor the fuzzy.
       if (!c.enforce && verdict.action === "block" && !verdict.force_block) verdict.action = "warn";

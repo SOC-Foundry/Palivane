@@ -10,7 +10,7 @@
       "type": "string"
     },
     "enrollToken": {
-      "title": "Fleet enrollment token (et_...) — extension self-enrolls a per-device key",
+      "title": "Fleet enrollment token (et_...), extension self-enrolls a per-device key",
       "type": "string"
     },
     "user": {
