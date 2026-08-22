@@ -1,38 +1,104 @@
 // Shared nav + footer for the public marketing pages (landing, why-palivane, use-cases,
-// how-it-works, legal). Centralizes the tab set so every page stays consistent.
+// how-it-works, legal). Centralizes the menu so every page stays consistent.
 //
 // Sign-in: on the landing we have an in-SPA handler (onSignIn) that flips to the login
 // view without a navigation. On the standalone subpages there's no such handler, so the
 // button links to "/#signin", App reads that hash on mount and opens login on the home
 // route. Pass onSignIn only from the landing.
+//
+// The nav groups pages under dropdowns rather than listing every page flat. A flat row
+// stops scaling once there are more than about five destinations, and it gives a visitor
+// no sense of which pages belong together; grouping says "these are the product pages,
+// these are the ways people use it, these are the reference docs" before anything is
+// clicked.
 import { useEffect, useRef, useState } from "react";
 
-const TABS = [
-  { href: "/why-palivane", label: "Why Palivane" },
-  { href: "/use-cases", label: "Use cases" },
-  { href: "/how-it-works", label: "How it works" },
-  { href: "/coverage", label: "Coverage" },
-  { href: "/setup", label: "Setup" },
-  { href: "/docs", label: "Docs" },
-  // Pricing tab hidden for now (2026-08-05, David), the /pricing page itself stays
-  // reachable by direct URL. Restore by uncommenting; it goes last, adjacent to the
-  // sign-in CTA, where it reads as the natural next step.
-  // { href: "/pricing", label: "Pricing" },
+const MENU = [
+  { label: "Platform", items: [
+    { href: "/how-it-works", label: "How it works", note: "The four planes, end to end" },
+    { href: "/coverage",     label: "Coverage",     note: "Every surface, and what each needs" },
+    { href: "/why-palivane", label: "Why Palivane", note: "What makes it different" },
+  ]},
+  { label: "Use cases", items: [
+    { href: "/use-cases#engineering", label: "Engineering",    note: "Coding assistants and agents" },
+    { href: "/use-cases#security",    label: "Security teams", note: "Shadow-AI discovery and response" },
+    { href: "/use-cases#compliance",  label: "Compliance",     note: "Evidence, audit, and residency" },
+  ]},
+  { label: "Resources", items: [
+    { href: "/docs",    label: "Documentation", note: "Setup, deployment, reference" },
+    { href: "/setup",   label: "Set it up",     note: "One command, one afternoon" },
+    { href: "/trust",   label: "Trust & security", note: "Posture, data handling, disclosure" },
+    { href: "/pricing", label: "Pricing",       note: "Plans and what they include" },
+  ]},
 ];
 
 export function SiteNav({ onSignIn }) {
+  const [open, setOpen] = useState(null);      // label of the open dropdown
+  const [mobile, setMobile] = useState(false);
+  const navRef = useRef(null);
+
+  // Close on outside click and on Escape. A dropdown that only closes by re-clicking its
+  // own trigger feels stuck, and keyboard users need a way out that isn't a mouse.
+  useEffect(() => {
+    const away = (e) => { if (navRef.current && !navRef.current.contains(e.target)) setOpen(null); };
+    const esc = (e) => { if (e.key === "Escape") { setOpen(null); setMobile(false); } };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, []);
+
+  const signIn = onSignIn
+    ? <button type="button" className="lp-nav-ghost" onClick={onSignIn}>Sign in</button>
+    : <a className="lp-nav-ghost" href="/#signin">Sign in</a>;
+
   return (
-    <header className="lp-nav">
-      <a className="lp-brand" href="/" style={{ color: "inherit", textDecoration: "none" }}>
-        <img src="/palivane-emblem.png" alt="Palivane" className="lp-brand-emblem" />
+    <header className="lp-nav" ref={navRef}>
+      <a className="lp-brand" href="/">
+        <img src="/palivane-emblem.png" alt="" className="lp-brand-emblem" />
         <span>Palivane</span>
       </a>
-      <nav className="lp-nav-links">
-        {TABS.map((t) => <a key={t.href} href={t.href}>{t.label}</a>)}
-        {onSignIn
-          ? <button className="primary-btn slim" onClick={onSignIn}>Sign in</button>
-          : <a className="primary-btn slim" href="/#signin" style={{ textDecoration: "none" }}>Sign in</a>}
+
+      <nav className="lp-menu" aria-label="Main">
+        {MENU.map((m) => (
+          <div key={m.label} className={`lp-menu-group ${open === m.label ? "is-open" : ""}`}>
+            <button type="button" className="lp-menu-trigger" aria-expanded={open === m.label}
+                    onClick={() => setOpen(open === m.label ? null : m.label)}>
+              {m.label}<span className="lp-caret" aria-hidden="true" />
+            </button>
+            <div className="lp-dropdown" role="menu">
+              {m.items.map((it) => (
+                <a key={it.href} href={it.href} role="menuitem" className="lp-drop-item">
+                  <span className="lp-drop-label">{it.label}</span>
+                  <span className="lp-drop-note">{it.note}</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        ))}
       </nav>
+
+      <div className="lp-nav-actions">
+        {signIn}
+        <a className="primary-btn slim" href="/setup">Get started</a>
+      </div>
+
+      <button type="button" className="lp-burger" aria-label="Menu" aria-expanded={mobile}
+              onClick={() => setMobile(!mobile)}>
+        <span /><span /><span />
+      </button>
+
+      {mobile && (
+        <div className="lp-mobile">
+          {MENU.map((m) => (
+            <div key={m.label} className="lp-mobile-group">
+              <span className="lp-mobile-head">{m.label}</span>
+              {m.items.map((it) => <a key={it.href} href={it.href}>{it.label}</a>)}
+            </div>
+          ))}
+          <div className="lp-mobile-actions">{signIn}
+            <a className="primary-btn slim" href="/setup">Get started</a></div>
+        </div>
+      )}
     </header>
   );
 }
@@ -104,15 +170,50 @@ export function Clip({ src, poster = "", caption = "", lead = false }) {
 }
 
 export function SiteFooter() {
+  // Grouped by what a visitor is trying to do, not by how the site is built. A single
+  // row of links makes every destination look equally important; columns say which
+  // handful actually matter and let the rest sit underneath without competing.
+  const COLS = [
+    { head: "Product", links: [
+      ["/how-it-works", "How it works"], ["/coverage", "Coverage"],
+      ["/why-palivane", "Why Palivane"], ["/pricing", "Pricing"],
+    ]},
+    { head: "Use cases", links: [
+      ["/use-cases#engineering", "Engineering"], ["/use-cases#security", "Security teams"],
+      ["/use-cases#compliance", "Compliance"], ["/use-cases", "All use cases"],
+    ]},
+    { head: "Get started", links: [
+      ["/setup", "Set it up"], ["/docs", "Documentation"],
+      ["/#signin", "Sign in"],
+    ]},
+    { head: "Trust", links: [
+      ["/trust", "Trust & security"], ["/privacy", "Privacy"], ["/terms", "Terms"],
+    ]},
+  ];
   return (
     <footer className="lp-foot">
-      <span>◆ Palivane, AI Security Gateway</span>
-      <span className="lp-foot-links">
-        {TABS.map((t) => <a key={t.href} href={t.href}>{t.label}</a>)}
-        <a href="/trust">Trust &amp; Security</a>
-        <a href="/privacy">Privacy</a>
-        <a href="/terms">Terms</a>
-      </span>
+      <div className="lp-foot-grid">
+        <div className="lp-foot-brand">
+          <a className="lp-brand" href="/">
+            <img src="/palivane-emblem.png" alt="" className="lp-brand-emblem" />
+            <span>Palivane</span>
+          </a>
+          <p className="lp-foot-blurb">
+            An AI security gateway. It sees what your team sends to AI tools and stops the
+            secrets, customer data, and source code that shouldn't leave.
+          </p>
+        </div>
+        {COLS.map((c) => (
+          <nav key={c.head} className="lp-foot-col" aria-label={c.head}>
+            <span className="lp-foot-head">{c.head}</span>
+            {c.links.map(([href, label]) => <a key={href + label} href={href}>{label}</a>)}
+          </nav>
+        ))}
+      </div>
+      <div className="lp-foot-bar">
+        <span>&copy; {new Date().getFullYear()} Palivane</span>
+        <span>Built for teams that adopted AI faster than they secured it.</span>
+      </div>
     </footer>
   );
 }
