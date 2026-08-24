@@ -61,7 +61,7 @@ your database. There's no Palivane cloud. It's two layers, **one server you host
 **Nothing requires a manual, per-user install.** What (if anything) lands on an endpoint
 depends on how that person reaches AI, and it's all admin-deployed and zero-touch:
 
-| AI is used via… | On the end-user machine | How it's deployed | User action |
+| AI is used via... | On the end-user machine | How it's deployed | User action |
 | --- | --- | --- | --- |
 | First-party apps, Claude Code, OpenAI/Gemini SDKs | **Nothing installed**, just a base-URL config pointing at Palivane | Env var, or Claude Code `managed-settings.json` pushed by MDM | None |
 | Browser AI (claude.ai, ChatGPT, Gemini) | A browser **extension** in Chrome/Edge | **Force-installed** via MDM / group policy (`ExtensionInstallForcelist`) + managed config | None |
@@ -278,7 +278,7 @@ Finish the browser surface by installing the Palivane extension (Chrome/Edge) an
 For pilots or hand-tuning, the per-source cards below (and the table here) let you wire up
 one plane at a time. Pick whichever matches how your org uses AI:
 
-| AI is used via… | Capture plane | Setup |
+| AI is used via... | Capture plane | Setup |
 | --- | --- | --- |
 | Your own apps / CLIs / Claude Code / Codex CLI | **LLM gateway** (`/v1`) | Point the client's base URL at Palivane, see below. |
 | Browser web UIs (claude.ai, chatgpt.com, Microsoft Copilot) | **Browser extension** | [`extension/README.md`](../extension/README.md) |
@@ -357,7 +357,7 @@ delivery) instance-wide, see `/pricing` or contact sales@palivane.io.
 The license is a signed blob (`WDN1.…`). Set it as the value of `PALIVANE_LICENSE`, or
 point `PALIVANE_LICENSE` at a file containing it, and restart:
 
-    PALIVANE_LICENSE=WDN1.eyJ2IjoxLCJvcmciOi…   # or PALIVANE_LICENSE=/etc/palivane/license
+    PALIVANE_LICENSE=WDN1.eyJ2IjoxLCJvcmciOi...   # or PALIVANE_LICENSE=/etc/palivane/license
 
 `GET /api/health` shows the active license (`org`, `plan`, `expires`). An invalid or
 expired license is ignored with a startup warning, the instance falls back to Free,

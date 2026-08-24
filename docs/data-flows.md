@@ -45,7 +45,7 @@ detection engine can score it:
 ### Hop 2, what the backend stores
 
 The engine produces a verdict (severity, risk score) and a list of **signals**, each a
-category (`secret_leak`, `pii_exposure`, `prompt_injection`, …) plus short **evidence**
+category (`secret_leak`, `pii_exposure`, `prompt_injection`, ...) plus short **evidence**
 that is already redacted upstream: a label (`"AWS access key id"`), a ≤10-char prefix, or a
 `«redacted:…»` marker, never the full secret.
 

@@ -1,4 +1,4 @@
-# Multi-tenant hosting — hardening roadmap
+# Multi-tenant hosting, hardening roadmap
 
 Palivane was designed multi-tenant (every query is scoped to `tenant_id`, with cross-tenant
 isolation tests). This tracks what's needed to host it as a **shared SaaS** serving many
@@ -6,11 +6,11 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
 
 ## Done
 - **Tenant-scoped login.** Email is unique only *within* a tenant, so login accepts an
-  optional `org` (slug). An email that exists in multiple orgs must specify one — Palivane
+  optional `org` (slug). An email that exists in multiple orgs must specify one. Palivane
   never auto-picks a tenant (that would be a cross-tenant hazard). Single-org/demo login
   omits `org`.
 - **Shared-state brute-force throttle.** Failed logins are recorded in the DB
-  (`login_attempts`) and limited per **email** and per **IP** within a window — so the
+  (`login_attempts`) and limited per **email** and per **IP** within a window, so the
   limit holds across workers/replicas, not per-process.
 - **Redaction at rest.** Stored finding content masks secrets/PII so one shared DB isn't a
   plaintext-secret honeypot (`PALIVANE_REDACT_FINDINGS`).
@@ -20,17 +20,17 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   Gemini base URL + key (`PUT /api/upstreams/{provider}`), stored **encrypted at rest**
   (`crypto.py`, Fernet keyed from `PALIVANE_ENCRYPTION_KEY`/`PALIVANE_SECRET_KEY`). The
   gateway resolves the calling tenant's config per request and forwards allowed calls with
-  *its* key — so gateway traffic bills to each org's own provider account, not one shared
+  *its* key, so gateway traffic bills to each org's own provider account, not one shared
   account. Falls back to the global env config when a tenant hasn't set one.
 - **Data controls per tenant.** Claude-judge **opt-out** (`PATCH /api/tenant` `judge`:
-  on/off/inherit — the judge ships content to Anthropic), **retention** (`retention_days`
+  on/off/inherit, the judge ships content to Anthropic), **retention** (`retention_days`
   + `POST /api/findings/purge`, scheduler-friendly), and **delete-my-org**
   (`DELETE /api/tenant`, slug-confirmed, cascades **everything**: findings, users, keys,
   enrollment tokens, upstreams, audit log, usage, OIDC/SAML). Stored finding content is
   already redacted at rest (`PALIVANE_REDACT_FINDINGS`).
 - **Self-serve data export + DPA record.** `GET /api/export/tenant` returns the org's whole
   footprint as one JSON doc (config, users, keys, findings, audit log, SSO/upstream config,
-  DPA record) — secrets excluded, finding content only with `?include_content=true`.
+  DPA record), secrets excluded, finding content only with `?include_content=true`.
   `GET/POST /api/tenant/dpa` records data-processing-agreement acceptance (version/who/when,
   `PALIVANE_DPA_VERSION`; stale on version bump), audit-logged. Both admin-only, in Settings.
 - **Password hashing & session revocation.** Passwords use **argon2id** (legacy PBKDF2
@@ -44,17 +44,17 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
 - **Capture quotas + usage metering.** A DB-backed per-minute counter per tenant
   (`gateway_usage`), split by `kind`: the **gateway** budget (`rate_limit`, else global
   `GATEWAY_RATE_LIMIT`) and a **separate sensor/ingest** budget (`ingest_rate_limit`, else
-  `INGEST_RATE_LIMIT`) for `/api/ingest/*` + `/api/scan/*` — so high-volume agentic capture
+  `INGEST_RATE_LIMIT`) for `/api/ingest/*` + `/api/scan/*`, so high-volume agentic capture
   (palivane-hook/palivane-mcp) can't starve real LLM traffic. Over-limit → provider-shaped
   **429** (gateway) or `429 + Retry-After` (ingest); 0 = unlimited. The same counter is the
   metering source: `GET /api/usage` reports gateway current/24h/per-day plus `ingest_*`
   totals. Benign MCP tool calls aren't persisted by default (`PALIVANE_MCP_PERSIST_BENIGN`),
-  and neither are benign usage captures — proxy/extension `ai-usage` ingest, OTLP prompts,
+  and neither are benign usage captures, proxy/extension `ai-usage` ingest, OTLP prompts,
   gateway prompt capture and response DLP (`PALIVANE_USAGE_PERSIST_BENIGN`). Allow-level
   traffic still feeds discovery and usage metering; only warn+ verdicts become findings.
 - **Admin console (Settings page).** A self-serve UI for all of the above: org settings
   (name, judge consent, retention, rate limit), a usage panel, per-provider upstream keys,
-  OIDC SSO config, and "log out everywhere" — previously API-only.
+  OIDC SSO config, and "log out everywhere", previously API-only.
 - **SAML SSO per tenant.** SP-initiated SAML 2.0 (python3-saml/xmlsec): per-tenant IdP
   config (`PUT /api/saml`: entity id, SSO URL, signing cert), `/api/auth/saml/{org}/login`
   → IdP → `/acs` validates the signed assertion (strict, `wantAssertionsSigned`), maps/
@@ -73,15 +73,15 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   authorized admins (`to_detail`, corpus export). Composes with redaction (redact → encrypt);
   a tagged wrapper lets a column hold mixed plaintext/ciphertext rows.
 - **Observability.** `/livez` (liveness), `/readyz` (DB-reachability, 503 if down), and a
-  Prometheus `/metrics` endpoint — HTTP request counts + latency histogram labelled by
+  Prometheus `/metrics` endpoint, HTTP request counts + latency histogram labelled by
   route template (bounded cardinality), via middleware. `/metrics` is optionally gated by
   `PALIVANE_METRICS_TOKEN`.
 - **Alerting & SIEM (per tenant).** A Slack-compatible webhook (real-time, or hourly/daily
-  **digest** — criticals always real-time), a pull-based JSONL **findings export**, and a
+  **digest**, criticals always real-time), a pull-based JSONL **findings export**, and a
   real-time **SIEM push forwarder** (generic JSON / Splunk HEC / CEF). The webhook and SIEM
   URLs are SSRF-guarded; the SIEM token is write-only (`siem_token_set` is the only readback).
-  All outbound sends are fire-and-forget and fail open — a down collector never blocks capture.
-  `siem_naming` (per tenant) picks the brand key in the wire format — Splunk sourcetype
+  All outbound sends are fire-and-forget and fail open, a down collector never blocks capture.
+  `siem_naming` (per tenant) picks the brand key in the wire format. Splunk sourcetype
   `<naming>:finding` and the S3 path `<naming>/findings/…`. Tenants from before the Palivane
   rebrand stay on `palivane` (their dashboards/pipelines key on it); new tenants get
   `palivane`; switchable in Settings → SIEM.
@@ -90,7 +90,7 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   (`PALIVANE_MAX_BODY_BYTES`, ~12 MB → 413) plus per-field `max_length`/`max_items` caps on all
   ingest/scan/analyze content, so a hostile payload can't OOM a worker or amplify regex cost;
   the scanner importer caps normalized findings. SSRF guard extended to the OIDC issuer/token/
-  JWKS fetches. `alert_webhook` is write-only (may embed a Slack token — API returns only
+  JWKS fetches. `alert_webhook` is write-only (may embed a Slack token, API returns only
   `alert_webhook_set`, like `siem_token`). CORS restricted to explicit methods/headers with
   credentials off; baseline security headers (nosniff / DENY / no-referrer). Recovery-code
   check is constant-time. (A prior pass added the SSRF guard on the alert webhook + gateway
@@ -100,7 +100,7 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
 
 ### 1. Data security & compliance (remaining)
 - Optional **per-tenant encryption keys** (content encryption today uses one deployment key).
-- (Done: self-serve data export + DPA/consent record — see above.)
+- (Done: self-serve data export + DPA/consent record, see above.)
 
 ### 2. Auth for SaaS (remaining)
 - Per-tenant signup/onboarding controls (the global `PALIVANE_ALLOW_SIGNUP` isn't enough).
@@ -113,5 +113,5 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
 ### 4. Operational (remaining)
 - Back the login-throttle / usage-metering prune with an index-friendly job (or TTL) at
   high volume.
-- A horizontal-scale runbook (all state is in Postgres today — keep it that way; no
+- A horizontal-scale runbook (all state is in Postgres today, keep it that way; no
   per-process state).

@@ -4,7 +4,7 @@ Policy suite and security-questionnaire responses backing the SOC 2 program and 
 public [/trust](https://app.palivane.io/trust) page. Every control cited here is
 implemented; where a policy names a cadence, the calendar below is the commitment.
 
-**Owner:** David Kerschieter (Founder — acts as CEO, CISO, and DPO). Single-operator
+**Owner:** David Kerschieter (Founder, acts as CEO, CISO, and DPO). Single-operator
 context: separation-of-duties controls are replaced by documented compensating controls
 (automation-enforced gates, immutable logs) noted per policy.
 
@@ -13,7 +13,7 @@ context: separation-of-duties controls are replaced by documented compensating c
 | 01 | [Information Security Policy](policies/01-information-security.md) | CC1, CC2, CC5 |
 | 02 | [Access Control](policies/02-access-control.md) | CC6 |
 | 03 | [Change Management](policies/03-change-management.md) | CC8 |
-| 04 | [Incident Response](policies/04-incident-response.md) | CC7.3–CC7.5 |
+| 04 | [Incident Response](policies/04-incident-response.md) | CC7.3-CC7.5 |
 | 05 | [Business Continuity & DR](policies/05-business-continuity-dr.md) | A1 |
 | 06 | [Vendor Management](policies/06-vendor-management.md) | CC9.2 |
 | 07 | [Data Classification & Handling](policies/07-data-classification.md) | C1 |
@@ -36,4 +36,4 @@ Questionnaire: [CAIQ-style responses](caiq.md) (hand this + the DPA + /trust to 
 
 ## Revision history
 
-- 2026-07-19 — v1.0, initial suite adopted (all policies effective this date).
+- 2026-07-19, v1.0, initial suite adopted (all policies effective this date).

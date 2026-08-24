@@ -1,9 +1,9 @@
-# SaaS-connector smoke tests — real-tenant runbook
+# SaaS-connector smoke tests, real-tenant runbook
 
 The live OAuth-grant fetchers in `backend/app/saas_connectors.py` are unit-tested against
 mocked HTTP, which proves our parsing, not the vendor's actual API behavior. This runbook
 takes an admin from nothing to credentials to a one-command live smoke test per platform,
-using `scripts/connector_smoke.py` — the same fetcher code the backend's
+using `scripts/connector_smoke.py`, the same fetcher code the backend's
 `POST /api/discovery/connectors/{id}/sync` executes, run standalone: **no running
 backend, no database, nothing stored, read-only API calls**.
 
@@ -13,7 +13,7 @@ Every claimed permission below is cross-checked against what the fetcher actuall
 ## Running the smoke
 
 From the repo root, with the backend's Python environment (it needs the backend's
-dependencies — `backend/.venv` if you built one, or any interpreter with
+dependencies, `backend/.venv` if you built one, or any interpreter with
 `backend/requirements.txt` installed):
 
 ```bash
@@ -22,31 +22,31 @@ backend/.venv/bin/python scripts/connector_smoke.py --platform <key>
 ```
 
 Platform keys: `google_workspace`, `microsoft_365`, `slack`, `salesforce` (`notion` is
-registered manual-only — running it prints why and exits `SMOKE: SKIP`).
+registered manual-only, running it prints why and exits `SMOKE: SKIP`).
 
-Credentials come from **env vars (preferred — keeps secrets out of shell history)** or
+Credentials come from **env vars (preferred, keeps secrets out of shell history)** or
 CLI flags; a flag overrides its env var. Env names are
 `PALIVANE_SMOKE_<PLATFORM>_<FIELD>` with `PALIVANE_SMOKE_<FIELD>` as a fallback; the
 fields are exactly the platform's `credential_fields` in the PLATFORMS registry (also
 shown by `--help`, and reported as `MISSING` per field when absent). A value that names a
-readable file is replaced by the file's contents — use that for key files.
+readable file is replaced by the file's contents, use that for key files.
 
 The report has four legs and always ends in one line:
 
 ```
-auth:  OK — access token acquired (value not shown)      # or FAIL + the fetcher's hint
-fetch: OK — 37 grant row(s)                              # + truncation sentinel(s) if any
+auth:  OK, access token acquired (value not shown)      # or FAIL + the fetcher's hint
+fetch: OK, 37 grant row(s)                              # + truncation sentinel(s) if any
 sample (first 5 of 37, redacted): ...                    # app_name/provider/scope count/user yes-no
-shape: OK — every row matches the ingest contract (app_id, app_name, provider, scopes, user)
+shape: OK, every row matches the ingest contract (app_id, app_name, provider, scopes, user)
 SMOKE: PASS
 ```
 
 Exit code 0 on PASS/SKIP, 1 on FAIL. `--full` prints the sampled rows completely
-(includes user identities — still never tokens). `--sample N` changes the sample size.
+(includes user identities, still never tokens). `--sample N` changes the sample size.
 Secrets are never echoed, in any mode.
 
 **After PASS**: store the same credentials via `POST /api/discovery/connectors` so the
-backend does scheduled live pulls — see [the last section](#after-pass-wire-up-scheduled-pulls).
+backend does scheduled live pulls, see [the last section](#after-pass-wire-up-scheduled-pulls).
 
 ---
 
@@ -54,16 +54,16 @@ backend does scheduled live pulls — see [the last section](#after-pass-wire-up
 
 What the fetcher calls (Graph v1.0, app-only token):
 
-- `POST https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token` —
+- `POST https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token`,
   client-credentials grant, scope `https://graph.microsoft.com/.default`
-- `GET /servicePrincipals?$select=id,appId,displayName,appRoles` — app identities
-- `GET /oauth2PermissionGrants` — delegated (user/tenant-consented) grants
-- `GET /users/{id}?$select=userPrincipalName` — resolve consenting principals to UPNs
-- `GET /servicePrincipals/{id}/appRoleAssignments` — application (app-only) grants
+- `GET /servicePrincipals?$select=id,appId,displayName,appRoles`, app identities
+- `GET /oauth2PermissionGrants`, delegated (user/tenant-consented) grants
+- `GET /users/{id}?$select=userPrincipalName`, resolve consenting principals to UPNs
+- `GET /servicePrincipals/{id}/appRoleAssignments`, application (app-only) grants
 
 So the app registration needs exactly two admin-consented **application** permissions:
 `Application.Read.All` (servicePrincipals + appRoleAssignments) and `Directory.Read.All`
-(oauth2PermissionGrants + user lookups). Delegated permissions will NOT work — the flow
+(oauth2PermissionGrants + user lookups). Delegated permissions will NOT work, the flow
 has no signed-in user.
 
 ### Tenant setup
@@ -89,7 +89,7 @@ First-run gotchas:
 - `AADSTS700016` means the app isn't in the tenant you pointed `tenant_id` at.
 - Big tenants: the fetcher pages service principals up to a 2,000 bound and does per-SP
   appRoleAssignments calls, so the run can take minutes; past the bound you get a
-  reported truncation sentinel (`__truncated_at_2000_service_principals__`) — expected,
+  reported truncation sentinel (`__truncated_at_2000_service_principals__`), expected,
   not a failure.
 
 ### Smoke command
@@ -101,8 +101,8 @@ export PALIVANE_SMOKE_MICROSOFT_365_CLIENT_SECRET='<client-secret-value>'
 backend/.venv/bin/python scripts/connector_smoke.py --platform microsoft_365
 ```
 
-PASS looks like: `auth: OK`, `fetch: OK — N grant row(s)` (delegated per-user consents
-show `user=yes`; tenant-wide consents and application grants show `user=no` — that is
+PASS looks like: `auth: OK`, `fetch: OK, N grant row(s)` (delegated per-user consents
+show `user=yes`; tenant-wide consents and application grants show `user=no`, that is
 Graph's data model, not a bug), `shape: OK`, `SMOKE: PASS`. Then store the same three
 fields via `POST /api/discovery/connectors` with `"platform": "microsoft_365"`.
 
@@ -117,14 +117,14 @@ workspace the API answers `ok: false, error: feature_not_enabled` and the smoke 
 with the fetcher's exact hint:
 
 ```
-fetch: FAIL — Slack API error feature_not_enabled: admin.apps.* needs an Enterprise Grid org
+fetch: FAIL, Slack API error feature_not_enabled: admin.apps.* needs an Enterprise Grid org
 ```
 
 There is no workaround on non-Grid plans; use the manual export path
 (`POST /api/discovery/oauth-grants`) instead.
 
 The credential is an **org-admin user token** (`xoxp-…`) carrying the `admin.apps:read`
-**user** scope — not a bot token, and the installing user must be an org owner/admin
+**user** scope, not a bot token, and the installing user must be an org owner/admin
 (otherwise: `not_an_admin`).
 
 ### Minting the token
@@ -132,7 +132,7 @@ The credential is an **org-admin user token** (`xoxp-…`) carrying the `admin.a
 1. `api.slack.com/apps` → **Create New App → From scratch**, in any workspace of the Grid
    org.
 2. **OAuth & Permissions → Scopes → User Token Scopes** → add `admin.apps:read`. (Leave
-   bot scopes empty — the admin APIs ignore bot tokens.)
+   bot scopes empty, the admin APIs ignore bot tokens.)
 3. Install at the **organization** level: apps requesting `admin.*` scopes must be
    installed on the org, by an org owner/admin. Open the app's install/authorize flow
    while signed in as an org admin and pick the *organization* in the destination picker
@@ -153,8 +153,8 @@ backend/.venv/bin/python scripts/connector_smoke.py --platform slack
 ```
 
 PASS looks like: `auth: no separate token exchange on this platform` (Slack validates the
-token in-band on the first call), `fetch: OK — N grant row(s)`, every sample row
-`user=no` (Slack reports approvals at org/workspace level, never the granting user —
+token in-band on the first call), `fetch: OK, N grant row(s)`, every sample row
+`user=no` (Slack reports approvals at org/workspace level, never the granting user,
 expected), `shape: OK`, `SMOKE: PASS`. Then store `admin_token` (+ optional `team_id`)
 via `POST /api/discovery/connectors` with `"platform": "slack"`.
 
@@ -164,37 +164,37 @@ via `POST /api/discovery/connectors` with `"platform": "slack"`.
 
 What the fetcher calls:
 
-- `POST https://<mydomain>.my.salesforce.com/services/oauth2/token` —
+- `POST https://<mydomain>.my.salesforce.com/services/oauth2/token`,
   client-credentials grant (the generic `login.salesforce.com` host does NOT support this
   flow; the org's My Domain URL is required)
 - `GET /services/data/v60.0/query?q=SELECT AppName, AppMenuItemId, User.Username FROM
-  OauthToken` — one row per (connected app, user) token, paged via `nextRecordsUrl`
+  OauthToken`, one row per (connected app, user) token, paged via `nextRecordsUrl`
 
 Reading the `OauthToken` sObject is gated on the query user having **Manage Users**; API
 access needs **API Enabled**. Note: Salesforce does not expose per-token OAuth scopes on
 `OauthToken`, so every row has `scopes=0` and Palivane's broad-scope flagging never
-triggers for this platform — expected, documented in the fetcher.
+triggers for this platform, expected, documented in the fetcher.
 
 ### Tenant setup
 
 1. **My Domain**: Setup → search "My Domain". `instance_url` is
    `https://<mydomain>.my.salesforce.com`.
 2. **Connected app**: Setup → **App Manager → New Connected App**. Enable OAuth settings;
-   the callback URL is a required field but unused by client-credentials — a placeholder
+   the callback URL is a required field but unused by client-credentials, a placeholder
    like `https://localhost/callback` is fine. OAuth scopes: add **Manage user data via
    APIs (api)**. Check **Enable Client Credentials Flow**. Save.
 3. **Run-as user**: App Manager → your app → **Manage → Edit Policies** → under *Client
    Credentials Flow*, set **Run As** to an integration user whose profile/permission set
    has **API Enabled** and **Manage Users** (the latter is what allows the `OauthToken`
-   query — without it the fetch fails on the SOQL, typically `INVALID_TYPE`/insufficient
+   query, without it the fetch fails on the SOQL, typically `INVALID_TYPE`/insufficient
    access).
-4. **Credentials**: App Manager → your app → **View → Manage Consumer Details** —
+4. **Credentials**: App Manager → your app → **View → Manage Consumer Details**,
    **Consumer Key** → `client_id`, **Consumer Secret** → `client_secret`.
 
 First-run gotchas:
 
-- A freshly created connected app can take ~2–10 minutes to propagate; token requests in
-  that window fail with `invalid_client` — wait and rerun.
+- A freshly created connected app can take ~2-10 minutes to propagate; token requests in
+  that window fail with `invalid_client`, wait and rerun.
 - `invalid_grant` on the token call usually means the Client Credentials Flow checkbox is
   off or no run-as user is set.
 - Sandbox orgs use `https://<mydomain>--<sandbox>.sandbox.my.salesforce.com`.
@@ -208,14 +208,14 @@ export PALIVANE_SMOKE_SALESFORCE_CLIENT_SECRET='<consumer-secret>'
 backend/.venv/bin/python scripts/connector_smoke.py --platform salesforce
 ```
 
-PASS looks like: `auth: OK`, `fetch: OK — N grant row(s)` with `user=yes` on rows tied to
-a user and `scopes=0` everywhere (expected — see above), `shape: OK`, `SMOKE: PASS`.
+PASS looks like: `auth: OK`, `fetch: OK, N grant row(s)` with `user=yes` on rows tied to
+a user and `scopes=0` everywhere (expected, see above), `shape: OK`, `SMOKE: PASS`.
 Then store the same three fields via `POST /api/discovery/connectors` with
 `"platform": "salesforce"`.
 
 ---
 
-## Google Workspace (reference platform — already validated against a real tenant)
+## Google Workspace (reference platform, already validated against a real tenant)
 
 Included so the harness can re-verify the known-good platform. Setup summary (the
 fetcher mints a service-account JWT impersonating an admin, lists users via
