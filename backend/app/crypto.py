@@ -112,3 +112,99 @@ def unseal_with(text, dek: str | None):
     if text.startswith(_ENC_PREFIX):
         return decrypt(text[len(_ENC_PREFIX):])
     return text
+
+# --- per-tenant SECRETS ---------------------------------------------------------------
+#
+# Content already rides the v2 envelope. Stored credentials did not: provider API keys,
+# judge BYOK keys, OIDC client secrets, SIEM tokens and SaaS-connector credentials were
+# all sealed with the one deployment key, so a single KEK compromise exposed every
+# tenant's. The connector credentials are the sharp end of that, since a Google Workspace
+# entry holds a domain-wide-delegation service-account key.
+#
+# These are separate from seal_with/unseal_with for one reason: on failure a secret must
+# read as "not configured" (""), the same as a rotated key has always produced, whereas
+# content returns a human-readable marker for display. Returning a marker string where a
+# caller expects a credential would send the marker to a provider as an API key.
+#
+# Three storage shapes have to be readable, because migration is lazy (a value is only
+# rewritten under the tenant DEK when it is next saved):
+#   enc:v2:<tok>  tenant DEK
+#   enc:v1:<tok>  global key, written by seal()
+#   <tok>         global key, bare, written by encrypt() - the original shape
+
+def seal_secret(dek: str | None, plaintext: str) -> str:
+    """Encrypt a credential under the tenant DEK when there is one, else the global key."""
+    if not plaintext:
+        return ""
+    if dek:
+        return _ENC_PREFIX_V2 + Fernet(dek.encode()).encrypt(plaintext.encode()).decode()
+    return encrypt(plaintext)
+
+
+def unseal_secret(stored, dek: str | None, legacy_plaintext: bool = False) -> str:
+    """Decrypt a stored credential. "" when it cannot be opened, which every caller
+    already treats as "not configured".
+
+    `legacy_plaintext` picks what an UNPREFIXED value means, and the two column families
+    disagree, so this cannot be one rule:
+
+      seal()/unseal() columns (siem_token, siem_s3_secret) predate sealing, so an
+      unprefixed value there is genuine plaintext and must pass through untouched.
+      Deployments still hold rows written before those columns were ever encrypted.
+
+      encrypt()/decrypt() columns (key_encrypted, credentials_enc, client_secret) were
+      always ciphertext, so an unprefixed value that will not decrypt is a rotated key,
+      and "" is the long-standing answer.
+    """
+    if not isinstance(stored, str) or not stored:
+        return ""
+    if stored.startswith(_ENC_PREFIX_V2):
+        if not dek:
+            return ""
+        try:
+            return Fernet(dek.encode()).decrypt(stored[len(_ENC_PREFIX_V2):].encode()).decode()
+        except (InvalidToken, ValueError):
+            return ""
+    if stored.startswith(_ENC_PREFIX):
+        return decrypt(stored[len(_ENC_PREFIX):])
+    if legacy_plaintext:
+        return decrypt(stored) or stored
+    return decrypt(stored)
+
+
+def tenant_dek(tenant, db) -> str | None:
+    """The tenant's unwrapped data key, minting and storing a wrapped one on first use.
+    None when there is no tenant, so callers fall back to the global key."""
+    if tenant is None:
+        return None
+    if not tenant.dek_wrapped:
+        dek = new_dek()
+        tenant.dek_wrapped = wrap_dek(dek)
+        db.commit()
+        return dek
+    return unwrap_dek(tenant.dek_wrapped)
+
+
+# Deliberately still on the global key: user MFA (TOTP) secrets. They are per-USER, and
+# they are read during login, before the caller is authenticated, so moving them to the
+# owning tenant's DEK adds a Tenant load and an unwrap to the auth path for a secret whose
+# blast radius differs from a tenant credential. Worth doing, but as its own change with
+# its own thinking about the login path, not folded in here.
+
+
+def tenant_dek_readonly(tenant) -> str | None:
+    """Unwrap an existing tenant DEK without a session. Minting one needs db.commit(),
+    but opening an already-provisioned key does not, so background paths (the archive
+    flusher, anything off the request path) can still read enc:v2: values. Returns None
+    when the tenant has no DEK yet, which means nothing was ever sealed under one."""
+    if tenant is None or not getattr(tenant, "dek_wrapped", ""):
+        return None
+    return unwrap_dek(tenant.dek_wrapped)
+
+
+def dek_for(db, tenant_id) -> str | None:
+    """tenant_dek by id, for rows that carry tenant_id rather than the Tenant itself."""
+    if not tenant_id:
+        return None
+    from .models import Tenant
+    return tenant_dek(db.get(Tenant, tenant_id), db)

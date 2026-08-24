@@ -124,5 +124,10 @@ def test_installed_token_feeds_the_scanner(client, raw_client, monkeypatch, db_f
     from app.models import SaasConnector
     row = db.query(SaasConnector).filter(SaasConnector.platform == "slack_messages").one()
     import json as _json
-    assert _json.loads(decrypt(row.credentials_enc))["bot_token"] == "xoxb-installed-token"
+    # sealed under the tenant's own key (enc:v2:), not the shared deployment key
+    from app import crypto
+    creds = _json.loads(crypto.unseal_secret(row.credentials_enc,
+                                             crypto.dek_for(db, row.tenant_id)))
+    assert creds["bot_token"] == "xoxb-installed-token"
+    assert row.credentials_enc.startswith("enc:v2:")
     db.close()

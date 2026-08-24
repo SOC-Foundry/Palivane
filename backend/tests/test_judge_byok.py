@@ -106,7 +106,10 @@ def test_judge_key_roundtrip_write_only(client, db_factory):
     db = db_factory()
     t = db.query(Tenant).filter(Tenant.slug == "acme").first()
     assert t.judge_byok_key_encrypted != "sk-ant-tenant-own"   # encrypted at rest
-    assert decrypt(t.judge_byok_key_encrypted) == "sk-ant-tenant-own"
+    from app import crypto
+    assert t.judge_byok_key_encrypted.startswith("enc:v2:")
+    assert crypto.unseal_secret(t.judge_byok_key_encrypted,
+                                crypto.tenant_dek_readonly(t)) == "sk-ant-tenant-own"
     db.close()
 
     # Update model only: empty key keeps the stored one.
