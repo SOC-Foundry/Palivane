@@ -42,6 +42,11 @@ jobs:
           SQL_CONNECTION: ${{ vars.GCP_SQL_CONNECTION }}
           VPC_NETWORK: ${{ vars.VPC_NETWORK }}
           VPC_SUBNET: ${{ vars.VPC_SUBNET }}
+          # Never grant allUsers run.invoker from CI. The origin is reachable only through
+          # the Cloudflare Worker, which authenticates as palivane-front; a public invoker
+          # would let anyone bypass the WAF and rate limiting and hit Cloud Run directly.
+          # deploy.sh defaults to --allow-unauthenticated, so this has to be explicit.
+          NO_UNAUTH: "1"
           # Posture + fronting — set as repo/environment variables (not secrets; non-sensitive).
           GATEWAY_ENFORCE: ${{ vars.GATEWAY_ENFORCE }}
           JUDGE_PROVIDER: ${{ vars.JUDGE_PROVIDER }}
