@@ -123,4 +123,10 @@ gcloud run deploy "$SERVICE" --project "$PROJECT_ID" --region "$REGION" \
 echo "==> Done. Service URL:"
 gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" \
   --format 'value(status.url)'
-[ -n "$DOMAIN" ] && echo "Map your domain: gcloud run domain-mappings create --service $SERVICE --domain $DOMAIN --region $REGION"
+# An `[ cond ] && cmd` as the FINAL statement takes the test's exit status when the
+# condition is false, so with DOMAIN unset this script reported failure after a deploy
+# that had already succeeded. Written as an if so the script's status reflects the
+# deploy, not whether an optional hint happened to print.
+if [ -n "$DOMAIN" ]; then
+  echo "Map your domain: gcloud run domain-mappings create --service $SERVICE --domain $DOMAIN --region $REGION"
+fi
