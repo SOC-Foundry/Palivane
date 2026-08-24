@@ -15,6 +15,14 @@ account-bound and must be done from your own developer account.
 
 ## What only you can do (account-bound)
 
+> **This is a fresh listing under SOC Foundry, not a transfer.** A Chrome Web Store item id
+> is issued to the developer account that published it, so the previous item cannot come
+> along; publishing here mints a **new id**. Once you have it, set `PALIVANE_EXTENSION_ID`
+> on the deployment. It is empty by default on purpose, because shipping the old company's
+> id would put a third-party extension into every customer's CORS allowlist and MDM
+> force-install policy. Anyone already running the old item has to reinstall from the new
+> listing, and their MDM `ExtensionInstallForcelist` entry has to be repointed.
+
 1. **Register a developer account**, [Chrome Web Store dev dashboard](https://chrome.google.com/webstore/devconsole)
    (one-time **$5** fee) and/or [Edge Partner Center](https://partner.microsoft.com/dashboard/microsoftedge)
    (free).

@@ -1,6 +1,6 @@
 {
   "name": "palivane-vscode",
-  "displayName": "Palivane — AI Security Posture",
+  "displayName": "Palivane, AI Security Posture",
   "description": "Continuous in-IDE posture for Palivane: extension inventory drift, MCP config changes, and AI-assistant autonomy settings, reported live to your org's Palivane console.",
   "version": "0.2.0",
   "publisher": "palivane",
@@ -31,7 +31,7 @@
         "palivane.url": {
           "type": "string",
           "default": "",
-          "description": "Deprecated pre-rebrand setting — use palivane.url. Still read as a fallback."
+          "description": "Deprecated pre-rebrand setting, use palivane.url. Still read as a fallback."
         }
       }
     }
