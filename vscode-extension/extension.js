@@ -1,9 +1,9 @@
-// Palivane for VS Code — the continuous in-IDE posture sensor (the "real extension" that
+// Palivane for VS Code, the continuous in-IDE posture sensor (the "real extension" that
 // the palivane-posture CLI was the 80/20 for). Same scan APIs, but event-driven instead of
 // session-triggered:
 //
 //   - installed extension inventory  -> POST /api/scan/ide-extensions
-//     (re-reported the moment extensions change — vscode.extensions.onDidChange)
+//     (re-reported the moment extensions change, vscode.extensions.onDidChange)
 //   - MCP server configs             -> POST /api/scan/mcp-config
 //     (workspace .mcp.json watched live; user-level configs on activation/report)
 //   - AI-assistant autonomy settings -> POST /api/scan/agent-config
@@ -13,7 +13,7 @@
 // to PALIVANE_URL/PALIVANE_TOKEN in the environment or ~/.claude/settings.json, so a machine
 // already onboarded by palivane-connect reports with zero extra setup.
 //
-// Everything is fail-open and deduplicated (sha256 per report key in globalState) — the
+// Everything is fail-open and deduplicated (sha256 per report key in globalState), the
 // sensor never interferes with the editor and never spams unchanged state.
 
 const vscode = require("vscode");
@@ -105,7 +105,7 @@ function collectExtensions() {
 }
 
 function synthesizeClaudeConfig(raw) {
-  // Minimal {"mcpServers": …} from ~/.claude.json — never post the raw file (it holds
+  // Minimal {"mcpServers": ...} from ~/.claude.json, never post the raw file (it holds
   // unrelated user state).
   let data;
   try { data = JSON.parse(raw); } catch { return null; }
@@ -221,8 +221,8 @@ function updateStatus(connected, posted) {
   } else {
     status.text = "$(shield) Palivane";
     status.tooltip = posted
-      ? `Palivane posture sensor active — ${posted} report(s) just sent`
-      : "Palivane posture sensor active — everything up to date";
+      ? `Palivane posture sensor active, ${posted} report(s) just sent`
+      : "Palivane posture sensor active, everything up to date";
     status.command = "palivane.reportNow";
   }
   status.show();
@@ -244,7 +244,7 @@ async function activate(context) {
         const got = await connectFlow(cfg.url);
         await ctx.secrets.store("palivane.token", got.token);
         vscode.window.showInformationMessage(
-          `Palivane connected as ${got.user || "you"} — posture reporting is on.`);
+          `Palivane connected as ${got.user || "you"}, posture reporting is on.`);
         await report(true);
       } catch (e) {
         vscode.window.showErrorMessage(`Palivane sign-in failed: ${e.message || e}`);
@@ -259,7 +259,7 @@ async function activate(context) {
     vscode.extensions.onDidChange(() => report()),
   );
 
-  // Watch workspace MCP configs — a new/edited .mcp.json is a posture change.
+  // Watch workspace MCP configs, a new/edited .mcp.json is a posture change.
   const watcher = vscode.workspace.createFileSystemWatcher("**/.mcp.json");
   watcher.onDidChange(() => report());
   watcher.onDidCreate(() => report());
