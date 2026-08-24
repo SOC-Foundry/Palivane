@@ -80,7 +80,15 @@ for pair in \
   "PALIVANE_RELEASE_SIGNING_KEY=palivane-release-signing-key" \
   "PALIVANE_SLACK_CLIENT_SECRET=palivane-slack-client-secret"; do
   name="${pair##*=}"
-  if gcloud secrets describe "$name" --project "$PROJECT_ID" >/dev/null 2>&1; then
+  # Require an ENABLED VERSION, not merely that the secret exists. Terraform creates
+  # palivane-smtp-pass deliberately empty (the value is added out of band), so a
+  # describe-only check wires up ":latest" for a secret that has nothing to resolve to,
+  # and Cloud Run rejects the whole revision:
+  #   spec...secret_key_ref.name: Secret projects/N/secrets/palivane-smtp-pass ... 
+  # That failed every full deploy while an image-only `gcloud run deploy` kept working,
+  # because the latter reuses the existing revision's config instead of rebuilding it.
+  if gcloud secrets versions list "$name" --project "$PROJECT_ID" \
+       --filter "state=ENABLED" --format "value(name)" --limit 1 2>/dev/null | grep -q .; then
     SECRETS+=",${pair}:latest"
   fi
 done
