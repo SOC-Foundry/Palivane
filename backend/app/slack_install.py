@@ -92,7 +92,7 @@ def complete_install(db, code: str, state: str, redirect_uri: str):
     if not row:
         row = SaasConnector(tenant_id=tenant_id, platform="slack_messages", label=label)
         db.add(row)
-    store_credentials(row, {"bot_token": token})
+    store_credentials(row, {"bot_token": token}, db)
     row.active = True
     db.commit()
     db.refresh(row)

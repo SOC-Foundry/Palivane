@@ -23,6 +23,7 @@ from .config import settings, _env
 from .gateway import gemini_router, router as gateway_router
 from .database import Base, engine as db_engine, get_db
 from .detectors import AnalysisInput, Surface
+from . import crypto
 from .engine import engine
 from .models import (Agent, AgentRole, CorpusSample, Finding, PolicyOverride, SaasConnector,
                      Tenant, User)
@@ -324,7 +325,7 @@ def test_siem(current: User = Depends(require_admin), db: Session = Depends(get_
         {"severity": "high", "risk_score": 75, "finding_id": 0,
          "signals": [{"category": "secret_leak"}]},
         subject="Palivane SIEM test event", actor="palivane", surface="test", org=t.slug)
-    ok, detail = siem.send_detail(t.siem_url.strip(), unseal(t.siem_token or ""),
+    ok, detail = siem.send_detail(t.siem_url.strip(), crypto.unseal_secret(t.siem_token, crypto.tenant_dek(t, db), legacy_plaintext=True),
                                   t.siem_format or "json", fields)
     return {"ok": ok, "detail": detail}
 
@@ -339,7 +340,7 @@ def test_siem_s3(current: User = Depends(require_admin), db: Session = Depends(g
         raise HTTPException(status_code=400, detail="no S3 bucket configured")
     ok, detail = siem_s3.test(t.siem_s3_bucket.strip(), t.siem_s3_prefix or "",
                               t.siem_s3_region or "", t.siem_s3_key_id or "",
-                              unseal(t.siem_s3_secret or ""),
+                              crypto.unseal_secret(t.siem_s3_secret, crypto.tenant_dek(t, db), legacy_plaintext=True),
                               role_arn=t.siem_s3_role_arn or "",
                               external_id=t.siem_s3_external_id or "")
     return {"ok": ok, "detail": detail}
@@ -357,7 +358,7 @@ def test_archive_s3(current: User = Depends(require_admin), db: Session = Depend
         raise HTTPException(status_code=400, detail="no S3 bucket configured")
     ok, detail = archive_s3.test(t.siem_s3_bucket.strip(), t.siem_s3_prefix or "",
                                  t.siem_s3_region or "", t.siem_s3_key_id or "",
-                                 unseal(t.siem_s3_secret or ""),
+                                 crypto.unseal_secret(t.siem_s3_secret, crypto.tenant_dek(t, db), legacy_plaintext=True),
                                  role_arn=t.siem_s3_role_arn or "",
                                  external_id=t.siem_s3_external_id or "")
     return {"ok": ok, "detail": detail}
@@ -2498,7 +2499,7 @@ def connectors_create(body: ConnectorCreate, current: User = Depends(require_adm
     if not row:
         row = SaasConnector(tenant_id=current.tenant_id, platform=body.platform, label=body.label)
         db.add(row)
-    store_credentials(row, body.credentials)
+    store_credentials(row, body.credentials, db)
     row.active = True
     db.commit()
     db.refresh(row)

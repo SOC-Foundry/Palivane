@@ -531,8 +531,14 @@ PLATFORMS: dict[str, dict] = {
 
 # --- sync -------------------------------------------------------------------------------
 
-def store_credentials(connector, credentials: dict) -> None:
-    connector.credentials_enc = encrypt(json.dumps(credentials))
+def store_credentials(connector, credentials: dict, db=None) -> None:
+    """Seal connector credentials under the owning tenant's key when a session is given.
+    These are the most dangerous secrets the product holds (a Google Workspace entry is a
+    domain-wide-delegation service-account key), so they should not share one key across
+    tenants. Without a session the global key is still used, and reads handle both."""
+    from . import crypto
+    dek = crypto.dek_for(db, getattr(connector, "tenant_id", None)) if db is not None else None
+    connector.credentials_enc = crypto.seal_secret(dek, json.dumps(credentials))
 
 
 def sync_connector(db, connector) -> dict:
@@ -541,7 +547,10 @@ def sync_connector(db, connector) -> dict:
     last_sync_* fields (committed by the caller alongside the ingest)."""
     connector.last_sync_at = datetime.now(timezone.utc).replace(tzinfo=None)
     try:
-        creds = json.loads(decrypt(connector.credentials_enc) or "{}")
+        from . import crypto
+        creds = json.loads(
+            crypto.unseal_secret(connector.credentials_enc,
+                                 crypto.dek_for(db, connector.tenant_id)) or "{}")
         spec = PLATFORMS[connector.platform]
         if "scan" in spec:
             # Content scanner: persists findings itself (and advances its own cursor).
