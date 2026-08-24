@@ -71,7 +71,7 @@ The served scripts are the repository's `cli/*` and `proxy/palivane_addon.py` fi
 from source:
 
 ```bash
-git clone https://github.com/Palivane-Engineering/Palivane && cd Palivane
+git clone https://github.com/SOC-Foundry/Palivane && cd Palivane
 git checkout <release-tag>
 # hash a served script exactly as the manifest does:
 sha256sum cli/palivane-connect

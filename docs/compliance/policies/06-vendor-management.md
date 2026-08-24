@@ -1,4 +1,4 @@
-# 06 — Vendor & Third-Party Risk Management
+# 06. Vendor & Third-Party Risk Management
 
 **Owner:** Founder · **Effective:** 2026-07-19 · **Review:** annual
 
@@ -15,15 +15,15 @@ Public list mirrored on /trust; the DPA commits to notifying customers of additi
 
 ## Supporting vendors (no customer data)
 
-GitHub (source + CI — repo is access-controlled and branch-protected), npm/PyPI
-(dependencies — see Policy 08 supply-chain controls), VS Code/Chrome marketplaces
+GitHub (source + CI, repo is access-controlled and branch-protected), npm/PyPI
+(dependencies, see Policy 08 supply-chain controls), VS Code/Chrome marketplaces
 (distribution only).
 
 ## Adding a vendor
 
 Before use: confirm security attestation (SOC 2 or equivalent), data location,
 subprocessor terms; grant least-privilege scopes; record it here via PR (the change
-gate is the approval record). Vendors are reviewed annually — attestation still
+gate is the approval record). Vendors are reviewed annually, attestation still
 current, scopes still minimal, still needed at all.
 
 ## Concentration note

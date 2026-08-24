@@ -1,4 +1,4 @@
-# 11 — Data Retention & Disposal
+# 11. Data Retention & Disposal
 
 **Owner:** Founder · **Effective:** 2026-07-19 · **Review:** annual
 
@@ -17,8 +17,8 @@
 
 - **Export:** self-serve full-org JSON export (secrets never included; content
   decrypted only when explicitly requested by an org admin).
-- **Deletion:** self-serve org deletion removes every row the org owns — findings,
-  users, keys, audit log, domains, SSO config, usage — verified by the lifecycle test
+- **Deletion:** self-serve org deletion removes every row the org owns, findings,
+  users, keys, audit log, domains, SSO config, usage, verified by the lifecycle test
   suite. Backups age out within 14 days; the DPA states this window.
 - **Crypto-shredding:** content is sealed under a per-tenant DEK; dropping the wrapped
   DEK renders remaining ciphertext unrecoverable independent of row deletion.

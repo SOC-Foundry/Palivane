@@ -142,7 +142,7 @@ def require_feature(tenant: Tenant | None, feature: str) -> None:
     if current == "expired":
         raise HTTPException(
             status_code=402,
-            detail="your Palivane trial has ended — contact sales@palivane.io to pick a plan "
+            detail="your Palivane trial has ended, contact sales@palivane.io to pick a plan "
                    "and keep this feature")
     needed = PLANS[_NEEDED_PLAN[feature]]["label"]
     raise HTTPException(
