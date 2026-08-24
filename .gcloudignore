@@ -4,7 +4,11 @@
 **/node_modules
 **/__pycache__
 **/*.pyc
-**/.venv
+# Every virtualenv flavour, not just the literal name. RUNNING-LOCALLY.md tells you to
+# create .venv-local, which "**/.venv" does not match; that quietly added 500MB to the
+# Cloud Build upload on every deploy. Git never noticed because uv writes a .gitignore
+# containing "*" inside the venv itself.
+**/.venv*
 **/.pytest_cache
 frontend/dist
 extension/*.zip
