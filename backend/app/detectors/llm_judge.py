@@ -542,7 +542,7 @@ class LLMJudgeDetector:
             return [Signal(
                 category=Category.AI_GENERATED,
                 title="LLM judge unavailable",
-                detail="all configured judge providers failed — running offline detectors only",
+                detail="all configured judge providers failed, running offline detectors only",
                 weight=0.0, confidence=0.0, detector=self.name,
             )]
         if verdict is None:     # a provider ran but returned no verdict

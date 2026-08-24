@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """palivane-otel — bridge Claude Code's OpenTelemetry stream into Palivane (optional add-on).
 
-Companion to `claude-otel` (github.com/Palivane-Engineering/claude-otel): that project runs
+Companion to `claude-otel` (github.com/SOC-Foundry/claude-otel): that project runs
 a local OTEL collector that captures Claude Code's native telemetry — user prompts, tool
 calls, MCP connections, api requests — into an append-only `logs.jsonl`. This tails that
 file and forwards the security-relevant events to Palivane's ingest API, so an org already

@@ -1,4 +1,4 @@
-# 09 — Risk Management Policy
+# 09. Risk Management Policy
 
 **Owner:** Founder · **Effective:** 2026-07-19 · **Review:** annual (register: continuous)
 
@@ -6,7 +6,7 @@
 
 Risks are assessed on likelihood × impact (High/Medium/Low), owned, and given a
 treatment: mitigate, accept (with rationale), or transfer. The register lives in this
-file and is updated whenever architecture or business context changes materially —
+file and is updated whenever architecture or business context changes materially,
 via PR, so history is the audit trail.
 
 ## Register (2026-07-19)

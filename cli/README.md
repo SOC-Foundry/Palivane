@@ -383,7 +383,7 @@ ggshield secret scan path . --json                    | palivane-import gitguard
 
 ## `palivane-otel` — claude-otel telemetry bridge (optional)
 
-For orgs already running [claude-otel](https://github.com/Palivane-Engineering/claude-otel)
+For orgs already running [claude-otel](https://github.com/SOC-Foundry/claude-otel)
 (a local OTEL collector capturing Claude Code's native telemetry into `logs.jsonl`), this
 tails that file and forwards the security-relevant events to Palivane — a capture plane with
 **no proxy, no CA, no hook**, from telemetry Claude Code already emits:

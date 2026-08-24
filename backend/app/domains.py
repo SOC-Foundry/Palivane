@@ -115,11 +115,11 @@ def verify_domain(domain_id: int, current: User = Depends(require_admin),
     try:
         found = _lookup_txt(f"_palivane-verify.{d.domain}")
     except Exception:
-        raise HTTPException(status_code=502, detail="DNS lookup failed — try again")
+        raise HTTPException(status_code=502, detail="DNS lookup failed, try again")
     if expect not in found:
         raise HTTPException(
             status_code=409,
-            detail="TXT record not found (or not propagated yet) — "
+            detail="TXT record not found (or not propagated yet), "
                    f"expected {expect!r} at _palivane-verify.{d.domain}")
     d.verified = True
     d.verified_at = datetime.now(timezone.utc).replace(tzinfo=None)

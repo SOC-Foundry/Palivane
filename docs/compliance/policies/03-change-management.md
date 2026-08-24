@@ -1,10 +1,10 @@
-# 03 — Change Management Policy
+# 03. Change Management Policy
 
 **Owner:** Founder · **Effective:** 2026-07-19 · **Review:** annual
 
 ## The gate (enforced, not aspirational)
 
-All changes to `main` — and therefore to production — flow through GitHub branch
+All changes to `main`, and therefore to production, flow through GitHub branch
 protection that even repo admins cannot bypass:
 
 1. Change developed on a short-lived branch; test suite run locally.
@@ -36,5 +36,5 @@ and noted in the incident record.
 
 ## Rollback
 
-Cloud Run retains prior revisions — traffic can be shifted back in minutes. Database
+Cloud Run retains prior revisions, traffic can be shifted back in minutes. Database
 migrations ship with downgrade paths; data-loss-bearing rollbacks trigger Policy 05.

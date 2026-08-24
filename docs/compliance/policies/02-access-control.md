@@ -1,4 +1,4 @@
-# 02 — Access Control Policy
+# 02. Access Control Policy
 
 **Owner:** Founder · **Effective:** 2026-07-19 · **Review:** annual
 
@@ -12,11 +12,11 @@ supports it, and quarterly reviews with written evidence.
 | System | Who | Auth |
 |---|---|---|
 | GCP project `palivane` | Founder | Google account + MFA |
-| GitHub `Palivane-Engineering/Palivane` | Founder | GitHub account + MFA |
+| GitHub `SOC-Foundry/Palivane` | Founder | GitHub account + MFA |
 | Cloudflare (zone + Worker) | Founder | Cloudflare account + MFA |
 | Secret Manager (all secrets incl. license signing key) | Founder + Cloud Run runtime SA | IAM |
-| Palivane app — tenant admin | Founder (palivane org) | password (argon2id) + TOTP |
-| Production DB | No human path — private IP only; operator tasks run as auditable one-off Cloud Run jobs | IAM |
+| Palivane app, tenant admin | Founder (palivane org) | password (argon2id) + TOTP |
+| Production DB | No human path, private IP only; operator tasks run as auditable one-off Cloud Run jobs | IAM |
 
 Service accounts are single-purpose (`palivane-front` for the edge, the compute SA for
 runtime) and hold only the roles they need.
@@ -38,4 +38,4 @@ Access is granted on documented need (today: the Founder's operating roles). A
 keys; results are dated notes in `docs/compliance/reviews/`. Offboarding (future
 personnel): all access in the inventory revoked the same day, recorded on the
 offboarding checklist. Emergency credential rotation follows the incident process
-(Policy 04) — precedent: the 2026-07-16 DB password rotation after a suspected exposure.
+(Policy 04), precedent: the 2026-07-16 DB password rotation after a suspected exposure.
