@@ -1,4 +1,4 @@
-# 01 — Information Security Policy
+# 01. Information Security Policy
 
 **Owner:** Founder · **Effective:** 2026-07-19 · **Review:** annual
 
@@ -6,26 +6,26 @@
 
 Defines how Palivane protects Palivane (the hosted service at app.palivane.io, the
 source repository, and all customer data processed by either). Applies to every person
-with access — currently the Founder and any future employee or contractor from their
+with access, currently the Founder and any future employee or contractor from their
 first day.
 
 ## Objectives
 
-Protect the confidentiality, integrity, and availability of customer data — which for
+Protect the confidentiality, integrity, and availability of customer data, which for
 Palivane includes some of the most sensitive artifacts an organization has (prompts,
 findings about leaked credentials, security posture). The product's own design reflects
 this: redaction before storage, metadata-only defaults, per-tenant encryption.
 
 ## Core commitments
 
-1. **Least privilege** — access is granted per role and reviewed quarterly (Policy 02).
-2. **Defense in depth** — controls exist at the edge (Cloudflare WAF), application
+1. **Least privilege**, access is granted per role and reviewed quarterly (Policy 02).
+2. **Defense in depth**, controls exist at the edge (Cloudflare WAF), application
    (authn/z, rate limits), and database (Postgres Row-Level Security) layers.
-3. **Encryption everywhere** — TLS in transit; disk + application-layer envelope
+3. **Encryption everywhere**, TLS in transit; disk + application-layer envelope
    encryption at rest (per-tenant data keys).
-4. **Change control** — no change reaches production outside the gated flow (Policy 03).
-5. **Verified recoverability** — backups exist AND restores are drilled (Policy 05).
-6. **Honest disclosure** — incidents and vulnerabilities are handled per Policy 04 and
+4. **Change control**, no change reaches production outside the gated flow (Policy 03).
+5. **Verified recoverability**, backups exist AND restores are drilled (Policy 05).
+6. **Honest disclosure**, incidents and vulnerabilities are handled per Policy 04 and
    `SECURITY.md`; the public /trust page states only implemented controls.
 
 ## Organization & accountability

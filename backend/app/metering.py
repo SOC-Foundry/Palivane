@@ -67,7 +67,7 @@ def check_resource_quota(db: Session, tenant_id: int, name: str, current_count: 
                 else "contact your Palivane operator to raise it")
         raise HTTPException(
             status_code=403,
-            detail=f"{name.replace('_', ' ')} quota reached ({limit}) — {hint}")
+            detail=f"{name.replace('_', ' ')} quota reached ({limit}), {hint}")
 
 
 def check_daily_ingest(db: Session, tenant_id: int) -> tuple[bool, int, int]:

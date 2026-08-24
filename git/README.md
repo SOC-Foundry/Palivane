@@ -32,7 +32,7 @@ protect, add to `.pre-commit-config.yaml`:
 
 ```yaml
 repos:
-  - repo: https://github.com/Palivane-Engineering/Palivane
+  - repo: https://github.com/SOC-Foundry/Palivane
     rev: main                       # pin to a tag/SHA in real use
     hooks:
       - id: palivane-secret-scan
@@ -68,7 +68,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }        # full history so the PR range diffs correctly
-      - uses: Palivane-Engineering/Palivane/git@main
+      - uses: SOC-Foundry/Palivane/git@main
         with:
           palivane-url: https://palivane.corp.example.com
           palivane-token: ${{ secrets.PALIVANE_TOKEN }}
@@ -101,14 +101,14 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       # bring palivane-import onto PATH (from this repo, or vendor cli/palivane-import)
-      - run: curl -sSL https://raw.githubusercontent.com/Palivane-Engineering/Palivane/main/cli/palivane-import -o /usr/local/bin/palivane-import && chmod +x /usr/local/bin/palivane-import
+      - run: curl -sSL https://raw.githubusercontent.com/SOC-Foundry/Palivane/main/cli/palivane-import -o /usr/local/bin/palivane-import && chmod +x /usr/local/bin/palivane-import
       - uses: trufflesecurity/trufflehog@main
         with: { extra_args: --json }          # or run any scanner that emits JSON
       # pipe the scanner's JSON to Palivane (trufflehog | gitleaks | gitguardian)
       - run: trufflehog git file://. --json | palivane-import trufflehog
 ```
 
-This is complementary to the native Action above: use `Palivane-Engineering/Palivane/git@main`
+This is complementary to the native Action above: use `SOC-Foundry/Palivane/git@main`
 for a Palivane-engine gate, and `palivane-import` to fold in whatever scanners you already run.
 On endpoints (not CI), the same integration is `palivane-secrets --engine trufflehog`, which
 the MDM pack schedules for you.
@@ -195,7 +195,7 @@ palivane-secret-scan:
   image: python:3.12-slim
   variables: { PALIVANE_URL: "https://palivane.corp.example.com" }   # PALIVANE_TOKEN via a masked CI variable
   script:
-    - curl -sSL https://raw.githubusercontent.com/Palivane-Engineering/Palivane/main/git/palivane_git_scan.py -o palivane_git_scan.py
+    - curl -sSL https://raw.githubusercontent.com/SOC-Foundry/Palivane/main/git/palivane_git_scan.py -o palivane_git_scan.py
     - python3 palivane_git_scan.py --range "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME...HEAD" --fail-closed --record
 ```
 

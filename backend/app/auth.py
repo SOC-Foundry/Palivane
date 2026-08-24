@@ -95,7 +95,7 @@ def get_current_user(
     if user is None or not user.active:
         raise HTTPException(status_code=401, detail="user not found or inactive")
     if int(payload.get("tv", 0)) != user.token_version:
-        raise HTTPException(status_code=401, detail="session revoked — please sign in again")
+        raise HTTPException(status_code=401, detail="session revoked, please sign in again")
     from .lifecycle import ensure_active
     ensure_active(db, user.tenant_id)
     # Scope the DB session to this tenant so RLS enforces isolation on everything the
@@ -132,7 +132,7 @@ def signup(body: SignupRequest, request: Request, db: Session = Depends(get_db))
     ip = _client_ip(request)
     if _throttled(db, email, ip):
         raise HTTPException(status_code=429,
-                            detail="too many signups from here — try again later")
+                            detail="too many signups from here, try again later")
     db.add(LoginAttempt(email=email, ip=ip))
     db.commit()
     claim = domains_mod.match_verified(db, email)
@@ -244,7 +244,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     ip = _client_ip(request)
     if _throttled(db, email, ip):
         raise HTTPException(status_code=429,
-                            detail="too many failed attempts — try again later")
+                            detail="too many failed attempts, try again later")
 
     q = db.query(User).filter(User.email == email, User.active.is_(True))
     if body.org.strip():
@@ -261,7 +261,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     ok = verify_password(body.password, user.password_hash if user else DUMMY_PASSWORD_HASH)
     if ambiguous:
         raise HTTPException(status_code=409,
-                            detail="multiple organizations use this email — specify your org")
+                            detail="multiple organizations use this email, specify your org")
     if not user or not ok:
         db.add(LoginAttempt(email=email, ip=ip))
         db.commit()
@@ -271,7 +271,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     ensure_active(db, user.tenant_id)
     if not user.email_verified:
         raise HTTPException(status_code=403,
-                            detail="verify your email first — check your inbox for the "
+                            detail="verify your email first, check your inbox for the "
                                    "confirmation link")
 
     # Successful login clears this email's recent failures.
@@ -391,7 +391,7 @@ def mfa_verify(body: MFAVerify, request: Request, db: Session = Depends(get_db))
 
     ip = _client_ip(request)
     if _throttled(db, user.email, ip):
-        raise HTTPException(status_code=429, detail="too many attempts — try again later")
+        raise HTTPException(status_code=429, detail="too many attempts, try again later")
 
     ok = False
     step = totp.verify_step(decrypt(user.mfa_secret), body.code)
@@ -1430,7 +1430,7 @@ def _sso_complete(db: Session, tenant: Tenant, email: str, auto_provision: bool,
             .filter(User.tenant_id == tenant.id, User.email == email).first())
     if user is None:
         if not auto_provision:
-            raise HTTPException(status_code=403, detail="no account for this email — ask an admin")
+            raise HTTPException(status_code=403, detail="no account for this email, ask an admin")
         user = User(tenant_id=tenant.id, email=email,
                     password_hash=hash_password(secrets.token_urlsafe(32)), role="analyst")
         db.add(user)

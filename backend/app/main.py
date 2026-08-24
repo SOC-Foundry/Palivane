@@ -611,7 +611,7 @@ def upgrade_request_create(body: dict, current: User = Depends(require_admin),
             .filter(UpgradeRequest.tenant_id == current.tenant_id,
                     UpgradeRequest.status == "pending").first()):
         raise HTTPException(status_code=409,
-                            detail="an upgrade request is already pending — we'll be in touch")
+                            detail="an upgrade request is already pending, we'll be in touch")
     seats = max(0, int(body.get("seats") or 0))
     note = (body.get("note") or "").strip()[:2000]
     tenant = db.get(Tenant, current.tenant_id)
@@ -745,7 +745,7 @@ def license_renew(body: dict, db: Session = Depends(get_db)):
     if row.status != "active":
         raise HTTPException(status_code=403, detail="license revoked")
     if row.contract_until and row.contract_until < now:
-        raise HTTPException(status_code=403, detail="license contract ended — contact sales@palivane.io")
+        raise HTTPException(status_code=403, detail="license contract ended, contact sales@palivane.io")
     new_expiry = date.today() + timedelta(days=licensing.DEFAULT_TERM_DAYS)
     fresh = licensing.issue(key, row.org, row.plan, row.seats or 0,
                             new_expiry.isoformat(), lic_id=row.id)
@@ -2722,7 +2722,7 @@ def exception_resolve(req_id: int, body: ExceptionResolve,
                   if k in VALID_KEYS]
         if not checks:
             raise HTTPException(status_code=400,
-                                detail="nothing to approve: no valid checks requested — "
+                                detail="nothing to approve: no valid checks requested, "
                                        "pass disable_checks explicitly")
         if not row.actor:
             raise HTTPException(status_code=400, detail="request has no actor to scope to")

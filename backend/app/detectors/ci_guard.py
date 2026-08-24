@@ -203,7 +203,7 @@ class CIGuardDetector:
                 found.append(f"job '{name}'")
         return [Signal(
             category=Category.CI_WORKFLOW_RISK, title="write-all token permissions",
-            detail=f"{where} grants the GITHUB_TOKEN write-all — a compromised step can "
+            detail=f"{where} grants the GITHUB_TOKEN write-all, a compromised step can "
                    "push code, rewrite releases, and edit workflows. Grant scopes explicitly.",
             weight=0.55, confidence=0.9, detector=self.name,
             evidence=where, check="ci_excessive_permissions") for where in found]
@@ -240,7 +240,7 @@ class CIGuardDetector:
             if "self-hosted" in runs_on:
                 out.append(Signal(
                     category=Category.CI_WORKFLOW_RISK, title="Self-hosted runner on PR trigger",
-                    detail=f"Job '{name}' runs PR-triggered code on a self-hosted runner — "
+                    detail=f"Job '{name}' runs PR-triggered code on a self-hosted runner, "
                            "a fork PR is code execution inside your network.",
                     weight=0.65, confidence=0.85, detector=self.name,
                     evidence=runs_on, check="ci_self_hosted_runner"))
@@ -266,7 +266,7 @@ class CIGuardDetector:
                 if risky_secrets:
                     out.append(Signal(
                         category=Category.SECRET_LEAK, title="Non-model secrets handed to AI step",
-                        detail=f"Step {where} passes {', '.join(risky_secrets[:5])} to {tool} — "
+                        detail=f"Step {where} passes {', '.join(risky_secrets[:5])} to {tool}, "
                                "deploy/cloud credentials inside an AI agent's context.",
                         weight=0.8, confidence=0.85, detector=self.name,
                         evidence=", ".join(risky_secrets[:5]), check="ci_secrets_to_ai"))

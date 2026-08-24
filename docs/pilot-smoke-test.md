@@ -101,4 +101,4 @@ these will block on every surface. Everything is attributed to your `@palivane.i
 ## What "pass" means
 All three planes produce findings attributed to you, and the test payload is blocked in the
 browser and at the gateway. Then the only rollout step left is telling the team to do
-steps 1–2 (and step 3 where desktop apps matter).
+steps 1-2 (and step 3 where desktop apps matter).

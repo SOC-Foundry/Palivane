@@ -1,4 +1,4 @@
-# 07 — Data Classification & Handling
+# 07. Data Classification & Handling
 
 **Owner:** Founder · **Effective:** 2026-07-19 · **Review:** annual
 
@@ -26,7 +26,7 @@ These are code paths, not habits:
 ## Movement rules
 
 Restricted data never leaves production systems except: (a) to the org's own
-configured integrations (SIEM/S3/webhooks — their credentials, their destination);
+configured integrations (SIEM/S3/webhooks, their credentials, their destination);
 (b) to Anthropic for judging when the org allows it. Operator debugging uses
 metadata and IDs, not content; where content access is unavoidable it runs as an
 auditable one-off job and is noted in the audit log.

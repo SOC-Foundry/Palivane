@@ -1,12 +1,12 @@
-# 05 — Business Continuity & Disaster Recovery
+# 05. Business Continuity & Disaster Recovery
 
 **Owner:** Founder · **Effective:** 2026-07-19 · **Review:** annual + after each drill
 
 ## Objectives (measured, not guessed)
 
-- **RPO ≤ 24 h nominal, minutes typical** — daily automated Cloud SQL backups plus
+- **RPO ≤ 24 h nominal, minutes typical**, daily automated Cloud SQL backups plus
   14-day point-in-time recovery (WAL).
-- **RTO ≈ 1 h** — the 2026-07-19 drill measured ~35 min for a full PITR clone to
+- **RTO ≈ 1 h**, the 2026-07-19 drill measured ~35 min for a full PITR clone to
   accepting connections (plus a few minutes' settle), verified row-by-row; budget an
   hour end-to-end with traffic cutover.
 
@@ -38,4 +38,4 @@ compliance calendar evidence.
 
 Single-operator dependency is the top continuity risk (see risk register): mitigations
 are this documentation (all procedures runnable by a competent engineer from the repo),
-IaC, and — as the business grows — the first ops-capable hire.
+IaC, and, as the business grows, the first ops-capable hire.
