@@ -1,17 +1,20 @@
 name: Deploy (Cloud Run)
 
-# App rollout on merge to main: build + push the image (Cloud Build) and deploy to Cloud
-# Run via the existing deploy script. Infra changes are handled separately by
-# terraform-apply.yml. Requires Workload Identity Federation + a deploy service account.
+# App rollout: build + push the image (Cloud Build) and deploy to Cloud Run via the
+# existing deploy script. Infra changes are handled separately by terraform-apply.yml.
+# Requires Workload Identity Federation + a deploy service account.
+#
+# MANUAL ONLY. The push-to-main trigger is deliberately absent: it shipped straight to
+# production with nothing in between, and the usual brake for that, required reviewers on
+# the production environment, needs a paid plan (the org is on free, and the repo is
+# private, so the API refuses the protection rule). Dispatching by hand is the gate
+# instead, the same arrangement terraform-apply.yml already uses.
+#
+# To restore automatic rollout once required reviewers are available, put back:
+#   push:
+#     branches: [main]
+#     paths-ignore: ["deploy/terraform/**", "deploy/gcp/**", ".github/**", "**/*.md", "docs/**"]
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "deploy/terraform/**"
-      - "deploy/gcp/**"
-      - ".github/**"
-      - "**/*.md"
-      - "docs/**"
   workflow_dispatch:
 
 permissions:
