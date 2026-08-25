@@ -43,6 +43,18 @@ jobs:
           service_account: ${{ vars.GCP_DEPLOY_SA }}
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
+      - name: Ensure log access
+        run: |
+          # The deploy SA holds projectIamAdmin (deploy/gcp/setup-wif.sh) but existing
+          # deployments were provisioned before logging.viewer joined its role list —
+          # self-grant so the "Job output" step can read the job's container logs.
+          # Idempotent: re-adding an existing binding is a no-op. Placed before the job
+          # runs so a first-time grant has the job's runtime (~minutes) to propagate.
+          gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+            --member "serviceAccount:${{ vars.GCP_DEPLOY_SA }}" \
+            --role roles/logging.viewer --condition=None --quiet >/dev/null \
+            || echo "(grant failed — job output may be unavailable this run)"
+
       - name: Run admin job
         env:
           SQL_CONNECTION: ${{ vars.GCP_SQL_CONNECTION }}
