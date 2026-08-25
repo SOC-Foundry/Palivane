@@ -47,9 +47,14 @@ ENV_VARS+="|SEED_ON_START=${SEED_ON_START:-false}"
 # PALIVANE_ALLOWED_HOSTS may need more than DOMAIN (e.g. the *.run.app hostname when a
 # fronting proxy/Worker reaches the service by its run.app origin) — allow an override.
 [ -n "$DOMAIN" ] && ENV_VARS+="|CORS_ORIGINS=https://${DOMAIN}|PALIVANE_PUBLIC_URL=https://${DOMAIN}|PALIVANE_ALLOWED_HOSTS=${PALIVANE_ALLOWED_HOSTS:-$DOMAIN}"
-# Email plane (password reset / join verification / invites). SMTP_PASS rides in via the
-# optional-secrets loop below (create secret 'palivane-smtp-pass' to enable).
-[ -n "${SMTP_HOST:-}" ] && ENV_VARS+="|SMTP_HOST=${SMTP_HOST}|SMTP_PORT=${SMTP_PORT:-587}|SMTP_USER=${SMTP_USER:-}|MAIL_FROM=${MAIL_FROM:-}"
+# Email plane (password reset / join verification / invites). Two transports: SMTP
+# (SMTP_PASS rides in via the optional-secrets loop below — create 'palivane-smtp-pass')
+# or the Cloudflare Email Service REST API (token via 'palivane-cf-email-token', account
+# id here — it is not a secret). MAIL_FROM is shared by both, so it is threaded
+# independently of which transport is configured.
+[ -n "${SMTP_HOST:-}" ] && ENV_VARS+="|SMTP_HOST=${SMTP_HOST}|SMTP_PORT=${SMTP_PORT:-587}|SMTP_USER=${SMTP_USER:-}"
+[ -n "${CF_EMAIL_ACCOUNT_ID:-}" ] && ENV_VARS+="|CF_EMAIL_ACCOUNT_ID=${CF_EMAIL_ACCOUNT_ID}"
+[ -n "${MAIL_FROM:-}" ] && ENV_VARS+="|MAIL_FROM=${MAIL_FROM}"
 # Encrypt stored finding content at rest (needs a durable PALIVANE_SECRET_KEY — key loss =
 # data loss). Opt-in per deploy; threaded through when set.
 [ -n "${PALIVANE_ENCRYPT_FINDINGS:-}" ] && ENV_VARS+="|PALIVANE_ENCRYPT_FINDINGS=${PALIVANE_ENCRYPT_FINDINGS}"
@@ -76,6 +81,7 @@ for pair in \
   "PALIVANE_METRICS_TOKEN=palivane-metrics-token" \
   "EXTENSION_INGEST_TOKEN=extension-ingest-token" \
   "SMTP_PASS=palivane-smtp-pass" \
+  "CF_EMAIL_TOKEN=palivane-cf-email-token" \
   "PALIVANE_LICENSE_SIGNING_KEY=palivane-license-signing-key" \
   "PALIVANE_RELEASE_SIGNING_KEY=palivane-release-signing-key" \
   "PALIVANE_SLACK_CLIENT_SECRET=palivane-slack-client-secret"; do
