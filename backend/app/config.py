@@ -191,6 +191,14 @@ class Settings:
     # (palivane-cf-email-token), same as the other provider keys.
     cf_email_account_id: str = _env("CF_EMAIL_ACCOUNT_ID", "").strip()
     cf_email_token: str = _env("CF_EMAIL_TOKEN", "").strip()
+    # Self-serve billing (Stripe Checkout for the Team plan; Enterprise stays sales-led).
+    # Dark until the secret key + at least one price id are set (see app/billing.py).
+    # Secrets ride in from Secret Manager (palivane-stripe-secret-key / -webhook-secret);
+    # price ids are not secrets.
+    stripe_secret_key: str = _env("STRIPE_SECRET_KEY", "").strip()
+    stripe_webhook_secret: str = _env("STRIPE_WEBHOOK_SECRET", "").strip()
+    stripe_price_team_monthly: str = _env("STRIPE_PRICE_TEAM_MONTHLY", "").strip()
+    stripe_price_team_annual: str = _env("STRIPE_PRICE_TEAM_ANNUAL", "").strip()
     # Per-tenant resource quotas for open multi-tenant signup (0 = unlimited). A tenant's
     # own quota_* column (operator-set via `python -m app.users set-quota`) overrides the
     # global default — tenant admins can NOT raise their own quotas through the API.

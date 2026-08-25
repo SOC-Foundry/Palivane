@@ -55,6 +55,11 @@ ENV_VARS+="|SEED_ON_START=${SEED_ON_START:-false}"
 [ -n "${SMTP_HOST:-}" ] && ENV_VARS+="|SMTP_HOST=${SMTP_HOST}|SMTP_PORT=${SMTP_PORT:-587}|SMTP_USER=${SMTP_USER:-}"
 [ -n "${CF_EMAIL_ACCOUNT_ID:-}" ] && ENV_VARS+="|CF_EMAIL_ACCOUNT_ID=${CF_EMAIL_ACCOUNT_ID}"
 [ -n "${MAIL_FROM:-}" ] && ENV_VARS+="|MAIL_FROM=${MAIL_FROM}"
+# Self-serve billing (Stripe Checkout for Team). Price ids are not secrets; the API key
+# and webhook signing secret ride in via the optional-secrets loop below (create
+# 'palivane-stripe-secret-key' + 'palivane-stripe-webhook-secret' to enable).
+[ -n "${STRIPE_PRICE_TEAM_MONTHLY:-}" ] && ENV_VARS+="|STRIPE_PRICE_TEAM_MONTHLY=${STRIPE_PRICE_TEAM_MONTHLY}"
+[ -n "${STRIPE_PRICE_TEAM_ANNUAL:-}" ] && ENV_VARS+="|STRIPE_PRICE_TEAM_ANNUAL=${STRIPE_PRICE_TEAM_ANNUAL}"
 # Encrypt stored finding content at rest (needs a durable PALIVANE_SECRET_KEY — key loss =
 # data loss). Opt-in per deploy; threaded through when set.
 [ -n "${PALIVANE_ENCRYPT_FINDINGS:-}" ] && ENV_VARS+="|PALIVANE_ENCRYPT_FINDINGS=${PALIVANE_ENCRYPT_FINDINGS}"
@@ -82,6 +87,8 @@ for pair in \
   "EXTENSION_INGEST_TOKEN=extension-ingest-token" \
   "SMTP_PASS=palivane-smtp-pass" \
   "CF_EMAIL_TOKEN=palivane-cf-email-token" \
+  "STRIPE_SECRET_KEY=palivane-stripe-secret-key" \
+  "STRIPE_WEBHOOK_SECRET=palivane-stripe-webhook-secret" \
   "PALIVANE_LICENSE_SIGNING_KEY=palivane-license-signing-key" \
   "PALIVANE_RELEASE_SIGNING_KEY=palivane-release-signing-key" \
   "PALIVANE_SLACK_CLIENT_SECRET=palivane-slack-client-secret"; do

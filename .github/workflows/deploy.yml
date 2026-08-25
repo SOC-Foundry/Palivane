@@ -64,6 +64,8 @@ jobs:
           SMTP_USER: ${{ vars.SMTP_USER }}
           MAIL_FROM: ${{ vars.MAIL_FROM }}
           CF_EMAIL_ACCOUNT_ID: ${{ vars.CF_EMAIL_ACCOUNT_ID }}
+          STRIPE_PRICE_TEAM_MONTHLY: ${{ vars.STRIPE_PRICE_TEAM_MONTHLY }}
+          STRIPE_PRICE_TEAM_ANNUAL: ${{ vars.STRIPE_PRICE_TEAM_ANNUAL }}
           # Role-based S3 delivery (AWS identity via GCP web-identity federation) and the
           # published Slack app. All non-sensitive; the Slack client SECRET comes from
           # Secret Manager (palivane-slack-client-secret) inside deploy.sh.

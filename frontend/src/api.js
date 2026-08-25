@@ -178,6 +178,10 @@ export const api = {
   deleteTenant: (confirm) => req("/tenant", { method: "DELETE", body: JSON.stringify({ confirm }) }),
   usage: () => req("/usage"),
   planCatalog: () => req("/plans"),
+  billing: () => req("/billing"),
+  billingCheckout: (seats, interval) =>
+    req("/billing/checkout", { method: "POST", body: JSON.stringify({ seats, interval }) }),
+  billingPortal: () => req("/billing/portal", { method: "POST" }),
   upgradeRequest: () => req("/plans/upgrade"),
   requestUpgrade: (plan, seats, note) =>
     req("/plans/upgrade", { method: "POST", body: JSON.stringify({ plan, seats, note }) }),
