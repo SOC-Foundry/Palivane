@@ -10,7 +10,7 @@ const TIERS = [
     cta: { label: "Upgrade in the console →", href: "/" },
     featured: true,
     features: [
-      "Up to 25 people (more on request)",
+      "Per seat — bring your whole team, add or drop seats any time",
       "Covers the browser, desktop AI apps, AI coding tools, your code, and GitHub Actions",
       "Live findings, every AI tool in use, and who is covered",
       "Watch-only or blocking, your call",
@@ -24,7 +24,7 @@ const TIERS = [
     blurb: "For when identity, audit, and a security review are part of the deal.",
     cta: { label: "Talk to sales →", href: "mailto:sales@palivane.io?subject=Palivane%20Enterprise" },
     features: [
-      "Everything in Team, without the seat cap",
+      "Everything in Team, on an annual license",
       "Single sign-on with your identity provider (OIDC & SAML)",
       "Findings forwarded to your SIEM (Splunk HEC · CEF · JSON)",
       "Delivery to your own data lake (S3 for Panther, Athena, Snowflake)",
