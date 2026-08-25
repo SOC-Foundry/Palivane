@@ -12,6 +12,11 @@ name: Ops (one-off admin job)
 #   3. gh secret delete OPS_SCRIPT
 # The job is deleted after execution (pass/fail) so the script does not persist on the
 # Cloud Run resource either.
+#
+# A second optional secret, OPS_RUNNER_SCRIPT, runs on the Actions runner authenticated
+# as the deploy SA (NOT inside the container) — for gcloud-level tasks the runtime SA
+# can't do: creating/rotating Secret Manager secrets, inspecting the service config, etc.
+# Set either secret or both; a dispatch with neither fails.
 on:
   workflow_dispatch:
     inputs:
@@ -55,6 +60,19 @@ jobs:
             --role roles/logging.viewer --condition=None --quiet >/dev/null \
             || echo "(grant failed — job output may be unavailable this run)"
 
+      - name: Runner script
+        env:
+          OPS_RUNNER_SCRIPT: ${{ secrets.OPS_RUNNER_SCRIPT }}
+          OPS_SCRIPT: ${{ secrets.OPS_SCRIPT }}
+        run: |
+          set -euo pipefail
+          if [ -z "$OPS_RUNNER_SCRIPT" ] && [ -z "$OPS_SCRIPT" ]; then
+            echo "Set OPS_SCRIPT and/or OPS_RUNNER_SCRIPT first (see the header of this workflow)." >&2
+            exit 1
+          fi
+          [ -z "$OPS_RUNNER_SCRIPT" ] && { echo "(no runner script)"; exit 0; }
+          bash -euo pipefail -c "$OPS_RUNNER_SCRIPT"
+
       - name: Run admin job
         env:
           SQL_CONNECTION: ${{ vars.GCP_SQL_CONNECTION }}
@@ -64,8 +82,8 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$OPS_SCRIPT" ]; then
-            echo "Set the OPS_SCRIPT repository secret first (see the header of this workflow)." >&2
-            exit 1
+            echo "(no OPS_SCRIPT — container job skipped)"
+            exit 0
           fi
           # Reuse the image AND runtime service account of the running service — same code,
           # same migrations, and the SA is the one with secretAccessor on the DB secrets
