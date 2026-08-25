@@ -51,7 +51,9 @@ def resolve(provider: str, tenant_id: int | None, db: Session) -> tuple[str, str
         from .netguard import is_safe_url
         if not is_safe_url(row.base_url):
             return g_base, g_key
-    return (row.base_url or g_base), (decrypt(row.key_encrypted) or g_key)
+    from . import crypto
+    key = crypto.unseal_secret(row.key_encrypted, crypto.dek_for(db, tenant_id))
+    return (row.base_url or g_base), (key or g_key)
 
 
 def forwards(provider: str, tenant_id: int | None, db: Session) -> bool:

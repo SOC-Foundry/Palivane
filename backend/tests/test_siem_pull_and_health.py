@@ -142,10 +142,18 @@ def test_siem_credentials_sealed_at_rest(client, db_factory):
                                       "siem_s3_secret": "aws-secret-456"})
     db = db_factory()
     t = db.query(Tenant).filter(Tenant.slug == "acme").one()
-    assert t.siem_token.startswith("enc:v1:") and "hec-token-123" not in t.siem_token
-    assert t.siem_s3_secret.startswith("enc:v1:") and "aws-secret-456" not in t.siem_s3_secret
-    assert unseal(t.siem_token) == "hec-token-123"
-    assert unseal(t.siem_s3_secret) == "aws-secret-456"
+    # enc:v2: now, not enc:v1: — these are sealed under the tenant's own data key rather
+    # than the one deployment key, so a KEK compromise no longer opens every tenant's
+    # SIEM credentials at once.
+    from app import crypto
+    assert t.siem_token.startswith("enc:v2:") and "hec-token-123" not in t.siem_token
+    assert t.siem_s3_secret.startswith("enc:v2:") and "aws-secret-456" not in t.siem_s3_secret
+    dek = crypto.tenant_dek_readonly(t)
+    assert dek, "sealing a credential should have provisioned the tenant DEK"
+    assert crypto.unseal_secret(t.siem_token, dek) == "hec-token-123"
+    assert crypto.unseal_secret(t.siem_s3_secret, dek) == "aws-secret-456"
+    # and another tenant's key must not open them
+    assert crypto.unseal_secret(t.siem_token, crypto.new_dek()) == ""
     db.close()
 
 

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from . import audit_log, oidc, saml, totp
 from .config import settings
+from . import crypto
 from .crypto import decrypt, encrypt, seal
 from .database import get_db
 from .models import (
@@ -982,7 +983,7 @@ def set_upstream(provider: str, body: UpstreamConfig, current: User = Depends(re
         db.add(row)
     row.base_url = base
     if body.key:
-        row.key_encrypted = encrypt(body.key)
+        row.key_encrypted = crypto.seal_secret(crypto.dek_for(db, row.tenant_id), body.key)
     db.commit()
     audit_log.record(db, current.tenant_id, current.email, "upstream.set", target=provider)
     return _upstream_state(provider, current.tenant_id, db)
@@ -1014,11 +1015,14 @@ def _judge_key_state(tenant) -> dict:
     # has exercised the key on this instance.
     health = None
     if tenant.judge_byok_key_encrypted:
-        from .crypto import decrypt
         from .detectors.llm_judge import byok_health
         try:
-            health = byok_health(tenant.judge_byok_provider or "",
-                                 decrypt(tenant.judge_byok_key_encrypted),
+            # no session in this helper, and none is needed: opening an existing DEK
+            # takes only the KEK. (A minting call here would have raised NameError into
+            # the except below and silently reported health as None.)
+            key = crypto.unseal_secret(tenant.judge_byok_key_encrypted,
+                                       crypto.tenant_dek_readonly(tenant))
+            health = byok_health(tenant.judge_byok_provider or "", key,
                                  tenant.judge_byok_model or "")
         except Exception:
             health = None
@@ -1050,7 +1054,8 @@ def set_judge_key(body: JudgeKeyConfig, current: User = Depends(require_admin),
     tenant.judge_byok_provider = provider
     tenant.judge_byok_model = (body.model or "").strip()
     if body.key:
-        tenant.judge_byok_key_encrypted = encrypt(body.key.strip())
+        tenant.judge_byok_key_encrypted = crypto.seal_secret(
+            crypto.tenant_dek(tenant, db), body.key.strip())
     if not tenant.judge_byok_key_encrypted:
         raise HTTPException(status_code=400, detail="key is required (none stored yet)")
     db.commit()
@@ -1152,7 +1157,8 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
     if body.siem_token is not None:
         # Sealed at rest (enc:v1: tag) like other stored secrets; unsealed at send time.
         # Legacy plaintext rows keep working — unseal passes untagged values through.
-        tenant.siem_token = seal(body.siem_token.strip())
+        tenant.siem_token = crypto.seal_secret(crypto.tenant_dek(tenant, db),
+                                               body.siem_token.strip())
     if body.siem_min_severity is not None:
         if body.siem_min_severity not in ("low", "suspicious", "high", "critical"):
             raise HTTPException(status_code=400, detail="invalid siem_min_severity")
@@ -1171,7 +1177,8 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
     if body.siem_s3_key_id:
         tenant.siem_s3_key_id = body.siem_s3_key_id.strip()
     if body.siem_s3_secret:
-        tenant.siem_s3_secret = seal(body.siem_s3_secret.strip())   # sealed at rest
+        tenant.siem_s3_secret = crypto.seal_secret(crypto.tenant_dek(tenant, db),
+                                                   body.siem_s3_secret.strip())  # sealed at rest
     if body.siem_s3_role_arn is not None:
         arn = body.siem_s3_role_arn.strip()
         # Any AWS partition (aws / aws-us-gov / aws-cn), but it must be an IAM *role* —
@@ -1342,7 +1349,8 @@ def set_oidc(body: OIDCConfig, current: User = Depends(require_admin),
     row.issuer = body.issuer.strip() or row.issuer
     row.client_id = body.client_id.strip() or row.client_id
     if body.client_secret:
-        row.client_secret_encrypted = encrypt(body.client_secret)
+        row.client_secret_encrypted = crypto.seal_secret(
+            crypto.dek_for(db, row.tenant_id), body.client_secret)
     if body.enabled is not None:
         row.enabled = body.enabled
     if body.auto_provision is not None:
@@ -1403,7 +1411,7 @@ def oidc_callback(org: str, request: Request, code: str = "", state: str = "",
     tenant, row = _enabled_oidc(org, db)
     base = str(request.base_url).rstrip("/")
     redirect_uri = f"{base}/api/auth/oidc/{tenant.slug}/callback"
-    secret = decrypt(row.client_secret_encrypted)
+    secret = crypto.unseal_secret(row.client_secret_encrypted, crypto.tenant_dek(tenant, db))
     try:
         meta = oidc.discover(row.issuer)
         tokens = oidc.exchange_code(meta, row.client_id, secret, code, redirect_uri)
