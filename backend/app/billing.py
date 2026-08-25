@@ -64,10 +64,14 @@ def _stripe(method: str, path: str, params: dict | None = None) -> dict:
         except Exception:
             pass
         log.warning("stripe %s %s failed: %s", method, path, detail[:200])
-        raise HTTPException(status_code=502, detail=f"Stripe: {detail[:300]}")
+        # NOT 502: Cloudflare replaces origin 502/504 bodies with its own error page,
+        # which hides the actual Stripe message from the console (and from curl).
+        raise HTTPException(status_code=400, detail=f"Stripe: {detail[:300]}")
+    except HTTPException:
+        raise
     except Exception as e:
         log.warning("stripe %s %s failed: %s", method, path, str(e)[:200])
-        raise HTTPException(status_code=502, detail="billing provider unreachable")
+        raise HTTPException(status_code=503, detail="billing provider unreachable")
 
 
 def _base_url() -> str:
