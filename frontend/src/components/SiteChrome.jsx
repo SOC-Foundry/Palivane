@@ -24,11 +24,14 @@ const MENU = [
     { href: "/use-cases#security",    label: "Security teams", note: "Shadow-AI discovery and response" },
     { href: "/use-cases#compliance",  label: "Compliance",     note: "Evidence, audit, and residency" },
   ]},
+  // Pricing is deliberately top-level, not in a dropdown: it is the highest-intent click
+  // on the site, and hiding it reads as "call us to find out" — the opposite of the
+  // self-serve Team plan.
+  { label: "Pricing", href: "/pricing" },
   { label: "Resources", items: [
     { href: "/docs",    label: "Documentation", note: "Setup, deployment, reference" },
     { href: "/setup",   label: "Set it up",     note: "One command, one afternoon" },
     { href: "/trust",   label: "Trust & security", note: "Posture, data handling, disclosure" },
-    { href: "/pricing", label: "Pricing",       note: "Plans and what they include" },
   ]},
 ];
 
@@ -60,20 +63,24 @@ export function SiteNav({ onSignIn }) {
 
       <nav className="lp-menu" aria-label="Main">
         {MENU.map((m) => (
-          <div key={m.label} className={`lp-menu-group ${open === m.label ? "is-open" : ""}`}>
-            <button type="button" className="lp-menu-trigger" aria-expanded={open === m.label}
-                    onClick={() => setOpen(open === m.label ? null : m.label)}>
-              {m.label}<span className="lp-caret" aria-hidden="true" />
-            </button>
-            <div className="lp-dropdown" role="menu">
-              {m.items.map((it) => (
-                <a key={it.href} href={it.href} role="menuitem" className="lp-drop-item">
-                  <span className="lp-drop-label">{it.label}</span>
-                  <span className="lp-drop-note">{it.note}</span>
-                </a>
-              ))}
+          m.items ? (
+            <div key={m.label} className={`lp-menu-group ${open === m.label ? "is-open" : ""}`}>
+              <button type="button" className="lp-menu-trigger" aria-expanded={open === m.label}
+                      onClick={() => setOpen(open === m.label ? null : m.label)}>
+                {m.label}<span className="lp-caret" aria-hidden="true" />
+              </button>
+              <div className="lp-dropdown" role="menu">
+                {m.items.map((it) => (
+                  <a key={it.href} href={it.href} role="menuitem" className="lp-drop-item">
+                    <span className="lp-drop-label">{it.label}</span>
+                    <span className="lp-drop-note">{it.note}</span>
+                  </a>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <a key={m.label} href={m.href} className="lp-menu-trigger">{m.label}</a>
+          )
         ))}
       </nav>
 
@@ -91,8 +98,14 @@ export function SiteNav({ onSignIn }) {
         <div className="lp-mobile">
           {MENU.map((m) => (
             <div key={m.label} className="lp-mobile-group">
-              <span className="lp-mobile-head">{m.label}</span>
-              {m.items.map((it) => <a key={it.href} href={it.href}>{it.label}</a>)}
+              {m.items ? (
+                <>
+                  <span className="lp-mobile-head">{m.label}</span>
+                  {m.items.map((it) => <a key={it.href} href={it.href}>{it.label}</a>)}
+                </>
+              ) : (
+                <a href={m.href}>{m.label}</a>
+              )}
             </div>
           ))}
           <div className="lp-mobile-actions">{signIn}
