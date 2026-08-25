@@ -12,6 +12,7 @@ export default function Login({ onAuthed, onBack }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [allowSignup, setAllowSignup] = useState(false);
+  const [googleLogin, setGoogleLogin] = useState(false);
   const [mfaChallenge, setMfaChallenge] = useState(null);   // set when login needs a 2nd factor
   const [mfaCode, setMfaCode] = useState("");
   const [pendingOrg, setPendingOrg] = useState(null);       // signup became a join request
@@ -22,6 +23,7 @@ export default function Login({ onAuthed, onBack }) {
     api.health().then((h) => {
       setAllowSignup(!!h.allow_signup);
       setEmailEnabled(!!h.email_enabled);
+      setGoogleLogin(!!h.google_login);
     }).catch(() => setAllowSignup(false));
     // Password-reset links land as /#reset=TOKEN (fragment: never sent to the server).
     const m = window.location.hash.match(/^#reset=(.+)$/);
@@ -201,6 +203,12 @@ export default function Login({ onAuthed, onBack }) {
            mode === "forgot" ? "Send reset link" :
            mode === "reset" ? "Set new password" : "Sign in"}
         </button>
+        {(mode === "signin" || mode === "signup") && googleLogin && (
+          <button type="button" className="sso-btn"
+                  onClick={() => { window.location.href = "/api/auth/google/login"; }}>
+            Continue with Google
+          </button>
+        )}
         {mode === "signin" && (
           <button type="button" className="sso-btn" onClick={ssoLogin}>
             Sign in with SSO

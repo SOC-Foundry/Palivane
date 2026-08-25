@@ -55,6 +55,9 @@ ENV_VARS+="|SEED_ON_START=${SEED_ON_START:-false}"
 [ -n "${SMTP_HOST:-}" ] && ENV_VARS+="|SMTP_HOST=${SMTP_HOST}|SMTP_PORT=${SMTP_PORT:-587}|SMTP_USER=${SMTP_USER:-}"
 [ -n "${CF_EMAIL_ACCOUNT_ID:-}" ] && ENV_VARS+="|CF_EMAIL_ACCOUNT_ID=${CF_EMAIL_ACCOUNT_ID}"
 [ -n "${MAIL_FROM:-}" ] && ENV_VARS+="|MAIL_FROM=${MAIL_FROM}"
+# "Continue with Google" (app-global social sign-in). The client id is not a secret;
+# the client secret rides in via the optional-secrets loop (palivane-google-oauth-secret).
+[ -n "${GOOGLE_OAUTH_CLIENT_ID:-}" ] && ENV_VARS+="|GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}"
 # Self-serve billing (Stripe Checkout for Team). Price ids are not secrets; the API key
 # and webhook signing secret ride in via the optional-secrets loop below (create
 # 'palivane-stripe-secret-key' + 'palivane-stripe-webhook-secret' to enable).
@@ -87,6 +90,7 @@ for pair in \
   "EXTENSION_INGEST_TOKEN=extension-ingest-token" \
   "SMTP_PASS=palivane-smtp-pass" \
   "CF_EMAIL_TOKEN=palivane-cf-email-token" \
+  "GOOGLE_OAUTH_CLIENT_SECRET=palivane-google-oauth-secret" \
   "STRIPE_SECRET_KEY=palivane-stripe-secret-key" \
   "STRIPE_WEBHOOK_SECRET=palivane-stripe-webhook-secret" \
   "PALIVANE_LICENSE_SIGNING_KEY=palivane-license-signing-key" \

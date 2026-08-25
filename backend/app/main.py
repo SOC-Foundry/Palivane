@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from .auth import get_current_user, require_admin, router as auth_router
 from .distribution import router as distribution_router
 from .billing import router as billing_router
+from .google_login import router as google_login_router
 from .domains import router as domains_router
 from .config import settings, _env
 from .gateway import gemini_router, router as gateway_router
@@ -234,6 +235,7 @@ async def _guard(request: Request, call_next):
 
 app.include_router(auth_router)
 app.include_router(billing_router)
+app.include_router(google_login_router)
 app.include_router(domains_router)
 app.include_router(distribution_router)
 app.include_router(gateway_router)
@@ -253,7 +255,7 @@ async def _metrics_middleware(request, call_next):
 
 @app.get("/api/health")
 def health():
-    from . import email as email_mod
+    from . import email as email_mod, google_login
     from .licensing import current as license_current
     lic = license_current()
     return {
@@ -267,6 +269,7 @@ def health():
         "judge_healthy": engine.judge.health["ok"] if engine.judge_enabled else None,
         "allow_signup": settings.allow_signup,
         "email_enabled": email_mod.enabled(),
+        "google_login": google_login.enabled(),
         # Self-hosted licensing (see app/licensing.py); absent on the hosted SaaS where
         # tenant.plan is authoritative.
         "license": {"org": lic["org"], "plan": lic["plan"],
