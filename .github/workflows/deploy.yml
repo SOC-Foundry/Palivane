@@ -64,6 +64,7 @@ jobs:
           SMTP_USER: ${{ vars.SMTP_USER }}
           MAIL_FROM: ${{ vars.MAIL_FROM }}
           CF_EMAIL_ACCOUNT_ID: ${{ vars.CF_EMAIL_ACCOUNT_ID }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
           STRIPE_PRICE_TEAM_MONTHLY: ${{ vars.STRIPE_PRICE_TEAM_MONTHLY }}
           STRIPE_PRICE_TEAM_ANNUAL: ${{ vars.STRIPE_PRICE_TEAM_ANNUAL }}
           # Role-based S3 delivery (AWS identity via GCP web-identity federation) and the

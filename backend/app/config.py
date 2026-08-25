@@ -191,6 +191,12 @@ class Settings:
     # (palivane-cf-email-token), same as the other provider keys.
     cf_email_account_id: str = _env("CF_EMAIL_ACCOUNT_ID", "").strip()
     cf_email_token: str = _env("CF_EMAIL_TOKEN", "").strip()
+    # "Continue with Google" (app-global social sign-in; see app/google_login.py) — one
+    # OAuth client for the whole deployment, distinct from per-tenant OIDC SSO. Dark
+    # until both are set. The secret rides in from Secret Manager
+    # (palivane-google-oauth-secret); the client id is not a secret.
+    google_oauth_client_id: str = _env("GOOGLE_OAUTH_CLIENT_ID", "").strip()
+    google_oauth_client_secret: str = _env("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
     # Self-serve billing (Stripe Checkout for the Team plan; Enterprise stays sales-led).
     # Dark until the secret key + at least one price id are set (see app/billing.py).
     # Secrets ride in from Secret Manager (palivane-stripe-secret-key / -webhook-secret);
