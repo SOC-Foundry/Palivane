@@ -6,7 +6,8 @@ const TIERS = [
   {
     name: "Team", price: "$12", per: "per user / month ($10 annual)",
     blurb: "The plan most companies run. Covers everyone and tells you when something happens.",
-    cta: { label: "Talk to us →", href: "mailto:sales@palivane.io?subject=Palivane%20Team%20plan" },
+    // Self-serve: pay by card from Settings → Your plan in the console (Stripe Checkout).
+    cta: { label: "Upgrade in the console →", href: "/" },
     featured: true,
     features: [
       "Up to 25 people (more on request)",
