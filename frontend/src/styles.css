@@ -774,6 +774,7 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
   background: none; border: 0; cursor: pointer;
   color: var(--muted); font: 600 14px/1 inherit; padding: 9px 12px; border-radius: 4px;
   transition: color 0.12s ease, background 0.12s ease;
+  text-decoration: none;   /* also used on flat <a> nav links (Pricing) */
 }
 .lp-menu-trigger:hover, .lp-menu-group.is-open .lp-menu-trigger { color: var(--text); background: var(--panel-2); }
 .lp-caret {
