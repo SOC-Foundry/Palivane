@@ -142,10 +142,14 @@ def archive(tenant, item, result: dict, agent: str = "") -> None:
     try:
         if tenant is None or not getattr(tenant, "archive_s3_enabled", False):
             return
-        from .crypto import unseal
+        from . import crypto
         bucket = (tenant.siem_s3_bucket or "").strip()
         key_id = (tenant.siem_s3_key_id or "").strip()
-        secret = unseal((tenant.siem_s3_secret or "").strip())
+        # Runs off the request path with no session. Unwrapping an existing DEK needs
+        # only the KEK, so enc:v2: secrets still open here; minting is what would need a
+        # commit, and a tenant with nothing sealed has no DEK to mint against anyway.
+        secret = crypto.unseal_secret((tenant.siem_s3_secret or "").strip(),
+                                      crypto.tenant_dek_readonly(tenant), legacy_plaintext=True)
         role_arn = (getattr(tenant, "siem_s3_role_arn", "") or "").strip()
         external_id = (getattr(tenant, "siem_s3_external_id", "") or "").strip()
         if not (bucket and (role_arn or (key_id and secret))):

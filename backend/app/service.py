@@ -12,6 +12,7 @@ from .config import settings
 from .detectors import AnalysisInput
 from .engine import engine
 from .models import Finding, Tenant
+from . import crypto
 from .crypto import seal
 # Imported at module level (not lazily) so capture binds the same config `settings` object
 # as the rest of the scan path — a late import would bind a different instance if the
@@ -45,17 +46,12 @@ def scrub_expired_content(db) -> int:
 
 
 def _tenant_dek(tenant, db) -> str | None:
-    """The tenant's unwrapped data key, generating + storing a wrapped one on first use.
-    Returns None if there's no tenant (can't do per-tenant envelope) — caller falls back."""
-    if tenant is None:
-        return None
+    """The tenant's unwrapped data key, minting one on first use. Lives in crypto now
+    that stored credentials need it too; kept here as a thin alias so existing call sites
+    read unchanged. Note this is the MINTING variant: content sealing has a session and
+    must be able to create the key, unlike the sink dispatch below."""
     from . import crypto
-    if not tenant.dek_wrapped:
-        dek = crypto.new_dek()
-        tenant.dek_wrapped = crypto.wrap_dek(dek)
-        db.commit()
-        return dek
-    return crypto.unwrap_dek(tenant.dek_wrapped)
+    return crypto.tenant_dek(tenant, db)
 
 
 def _stored_content(content: str, tenant, db) -> str:
@@ -120,10 +116,10 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     # opt-out above still wins: consent to ship content is a separate decision.
     byok = []
     if include_judge and tenant is not None and getattr(tenant, "judge_byok_key_encrypted", ""):
-        from .crypto import decrypt
         from .detectors.llm_judge import byok_backends
         byok = byok_backends(tenant.judge_byok_provider or "",
-                             decrypt(tenant.judge_byok_key_encrypted),
+                             crypto.unseal_secret(tenant.judge_byok_key_encrypted,
+                                                  crypto.tenant_dek_readonly(tenant)),
                              tenant.judge_byok_model or "")
     # On the managed SaaS the operator-funded judge is a paid entitlement: when
     # plan-gating is on, a tenant whose plan lacks the "judge" feature runs offline-only
@@ -237,12 +233,12 @@ def _dispatch_sinks(tenant, payload: dict, subject: str, actor: str, surface: st
         alerts.notify(tenant.alert_webhook.strip(), tenant.alert_min_severity, payload,
                       subject=subject, actor=actor, surface=surface,
                       digest=tenant.alert_digest or "off")
-    # SIEM credentials are sealed at rest (crypto.seal in update_tenant); unseal passes
-    # legacy plaintext rows through unchanged.
-    from .crypto import unseal
+    # SIEM credentials are sealed at rest. _dispatch_sinks has no session (it also runs
+    # from the correlation path), so use the read-only unwrap: opening an existing DEK
+    # needs the KEK only. Legacy bare and enc:v1: rows still pass through.
     if (tenant.siem_url or "").strip():
         from . import siem
-        siem.forward(tenant.siem_url.strip(), unseal(tenant.siem_token or ""),
+        siem.forward(tenant.siem_url.strip(), crypto.unseal_secret(tenant.siem_token, crypto.tenant_dek_readonly(tenant), legacy_plaintext=True),
                      tenant.siem_min_severity, tenant.siem_format, payload,
                      subject=subject, actor=actor, surface=surface, org=tenant.slug,
                      tenant_id=tenant.id)
@@ -250,7 +246,7 @@ def _dispatch_sinks(tenant, payload: dict, subject: str, actor: str, surface: st
         from . import siem_s3
         siem_s3.forward_s3(tenant.siem_s3_bucket.strip(), tenant.siem_s3_prefix or "",
                            tenant.siem_s3_region or "", tenant.siem_s3_key_id or "",
-                           unseal(tenant.siem_s3_secret or ""), tenant.siem_min_severity,
+                           crypto.unseal_secret(tenant.siem_s3_secret, crypto.tenant_dek_readonly(tenant), legacy_plaintext=True), tenant.siem_min_severity,
                            payload, subject=subject, actor=actor, surface=surface,
                            org=tenant.slug,
                            tenant_id=tenant.id,
