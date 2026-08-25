@@ -272,6 +272,38 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   const loadUpgrade = useCallback(
     () => api.upgradeRequest().then((r) => setUpgrade(r.request)).catch(() => {}), []);
 
+  // --- Self-serve billing (Stripe; Team only — Enterprise stays sales-led). Dark unless
+  // the backend has Stripe configured, in which case the card-swipe path renders above
+  // the sales-led request form. ---
+  const [billing, setBilling] = useState(null);          // { enabled, subscribed, portal, intervals }
+  const [coDraft, setCoDraft] = useState({ seats: "", interval: "month" });
+  const loadBilling = useCallback(() => api.billing().then(setBilling).catch(() => {}), []);
+  useEffect(() => {   // Checkout bounces back with #billing=success|cancelled
+    if (window.location.hash === "#billing=success") {
+      flash("Payment received — your Team plan activates in a few seconds. Thanks!");
+      window.history.replaceState(null, "", window.location.pathname);
+      setTimeout(() => { loadBilling(); onTenant?.(); }, 4000);
+    } else if (window.location.hash === "#billing=cancelled") {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function startCheckout(e) {
+    e.preventDefault();
+    try {
+      const r = await api.billingCheckout(Number(coDraft.seats) || 1, coDraft.interval);
+      window.location.href = r.url;   // off to Stripe Checkout
+    } catch (e2) { err(e2); }
+  }
+
+  async function openPortal() {
+    try {
+      const r = await api.billingPortal();
+      window.location.href = r.url;
+    } catch (e2) { err(e2); }
+  }
+
   async function submitUpgrade(e) {
     e.preventDefault();
     try {
@@ -388,8 +420,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     } catch (e) { err(e); }
   }
 
-  useEffect(() => { loadUsage(); loadUps(); loadJudgeKey(); loadOidc(); loadSaml(); loadDpa(); loadCatalog(); loadUpgrade(); loadSinkHealth(); loadSlack(); },
-    [loadUsage, loadUps, loadJudgeKey, loadOidc, loadSaml, loadDpa, loadCatalog, loadUpgrade, loadSinkHealth, loadSlack]);
+  useEffect(() => { loadUsage(); loadUps(); loadJudgeKey(); loadOidc(); loadSaml(); loadDpa(); loadCatalog(); loadUpgrade(); loadBilling(); loadSinkHealth(); loadSlack(); },
+    [loadUsage, loadUps, loadJudgeKey, loadOidc, loadSaml, loadDpa, loadCatalog, loadUpgrade, loadBilling, loadSinkHealth, loadSlack]);
 
   async function logoutEverywhere() {
     try { await api.logoutAll(); } catch { /* ignore */ }
@@ -430,7 +462,40 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
               to pick a plan.
             </p>
           )}
-          {plan !== "enterprise" && (
+          {/* Self-serve: buy Team by card (Stripe Checkout). Renders only when the
+              backend has billing configured; Enterprise stays sales-led below. */}
+          {billing?.enabled && !billing.subscribed && !["team", "enterprise"].includes(plan) && (
+            <form onSubmit={startCheckout}
+                  style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
+              <label>Seats
+                <input type="number" min="1" placeholder="5" value={coDraft.seats}
+                       style={{ width: 90 }}
+                       onChange={(e) => setCoDraft((s) => ({ ...s, seats: e.target.value }))} />
+              </label>
+              {billing.intervals.length > 1 && (
+                <label>Billing
+                  <select value={coDraft.interval}
+                          onChange={(e) => setCoDraft((s) => ({ ...s, interval: e.target.value }))}>
+                    <option value="month">Monthly, $12/user</option>
+                    <option value="year">Annual, $10/user/mo</option>
+                  </select>
+                </label>
+              )}
+              <button className="primary-btn slim" type="submit">Upgrade to Team, pay by card →</button>
+              <span className="muted" style={{ flexBasis: "100%" }}>
+                Checkout and invoices are handled by Stripe. Need Enterprise (SSO, SIEM, S3)?
+                Use the request form below.
+              </span>
+            </form>
+          )}
+          {billing?.enabled && billing.portal && (billing.subscribed || plan === "team") && (
+            <p style={{ marginTop: 0 }}>
+              <button className="secondary-btn slim" type="button" onClick={openPortal}>
+                Manage billing (seats, invoices, cancel) →
+              </button>
+            </p>
+          )}
+          {plan !== "enterprise" && !(billing?.enabled && billing.subscribed) && (
             upgrade && upgrade.status === "pending" ? (
               <p className="flash-ok" style={{ marginTop: 0 }}>
                 Upgrade to <strong>{upgrade.plan === "team" ? "Team" : "Enterprise"}</strong> requested

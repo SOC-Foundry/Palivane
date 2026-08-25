@@ -55,6 +55,10 @@ class Tenant(Base):
     quota_users = Column(Integer, default=0)
     quota_api_keys = Column(Integer, default=0)
     quota_ingest_per_day = Column(Integer, default=0)
+    # Self-serve billing (app/billing.py): the Stripe customer this org maps to, and its
+    # live subscription (empty = none). Plan changes ride the webhook, never the client.
+    stripe_customer_id = Column(String(64), default="")
+    stripe_subscription_id = Column(String(64), default="")
     # Approved MCP server hosts for this org (comma-separated). Empty = inherit the global
     # MCP_ALLOWED_SERVERS; a non-empty list flags MCP activity to any server not on it.
     mcp_allowed_servers = Column(String(1024), default="")
