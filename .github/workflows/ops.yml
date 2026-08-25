@@ -1,0 +1,92 @@
+name: Ops (one-off admin job)
+
+# Runs an operator script (e.g. `python -m app.users create-tenant ...`) inside the
+# production image as a one-off Cloud Run job — the pattern deploy/cloudrun/README.md
+# recommends for admin tasks, since the operator CLI needs direct DB access that only
+# exists inside the Cloud Run/Cloud SQL perimeter.
+#
+# The script comes from the OPS_SCRIPT repository secret, NOT a dispatch input, so
+# passwords and other sensitive values never appear in run metadata or logs:
+#   1. gh secret set OPS_SCRIPT < script.sh
+#   2. gh workflow run ops.yml -f note="what this does"
+#   3. gh secret delete OPS_SCRIPT
+# The job is deleted after execution (pass/fail) so the script does not persist on the
+# Cloud Run resource either.
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: What this run does (shows in the run list for auditing)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ops-cloud-run
+  cancel-in-progress: false
+
+jobs:
+  ops:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION }}
+    steps:
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Run admin job
+        env:
+          SQL_CONNECTION: ${{ vars.GCP_SQL_CONNECTION }}
+          VPC_NETWORK: ${{ vars.VPC_NETWORK }}
+          VPC_SUBNET: ${{ vars.VPC_SUBNET }}
+          OPS_SCRIPT: ${{ secrets.OPS_SCRIPT }}
+        run: |
+          set -euo pipefail
+          if [ -z "$OPS_SCRIPT" ]; then
+            echo "Set the OPS_SCRIPT repository secret first (see the header of this workflow)." >&2
+            exit 1
+          fi
+          # Reuse the image the service is currently running — same code, same migrations.
+          IMAGE=$(gcloud run services describe palivane --project "$PROJECT_ID" --region "$REGION" \
+            --format 'value(spec.template.spec.containers[0].image)')
+          echo "Using image: $IMAGE"
+          VPC_ARGS=()
+          if [ -n "$VPC_NETWORK" ] && [ -n "$VPC_SUBNET" ]; then
+            VPC_ARGS=(--network "$VPC_NETWORK" --subnet "$VPC_SUBNET" --vpc-egress private-ranges-only)
+          fi
+          # The script rides in base64 so quoting survives gcloud's comma-split --args.
+          B64=$(printf '%s' "$OPS_SCRIPT" | base64 -w0)
+          gcloud run jobs deploy palivane-ops --project "$PROJECT_ID" --region "$REGION" \
+            --image "$IMAGE" \
+            --set-cloudsql-instances "$SQL_CONNECTION" \
+            --set-secrets "DATABASE_URL=palivane-database-url:latest,PALIVANE_SECRET_KEY=palivane-secret-key:latest" \
+            --set-env-vars "OPS_SCRIPT_B64=$B64" \
+            --command bash \
+            --args '-c,echo "$OPS_SCRIPT_B64" | base64 -d | bash' \
+            --max-retries 0 --task-timeout 600 \
+            "${VPC_ARGS[@]}"
+          gcloud run jobs execute palivane-ops --project "$PROJECT_ID" --region "$REGION" --wait
+
+      - name: Job output
+        if: always()
+        run: |
+          sleep 15   # Cloud Logging is eventually consistent
+          gcloud logging read \
+            'resource.type="cloud_run_job" AND resource.labels.job_name="palivane-ops"' \
+            --project "$PROJECT_ID" --freshness 30m --limit 100 --order asc \
+            --format 'value(textPayload)' \
+            || echo "(could not read logs — grant the deploy SA roles/logging.viewer to see job output here)"
+
+      - name: Delete job
+        if: always()
+        run: |
+          gcloud run jobs delete palivane-ops --project "$PROJECT_ID" --region "$REGION" --quiet || true
