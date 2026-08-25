@@ -137,3 +137,60 @@ def test_invite_by_email(client, raw_client, monkeypatch):
 def test_invite_requires_email_plane(client):
     r = client.post("/api/users", json={"email": "x@acme.com", "role": "analyst"})
     assert r.status_code == 400 and "invites are not" in r.json()["detail"]
+
+
+def test_cloudflare_transport_enables_plane(raw_client, monkeypatch):
+    """CF account id + token + MAIL_FROM turn the plane on without any SMTP config."""
+    assert raw_client.get("/api/health").json()["email_enabled"] is False
+    monkeypatch.setattr(email_mod.settings, "cf_email_account_id", "acct123")
+    monkeypatch.setattr(email_mod.settings, "cf_email_token", "tok")
+    assert raw_client.get("/api/health").json()["email_enabled"] is False  # still no MAIL_FROM
+    monkeypatch.setattr(email_mod.settings, "mail_from", "noreply@palivane.io")
+    assert raw_client.get("/api/health").json()["email_enabled"] is True
+
+
+def test_send_sync_routes_to_cloudflare(monkeypatch):
+    """Without SMTP_HOST, _send_sync posts the REST payload (from.address, text body)."""
+    import io
+    import json as _json
+
+    monkeypatch.setattr(email_mod.settings, "smtp_host", "")
+    monkeypatch.setattr(email_mod.settings, "cf_email_account_id", "acct123")
+    monkeypatch.setattr(email_mod.settings, "cf_email_token", "tok")
+    monkeypatch.setattr(email_mod.settings, "mail_from", "noreply@palivane.io")
+
+    seen = {}
+
+    class _Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=0):
+        seen["url"] = req.full_url
+        seen["auth"] = req.headers.get("Authorization")
+        seen["payload"] = _json.loads(req.data)
+        return _Resp(b'{"success": true}')
+
+    monkeypatch.setattr(email_mod.urllib.request, "urlopen", fake_urlopen)
+    email_mod._send_sync("user@acme.com", "Reset", "click here")
+    assert seen["url"].endswith("/accounts/acct123/email/sending/send")
+    assert seen["auth"] == "Bearer tok"
+    assert seen["payload"]["to"] == "user@acme.com"
+    assert seen["payload"]["from"]["address"] == "noreply@palivane.io"
+    assert seen["payload"]["text"] == "click here"
+
+
+def test_smtp_wins_over_cloudflare(monkeypatch):
+    """With both transports configured, the explicitly pointed relay is used."""
+    called = []
+    monkeypatch.setattr(email_mod.settings, "smtp_host", "smtp.test")
+    monkeypatch.setattr(email_mod.settings, "cf_email_account_id", "acct123")
+    monkeypatch.setattr(email_mod.settings, "cf_email_token", "tok")
+    monkeypatch.setattr(email_mod.settings, "mail_from", "noreply@palivane.io")
+    monkeypatch.setattr(email_mod, "_send_smtp", lambda *a: called.append("smtp"))
+    monkeypatch.setattr(email_mod, "_send_cf", lambda *a: called.append("cf"))
+    email_mod._send_sync("user@acme.com", "Reset", "body")
+    assert called == ["smtp"]
