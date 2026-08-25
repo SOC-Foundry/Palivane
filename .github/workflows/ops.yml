@@ -55,10 +55,16 @@ jobs:
             echo "Set the OPS_SCRIPT repository secret first (see the header of this workflow)." >&2
             exit 1
           fi
-          # Reuse the image the service is currently running — same code, same migrations.
+          # Reuse the image AND runtime service account of the running service — same code,
+          # same migrations, and the SA is the one with secretAccessor on the DB secrets
+          # (jobs otherwise default to the compute SA, which can't read them).
           IMAGE=$(gcloud run services describe palivane --project "$PROJECT_ID" --region "$REGION" \
             --format 'value(spec.template.spec.containers[0].image)')
-          echo "Using image: $IMAGE"
+          RUN_SA=$(gcloud run services describe palivane --project "$PROJECT_ID" --region "$REGION" \
+            --format 'value(spec.template.spec.serviceAccountName)')
+          echo "Using image: $IMAGE (service account: ${RUN_SA:-default})"
+          SA_ARGS=()
+          [ -n "$RUN_SA" ] && SA_ARGS=(--service-account "$RUN_SA")
           VPC_ARGS=()
           if [ -n "$VPC_NETWORK" ] && [ -n "$VPC_SUBNET" ]; then
             VPC_ARGS=(--network "$VPC_NETWORK" --subnet "$VPC_SUBNET" --vpc-egress private-ranges-only)
@@ -73,6 +79,7 @@ jobs:
             --command bash \
             --args '-c,echo "$OPS_SCRIPT_B64" | base64 -d | bash' \
             --max-retries 0 --task-timeout 600 \
+            "${SA_ARGS[@]}" \
             "${VPC_ARGS[@]}"
           gcloud run jobs execute palivane-ops --project "$PROJECT_ID" --region "$REGION" --wait
 
