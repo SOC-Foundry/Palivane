@@ -7,6 +7,9 @@
   (Cloud Build) and deploys to Cloud Run via `deploy/cloudrun/deploy.sh`.
 - **terraform-apply.yml** (push to `main` touching `deploy/terraform/**`) — `terraform apply`
   for infra changes, kept separate from app deploys.
+- **ops.yml** (manual dispatch) — runs an operator script (`python -m app.users ...`) inside
+  the production image as a one-off Cloud Run job. The script comes from the `OPS_SCRIPT`
+  repository secret (set it, dispatch, delete it) so passwords never appear in logs.
 
 ## Auth — Workload Identity Federation (no long-lived keys)
 Create a WIF pool/provider bound to a deploy service account, and grant that SA:
