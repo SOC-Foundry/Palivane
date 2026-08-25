@@ -53,6 +53,7 @@ ROLES=(
   roles/iam.serviceAccountAdmin
   roles/resourcemanager.projectIamAdmin
   roles/serviceusage.serviceUsageAdmin
+  roles/logging.viewer   # ops.yml reads one-off admin job output from Cloud Logging
 )
 for role in "${ROLES[@]}"; do
   for attempt in 1 2 3 4 5; do
