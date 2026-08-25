@@ -175,14 +175,22 @@ class Settings:
     # counted separately from the gateway so agentic volume can't starve LLM traffic
     # (0 = unlimited). A tenant's own ingest_rate_limit overrides this.
     ingest_rate_limit: int = int(os.getenv("INGEST_RATE_LIMIT", "0"))
-    # Outbound email (password reset, join verification, invites). Dark until SMTP_HOST +
-    # MAIL_FROM are set; flows degrade to email-less behavior. Provider-neutral SMTP.
+    # Outbound email (password reset, join verification, invites). Dark until MAIL_FROM
+    # plus a delivery path are set; flows degrade to email-less behavior. Two paths:
+    # provider-neutral SMTP, or the Cloudflare Email Service REST API (no SMTP relay
+    # needed — the sender domain is onboarded once in the Cloudflare dashboard). When
+    # both are configured, SMTP wins: an explicitly pointed relay beats the platform API.
     smtp_host: str = os.getenv("SMTP_HOST", "")
     smtp_port: int = int(os.getenv("SMTP_PORT", "587"))
     smtp_user: str = os.getenv("SMTP_USER", "")
     smtp_pass: str = os.getenv("SMTP_PASS", "")
     smtp_tls: bool = os.getenv("SMTP_TLS", "true").lower() in ("1", "true", "yes")
     mail_from: str = os.getenv("MAIL_FROM", "")
+    # Cloudflare Email Service: the account id is not a secret; the API token (needs the
+    # Email Sending permission) is — in cloud deploys it rides in from Secret Manager
+    # (palivane-cf-email-token), same as the other provider keys.
+    cf_email_account_id: str = _env("CF_EMAIL_ACCOUNT_ID", "").strip()
+    cf_email_token: str = _env("CF_EMAIL_TOKEN", "").strip()
     # Per-tenant resource quotas for open multi-tenant signup (0 = unlimited). A tenant's
     # own quota_* column (operator-set via `python -m app.users set-quota`) overrides the
     # global default — tenant admins can NOT raise their own quotas through the API.
