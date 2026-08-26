@@ -67,3 +67,63 @@ def test_record_flag_scans_and_flags(raw_client, db_factory, monkeypatch):
                  public=True, record=True).json()
     assert body["objects"] and body["objects"][0]["public"] is True
     assert body["action"] == "block"
+
+
+# --- client-side detection (metadata only) ------------------------------------------------
+# palivane-s3-scan now detects in the account that owns the bucket and sends findings, not
+# object text. These cover the shape the server has to accept and score.
+
+def _finding(category="secret_leak", label="AWS access key id", line=1, masked="AKIA••••MPLE"):
+    return {"category": category, "label": label, "line": line, "masked": masked}
+
+
+def test_client_findings_are_scored_without_any_content(raw_client, db_factory, monkeypatch):
+    _setup(db_factory, monkeypatch)
+    r = _scan(raw_client, [{"key": "exports/.env", "findings": [_finding()]}]).json()
+    assert r["action"] == "block"
+    obj = r["objects"][0]
+    assert obj["key"] == "exports/.env" and obj["action"] == "block"
+    assert obj["risk_score"] >= 70
+
+
+def test_no_object_text_is_required_or_echoed(raw_client, db_factory, monkeypatch):
+    """The point of the change: the request carries no bytes from the bucket, and the
+    response cannot leak any either."""
+    _setup(db_factory, monkeypatch)
+    r = _scan(raw_client, [{"key": "db.sql", "findings": [_finding(masked="AKIA••••7777")]}])
+    body = r.text
+    assert "AKIAIOSFODNN7EXAMPLE" not in body       # nothing that looks like a real value
+    assert "content" not in r.json()["objects"][0]
+
+
+def test_pii_and_phi_categories_are_accepted(raw_client, db_factory, monkeypatch):
+    _setup(db_factory, monkeypatch)
+    for cat in ("pii_exposure", "phi_exposure"):
+        r = _scan(raw_client, [{"key": f"{cat}.csv",
+                                "findings": [_finding(category=cat, label="US Social Security number",
+                                                      masked="412-••••7390")]}]).json()
+        assert r["objects"], f"{cat} produced no finding"
+        assert r["objects"][0]["action"] in ("warn", "block")
+
+
+def test_public_bucket_still_escalates_with_client_findings(raw_client, db_factory, monkeypatch):
+    _setup(db_factory, monkeypatch)
+    obj = [{"key": "leak.env", "findings": [_finding()]}]
+    private = _scan(raw_client, obj, public=False).json()
+    public = _scan(raw_client, obj, public=True).json()
+    assert public["action"] == "block" and public["objects"][0]["public"] is True
+    assert private["public"] is False
+
+
+def test_legacy_content_payload_still_works(raw_client, db_factory, monkeypatch):
+    """Older installed CLIs still POST object text; they must not break on upgrade."""
+    _setup(db_factory, monkeypatch)
+    r = _scan(raw_client, [{"key": "old.env",
+                            "content": "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}]).json()
+    assert r["objects"] and r["objects"][0]["action"] == "block"
+
+
+def test_an_object_with_no_findings_is_not_reported(raw_client, db_factory, monkeypatch):
+    _setup(db_factory, monkeypatch)
+    r = _scan(raw_client, [{"key": "readme.txt", "findings": []}]).json()
+    assert r["action"] == "allow" and r["objects"] == []

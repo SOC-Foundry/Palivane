@@ -46,6 +46,9 @@ _ALLOW = {
     "palivane-otel": "cli/palivane-otel",
     "palivane-desktop": "cli/palivane-desktop",
     "palivane_addon.py": "proxy/palivane_addon.py",
+    # Shared local-detection module; palivane-secrets and palivane-s3-scan both
+    # import it, and fetch it from here when it is not already beside them.
+    "palivane_detect.py": "cli/palivane_detect.py",
 }
 
 # The POSIX CLI tools install under these names via install.sh. Excluded: palivane_addon.py

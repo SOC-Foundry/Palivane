@@ -173,7 +173,10 @@ def test_payload_shape_and_filtering(monkeypatch):
         {"Key": "big.txt", "Size": 5_000_000},
         {"Key": "bin", "Size": 20},
     ], "IsTruncated": False}]
-    objects = {"small.txt": b"TOKEN=ghp_x", "bin": b"\xff\xfe\x00binary"}
+    # a real GitHub token shape: the CLI detects locally now, so a stub that matches
+    # nothing would mean nothing to send and no request to inspect.
+    objects = {"small.txt": b"TOKEN=ghp_abcdefghijklmnopqrstuvwxyz012345",
+               "bin": b"\xff\xfe\x00binary"}
     s3 = FakeS3(pab=None, acl=_ALLUSERS_GRANT, listings=listings, objects=objects)
 
     captured = {}
@@ -187,13 +190,19 @@ def test_payload_shape_and_filtering(monkeypatch):
     assert body["bucket"] == "b"
     assert body["public"] is True                      # AllUsers ACL grant detected
     # Only the small text object survives filtering; big + binary are dropped.
-    assert body["objects"] == [{"key": "small.txt", "content": "TOKEN=ghp_x"}]
+    assert len(body["objects"]) == 1 and body["objects"][0]["key"] == "small.txt"
+    # The contract that matters: findings travel, object text does not.
+    fd = body["objects"][0]["findings"]
+    assert fd and fd[0]["category"] == "secret_leak" and fd[0]["label"] == "GitHub token"
+    assert "content" not in body["objects"][0]
+    assert "ghp_abcdefghijklmnopqrstuvwxyz012345" not in json.dumps(body), \
+        "the raw secret must never appear in the request"
     assert rc == 0   # backend returned no flagged objects -> nothing blocking
 
 
 def test_block_finding_exits_1(monkeypatch):
     listings = [{"Contents": [{"Key": "a.env", "Size": 10}], "IsTruncated": False}]
-    s3 = FakeS3(pab=_BLOCKED_PAB, listings=listings, objects={"a.env": b"AKIA..."})
+    s3 = FakeS3(pab=_BLOCKED_PAB, listings=listings, objects={"a.env": b"AKIAIOSFODNN7EXAMPLE"})
     resp = {"action": "block", "scanned": 1, "bucket": "b", "public": False,
             "objects": [{"key": "a.env", "action": "block", "severity": "high",
                          "signals": [{"category": "secret_leak", "evidence": "AKIA…"}]}]}
