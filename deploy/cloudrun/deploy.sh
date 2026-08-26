@@ -55,6 +55,9 @@ ENV_VARS+="|SEED_ON_START=${SEED_ON_START:-false}"
 [ -n "${SMTP_HOST:-}" ] && ENV_VARS+="|SMTP_HOST=${SMTP_HOST}|SMTP_PORT=${SMTP_PORT:-587}|SMTP_USER=${SMTP_USER:-}"
 [ -n "${CF_EMAIL_ACCOUNT_ID:-}" ] && ENV_VARS+="|CF_EMAIL_ACCOUNT_ID=${CF_EMAIL_ACCOUNT_ID}"
 [ -n "${MAIL_FROM:-}" ] && ENV_VARS+="|MAIL_FROM=${MAIL_FROM}"
+# Public read-only demo — slug of the seeded demo tenant (run `python -m app.seed`
+# against prod once, with a random SEED_ADMIN_PASSWORD). Empty = no demo button.
+[ -n "${PALIVANE_DEMO_ORG:-}" ] && ENV_VARS+="|PALIVANE_DEMO_ORG=${PALIVANE_DEMO_ORG}"
 # "Continue with Google" (app-global social sign-in). The client id is not a secret;
 # the client secret rides in via the optional-secrets loop (palivane-google-oauth-secret).
 [ -n "${GOOGLE_OAUTH_CLIENT_ID:-}" ] && ENV_VARS+="|GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}"
