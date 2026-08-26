@@ -33,6 +33,50 @@ import Report from "./components/Report.jsx";
 import Help from "./components/Help.jsx";
 import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard, IconInbox, IconTarget, IconRadar, IconSliders, IconActivity, IconBot, IconBook } from "./components/icons.jsx";
 
+// Sidebar navigation, grouped.
+//
+// Sixteen destinations in one flat list gave every page the same weight, so Findings (the
+// daily inbox) read no differently from Help, and the column ran past the viewport: at
+// 1366x768 the last item ended at 798px and the footer with Sign out was clipped off
+// entirely. Grouping is the fix for the first problem; `.nav` scrolling with the footer
+// pinned is the fix for the second, and both are needed since headings make it taller.
+//
+// Written as data rather than sixteen near-identical JSX blocks, which is also what makes
+// the admin gating uniform instead of fourteen repeated `{isAdmin && (...)}` wrappers.
+const NAV = [
+  { head: "Monitor", items: [
+    { v: "findings",    icon: <IconList />,      label: "Findings",    admin: false },
+    { v: "sessions",    icon: <IconActivity />,  label: "Sessions" },
+    { v: "scanlog",     icon: <IconActivity />,  label: "Scan log" },
+  ]},
+  { head: "Inventory", items: [
+    { v: "discovery",   icon: <IconRadar />,     label: "Discovery" },
+    { v: "coverage",    icon: <IconTarget />,    label: "Coverage" },
+    { v: "fleet",       icon: <IconActivity />,  label: "Fleet" },
+    { v: "agents",      icon: <IconBot />,       label: "Agents" },
+  ]},
+  { head: "Policy", items: [
+    { v: "policies",    icon: <IconSliders />,   label: "Policies" },
+    { v: "simulator",   icon: <IconTarget />,    label: "Simulator" },
+  ]},
+  { head: "Setup", items: [
+    { v: "connect",     icon: <IconPlug />,      label: "Connect" },
+    { v: "connections", icon: <IconInbox />,     label: "Connections" },
+    { v: "users",       icon: <IconUsers />,     label: "Users" },
+    { v: "settings",    icon: <IconGear />,      label: "Settings" },
+  ]},
+  { head: "Records", items: [
+    { v: "report",      icon: <IconClipboard />, label: "Report" },
+    { v: "audit",       icon: <IconClipboard />, label: "Audit" },
+  ]},
+  // No heading: Help is not a record, and a non-admin sees only Findings and Help, so a
+  // lone "RECORDS" label above it would be the one heading they ever saw, and wrong.
+  { head: null, items: [
+    { v: "help",        icon: <IconBook />,      label: "Help",        admin: false },
+  ]},
+];
+
+
 export default function App() {
   const [auth, setAuth] = useState(null);        // { user, tenant }
   // Open the console view directly for any hash the Login screen owns, #signin, plus the
@@ -49,7 +93,21 @@ export default function App() {
   const [statusFilter, setStatusFilter] = useState("open");
   const [selectedId, setSelectedId] = useState(null);
   const [selected, setSelected] = useState(null);
-  const [view, setView] = useState("findings");   // "findings" | "connect"
+  const [view, setView] = useState("findings");
+  // A sixteen-item nav does not fit a 768px column, so it scrolls. Two consequences to
+  // handle: land on Settings and the sidebar should already be showing Settings, and the
+  // bottom fade should disappear once there is nothing further down to hint at.
+  const navRef = useRef(null);
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+    el.querySelector(".nav-on")?.scrollIntoView({ block: "nearest" });
+    const onScroll = () =>
+      el.classList.toggle("at-end", el.scrollTop + el.clientHeight >= el.scrollHeight - 2);
+    onScroll();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [view]);   // "findings" | "connect"
 
   useEffect(() => {
     setUnauthorizedHandler(() => setAuth(null));
@@ -179,99 +237,24 @@ export default function App() {
           </div>
         </div>
 
-        <nav className="nav">
-          <button type="button" className={`nav-item ${view === "findings" ? "nav-on" : ""}`}
-                  onClick={() => setView("findings")}>
-            <IconList /> <span>Findings</span>
-          </button>
-          {isAdmin && (
-            <button type="button" className={`nav-item ${view === "connect" ? "nav-on" : ""}`}
-                    onClick={() => setView("connect")}>
-              <IconPlug /> <span>Connect</span>
-            </button>
-          )}
-          {isAdmin && (
-            <button type="button" className={`nav-item ${view === "connections" ? "nav-on" : ""}`}
-                    onClick={() => setView("connections")}>
-              <IconInbox /> <span>Connections</span>
-            </button>
-          )}
-          {isAdmin && (
-            <button type="button" className={`nav-item ${view === "discovery" ? "nav-on" : ""}`}
-                    onClick={() => setView("discovery")}>
-              <IconRadar /> <span>Discovery</span>
-            </button>
-          )}
-          {isAdmin && (
-            <button type="button" className={`nav-item ${view === "coverage" ? "nav-on" : ""}`}
-                    onClick={() => setView("coverage")}>
-              <IconTarget /> <span>Coverage</span>
-            </button>
-          )}
-          {isAdmin && (
-            <button type="button" className={`nav-item ${view === "fleet" ? "nav-on" : ""}`}
-                    onClick={() => setView("fleet")}>
-              <IconActivity /> <span>Fleet</span>
-            </button>
-          )}
-          {isAdmin && (
-            <button type="button" className={`nav-item ${view === "sessions" ? "nav-on" : ""}`}
-                    onClick={() => setView("sessions")}>
-              <IconActivity /> <span>Sessions</span>
-            </button>
-          )}
-          {isAdmin && (
-            <button type="button" className={`nav-item ${view === "scanlog" ? "nav-on" : ""}`}
-                    onClick={() => setView("scanlog")}>
-              <IconActivity /> <span>Scan log</span>
-            </button>
-          )}
-          {isAdmin && (
-            <button type="button" className={`nav-item ${view === "agents" ? "nav-on" : ""}`}
-                    onClick={() => setView("agents")}>
-              <IconBot /> <span>Agents</span>
-            </button>
-          )}
-          {isAdmin && (
-            <button type="button" className={`nav-item ${view === "users" ? "nav-on" : ""}`}
-                    onClick={() => setView("users")}>
-              <IconUsers /> <span>Users</span>
-            </button>
-          )}
-          {isAdmin && (
-            <button type="button" className={`nav-item ${view === "policies" ? "nav-on" : ""}`}
-                    onClick={() => setView("policies")}>
-              <IconSliders /> <span>Policies</span>
-            </button>
-          )}
-          {isAdmin && (
-            <button type="button" className={`nav-item ${view === "simulator" ? "nav-on" : ""}`}
-                    onClick={() => setView("simulator")}>
-              <IconTarget /> <span>Simulator</span>
-            </button>
-          )}
-          {isAdmin && (
-            <button type="button" className={`nav-item ${view === "report" ? "nav-on" : ""}`}
-                    onClick={() => setView("report")}>
-              <IconClipboard /> <span>Report</span>
-            </button>
-          )}
-          {isAdmin && (
-            <button type="button" className={`nav-item ${view === "settings" ? "nav-on" : ""}`}
-                    onClick={() => setView("settings")}>
-              <IconGear /> <span>Settings</span>
-            </button>
-          )}
-          {isAdmin && (
-            <button type="button" className={`nav-item ${view === "audit" ? "nav-on" : ""}`}
-                    onClick={() => setView("audit")}>
-              <IconClipboard /> <span>Audit</span>
-            </button>
-          )}
-          <button type="button" className={`nav-item ${view === "help" ? "nav-on" : ""}`}
-                  onClick={() => setView("help")}>
-            <IconBook /> <span>Help</span>
-          </button>
+        <nav className="nav" aria-label="Console" ref={navRef}>
+          {NAV.map((group) => {
+            const shown = group.items.filter((it) => it.admin === false || isAdmin);
+            if (!shown.length) return null;   // a non-admin sees only Findings and Help
+            return (
+              <div key={group.head ?? "_"} className="nav-group">
+                {group.head && <span className="nav-head">{group.head}</span>}
+                {shown.map((it) => (
+                  <button key={it.v} type="button"
+                          className={`nav-item ${view === it.v ? "nav-on" : ""}`}
+                          aria-current={view === it.v ? "page" : undefined}
+                          onClick={() => setView(it.v)}>
+                    {it.icon} <span>{it.label}</span>
+                  </button>
+                ))}
+              </div>
+            );
+          })}
         </nav>
 
         <div className="sidebar-foot">

@@ -13,7 +13,7 @@ function SetupHealth() {
     ["Credentials at rest", s.planes.secrets],
   ];
   return (
-    <div className="panel chart-panel">
+    <div className="panel chart-panel setup-health">
       <h2>Coverage &amp; enforcement</h2>
       <ul className="plane-list">
         {planes.map(([label, n]) => (
