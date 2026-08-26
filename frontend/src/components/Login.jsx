@@ -13,6 +13,7 @@ export default function Login({ onAuthed, onBack }) {
   const [err, setErr] = useState(null);
   const [allowSignup, setAllowSignup] = useState(false);
   const [googleLogin, setGoogleLogin] = useState(false);
+  const [demoAvailable, setDemoAvailable] = useState(false);
   const [mfaChallenge, setMfaChallenge] = useState(null);   // set when login needs a 2nd factor
   const [mfaCode, setMfaCode] = useState("");
   const [pendingOrg, setPendingOrg] = useState(null);       // signup became a join request
@@ -24,6 +25,12 @@ export default function Login({ onAuthed, onBack }) {
       setAllowSignup(!!h.allow_signup);
       setEmailEnabled(!!h.email_enabled);
       setGoogleLogin(!!h.google_login);
+      setDemoAvailable(!!h.demo);
+      // Landing "live demo" links arrive as /#demo — go straight in.
+      if (!!h.demo && window.location.hash === "#demo") {
+        window.history.replaceState(null, "", window.location.pathname);
+        demoLogin();
+      }
     }).catch(() => setAllowSignup(false));
     // Password-reset links land as /#reset=TOKEN (fragment: never sent to the server).
     const m = window.location.hash.match(/^#reset=(.+)$/);
@@ -95,6 +102,22 @@ export default function Login({ onAuthed, onBack }) {
         msg.includes("429") ? "Too many attempts. Please wait a few minutes and try again." :
         msg
       );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function demoLogin() {
+    setBusy(true); setErr(null);
+    try {
+      const res = await api.demoLogin();
+      sessionStorage.setItem("palivane-demo", "1");   // App shows the sample-data banner
+      setToken(res.access_token);
+      onAuthed(res.user);
+    } catch (e) {
+      setErr(String(e.message || e).includes("429")
+        ? "Too many demo sessions from here, try again in a few minutes."
+        : "The demo isn't available right now.");
     } finally {
       setBusy(false);
     }
@@ -203,6 +226,11 @@ export default function Login({ onAuthed, onBack }) {
            mode === "forgot" ? "Send reset link" :
            mode === "reset" ? "Set new password" : "Sign in"}
         </button>
+        {(mode === "signin" || mode === "signup") && demoAvailable && (
+          <button type="button" className="sso-btn" onClick={demoLogin}>
+            Explore the live demo (sample data)
+          </button>
+        )}
         {(mode === "signin" || mode === "signup") && googleLogin && (
           <button type="button" className="sso-btn"
                   onClick={() => { window.location.href = "/api/auth/google/login"; }}>
