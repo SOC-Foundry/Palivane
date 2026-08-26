@@ -191,6 +191,10 @@ class Settings:
     # (palivane-cf-email-token), same as the other provider keys.
     cf_email_account_id: str = _env("CF_EMAIL_ACCOUNT_ID", "").strip()
     cf_email_token: str = _env("CF_EMAIL_TOKEN", "").strip()
+    # Public read-only demo (see app/demo.py): slug of the tenant the demo button signs
+    # into (seed it with `python -m app.seed`). Empty = no demo. Demo sessions carry a
+    # `demo` claim that get_current_user enforces as read-only.
+    demo_org: str = _env("PALIVANE_DEMO_ORG", "").strip().lower()
     # "Continue with Google" (app-global social sign-in; see app/google_login.py) — one
     # OAuth client for the whole deployment, distinct from per-tenant OIDC SSO. Dark
     # until both are set. The secret rides in from Secret Manager

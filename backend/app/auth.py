@@ -74,6 +74,7 @@ router = APIRouter(prefix="/api", tags=["auth"])
 
 
 def get_current_user(
+    request: Request,
     authorization: str = Header(default=""),
     db: Session = Depends(get_db),
 ) -> User:
@@ -86,6 +87,11 @@ def get_current_user(
     except TokenError as exc:
         raise HTTPException(status_code=401, detail=str(exc),
                             headers={"WWW-Authenticate": "Bearer"})
+    # Public-demo sessions (app/demo.py) are read-only: browsing is fine, anything that
+    # mutates is not — a shared demo org must look the same for the next visitor.
+    if payload.get("demo") and request.method not in ("GET", "HEAD", "OPTIONS"):
+        raise HTTPException(status_code=403,
+                            detail="the demo is read-only — sign up to work with your own data")
     # Only a *session* token authenticates. Special-purpose tokens carry a `typ`
     # (MFA challenge, OIDC state) — they must NOT be accepted here, or a caller who
     # only passed the first factor could use the MFA challenge as a full session.

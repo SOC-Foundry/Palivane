@@ -178,6 +178,7 @@ export const api = {
   deleteTenant: (confirm) => req("/tenant", { method: "DELETE", body: JSON.stringify({ confirm }) }),
   usage: () => req("/usage"),
   planCatalog: () => req("/plans"),
+  demoLogin: () => req("/auth/demo", { method: "POST" }),
   billing: () => req("/billing"),
   billingCheckout: (seats, interval) =>
     req("/billing/checkout", { method: "POST", body: JSON.stringify({ seats, interval }) }),

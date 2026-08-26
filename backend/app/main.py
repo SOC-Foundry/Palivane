@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from .auth import get_current_user, require_admin, router as auth_router
 from .distribution import router as distribution_router
 from .billing import router as billing_router
+from .demo import router as demo_router
 from .google_login import router as google_login_router
 from .domains import router as domains_router
 from .config import settings, _env
@@ -235,6 +236,7 @@ async def _guard(request: Request, call_next):
 
 app.include_router(auth_router)
 app.include_router(billing_router)
+app.include_router(demo_router)
 app.include_router(google_login_router)
 app.include_router(domains_router)
 app.include_router(distribution_router)
@@ -255,7 +257,7 @@ async def _metrics_middleware(request, call_next):
 
 @app.get("/api/health")
 def health():
-    from . import email as email_mod, google_login
+    from . import demo as demo_mod, email as email_mod, google_login
     from .licensing import current as license_current
     lic = license_current()
     return {
@@ -270,6 +272,7 @@ def health():
         "allow_signup": settings.allow_signup,
         "email_enabled": email_mod.enabled(),
         "google_login": google_login.enabled(),
+        "demo": demo_mod.enabled(),
         # Self-hosted licensing (see app/licensing.py); absent on the hosted SaaS where
         # tenant.plan is authoritative.
         "license": {"org": lic["org"], "plan": lic["plan"],
@@ -426,6 +429,7 @@ class _ExportPrincipal:
 
 
 def require_export_auth(
+    request: Request,
     authorization: str = Header(default=""),
     x_palivane_token: str = Header(default=""),
     db: Session = Depends(get_db),
@@ -445,7 +449,7 @@ def require_export_auth(
         from .database import bind_tenant
         bind_tenant(db, principal.tenant_id)             # RLS scoping, like every auth path
         return _ExportPrincipal(principal.tenant_id, principal.actor)
-    user = require_admin(get_current_user(authorization=authorization, db=db))
+    user = require_admin(get_current_user(request, authorization=authorization, db=db))
     return _ExportPrincipal(user.tenant_id, user.email)
 
 
