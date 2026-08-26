@@ -65,6 +65,9 @@ export default function Landing({ onSignIn }) {
           </p>
           <div className="lp-cta">
             <button className="primary-btn slim" onClick={onSignIn}>Open the console →</button>
+            {/* Straight into a read-only seeded org (Login auto-triggers on #demo) —
+                security buyers want to see real findings before installing anything. */}
+            <a className="lp-nav-ghost wide" href="/#demo">See the live demo</a>
             <a className="lp-nav-ghost wide" href="/setup">Set it up</a>
           </div>
           <div className="lp-hero-cmd">

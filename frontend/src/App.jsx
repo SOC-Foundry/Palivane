@@ -40,7 +40,14 @@ export default function App() {
   // read those fragments, so without this a reset link silently renders the marketing page
   // and the token is never consumed (Login.jsx parses the hash on mount).
   const [showLogin, setShowLogin] = useState(
-    () => /^#(signin|reset=.+|join=\w+)$/.test(window.location.hash));
+    () => /^#(signin|demo|reset=.+|join=\w+)$/.test(window.location.hash));
+  useEffect(() => {   // same-page hash navigation (e.g. the landing "See the live demo" link)
+    const onHash = () => {
+      if (/^#(signin|demo|reset=.+|join=\w+)$/.test(window.location.hash)) setShowLogin(true);
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
   const [booting, setBooting] = useState(true);
   const [health, setHealth] = useState(null);
   const [stats, setStats] = useState(null);
@@ -112,6 +119,7 @@ export default function App() {
   }, [selected]);
 
   function logout() {
+    sessionStorage.removeItem("palivane-demo");
     setToken(null);
     setAuth(null);
     setStats(null);
@@ -294,6 +302,16 @@ export default function App() {
       </aside>
 
       <main className="content">
+        {/* Public demo session: browsing sample data, everything mutating is 403'd
+            server-side. The banner is the exit ramp to a real signup. */}
+        {sessionStorage.getItem("palivane-demo") === "1" && (
+          <div className="flash-ok" style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between" }}>
+            <span>You're browsing the <strong>live demo</strong> — sample data, read-only.</span>
+            <a className="primary-btn slim" href="/pricing" style={{ whiteSpace: "nowrap" }}>
+              Try it on your own traffic →
+            </a>
+          </div>
+        )}
         {/* Trial countdown / expiry, console-wide (Settings alone is not enough: nobody
             re-opens Settings in week two). Hidden on Settings itself, where the plan
             panel and upgrade form already carry this. */}
