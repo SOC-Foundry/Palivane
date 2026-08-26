@@ -86,7 +86,12 @@ def _role_client(region: str, role_arn: str, external_id: str):
 
 def _client(region: str, key_id: str, secret: str, role_arn: str = "",
             external_id: str = ""):
-    if role_arn:                 # role takes precedence over a leftover static key pair
+    # Role assumption needs an AWS identity for THIS deployment to be assumed FROM, named
+    # in the customer's trust policy. Without one the AssumeRole cannot succeed, so a
+    # configured role_arn must not shadow a static key pair that does work: preferring it
+    # would break delivery for anyone who followed the console's old advice and set both.
+    from .config import settings  # noqa: PLC0415
+    if role_arn and settings.role_delivery_principal:
         return _role_client(region, role_arn, external_id)
     import boto3  # noqa: PLC0415
 

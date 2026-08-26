@@ -155,7 +155,6 @@ export const api = {
   testSiemS3: () => req("/siem/s3/test", { method: "POST" }),
   testArchiveS3: () => req("/siem/s3/archive/test", { method: "POST" }),
   siemStatus: () => req("/siem/status"),
-  siemS3RoleSetup: () => req("/siem/s3/role-setup"),
   connectors: () => req("/discovery/connectors"),
   syncConnector: (id) => req(`/discovery/connectors/${id}/sync`, { method: "POST" }),
   slackInstallUrl: () => req("/slack/install"),

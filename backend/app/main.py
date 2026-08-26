@@ -375,16 +375,21 @@ def test_archive_s3(current: User = Depends(require_admin), db: Session = Depend
 @app.get("/api/siem/s3/role-setup")
 def siem_s3_role_setup(current: User = Depends(require_admin), db: Session = Depends(get_db)):
     """Everything a customer needs to create the cross-account S3 delivery role: this
-    deployment's AWS principal (PALIVANE_AWS_DELIVERY_PRINCIPAL), the org's external ID
+    deployment's AWS principal (a static PALIVANE_AWS_DELIVERY_PRINCIPAL, or the federated
+    role from PALIVANE_AWS_WIF_ROLE_ARN — 501 if it has neither), the org's external ID
     (minted here on first call, then stable — their trust policy pins it), and a
     ready-to-paste trust policy. The external ID is a confused-deputy guard, not a
     secret; the role needs only s3:PutObject on the delivery bucket."""
     import secrets as _secrets
+    if not settings.role_delivery_principal:
+        raise HTTPException(status_code=501,
+                            detail="Role-based S3 delivery is not available on this "
+                                   "deployment. Use an access key pair instead.")
     t = db.get(Tenant, current.tenant_id)
     if not (t.siem_s3_external_id or "").strip():
         t.siem_s3_external_id = "plv-" + _secrets.token_hex(16)
         db.commit()
-    principal = settings.aws_delivery_principal
+    principal = settings.role_delivery_principal
     return {
         "principal": principal,
         "external_id": t.siem_s3_external_id,
@@ -392,7 +397,7 @@ def siem_s3_role_setup(current: User = Depends(require_admin), db: Session = Dep
             "Version": "2012-10-17",
             "Statement": [{
                 "Effect": "Allow",
-                "Principal": {"AWS": principal or "<palivane-delivery-principal-arn>"},
+                "Principal": {"AWS": principal},
                 "Action": "sts:AssumeRole",
                 "Condition": {"StringEquals": {"sts:ExternalId": t.siem_s3_external_id}},
             }],
