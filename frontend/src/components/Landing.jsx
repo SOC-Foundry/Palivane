@@ -9,7 +9,7 @@ import { SiteNav, SiteFooter, Shot, Clip, Lightbox } from "./SiteChrome.jsx";
 
 const STATS = [
   { n: "6", l: "surfaces covered", s: "browser, desktop, CLI, CI, cloud storage, MCP" },
-  { n: "0", l: "content leaves your org", s: "detection runs inside your own deployment" },
+  { n: "0", l: "prompt text kept by default", s: "the verdict and its metadata, not what was typed" },
   { n: "28", l: "detection checks", s: "secrets, PII, source code, prompt attacks" },
   { n: "1", l: "afternoon to set up", s: "one command, nothing to install by hand" },
 ];
@@ -34,10 +34,10 @@ const LOOKS_FOR = [
 const FAQ = [
   { q: "Does anything have to be installed on every laptop?",
     a: "No. The browser extension can be force-installed by policy and the CLI coverage arrives through one command that a person runs once, or through your MDM. Nothing needs a per-machine visit." },
-  { q: "Do our prompts leave the company?",
-    a: "No. Detection runs inside your own deployment. Content is never sent to a third-party AI service for scoring, and the default posture records metadata only, not prompt text." },
+  { q: "Where does our prompt text actually go?",
+    a: "To your Palivane backend, and nowhere beyond it. Self-host and it never leaves your own infrastructure. On the managed service it reaches Palivane, which by default records the verdict and its metadata and discards the text. Scoring is deterministic either way (rules and heuristics, with no AI service in the loop) unless you switch on the optional LLM judge, which does send the content it reviews to the model provider you choose." },
   { q: "Will it break the AI tools people already pay for?",
-    a: "No. Personal Claude and ChatGPT sign-ins keep working, because the hooks score prompts locally rather than routing them through a gateway. Gateway routing is available, and optional." },
+    a: "No. Personal Claude and ChatGPT sign-ins keep working, because the hooks score a prompt alongside the request rather than putting a gateway in its path, so the tool still talks to the provider itself with its own credentials. Gateway routing is available, and optional." },
   { q: "What happens the moment we turn it on?",
     a: "Nothing is blocked. Palivane starts in monitor mode, so the first thing you get is an inventory of which AI tools are in use and what has been going to them. Enforcement is a switch you flip later." },
   { q: "What if the backend is unreachable?",
@@ -163,9 +163,9 @@ export default function Landing({ onSignIn }) {
           <div className="lp-split-text sticky">
             <span className="lp-eyebrow">Detection</span>
             <h2 className="lp-h2">What Palivane looks for</h2>
-            <p className="lp-sub">Every check runs inside your deployment in milliseconds. No
-              third-party AI service ever sees your content. One risk score decides whether to
-              allow, warn, or block.</p>
+            <p className="lp-sub">Every check runs on your Palivane backend in milliseconds,
+              deterministic rules with no AI service in the loop. One risk score decides
+              whether to allow, warn, or block.</p>
             <a className="lp-textlink" href="/how-it-works">The scoring model →</a>
           </div>
           <ul className="lp-checklist">
