@@ -1545,6 +1545,16 @@ def scan_mcp_config(
     allowed = _tenant_mcp_allow(tenant_id, db)
     block_sev = _tenant_mcp_block_severity(tenant_id, db)
     servers = _parse_mcp_servers(body.content)
+    # Secrets in the config are detected on the machine that holds it — the env block is
+    # where a live token sits, and it used to be shipped here verbatim to be scanned. Group
+    # what the sender found by the server it belongs to; anything it could not attribute
+    # (an unparseable config) is reported against the file itself, below.
+    _by_server: dict[str, list] = {}
+    for fd in body.findings:
+        _by_server.setdefault(fd.server, []).append(fd)
+    _declared = {srv.get("name", "") for srv in servers}
+    _unattributed = [fd for srv, fds in _by_server.items()
+                     if srv not in _declared for fd in fds]
 
     # Supply-chain: resolve each server's launcher to the registry package it runs, then OSV
     # the pinned ones for CVEs (matches Kirin's "MCP dependencies" check).
@@ -1581,7 +1591,8 @@ def scan_mcp_config(
                       "allowed_servers": allowed},
         )
         result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
-                              db=db, tenant_id=tenant_id, signal_filter=_mcp_filter)
+                              db=db, tenant_id=tenant_id, signal_filter=_mcp_filter,
+                              extra_signals=_client_signals(_by_server.get(name, [])))
         signals = list(result["signals"])
         sev = result["severity"]
         # Supply-chain signals for this server's launcher package (respects the
@@ -1615,6 +1626,23 @@ def scan_mcp_config(
             flagged.append({"name": name, "transport": transport, "action": action,
                             "severity": sev, "risk_score": result["risk_score"],
                             "signals": signals})
+
+    # A credential the sender could not tie to a declared server still has to be reported:
+    # dropping it would mean an unparseable config silently loses its secret detection.
+    if _unattributed:
+        item = AnalysisInput(content=body.path or "mcp config",
+                             subject=f"mcp-config: {body.path or 'file'}",
+                             channel="mcp-config", surface=Surface.MCP,
+                             metadata={"path": body.path, "unattributed": True})
+        result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
+                              db=db, tenant_id=tenant_id, signal_filter=_mcp_filter,
+                              extra_signals=_client_signals(_unattributed))
+        action = _action_for(result["severity"], block_sev)
+        if action != "allow":
+            worst = max(worst, _ACTION_RANK.get(result["severity"], 0))
+            flagged.append({"name": body.path or "(config file)", "transport": "file",
+                            "action": action, "severity": result["severity"],
+                            "risk_score": result["risk_score"], "signals": result["signals"]})
 
     overall = _action_for(_SEV_BY_RANK[worst], block_sev)
     return {"action": overall, "scanned": len(servers), "servers": flagged}
@@ -1904,7 +1932,8 @@ def scan_agent_config(
                          channel=f"{body.tool or 'agent'}-config", surface=Surface.IDE,
                          metadata={"kind": "agent_config", "tool": body.tool})
     result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
-                          db=db, tenant_id=tenant_id, agent=agent)
+                          db=db, tenant_id=tenant_id, agent=agent,
+                          extra_signals=_client_signals(body.findings))
     return {
         "action": _action_for(result["severity"]),
         "severity": result["severity"],
@@ -1970,7 +1999,8 @@ def scan_agent_rules(
         metadata={"kind": "agent_rules", "path": body.path, "tool": body.tool},
     )
     result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
-                          db=db, tenant_id=tenant_id, agent=agent)
+                          db=db, tenant_id=tenant_id, agent=agent,
+                          extra_signals=_client_signals(body.findings))
     return {
         "action": _action_for(result["severity"]),
         "severity": result["severity"],

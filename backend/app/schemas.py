@@ -92,10 +92,34 @@ class MCPBatchIngest(BaseModel):
     items: list[MCPIngest] = Field(min_length=1, max_length=200)
 
 
+class ClientFinding(BaseModel):
+    """One detection the CLIENT made, in metadata form. `masked` is a redacted preview
+    (`AKIA••••MPLE`); the value itself is never carried. Shared by every at-rest scanner
+    that detects where the data lives — S3 objects, GitHub blobs — so they cannot drift."""
+    category: Literal["secret_leak", "pii_exposure", "phi_exposure"] = "secret_leak"
+    label: str = Field(default="", max_length=120)
+    line: int = 0
+    masked: str = Field(default="", max_length=200)
+
+
+class MCPClientFinding(ClientFinding):
+    """A ClientFinding that knows which declared server it came out of, so the per-server
+    verdict can carry it. Empty when the config could not be parsed into servers."""
+    server: str = Field(default="", max_length=200)
+
+
 class MCPConfigScan(BaseModel):
-    """An MCP configuration file (.mcp.json, Cursor/VS Code) to vet in CI or the console."""
+    """An MCP configuration file (.mcp.json, Cursor/VS Code) to vet in CI or the console.
+
+    `content` is expected to arrive with credentials REDACTED: palivane-posture runs on
+    every developer machine at session start, and an MCP config's env block is where a
+    live token sits. The structural vetting here — which servers are declared, what they
+    launch, whether they are allowlisted — never needed the token's value, and the secret
+    detection that did is now done on the machine holding the file and arrives in
+    `findings`."""
     content: str = Field(min_length=1, max_length=MAX_CONTENT)
     path: str = ""
+    findings: list[MCPClientFinding] = Field(default_factory=list, max_length=200)
     record: bool = False   # persist non-clean servers as findings (off by default)
 
 
@@ -180,16 +204,6 @@ class CIScan(BaseModel):
     ref: str = ""                 # branch/sha the workflows came from (informational)
     workflows: list[CodeFile] = Field(default_factory=list, max_length=500)
     record: bool = True
-
-
-class ClientFinding(BaseModel):
-    """One detection the CLIENT made, in metadata form. `masked` is a redacted preview
-    (`AKIA••••MPLE`); the value itself is never carried. Shared by every at-rest scanner
-    that detects where the data lives — S3 objects, GitHub blobs — so they cannot drift."""
-    category: Literal["secret_leak", "pii_exposure", "phi_exposure"] = "secret_leak"
-    label: str = Field(default="", max_length=120)
-    line: int = 0
-    masked: str = Field(default="", max_length=200)
 
 
 class S3Object(BaseModel):
@@ -504,14 +518,18 @@ class ExceptionResolve(BaseModel):
 
 
 class AgentConfigScan(BaseModel):
-    content: str = Field(min_length=1, max_length=MAX_CONTENT)  # IDE/agent config blob
+    content: str = Field(min_length=1, max_length=MAX_CONTENT)  # IDE/agent config blob,
+                                      # credentials redacted by the sender (see MCPConfigScan)
+    findings: list[ClientFinding] = Field(default_factory=list, max_length=200)
     user: str = ""                    # actor the config belongs to (per-user attribution)
     tool: str = "cursor"              # cursor | claude-code | aider | …
     record: bool = True
 
 
 class AgentRulesScan(BaseModel):
-    content: str = Field(min_length=1, max_length=MAX_CONTENT)  # the rules-file contents
+    content: str = Field(min_length=1, max_length=MAX_CONTENT)  # the rules-file contents,
+                                      # credentials redacted by the sender (see MCPConfigScan)
+    findings: list[ClientFinding] = Field(default_factory=list, max_length=200)
     user: str = ""                    # actor the file belongs to (per-user attribution)
     path: str = ""                    # e.g. "CLAUDE.md", ".cursor/rules/foo.mdc"
     tool: str = ""                    # claude-code | cursor | copilot | … (best-effort)
