@@ -13,7 +13,12 @@ import pytest
 import app.aws_wif as wif
 import app.siem_s3 as s3
 
-WIF_ROLE = "arn:aws:iam::592954524802:role/palivane-delivery-wif"
+# Both are AWS's own documentation placeholder account ids. The operator role previously
+# carried what looked like a real twelve-digit account, which is the sort of identifier
+# that should not sit in a repository at all: it names infrastructure, it survives every
+# grep for the old company's name because it contains no name, and a reader cannot tell a
+# fixture from a live account.
+WIF_ROLE = "arn:aws:iam::444455556666:role/palivane-delivery-wif"
 CUSTOMER_ROLE = "arn:aws:iam::111122223333:role/customer-delivery"
 
 
