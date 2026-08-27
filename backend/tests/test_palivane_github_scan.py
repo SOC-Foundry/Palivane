@@ -88,20 +88,50 @@ def test_repo_blobs_filters_oversized_and_binary(monkeypatch):
     assert items[0]["branch"] == "main" and items[0]["sha"] == "sha-app"
 
 
-# --- blob fetch: base64 decode + owner/repo@branch:path label -------------------------
+# --- blob scan: decode, detect LOCALLY, report findings only --------------------------
+# The blob's text is read here and dropped here. What comes back is metadata: category,
+# label, line, masked preview. Nothing that could reconstruct the file.
 
-def test_fetch_blob_decodes_and_labels(monkeypatch):
-    _patch_gh(monkeypatch)
-    item = {"owner": "acme", "repo": "api", "branch": "main", "path": "src/app.py", "sha": "sha-app"}
-    blob = ghs.fetch_blob(item, "gh", ghs.GITHUB_API)
-    assert blob == {"path": "acme/api@main:src/app.py", "content": "SECRET = 'x'\n"}
+_ITEM = {"owner": "acme", "repo": "api", "branch": "main", "path": "src/app.py", "sha": "sha-app"}
 
 
-def test_fetch_blob_skips_non_utf8(monkeypatch):
+def _blob(text: str):
+    return {"encoding": "base64", "content": base64.b64encode(text.encode()).decode()}
+
+
+def test_scan_blob_returns_findings_not_content(monkeypatch):
+    monkeypatch.setattr(ghs, "_gh_get",
+                        lambda p, t, a: _blob("AWS_KEY = 'AKIAIOSFODNN7EXAMPLE'\n"))
+    hit = ghs.scan_blob(_ITEM, "gh", ghs.GITHUB_API)
+    assert hit["path"] == "acme/api@main:src/app.py"
+    assert "content" not in hit
+    assert hit["findings"][0]["category"] == "secret_leak"
+    assert hit["findings"][0]["line"] == 1
+    assert "AKIAIOSFODNN7EXAMPLE" not in str(hit), "the raw value must never leave the machine"
+
+
+def test_scan_blob_returns_none_for_a_clean_file(monkeypatch):
+    """A clean file is not reported at all — 'we looked and found nothing' needs no
+    evidence sent anywhere, and it keeps an org sweep's request volume proportional to
+    what was actually found rather than to how much source exists."""
+    monkeypatch.setattr(ghs, "_gh_get", lambda p, t, a: _blob("def add(a, b):\n    return a + b\n"))
+    assert ghs.scan_blob(_ITEM, "gh", ghs.GITHUB_API) is None
+
+
+def test_scan_blob_finds_the_aws_secret_half(monkeypatch):
+    monkeypatch.setattr(ghs, "_gh_get", lambda p, t, a: _blob(
+        "aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n"))
+    hit = ghs.scan_blob(_ITEM, "gh", ghs.GITHUB_API)
+    assert hit and hit["findings"][0]["label"] == "AWS secret access key"
+
+
+def test_scan_blob_marks_non_utf8_unreadable_not_clean(monkeypatch):
+    """A binary blob and a clean source file both produce no finding, but only the second
+    was actually scanned — the summary line counts them separately."""
     monkeypatch.setattr(ghs, "_gh_get",
                         lambda p, t, a: {"encoding": "base64", "content": _b64_bytes(b"\xff\xfe")})
     item = {"owner": "acme", "repo": "api", "branch": "main", "path": "x.bin", "sha": "s"}
-    assert ghs.fetch_blob(item, "gh", ghs.GITHUB_API) is None
+    assert ghs.scan_blob(item, "gh", ghs.GITHUB_API) is ghs.UNREADABLE
 
 
 def _b64_bytes(b: bytes) -> str:
@@ -125,10 +155,14 @@ def test_scan_batch_posts_expected_payload(monkeypatch):
         return _Resp()
 
     monkeypatch.setattr(ghs.urllib.request, "urlopen", fake_urlopen)
-    files = [{"path": "acme/api@main:src/app.py", "content": "SECRET = 'x'\n"}]
+    files = [{"path": "acme/api@main:src/app.py",
+              "findings": [{"category": "secret_leak", "label": "AWS access key id",
+                            "line": 1, "masked": "AKIA••••MPLE"}]}]
     result = ghs.scan_batch("http://localhost:8088/", "ak_tok", files, record=False)
 
     assert result["scanned"] == 1
     assert captured["url"] == "http://localhost:8088/api/scan/code"
     assert captured["token"] == "ak_tok"
     assert captured["body"] == {"files": files, "record": False}
+    # The wire format is the whole point of the change: findings, never file text.
+    assert "content" not in json.dumps(captured["body"])

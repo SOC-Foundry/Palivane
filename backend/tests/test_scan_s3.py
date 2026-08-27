@@ -127,3 +127,30 @@ def test_an_object_with_no_findings_is_not_reported(raw_client, db_factory, monk
     _setup(db_factory, monkeypatch)
     r = _scan(raw_client, [{"key": "readme.txt", "findings": []}]).json()
     assert r["action"] == "allow" and r["objects"] == []
+
+
+def test_recorded_verdict_matches_the_response(raw_client, db_factory, monkeypatch):
+    """A client-detected object was answered 'high' and stored 'benign', so `--record`
+    filed every finding below the warn line: nothing in the console, no alert, no SIEM
+    forward. The scorer now sees the client's evidence, so one verdict serves both."""
+    from app.models import Finding
+    _setup(db_factory, monkeypatch)
+    body = _scan(raw_client, [{"key": "prod.env", "findings": [_finding()]}], record=True).json()
+    db = db_factory()
+    rows = db.query(Finding).all()
+    db.close()
+    assert len(rows) == 1
+    assert rows[0].severity == body["objects"][0]["severity"]
+    assert rows[0].risk_score == body["objects"][0]["risk_score"]
+
+
+def test_disabled_check_suppresses_a_client_finding(raw_client, db_factory, monkeypatch):
+    """Client-reported evidence is policy-filtered like the server's own. An admin who
+    turned a category off must not get it back because detection moved to the client."""
+    from app.models import Tenant
+    _setup(db_factory, monkeypatch)
+    db = db_factory()
+    db.query(Tenant).filter(Tenant.slug == "acme").one().disabled_checks = "secret_leak"
+    db.commit(); db.close()
+    body = _scan(raw_client, [{"key": "prod.env", "findings": [_finding()]}]).json()
+    assert body["action"] == "allow" and body["objects"] == []

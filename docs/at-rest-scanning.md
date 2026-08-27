@@ -6,10 +6,13 @@ scanning data that's already sitting somewhere: **S3 buckets**, **entire reposit
 **whole GitHub orgs**. They reuse the same detection engine; the only new part is *reaching*
 the data.
 
-All three send Palivane only what it needs, for `palivane-secrets` (device at rest) nothing but
-masked metadata leaves the machine; for the S3 and code scanners, object/file **contents**
-are streamed to your Palivane backend's detection engine (self-hosted, the content stays in
-your infrastructure) and only findings are stored.
+**Every sweep detects where the data already is.** `palivane-secrets`, `palivane-s3-scan`,
+and `palivane-github-scan` all run the same local detector (`palivane_detect.py`) on the
+machine holding the data, and send Palivane only what they found: category, label, line
+number, and a masked preview such as `AKIA••••MPLE`. Bucket objects and repository files
+never reach Palivane — not on the managed service, and not on your own deployment. The
+pre-commit hook is the one exception, and only because it scans a file on the very machine
+the request comes from, so there is nothing to withhold.
 
 | Scanner | Scans | Trigger |
 | --- | --- | --- |
@@ -155,7 +158,10 @@ GITHUB_TOKEN=ghp_… palivane-github-scan --repo acme/api --repo acme/web
 ```
 
 `palivane-github-scan` enumerates the org's/user's/explicit repos, walks each default-branch
-tree, fetches + decodes the text blobs, and scores them, no checkout required.
+tree, fetches + decodes the text blobs, and scans them **in the process running the sweep** —
+no checkout required, and no source uploaded. Only files with findings are reported at all,
+so a clean repo produces no request; the sweep's traffic is proportional to what it found,
+not to how much source your org has.
 
 ### GitHub token
 

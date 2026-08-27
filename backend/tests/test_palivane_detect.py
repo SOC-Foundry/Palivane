@@ -60,3 +60,43 @@ def test_masked_previews_hide_the_middle():
 
 def test_clean_text_produces_nothing():
     assert d.scan_all("just some ordinary prose about buckets") == []
+
+
+# --- AWS secret access key ----------------------------------------------------------------
+# The id half (AKIA…) was always caught; the SECRET half had no pattern here at all. The
+# server gained one in #234 after a real 40-char secret survived redaction and was stored
+# verbatim, but the fix never reached this module, so both at-rest scanners stayed blind to
+# exactly the credential the sweep exists to find.
+
+_AWS_SECRET = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+
+
+def test_aws_secret_access_key_is_detected():
+    out = d.scan_all(f"aws_secret_access_key={_AWS_SECRET}")
+    assert [lbl for _, lbl, _, _ in out] == ["AWS secret access key"]
+    assert _AWS_SECRET not in str(out)
+
+
+def test_aws_secret_preview_masks_the_value_not_the_label():
+    """The pattern has to match the surrounding "secret_access_key" label to identify the
+    value, but the preview must be of the value — otherwise it reads 'secr••••EKEY'."""
+    (_, _, _, masked), = d.scan_all(f"aws_secret_access_key={_AWS_SECRET}")
+    assert masked.startswith("wJal") and masked.endswith("EKEY")
+
+
+def test_aws_secret_spellings():
+    for line in (f'secret_key = "{_AWS_SECRET}"',
+                 f"aws secret access key: {_AWS_SECRET}",
+                 f"AWS_SECRET_ACCESS_KEY={_AWS_SECRET}"):
+        assert any(lbl == "AWS secret access key" for _, lbl, _, _ in d.scan_all(line)), line
+
+
+def test_bare_base64_run_is_not_an_aws_secret():
+    """Ungated, the 40-char pattern would match any base64 blob. A digest still trips the
+    generic entropy backstop, but must not be mislabelled as an AWS credential."""
+    out = d.scan_all("digest = 4k2L9xQ/vB8mN3pR7sT1uW5yZ0aC6eG2hJ4kM8nP")
+    assert not any(lbl == "AWS secret access key" for _, lbl, _, _ in out)
+
+
+def test_aws_secret_placeholder_is_not_reported():
+    assert not d.scan_all("aws_secret_access_key=your-secret-key-here")
