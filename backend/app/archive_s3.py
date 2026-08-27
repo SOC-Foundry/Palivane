@@ -150,7 +150,11 @@ def archive(tenant, item, result: dict, agent: str = "") -> None:
         # commit, and a tenant with nothing sealed has no DEK to mint against anyway.
         secret = crypto.unseal_secret((tenant.siem_s3_secret or "").strip(),
                                       crypto.tenant_dek_readonly(tenant), legacy_plaintext=True)
-        role_arn = (getattr(tenant, "siem_s3_role_arn", "") or "").strip()
+        # A role is only usable when this deployment has an AWS identity for the customer
+        # trust policy to name; without one, treat a configured role as absent so the
+        # "is this tenant set up" check below does not pass on a role that cannot work.
+        role_arn = ((getattr(tenant, "siem_s3_role_arn", "") or "").strip()
+                    if settings.role_delivery_principal else "")
         external_id = (getattr(tenant, "siem_s3_external_id", "") or "").strip()
         if not (bucket and (role_arn or (key_id and secret))):
             return

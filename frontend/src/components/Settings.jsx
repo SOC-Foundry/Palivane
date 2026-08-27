@@ -154,29 +154,18 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   const [s3Cfg, setS3Cfg] = useState({
     bucket: tenant?.siem_s3_bucket || "", prefix: tenant?.siem_s3_prefix || "",
     region: tenant?.siem_s3_region || "", keyId: "", secret: "",
-    roleArn: tenant?.siem_s3_role_arn || "", externalId: tenant?.siem_s3_external_id || "",
     configured: !!tenant?.siem_s3_configured,
     archive: !!tenant?.archive_s3_enabled, archiveRaw: !!tenant?.archive_s3_raw_content,
   });
-  const [roleSetup, setRoleSetup] = useState(null);   // trust-policy helper (fetched on demand)
-  async function loadRoleSetup() {
-    try {
-      const r = await api.siemS3RoleSetup();
-      setRoleSetup(r);
-      setS3Cfg((s) => ({ ...s, externalId: r.external_id }));
-    } catch (e) { err(e); }
-  }
   async function saveS3() {
     try {
       const payload = { siem_s3_bucket: s3Cfg.bucket, siem_s3_prefix: s3Cfg.prefix, siem_s3_region: s3Cfg.region,
-                        siem_s3_role_arn: s3Cfg.roleArn,
                         archive_s3_enabled: s3Cfg.archive, archive_s3_raw_content: s3Cfg.archiveRaw };
       if (s3Cfg.keyId) payload.siem_s3_key_id = s3Cfg.keyId;    // write-only; only send if changed
       if (s3Cfg.secret) payload.siem_s3_secret = s3Cfg.secret;
       const t = await api.updateTenant(payload);
       onTenant?.(t);
       setS3Cfg((s) => ({ ...s, keyId: "", secret: "", configured: !!t.siem_s3_configured,
-                         roleArn: t.siem_s3_role_arn || "", externalId: t.siem_s3_external_id || "",
                          archive: !!t.archive_s3_enabled, archiveRaw: !!t.archive_s3_raw_content }));
       flash("S3 delivery saved.");
     } catch (e) { err(e); }
@@ -760,31 +749,12 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <label>Region
             <input placeholder="us-east-1"
                    value={s3Cfg.region} onChange={(e) => setS3Cfg((s) => ({ ...s, region: e.target.value }))} /></label>
-          <label className="field-wide">IAM role ARN (recommended, no stored secret)
-            <input placeholder="arn:aws:iam::123456789012:role/palivane-delivery"
-                   value={s3Cfg.roleArn} onChange={(e) => setS3Cfg((s) => ({ ...s, roleArn: e.target.value }))} /></label>
           <label>AWS access key ID {s3Cfg.configured && <span className="muted">(set, leave blank to keep)</span>}
             <input placeholder={s3Cfg.configured ? "••••••••" : "AKIA..."}
                    value={s3Cfg.keyId} onChange={(e) => setS3Cfg((s) => ({ ...s, keyId: e.target.value }))} /></label>
           <label>AWS secret access key {s3Cfg.configured && <span className="muted">(set, leave blank to keep)</span>}
             <input type="password" placeholder={s3Cfg.configured ? "••••••••" : "secret"}
                    value={s3Cfg.secret} onChange={(e) => setS3Cfg((s) => ({ ...s, secret: e.target.value }))} /></label>
-        </div>
-        <div className="settings-sub" style={{ marginTop: 12 }}>
-          <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-            <strong>Role-based delivery</strong> is preferred: Palivane assumes your role via STS
-            (temporary credentials, revocable from your trust policy) instead of holding a
-            long-lived key. The role needs only <code>s3:PutObject</code> on the bucket, and it
-            takes precedence over the access-key pair when both are set.
-            {s3Cfg.externalId && <> Your external ID: <code>{s3Cfg.externalId}</code></>}
-          </p>
-          <button type="button" className="mini-btn" style={{ marginTop: 6 }} onClick={loadRoleSetup}>
-            Show trust policy</button>
-          {roleSetup && (
-            <pre style={{ fontSize: 11, overflowX: "auto", marginTop: 6 }}>
-              {JSON.stringify(roleSetup.trust_policy, null, 2)}
-            </pre>
-          )}
         </div>
         <div className="settings-sub" style={{ marginTop: 12 }}>
           <h3 style={{ margin: "0 0 6px" }}>Raw event archive</h3>
@@ -813,9 +783,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         {s3Cfg.archive && <SinkHealth sink="archive_s3" label="Event archive" />}
         <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Findings are written under
            <code> &lt;prefix&gt;/palivane/findings/YYYY/MM/DD/...json</code> (path follows the
-           same brand key). Static credentials are stored write-only and
-           encrypted; role-based delivery stores no secret at all. Grant the role or key
-           <code> s3:PutObject</code> on the bucket only.</p>
+           same brand key). Your credentials are stored write-only and encrypted. Grant
+           the key <code>s3:PutObject</code> on the bucket only.</p>
       </div>
 
       {/* Slack scanning */}

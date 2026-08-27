@@ -1193,6 +1193,14 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
             raise HTTPException(status_code=400,
                                 detail="siem_s3_role_arn must be an IAM role ARN "
                                        "(arn:aws:iam::<account-id>:role/<name>)")
+        if arn and not settings.role_delivery_principal:
+            # AssumeRole needs an AWS identity for this deployment to be assumed *from*
+            # (a static principal or the federated WIF role). With neither there is none,
+            # so accepting the ARN would leave the tenant looking configured while nothing
+            # can ever be delivered.
+            raise HTTPException(status_code=400,
+                                detail="Role-based S3 delivery is not available on this "
+                                       "deployment. Use an access key pair instead.")
         if arn and not (tenant.siem_s3_external_id or "").strip():
             # First role config: mint the external ID the customer's trust policy pins
             # (confused-deputy guard). Never regenerated on later saves — the trust
