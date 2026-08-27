@@ -65,7 +65,8 @@ class Settings:
     # Palivane's own AWS principal (IAM user/role ARN) that customer-side delivery roles
     # trust for role-based S3 delivery (STS AssumeRole). Operator-level: it names THIS
     # deployment's AWS identity, and the console's role-setup helper embeds it in the
-    # trust policy it hands tenant admins. Empty = the helper shows a placeholder.
+    # trust policy it hands tenant admins. Empty = role delivery is not offered at all
+    # (see role_delivery_principal below), not offered with a placeholder.
     aws_delivery_principal: str = _env("PALIVANE_AWS_DELIVERY_PRINCIPAL", "").strip()
     # GCP→AWS web-identity federation (aws_wif.py): the AWS role this runtime assumes
     # with its GCP identity token — the no-stored-secret alternative to static AWS env
@@ -319,6 +320,15 @@ class Settings:
     # built-in denylist, and an optional approved-extension allowlist (empty = allow all).
     ide_ext_denylist: str = os.getenv("IDE_EXT_DENYLIST", "")
     ide_ext_allowed: str = os.getenv("IDE_EXT_ALLOWED", "")
+
+    @property
+    def role_delivery_principal(self) -> str:
+        """The AWS identity a customer's trust policy must name for role-based S3
+        delivery to work: the static principal if the operator set one, otherwise the
+        GCP-federated role this runtime assumes (aws_wif). Empty means this deployment
+        has no AWS identity at all, so no AssumeRole against a customer role can ever
+        succeed and role delivery must not be offered, configured, or counted as set up."""
+        return self.aws_delivery_principal or self.aws_wif_role_arn
 
 
 settings = Settings()

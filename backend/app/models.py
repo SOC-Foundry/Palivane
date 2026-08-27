@@ -170,6 +170,7 @@ class Tenant(Base):
     ml_capture = Column(Boolean, default=False)
 
     def to_dict(self) -> dict:
+        from .config import settings as _settings   # late: test_config.py rebinds it
         from .plans import PLANS, features_of, plan_of, trial_days_left
         return {"id": self.id, "slug": self.slug, "name": self.name,
                 "status": self.status or "active",
@@ -206,9 +207,11 @@ class Tenant(Base):
                 "siem_s3_role_arn": self.siem_s3_role_arn or "",
                 "siem_s3_external_id": self.siem_s3_external_id or "",
                 # creds are write-only; expose only whether S3 delivery is fully
-                # configured (an assumable role, or the full static key pair).
+                # configured (a role this deployment can actually assume, or the full
+                # static key pair).
                 "siem_s3_configured": bool((self.siem_s3_bucket or "").strip()
-                                           and ((self.siem_s3_role_arn or "").strip()
+                                           and (((self.siem_s3_role_arn or "").strip()
+                                                 and _settings.role_delivery_principal)
                                                 or ((self.siem_s3_key_id or "").strip()
                                                     and (self.siem_s3_secret or "").strip()))),
                 "archive_s3_enabled": bool(self.archive_s3_enabled),
