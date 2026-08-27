@@ -225,3 +225,93 @@ def test_device_posture_payload_end_to_end(client, raw_client, monkeypatch):
     out = r.json()
     assert out["action"] in ("warn", "block")
     assert any(s.get("category") == "posture_gap" for s in out["signals"])
+
+
+# --- credentials never leave the machine ---------------------------------------------------
+# This runs as a SessionStart hook on every developer machine, and an MCP config's env block
+# is where a live token sits. It used to be posted verbatim so the backend could scan it.
+
+_TOKEN = "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
+
+
+def _run_capturing(tmp_path, monkeypatch):
+    posts: list[tuple[str, dict]] = []
+    monkeypatch.setattr(wp, "_post",
+                        lambda cfg, path, body, timeout=10.0: posts.append((path, body)) or True)
+    wp.run({"url": "https://w.io", "token": "ak_x"}, cache_path=str(tmp_path / "c.json"),
+           cwd=str(tmp_path), quiet=True)
+    return posts
+
+
+def test_mcp_env_token_is_redacted_before_posting(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / ".mcp.json").write_text(json.dumps({"mcpServers": {"github": {
+        "command": "npx", "args": ["-y", "server-github"],
+        "env": {"GITHUB_TOKEN": _TOKEN}}}}))
+    monkeypatch.setattr(wp, "collect_ide_extensions", lambda: None)
+    monkeypatch.setattr(wp, "collect_agent_configs", lambda: [])
+    monkeypatch.setattr(wp, "collect_agent_rules", lambda cwd=".": [])
+
+    posts = _run_capturing(tmp_path, monkeypatch)
+    path, body = next(p for p in posts if p[0] == "/api/scan/mcp-config")
+    assert _TOKEN not in json.dumps(body), "the token must not be in the request at all"
+    # what the backend actually vets survived
+    assert "npx" in body["content"] and "server-github" in body["content"]
+    # and the detection is preserved, attributed to the server that declared it
+    fd, = body["findings"]
+    assert fd["server"] == "github" and fd["category"] == "secret_leak"
+    assert fd["label"] == "GitHub token" and fd["masked"].startswith("ghp_")
+
+
+def test_agent_rules_secret_is_redacted_before_posting(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "CLAUDE.md").write_text(f"Deploy with token {_TOKEN} when asked.\n")
+    monkeypatch.setattr(wp, "collect_ide_extensions", lambda: None)
+    monkeypatch.setattr(wp, "collect_agent_configs", lambda: [])
+
+    posts = _run_capturing(tmp_path, monkeypatch)
+    path, body = next(p for p in posts if p[0] == "/api/scan/agent-rules")
+    assert _TOKEN not in json.dumps(body)
+    assert "Deploy with token" in body["content"]      # the instruction text is intact
+    assert body["findings"][0]["label"] == "GitHub token"
+
+
+def test_cache_keys_on_the_real_file_not_the_redacted_payload(tmp_path, monkeypatch):
+    """Rotating a token has to read as drift. If the cache keyed on the redacted text, two
+    different tokens would hash identically and the change would never be reported."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    cfgf = tmp_path / ".mcp.json"
+    monkeypatch.setattr(wp, "collect_ide_extensions", lambda: None)
+    monkeypatch.setattr(wp, "collect_agent_configs", lambda: [])
+    monkeypatch.setattr(wp, "collect_agent_rules", lambda cwd=".": [])
+
+    def _write(tok):
+        cfgf.write_text(json.dumps({"mcpServers": {"github": {
+            "command": "npx", "env": {"GITHUB_TOKEN": tok}}}}))
+
+    posts: list[str] = []
+    monkeypatch.setattr(wp, "_post",
+                        lambda cfg, path, body, timeout=10.0: posts.append(path) or True)
+    cache_path = str(tmp_path / "c.json")
+    cfg = {"url": "https://w.io", "token": "ak_x"}
+
+    _write(_TOKEN)
+    wp.run(cfg, cache_path=cache_path, cwd=str(tmp_path), quiet=True)
+    assert "/api/scan/mcp-config" in posts
+
+    posts.clear()
+    wp.run(cfg, cache_path=cache_path, cwd=str(tmp_path), quiet=True)
+    assert posts == []                                    # unchanged
+
+    posts.clear()
+    _write("ghp_Z9y8X7w6V5u4T3s2R1q0P9o8N7m6L5k4J3i2")   # rotated
+    wp.run(cfg, cache_path=cache_path, cwd=str(tmp_path), quiet=True)
+    assert "/api/scan/mcp-config" in posts
+
+
+def test_unparseable_config_is_still_scanned_and_redacted(tmp_path, monkeypatch):
+    """No server attribution is possible, so the findings carry none — but they are still
+    made, and the token still does not travel."""
+    out = wp.mcp_findings("not json at all, token=" + _TOKEN)
+    assert out and out[0]["label"] == "GitHub token"
+    assert "server" not in out[0]

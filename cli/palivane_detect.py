@@ -134,46 +134,70 @@ def mask(secret: str) -> str:
     return f"{s[:4]}••••{s[-4:]}"
 
 
+def _line_secrets(line: str) -> list[tuple[str, str]]:
+    """(label, raw value) for every credential on one line, in detection order: known-
+    provider patterns, connection-URL credentials, labeled key=value assignments, and a
+    tier-2 high-entropy heuristic for novel/vendor tokens with no recognized prefix.
+
+    The single place the patterns are applied. scan_text() reports what this finds and
+    redact() removes it, so a value one of them acts on can never be missed by the other."""
+    out: list[tuple[str, str]] = []
+    matched: set[str] = set()   # raw secrets found here — suppress entropy dupes
+    for label, rx in _PATTERNS:
+        m = rx.search(line)
+        if not m:
+            continue
+        # A pattern that has to match surrounding context to identify its secret (the AWS
+        # secret key's "secret_access_key" label) names the value group "v"; use that, so
+        # neither the preview nor the redaction swallows the context along with it.
+        val = m.groupdict().get("v") or m.group(0)
+        matched.add(val)
+        out.append((label, val))
+    cm = _CONN_RE.search(line)
+    if cm and not _is_placeholder(cm.group(1)):
+        matched.add(cm.group(1))
+        out.append(("Connection string credential", cm.group(1)))
+    am = _ASSIGN_RE.search(line)
+    if am and not _is_placeholder(am.group(1)):
+        matched.add(am.group(1))
+        out.append(("Credential assignment", am.group(1)))
+    for tok in _entropy_tokens(line):
+        # Don't re-flag a token a specific pattern already caught (as its type).
+        if not any(tok in mv or mv in tok for mv in matched):
+            out.append((_ENTROPY_LABEL, tok))
+    return out
+
+
 def scan_text(text: str) -> list[tuple[str, int, str]]:
-    """Return (secret_type, line_no, masked_preview) for each credential in `text` —
-    known-provider patterns, connection-URL credentials, labeled key=value assignments, and
-    a tier-2 high-entropy heuristic for novel/vendor tokens with no recognized prefix."""
+    """Return (secret_type, line_no, masked_preview) for each credential in `text`.
+    A repeat of the same value under the same label is reported once, at its first line."""
     found: list[tuple[str, int, str]] = []
     seen: set[tuple[str, str]] = set()
     for lineno, line in enumerate(text.splitlines(), 1):
-        if len(line) > 4000:
-            line = line[:4000]
-        matched: set[str] = set()   # raw secrets found on this line — suppress entropy dupes
-        for label, rx in _PATTERNS:
-            m = rx.search(line)
-            if not m:
-                continue
-            # A pattern that has to match surrounding context to identify its secret (the
-            # AWS secret key's "secret_access_key" label) names the value group "v"; report
-            # that, so neither the dedup key nor the preview carries the context along.
-            val = m.groupdict().get("v") or m.group(0)
+        for label, val in _line_secrets(line[:4000]):
             if (label, val) not in seen:
                 seen.add((label, val))
-                matched.add(val)
                 found.append((label, lineno, mask(val)))
-        cm = _CONN_RE.search(line)
-        if cm and not _is_placeholder(cm.group(1)) and ("Connection string credential", cm.group(1)) not in seen:
-            seen.add(("Connection string credential", cm.group(1)))
-            matched.add(cm.group(1))
-            found.append(("Connection string credential", lineno, mask(cm.group(1))))
-        am = _ASSIGN_RE.search(line)
-        if am and not _is_placeholder(am.group(1)) and ("Credential assignment", am.group(1)) not in seen:
-            seen.add(("Credential assignment", am.group(1)))
-            matched.add(am.group(1))
-            found.append(("Credential assignment", lineno, mask(am.group(1))))
-        for tok in _entropy_tokens(line):
-            # Don't re-flag a token a specific pattern already caught (as its type).
-            if any(tok in mv or mv in tok for mv in matched):
-                continue
-            if (_ENTROPY_LABEL, tok) not in seen:
-                seen.add((_ENTROPY_LABEL, tok))
-                found.append((_ENTROPY_LABEL, lineno, mask(tok)))
     return found
+
+
+def redact(text: str) -> str:
+    """`text` with every detected credential replaced by «redacted:label». For payloads
+    that must be sent somewhere for analysis that does not need the value itself — an MCP
+    config still shows which servers it declares and what they run once the tokens in its
+    env block are gone.
+
+    Every occurrence goes, not just the first: scan_text reports a repeated value once, but
+    leaving the other copies in place would defeat the point. Longest values are replaced
+    first so a short secret that happens to sit inside a longer one cannot leave a
+    fragment of the longer one behind."""
+    values: dict[str, str] = {}
+    for line in text.splitlines():
+        for label, val in _line_secrets(line[:4000]):
+            values.setdefault(val, label)
+    for val in sorted(values, key=len, reverse=True):
+        text = text.replace(val, f"\u00abredacted:{values[val]}\u00bb")
+    return text
 
 
 # --- PII / PHI ---------------------------------------------------------------------------

@@ -278,10 +278,19 @@ happens:
   `{"mcpServers": …}` — the raw file holds unrelated user state and never leaves the
   machine), `./.mcp.json`, VS Code and Cursor user configs.
 
+**Credentials are stripped before anything is posted.** An MCP config's `env` block is
+where a live token sits, and this runs at every session start on every machine — so each
+secret is detected locally (`palivane_detect`, the same module `palivane-secrets` and the
+at-rest scanners use), replaced by `«redacted:label»` in the posted content, and reported
+separately as a category, a label and a masked preview attributed to the server that
+declared it. The backend's vetting — which servers are declared, what they launch, whether
+they are allowlisted, what a rules file instructs — never needed the value.
+
 A sha256 cache (`~/.palivane/posture-cache.json`) skips unchanged state, so repeated runs
-don't spam findings. `palivane-connect` wires it to Claude Code session start; a cron or
-launchd job works for non-Claude fleets. Flags: `--force`, `--dry-run`, `--quiet`,
-`--async` (detach and return immediately).
+don't spam findings. It hashes the file as it is on disk, not the redacted payload, so
+rotating a token still reads as drift. `palivane-connect` wires it to Claude Code session
+start; a cron or launchd job works for non-Claude fleets. Flags: `--force`, `--dry-run`,
+`--quiet`, `--async` (detach and return immediately).
 
 ## `palivane-secrets` — credentials at rest (infostealer surface)
 

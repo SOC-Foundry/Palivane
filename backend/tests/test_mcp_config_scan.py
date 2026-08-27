@@ -69,3 +69,57 @@ def test_clean_config_allowed(client, raw_client, monkeypatch):
         "files": {"command": "npx", "args": ["-y", "server-filesystem", "./data"]}}})
     assert out["action"] == "allow"
     assert out["servers"] == []
+
+
+# --- client-detected secrets (palivane-posture redacts before posting) ---------------------
+# The env block used to arrive verbatim so the detectors could scan it. Now the sender
+# scans it and posts the config with «redacted:…» in place of the value.
+
+def _scan_with(raw_client, key, config, findings, path=".mcp.json"):
+    return raw_client.post("/api/scan/mcp-config",
+                           json={"content": json.dumps(config), "path": path,
+                                 "findings": findings},
+                           headers={"X-Palivane-Token": key}).json()
+
+
+def _fd(server="github", category="secret_leak", label="GitHub token", masked="ghp_••••Q7r8"):
+    return {"server": server, "category": category, "label": label, "line": 1, "masked": masked}
+
+
+def test_client_secret_is_attributed_to_its_server(raw_client, client):
+    key = _key(client)
+    cfg = {"mcpServers": {
+        "github": {"command": "npx", "args": ["-y", "server-github"],
+                   "env": {"GITHUB_TOKEN": "«redacted:GitHub token»"}},
+        "docs": {"command": "npx", "args": ["-y", "server-docs"]}}}
+    body = _scan_with(raw_client, key, cfg, [_fd()])
+    hit = {s["name"]: s for s in body["servers"]}
+    assert "github" in hit, "the server whose env held the token must be flagged"
+    assert any(sig["category"] == "secret_leak" for sig in hit["github"]["signals"])
+    # the clean sibling must not inherit it
+    assert "secret_leak" not in json.dumps(hit.get("docs", {}))
+
+
+def test_unattributed_finding_is_reported_against_the_file(raw_client, client):
+    """An unparseable config yields findings with no server. Dropping them would mean the
+    secret detection silently disappears for exactly the files that parse worst."""
+    key = _key(client)
+    body = _scan_with(raw_client, key, {"mcpServers": {}}, [_fd(server="")], path="broken.json")
+    names = [s["name"] for s in body["servers"]]
+    assert "broken.json" in names
+    entry = next(s for s in body["servers"] if s["name"] == "broken.json")
+    assert entry["transport"] == "file"
+    assert any(sig["category"] == "secret_leak" for sig in entry["signals"])
+
+
+def test_finding_naming_an_undeclared_server_is_not_dropped(raw_client, client):
+    key = _key(client)
+    body = _scan_with(raw_client, key, {"mcpServers": {"docs": {"command": "npx"}}},
+                      [_fd(server="ghost")])
+    assert any(s["name"] == ".mcp.json" for s in body["servers"])
+
+
+def test_no_findings_behaves_exactly_as_before(raw_client, client):
+    key = _key(client)
+    cfg = {"mcpServers": {"docs": {"command": "npx", "args": ["-y", "server-docs"]}}}
+    assert _scan_with(raw_client, key, cfg, []) == _scan(raw_client, key, cfg)
