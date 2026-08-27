@@ -109,11 +109,31 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); paddi
   text-transform: uppercase; letter-spacing: 1.6px; margin-top: 3px;
 }
 
-.nav { display: flex; flex-direction: column; gap: 5px; }
+/* The nav scrolls, the footer stays put. Without flex:1 + min-height:0 the list simply
+   grew past 100vh and took Sign out off screen with it at 1366x768. */
+.nav {
+  display: flex; flex-direction: column; gap: 13px;
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--border-bright) transparent;
+  margin-right: -6px; padding-right: 6px;   /* keep the scrollbar off the labels */
+}
+.nav {
+  /* the mask makes the overflow read as scrollable instead of truncated */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent 100%);
+}
+.nav.at-end { -webkit-mask-image: none; mask-image: none; }
+.nav::-webkit-scrollbar { width: 6px; }
+.nav::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
+.nav-group { display: flex; flex-direction: column; gap: 3px; }
+.nav-head {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.13em; text-transform: uppercase;
+  color: var(--muted-2); padding: 0 12px 2px;
+}
 .nav-item {
   display: flex; align-items: center; gap: 12px;
   background: transparent; border: 1px solid transparent; color: var(--muted); cursor: pointer;
-  font: 600 13.5px/1.2 inherit; padding: 10px 14px; border-radius: 4px; text-align: left;
+  font: 600 13px/1.2 inherit; padding: 7px 12px; border-radius: 4px; text-align: left;
   transition: all 0.15s ease;
 }
 .nav-item svg { color: var(--muted-2); transition: all 0.15s ease; width: 17px; height: 17px; }
@@ -220,6 +240,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); paddi
 
 /* ===== Charts ===== */
 .charts-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; margin-bottom: 22px; }
+/* Three panels in a two-column grid left the second cell of row two empty, a full panel
+   of dead space above the fold that pushed the findings list down. Coverage is a short
+   list, so it reads across the full width rather than leaving a hole beside it. */
+.setup-health { grid-column: 1 / -1; }
+.setup-health .plane-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 32px; }
 .chart-panel h2 { margin-bottom: 16px; }
 .chart-empty { color: var(--muted); font-size: 13px; margin: 8px 0; }
 
