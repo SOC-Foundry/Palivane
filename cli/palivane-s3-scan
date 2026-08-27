@@ -4,9 +4,10 @@ detect public-bucket exposure, reporting to Palivane.
 
 Buckets are where secrets go to die quietly: a stray `.env`, a Terraform state, a DB dump —
 sitting in object storage that's often more open than anyone realizes. This plane walks a
-bucket's objects, streams their (text) contents to the Palivane backend's `POST /api/scan/s3`
-detection engine (same secrets/PII logic as the code scanner), and — crucially — determines
-whether the bucket is *publicly reachable*. A world-readable bucket holding sensitive data is
+bucket's objects, detects secrets/PII in them LOCALLY (palivane_detect, shared with
+palivane-secrets), and sends only what it found to `POST /api/scan/s3`: the category, a
+label, the line, and a masked preview. Object bytes never leave the account that owns
+them. It also determines whether the bucket is *publicly reachable*. A world-readable bucket holding sensitive data is
 the crown-jewel case, so the backend escalates any non-clean object in a public bucket to a
 hard `block`.
 
@@ -31,10 +32,43 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 
-MAX_CONTENT = 200_000        # backend caps object content at 200k chars — truncate to match
+MAX_CONTENT = 200_000
+
+# Detection is shared with palivane-secrets and lives beside this script. The CLIs are
+# downloaded individually, so fall back to fetching it from the same deployment this
+# scanner reports to rather than failing with an ImportError the user cannot act on.
+def _load_detect():
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(here, "palivane_detect.py")
+    if not os.path.exists(path):
+        base = (os.environ.get("PALIVANE_URL") or "").rstrip("/")
+        if not base:
+            sys.exit("palivane_detect.py not found next to this script and PALIVANE_URL "
+                     "is unset, so it cannot be fetched. Download it from "
+                     "<your-palivane-url>/cli/palivane_detect.py into the same directory.")
+        try:
+            import urllib.request
+            with urllib.request.urlopen(base + "/cli/palivane_detect.py", timeout=20) as r:
+                body = r.read()
+            path = os.path.join(tempfile.gettempdir(), "palivane_detect.py")
+            with open(path, "wb") as fh:
+                fh.write(body)
+        except Exception as e:                                    # noqa: BLE001
+            sys.exit(f"could not fetch palivane_detect.py from {base}: {e}")
+    spec = importlib.util.spec_from_file_location("palivane_detect", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+detect = _load_detect()
+
+        # backend caps object content at 200k chars — truncate to match
 BATCH = 100                  # objects per POST — bounded request size, well under the 2000 cap
 # S3 predefined group URIs that mean "the public" (or any AWS-authenticated principal).
 _PUBLIC_GRANTEE_URIS = (
@@ -189,6 +223,7 @@ def main() -> int:
 
     # Read scannable objects: within the size cap and utf-8-decodable (binary skipped).
     objects: list[dict] = []
+    scanned_keys: list[str] = []
     skipped_large = skipped_binary = 0
     for o in listing:
         if o["size"] > args.max_object_bytes:
@@ -198,19 +233,29 @@ def main() -> int:
         if content is None:
             skipped_binary += 1
             continue
-        objects.append({"key": o["key"], "content": content})
+        # Detect HERE. Only what was found travels: category, label, line, masked
+        # preview. The object's bytes stay in the account that owns them, which is the
+        # same contract palivane-secrets keeps for endpoints.
+        found = detect.scan_all(content)
+        if found:
+            objects.append({"key": o["key"], "findings": [
+                {"category": c, "label": lbl, "line": ln, "masked": mk}
+                for c, lbl, ln, mk in found]})
+        scanned_keys.append(o["key"])
 
-    print(f"Listed {len(listing)} object(s); scanning {len(objects)} "
+    print(f"Listed {len(listing)} object(s); scanned {len(scanned_keys)} locally, "
+          f"{len(objects)} with findings "
           f"(skipped {skipped_large} over size cap, {skipped_binary} binary/unreadable).")
 
     if args.dry_run:
-        for o in objects:
-            print(f"  • {o['key']}")
+        for k in scanned_keys:
+            print(f"  • {k}")
         print(f"\n(--dry-run: exposure={'PUBLIC' if public else 'private'}; nothing sent to Palivane)")
         return 0
 
     if not objects:
-        print("✓ Nothing scannable — bucket empty or all objects skipped.")
+        print("✓ Nothing sensitive found." if scanned_keys
+              else "✓ Nothing scannable, bucket empty or all objects skipped.")
         return 0
 
     # POST in batches; aggregate the flagged objects and the worst overall action.

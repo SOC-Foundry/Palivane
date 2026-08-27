@@ -175,8 +175,23 @@ class CIScan(BaseModel):
     record: bool = True
 
 
+class S3ObjectFinding(BaseModel):
+    """One detection the CLIENT made, in metadata form. `masked` is a redacted preview
+    (`AKIA••••MPLE`); the value itself is never carried."""
+    category: Literal["secret_leak", "pii_exposure", "phi_exposure"] = "secret_leak"
+    label: str = Field(default="", max_length=120)
+    line: int = 0
+    masked: str = Field(default="", max_length=200)
+
+
 class S3Object(BaseModel):
     key: str = ""
+    # Preferred: the scanner detects locally and sends only what it found. Object bytes
+    # then never leave the account holding them, which is the same contract
+    # palivane-secrets has always kept for endpoints.
+    findings: list[S3ObjectFinding] = Field(default_factory=list, max_length=200)
+    # Legacy: older palivane-s3-scan builds POST object text for server-side detection.
+    # Still accepted so they keep working, but nothing ships that way now.
     content: str = Field(default="", max_length=MAX_CONTENT)
 
 

@@ -51,6 +51,27 @@ AuthenticatedUsers groups, and a *fully-enabled* Block Public Access then overri
 (grants are neutralized). Absence of a bucket-level block config is **not** treated as public
 (most private buckets have none), so private buckets aren't falsely flagged.
 
+### Verifying the scanner without an AWS account
+
+`backend/tests/test_palivane_s3_scan_live.py` runs the scanner against MinIO, which speaks
+the S3 API, so listing and pagination, the binary and size skips, object reads, and the
+end-to-end local-detection path are exercised against a real service rather than a fake:
+
+```bash
+docker run -d --name pv-minio -p 9100:9000 \
+  -e MINIO_ROOT_USER=palivanetest -e MINIO_ROOT_PASSWORD=palivanetest123 \
+  minio/minio:latest server /data
+cd backend && pytest tests/test_palivane_s3_scan_live.py
+```
+
+The tests skip themselves when MinIO is not reachable, so CI is unaffected.
+
+Two things MinIO cannot show, and which therefore still need a real AWS account: a bucket
+it considers **public** (it returns NotImplemented for `PutBucketAcl` public-read, and
+reports `IsPublic` false even for a `Principal:"*"` `GetObject` policy), and **Block Public
+Access overriding a public grant**. The public-exposure logic is covered by the FakeS3
+tests; what is unverified is that AWS's real responses match the shapes those fakes assume.
+
 ### AWS credentials & IAM
 
 `palivane-s3-scan` uses the **standard boto3 credential chain**, no AWS keys are ever passed
