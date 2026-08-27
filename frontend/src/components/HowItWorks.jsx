@@ -60,7 +60,8 @@ export default function HowItWorks() {
         <h1>How Palivane works</h1>
         <p>Every piece of AI-bound content ends up as one risk verdict. The engine is regex and
            heuristics, deterministic, millisecond-fast, and it calls no third-party AI service
-           to reach a decision.</p>
+           to reach a decision. The one exception is the optional LLM judge, which is off
+           unless you turn it on and sends the content it reviews to your chosen provider.</p>
       </section>
 
       {/* Pipeline */}

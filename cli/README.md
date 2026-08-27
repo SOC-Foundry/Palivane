@@ -64,9 +64,10 @@ What happens:
    **Copilot CLI** (`~/.copilot` present + `palivane-copilot-hook`) gets a Palivane-owned
    `~/.copilot/hooks/palivane.json` (`preToolUse` + `userPromptSubmitted`) + creds in
    `~/.copilot/palivane.json`.
-6. Restart the tools — prompts and tool calls are inspected locally, posture reports on
-   session start (and with `--route-gateway`, prompts route through the gateway); all
-   attributed to you and revocable in the console like any key.
+6. Restart the tools — prompts and tool calls are scored by your Palivane backend beside
+   the request rather than through a gateway in its path, posture reports on session start
+   (and with `--route-gateway`, prompts route through the gateway instead); all attributed
+   to you and revocable in the console like any key.
 
 ## `palivane-reenroll` — self-healing device key (apiKeyHelper)
 
