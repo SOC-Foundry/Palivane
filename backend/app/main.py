@@ -1620,6 +1620,28 @@ def scan_mcp_config(
 _VCS_KEEP = {"secret_leak", "pii_exposure", "phi_exposure"}
 
 
+# A client-detected finding arrives as a label and a masked preview, so the server's own
+# detectors have nothing to bite on. Severity therefore comes from the categories the
+# client reported. Deliberately coarse: a credential at rest is the reason this scanner
+# exists, and personal data in object storage is not far behind.
+_CLIENT_SEVERITY = {"secret_leak": ("high", 76), "phi_exposure": ("high", 70),
+                    "pii_exposure": ("high", 60)}
+
+
+def _severity_from_client(findings, result: dict) -> dict:
+    best_sev, best_score = result["severity"], result["risk_score"]
+    for fd in findings:
+        sev, score = _CLIENT_SEVERITY.get(fd.category, ("suspicious", 40))
+        if score > best_score:
+            best_sev, best_score = sev, score
+    out = dict(result)
+    out["severity"], out["risk_score"] = best_sev, best_score
+    if not out.get("signals"):
+        out["signals"] = [{"category": fd.category, "title": fd.label,
+                           "evidence": fd.masked} for fd in findings[:8]]
+    return out
+
+
 def _vcs_filter(signals: list) -> list:
     return [s for s in signals if s.category.value in _VCS_KEEP]
 
@@ -1679,10 +1701,28 @@ def scan_s3(
     for obj in body.objects[:1000]:
         meta = {"bucket": body.bucket, "key": obj.key, "region": body.region,
                 "public": body.public, "source": "s3-scan"}
-        item = AnalysisInput(content=obj.content, subject=f"s3://{body.bucket}/{obj.key}",
+        # Preferred path: the scanner detected locally and sent metadata, so there is no
+        # object text here to score. Feed the scorer the labels and masked previews the
+        # same way the at-rest credential path does, rather than asking the bucket owner
+        # to hand us their data for the privilege of being told it is sensitive.
+        if obj.findings:
+            meta["client_findings"] = [
+                {"category": fd.category, "label": fd.label, "line": fd.line}
+                for fd in obj.findings]
+            meta["evidence"] = "; ".join(f"{fd.label} {fd.masked}".strip()
+                                         for fd in obj.findings[:5])
+            scored = f"s3://{body.bucket}/{obj.key}\n" + "\n".join(
+                f"{fd.label}: {fd.masked}" for fd in obj.findings)
+        else:
+            scored = obj.content        # legacy CLI still sending object text
+        item = AnalysisInput(content=scored, subject=f"s3://{body.bucket}/{obj.key}",
                              channel="s3", surface=Surface.AI_USAGE, metadata=meta)
         result = run_analysis(item, persist=False, db=db, tenant_id=tenant_id,
                               signal_filter=_vcs_filter)
+        # Metadata carries no raw value, so the server's own detectors may find nothing in
+        # it. The client already did the finding; trust its categories for severity.
+        if obj.findings and result["severity"] in ("benign", "low"):
+            result = _severity_from_client(obj.findings, result)
         action = _action_for(result["severity"])
         if action == "allow":
             continue
