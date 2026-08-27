@@ -28,6 +28,18 @@ _STRIP = " (separator stripped — likely bypass)"
 _PATTERNS = [
     ("Private key block", re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")),
     ("AWS access key id", re.compile(r"AKIA[0-9A-Z]{16}")),
+    # The SECRET half. No distinguishing prefix — 40 chars of base64 — so it is gated on an
+    # adjacent "secret[ access][ key]" label; ungated it would match any 40-char base64 run
+    # (hashes, blob chunks). The entropy backstop below structurally cannot cover it:
+    # _TOKEN_CANDIDATE_RE is [A-Za-z0-9_]{24,80}, and the "/" and "+" in a base64 secret
+    # split those 40 chars into sub-24-char pieces, so every layer here missed it. Kept in
+    # step with the server's patterns.py, where the same gap let a secret survive redaction.
+    ("AWS secret access key",
+     # (?<![A-Za-z0-9]) not \b: "_" is a word char, so \bsecret cannot match inside the
+     # commonest spelling of all, aws_secret_access_key=…  The named group is the value, so
+     # the masked preview is of the secret rather than of the label that gated it.
+     re.compile(r"(?i)(?<![A-Za-z0-9])secret(?:[_ -]?access)?(?:[_ -]?key)?"
+                r"\W{0,4}(?P<v>[A-Za-z0-9/+]{40})(?![A-Za-z0-9/+=])")),
     ("GitHub token", re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}")),
     ("GitHub fine-grained PAT", re.compile(r"github_pat_[A-Za-z0-9_]{22,}")),
     ("GitLab PAT", re.compile(r"glpat-[A-Za-z0-9_\-]{20,}")),
@@ -134,10 +146,16 @@ def scan_text(text: str) -> list[tuple[str, int, str]]:
         matched: set[str] = set()   # raw secrets found on this line — suppress entropy dupes
         for label, rx in _PATTERNS:
             m = rx.search(line)
-            if m and (label, m.group(0)) not in seen:
-                seen.add((label, m.group(0)))
-                matched.add(m.group(0))
-                found.append((label, lineno, mask(m.group(0))))
+            if not m:
+                continue
+            # A pattern that has to match surrounding context to identify its secret (the
+            # AWS secret key's "secret_access_key" label) names the value group "v"; report
+            # that, so neither the dedup key nor the preview carries the context along.
+            val = m.groupdict().get("v") or m.group(0)
+            if (label, val) not in seen:
+                seen.add((label, val))
+                matched.add(val)
+                found.append((label, lineno, mask(val)))
         cm = _CONN_RE.search(line)
         if cm and not _is_placeholder(cm.group(1)) and ("Connection string credential", cm.group(1)) not in seen:
             seen.add(("Connection string credential", cm.group(1)))

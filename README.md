@@ -514,7 +514,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/scan/agent-config` | Scan an AI coding-assistant config (Cursor/Claude settings, MCP config, CLI flags) for unsafe autonomy — YOLO / auto-apply / `--dangerously-skip-permissions`. Attributed per user. Token-gated. |
 | POST   | `/api/scan/oversharing`  | Need-to-know check: given an LLM response + its recipient, flag restricted data (confidential / PII / keyword) returned to someone outside the allowed group. Token-gated. |
 | GET    | `/api/policy-pack`       | Generate the MDM policy pack (agentless enforcement config): editor allowlist, system-proxy profiles, browser force-install, CA note, Claude Code managed settings, OpenAI/Gemini gateway routing, Cursor hooks, and a scheduled `palivane-secrets` scan (TruffleHog by default; `?secrets_engine=`) (admin). Runbook: [`docs/mdm-policy-pack.md`](docs/mdm-policy-pack.md). |
-| POST   | `/api/scan/code`         | Scan changed files (pre-commit hook / CI) for secrets & PII before they reach a repo; ignores `source_code_leak`. Returns a per-file allow/warn/block. Token-gated. |
+| POST   | `/api/scan/code`         | Secrets & PII in repo files. Takes either `findings` (what `palivane-github-scan` detected locally — no source is sent) or `content` (the pre-commit hook, scanning a file on the machine the request came from). Ignores `source_code_leak`. Returns a per-file allow/warn/block. Token-gated. |
 | GET    | `/api/findings`          | List the tenant's findings (filter by `severity`, `status`). |
 | GET    | `/api/findings/{id}`     | Full finding detail with signal breakdown. |
 | PATCH  | `/api/findings/{id}`     | Set status (`open` / `triaged` / `dismissed`). |

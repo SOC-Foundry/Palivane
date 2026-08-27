@@ -25,7 +25,7 @@ from .domains import router as domains_router
 from .config import settings, _env
 from .gateway import gemini_router, router as gateway_router
 from .database import Base, engine as db_engine, get_db
-from .detectors import AnalysisInput, Surface
+from .detectors import AnalysisInput, Category, Signal, Surface
 from . import crypto
 from .engine import engine
 from .models import (Agent, AgentRole, CorpusSample, Finding, PolicyOverride, SaasConnector,
@@ -1625,25 +1625,50 @@ def scan_mcp_config(
 _VCS_KEEP = {"secret_leak", "pii_exposure", "phi_exposure"}
 
 
-# A client-detected finding arrives as a label and a masked preview, so the server's own
-# detectors have nothing to bite on. Severity therefore comes from the categories the
-# client reported. Deliberately coarse: a credential at rest is the reason this scanner
-# exists, and personal data in object storage is not far behind.
-_CLIENT_SEVERITY = {"secret_leak": ("high", 76), "phi_exposure": ("high", 70),
-                    "pii_exposure": ("high", 60)}
+# A client-detected finding arrives as a label and a masked preview: the value stayed on
+# the machine that held it, so the server's own detectors have nothing to bite on. Turn
+# each into the Signal the server's detector would have produced from the same bytes, and
+# let the normal scorer do the rest — so the verdict in the response is also the verdict
+# that gets stored, alerted on, and forwarded to a SIEM.
+#
+# Weights mirror shadow_ai's own: a named-provider credential is tier 1 (0.9/0.85), the
+# entropy heuristic is tier 2 (0.7/0.7), personal data 0.7/0.75, health data 0.7/0.75
+# rising to 0.8 once two independent markers make it a patient record rather than a stray
+# identifier. Titles matter as much as weights — confirmed_leak() reads the TITLE to
+# decide what hard-blocks under a monitor-mode posture, and the client's entropy label is
+# already HIGH_ENTROPY_TITLE verbatim, so the tiering carries across on its own.
+_CLIENT_SIGNAL_SPEC = {
+    "secret_leak": (Category.SECRET_LEAK, 0.9, 0.85,
+                    "Credentials/secrets found at rest by the local scanner."),
+    "pii_exposure": (Category.PII_EXPOSURE, 0.7, 0.75,
+                     "Personally identifiable information found at rest by the local scanner."),
+    "phi_exposure": (Category.PHI_EXPOSURE, 0.7, 0.75,
+                     "HIPAA-regulated health data found at rest by the local scanner."),
+}
 
 
-def _severity_from_client(findings, result: dict) -> dict:
-    best_sev, best_score = result["severity"], result["risk_score"]
+def _client_signals(findings) -> list[Signal]:
+    """Client-reported findings as scorable Signals. `evidence` carries only the label and
+    the masked preview the client sent — there is no raw value here to carry."""
+    from .detectors.shadow_ai import HIGH_ENTROPY_TITLE  # noqa: PLC0415
+
+    phi = sum(1 for fd in findings if fd.category == "phi_exposure")
+    out: list[Signal] = []
     for fd in findings:
-        sev, score = _CLIENT_SEVERITY.get(fd.category, ("suspicious", 40))
-        if score > best_score:
-            best_sev, best_score = sev, score
-    out = dict(result)
-    out["severity"], out["risk_score"] = best_sev, best_score
-    if not out.get("signals"):
-        out["signals"] = [{"category": fd.category, "title": fd.label,
-                           "evidence": fd.masked} for fd in findings[:8]]
+        spec = _CLIENT_SIGNAL_SPEC.get(fd.category)
+        if spec is None:
+            continue
+        category, weight, confidence, detail = spec
+        title = fd.label or "Sensitive data found at rest"
+        if title == HIGH_ENTROPY_TITLE:
+            # Tier 2 like the server's own: warns in monitor mode instead of hard-blocking,
+            # because "looks random" is a guess and a false positive here is a blocked repo.
+            weight, confidence = 0.7, 0.7
+        elif fd.category == "phi_exposure" and phi >= 2:
+            weight = 0.8
+        out.append(Signal(category=category, title=title, detail=detail,
+                          weight=weight, confidence=confidence, detector="client_scan",
+                          evidence=f"{fd.label} {fd.masked}".strip()[:200]))
     return out
 
 
@@ -1657,7 +1682,14 @@ def scan_code(
     x_palivane_token: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
-    """Scan code/diffs (pre-commit hook, CI) for secrets & PII before they reach a repo.
+    """Scan code/diffs (pre-commit hook, CI, whole-repo sweeps) for secrets & PII before
+    they reach a repo — or after, when auditing what is already there.
+
+    Two request shapes. A file may carry `findings`, which is what palivane-github-scan
+    sends: it read the repo through the GitHub API, detected on its own machine, and is
+    reporting labels and masked previews. Or it may carry `content`, which is what the
+    pre-commit hook sends — it is scanning a file you are about to commit, on the same
+    machine this request came from, so there is nothing to protect by withholding it.
 
     Reuses the detection engine but keeps only data-loss categories — a repo is meant to
     hold code, so source_code_leak is ignored. Token-gated like the ingest endpoint.
@@ -1668,10 +1700,26 @@ def scan_code(
     flagged: list[dict] = []
     worst = 0
     for f in body.files[:1000]:
-        item = AnalysisInput(content=f.content, subject=f.path, channel="git",
-                             surface=Surface.AI_USAGE)
-        result = run_analysis(item, persist=False, db=db, tenant_id=tenant_id,
-                              signal_filter=_vcs_filter)
+        meta = {"path": f.path, "source": "code-scan"}
+        if f.findings:
+            meta["client_findings"] = [
+                {"category": fd.category, "label": fd.label, "line": fd.line}
+                for fd in f.findings]
+            meta["evidence"] = "; ".join(f"{fd.label} {fd.masked}".strip()
+                                         for fd in f.findings[:5])
+            scored = f.path + "\n" + "\n".join(f"{fd.label}: {fd.masked}"
+                                                for fd in f.findings)
+        else:
+            scored = f.content
+        item = AnalysisInput(content=scored, subject=f.path, channel="git",
+                             surface=Surface.AI_USAGE, metadata=meta)
+        # Scored once, with the client's evidence folded in, so `record` persists the same
+        # verdict the caller is shown — and so one pass does the work two used to.
+        extra = _client_signals(f.findings)
+        persist = bool(body.record and tenant_id is not None)
+        result = run_analysis(item, persist=persist, db=db, tenant_id=tenant_id,
+                              signal_filter=_vcs_filter, persist_benign=False,
+                              extra_signals=extra)
         action = _action_for(result["severity"])
         worst = max(worst, _ACTION_RANK.get(result["severity"], 0))
         if action != "allow":
@@ -1679,9 +1727,6 @@ def scan_code(
                 "path": f.path, "action": action, "severity": result["severity"],
                 "risk_score": result["risk_score"], "signals": result["signals"],
             })
-            if body.record and tenant_id is not None:
-                run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
-                             signal_filter=_vcs_filter)
 
     overall = "block" if worst >= 3 else ("warn" if worst >= 2 else "allow")
     return {"action": overall, "scanned": len(body.files[:1000]), "files": flagged}
@@ -1722,12 +1767,12 @@ def scan_s3(
             scored = obj.content        # legacy CLI still sending object text
         item = AnalysisInput(content=scored, subject=f"s3://{body.bucket}/{obj.key}",
                              channel="s3", surface=Surface.AI_USAGE, metadata=meta)
+        # One analysis, scored WITH the client's evidence — so `record` below stores the
+        # same verdict this response reports. Scoring the response separately would put a
+        # high-severity leak in the caller's terminal and a benign row in the console.
+        extra = _client_signals(obj.findings)
         result = run_analysis(item, persist=False, db=db, tenant_id=tenant_id,
-                              signal_filter=_vcs_filter)
-        # Metadata carries no raw value, so the server's own detectors may find nothing in
-        # it. The client already did the finding; trust its categories for severity.
-        if obj.findings and result["severity"] in ("benign", "low"):
-            result = _severity_from_client(obj.findings, result)
+                              signal_filter=_vcs_filter, extra_signals=extra)
         action = _action_for(result["severity"])
         if action == "allow":
             continue
@@ -1742,7 +1787,7 @@ def scan_s3(
         })
         if body.record and tenant_id is not None:
             run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
-                         signal_filter=_vcs_filter)
+                         signal_filter=_vcs_filter, extra_signals=extra)
 
     overall = "block" if worst >= 3 else ("warn" if worst >= 2 else "allow")
     return {"action": overall, "scanned": len(body.objects[:1000]),
