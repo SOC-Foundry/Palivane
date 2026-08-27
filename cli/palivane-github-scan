@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Palivane GitHub scan plane — sweep whole GitHub repos (or entire orgs/users) for secrets & PII.
 
-Reads repositories over the GitHub API and feeds every text blob to the Palivane backend's
-`POST /api/scan/code` (the same detection engine the pre-commit hook uses; no secrets logic
-lives here). Nothing is written back to GitHub — this is a read-only audit. Stdlib only.
+Reads repositories over the GitHub API and detects HERE, on the machine running the scan,
+then reports only what it found to `POST /api/scan/code`: category, label, line number, and
+a masked preview. Your source never reaches Palivane. This used to POST every text blob of
+every repo — an `--org` sweep uploaded an entire private codebase for the privilege of being
+told it held a key, which is the opposite of what this product is for. Detection is shared
+with palivane-secrets and palivane-s3-scan (palivane_detect.py) so the three cannot drift.
+
+Nothing is written back to GitHub — this is a read-only audit. Stdlib only.
 
 Config (env):
   PALIVANE_URL     Palivane backend base URL                    (or --url)
@@ -27,12 +32,49 @@ import base64
 import json
 import os
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 
-MAX_CONTENT = 200_000        # backend cap — truncate blob text to this many chars
-BATCH = 50                   # files per /api/scan/code request
+MAX_CONTENT = 200_000        # cap on how much of one blob we scan locally
+BATCH = 200                  # files per /api/scan/code request — findings-only, so a batch
+                             # is now metadata and can be far larger than the old 50 blobs
 GITHUB_API = "https://api.github.com"
+
+# scan_blob's third answer. "Clean" and "could not read this as text" are both "nothing to
+# report", but only the first means a file was actually scanned, and the summary line has to
+# tell the truth about which happened.
+UNREADABLE = object()
+
+
+# Detection is shared with palivane-secrets and palivane-s3-scan and lives beside this
+# script. The CLIs are downloaded individually, so fall back to fetching it from the same
+# deployment this scanner reports to rather than failing with an ImportError.
+def _load_detect():
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(here, "palivane_detect.py")
+    if not os.path.exists(path):
+        base = (os.environ.get("PALIVANE_URL") or "").rstrip("/")
+        if not base:
+            sys.exit("palivane_detect.py not found next to this script and PALIVANE_URL "
+                     "is unset, so it cannot be fetched. Download it from "
+                     "<your-palivane-url>/cli/palivane_detect.py into the same directory.")
+        try:
+            with urllib.request.urlopen(base + "/cli/palivane_detect.py", timeout=20) as r:
+                body = r.read()
+            path = os.path.join(tempfile.gettempdir(), "palivane_detect.py")
+            with open(path, "wb") as fh:
+                fh.write(body)
+        except Exception as e:                                    # noqa: BLE001
+            sys.exit(f"could not fetch palivane_detect.py from {base}: {e}")
+    spec = importlib.util.spec_from_file_location("palivane_detect", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+detect = _load_detect()
 
 # Obvious-binary paths we never fetch (the content scan can't read them anyway). The tree
 # already gives us sizes; this trims the blob-fetch fan-out before we spend an API call.
@@ -135,23 +177,32 @@ def repo_blobs(repo: dict, args, token: str, api: str) -> list[dict]:
     return kept
 
 
-def fetch_blob(item: dict, token: str, api: str) -> dict | None:
-    """Fetch a blob, base64-decode + utf-8 decode it, and label it owner/repo@branch:path.
-    Returns None for binary (non-utf-8) blobs. Content is truncated to the backend cap."""
+def scan_blob(item: dict, token: str, api: str) -> dict | None:
+    """Fetch a blob, decode it, and scan it locally. Returns the file's findings labelled
+    owner/repo@branch:path, None if it scanned clean (a clean file is not reported at all —
+    "we looked and found nothing" needs no evidence sent anywhere), or UNREADABLE if it
+    could not be decoded as text.
+
+    The blob's text is read into memory here and dropped here. It is never returned to the
+    caller, so there is no path by which it reaches the request body."""
     blob = _gh_get(f"/repos/{item['owner']}/{item['repo']}/git/blobs/{item['sha']}", token, api)
     if not isinstance(blob, dict) or blob.get("encoding") != "base64":
-        return None
+        return UNREADABLE
     try:
         raw = base64.b64decode(blob.get("content", ""))
         text = raw.decode("utf-8")
     except (ValueError, UnicodeDecodeError):
-        return None    # binary — skip
+        return UNREADABLE    # binary — skip
+    found = detect.scan_all(text[:MAX_CONTENT])
+    if not found:
+        return None
     label = f"{item['owner']}/{item['repo']}@{item['branch']}:{item['path']}"
-    return {"path": label, "content": text[:MAX_CONTENT]}
+    return {"path": label, "findings": [{"category": c, "label": lbl, "line": ln, "masked": mk}
+                                        for c, lbl, ln, mk in found]}
 
 
 def scan_batch(url: str, token: str, files: list[dict], record: bool) -> dict:
-    """POST a batch of files to the Palivane backend. Raises on HTTP/network error."""
+    """POST a batch of findings to the Palivane backend. Raises on HTTP/network error."""
     payload = json.dumps({"files": files, "record": record}).encode()
     req = urllib.request.Request(
         url.rstrip("/") + "/api/scan/code", data=payload, method="POST",
@@ -219,7 +270,7 @@ def main() -> int:
         print("palivane: no repos to scan.")
         return 0
 
-    total_scanned, total_flagged, blocking = 0, 0, False
+    total_scanned, total_flagged, total_binary, blocking = 0, 0, 0, False
     remaining = args.max_files
 
     for repo in repos:
@@ -229,11 +280,17 @@ def main() -> int:
             break
         try:
             items = repo_blobs(repo, args, gh_token, api)[:remaining]
+            # Every blob is read and scanned here; only the ones with findings survive
+            # into `files`, and they carry findings rather than text.
             files: list[dict] = []
             for it in items:
-                blob = fetch_blob(it, gh_token, api)
-                if blob is not None:
-                    files.append(blob)
+                hit = scan_blob(it, gh_token, api)
+                if hit is UNREADABLE:
+                    total_binary += 1
+                    continue
+                total_scanned += 1
+                if hit is not None:
+                    files.append(hit)
             remaining -= len(items)
         except urllib.error.HTTPError as e:
             if _is_ratelimited(e):
@@ -246,14 +303,15 @@ def main() -> int:
             continue
 
         if not files:
-            print(f"  {label}: no scannable files.")
+            # Nothing sensitive in this repo, so there is nothing to report — no request
+            # is made at all, rather than one saying "here are N clean files".
+            print(f"  {label}: clean ✓" if items else f"  {label}: no scannable files.")
             continue
 
         repo_flagged: list[dict] = []
         try:
             for i in range(0, len(files), BATCH):
                 result = scan_batch(args.url, token, files[i:i + BATCH], args.record)
-                total_scanned += result.get("scanned", 0)
                 repo_flagged.extend(result.get("files", []))
         except urllib.error.HTTPError as e:
             print(f"palivane: backend returned HTTP {e.code} on {label}.", file=sys.stderr)
@@ -273,8 +331,9 @@ def main() -> int:
         else:
             print(f"  {label}: clean ✓")
 
-    print(f"\npalivane: scanned {total_scanned} file(s) across {len(repos)} repo(s) — "
-          f"{total_flagged} flagged.")
+    binary = f", skipped {total_binary} binary/unreadable" if total_binary else ""
+    print(f"\npalivane: scanned {total_scanned} file(s) across {len(repos)} repo(s) "
+          f"locally{binary} — {total_flagged} flagged. No file contents left this machine.")
     return 1 if blocking else 0
 
 

@@ -157,7 +157,14 @@ class ScannerImport(BaseModel):
 
 class CodeFile(BaseModel):
     path: str = ""
-    content: str = Field(max_length=MAX_CONTENT)
+    # Preferred for the repo sweepers: palivane-github-scan reads a repo over the GitHub
+    # API, detects on its own machine, and sends only what it found. Whole private
+    # codebases then never transit to Palivane just to be told they hold a key.
+    findings: list[ClientFinding] = Field(default_factory=list, max_length=200)
+    # The pre-commit hook still sends text: it is scanning a file on the very machine the
+    # request comes from, so there is nothing to withhold. Optional now that the sweepers
+    # do not use it, and still accepted from older palivane-github-scan builds.
+    content: str = Field(default="", max_length=MAX_CONTENT)
 
 
 class CodeScanRequest(BaseModel):
@@ -175,9 +182,10 @@ class CIScan(BaseModel):
     record: bool = True
 
 
-class S3ObjectFinding(BaseModel):
+class ClientFinding(BaseModel):
     """One detection the CLIENT made, in metadata form. `masked` is a redacted preview
-    (`AKIA••••MPLE`); the value itself is never carried."""
+    (`AKIA••••MPLE`); the value itself is never carried. Shared by every at-rest scanner
+    that detects where the data lives — S3 objects, GitHub blobs — so they cannot drift."""
     category: Literal["secret_leak", "pii_exposure", "phi_exposure"] = "secret_leak"
     label: str = Field(default="", max_length=120)
     line: int = 0
@@ -189,7 +197,7 @@ class S3Object(BaseModel):
     # Preferred: the scanner detects locally and sends only what it found. Object bytes
     # then never leave the account holding them, which is the same contract
     # palivane-secrets has always kept for endpoints.
-    findings: list[S3ObjectFinding] = Field(default_factory=list, max_length=200)
+    findings: list[ClientFinding] = Field(default_factory=list, max_length=200)
     # Legacy: older palivane-s3-scan builds POST object text for server-side detection.
     # Still accepted so they keep working, but nothing ships that way now.
     content: str = Field(default="", max_length=MAX_CONTENT)
