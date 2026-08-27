@@ -17,6 +17,15 @@ finding shortly after it happens:
   injection (the "rules-file backdoor"): CLAUDE.md / .cursorrules / .cursor/rules/*.mdc /
   AGENTS.md / .github/copilot-instructions.md / GEMINI.md / skill SKILL.md files.
 
+Credentials are stripped before anything is posted. This runs on every developer machine
+at session start, and an MCP config's `env` block is exactly where a live token sits — it
+used to be shipped verbatim so the backend could scan it. Detection now happens here
+(palivane_detect, shared with palivane-secrets and the at-rest scanners): each secret is
+replaced by «redacted:label» in the content, and reported separately as a category, a
+label, and a masked preview. The vetting the backend does — which servers are declared,
+what they launch, whether they are allowlisted, what a rules file instructs — never needed
+the value.
+
 Runs are cheap and idempotent: a sha256 cache (~/.palivane/posture-cache.json) skips the
 POST when nothing changed, so repeated runs don't spam findings. palivane-connect installs
 a SessionStart hook that fires `palivane-posture --async --quiet` whenever a Claude Code
@@ -36,6 +45,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.request
 from datetime import datetime, timezone
 
@@ -83,6 +93,73 @@ _RULES_GLOBS = (
     (".claude/skills", "cwd", ".claude/skills", ("SKILL.md",), "claude-code"),
     ("~/.claude/skills", "home", "~/.claude/skills", ("SKILL.md",), "claude-code"),
 )
+
+
+# Detection is shared with palivane-secrets and the at-rest scanners and is installed
+# beside this script. Fall back to fetching it from the deployment this reports to rather
+# than failing with an ImportError the user cannot act on.
+def _load_detect():
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(here, "palivane_detect.py")
+    if not os.path.exists(path):
+        base = (os.environ.get("PALIVANE_URL") or "").rstrip("/")
+        if not base:
+            sys.exit("palivane_detect.py not found next to this script and PALIVANE_URL "
+                     "is unset, so it cannot be fetched. Download it from "
+                     "<your-palivane-url>/cli/palivane_detect.py into the same directory.")
+        try:
+            with urllib.request.urlopen(base + "/cli/palivane_detect.py", timeout=20) as r:
+                body = r.read()
+            path = os.path.join(tempfile.gettempdir(), "palivane_detect.py")
+            with open(path, "wb") as fh:
+                fh.write(body)
+        except Exception as e:                                    # noqa: BLE001
+            sys.exit(f"could not fetch palivane_detect.py from {base}: {e}")
+    spec = importlib.util.spec_from_file_location("palivane_detect", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+detect = _load_detect()
+
+
+def _findings(text: str, server: str = "") -> list[dict]:
+    """What palivane_detect found in `text`, in the metadata form the scan APIs take."""
+    out = [{"category": c, "label": lbl, "line": ln, "masked": mk}
+           for c, lbl, ln, mk in detect.scan_all(text)]
+    if server:
+        for fd in out:
+            fd["server"] = server
+    return out
+
+
+def mcp_findings(content: str) -> list[dict]:
+    """Secrets in an MCP config, attributed to the server they were declared under.
+
+    Mirrors what the backend used to scan per server — the command, its args, and every
+    env VALUE joined together — so moving the detection here changes where it runs and
+    nothing else. A config that will not parse still gets scanned as a whole; those
+    findings carry no server and the backend reports them against the file."""
+    try:
+        j = json.loads(content)
+        servers = j.get("mcpServers") or j.get("servers") or (j.get("mcp") or {}).get("servers")
+    except (ValueError, TypeError, AttributeError):
+        servers = None
+    if not isinstance(servers, dict):
+        return _findings(content)
+    out: list[dict] = []
+    for name, spec in servers.items():
+        if not isinstance(spec, dict):
+            continue
+        env = spec.get("env")
+        args_text = " ".join(
+            [str(spec.get("command", ""))]
+            + [str(a) for a in (spec.get("args") or [])]
+            + [str(v) for v in (env.values() if isinstance(env, dict) else [])])
+        out.extend(_findings(args_text, server=str(name)))
+    return out
 
 
 def _user() -> str:
@@ -511,17 +588,22 @@ def run(cfg: dict, cache_path: str = CACHE_PATH, cwd: str = ".",
         canonical = "\n".join(exts)
         items.append(("ide-extensions", "/api/scan/ide-extensions",
                       {"extensions": exts, "record": True}, canonical))
+    # The three file-backed payloads. Each is scanned here and posted REDACTED — the
+    # canonical text kept for the change cache stays the real file, so rotating a token
+    # still reads as drift and re-reports.
     for label, content in find_mcp_configs(cwd):
         items.append((f"mcp:{label}", "/api/scan/mcp-config",
-                      {"content": content, "path": label, "record": True}, content))
+                      {"content": detect.redact(content), "path": label,
+                       "findings": mcp_findings(content), "record": True}, content))
     user = _user()
     for label, content, tool in collect_agent_configs():
         items.append((f"agent:{label}", "/api/scan/agent-config",
-                      {"content": content, "tool": tool, "user": user, "record": True}, content))
+                      {"content": detect.redact(content), "tool": tool, "user": user,
+                       "findings": _findings(content), "record": True}, content))
     for label, content, path, tool in collect_agent_rules(cwd):
         items.append((f"rules:{label}", "/api/scan/agent-rules",
-                      {"content": content, "path": path, "tool": tool, "user": user,
-                       "record": True}, content))
+                      {"content": detect.redact(content), "path": path, "tool": tool,
+                       "user": user, "findings": _findings(content), "record": True}, content))
     health = json.dumps(collect_device_health(), sort_keys=True)
     items.append(("device-posture", "/api/scan/device-posture",
                   {"content": health, "user": user, "record": True}, health))

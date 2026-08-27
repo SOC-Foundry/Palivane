@@ -100,3 +100,55 @@ def test_bare_base64_run_is_not_an_aws_secret():
 
 def test_aws_secret_placeholder_is_not_reported():
     assert not d.scan_all("aws_secret_access_key=your-secret-key-here")
+
+
+# --- redact() ------------------------------------------------------------------------------
+# For payloads that must be sent somewhere for analysis that does not need the value: the
+# structural shape survives, the credential does not.
+
+_GH = "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
+_MCP = ('{"mcpServers": {"github": {"command": "npx", "args": ["-y", "server-github"],'
+        ' "env": {"GITHUB_TOKEN": "%s"}}}}' % _GH)
+
+
+def test_redact_removes_the_value_and_keeps_the_structure():
+    out = d.redact(_MCP)
+    assert _GH not in out
+    assert "«redacted:GitHub token»" in out
+    # everything the backend actually vets is still there
+    assert '"command": "npx"' in out and "server-github" in out and '"github"' in out
+
+
+def test_redact_output_is_still_parseable_json():
+    import json
+    j = json.loads(d.redact(_MCP))
+    assert j["mcpServers"]["github"]["command"] == "npx"
+
+
+def test_redact_removes_every_occurrence_not_just_the_first():
+    """scan_text reports a repeated value once; leaving the other copies would defeat it."""
+    out = d.redact(f"a={_GH}\nb={_GH}\nc={_GH}\n")
+    assert _GH not in out and out.count("«redacted:") == 3
+
+
+def test_redact_leaves_ordinary_values_alone():
+    text = '{"env": {"TENANT_ID": "acme-prod", "REGION": "us-east-1"}}'
+    assert d.redact(text) == text
+
+
+def test_redact_catches_an_opaque_token_via_the_entropy_backstop():
+    opaque = "7fQ2mNvR8sLpXd3JhTgB6wYzKc1AeUiO"
+    assert opaque not in d.redact('{"env": {"ACME_SERVICE_KEY": "%s"}}' % opaque)
+
+
+def test_redact_finds_what_scan_finds():
+    """The two must agree: a value scan_text reports has to be one redact removes, or the
+    payload would carry a secret the sender has already told the server about."""
+    text = (f"github={_GH}\naws=AKIAIOSFODNN7EXAMPLE\n"
+            "aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n"
+            "db=postgres://u:sup3rsecret@host/db\n")
+    out = d.redact(text)
+    for value in (_GH, "AKIAIOSFODNN7EXAMPLE",
+                  "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "sup3rsecret"):
+        assert value not in out, value
+    assert len(d.scan_text(text)) >= 4
