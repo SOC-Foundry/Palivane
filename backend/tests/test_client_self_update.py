@@ -264,3 +264,19 @@ def test_sensor_with_no_client_name_is_exempt(client, raw_client):
            if s["actor"] == "n@acme.com"][0]
     assert row["client"] == "" and row["client_current"] is True
     assert row["client_retired"] is False
+
+
+def test_store_updated_extension_is_current_at_any_version(client, raw_client):
+    """The browser extension ships from the Chrome Web Store, which pushes updates on its
+    own schedule — the server has no authoritative 'latest' for it (a submission in
+    review would misflag every install). Known name, store-managed currency."""
+    key = client.post("/api/apikeys", json={"label": "e", "actor": "ext@acme.com"}).json()["token"]
+    raw_client.post("/api/ingest/ai-usage",
+                    json={"content": "hi", "tool": "chatgpt.com", "user": "ext@acme.com"},
+                    headers={"X-Palivane-Token": key,
+                             "User-Agent": "palivane-extension/0.0.1"})
+    fleet = client.get("/api/fleet").json()
+    row = [s for s in fleet["sensors"] if s["actor"] == "ext@acme.com"][0]
+    assert row["client"] == "palivane-extension"
+    assert row["client_current"] is True
+    assert row["client_retired"] is False
