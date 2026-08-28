@@ -349,3 +349,41 @@ def test_space_split_secret_key_detected():
     assert any(s.category == Category.SECRET_LEAK for s in sigs)
     # ...but a known prefix followed by ordinary prose is NOT glued into a fake key.
     assert not ShadowAIDetector()._scan_secrets("please ask-ing about the npm_ registry today")
+
+
+def test_expanded_vendor_secret_patterns():
+    """The 2026-08 pattern expansion: AI-provider keys (the audience's own credentials)
+    plus SaaS tokens with unambiguous vendor markers. One representative each."""
+    cases = {
+        "Hugging Face token": "hf_" + "A1" * 16,
+        "xAI API key": "xai-" + "k3" * 21,
+        "OpenRouter API key": "sk-or-v1-" + "a9" * 12,
+        "Groq API key": "gsk_" + "Zx" * 21,
+        "Replicate API token": "r8_" + "Qm" * 16,
+        "Perplexity API key": "pplx-" + "b7" * 21,
+        "Fireworks API key": "fw_" + "cD" * 13,
+        "Azure storage account key": "AccountKey=" + "Ab9Cd7Ef5GhIjKlMnOpQrStUvWxYz0123456789+/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789+/AbCdEfG" + "==",
+        "Azure AD client secret": "aB~8Q~" + "x.Y-z_" * 5 + "ab",
+        "Atlassian API token": "ATATT3" + "xB" * 45,
+        "Telegram bot token": "123456789:AA" + "F4bGh8Jk2Lm9Np5Qr7St3Uv6Wx1Yz0AbC",
+        "Shopify token": "shpat_" + "0f" * 16,
+        "Linear API key": "lin_api_" + "K9" * 20,
+        "Figma personal access token": "figd_" + "T-" * 21,
+        "New Relic API key": "NRAK-" + "A2B4C6D8E0F1G3H5I7J9K1L3M5N",
+        "Tailscale key": "tskey-auth-kAbCdEf123456-XyZ987654321",
+        "Supabase access token": "sbp_" + "3a" * 20,
+        "PlanetScale token": "pscale_tkn_" + "m4" * 16,
+        "Sentry org token": "sntrys_" + "eyJpc3MiOiJz" * 3,
+        "Netlify personal access token": "nfp_" + "R7" * 16,
+        "Airtable personal access token": "pat" + "Ab12Cd34Ef567" + "8" + "." + "9c" * 32,
+        "Postman API key": "PMAK-" + "0a" * 12 + "-" + "1b" * 17,
+        "CircleCI personal token": "CCIPAT_" + "Nn" * 11,
+        "1Password service account token": "ops_eyJ" + "sig" * 8,
+        "age secret key": "AGE-SECRET-KEY-1" + ("Q2W4E6R8T0Y1U3I5O7P9A2S4D6F8G0" + "H1J3K5L7Z9X2C4V6B8N0M1Q3W5E7") ,
+        "PuTTY private key file": "PuTTY-User-Key-File-3: ssh-ed25519",
+    }
+    for label, sample in cases.items():
+        assert label in find_secrets(f"config value: {sample}"), f"{label} not detected"
+    # PGP block: the pre-expansion regex required 'PRIVATE KEY-----' and missed the
+    # '… KEY BLOCK-----' form entirely.
+    assert "Private key block" in find_secrets("-----BEGIN PGP PRIVATE KEY BLOCK-----")
