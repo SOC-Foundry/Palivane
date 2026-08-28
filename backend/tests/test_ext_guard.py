@@ -54,3 +54,25 @@ def test_endpoint_accepts_list(client, raw_client):
     r = raw_client.post("/api/scan/ide-extensions", headers={"X-Palivane-Token": key},
                         json={"extensions": ["ms-python.python", "esbenp.prettier-vscode"]})
     assert r.json()["action"] == "allow"
+
+
+def test_agentic_ai_extension_flagged_as_unsanctioned():
+    """Hook-less agentic AI tools (Cline, Roo, Windsurf, Amazon Q, …) can't be captured —
+    detection IS the coverage: posture scans surface them as unsanctioned-AI."""
+    sigs = _scan("saoudrizwan.claude-dev\nms-python.python")
+    agentic = [s for s in sigs if s.category == Category.UNSANCTIONED_AI]
+    assert len(agentic) == 1 and "Cline" in agentic[0].detail
+    # the innocuous extension stays silent
+    assert not any(s.evidence == "ms-python.python" for s in sigs)
+
+
+def test_sanctioned_agentic_extension_is_silent():
+    """An org that approves an agentic tool via the allowlist gets no noise for it —
+    but everything NOT allowlisted still trips the unapproved branch."""
+    sigs = _scan("rooveterinaryinc.roo-cline",
+                 meta={"allowed": "rooveterinaryinc.roo-cline"})
+    assert not any(s.category == Category.UNSANCTIONED_AI for s in sigs)
+    sigs = _scan("amazonwebservices.amazon-q-vscode",
+                 meta={"allowed": "ms-python.python"})
+    # allowlist configured and Q not on it: the stricter unapproved signal wins
+    assert any("Unapproved" in s.title for s in sigs)
