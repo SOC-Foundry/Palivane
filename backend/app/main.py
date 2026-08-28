@@ -2964,10 +2964,16 @@ def fleet_health(current: User = Depends(require_admin), db: Session = Depends(g
     # in the fleet. Only a sensor that reports no client name at all is exempt.
     from .distribution import client_versions
     latest = client_versions()
+    # Clients on an auto-updating channel this server doesn't distribute: the browser
+    # extension ships from the Chrome Web Store / Edge Add-ons, which pushes updates on
+    # its own schedule (and lags review) — the server has no authoritative "latest", and
+    # comparing against the repo manifest would misflag every install while a submission
+    # sits in review. Known name, store-managed currency.
+    auto_updated = {"palivane-extension"}
     for s in sensors:
         name = s.get("client") or ""
-        if not name:
-            s["client_current"] = True          # nothing declared — cannot judge
+        if not name or name in auto_updated:
+            s["client_current"] = True          # nothing declared / store-updated — cannot judge
             s["client_retired"] = False
         elif name not in latest:
             s["client_current"] = False         # retired/unrecognised build
