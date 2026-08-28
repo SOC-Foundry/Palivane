@@ -781,6 +781,32 @@ def _openai_stub(model: str, verdict: dict) -> dict:
     }
 
 
+
+def _openai_upstream(base: str, key: str, path: str, model: str) -> tuple[str, dict]:
+    """URL + auth headers for an OpenAI-shaped upstream, Azure OpenAI included.
+
+    Azure speaks the same request body but a different URL layout and auth header, so a
+    tenant (or the operator) can just paste their resource URL as the openai base:
+      - `https://<res>.openai.azure.com/openai/v1` (the 2025+ unified endpoint) — OpenAI
+        path layout as-is; auth accepted as api-key, which we send alongside Bearer.
+      - a bare `https://<res>.openai.azure.com` — classic deployments layout: the payload
+        model doubles as the deployment name (the common convention), plus api-version.
+    Everything non-Azure keeps the plain OpenAI-compatible form (Groq, Mistral, DeepSeek,
+    Together, OpenRouter, vLLM, … all ride this shape by base URL alone)."""
+    headers = {"Content-Type": "application/json"}
+    is_azure = ".openai.azure.com" in base or ".cognitiveservices.azure.com" in base
+    if is_azure and "/openai/v1" not in base:
+        url = (base.rstrip("/") + f"/openai/deployments/{model}{path}"
+               f"?api-version={settings.gateway_azure_api_version}")
+    else:
+        url = base.rstrip("/") + path
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+        if is_azure:
+            headers["api-key"] = key
+    return url, headers
+
+
 @router.post("/chat/completions")
 async def chat_completions(request: Request, principal: Principal = Depends(get_gateway_principal),
                            db: Session = Depends(get_db)):
@@ -802,10 +828,7 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
         return _openai_error(agentic)
     base, key = resolve_upstream("openai", principal.tenant_id, db)
     if base:
-        url = base.rstrip("/") + "/chat/completions"
-        headers = {"Content-Type": "application/json"}
-        if key:
-            headers["Authorization"] = f"Bearer {key}"
+        url, headers = _openai_upstream(base, key, "/chat/completions", model)
         if payload.get("stream"):
             if not pol.enforce:
                 return _passthrough_stream(url, payload, headers, model, tool, principal)  # monitor: live output (teed)
@@ -961,10 +984,7 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
         return _openai_error(agentic)
     base, key = resolve_upstream("openai", principal.tenant_id, db)
     if base:
-        url = base.rstrip("/") + "/responses"
-        headers = {"Content-Type": "application/json"}
-        if key:
-            headers["Authorization"] = f"Bearer {key}"
+        url, headers = _openai_upstream(base, key, "/responses", model)
         if payload.get("stream"):
             if not pol.enforce:
                 return _passthrough_stream(url, payload, headers, model, tool, principal)  # monitor: live output (teed)

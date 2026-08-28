@@ -22,6 +22,27 @@ _BUILTIN_DENYLIST = {
     "ahban.cychelloworld", "ahban.shshshsh",
 }
 
+# Agentic AI coding extensions — not malicious, but each is an autonomous AI surface that
+# reads/writes the workspace and ships code to a model provider, and none of them expose
+# a hook API Palivane could capture through (unlike Claude Code / Cursor / Codex /
+# Copilot / Gemini CLI). Detection is the coverage: every posture scan surfaces them as
+# unsanctioned-AI so the org KNOWS, and the policy pack's vscode-extensions.json can
+# allow or block them. An org that sanctions one lists it in ide_ext_allowed, which
+# downgrades this to silence.
+_AGENTIC_AI_EXTENSIONS = {
+    "saoudrizwan.claude-dev":            "Cline",
+    "rooveterinaryinc.roo-cline":        "Roo Code",
+    "kilocode.kilo-code":                "Kilo Code",
+    "continue.continue":                 "Continue",
+    "codeium.codeium":                   "Codeium/Windsurf plugin",
+    "codeium.windsurfpyright":           "Windsurf companion",
+    "amazonwebservices.amazon-q-vscode": "Amazon Q Developer",
+    "sourcegraph.cody-ai":               "Sourcegraph Cody",
+    "tabnine.tabnine-vscode":            "Tabnine",
+    "supermaven.supermaven":             "Supermaven",
+    "google.geminicodeassist":           "Gemini Code Assist",
+}
+
 
 def _parse_ext_ids(content: str) -> list[str]:
     """Extract extension ids from a `.vscode/extensions.json`, a JSON list, or a plain
@@ -70,4 +91,14 @@ class ExtGuardDetector:
                     category=Category.DEPENDENCY_RISK, title="Unapproved IDE extension",
                     detail=f"Extension '{eid}' is not on the approved-extension allowlist.",
                     weight=0.6, confidence=0.85, detector=self.name, evidence=eid))
+            elif low in _AGENTIC_AI_EXTENSIONS and low not in allow:
+                # Only reached with no allowlist configured (the allowlist branch above
+                # already covers the strict posture): an ungoverned agentic AI tool the
+                # org should at least know about.
+                signals.append(Signal(
+                    category=Category.UNSANCTIONED_AI, title="Agentic AI IDE extension",
+                    detail=(f"{_AGENTIC_AI_EXTENSIONS[low]} ('{eid}') is an autonomous AI "
+                            "coding surface with no capture hooks — sanction it via the "
+                            "extension allowlist, or block it via the MDM policy pack."),
+                    weight=0.5, confidence=0.9, detector=self.name, evidence=eid))
         return signals
