@@ -15,15 +15,15 @@ const STATS = [
 ];
 
 const CAPTURE = [
-  { icon: <IconPlug />, title: "In the browser", body: "What people paste into ChatGPT, Claude, Gemini, and Copilot on the web." },
+  { icon: <IconPlug />, title: "In the browser", body: "What people paste into ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, Qwen, Kimi — 24 AI sites, including the app builders (v0, Bolt, Lovable, Replit)." },
   { icon: <IconInbox />, title: "In desktop apps", body: "The AI apps that never touch a browser: Claude and ChatGPT desktop." },
-  { icon: <IconShield />, title: "In coding tools", body: "Claude Code, Cursor, Codex, and Gemini CLI report every prompt and tool call." },
+  { icon: <IconShield />, title: "In coding tools", body: "Claude Code, Cursor, Codex, Copilot, and Gemini CLI report every prompt and tool call — and posture scans surface the agents that can't be hooked (Cline, Roo, Windsurf, Amazon Q)." },
   { icon: <IconClipboard />, title: "In code and laptops", body: "Commits and dependencies before they land, and credentials already at rest." },
   { icon: <IconAlert />, title: "In GitHub Actions", body: "Coding agents running on CI runners with your production credentials." },
 ];
 
 const LOOKS_FOR = [
-  { title: "Passwords, keys, and tokens", body: "Cloud keys, API tokens, private keys, and database passwords, in prompts and in what an assistant sends back." },
+  { title: "Passwords, keys, and tokens", body: "Nearly sixty credential formats — cloud keys, API tokens, private keys, database passwords, and every major AI provider's own keys — in prompts and in what an assistant sends back." },
   { title: "Personal and customer data", body: "Social security numbers, payment cards, and customer records, tuned so ordinary engineering work does not trip it." },
   { title: "Code and confidential documents", body: "Proprietary source, financials, contracts, and material carrying a classification label." },
   { title: "Risky AI behaviour", body: "Attempts to hijack an assistant's instructions, talk it past its rules, or smuggle payloads through hidden characters." },
@@ -37,7 +37,7 @@ const FAQ = [
   { q: "Where does our prompt text actually go?",
     a: "To your Palivane backend, and nowhere beyond it. Self-host and it never leaves your own infrastructure. On the managed service it reaches Palivane, which by default records the verdict and its metadata and discards the text. Scoring is deterministic either way (rules and heuristics, with no AI service in the loop) unless you switch on the optional LLM judge, which does send the content it reviews to the model provider you choose." },
   { q: "Will it break the AI tools people already pay for?",
-    a: "No. Personal Claude and ChatGPT sign-ins keep working, because the hooks score a prompt alongside the request rather than putting a gateway in its path, so the tool still talks to the provider itself with its own credentials. Gateway routing is available, and optional." },
+    a: "No. Personal Claude and ChatGPT sign-ins keep working, because the hooks score a prompt alongside the request rather than putting a gateway in its path, so the tool still talks to the provider itself with its own credentials. Gateway routing is available, and optional — OpenAI, Anthropic, Gemini, Azure OpenAI, or any OpenAI-compatible provider." },
   { q: "What happens the moment we turn it on?",
     a: "Nothing is blocked. Palivane starts in monitor mode, so the first thing you get is an inventory of which AI tools are in use and what has been going to them. Enforcement is a switch you flip later." },
   { q: "What if the backend is unreachable?",
