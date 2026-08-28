@@ -35,6 +35,12 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
+      - name: Stats band matches the engine
+        working-directory: frontend
+        # src/stats.gen.json is committed (the Docker web stage has no backend/ in its
+        # context); this check is what stops the landing-page numbers drifting from the
+        # detector source. Regenerate with `node scripts/gen-stats.mjs` when it fails.
+        run: node scripts/gen-stats.mjs --check
       - name: Build
         working-directory: frontend
         run: npm ci && npm run build

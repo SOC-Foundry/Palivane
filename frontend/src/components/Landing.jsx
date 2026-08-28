@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { IconShield, IconPlug, IconTarget, IconAlert, IconInbox, IconClipboard } from "./icons.jsx";
 import { SiteNav, SiteFooter, Shot, Clip, Lightbox } from "./SiteChrome.jsx";
+// Derived from the detector source at build time (frontend/scripts/gen-stats.mjs, CI
+// fails when stale) — the band can never claim different numbers than the engine ships.
+import stats from "../stats.gen.json";
 
 // The page alternates deliberately: a full-bleed band, then a two-column split, then the
 // mirror of that split, then a card row. The previous version stacked five identical
@@ -10,7 +13,8 @@ import { SiteNav, SiteFooter, Shot, Clip, Lightbox } from "./SiteChrome.jsx";
 const STATS = [
   { n: "6", l: "surfaces covered", s: "browser, desktop, CLI, CI, cloud storage, MCP" },
   { n: "0", l: "prompt text kept by default", s: "the verdict and its metadata, not what was typed" },
-  { n: "40+", l: "detection checks", s: "56 credential formats, PII, source code, prompt attacks, agent actions" },
+  { n: `${stats.detection_checks}`, l: "detection checks",
+    s: `${stats.secret_formats} credential formats, PII, source code, prompt attacks, agent actions` },
   { n: "1", l: "afternoon to set up", s: "one command, nothing to install by hand" },
 ];
 
