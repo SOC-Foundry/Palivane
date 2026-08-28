@@ -192,6 +192,10 @@ class Settings:
     # (palivane-cf-email-token), same as the other provider keys.
     cf_email_account_id: str = _env("CF_EMAIL_ACCOUNT_ID", "").strip()
     cf_email_token: str = _env("CF_EMAIL_TOKEN", "").strip()
+    # Azure OpenAI (rides the "openai" upstream slot — paste the resource URL as the
+    # base; see gateway._openai_upstream): the api-version used for the classic
+    # deployments URL layout. The 2025+ /openai/v1 unified endpoint ignores it.
+    gateway_azure_api_version: str = _env("GATEWAY_AZURE_API_VERSION", "2024-10-21")
     # Public read-only demo (see app/demo.py): slug of the tenant the demo button signs
     # into (seed it with `python -m app.seed`). Empty = no demo. Demo sessions carry a
     # `demo` claim that get_current_user enforces as read-only.

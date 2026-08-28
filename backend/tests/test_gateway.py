@@ -730,3 +730,25 @@ def test_benign_prompt_persisted_when_opted_in(client, monkeypatch):
     assert r.status_code == 200
     findings = client.get("/api/findings").json()["findings"]
     assert any(f["surface"] == "llm_io" for f in findings)
+
+
+def test_openai_upstream_shapes_azure_and_compatible():
+    """Azure OpenAI rides the openai slot by base URL: classic resource URL gets the
+    deployments layout + api-version + api-key header; the 2025 /openai/v1 unified
+    endpoint keeps OpenAI paths; everything non-Azure is plain OpenAI-compatible."""
+    from app import gateway
+    url, h = gateway._openai_upstream(
+        "https://acme.openai.azure.com", "azkey", "/chat/completions", "gpt-4o")
+    assert url == ("https://acme.openai.azure.com/openai/deployments/gpt-4o"
+                   "/chat/completions?api-version=2024-10-21")
+    assert h["api-key"] == "azkey" and h["Authorization"] == "Bearer azkey"
+
+    url, h = gateway._openai_upstream(
+        "https://acme.openai.azure.com/openai/v1", "azkey", "/responses", "gpt-4o")
+    assert url == "https://acme.openai.azure.com/openai/v1/responses"
+    assert h["api-key"] == "azkey"
+
+    url, h = gateway._openai_upstream(
+        "https://api.groq.com/openai/v1", "gk", "/chat/completions", "llama-3.3-70b")
+    assert url == "https://api.groq.com/openai/v1/chat/completions"
+    assert "api-key" not in h and h["Authorization"] == "Bearer gk"
