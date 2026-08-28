@@ -292,6 +292,9 @@ class ApiKey(Base):
     # view surfaces these as "device still presenting a dead key" (otherwise a rotated
     # device fails open silently and looks identical to a healthy quiet one).
     last_failed_at = Column(DateTime, nullable=True)
+    # Fleet alerting: when the "device still presenting a dead key" alert went out for
+    # this key (once per key, not per sweep). See alerts.run_fleet_alerts.
+    dead_alerted_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=True)
 
     def to_dict(self) -> dict:
@@ -835,6 +838,10 @@ class SensorHeartbeat(Base):
     # server-side detection updates instantly, but installed scripts don't.
     client = Column(String(48), default="")           # palivane-hook | palivane-proxy | …
     client_version = Column(String(24), default="")
+    # Fleet alerting (alerts.run_fleet_alerts): when this sensor's gone-dark alert went
+    # out. NULL = not alerted; cleared when a heartbeat resumes so a NEW dark episode
+    # pages again (edge-triggered, not every sweep).
+    dark_alerted_at = Column(DateTime, nullable=True)
 
     def to_dict(self) -> dict:
         return {"actor": self.actor, "plane": self.plane, "tool": self.tool,

@@ -125,6 +125,9 @@ async def lifespan(_app: FastAPI):
                 db = SessionLocal()
                 try:
                     await asyncio.to_thread(alerts.run_digests, db)
+                    # Fleet health: page when a sensor goes dark or a revoked key keeps
+                    # being presented (edge-triggered inside; safe on every tick).
+                    await asyncio.to_thread(alerts.run_fleet_alerts, db)
                     # Trial lifecycle notices (7-day / 2-day / expiry emails). Cheap: one
                     # query over plan="trial" tenants; per-stage dedupe in run_notices.
                     from .trial import run_notices
@@ -1340,6 +1343,7 @@ def _record_heartbeat(db: Session, tenant_id: int | None, actor: str,
             db.add(row)
         row.last_seen = now
         row.count = (row.count or 0) + 1
+        row.dark_alerted_at = None   # back online — arm the gone-dark alert again
         client, version = _parse_client_ua(client_ua)
         if client:          # keep the last known build when a request carries no UA
             row.client, row.client_version = client, version

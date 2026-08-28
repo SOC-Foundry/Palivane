@@ -171,3 +171,65 @@ def run_digests(db, now=None) -> int:
         if send_sync(t.alert_webhook.strip(), _digest_payload(t, findings, since, now)):
             sent += 1
     return sent
+
+
+_DARK_AFTER_HOURS = 72   # matches the fleet view's "dark" bucket
+
+
+def run_fleet_alerts(db, now=None) -> int:
+    """Page a tenant's webhook when a sensor goes dark (>72h silent — MDM removed the
+    hook, device wiped, key rotated but never re-enrolled) or a device keeps presenting
+    a revoked/expired key. Edge-triggered via per-row alerted-at markers (the heartbeat
+    upsert re-arms a sensor when it resumes), claimed with conditional updates so
+    multiple workers can't double-send, and batched per tenant per sweep so a returned-
+    from-vacation Monday is one message, not thirty. Returns #webhooks sent."""
+    from datetime import datetime, timedelta
+
+    from .models import ApiKey, SensorHeartbeat, Tenant
+    now = now or datetime.utcnow()
+    cutoff = now - timedelta(hours=_DARK_AFTER_HOURS)
+    sent = 0
+    for t in db.query(Tenant).filter(Tenant.alert_webhook != "").all():
+        dark = (db.query(SensorHeartbeat)
+                .filter(SensorHeartbeat.tenant_id == t.id,
+                        SensorHeartbeat.last_seen < cutoff,
+                        SensorHeartbeat.dark_alerted_at.is_(None))
+                .order_by(SensorHeartbeat.last_seen).limit(50).all())
+        dead = (db.query(ApiKey)
+                .filter(ApiKey.tenant_id == t.id, ApiKey.active.is_(False),
+                        ApiKey.last_failed_at.isnot(None),
+                        ApiKey.dead_alerted_at.is_(None))
+                .order_by(ApiKey.last_failed_at.desc()).limit(50).all())
+        if not dark and not dead:
+            continue
+        # Claim each row before sending (conditional update, like digest windows) so a
+        # second worker's sweep matches zero rows and stays quiet.
+        claimed_dark = [r for r in dark if db.query(SensorHeartbeat)
+                        .filter(SensorHeartbeat.id == r.id,
+                                SensorHeartbeat.dark_alerted_at.is_(None))
+                        .update({SensorHeartbeat.dark_alerted_at: now},
+                                synchronize_session=False)]
+        claimed_dead = [k for k in dead if db.query(ApiKey)
+                        .filter(ApiKey.id == k.id, ApiKey.dead_alerted_at.is_(None))
+                        .update({ApiKey.dead_alerted_at: now}, synchronize_session=False)]
+        db.commit()
+        if not claimed_dark and not claimed_dead:
+            continue
+        lines = [f"• gone dark: *{r.actor or 'unknown'}* ({r.plane}"
+                 f"{'/' + r.tool if r.tool else ''}) — last seen "
+                 f"{r.last_seen:%Y-%m-%d %H:%M} UTC" for r in claimed_dark]
+        lines += [f"• revoked key still in use: *{k.label or k.prefix}*"
+                  f"{' (' + k.actor + ')' if k.actor else ''} — last attempt "
+                  f"{k.last_failed_at:%Y-%m-%d %H:%M} UTC" for k in claimed_dead]
+        text = (f":shield: *Palivane fleet alert* — {len(claimed_dark)} sensor(s) dark"
+                + (f", {len(claimed_dead)} dead key(s) in use" if claimed_dead else "")
+                + " (a fail-open control that stops reporting is indistinguishable from "
+                  "a healthy quiet one — check the Fleet view)\n" + "\n".join(lines))
+        if send_sync(t.alert_webhook.strip(), {"text": text, **_envelope({
+                "event": "fleet_health",
+                "dark": [{"actor": r.actor, "plane": r.plane, "tool": r.tool}
+                         for r in claimed_dark],
+                "dead_keys": [{"label": k.label, "actor": k.actor} for k in claimed_dead],
+                "org": t.slug})}):
+            sent += 1
+    return sent
