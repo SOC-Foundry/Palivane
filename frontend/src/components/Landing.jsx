@@ -10,7 +10,7 @@ import { SiteNav, SiteFooter, Shot, Clip, Lightbox } from "./SiteChrome.jsx";
 const STATS = [
   { n: "6", l: "surfaces covered", s: "browser, desktop, CLI, CI, cloud storage, MCP" },
   { n: "0", l: "prompt text kept by default", s: "the verdict and its metadata, not what was typed" },
-  { n: "28", l: "detection checks", s: "secrets, PII, source code, prompt attacks" },
+  { n: "40+", l: "detection checks", s: "56 credential formats, PII, source code, prompt attacks, agent actions" },
   { n: "1", l: "afternoon to set up", s: "one command, nothing to install by hand" },
 ];
 
