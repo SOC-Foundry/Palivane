@@ -75,7 +75,41 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("Connection string credential", re.compile(
         r"\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqps?|mssql|"
         r"clickhouse|cockroachdb|ftp)://[^\s:/@]+:([^\s:/@]{3,})@[^\s/]+", re.IGNORECASE)),
-    ("Private key block", re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")),
+    # AI-provider keys — the credentials this product's audience actually pastes into
+    # prompts. All carry distinctive vendor prefixes, so false positives are near zero.
+    ("Hugging Face token", re.compile(r"\bhf_[A-Za-z0-9]{30,}")),
+    ("xAI API key", re.compile(r"\bxai-[A-Za-z0-9]{40,}")),
+    ("OpenRouter API key", re.compile(r"\bsk-or-[A-Za-z0-9_\-]{20,}")),
+    ("Groq API key", re.compile(r"\bgsk_[A-Za-z0-9]{40,}")),
+    ("Replicate API token", re.compile(r"\br8_[A-Za-z0-9]{30,}")),
+    ("Perplexity API key", re.compile(r"\bpplx-[A-Za-z0-9]{40,}")),
+    ("Fireworks API key", re.compile(r"\bfw_[A-Za-z0-9]{24,}")),
+    # Cloud / SaaS tokens with unambiguous markers.
+    ("Azure storage account key", re.compile(
+        r"(?i)AccountKey=[A-Za-z0-9+/]{86}==")),
+    ("Azure AD client secret", re.compile(
+        # The `8Q~` run is Azure's own value marker (same anchor gitleaks uses).
+        r"(?i)\b[a-z0-9_.~\-]{3}8Q~[a-z0-9_.~\-]{31,34}\b")),
+    ("Atlassian API token", re.compile(r"\bATATT3[A-Za-z0-9_\-=]{80,}")),
+    ("Discord bot token", re.compile(
+        r"\b[MN][A-Za-z\d_\-]{23,25}\.[A-Za-z\d_\-]{6}\.[A-Za-z\d_\-]{27,}\b")),
+    ("Telegram bot token", re.compile(r"\b\d{8,10}:AA[A-Za-z0-9_\-]{33}\b")),
+    ("Shopify token", re.compile(r"\bshp(?:at|ca|pa|ss)_[0-9a-fA-F]{32}\b")),
+    ("Linear API key", re.compile(r"\blin_api_[A-Za-z0-9]{40,}")),
+    ("Figma personal access token", re.compile(r"\bfigd_[A-Za-z0-9_\-]{40,}")),
+    ("New Relic API key", re.compile(r"\bNRAK-[A-Z0-9]{27}\b")),
+    ("Tailscale key", re.compile(r"\btskey-[a-z]+-[A-Za-z0-9]{10,}-[A-Za-z0-9]{10,}")),
+    ("Supabase access token", re.compile(r"\bsbp_[0-9a-f]{40}\b")),
+    ("PlanetScale token", re.compile(r"\bpscale_(?:tkn|oauth|pw)_[A-Za-z0-9_\-.]{32,}")),
+    ("Sentry org token", re.compile(r"\bsntrys_[A-Za-z0-9+/=_\-]{20,}")),
+    ("Netlify personal access token", re.compile(r"\bnfp_[A-Za-z0-9]{30,}")),
+    ("Airtable personal access token", re.compile(r"\bpat[A-Za-z0-9]{14}\.[0-9a-f]{64}\b")),
+    ("Postman API key", re.compile(r"\bPMAK-[0-9a-f]{24}-[0-9a-f]{34}\b")),
+    ("CircleCI personal token", re.compile(r"\bCCIPAT_[A-Za-z0-9_\-]{20,}")),
+    ("1Password service account token", re.compile(r"\bops_eyJ[A-Za-z0-9_\-]{20,}")),
+    ("age secret key", re.compile(r"\bAGE-SECRET-KEY-1[A-Z0-9]{58}\b")),
+    ("Private key block", re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----")),
+    ("PuTTY private key file", re.compile(r"\bPuTTY-User-Key-File-\d")),
     ("JWT", re.compile(r"\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{6,}")),
     # Assignment-form credential: a `password`/`secret`/`token`/`api_key`-like LHS assigned a
     # non-trivial literal. `\b\w*` before the keyword lets an identifier PREFIX count too
