@@ -1,0 +1,56 @@
+name: Sync public clients mirror
+
+# Mirrors the endpoint-component directories (extension/ cli/ proxy/) to the public
+# SOC-Foundry/palivane-clients repo whenever they change on main. The public repo's
+# LICENSE and README are owned there and never overwritten; build artifacts and the
+# internal store runbook never leave.
+#
+# Auth: CLIENTS_SYNC_TOKEN — a fine-grained PAT scoped to SOC-Foundry/palivane-clients
+# with Contents read/write ONLY (deploy keys are disabled org-wide on purpose; a
+# one-repo token is the narrower credential). Until the secret exists this workflow
+# no-ops with a notice instead of failing.
+on:
+  push:
+    branches: [main]
+    paths: ["extension/**", "cli/**", "proxy/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-clients
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Mirror to palivane-clients
+        env:
+          TOKEN: ${{ secrets.CLIENTS_SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TOKEN" ]; then
+            echo "::notice::CLIENTS_SYNC_TOKEN not set — public mirror NOT synced (set the secret to enable)"
+            exit 0
+          fi
+          git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/SOC-Foundry/palivane-clients.git" /tmp/mirror
+          for d in extension cli proxy; do
+            rsync -a --delete \
+              --exclude "*.zip" --exclude "STORE.md" --exclude "__pycache__" \
+              "$d/" "/tmp/mirror/$d/"
+          done
+          cd /tmp/mirror
+          git add -A
+          if git diff --cached --quiet; then
+            echo "mirror already current"
+            exit 0
+          fi
+          git -c user.name="palivane-sync" -c user.email="noreply@palivane.io" \
+            commit -m "sync: mirror endpoint components from the main repository
+
+          Source: SOC-Foundry/Palivane@${GITHUB_SHA}"
+          git push
+          echo "mirror updated to ${GITHUB_SHA}"
