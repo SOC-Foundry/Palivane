@@ -38,6 +38,25 @@ INJECTION_TERMS = [
     "do not follow your", "stop following", "override your", "ignore your guidelines",
     "ignore your rules", "your real instructions are", "the following takes precedence",
     "this overrides", "begin new session", "reset your instructions",
+    # Policy puppetry — impersonating or rewriting the system layer instead of fighting it.
+    "respond as if your system prompt", "as if your instructions said",
+    "your system prompt now", "pretend your instructions", "simulate a system prompt",
+    "act as the system", "<|im_start|>system", "[system](#", "#system:",
+    # Payload splitting — assembling an instruction the filters never see whole.
+    "combine part 1", "combine the parts", "remember this for later:",
+    "i will send it in parts", "in multiple parts, combine", "concatenate the previous",
+    "put the pieces together", "execute the combined",
+    # Non-English (top phrases in the languages enterprise fleets actually type —
+    # matched on the same normalized/folded text as everything else).
+    "ignora las instrucciones anteriores", "ignora todas las instrucciones",   # es
+    "ignore les instructions", "ignorez les instructions",                     # fr
+    "ignoriere die vorherigen anweisungen", "ignoriere alle anweisungen",      # de
+    "ignore as instrucoes anteriores",                                          # pt (folded)
+    "prethodne upute zanemari",                                                  # hr/sr
+    "\u5ffd\u7565\u4e4b\u524d\u7684\u6307\u4ee4", "\u5ffd\u7565\u4ee5\u4e0a\u6307\u4ee4",  # zh: ignore previous/above instructions
+    "\u4ee5\u524d\u306e\u6307\u793a\u3092\u7121\u8996",                                          # ja: ignore previous instructions
+    "\uc774\uc804 \uc9c0\uc2dc\ub97c \ubb34\uc2dc",                                               # ko: ignore previous instructions
+    "\u0438\u0433\u043d\u043e\u0440\u0438\u0440\u0443\u0439 \u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0438\u0435",  # ru: ignore previous
 ]
 
 # --- Jailbreak: defeating safety / guardrails -----------------------------------------
@@ -50,6 +69,19 @@ JAILBREAK_TERMS = [
     "ignore content policy", "ignore the content policy", "stay in character",
     "roleplay as", "act as an ai that", "hypothetical response", "opposite mode",
     "evil mode", "god mode", "do not refuse", "you must answer", "you cannot say no",
+    # Persona/roleplay framing — the restriction-free alter ego, named or generic.
+    "has no restrictions", "who has no rules", "with no moral", "an ai without",
+    "is not bound by", "does not have to follow", "free from all restrictions",
+    "answers any question", "never refuses", "grandma exploit", "as my deceased",
+    # Many-shot priming — bulk fake dialogue teaching the model the "expected" answer.
+    "here are some example conversations", "continue the pattern above",
+    "following the examples above, answer",
+    # Non-English jailbreak framing.
+    "modo desarrollador", "sin restricciones",                                  # es
+    "mode developpeur", "sans restrictions",                                    # fr (folded)
+    "entwicklermodus", "ohne einschrankungen",                                  # de (folded)
+    "\u5f00\u53d1\u8005\u6a21\u5f0f",                                      # zh: developer mode
+    "\u958b\u767a\u8005\u30e2\u30fc\u30c9",                                # ja: developer mode
 ]
 
 # --- Data exfiltration: extracting the system prompt, secrets, or data -----------------
@@ -62,7 +94,25 @@ EXFIL_TERMS = [
     "verbatim instructions", "show me the text above", "reproduce the prompt",
     "list your rules", "reveal your configuration", "print your system message",
     "exfiltrate", "send the data to", "post the contents to", "leak the",
+    # Prompt-leak variants that dodge the verb+target regex below.
+    "everything above verbatim", "word for word everything", "text above word for word",
+    "translate your instructions", "summarize your instructions",
+    "encode your instructions", "your prompt in base64", "first message you received",
+    # Non-English system-prompt extraction.
+    "revela tu prompt de sistema", "muestra tus instrucciones",                 # es
+    "montre tes instructions", "revele ton prompt",                             # fr (folded)
+    "zeige deine anweisungen", "gib deinen system-prompt",                      # de
+    "\u663e\u793a\u4f60\u7684\u7cfb\u7edf\u63d0\u793a", "\u91cd\u590d\u4e0a\u9762\u7684\u5185\u5bb9",  # zh: show system prompt / repeat the above
 ]
+
+# Terms are matched against the normalized haystack (homoglyph/fullwidth/spacing
+# folding), so they must live in that same space: normalize_for_match rewrites genuine
+# non-Latin phrases too (Cyrillic letters fold to Latin lookalikes), which would silently
+# break e.g. the Russian terms if they stayed in dictionary spelling. Fold every term
+# once at import — identity for plain ASCII — instead of hand-maintaining folded forms.
+INJECTION_TERMS = [normalize_for_match(t).lower() for t in INJECTION_TERMS]
+JAILBREAK_TERMS = [normalize_for_match(t).lower() for t in JAILBREAK_TERMS]
+EXFIL_TERMS = [normalize_for_match(t).lower() for t in EXFIL_TERMS]
 
 # Generalized exfil: an extract-verb near a sensitive target, tolerant of words in
 # between (e.g. "reveal your *full* system prompt", "print every API key").

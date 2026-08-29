@@ -90,3 +90,19 @@ def test_wrong_kind_and_garbage_are_ignored():
     item2 = AnalysisInput(content=json.dumps(_healthy()), surface=Surface.DEVICE,
                           metadata={"kind": "something_else"})
     assert det.analyze(item2) == []
+
+
+def test_local_llm_runtime_surfaces_unsanctioned_ai():
+    """Ollama/LM Studio are AI usage with zero network tell — presence is the finding."""
+    from app.detectors.base import Category
+    r = {"proxy": {"port": 8081, "listening": True, "listener": "mitmdump",
+                   "env_proxy": "", "env_points_local": False},
+         "breaker": {}, "gaps": {},
+         "local_llms": [{"name": "ollama", "listening": True},
+                        {"name": "lm studio", "listening": False}]}
+    sigs = [s for s in det.analyze(_item(r)) if s.category == Category.UNSANCTIONED_AI]
+    assert len(sigs) == 2
+    serving = next(s for s in sigs if s.evidence == "ollama")
+    idle = next(s for s in sigs if s.evidence == "lm studio")
+    assert "currently serving" in serving.detail and serving.weight > idle.weight
+    assert all(s.check == "local_llm" for s in sigs)

@@ -55,6 +55,9 @@ ENV_VARS+="|SEED_ON_START=${SEED_ON_START:-false}"
 [ -n "${SMTP_HOST:-}" ] && ENV_VARS+="|SMTP_HOST=${SMTP_HOST}|SMTP_PORT=${SMTP_PORT:-587}|SMTP_USER=${SMTP_USER:-}"
 [ -n "${CF_EMAIL_ACCOUNT_ID:-}" ] && ENV_VARS+="|CF_EMAIL_ACCOUNT_ID=${CF_EMAIL_ACCOUNT_ID}"
 [ -n "${MAIL_FROM:-}" ] && ENV_VARS+="|MAIL_FROM=${MAIL_FROM}"
+# MCP reputation feed (opt-in): point at the shipped starter dataset
+# (/app/data/mcp-reputation-starter.json) or a licensed one.
+[ -n "${PALIVANE_MCP_REPUTATION_FEED:-}" ] && ENV_VARS+="|MCP_REPUTATION_FEED=${PALIVANE_MCP_REPUTATION_FEED}"
 # Public read-only demo — slug of the seeded demo tenant (run `python -m app.seed`
 # against prod once, with a random SEED_ADMIN_PASSWORD). Empty = no demo button.
 [ -n "${PALIVANE_DEMO_ORG:-}" ] && ENV_VARS+="|PALIVANE_DEMO_ORG=${PALIVANE_DEMO_ORG}"
