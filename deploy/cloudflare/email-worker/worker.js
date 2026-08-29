@@ -1,5 +1,8 @@
-// Email Routing fan-out for sales@palivane.io: Cloudflare forward rules allow exactly
-// one destination, so this worker forwards each inbound message to every founder.
+// Email Routing fan-out for the palivane.io public addresses (sales@, support@,
+// security@, privacy@, hello@ — one routing rule each): Cloudflare forward rules allow
+// exactly one destination, so this worker forwards each inbound message to every
+// founder. The original To: header survives forwarding, so recipients can filter
+// support vs security in their own mailboxes.
 // Destinations MUST be verified in Email Routing (Dashboard -> Email -> Destination
 // addresses) or forward() rejects. One failed destination must not eat the lead, so
 // failures are logged and the rest still go out; if NONE succeeded, throw so the
