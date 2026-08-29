@@ -77,8 +77,9 @@ export default function Pricing() {
         <div className="lp-tagline">PRICING</div>
         <h1>Try it for two weeks. Then pick a plan.</h1>
         <p>Every feature is unlocked during the trial, so you evaluate the real thing on your
-           own traffic. Prefer to run it yourself? The core is source-available and free to
-           self-host, for as long as you like.</p>
+           own traffic. Prefer to run it yourself? A free self-hosted
+           edition is available — the endpoint components are open for audit, and the
+           full self-host package comes via sales while the public release is prepared.</p>
       </section>
 
       <section className="lp-section">
@@ -87,9 +88,11 @@ export default function Pricing() {
             {TIERS.map((t) => <Tier key={t.name} t={t} />)}
           </div>
           <p className="lp-sub" style={{ textAlign: "center", marginTop: 28 }}>
-            Running it yourself is the free option: Palivane's core is source-available, and an
-            unlicensed instance keeps working indefinitely, full detection, with no LLM API key
-            or external AI service required. Team and Enterprise licenses add
+            Running it yourself is the free option: an unlicensed self-hosted instance keeps
+            working indefinitely, full detection, with no LLM API key or external AI service
+            required. Everything that runs on your machines (browser extension, CLI hooks,
+            egress proxy) is open for audit; the full self-host package is available through
+            us while the public source release is prepared. Team and Enterprise licenses add
             the fleet and compliance features to a self-hosted deployment too.
             Questions: <a href="mailto:sales@palivane.io">sales@palivane.io</a>.
           </p>
