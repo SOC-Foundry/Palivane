@@ -382,6 +382,26 @@ def _breaker_state() -> dict:
             "deauth_active": now < (data.get("deauth_until") or 0)}
 
 
+def _local_llms() -> list[dict]:
+    """Local model runtimes — shadow AI with zero network tell (nothing for the proxy,
+    extension, or gateway to see). Raw presence only; the server decides the finding."""
+    out = []
+    if shutil.which("ollama") or os.path.isdir(os.path.expanduser("~/.ollama")):
+        out.append({"name": "ollama", "listening": _port_listening(11434)})
+    for d in ("~/.lmstudio", "~/.cache/lm-studio",
+              "~/Library/Application Support/LM Studio"):
+        if os.path.isdir(os.path.expanduser(d)):
+            out.append({"name": "lm studio", "listening": _port_listening(1234)})
+            break
+    if shutil.which("llamafile"):
+        out.append({"name": "llamafile", "listening": _port_listening(8080)})
+    for d in ("~/.gpt4all", "~/Library/Application Support/nomic.ai"):
+        if os.path.isdir(os.path.expanduser(d)):
+            out.append({"name": "gpt4all", "listening": _port_listening(4891)})
+            break
+    return out
+
+
 def collect_device_health() -> dict:
     port = _proxy_port()
     listening = _port_listening(port)
@@ -401,6 +421,7 @@ def collect_device_health() -> dict:
         "breaker": _breaker_state(),
         "gaps": {"wsl": wsl, "docker_present": shutil.which("docker") is not None,
                  "in_container": os.path.exists("/.dockerenv")},
+        "local_llms": _local_llms(),
     }
 
 
