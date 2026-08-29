@@ -197,7 +197,7 @@ export default function HowItWorks() {
         <div className="lp-wrap">
           <h2 className="lp-h2">...into one console</h2>
           <p className="lp-sub">Every verdict, across every plane, scored and triageable in one place.</p>
-          <Shot lead src="/shots/dashboard.png?v=3" alt="Palivane findings dashboard" />
+          <Shot lead src="/shots/dashboard.png?v=5" alt="Palivane findings dashboard" />
         </div>
       </section>
 
