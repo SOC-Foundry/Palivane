@@ -56,9 +56,9 @@ def _http_json(url: str, *, headers: dict | None = None, data: bytes | None = No
 
 # --- Google Workspace ------------------------------------------------------------------
 
-def _google_access_token(creds: dict) -> str:
+def _google_access_token(creds: dict, scopes: str = _GOOGLE_SCOPES) -> str:
     """Service-account JWT grant (RFC 7523), impersonating the admin via `sub` — the
-    domain-wide-delegation flow Google requires for Admin SDK reads."""
+    domain-wide-delegation flow Google requires for Admin SDK / Drive reads."""
     sa = creds.get("service_account_json") or {}
     if isinstance(sa, str):                      # UI may store the key file as a string
         try:
@@ -72,7 +72,7 @@ def _google_access_token(creds: dict) -> str:
     now = int(time.time())
     assertion = jwt.encode(
         {"alg": "RS256"},
-        {"iss": sa["client_email"], "sub": admin, "scope": _GOOGLE_SCOPES,
+        {"iss": sa["client_email"], "sub": admin, "scope": scopes,
          "aud": _GOOGLE_TOKEN_URL, "iat": now, "exp": now + 3600},
         sa["private_key"])
     body = urllib.parse.urlencode({
@@ -469,6 +469,224 @@ def fetch_notion(creds: dict) -> list[dict]:
         "Settings & members -> Connections and upload it via POST /api/discovery/oauth-grants.")
 
 
+
+
+# --- Google Drive / SharePoint content scanning -------------------------------------------
+#
+# Same shape as Slack message scanning: pull what changed since the watermark, run it
+# through run_analysis on the collab surface, advance the cursor only past content
+# actually scanned. Rules-only (use_judge=False) — a first sync over a big library must
+# not fan out thousands of LLM calls. Only text-extractable content is scanned; Office
+# binaries (docx/xlsx) and PDFs are skipped in v1 (no extractor dependency).
+
+_MAX_FILES_PER_SYNC = 300          # bounds one sync; the cursor resumes where it stopped
+_MAX_CONTENT_BYTES = 256 * 1024    # scan the first 256KB of a file — enough for DLP
+_MAX_FILE_BYTES = 8 * 1024 * 1024  # skip anything larger outright
+
+_GDRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+_GDRIVE_BASE = "https://www.googleapis.com/drive/v3"
+# Google-native types export to text; everything else must already be text-shaped.
+_GDRIVE_EXPORT = {
+    "application/vnd.google-apps.document": "text/plain",
+    "application/vnd.google-apps.spreadsheet": "text/csv",
+    "application/vnd.google-apps.presentation": "text/plain",
+}
+_TEXTY_EXT = (".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".log", ".env", ".conf",
+              ".ini", ".cfg", ".xml", ".html", ".py", ".js", ".ts", ".java", ".go",
+              ".rb", ".sql", ".sh", ".ps1", ".tf", ".tfvars", ".pem", ".key")
+
+
+def _texty(mime: str, name: str) -> bool:
+    if mime.startswith("text/") or mime in ("application/json", "application/xml"):
+        return True
+    return (name or "").lower().endswith(_TEXTY_EXT)
+
+
+def _http_text(url: str, headers: dict, cap: int = _MAX_CONTENT_BYTES) -> str:
+    """GET a (possibly redirecting) content URL, decode best-effort, cap the read."""
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.read(cap).decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        raise ConnectorError(f"HTTP {e.code} fetching content: {str(e)[:120]}")
+    except (urllib.error.URLError, OSError) as e:
+        raise ConnectorError(f"content fetch failed: {e}")
+
+
+def _scan_blob(db, connector, custom_pii: str, *, content: str, sender: str,
+               subject: str, channel: str) -> bool:
+    """One document through the engine on the collab surface. True when it made a finding."""
+    from .detectors import AnalysisInput, Surface
+    from .service import run_analysis
+    result = run_analysis(
+        AnalysisInput(content=content, sender=sender, channel=channel, subject=subject,
+                      surface=Surface.COLLAB, metadata={"custom_pii": custom_pii}),
+        persist=True, db=db, tenant_id=connector.tenant_id,
+        persist_benign=False, use_judge=False)
+    return result.get("finding_id") is not None
+
+
+def _tenant_custom_pii(db, connector) -> str:
+    from .models import Tenant
+    tenant = db.get(Tenant, connector.tenant_id)
+    return (getattr(tenant, "custom_pii_patterns", "") or "") if tenant else ""
+
+
+def scan_gdrive_files(db, connector, creds: dict) -> dict:
+    """Scan changed Google Drive files (shared drives + the impersonated user's My Drive)
+    for PII/PHI/secrets. Watermark-incremental on modifiedTime; oldest-first so the
+    cursor only ever moves past files actually scanned."""
+    token = _google_access_token(creds, scopes=_GDRIVE_SCOPE)
+    hdrs = {"Authorization": f"Bearer {token}"}
+    state = connector.state
+    watermark = state.get("modified_after") or datetime.fromtimestamp(
+        time.time() - _SCAN_LOOKBACK_SECS, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    custom_pii = _tenant_custom_pii(db, connector)
+
+    scanned = findings = skipped = 0
+    truncated = False
+    page = ""
+    mark = watermark
+    while True:
+        q = {"q": f"modifiedTime > '{watermark}' and trashed = false",
+             "orderBy": "modifiedTime",
+             "corpora": "allDrives", "includeItemsFromAllDrives": "true",
+             "supportsAllDrives": "true", "pageSize": "100",
+             "fields": "nextPageToken,files(id,name,mimeType,modifiedTime,size,"
+                       "owners(emailAddress),lastModifyingUser(emailAddress))"}
+        if page:
+            q["pageToken"] = page
+        data = _http_json(f"{_GDRIVE_BASE}/files?{urllib.parse.urlencode(q)}", headers=hdrs)
+        for f in data.get("files", []):
+            if scanned >= _MAX_FILES_PER_SYNC:
+                truncated = True
+                break
+            fid, name = f.get("id", ""), f.get("name", "")
+            mime = f.get("mimeType", "")
+            if not fid:
+                continue
+            export = _GDRIVE_EXPORT.get(mime)
+            if not export and (not _texty(mime, name)
+                               or int(f.get("size") or 0) > _MAX_FILE_BYTES):
+                skipped += 1
+                mark = f.get("modifiedTime") or mark   # skipped files still pass the cursor
+                continue
+            url = (f"{_GDRIVE_BASE}/files/{fid}/export?mimeType={urllib.parse.quote(export)}"
+                   if export else f"{_GDRIVE_BASE}/files/{fid}?alt=media&supportsAllDrives=true")
+            try:
+                text = _http_text(url, hdrs)
+            except ConnectorError:
+                skipped += 1                            # unexportable/permission-denied file
+                mark = f.get("modifiedTime") or mark
+                continue
+            sender = ((f.get("lastModifyingUser") or {}).get("emailAddress")
+                      or ((f.get("owners") or [{}])[0]).get("emailAddress") or "")
+            if _scan_blob(db, connector, custom_pii, content=text, sender=sender,
+                          subject=name, channel="gdrive"):
+                findings += 1
+            scanned += 1
+            mark = f.get("modifiedTime") or mark
+        if truncated:
+            break
+        page = data.get("nextPageToken", "")
+        if not page:
+            break
+
+    connector.state = {**state, "modified_after": mark}
+    summary = {"files": scanned, "skipped": skipped, "findings": findings}
+    if truncated:
+        summary["truncated"] = True
+    return summary
+
+
+_GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+_MAX_SITES_PER_SYNC = 50
+
+
+def scan_sharepoint_files(db, connector, creds: dict) -> dict:
+    """Scan changed files in SharePoint document libraries via Graph delta queries.
+    Per-drive deltaLinks in connector.state make every sync incremental; a drive whose
+    budget runs out keeps its old link (its changes rescan next sync — recurrences fold)."""
+    token = _microsoft_access_token(creds)
+    hdrs = {"Authorization": f"Bearer {token}"}
+    state = connector.state
+    deltas: dict[str, str] = dict(state.get("deltas") or {})
+    custom_pii = _tenant_custom_pii(db, connector)
+
+    sites, url = [], f"{_GRAPH_BASE}/sites?search=*&$top=50"
+    while url and len(sites) < _MAX_SITES_PER_SYNC:
+        data = _http_json(url, headers=hdrs)
+        sites += data.get("value", [])
+        url = data.get("@odata.nextLink", "")
+
+    drives: list[dict] = []
+    for site in sites[:_MAX_SITES_PER_SYNC]:
+        sid = site.get("id", "")
+        if not sid:
+            continue
+        try:
+            dd = _http_json(f"{_GRAPH_BASE}/sites/{sid}/drives", headers=hdrs)
+        except ConnectorError:
+            continue                              # site without accessible libraries
+        drives += dd.get("value", [])
+
+    scanned = findings = skipped = 0
+    truncated = False
+    for drive in drives:
+        did = drive.get("id", "")
+        if not did:
+            continue
+        if scanned >= _MAX_FILES_PER_SYNC:
+            truncated = True
+            break
+        url = deltas.get(did) or f"{_GRAPH_BASE}/drives/{did}/root/delta"
+        new_link, over = "", False
+        while url:
+            data = _http_json(url, headers=hdrs)
+            for item in data.get("value", []):
+                fobj = item.get("file") or {}
+                if not fobj:
+                    continue                       # folders / deleted markers
+                if scanned >= _MAX_FILES_PER_SYNC:
+                    over = True
+                    break
+                name = item.get("name", "")
+                mime = fobj.get("mimeType", "")
+                if (not _texty(mime, name)
+                        or int(item.get("size") or 0) > _MAX_FILE_BYTES):
+                    skipped += 1
+                    continue
+                try:
+                    text = _http_text(f"{_GRAPH_BASE}/drives/{did}/items/"
+                                      f"{item.get('id')}/content", hdrs)
+                except ConnectorError:
+                    skipped += 1
+                    continue
+                sender = (((item.get("lastModifiedBy") or {}).get("user") or {})
+                          .get("email") or "")
+                subject = f"{drive.get('name', 'library')}/{name}"
+                if _scan_blob(db, connector, custom_pii, content=text, sender=sender,
+                              subject=subject, channel="sharepoint"):
+                    findings += 1
+                scanned += 1
+            if over:
+                break
+            new_link = data.get("@odata.deltaLink", "")
+            url = data.get("@odata.nextLink", "")
+        if over:
+            truncated = True                       # keep the OLD delta link: rescan, don't skip
+        elif new_link:
+            deltas[did] = new_link
+
+    connector.state = {**state, "deltas": deltas}
+    summary = {"sites": len(sites), "drives": len(drives), "files": scanned,
+               "skipped": skipped, "findings": findings}
+    if truncated:
+        summary["truncated"] = True
+    return summary
+
+
 PLATFORMS: dict[str, dict] = {
     "google_workspace": {
         "label": "Google Workspace",
@@ -505,6 +723,28 @@ PLATFORMS: dict[str, dict] = {
                  "cursor (first sync looks back 7 days) and runs them through PII/PHI/"
                  "secret detection on the collab surface — findings alert and export "
                  "like any other plane. Detection is rules-only (no LLM judge).",
+    },
+    "gdrive_files": {
+        "label": "Google Drive scanning",
+        "scan": scan_gdrive_files,
+        "credential_fields": ["service_account_json", "admin_email"],
+        "setup": "Service account with domain-wide delegation, granted the "
+                 "https://www.googleapis.com/auth/drive.readonly scope in Admin Console; "
+                 "admin_email is the user it impersonates (their My Drive + all shared "
+                 "drives they can see are scanned). Watermark-incremental on modifiedTime "
+                 "(first sync looks back 7 days). Google Docs/Sheets/Slides are exported "
+                 "as text; plain-text files are scanned directly; Office binaries and "
+                 "PDFs are skipped. Rules-only detection on the collab surface.",
+    },
+    "sharepoint_files": {
+        "label": "SharePoint / OneDrive scanning",
+        "scan": scan_sharepoint_files,
+        "credential_fields": ["tenant_id", "client_id", "client_secret"],
+        "setup": "Entra ID app registration with admin-consented *application* Graph "
+                 "permissions Sites.Read.All + Files.Read.All. Scans document libraries "
+                 "across SharePoint sites via Graph delta queries (fully incremental "
+                 "after the first sync). Text-shaped files are scanned; Office binaries "
+                 "and PDFs are skipped. Rules-only detection on the collab surface.",
     },
     "salesforce": {
         "label": "Salesforce",
