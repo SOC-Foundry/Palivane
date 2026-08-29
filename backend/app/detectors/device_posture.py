@@ -44,6 +44,21 @@ class DevicePostureDetector:
         proxy = data.get("proxy") or {}
         breaker = data.get("breaker") or {}
         gaps = data.get("gaps") or {}
+
+        # Local model runtimes (Ollama, LM Studio, llamafile, GPT4All): AI usage with
+        # zero network tell — same treatment as hook-less agentic IDE extensions:
+        # detection IS the coverage, and the org policies it from there.
+        for llm in data.get("local_llms") or []:
+            name = str(llm.get("name") or "local model runtime")[:32]
+            running = bool(llm.get("listening"))
+            signals.append(Signal(
+                category=Category.UNSANCTIONED_AI, check="local_llm",
+                title="Local LLM runtime on device",
+                detail=(f"{name} is installed" + (" and currently serving" if running else "")
+                        + " — prompts to a local model never cross the proxy, extension, "
+                          "or gateway planes. Sanction it, or remove it via MDM."),
+                weight=0.55 if running else 0.4, confidence=0.9,
+                detector=self.name, evidence=name))
         port = proxy.get("port", "?")
 
         # Proxy dead while the environment still routes through it: every AI tool on the
