@@ -2,7 +2,7 @@
 // diagram, surface chips, detector cards, tiered secret stack, scoring formula + severity
 // table, monitor/enforce split) rather than a wall of prose. Content mirrors README
 // "How detection works", kept accurate for a security-minded reader evaluating the engine.
-import { SiteNav, SiteFooter, Shot } from "./SiteChrome.jsx";
+import { SiteNav, SiteFooter, Shot, Clip } from "./SiteChrome.jsx";
 import { IconInbox, IconShield, IconList, IconTarget, IconAlert, IconClipboard, IconPlug } from "./icons.jsx";
 
 const PIPELINE = [
@@ -197,7 +197,10 @@ export default function HowItWorks() {
         <div className="lp-wrap">
           <h2 className="lp-h2">...into one console</h2>
           <p className="lp-sub">Every verdict, across every plane, scored and triageable in one place.</p>
-          <Shot lead src="/shots/dashboard.png?v=5" alt="Palivane findings dashboard" />
+          {/* Real console, real seeded data — findings, discovery, policies, a live
+              simulator block, and fleet health, recorded end to end. */}
+          <Clip lead src="/shots/console-tour1.mp4" poster="/shots/console-poster1.png"
+                caption="Thirty seconds through the console: findings and their evidence, the shadow-AI inventory, the policy catalog, and the simulator blocking a live injection + credential paste." />
         </div>
       </section>
 
