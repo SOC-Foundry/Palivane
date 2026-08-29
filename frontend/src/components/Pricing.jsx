@@ -78,8 +78,9 @@ export default function Pricing() {
         <h1>Try it for two weeks. Then pick a plan.</h1>
         <p>Every feature is unlocked during the trial, so you evaluate the real thing on your
            own traffic. Prefer to run it yourself? A free self-hosted
-           edition is available — the endpoint components are open for audit, and the
-           full self-host package comes via sales while the public release is prepared.</p>
+           edition is available — everything that runs on your machines is public at
+           github.com/SOC-Foundry/palivane-clients, and the full self-host package comes
+           via sales while the backend's public release is prepared.</p>
       </section>
 
       <section className="lp-section">
@@ -91,8 +92,10 @@ export default function Pricing() {
             Running it yourself is the free option: an unlicensed self-hosted instance keeps
             working indefinitely, full detection, with no LLM API key or external AI service
             required. Everything that runs on your machines (browser extension, CLI hooks,
-            egress proxy) is open for audit; the full self-host package is available through
-            us while the public source release is prepared. Team and Enterprise licenses add
+            egress proxy) is public and Apache-2.0 licensed at{" "}
+            <a href="https://github.com/SOC-Foundry/palivane-clients">github.com/SOC-Foundry/palivane-clients</a>;
+            the full self-host package is available through us while the backend's public
+            source release is prepared. Team and Enterprise licenses add
             the fleet and compliance features to a self-hosted deployment too.
             Questions: <a href="mailto:sales@palivane.io">sales@palivane.io</a>.
           </p>

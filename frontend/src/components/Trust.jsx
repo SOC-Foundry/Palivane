@@ -50,6 +50,7 @@ const SECTIONS = [
   {
     title: "Security testing",
     items: [
+      ["Open endpoint code", "Everything Palivane runs on your machines — the browser extension, CLI capture hooks, and egress proxy — is public and Apache-2.0 licensed, auditable at github.com/SOC-Foundry/palivane-clients."],
       ["Adversarial reviews", "Multiple internal adversarial security audits (authentication, tenant isolation, SSRF, injection, extension surface) with all findings remediated, most recent: July 2026."],
       ["Independent testing", "A third-party penetration test is scheduled as part of the SOC 2 program."],
       ["Responsible disclosure", "security@palivane.io, see our security policy for scope and safe-harbor terms."],
