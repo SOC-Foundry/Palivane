@@ -91,6 +91,7 @@ export const api = {
   coverageReconcile: (events) =>
     req("/coverage/reconcile", { method: "POST", body: JSON.stringify({ events }) }),
   activityUsers: () => req("/activity/users"),
+  exposure: () => req("/exposure"),
   agents: () => req("/agents"),
   agentCreate: (payload) => req("/agents", { method: "POST", body: JSON.stringify(payload) }),
   agentRotate: (id) => req(`/agents/${id}/rotate`, { method: "POST" }),

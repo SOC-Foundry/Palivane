@@ -1382,3 +1382,23 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 /* Large-monitor scaling */
 @media (min-width: 2100px) { html { zoom: 1.25; } }
 @media (min-width: 3000px) { html { zoom: 1.6; } }
+
+/* --- Exposure (blast radius) --- */
+.exposure .empty-state { text-align: center; padding: 40px 24px; }
+.exposure .empty-state .muted { max-width: 60ch; margin: 8px auto 0; }
+.exposure-list { display: flex; flex-direction: column; gap: 12px; }
+.exposure-card { padding: 16px 18px; }
+.exposure-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+.sev-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; background: var(--muted); vertical-align: middle; }
+.sev-dot.sev-critical { background: #f43f5e; }
+.sev-dot.sev-high { background: #fb923c; }
+.sev-dot.sev-suspicious { background: #facc15; }
+.sev-dot.sev-low { background: #60a5fa; }
+.exposure-title { font-size: 15px; }
+.exposure-src { margin-left: 10px; font-family: var(--mono, ui-monospace, monospace); font-size: 12px; text-transform: capitalize; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 7px; }
+.exposure-count { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.exposure-count strong { color: var(--text); }
+.exposure-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 10px; }
+.exposure-tool { font-size: 12px; background: var(--panel-2, rgba(255,255,255,0.04)); border: 1px solid var(--line); border-radius: 4px; padding: 3px 9px; }
+.exposure-tool b { color: var(--accent); margin-left: 2px; }
+.exposure-foot { font-size: 12px; }
