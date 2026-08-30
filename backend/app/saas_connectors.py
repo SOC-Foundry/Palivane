@@ -585,6 +585,11 @@ def scan_gdrive_files(db, connector, creds: dict) -> dict:
             if _scan_blob(db, connector, custom_pii, content=text, sender=sender,
                           subject=name, channel="gdrive"):
                 findings += 1
+            # Fingerprint every scanned doc (benign ones are valid origins too) so a later
+            # leak of this content can be traced back here.
+            from . import content_origin
+            content_origin.store_fingerprint(db, connector.tenant_id, "gdrive", fid,
+                                             name, sender, text)
             scanned += 1
             mark = f.get("modifiedTime") or mark
         if truncated:
@@ -669,6 +674,9 @@ def scan_sharepoint_files(db, connector, creds: dict) -> dict:
                 if _scan_blob(db, connector, custom_pii, content=text, sender=sender,
                               subject=subject, channel="sharepoint"):
                     findings += 1
+                from . import content_origin
+                content_origin.store_fingerprint(db, connector.tenant_id, "sharepoint",
+                                                 item.get("id", ""), subject, sender, text)
                 scanned += 1
             if over:
                 break
