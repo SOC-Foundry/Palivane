@@ -65,6 +65,9 @@ export default function Report() {
               <div><span className="usage-n">{data.prevented_blocks}</span><span className="usage-l">prevented blocks</span></div>
               <div><span className="usage-n">{data.actors_with_findings}</span><span className="usage-l">actors w/ findings</span></div>
               <div><span className="usage-n">{data.covered_actors}</span><span className="usage-l">covered actors</span></div>
+              {data.leaked_source_documents > 0 && (
+                <div><span className="usage-n">{data.leaked_source_documents}</span><span className="usage-l">source docs leaked</span></div>
+              )}
             </div>
             <p className="muted" style={{ marginBottom: 0 }}>
               Window: last {data.days} days · generated {data.generated_at ? new Date(data.generated_at).toLocaleString() : "-"}
