@@ -160,3 +160,32 @@ def test_recurrence_backfills_origin(client, db_factory):
     assert r2["finding_id"] == r1["finding_id"] and r2.get("recurrence") == 2
     assert db.get(Finding, r1["finding_id"]).origin["title"] == "Q3.docx"
     db.close()
+
+
+def test_origin_boosts_severity(client, db_factory):
+    """A leak matching a known-SENSITIVE source scores higher than the same content with
+    no known source — origin-aware severity, applied to the verdict (not just annotation)."""
+    tid = _tid(db_factory)
+    leaky = DOC + " employee SSN on file is 123-45-6789"   # trips PII, sub-max base
+    # baseline: no fingerprint -> whatever base severity is
+    db = db_factory()
+    base = run_analysis(
+        AnalysisInput(content=leaky, sender="a@acme.com", channel="chatgpt.com",
+                      subject="p", surface=Surface.AI_USAGE),
+        persist=False, db=db, tenant_id=tid, use_judge=False)
+    db.close()
+    # now fingerprint the source AS SENSITIVE
+    db = db_factory()
+    co.store_fingerprint(db, tid, "sharepoint", "sp:1", "Board deck", "cfo@acme.com",
+                         leaky, sensitive=True)
+    db.commit(); db.close()
+    db = db_factory()
+    boosted = run_analysis(
+        AnalysisInput(content=leaky, sender="b@acme.com", channel="chatgpt.com",
+                      subject="p", surface=Surface.AI_USAGE),
+        persist=False, db=db, tenant_id=tid, use_judge=False)
+    db.close()
+    assert boosted["risk_score"] > base["risk_score"]
+    assert boosted["risk_score"] >= 60 and boosted["severity"] in ("high", "critical")
+    assert any(s["detector"] == "content_origin" for s in boosted["signals"])
+    assert any("known sensitive document" in s["title"] for s in boosted["signals"])

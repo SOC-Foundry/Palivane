@@ -158,6 +158,41 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         for f in filters:
             sigs = f(sigs)
         verdict = score(sigs)
+
+    # Origin-aware severity: a leak whose content matches a document we scanned at rest
+    # is confirmed real org data, not merely PII-shaped text — so it scores higher, and a
+    # match to a KNOWN-SENSITIVE source (the doc's own scan tripped a data-loss category)
+    # higher still. Applied to the verdict BEFORE result/persist so the boost flows into
+    # the gateway's block decision too, not just the stored finding. Read-only match,
+    # gated to data-loss findings on egress surfaces (an injection has no source doc).
+    origin = None
+    if item.surface.value in ("ai_usage", "llm_io"):
+        _DLP = {"secret_leak", "pii_exposure", "phi_exposure",
+                "source_code_leak", "confidential_data"}
+        if any(s.category.value in _DLP for s in verdict.signals):
+            from . import content_origin
+            origin = content_origin.match_origin(db, tenant_id, item.content)
+    if origin:
+        from .detectors.base import Category, Signal
+        from .scoring import severity_for
+        sensitive = bool(origin.get("sensitive"))
+        boosted = min(100, verdict.risk_score + (25 if sensitive else 15))
+        if sensitive:
+            boosted = max(boosted, 60)   # a known-sensitive source is at least "high"
+        verdict.risk_score = boosted
+        verdict.severity, verdict.recommended_action = severity_for(boosted)
+        where = origin.get("title") or origin.get("ref") or "a scanned document"
+        verdict.signals = [Signal(
+            category=Category.CONFIDENTIAL_DATA if sensitive else Category.DATA_EXFILTRATION,
+            title=("Leaked content matches a known sensitive document" if sensitive
+                   else "Leaked content matches a known document"),
+            detail=(f"This content overlaps “{where}” ({int(origin.get('containment', 0) * 100)}% "
+                    f"match) from your {origin.get('source', 'at-rest')} scan"
+                    + (" — a source that itself holds sensitive data." if sensitive
+                       else ", confirming it is real organizational data.")),
+            weight=0.0, confidence=1.0,   # evidence/severity already applied via the boost
+            detector="content_origin", evidence=where)] + list(verdict.signals)
+
     result = verdict.to_dict()
     # Raw event archival: EVERY analyzed event (benign included, findings or not) streams
     # to the tenant's S3 lake when enabled — the complete capture record, independent of
@@ -181,29 +216,27 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         # Recurrence folding: a repeat of an already-recorded event (same fingerprint)
         # bumps the original's seen_count/last_seen instead of creating another open row —
         # and stays dismissed if an analyst already dismissed it. Alerts/SIEM fired on the
-        # first occurrence; recurrences don't re-alert.
-        # Content origin: if this leaked content overlaps a document we scanned at rest,
-        # attach where it came from. Only for data-loss findings (a paste of sensitive
-        # data has a source; an injection attempt does not), and only for egress surfaces.
-        # Computed before the recurrence check so a repeat can backfill an origin that was
-        # only fingerprinted after the finding first fired.
-        origin = None
-        if item.surface.value in ("ai_usage", "llm_io"):
-            _DLP = {"secret_leak", "pii_exposure", "phi_exposure",
-                    "source_code_leak", "confidential_data"}
-            if any(s.get("category") in _DLP for s in result["signals"]):
-                from . import content_origin
-                origin = content_origin.match_origin(db, tenant_id, item.content)
-        fp = _fingerprint(tenant_id, item, result["signals"])
+        # first occurrence; recurrences don't re-alert. `origin` was matched above (where
+        # it also drove the severity boost); reused here for finding.origin + backfill.
+        # Fingerprint on the REAL detection signals only — the synthetic content_origin
+        # signal is excluded so the same leak folds whether or not a source was matched
+        # (a source fingerprinted after the first occurrence must still fold + backfill).
+        fp = _fingerprint(tenant_id, item,
+                          [s for s in result["signals"] if s.get("detector") != "content_origin"])
         prior = _fold_recurrence(db, tenant_id, fp)
         if prior is not None:
             from datetime import datetime, timezone
             prior.seen_count = (prior.seen_count or 1) + 1
             prior.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
             # Backfill a source discovered since this finding first fired (the at-rest scan
-            # that fingerprinted it may have run after the first leak).
+            # that fingerprinted it may have run after the first leak) — and lift its
+            # severity to the origin-boosted score (same fingerprint = same base risk).
             if origin and not prior.origin:
                 prior.origin = origin
+                if verdict.risk_score > (prior.risk_score or 0):
+                    prior.risk_score = verdict.risk_score
+                    prior.severity = verdict.severity
+                    prior.recommended_action = verdict.recommended_action
             db.commit()
             return {"finding_id": prior.id, "recurrence": prior.seen_count,
                     "judge_used": judge_ran, **result}
