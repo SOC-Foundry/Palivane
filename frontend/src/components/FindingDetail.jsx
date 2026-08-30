@@ -149,14 +149,18 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
 
       {finding.origin && (
         <div className="detail-section origin">
-          <h4>Where it came from</h4>
+          <h4>Where it came from{finding.origin.sensitive && <span className="origin-badge">sensitive source</span>}</h4>
           <p className="origin-line">
             This content matches <strong>{finding.origin.title || finding.origin.ref}</strong>
             {finding.origin.owner && <> · owned by {finding.origin.owner}</>}
             {" "}in <span className="origin-source">{finding.origin.source}</span>
             {" "}<span className="origin-conf">{Math.round((finding.origin.containment || 0) * 100)}% overlap</span>
           </p>
-          <p className="origin-note">Matched against documents Palivane scanned at rest. Restrict access at the source to stop the leak at its root.</p>
+          <p className="origin-note">
+            {finding.origin.sensitive
+              ? "This source document itself holds sensitive data — severity was raised because a known-confidential file reached an AI tool. "
+              : "Confirmed as real organizational data (not just sensitive-looking text), so severity was raised. "}
+            Restrict access at the source to stop the leak at its root.</p>
         </div>
       )}
 
