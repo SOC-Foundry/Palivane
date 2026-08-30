@@ -534,6 +534,10 @@ class Finding(Base):
     fingerprint = Column(String(64), default="", index=True)
     seen_count = Column(Integer, default=1)
     last_seen = Column(DateTime, default=_utcnow)
+    # Content-origin match (app/content_origin.py): when leaked prompt content overlaps a
+    # document Palivane scanned at rest, the source is attached here —
+    # {source, ref, title, owner, containment}. Empty when no origin matched.
+    origin = Column(JSON, default=None)
 
     def to_summary(self) -> dict:
         return {
@@ -557,6 +561,8 @@ class Finding(Base):
             "attack_intent": self.attack_intent,
             "status": self.status,
             "judge_used": self.judge_used,
+            # Where leaked content came from, when matched to a scanned document.
+            "origin": self.origin or None,
         }
 
     def to_detail(self, dek: str | None = None) -> dict:
@@ -811,6 +817,26 @@ class SaasConnector(Base):
                 "last_sync_at": self.last_sync_at.isoformat() if self.last_sync_at else None,
                 "last_sync_status": self.last_sync_status or "",
                 "last_sync_detail": self.last_sync_detail or ""}
+
+
+class ContentFingerprint(Base):
+    """A shingle sketch of a document Palivane scanned at rest (Drive/SharePoint/Slack/…),
+    so leaked prompt content can be matched back to its source — see app/content_origin.py.
+    `shingles` is a JSON list of sampled 64-bit shingle hashes (as strings); one row per
+    (tenant, source, ref), updated in place on re-scan."""
+
+    __tablename__ = "content_fingerprints"
+    __table_args__ = (UniqueConstraint("tenant_id", "source", "ref",
+                                       name="uq_fingerprint_tenant_source_ref"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    source = Column(String(32), default="")      # gdrive | sharepoint | slack | salesforce
+    ref = Column(String(512), default="")        # stable id/path within the source
+    title = Column(String(512), default="")      # human name (file name, channel)
+    owner = Column(String(320), default="")      # last modifier / owner email
+    shingles = Column(JSON, default=list)         # sampled shingle hashes (strings)
+    updated_at = Column(DateTime, default=_utcnow, index=True)
 
 
 class SensorHeartbeat(Base):

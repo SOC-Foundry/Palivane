@@ -147,6 +147,19 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
         {finding.attack_intent && <span className="tag tag-atk">attack intent</span>}
       </div>
 
+      {finding.origin && (
+        <div className="detail-section origin">
+          <h4>Where it came from</h4>
+          <p className="origin-line">
+            This content matches <strong>{finding.origin.title || finding.origin.ref}</strong>
+            {finding.origin.owner && <> · owned by {finding.origin.owner}</>}
+            {" "}in <span className="origin-source">{finding.origin.source}</span>
+            {" "}<span className="origin-conf">{Math.round((finding.origin.containment || 0) * 100)}% overlap</span>
+          </p>
+          <p className="origin-note">Matched against documents Palivane scanned at rest. Restrict access at the source to stop the leak at its root.</p>
+        </div>
+      )}
+
       {steps.length > 0 && (
         <div className="detail-section remediation">
           <h4>How to fix</h4>

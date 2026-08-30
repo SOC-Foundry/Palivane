@@ -191,6 +191,16 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             db.commit()
             return {"finding_id": prior.id, "recurrence": prior.seen_count,
                     "judge_used": judge_ran, **result}
+        # Content origin: if this leaked content overlaps a document we scanned at rest,
+        # attach where it came from. Only for data-loss findings (a paste of sensitive
+        # data has a source; an injection attempt does not), and only for egress surfaces.
+        origin = None
+        if item.surface.value in ("ai_usage", "llm_io"):
+            _DLP = {"secret_leak", "pii_exposure", "phi_exposure",
+                    "source_code_leak", "confidential_data"}
+            if any(s.get("category") in _DLP for s in result["signals"]):
+                from . import content_origin
+                origin = content_origin.match_origin(db, tenant_id, item.content)
         finding = Finding(
             tenant_id=tenant_id,
             fingerprint=fp,
@@ -207,6 +217,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             attack_intent=verdict.attack_intent,
             signals=result["signals"],
             judge_used=judge_ran,
+            origin=origin,
         )
         db.add(finding)
         db.commit()
