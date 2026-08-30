@@ -3057,7 +3057,8 @@ def report_summary(days: int = 30, current: User = Depends(require_admin),
     since = now - timedelta(days=days)
 
     rows = (db.query(Finding.severity, Finding.status, Finding.signals,
-                     Finding.channel, Finding.sender, Finding.recommended_action)
+                     Finding.channel, Finding.sender, Finding.recommended_action,
+                     Finding.origin)
               .filter(Finding.tenant_id == current.tenant_id,
                       Finding.last_seen >= since)
               .limit(20000).all())
@@ -3066,7 +3067,9 @@ def report_summary(days: int = 30, current: User = Depends(require_admin),
     by_tool: dict[str, int] = {}
     actors: set[str] = set()
     prevented = 0
-    for severity, status, signals, channel, sender, action in rows:
+    traced = 0                       # leaks traced to a known at-rest source (lineage)
+    leaked_docs: set[tuple] = set()  # distinct sensitive source documents that leaked
+    for severity, status, signals, channel, sender, action, origin in rows:
         by_severity[severity] = by_severity.get(severity, 0) + 1
         for c in {(s.get("category") or "") for s in (signals or [])} - {""}:
             by_category[c] = by_category.get(c, 0) + 1
@@ -3074,6 +3077,9 @@ def report_summary(days: int = 30, current: User = Depends(require_admin),
             by_tool[channel] = by_tool.get(channel, 0) + 1
         if sender:
             actors.add(sender)
+        if isinstance(origin, dict) and origin.get("ref"):
+            traced += 1
+            leaked_docs.add((origin.get("source", ""), origin.get("ref", "")))
         # "Prevented" mirrors what clients actually hard-block: a block-band verdict, or
         # a confirmed secret/PII leak (force_block even in monitor mode).
         if action == "block" or confirmed_leak(signals or []):
@@ -3092,7 +3098,11 @@ def report_summary(days: int = 30, current: User = Depends(require_admin),
             "by_category": dict(sorted(by_category.items(), key=lambda kv: -kv[1])),
             "by_tool": dict(sorted(by_tool.items(), key=lambda kv: -kv[1])[:15]),
             "actors_with_findings": len(actors),
-            "covered_actors": len(covered)}
+            "covered_actors": len(covered),
+            # Content-origin lineage: leaks traced back to a known scanned document, and how
+            # many distinct source documents leaked — "which of our data is walking out."
+            "leaks_with_known_source": traced,
+            "leaked_source_documents": len(leaked_docs)}
 
 
 # --- Protection simulator (nothing persisted) --------------------------------------------

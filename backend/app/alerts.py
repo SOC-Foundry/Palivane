@@ -27,13 +27,23 @@ def _payload(verdict: dict, subject: str, actor: str, surface: str) -> dict:
     tops = top_signals(verdict.get("signals"), 3)
     lines = "".join(f"\n  • {t['title']}" + (f" — `{t['evidence']}`" if t["evidence"] else "")
                     for t in tops)
+    # Content origin: name the source document the leaked content came from, when known —
+    # the "restrict it here" pointer, and flag when that source is itself sensitive.
+    origin = verdict.get("origin") or None
+    origin_line = ""
+    if origin:
+        src = origin.get("title") or origin.get("ref") or "a scanned document"
+        origin_line = (f"\n  ↳ from {src} ({origin.get('source', 'at-rest')}, "
+                       f"{int(origin.get('containment', 0) * 100)}% match"
+                       + (", sensitive source" if origin.get("sensitive") else "") + ")")
     text = (f":shield: *Palivane {verdict.get('severity', '?').upper()}* — "
             f"{subject or 'finding'} ({actor or 'unknown'})\n"
-            f"{cats} · risk {verdict.get('risk_score', '?')} · surface {surface}{lines}")
+            f"{cats} · risk {verdict.get('risk_score', '?')} · surface {surface}{lines}{origin_line}")
     return {"text": text, **_envelope({
         "severity": verdict.get("severity"), "risk_score": verdict.get("risk_score"),
         "categories": cats, "actor": actor, "surface": surface,
         "finding_id": verdict.get("finding_id"), "top_signals": tops,
+        "origin": origin,
     })}
 
 

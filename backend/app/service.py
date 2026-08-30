@@ -194,6 +194,8 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             detector="content_origin", evidence=where)] + list(verdict.signals)
 
     result = verdict.to_dict()
+    if origin:
+        result["origin"] = origin   # carried to the alert / SIEM / archival sinks below
     # Raw event archival: EVERY analyzed event (benign included, findings or not) streams
     # to the tenant's S3 lake when enabled — the complete capture record, independent of
     # the severity-gated findings sinks below. Buffered + fire-and-forget inside archive().
