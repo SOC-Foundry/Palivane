@@ -228,11 +228,21 @@ async def _guard(request: Request, call_next):
     # CSP: the SPA loads only same-origin bundles (no inline/external scripts); React uses
     # inline style attributes (hence style 'unsafe-inline'); posters/video/data-URI icons are
     # same-origin or data:. frame-ancestors 'none' complements X-Frame-Options.
+    # Stripe embedded Checkout mounts Stripe.js + its payment iframe — allowed ONLY when
+    # self-serve billing is configured, so the extra origins aren't in the policy on
+    # deployments that don't take card payments.
+    stripe_script = stripe_frame = stripe_connect = ""
+    if settings.stripe_publishable_key:
+        stripe_script = " https://js.stripe.com"
+        stripe_frame = "frame-src https://js.stripe.com https://hooks.stripe.com; "
+        stripe_connect = " https://api.stripe.com"
     resp.headers.setdefault(
         "Content-Security-Policy",
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        f"default-src 'self'; script-src 'self'{stripe_script}; "
+        "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; media-src 'self'; font-src 'self' data:; "
-        "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
+        f"connect-src 'self'{stripe_connect}; {stripe_frame}"
+        "frame-ancestors 'none'; base-uri 'self'; "
         "form-action 'self'; object-src 'none'")
     return resp
 
