@@ -98,6 +98,9 @@ def billing_status(current: User = Depends(require_admin), db: Session = Depends
         "seats": tenant.quota_users or 0,
         "intervals": [i for i, p in (("month", settings.stripe_price_team_monthly),
                                      ("year", settings.stripe_price_team_annual)) if p],
+        # Publishable key (pk_…) — not a secret; the frontend needs it to mount the
+        # embedded Checkout via Stripe.js.
+        "publishable_key": settings.stripe_publishable_key,
     }
 
 
@@ -109,8 +112,10 @@ class CheckoutRequest(BaseModel):
 @router.post("/billing/checkout")
 def create_checkout(body: CheckoutRequest, current: User = Depends(require_admin),
                     db: Session = Depends(get_db)):
-    """Start a per-seat Team subscription in Stripe Checkout; returns the redirect URL.
-    The plan flips only when the checkout.session.completed webhook lands — never here."""
+    """Start a per-seat Team subscription as an EMBEDDED Checkout Session — mounted on our
+    own page (ui_mode=embedded), so the buyer never leaves the console. Returns the
+    session's client_secret for Stripe.js to render. The plan flips only when the
+    checkout.session.completed webhook lands — never here."""
     if not enabled():
         raise HTTPException(status_code=400, detail="self-serve billing is not configured")
     tenant = db.get(Tenant, current.tenant_id)
@@ -125,6 +130,7 @@ def create_checkout(body: CheckoutRequest, current: User = Depends(require_admin
     seats = max(seats, users)   # can't buy fewer seats than existing members
     params = {
         "mode": "subscription",
+        "ui_mode": "embedded",
         "line_items[0][price]": _price_for(body.interval),
         "line_items[0][quantity]": seats,
         "line_items[0][adjustable_quantity][enabled]": "true",
@@ -134,8 +140,9 @@ def create_checkout(body: CheckoutRequest, current: User = Depends(require_admin
         "subscription_data[metadata][tenant_id]": tenant.id,
         "metadata[tenant_id]": tenant.id,
         "allow_promotion_codes": "true",
-        "success_url": f"{_base_url()}/#billing=success",
-        "cancel_url": f"{_base_url()}/#billing=cancelled",
+        # On completion Stripe redirects the embedded flow back to our own page — still on
+        # our domain start to finish. The webhook (not this URL) is what flips the plan.
+        "return_url": f"{_base_url()}/#billing=success",
     }
     # Reuse the Stripe customer across attempts so retries and re-subscribes don't
     # spawn duplicate customer records.
@@ -146,7 +153,7 @@ def create_checkout(body: CheckoutRequest, current: User = Depends(require_admin
     session = _stripe("POST", "/checkout/sessions", params)
     audit_log.record(db, tenant.id, current.email, "billing.checkout",
                      target="team", detail={"seats": seats, "interval": body.interval})
-    return {"url": session["url"]}
+    return {"client_secret": session["client_secret"]}
 
 
 @router.post("/billing/portal")
