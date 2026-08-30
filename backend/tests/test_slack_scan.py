@@ -146,3 +146,24 @@ def test_missing_token_and_api_error_surface(client, monkeypatch):
 def test_slack_messages_platform_listed(client):
     platforms = client.get("/api/discovery/connectors").json()["platforms"]
     assert platforms["slack_messages"]["credential_fields"] == ["bot_token"]
+
+
+def test_scan_fingerprints_substantial_messages(client, monkeypatch, db_factory):
+    """Slack scanning stores content-origin fingerprints for real messages (so a later
+    leak traces back to the thread), and skips one-liners too short to shingle."""
+    long_msg = ("Here is the full production incident postmortem for the billing outage "
+                "including the root cause analysis timeline and the customer accounts "
+                "that were affected during the ninety minute window on tuesday morning")
+    _fake_slack(monkeypatch, [
+        {"user": "U1", "ts": "1755100003.000100", "text": long_msg},
+        {"user": "U1", "ts": "1755100001.000100", "text": "lunch?"},
+    ])
+    cid = _mk(client)
+    client.post(f"/api/discovery/connectors/{cid}/sync")
+    from app.models import ContentFingerprint, Tenant
+    db = db_factory()
+    tid = db.query(Tenant).filter(Tenant.slug == "acme").first().id
+    rows = db.query(ContentFingerprint).filter_by(tenant_id=tid, source="slack").all()
+    assert len(rows) == 1                       # only the substantial message
+    assert rows[0].shingles and rows[0].owner == "nurse@acme.com"
+    db.close()

@@ -390,6 +390,13 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
                               metadata={"custom_pii": custom_pii}),
                 persist=True, db=db, tenant_id=connector.tenant_id,
                 persist_benign=False, use_judge=False)
+            # Fingerprint substantial messages so a later leak can be traced to the
+            # thread it was lifted from. store_fingerprint no-ops on short text, so
+            # one-liners ("lunch?") never create rows — only real content does.
+            from . import content_origin
+            content_origin.store_fingerprint(
+                db, connector.tenant_id, "slack", f"{cid}:{m['ts']}",
+                f"#{cname}" if cname else cid, actor, m["text"])
             scanned += 1
             if not over:
                 marks[cid] = m["ts"]
@@ -585,6 +592,11 @@ def scan_gdrive_files(db, connector, creds: dict) -> dict:
             if _scan_blob(db, connector, custom_pii, content=text, sender=sender,
                           subject=name, channel="gdrive"):
                 findings += 1
+            # Fingerprint every scanned doc (benign ones are valid origins too) so a later
+            # leak of this content can be traced back here.
+            from . import content_origin
+            content_origin.store_fingerprint(db, connector.tenant_id, "gdrive", fid,
+                                             name, sender, text)
             scanned += 1
             mark = f.get("modifiedTime") or mark
         if truncated:
@@ -669,6 +681,9 @@ def scan_sharepoint_files(db, connector, creds: dict) -> dict:
                 if _scan_blob(db, connector, custom_pii, content=text, sender=sender,
                               subject=subject, channel="sharepoint"):
                     findings += 1
+                from . import content_origin
+                content_origin.store_fingerprint(db, connector.tenant_id, "sharepoint",
+                                                 item.get("id", ""), subject, sender, text)
                 scanned += 1
             if over:
                 break
