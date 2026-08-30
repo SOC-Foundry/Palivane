@@ -462,6 +462,108 @@ def fetch_salesforce(creds: dict) -> list[dict]:
     return grants
 
 
+# --- Salesforce content scanning ---------------------------------------------------------
+#
+# Distinct from fetch_salesforce (grant inventory): this reads record CONTENT — the free-text
+# fields where customer PII and secrets actually accumulate — and runs it through the engine
+# on the collab surface, same as Slack/Drive/SharePoint. SOQL is watermark-incremental on
+# LastModifiedDate, oldest-first so the cursor only advances past records actually scanned.
+# The object set is configurable (creds["objects"]); the defaults are the two objects that
+# hold sensitive free text in almost every org.
+
+_MAX_RECORDS_PER_SYNC = 2000
+# Each target: which sObject, which text fields to scan, an optional field to title the
+# finding, and the relationship path to the actor to attribute it to.
+_DEFAULT_SF_OBJECTS = [
+    {"sobject": "Case", "fields": ["Subject", "Description"],
+     "title": "Subject", "actor": "LastModifiedBy.Username"},
+    {"sobject": "FeedItem", "fields": ["Body"],
+     "title": None, "actor": "CreatedBy.Username"},
+]
+
+
+def _sf_path(rec: dict, dotted: str) -> str:
+    """Walk a SOQL relationship path (e.g. 'LastModifiedBy.Username') through the nested
+    record dicts Salesforce returns; '' when any hop is missing."""
+    cur = rec
+    for part in dotted.split("."):
+        if not isinstance(cur, dict):
+            return ""
+        cur = cur.get(part)
+    return cur if isinstance(cur, str) else ""
+
+
+def scan_salesforce_records(db, connector, creds: dict) -> dict:
+    """Scan changed Salesforce records (Cases, Chatter posts by default) for PII/PHI/
+    secrets, and fingerprint them for content-origin. Watermark-incremental per sObject on
+    LastModifiedDate. Text fields only — file/attachment bodies (ContentVersion) are a
+    separate scan, not covered here."""
+    instance, token = _salesforce_access(creds)
+    hdrs = {"Authorization": f"Bearer {token}"}
+    custom_pii = _tenant_custom_pii(db, connector)
+    state = connector.state
+    marks: dict[str, str] = dict(state.get("sf_objects") or {})
+    targets = creds.get("objects") or _DEFAULT_SF_OBJECTS
+    default_since = datetime.fromtimestamp(
+        time.time() - _SCAN_LOOKBACK_SECS, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    scanned = findings = 0
+    truncated = False
+    for t in targets:
+        if scanned >= _MAX_RECORDS_PER_SYNC:
+            truncated = True
+            break
+        sobject = t["sobject"]
+        text_fields = t["fields"]
+        actor_path = t.get("actor") or ""
+        title_field = t.get("title")
+        # Deduped SELECT: Id + watermark + actor relationship + content/title fields.
+        select = ["Id", "LastModifiedDate"]
+        for f in ([actor_path] if actor_path else []) + text_fields + \
+                ([title_field] if title_field else []):
+            if f and f not in select:
+                select.append(f)
+        watermark = marks.get(sobject) or default_since
+        soql = (f"SELECT {', '.join(select)} FROM {sobject} "
+                f"WHERE LastModifiedDate > {watermark} ORDER BY LastModifiedDate ASC")
+        url = (f"{instance}/services/data/{_SF_API_VERSION}/query?"
+               + urllib.parse.urlencode({"q": soql}))
+        mark = watermark
+        over = False
+        while url and not over:
+            data = _http_json(url, headers=hdrs)
+            for rec in data.get("records", []):
+                if scanned >= _MAX_RECORDS_PER_SYNC:
+                    over = True
+                    break
+                content = "\n".join(str(rec.get(f) or "") for f in text_fields).strip()
+                rid = rec.get("Id", "")
+                if not content or not rid:
+                    mark = rec.get("LastModifiedDate") or mark   # nothing to scan, still advance
+                    continue
+                actor = _sf_path(rec, actor_path) if actor_path else ""
+                title = (title_field and str(rec.get(title_field) or "")) or f"{sobject} {rid}"
+                if _scan_blob(db, connector, custom_pii, content=content, sender=actor,
+                              subject=f"{sobject}: {title}"[:200], channel="salesforce"):
+                    findings += 1
+                from . import content_origin
+                content_origin.store_fingerprint(db, connector.tenant_id, "salesforce",
+                                                 f"{sobject}:{rid}", title, actor, content)
+                scanned += 1
+                mark = rec.get("LastModifiedDate") or mark
+            nxt = data.get("nextRecordsUrl", "")
+            url = f"{instance}{nxt}" if (nxt and not data.get("done", True)) else ""
+        marks[sobject] = mark
+        if over:
+            truncated = True
+
+    connector.state = {**state, "sf_objects": marks}
+    summary = {"records": scanned, "findings": findings, "objects": len(targets)}
+    if truncated:
+        summary["truncated"] = True
+    return summary
+
+
 # --- Notion (manual export only) ---------------------------------------------------------
 
 def fetch_notion(creds: dict) -> list[dict]:
@@ -770,6 +872,19 @@ PLATFORMS: dict[str, dict] = {
                  "user needs API Enabled + Manage Users to read the OauthToken sObject. "
                  "Salesforce does not expose per-token scopes, so scope-based risk "
                  "flagging is unavailable here.",
+    },
+    "salesforce_content": {
+        "label": "Salesforce content scanning",
+        "scan": scan_salesforce_records,
+        "credential_fields": ["instance_url", "client_id", "client_secret"],
+        "setup": "Same connected app as the Salesforce grant connector (client-credentials "
+                 "flow; instance_url is the org's My Domain). The run-as user needs API "
+                 "Enabled plus read access to the scanned objects. Scans record free-text "
+                 "for PII/secrets on the collab surface — Cases (Subject, Description) and "
+                 "Chatter posts by default; override with an `objects` credential entry "
+                 "([{sobject, fields, title, actor}]) to scan custom objects. Watermark-"
+                 "incremental on LastModifiedDate (first sync looks back 7 days). Text "
+                 "fields only — file/attachment bodies are not scanned. Rules-only.",
     },
     "notion": {
         "label": "Notion (manual export only)",
