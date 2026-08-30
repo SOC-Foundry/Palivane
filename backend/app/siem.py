@@ -36,6 +36,9 @@ def _fields(verdict: dict, subject: str, actor: str, surface: str, org: str) -> 
         "top_signals": top_signals(verdict.get("signals"), 3),
         "surface": surface, "subject": subject, "actor": actor,
         "finding_id": verdict.get("finding_id"), "org": org,
+        # Content-origin lineage: the source document the leaked content came from, when
+        # matched, so a SIEM correlation rule can pivot on the leaking file/owner.
+        "origin": verdict.get("origin") or None,
         "ts": int(time.time()),
     }
 

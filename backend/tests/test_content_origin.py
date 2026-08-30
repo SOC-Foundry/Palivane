@@ -189,3 +189,36 @@ def test_origin_boosts_severity(client, db_factory):
     assert boosted["risk_score"] >= 60 and boosted["severity"] in ("high", "critical")
     assert any(s["detector"] == "content_origin" for s in boosted["signals"])
     assert any("known sensitive document" in s["title"] for s in boosted["signals"])
+
+
+def test_origin_propagates_to_alert_siem_report(client, db_factory, monkeypatch):
+    """Layer 3: origin flows into the alert payload, the SIEM record, and the report."""
+    import app.alerts as alerts
+    import app.siem as siem
+    tid = _tid(db_factory)
+    leaky = DOC + " db password=Pr0dDb9xKmz2024"
+    db = db_factory()
+    co.store_fingerprint(db, tid, "sharepoint", "sp:9", "Q3-board.pptx", "cfo@acme.com",
+                         leaky, sensitive=True)
+    db.commit(); db.close()
+
+    # alert payload names the source
+    verdict = {"severity": "critical", "risk_score": 95, "signals": [],
+               "origin": {"source": "sharepoint", "ref": "sp:9", "title": "Q3-board.pptx",
+                          "owner": "cfo@acme.com", "containment": 0.97, "sensitive": True}}
+    pl = alerts._payload(verdict, "paste", "alice@acme.com", "ai_usage")
+    assert "Q3-board.pptx" in pl["text"] and "sensitive source" in pl["text"]
+    assert pl["palivane"]["origin"]["ref"] == "sp:9"
+
+    # SIEM record carries the structured origin
+    f = siem._fields(verdict, "paste", "alice@acme.com", "ai_usage", "acme")
+    assert f["origin"]["title"] == "Q3-board.pptx" and f["origin"]["sensitive"] is True
+
+    # report counts leaked source documents
+    db = db_factory()
+    run_analysis(AnalysisInput(content=leaky, sender="al@acme.com", channel="chatgpt.com",
+                               subject="p", surface=Surface.AI_USAGE),
+                 persist=True, db=db, tenant_id=tid, persist_benign=False, use_judge=False)
+    db.commit(); db.close()
+    rep = client.get("/api/reports/summary?days=30").json()
+    assert rep["leaked_source_documents"] >= 1 and rep["leaks_with_known_source"] >= 1
