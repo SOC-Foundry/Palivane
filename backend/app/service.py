@@ -182,18 +182,11 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         # bumps the original's seen_count/last_seen instead of creating another open row —
         # and stays dismissed if an analyst already dismissed it. Alerts/SIEM fired on the
         # first occurrence; recurrences don't re-alert.
-        fp = _fingerprint(tenant_id, item, result["signals"])
-        prior = _fold_recurrence(db, tenant_id, fp)
-        if prior is not None:
-            from datetime import datetime, timezone
-            prior.seen_count = (prior.seen_count or 1) + 1
-            prior.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
-            db.commit()
-            return {"finding_id": prior.id, "recurrence": prior.seen_count,
-                    "judge_used": judge_ran, **result}
         # Content origin: if this leaked content overlaps a document we scanned at rest,
         # attach where it came from. Only for data-loss findings (a paste of sensitive
         # data has a source; an injection attempt does not), and only for egress surfaces.
+        # Computed before the recurrence check so a repeat can backfill an origin that was
+        # only fingerprinted after the finding first fired.
         origin = None
         if item.surface.value in ("ai_usage", "llm_io"):
             _DLP = {"secret_leak", "pii_exposure", "phi_exposure",
@@ -201,6 +194,19 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             if any(s.get("category") in _DLP for s in result["signals"]):
                 from . import content_origin
                 origin = content_origin.match_origin(db, tenant_id, item.content)
+        fp = _fingerprint(tenant_id, item, result["signals"])
+        prior = _fold_recurrence(db, tenant_id, fp)
+        if prior is not None:
+            from datetime import datetime, timezone
+            prior.seen_count = (prior.seen_count or 1) + 1
+            prior.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
+            # Backfill a source discovered since this finding first fired (the at-rest scan
+            # that fingerprinted it may have run after the first leak).
+            if origin and not prior.origin:
+                prior.origin = origin
+            db.commit()
+            return {"finding_id": prior.id, "recurrence": prior.seen_count,
+                    "judge_used": judge_ran, **result}
         finding = Finding(
             tenant_id=tenant_id,
             fingerprint=fp,
