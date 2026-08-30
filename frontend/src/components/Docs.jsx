@@ -15,12 +15,14 @@ import dataFlowsMd from "../../../docs/data-flows.md?raw";
 import verifyMd from "../../../docs/verifying-downloads.md?raw";
 import pilotMd from "../../../docs/pilot-smoke-test.md?raw";
 import corpChecklistMd from "../../../docs/corporate-deployment-checklist.md?raw";
+import existingProxyMd from "../../../docs/existing-proxy-vpn.md?raw";
 
 const DOCS = [
   { slug: "overview", title: "Overview & architecture", md: overviewMd },
   { slug: "setup", title: "Setting up Palivane", md: setupMd },
   { slug: "claude", title: "Deploying for Claude", md: claudeMd },
   { slug: "corporate-checklist", title: "Corporate deployment checklist", md: corpChecklistMd },
+  { slug: "existing-proxy-vpn", title: "Alongside your proxy or VPN", md: existingProxyMd },
   { slug: "mdm-policy-pack", title: "MDM policy pack", md: mdmMd },
   { slug: "tokens-and-identity", title: "Tokens & identity", md: tokensMd },
   { slug: "at-rest-scanning", title: "S3 & repo scanning", md: atRestMd },
