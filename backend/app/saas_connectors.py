@@ -390,6 +390,13 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
                               metadata={"custom_pii": custom_pii}),
                 persist=True, db=db, tenant_id=connector.tenant_id,
                 persist_benign=False, use_judge=False)
+            # Fingerprint substantial messages so a later leak can be traced to the
+            # thread it was lifted from. store_fingerprint no-ops on short text, so
+            # one-liners ("lunch?") never create rows — only real content does.
+            from . import content_origin
+            content_origin.store_fingerprint(
+                db, connector.tenant_id, "slack", f"{cid}:{m['ts']}",
+                f"#{cname}" if cname else cid, actor, m["text"])
             scanned += 1
             if not over:
                 marks[cid] = m["ts"]
