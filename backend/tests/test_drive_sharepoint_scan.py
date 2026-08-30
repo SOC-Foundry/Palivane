@@ -123,3 +123,71 @@ def test_platforms_registered(client):
     assert {"gdrive_files", "sharepoint_files"} <= set(plats)
     for k in ("gdrive_files", "sharepoint_files"):
         assert plats[k]["credential_fields"] and plats[k]["setup"]
+
+
+# --- Salesforce content ------------------------------------------------------------------
+
+SF_CREDS = {"instance_url": "https://acme.my.salesforce.com",
+            "client_id": "c1", "client_secret": "s1"}
+
+
+def _fake_salesforce(monkeypatch, by_object):
+    """Canned SOQL: by_object maps sObject name -> list of record dicts."""
+    monkeypatch.setattr(sc, "_salesforce_access", lambda creds: ("https://acme.my.salesforce.com", "tok"))
+
+    def fake_json(url, headers=None, data=None, timeout=20):
+        q = sc.urllib.parse.unquote_plus(url.split("q=", 1)[1]) if "q=" in url else ""
+        for name, recs in by_object.items():
+            if f"FROM {name} " in q:
+                return {"records": recs, "done": True}
+        return {"records": [], "done": True}
+
+    monkeypatch.setattr(sc, "_http_json", fake_json)
+
+
+def test_salesforce_scans_cases_and_chatter(client, monkeypatch, db_factory):
+    _fake_salesforce(monkeypatch, {
+        "Case": [
+            {"Id": "500x1", "LastModifiedDate": "2026-08-20T10:00:00.000+0000",
+             "LastModifiedBy": {"Username": "agent@acme.com"},
+             "Subject": "billing question",
+             "Description": "customer SSN is 123-45-6789 and card 4111111111111111"},
+            {"Id": "500x2", "LastModifiedDate": "2026-08-21T10:00:00.000+0000",
+             "LastModifiedBy": {"Username": "agent@acme.com"},
+             "Subject": "hello", "Description": "just checking in, no data here"},
+        ],
+        "FeedItem": [
+            {"Id": "0D5x1", "LastModifiedDate": "2026-08-22T10:00:00.000+0000",
+             "CreatedBy": {"Username": "rep@acme.com"},
+             "Body": "posting the prod db password=Pr0dDb9xKmz2024 for the team"},
+        ],
+    })
+    cid = _mk(client, "salesforce_content", SF_CREDS)
+    summary = client.post(f"/api/discovery/connectors/{cid}/sync").json()
+    assert summary["records"] == 3 and summary["objects"] == 2
+    assert summary["findings"] == 2                      # the benign case doesn't persist
+    rows = client.get("/api/findings?surface=collab").json()["findings"]
+    sf = [r for r in rows if r["channel"] == "salesforce"]
+    assert len(sf) == 2
+    case = [r for r in sf if r["subject"].startswith("Case:")][0]
+    assert case["sender"] == "agent@acme.com" and "pii_exposure" in case["categories"]
+    assert any(r["subject"].startswith("FeedItem:") for r in sf)
+
+
+def test_salesforce_fingerprints_for_origin(client, monkeypatch, db_factory):
+    _fake_salesforce(monkeypatch, {
+        "Case": [{"Id": "500z", "LastModifiedDate": "2026-08-20T10:00:00.000+0000",
+                  "LastModifiedBy": {"Username": "agent@acme.com"}, "Subject": "escalation",
+                  "Description": "The enterprise renewal terms and the confidential pricing "
+                                 "schedule for globex are attached in the following summary "
+                                 "for the account team to review before the call next week."}],
+        "FeedItem": [],
+    })
+    cid = _mk(client, "salesforce_content", SF_CREDS)
+    client.post(f"/api/discovery/connectors/{cid}/sync")
+    from app.models import ContentFingerprint, Tenant
+    db = db_factory()
+    tid = db.query(Tenant).filter(Tenant.slug == "acme").first().id
+    rows = db.query(ContentFingerprint).filter_by(tenant_id=tid, source="salesforce").all()
+    assert len(rows) == 1 and rows[0].ref == "Case:500z" and rows[0].shingles
+    db.close()
