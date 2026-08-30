@@ -91,6 +91,21 @@ def _saturating_combine(contributions: list[float]) -> float:
     return 1.0 - acc
 
 
+def severity_for(risk: int) -> tuple[str, str]:
+    """Map a 0..100 risk score to (severity, recommended_action). The single source of
+    these thresholds — score() and the origin-severity boost both call it so a bumped
+    risk lands on exactly the same bands as a natively-scored one."""
+    if risk >= 80:
+        return "critical", "block"
+    if risk >= 60:
+        return "high", "quarantine"
+    if risk >= 35:
+        return "suspicious", "quarantine"
+    if risk >= 15:
+        return "low", "monitor"
+    return "benign", "allow"
+
+
 def score(signals: list[Signal]) -> Verdict:
     real = [s for s in signals if s.contribution > 0.0]
 
@@ -113,16 +128,7 @@ def score(signals: list[Signal]) -> Verdict:
     ai_generated = ai_conf >= 0.5
     attack_intent = attack_conf >= 0.45
 
-    if risk >= 80:
-        severity, action = "critical", "block"
-    elif risk >= 60:
-        severity, action = "high", "quarantine"
-    elif risk >= 35:
-        severity, action = "suspicious", "quarantine"
-    elif risk >= 15:
-        severity, action = "low", "monitor"
-    else:
-        severity, action = "benign", "allow"
+    severity, action = severity_for(risk)
 
     # Strongest evidence first.
     ordered = sorted(real, key=lambda s: s.contribution, reverse=True)

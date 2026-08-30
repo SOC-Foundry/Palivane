@@ -836,6 +836,11 @@ class ContentFingerprint(Base):
     title = Column(String(512), default="")      # human name (file name, channel)
     owner = Column(String(320), default="")      # last modifier / owner email
     shingles = Column(JSON, default=list)         # sampled shingle hashes (strings)
+    # True when the source document's own at-rest scan tripped a data-loss category —
+    # i.e. the doc itself holds secrets/PII. A leak matching a KNOWN-sensitive doc gets a
+    # larger severity boost than one matching a merely-known doc. No manual labeling: the
+    # scan that fingerprints the doc already knows whether it was sensitive.
+    sensitive = Column(Boolean, default=False)
     updated_at = Column(DateTime, default=_utcnow, index=True)
 
 

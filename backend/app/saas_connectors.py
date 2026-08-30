@@ -396,7 +396,8 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
             from . import content_origin
             content_origin.store_fingerprint(
                 db, connector.tenant_id, "slack", f"{cid}:{m['ts']}",
-                f"#{cname}" if cname else cid, actor, m["text"])
+                f"#{cname}" if cname else cid, actor, m["text"],
+                sensitive=result.get("finding_id") is not None)
             scanned += 1
             if not over:
                 marks[cid] = m["ts"]
@@ -543,12 +544,14 @@ def scan_salesforce_records(db, connector, creds: dict) -> dict:
                     continue
                 actor = _sf_path(rec, actor_path) if actor_path else ""
                 title = (title_field and str(rec.get(title_field) or "")) or f"{sobject} {rid}"
-                if _scan_blob(db, connector, custom_pii, content=content, sender=actor,
-                              subject=f"{sobject}: {title}"[:200], channel="salesforce"):
+                hit = _scan_blob(db, connector, custom_pii, content=content, sender=actor,
+                                 subject=f"{sobject}: {title}"[:200], channel="salesforce")
+                if hit:
                     findings += 1
                 from . import content_origin
                 content_origin.store_fingerprint(db, connector.tenant_id, "salesforce",
-                                                 f"{sobject}:{rid}", title, actor, content)
+                                                 f"{sobject}:{rid}", title, actor, content,
+                                                 sensitive=hit)
                 scanned += 1
                 mark = rec.get("LastModifiedDate") or mark
             nxt = data.get("nextRecordsUrl", "")
@@ -691,14 +694,16 @@ def scan_gdrive_files(db, connector, creds: dict) -> dict:
                 continue
             sender = ((f.get("lastModifyingUser") or {}).get("emailAddress")
                       or ((f.get("owners") or [{}])[0]).get("emailAddress") or "")
-            if _scan_blob(db, connector, custom_pii, content=text, sender=sender,
-                          subject=name, channel="gdrive"):
+            hit = _scan_blob(db, connector, custom_pii, content=text, sender=sender,
+                             subject=name, channel="gdrive")
+            if hit:
                 findings += 1
             # Fingerprint every scanned doc (benign ones are valid origins too) so a later
-            # leak of this content can be traced back here.
+            # leak of this content can be traced back here; sensitive= flags docs whose own
+            # scan tripped a data-loss category, for a stronger match-time severity boost.
             from . import content_origin
             content_origin.store_fingerprint(db, connector.tenant_id, "gdrive", fid,
-                                             name, sender, text)
+                                             name, sender, text, sensitive=hit)
             scanned += 1
             mark = f.get("modifiedTime") or mark
         if truncated:
@@ -780,12 +785,14 @@ def scan_sharepoint_files(db, connector, creds: dict) -> dict:
                 sender = (((item.get("lastModifiedBy") or {}).get("user") or {})
                           .get("email") or "")
                 subject = f"{drive.get('name', 'library')}/{name}"
-                if _scan_blob(db, connector, custom_pii, content=text, sender=sender,
-                              subject=subject, channel="sharepoint"):
+                hit = _scan_blob(db, connector, custom_pii, content=text, sender=sender,
+                                 subject=subject, channel="sharepoint")
+                if hit:
                     findings += 1
                 from . import content_origin
                 content_origin.store_fingerprint(db, connector.tenant_id, "sharepoint",
-                                                 item.get("id", ""), subject, sender, text)
+                                                 item.get("id", ""), subject, sender, text,
+                                                 sensitive=hit)
                 scanned += 1
             if over:
                 break

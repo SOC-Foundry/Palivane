@@ -71,7 +71,7 @@ def fingerprint(text: str) -> list[str]:
 
 
 def store_fingerprint(db, tenant_id: int, source: str, ref: str, title: str,
-                      owner: str, content: str) -> None:
+                      owner: str, content: str, sensitive: bool = False) -> None:
     """Upsert one document's sketch. Best-effort — a fingerprinting failure must never
     sink the scan it rides on."""
     try:
@@ -97,6 +97,7 @@ def store_fingerprint(db, tenant_id: int, source: str, ref: str, title: str,
         row.title = (title or "")[:512]
         row.owner = (owner or "")[:320]
         row.shingles = sk
+        row.sensitive = bool(sensitive)
         row.updated_at = now
     except Exception:
         pass
@@ -128,6 +129,7 @@ def match_origin(db, tenant_id: int, content: str) -> dict | None:
         if best is None:
             return None
         return {"source": best.source, "ref": best.ref, "title": best.title,
-                "owner": best.owner, "containment": round(best_c, 2)}
+                "owner": best.owner, "containment": round(best_c, 2),
+                "sensitive": bool(best.sensitive)}
     except Exception:
         return None
