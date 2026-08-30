@@ -2531,6 +2531,53 @@ def activity_users(current: User = Depends(require_admin), db: Session = Depends
     return {"users": out[:min(limit, 1000)]}
 
 
+@app.get("/api/exposure")
+def exposure(current: User = Depends(require_admin), db: Session = Depends(get_db),
+             limit: int = 200):
+    """Blast radius of content-origin lineage: for each at-rest document that leaked into
+    an AI tool, every leak that pulled from it — which tools, which users, how often, when.
+    The inverse of finding.origin (finding -> source): here it's source -> leaks. Answers
+    'which of my sensitive documents are leaking, and where.'"""
+    _RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}
+    rows = (db.query(Finding)
+              .filter(Finding.tenant_id == current.tenant_id, Finding.origin.isnot(None))
+              .order_by(Finding.last_seen.desc()).limit(20000).all())
+    docs: dict[tuple, dict] = {}
+    for r in rows:
+        o = r.origin or {}
+        # A no-match finding stores origin as JSON null (not SQL NULL), so isnot(None)
+        # can't filter it — skip anything without a resolved source ref.
+        if not isinstance(o, dict) or not o.get("ref"):
+            continue
+        key = (o.get("source", ""), o.get("ref", ""))
+        d = docs.setdefault(key, {
+            "source": o.get("source", ""), "ref": o.get("ref", ""),
+            "title": o.get("title", "") or o.get("ref", ""), "owner": o.get("owner", ""),
+            "leaks": 0, "max_severity": "benign", "max_containment": 0.0,
+            "tools": {}, "users": set(), "last_seen": ""})
+        n = r.seen_count or 1
+        d["leaks"] += n
+        if _RANK.get(r.severity, 0) > _RANK.get(d["max_severity"], 0):
+            d["max_severity"] = r.severity
+        d["max_containment"] = max(d["max_containment"], float(o.get("containment") or 0))
+        tool = r.channel or "?"
+        d["tools"][tool] = d["tools"].get(tool, 0) + n
+        if r.sender:
+            d["users"].add(r.sender)
+        ls = (r.last_seen or r.created_at)
+        ls = ls.isoformat() if ls else ""
+        if ls > d["last_seen"]:
+            d["last_seen"] = ls
+    out = []
+    for d in docs.values():
+        out.append({**d, "users": sorted(d["users"]), "user_count": len(d["users"]),
+                    "tools": [{"tool": k, "count": v}
+                              for k, v in sorted(d["tools"].items(),
+                                                 key=lambda kv: kv[1], reverse=True)]})
+    out.sort(key=lambda x: (_RANK.get(x["max_severity"], 0), x["leaks"]), reverse=True)
+    return {"documents": out[:min(limit, 1000)]}
+
+
 @app.get("/api/audit/sessions")
 def audit_sessions(current: User = Depends(require_admin), db: Session = Depends(get_db),
                    days: int = 7, limit: int = 200):

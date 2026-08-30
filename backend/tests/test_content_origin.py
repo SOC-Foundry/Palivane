@@ -132,3 +132,31 @@ def _match(db_factory, tid, content):
         return co.match_origin(db, tid, content)
     finally:
         db.close()
+
+
+def test_recurrence_backfills_origin(client, db_factory):
+    """A source fingerprinted AFTER a leak first fired backfills origin on the next
+    recurrence, instead of the fold silently keeping the finding origin-less."""
+    tid = _tid(db_factory)
+    leaky = DOC + " db password=Pr0dDb9xKmz2024"
+    item = AnalysisInput(content=leaky, sender="al@acme.com", channel="chatgpt.com",
+                         subject="paste", surface=Surface.AI_USAGE)
+    # first leak — no fingerprint yet, so no origin
+    db = db_factory()
+    r1 = run_analysis(item, persist=True, db=db, tenant_id=tid, persist_benign=False,
+                      use_judge=False)
+    db.commit(); db.close()
+    from app.models import Finding
+    db = db_factory()
+    assert db.get(Finding, r1["finding_id"]).origin is None
+    # now the source gets scanned
+    co.store_fingerprint(db, tid, "gdrive", "f1", "Q3.docx", "fin@acme.com", leaky)
+    db.commit(); db.close()
+    # the same leak recurs — folds into the first finding AND backfills its origin
+    db = db_factory()
+    r2 = run_analysis(item, persist=True, db=db, tenant_id=tid, persist_benign=False,
+                      use_judge=False)
+    db.commit()
+    assert r2["finding_id"] == r1["finding_id"] and r2.get("recurrence") == 2
+    assert db.get(Finding, r1["finding_id"]).origin["title"] == "Q3.docx"
+    db.close()

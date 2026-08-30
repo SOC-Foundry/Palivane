@@ -23,6 +23,7 @@ import ExtensionConnect from "./components/ExtensionConnect.jsx";
 import Connections from "./components/Connections.jsx";
 import Coverage from "./components/Coverage.jsx";
 import Discovery from "./components/Discovery.jsx";
+import Exposure from "./components/Exposure.jsx";
 import Policies from "./components/Policies.jsx";
 import ScanLog from "./components/ScanLog.jsx";
 import Agents from "./components/Agents.jsx";
@@ -51,6 +52,7 @@ const NAV = [
   ]},
   { head: "Inventory", items: [
     { v: "discovery",   icon: <IconRadar />,     label: "Discovery" },
+    { v: "exposure",    icon: <IconRadar />,     label: "Exposure" },
     { v: "coverage",    icon: <IconTarget />,    label: "Coverage" },
     { v: "fleet",       icon: <IconActivity />,  label: "Fleet" },
     { v: "agents",      icon: <IconBot />,       label: "Agents" },
@@ -321,6 +323,8 @@ export default function App() {
           <Connections />
         ) : view === "discovery" ? (
           <Discovery tenant={auth.tenant} onTenant={(t) => setAuth((a) => ({ ...a, tenant: t }))} />
+        ) : view === "exposure" ? (
+          <Exposure />
         ) : view === "coverage" ? (
           <Coverage />
         ) : view === "policies" ? (
