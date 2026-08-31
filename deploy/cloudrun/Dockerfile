@@ -12,6 +12,16 @@ COPY frontend/ ./
 # The /docs pages import repo markdown via ?raw ("../../../docs/*.md" from
 # /web/src/components resolves to /docs) — the docs must exist in the build stage.
 COPY docs/ /docs/
+# Which deployment this image IS. The marketing pages make a promise about where prompt
+# text goes, and the honest answer differs: self-hosted it never leaves the operator's own
+# infrastructure, managed it reaches Palivane. Baked in at build time rather than fetched,
+# so the page never renders one answer and then corrects itself.
+#
+# "1" = self-hosted, which is the STRONGER claim and therefore the one you opt into. Unset
+# yields the managed copy, so a forgotten flag always understates rather than overstates.
+# docker-compose sets it for the ordinary self-host path.
+ARG VITE_PALIVANE_SELF_HOSTED=""
+ENV VITE_PALIVANE_SELF_HOSTED=$VITE_PALIVANE_SELF_HOSTED
 RUN npm run build          # -> /web/dist
 
 # --- Stage 2: backend + static SPA ---

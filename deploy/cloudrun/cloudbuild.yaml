@@ -6,12 +6,16 @@ substitutions:
   _REPO: palivane
   _IMAGE: palivane
   _TAG: latest
+  # "1" builds the SPA as a SELF-HOSTED install (see the Dockerfile). Empty = managed.
+  _SELF_HOSTED: ""
 steps:
   - name: gcr.io/cloud-builders/docker
     args:
       - build
       - -f
       - deploy/cloudrun/Dockerfile
+      - --build-arg
+      - VITE_PALIVANE_SELF_HOSTED=${_SELF_HOSTED}
       - -t
       - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_TAG}
       - .

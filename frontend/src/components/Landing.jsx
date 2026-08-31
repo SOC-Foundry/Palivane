@@ -4,6 +4,7 @@ import { SiteNav, SiteFooter, Shot, Clip, Lightbox } from "./SiteChrome.jsx";
 // Derived from the detector source at build time (frontend/scripts/gen-stats.mjs, CI
 // fails when stale) — the band can never claim different numbers than the engine ships.
 import stats from "../stats.gen.json";
+import { SELF_HOSTED } from "../deployment.js";
 
 // The page alternates deliberately: a full-bleed band, then a two-column split, then the
 // mirror of that split, then a card row. The previous version stacked five identical
@@ -12,7 +13,9 @@ import stats from "../stats.gen.json";
 
 const STATS = [
   { n: "6", l: "surfaces covered", s: "browser, desktop, CLI, CI, cloud storage, MCP" },
-  { n: "0", l: "prompt text kept by default", s: "the verdict and its metadata, not what was typed" },
+  SELF_HOSTED
+    ? { n: "0", l: "content leaves your infrastructure", s: "detection runs on the backend you deploy" }
+    : { n: "0", l: "prompt text kept by default", s: "the verdict and its metadata, not what was typed" },
   { n: `${stats.detection_checks}`, l: "detection checks",
     s: `${stats.secret_formats} credential formats, PII, source code, prompt attacks, agent actions` },
   { n: "1", l: "afternoon to set up", s: "one command, nothing to install by hand" },
@@ -39,7 +42,9 @@ const FAQ = [
   { q: "Does anything have to be installed on every laptop?",
     a: "No. The browser extension can be force-installed by policy and the CLI coverage arrives through one command that a person runs once, or through your MDM. Nothing needs a per-machine visit." },
   { q: "Where does our prompt text actually go?",
-    a: "To your Palivane backend, and nowhere beyond it. Self-host and it never leaves your own infrastructure. On the managed service it reaches Palivane, which by default records the verdict and its metadata and discards the text. Scoring is deterministic either way (rules and heuristics, with no AI service in the loop) unless you switch on the optional LLM judge, which does send the content it reviews to the model provider you choose." },
+    a: SELF_HOSTED
+      ? "To the Palivane backend you deploy, and nowhere beyond it. It never leaves your infrastructure, so there is no vendor holding your prompts. Scoring is deterministic (rules and heuristics, no AI service in the loop) unless you switch on the optional LLM judge, which does send the content it reviews to the model provider you choose."
+      : "To Palivane, and nowhere beyond it. By default we record the verdict and its metadata and discard the text itself, so what we hold is that a prompt to ChatGPT carried an AWS key, not the prompt. Scoring is deterministic (rules and heuristics, no AI service in the loop) unless you switch on the optional LLM judge, which does send the content it reviews to the model provider you choose. Prefer that none of it reaches us at all? The free self-hosted edition runs the same detection on your own infrastructure, and comes through us while the public release is prepared." },
   { q: "Will it break the AI tools people already pay for?",
     a: "No. Personal Claude and ChatGPT sign-ins keep working, because the hooks score a prompt alongside the request rather than putting a gateway in its path, so the tool still talks to the provider itself with its own credentials. Gateway routing is available, and optional — OpenAI, Anthropic, Gemini, Azure OpenAI, or any OpenAI-compatible provider." },
   { q: "What happens the moment we turn it on?",
@@ -167,9 +172,10 @@ export default function Landing({ onSignIn }) {
           <div className="lp-split-text sticky">
             <span className="lp-eyebrow">Detection</span>
             <h2 className="lp-h2">What Palivane looks for</h2>
-            <p className="lp-sub">Every check runs on your Palivane backend in milliseconds,
-              deterministic rules with no AI service in the loop. One risk score decides
-              whether to allow, warn, or block.</p>
+            <p className="lp-sub">Every check runs {SELF_HOSTED ? "inside your own deployment"
+              : "on your Palivane backend"} in milliseconds, deterministic rules with no
+              AI service in the loop. One risk score decides whether to allow, warn, or
+              block.</p>
             <a className="lp-textlink" href="/how-it-works">The scoring model →</a>
           </div>
           <ul className="lp-checklist">

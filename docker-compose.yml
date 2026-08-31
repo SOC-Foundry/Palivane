@@ -26,6 +26,10 @@ services:
     build:
       context: .
       dockerfile: deploy/cloudrun/Dockerfile
+      args:
+        # This stack IS a self-hosted install, so the site may make the stronger (true)
+        # claim: prompt text never leaves the operator's own infrastructure.
+        VITE_PALIVANE_SELF_HOSTED: "1"
     depends_on:
       db:
         condition: service_healthy
