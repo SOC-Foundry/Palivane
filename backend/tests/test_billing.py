@@ -60,7 +60,7 @@ def test_checkout_returns_embedded_client_secret(client, db_factory, monkeypatch
     r = client.post("/api/billing/checkout", json={"interval": "year", "seats": 25})
     assert r.status_code == 200 and r.json()["client_secret"].startswith("cs_test_")
     assert seen["path"] == "/checkout/sessions"
-    assert seen["params"]["ui_mode"] == "embedded"           # in-page, not a redirect
+    assert seen["params"]["ui_mode"] == "embedded_page"           # in-page, not a redirect
     assert "return_url" in seen["params"] and "success_url" not in seen["params"]
     assert seen["params"]["line_items[0][price]"] == "price_y1"
     assert seen["params"]["line_items[0][quantity]"] == 25
