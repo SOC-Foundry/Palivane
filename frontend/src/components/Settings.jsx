@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
+import StripeCheckout from "./StripeCheckout.jsx";
 
 const PROVIDERS = { openai: "OpenAI", anthropic: "Anthropic", gemini: "Gemini" };
 
@@ -264,16 +265,15 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   // --- Self-serve billing (Stripe; Team only — Enterprise stays sales-led). Dark unless
   // the backend has Stripe configured, in which case the card-swipe path renders above
   // the sales-led request form. ---
-  const [billing, setBilling] = useState(null);          // { enabled, subscribed, portal, intervals }
+  const [billing, setBilling] = useState(null);          // { enabled, subscribed, portal, intervals, publishable_key }
   const [coDraft, setCoDraft] = useState({ seats: "", interval: "month" });
+  const [checkoutSecret, setCheckoutSecret] = useState(null);   // embedded Checkout client_secret
   const loadBilling = useCallback(() => api.billing().then(setBilling).catch(() => {}), []);
-  useEffect(() => {   // Checkout bounces back with #billing=success|cancelled
+  useEffect(() => {   // embedded Checkout returns to /#billing=success on completion
     if (window.location.hash === "#billing=success") {
       flash("Payment received — your Team plan activates in a few seconds. Thanks!");
       window.history.replaceState(null, "", window.location.pathname);
       setTimeout(() => { loadBilling(); onTenant?.(); }, 4000);
-    } else if (window.location.hash === "#billing=cancelled") {
-      window.history.replaceState(null, "", window.location.pathname);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -282,14 +282,14 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     e.preventDefault();
     try {
       const r = await api.billingCheckout(Number(coDraft.seats) || 1, coDraft.interval);
-      window.location.href = r.url;   // off to Stripe Checkout
+      setCheckoutSecret(r.client_secret);   // mounts the embedded form in-page (no redirect)
     } catch (e2) { err(e2); }
   }
 
   async function openPortal() {
     try {
       const r = await api.billingPortal();
-      window.location.href = r.url;
+      window.location.href = r.url;   // Stripe's portal is hosted-only; redirect is expected
     } catch (e2) { err(e2); }
   }
 
@@ -451,31 +451,42 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
               to pick a plan.
             </p>
           )}
-          {/* Self-serve: buy Team by card (Stripe Checkout). Renders only when the
-              backend has billing configured; Enterprise stays sales-led below. */}
+          {/* Self-serve: buy Team by card via embedded Stripe Checkout — mounted in-page
+              (no redirect). Renders only when billing is configured; Enterprise stays
+              sales-led below. Once a session starts, the seat form is replaced by the
+              embedded card form on our own domain. */}
           {billing?.enabled && !billing.subscribed && !["team", "enterprise"].includes(plan) && (
-            <form onSubmit={startCheckout}
-                  style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
-              <label>Seats
-                <input type="number" min="1" placeholder="5" value={coDraft.seats}
-                       style={{ width: 90 }}
-                       onChange={(e) => setCoDraft((s) => ({ ...s, seats: e.target.value }))} />
-              </label>
-              {billing.intervals.length > 1 && (
-                <label>Billing
-                  <select value={coDraft.interval}
-                          onChange={(e) => setCoDraft((s) => ({ ...s, interval: e.target.value }))}>
-                    <option value="month">Monthly, $12/user</option>
-                    <option value="year">Annual, $10/user/mo</option>
-                  </select>
+            checkoutSecret && billing.publishable_key ? (
+              <div className="checkout-embed" style={{ marginBottom: 14 }}>
+                <StripeCheckout publishableKey={billing.publishable_key}
+                                clientSecret={checkoutSecret} />
+                <button className="link-btn link-muted" type="button"
+                        onClick={() => setCheckoutSecret(null)}>← back</button>
+              </div>
+            ) : (
+              <form onSubmit={startCheckout}
+                    style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
+                <label>Seats
+                  <input type="number" min="1" placeholder="5" value={coDraft.seats}
+                         style={{ width: 90 }}
+                         onChange={(e) => setCoDraft((s) => ({ ...s, seats: e.target.value }))} />
                 </label>
-              )}
-              <button className="primary-btn slim" type="submit">Upgrade to Team, pay by card →</button>
-              <span className="muted" style={{ flexBasis: "100%" }}>
-                Checkout and invoices are handled by Stripe. Need Enterprise (SSO, SIEM, S3)?
-                Use the request form below.
-              </span>
-            </form>
+                {billing.intervals.length > 1 && (
+                  <label>Billing
+                    <select value={coDraft.interval}
+                            onChange={(e) => setCoDraft((s) => ({ ...s, interval: e.target.value }))}>
+                      <option value="month">Monthly, $12/user</option>
+                      <option value="year">Annual, $10/user/mo</option>
+                    </select>
+                  </label>
+                )}
+                <button className="primary-btn slim" type="submit">Upgrade to Team, pay by card →</button>
+                <span className="muted" style={{ flexBasis: "100%" }}>
+                  Secure card entry by Stripe, right here on this page. Need Enterprise
+                  (SSO, SIEM, S3)? Use the request form below.
+                </span>
+              </form>
+            )
           )}
           {billing?.enabled && billing.portal && (billing.subscribed || plan === "team") && (
             <p style={{ marginTop: 0 }}>
