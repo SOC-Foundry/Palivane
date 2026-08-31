@@ -270,7 +270,7 @@ async def _metrics_middleware(request, call_next):
 
 @app.get("/api/health")
 def health():
-    from . import demo as demo_mod, email as email_mod, google_login
+    from . import demo as demo_mod, email as email_mod, google_login, slack_install
     from .licensing import current as license_current
     lic = license_current()
     return {
@@ -286,6 +286,10 @@ def health():
         "email_enabled": email_mod.enabled(),
         "google_login": google_login.enabled(),
         "demo": demo_mod.enabled(),
+        # Whether this deployment has a published Slack app registered. Deployment-level,
+        # not tenant-level: without one the console must not offer "Add to Slack", because
+        # /api/slack/install can only 404 and the workspace-app path is the real answer.
+        "slack_app": slack_install.configured(),
         # Self-hosted licensing (see app/licensing.py); absent on the hosted SaaS where
         # tenant.plan is authoritative.
         "license": {"org": lic["org"], "plan": lic["plan"],

@@ -131,3 +131,35 @@ def test_installed_token_feeds_the_scanner(client, raw_client, monkeypatch, db_f
     assert creds["bot_token"] == "xoxb-installed-token"
     assert row.credentials_enc.startswith("enc:v2:")
     db.close()
+
+
+# --- the console must not offer an install this deployment cannot serve --------------------
+# /api/slack/install can only 404 without a registered app, so the button behind it was a
+# primary-styled control that always failed. health() now says whether it exists.
+
+def test_health_reports_no_slack_app_by_default(raw_client, monkeypatch):
+    import app.main as main
+    monkeypatch.setattr(main.settings, "slack_client_id", "")
+    monkeypatch.setattr(main.settings, "slack_client_secret", "")
+    assert raw_client.get("/api/health").json()["slack_app"] is False
+
+
+def test_health_reports_a_registered_slack_app(raw_client, monkeypatch):
+    import app.main as main
+    monkeypatch.setattr(main.settings, "slack_client_id", "123.456")
+    monkeypatch.setattr(main.settings, "slack_client_secret", "shh")
+    assert raw_client.get("/api/health").json()["slack_app"] is True
+
+
+def test_health_flag_tracks_the_install_endpoint(client, monkeypatch):
+    """The flag has to mean what the button does, or gating on it just moves the bug."""
+    import app.main as main
+    monkeypatch.setattr(main.settings, "slack_client_id", "")
+    monkeypatch.setattr(main.settings, "slack_client_secret", "")
+    assert client.get("/api/health").json()["slack_app"] is False
+    assert client.get("/api/slack/install").status_code == 404
+
+    monkeypatch.setattr(main.settings, "slack_client_id", "123.456")
+    monkeypatch.setattr(main.settings, "slack_client_secret", "shh")
+    assert client.get("/api/health").json()["slack_app"] is True
+    assert client.get("/api/slack/install").status_code == 200
