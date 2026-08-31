@@ -66,6 +66,11 @@ jobs:
           CF_EMAIL_ACCOUNT_ID: ${{ vars.CF_EMAIL_ACCOUNT_ID }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
           PALIVANE_DEMO_ORG: ${{ vars.PALIVANE_DEMO_ORG }}
+          # "1" only for a SELF-HOSTED build. Unset here on purpose: this workflow deploys
+          # the managed service, and the managed copy is what an unset flag yields (see
+          # deploy/cloudrun/Dockerfile). Left wired so a fork deploying its own install can
+          # set the variable and get the stronger, true claim.
+          PALIVANE_SELF_HOSTED: ${{ vars.PALIVANE_SELF_HOSTED }}
           PALIVANE_MCP_REPUTATION_FEED: ${{ vars.PALIVANE_MCP_REPUTATION_FEED }}
           STRIPE_PUBLISHABLE_KEY: ${{ vars.STRIPE_PUBLISHABLE_KEY }}
           STRIPE_PRICE_TEAM_MONTHLY: ${{ vars.STRIPE_PRICE_TEAM_MONTHLY }}

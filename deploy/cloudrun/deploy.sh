@@ -23,7 +23,7 @@ echo "==> Building & pushing $IMAGE"
 gcloud builds submit --project "$PROJECT_ID" \
   --config deploy/cloudrun/cloudbuild.yaml \
   --suppress-logs \
-  --substitutions "_REGION=${REGION},_REPO=${REPO},_IMAGE=${IMAGE_NAME},_TAG=${TAG}" .
+  --substitutions "_REGION=${REGION},_REPO=${REPO},_IMAGE=${IMAGE_NAME},_TAG=${TAG},_SELF_HOSTED=${PALIVANE_SELF_HOSTED:-}" .
 
 # Non-secret runtime config. Secrets (DATABASE_URL, PALIVANE_SECRET_KEY, provider keys) come
 # from Secret Manager via --set-secrets below.
