@@ -212,6 +212,8 @@ class Settings:
     # price ids are not secrets.
     stripe_secret_key: str = _env("STRIPE_SECRET_KEY", "").strip()
     stripe_webhook_secret: str = _env("STRIPE_WEBHOOK_SECRET", "").strip()
+    # Publishable key (pk_…) — NOT a secret; the frontend mounts embedded Checkout with it.
+    stripe_publishable_key: str = _env("STRIPE_PUBLISHABLE_KEY", "").strip()
     stripe_price_team_monthly: str = _env("STRIPE_PRICE_TEAM_MONTHLY", "").strip()
     stripe_price_team_annual: str = _env("STRIPE_PRICE_TEAM_ANNUAL", "").strip()
     # Per-tenant resource quotas for open multi-tenant signup (0 = unlimited). A tenant's

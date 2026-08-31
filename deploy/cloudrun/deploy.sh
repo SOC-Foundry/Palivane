@@ -67,6 +67,7 @@ ENV_VARS+="|SEED_ON_START=${SEED_ON_START:-false}"
 # Self-serve billing (Stripe Checkout for Team). Price ids are not secrets; the API key
 # and webhook signing secret ride in via the optional-secrets loop below (create
 # 'palivane-stripe-secret-key' + 'palivane-stripe-webhook-secret' to enable).
+[ -n "${STRIPE_PUBLISHABLE_KEY:-}" ] && ENV_VARS+="|STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}"
 [ -n "${STRIPE_PRICE_TEAM_MONTHLY:-}" ] && ENV_VARS+="|STRIPE_PRICE_TEAM_MONTHLY=${STRIPE_PRICE_TEAM_MONTHLY}"
 [ -n "${STRIPE_PRICE_TEAM_ANNUAL:-}" ] && ENV_VARS+="|STRIPE_PRICE_TEAM_ANNUAL=${STRIPE_PRICE_TEAM_ANNUAL}"
 # Encrypt stored finding content at rest (needs a durable PALIVANE_SECRET_KEY — key loss =
