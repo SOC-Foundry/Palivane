@@ -62,9 +62,16 @@ Two things to know before you turn it on:
 Files shared in a scanned channel are scanned too, and get their own finding named after
 the file, so triage points at the thing to delete rather than at the message beside it.
 
-Only formats whose bytes are their text are read: CSV, TSV, JSON, YAML, logs, source,
-Markdown, plain text. **PDFs, Office documents, and images are not scanned** — those need a
-parser and an OCR engine respectively. They are counted in the sync summary as
+Three tiers, depending on what the file needs:
+
+| Tier | Formats | Notes |
+| --- | --- | --- |
+| text | CSV, TSV, JSON, YAML, logs, source, Markdown, plain text | read directly |
+| document | **PDF, Word, Excel, PowerPoint** (`.docx/.xlsx/.pptx`) | text pulled out of the container; no layout, which is all a scanner needs |
+| ocr | **PNG, JPEG, GIF, WebP, TIFF** | only when OCR is enabled on the deployment (`PALIVANE_OCR=true`, needs Pillow + tesseract). Runs locally; no image is ever sent to a vision API |
+
+What still cannot be opened: pre-2007 Office (`.doc/.xls/.ppt`, a binary OLE container),
+encrypted PDFs, and images when OCR is off. Those are counted in the sync summary as
 `files_skipped` rather than passed over silently, so "clean" never quietly means "did not
 look".
 

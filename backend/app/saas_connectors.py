@@ -295,20 +295,13 @@ _MAX_MESSAGES_PER_SYNC = 2000     # bounds one sync; the cursor resumes where it
 _SCAN_LOOKBACK_SECS = 7 * 86400   # first sync reaches back a week, then cursor-incremental
 
 # --- shared files ---------------------------------------------------------------------
-# A regulated record is as likely to be a pasted CSV as a typed message, and the message
-# scan alone never saw it. Only formats whose bytes ARE their text are read: a PDF or a
-# .docx is a container needing a parser, and an image needs OCR — both are real gaps and
-# neither is quietly approximated here. Slack reports the type, so an unreadable
-# attachment is counted and reported rather than skipped in silence.
-_FILE_TEXT_MIMES = ("text/", "application/json", "application/xml", "application/x-ndjson",
-                    "application/x-sh", "application/javascript", "application/sql")
-_FILE_TEXT_TYPES = frozenset({
-    "text", "post", "snippet", "csv", "tsv", "json", "yaml", "yml", "xml", "markdown",
-    "md", "html", "css", "javascript", "typescript", "python", "ruby", "go", "rust",
-    "java", "php", "shell", "sql", "ini", "toml", "log", "diff", "patch", "env",
-})
-_MAX_FILE_BYTES = 1_000_000       # per file; larger ones are counted as skipped
-_MAX_FILE_BYTES_PER_SYNC = 25_000_000
+# A regulated record is as likely to be a pasted CSV, an exported spreadsheet or a
+# screenshot as a typed message. doc_extract turns all three into text — plain text
+# directly, OOXML and PDF by container, images through the opt-in local OCR — and returns
+# "" for what it genuinely cannot open, which is counted and reported rather than passed
+# over in silence.
+_MAX_FILE_BYTES = 5_000_000       # per file; larger ones are counted as skipped
+_MAX_FILE_BYTES_PER_SYNC = 50_000_000
 
 
 def _slack_pages(url_base: str, params: dict, hdrs: dict, list_key: str):
@@ -345,24 +338,38 @@ def _slack_actor(cache: dict, user_id: str, hdrs: dict) -> str:
     return actor
 
 
+def _slack_file_name(f: dict) -> str:
+    """A filename doc_extract can read an extension off, even when Slack omits one."""
+    name = f.get("name") or f.get("title") or f.get("id") or "file"
+    ftype = (f.get("filetype") or "").lower()
+    return name if "." in name else (f"{name}.{ftype}" if ftype else name)
+
+
 def _slack_readable_file(f: dict) -> bool:
-    """Whether this attachment's bytes can be read as text without a parser."""
-    mime = (f.get("mimetype") or "").lower()
-    return (f.get("filetype") or "").lower() in _FILE_TEXT_TYPES or mime.startswith(_FILE_TEXT_MIMES)
+    """Whether anything here can read this attachment. Checked before the download, so a
+    scan of a channel full of .doc files costs no bandwidth."""
+    from .doc_extract import kind_of
+    kind = kind_of(_slack_file_name(f), f.get("mimetype") or "")
+    if kind != "image":
+        return bool(kind)
+    from .ocr import ocr_available
+    return ocr_available()            # an image is only readable when OCR is available
 
 
-def _slack_file_text(f: dict, hdrs: dict) -> str:
-    """An attachment's text, or "" if it cannot be read. Best-effort by design: one
-    unreadable or expired file must not sink a whole workspace scan."""
+def _slack_file_text(f: dict, hdrs: dict) -> tuple[str, str]:
+    """(text, how) for an attachment. Best-effort by design: one unreadable or expired
+    file must not sink a whole workspace scan."""
     url = f.get("url_private_download") or f.get("url_private") or ""
     if not url:
-        return ""
+        return "", ""
     try:
         req = urllib.request.Request(url, headers=hdrs)
         with urllib.request.urlopen(req, timeout=30) as r:
-            return r.read(_MAX_FILE_BYTES).decode("utf-8", errors="replace")
+            raw = r.read(_MAX_FILE_BYTES)
     except (urllib.error.URLError, urllib.error.HTTPError, OSError):
-        return ""
+        return "", ""
+    from .doc_extract import extract
+    return extract(_slack_file_name(f), raw, f.get("mimetype") or "")
 
 
 def _slack_channels(hdrs: dict, auto_join: bool) -> tuple[list[dict], int]:
@@ -526,17 +533,21 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
                 if not _slack_readable_file(fo) or int(fo.get("size") or 0) > _MAX_FILE_BYTES:
                     files_skipped += 1        # binary/oversize: counted, never guessed at
                     continue
-                body = _slack_file_text(fo, hdrs)
+                body, how = _slack_file_text(fo, hdrs)
                 if not body.strip():
                     files_skipped += 1
                     continue
                 file_bytes += len(body)
                 files_scanned += 1
-                fname = fo.get("name") or fo.get("id") or "file"
+                fname = _slack_file_name(fo)
                 if run_analysis(
                         AnalysisInput(content=body, sender=actor, channel="slack",
                                       subject=f"{where}: {fname}", surface=Surface.COLLAB,
-                                      metadata={"custom_pii": custom_pii, "slack_file": fname}),
+                                      metadata={"custom_pii": custom_pii, "slack_file": fname,
+                                                # how the text was recovered, so a finding
+                                                # off a screenshot is distinguishable from
+                                                # one off a message during triage
+                                                "extracted_via": how}),
                         persist=True, db=db, tenant_id=connector.tenant_id,
                         persist_benign=False, use_judge=False).get("finding_id") is not None:
                     findings += 1
