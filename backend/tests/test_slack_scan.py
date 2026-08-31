@@ -167,3 +167,168 @@ def test_scan_fingerprints_substantial_messages(client, monkeypatch, db_factory)
     assert len(rows) == 1                       # only the substantial message
     assert rows[0].shingles and rows[0].owner == "nurse@acme.com"
     db.close()
+
+
+# --- auto-join: the closest a bot token gets to the Enterprise Grid view -------------------
+# Default stays invite-only. With auto_join the bot enumerates every public channel and
+# joins the ones it is not in — because a channel nobody invited it to is simply invisible,
+# which is the single most common reason a first scan comes back near-empty.
+
+def _fake_workspace(monkeypatch, public, private=(), history=None, joins=None):
+    history = history or []
+
+    def fake_http(url, headers=None, data=None, timeout=20):
+        if "conversations.list" in url:
+            return {"ok": True, "channels": list(public)}
+        if "users.conversations" in url:
+            want_private = "private_channel" in url and "public_channel" not in url
+            return {"ok": True, "channels": list(private) if want_private
+                    else [c for c in public if c.get("is_member")] + list(private)}
+        if "conversations.join" in url:
+            cid = (data or b"").decode().split("channel=")[1]
+            if joins is not None:
+                joins.append(cid)
+            return {"ok": True} if cid != "C_LOCKED" else {"ok": False, "error": "is_archived"}
+        if "conversations.history" in url:
+            return {"ok": True, "messages": history}
+        if "users.info" in url:
+            return {"ok": True, "user": {"profile": {"email": "dev@acme.com"}}}
+        raise AssertionError(f"unexpected Slack call: {url}")
+
+    monkeypatch.setattr(sc, "_http_json", fake_http)
+
+
+def test_default_scans_only_invited_channels(monkeypatch):
+    joins = []
+    _fake_workspace(monkeypatch,
+                    public=[{"id": "C1", "name": "in", "is_member": True},
+                            {"id": "C2", "name": "out", "is_member": False}],
+                    joins=joins)
+    channels, joined = sc._slack_channels({}, auto_join=False)
+    assert [c["id"] for c in channels] == ["C1"]
+    assert joined == 0 and joins == [], "must not touch the workspace unless asked"
+
+
+def test_auto_join_covers_every_public_channel(monkeypatch):
+    joins = []
+    _fake_workspace(monkeypatch,
+                    public=[{"id": "C1", "name": "in", "is_member": True},
+                            {"id": "C2", "name": "out", "is_member": False},
+                            {"id": "C3", "name": "also-out", "is_member": False}],
+                    joins=joins)
+    channels, joined = sc._slack_channels({}, auto_join=True)
+    assert sorted(c["id"] for c in channels) == ["C1", "C2", "C3"]
+    assert sorted(joins) == ["C2", "C3"] and joined == 2   # already-in is not re-joined
+
+
+def test_a_channel_that_refuses_the_join_is_dropped_not_fatal(monkeypatch):
+    _fake_workspace(monkeypatch,
+                    public=[{"id": "C1", "name": "ok", "is_member": True},
+                            {"id": "C_LOCKED", "name": "nope", "is_member": False}])
+    channels, joined = sc._slack_channels({}, auto_join=True)
+    assert [c["id"] for c in channels] == ["C1"] and joined == 0
+
+
+def test_auto_join_never_reaches_private_channels(monkeypatch):
+    """No bot scope opens a private conversation — only Discovery API does, and that is
+    Enterprise Grid. Private coverage stays exactly what was invited in."""
+    _fake_workspace(monkeypatch,
+                    public=[{"id": "C1", "name": "pub", "is_member": False}],
+                    private=[{"id": "G1", "name": "invited-private"}])
+    channels, _ = sc._slack_channels({}, auto_join=True)
+    assert sorted(c["id"] for c in channels) == ["C1", "G1"]   # G1 only because invited
+
+
+# --- attachments ---------------------------------------------------------------------------
+# A regulated record is as likely to be a pasted CSV as a typed sentence.
+
+def test_readable_file_types():
+    assert sc._slack_readable_file({"filetype": "csv"})
+    assert sc._slack_readable_file({"mimetype": "text/plain"})
+    assert not sc._slack_readable_file({"filetype": "pdf", "mimetype": "application/pdf"})
+    assert not sc._slack_readable_file({"filetype": "png", "mimetype": "image/png"})
+
+
+def test_attachment_is_scanned_as_its_own_finding(client, monkeypatch):
+    """The message may be innocuous while the file it carries is not, so the file gets its
+    own finding, subject-named so triage points at the thing to delete."""
+    cid = _mk(client, "files")
+    _fake_workspace(monkeypatch,
+                    public=[{"id": "C1", "name": "care-team", "is_member": True}],
+                    history=[{"user": "U1", "ts": "1755100003.000100", "text": "as discussed",
+                              "files": [{"id": "F1", "name": "export.csv", "filetype": "csv",
+                                         "size": 120, "url_private_download": "https://x/f"}]}])
+    monkeypatch.setattr(sc, "_slack_file_text",
+                        lambda f, h: "name,ssn\nJane Roe,412-88-7390\n")
+    r = client.post(f"/api/discovery/connectors/{cid}/sync")
+    assert r.status_code == 200, r.text
+    detail = r.json()
+    assert detail["files"] == 1 and detail["findings"] >= 1
+
+
+def test_unreadable_attachment_is_counted_not_silently_dropped(client, monkeypatch):
+    """PDFs, Office docs and images are a real gap. The sync detail has to say so rather
+    than reporting a clean scan over files it never opened."""
+    cid = _mk(client, "binary")
+    _fake_workspace(monkeypatch,
+                    public=[{"id": "C1", "name": "care-team", "is_member": True}],
+                    history=[{"user": "U1", "ts": "1755100004.000100", "text": "scan attached",
+                              "files": [{"id": "F2", "name": "chart.pdf", "filetype": "pdf",
+                                         "mimetype": "application/pdf", "size": 900,
+                                         "url_private_download": "https://x/f"}]}])
+    detail = client.post(f"/api/discovery/connectors/{cid}/sync").json()
+    assert detail.get("files_skipped") == 1 and "files" not in detail
+
+
+def test_oversize_attachment_is_skipped(client, monkeypatch):
+    cid = _mk(client, "big")
+    _fake_workspace(monkeypatch,
+                    public=[{"id": "C1", "name": "care-team", "is_member": True}],
+                    history=[{"user": "U1", "ts": "1755100005.000100", "text": "logs",
+                              "files": [{"id": "F3", "name": "huge.log", "filetype": "log",
+                                         "size": sc._MAX_FILE_BYTES + 1,
+                                         "url_private_download": "https://x/f"}]}])
+    detail = client.post(f"/api/discovery/connectors/{cid}/sync").json()
+    assert detail.get("files_skipped") == 1
+
+
+# --- toggling auto_join without re-sending the token ----------------------------------------
+
+def test_options_round_trip_without_the_credential(client, db_factory):
+    """The switch must be flippable from the console. Requiring the bot token again to
+    change a checkbox is how a token ends up in a browser autofill or a support ticket."""
+    cid = _mk(client, "opts")
+    listed = client.get("/api/discovery/connectors").json()["connectors"]
+    row = next(c for c in listed if c["id"] == cid)
+    assert row["options"] == {"auto_join": False}
+
+    r = client.patch(f"/api/discovery/connectors/{cid}", json={"auto_join": True})
+    assert r.status_code == 200 and r.json()["options"]["auto_join"] is True
+
+    # and the token survived the edit
+    from app.models import SaasConnector
+    db = db_factory()
+    conn = db.get(SaasConnector, cid)
+    assert sc.read_credentials(conn, db)["bot_token"] == BOT_CREDS["bot_token"]
+    db.close()
+
+
+def test_options_never_leak_the_token(client):
+    cid = _mk(client, "leak")
+    body = client.get("/api/discovery/connectors").text
+    assert BOT_CREDS["bot_token"] not in body
+    assert BOT_CREDS["bot_token"] not in client.patch(
+        f"/api/discovery/connectors/{cid}", json={"auto_join": True}).text
+
+
+def test_partial_patch_does_not_clear_what_it_omits(client):
+    cid = _mk(client, "partial")
+    client.patch(f"/api/discovery/connectors/{cid}", json={"auto_join": True})
+    r = client.patch(f"/api/discovery/connectors/{cid}", json={})
+    assert r.json()["options"]["auto_join"] is True
+
+
+def test_patch_rejects_an_unknown_connector(client):
+    """The lookup is filtered by tenant_id, so another org's id is simply not found."""
+    assert client.patch("/api/discovery/connectors/999999",
+                        json={"auto_join": True}).status_code == 404

@@ -578,6 +578,12 @@ class OAuthGrantIngest(BaseModel):
     grants: list[OAuthGrant] = Field(min_length=1, max_length=50000)
 
 
+class ConnectorOptions(BaseModel):
+    """Non-secret scan settings, changeable without re-sending the credential. None means
+    "leave alone", so a partial PATCH cannot silently clear a setting it did not mention."""
+    auto_join: bool | None = None
+
+
 class ConnectorCreate(BaseModel):
     """A live-pull SaaS connector: platform key from saas_connectors.PLATFORMS plus the
     platform-specific credential fields (stored encrypted; never returned)."""
