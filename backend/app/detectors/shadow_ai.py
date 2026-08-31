@@ -38,6 +38,10 @@ _FILE_SCAN_CHANNELS = {"git", "s3", "github", "repo"}
 # Title of the warn-level heuristic secret signal (distinct from known-format Tier-1
 # secrets) — used to exclude it from confirmed_leak()'s hard-block set.
 HIGH_ENTROPY_TITLE = "Possible secret (high-entropy token)"
+# The classifier's own title. Distinct from the marker-based one so a reader can always tell
+# whether a label said this was confidential or a model thought so.
+ML_CONFIDENTIAL_TITLE = "Likely confidential business content (classifier)"
+_ML_MIN_PROBA = 0.80   # both tiers report only when the model is confident
 
 # Title of the bulk personal-email heuristic — same tier as HIGH_ENTROPY_TITLE: a
 # freemail contact list warns and records, but hard-blocks only under an enforce
@@ -557,7 +561,7 @@ class ShadowAIDetector:
         # Proprietary-code / unsanctioned-destination remain ai_usage-only (sending code to
         # your *own* LLM is expected; there's no external AI destination on llm_io/mcp).
         if item.surface == Surface.AI_USAGE:
-            signals.extend(self._scan_proprietary(text))
+            signals.extend(self._scan_proprietary(text, item.metadata))
             signals.extend(self._scan_destination(item))
         # Sensitive data wrapped in an encoding to slip past the plaintext scanners — decode
         # any obfuscated blob and re-run the SAME finders on the decoded view.
@@ -788,7 +792,7 @@ class ShadowAIDetector:
             evidence="; ".join(found[:4]),
         )]
 
-    def _scan_proprietary(self, text: str) -> list[Signal]:
+    def _scan_proprietary(self, text: str, meta: dict | None = None) -> list[Signal]:
         out: list[Signal] = []
 
         # Confidential business content: keyword markers + applied sensitivity labels
@@ -807,6 +811,36 @@ class ShadowAIDetector:
                 weight=0.6, confidence=0.65, detector=self.name,
                 evidence=ev,
             ))
+        else:
+            # Nothing marked it. That is the common case for the material that matters most
+            # — a term sheet, a pipeline export, a comp review — and the marker path above
+            # finds none of it. Ask the classifier, if one is loaded.
+            #
+            # Its own title and a lower weight/confidence than the marked path, on purpose:
+            # an analyst must be able to see which of the two spoke, and a model's opinion
+            # about prose should not on its own reach the tier that blocks someone's work.
+            # The encoder tier answers first where a tenant has it (word order and context
+            # beat a bag of n-grams), and the linear model is the fallback, not a rival.
+            # run_analysis puts the plan answer in metadata; the detector has no session.
+            p = None
+            if (meta or {}).get("ml_encoder"):
+                from ..ml.encoder import score as encoder_score
+                p = encoder_score(text)
+                p = p if p is not None and p >= _ML_MIN_PROBA else None
+            if p is None:
+                from ..ml.confidential import confident
+                p = confident(text)
+            if p is not None:
+                out.append(Signal(
+                    category=Category.CONFIDENTIAL_DATA,
+                    title=ML_CONFIDENTIAL_TITLE,
+                    detail="Reads as proprietary business content (deal terms, unreleased "
+                           "financials, pipeline, personnel or legal matters) though nothing "
+                           "in it is labelled as such. Scored locally by the content "
+                           "classifier, not by a third-party service.",
+                    weight=0.5, confidence=min(0.6, p * 0.65), detector=self.name,
+                    evidence=f"classifier {p:.0%} confident",
+                ))
 
         # Source-code / IP leak. Score STRUCTURAL proprietary tells (qualified schema refs,
         # internal-service calls, business-domain identifiers, a curated hint) rather than

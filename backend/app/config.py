@@ -264,6 +264,16 @@ class Settings:
     # enabled, OCR text is appended to the scanned content for detection only — it is
     # never stored beyond normal finding evidence.
     gateway_ocr: bool = _env("PALIVANE_OCR", "").lower() in ("1", "true", "yes")
+    # Path to the confidential-content classifier's weights (app/ml/confidential.py). Empty
+    # or missing = the model contributes nothing, which is the default: no weights ship in
+    # the repo, because a model trained on synthetic data has no business in a live path.
+    ml_confidential_model: str = _env("PALIVANE_ML_CONFIDENTIAL_MODEL", "").strip()
+    # The Enterprise tier of the same classifier: a fine-tuned encoder run through ONNX
+    # Runtime on CPU, locally (app/ml/encoder.py). Both paths empty = the linear model is
+    # the only classifier, which is the default. Needs onnxruntime + tokenizers installed;
+    # the deploy image does not carry them, so this is opt-in twice over.
+    ml_encoder_model: str = _env("PALIVANE_ML_ENCODER_MODEL", "").strip()
+    ml_encoder_tokenizer: str = _env("PALIVANE_ML_ENCODER_TOKENIZER", "").strip()
     # OpenAI-compatible upstream for /v1/chat/completions (empty = stub reply offline).
     gateway_upstream_base: str = os.getenv("GATEWAY_UPSTREAM_BASE", "")
     gateway_upstream_key: str = os.getenv("GATEWAY_UPSTREAM_KEY", "")

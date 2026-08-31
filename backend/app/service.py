@@ -131,6 +131,13 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     if include_judge and not byok and settings.judge_plan_gated:
         from .plans import has_feature
         include_judge = has_feature(tenant, "judge")
+    # Whether this tenant may use the encoder tier of the content classifier. Decided here,
+    # where the session and the plan are, and carried in metadata — the detectors run
+    # without a database and must not grow one.
+    if tenant is not None:
+        from .plans import has_feature
+        item.metadata = {**(item.metadata or {}),
+                         "ml_encoder": has_feature(tenant, "ml_encoder")}
     verdict = engine.analyze(item, include_judge=include_judge,
                              judge_backends=byok or None)
     # Did the judge actually participate? (a provider is configured AND it ran for this
