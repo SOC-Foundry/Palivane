@@ -130,7 +130,9 @@ def create_checkout(body: CheckoutRequest, current: User = Depends(require_admin
     seats = max(seats, users)   # can't buy fewer seats than existing members
     params = {
         "mode": "subscription",
-        "ui_mode": "embedded",
+        # Stripe renamed the embedded value: current API rejects "embedded" and wants
+        # "embedded_page" (the full prebuilt checkout mounted in-page via client_secret).
+        "ui_mode": "embedded_page",
         "line_items[0][price]": _price_for(body.interval),
         "line_items[0][quantity]": seats,
         "line_items[0][adjustable_quantity][enabled]": "true",
