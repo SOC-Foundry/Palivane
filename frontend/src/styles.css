@@ -832,12 +832,12 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 .lp-drop-note { color: var(--muted-2); font-size: 12px; line-height: 1.4; }
 .lp-nav-actions { display: flex; align-items: center; gap: 10px; justify-self: end; }
 .lp-nav-ghost {
-  background: none; border: 1px solid var(--border); cursor: pointer;
+  background: none; border: 1px solid var(--border-bright); cursor: pointer;
   color: var(--text); font: 650 13.5px/1 inherit; padding: 10px 15px; border-radius: 4px;
   text-decoration: none; display: inline-flex; align-items: center;
   transition: border-color 0.12s ease, background 0.12s ease;
 }
-.lp-nav-ghost:hover { border-color: var(--border-bright); background: var(--panel-2); }
+.lp-nav-ghost:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--text-heading); }
 .lp-burger { display: none; background: none; border: 0; cursor: pointer; padding: 8px; }
 .lp-burger span { display: block; width: 20px; height: 2px; background: var(--text); margin: 4px 0; }
 .lp-mobile { display: none; }
@@ -872,11 +872,31 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 
 /* Hero */
 .lp-hero-wrap {
-  position: relative; overflow: hidden;
+  position: relative; overflow: hidden; isolation: isolate;
   background: var(--bg);
   border-bottom: 1px solid var(--border-soft);
 }
-.lp-hero { position: relative; text-align: center; padding: 84px 24px 96px; display: flex; flex-direction: column; align-items: center; }
+/* A single wide bloom, low opacity, sitting behind the headline. One light source, not a
+   scattering of effects — the page stays serious and stops reading as a text document. */
+.lp-hero-wrap::before {
+  content: ""; position: absolute; z-index: -2;
+  top: -52%; left: 50%; transform: translateX(-50%);
+  width: min(920px, 108%); aspect-ratio: 1.35 / 1;
+  background: radial-gradient(ellipse at center,
+              rgba(47, 191, 143, 0.20) 0%, rgba(35, 157, 116, 0.06) 42%, transparent 66%);
+  pointer-events: none;
+}
+/* A structural grid, barely there, masked out before it reaches the copy so it never
+   competes with the type. Reads as engineered rather than decorated. */
+.lp-hero-wrap::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: radial-gradient(ellipse 74% 62% at 50% 34%, transparent 32%, #000 100%);
+          mask-image: radial-gradient(ellipse 74% 62% at 50% 34%, transparent 32%, #000 100%);
+}
+.lp-hero { position: relative; text-align: center; padding: 68px 24px 62px; display: flex; flex-direction: column; align-items: center; }
 .lp-tagline {
   font-size: 12px; font-weight: 800; letter-spacing: 3.5px;
   color: var(--accent-2); margin-bottom: 20px;
@@ -895,9 +915,10 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 .lp-cta-note { font-size: 13px; color: var(--muted-2); margin-top: 18px; font-weight: 500; }
 
 .lp-section { padding: 80px 0; }
+.lp-section { position: relative; }
 .lp-section.alt {
-  background: var(--panel);
-  border-top: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft);
+  background: linear-gradient(180deg, var(--panel-2) 0%, var(--panel) 42%, var(--panel) 100%);
+  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border-soft);
 }
 
 .lp-pagehead {
@@ -939,8 +960,23 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 
 .lp-shot { margin: 0; }
 .lp-frame {
-  border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
-  background: var(--panel-solid); box-shadow: 0 30px 70px -25px rgba(0,0,0,0.8);
+  border: 1px solid var(--border-bright); border-radius: 8px; overflow: hidden;
+  background: var(--panel-solid);
+  /* The dark drop keeps it grounded; the accent ring is what actually separates a dark
+     screenshot from a dark page. Kept under 10% so it reads as edge light, not neon. */
+  box-shadow: 0 30px 70px -25px rgba(0, 0, 0, 0.85),
+              0 0 0 1px rgba(47, 191, 143, 0.09),
+              0 0 60px -18px rgba(47, 191, 143, 0.16);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+.lp-shot:hover .lp-frame, .lp-frame:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 34px 80px -24px rgba(0, 0, 0, 0.9),
+              0 0 0 1px rgba(47, 191, 143, 0.16),
+              0 0 80px -16px rgba(47, 191, 143, 0.24);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-frame, .lp-shot:hover .lp-frame, .lp-frame:hover { transition: none; transform: none; }
 }
 .lp-frame-bar {
   display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 16px;
@@ -1031,6 +1067,7 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 .lp-band-head .lp-h2 { margin-top: 0; }
 
 /* Hero command line, the developer-facing counterpart to the buttons above it. */
+.lp-hero-cmd { margin-bottom: 4px; }
 .lp-hero-cmd {
   display: inline-flex; flex-direction: column; gap: 7px; align-items: center;
   margin-top: 28px;
@@ -1045,12 +1082,19 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 /* Stat band: the closest honest equivalent to a logo wall when there are no logos yet. */
 .lp-stats-band { border-block: 1px solid var(--border); background: var(--bg-2); }
 .lp-stats {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px;
-  padding-block: 34px;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 0;
+  padding-block: 40px;
 }
-.lp-stat { display: flex; flex-direction: column; gap: 3px; }
+/* Hairline dividers instead of gap alone: four numbers in a row read as one instrument
+   panel rather than four stray facts. */
+.lp-stat {
+  display: flex; flex-direction: column; gap: 5px;
+  padding-inline: 30px; border-left: 1px solid var(--border-soft);
+}
+.lp-stat:first-child { border-left: 0; padding-left: 0; }
 .lp-stat-n {
-  font-size: 34px; font-weight: 800; line-height: 1; color: var(--accent);
+  font-size: 46px; font-weight: 800; line-height: 1; letter-spacing: -1.5px;
+  color: var(--accent-2);
   font-variant-numeric: tabular-nums;
 }
 .lp-stat-l { font-size: 14px; font-weight: 650; color: var(--text); }
