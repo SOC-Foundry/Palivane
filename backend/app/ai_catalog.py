@@ -86,6 +86,40 @@ CATALOG: dict[str, tuple[str, str]] = {
     "librechat.ai": ("LibreChat", "assistant"),
     "chatbotui.com": ("Chatbot UI", "assistant"),
     "sharegpt.com": ("ShareGPT", "assistant"),
+    "forefront.ai": ("Forefront", "assistant"),
+    "nekton.ai": ("Nekton", "assistant"),
+    "open-notebook.ai": ("Open Notebook", "assistant"),
+    "cogram.com": ("Cogram", "assistant"),
+    "sybill.ai": ("Sybill", "assistant"),
+    "loopinhq.com": ("Loopinhq", "assistant"),
+    "elicit.org": ("Elicit", "assistant"),
+    "genei.io": ("Genei", "assistant"),
+    "explainpaper.com": ("Explainpaper", "assistant"),
+    "scispace.com": ("Scispace", "assistant"),
+    "alphaxiv.org": ("Alphaxiv", "assistant"),
+    "asreview.nl": ("Asreview", "assistant"),
+    "rayyan.ai": ("Rayyan", "assistant"),
+    "arena.ai": ("Arena", "assistant"),
+    "llm-stats.com": ("Llm Stats", "assistant"),
+    "emailtriager.com": ("Emailtriager", "assistant"),
+    "aipoemgenerator.org": ("Aipoemgenerator", "assistant"),
+    "aws.amazon.com": ("Amazon", "assistant"),
+    "ai2sql.io": ("Ai2Sql", "assistant"),
+    "dataline.app": ("Dataline", "assistant"),
+    "kilo.ai": ("Kilo", "assistant"),
+    "haystack.deepset.ai": ("Deepset", "assistant"),
+    "lmql.ai": ("Lmql", "assistant"),
+    "vanna.ai": ("Vanna", "assistant"),
+    "portkey.ai": ("Portkey", "assistant"),
+    "gitingest.com": ("Gitingest", "assistant"),
+    "repomix.com": ("Repomix", "assistant"),
+    "unsloth.ai": ("Unsloth", "assistant"),
+    "getwren.ai": ("Getwren", "assistant"),
+    "cleanlab.ai": ("Cleanlab", "assistant"),
+    "manifest.build": ("Manifest", "assistant"),
+    "modelcontextprotocol.io": ("Modelcontextprotocol", "assistant"),
+    "registry.modelcontextprotocol.io": ("Modelcontextprotocol", "assistant"),
+    "jan.ai": ("Jan", "assistant"),
 
     # --- Search / answer engines ---
     "perplexity.ai": ("Perplexity", "search"), "you.com": ("You.com", "search"),
@@ -164,6 +198,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "databutton.com": ("Databutton", "coding"),
     "base44.com": ("Base44", "coding"),
     "tempo.new": ("Tempo", "coding"),
+    "stenography.dev": ("Stenography", "coding"),
 
     # --- Agents / automation ---
     "manus.im": ("Manus", "agent"), "devin.ai": ("Devin", "agent"),
@@ -210,6 +245,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "orby.ai": ("Orby", "agent"),
     "mavenagi.com": ("Maven AGI", "agent"),
     "paradox.ai": ("Paradox", "agent"),
+    "agentset.ai": ("Agentset", "agent"),
 
     # --- Writing / productivity ---
     "jasper.ai": ("Jasper", "writing"), "copy.ai": ("Copy.ai", "writing"),
@@ -265,6 +301,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "hypotenuse.ai": ("Hypotenuse AI", "writing"),
     "postwise.ai": ("Postwise", "writing"),
     "editgpt.app": ("editGPT", "writing"),
+    "notion.so": ("Notion", "writing"),
 
     # --- Image / video / audio ---
     "midjourney.com": ("Midjourney", "image_video"), "labs.openai.com": ("DALL·E", "image_video"),
@@ -343,6 +380,8 @@ CATALOG: dict[str, tuple[str, str]] = {
     "stableaudio.com": ("Stable Audio", "image_video"),
     "beatoven.ai": ("Beatoven", "image_video"),
     "fish.audio": ("Fish Audio", "image_video"),
+    "artificialanalysis.ai": ("Artificialanalysis", "image_video"),
+    "imgsys.org": ("Imgsys", "image_video"),
 
     # --- Meeting / transcription notetakers (high data-exposure risk) ---
     "otter.ai": ("Otter.ai", "meeting"), "fireflies.ai": ("Fireflies.ai", "meeting"),
@@ -460,6 +499,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "rime.ai": ("Rime", "api"),
     "serper.dev": ("Serper", "api"),
     "llama.com": ("Meta Llama", "ml_platform"),
+    "mlflow.org": ("Mlflow", "ml_platform"),
 }
 
 # Rows recorded from vendor marketing/site rather than a verified traffic capture: the
