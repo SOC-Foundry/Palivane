@@ -12,7 +12,8 @@ import { SELF_HOSTED } from "../deployment.js";
 // made every section feel equally weighted.
 
 const STATS = [
-  { n: "6", l: "surfaces covered", s: "browser, desktop, CLI, CI, cloud storage, MCP" },
+  { n: "8", l: "surfaces covered",
+    s: "browser, desktop, CLI, CI, MCP, cloud storage, repos, and your SaaS document libraries" },
   SELF_HOSTED
     ? { n: "0", l: "content leaves your infrastructure", s: "detection runs on the backend you deploy" }
     : { n: "0", l: "prompt text kept by default", s: "the verdict and its metadata, not what was typed" },
@@ -27,11 +28,24 @@ const CAPTURE = [
   { icon: <IconShield />, title: "In coding tools", body: "Claude Code, Cursor, Codex, Copilot, and Gemini CLI report every prompt and tool call — and posture scans surface the agents that can't be hooked (Cline, Roo, Windsurf, Amazon Q)." },
   { icon: <IconClipboard />, title: "In code and laptops", body: "Commits and dependencies before they land, and credentials already at rest." },
   { icon: <IconAlert />, title: "In GitHub Actions", body: "Coding agents running on CI runners with your production credentials." },
+  { icon: <IconInbox />, title: "In the places it already sits", body: "Slack, Google Drive, SharePoint, and Salesforce, scanned where the data lives — because an AI rollout will index all of it long before anyone pastes it into a prompt." },
+];
+
+const LINEAGE = [
+  { title: "The finding names the source",
+    body: "\"An AWS key went to ChatGPT\" is a ticket. \"The Q3 forecast in this Drive doc went to ChatGPT, pasted by this person, at this time\" is an answer." },
+  { title: "Known org data scores higher",
+    body: "A leak of material Palivane has already seen in your own systems is treated as more serious than the same text arriving from nowhere, because it is." },
+  { title: "Blast radius, per document",
+    body: "Start from a document instead of a finding: which prompts carried it, to which AI tools, from whom. The question an incident actually opens with." },
+  { title: "It travels with the alert",
+    body: "The source document rides along into webhooks, the SIEM export, and the report, so the context is there before anyone opens the console." },
 ];
 
 const LOOKS_FOR = [
   { title: "Passwords, keys, and tokens", body: "Nearly sixty credential formats — cloud keys, API tokens, private keys, database passwords, and every major AI provider's own keys — in prompts and in what an assistant sends back." },
   { title: "Personal and customer data", body: "Social security numbers, payment cards, and customer records, tuned so ordinary engineering work does not trip it." },
+  { title: "Whatever the file happens to be", body: "A leak is more often an exported spreadsheet, a signed PDF, or a pasted screenshot than a typed sentence. Palivane reads all three. What it genuinely cannot open it reports as unread, never as clean." },
   { title: "Code and confidential documents", body: "Proprietary source, financials, contracts, and material carrying a classification label." },
   { title: "Risky AI behaviour", body: "Attempts to hijack an assistant's instructions, talk it past its rules, or smuggle payloads through hidden characters." },
   { title: "Dangerous agent actions", body: "File reads and shell commands an assistant proposes, checked before they run rather than logged after." },
@@ -168,6 +182,28 @@ export default function Landing({ onSignIn }) {
       </section>
 
       <section className="lp-section">
+        <div className="lp-wrap lp-split lp-split-narrow">
+          <div className="lp-split-text sticky">
+            <span className="lp-eyebrow">Lineage</span>
+            <h2 className="lp-h2">Not just what leaked. Which document it came out of.</h2>
+            <p className="lp-sub">Every document Palivane scans in Drive, SharePoint,
+              Salesforce, or Slack is fingerprinted. When text from one of them turns up in a
+              prompt later, the finding names the source, and the exposure view works the
+              other way too: pick a document and see everywhere it has surfaced.</p>
+            <a className="lp-textlink" href="/use-cases">What that changes in an incident →</a>
+          </div>
+          <ul className="lp-checklist">
+            {LINEAGE.map((s) => (
+              <li key={s.title}>
+                <h3>{s.title}</h3>
+                <p>{s.body}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      <section className="lp-section alt">
         <div className="lp-wrap lp-split lp-split-narrow">
           <div className="lp-split-text sticky">
             <span className="lp-eyebrow">Detection</span>

@@ -21,6 +21,13 @@ const GROUPS = [
         mode: "block",
       },
       {
+        surface: "SaaS content: Slack, Google Drive, SharePoint, Salesforce",
+        how: "Scheduled API scans of message history, document libraries, and record text — cursor-incremental, so each run covers what changed",
+        note: "Reads what the file actually is: plain text, PDFs, and Word/Excel/PowerPoint, plus screenshots where OCR is enabled. Anything nothing can open (pre-2007 Office, encrypted PDFs) is reported as unread, never counted clean. On Slack, Enterprise can additionally delete a confirmed leak, with every deletion written to the audit log.",
+        needs: "A read-scoped token or connected app per platform. Nothing installed anywhere.",
+        mode: "observe",
+      },
+      {
         surface: "Alerts, SIEM, data lake",
         how: "Findings pushed from the backend (Slack/webhook alerts, Splunk HEC / CEF / JSON, S3 NDJSON archive)",
         needs: "A destination URL or bucket. Nothing installed anywhere.",
@@ -106,8 +113,8 @@ const GROUPS = [
       },
       {
         surface: "S3 buckets & GitHub repos at rest",
-        how: "Scheduled server-side scans of configured buckets/repos",
-        note: "Read-only by design: it reports what is already exposed and how to fix it, it never deletes an object, rewrites history, or changes a bucket policy.",
+        how: "Scans that run where the data lives — detection happens in the account that owns the bucket or on the machine running the sweep, and only findings travel: a category, a label, a line number, a masked preview",
+        note: "Reads documents, not just text: PDFs and Word/Excel/PowerPoint as well as source and exports. Read-only by design — it reports what is already exposed and how to fix it, and never deletes an object, rewrites history, or changes a bucket policy.",
         needs: "Read credentials for the target (s3:GetObject / a read token). Nothing on devices.",
         mode: "observe",
       },
@@ -120,6 +127,9 @@ const GAPS = [
   ["Unmanaged, unenrolled devices", "A personal laptop with no extension, proxy, or hooks is invisible. The coverage view in the console exists precisely to show you who that is."],
   ["Copilot prompts", "Copilot's hook API allows inspecting tool calls (deniable) but exposes prompts observe-only, we can see them, not stop them."],
   ["OTEL-bridge capture", "Orgs using the claude-otel bridge get monitor-only, post-hoc capture, the event has already happened when it's scored."],
+  ["Slack private channels and DMs", "A bot token only reads conversations the bot was invited to; public channels can be joined automatically, private ones cannot. Uninvited private channels and direct messages are invisible. Reaching them needs Slack's Discovery API, which Slack restricts to Enterprise Grid and to approved DLP partners — a partnership, not a feature we can build."],
+  ["Formats nothing can open", "Pre-2007 Office files (.doc/.xls/.ppt) are binary containers and encrypted PDFs are encrypted; neither is readable. Images need OCR, which runs locally and is off unless enabled. All three are counted and reported as unread rather than passed over, so a scan never quietly implies it looked."],
+  ["SaaS scanning is periodic, not inline", "Slack, Drive, SharePoint, and Salesforce are scanned on a schedule against a cursor. A document is found after it lands, not before — these platforms expose no pre-delivery inspection point below Enterprise Grid."],
   ["Mobile apps", "Native mobile AI apps are not covered. The browser extension covers mobile web only where the browser supports extensions."],
   ["Agentic browsers", "Where the agent IS the browser (Perplexity Comet, Dia, the ChatGPT desktop app that absorbed Atlas), the model call originates from the browser itself, not a page fetch the extension wraps. The egress proxy now parses Comet's assistant SSE and flags its agent WebSocket, and the ChatGPT desktop app rides the proxy's existing chatgpt.com handling (but none of it has been verified against a real build yet (no Linux builds exist; the macOS/Windows pass is docs/agentic-browser-verification.md). Until that pass lands, treat these as discover-only: we see the usage, inline interception is built but unproven. Dia stays discovery-only by design) its real API hosts are unverified (catalog row flagged provisional)."],
 ];
