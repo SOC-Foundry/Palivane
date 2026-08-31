@@ -145,7 +145,7 @@ def test_missing_token_and_api_error_surface(client, monkeypatch):
 
 def test_slack_messages_platform_listed(client):
     platforms = client.get("/api/discovery/connectors").json()["platforms"]
-    assert platforms["slack_messages"]["credential_fields"] == ["bot_token"]
+    assert platforms["slack_messages"]["credential_fields"] == ["bot_token", "admin_token"]
 
 
 def test_scan_fingerprints_substantial_messages(client, monkeypatch, db_factory):
@@ -300,7 +300,7 @@ def test_options_round_trip_without_the_credential(client, db_factory):
     cid = _mk(client, "opts")
     listed = client.get("/api/discovery/connectors").json()["connectors"]
     row = next(c for c in listed if c["id"] == cid)
-    assert row["options"] == {"auto_join": False}
+    assert row["options"] == {"auto_join": False, "remediate": False}
 
     r = client.patch(f"/api/discovery/connectors/{cid}", json={"auto_join": True})
     assert r.status_code == 200 and r.json()["options"]["auto_join"] is True
@@ -332,3 +332,121 @@ def test_patch_rejects_an_unknown_connector(client):
     """The lookup is filtered by tenant_id, so another org's id is simply not found."""
     assert client.patch("/api/discovery/connectors/999999",
                         json={"auto_join": True}).status_code == 404
+
+
+# --- remediation: deleting a confirmed leak (Enterprise) -----------------------------------
+# This DESTROYS a customer's message. Every test below is about a case where it must NOT
+# fire; the one where it should is the short one at the top.
+
+ADMIN = "xoxp-admin-token"
+LEAK = "aws key AKIAIOSFODNN7EXAMPLE and secret wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+
+
+def _set_plan(db_factory, plan, slug="acme"):
+    """The `client` fixture seeds its tenant as ENTERPRISE so gated-feature tests exercise
+    the feature rather than the gate — so a gate test has to downgrade on purpose."""
+    from app.models import Tenant
+    db = db_factory()
+    db.query(Tenant).filter(Tenant.slug == slug).one().plan = plan
+    db.commit(); db.close()
+
+
+def _remediating(client, db_factory, monkeypatch, *, plan_enterprise=True,
+                 remediate=True, admin_token=ADMIN, text=LEAK):
+    """A connector set up to delete, with the Slack API faked. Returns (cid, deletes)."""
+    _set_plan(db_factory, "enterprise" if plan_enterprise else "free")
+    creds = {"bot_token": "xoxb-t"}
+    if admin_token:
+        creds["admin_token"] = admin_token
+    r = client.post("/api/discovery/connectors",
+                    json={"platform": "slack_messages", "label": "rem", "credentials": creds})
+    cid = r.json()["id"]
+    if remediate:
+        client.patch(f"/api/discovery/connectors/{cid}", json={"remediate": True})
+    deletes = []
+
+    def fake_http(url, headers=None, data=None, timeout=20):
+        if "chat.delete" in url:
+            deletes.append(((data or b"").decode(), (headers or {}).get("Authorization", "")))
+            return {"ok": True}
+        if "users.conversations" in url:
+            return {"ok": True, "channels": [{"id": "C1", "name": "eng"}]}
+        if "conversations.history" in url:
+            return {"ok": True, "messages": [{"user": "U1", "ts": "1755100009.000100",
+                                              "text": text}]}
+        if "users.info" in url:
+            return {"ok": True, "user": {"profile": {"email": "dev@acme.com"}}}
+        raise AssertionError(f"unexpected Slack call: {url}")
+
+    monkeypatch.setattr(sc, "_http_json", fake_http)
+    return cid, deletes
+
+
+def test_confirmed_leak_is_deleted_and_audited(client, db_factory, monkeypatch):
+    cid, deletes = _remediating(client, db_factory, monkeypatch)
+    summary = client.post(f"/api/discovery/connectors/{cid}/sync").json()
+    assert summary["deleted"] == 1
+    body, auth = deletes[0]
+    assert "channel=C1" in body and "ts=1755100009" in body
+    assert auth == f"Bearer {ADMIN}", "must use the admin token, never the bot token"
+    # the audit trail is the point: a message removed with no record of what it was is
+    # worse than the leak it removed
+    entries = client.get("/api/audit").json()["entries"]
+    hit = next(e for e in entries if e["action"] == "slack.message_deleted")
+    assert hit["detail"]["severity"] in ("high", "critical")
+    assert hit["detail"]["finding_id"] and hit["target"].startswith("#eng:")
+
+
+def test_nothing_is_deleted_without_the_switch(client, db_factory, monkeypatch):
+    cid, deletes = _remediating(client, db_factory, monkeypatch, remediate=False)
+    summary = client.post(f"/api/discovery/connectors/{cid}/sync").json()
+    assert deletes == [] and "deleted" not in summary
+    assert summary["findings"] >= 1, "still detected — just not acted on"
+
+
+def test_nothing_is_deleted_below_enterprise(client, db_factory, monkeypatch):
+    """The switch and the admin token are both present; the plan is not. Deleting customer
+    content is a commercial conversation, not a checkbox a trial finds by accident."""
+    cid, deletes = _remediating(client, db_factory, monkeypatch, plan_enterprise=False)
+    summary = client.post(f"/api/discovery/connectors/{cid}/sync").json()
+    assert deletes == [] and "deleted" not in summary
+
+
+def test_a_bot_token_is_never_used_to_delete(client, db_factory, monkeypatch):
+    """chat.delete with a bot token can only remove the bot's own posts. Accepting one
+    here would turn every scan into a stream of failed deletes against real messages."""
+    cid, deletes = _remediating(client, db_factory, monkeypatch, admin_token="xoxb-not-admin")
+    client.post(f"/api/discovery/connectors/{cid}/sync")
+    assert deletes == []
+
+
+def test_a_benign_message_is_never_deleted(client, db_factory, monkeypatch):
+    cid, deletes = _remediating(client, db_factory, monkeypatch,
+                                text="standup at 10, bring the roadmap")
+    summary = client.post(f"/api/discovery/connectors/{cid}/sync").json()
+    assert deletes == [] and summary.get("findings", 0) == 0
+
+
+def test_a_failed_delete_is_reported_not_swallowed(client, db_factory, monkeypatch):
+    """A remediation that quietly stopped working looks exactly like a workspace with
+    nothing left to remediate."""
+    cid, _ = _remediating(client, db_factory, monkeypatch)
+    real = sc._http_json
+
+    def failing(url, headers=None, data=None, timeout=20):
+        if "chat.delete" in url:
+            return {"ok": False, "error": "cant_delete_message"}
+        return real(url, headers=headers, data=data, timeout=timeout)
+    monkeypatch.setattr(sc, "_http_json", failing)
+    summary = client.post(f"/api/discovery/connectors/{cid}/sync").json()
+    assert summary.get("delete_failed") == 1 and "deleted" not in summary
+    entries = client.get("/api/audit").json()["entries"]
+    hit = next(e for e in entries if e["action"] == "slack.message_delete_failed")
+    assert hit["detail"]["error"] == "cant_delete_message"
+
+
+def test_admin_token_never_leaves_the_api(client, db_factory, monkeypatch):
+    cid, _ = _remediating(client, db_factory, monkeypatch)
+    assert ADMIN not in client.get("/api/discovery/connectors").text
+    assert ADMIN not in client.patch(f"/api/discovery/connectors/{cid}",
+                                     json={"remediate": True}).text
