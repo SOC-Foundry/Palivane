@@ -36,9 +36,9 @@ from app.ml.classifier import LogisticClassifier   # noqa: E402
 
 def _split(rows, test_frac=0.3, seed=7):
     """Deterministic stratified split (no random module — a fixed LCG)."""
-    by = {"malicious": [], "benign": []}
+    by: dict[str, list] = {}
     for r in rows:
-        by[r["label"]].append(r)
+        by.setdefault(r["label"], []).append(r)   # label set varies by task
     train, test = [], []
     rng = seed
     for label, items in by.items():
@@ -71,11 +71,11 @@ def _prf(tp, fp, fn):
     return prec, rec, f1
 
 
-def _eval_ml(model, test):
+def _eval_ml(model, test, positive="malicious"):
     tp = fp = fn = tn = 0
     for r in test:
         pred = model.predict(r["content"])
-        actual = r["label"] == "malicious"
+        actual = r["label"] == positive
         tp += pred and actual
         fp += pred and not actual
         fn += (not pred) and actual
@@ -83,7 +83,7 @@ def _eval_ml(model, test):
     return _prf(tp, fp, fn), (tp, fp, fn, tn)
 
 
-def _eval_regex(test):
+def _eval_regex(test, positive="malicious"):
     """Score the held-out set with the live regex engine, at its default operating cutoff."""
     from app.engine import Engine
     from app.detectors.base import AnalysisInput, Surface
@@ -93,7 +93,7 @@ def _eval_regex(test):
         res = eng.analyze(AnalysisInput(content=r["content"], surface=Surface.LLM_IO),
                           include_judge=False)
         pred = res.severity in ("suspicious", "high", "critical")
-        actual = r["label"] == "malicious"
+        actual = r["label"] == positive
         tp += pred and actual
         fp += pred and not actual
         fn += (not pred) and actual
@@ -104,6 +104,9 @@ def _eval_regex(test):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpus", required=True)
+    ap.add_argument("--positive-label", default="malicious",
+                    help="the label value that means 'positive' — \"malicious\" for the "
+                         "injection corpus, \"confidential\" for the content one")
     ap.add_argument("--save", default="")
     ap.add_argument("--holdout-after", default="",
                     help="ISO timestamp; rows with ts >= this are the held-out set "
@@ -124,12 +127,13 @@ def main() -> int:
         print(f"corpus: {len(rows)}  train: {len(train)}  test: {len(test)}")
         print("GATE: NOT EVALUABLE — empty train or holdout split")
         return 1
-    model = LogisticClassifier.train([(r["content"], 1 if r["label"] == "malicious" else 0)
+    positive = args.positive_label
+    model = LogisticClassifier.train([(r["content"], 1 if r["label"] == positive else 0)
                                       for r in train])
     model.meta = {"train_n": len(train), "features": len(model.w)}
 
-    (mp, mr, mf), mcm = _eval_ml(model, test)
-    (rp, rr, rf), rcm = _eval_regex(test)
+    (mp, mr, mf), mcm = _eval_ml(model, test, positive)
+    (rp, rr, rf), rcm = _eval_regex(test, positive)
     _, mfp, _, mtn = mcm
     fpr = mfp / (mfp + mtn) if (mfp + mtn) else 0.0
 

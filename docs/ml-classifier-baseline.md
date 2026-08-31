@@ -188,3 +188,86 @@ curl -s $HOST/api/ml/corpus/export -H "Authorization: Bearer $TOKEN" > /tmp/real
 python scripts/train_classifier.py --corpus /tmp/real.jsonl --holdout-after 2026-09-01
 # ship only on GATE: PASS (and only ever as an additional engine signal behind a flag)
 ```
+
+
+---
+
+# The confidential-content classifier (second task, same machinery)
+
+*Status: corpus generator, training path, runtime and engine wiring are built for BOTH
+tiers. No weights ship. The gate above applies unchanged and has not been cleared.*
+
+## Why a second task
+
+Everything above is about **attack intent** — injection, exfil, jailbreak. The competitive
+gap is a different question: **is this material confidential**, when nothing in it says so.
+
+The shipped `confidential_data` signal fires on explicit markers only: the word
+"confidential", or an applied sensitivity label (Purview/MIP/TLP). Measured against a
+corpus of unlabelled confidential prose — term sheets, pipeline exports, comp reviews,
+settlement terms — it finds **none of it**:
+
+| | precision | recall | F1 | FP rate | near-miss FP |
+|---|---|---|---|---|---|
+| marker regex (shipped) | — | **0.00** | 0.00 | 0% | 0% |
+| linear classifier | 0.99 | 1.00 | 1.00 | 1.1% | 1.3% |
+
+Read those two rows differently. **The regex row is a real result**: it was never trained
+on anything, so its failure on unlabelled confidential content is a genuine measurement of
+the shipped product. **The ML row is inflated** for exactly the reason the injection
+benchmark above is — train and test are drawn from one synthetic distribution. It shows a
+linear model *can* learn these families. It does not show it survives real traffic.
+
+## Tier 1: the linear model (`app/ml/confidential.py`)
+
+Hashed n-grams + logistic regression, the same code as the injection task, ~0.1 ms. Loads
+weights from `PALIVANE_ML_CONFIDENTIAL_MODEL`; with no file it contributes nothing.
+
+Contributes a signal under its own title (`Likely confidential business content
+(classifier)`) at weight 0.5 / confidence ≤ 0.6, strictly below the marker path's 0.6/0.65,
+and only when a marker did *not* already fire. A model gets to raise a hand, not to
+overrule a label or reach the block tier on its own.
+
+**Not gated.** Better-than-regex detection should not be a paid feature.
+
+## Tier 2: the encoder (`app/ml/encoder.py`, Enterprise)
+
+A fine-tuned ModernBERT-class encoder through ONNX Runtime on **CPU, locally**. Soft
+dependency (`onnxruntime`, `tokenizers`), off unless both the libraries and a weights file
+are present, plan-gated on `ml_encoder`, and preferred over tier 1 when available with tier
+1 as the fallback.
+
+The linear model cannot use word order: "we are acquiring them" and "they are acquiring us"
+are the same vector. That is the ceiling this tier exists to raise.
+
+**Why local matters commercially.** Harmonic publishes 46 ms median / 81 ms p95 for the
+equivalent binary classifier — on `ml.g5.4xlarge` GPU instances in their own cloud. Their
+marketing says the models sit on the endpoint; their engineering write-up says SageMaker.
+Either way the customer's content leaves to be classified. A test asserts both of our ML
+modules contain no HTTP client at all, because that difference is the product.
+
+**What is missing is weights.** Fine-tuning needs a GPU run over a labelled corpus that does
+not exist yet. The runtime settles loading, threading (one intra-op thread — an encoder
+inside a request worker must not fan out across every core), chunking (long documents are
+windowed and the strongest window wins, rather than truncated to their first page) and
+failure behaviour, so producing weights is the last step rather than the first of several.
+
+## Building the corpus
+
+    python scripts/build_confidential_corpus.py --out conf.jsonl
+    python scripts/train_classifier.py --corpus conf.jsonl --positive-label confidential
+
+Six categories (M&A, financials, sales pipeline, legal, strategy, personnel) with slot-filled
+templates, plus **near-misses in volume** — published earnings, public pricing pages, job ads
+quoting bands, sample NDAs, analyst notes. That second group is the whole game: a classifier
+that separates a term sheet from a cat photo is worthless, and every real false positive
+lives in text that shares the vocabulary. It is the same technique Harmonic describes
+(LLM-generated data plus deliberate near-misses, 10–15× augmentation).
+
+Rows carry a `category` as well as the binary label, so a later multi-label upgrade is a
+training question rather than a re-labelling project. Every row is tagged
+`source: "synthetic"`, which the gate uses to disqualify a synthetic holdout.
+
+**Synthetic training data is legitimate; a synthetic holdout is not.** The gate already
+encodes that distinction. What it still needs is a few hundred real labelled examples from
+a later time window — a much smaller ask than labelling a whole corpus.

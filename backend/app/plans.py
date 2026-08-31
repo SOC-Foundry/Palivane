@@ -40,8 +40,12 @@ from .models import Tenant
 #                  (Enterprise). Gated because it DESTROYS customer content, so it should
 #                  sit behind a deliberate commercial conversation, not a checkbox a trial
 #                  finds by accident.
+#   ml_encoder   — the transformer tier of the content classifier, run locally on CPU
+#                  (Enterprise). The linear classifier is NOT gated: better detection than
+#                  a regex should not be a paid feature. What is paid is the accuracy of a
+#                  149M-parameter encoder and the cost of running one.
 _ALL_FEATURES = frozenset({"alerts", "mdm", "sso", "siem", "s3_delivery", "judge",
-                           "device_setup", "remediation"})
+                           "device_setup", "remediation", "ml_encoder"})
 
 PLANS: dict[str, dict] = {
     "trial": {
@@ -73,7 +77,7 @@ PLANS: dict[str, dict] = {
     "enterprise": {
         "label": "Enterprise",
         "features": frozenset({"alerts", "mdm", "sso", "siem", "s3_delivery", "judge",
-                               "device_setup", "remediation"}),
+                               "device_setup", "remediation", "ml_encoder"}),
         "quotas": {},
     },
 }
