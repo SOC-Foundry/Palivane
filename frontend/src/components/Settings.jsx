@@ -198,6 +198,13 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
 
   // --- Slack scanning (collab-surface DLP via the published Slack app) ---
   const [slackConns, setSlackConns] = useState([]);
+  // Whether THIS deployment has a published Slack app registered. Without one there is no
+  // "Add to Slack" to offer: /api/slack/install can only 404, and the honest answer is the
+  // workspace-app route. Null until known, so the button never flashes in and out.
+  const [slackApp, setSlackApp] = useState(null);
+  useEffect(() => {
+    api.health().then((h) => setSlackApp(!!h.slack_app)).catch(() => setSlackApp(false));
+  }, []);
   const loadSlack = useCallback(async () => {
     try {
       const r = await api.connectors();
@@ -815,16 +822,27 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
             <button type="button" className="mini-btn" onClick={() => syncSlack(c.id)}>Scan now</button>
           </div>
         ))}
-        <div className="form-row" style={{ gap: 10, marginTop: slackConns.length ? 8 : 0 }}>
-          <button type="button" className={slackConns.length ? "mini-btn" : "primary-btn slim"}
-                  onClick={addToSlack}>
-            {slackConns.length ? "Add another workspace" : "Add to Slack"}</button>
-        </div>
-        <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Read-only scopes; the bot never
-           posts. Invite it to each channel to scan. Every scan pulls messages since the last
-           cursor (first scan looks back 7 days); findings land under the <code>collab</code>
-           surface with alerts and SIEM export as usual. Detection only. Slack offers no
-           pre-delivery block outside Enterprise Grid DLP.</p>
+        {slackApp && (
+          <div className="form-row" style={{ gap: 10, marginTop: slackConns.length ? 8 : 0 }}>
+            <button type="button" className={slackConns.length ? "mini-btn" : "primary-btn slim"}
+                    onClick={addToSlack}>
+              {slackConns.length ? "Add another workspace" : "Add to Slack"}</button>
+          </div>
+        )}
+        {slackApp === false && !slackConns.length && (
+          <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>One-click install is not
+             available on this deployment. Create a Slack app in your own workspace with the
+             read scopes below, then add its bot token here as a <code>slack_messages</code>
+             connector. <a href="/docs/slack-scanning" target="_blank"
+             rel="noreferrer">Step by step →</a></p>
+        )}
+        <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Read-only scopes
+           (<code>channels:read</code>, <code>groups:read</code>, <code>channels:history</code>,
+           <code>groups:history</code>, <code>users:read</code>, <code>users:read.email</code>);
+           the bot never posts. Invite it to each channel to scan. Every scan pulls messages
+           since the last cursor (first scan looks back 7 days); findings land under the
+           <code>collab</code> surface with alerts and SIEM export as usual. Detection only.
+           Slack offers no pre-delivery block outside Enterprise Grid DLP.</p>
       </div>
 
       {/* Usage */}
