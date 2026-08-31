@@ -409,6 +409,45 @@ def _slack_channels(hdrs: dict, auto_join: bool) -> tuple[list[dict], int]:
     return list(by_id.values()), joined
 
 
+# Deleting a message is the only remediation Slack allows below Enterprise Grid, and only
+# to a workspace ADMIN's user token: chat.delete with a bot token can remove nothing but the
+# bot's own posts, and chat.update refuses to touch a message the caller did not author on
+# every plan. So "redact the SSN and keep the sentence" is genuinely Grid-only; this is
+# delete-or-nothing, and it is named that way in the console rather than dressed up as
+# redaction.
+_REMEDIATE_MIN_RANK = 3           # high | critical — the confirmed-leak tier
+_SEV_RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}
+
+
+def _slack_delete(channel: str, ts: str, admin_token: str) -> tuple[bool, str]:
+    """Delete one message with a workspace-admin user token. Returns (deleted, error)."""
+    try:
+        r = _http_json(f"{_SLACK_API_BASE}/chat.delete",
+                       headers={"Authorization": f"Bearer {admin_token}",
+                                "Content-Type": "application/x-www-form-urlencoded"},
+                       data=urllib.parse.urlencode({"channel": channel, "ts": ts}).encode())
+    except ConnectorError as e:
+        return False, str(e)
+    return (True, "") if r.get("ok") else (False, r.get("error", "unknown"))
+
+
+def _remediation_enabled(db, connector, creds: dict) -> str:
+    """The admin token to delete with, or "" if remediation must not run.
+
+    Every gate is checked here rather than at the call site, because the failure that
+    matters is deleting a customer's message when something was misconfigured, not failing
+    to delete one."""
+    if not creds.get("remediate"):
+        return ""
+    token = (creds.get("admin_token") or "").strip()
+    if not token.startswith("xoxp-"):
+        return ""                 # a bot token cannot delete anyone else's message
+    from .models import Tenant
+    from .plans import has_feature
+    tenant = db.get(Tenant, connector.tenant_id)
+    return token if (tenant is not None and has_feature(tenant, "remediation")) else ""
+
+
 def scan_slack_messages(db, connector, creds: dict) -> dict:
     """Scan new Slack messages and their text attachments for PII/PHI/secrets, persisting
     findings on the collab surface.
@@ -437,9 +476,10 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
     default_oldest = f"{time.time() - _SCAN_LOOKBACK_SECS:.6f}"
 
     channels, joined = _slack_channels(hdrs, bool(creds.get("auto_join")))
+    admin_token = _remediation_enabled(db, connector, creds)
 
     users: dict[str, str] = {}
-    scanned = findings = 0
+    scanned = findings = deleted = delete_failed = 0
     files_scanned = files_skipped = file_bytes = 0
     truncated = False
     for ch in channels:
@@ -513,6 +553,25 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
                 marks[cid] = m["ts"]
             if result.get("finding_id") is not None:
                 findings += 1
+                # Remediation. Only ever a message this scan just flagged, only at the
+                # confirmed-leak tier, and every deletion is written to the audit log
+                # BEFORE it is reported — a message removed with no record of what it was
+                # or why is worse than the leak it was removing.
+                if admin_token and _SEV_RANK.get(result.get("severity", ""), 0) >= _REMEDIATE_MIN_RANK:
+                    ok, why = _slack_delete(cid, m["ts"], admin_token)
+                    from . import audit_log
+                    audit_log.record(
+                        db, connector.tenant_id, actor,
+                        "slack.message_deleted" if ok else "slack.message_delete_failed",
+                        f"{where}:{m['ts']}",
+                        {"finding_id": result.get("finding_id"),
+                         "severity": result.get("severity"),
+                         "channel": where, "connector": connector.label or connector.id,
+                         **({} if ok else {"error": why})})
+                    if ok:
+                        deleted += 1
+                    else:
+                        delete_failed += 1
         if over:
             truncated = True
 
@@ -522,6 +581,12 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
         summary["joined"] = joined
     if files_scanned:
         summary["files"] = files_scanned
+    if deleted:
+        summary["deleted"] = deleted
+    if delete_failed:
+        # Surfaced, because a remediation that silently stopped working reads exactly like
+        # a workspace with nothing left to remediate.
+        summary["delete_failed"] = delete_failed
     if files_skipped:
         # Surfaced, not swallowed: "12 attachments unreadable" is the honest way to say
         # that PDFs, Office documents and images are not covered.
@@ -958,13 +1023,17 @@ PLATFORMS: dict[str, dict] = {
     "slack_messages": {
         "label": "Slack message scanning",
         "scan": scan_slack_messages,
-        "credential_fields": ["bot_token"],
+        "credential_fields": ["bot_token", "admin_token"],
         "setup": "Bot token (xoxb-…) with channels:read, groups:read, channels:history, "
-                 "groups:history, users:read, users:read.email. Invite the bot to each "
-                 "channel to scan. Every sync pulls messages newer than the per-channel "
-                 "cursor (first sync looks back 7 days) and runs them through PII/PHI/"
-                 "secret detection on the collab surface — findings alert and export "
-                 "like any other plane. Detection is rules-only (no LLM judge).",
+                 "groups:history, users:read, users:read.email, files:read — plus "
+                 "channels:join to cover public channels nobody invited it to. Every sync "
+                 "pulls messages newer than the per-channel cursor (first sync looks back "
+                 "7 days), reads text attachments, and runs both through PII/PHI/secret "
+                 "detection on the collab surface — findings alert and export like any "
+                 "other plane. Detection is rules-only (no LLM judge). admin_token is "
+                 "OPTIONAL and Enterprise-only: a workspace-admin USER token (xoxp-…) that "
+                 "lets a confirmed leak be deleted from Slack. Leave it empty for "
+                 "detection only.",
     },
     "gdrive_files": {
         "label": "Google Drive scanning",
@@ -1046,7 +1115,7 @@ def read_credentials(connector, db=None) -> dict:
 # Non-secret scan options live inside the (encrypted) credential blob, so they need no
 # column — but only these keys may ever be read back out to the API. A bot token must not
 # reach the console through this door.
-PUBLIC_OPTIONS = ("auto_join",)
+PUBLIC_OPTIONS = ("auto_join", "remediate")
 
 
 def connector_options(connector, db=None) -> dict:

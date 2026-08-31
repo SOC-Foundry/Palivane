@@ -36,8 +36,12 @@ from .models import Tenant
 #   s3_delivery  — findings delivery to S3               (Enterprise)
 #   judge        — managed LLM judge (operator-funded)    (Enterprise; SaaS only, when
 #                  PALIVANE_JUDGE_PLAN_GATED is on — self-hosted brings its own key)
+#   remediation  — acting on a finding, not just recording it: Slack message deletion
+#                  (Enterprise). Gated because it DESTROYS customer content, so it should
+#                  sit behind a deliberate commercial conversation, not a checkbox a trial
+#                  finds by accident.
 _ALL_FEATURES = frozenset({"alerts", "mdm", "sso", "siem", "s3_delivery", "judge",
-                           "device_setup"})
+                           "device_setup", "remediation"})
 
 PLANS: dict[str, dict] = {
     "trial": {
@@ -69,7 +73,7 @@ PLANS: dict[str, dict] = {
     "enterprise": {
         "label": "Enterprise",
         "features": frozenset({"alerts", "mdm", "sso", "siem", "s3_delivery", "judge",
-                               "device_setup"}),
+                               "device_setup", "remediation"}),
         "quotas": {},
     },
 }

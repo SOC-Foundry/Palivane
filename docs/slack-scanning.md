@@ -76,9 +76,10 @@ a large backlog drains over several runs rather than in one long request.
 
 ## What it does not do
 
-**Detection only, for now.** Nothing is blocked, redacted, or deleted by the bot.
+**Nothing is blocked before delivery, and nothing is edited.** One remediation is
+available, and only on Enterprise: deletion.
 
-Some of that is Slack's design, not ours, and it is worth being precise about which parts:
+Some of the rest is Slack's design, not ours, and it is worth being precise about which:
 
 | | Below Enterprise Grid | Enterprise Grid |
 | --- | --- | --- |
@@ -86,13 +87,42 @@ Some of that is Slack's design, not ours, and it is worth being precise about wh
 | Read private channels / DMs uninvited | **no** | yes (Discovery API) |
 | Block before delivery | **no** | yes |
 | Edit someone else's message in place | **no** | yes (`discovery:write`) |
-| Delete someone else's message | possible, with an admin user token | yes |
+| Delete someone else's message | **yes**, with an admin user token (below) | yes |
 
 `chat.update` refuses to touch a message the caller did not author, on every plan — so
 "redact the SSN and leave the sentence" is genuinely Grid-only. Deletion is the one
 remediation reachable below Grid, and only with a workspace-admin **user** token, which is
 a much stronger credential than the bot token and is treated separately.
 
-If you are on Enterprise Grid and want in-place redaction or tombstoning, that is a
-different integration (Discovery API, org-owner install, Slack DLP-partner approval) and we
-will scope it with you.
+## Deleting a confirmed leak (Enterprise)
+
+**Settings → Slack scanning → "Delete confirmed leaks"** removes a message the scan has
+just flagged at high or critical from the workspace.
+
+What it needs, and why:
+
+- **A workspace-admin user token** (`xoxp-…`) on the connector, alongside the bot token.
+  `chat.delete` with a bot token can remove nothing but the bot's own posts, so there is no
+  version of this that runs on the bot token alone. This is a much stronger credential than
+  the bot token: it can do anything its owner can. It is stored encrypted, write-only, and
+  never returned by the API.
+- **The Enterprise plan.** This destroys customer content, so it sits behind a deliberate
+  conversation rather than a checkbox a trial finds by accident.
+- **The switch, off by default.**
+
+What it will and will not touch:
+
+- Only a message **this scan flagged**, at **high or critical** — the confirmed-leak tier.
+  A suspicious-but-unconfirmed hit is recorded, never deleted.
+- **Every deletion is written to the audit log first** (`slack.message_deleted`), with the
+  finding id, severity, channel, and who posted it. A message removed with no record of
+  what it was is worse than the leak it removed.
+- A deletion that fails is recorded too (`slack.message_delete_failed`) and counted in the
+  sync summary, because remediation that quietly stopped working looks exactly like a
+  workspace with nothing left to remediate.
+
+It is deletion, not redaction. Slack will not let any caller edit a message it did not
+author, on any plan, so "mask the SSN and leave the sentence" is genuinely Grid-only. If you
+are on Enterprise Grid and want in-place redaction or tombstoning, that is a different
+integration (Discovery API, org-owner install, Slack DLP-partner approval) and we will scope
+it with you.

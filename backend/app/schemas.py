@@ -582,6 +582,7 @@ class ConnectorOptions(BaseModel):
     """Non-secret scan settings, changeable without re-sending the credential. None means
     "leave alone", so a partial PATCH cannot silently clear a setting it did not mention."""
     auto_join: bool | None = None
+    remediate: bool | None = None
 
 
 class ConnectorCreate(BaseModel):

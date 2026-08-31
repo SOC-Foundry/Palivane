@@ -223,6 +223,15 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
                : "Auto-join off. Only channels the bot was invited to are scanned.");
     } catch (e) { err(e); }
   }
+  async function setSlackRemediate(id, on) {
+    try {
+      const c = await api.updateConnector(id, { remediate: on });
+      setSlackConns((cs) => cs.map((x) => (x.id === id ? c : x)));
+      flash(on ? "Confirmed leaks will be DELETED from Slack on the next scan. Every "
+                 + "deletion is written to the audit log."
+               : "Deletion off. Confirmed leaks are recorded, not removed.");
+    } catch (e) { err(e); }
+  }
   async function syncSlack(id) {
     try {
       const s = await api.syncConnector(id);
@@ -829,6 +838,21 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
               </span></span>
             <button type="button" className="mini-btn" onClick={() => syncSlack(c.id)}>Scan now</button>
           </div>
+        ))}
+        {can("remediation") && slackConns.map((c) => (
+          <label key={`rm-${c.id}`} className="form-row" style={{ gap: 8, marginTop: 6,
+                                                                  alignItems: "flex-start" }}>
+            <input type="checkbox" checked={!!c.options?.remediate}
+                   onChange={(e) => setSlackRemediate(c.id, e.target.checked)} />
+            <span style={{ fontSize: 12 }}>Delete confirmed leaks from{" "}
+              <strong>{c.label || "this workspace"}</strong>{" "}
+              <span className="muted">— a message this scan flags at high or critical is
+              removed from Slack, and the deletion is written to the audit log. Needs the
+              workspace-admin user token (<code>xoxp-…</code>) on this connector; the bot
+              token cannot delete anyone else's message. Deletion is all Slack allows below
+              Enterprise Grid: editing someone else's message to mask just the sensitive
+              part is Grid-only.</span></span>
+          </label>
         ))}
         {slackConns.map((c) => (
           <label key={`aj-${c.id}`} className="form-row" style={{ gap: 8, marginTop: 6,
