@@ -215,6 +215,14 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     try { const { url } = await api.slackInstallUrl(); window.location.href = url; }
     catch { flash("No published Slack app on this deployment, create a workspace app and register its bot token as a slack_messages connector.", false); }
   }
+  async function setSlackAutoJoin(id, on) {
+    try {
+      const c = await api.updateConnector(id, { auto_join: on });
+      setSlackConns((cs) => cs.map((x) => (x.id === id ? c : x)));
+      flash(on ? "Palivane will join and scan every public channel on the next scan."
+               : "Auto-join off. Only channels the bot was invited to are scanned.");
+    } catch (e) { err(e); }
+  }
   async function syncSlack(id) {
     try {
       const s = await api.syncConnector(id);
@@ -822,6 +830,18 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
             <button type="button" className="mini-btn" onClick={() => syncSlack(c.id)}>Scan now</button>
           </div>
         ))}
+        {slackConns.map((c) => (
+          <label key={`aj-${c.id}`} className="form-row" style={{ gap: 8, marginTop: 6,
+                                                                  alignItems: "flex-start" }}>
+            <input type="checkbox" checked={!!c.options?.auto_join}
+                   onChange={(e) => setSlackAutoJoin(c.id, e.target.checked)} />
+            <span style={{ fontSize: 12 }}>Scan every public channel in{" "}
+              <strong>{c.label || "this workspace"}</strong>{" "}
+              <span className="muted">— joins the ones it is not in, which posts a visible
+              "joined the channel" line in each. Private channels and DMs still need an
+              invite.</span></span>
+          </label>
+        ))}
         {slackApp && (
           <div className="form-row" style={{ gap: 10, marginTop: slackConns.length ? 8 : 0 }}>
             <button type="button" className={slackConns.length ? "mini-btn" : "primary-btn slim"}
@@ -838,11 +858,15 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         )}
         <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Read-only scopes
            (<code>channels:read</code>, <code>groups:read</code>, <code>channels:history</code>,
-           <code>groups:history</code>, <code>users:read</code>, <code>users:read.email</code>);
-           the bot never posts. Invite it to each channel to scan. Every scan pulls messages
-           since the last cursor (first scan looks back 7 days); findings land under the
-           <code>collab</code> surface with alerts and SIEM export as usual. Detection only.
-           Slack offers no pre-delivery block outside Enterprise Grid DLP.</p>
+           <code>groups:history</code>, <code>users:read</code>, <code>users:read.email</code>,
+           <code>files:read</code>, plus <code>channels:join</code> for the option above);
+           the bot never posts, edits, or deletes. Every scan pulls messages since the last
+           cursor (first scan looks back 7 days) and reads text attachments (CSV, JSON, logs,
+           source); PDFs, Office documents, and images are reported as skipped rather than
+           guessed at. Findings land under the <code>collab</code> surface with alerts and
+           SIEM export as usual. Detection only: Slack permits no pre-delivery block, and no
+           edit of another person's message, outside Enterprise Grid's Discovery API.
+           <a href="/docs/slack-scanning" target="_blank" rel="noreferrer"> Full setup →</a></p>
       </div>
 
       {/* Usage */}
