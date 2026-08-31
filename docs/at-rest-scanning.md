@@ -42,7 +42,9 @@ palivane-s3-scan my-data-bucket --prefix exports/ --record
 palivane-s3-scan my-data-bucket --dry-run        # list what it would scan + public verdict; sends nothing
 ```
 
-It streams the bucket's **text** objects (skips binary and anything over `--max-object-bytes`,
+It reads the bucket's text objects **and its PDFs, Word, Excel and PowerPoint files** — a
+bucket of exported reports is exactly where a customer record sits (skips images, which need
+OCR the stdlib scanner cannot carry, and anything over `--max-object-bytes`,
 default 1 MB) through the detection engine, and separately determines whether the bucket is
 **publicly reachable**. A non-clean object in a **public** bucket is escalated to a hard
 **block** and tagged for alerting, a world-readable bucket holding secrets/PII is the

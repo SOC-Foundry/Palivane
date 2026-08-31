@@ -885,9 +885,10 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
            <code>groups:history</code>, <code>users:read</code>, <code>users:read.email</code>,
            <code>files:read</code>, plus <code>channels:join</code> for the option above);
            the bot never posts, edits, or deletes. Every scan pulls messages since the last
-           cursor (first scan looks back 7 days) and reads text attachments (CSV, JSON, logs,
-           source); PDFs, Office documents, and images are reported as skipped rather than
-           guessed at. Findings land under the <code>collab</code> surface with alerts and
+           cursor (first scan looks back 7 days) and reads attachments: text, PDFs, and
+           Word/Excel/PowerPoint documents, plus screenshots when OCR is enabled on the
+           deployment. What nothing can open (pre-2007 Office, encrypted PDFs, images with
+           OCR off) is reported as skipped rather than counted clean. Findings land under the <code>collab</code> surface with alerts and
            SIEM export as usual. Detection only: Slack permits no pre-delivery block, and no
            edit of another person's message, outside Enterprise Grid's Discovery API.
            <a href="/docs/slack-scanning" target="_blank" rel="noreferrer"> Full setup →</a></p>

@@ -242,11 +242,24 @@ def test_auto_join_never_reaches_private_channels(monkeypatch):
 # --- attachments ---------------------------------------------------------------------------
 # A regulated record is as likely to be a pasted CSV as a typed sentence.
 
-def test_readable_file_types():
-    assert sc._slack_readable_file({"filetype": "csv"})
-    assert sc._slack_readable_file({"mimetype": "text/plain"})
-    assert not sc._slack_readable_file({"filetype": "pdf", "mimetype": "application/pdf"})
-    assert not sc._slack_readable_file({"filetype": "png", "mimetype": "image/png"})
+def test_readable_file_types(monkeypatch):
+    assert sc._slack_readable_file({"name": "a.csv", "filetype": "csv"})
+    assert sc._slack_readable_file({"name": "a.txt", "mimetype": "text/plain"})
+    assert sc._slack_readable_file({"name": "a.pdf", "mimetype": "application/pdf"})
+    assert sc._slack_readable_file({"name": "q.docx", "filetype": "docx"})
+    # pre-2007 Office is a binary OLE container — genuinely unreadable, and said so
+    assert not sc._slack_readable_file({"name": "old.doc", "filetype": "doc"})
+
+
+def test_an_image_is_readable_only_when_ocr_is_available(monkeypatch):
+    """Claiming an image was scanned when OCR is switched off would be the worst kind of
+    false clean: the format most likely to carry a pasted credential, reported as fine."""
+    import app.ocr as ocr
+    img = {"name": "shot.png", "filetype": "png", "mimetype": "image/png"}
+    monkeypatch.setattr(ocr, "ocr_available", lambda: False)
+    assert not sc._slack_readable_file(img)
+    monkeypatch.setattr(ocr, "ocr_available", lambda: True)
+    assert sc._slack_readable_file(img)
 
 
 def test_attachment_is_scanned_as_its_own_finding(client, monkeypatch):
@@ -259,7 +272,7 @@ def test_attachment_is_scanned_as_its_own_finding(client, monkeypatch):
                               "files": [{"id": "F1", "name": "export.csv", "filetype": "csv",
                                          "size": 120, "url_private_download": "https://x/f"}]}])
     monkeypatch.setattr(sc, "_slack_file_text",
-                        lambda f, h: "name,ssn\nJane Roe,412-88-7390\n")
+                        lambda f, h: ("name,ssn\nJane Roe,412-88-7390\n", "text"))
     r = client.post(f"/api/discovery/connectors/{cid}/sync")
     assert r.status_code == 200, r.text
     detail = r.json()
