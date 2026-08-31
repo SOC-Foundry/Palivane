@@ -810,13 +810,19 @@ class SaasConnector(Base):
         import json
         self.sync_state = json.dumps(value)
 
+
     def to_dict(self) -> dict:
         return {"id": self.id, "platform": self.platform, "label": self.label or "",
                 "active": self.active, "configured": bool(self.credentials_enc),
                 "created_at": self.created_at.isoformat() if self.created_at else None,
                 "last_sync_at": self.last_sync_at.isoformat() if self.last_sync_at else None,
                 "last_sync_status": self.last_sync_status or "",
-                "last_sync_detail": self.last_sync_detail or ""}
+                "last_sync_detail": self.last_sync_detail or "",
+                # Scan options are filled in by the API, which has the session needed to
+                # unwrap the tenant-sealed credential blob they live in. Empty here rather
+                # than wrong: a property on this model would get "" from unseal_secret and
+                # silently report every option as off.
+                "options": {}}
 
 
 class ContentFingerprint(Base):

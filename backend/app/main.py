@@ -43,6 +43,7 @@ from .schemas import (
     CoverageRequest,
     DevicePostureScan,
     ConnectorCreate,
+    ConnectorOptions,
     DiscoveryIngest,
     OAuthGrantIngest,
     IDEExtScan,
@@ -2670,9 +2671,9 @@ def discovery_oauth_grants(body: OAuthGrantIngest, current: User = Depends(requi
 def connectors_list(current: User = Depends(require_admin), db: Session = Depends(get_db)):
     """The tenant's live-pull SaaS connectors (credentials redacted) plus the platform
     registry, so the UI can render setup forms for platforms not yet configured."""
-    from .saas_connectors import PLATFORMS
+    from .saas_connectors import PLATFORMS, connector_options
     rows = db.query(SaasConnector).filter(SaasConnector.tenant_id == current.tenant_id).all()
-    return {"connectors": [c.to_dict() for c in rows],
+    return {"connectors": [{**c.to_dict(), "options": connector_options(c, db)} for c in rows],
             "platforms": {k: {"label": v["label"], "credential_fields": v["credential_fields"],
                               "setup": v["setup"], "manual_only": bool(v.get("manual_only"))}
                           for k, v in PLATFORMS.items()}}
@@ -2735,6 +2736,25 @@ def slack_oauth_callback(request: Request, code: str = "", state: str = "",
     except slack_install.InstallError:
         return RedirectResponse("/?slack=error")
     return RedirectResponse("/?slack=installed")
+
+
+@app.patch("/api/discovery/connectors/{connector_id}")
+def connectors_update(connector_id: int, body: ConnectorOptions,
+                      current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Change a connector's non-secret scan options without re-sending its credential.
+    Toggling a switch must never require pasting a bot token again."""
+    from .saas_connectors import connector_options, merge_options
+    row = (db.query(SaasConnector)
+             .filter(SaasConnector.id == connector_id,
+                     SaasConnector.tenant_id == current.tenant_id).first())
+    if row is None:
+        raise HTTPException(404, "connector not found")
+    opts = body.model_dump(exclude_none=True)
+    if opts:
+        merge_options(row, opts, db)
+        db.commit()
+        db.refresh(row)
+    return {**row.to_dict(), "options": connector_options(row, db)}
 
 
 @app.post("/api/discovery/connectors/{connector_id}/sync")

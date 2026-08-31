@@ -158,6 +158,8 @@ export const api = {
   siemStatus: () => req("/siem/status"),
   connectors: () => req("/discovery/connectors"),
   syncConnector: (id) => req(`/discovery/connectors/${id}/sync`, { method: "POST" }),
+  updateConnector: (id, options) => req(`/discovery/connectors/${id}`,
+                                        { method: "PATCH", body: JSON.stringify(options) }),
   slackInstallUrl: () => req("/slack/install"),
   exportFindings: async () => {
     const token = getToken();

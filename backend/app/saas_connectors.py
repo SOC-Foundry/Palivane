@@ -294,6 +294,22 @@ def fetch_slack(creds: dict) -> list[dict]:
 _MAX_MESSAGES_PER_SYNC = 2000     # bounds one sync; the cursor resumes where it stopped
 _SCAN_LOOKBACK_SECS = 7 * 86400   # first sync reaches back a week, then cursor-incremental
 
+# --- shared files ---------------------------------------------------------------------
+# A regulated record is as likely to be a pasted CSV as a typed message, and the message
+# scan alone never saw it. Only formats whose bytes ARE their text are read: a PDF or a
+# .docx is a container needing a parser, and an image needs OCR — both are real gaps and
+# neither is quietly approximated here. Slack reports the type, so an unreadable
+# attachment is counted and reported rather than skipped in silence.
+_FILE_TEXT_MIMES = ("text/", "application/json", "application/xml", "application/x-ndjson",
+                    "application/x-sh", "application/javascript", "application/sql")
+_FILE_TEXT_TYPES = frozenset({
+    "text", "post", "snippet", "csv", "tsv", "json", "yaml", "yml", "xml", "markdown",
+    "md", "html", "css", "javascript", "typescript", "python", "ruby", "go", "rust",
+    "java", "php", "shell", "sql", "ini", "toml", "log", "diff", "patch", "env",
+})
+_MAX_FILE_BYTES = 1_000_000       # per file; larger ones are counted as skipped
+_MAX_FILE_BYTES_PER_SYNC = 25_000_000
+
 
 def _slack_pages(url_base: str, params: dict, hdrs: dict, list_key: str):
     """Iterate a cursor-paginated Slack list method, yielding items. Raises ConnectorError
@@ -329,15 +345,86 @@ def _slack_actor(cache: dict, user_id: str, hdrs: dict) -> str:
     return actor
 
 
+def _slack_readable_file(f: dict) -> bool:
+    """Whether this attachment's bytes can be read as text without a parser."""
+    mime = (f.get("mimetype") or "").lower()
+    return (f.get("filetype") or "").lower() in _FILE_TEXT_TYPES or mime.startswith(_FILE_TEXT_MIMES)
+
+
+def _slack_file_text(f: dict, hdrs: dict) -> str:
+    """An attachment's text, or "" if it cannot be read. Best-effort by design: one
+    unreadable or expired file must not sink a whole workspace scan."""
+    url = f.get("url_private_download") or f.get("url_private") or ""
+    if not url:
+        return ""
+    try:
+        req = urllib.request.Request(url, headers=hdrs)
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.read(_MAX_FILE_BYTES).decode("utf-8", errors="replace")
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError):
+        return ""
+
+
+def _slack_channels(hdrs: dict, auto_join: bool) -> tuple[list[dict], int]:
+    """The channels to scan, and how many the bot joined to get there.
+
+    Default is what the bot was invited to. With auto_join it also enumerates every
+    public channel in the workspace and joins the ones it is not in, which is the closest
+    a bot token gets to Enterprise Grid's org-wide view. PRIVATE channels and DMs stay
+    invite-only whatever this is set to: no bot scope grants entry to a private
+    conversation, only Slack's Discovery API does, and that is Enterprise Grid.
+    """
+    if not auto_join:
+        return list(_slack_pages(f"{_SLACK_API_BASE}/users.conversations",
+                                 {"types": "public_channel,private_channel", "limit": "200"},
+                                 hdrs, "channels")), 0
+    joined = 0
+    by_id: dict[str, dict] = {}
+    for ch in _slack_pages(f"{_SLACK_API_BASE}/conversations.list",
+                           {"types": "public_channel", "exclude_archived": "true",
+                            "limit": "200"}, hdrs, "channels"):
+        cid = ch.get("id", "")
+        if not cid:
+            continue
+        by_id[cid] = ch
+        if not ch.get("is_member"):
+            # Joining posts a visible "joined the channel" line, which is why this is
+            # opt-in. Best-effort: a channel that refuses (archived mid-scan, admin-only
+            # membership) is simply left unscanned rather than failing the sync.
+            try:
+                r = _http_json(f"{_SLACK_API_BASE}/conversations.join",
+                               headers={**hdrs, "Content-Type": "application/x-www-form-urlencoded"},
+                               data=urllib.parse.urlencode({"channel": cid}).encode())
+                if r.get("ok"):
+                    joined += 1
+                else:
+                    by_id.pop(cid, None)
+            except ConnectorError:
+                by_id.pop(cid, None)
+    # Private channels are only ever the ones somebody invited the bot to.
+    for ch in _slack_pages(f"{_SLACK_API_BASE}/users.conversations",
+                           {"types": "private_channel", "limit": "200"}, hdrs, "channels"):
+        if ch.get("id"):
+            by_id.setdefault(ch["id"], ch)
+    return list(by_id.values()), joined
+
+
 def scan_slack_messages(db, connector, creds: dict) -> dict:
-    """Scan new Slack messages for PII/PHI/secrets and persist findings on the collab
-    surface. Covers the channels the bot is a member of (invite it to scan a channel).
-    Returns {channels, messages, findings, truncated?} for last_sync_detail."""
+    """Scan new Slack messages and their text attachments for PII/PHI/secrets, persisting
+    findings on the collab surface.
+
+    Covers the channels the bot is a member of; with creds["auto_join"] it also joins and
+    scans every public channel in the workspace. Private channels and DMs remain
+    invite-only on any plan below Enterprise Grid.
+
+    Returns {channels, messages, findings, joined?, files?, files_skipped?, truncated?}
+    for last_sync_detail."""
     token = (creds.get("bot_token") or "").strip()
     if not token:
         raise ConnectorError("slack_messages needs bot_token (xoxb-… with channels:read, "
                              "groups:read, channels:history, groups:history, users:read, "
-                             "users:read.email)")
+                             "users:read.email, files:read; plus channels:join to scan "
+                             "public channels it was not invited to)")
     hdrs = {"Authorization": f"Bearer {token}"}
     from .detectors import AnalysisInput, Surface
     from .models import Tenant
@@ -349,12 +436,11 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
     marks: dict[str, str] = dict(state.get("channels") or {})
     default_oldest = f"{time.time() - _SCAN_LOOKBACK_SECS:.6f}"
 
-    channels = list(_slack_pages(
-        f"{_SLACK_API_BASE}/users.conversations",
-        {"types": "public_channel,private_channel", "limit": "200"}, hdrs, "channels"))
+    channels, joined = _slack_channels(hdrs, bool(creds.get("auto_join")))
 
     users: dict[str, str] = {}
     scanned = findings = 0
+    files_scanned = files_skipped = file_bytes = 0
     truncated = False
     for ch in channels:
         cid, cname = ch.get("id", ""), ch.get("name", "")
@@ -383,20 +469,44 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
         # Oldest-first so the watermark only ever moves past messages actually scanned.
         for m in sorted(window, key=lambda x: float(x.get("ts", "0"))):
             actor = _slack_actor(users, m["user"], hdrs)
+            where = f"#{cname}" if cname else cid
             result = run_analysis(
                 AnalysisInput(content=m["text"], sender=actor, channel="slack",
-                              subject=f"#{cname}" if cname else cid,
-                              surface=Surface.COLLAB,
+                              subject=where, surface=Surface.COLLAB,
                               metadata={"custom_pii": custom_pii}),
                 persist=True, db=db, tenant_id=connector.tenant_id,
                 persist_benign=False, use_judge=False)
+            # Attachments are scanned as their own findings, so a clean message carrying a
+            # customer export is not reported as clean. Subject names the file, so triage
+            # points at the thing to delete rather than at the sentence beside it.
+            for fo in (m.get("files") or []):
+                if file_bytes >= _MAX_FILE_BYTES_PER_SYNC:
+                    files_skipped += 1
+                    continue
+                if not _slack_readable_file(fo) or int(fo.get("size") or 0) > _MAX_FILE_BYTES:
+                    files_skipped += 1        # binary/oversize: counted, never guessed at
+                    continue
+                body = _slack_file_text(fo, hdrs)
+                if not body.strip():
+                    files_skipped += 1
+                    continue
+                file_bytes += len(body)
+                files_scanned += 1
+                fname = fo.get("name") or fo.get("id") or "file"
+                if run_analysis(
+                        AnalysisInput(content=body, sender=actor, channel="slack",
+                                      subject=f"{where}: {fname}", surface=Surface.COLLAB,
+                                      metadata={"custom_pii": custom_pii, "slack_file": fname}),
+                        persist=True, db=db, tenant_id=connector.tenant_id,
+                        persist_benign=False, use_judge=False).get("finding_id") is not None:
+                    findings += 1
             # Fingerprint substantial messages so a later leak can be traced to the
             # thread it was lifted from. store_fingerprint no-ops on short text, so
             # one-liners ("lunch?") never create rows — only real content does.
             from . import content_origin
             content_origin.store_fingerprint(
                 db, connector.tenant_id, "slack", f"{cid}:{m['ts']}",
-                f"#{cname}" if cname else cid, actor, m["text"],
+                where, actor, m["text"],
                 sensitive=result.get("finding_id") is not None)
             scanned += 1
             if not over:
@@ -408,6 +518,14 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
 
     connector.state = {**state, "channels": marks}
     summary = {"channels": len(channels), "messages": scanned, "findings": findings}
+    if joined:
+        summary["joined"] = joined
+    if files_scanned:
+        summary["files"] = files_scanned
+    if files_skipped:
+        # Surfaced, not swallowed: "12 attachments unreadable" is the honest way to say
+        # that PDFs, Office documents and images are not covered.
+        summary["files_skipped"] = files_skipped
     if truncated:
         summary["truncated"] = True   # budget hit; the cursor resumes next sync
     return summary
@@ -916,6 +1034,38 @@ def store_credentials(connector, credentials: dict, db=None) -> None:
     from . import crypto
     dek = crypto.dek_for(db, getattr(connector, "tenant_id", None)) if db is not None else None
     connector.credentials_enc = crypto.seal_secret(dek, json.dumps(credentials))
+
+
+def read_credentials(connector, db=None) -> dict:
+    """The connector's decrypted credential blob (also carries non-secret options)."""
+    from . import crypto
+    dek = crypto.dek_for(db, getattr(connector, "tenant_id", None)) if db is not None else None
+    return json.loads(crypto.unseal_secret(connector.credentials_enc, dek) or "{}")
+
+
+# Non-secret scan options live inside the (encrypted) credential blob, so they need no
+# column — but only these keys may ever be read back out to the API. A bot token must not
+# reach the console through this door.
+PUBLIC_OPTIONS = ("auto_join",)
+
+
+def connector_options(connector, db=None) -> dict:
+    """The connector's non-secret options. Needs the session: the blob is sealed under the
+    tenant's own key, and unsealing without it returns "" rather than raising."""
+    try:
+        creds = read_credentials(connector, db)
+    except Exception:                                             # noqa: BLE001
+        return {}
+    return {k: bool(creds.get(k)) for k in PUBLIC_OPTIONS}
+
+
+def merge_options(connector, options: dict, db=None) -> None:
+    """Update non-secret settings in place, leaving the secrets alone. Toggling a switch
+    must never require the operator to paste their bot token again — that is how a token
+    ends up in a browser autofill or a support ticket."""
+    creds = read_credentials(connector, db)
+    creds.update(options)
+    store_credentials(connector, creds, db)
 
 
 def sync_connector(db, connector) -> dict:
