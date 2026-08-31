@@ -691,8 +691,8 @@ def _sf_path(rec: dict, dotted: str) -> str:
 def scan_salesforce_records(db, connector, creds: dict) -> dict:
     """Scan changed Salesforce records (Cases, Chatter posts by default) for PII/PHI/
     secrets, and fingerprint them for content-origin. Watermark-incremental per sObject on
-    LastModifiedDate. Text fields only — file/attachment bodies (ContentVersion) are a
-    separate scan, not covered here."""
+    LastModifiedDate. Record text AND attached files (ContentVersion) — a support case's
+    attachment is where the customer's own export ends up."""
     instance, token = _salesforce_access(creds)
     hdrs = {"Authorization": f"Bearer {token}"}
     custom_pii = _tenant_custom_pii(db, connector)
@@ -754,11 +754,81 @@ def scan_salesforce_records(db, connector, creds: dict) -> dict:
         if over:
             truncated = True
 
+    # Attachments. Salesforce record TEXT was covered; the files attached to those records
+    # never were, and a support case's attachment is where the customer's actual export
+    # ends up. ContentVersion is the modern file object; IsLatest keeps it to current
+    # versions rather than rescanning every revision.
+    files_scanned, files_skipped, file_findings, files_mark = _scan_salesforce_files(
+        db, connector, custom_pii, instance, hdrs,
+        marks.get("__files__") or default_since, _MAX_RECORDS_PER_SYNC - scanned)
+    marks["__files__"] = files_mark
+    findings += file_findings
+
     connector.state = {**state, "sf_objects": marks}
     summary = {"records": scanned, "findings": findings, "objects": len(targets)}
+    if files_scanned:
+        summary["files"] = files_scanned
+    if files_skipped:
+        summary["files_skipped"] = files_skipped
     if truncated:
         summary["truncated"] = True
     return summary
+
+
+def _scan_salesforce_files(db, connector, custom_pii, instance: str, hdrs: dict,
+                           since: str, budget: int) -> tuple[int, int, int, str]:
+    """Scan ContentVersion file bodies changed since `since`.
+
+    Returns (scanned, skipped, findings, new watermark). Best-effort: an org whose profile
+    cannot read ContentVersion should keep getting its record scan, not lose the whole
+    sync to a permissions error."""
+    if budget <= 0:
+        return 0, 0, 0, since
+    soql = ("SELECT Id, Title, FileExtension, ContentSize, LastModifiedDate, FileType, "
+            "OwnerId FROM ContentVersion WHERE IsLatest = true "
+            f"AND LastModifiedDate > {since} ORDER BY LastModifiedDate ASC")
+    url = (f"{instance}/services/data/{_SF_API_VERSION}/query?"
+           + urllib.parse.urlencode({"q": soql}))
+    scanned = skipped = findings = 0
+    mark = since
+    try:
+        data = _http_json(url, headers=hdrs)
+    except ConnectorError:
+        return 0, 0, 0, since            # no ContentVersion access — records still scanned
+    for rec in data.get("records", [])[:budget]:
+        cid, title = rec.get("Id", ""), rec.get("Title") or "file"
+        ext = (rec.get("FileExtension") or "").lower()
+        name = f"{title}.{ext}" if ext and not title.lower().endswith(f".{ext}") else title
+        if not cid:
+            continue
+        if not _readable_doc(name, "") or int(rec.get("ContentSize") or 0) > _MAX_FILE_BYTES:
+            skipped += 1
+            mark = rec.get("LastModifiedDate") or mark
+            continue
+        try:
+            text = _fetch_doc_text(
+                f"{instance}/services/data/{_SF_API_VERSION}/sobjects/ContentVersion/"
+                f"{cid}/VersionData", hdrs, name, "")
+        except ConnectorError:
+            skipped += 1
+            mark = rec.get("LastModifiedDate") or mark
+            continue
+        if not text.strip():
+            skipped += 1        # downloaded but unreadable: counted, never called clean
+            mark = rec.get("LastModifiedDate") or mark
+            continue
+        hit = _scan_blob(db, connector, custom_pii, content=text,
+                         sender=rec.get("OwnerId") or "",
+                         subject=f"Salesforce file: {name}"[:200], channel="salesforce")
+        if hit:
+            findings += 1
+        from . import content_origin
+        content_origin.store_fingerprint(db, connector.tenant_id, "salesforce",
+                                         f"ContentVersion:{cid}", name,
+                                         rec.get("OwnerId") or "", text, sensitive=hit)
+        scanned += 1
+        mark = rec.get("LastModifiedDate") or mark
+    return scanned, skipped, findings, mark
 
 
 # --- Notion (manual export only) ---------------------------------------------------------
@@ -820,6 +890,41 @@ def _http_text(url: str, headers: dict, cap: int = _MAX_CONTENT_BYTES) -> str:
         raise ConnectorError(f"content fetch failed: {e}")
 
 
+def _http_bytes(url: str, headers: dict, cap: int = _MAX_CONTENT_BYTES) -> bytes:
+    """The same fetch, undecoded — a PDF or a .xlsx has to reach the extractor intact."""
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.read(cap)
+    except urllib.error.HTTPError as e:
+        raise ConnectorError(f"HTTP {e.code} fetching content: {str(e)[:120]}")
+    except (urllib.error.URLError, OSError) as e:
+        raise ConnectorError(f"content fetch failed: {e}")
+
+
+def _readable_doc(name: str, mime: str) -> bool:
+    """Whether anything can read this file. Checked BEFORE the download, so a library full
+    of .doc files or (with OCR off) screenshots costs no bandwidth."""
+    from .doc_extract import kind_of
+    kind = kind_of(name, mime)
+    if kind != "image":
+        return bool(kind)
+    from .ocr import ocr_available
+    return ocr_available()
+
+
+def _fetch_doc_text(url: str, headers: dict, name: str, mime: str) -> str:
+    """Download a document library file and return its readable text.
+
+    Drive and SharePoint both hand back bytes: a Word file, a PDF, a screenshot. Fetch
+    undecoded and let doc_extract decide the tier, rather than the old behaviour of
+    decoding everything as utf-8 — which turned a .docx into replacement characters and a
+    scan of it into a confident "clean"."""
+    from .doc_extract import extract
+    text, _how = extract(name, _http_bytes(url, headers), mime)
+    return text
+
+
 def _scan_blob(db, connector, custom_pii: str, *, content: str, sender: str,
                subject: str, channel: str) -> bool:
     """One document through the engine on the collab surface. True when it made a finding."""
@@ -872,18 +977,29 @@ def scan_gdrive_files(db, connector, creds: dict) -> dict:
             mime = f.get("mimeType", "")
             if not fid:
                 continue
+            # A Google-native doc exports to clean text, which beats parsing its binary
+            # equivalent. Everything else — the uploaded PDFs, Word files and screenshots
+            # that make up most of a real Drive — goes through the extractor.
             export = _GDRIVE_EXPORT.get(mime)
-            if not export and (not _texty(mime, name)
+            if not export and (not _readable_doc(name, mime)
                                or int(f.get("size") or 0) > _MAX_FILE_BYTES):
                 skipped += 1
                 mark = f.get("modifiedTime") or mark   # skipped files still pass the cursor
                 continue
-            url = (f"{_GDRIVE_BASE}/files/{fid}/export?mimeType={urllib.parse.quote(export)}"
-                   if export else f"{_GDRIVE_BASE}/files/{fid}?alt=media&supportsAllDrives=true")
             try:
-                text = _http_text(url, hdrs)
+                if export:
+                    text = _http_text(f"{_GDRIVE_BASE}/files/{fid}/export"
+                                      f"?mimeType={urllib.parse.quote(export)}", hdrs)
+                else:
+                    text = _fetch_doc_text(
+                        f"{_GDRIVE_BASE}/files/{fid}?alt=media&supportsAllDrives=true",
+                        hdrs, name, mime)
             except ConnectorError:
                 skipped += 1                            # unexportable/permission-denied file
+                mark = f.get("modifiedTime") or mark
+                continue
+            if not text.strip():
+                skipped += 1        # downloaded but unreadable: counted, never called clean
                 mark = f.get("modifiedTime") or mark
                 continue
             sender = ((f.get("lastModifyingUser") or {}).get("emailAddress")
@@ -966,15 +1082,18 @@ def scan_sharepoint_files(db, connector, creds: dict) -> dict:
                     break
                 name = item.get("name", "")
                 mime = fobj.get("mimeType", "")
-                if (not _texty(mime, name)
+                if (not _readable_doc(name, mime)
                         or int(item.get("size") or 0) > _MAX_FILE_BYTES):
                     skipped += 1
                     continue
                 try:
-                    text = _http_text(f"{_GRAPH_BASE}/drives/{did}/items/"
-                                      f"{item.get('id')}/content", hdrs)
+                    text = _fetch_doc_text(f"{_GRAPH_BASE}/drives/{did}/items/"
+                                           f"{item.get('id')}/content", hdrs, name, mime)
                 except ConnectorError:
                     skipped += 1
+                    continue
+                if not text.strip():
+                    skipped += 1    # downloaded but unreadable: counted, never called clean
                     continue
                 sender = (((item.get("lastModifiedBy") or {}).get("user") or {})
                           .get("email") or "")
@@ -1055,8 +1174,11 @@ PLATFORMS: dict[str, dict] = {
                  "admin_email is the user it impersonates (their My Drive + all shared "
                  "drives they can see are scanned). Watermark-incremental on modifiedTime "
                  "(first sync looks back 7 days). Google Docs/Sheets/Slides are exported "
-                 "as text; plain-text files are scanned directly; Office binaries and "
-                 "PDFs are skipped. Rules-only detection on the collab surface.",
+                 "as text; plain text is read directly; PDFs and Word/Excel/PowerPoint "
+                 "files are extracted; images are read when OCR is enabled on the "
+                 "deployment. Anything nothing can open (pre-2007 Office, encrypted PDFs) "
+                 "is counted as skipped, never as clean. Rules-only detection on the "
+                 "collab surface.",
     },
     "sharepoint_files": {
         "label": "SharePoint / OneDrive scanning",
@@ -1088,8 +1210,10 @@ PLATFORMS: dict[str, dict] = {
                  "for PII/secrets on the collab surface — Cases (Subject, Description) and "
                  "Chatter posts by default; override with an `objects` credential entry "
                  "([{sobject, fields, title, actor}]) to scan custom objects. Watermark-"
-                 "incremental on LastModifiedDate (first sync looks back 7 days). Text "
-                 "fields only — file/attachment bodies are not scanned. Rules-only.",
+                 "incremental on LastModifiedDate (first sync looks back 7 days). "
+                 "Attached files (ContentVersion, latest version only) are scanned too: "
+                 "text, PDFs and Office documents, plus images when OCR is enabled. An org "
+                 "whose run-as user cannot read ContentVersion keeps its record scan. Rules-only.",
     },
     "notion": {
         "label": "Notion (manual export only)",
