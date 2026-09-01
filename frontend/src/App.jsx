@@ -224,7 +224,6 @@ export default function App() {
   }, [selected]);
 
   function logout() {
-    sessionStorage.removeItem("palivane-demo");
     // Leave the console URL behind too, or the next render is the marketing page sitting
     // at /app/settings and the back button walks into screens that are gone.
     window.history.replaceState(null, "", "/");
@@ -346,8 +345,15 @@ export default function App() {
 
       <main className="content">
         {/* Public demo session: browsing sample data, everything mutating is 403'd
-            server-side. The banner is the exit ramp to a real signup. */}
-        {sessionStorage.getItem("palivane-demo") === "1" && (
+            server-side. The banner is the exit ramp to a real signup.
+
+            `auth.demo` is the session token's own claim, reported by /auth/me. It used to
+            be a sessionStorage flag set at sign-in, which outlived nothing and survived
+            nothing: the token lives in localStorage, so closing the tab dropped the flag
+            and kept the session — leaving a sample-data console with no sign that it was
+            one. Reading the claim means the banner is present exactly when the read-only
+            demo session is. */}
+        {auth.demo && (
           <div className="flash-ok" style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between" }}>
             <span>You're browsing the <strong>live demo</strong> — sample data, read-only.</span>
             <a className="primary-btn slim" href="/pricing" style={{ whiteSpace: "nowrap" }}>

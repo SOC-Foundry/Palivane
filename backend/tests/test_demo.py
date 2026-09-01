@@ -51,3 +51,22 @@ def test_demo_throttled_per_ip(client, raw_client, monkeypatch, db_factory):
     monkeypatch.setattr(demo.settings, "login_ip_max_fails", 3)
     codes = [raw_client.post("/api/auth/demo").status_code for _ in range(5)]
     assert codes[:3] == [200, 200, 200] and 429 in codes[3:]
+
+
+def test_me_reports_the_demo_session(client, raw_client, monkeypatch, db_factory):
+    """The console labels a sample-data session from this, so it has to come from the
+    token rather than from anything the browser stores alongside it: the token lives in
+    localStorage and the old flag lived in sessionStorage, so closing the tab dropped the
+    label and kept the session."""
+    _enable(monkeypatch, db_factory)
+    r = raw_client.post("/api/auth/demo")
+    tok = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    me = raw_client.get("/api/auth/me", headers=tok)
+    assert me.status_code == 200 and me.json()["demo"] is True
+    # Still true on a later request — the claim is the session's, not the sign-in moment's.
+    assert raw_client.get("/api/auth/me", headers=tok).json()["demo"] is True
+
+
+def test_me_does_not_mark_an_ordinary_session_as_demo(client):
+    """A real session must never render the read-only sample-data banner."""
+    assert client.get("/api/auth/me").json()["demo"] is False
