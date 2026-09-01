@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from app.catalog_pipeline import as_catalog_lines, guess_category, propose
+from app.catalog_pipeline import (NEVER_CATALOG, as_catalog_lines, guess_category,
+                                  propose)
 
 
 def test_known_tools_are_deduped_not_proposed():
@@ -43,3 +44,24 @@ def test_paste_ready_lines_parse_as_catalog_rows():
     rows = propose([{"host": "zznovelbot.example"}])["new"]
     line = as_catalog_lines(rows).strip()
     assert line == '"zznovelbot.example": (\'Zznovelbot\', \'assistant\'),'
+
+
+def test_denylisted_hosts_are_never_proposed():
+    """Umbrella domains and read-about-AI sites stay out however often a feed lists them.
+
+    These reached CATALOG once via an automated growth run and had to be pulled back out:
+    "aws.amazon.com" classified the whole AWS console as an AI assistant.
+    """
+    r = propose([{"host": "aws.amazon.com"}, {"host": "https://notion.so/"},
+                 {"host": "llm-stats.com"}, {"host": "genuinelynew.ai"}])
+    assert [x["host"] for x in r["new"]] == ["genuinelynew.ai"]
+    assert r["counts"]["invalid"] == 3
+    assert all("denylist" in x["reason"] for x in r["invalid"])
+
+
+def test_art_substring_does_not_claim_artificial():
+    """'art' as a bare keyword matched 'artificial', filing a benchmark site under
+    image_video. Real art tools must still land there."""
+    assert guess_category("artificialanalysis.ai") != "image_video"
+    assert guess_category("smartdocs.ai") != "image_video"
+    assert guess_category("aiartwork.io") == "image_video"

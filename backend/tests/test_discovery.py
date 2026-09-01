@@ -146,3 +146,36 @@ def test_mcp_capture_unknown_plane_not_recorded(client, raw_client):
                     headers={"X-Palivane-Token": key, "User-Agent": "palivane-proxy/1.0"})
     inv = client.get("/api/discovery/inventory").json()
     assert all(t["tool"] not in ("MCP client",) or t["events"] for t in inv["tools"])
+
+
+def test_umbrella_domains_are_not_ai_tools():
+    """An automated catalog run once added "aws.amazon.com" and "notion.so" as AI tools,
+    which made every AWS console page and every Notion doc read as shadow-AI usage — and
+    because classify_name() also matches display names, so did "Amazon S3". Discovery is
+    only worth reading if a hit means something, so these must not resolve."""
+    from app.ai_catalog import classify, classify_name
+    for dest in ("https://aws.amazon.com/console/home", "aws.amazon.com",
+                 "https://www.notion.so/team/eng/page-abc", "notion.so",
+                 "modelcontextprotocol.io/docs", "llm-stats.com", "artificialanalysis.ai"):
+        assert classify(dest) is None, dest
+    for name in ("Amazon S3", "Amazon Web Services", "Amazon Connect", "Notion"):
+        assert classify_name(name) is None, name
+    # "Jan" as a canonical name matched any "Jan <surname>" in an app-name column.
+    assert classify_name("Jan Kowalski") is None
+
+
+def test_precise_ai_subproducts_of_umbrella_domains_still_resolve():
+    """Dropping the umbrella must not drop the real thing under it: classify() matches
+    longest-key-first, so a precise sub-path keeps working."""
+    from app.ai_catalog import classify
+    hit = classify("https://aws.amazon.com/sagemaker/studio")
+    assert hit and hit["tool"] == "Amazon SageMaker" and hit["category"] == "ml_platform"
+
+
+def test_notetakers_are_categorised_as_meetings_not_assistants():
+    """Meeting notetakers are the catalog's flagged high-data-exposure category; an
+    automated run filed three of them under 'assistant', which under-scores them."""
+    from app.ai_catalog import classify
+    for dest in ("cogram.com", "sybill.ai", "loopinhq.com"):
+        hit = classify(dest)
+        assert hit and hit["category"] == "meeting", (dest, hit)
