@@ -111,7 +111,6 @@ export default function Login({ onAuthed, onBack }) {
     setBusy(true); setErr(null);
     try {
       const res = await api.demoLogin();
-      sessionStorage.setItem("palivane-demo", "1");   // App shows the sample-data banner
       setToken(res.access_token);
       onAuthed(res.user);
     } catch (e) {

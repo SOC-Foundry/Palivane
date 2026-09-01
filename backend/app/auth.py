@@ -92,6 +92,9 @@ def get_current_user(
     if payload.get("demo") and request.method not in ("GET", "HEAD", "OPTIONS"):
         raise HTTPException(status_code=403,
                             detail="the demo is read-only — sign up to work with your own data")
+    # Hand the claim to the handlers too, so /auth/me can tell the console it is looking at
+    # sample data. The browser used to keep its own copy of this and the two could disagree.
+    request.state.demo_session = bool(payload.get("demo"))
     # Only a *session* token authenticates. Special-purpose tokens carry a `typ`
     # (MFA challenge, OIDC state) — they must NOT be accepted here, or a caller who
     # only passed the first factor could use the MFA challenge as a full session.
@@ -423,9 +426,14 @@ def mfa_verify(body: MFAVerify, request: Request, db: Session = Depends(get_db))
 
 
 @router.get("/auth/me")
-def me(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def me(request: Request, current: User = Depends(get_current_user),
+       db: Session = Depends(get_db)):
     tenant = db.get(Tenant, current.tenant_id)
-    return {"user": current.to_dict(), "tenant": tenant.to_dict() if tenant else None}
+    # `demo` comes from the session token's own claim (app/demo.py mints it, and
+    # get_current_user already enforces it as read-only), so it is true for as long as the
+    # session is, across reloads and new tabs — which a client-side flag was not.
+    return {"user": current.to_dict(), "tenant": tenant.to_dict() if tenant else None,
+            "demo": bool(getattr(request.state, "demo_session", False))}
 
 
 @router.post("/auth/logout-all")
