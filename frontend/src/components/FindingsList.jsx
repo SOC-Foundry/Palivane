@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 function RiskBadge({ severity, score }) {
   return (
@@ -163,6 +163,19 @@ export default function FindingsList({ findings, selectedId, onSelect, filter, o
   else if (filter) shown = shown.filter((f) => f.severity === filter);
 
   const groups = grouped ? groupFindings(shown) : null;
+
+  // A finding opened by URL (/app/findings/:id) can sit inside a collapsed group, where
+  // its row is never rendered at all — the detail pane opens but the list shows nothing
+  // selected, which reads as a broken link. Open its group once on arrival. Deliberately
+  // not derived-on-every-render: seeding the set instead means the chevron still collapses
+  // the group afterwards, rather than fighting a value recomputed under it.
+  useEffect(() => {
+    if (selectedId == null || !groups) return;
+    const g = groups.find((x) => x.items.some((f) => f.id === selectedId));
+    if (g) setExpanded((prev) => (prev.has(g.key) ? prev : new Set(prev).add(g.key)));
+    // `groups` is derived from these; depending on it directly would re-run every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, grouped, findings]);
 
   function toggle(key) {
     setExpanded((prev) => {

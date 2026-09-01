@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, getToken, setToken, setUnauthorizedHandler } from "./api.js";
+import { DEFAULT_VIEW, isRoot, parseRoute, viewToPath } from "./route.js";
 import Dashboard from "./components/Dashboard.jsx";
 import FindingsList from "./components/FindingsList.jsx";
 import FindingDetail from "./components/FindingDetail.jsx";
@@ -78,6 +79,13 @@ const NAV = [
   ]},
 ];
 
+// What /app/<view> may address, and which screens are admin-only — derived from NAV so the
+// sidebar stays the single source of truth. The admin map matters because a deep link can
+// reach a screen the nav would have hidden.
+const VIEW_ADMIN = new Map(
+  NAV.flatMap((g) => g.items.map((it) => [it.v, it.admin !== false])));
+const VIEWS = new Set(VIEW_ADMIN.keys());
+
 
 export default function App() {
   const [auth, setAuth] = useState(null);        // { user, tenant }
@@ -100,12 +108,32 @@ export default function App() {
   const [findings, setFindings] = useState([]);
   const [filter, setFilter] = useState("actionable");   // severity (client-side; "actionable" = warn+)
   const [statusFilter, setStatusFilter] = useState("open");
-  const [selectedId, setSelectedId] = useState(null);
   const [selected, setSelected] = useState(null);
-  const [view, setView] = useState("findings");
+  // The current screen and the selected finding live in the URL, not in state (route.js).
+  // null means "not a console URL" — the public site is rendering instead.
+  const [route, setRoute] = useState(() => parseRoute(window.location.pathname, VIEWS));
+  const view = route?.view ?? DEFAULT_VIEW;
+  const selectedId = route?.findingId ?? null;
   // A sixteen-item nav does not fit a 768px column, so it scrolls. Two consequences to
   // handle: land on Settings and the sidebar should already be showing Settings, and the
   // bottom fade should disappear once there is nothing further down to hint at.
+  const navigate = useCallback((nextView, findingId = null, { replace = false } = {}) => {
+    const path = viewToPath(nextView, findingId);
+    if (path !== window.location.pathname) {
+      window.history[replace ? "replaceState" : "pushState"](null, "", path);
+    }
+    setRoute({ view: nextView, findingId });
+  }, []);
+  const selectFinding = useCallback((id) => navigate(DEFAULT_VIEW, id), [navigate]);
+
+  // Back/forward. The console is the only thing that pushes history, so re-parsing the
+  // pathname is enough — the public pages are read at render time from location.
+  useEffect(() => {
+    const onPop = () => setRoute(parseRoute(window.location.pathname, VIEWS));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
   const navRef = useRef(null);
   useEffect(() => {
     const el = navRef.current;
@@ -121,6 +149,23 @@ export default function App() {
   useEffect(() => {
     setUnauthorizedHandler(() => setAuth(null));
   }, []);
+
+  // A signed-in session at "/" — the console's old address — gets moved onto a real URL so
+  // the address bar always names the screen. Scoped to "/" on purpose: a signed-in user
+  // reading /pricing or /docs must stay there, and every public path is a real route.
+  useEffect(() => {
+    if (!auth || !isRoot(window.location.pathname)) return;
+    navigate(DEFAULT_VIEW, null, { replace: true });
+  }, [auth, navigate]);
+
+  // Deep link to an admin screen as a non-admin: fall back rather than render a page whose
+  // every request will 403. Mirrors the nav, which filters the same screens out.
+  useEffect(() => {
+    if (!auth || !route) return;
+    if (VIEW_ADMIN.get(route.view) && auth.user?.role !== "admin") {
+      navigate(DEFAULT_VIEW, null, { replace: true });
+    }
+  }, [auth, route, navigate]);
 
   useEffect(() => {
     // SSO (OIDC) hands the session back in the URL fragment, pick it up, then clean the URL.
@@ -180,11 +225,15 @@ export default function App() {
 
   function logout() {
     sessionStorage.removeItem("palivane-demo");
+    // Leave the console URL behind too, or the next render is the marketing page sitting
+    // at /app/settings and the back button walks into screens that are gone.
+    window.history.replaceState(null, "", "/");
+    setRoute(null);
     setToken(null);
     setAuth(null);
     setStats(null);
     setFindings([]);
-    setSelectedId(null);
+    // selectedId is derived from the route, which setRoute(null) already cleared.
   }
 
   // Public legal pages, reachable without auth (Chrome Web Store needs a public
@@ -229,8 +278,17 @@ export default function App() {
 
   if (booting) return <div className="login-screen"><div className="login-sub">Loading...</div></div>;
   if (!auth) {
-    return showLogin
-      ? <Login onAuthed={() => api.me().then(setAuth)} onBack={() => setShowLogin(false)} />
+    // A console URL is itself a request to sign in: show Login rather than the marketing
+    // page, and leave the path alone so the post-auth render lands on the screen asked for.
+    return (showLogin || route)
+      ? <Login
+          onAuthed={() => api.me().then(setAuth)}
+          onBack={() => {
+            if (route) window.history.replaceState(null, "", "/");
+            setRoute(null);
+            setShowLogin(false);
+          }}
+        />
       : <Landing onSignIn={() => setShowLogin(true)} />;
   }
 
@@ -258,7 +316,7 @@ export default function App() {
                   <button key={it.v} type="button"
                           className={`nav-item ${view === it.v ? "nav-on" : ""}`}
                           aria-current={view === it.v ? "page" : undefined}
-                          onClick={() => setView(it.v)}>
+                          onClick={() => navigate(it.v)}>
                     {it.icon} <span>{it.label}</span>
                   </button>
                 ))}
@@ -311,7 +369,7 @@ export default function App() {
                 : `Your trial ends in ${auth.tenant.trial_days_left} ${auth.tenant.trial_days_left === 1 ? "day" : "days"}.`}
             </span>
             {isAdmin
-              ? <button type="button" className="mini-btn" onClick={() => setView("settings")}>
+              ? <button type="button" className="mini-btn" onClick={() => navigate("settings")}>
                   Upgrade
                 </button>
               : <span className="muted">Ask your admin to upgrade.</span>}
@@ -353,7 +411,7 @@ export default function App() {
         ) : view === "audit" ? (
           <Audit />
         ) : view === "help" ? (
-          <Help isAdmin={isAdmin} onNavigate={setView} />
+          <Help isAdmin={isAdmin} onNavigate={navigate} />
         ) : (
           <>
             <div className="content-head">
@@ -377,12 +435,12 @@ export default function App() {
                 <FindingsList
                   findings={findings}
                   selectedId={selectedId}
-                  onSelect={setSelectedId}
+                  onSelect={selectFinding}
                   filter={filter}
                   onFilter={setFilter}
                   status={statusFilter}
                   onStatus={setStatusFilter}
-                  onConnect={() => setView("connect")}
+                  onConnect={() => navigate("connect")}
                   onBulkStatus={async (ids, status) => {
                     await api.bulkStatus(ids, status);
                     await refresh();
@@ -395,7 +453,7 @@ export default function App() {
                     key={selected.id}
                     finding={selected}
                     isAdmin={isAdmin}
-                    onClose={() => setSelectedId(null)}
+                    onClose={() => navigate(DEFAULT_VIEW)}
                     onStatusChange={async () => {
                       await refresh();
                       if (selectedId) api.finding(selectedId).then(setSelected);
