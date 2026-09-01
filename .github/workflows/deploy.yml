@@ -58,6 +58,12 @@ jobs:
           PALIVANE_ALLOW_SIGNUP: ${{ vars.PALIVANE_ALLOW_SIGNUP }}
           PALIVANE_ENCRYPT_FINDINGS: ${{ vars.PALIVANE_ENCRYPT_FINDINGS }}
           DOMAIN: ${{ vars.DOMAIN }}
+          # The site and the console are on different hosts here — palivane.io serves the
+          # public site, this service is the console (deploy/cloudflare/worker.js does the
+          # split). The SPA is built with the console's origin so "Sign in" on a marketing
+          # page crosses hosts; a same-origin sign-in on the apex would store the token in
+          # an origin the console cannot read. Keep this in step with worker.js APP_HOST.
+          PALIVANE_APP_ORIGIN: https://app.palivane.io
           PALIVANE_ALLOWED_HOSTS: ${{ vars.PALIVANE_ALLOWED_HOSTS }}
           PALIVANE_EXTENSION_ID: ${{ vars.PALIVANE_EXTENSION_ID }}
           SMTP_HOST: ${{ vars.SMTP_HOST }}

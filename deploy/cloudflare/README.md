@@ -1,6 +1,7 @@
 # Cloudflare Worker front door
 
-Public entry for Palivane at `app.palivane.io` without granting `allUsers`
+Public entry for Palivane at `palivane.io` (the site) and `app.palivane.io` (the console
+and the API) without granting `allUsers`
 run.invoker (forbidden by the org's domain-restricted-sharing policy). The Worker
 attaches a Google ID token for the `palivane-front` service account to every request,
 so the Cloud Run service stays IAM-locked: direct `*.run.app` access is 403 for
@@ -11,6 +12,32 @@ browser/agent ──TLS──> Cloudflare (orange cloud, WAF)
                           └─ Worker: + X-Serverless-Authorization: Bearer <SA ID token>
                                └────> Cloud Run (IAM: only palivane-front@ may invoke)
 ```
+
+## Two hosts, one worker
+
+Both routes reach the same worker and the same Cloud Run origin. `worker.js` decides who
+owns a page and 301s browser navigation accordingly:
+
+| request | goes to |
+| --- | --- |
+| `palivane.io/`, `/pricing`, `/docs/*`, … | served here — the public site |
+| `palivane.io/app/*` | `app.palivane.io` — the console |
+| `app.palivane.io/` | `app.palivane.io/app/findings` — console, or sign-in if signed out |
+| `app.palivane.io/pricing`, `/docs/*`, … | `palivane.io` — the public site |
+| `/api/*`, `/v1` on either host | **never redirected** |
+| assets, `/cli/*`, `/install.sh`, `/admin` | served on whichever host asked |
+
+API and gateway traffic is never redirected because installed CLIs, the extension and MDM
+clients POST there and a 301 would not replay their bodies — they keep working against
+whichever host they enrolled on. Assets are excluded so a console page does not fetch its
+own JavaScript across origins.
+
+**The SPA has to agree with this.** It is built with `VITE_PALIVANE_APP_ORIGIN` (set in
+`.github/workflows/deploy.yml`) so "Sign in" on a marketing page navigates to the console's
+origin; the session token lives in per-origin localStorage, so a same-origin sign-in on the
+apex would store it where the console cannot read it. **Deploy Cloud Run before the
+worker** — the other order leaves a window where the apex serves the site to a build whose
+sign-in button is still same-origin.
 
 ## Deploy
 

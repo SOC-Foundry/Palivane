@@ -6,12 +6,20 @@
 // button links to "/#signin", App reads that hash on mount and opens login on the home
 // route. Pass onSignIn only from the landing.
 //
+// When the site and the console are on different hosts (APP_ORIGIN set — the managed
+// deployment serves the site from the apex and the console from app.palivane.io), the
+// in-SPA path is WRONG even on the landing: the session token lives in localStorage, which
+// is per-origin, so signing in on the marketing origin would store it where the console
+// cannot read it. There sign-in must be a real navigation to the console host, so the
+// handler is ignored and every entry point becomes a link.
+//
 // The nav groups pages under dropdowns rather than listing every page flat. A flat row
 // stops scaling once there are more than about five destinations, and it gives a visitor
 // no sense of which pages belong together; grouping says "these are the product pages,
 // these are the ways people use it, these are the reference docs" before anything is
 // clicked.
 import { useEffect, useRef, useState } from "react";
+import { SIGN_IN_IS_CROSS_ORIGIN, signInUrl } from "../deployment.js";
 
 const MENU = [
   { label: "Platform", items: [
@@ -50,9 +58,9 @@ export function SiteNav({ onSignIn }) {
     return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
   }, []);
 
-  const signIn = onSignIn
+  const signIn = onSignIn && !SIGN_IN_IS_CROSS_ORIGIN
     ? <button type="button" className="lp-nav-ghost" onClick={onSignIn}>Sign in</button>
-    : <a className="lp-nav-ghost" href="/#signin">Sign in</a>;
+    : <a className="lp-nav-ghost" href={signInUrl()}>Sign in</a>;
 
   return (
     <header className="lp-nav" ref={navRef}>
@@ -197,7 +205,7 @@ export function SiteFooter() {
     ]},
     { head: "Get started", links: [
       ["/setup", "Set it up"], ["/docs", "Documentation"],
-      ["/#signin", "Sign in"],
+      [signInUrl(), "Sign in"],
     ]},
     { head: "Trust", links: [
       ["/trust", "Trust & security"], ["/privacy", "Privacy"], ["/terms", "Terms"],

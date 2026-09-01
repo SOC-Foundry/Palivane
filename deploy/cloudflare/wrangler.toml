@@ -8,9 +8,10 @@ account_id = "e877e5d440048df1624a3512143c1281"
 # Both routes need PROXIED (orange-cloud) DNS records in the palivane.io zone — the
 # wrangler token can't create DNS, so add them in the Cloudflare dashboard first. Once
 # they exist, `wrangler deploy` activates these routes.
+# Both hosts hit the same worker and the same origin; worker.js decides which pages belong
+# to which. app.palivane.io is the console and the API, palivane.io is the public site.
 routes = [
   { pattern = "app.palivane.io/*", zone_name = "palivane.io" },
-  # Apex proxies the same backend; browser navigation 301s to app.palivane.io (worker.js).
   { pattern = "palivane.io/*", zone_name = "palivane.io" }
 ]
 
