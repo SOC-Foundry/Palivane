@@ -153,3 +153,19 @@ def test_the_server_and_the_cli_scanners_share_one_implementation():
     same = d.extract_text("a.docx", _docx(f"key {AWS}"))
     server, _ = extract("a.docx", _docx(f"key {AWS}"))
     assert same == server and AWS in server
+
+
+def test_pdf_whose_deflate_payload_ends_in_a_newline():
+    """A PDF stream is followed by an EOL before "endstream", and the deflate payload can
+    itself END in 0x0a or 0x0d. Stripping those to remove the delimiter truncates the
+    stream and the file extracts to nothing — silently, so the scan reports it clean.
+
+    This exact string is the one that caught it: zlib.compress() of it ends in 0x0a."""
+    payload = f"BT /F1 12 Tf 72 720 Td (customer export - aws key {AWS}) Tj ET"
+    comp = zlib.compress(payload.encode())
+    assert comp[-1:] == b"\n", "the fixture must still exercise the case it was written for"
+    pdf = (b"%PDF-1.4\n1 0 obj<</Length " + str(len(comp)).encode()
+           + b"/Filter/FlateDecode>>stream\n" + comp
+           + b"\nendstream\nendobj\ntrailer<<>>\n%%EOF")
+    text, how = extract("export.pdf", pdf)
+    assert how == "document" and AWS in text
