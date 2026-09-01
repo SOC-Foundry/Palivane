@@ -18,12 +18,37 @@ from __future__ import annotations
 
 from .ai_catalog import CATALOG, CATEGORY_LABEL, classify
 
+# Hosts the pipeline must never propose, however often a "top AI tools" feed lists them.
+# Two kinds, both of which reached CATALOG once and had to be pulled back out:
+#
+#   - umbrella domains for a product that is mostly NOT AI. "aws.amazon.com" made every
+#     visit to the AWS console read as shadow-AI assistant usage, and because classify_name
+#     also matches display names, "Amazon S3" and "Amazon Connect" classified as an AI
+#     assistant too. "notion.so" did the same to every Notion page. Palivane's discovery is
+#     only useful if a hit means something; an umbrella domain guarantees it does not.
+#   - sites you read *about* AI on: specs, docs, leaderboards, benchmarks. Nobody's data
+#     goes into a leaderboard, so a finding there is noise with a risk score attached.
+#
+# A real sub-product of one of these is still welcome as its own precise key — the catalog
+# already carries "aws.amazon.com/sagemaker" that way, and it keeps working because
+# classify() matches longest-key-first.
+NEVER_CATALOG: frozenset[str] = frozenset({
+    "aws.amazon.com", "notion.so",
+    "modelcontextprotocol.io", "registry.modelcontextprotocol.io",
+    "llm-stats.com", "artificialanalysis.ai", "imgsys.org", "arena.ai",
+    "lmql.ai", "mlflow.org", "manifest.build",
+})
+
 # Category guess: first keyword group that matches the host or name wins. Order matters —
 # more specific categories first. This is a heuristic to pre-fill review, never the last word.
 _CATEGORY_HINTS: list[tuple[str, tuple[str, ...]]] = [
     ("coding", ("code", "dev", "copilot", "cursor", "codeium", "tabnine", "replit", "v0", "bolt")),
-    ("image_video", ("image", "img", "video", "vid", "art", "diffusion", "midjourney",
-                     "runway", "sora", "pika", "eleven", "voice", "audio", "music")),
+    # "art" is deliberately absent: as a bare substring it matches "artificial",
+    # "smart" and "start", and it filed artificialanalysis.ai under image_video. The
+    # narrower art-tool words below carry the same signal without the collisions.
+    ("image_video", ("image", "img", "video", "vid", "artwork", "artist", "diffusion",
+                     "midjourney", "runway", "sora", "pika", "eleven", "voice", "audio",
+                     "music")),
     ("meeting", ("meet", "notetaker", "otter", "fireflies", "fathom", "granola", "transcri")),
     ("search", ("search", "perplex", "phind", "you.com")),
     ("writing", ("write", "writer", "grammar", "copy", "jasper", "notion", "docs")),
@@ -62,6 +87,9 @@ def propose(candidates: list[dict]) -> dict:
         host = _norm_host(c.get("host", ""))
         if not host or "." not in host:
             invalid.append({"input": c, "reason": "not a host"})
+            continue
+        if host in NEVER_CATALOG:
+            invalid.append({"input": c, "reason": "denylisted (see NEVER_CATALOG)"})
             continue
         hit = classify(host)               # already in the catalog (or a substring match)?
         if hit:
