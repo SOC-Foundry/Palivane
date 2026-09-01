@@ -228,13 +228,14 @@ os.makedirs(BASE, exist_ok=True)
 
 # 90.28s hero cut. Sections follow the story: title, the three browser blocks, the three
 # agent blocks, infrastructure (AWS + GitHub), then the console payoff and a settle.
-render(104.24, [
+render(123.44, [
     (0.0,   4.0,    ["C"],                        0.15),   # title card: sit on home
     (4.0,   32.5,   ["Dm", "G", "C", "Am"],       0.55),   # browser: claude / chatgpt / gemini
-    (32.5,  61.0,   ["Dm", "G", "C", "Am"],       0.75),   # agents: claude code / codex / cursor
-    (61.0,  78.0,   ["F", "Em", "Dm", "G"],       0.85),   # infrastructure: the descent
-    (78.0,  99.0,   ["Dm", "G", "C", "Am"],       0.62),   # console tour
-    (99.0,  104.24, ["Dm", "C"],                  0.30),   # settle out, unresolved to home
+    (32.5,  59.5,   ["Dm", "G", "C", "Am"],       0.75),   # agents: claude code / codex / cursor
+    (59.5,  79.0,   ["F", "Em", "Dm", "G"],       0.85),   # infrastructure: S3, GitHub Actions
+    (79.0,  98.5,   ["Dm", "G", "C", "Am"],       0.78),   # SaaS at rest: Drive, Slack
+    (98.5,  118.5,  ["Dm", "G", "C", "Am"],       0.62),   # console tour
+    (118.5, 123.44, ["Dm", "C"],                  0.30),   # settle out, unresolved to home
 ], f"{BASE}/score.wav")
 
 # 58.96s setup cut. Its storyboard is calmer than the hero (title, Connect, the install

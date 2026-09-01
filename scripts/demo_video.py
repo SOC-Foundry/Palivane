@@ -144,6 +144,40 @@ def build_scenes(d: dict) -> list[tuple[str, str, float]]:
             *sig_lines,
         ], "github", "GitHub Actions"), 10.5))
 
+    # 9 · Google Drive — a spreadsheet nobody labelled, read out of its container
+    gd = (d["gdrive"].get("files") or [{}])[0]
+    gd_sigs = [("err", f"       · {sg.get('title')}: {sg.get('evidence', '')}")
+               for sg in gd.get("signals", [])[:3]]
+    scenes.append(("gdrive", S.terminal_scene(
+        "palivane · google drive connector", [
+            ("cmd", "$ palivane connectors sync gdrive_files"),
+            ("dim", ""),
+            ("out", "  walking shared drives since the last watermark…"),
+            ("dim", ""),
+            ("warn", "  ⚠ Finance/Q3 Forecast (FINAL).xlsx"),
+            ("out", "     .xlsx is a container, so the text is extracted before it is scanned"),
+            ("err", f"     🔴 {gd.get('severity')} · risk {gd.get('risk_score')}"),
+            *gd_sigs,
+            ("dim", ""),
+            ("dim", "  Nothing in the file says \"confidential\". It did not need to."),
+        ], "gdrive", "Google Drive at rest", "#4285f4"), 10.0))
+
+    # 10 · Slack — the attachment, not the message
+    sl = (d["slack"].get("files") or [{}])[0]
+    sl_sigs = [("err", f"       · {sg.get('title')}: {sg.get('evidence', '')}")
+               for sg in sl.get("signals", [])[:3]]
+    scenes.append(("slack", S.terminal_scene(
+        "palivane · slack connector", [
+            ("cmd", "$ palivane connectors sync slack_messages"),
+            ("dim", ""),
+            ("out", "  joined 34 public channels; scanning since the last cursor…"),
+            ("dim", ""),
+            ("warn", "  ⚠ #billing-eng — customers-export.pdf"),
+            ("out", "     the message read fine. The PDF stapled to it did not."),
+            ("err", f"     🔴 {sl.get('severity')} · risk {sl.get('risk_score')}"),
+            *sl_sigs,
+        ], "slack", "Slack, message and attachment", "#611f69"), 10.0))
+
     return scenes
 
 
