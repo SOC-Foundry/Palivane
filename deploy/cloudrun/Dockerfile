@@ -22,6 +22,14 @@ COPY docs/ /docs/
 # docker-compose sets it for the ordinary self-host path.
 ARG VITE_PALIVANE_SELF_HOSTED=""
 ENV VITE_PALIVANE_SELF_HOSTED=$VITE_PALIVANE_SELF_HOSTED
+# Where the console is served, when that is a different host from the public site (the
+# managed deployment: site on palivane.io, console on app.palivane.io). The SPA needs it so
+# "Sign in" on a marketing page navigates to the console's origin — the session token is in
+# localStorage, which is per-origin, so signing in on the site's origin would put it
+# somewhere the console cannot read. Empty = single origin, which is every self-hosted
+# install, and links stay relative.
+ARG VITE_PALIVANE_APP_ORIGIN=""
+ENV VITE_PALIVANE_APP_ORIGIN=$VITE_PALIVANE_APP_ORIGIN
 RUN npm run build          # -> /web/dist
 
 # --- Stage 2: backend + static SPA ---

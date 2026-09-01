@@ -8,6 +8,8 @@ substitutions:
   _TAG: latest
   # "1" builds the SPA as a SELF-HOSTED install (see the Dockerfile). Empty = managed.
   _SELF_HOSTED: ""
+  # Console origin when the site and console are on different hosts. Empty = single origin.
+  _APP_ORIGIN: ""
 steps:
   - name: gcr.io/cloud-builders/docker
     args:
@@ -16,6 +18,8 @@ steps:
       - deploy/cloudrun/Dockerfile
       - --build-arg
       - VITE_PALIVANE_SELF_HOSTED=${_SELF_HOSTED}
+      - --build-arg
+      - VITE_PALIVANE_APP_ORIGIN=${_APP_ORIGIN}
       - -t
       - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_TAG}
       - .

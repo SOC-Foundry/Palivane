@@ -4,7 +4,7 @@ import { SiteNav, SiteFooter, Shot, Clip, Lightbox } from "./SiteChrome.jsx";
 // Derived from the detector source at build time (frontend/scripts/gen-stats.mjs, CI
 // fails when stale) — the band can never claim different numbers than the engine ships.
 import stats from "../stats.gen.json";
-import { SELF_HOSTED } from "../deployment.js";
+import { SELF_HOSTED, SIGN_IN_IS_CROSS_ORIGIN, signInUrl } from "../deployment.js";
 
 // The page alternates deliberately: a full-bleed band, then a two-column split, then the
 // mirror of that split, then a card row. The previous version stacked five identical
@@ -69,6 +69,15 @@ const FAQ = [
     a: "One person, part time. It is designed to be set up once and then mostly leave you alone: domain claim for onboarding, policy defaults that are sensible on day one, and digests rather than a queue to work." },
 ];
 
+// "Open the console" is sign-in for anyone not already signed in, so it crosses hosts on
+// the same rule as the nav's Sign in — see SiteChrome and deployment.js APP_ORIGIN.
+function ConsoleCta({ onSignIn }) {
+  return SIGN_IN_IS_CROSS_ORIGIN
+    ? <a className="primary-btn slim" href={signInUrl()}>Open the console →</a>
+    : <button className="primary-btn slim" onClick={onSignIn}>Open the console →</button>;
+}
+
+
 export default function Landing({ onSignIn }) {
   const [zoom, setZoom] = useState(null);   // {src, alt} when a screenshot is enlarged
   const [openQ, setOpenQ] = useState(0);
@@ -87,7 +96,7 @@ export default function Landing({ onSignIn }) {
             and source code that shouldn't go</strong>.
           </p>
           <div className="lp-cta">
-            <button className="primary-btn slim" onClick={onSignIn}>Open the console →</button>
+            <ConsoleCta onSignIn={onSignIn} />
             {/* Straight into a read-only seeded org (Login auto-triggers on #demo) —
                 security buyers want to see real findings before installing anything. */}
             <a className="lp-nav-ghost wide" href="/#demo">See the live demo</a>
@@ -252,7 +261,7 @@ export default function Landing({ onSignIn }) {
             <p>Run it in monitor mode to see what your team is really sending, then switch on
               blocking when you have seen enough.</p>
             <div className="lp-cta">
-              <button className="primary-btn slim" onClick={onSignIn}>Open the console →</button>
+              <ConsoleCta onSignIn={onSignIn} />
               <a className="lp-nav-ghost wide" href="/setup">Set it up</a>
             </div>
           </div>
