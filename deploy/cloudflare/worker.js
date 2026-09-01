@@ -145,15 +145,41 @@ function apiOverLimit(ip) {
   return c.n > API_LIMIT;
 }
 
-// The canonical host is app.palivane.io. The apex palivane.io is also routed here (same
-// worker, both routes) and PROXIES all traffic transparently — but human/browser
-// navigation (GET/HEAD for non-API paths: the console SPA and public site) is
-// 301-redirected to the canonical host so people land on one address.
-// API/gateway traffic (/api/*, /v1) is NEVER redirected: installed CLIs, the extension,
-// and MDM clients POST there, and a 301 wouldn't replay their bodies — they keep hitting
-// whichever host they enrolled against.
-const CANONICAL_HOST = 'app.palivane.io';
-const LEGACY_HOST = 'palivane.io';
+// Two hosts, one worker, one origin behind it. palivane.io is the public site;
+// app.palivane.io is the console and the API.
+//
+// It used to be the other way round — everything answered on app.palivane.io and the apex
+// 301'd to it — which put the marketing site on the hostname that means "the thing you log
+// into" and left the apex unable to show a page at all. The console had no URLs of its own
+// back then, so there was no path boundary to split on; now that every console screen
+// lives under /app there is.
+//
+// The console does NOT move: it stays on app.palivane.io, where the session tokens already
+// are (localStorage is per-origin, so moving it would sign everyone out).
+//
+// Three rules, and only for browser navigation:
+//   /app/* on the apex          -> app.palivane.io   (console lives there)
+//   a site page on the app host -> palivane.io       (site lives there)
+//   app.palivane.io/            -> /app/findings     (the app host is the console; signed
+//                                                     out that renders the sign-in screen)
+//
+// Everything else is proxied where it was asked for. API/gateway traffic (/api/*, /v1) is
+// NEVER redirected — installed CLIs, the extension and MDM clients POST there and a 301
+// would not replay their bodies, so they keep hitting whichever host they enrolled
+// against. Static assets, /cli/*, /install.sh, /extension-connect and /admin are not site
+// pages either, so they stay on the host that served the page referencing them rather than
+// taking a cross-origin hop.
+const SITE_HOST = 'palivane.io';
+const APP_HOST = 'app.palivane.io';
+
+// The public site's pages, listed rather than inferred: "not a console path" would sweep up
+// assets and the CLI download endpoints and bounce them across hosts on every request.
+const SITE_PAGES = new Set([
+  '/', '/pricing', '/why-palivane', '/use-cases', '/how-it-works', '/coverage',
+  '/setup', '/trust', '/privacy', '/terms',
+]);
+const isSitePage = (p) => SITE_PAGES.has(p) || p === '/docs' || p.startsWith('/docs/');
+const isConsolePage = (p) => p === '/app' || p.startsWith('/app/');
 
 export default {
   async fetch(request, env) {
@@ -167,12 +193,23 @@ export default {
       return deny(404, 'not found');
     }
 
-    // Human navigation on the legacy host → move to the new brand hostname. Programmatic
-    // API/gateway calls fall through and are proxied unchanged (see note above).
+    // Send browser navigation to whichever host owns that page. Programmatic API/gateway
+    // calls fall through and are proxied unchanged (see note above).
     const isApi = path.startsWith('/api/') || path.startsWith('/v1');
     const isNav = request.method === 'GET' || request.method === 'HEAD';
-    if (url.hostname === LEGACY_HOST && isNav && !isApi) {
-      return Response.redirect('https://' + CANONICAL_HOST + path + url.search, 301);
+    if (isNav && !isApi) {
+      // Trailing slashes are equivalent to the SPA (App.jsx strips them), so match on the
+      // stripped form and redirect to it, rather than leaving /pricing/ un-matched here.
+      const page = path.length > 1 ? path.replace(/\/+$/, '') || '/' : path;
+      if (url.hostname === SITE_HOST && isConsolePage(page)) {
+        return Response.redirect('https://' + APP_HOST + page + url.search, 301);
+      }
+      if (url.hostname === APP_HOST && page === '/') {
+        return Response.redirect('https://' + APP_HOST + '/app/findings' + url.search, 301);
+      }
+      if (url.hostname === APP_HOST && isSitePage(page)) {
+        return Response.redirect('https://' + SITE_HOST + page + url.search, 301);
+      }
     }
 
     const ip = request.headers.get('cf-connecting-ip') || 'unknown';

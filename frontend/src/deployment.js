@@ -19,3 +19,23 @@
 // their prompts never reach us, which is the failure that actually matters. docker-compose
 // sets it, so the ordinary self-host path still says the true, stronger thing.
 export const SELF_HOSTED = import.meta.env.VITE_PALIVANE_SELF_HOSTED === "1";
+
+
+// Where the console lives, when it is not on the same origin as the marketing site.
+//
+// The managed deployment splits them: palivane.io serves the public site, the console and
+// the API stay on app.palivane.io. That split is not cosmetic — the session token lives in
+// localStorage, which is per-origin, so a "Sign in" button that opened the login screen
+// in-place on the marketing origin would mint the token into the wrong one and the console
+// would never see it. Sign-in has to cross hosts as a real navigation.
+//
+// Empty is the default and means single-origin, which is every self-hosted install and the
+// local dev server: links stay relative and nothing about them changes. Set it only where
+// the two are actually on different hosts.
+export const APP_ORIGIN = (import.meta.env.VITE_PALIVANE_APP_ORIGIN || "").replace(/\/+$/, "");
+
+/** URL for the console's sign-in screen — cross-origin when the hosts are split. */
+export const signInUrl = () => `${APP_ORIGIN}/#signin`;
+
+/** True when sign-in must be a navigation rather than an in-SPA view swap. */
+export const SIGN_IN_IS_CROSS_ORIGIN = APP_ORIGIN !== "";
