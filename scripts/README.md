@@ -25,7 +25,7 @@ ffmpeg -i /tmp/palivane-demo/silent.mp4 -i /tmp/palivane-demo/score.wav \
 | --- | --- |
 | `demo_capture.py` | Drives a live backend over its real endpoints and writes every verdict the video shows. Refuses any non-localhost `PALIVANE_URL` (it records findings). |
 | `demo_scenes.py` | The HTML for each scene. Each page exposes `setT(t)`, `t` in 0..1. |
-| `demo_icons.py` | Simplified tool marks (Claude, Gemini, OpenAI, Cursor, GitHub, AWS). Drop a real SVG at `scripts/brand-icons/<key>.svg` to override — check the vendor's brand terms first. |
+| `demo_icons.py` | Tool marks. Claude / Gemini / OpenAI / Cursor / GitHub / AWS are simplified hand-drawn stand-ins; Drive and Slack are the vendors' real SVGs, shipped in `scripts/brand-icons/`. Drop a real SVG at `scripts/brand-icons/<key>.svg` to override any key — it is fitted to the box, never recoloured. Check the vendor's brand terms first. |
 | `demo_video.py` | Steps `setT` frame by frame, screenshots, encodes each scene, crossfades them, and captures the closing console tour against the live console. |
 | `demo_score.py` | Synthesizes the lofi bed. Section map at the bottom — match it to the cut's length. |
 
