@@ -72,6 +72,41 @@ jobs:
 """
 
 
+def _xlsx_bytes() -> bytes:
+    """A real OOXML workbook — a ZIP of XML, which is why no parser library is needed."""
+    import io
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("xl/sharedStrings.xml",
+                   "<sst><si><t>account</t></si><si><t>owner</t></si><si><t>ssn</t></si>"
+                   "<si><t>ARR</t></si><si><t>Northgate Health</t></si>"
+                   "<si><t>dana@northgate-health.com</t></si><si><t>412-88-7390</t></si>"
+                   "<si><t>$1.2M</t></si></sst>")
+    return buf.getvalue()
+
+
+def _pdf_bytes() -> bytes:
+    """A real PDF with a Flate-compressed content stream."""
+    import zlib
+    body = zlib.compress(
+        f"BT /F1 12 Tf 72 720 Td (customer export - aws key {AWS_KEY}) Tj ET".encode())
+    return (b"%PDF-1.4\n1 0 obj<</Length " + str(len(body)).encode()
+            + b"/Filter/FlateDecode>>stream\n" + body
+            + b"\nendstream\nendobj\ntrailer<<>>\n%%EOF")
+
+
+def _extract(name: str, raw: bytes) -> str:
+    """The SAME extractor the connectors run, so the demo exercises the real path."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "backend"))
+    from app.doc_extract import extract
+    text, how = extract(name, raw)
+    if not text.strip():
+        raise SystemExit(f"demo: {name} extracted nothing ({how!r}) — the scene would lie")
+    return text
+
+
 def _post(path: str, body: dict, headers: dict | None = None) -> dict:
     req = urllib.request.Request(
         BASE + path, data=json.dumps(body).encode(), method="POST",
@@ -134,6 +169,19 @@ def main() -> int:
         "repo": "northgate/billing", "ref": "main", "record": True,
         "workflows": [{"path": ".github/workflows/agent-triage.yml", "content": CI_WORKFLOW}]}, tok)
 
+    # 9-10 · the SaaS content planes. These build a REAL .xlsx and a REAL PDF, run them
+    # through the same doc_extract the Drive/SharePoint/Slack connectors use, and score the
+    # extracted text on the live backend — so the verdict and the extraction are both
+    # genuine, not a mock of what a connector would have said.
+    out["gdrive"] = _post("/api/scan/code", {
+        "files": [{"path": "Finance/Q3 Forecast (FINAL).xlsx",
+                   "content": _extract("Q3 Forecast (FINAL).xlsx", _xlsx_bytes())}],
+        "record": True}, tok)
+    out["slack"] = _post("/api/scan/code", {
+        "files": [{"path": "#billing-eng: customers-export.pdf",
+                   "content": _extract("customers-export.pdf", _pdf_bytes())}],
+        "record": True}, tok)
+
     out["_inputs"] = {"browser_prompt": BROWSER_PROMPT, "code_prompt": CODE_PROMPT,
                       "ci_workflow": CI_WORKFLOW, "s3_objects": S3_OBJECTS}
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
@@ -152,6 +200,11 @@ def main() -> int:
           f"flagged={len(out['aws'].get('objects', []))} of {out['aws'].get('scanned')}")
     print(f"github      action={out['github'].get('action')} "
           f"flagged={len(out['github'].get('workflows', []))}")
+    for k in ("gdrive", "slack"):
+        v = out[k]
+        fl = (v.get("files") or [{}])[0]
+        print(f"{k:11s} action={v.get('action')} sev={fl.get('severity')} "
+              f"risk={fl.get('risk_score')}")
     print(f"\nwrote {OUT}")
     return 0
 
