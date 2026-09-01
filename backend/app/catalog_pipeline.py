@@ -21,11 +21,13 @@ from .ai_catalog import CATALOG, CATEGORY_LABEL, classify
 # Hosts the pipeline must never propose, however often a "top AI tools" feed lists them.
 # Two kinds, both of which reached CATALOG once and had to be pulled back out:
 #
-#   - umbrella domains for a product that is mostly NOT AI. "aws.amazon.com" made every
-#     visit to the AWS console read as shadow-AI assistant usage, and because classify_name
-#     also matches display names, "Amazon S3" and "Amazon Connect" classified as an AI
-#     assistant too. "notion.so" did the same to every Notion page. Palivane's discovery is
-#     only useful if a hit means something; an umbrella domain guarantees it does not.
+#   - umbrella domains for a company whose products are mostly NOT AI. "aws.amazon.com"
+#     made every visit to the AWS console read as shadow-AI assistant usage, and because
+#     classify_name also matches display names, "Amazon S3" and "Amazon Connect" classified
+#     as an AI assistant too. The test is whether the name spans unrelated products:
+#     "Amazon" does, so it is denied. Notion is deliberately NOT on this list — it names one
+#     product, that product ships AI into every page, and an org that has approved it
+#     sanctions the tool once. Breadth is only a defect when the hit means nothing.
 #   - sites you read *about* AI on: specs, docs, leaderboards, benchmarks. Nobody's data
 #     goes into a leaderboard, so a finding there is noise with a risk score attached.
 #
@@ -33,7 +35,7 @@ from .ai_catalog import CATALOG, CATEGORY_LABEL, classify
 # already carries "aws.amazon.com/sagemaker" that way, and it keeps working because
 # classify() matches longest-key-first.
 NEVER_CATALOG: frozenset[str] = frozenset({
-    "aws.amazon.com", "notion.so",
+    "aws.amazon.com",
     "modelcontextprotocol.io", "registry.modelcontextprotocol.io",
     "llm-stats.com", "artificialanalysis.ai", "imgsys.org", "arena.ai",
     "lmql.ai", "mlflow.org", "manifest.build",

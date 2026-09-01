@@ -52,11 +52,13 @@ def test_denylisted_hosts_are_never_proposed():
     These reached CATALOG once via an automated growth run and had to be pulled back out:
     "aws.amazon.com" classified the whole AWS console as an AI assistant.
     """
-    r = propose([{"host": "aws.amazon.com"}, {"host": "https://notion.so/"},
-                 {"host": "llm-stats.com"}, {"host": "genuinelynew.ai"}])
+    r = propose([{"host": "aws.amazon.com"}, {"host": "llm-stats.com"},
+                 {"host": "genuinelynew.ai"}])
     assert [x["host"] for x in r["new"]] == ["genuinelynew.ai"]
-    assert r["counts"]["invalid"] == 3
+    assert r["counts"]["invalid"] == 2
     assert all("denylist" in x["reason"] for x in r["invalid"])
+    # Notion is covered, not denied — it is already in CATALOG, so it dedupes as known.
+    assert propose([{"host": "notion.so"}])["counts"] == {"new": 0, "known": 1, "invalid": 0}
 
 
 def test_art_substring_does_not_claim_artificial():

@@ -149,19 +149,39 @@ def test_mcp_capture_unknown_plane_not_recorded(client, raw_client):
 
 
 def test_umbrella_domains_are_not_ai_tools():
-    """An automated catalog run once added "aws.amazon.com" and "notion.so" as AI tools,
-    which made every AWS console page and every Notion doc read as shadow-AI usage — and
-    because classify_name() also matches display names, so did "Amazon S3". Discovery is
-    only worth reading if a hit means something, so these must not resolve."""
+    """An automated catalog run once added "aws.amazon.com" as an AI tool, which made every
+    AWS console page read as shadow-AI usage — and because classify_name() also matches
+    display names, so did "Amazon S3". The line is whether the name spans unrelated
+    products: "Amazon" does, so it is denied (Notion does not — see the test below)."""
     from app.ai_catalog import classify, classify_name
     for dest in ("https://aws.amazon.com/console/home", "aws.amazon.com",
-                 "https://www.notion.so/team/eng/page-abc", "notion.so",
                  "modelcontextprotocol.io/docs", "llm-stats.com", "artificialanalysis.ai"):
         assert classify(dest) is None, dest
-    for name in ("Amazon S3", "Amazon Web Services", "Amazon Connect", "Notion"):
+    for name in ("Amazon S3", "Amazon Web Services", "Amazon Connect"):
         assert classify_name(name) is None, name
     # "Jan" as a canonical name matched any "Jan <surname>" in an app-name column.
     assert classify_name("Jan Kowalski") is None
+
+
+def test_notion_is_covered_at_host_level_on_both_domains():
+    """Notion ships AI into every page and there is no hostname or public path that
+    isolates an AI call, so the host is the only coverage DNS/CASB telemetry can carry —
+    and a host-level hit is what the one-click sanction workflow exists to resolve."""
+    from app.ai_catalog import classify
+    for dest in ("notion.so", "https://www.notion.so/team/eng/page-abc",
+                 "notion.com", "https://www.notion.com/workspace/doc-abc"):
+        hit = classify(dest)
+        assert hit and hit["tool"] == "Notion" and hit["category"] == "writing", dest
+
+
+def test_notion_ai_paths_outrank_the_bare_host():
+    """classify() is longest-key-first, so a URL that really is the AI surface names Notion
+    AI rather than the workspace it sits in."""
+    from app.ai_catalog import classify
+    for dest in ("notion.so/ai", "https://www.notion.so/ai", "notion.ai",
+                 "https://www.notion.com/product/ai", "notion.com/ai"):
+        hit = classify(dest)
+        assert hit and hit["tool"] == "Notion AI", (dest, hit)
 
 
 def test_precise_ai_subproducts_of_umbrella_domains_still_resolve():

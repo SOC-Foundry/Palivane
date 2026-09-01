@@ -271,7 +271,22 @@ CATALOG: dict[str, tuple[str, str]] = {
     "jasper.ai": ("Jasper", "writing"), "copy.ai": ("Copy.ai", "writing"),
     "writesonic.com": ("Writesonic", "writing"), "rytr.me": ("Rytr", "writing"),
     "grammarly.com": ("Grammarly (AI)", "writing"), "quillbot.com": ("QuillBot", "writing"),
+    # Notion. The AI paths come first only for readability — classify() sorts by key length,
+    # so "notion.so/ai" beats the bare host on a URL that really is the AI surface, and the
+    # host answers for everything else. notion.com is the primary domain now; notion.so
+    # still resolves and is what older CASB/DNS exports contain, so both are listed.
+    #
+    # The bare hosts are a deliberate broad net, unlike "aws.amazon.com" (see
+    # catalog_pipeline.NEVER_CATALOG). Notion names one product and that product ships AI
+    # into every page, so "someone is putting documents in Notion" is a finding worth
+    # raising; an org that has approved it sanctions the tool once and the noise stops.
+    # There is no hostname or stable public path that isolates a Notion AI call from an
+    # ordinary page load — the in-product calls go to Notion's own undocumented client API
+    # on the same host — so host-level is the only coverage available for DNS/CASB
+    # telemetry, which carries no path at all.
     "notion.so/ai": ("Notion AI", "writing"), "notion.ai": ("Notion AI", "writing"),
+    "notion.com/product/ai": ("Notion AI", "writing"), "notion.com/ai": ("Notion AI", "writing"),
+    "notion.so": ("Notion", "writing"), "notion.com": ("Notion", "writing"),
     "sudowrite.com": ("Sudowrite", "writing"), "wordtune.com": ("Wordtune", "writing"),
     "gamma.app": ("Gamma", "writing"), "tome.app": ("Tome", "writing"),
     "writer.com": ("Writer", "writing"),
