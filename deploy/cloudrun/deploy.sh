@@ -129,6 +129,11 @@ AUTH_ARGS=(--allow-unauthenticated)
 [ "${NO_UNAUTH:-}" = "1" ] && AUTH_ARGS=(--no-allow-unauthenticated)
 [ -n "${INGRESS:-}" ] && AUTH_ARGS+=(--ingress "$INGRESS")
 
+# 2 CPU / 1Gi rather than 1 / 512Mi. This is a startup-budget decision, not a throughput
+# one: Cloud Run allows a startup probe at most 4 minutes, and boot imports the app twice
+# (once for migrations/env.py, once for uvicorn) on top of a 40-60s wait for Cloud SQL. On
+# a single CPU that came to 2-4 minutes and a rollout failed the probe by three seconds
+# with the container otherwise healthy. Halving the CPU-bound half buys the margin back.
 echo "==> Deploying Cloud Run service '$SERVICE'"
 # --update-env-vars (merge), NOT --set-env-vars (replace): a deploy that omits a var must
 # not silently drop it. Out-of-band config (e.g. SMTP set via `services update`) persists.
@@ -140,7 +145,7 @@ gcloud run deploy "$SERVICE" --project "$PROJECT_ID" --region "$REGION" \
   "${AUTH_ARGS[@]}" \
   "${VPC_ARGS[@]}" \
   --port 8080 \
-  --cpu 1 --memory 512Mi \
+  --cpu 2 --memory 1Gi \
   --min-instances "${MIN_INSTANCES:-1}" --max-instances "${MAX_INSTANCES:-4}" \
   --cpu-boost --timeout 300
 
