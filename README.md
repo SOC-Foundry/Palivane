@@ -299,6 +299,19 @@ npm run dev                   # http://localhost:5173
 Open http://localhost:5173 and sign in. Findings stream into the dashboard from the
 gateway / extension / proxy; the **Connect** tab generates the setup config for each.
 
+**Console URLs.** Every console screen lives under `/app` — `/app/findings`,
+`/app/discovery`, `/app/policies`, `/app/settings`, and so on, one path per sidebar entry,
+plus `/app/findings/:id` for a single finding. They are linkable, bookmarkable, and the
+back button works. Routing is hand-rolled in `frontend/src/route.js` (the public pages are
+matched off `location.pathname` in `App.jsx`; there is no router dependency).
+
+The `/app` prefix is load-bearing: the public site already owns `/coverage`, `/setup` and
+`/docs`, which would otherwise collide with the console's Coverage, Connect and Help
+screens. Deep links are gated the same way the sidebar is — a non-admin who opens
+`/app/settings` lands on Findings rather than a screen whose every request would 403 — and
+an unauthenticated one gets the sign-in screen with the path preserved, so signing in lands
+where they were headed.
+
 ## Configuration
 
 Backend reads these from the environment (see `backend/.env.example`):
