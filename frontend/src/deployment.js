@@ -37,5 +37,12 @@ export const APP_ORIGIN = (import.meta.env.VITE_PALIVANE_APP_ORIGIN || "").repla
 /** URL for the console's sign-in screen — cross-origin when the hosts are split. */
 export const signInUrl = () => `${APP_ORIGIN}/#signin`;
 
+/** URL for the read-only public demo — same cross-origin rule as sign-in: it signs you in. */
+export const demoUrl = () => `${APP_ORIGIN}/#demo`;
+
 /** True when sign-in must be a navigation rather than an in-SPA view swap. */
 export const SIGN_IN_IS_CROSS_ORIGIN = APP_ORIGIN !== "";
+
+/** True when this page is running on the site's origin and the console lives elsewhere. */
+export const isOffConsoleOrigin = () =>
+  SIGN_IN_IS_CROSS_ORIGIN && window.location.origin !== APP_ORIGIN;

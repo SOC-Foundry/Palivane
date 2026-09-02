@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, getToken, setToken, setUnauthorizedHandler } from "./api.js";
 import { DEFAULT_VIEW, isRoot, parseRoute, viewToPath } from "./route.js";
+import { APP_ORIGIN, isOffConsoleOrigin } from "./deployment.js";
 import Dashboard from "./components/Dashboard.jsx";
 import FindingsList from "./components/FindingsList.jsx";
 import FindingDetail from "./components/FindingDetail.jsx";
@@ -145,6 +146,28 @@ export default function App() {
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, [view]);   // "findings" | "connect"
+
+  // The console and every way into it belong to the console's ORIGIN, not merely to a path.
+  //
+  // The same SPA is served on both hosts, and client-side routing never reaches the
+  // Cloudflare worker — so the worker's host rules only catch full page loads. Without this,
+  // anything that signs you in while on the site's origin puts the token in that origin's
+  // localStorage, where the console cannot read it, and then routes the console into place
+  // right there: a working-looking console on palivane.io whose session does not exist on
+  // app.palivane.io. A relative "#demo" link did exactly that.
+  //
+  // So on the site origin, wanting the console or wanting to authenticate is a navigation,
+  // not a state change. Any token stranded here by an earlier build is cleared on the way
+  // out; it is unusable on this origin and would otherwise keep re-triggering this.
+  useEffect(() => {
+    if (!isOffConsoleOrigin()) return;
+    const { pathname, search, hash } = window.location;
+    const wantsConsole = parseRoute(pathname, VIEWS) !== null;
+    const wantsAuth = /^#(signin|demo|reset=.+|join=\w+)$/.test(hash) || hash.includes("sso_token=");
+    if (!wantsConsole && !wantsAuth && !getToken()) return;
+    if (getToken()) setToken(null);
+    window.location.replace(APP_ORIGIN + pathname + search + hash);
+  }, []);
 
   useEffect(() => {
     setUnauthorizedHandler(() => setAuth(null));
