@@ -267,8 +267,13 @@ export default function Landing({ onSignIn }) {
             <h2>Start by watching.</h2>
             <p>Run it in monitor mode to see what your team is really sending, then switch on
               blocking when you have seen enough.</p>
+            {/* The one place on the landing page with a route to a human. The hero stays
+                two self-serve CTAs on purpose; someone who has read to the bottom and
+                still wants a conversation is exactly who should find this. */}
             <div className="lp-cta">
               <ConsoleCta onSignIn={onSignIn} />
+              <a className="lp-nav-ghost wide" href="mailto:sales@palivane.io?subject=Palivane">
+                Talk to sales</a>
             </div>
           </div>
         </div>
