@@ -1,6 +1,7 @@
 // Public "Why Palivane" page at /why-palivane (legacy /why-palivane still routes). The differentiators, what sets Palivane apart.
 // Reuses the landing (lp-*) design language.
 import { SiteNav, SiteFooter, Shot } from "./SiteChrome.jsx";
+import { signInUrl } from "../deployment.js";
 import { IconShield, IconTarget, IconPlug, IconInbox, IconClipboard, IconAlert } from "./icons.jsx";
 
 const REASONS = [
@@ -87,7 +88,7 @@ export default function WhyPalivane() {
               detection surface, the two-tier secret engine, and how scoring works.
             </div>
             <a className="lp-btn-ghost wide" href="/how-it-works">How it works →</a>
-            <a className="primary-btn slim" href="/#signin" style={{ textDecoration: "none" }}>Sign in</a>
+            <a className="primary-btn slim" href={signInUrl()} style={{ textDecoration: "none" }}>Sign in</a>
           </div>
         </div>
       </section>

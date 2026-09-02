@@ -1,6 +1,7 @@
 // Public "Use cases" page at /use-cases. Concrete scenarios Palivane addresses, mapped to
 // the real capture planes and detectors. Reuses the landing (lp-*) design language.
 import { SiteNav, SiteFooter, Shot } from "./SiteChrome.jsx";
+import { signInUrl } from "../deployment.js";
 import { IconTarget, IconShield, IconAlert, IconInbox, IconClipboard, IconPlug } from "./icons.jsx";
 
 const CASES = [
@@ -109,7 +110,7 @@ export default function UseCases() {
               <strong>Try it on your own traffic.</strong> Connect one source and watch real findings
               land in minutes. Watch-only until you say otherwise.
             </div>
-            <a className="primary-btn slim" href="/#signin" style={{ textDecoration: "none" }}>Open the console →</a>
+            <a className="primary-btn slim" href={signInUrl()} style={{ textDecoration: "none" }}>Open the console →</a>
           </div>
         </div>
       </section>
