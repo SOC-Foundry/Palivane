@@ -29,7 +29,7 @@ const STATS = [
 // trusted CA, and leading with it puts an MDM project in front of the value.
 const CAPTURE = [
   { icon: <IconShield />, title: "In coding tools", body: "Claude Code, Cursor, Codex, Copilot, and Gemini CLI report every prompt and tool call, and posture scans surface the agents that can't be hooked (Cline, Roo, Windsurf, Amazon Q). One line to install." },
-  { icon: <IconPlug />, title: "In the browser", body: "What people paste into ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, Qwen, Kimi. 24 AI sites in all, including the app builders (v0, Bolt, Lovable, Replit)." },
+  { icon: <IconPlug />, title: "In the browser", body: `What people paste into ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, Qwen, Kimi. ${stats.browser_sites} AI sites in all, including the app builders (v0, Bolt, Lovable, Replit).` },
   { icon: <IconInbox />, title: "In the places it already sits", body: "Slack, Google Drive, SharePoint, and Salesforce, scanned where the data lives, because an AI rollout will index all of it long before anyone pastes it into a prompt. A read token, nothing installed anywhere." },
   { icon: <IconClipboard />, title: "In code and laptops", body: "Commits and dependencies before they land, and credentials already at rest." },
   { icon: <IconAlert />, title: "In GitHub Actions", body: "Coding agents running on CI runners with your production credentials." },
@@ -58,8 +58,8 @@ const LOOKS_FOR = [
 ];
 
 const FAQ = [
-  { q: "Does anything have to be installed on every laptop?",
-    a: "No. The browser extension can be force-installed by policy and the CLI coverage arrives through one command that a person runs once, or through your MDM. Nothing needs a per-machine visit." },
+  { q: "Does anyone have to touch every laptop?",
+    a: "No. Two things do go on a machine, a browser extension and a small CLI that wires the coding-tool hooks, but the extension is force-installed by browser policy and the CLI arrives through your MDM or one command a person runs once. Nothing needs a per-machine visit. The gateway and the SaaS connectors put nothing on a machine at all." },
   { q: "Where does our prompt text actually go?",
     a: SELF_HOSTED
       ? "To the Palivane backend you deploy, and nowhere beyond it. It never leaves your infrastructure, so there is no vendor holding your prompts. Scoring is deterministic (rules and heuristics, no AI service in the loop) unless you switch on the optional LLM judge, which does send the content it reviews to the model provider you choose."
