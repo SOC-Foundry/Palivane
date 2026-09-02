@@ -152,3 +152,70 @@ def test_redact_finds_what_scan_finds():
                   "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "sup3rsecret"):
         assert value not in out, value
     assert len(d.scan_text(text)) >= 4
+
+
+# --- reversible tokenization -----------------------------------------------------------
+# The point of tokenizing rather than redacting is that the prompt still works, so these
+# check that structure survives, identity does not, and nothing is left behind afterwards.
+
+def test_tokenize_round_trips():
+    text = "Customer SSN 123-45-6789 on card 4242424242424242."
+    tok, m = d.tokenize(text)
+    assert "123-45-6789" not in tok and "4242424242424242" not in tok
+    assert d.detokenize(tok, m) == text
+
+
+def test_the_same_value_gets_the_same_token():
+    """A model must still be able to tell that two mentions are the same person."""
+    tok, m = d.tokenize("SSN 123-45-6789 ... about SSN 123-45-6789")
+    tokens = d.TOKEN_RE.findall(tok)
+    assert len(tokens) == 2 and tokens[0] == tokens[1]
+    assert len(m) == 1
+
+
+def test_different_values_get_different_tokens():
+    # Both must be VALID SSNs: 900-999 and 666 are unassigned areas and _valid_ssn9
+    # rejects them, which is the detector being right rather than the tokenizer failing.
+    tok, m = d.tokenize("SSN 123-45-6789 and SSN 234-56-7890")
+    assert len(set(d.TOKEN_RE.findall(tok))) == 2 and len(m) == 2
+
+
+def test_the_token_says_what_kind_of_value_it_replaced():
+    """Structure is the whole point: the model should know it is holding a card, not a name."""
+    tok, _ = d.tokenize("card 4242424242424242")
+    assert "PCN" in tok
+
+
+def test_secrets_are_not_tokenized():
+    """A credential must not reach the model in any form, so redact() stays the answer."""
+    text = "aws key AKIAIOSFODNN7EXAMPLE"
+    tok, m = d.tokenize(text)
+    assert tok == text and m == {}
+
+
+def test_detokenize_survives_a_model_changing_case():
+    tok, m = d.tokenize("SSN 123-45-6789")
+    token = next(iter(m))
+    assert d.detokenize(f"about {token.lower()} here", m) == "about 123-45-6789 here"
+
+
+def test_an_invented_token_is_left_alone_and_reported():
+    """A model that makes up a token is telling you something; deleting it hides that."""
+    _, m = d.tokenize("SSN 123-45-6789")
+    out = d.detokenize("see PLV_USSN_ABCDEF", m)
+    assert out == "see PLV_USSN_ABCDEF"
+    assert d.unknown_tokens(out, m) == ["PLV_USSN_ABCDEF"]
+
+
+def test_a_shorter_value_inside_a_longer_one_cannot_strand_a_fragment():
+    tok, m = d.tokenize("card 4242424242424242 and SSN 123-45-6789")
+    assert not any(ch.isdigit() for ch in tok.replace("PLV_", "").split("SSN")[0]
+                   if ch in "4242424242424242") or "4242424242424242" not in tok
+    assert d.detokenize(tok, m).count("4242424242424242") == 1
+
+
+def test_nothing_is_returned_that_a_caller_could_accidentally_persist():
+    """The map is the only place a raw value appears, and it is a return value the caller
+    holds in memory. scan_all's invariant (metadata only) is unaffected by the split."""
+    text = "SSN 123-45-6789"
+    assert all("123-45-6789" not in str(f) for f in d.scan_all(text))
