@@ -22,13 +22,18 @@ const STATS = [
   { n: "1", l: "afternoon to set up", s: "one command, nothing to install by hand" },
 ];
 
+// Ordered by what a buyer can turn on soonest, not by how the planes are built. Coding
+// tools first: it is a one-line install, it is where the expensive leaks are (source code,
+// production credentials), and it is the surface a CASB and a browser-only tool cannot see
+// at all. Desktop apps last, because that is the only plane needing a system proxy and a
+// trusted CA, and leading with it puts an MDM project in front of the value.
 const CAPTURE = [
+  { icon: <IconShield />, title: "In coding tools", body: "Claude Code, Cursor, Codex, Copilot, and Gemini CLI report every prompt and tool call, and posture scans surface the agents that can't be hooked (Cline, Roo, Windsurf, Amazon Q). One line to install." },
   { icon: <IconPlug />, title: "In the browser", body: "What people paste into ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, Qwen, Kimi. 24 AI sites in all, including the app builders (v0, Bolt, Lovable, Replit)." },
-  { icon: <IconInbox />, title: "In desktop apps", body: "The AI apps that never touch a browser: Claude and ChatGPT desktop." },
-  { icon: <IconShield />, title: "In coding tools", body: "Claude Code, Cursor, Codex, Copilot, and Gemini CLI report every prompt and tool call, and posture scans surface the agents that can't be hooked (Cline, Roo, Windsurf, Amazon Q)." },
+  { icon: <IconInbox />, title: "In the places it already sits", body: "Slack, Google Drive, SharePoint, and Salesforce, scanned where the data lives, because an AI rollout will index all of it long before anyone pastes it into a prompt. A read token, nothing installed anywhere." },
   { icon: <IconClipboard />, title: "In code and laptops", body: "Commits and dependencies before they land, and credentials already at rest." },
   { icon: <IconAlert />, title: "In GitHub Actions", body: "Coding agents running on CI runners with your production credentials." },
-  { icon: <IconInbox />, title: "In the places it already sits", body: "Slack, Google Drive, SharePoint, and Salesforce, scanned where the data lives, because an AI rollout will index all of it long before anyone pastes it into a prompt." },
+  { icon: <IconInbox />, title: "In desktop apps", body: "The AI apps that never touch a browser: Claude and ChatGPT desktop. The one plane that needs a system proxy and a trusted CA, so it is usually a second phase." },
 ];
 
 const LINEAGE = [
@@ -91,9 +96,10 @@ export default function Landing({ onSignIn }) {
           <div className="lp-tagline">AI SECURITY FOR THE TOOLS YOUR TEAM ALREADY USES</div>
           <h1>Your secrets shouldn't leave with the prompt.</h1>
           <p className="lp-lead">
-            Your team uses ChatGPT, Claude, Copilot, and AI coding assistants every day.
-            Palivane shows you what they send, and <strong>stops the customer data, passwords,
-            and source code that shouldn't go</strong>.
+            Your team uses ChatGPT, Claude, Copilot, and AI coding assistants every day. Your
+            CASB can tell you someone opened chatgpt.com. Palivane tells you <strong>a customer
+            export went into it</strong>, and stops the data, passwords, and source code that
+            shouldn't go.
           </p>
           <div className="lp-cta">
             <ConsoleCta onSignIn={onSignIn} />
@@ -175,7 +181,8 @@ export default function Landing({ onSignIn }) {
           <div className="lp-band-head">
             <h2 className="lp-h2">It works wherever your team uses AI</h2>
             <p className="lp-sub">Nobody has to remember to run anything, and everything lands in
-              the same console.</p>
+              the same console. Only desktop-app coverage needs a system proxy and a certificate:
+              start with the rest and add it later, or never.</p>
           </div>
           <div className="lp-cards lp-cards-5">
             {CAPTURE.map((c) => (
