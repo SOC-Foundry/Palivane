@@ -17,6 +17,7 @@ import pilotMd from "../../../docs/pilot-smoke-test.md?raw";
 import corpChecklistMd from "../../../docs/corporate-deployment-checklist.md?raw";
 import existingProxyMd from "../../../docs/existing-proxy-vpn.md?raw";
 import slackMd from "../../../docs/slack-scanning.md?raw";
+import siemMd from "../../../docs/siem-and-s3-delivery.md?raw";
 
 const DOCS = [
   { slug: "overview", title: "Overview & architecture", md: overviewMd },
@@ -28,6 +29,7 @@ const DOCS = [
   { slug: "tokens-and-identity", title: "Tokens & identity", md: tokensMd },
   { slug: "at-rest-scanning", title: "S3 & repo scanning", md: atRestMd },
   { slug: "slack-scanning", title: "Slack scanning", md: slackMd },
+  { slug: "siem-and-s3-delivery", title: "SIEM & S3 delivery", md: siemMd },
   { slug: "data-flows", title: "Data flows: what leaves the machine", md: dataFlowsMd },
   { slug: "verifying-downloads", title: "Verifying what you install", md: verifyMd },
   { slug: "pilot", title: "Pilot smoke test", md: pilotMd },
