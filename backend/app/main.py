@@ -423,6 +423,26 @@ def siem_s3_role_setup(current: User = Depends(require_admin), db: Session = Dep
     }
 
 
+@app.post("/api/policies/pattern-from-examples")
+def pattern_from_examples(body: dict, current: User = Depends(require_admin)):
+    """Turn two or more example identifiers into a custom-PII regex, with the reasoning in
+    words so an admin can check it without reading regex.
+
+    Nothing is saved: the caller reviews the pattern and pastes it into Settings ->
+    Custom PII patterns as the usual `label=regex` line, matched by the usual engine. This
+    endpoint only writes the string a human would otherwise have had to write, which is the
+    part that keeps orgs from defining their own identifiers at all.
+
+    Deterministic (see pattern_infer): no model call, so it works on a self-hosted
+    deployment with no provider key and gives the same answer every time."""
+    from .pattern_infer import infer
+    ex = body.get("examples") or []
+    ce = body.get("counter_examples") or []
+    if not isinstance(ex, list) or not isinstance(ce, list):
+        raise HTTPException(status_code=422, detail="examples and counter_examples must be lists")
+    return infer([str(x) for x in ex][:40], [str(x) for x in ce][:40])
+
+
 @app.get("/api/siem/status")
 def siem_status(current: User = Depends(require_admin), db: Session = Depends(get_db)):
     """Delivery health for this tenant's out-of-band sinks (SIEM HTTP push, S3 findings,

@@ -18,6 +18,63 @@ function clientEnforceValue(t) {
 
 const SEVERITIES = ["low", "suspicious", "high", "critical"];
 
+// Writing a regex is the reason most orgs never define their own identifiers, so this
+// writes it from examples instead. Inference is deterministic and server-side (see
+// app/pattern_infer.py); this is only the form and the review step. Nothing saves until
+// the admin has seen the pattern, read what it means in words, and pressed Add.
+function PatternBuilder({ onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState("");
+  const [examples, setExamples] = useState("");
+  const [counters, setCounters] = useState("");
+  const [res, setRes] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const lines = (s) => s.split("\n").map((x) => x.trim()).filter(Boolean);
+
+  async function build() {
+    setBusy(true);
+    try { setRes(await api.patternFromExamples(lines(examples), lines(counters))); }
+    catch (e) { setRes({ ok: false, error: String(e.message || e) }); }
+    finally { setBusy(false); }
+  }
+  if (!open) {
+    return <button type="button" className="ghost-btn slim" onClick={() => setOpen(true)}>
+      Build one from examples →</button>;
+  }
+  return (
+    <div className="field-wide" style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 12 }}>
+      <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+        <label style={{ flex: "1 1 180px" }}>Name it
+          <input placeholder="Customer ID" value={label} onChange={(e) => setLabel(e.target.value)} /></label>
+        <label style={{ flex: "1 1 220px" }}>Examples (one per line, at least two)
+          <textarea rows={3} placeholder={"CUST-4821-A\nCUST-9930-B"}
+                    value={examples} onChange={(e) => setExamples(e.target.value)} /></label>
+        <label style={{ flex: "1 1 220px" }}>Should NOT match (optional)
+          <textarea rows={3} placeholder={"ORD-4821-A"}
+                    value={counters} onChange={(e) => setCounters(e.target.value)} /></label>
+      </div>
+      <div className="row" style={{ gap: 8, marginTop: 8 }}>
+        <button type="button" className="ghost-btn slim" onClick={build} disabled={busy}>
+          {busy ? "Working…" : "Build pattern"}</button>
+        <button type="button" className="ghost-btn slim" onClick={() => { setOpen(false); setRes(null); }}>
+          Close</button>
+      </div>
+      {res && !res.ok && <p className="muted" style={{ marginTop: 10 }}>{res.error}
+        {res.false_hits?.length ? ` (also matched: ${res.false_hits.join(", ")})` : ""}</p>}
+      {res?.ok && (
+        <div style={{ marginTop: 10 }}>
+          <code>{res.regex}</code>
+          <p className="muted" style={{ margin: "6px 0" }}>Matches {res.explain}.</p>
+          <button type="button" className="primary-btn slim"
+                  onClick={() => { onAdd(`${label.trim() || "Custom PII"}=${res.regex}`);
+                                   setRes(null); setExamples(""); setCounters(""); setLabel(""); }}>
+            Add to patterns</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   const [msg, setMsg] = useState(null);       // { ok, text }
   const flash = (text, ok = true) => { setMsg({ ok, text }); setTimeout(() => setMsg(null), 3000); };
@@ -684,6 +741,9 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <label className="field-wide">Custom PII / confidential patterns (one <code>label=regex</code> per line)
             <textarea rows={3} placeholder={"Customer ID=CUST-\\d{8}\nMRN=MRN\\d{7}\nProject codename=(Bluebird|Falcon)"}
                       value={org.custom_pii_patterns} onChange={setField("custom_pii_patterns")} /></label>
+          <PatternBuilder onAdd={(line) => setOrgState((o) => ({
+            ...o, custom_pii_patterns: (o.custom_pii_patterns || "").trim()
+              ? `${o.custom_pii_patterns.trim()}\n${line}` : line }))} />
           <label className="field-wide">Need-to-know rules (oversharing), one <code>restricted = allowed-group</code> per line
             <textarea rows={3} placeholder={"confidential_data = *@acme.com\npii_exposure = *@hr.acme.com\nkw:salary = *@hr.acme.com,*@exec.acme.com"}
                       value={org.oversharing_rules} onChange={setField("oversharing_rules")} /></label>
