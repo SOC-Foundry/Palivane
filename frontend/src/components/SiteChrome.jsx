@@ -19,7 +19,7 @@
 // these are the ways people use it, these are the reference docs" before anything is
 // clicked.
 import { useEffect, useRef, useState } from "react";
-import { SIGN_IN_IS_CROSS_ORIGIN, signInUrl } from "../deployment.js";
+import { SIGN_IN_IS_CROSS_ORIGIN, demoUrl, signInUrl } from "../deployment.js";
 
 const MENU = [
   { label: "Platform", items: [
@@ -197,15 +197,22 @@ export function SiteFooter() {
   const COLS = [
     { head: "Product", links: [
       ["/how-it-works", "How it works"], ["/coverage", "Coverage"],
-      ["/why-palivane", "Why Palivane"], ["/pricing", "Pricing"],
+      ["/why-palivane", "Why Palivane"], ["/docs", "Documentation"],
     ]},
     { head: "Use cases", links: [
       ["/use-cases#engineering", "Engineering"], ["/use-cases#security", "Security teams"],
       ["/use-cases#compliance", "Compliance"], ["/use-cases", "All use cases"],
     ]},
+    // "Get started" is the buyer's column, in the order a buyer moves: what it costs, see
+    // it working, ask a human, install it. It used to hold Set it up / Documentation /
+    // Sign in, which is three different audiences and none of them a buyer — Sign in is
+    // for people who already have an account (and is in the nav on every page anyway),
+    // Documentation is reference, and Pricing, the highest-intent click on the site, sat
+    // under Product. There was also no route to a human anywhere in the footer, though
+    // sales@palivane.io is the Enterprise CTA one page over.
     { head: "Get started", links: [
-      ["/setup", "Set it up"], ["/docs", "Documentation"],
-      [signInUrl(), "Sign in"],
+      ["/pricing", "Pricing"], [demoUrl(), "See the live demo"],
+      ["mailto:sales@palivane.io", "Talk to sales"], ["/setup", "Set it up"],
     ]},
     { head: "Trust", links: [
       ["/trust", "Trust & security"], ["/privacy", "Privacy"], ["/terms", "Terms"],
