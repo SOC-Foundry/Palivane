@@ -44,7 +44,7 @@ const TIERS = [
       "Every feature of Enterprise, for two weeks",
       "First findings in about two minutes",
       "No card, no call required to start",
-      "Nothing to install on anyone's laptop",
+      "First findings without touching a laptop, a base-URL change or a read token",
       "When it ends, capture keeps running, you just stop configuring",
     ],
   },
