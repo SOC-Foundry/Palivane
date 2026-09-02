@@ -245,3 +245,67 @@ def test_streaming_provider_gets_tokens_and_client_gets_plaintext(client, monkey
     assert r.status_code == 200
     assert SSN not in seen["payload"]["messages"][0]["content"]        # provider
     assert SSN in r.text and not TOKEN_RE.search(r.text)               # client
+
+
+# --- the other two providers -------------------------------------------------------------
+# Codex CLI defaults to the Responses API and Gemini CLI to generateContent, so covering
+# only the chat/messages shapes left the two most likely CLI clients untokenized.
+
+def test_responses_api_string_input():
+    payload = {"model": "gpt-5", "input": f"Reformat SSN {SSN}"}
+    out, m = tokenize_payload(payload)
+    assert SSN not in out["input"] and len(m) == 1
+
+
+def test_responses_api_item_list_and_instructions_share_one_token():
+    """`instructions` is the Responses system prompt; the same person in both must read as
+    the same person to the model."""
+    payload = {"input": [{"role": "user",
+                          "content": [{"type": "input_text", "text": f"SSN {SSN}"}]}],
+               "instructions": f"The customer is {SSN}"}
+    out, m = tokenize_payload(payload)
+    assert len(m) == 1
+    tok = next(iter(m))
+    assert tok in out["input"][0]["content"][0]["text"] and tok in out["instructions"]
+
+
+def test_gemini_parts_and_system_instruction():
+    payload = {"contents": [{"role": "user", "parts": [{"text": f"SSN {SSN}"},
+                                                       {"inlineData": {"mimeType": "image/png"}}]}],
+               "systemInstruction": {"parts": [{"text": f"about {SSN}"}]}}
+    out, m = tokenize_payload(payload)
+    assert len(m) == 1
+    assert SSN not in out["contents"][0]["parts"][0]["text"]
+    assert SSN not in out["systemInstruction"]["parts"][0]["text"]
+    # a non-text part is structure, not prompt, and must survive untouched
+    assert out["contents"][0]["parts"][1] == {"inlineData": {"mimeType": "image/png"}}
+
+
+def test_gemini_snake_case_system_instruction():
+    """The REST API accepts both spellings; the SDK sends one and raw callers the other."""
+    out, m = tokenize_payload({"system_instruction": {"parts": [{"text": f"SSN {SSN}"}]}})
+    assert len(m) == 1 and SSN not in out["system_instruction"]["parts"][0]["text"]
+
+
+def test_gemini_end_to_end(client, monkeypatch):
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_tokenize", True)
+    monkeypatch.setattr(gateway.settings, "gateway_enforce_secrets", False)
+    monkeypatch.setattr(gateway.settings, "gateway_scan_responses", False)
+    monkeypatch.setattr(gateway, "resolve_upstream", lambda *a, **k: ("https://up", "key"))
+    seen = {}
+
+    def fake_forward(model, method, payload, request, base, key):
+        from fastapi.responses import Response as R
+        seen["payload"] = payload
+        echoed = payload["contents"][0]["parts"][0]["text"]
+        import json as _j
+        return R(content=_j.dumps({"candidates": [{"content": {"parts": [{"text": echoed}]}}]}).encode(),
+                 status_code=200, media_type="application/json")
+
+    monkeypatch.setattr(gateway, "_forward_gemini", fake_forward)
+    r = client.post("/v1beta/models/gemini-2.5-pro:generateContent", json={
+        "contents": [{"role": "user", "parts": [{"text": f"Reformat SSN {SSN}"}]}]})
+    assert r.status_code == 200
+    assert SSN not in seen["payload"]["contents"][0]["parts"][0]["text"]   # provider
+    assert SSN in r.text and not TOKEN_RE.search(r.text)                   # client
