@@ -734,7 +734,8 @@ _STREAM_TEE_CAP = 2_000_000   # cap the accumulated copy so a huge stream can't 
 
 
 def _passthrough_stream(url: str, payload: dict, headers: dict, model: str = "",
-                        tool: str = "", principal: Principal | None = None) -> StreamingResponse:
+                        tool: str = "", principal: Principal | None = None,
+                        tokens: dict | None = None) -> StreamingResponse:
     """Pass-through streaming (monitor mode) — forward chunks as they arrive so the client
     keeps live output. When response DLP is on, also *tee* a bounded copy and scan the
     assembled output once the stream ends (no client-facing latency — the scan happens after
@@ -754,7 +755,15 @@ def _passthrough_stream(url: str, payload: dict, headers: dict, model: str = "",
                         yield b
         finally:
             if scan and buf:
+                # DLP sees the stream as the provider sent it, tokens and all. A token
+                # carries no personal data, so nothing is missed by scanning before
+                # reversing, and the tee stays byte-identical to what was scored.
                 _record_stream_dlp(b"".join(buf), model, tool, principal)
+
+    if tokens:
+        from .tokenization import detokenize_stream
+        return StreamingResponse(detokenize_stream(gen(), tokens),
+                                 media_type="text/event-stream")
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
@@ -857,9 +866,11 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
     if base:
         url, headers = _openai_upstream(base, key, "/chat/completions", model)
         if payload.get("stream"):
+            sent, tokens = _tokenize_out(payload, principal, db)
             if not pol.enforce:
-                return _passthrough_stream(url, payload, headers, model, tool, principal)  # monitor: live output (teed)
-            status, ctype, raw = _read_stream(url, payload, headers)
+                return _passthrough_stream(url, sent, headers, model, tool, principal,
+                                           tokens)  # monitor: live output (teed)
+            status, ctype, raw = _read_stream(url, sent, headers)
             decoded = raw.decode("utf-8", "replace")
             act = _stream_tool_use_openai(decoded)
             if act:
@@ -870,6 +881,9 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
                 dlp = _capture_response_dlp(_stream_output_text(decoded), model, tool, principal, db)
                 if dlp and _blocked(dlp, pol):
                     return _openai_error(dlp)
+            if tokens:
+                from .tokenization import detokenize_bytes
+                raw = detokenize_bytes(raw, tokens)
             return Response(content=raw, status_code=status, media_type=ctype)
         sent, tokens = _tokenize_out(payload, principal, db)
         with httpx.Client(timeout=60) as c:
@@ -1104,10 +1118,12 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
         if payload.get("stream"):
             url = base.rstrip("/") + "/v1/messages"
             headers = _anthropic_headers(request, key)
+            sent, tokens = _tokenize_out(payload, principal, db)
             if not pol.enforce:
-                return _passthrough_stream(url, payload, headers, model, tool, principal)  # monitor: live output (teed)
+                return _passthrough_stream(url, sent, headers, model, tool, principal,
+                                           tokens)  # monitor: live output (teed)
             # enforce: buffer, inspect the assembled tool_use, block or replay verbatim.
-            status, ctype, raw = _read_stream(url, payload, headers)
+            status, ctype, raw = _read_stream(url, sent, headers)
             decoded = raw.decode("utf-8", "replace")
             act = _stream_tool_use_anthropic(decoded)
             if act:
@@ -1118,6 +1134,9 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
                 dlp = _capture_response_dlp(_stream_output_text(decoded), model, tool, principal, db)
                 if dlp and _blocked(dlp, pol):
                     return _anthropic_error(dlp)
+            if tokens:
+                from .tokenization import detokenize_bytes
+                raw = detokenize_bytes(raw, tokens)
             return Response(content=raw, status_code=status, media_type=ctype)
         sent, tokens = _tokenize_out(payload, principal, db)
         status, data = _post_upstream_anthropic("/v1/messages", sent, request, base, key)

@@ -176,3 +176,72 @@ def test_disabled_means_the_payload_is_untouched(client, monkeypatch):
         "model": "claude-3", "max_tokens": 16,
         "messages": [{"role": "user", "content": f"SSN {SSN}"}]})
     assert seen["payload"]["messages"][0]["content"] == f"SSN {SSN}"
+
+
+# --- streaming --------------------------------------------------------------------------
+# Claude Code, Cursor, Codex and Gemini CLI all stream by default, so tokenization that
+# only covers the buffered path does not apply to the tools people actually use.
+
+def test_a_token_split_across_chunks_still_reverses():
+    """The reason streaming needs its own path: a chunk boundary can fall anywhere."""
+    from app.tokenization import detokenize_stream
+    _, m = tokenize(f"SSN {SSN}")
+    tok = next(iter(m))
+    full = f'data: {{"text":"for {tok} ok, help"}}\n\n'.encode()
+    want = full.replace(tok.encode(), SSN.encode())
+    for size in (1, 2, 3, 5, 7, 11, 23, 64, 4096):
+        chunks = [full[i:i + size] for i in range(0, len(full), size)]
+        assert b"".join(detokenize_stream(iter(chunks), m)) == want, f"chunk size {size}"
+
+
+def test_streaming_holds_back_only_a_partial_token():
+    """It must stay a stream: holding the whole response would defeat the purpose."""
+    from app.tokenization import TOKEN_MAX, detokenize_stream
+    _, m = tokenize(f"SSN {SSN}")
+    big = b"x" * 10_000
+    first = next(iter(detokenize_stream(iter([big]), m)))
+    assert len(first) >= len(big) - TOKEN_MAX
+
+
+def test_streaming_with_no_tokens_is_a_passthrough():
+    from app.tokenization import detokenize_stream
+    chunks = [b"data: hello\n", b"data: world\n"]
+    assert list(detokenize_stream(iter(chunks), {})) == chunks
+
+
+def test_text_that_merely_starts_like_a_token_survives():
+    """A stray "P" at a chunk edge is held back briefly and must still come out intact."""
+    from app.tokenization import detokenize_stream
+    _, m = tokenize(f"SSN {SSN}")
+    full = b"PLEASE help P PL PLV PLV_ and PLV_NOPE_ZZZZZZ done"
+    for size in (1, 4, 9):
+        chunks = [full[i:i + size] for i in range(0, len(full), size)]
+        assert b"".join(detokenize_stream(iter(chunks), m)) == full
+
+
+def test_streaming_provider_gets_tokens_and_client_gets_plaintext(client, monkeypatch):
+    """End to end on the monitor-mode streaming path, which is what a CLI actually hits."""
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_tokenize", True)
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
+    monkeypatch.setattr(gateway.settings, "gateway_enforce_secrets", False)
+    monkeypatch.setattr(gateway.settings, "gateway_scan_responses", False)
+    monkeypatch.setattr(gateway, "resolve_upstream", lambda *a, **k: ("https://up", "key"))
+    seen = {}
+
+    def fake_passthrough(url, payload, headers, model="", tool="", principal=None, tokens=None):
+        from fastapi.responses import StreamingResponse
+        from app.tokenization import detokenize_stream
+        seen["payload"] = payload
+        echo = payload["messages"][0]["content"].encode()
+        chunks = [echo[i:i + 3] for i in range(0, len(echo), 3)]   # awkward on purpose
+        return StreamingResponse(detokenize_stream(iter(chunks), tokens or {}),
+                                 media_type="text/event-stream")
+
+    monkeypatch.setattr(gateway, "_passthrough_stream", fake_passthrough)
+    r = client.post("/v1/messages", json={
+        "model": "claude-3", "max_tokens": 16, "stream": True,
+        "messages": [{"role": "user", "content": f"Reformat SSN {SSN}"}]})
+    assert r.status_code == 200
+    assert SSN not in seen["payload"]["messages"][0]["content"]        # provider
+    assert SSN in r.text and not TOKEN_RE.search(r.text)               # client
