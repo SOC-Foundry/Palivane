@@ -24,6 +24,16 @@ SINK_DELIVERY = Counter(
 DISPATCH_DROPPED = Counter(
     "palivane_dispatch_dropped_total", "Background delivery jobs dropped (pool saturated)",
 )
+# Tokenization that did not survive the round trip: a Palivane token still visible in what
+# the client receives. It means the model altered or invented one, and the user is reading
+# a placeholder where their own data should be. The only failure mode of gateway
+# tokenization that no test can reach, because it depends on how a real model behaves —
+# and without this it is silent, which is the thing sink_health.py exists to prevent for
+# the delivery sinks. Label is the client tool, never the tenant.
+TOKENIZE_RESIDUAL = Counter(
+    "palivane_tokenize_residual_total",
+    "Palivane tokens still present in a reply after reversal", ["tool"],
+)
 
 
 def route_template(request) -> str:

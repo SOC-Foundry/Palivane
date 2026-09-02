@@ -1123,6 +1123,8 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.ml_capture = body.ml_capture
     if body.redact_mode is not None:
         tenant.redact_mode = _JUDGE[body.redact_mode]       # coaching mode (tri-state)
+    if body.gateway_tokenize is not None:
+        tenant.gateway_tokenize = _JUDGE[body.gateway_tokenize]
     if body.retention_days is not None:
         if body.retention_days < 0:
             raise HTTPException(status_code=400, detail="retention_days must be >= 0")

@@ -106,6 +106,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     gateway_enforce: enforceValue(tenant),
     client_enforce: clientEnforceValue(tenant),
     redact_mode: tenant?.redact_mode === true ? "on" : tenant?.redact_mode === false ? "off" : "inherit",
+    gateway_tokenize: tenant?.gateway_tokenize === true ? "on"
+      : tenant?.gateway_tokenize === false ? "off" : "inherit",
     gateway_block_severity: tenant?.gateway_block_severity || "",
     mcp_block_severity: tenant?.mcp_block_severity || "",
     ci_block_severity: tenant?.ci_block_severity || "",
@@ -130,6 +132,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         gateway_enforce: org.gateway_enforce,
         client_enforce: org.client_enforce,
         redact_mode: org.redact_mode,
+        gateway_tokenize: org.gateway_tokenize,
         gateway_block_severity: org.gateway_block_severity,
         mcp_block_severity: org.mcp_block_severity,
         ci_block_severity: org.ci_block_severity,
@@ -701,6 +704,21 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
               <option value="on">Enforce (block risky prompts & tool calls)</option>
               <option value="off">Monitor (confirmed secret/PII leaks still block)</option>
             </select>
+          </label>
+          <label>Gateway tokenization (personal data)
+            <select value={org.gateway_tokenize} onChange={setField("gateway_tokenize")}>
+              <option value="inherit">Inherit (global)</option>
+              <option value="on">Tokenize, the provider never sees the value</option>
+              <option value="off">Off, send as typed</option>
+            </select>
+            <span className="muted" style={{ fontSize: 11.5, marginTop: 3 }}>
+              Gateway traffic only. Personal data is replaced by a placeholder on the way to
+              the model and restored in the reply, so the model reasons over a record's shape
+              without the provider holding its contents. Scoring still runs on the original
+              text. Credentials are never tokenized, they are blocked. Pair with a Monitor
+              block severity for PII, or the confirmed-leak stop refuses the prompt before
+              tokenization can make it safe to send.
+            </span>
           </label>
           <label>Coaching mode (secrets / PII)
             <select value={org.redact_mode} onChange={setField("redact_mode")}>

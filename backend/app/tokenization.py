@@ -169,7 +169,22 @@ def _emit_upto(buf: bytes) -> int:
     return len(buf)
 
 
-def detokenize_stream(chunks, mapping: dict[str, str]):
+# A token that survives reversal is the one failure this feature has that no test can
+# reach: it depends on whether a real model echoes a token intact. Deliberately LOOSER than
+# TOKEN_RE, because the interesting case is a model that altered one — "PLV-USSN-A7C9D5",
+# a stray case change, a split — none of which the strict pattern matches any more. What
+# matters is that the user is looking at a placeholder instead of their own data.
+_RESIDUAL_RE_B = re.compile(rb"\bPLV[-_ ][A-Za-z0-9]{2,12}[-_ ]", re.I)
+
+
+def count_residuals(data: bytes | str) -> int:
+    """How many Palivane tokens are still visible in text that has already been reversed."""
+    if isinstance(data, str):
+        data = data.encode("utf-8", "replace")
+    return len(_RESIDUAL_RE_B.findall(data)) if data else 0
+
+
+def detokenize_stream(chunks, mapping: dict[str, str], on_residual=None):
     """Wrap a byte-chunk iterator, reversing tokens as they go.
 
     Holds back only a possible partial token (at most 23 bytes), so the client still sees
@@ -179,14 +194,21 @@ def detokenize_stream(chunks, mapping: dict[str, str]):
         yield from chunks
         return
     carry = b""
+    residual = 0
     for chunk in chunks:
         buf = carry + chunk
         cut = _emit_upto(buf)
         carry = buf[cut:]
         if cut:
-            yield detokenize_bytes(buf[:cut], mapping)
+            out = detokenize_bytes(buf[:cut], mapping)
+            residual += count_residuals(out)
+            yield out
     if carry:
-        yield detokenize_bytes(carry, mapping)
+        out = detokenize_bytes(carry, mapping)
+        residual += count_residuals(out)
+        yield out
+    if residual and on_residual:
+        on_residual(residual)
 
 
 def detokenize_obj(obj, mapping: dict[str, str]):

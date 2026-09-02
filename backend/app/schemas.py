@@ -362,6 +362,8 @@ class TenantUpdate(BaseModel):
     # follows the global CLIENT_ENFORCE (default monitor).
     client_enforce: Literal["on", "off", "inherit"] | None = None
     redact_mode: Literal["on", "off", "inherit"] | None = None   # coaching mode (tri-state)
+    # Tokenize personal data in gateway traffic for this org (tri-state).
+    gateway_tokenize: Literal["on", "off", "inherit"] | None = None
     gateway_block_severity: str | None = None  # ""|low|suspicious|high|critical
     mcp_block_severity: str | None = None      # block threshold for capture-plane verdicts
     ci_block_severity: str | None = None       # block threshold for CI-runner scans
