@@ -147,9 +147,10 @@ export default function Landing({ onSignIn }) {
           <div className="lp-split-text">
             <span className="lp-eyebrow">Visibility</span>
             <h2 className="lp-h2">You finally know which AI tools are in use</h2>
-            <p className="lp-sub">Every AI tool your company touches, who or which repo is using it,
+            <p className="lp-sub">The AI tools your company touches, who or which repo is using it,
               and what data went where, including the ones nobody asked permission for. Unlike
-              log-only tools, the exposure column shows the real sensitive data each one received.</p>
+              log-only tools, the exposure column shows the real sensitive data each one received,
+              and names the devices reporting nothing rather than counting them as clean.</p>
             <a className="lp-textlink" href="/coverage">What each surface requires →</a>
           </div>
           <div className="lp-split-media">
