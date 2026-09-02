@@ -807,6 +807,33 @@ def _openai_upstream(base: str, key: str, path: str, model: str) -> tuple[str, d
     return url, headers
 
 
+def _tokenize_out(payload: dict, principal: Principal, db: Session) -> tuple[dict, dict]:
+    """Substitute personal data in an outbound payload, returning it and the reverse map.
+
+    Called AFTER scoring, never before: detection must see the real text or the verdict
+    would be about the tokens. Returns the payload untouched and an empty map when the
+    feature is off, so every caller can run this unconditionally.
+
+    The map is a local in the request handler for the length of one exchange. It is never
+    written anywhere, which is the point: a stored plaintext-to-token vault would be the
+    sensitive data again, in one place, and Palivane's promise is that the verdict is kept
+    and the text is not.
+
+    Interacts with GATEWAY_ENFORCE_SECRETS, and an operator should know how. That default
+    hard-blocks a CONFIRMED secret/PII leak even in monitor mode, and it runs first, so a
+    prompt carrying a recognised SSN is refused before tokenization could have made it safe
+    to send. That is the right order (blocking beats substituting when you are unsure), but
+    it means an org that wants tokenization for personal data is choosing substitution over
+    refusal and should turn the certain-leak block off for those categories. Credentials are
+    unaffected either way: they are never tokenized, so they are still refused.
+    """
+    if not settings.gateway_tokenize:
+        return payload, {}
+    from .tokenization import tokenize_payload
+    t = db.get(Tenant, principal.tenant_id) if principal.tenant_id else None
+    return tokenize_payload(payload, (t.custom_pii_patterns or "") if t else "")
+
+
 @router.post("/chat/completions")
 async def chat_completions(request: Request, principal: Principal = Depends(get_gateway_principal),
                            db: Session = Depends(get_db)):
@@ -844,12 +871,18 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
                 if dlp and _blocked(dlp, pol):
                     return _openai_error(dlp)
             return Response(content=raw, status_code=status, media_type=ctype)
+        sent, tokens = _tokenize_out(payload, principal, db)
         with httpx.Client(timeout=60) as c:
-            r = c.post(url, json=payload, headers=headers)
+            r = c.post(url, json=sent, headers=headers)
         data = r.json()
+        # Response DLP scans what the provider actually returned, tokens and all. A token
+        # carries no personal data, so nothing is missed by scanning before reversing.
         blocked = _scan_response(data, model, tool, pol, principal, db)
         if blocked:
             return _openai_error(blocked)
+        if tokens:
+            from .tokenization import detokenize_obj
+            data = detokenize_obj(data, tokens)
         return JSONResponse(status_code=r.status_code, content=data)
     return JSONResponse(content=_openai_stub(model, verdict))
 
@@ -1086,9 +1119,12 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
                 if dlp and _blocked(dlp, pol):
                     return _anthropic_error(dlp)
             return Response(content=raw, status_code=status, media_type=ctype)
-        status, data = _post_upstream_anthropic("/v1/messages", payload, request, base, key)
+        sent, tokens = _tokenize_out(payload, principal, db)
+        status, data = _post_upstream_anthropic("/v1/messages", sent, request, base, key)
         # Response-side: DLP on the model's output (secrets/PII), and block a dangerous
         # tool_use it just requested, before the client sees/executes it (non-streaming).
+        # Both run on the provider's reply as it arrived; a token carries no personal data,
+        # so scanning before reversing misses nothing.
         if settings.gateway_scan_responses:
             dlp = _capture_response_dlp(_response_output_text(data), model, tool, principal, db)
             if pol.enforce and dlp and _blocked(dlp, pol):
@@ -1097,6 +1133,9 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
             ragentic = _capture_response_agentic(data, tool, principal, db)
             if _agentic_block(ragentic, pol):
                 return _anthropic_error(ragentic)
+        if tokens:
+            from .tokenization import detokenize_obj
+            data = detokenize_obj(data, tokens)
         return JSONResponse(status_code=status, content=data)
     return JSONResponse(content=_anthropic_stub(model, verdict))
 
