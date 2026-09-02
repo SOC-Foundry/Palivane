@@ -100,7 +100,6 @@ export default function Landing({ onSignIn }) {
             {/* Straight into a read-only seeded org (Login auto-triggers on #demo) —
                 security buyers want to see real findings before installing anything. */}
             <a className="lp-nav-ghost wide" href={demoUrl()}>See the live demo</a>
-            <a className="lp-nav-ghost wide" href="/setup">Set it up</a>
           </div>
           <div className="lp-hero-cmd">
             <code>curl -fsSL https://app.palivane.io/install.sh | bash</code>
@@ -262,7 +261,6 @@ export default function Landing({ onSignIn }) {
               blocking when you have seen enough.</p>
             <div className="lp-cta">
               <ConsoleCta onSignIn={onSignIn} />
-              <a className="lp-nav-ghost wide" href="/setup">Set it up</a>
             </div>
           </div>
         </div>
