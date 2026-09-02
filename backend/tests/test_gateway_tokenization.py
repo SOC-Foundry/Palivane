@@ -309,3 +309,73 @@ def test_gemini_end_to_end(client, monkeypatch):
     assert r.status_code == 200
     assert SSN not in seen["payload"]["contents"][0]["parts"][0]["text"]   # provider
     assert SSN in r.text and not TOKEN_RE.search(r.text)                   # client
+
+
+# --- per-tenant opt-in and the residual counter ------------------------------------------
+# GATEWAY_TOKENIZE alone is all tenants or none, which makes a pilot impossible: turning it
+# on changes what every customer's provider receives at once.
+
+def test_a_tenant_can_opt_in_while_the_deployment_default_is_off(client, monkeypatch,
+                                                                 db_factory):
+    from app import gateway
+    from app.models import Tenant
+    monkeypatch.setattr(gateway.settings, "gateway_tokenize", False)      # deployment: off
+    monkeypatch.setattr(gateway.settings, "gateway_enforce_secrets", False)
+    monkeypatch.setattr(gateway.settings, "gateway_scan_responses", False)
+    monkeypatch.setattr(gateway, "resolve_upstream", lambda *a, **k: ("https://up", "key"))
+    db = db_factory()
+    db.query(Tenant).filter(Tenant.slug == "acme").first().gateway_tokenize = True
+    db.commit(); db.close()
+
+    seen = {}
+
+    def fake_post(path, payload, request, base, key):
+        seen["payload"] = payload
+        return 200, {"content": [], "role": "assistant"}
+
+    monkeypatch.setattr(gateway, "_post_upstream_anthropic", fake_post)
+    client.post("/v1/messages", json={"model": "claude-3", "max_tokens": 8,
+                                      "messages": [{"role": "user", "content": f"SSN {SSN}"}]})
+    assert SSN not in seen["payload"]["messages"][0]["content"]
+
+
+def test_a_tenant_can_opt_out_while_the_deployment_default_is_on(client, monkeypatch,
+                                                                 db_factory):
+    from app import gateway
+    from app.models import Tenant
+    monkeypatch.setattr(gateway.settings, "gateway_tokenize", True)       # deployment: on
+    monkeypatch.setattr(gateway.settings, "gateway_enforce_secrets", False)
+    monkeypatch.setattr(gateway, "resolve_upstream", lambda *a, **k: ("https://up", "key"))
+    db = db_factory()
+    db.query(Tenant).filter(Tenant.slug == "acme").first().gateway_tokenize = False
+    db.commit(); db.close()
+
+    seen = {}
+
+    def fake_post(path, payload, request, base, key):
+        seen["payload"] = payload
+        return 200, {"content": [], "role": "assistant"}
+
+    monkeypatch.setattr(gateway, "_post_upstream_anthropic", fake_post)
+    client.post("/v1/messages", json={"model": "claude-3", "max_tokens": 8,
+                                      "messages": [{"role": "user", "content": f"SSN {SSN}"}]})
+    assert seen["payload"]["messages"][0]["content"] == f"SSN {SSN}"
+
+
+def test_residuals_catch_a_model_that_mangled_a_token():
+    """The one failure no test can reach directly: it depends on real model behaviour. The
+    detector is looser than TOKEN_RE on purpose, because a mangled token no longer matches
+    the strict pattern and the user is still reading a placeholder."""
+    from app.tokenization import count_residuals
+    assert count_residuals("all good, 123-45-6789") == 0        # a clean reversal
+    assert count_residuals("see PLV-USSN-A7C9D5") == 1          # separators changed
+    assert count_residuals("see PLV_USSN_ABCDEF") == 1          # not in our map
+    assert count_residuals("PLVDATA is a product name") == 0    # not token-shaped
+
+
+def test_the_stream_reports_residuals_once_at_the_end():
+    from app.tokenization import detokenize_stream, tokenize
+    _, m = tokenize(f"SSN {SSN}")
+    got = []
+    list(detokenize_stream(iter([b"a PLV-USSN-DEAD01 b", b" PLV-PCN-BEEF02"]), m, got.append))
+    assert got == [2]
