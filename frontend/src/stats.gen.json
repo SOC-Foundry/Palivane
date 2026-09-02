@@ -1,4 +1,5 @@
 {
   "detection_checks": 44,
-  "secret_formats": 56
+  "secret_formats": 56,
+  "browser_sites": 21
 }
