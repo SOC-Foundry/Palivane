@@ -762,8 +762,9 @@ def _passthrough_stream(url: str, payload: dict, headers: dict, model: str = "",
 
     if tokens:
         from .tokenization import detokenize_stream
-        return StreamingResponse(detokenize_stream(gen(), tokens),
-                                 media_type="text/event-stream")
+        return StreamingResponse(
+            detokenize_stream(gen(), tokens, lambda n: _note_residual(n, tool)),
+            media_type="text/event-stream")
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
@@ -836,11 +837,42 @@ def _tokenize_out(payload: dict, principal: Principal, db: Session) -> tuple[dic
     refusal and should turn the certain-leak block off for those categories. Credentials are
     unaffected either way: they are never tokenized, so they are still refused.
     """
-    if not settings.gateway_tokenize:
+    t = db.get(Tenant, principal.tenant_id) if principal.tenant_id else None
+    # Tri-state, like coaching and the judge: the org's own setting wins, NULL inherits the
+    # deployment default. Per-org because switching this on changes what a provider
+    # receives, so it has to be possible to pilot on one org rather than on all of them.
+    on = t.gateway_tokenize if (t is not None and t.gateway_tokenize is not None) \
+        else settings.gateway_tokenize
+    if not on:
         return payload, {}
     from .tokenization import tokenize_payload
-    t = db.get(Tenant, principal.tenant_id) if principal.tenant_id else None
     return tokenize_payload(payload, (t.custom_pii_patterns or "") if t else "")
+
+
+def _reverse_bytes(raw: bytes, tokens: dict, tool: str) -> bytes:
+    """Put real values back into a raw reply, and count any token that survived."""
+    from .tokenization import count_residuals, detokenize_bytes
+    out = detokenize_bytes(raw, tokens)
+    _note_residual(count_residuals(out), tool)
+    return out
+
+
+def _reverse_obj(data, tokens: dict, tool: str):
+    """Same for a parsed reply."""
+    from .tokenization import count_residuals, detokenize_obj
+    out = detokenize_obj(data, tokens)
+    _note_residual(count_residuals(json.dumps(out)), tool)
+    return out
+
+
+def _note_residual(n: int, tool: str) -> None:
+    """A Palivane token still visible after reversal means the model altered or invented
+    one and the caller is reading a placeholder instead of their own data. It is the only
+    failure of tokenization that depends on real model behaviour, so it cannot be tested
+    for — counting it is what stops it being silent."""
+    if n:
+        from .metrics import TOKENIZE_RESIDUAL
+        TOKENIZE_RESIDUAL.labels(tool=tool or "unknown").inc(n)
 
 
 @router.post("/chat/completions")
@@ -882,8 +914,7 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
                 if dlp and _blocked(dlp, pol):
                     return _openai_error(dlp)
             if tokens:
-                from .tokenization import detokenize_bytes
-                raw = detokenize_bytes(raw, tokens)
+                raw = _reverse_bytes(raw, tokens, tool)
             return Response(content=raw, status_code=status, media_type=ctype)
         sent, tokens = _tokenize_out(payload, principal, db)
         with httpx.Client(timeout=60) as c:
@@ -895,8 +926,7 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
         if blocked:
             return _openai_error(blocked)
         if tokens:
-            from .tokenization import detokenize_obj
-            data = detokenize_obj(data, tokens)
+            data = _reverse_obj(data, tokens, tool)
         return JSONResponse(status_code=r.status_code, content=data)
     return JSONResponse(content=_openai_stub(model, verdict))
 
@@ -1049,8 +1079,7 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
                 if dlp and _blocked(dlp, pol):
                     return _openai_error(dlp)
             if tokens:
-                from .tokenization import detokenize_bytes
-                raw = detokenize_bytes(raw, tokens)
+                raw = _reverse_bytes(raw, tokens, tool)
             return Response(content=raw, status_code=status, media_type=ctype)
         with httpx.Client(timeout=120) as c:
             r = c.post(url, json=sent, headers=headers)
@@ -1065,8 +1094,7 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
             if _agentic_block(ragentic, pol):
                 return _openai_error(ragentic)
         if tokens:
-            from .tokenization import detokenize_obj
-            data = detokenize_obj(data, tokens)
+            data = _reverse_obj(data, tokens, tool)
         return JSONResponse(status_code=r.status_code, content=data)
     return JSONResponse(content=_responses_stub(model, verdict))
 
@@ -1143,8 +1171,7 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
                 if dlp and _blocked(dlp, pol):
                     return _anthropic_error(dlp)
             if tokens:
-                from .tokenization import detokenize_bytes
-                raw = detokenize_bytes(raw, tokens)
+                raw = _reverse_bytes(raw, tokens, tool)
             return Response(content=raw, status_code=status, media_type=ctype)
         sent, tokens = _tokenize_out(payload, principal, db)
         status, data = _post_upstream_anthropic("/v1/messages", sent, request, base, key)
@@ -1161,8 +1188,7 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
             if _agentic_block(ragentic, pol):
                 return _anthropic_error(ragentic)
         if tokens:
-            from .tokenization import detokenize_obj
-            data = detokenize_obj(data, tokens)
+            data = _reverse_obj(data, tokens, tool)
         return JSONResponse(status_code=status, content=data)
     return JSONResponse(content=_anthropic_stub(model, verdict))
 
@@ -1301,8 +1327,7 @@ async def _gemini_entry(model: str, method: str, request: Request,
         if tokens:
             # _forward_gemini buffers the upstream bytes verbatim for both generateContent
             # and streamGenerateContent, so one byte-level pass covers both.
-            from .tokenization import detokenize_bytes
-            return Response(content=detokenize_bytes(resp.body, tokens),
+            return Response(content=_reverse_bytes(resp.body, tokens, tool),
                             status_code=resp.status_code,
                             media_type=resp.media_type or "application/json")
         return resp
