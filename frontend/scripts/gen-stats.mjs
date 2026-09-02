@@ -14,10 +14,11 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const detectors = join(here, "..", "..", "backend", "app", "detectors");
+const manifest = join(here, "..", "..", "extension", "manifest.json");
 const outPath = join(here, "..", "src", "stats.gen.json");
 
-if (!existsSync(detectors)) {
-  console.log("gen-stats: backend source not present (image build) — keeping committed stats");
+if (!existsSync(detectors) || !existsSync(manifest)) {
+  console.log("gen-stats: engine source not present (image build) — keeping committed stats");
   process.exit(0);
 }
 
@@ -35,7 +36,20 @@ const patterns = readFileSync(join(detectors, "patterns.py"), "utf8");
 const block = patterns.split("SECRET_PATTERNS")[1].split("\n]")[0];
 const formats = new Set([...block.matchAll(/^\s*\("([^"]+)",/gm)].map((m) => m[1]));
 
-const stats = { detection_checks: titles.size, secret_formats: formats.size };
+// Distinct AI sites the browser extension covers, from the extension's own content-script
+// match patterns. Counted as SITES, not patterns: several products need two patterns each
+// (an apex plus its www, chatgpt.com plus the legacy chat.openai.com), and counting those
+// twice is how a hand-written "24" ended up on the landing page against a real 21.
+const mf = JSON.parse(readFileSync(manifest, "utf8"));
+const ALIAS = { "chat.openai.com": "chatgpt.com" };
+const sites = new Set(
+  (mf.content_scripts || []).flatMap((cs) => cs.matches || []).map((m) => {
+    const host = m.split("://")[1].split("/")[0].replace(/^www\./, "");
+    return ALIAS[host] || host;
+  }));
+
+const stats = { detection_checks: titles.size, secret_formats: formats.size,
+                browser_sites: sites.size };
 const next = JSON.stringify(stats, null, 2) + "\n";
 
 if (process.argv.includes("--check")) {

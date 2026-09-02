@@ -15,7 +15,7 @@ const TIERS = [
     features: [
       "Per seat: bring your whole team, add or drop seats any time",
       "Covers the browser, desktop AI apps, AI coding tools, your code, and GitHub Actions",
-      "Live findings, every AI tool in use, and who is covered",
+      "Live findings, the AI tools in use, and who is covered and who is not",
       "Watch-only or blocking, your call",
       "Alerts where you already work, plus hourly or daily digests",
       "Push the setup to managed laptops (Jamf · Intune · Group Policy)",
