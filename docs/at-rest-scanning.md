@@ -10,7 +10,7 @@ the data.
 and `palivane-github-scan` all run the same local detector (`palivane_detect.py`) on the
 machine holding the data, and send Palivane only what they found: category, label, line
 number, and a masked preview such as `AKIA••••MPLE`. Bucket objects and repository files
-never reach Palivane — not on the managed service, and not on your own deployment. The
+never reach Palivane, not on the managed service and not on your own deployment. The
 pre-commit hook is the one exception, and only because it scans a file on the very machine
 the request comes from, so there is nothing to withhold.
 
@@ -42,7 +42,7 @@ palivane-s3-scan my-data-bucket --prefix exports/ --record
 palivane-s3-scan my-data-bucket --dry-run        # list what it would scan + public verdict; sends nothing
 ```
 
-It reads the bucket's text objects **and its PDFs, Word, Excel and PowerPoint files** — a
+It reads the bucket's text objects **and its PDFs, Word, Excel and PowerPoint files**: a
 bucket of exported reports is exactly where a customer record sits (skips images, which need
 OCR the stdlib scanner cannot carry, and anything over `--max-object-bytes`,
 default 1 MB) through the detection engine, and separately determines whether the bucket is
@@ -160,7 +160,7 @@ GITHUB_TOKEN=ghp_… palivane-github-scan --repo acme/api --repo acme/web
 ```
 
 `palivane-github-scan` enumerates the org's/user's/explicit repos, walks each default-branch
-tree, fetches + decodes the text blobs, and scans them **in the process running the sweep** —
+tree, fetches + decodes the text blobs, and scans them **in the process running the sweep**:
 no checkout required, and no source uploaded. Only files with findings are reported at all,
 so a clean repo produces no request; the sweep's traffic is proportional to what it found,
 not to how much source your org has.
