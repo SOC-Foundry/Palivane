@@ -94,7 +94,7 @@ export function SiteNav({ onSignIn }) {
 
       <div className="lp-nav-actions">
         {signIn}
-        <a className="primary-btn slim" href="/setup">Get started</a>
+        <a className="primary-btn slim" href={signInUrl()}>Get started</a>
       </div>
 
       <button type="button" className="lp-burger" aria-label="Menu" aria-expanded={mobile}
@@ -117,7 +117,7 @@ export function SiteNav({ onSignIn }) {
             </div>
           ))}
           <div className="lp-mobile-actions">{signIn}
-            <a className="primary-btn slim" href="/setup">Get started</a></div>
+            <a className="primary-btn slim" href={signInUrl()}>Get started</a></div>
         </div>
       )}
     </header>
