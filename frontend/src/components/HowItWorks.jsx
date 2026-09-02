@@ -3,6 +3,7 @@
 // table, monitor/enforce split) rather than a wall of prose. Content mirrors README
 // "How detection works", kept accurate for a security-minded reader evaluating the engine.
 import { SiteNav, SiteFooter, Shot, Clip } from "./SiteChrome.jsx";
+import { signInUrl } from "../deployment.js";
 import { IconInbox, IconShield, IconList, IconTarget, IconAlert, IconClipboard, IconPlug } from "./icons.jsx";
 
 const PIPELINE = [
@@ -217,7 +218,7 @@ export default function HowItWorks() {
               miss, running on a provider API key you control. Turn it off for data-residency and the
               engine still fully works.
             </div>
-            <a className="primary-btn slim" href="/#signin" style={{ textDecoration: "none" }}>Open the console →</a>
+            <a className="primary-btn slim" href={signInUrl()} style={{ textDecoration: "none" }}>Open the console →</a>
           </div>
         </div>
       </section>

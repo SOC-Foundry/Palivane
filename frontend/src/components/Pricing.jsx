@@ -1,13 +1,16 @@
 // Public pricing page at /pricing. Two purchasable tiers (Team · Enterprise) plus the
 // 14-day trial; mirrors the real plan gates in backend app/plans.py, keep in sync.
 import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
+import { signInUrl } from "../deployment.js";
 
 const TIERS = [
   {
     name: "Team", price: "$12", per: "per user / month ($10 annual)",
     blurb: "The plan most companies run. Covers everyone and tells you when something happens.",
-    // Self-serve: pay by card from Settings → Your plan in the console (Stripe Checkout).
-    cta: { label: "Upgrade in the console →", href: "/" },
+    // Self-serve: sign into the console, then pay by card in Settings → Your plan. Uses
+    // signInUrl() so it crosses to app.palivane.io on the split managed deployment (a bare
+    // "/" would strand the buyer on the marketing origin).
+    cta: { label: "Upgrade in the console →", href: signInUrl() },
     featured: true,
     features: [
       "Per seat — bring your whole team, add or drop seats any time",
@@ -36,7 +39,7 @@ const TIERS = [
   {
     name: "Trial", price: "14 days", per: "free, everything unlocked",
     blurb: "See real findings from your own traffic before you decide anything.",
-    cta: { label: "Start a 14-day trial →", href: "/#signin" },
+    cta: { label: "Start a 14-day trial →", href: signInUrl() },
     features: [
       "Every feature of Enterprise, for two weeks",
       "First findings in about two minutes",
