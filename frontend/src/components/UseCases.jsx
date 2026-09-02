@@ -95,9 +95,9 @@ export default function UseCases() {
       <section className="lp-section alt">
         <div className="lp-wrap">
           <h2 className="lp-h2">Start by seeing what is actually happening</h2>
-          <p className="lp-sub">Before you write a policy, get the list: every AI tool in use,
-             approved or not, broken down by team, and what sensitive data each one actually
-             received.</p>
+          <p className="lp-sub">Before you write a policy, get the list: the AI tools in use,
+             approved or not, broken down by team, what sensitive data each one actually
+             received, and which devices are not reporting at all.</p>
           <Shot lead src="/shots/discovery.png?v=5" alt="Inventory of AI tools in use" />
         </div>
       </section>
