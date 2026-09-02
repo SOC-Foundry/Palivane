@@ -62,6 +62,9 @@ export const api = {
   resetPassword: (token, password) =>
     req("/auth/reset", { method: "POST", body: JSON.stringify({ token, password }) }),
   me: () => req("/auth/me"),
+  patternFromExamples: (examples, counter_examples) =>
+    req("/policies/pattern-from-examples",
+        { method: "POST", body: JSON.stringify({ examples, counter_examples }) }),
   domains: () => req("/domains"),
   claimDomain: (domain) => req("/domains", { method: "POST", body: JSON.stringify({ domain }) }),
   verifyDomain: (id) => req(`/domains/${id}/verify`, { method: "POST" }),
