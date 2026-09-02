@@ -77,8 +77,9 @@ const NAV = [
     { v: "report",      icon: <IconClipboard />, label: "Report" },
     { v: "audit",       icon: <IconClipboard />, label: "Audit" },
   ]},
-  // No heading: Help is not a record, and a non-admin sees only Findings and Help, so a
-  // lone "RECORDS" label above it would be the one heading they ever saw, and wrong.
+  // No heading: Help is not a record, and a non-admin sees only Findings, Your findings
+  // and Help, so a lone "RECORDS" label above it would be the one heading they ever saw,
+  // and wrong.
   { head: null, items: [
     { v: "help",        icon: <IconBook />,      label: "Help",        admin: false },
   ]},
@@ -334,7 +335,7 @@ export default function App() {
         <nav className="nav" aria-label="Console" ref={navRef}>
           {NAV.map((group) => {
             const shown = group.items.filter((it) => it.admin === false || isAdmin);
-            if (!shown.length) return null;   // a non-admin sees only Findings and Help
+            if (!shown.length) return null;   // a non-admin sees Findings, Your findings, Help
             return (
               <div key={group.head ?? "_"} className="nav-group">
                 {group.head && <span className="nav-head">{group.head}</span>}
