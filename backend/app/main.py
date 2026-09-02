@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from .auth import get_current_user, require_admin, router as auth_router
@@ -2359,6 +2359,88 @@ def bulk_update_status(body: BulkStatusUpdate, current: User = Depends(get_curre
     audit_log.record(db, current.tenant_id, current.email, "finding.bulk_status",
                      detail={"status": body.status, "count": n, "ids": body.ids[:50]})
     return {"updated": n, "status": body.status}
+
+
+# --- Your own findings: the person a finding belongs to answers for it ----------------
+#
+# Everything a scan turns up currently lands in one admin queue, so closing an incident
+# needs a security person to work out whose file it is, ask them, and wait. That does not
+# scale past a small fleet, and the answer is nearly always something only the owner knows:
+# it is fixed, it is not mine, or it is approved and here is why.
+#
+# So: scope the queue to the person, and let them answer. Deliberately an ANSWER and not a
+# verdict. Responding never sets `dismissed` — the one person with a motive to bury a real
+# leak cannot close it, and an admin still works the same queue, now with the owner's reply
+# attached instead of having to go and ask for it.
+
+_MY_ACTIONS = {
+    "fixed": "the exposure is removed or access is restricted",
+    "not_mine": "this is not the owner's data or account",
+    "approved": "this is expected and sanctioned",
+}
+
+
+def _mine(q, db, current: User):
+    """Restrict a Finding query to rows belonging to the caller: their capture attribution
+    (`sender`, how at-rest scans record a Slack actor or a Salesforce OwnerId) or their
+    ownership of the source document (origin.owner, set by content_origin)."""
+    email = (current.email or "").strip().lower()
+    if not email:
+        return q.filter(Finding.id == -1)          # no identity, no rows
+    return q.filter(or_(func.lower(Finding.sender) == email,
+                        func.lower(Finding.agent) == email))
+
+
+@app.get("/api/my/findings")
+def my_findings(status: str = "open", limit: int = 100,
+                current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Findings attributed to the caller. Any role: this is the one console view that is
+    for the person who caused or owns the finding rather than for the security team."""
+    q = db.query(Finding).filter(Finding.tenant_id == current.tenant_id)
+    if status and status != "all":
+        q = q.filter(Finding.status == status)
+    rows = _mine(q, db, current).order_by(Finding.last_seen.desc()).limit(min(limit, 500)).all()
+    # Owners get the summary, never the stored prose: the point is to tell someone their own
+    # document leaked, not to hand every user a content-reading surface.
+    out = []
+    for r in rows:
+        d = r.to_summary()
+        d["remediation"] = remediation_for(r.signals or [])
+        out.append(d)
+    return {"findings": out, "actions": _MY_ACTIONS}
+
+
+@app.post("/api/my/findings/{finding_id}/respond")
+def my_finding_respond(finding_id: int, body: dict,
+                       current: User = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    """Answer for a finding that is yours. 404 (not 403) when it is not: whether a finding
+    exists for someone else is not something an arbitrary user should be able to probe."""
+    action = str(body.get("action", "")).strip()
+    note = str(body.get("note", "")).strip()[:1000]
+    if action not in _MY_ACTIONS:
+        raise HTTPException(status_code=422,
+                            detail=f"action must be one of {sorted(_MY_ACTIONS)}")
+    if action == "not_mine" and not note:
+        raise HTTPException(status_code=422,
+                            detail="say whose it is, or what makes it wrong, so an admin can act")
+    q = db.query(Finding).filter(Finding.tenant_id == current.tenant_id,
+                                 Finding.id == finding_id)
+    row = _mine(q, db, current).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="finding not found")
+    from datetime import datetime as _now, timezone as _tz
+    row.owner_response = {"action": action, "note": note, "by": current.email,
+                          "at": _now.now(_tz.utc).isoformat()}
+    # Answered, not closed. `triaged` moves it out of the untouched queue while leaving it
+    # open to an admin; `dismissed` stays a decision only the security team makes.
+    if row.status == "open":
+        row.status = "triaged"
+    db.commit()
+    from . import audit_log
+    audit_log.record(db, current.tenant_id, current.email, "finding.owner_response",
+                     target=str(finding_id), detail={"action": action, "note": note[:200]})
+    return {"id": finding_id, "status": row.status, "owner_response": row.owner_response}
 
 
 @app.post("/api/findings/purge")

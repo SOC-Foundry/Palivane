@@ -538,6 +538,11 @@ class Finding(Base):
     # document Palivane scanned at rest, the source is attached here —
     # {source, ref, title, owner, containment}. Empty when no origin matched.
     origin = Column(JSON, default=None)
+    # What the person this finding belongs to said about it: {action, note, by, at}.
+    # Written only through /api/my/findings/{id}/respond, which requires the caller to BE
+    # that person. An answer, not a verdict: responding never dismisses a finding, so a
+    # real leak cannot be closed by the one person with a reason to want it closed.
+    owner_response = Column(JSON, default=None)
 
     def to_summary(self) -> dict:
         return {
@@ -563,6 +568,10 @@ class Finding(Base):
             "judge_used": self.judge_used,
             # Where leaked content came from, when matched to a scanned document.
             "origin": self.origin or None,
+            # The owner's own answer, if they have given one. On the summary as well as the
+            # detail so an admin sees "already answered" while triaging the queue, rather
+            # than opening each row to find out.
+            "owner_response": self.owner_response or None,
         }
 
     def to_detail(self, dek: str | None = None) -> dict:

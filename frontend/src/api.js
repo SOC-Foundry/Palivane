@@ -62,6 +62,9 @@ export const api = {
   resetPassword: (token, password) =>
     req("/auth/reset", { method: "POST", body: JSON.stringify({ token, password }) }),
   me: () => req("/auth/me"),
+  myFindings: (status = "open") => req(`/my/findings?status=${encodeURIComponent(status)}`),
+  respondToMyFinding: (id, action, note) =>
+    req(`/my/findings/${id}/respond`, { method: "POST", body: JSON.stringify({ action, note }) }),
   patternFromExamples: (examples, counter_examples) =>
     req("/policies/pattern-from-examples",
         { method: "POST", body: JSON.stringify({ examples, counter_examples }) }),
