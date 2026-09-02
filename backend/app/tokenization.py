@@ -238,4 +238,34 @@ def tokenize_payload(payload: dict, extra_patterns: str = "") -> tuple[dict, dic
         out["messages"] = [({**m, "content": do_content(m["content"])}
                             if isinstance(m, dict) and "content" in m else m)
                            for m in msgs]
+
+    # OpenAI Responses API (Codex CLI's default): `input` replaces `messages` and is a bare
+    # string or a list of typed items; `instructions` is its system prompt.
+    if isinstance(out.get("instructions"), str):
+        out["instructions"], _ = tokenize(out["instructions"], extra_patterns, mapping)
+    inp = out.get("input")
+    if isinstance(inp, str):
+        out["input"], _ = tokenize(inp, extra_patterns, mapping)
+    elif isinstance(inp, list):
+        out["input"] = [({**it, "content": do_content(it["content"])}
+                         if isinstance(it, dict) and "content" in it else it)
+                        for it in inp]
+
+    # Gemini: text lives in parts[].text, under contents[] and the system instruction.
+    def do_parts(node):
+        if not isinstance(node, dict) or not isinstance(node.get("parts"), list):
+            return node
+        parts = []
+        for part in node["parts"]:
+            if isinstance(part, dict) and isinstance(part.get("text"), str):
+                part = dict(part)
+                part["text"], _ = tokenize(part["text"], extra_patterns, mapping)
+            parts.append(part)
+        return {**node, "parts": parts}
+
+    if isinstance(out.get("contents"), list):
+        out["contents"] = [do_parts(c) for c in out["contents"]]
+    for key in ("systemInstruction", "system_instruction"):
+        if isinstance(out.get(key), dict):
+            out[key] = do_parts(out[key])
     return out, mapping

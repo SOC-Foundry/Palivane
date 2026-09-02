@@ -1032,10 +1032,12 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
     base, key = resolve_upstream("openai", principal.tenant_id, db)
     if base:
         url, headers = _openai_upstream(base, key, "/responses", model)
+        sent, tokens = _tokenize_out(payload, principal, db)
         if payload.get("stream"):
             if not pol.enforce:
-                return _passthrough_stream(url, payload, headers, model, tool, principal)  # monitor: live output (teed)
-            status, ctype, raw = _read_stream(url, payload, headers)
+                return _passthrough_stream(url, sent, headers, model, tool, principal,
+                                           tokens)  # monitor: live output (teed)
+            status, ctype, raw = _read_stream(url, sent, headers)
             decoded = raw.decode("utf-8", "replace")
             act = _stream_tool_use_responses(decoded)
             if act:
@@ -1046,9 +1048,12 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
                 dlp = _capture_response_dlp(_stream_output_text(decoded), model, tool, principal, db)
                 if dlp and _blocked(dlp, pol):
                     return _openai_error(dlp)
+            if tokens:
+                from .tokenization import detokenize_bytes
+                raw = detokenize_bytes(raw, tokens)
             return Response(content=raw, status_code=status, media_type=ctype)
         with httpx.Client(timeout=120) as c:
-            r = c.post(url, json=payload, headers=headers)
+            r = c.post(url, json=sent, headers=headers)
         data = r.json()
         if settings.gateway_scan_responses:
             dlp = _capture_response_dlp(_response_output_text(data), model, tool, principal, db)
@@ -1059,6 +1064,9 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
                 _capture_response_agentic_responses(data, tool, principal, db)
             if _agentic_block(ragentic, pol):
                 return _openai_error(ragentic)
+        if tokens:
+            from .tokenization import detokenize_obj
+            data = detokenize_obj(data, tokens)
         return JSONResponse(status_code=r.status_code, content=data)
     return JSONResponse(content=_responses_stub(model, verdict))
 
@@ -1278,7 +1286,8 @@ async def _gemini_entry(model: str, method: str, request: Request,
         return _gemini_error(verdict)
     base, key = resolve_upstream("gemini", principal.tenant_id, db)
     if key:
-        resp = _forward_gemini(model, method, payload, request, base, key)
+        sent, tokens = _tokenize_out(payload, principal, db)
+        resp = _forward_gemini(model, method, sent, request, base, key)
         # Response-side DLP on the non-streaming JSON reply (streaming is passed through).
         if settings.gateway_scan_responses and method == "generateContent":
             try:
@@ -1289,6 +1298,13 @@ async def _gemini_entry(model: str, method: str, request: Request,
                 dlp = _capture_response_dlp(_response_output_text(data), model, tool, principal, db)
                 if pol.enforce and dlp and _blocked(dlp, pol):
                     return _gemini_error(dlp)
+        if tokens:
+            # _forward_gemini buffers the upstream bytes verbatim for both generateContent
+            # and streamGenerateContent, so one byte-level pass covers both.
+            from .tokenization import detokenize_bytes
+            return Response(content=detokenize_bytes(resp.body, tokens),
+                            status_code=resp.status_code,
+                            media_type=resp.media_type or "application/json")
         return resp
     return JSONResponse(content=_gemini_stub(model, verdict))
 
