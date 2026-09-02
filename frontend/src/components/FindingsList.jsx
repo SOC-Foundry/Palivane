@@ -112,7 +112,11 @@ function GroupRow({ g, expanded, onToggle, selectedId, onSelect, onBulkStatus })
   const openIds = g.items.filter((f) => f.status === "open").map((f) => f.id);
   return (
     <>
-      <li className={`finding-row group-row ${expanded ? "expanded" : ""}`} onClick={onToggle}>
+      {/* One click both opens the worst finding's detail AND expands the members — so a
+          click always populates the detail pane (never "clicked a row, nothing opened"),
+          with the individual occurrences right there if you want a specific one. */}
+      <li className={`finding-row group-row ${expanded ? "expanded" : ""} ${g.worst.id === selectedId ? "active" : ""}`}
+          onClick={() => { onSelect(g.worst.id); onToggle(); }}>
         <RiskBadge severity={g.worst.severity} score={g.worst.risk_score} />
         <div className="finding-main">
           <div className="finding-subject">
@@ -228,9 +232,13 @@ export default function FindingsList({ findings, selectedId, onSelect, filter, o
       <ul className="finding-rows">
         {grouped
           ? groups.map((g) => (
-              <GroupRow key={g.key} g={g} expanded={expanded.has(g.key)}
-                        onToggle={() => toggle(g.key)} selectedId={selectedId}
-                        onSelect={onSelect} onBulkStatus={onBulkStatus} />
+              // A group of one is just a finding — render it as a plain row that opens on
+              // the first click, not a folder you expand to reveal a single identical row.
+              g.items.length === 1
+                ? <FindingRow key={g.key} f={g.items[0]} selectedId={selectedId} onSelect={onSelect} />
+                : <GroupRow key={g.key} g={g} expanded={expanded.has(g.key)}
+                            onToggle={() => toggle(g.key)} selectedId={selectedId}
+                            onSelect={onSelect} onBulkStatus={onBulkStatus} />
             ))
           : shown.map((f) => (
               <FindingRow key={f.id} f={f} selectedId={selectedId} onSelect={onSelect} />
