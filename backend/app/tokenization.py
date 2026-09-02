@@ -131,6 +131,64 @@ def detokenize(text: str, mapping: dict[str, str]) -> str:
                   lambda m: lower.get(m.group(0).lower(), m.group(0)), text, flags=re.I)
 
 
+# --- streaming ------------------------------------------------------------------------
+# A streamed answer arrives in chunks that can split a token down the middle, so reversing
+# one chunk at a time would emit half a token and then an orphan tail. Work in BYTES: a
+# token is pure ASCII by construction, so a multi-byte character split across the same
+# boundary passes through untouched, which decoding chunk-by-chunk would not guarantee.
+
+TOKEN_MAX = 4 + 12 + 1 + 6        # "PLV_" + slug + "_" + hex, the longest a token can be
+_TOKEN_RE_B = re.compile(rb"PLV_[A-Z0-9]{2,12}_[0-9A-F]{6}", re.I)
+
+
+def detokenize_bytes(data: bytes, mapping: dict[str, str]) -> bytes:
+    """detokenize over raw bytes, for a response body that was never decoded."""
+    if not mapping or not data:
+        return data
+    lower = {t.lower().encode(): v.encode() for t, v in mapping.items()}
+    return _TOKEN_RE_B.sub(lambda m: lower.get(m.group(0).lower(), m.group(0)), data)
+
+
+# Any PREFIX of a token, anchored at the end of the buffer. The complete form is excluded
+# by capping the hex run at five: six means the token is finished and safe to substitute.
+# Matching only the whole "PLV_" literal is not enough — with one-byte chunks the "P" is
+# released before the "L" arrives, and the token is never seen at all.
+_PARTIAL_RE_B = re.compile(rb"P(?:L(?:V(?:_(?:[A-Z0-9]{1,12}(?:_[0-9A-F]{0,5})?)?)?)?)?$", re.I)
+
+
+def _emit_upto(buf: bytes) -> int:
+    """How much of `buf` can be released without risking a half-written token.
+
+    Everything, unless the tail is the beginning of one — then stop there and keep the rest
+    for the next chunk. A stray trailing "P" costs a few bytes of delay and is flushed when
+    the stream ends, which is the right way to be wrong.
+    """
+    m = _PARTIAL_RE_B.search(buf)
+    if m and not _TOKEN_RE_B.match(buf, m.start()):
+        return m.start()
+    return len(buf)
+
+
+def detokenize_stream(chunks, mapping: dict[str, str]):
+    """Wrap a byte-chunk iterator, reversing tokens as they go.
+
+    Holds back only a possible partial token (at most 23 bytes), so the client still sees
+    output arrive live: this is not buffering the response.
+    """
+    if not mapping:
+        yield from chunks
+        return
+    carry = b""
+    for chunk in chunks:
+        buf = carry + chunk
+        cut = _emit_upto(buf)
+        carry = buf[cut:]
+        if cut:
+            yield detokenize_bytes(buf[:cut], mapping)
+    if carry:
+        yield detokenize_bytes(carry, mapping)
+
+
 def detokenize_obj(obj, mapping: dict[str, str]):
     """detokenize every string in a response payload, whatever shape it is. Structure is
     untouched: only string leaves change, and a token cannot collide with a key name."""
