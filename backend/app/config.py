@@ -259,6 +259,13 @@ class Settings:
     client_enforce: bool = os.getenv("CLIENT_ENFORCE", "").lower() in ("1", "true", "yes")
     # Response-side DLP: scan the model's OUTPUT for secrets/PII (records; blocks in enforce).
     gateway_scan_responses: bool = os.getenv("GATEWAY_SCAN_RESPONSES", "true").lower() in ("1", "true", "yes")
+    # Tokenize personal data in gateway traffic: substitute a placeholder on the way to the
+    # provider and put the real value back in the answer, so the model can reason over a
+    # record's structure without OpenAI/Anthropic ever holding its contents. Off by default
+    # because it changes what the provider receives, which is a deliberate decision rather
+    # than a default. The map lives in the request handler and is never stored. Scoring runs
+    # on the ORIGINAL text, before substitution, so detection is unaffected either way.
+    gateway_tokenize: bool = _env("GATEWAY_TOKENIZE", "").lower() in ("1", "true", "yes")
     # Opt-in OCR of images sent to LLMs (screenshots carry secrets/PII the text scan never
     # sees). Requires pytesseract + Pillow AND the tesseract binary; default off. When
     # enabled, OCR text is appended to the scanned content for detection only — it is
