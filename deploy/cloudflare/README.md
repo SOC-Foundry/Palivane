@@ -22,10 +22,19 @@ owns a page and 301s browser navigation accordingly:
 | --- | --- |
 | `palivane.io/`, `/pricing`, `/docs/*`, … | served here — the public site |
 | `palivane.io/app/*` | `app.palivane.io` — the console |
-| `app.palivane.io/` | `app.palivane.io/app/findings` — console, or sign-in if signed out |
+| `app.palivane.io/` | served here — signed out that is the site, signed in the SPA routes to `/app/findings` |
 | `app.palivane.io/pricing`, `/docs/*`, … | `palivane.io` — the public site |
 | `/api/*`, `/v1` on either host | **never redirected** |
 | assets, `/cli/*`, `/install.sh`, `/admin` | served on whichever host asked |
+
+Cross-host redirects are **302**, not 301. The apex used to answer `301 Moved Permanently`
+pointing at the app host, and browsers cache that indefinitely — anyone who loaded
+`palivane.io` before the split still bounces to `app.palivane.io` without asking. That
+cache cannot be invalidated from the server; it ages out on its own. Which host owns a page
+is a layout decision that has now changed once, so the redirects are temporary and the next
+change will not be sticky. `app.palivane.io/` is deliberately not redirected: it is where
+every stale 301 lands, and forwarding it would drop people who asked for the website into a
+sign-in screen.
 
 API and gateway traffic is never redirected because installed CLIs, the extension and MDM
 clients POST there and a 301 would not replay their bodies — they keep working against

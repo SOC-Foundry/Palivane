@@ -157,11 +157,22 @@ function apiOverLimit(ip) {
 // The console does NOT move: it stays on app.palivane.io, where the session tokens already
 // are (localStorage is per-origin, so moving it would sign everyone out).
 //
-// Three rules, and only for browser navigation:
+// Two rules, and only for browser navigation:
 //   /app/* on the apex          -> app.palivane.io   (console lives there)
 //   a site page on the app host -> palivane.io       (site lives there)
-//   app.palivane.io/            -> /app/findings     (the app host is the console; signed
-//                                                     out that renders the sign-in screen)
+//
+// 302, not 301. Until today the apex answered "301 Moved Permanently -> app.palivane.io",
+// and browsers cache that indefinitely — every visitor who ever loaded palivane.io still
+// has it and never asks again, so for them the apex still bounces to the app host. That
+// cache cannot be invalidated from here; it just has to age out. These redirects describe
+// which host owns a page, which is a layout decision and has now changed once, so they are
+// temporary redirects and the next change will not be sticky.
+//
+// app.palivane.io/ deliberately does NOT redirect. It would be tidier for the app host's
+// root to open the console, but it is also where every one of those stale 301s lands, and
+// sending it on to /app/findings drops people who asked for the website into a sign-in
+// screen. Served as-is, the SPA does the right thing for both: signed out it renders the
+// landing page, and signed in App.jsx routes to /app/findings on its own.
 //
 // Everything else is proxied where it was asked for. API/gateway traffic (/api/*, /v1) is
 // NEVER redirected — installed CLIs, the extension and MDM clients POST there and a 301
@@ -202,13 +213,11 @@ export default {
       // stripped form and redirect to it, rather than leaving /pricing/ un-matched here.
       const page = path.length > 1 ? path.replace(/\/+$/, '') || '/' : path;
       if (url.hostname === SITE_HOST && isConsolePage(page)) {
-        return Response.redirect('https://' + APP_HOST + page + url.search, 301);
+        return Response.redirect('https://' + APP_HOST + page + url.search, 302);
       }
-      if (url.hostname === APP_HOST && page === '/') {
-        return Response.redirect('https://' + APP_HOST + '/app/findings' + url.search, 301);
-      }
-      if (url.hostname === APP_HOST && isSitePage(page)) {
-        return Response.redirect('https://' + SITE_HOST + page + url.search, 301);
+      // '/' on the app host is excluded on purpose — see the note above.
+      if (url.hostname === APP_HOST && page !== '/' && isSitePage(page)) {
+        return Response.redirect('https://' + SITE_HOST + page + url.search, 302);
       }
     }
 
