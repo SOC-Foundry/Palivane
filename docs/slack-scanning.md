@@ -96,7 +96,7 @@ Some of the rest is Slack's design, not ours, and it is worth being precise abou
 | Edit someone else's message in place | **no** | yes (`discovery:write`) |
 | Delete someone else's message | **yes**, with an admin user token (below) | yes |
 
-`chat.update` refuses to touch a message the caller did not author, on every plan — so
+`chat.update` refuses to touch a message the caller did not author, on every plan, so
 "redact the SSN and leave the sentence" is genuinely Grid-only. Deletion is the one
 remediation reachable below Grid, and only with a workspace-admin **user** token, which is
 a much stronger credential than the bot token and is treated separately.
@@ -119,7 +119,7 @@ What it needs, and why:
 
 What it will and will not touch:
 
-- Only a message **this scan flagged**, at **high or critical** — the confirmed-leak tier.
+- Only a message **this scan flagged**, at **high or critical**: the confirmed-leak tier.
   A suspicious-but-unconfirmed hit is recorded, never deleted.
 - **Every deletion is written to the audit log first** (`slack.message_deleted`), with the
   finding id, severity, channel, and who posted it. A message removed with no record of

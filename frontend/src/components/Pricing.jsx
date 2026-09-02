@@ -13,7 +13,7 @@ const TIERS = [
     cta: { label: "Upgrade in the console →", href: signInUrl() },
     featured: true,
     features: [
-      "Per seat — bring your whole team, add or drop seats any time",
+      "Per seat: bring your whole team, add or drop seats any time",
       "Covers the browser, desktop AI apps, AI coding tools, your code, and GitHub Actions",
       "Live findings, every AI tool in use, and who is covered",
       "Watch-only or blocking, your call",
@@ -81,7 +81,7 @@ export default function Pricing() {
         <h1>Try it for two weeks. Then pick a plan.</h1>
         <p>Every feature is unlocked during the trial, so you evaluate the real thing on your
            own traffic. Prefer to run it yourself? A free self-hosted
-           edition is available — everything that runs on your machines is public at
+           edition is available: everything that runs on your machines is public at
            github.com/SOC-Foundry/palivane-clients, and the full self-host package comes
            via sales while the backend's public release is prepared.</p>
       </section>
