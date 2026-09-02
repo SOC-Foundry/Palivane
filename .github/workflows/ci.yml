@@ -41,6 +41,12 @@ jobs:
         # context); this check is what stops the landing-page numbers drifting from the
         # detector source. Regenerate with `node scripts/gen-stats.mjs` when it fails.
         run: node scripts/gen-stats.mjs --check
+      - name: Public claims match the coverage matrix
+        working-directory: frontend
+        # gen-stats keeps the NUMBERS honest; this keeps the prose honest. A small
+        # blocklist of claims that actually shipped and had to be corrected, because
+        # marketing copy drifts toward the flattering version one edit at a time.
+        run: node scripts/check-claims.mjs
       - name: Build
         working-directory: frontend
         run: npm ci && npm run build
