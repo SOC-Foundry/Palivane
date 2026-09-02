@@ -4,7 +4,7 @@ import { SiteNav, SiteFooter, Shot, Clip, Lightbox } from "./SiteChrome.jsx";
 // Derived from the detector source at build time (frontend/scripts/gen-stats.mjs, CI
 // fails when stale) — the band can never claim different numbers than the engine ships.
 import stats from "../stats.gen.json";
-import { SELF_HOSTED, SIGN_IN_IS_CROSS_ORIGIN, signInUrl } from "../deployment.js";
+import { SELF_HOSTED, SIGN_IN_IS_CROSS_ORIGIN, demoUrl, signInUrl } from "../deployment.js";
 
 // The page alternates deliberately: a full-bleed band, then a two-column split, then the
 // mirror of that split, then a card row. The previous version stacked five identical
@@ -99,7 +99,7 @@ export default function Landing({ onSignIn }) {
             <ConsoleCta onSignIn={onSignIn} />
             {/* Straight into a read-only seeded org (Login auto-triggers on #demo) —
                 security buyers want to see real findings before installing anything. */}
-            <a className="lp-nav-ghost wide" href="/#demo">See the live demo</a>
+            <a className="lp-nav-ghost wide" href={demoUrl()}>See the live demo</a>
             <a className="lp-nav-ghost wide" href="/setup">Set it up</a>
           </div>
           <div className="lp-hero-cmd">
