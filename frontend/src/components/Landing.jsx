@@ -19,7 +19,7 @@ const STATS = [
     : { n: "0", l: "prompt text kept by default", s: "the verdict and its metadata, not what was typed" },
   { n: `${stats.detection_checks}`, l: "detection checks",
     s: `${stats.secret_formats} credential formats, PII, source code, prompt attacks, agent actions` },
-  { n: "1", l: "afternoon to set up", s: "one command, nothing to install by hand" },
+  { n: "1", l: "afternoon to set up", s: "one command, and your MDM pushes the rest" },
 ];
 
 // Ordered by what a buyer can turn on soonest, not by how the planes are built. Coding

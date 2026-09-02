@@ -29,7 +29,7 @@ const ORG = [
   { n: "1", title: "Pick how you ship software",
     body: "Connect → Quick start. Choose an MDM policy pack (Jamf · Intune · GPO) or a per-OS setup script. Palivane generates everything already pointed at your org and pre-loaded with your policy." },
   { n: "2", title: "Push the pack fleet-wide",
-    body: "One pack your MDM pushes: extension force-install, egress-proxy profile, and Claude Code managed settings + hooks. Agentless, nothing to install per device. Set your org's model key first (Part 1, step 4) so gateway-routed Claude Code keeps answering; the proxy leg also needs your root CA in the device trust store." },
+    body: "One pack your MDM pushes: extension force-install, egress-proxy profile, and Claude Code managed settings + hooks. No proprietary agent, and nobody has to touch a laptop. Set your org's model key first (Part 1, step 4) so gateway-routed Claude Code keeps answering; the proxy leg also needs your root CA in the device trust store." },
   { n: "3", title: "Confirm coverage",
     body: "Discovery and Coverage show every AI tool in use across teams (sanctioned or not) with the real sensitive-data exposure each one received." },
 ];
