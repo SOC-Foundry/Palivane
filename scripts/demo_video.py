@@ -192,8 +192,8 @@ def console_tour_frames(pw, out_dir: str, seconds: float) -> int:
 
     # The whole console, in the order an evaluator would click through it. Every screen is
     # the real thing rendered against the findings the earlier scenes just produced.
-    tabs = ["Findings", "Discovery", "Coverage", "Fleet", "Scan log", "Agents",
-            "Policies", "Simulator", "Report", "Settings", "Audit"]
+    tabs = ["Findings", "Your findings", "Discovery", "Coverage", "Fleet", "Scan log",
+            "Agents", "Policies", "Simulator", "Report", "Settings", "Audit"]
     per = seconds / len(tabs)
     frames_per = max(1, int(per * FPS))
     b = pw.chromium.launch(args=["--disable-dev-shm-usage", "--no-sandbox"])   # tiny /dev/shm in CI/sandboxes breaks captureScreenshot
