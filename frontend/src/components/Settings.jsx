@@ -43,7 +43,7 @@ function PatternBuilder({ onAdd }) {
   }
   return (
     <div className="field-wide" style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 12 }}>
-      <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <label style={{ flex: "1 1 180px" }}>Name it
           <input placeholder="Customer ID" value={label} onChange={(e) => setLabel(e.target.value)} /></label>
         <label style={{ flex: "1 1 220px" }}>Examples (one per line, at least two)
@@ -53,7 +53,7 @@ function PatternBuilder({ onAdd }) {
           <textarea rows={3} placeholder={"ORD-4821-A"}
                     value={counters} onChange={(e) => setCounters(e.target.value)} /></label>
       </div>
-      <div className="row" style={{ gap: 8, marginTop: 8 }}>
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         <button type="button" className="ghost-btn slim" onClick={build} disabled={busy}>
           {busy ? "Working…" : "Build pattern"}</button>
         <button type="button" className="ghost-btn slim" onClick={() => { setOpen(false); setRes(null); }}>
