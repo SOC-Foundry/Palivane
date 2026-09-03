@@ -58,6 +58,10 @@ def detect_tool(user_agent: str = "", explicit: str = "") -> str:
         return "copilot"
     if "codeium" in ua:
         return "codeium"
+    if "grok" in ua:
+        return "grok"
+    if "antigravity" in ua:   # Google's agentic IDE (Gemini-based) — check before "gemini"
+        return "antigravity"
     if "gemini" in ua or "geminicli" in ua:
         return "gemini-cli"
     return "unknown"
