@@ -12,7 +12,7 @@ from .config import settings
 from .crypto import decrypt
 from .models import TenantUpstream
 
-PROVIDERS = ("openai", "anthropic", "gemini")
+PROVIDERS = ("openai", "anthropic", "gemini", "xai")
 
 
 def _global_default(provider: str) -> tuple[str, str]:
@@ -28,6 +28,8 @@ def _global_default(provider: str) -> tuple[str, str]:
         return settings.gateway_anthropic_base, settings.gateway_anthropic_key
     if provider == "gemini":
         return settings.gateway_gemini_base, settings.gateway_gemini_key
+    if provider == "xai":
+        return settings.gateway_xai_base, settings.gateway_xai_key
     return "", ""
 
 

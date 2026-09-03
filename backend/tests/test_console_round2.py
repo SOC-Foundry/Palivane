@@ -24,7 +24,7 @@ def test_setup_status(client):
     for k in ("judge_enabled", "gateway_enforce", "mcp_enforce"):
         assert k in s
     # Per-provider "will the gateway forward or stub?" for the Connect page's warning.
-    assert set(s["upstream_forwards"]) == {"openai", "anthropic", "gemini"}
+    assert set(s["upstream_forwards"]) == {"openai", "anthropic", "gemini", "xai"}
     assert all(isinstance(v, bool) for v in s["upstream_forwards"].values())
 
 
