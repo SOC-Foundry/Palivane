@@ -478,9 +478,9 @@ class ProvisionRequest(BaseModel):
 
 
 class AccessEvent(BaseModel):
-    actor: str                    # user identity from the IdP/CASB record
-    tool: str = ""                # AI tool/domain they accessed
-    last_seen: str = ""           # ISO timestamp (optional)
+    actor: str = Field(max_length=320)            # user identity from the IdP/CASB record
+    tool: str = Field("", max_length=320)          # AI tool/domain they accessed
+    last_seen: str = Field("", max_length=64)      # ISO timestamp (optional)
 
 
 class CoverageRequest(BaseModel):
@@ -556,23 +556,25 @@ class OversharingScan(BaseModel):
 
 
 class DiscoveryEvent(BaseModel):
-    actor: str = ""                      # user identity from the log line
-    destination: str = ""                # URL / domain seen (proxy, SWG, DNS)
-    domain: str = ""                     # alias for destination
-    tool: str = ""                       # or a named tool, if the log already resolved it
-    team: str = ""                       # department/team, if the log carries it
-    count: int = Field(1, ge=1, le=100000)  # events collapsed into this line (bounded)
-    last_seen: str = ""                  # ISO timestamp (optional)
+    # Field lengths are bounded so a 50k-item batch can't feed unbounded strings into the
+    # per-item catalog scan (ai_catalog.classify runs per destination) — a cheap DoS backstop.
+    actor: str = Field("", max_length=320)        # user identity from the log line
+    destination: str = Field("", max_length=2048)  # URL / domain seen (proxy, SWG, DNS)
+    domain: str = Field("", max_length=2048)       # alias for destination
+    tool: str = Field("", max_length=320)          # or a named tool, if the log already resolved it
+    team: str = Field("", max_length=320)          # department/team, if the log carries it
+    count: int = Field(1, ge=1, le=100000)         # events collapsed into this line (bounded)
+    last_seen: str = Field("", max_length=64)      # ISO timestamp (optional)
 
 
 class OAuthGrant(BaseModel):
     """One third-party OAuth app a user granted access to a SaaS platform (Google Workspace,
     Microsoft 365, Slack, …). Where AI tools plug into SaaS via OAuth, they leave no network
     traffic a proxy/extension would see — this is the channel network capture misses."""
-    app_name: str = ""                   # the OAuth app's display name
-    app_id: str = ""                     # client id, if the export carries it
-    user: str = ""                       # the granting user
-    provider: str = ""                   # google | microsoft | slack | … (informational)
+    app_name: str = Field("", max_length=320)   # the OAuth app's display name
+    app_id: str = Field("", max_length=320)      # client id, if the export carries it
+    user: str = Field("", max_length=320)        # the granting user
+    provider: str = Field("", max_length=64)     # google | microsoft | slack | … (informational)
     scopes: list[str] = Field(default_factory=list, max_length=200)
 
 

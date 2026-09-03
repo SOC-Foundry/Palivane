@@ -13,7 +13,10 @@ function redirectKind(uri) {
   try {
     const u = new URL(uri);
     if (u.protocol === "https:" && u.hostname.endsWith(".chromiumapp.org")) return "fragment";
-    if ((u.hostname === "127.0.0.1" || u.hostname === "localhost")) return "query";
+    // Loopback CLI server is plain http — pin the scheme so a non-http(s) redirect_uri
+    // (e.g. a custom scheme that still parses with a 127.0.0.1 host) can't carry the token.
+    if ((u.protocol === "http:" || u.protocol === "https:") &&
+        (u.hostname === "127.0.0.1" || u.hostname === "localhost")) return "query";
     return null;
   } catch {
     return null;

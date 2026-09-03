@@ -209,8 +209,10 @@ app.add_middleware(
 
 @app.middleware("http")
 async def _guard(request: Request, call_next):
-    # Reject oversized bodies up front (DoS/OOM) — the detectors run many regex passes over
-    # request content, so bound it before parsing. Backs the per-field Pydantic caps.
+    # Fast reject on a declared oversized body (DoS/OOM) — the detectors run many regex passes
+    # over request content, so bound it before parsing. This is only a cheap early-out on the
+    # Content-Length header; the real enforcement (chunked / missing / lying length) is the
+    # streamed byte cap in _BodySizeLimitMiddleware below. Backs the per-field Pydantic caps.
     cl = request.headers.get("content-length")
     if cl and cl.isdigit() and int(cl) > settings.max_body_bytes:
         from fastapi.responses import JSONResponse as _JR
@@ -246,6 +248,63 @@ async def _guard(request: Request, call_next):
         "frame-ancestors 'none'; base-uri 'self'; "
         "form-action 'self'; object-src 'none'")
     return resp
+
+
+class _BodySizeLimitMiddleware:
+    """Enforce the request-body cap on the actual streamed bytes, not the (spoofable, and
+    absent under chunked transfer) Content-Length header. Buffers the body up to the cap and
+    replays it to the app; a body that exceeds the cap gets a 413 before the handler — and
+    before request.json() buffers it all into memory. Palivane has no streaming-upload route,
+    so buffering here is safe (bounded by the cap)."""
+
+    def __init__(self, app, max_bytes: int):
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["method"] in ("GET", "HEAD", "OPTIONS"):
+            return await self.app(scope, receive, send)
+        chunks: list[bytes] = []
+        total = 0
+        more = True
+        while more:
+            msg = await receive()
+            if msg["type"] != "http.request":
+                # e.g. http.disconnect — hand the event straight through.
+                return await self.app(scope, _replay(chunks, receive, pending=msg), send)
+            total += len(msg.get("body", b""))
+            if total > self.max_bytes:
+                await send({"type": "http.response.start", "status": 413,
+                            "headers": [(b"content-type", b"application/json")]})
+                await send({"type": "http.response.body",
+                            "body": b'{"detail":"request body too large"}'})
+                return
+            chunks.append(msg.get("body", b""))
+            more = msg.get("more_body", False)
+        await self.app(scope, _replay(chunks, receive), send)
+
+
+def _replay(chunks, receive, pending=None):
+    """A receive() that yields the buffered body once, then the pending event (if any), then
+    delegates to the real receive — so a streaming response still gets its http.disconnect
+    instead of an endless stream of http.request events."""
+    body = b"".join(chunks)
+    state = {"sent_body": False, "sent_pending": pending is None}
+
+    async def _rcv():
+        if not state["sent_body"]:
+            state["sent_body"] = True
+            return {"type": "http.request", "body": body, "more_body": False}
+        if not state["sent_pending"]:
+            state["sent_pending"] = True
+            return pending
+        return await receive()
+
+    return _rcv
+
+
+# Outermost middleware (added last): sees raw receive before any body parsing.
+app.add_middleware(_BodySizeLimitMiddleware, max_bytes=settings.max_body_bytes)
 
 
 app.include_router(auth_router)

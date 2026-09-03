@@ -153,6 +153,11 @@ class Settings:
     # its token-bearing redirect from THIS, not the client Host header — closing a
     # host-header open-redirect / session-token exfil. Also seeds the trusted-host allowlist.
     public_base_url: str = _env("PALIVANE_PUBLIC_URL", "").rstrip("/")
+    # Issuer bound into session JWTs (`iss`). Defaults to the public URL so tokens minted by
+    # one deployment don't verify on another that happens to share the signing key. Enforced
+    # only when a token actually carries `iss`, so pre-existing tokens keep working until they
+    # expire (no forced logout on rollout). Empty = don't set or check `iss`.
+    jwt_iss: str = _env("PALIVANE_JWT_ISS", "") or _env("PALIVANE_PUBLIC_URL", "").rstrip("/")
     # Build identity, surfaced to clients so they can tell whether their installed copies
     # of the hooks/proxy addon are current (see /cli/manifest.json). The deploy sets it to
     # the image tag; "dev" locally. Clients compare FILE HASHES from the manifest, not this
@@ -171,7 +176,16 @@ class Settings:
     ingest_tenant: str = os.getenv("INGEST_TENANT", "")
     # Default gateway requests-per-minute limit per tenant (0 = unlimited). A tenant's own
     # rate_limit overrides this. Enforced as a fixed 60s window; also the metering source.
-    gateway_rate_limit: int = int(os.getenv("GATEWAY_RATE_LIMIT", "0"))
+    # Defaults to a generous non-zero ceiling so a single leaked/abused key can't drive
+    # unbounded upstream spend; raise per-tenant (Tenant.rate_limit) for high-volume orgs.
+    gateway_rate_limit: int = int(os.getenv("GATEWAY_RATE_LIMIT", "600"))
+    # Per-tenant daily gateway request cap (0 = unlimited). The minute limit stops bursts;
+    # this backstops sustained cost-amplification over a day (ingest already has its own).
+    quota_gateway_per_day: int = int(_env("PALIVANE_QUOTA_GATEWAY_PER_DAY", "200000"))
+    # Hard ceiling on the output-token count forwarded upstream, whatever the client asks
+    # for. Caps the cost of any single proxied call (0 = don't clamp). Applies to OpenAI
+    # max_tokens / max_output_tokens, Anthropic max_tokens, and Gemini maxOutputTokens.
+    gateway_max_output_tokens: int = int(_env("PALIVANE_GATEWAY_MAX_OUTPUT_TOKENS", "16384"))
     # Default sensor/ingest req/min per tenant (capture planes: /api/ingest/*, /api/scan/*),
     # counted separately from the gateway so agentic volume can't starve LLM traffic
     # (0 = unlimited). A tenant's own ingest_rate_limit overrides this.

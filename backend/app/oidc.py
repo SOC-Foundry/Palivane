@@ -258,4 +258,9 @@ def validate_id_token(meta: dict, issuer: str, client_id: str, id_token: str,
     email = claims.get("email")
     if not email:
         raise OIDCError("ID token has no email claim")
+    # If the IdP asserts the email is unverified, don't map it onto an existing account — an
+    # unverified/aliased address could otherwise be claimed as someone else's in the tenant.
+    # Enforced only when the claim is present (many IdPs omit it), mirroring Google login.
+    if claims.get("email_verified") is False:
+        raise OIDCError("ID token email is not verified by the identity provider")
     return dict(claims)
