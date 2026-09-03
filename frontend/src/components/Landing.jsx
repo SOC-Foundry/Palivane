@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { IconTerminal, IconBrowser, IconCloud, IconLaptop, IconWorkflow, IconDesktop } from "./icons.jsx";
+import { BrandClaude, BrandCursor, BrandCopilot, BrandGemini, BrandPerplexity, BrandOpenAI,
+         BrandDrive, BrandSlack, BrandGit, BrandGitHub, BrandNpm, BrandActions } from "./brandicons.jsx";
 import { SiteNav, SiteFooter, Shot, Clip, Lightbox } from "./SiteChrome.jsx";
 // Derived from the detector source at build time (frontend/scripts/gen-stats.mjs, CI
 // fails when stale) — the band can never claim different numbers than the engine ships.
@@ -28,12 +29,12 @@ const STATS = [
 // at all. Desktop apps last, because that is the only plane needing a system proxy and a
 // trusted CA, and leading with it puts an MDM project in front of the value.
 const CAPTURE = [
-  { icon: <IconTerminal />, title: "In coding tools", body: "Claude Code, Cursor, Codex, Copilot, and Gemini CLI report every prompt and tool call, and posture scans surface the agents that can't be hooked (Cline, Roo, Windsurf, Amazon Q). One line to install." },
-  { icon: <IconBrowser />, title: "In the browser", body: `What people paste into ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, Qwen, Kimi. ${stats.browser_sites} AI sites in all, including the app builders (v0, Bolt, Lovable, Replit).` },
-  { icon: <IconCloud />, title: "In the places it already sits", body: "Slack, Google Drive, SharePoint, and Salesforce, scanned where the data lives, because an AI rollout will index all of it long before anyone pastes it into a prompt. A read token, nothing installed anywhere." },
-  { icon: <IconLaptop />, title: "In code and laptops", body: "Commits and dependencies before they land, and credentials already at rest." },
-  { icon: <IconWorkflow />, title: "In GitHub Actions", body: "Coding agents running on CI runners with your production credentials." },
-  { icon: <IconDesktop />, title: "In desktop apps", body: "The AI apps that never touch a browser: Claude and ChatGPT desktop. The one plane that needs a system proxy and a trusted CA, so it is usually a second phase." },
+  { logos: [BrandClaude, BrandCursor, BrandCopilot, BrandGemini], title: "In coding tools", body: "Claude Code, Cursor, Codex, Copilot, and Gemini CLI report every prompt and tool call, and posture scans surface the agents that can't be hooked (Cline, Roo, Windsurf, Amazon Q). One line to install." },
+  { logos: [BrandOpenAI, BrandClaude, BrandGemini, BrandPerplexity], title: "In the browser", body: `What people paste into ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, Qwen, Kimi. ${stats.browser_sites} AI sites in all, including the app builders (v0, Bolt, Lovable, Replit).` },
+  { logos: [BrandSlack, BrandDrive], title: "In the places it already sits", body: "Slack, Google Drive, SharePoint, and Salesforce, scanned where the data lives, because an AI rollout will index all of it long before anyone pastes it into a prompt. A read token, nothing installed anywhere." },
+  { logos: [BrandGit, BrandGitHub, BrandNpm], title: "In code and laptops", body: "Commits and dependencies before they land, and credentials already at rest." },
+  { logos: [BrandActions], title: "In GitHub Actions", body: "Coding agents running on CI runners with your production credentials." },
+  { logos: [BrandClaude, BrandOpenAI], title: "In desktop apps", body: "The AI apps that never touch a browser: Claude and ChatGPT desktop. The one plane that needs a system proxy and a trusted CA, so it is usually a second phase." },
 ];
 
 const LINEAGE = [
@@ -188,7 +189,9 @@ export default function Landing({ onSignIn }) {
           <div className="lp-cards lp-cards-5">
             {CAPTURE.map((c) => (
               <div key={c.title} className="lp-card">
-                <span className="lp-card-icon">{c.icon}</span>
+                <span className="lp-card-logos">
+                  {c.logos.map((Logo, i) => <Logo key={i} />)}
+                </span>
                 <h3>{c.title}</h3>
                 <p>{c.body}</p>
               </div>
