@@ -86,6 +86,23 @@ def check_daily_ingest(db: Session, tenant_id: int) -> tuple[bool, int, int]:
     return total <= limit, int(total), limit
 
 
+def check_daily_gateway(db: Session, tenant_id: int) -> tuple[bool, int, int]:
+    """Sustained-abuse cap on top of the per-minute rate: total gateway requests since UTC
+    midnight vs the tenant's daily quota. Backstops cost-amplification that stays under the
+    minute limit. Returns (allowed, count_today, limit); limit 0 = unlimited."""
+    tenant = db.get(Tenant, tenant_id)
+    limit = getattr(tenant, "quota_gateway_per_day", 0) or settings.quota_gateway_per_day
+    if not limit:
+        return True, 0, 0
+    midnight = _now().replace(hour=0, minute=0, second=0, microsecond=0)
+    from sqlalchemy import func  # noqa: PLC0415
+    total = (db.query(func.coalesce(func.sum(GatewayUsage.count), 0))
+             .filter(GatewayUsage.tenant_id == tenant_id, GatewayUsage.kind == "gateway",
+                     GatewayUsage.window_start >= midnight)
+             .scalar())
+    return int(total) <= limit, int(total), limit
+
+
 def record_and_check(db: Session, tenant_id: int | None, kind: str = "gateway",
                      limit: int | None = None) -> tuple[bool, int, int]:
     """Count one request in the current minute for `kind` and report whether it's allowed.
