@@ -1,7 +1,7 @@
 // Public support page at /support. Honest by construction: it only promises the support
 // that the plans actually include (see Pricing.jsx / plans.py) and routes each kind of
-// request to the address that already exists behind the Email Routing worker
-// (deploy/cloudflare/email-worker). No SLA hours are stated that aren't committed.
+// request to a real inbox — support@/sales@/security@/privacy@ are Google Workspace groups
+// on palivane.io. No SLA hours are stated that aren't committed.
 import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
 
 // Try the docs first — most "how do I…" questions are answered without waiting on email.
