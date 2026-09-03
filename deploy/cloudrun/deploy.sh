@@ -90,6 +90,7 @@ ENV_VARS+="|SEED_ON_START=${SEED_ON_START:-false}"
 SECRETS="PALIVANE_SECRET_KEY=palivane-secret-key:latest,DATABASE_URL=palivane-database-url:latest"
 for pair in \
   "GATEWAY_ANTHROPIC_KEY=gateway-anthropic-key" \
+  "GATEWAY_XAI_KEY=gateway-xai-key" \
   "ANTHROPIC_API_KEY=judge-anthropic-key" \
   "OPENAI_API_KEY=openai-api-key" \
   "GEMINI_API_KEY=gemini-api-key" \
