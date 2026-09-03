@@ -307,6 +307,11 @@ class Settings:
     gateway_gemini_base: str = os.getenv("GATEWAY_GEMINI_BASE", "https://generativelanguage.googleapis.com")
     gateway_gemini_key: str = os.getenv("GATEWAY_GEMINI_KEY", "")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+    # xAI (Grok) upstream — OpenAI-compatible, so Grok CLI / any OpenAI client pointed at the
+    # gateway is forwarded here when the model is a grok-* model. Key = the tenant's xAI key
+    # (set as the `xai` upstream) or GATEWAY_XAI_KEY; empty = stub reply.
+    gateway_xai_base: str = os.getenv("GATEWAY_XAI_BASE", "https://api.x.ai/v1")
+    gateway_xai_key: str = os.getenv("GATEWAY_XAI_KEY", "")
 
     # --- Shadow-AI governance ---
     # Static token the browser extension / egress proxy present on /api/ingest/ai-usage.

@@ -199,6 +199,14 @@ def _blocked(verdict: dict, pol: GatewayPolicy) -> int:
     return _SEVERITY_RANK.get(verdict["severity"], 0) >= _SEVERITY_RANK.get(pol.block_severity, 3)
 
 
+def _openai_shape_provider(model: str) -> str:
+    """OpenAI-shaped requests (chat/completions, responses) forward to the OpenAI upstream by
+    default, but grok-* models go to the xAI upstream — xAI's API is OpenAI-compatible, so a
+    Grok CLI pointed at the gateway is captured here and forwarded to the right provider
+    instead of being misrouted to OpenAI."""
+    return "xai" if str(model or "").lower().startswith("grok") else "openai"
+
+
 def _should_block(verdict: dict, pol: GatewayPolicy) -> bool:
     """Block when the tenant enforces and the verdict clears the bar, OR — even in monitor
     mode — when it carries a CONFIRMED secret/PII leak (block-the-certain default)."""
@@ -932,7 +940,7 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
     agentic = _capture_agentic(payload, tool, principal, db)
     if _agentic_block(agentic, pol):
         return _openai_error(agentic)
-    base, key = resolve_upstream("openai", principal.tenant_id, db)
+    base, key = resolve_upstream(_openai_shape_provider(model), principal.tenant_id, db)
     if base:
         url, headers = _openai_upstream(base, key, "/chat/completions", model)
         if payload.get("stream"):
@@ -1097,7 +1105,7 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
     agentic = _capture_activity_dict(_responses_agentic(payload), tool, principal, db)
     if _agentic_block(agentic, pol):
         return _openai_error(agentic)
-    base, key = resolve_upstream("openai", principal.tenant_id, db)
+    base, key = resolve_upstream(_openai_shape_provider(model), principal.tenant_id, db)
     if base:
         url, headers = _openai_upstream(base, key, "/responses", model)
         sent, tokens = _tokenize_out(payload, principal, db)

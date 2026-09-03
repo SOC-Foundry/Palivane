@@ -94,6 +94,64 @@ def test_gateway_forwards_with_tenant_key(client, monkeypatch):
     assert captured["url"].startswith("https://8.8.8.8")
     assert captured["headers"]["x-api-key"] == "sk-ant-acme"
 
+GROK_BENIGN = {"model": "grok-3", "max_tokens": 32,
+               "messages": [{"role": "user", "content": "Explain TCP vs UDP."}]}
+
+
+def test_openai_shape_provider_routes_grok_to_xai():
+    assert gateway._openai_shape_provider("grok-3") == "xai"
+    assert gateway._openai_shape_provider("grok-code-fast-1") == "xai"
+    assert gateway._openai_shape_provider("gpt-4o") == "openai"
+    assert gateway._openai_shape_provider("") == "openai"
+
+
+def test_resolve_xai_global_default(db_factory, monkeypatch):
+    from app import users as users_cli
+    db = db_factory()
+    tenant = users_cli.create_tenant(db, "acme", "Acme")
+    monkeypatch.setattr(settings, "gateway_xai_base", "https://api.x.ai/v1")
+    monkeypatch.setattr(settings, "gateway_xai_key", "")
+    assert upstreams.resolve("xai", tenant.id, db) == ("https://api.x.ai/v1", "")
+    assert "xai" in upstreams.PROVIDERS
+
+
+def test_grok_model_forwards_to_xai_upstream_not_openai(client, monkeypatch):
+    """A grok-* model routed through /v1/chat/completions must forward to the tenant's xAI
+    upstream, not its OpenAI one — otherwise Grok traffic would hit the wrong provider."""
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
+    # Distinct bases so the assertion proves which upstream was chosen (public IPs pass SSRF).
+    client.put("/api/upstreams/openai", json={"base_url": "https://1.1.1.1/v1", "key": "sk-oai"})
+    client.put("/api/upstreams/xai", json={"base_url": "https://8.8.8.8/v1", "key": "xai-acme"})
+
+    captured = {}
+
+    class FakeResp:
+        status_code = 200
+        def json(self):
+            return {"id": "x", "object": "chat.completion", "model": "grok-3",
+                    "choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def post(self, url, json=None, headers=None, **k):
+            captured["url"] = url
+            return FakeResp()
+
+    monkeypatch.setattr(gateway.httpx, "Client", FakeClient)
+    r = client.post("/v1/chat/completions", json=GROK_BENIGN)
+    assert r.status_code == 200
+    assert captured["url"].startswith("https://8.8.8.8")   # xAI upstream, not 1.1.1.1 (OpenAI)
+
+
+def test_xai_upstream_api_accepts_provider(client):
+    r = client.put("/api/upstreams/xai", json={"base_url": "https://8.8.8.8/v1", "key": "xai-k"})
+    assert r.status_code == 200 and r.json()["key_set"] is True
+    lst = client.get("/api/upstreams").json()["upstreams"]
+    assert any(u["provider"] == "xai" for u in lst)
+
+
 def test_resolve_ignores_internal_tenant_base(client, db_factory):
     # A stored tenant base_url that resolves internal (e.g. bypassing set-time via an old
     # row / rebind) must NOT be used by the gateway — resolve() re-checks at call time and
