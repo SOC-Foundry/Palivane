@@ -48,14 +48,14 @@ def _payload(verdict: dict, subject: str, actor: str, surface: str) -> dict:
 
 
 def send_sync(webhook: str, payload: dict, timeout: float = 8.0) -> bool:
-    from .netguard import is_safe_url
+    from .netguard import is_safe_url, safe_urlopen
     if not is_safe_url(webhook):   # SSRF guard: no internal/metadata targets
         return False
     try:
         req = urllib.request.Request(
             webhook, method="POST", data=json.dumps(payload).encode(),
             headers={"content-type": "application/json"})
-        urllib.request.urlopen(req, timeout=timeout)
+        safe_urlopen(req, timeout)   # pinned to the validated IP (closes the DNS-rebind window)
         return True
     except Exception:
         return False

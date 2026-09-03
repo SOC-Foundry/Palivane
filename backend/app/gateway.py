@@ -53,6 +53,7 @@ from .security import (TokenError, decode_token, hash_token, looks_like_agent_to
                        looks_like_api_key)
 from .metering import check_daily_gateway, record_and_check
 from .service import run_analysis
+from .netguard import safe_client
 from .upstreams import resolve as resolve_upstream
 
 router = APIRouter(prefix="/v1", tags=["gateway"])
@@ -741,7 +742,7 @@ def _read_stream(url: str, payload: dict, headers: dict) -> tuple[int, str, byte
     """Buffer a streamed upstream response (enforce mode needs the whole turn to inspect
     the tool_use before it reaches the client). Factored out so tests can stub it."""
     chunks: list[bytes] = []
-    with httpx.Client(timeout=120) as c:
+    with safe_client(timeout=120) as c:
         with c.stream("POST", url, json=payload, headers=headers) as r:
             status, ctype = r.status_code, r.headers.get("content-type", "text/event-stream")
             for b in r.iter_bytes():
@@ -783,7 +784,7 @@ def _passthrough_stream(url: str, payload: dict, headers: dict, model: str = "",
         buf: list[bytes] = []
         acc = 0
         try:
-            with httpx.Client(timeout=120) as c:
+            with safe_client(timeout=120) as c:
                 with c.stream("POST", url, json=payload, headers=headers) as r:
                     for b in r.iter_bytes():
                         if scan and acc < _STREAM_TEE_CAP:
@@ -954,7 +955,7 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
                 raw = _reverse_bytes(raw, tokens, tool)
             return Response(content=raw, status_code=status, media_type=ctype)
         sent, tokens = _tokenize_out(payload, principal, db)
-        with httpx.Client(timeout=60) as c:
+        with safe_client(timeout=60) as c:
             r = c.post(url, json=sent, headers=headers)
         data = r.json()
         # Response DLP scans what the provider actually returned, tokens and all. A token
@@ -1118,7 +1119,7 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
             if tokens:
                 raw = _reverse_bytes(raw, tokens, tool)
             return Response(content=raw, status_code=status, media_type=ctype)
-        with httpx.Client(timeout=120) as c:
+        with safe_client(timeout=120) as c:
             r = c.post(url, json=sent, headers=headers)
         data = r.json()
         if settings.gateway_scan_responses:
@@ -1247,7 +1248,7 @@ def _anthropic_headers(request: Request, key: str) -> dict:
 def _post_upstream_anthropic(path: str, payload: dict, request: Request,
                              base: str, key: str) -> tuple[int, dict]:
     url = base.rstrip("/") + path
-    with httpx.Client(timeout=120) as c:
+    with safe_client(timeout=120) as c:
         r = c.post(url, json=payload, headers=_anthropic_headers(request, key))
     return r.status_code, r.json()
 
@@ -1326,7 +1327,7 @@ def _forward_gemini(model: str, method: str, payload: dict, request: Request,
     url = f"{base.rstrip('/')}/v1beta/models/{model}:{method}"
     params = {k: v for k, v in request.query_params.items() if k != "key"}
     headers = {"Content-Type": "application/json", "x-goog-api-key": key}
-    with httpx.Client(timeout=120) as c:
+    with safe_client(timeout=120) as c:
         r = c.post(url, json=payload, params=params, headers=headers)
     return Response(content=r.content, status_code=r.status_code,
                     media_type=r.headers.get("content-type", "application/json"))

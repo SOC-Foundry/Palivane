@@ -95,14 +95,14 @@ def send_detail(url: str, token: str, fmt: str, fields: dict, timeout: float = 8
                 ) -> tuple[bool, str]:
     """Deliver one event; returns (ok, detail) so callers can surface WHY a send failed
     (expired token vs unreachable host) instead of a bare boolean."""
-    from .netguard import is_safe_url
+    from .netguard import is_safe_url, safe_urlopen
     if not url:
         return False, "no SIEM URL configured"
     if not is_safe_url(url):                # SSRF guard: no internal/metadata targets
         return False, "URL blocked (internal/loopback/metadata host)"
     try:
-        urllib.request.urlopen(_request(url, token, fmt if fmt in FORMATS else "json", fields,
-                                        ), timeout=timeout)
+        # Pinned to the validated IP so the connection can't be rebound to an internal host.
+        safe_urlopen(_request(url, token, fmt if fmt in FORMATS else "json", fields), timeout)
         return True, ""
     except Exception as e:
         return False, str(e)[:300]
