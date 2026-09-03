@@ -8,7 +8,7 @@ const REASONS = [
   {
     icon: <IconShield />,
     title: "No agent to package or roll out",
-    body: "There is no proprietary always-on agent to build, sign, maintain, and explain to your developers. If you already use Jamf, Intune, or Group Policy, Palivane hands you the config to push through them. Some planes put nothing on a machine at all: the gateway is a base-URL change, and scanning Slack, Drive, SharePoint or Salesforce needs only a read token. The endpoint planes do install something, a browser extension and a small CLI that wires the coding-tool hooks, and both go out through the same MDM.",
+    body: "There is no proprietary always-on agent to build, sign, maintain, and explain to your developers. If you already use Jamf, Intune, or Group Policy, Palivane hands you the config to push through them. Some planes put nothing on a machine at all: the gateway is a base-URL change, and scanning Slack, Drive, SharePoint or Salesforce needs only read-only access (a bot token or a read-only app/service account). The endpoint planes do install something, a browser extension and a small CLI that wires the coding-tool hooks, and both go out through the same MDM.",
   },
   {
     icon: <IconTarget />,
