@@ -176,6 +176,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "warp.dev": ("Warp AI", "coding"),
     "zed.dev": ("Zed AI", "coding"),
     "trae.ai": ("Trae", "coding"),
+    "antigravity.google": ("Antigravity", "coding"),
     "factory.ai": ("Factory", "coding"),
     "all-hands.dev": ("OpenHands", "coding"),
     "qodo.ai": ("Qodo", "coding"),
