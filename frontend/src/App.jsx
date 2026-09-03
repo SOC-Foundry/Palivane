@@ -19,6 +19,7 @@ import UseCases from "./components/UseCases.jsx";
 import Pricing from "./components/Pricing.jsx";
 import WhyPalivane from "./components/WhyPalivane.jsx";
 import Trust from "./components/Trust.jsx";
+import Support from "./components/Support.jsx";
 import Docs from "./components/Docs.jsx";
 import Admin from "./components/Admin.jsx";
 import ExtensionConnect from "./components/ExtensionConnect.jsx";
@@ -289,6 +290,9 @@ export default function App() {
   }
   if (legalPath === "/trust") {
     return <Trust />;
+  }
+  if (legalPath === "/support") {
+    return <Support />;
   }
   if (legalPath === "/docs" || legalPath.startsWith("/docs/")) {
     return <Docs slug={legalPath.split("/")[2] || ""} />;

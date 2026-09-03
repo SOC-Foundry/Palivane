@@ -40,6 +40,7 @@ const MENU = [
     { href: "/docs",    label: "Documentation", note: "Setup, deployment, reference" },
     { href: "/setup",   label: "Set it up",     note: "One command, one afternoon" },
     { href: "/trust",   label: "Trust & security", note: "Posture, data handling, disclosure" },
+    { href: "/support", label: "Support",       note: "Get help, by plan" },
   ]},
 ];
 
@@ -213,6 +214,7 @@ export function SiteFooter() {
     { head: "Get started", links: [
       ["/pricing", "Pricing"], [demoUrl(), "See the live demo"],
       ["mailto:sales@palivane.io", "Talk to sales"], ["/setup", "Set it up"],
+      ["/support", "Support"],
     ]},
     { head: "Trust", links: [
       ["/trust", "Trust & security"], ["/privacy", "Privacy"], ["/terms", "Terms"],
