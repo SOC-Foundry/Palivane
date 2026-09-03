@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { BrandClaude, BrandCursor, BrandCopilot, BrandGemini, BrandPerplexity, BrandOpenAI,
-         BrandDrive, BrandSlack, BrandGit, BrandGitHub, BrandNpm, BrandActions } from "./brandicons.jsx";
+         BrandDrive, BrandSlack, BrandGit, BrandGitHub, BrandNpm, BrandActions,
+         BrandSharePoint, BrandSalesforce } from "./brandicons.jsx";
 import { SiteNav, SiteFooter, Shot, Clip, Lightbox } from "./SiteChrome.jsx";
 // Derived from the detector source at build time (frontend/scripts/gen-stats.mjs, CI
 // fails when stale) — the band can never claim different numbers than the engine ships.
@@ -31,7 +32,7 @@ const STATS = [
 const CAPTURE = [
   { logos: [BrandClaude, BrandCursor, BrandCopilot, BrandGemini], title: "In coding tools", body: "Claude Code, Cursor, Codex, Copilot, and Gemini CLI report every prompt and tool call, and posture scans surface the agents that can't be hooked (Cline, Roo, Windsurf, Amazon Q). One line to install." },
   { logos: [BrandOpenAI, BrandClaude, BrandGemini, BrandPerplexity], title: "In the browser", body: `What people paste into ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, Qwen, Kimi. ${stats.browser_sites} AI sites in all, including the app builders (v0, Bolt, Lovable, Replit).` },
-  { logos: [BrandSlack, BrandDrive], title: "In the places it already sits", body: "Slack, Google Drive, SharePoint, and Salesforce, scanned where the data lives, because an AI rollout will index all of it long before anyone pastes it into a prompt. A read token, nothing installed anywhere." },
+  { logos: [BrandSlack, BrandDrive, BrandSharePoint, BrandSalesforce], title: "In the places it already sits", body: "Slack, Google Drive, SharePoint, and Salesforce, scanned where the data lives, because an AI rollout will index all of it long before anyone pastes it into a prompt. A read token, nothing installed anywhere." },
   { logos: [BrandGit, BrandGitHub, BrandNpm], title: "In code and laptops", body: "Commits and dependencies before they land, and credentials already at rest." },
   { logos: [BrandActions], title: "In GitHub Actions", body: "Coding agents running on CI runners with your production credentials." },
   { logos: [BrandClaude, BrandOpenAI], title: "In desktop apps", body: "The AI apps that never touch a browser: Claude and ChatGPT desktop. The one plane that needs a system proxy and a trusted CA, so it is usually a second phase." },
