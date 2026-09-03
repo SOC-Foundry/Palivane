@@ -11,6 +11,8 @@ import warnings
 
 import httpx
 
+from .netguard import safe_client
+
 with warnings.catch_warnings():   # authlib.jose is "deprecated" but supported pre-2.0
     warnings.simplefilter("ignore")
     from authlib.jose import JsonWebKey, jwt
@@ -34,7 +36,7 @@ def discover(issuer: str) -> dict:
     """Fetch the IdP's OpenID configuration (authorization/token/jwks endpoints)."""
     url = _safe(issuer.rstrip("/") + "/.well-known/openid-configuration")
     try:
-        with httpx.Client(timeout=10) as c:
+        with safe_client(timeout=10) as c:
             r = c.get(url)
             r.raise_for_status()
             return r.json()
@@ -67,7 +69,7 @@ def exchange_code(meta: dict, client_id: str, client_secret: str, code: str,
         "client_secret": client_secret,
     }
     try:
-        with httpx.Client(timeout=10) as c:
+        with safe_client(timeout=10) as c:
             r = c.post(_safe(meta["token_endpoint"]), data=data)
             r.raise_for_status()
             return r.json()
@@ -106,7 +108,7 @@ def _key_set(jwks_uri: str):
     if hit and hit[1] > _time.time():
         return hit[0]
     try:
-        with httpx.Client(timeout=10) as c:
+        with safe_client(timeout=10) as c:
             jwks = c.get(_safe(jwks_uri), timeout=10).json()
         ks = JsonWebKey.import_key_set(jwks)
     except Exception as e:
@@ -242,7 +244,7 @@ def validate_id_token(meta: dict, issuer: str, client_id: str, id_token: str,
     """Validate the ID token's signature (via the IdP JWKS) and claims, and return them.
     Enforces iss, aud (our client_id), exp, and the round-trip nonce."""
     try:
-        with httpx.Client(timeout=10) as c:
+        with safe_client(timeout=10) as c:
             jwks = c.get(_safe(meta["jwks_uri"]), timeout=10).json()
         key_set = JsonWebKey.import_key_set(jwks)
         claims = jwt.decode(id_token, key_set, claims_options={
