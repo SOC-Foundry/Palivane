@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { IconShield, IconPlug, IconTarget, IconAlert, IconInbox, IconClipboard } from "./icons.jsx";
+import { IconTerminal, IconBrowser, IconCloud, IconLaptop, IconWorkflow, IconDesktop } from "./icons.jsx";
 import { SiteNav, SiteFooter, Shot, Clip, Lightbox } from "./SiteChrome.jsx";
 // Derived from the detector source at build time (frontend/scripts/gen-stats.mjs, CI
 // fails when stale) — the band can never claim different numbers than the engine ships.
@@ -28,12 +28,12 @@ const STATS = [
 // at all. Desktop apps last, because that is the only plane needing a system proxy and a
 // trusted CA, and leading with it puts an MDM project in front of the value.
 const CAPTURE = [
-  { icon: <IconShield />, title: "In coding tools", body: "Claude Code, Cursor, Codex, Copilot, and Gemini CLI report every prompt and tool call, and posture scans surface the agents that can't be hooked (Cline, Roo, Windsurf, Amazon Q). One line to install." },
-  { icon: <IconPlug />, title: "In the browser", body: `What people paste into ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, Qwen, Kimi. ${stats.browser_sites} AI sites in all, including the app builders (v0, Bolt, Lovable, Replit).` },
-  { icon: <IconInbox />, title: "In the places it already sits", body: "Slack, Google Drive, SharePoint, and Salesforce, scanned where the data lives, because an AI rollout will index all of it long before anyone pastes it into a prompt. A read token, nothing installed anywhere." },
-  { icon: <IconClipboard />, title: "In code and laptops", body: "Commits and dependencies before they land, and credentials already at rest." },
-  { icon: <IconAlert />, title: "In GitHub Actions", body: "Coding agents running on CI runners with your production credentials." },
-  { icon: <IconInbox />, title: "In desktop apps", body: "The AI apps that never touch a browser: Claude and ChatGPT desktop. The one plane that needs a system proxy and a trusted CA, so it is usually a second phase." },
+  { icon: <IconTerminal />, title: "In coding tools", body: "Claude Code, Cursor, Codex, Copilot, and Gemini CLI report every prompt and tool call, and posture scans surface the agents that can't be hooked (Cline, Roo, Windsurf, Amazon Q). One line to install." },
+  { icon: <IconBrowser />, title: "In the browser", body: `What people paste into ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, Qwen, Kimi. ${stats.browser_sites} AI sites in all, including the app builders (v0, Bolt, Lovable, Replit).` },
+  { icon: <IconCloud />, title: "In the places it already sits", body: "Slack, Google Drive, SharePoint, and Salesforce, scanned where the data lives, because an AI rollout will index all of it long before anyone pastes it into a prompt. A read token, nothing installed anywhere." },
+  { icon: <IconLaptop />, title: "In code and laptops", body: "Commits and dependencies before they land, and credentials already at rest." },
+  { icon: <IconWorkflow />, title: "In GitHub Actions", body: "Coding agents running on CI runners with your production credentials." },
+  { icon: <IconDesktop />, title: "In desktop apps", body: "The AI apps that never touch a browser: Claude and ChatGPT desktop. The one plane that needs a system proxy and a trusted CA, so it is usually a second phase." },
 ];
 
 const LINEAGE = [

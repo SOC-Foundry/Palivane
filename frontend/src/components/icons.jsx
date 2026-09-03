@@ -52,3 +52,23 @@ export const IconBook = (p) => (
 export const IconGear = (p) => (
   <svg {...base} {...p}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
 );
+
+// Surface icons for the landing "where it works" grid — one distinct glyph per surface.
+export const IconTerminal = (p) => (   // coding tools (CLI / editor)
+  <svg {...base} {...p}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 9l3 3-3 3M13.5 15H17" /></svg>
+);
+export const IconBrowser = (p) => (    // browser tabs
+  <svg {...base} {...p}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 8.5h18M6.5 6.3h.01M9.3 6.3h.01" /></svg>
+);
+export const IconCloud = (p) => (      // SaaS where the data already sits
+  <svg {...base} {...p}><path d="M7 18h9.5a3.5 3.5 0 0 0 .3-6.99 5 5 0 0 0-9.64-1.4A4 4 0 0 0 7 18z" /></svg>
+);
+export const IconLaptop = (p) => (     // code & laptops
+  <svg {...base} {...p}><rect x="4" y="5" width="16" height="10" rx="1" /><path d="M2 19h20" /></svg>
+);
+export const IconWorkflow = (p) => (   // GitHub Actions / CI runs
+  <svg {...base} {...p}><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M10 8.5l5.5 3.5L10 15.5z" /></svg>
+);
+export const IconDesktop = (p) => (    // desktop apps
+  <svg {...base} {...p}><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8.5 20h7M12 16v4" /></svg>
+);
