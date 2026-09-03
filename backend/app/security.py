@@ -153,6 +153,8 @@ def create_token(claims: dict, ttl: int | None = None) -> str:
     ttl = settings.auth_token_ttl if ttl is None else ttl
     now = int(time.time())
     payload = {**claims, "iat": now, "exp": now + ttl}
+    if settings.jwt_iss:
+        payload.setdefault("iss", settings.jwt_iss)
     header = {"alg": "HS256", "typ": "JWT"}
     segs = [
         _b64e(json.dumps(header, separators=(",", ":")).encode()),
@@ -190,4 +192,10 @@ def decode_token(token: str) -> dict:
         raise TokenError("bad payload")
     if int(payload.get("exp", 0)) < int(time.time()):
         raise TokenError("token expired")
+    # Reject a token minted for a different deployment. Only checked when the token carries
+    # `iss` and this deployment has one configured, so legacy tokens (no `iss`) still verify
+    # until they expire — no forced logout when this rolls out.
+    iss = payload.get("iss")
+    if settings.jwt_iss and iss is not None and iss != settings.jwt_iss:
+        raise TokenError("wrong issuer")
     return payload

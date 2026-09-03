@@ -51,7 +51,7 @@ from .models import Agent, ApiKey, Tenant, User
 from .policy import detect_tool, signal_filter_for
 from .security import (TokenError, decode_token, hash_token, looks_like_agent_token,
                        looks_like_api_key)
-from .metering import record_and_check
+from .metering import check_daily_gateway, record_and_check
 from .service import run_analysis
 from .upstreams import resolve as resolve_upstream
 
@@ -209,6 +209,30 @@ def _should_block(verdict: dict, pol: GatewayPolicy) -> bool:
     return False
 
 
+def _clamp_output_tokens(payload: dict) -> dict:
+    """Cap the output-token count forwarded upstream at settings.gateway_max_output_tokens,
+    whatever the client requested — the per-call cost ceiling that stops one request from
+    amplifying spend. Covers OpenAI (max_tokens / max_completion_tokens / max_output_tokens),
+    Anthropic (max_tokens), and Gemini (generationConfig.maxOutputTokens). No-op when the
+    limit is 0 or the payload isn't a dict."""
+    cap = settings.gateway_max_output_tokens
+    if not cap or not isinstance(payload, dict):
+        return payload
+    for k in ("max_tokens", "max_completion_tokens", "max_output_tokens"):
+        v = payload.get(k)
+        if isinstance(v, int) and v > cap:
+            payload[k] = cap
+    gc = payload.get("generationConfig")
+    if isinstance(gc, dict):
+        v = gc.get("maxOutputTokens")
+        # Gemini sends this as an int or a numeric string.
+        if isinstance(v, int) and v > cap:
+            gc["maxOutputTokens"] = cap
+        elif isinstance(v, str) and v.isdigit() and int(v) > cap:
+            gc["maxOutputTokens"] = str(cap)
+    return payload
+
+
 _RETRY_HEADER = {"Retry-After": "60"}
 
 
@@ -224,6 +248,19 @@ def _rate_limited(db: Session, principal: "Principal", shape: str) -> JSONRespon
                                                "type": "forbidden", "code": "suspended"}})
     allowed, count, limit = record_and_check(db, principal.tenant_id)
     msg = f"Palivane rate limit exceeded ({limit}/min)."
+    # Daily backstop, checked after the minute bucket records this request so the count is
+    # inclusive (limit N allows exactly N/day), matching the per-minute semantics.
+    if allowed:
+        day_ok, _dc, day_limit = check_daily_gateway(db, principal.tenant_id)
+        if not day_ok:
+            dmsg = f"Palivane daily gateway quota exceeded ({day_limit}/day)."
+            if shape == "anthropic":
+                dbody = {"type": "error", "error": {"type": "rate_limit_error", "message": dmsg}}
+            elif shape == "gemini":
+                dbody = {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "message": dmsg}}
+            else:
+                dbody = {"error": {"message": dmsg, "type": "rate_limited", "code": "rate_limited"}}
+            return JSONResponse(status_code=429, content=dbody, headers=_RETRY_HEADER)
     if allowed and principal.agent_id:
         # Per-agent budget on top of the tenant's: an agent with its own rate_limit gets
         # its own minute-bucket (kind=agN), so one runaway agent can't drain the org.
@@ -881,7 +918,7 @@ async def chat_completions(request: Request, principal: Principal = Depends(get_
     limited = _rate_limited(db, principal, "openai")
     if limited:
         return limited
-    payload = await request.json()
+    payload = _clamp_output_tokens(await request.json())
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
     prompt = _with_image_text(_scan_messages(payload.get("messages", [])), payload)
@@ -1048,7 +1085,7 @@ async def responses(request: Request, principal: Principal = Depends(get_gateway
     limited = _rate_limited(db, principal, "openai")
     if limited:
         return limited
-    payload = await request.json()
+    payload = _clamp_output_tokens(await request.json())
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
     verdict = _capture(_responses_user_text(payload.get("input")), model, tool, principal, db)
@@ -1135,7 +1172,7 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
     limited = _rate_limited(db, principal, "anthropic")
     if limited:
         return limited
-    payload = await request.json()
+    payload = _clamp_output_tokens(await request.json())
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
     prompt = _with_image_text(_scan_messages(payload.get("messages", []), payload.get("system")), payload)
@@ -1300,7 +1337,7 @@ async def _gemini_entry(model: str, method: str, request: Request,
     limited = _rate_limited(db, principal, "gemini")
     if limited:
         return limited
-    payload = await request.json()
+    payload = _clamp_output_tokens(await request.json())
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
     prompt = _with_image_text(
         _scan_gemini(payload.get("contents", []), payload.get("systemInstruction") or payload.get("system_instruction")),

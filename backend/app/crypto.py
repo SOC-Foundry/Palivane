@@ -3,6 +3,10 @@
 Uses Fernet (AES-CBC + HMAC, authenticated) with a key derived from PALIVANE_ENCRYPTION_KEY,
 falling back to PALIVANE_SECRET_KEY. Deriving from the existing secret means a self-host
 gets encryption for free; set a dedicated PALIVANE_ENCRYPTION_KEY to rotate independently.
+
+The key is derived with HKDF-SHA256 (a real KDF with domain-separating salt/info). A
+MultiFernet keeps the older bare-SHA256 derivation as a *decrypt-only* fallback, so secrets
+written before this change still open; anything re-encrypted is upgraded to the HKDF key.
 """
 from __future__ import annotations
 
@@ -10,16 +14,27 @@ import base64
 import hashlib
 import os
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from .config import settings, _env
 
 
-def _fernet() -> Fernet:
-    secret = (_env("PALIVANE_ENCRYPTION_KEY") or settings.auth_secret_key
-              or "dev-insecure-change-me").encode()
-    # Fernet needs a 32-byte urlsafe-base64 key; derive one deterministically.
-    return Fernet(base64.urlsafe_b64encode(hashlib.sha256(secret).digest()))
+def _secret_bytes() -> bytes:
+    return (_env("PALIVANE_ENCRYPTION_KEY") or settings.auth_secret_key
+            or "dev-insecure-change-me").encode()
+
+
+def _fernet() -> MultiFernet:
+    # Fernet needs a 32-byte urlsafe-base64 key. Primary: HKDF-SHA256. Fallback (decrypt
+    # only): the legacy unsalted SHA-256 so existing ciphertext keeps working.
+    secret = _secret_bytes()
+    hkdf_key = HKDF(algorithm=hashes.SHA256(), length=32,
+                    salt=b"palivane.crypto.hkdf.v1", info=b"secret-at-rest").derive(secret)
+    legacy_key = hashlib.sha256(secret).digest()
+    return MultiFernet([Fernet(base64.urlsafe_b64encode(hkdf_key)),
+                        Fernet(base64.urlsafe_b64encode(legacy_key))])
 
 
 def encrypt(plaintext: str) -> str:

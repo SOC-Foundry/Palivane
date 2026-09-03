@@ -18,6 +18,7 @@ registered manual-only — its public API has no grant-enumeration surface (see 
 from __future__ import annotations
 
 import json
+import logging
 import time
 import urllib.error
 import urllib.parse
@@ -29,6 +30,8 @@ from authlib.jose import jwt
 from .crypto import decrypt, encrypt
 from .discovery import ingest_oauth_grants
 from .schemas import OAuthGrant
+
+_log = logging.getLogger("palivane.saas")
 
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 _GOOGLE_ADMIN_BASE = "https://admin.googleapis.com/admin/directory/v1"
@@ -82,7 +85,10 @@ def _google_access_token(creds: dict, scopes: str = _GOOGLE_SCOPES) -> str:
     tok = _http_json(_GOOGLE_TOKEN_URL, data=body,
                      headers={"Content-Type": "application/x-www-form-urlencoded"})
     if not tok.get("access_token"):
-        raise ConnectorError(f"token exchange returned no access_token: {tok}")
+        # Log the provider's error body for diagnosis, but don't fold it into the raised
+        # message — it gets persisted on the connector and surfaced via the API.
+        _log.warning("OAuth token exchange returned no access_token: %s", tok)
+        raise ConnectorError("token exchange failed (no access_token returned)")
     return tok["access_token"]
 
 
@@ -144,7 +150,10 @@ def _microsoft_access_token(creds: dict) -> str:
                      data=body,
                      headers={"Content-Type": "application/x-www-form-urlencoded"})
     if not tok.get("access_token"):
-        raise ConnectorError(f"token exchange returned no access_token: {tok}")
+        # Log the provider's error body for diagnosis, but don't fold it into the raised
+        # message — it gets persisted on the connector and surfaced via the API.
+        _log.warning("OAuth token exchange returned no access_token: %s", tok)
+        raise ConnectorError("token exchange failed (no access_token returned)")
     return tok["access_token"]
 
 
@@ -630,7 +639,10 @@ def _salesforce_access(creds: dict) -> tuple[str, str]:
     tok = _http_json(f"{instance}/services/oauth2/token", data=body,
                      headers={"Content-Type": "application/x-www-form-urlencoded"})
     if not tok.get("access_token"):
-        raise ConnectorError(f"token exchange returned no access_token: {tok}")
+        # Log the provider's error body for diagnosis, but don't fold it into the raised
+        # message — it gets persisted on the connector and surfaced via the API.
+        _log.warning("OAuth token exchange returned no access_token: %s", tok)
+        raise ConnectorError("token exchange failed (no access_token returned)")
     return (tok.get("instance_url") or instance).rstrip("/"), tok["access_token"]
 
 
