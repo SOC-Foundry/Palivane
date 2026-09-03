@@ -52,7 +52,8 @@ _DANGEROUS_CMD = re.compile(
 )
 
 _CODING_TOOLS = ("cursor", "claude-code", "claude code", "copilot", "codeium",
-                 "windsurf", "aider", "cline", "continue", "gemini-cli")
+                 "windsurf", "aider", "cline", "continue", "gemini-cli",
+                 "grok", "antigravity")
 
 
 def _is_config(item: AnalysisInput) -> bool:
