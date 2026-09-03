@@ -1025,11 +1025,17 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
   display: grid; place-items: center; width: 44px; height: 44px; border-radius: 5px;
   background: var(--accent-soft); color: var(--accent-2); border: 1px solid var(--accent); margin-bottom: 15px;
 }
-/* Brand-logo variant: a small single-color logo wall, one chip per product. */
-.lp-card-logos { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px; }
+/* Brand-logo wall: one chip per product, each mark in its own brand color. Neutral chip
+   so the colors read cleanly against the dark card. */
+.lp-card-logos { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px; align-items: center; }
 .lp-card-logos svg {
   width: 18px; height: 18px; padding: 6px; box-sizing: content-box; border-radius: 5px;
-  background: var(--accent-soft); color: var(--accent-2); border: 1px solid var(--accent);
+  background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .1);
+}
+.lp-more {
+  display: inline-flex; align-items: center; height: 32px; padding: 0 9px; border-radius: 5px;
+  background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .1);
+  color: var(--muted); font-size: 12.5px; font-weight: 600;
 }
 .lp-card h3 { font-size: 17.5px; margin: 0 0 8px; color: #ffffff; }
 .lp-card p { font-size: 14px; color: var(--muted); line-height: 1.65; margin: 0; }
