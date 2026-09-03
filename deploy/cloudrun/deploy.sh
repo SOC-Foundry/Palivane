@@ -91,6 +91,7 @@ SECRETS="PALIVANE_SECRET_KEY=palivane-secret-key:latest,DATABASE_URL=palivane-da
 for pair in \
   "GATEWAY_ANTHROPIC_KEY=gateway-anthropic-key" \
   "GATEWAY_XAI_KEY=gateway-xai-key" \
+  "GMAIL_SA_JSON=gmail-sa-json" \
   "ANTHROPIC_API_KEY=judge-anthropic-key" \
   "OPENAI_API_KEY=openai-api-key" \
   "GEMINI_API_KEY=gemini-api-key" \

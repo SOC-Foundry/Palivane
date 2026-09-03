@@ -206,6 +206,12 @@ class Settings:
     # (palivane-cf-email-token), same as the other provider keys.
     cf_email_account_id: str = _env("CF_EMAIL_ACCOUNT_ID", "").strip()
     cf_email_token: str = _env("CF_EMAIL_TOKEN", "").strip()
+    # Gmail API transport (HTTPS — works from Cloud Run, which blocks outbound SMTP to
+    # Gmail). gmail_sa_json is a service-account key JSON with domain-wide delegation for the
+    # gmail.send scope; gmail_send_as is the Workspace user it impersonates (mail sends as
+    # that user, or as MAIL_FROM when MAIL_FROM is a verified send-as alias of it).
+    gmail_sa_json: str = _env("GMAIL_SA_JSON", "")
+    gmail_send_as: str = _env("GMAIL_SEND_AS", "").strip()
     # Azure OpenAI (rides the "openai" upstream slot — paste the resource URL as the
     # base; see gateway._openai_upstream): the api-version used for the classic
     # deployments URL layout. The 2025+ /openai/v1 unified endpoint ignores it.

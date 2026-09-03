@@ -69,6 +69,9 @@ jobs:
           SMTP_HOST: ${{ vars.SMTP_HOST }}
           SMTP_USER: ${{ vars.SMTP_USER }}
           MAIL_FROM: ${{ vars.MAIL_FROM }}
+          # Gmail API transport (HTTPS; works from Cloud Run, which blocks SMTP to Gmail).
+          # The service-account key rides in from Secret Manager (gmail-sa-json) in deploy.sh.
+          GMAIL_SEND_AS: ${{ vars.GMAIL_SEND_AS }}
           CF_EMAIL_ACCOUNT_ID: ${{ vars.CF_EMAIL_ACCOUNT_ID }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
           PALIVANE_DEMO_ORG: ${{ vars.PALIVANE_DEMO_ORG }}
