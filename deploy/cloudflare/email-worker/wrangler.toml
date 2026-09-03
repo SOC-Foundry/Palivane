@@ -1,6 +1,0 @@
-# Fan-out worker behind the sales@palivane.io Email Routing rule (see worker.js).
-# Deploy: npx wrangler deploy  (from this directory, authed to the palivane.io account)
-name = "palivane-sales-email"
-main = "worker.js"
-compatibility_date = "2026-08-01"
-account_id = "e877e5d440048df1624a3512143c1281"
