@@ -169,6 +169,29 @@ export default function HowItWorks() {
         </div>
       </section>
 
+      {/* Latency */}
+      <section className="lp-section">
+        <div className="lp-wrap">
+          <h2 className="lp-h2">What inline inspection costs in latency</h2>
+          <p className="lp-sub">The whole detection engine is deterministic and in-process,
+             no model call sits between the prompt and the provider. Measured on a
+             production-class core (rules path, the default; the optional LLM judge runs
+             out-of-band):</p>
+          <table className="hiw-table">
+            <thead><tr><th>Input</th><th>p50</th><th>p95</th></tr></thead>
+            <tbody>
+              <tr><td>Typical prompt (&lt;1&nbsp;KB)</td><td><code>0.2&nbsp;ms</code></td><td><code>0.3&nbsp;ms</code></td></tr>
+              <tr><td>Code paste (~2&nbsp;KB)</td><td><code>5&nbsp;ms</code></td><td><code>8&nbsp;ms</code></td></tr>
+              <tr><td>Document paste (~18&nbsp;KB)</td><td><code>44&nbsp;ms</code></td><td><code>65&nbsp;ms</code></td></tr>
+            </tbody>
+          </table>
+          <p className="lp-sub" style={{ fontSize: 13, opacity: 0.8 }}>Scoring time only,
+             network round-trip to your Palivane deployment adds the usual in-region
+             single-digit milliseconds. Streaming responses pass through live in monitor
+             mode, inspection tees the stream rather than buffering it.</p>
+        </div>
+      </section>
+
       {/* Monitor vs enforce */}
       <section className="lp-section alt">
         <div className="lp-wrap">
