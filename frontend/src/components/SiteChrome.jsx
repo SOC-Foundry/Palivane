@@ -217,7 +217,8 @@ export function SiteFooter() {
       ["/support", "Support"],
     ]},
     { head: "Trust", links: [
-      ["/trust", "Trust & security"], ["/privacy", "Privacy"], ["/terms", "Terms"],
+      ["/trust", "Trust & security"], ["/eu-ai-act", "EU AI Act"],
+      ["/privacy", "Privacy"], ["/terms", "Terms"],
     ]},
   ];
   return (

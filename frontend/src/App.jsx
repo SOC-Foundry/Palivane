@@ -19,6 +19,7 @@ import UseCases from "./components/UseCases.jsx";
 import Pricing from "./components/Pricing.jsx";
 import WhyPalivane from "./components/WhyPalivane.jsx";
 import Trust from "./components/Trust.jsx";
+import EUAIAct from "./components/EUAIAct.jsx";
 import Support from "./components/Support.jsx";
 import Docs from "./components/Docs.jsx";
 import Admin from "./components/Admin.jsx";
@@ -290,6 +291,9 @@ export default function App() {
   }
   if (legalPath === "/trust") {
     return <Trust />;
+  }
+  if (legalPath === "/eu-ai-act") {
+    return <EUAIAct />;
   }
   if (legalPath === "/support") {
     return <Support />;
