@@ -939,7 +939,7 @@ frontend/
     components/       # Dashboard, FindingsList, FindingDetail, Connect, Settings, Users,
                       #   Landing, Login (emblem + wordmark), Legal (privacy/terms), ExtensionConnect
     App.jsx           # routes: public Landing + /privacy + /terms + /extension-connect, else Login → console
-public/palivane-emblem.png  # knight+shield emblem (landing/nav/login); palivane-logo.png = full app icon
+public/palivane-emblem.svg  # green capsule mark (landing/nav/login/favicon); palivane-emblem.png/palivane-icon.png = raster fallbacks
 ```
 
 The frontend serves a **public marketing landing page** (the app root, pre-login) plus

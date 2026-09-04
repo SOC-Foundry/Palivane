@@ -98,7 +98,7 @@ export default function UseCases() {
           <p className="lp-sub">Before you write a policy, get the list: the AI tools in use,
              approved or not, broken down by team, what sensitive data each one actually
              received, and which devices are not reporting at all.</p>
-          <Shot lead src="/shots/discovery.png?v=5" alt="Inventory of AI tools in use" />
+          <Shot lead src="/shots/discovery.png?v=6" alt="Inventory of AI tools in use" />
         </div>
       </section>
 

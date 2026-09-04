@@ -164,7 +164,7 @@ export default function Landing({ onSignIn }) {
             <a className="lp-textlink" href="/coverage">What each surface requires →</a>
           </div>
           <div className="lp-split-media">
-            <Shot src="/shots/discovery.png?v=5" alt="Inventory of AI tools in use"
+            <Shot src="/shots/discovery.png?v=6" alt="Inventory of AI tools in use"
                   onZoom={(s, a) => setZoom({ src: s, alt: a })} />
           </div>
         </div>
@@ -181,7 +181,7 @@ export default function Landing({ onSignIn }) {
             <a className="lp-textlink" href="/use-cases#engineering">How engineering teams use it →</a>
           </div>
           <div className="lp-split-media">
-            <Shot src="/shots/agents.png?v=5" alt="AI assistant identity and limits"
+            <Shot src="/shots/agents.png?v=6" alt="AI assistant identity and limits"
                   onZoom={(s, a) => setZoom({ src: s, alt: a })} />
           </div>
         </div>
