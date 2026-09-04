@@ -17,13 +17,15 @@ registered manual-only — its public API has no grant-enumeration surface (see 
 """
 from __future__ import annotations
 
+import html as html_lib
 import json
 import logging
+import re
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from authlib.jose import jwt
 
@@ -1136,6 +1138,255 @@ def scan_sharepoint_files(db, connector, creds: dict) -> dict:
     return summary
 
 
+# --- Microsoft Teams message scanning -----------------------------------------------------
+# Channel messages via per-channel Graph delta queries (incremental after the first sync,
+# which looks back a week). Graph's channel-message delta covers only ROOT messages, so each
+# root that comes through the window also has its thread replies pulled — a reply landing on
+# a thread whose root is older than the window is not seen until that root changes again;
+# that limit is documented in the setup text rather than papered over. 1:1/group chats are
+# opt-in per named user via the (metered, licensed) Teams export API. Files shared in Teams
+# live in SharePoint/OneDrive and are covered by the sharepoint_files connector.
+
+_MAX_TEAMS_PER_SYNC = 100      # bounds team enumeration on huge tenants
+_MAX_REPLIES_PER_ROOT = 100    # replies pulled per newly-seen thread root
+_MAX_CHAT_USERS = 50           # bounds the opt-in per-user chat pull
+
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _teams_text(body: dict | None) -> str:
+    """chatMessage.body -> plain text (Graph message bodies are usually HTML)."""
+    content = (body or {}).get("content") or ""
+    if (body or {}).get("contentType", "").lower() == "html":
+        content = html_lib.unescape(_TAG_RE.sub(" ", content))
+    return content.strip()
+
+
+def _teams_upn(cache: dict, uid: str, hdrs: dict) -> str:
+    """Resolve a Teams user id to a UPN (cached; falls back to the id for deleted users)."""
+    if not uid:
+        return ""
+    if uid not in cache:
+        try:
+            u = _http_json(f"{_GRAPH_BASE}/users/{urllib.parse.quote(uid)}"
+                           "?$select=userPrincipalName", headers=hdrs)
+            cache[uid] = u.get("userPrincipalName") or uid
+        except ConnectorError:
+            cache[uid] = uid
+    return cache[uid]
+
+
+def _chat_where(cache: dict, chat_id: str, hdrs: dict) -> str:
+    """A triageable subject for a chat message: the chat's topic when it has one, else its
+    type ("1:1 chat" / "group chat"). Cached per chat; a failed lookup degrades to the id."""
+    if not chat_id:
+        return "Teams chat"
+    if chat_id not in cache:
+        try:
+            c = _http_json(f"{_GRAPH_BASE}/chats/{urllib.parse.quote(chat_id)}"
+                           "?$select=topic,chatType", headers=hdrs)
+            topic = (c.get("topic") or "").strip()
+            cache[chat_id] = (f"chat: {topic}" if topic
+                              else {"oneOnOne": "1:1 chat"}.get(c.get("chatType"), "group chat"))
+        except ConnectorError:
+            cache[chat_id] = f"chat {chat_id[:24]}"
+    return cache[chat_id]
+
+
+def scan_teams_messages(db, connector, creds: dict) -> dict:
+    """Scan Microsoft Teams channel messages (and opted-in users' chats) for PII/PHI/
+    secrets, persisting findings on the collab surface. Per-channel deltaLinks in
+    connector.state make every sync incremental; a channel whose budget runs out keeps its
+    old link (its changes rescan next sync — recurrences fold).
+
+    Returns {teams, channels, messages, findings, skipped?, chats?, chat_errors?,
+    truncated?} for last_sync_detail."""
+    token = _microsoft_access_token(creds)
+    hdrs = {"Authorization": f"Bearer {token}"}
+    from .detectors import AnalysisInput, Surface
+    from .service import run_analysis
+    from . import content_origin
+
+    custom_pii = _tenant_custom_pii(db, connector)
+    state = connector.state
+    deltas: dict[str, str] = dict(state.get("teams_deltas") or {})
+    since = (datetime.now(timezone.utc)
+             - timedelta(seconds=_SCAN_LOOKBACK_SECS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    users: dict[str, str] = {}
+    scanned = findings = skipped = 0
+    truncated = False
+
+    def _scan_msg(m: dict, where: str) -> int | None:
+        """One chatMessage through the engine. 1 = finding, 0 = scanned clean,
+        None = not user content (system events, bots, deleted, empty bodies)."""
+        nonlocal findings
+        if m.get("messageType") != "message" or m.get("deletedDateTime"):
+            return None
+        u = (m.get("from") or {}).get("user") or {}
+        text = _teams_text(m.get("body"))
+        if not u.get("id") or not text:
+            return None
+        actor = _teams_upn(users, u["id"], hdrs) or u.get("displayName", "")
+        result = run_analysis(
+            AnalysisInput(content=text, sender=actor, channel="teams", subject=where,
+                          surface=Surface.COLLAB, metadata={"custom_pii": custom_pii}),
+            persist=True, db=db, tenant_id=connector.tenant_id,
+            persist_benign=False, use_judge=False)
+        hit = result.get("finding_id") is not None
+        content_origin.store_fingerprint(db, connector.tenant_id, "teams",
+                                         m.get("id", ""), where, actor, text, sensitive=hit)
+        if hit:
+            findings += 1
+        return 1 if hit else 0
+
+    # Teams-provisioned groups (a Team is a group with the Team provisioning option).
+    teams: list[dict] = []
+    url = (f"{_GRAPH_BASE}/groups?"
+           + urllib.parse.urlencode({
+               "$filter": "resourceProvisioningOptions/Any(x:x eq 'Team')",
+               "$select": "id,displayName", "$top": "999"}))
+    while url and len(teams) < _MAX_TEAMS_PER_SYNC:
+        data = _http_json(url, headers=hdrs)
+        teams += data.get("value", [])
+        url = data.get("@odata.nextLink", "")
+    if url:
+        truncated = True
+
+    channels_seen = 0
+    for team in teams[:_MAX_TEAMS_PER_SYNC]:
+        tid, tname = team.get("id", ""), team.get("displayName", "team")
+        if not tid:
+            continue
+        if scanned >= _MAX_MESSAGES_PER_SYNC:
+            truncated = True
+            break
+        try:
+            chans = _http_json(f"{_GRAPH_BASE}/teams/{tid}/channels",
+                               headers=hdrs).get("value", [])
+        except ConnectorError:
+            continue                     # archived team / channels not accessible
+        for ch in chans:
+            cid, cname = ch.get("id", ""), ch.get("displayName", "channel")
+            if not cid:
+                continue
+            channels_seen += 1
+            if scanned >= _MAX_MESSAGES_PER_SYNC:
+                truncated = True
+                break
+            key = f"{tid}:{cid}"
+            url = deltas.get(key) or (
+                f"{_GRAPH_BASE}/teams/{tid}/channels/{cid}/messages/delta?"
+                + urllib.parse.urlencode({"$filter": f"lastModifiedDateTime gt {since}"}))
+            where = f"{tname}/#{cname}"
+            new_link, over = "", False
+            while url:
+                data = _http_json(url, headers=hdrs)
+                for m in data.get("value", []):
+                    if scanned >= _MAX_MESSAGES_PER_SYNC:
+                        over = True
+                        break
+                    got = _scan_msg(m, where)
+                    if got is None:
+                        skipped += 1
+                        continue
+                    scanned += 1
+                    # Delta returns only thread roots — pull this root's replies while it
+                    # is in the window, bounded so one megathread cannot eat the sync.
+                    if not m.get("replyToId") and m.get("id"):
+                        rurl = (f"{_GRAPH_BASE}/teams/{tid}/channels/{cid}/messages/"
+                                f"{urllib.parse.quote(m['id'])}/replies?%24top=50")
+                        pulled = 0
+                        while rurl and pulled < _MAX_REPLIES_PER_ROOT and not over:
+                            try:
+                                rd = _http_json(rurl, headers=hdrs)
+                            except ConnectorError:
+                                break    # replies denied ≠ channel scan failed
+                            for r in rd.get("value", []):
+                                if scanned >= _MAX_MESSAGES_PER_SYNC:
+                                    over = True
+                                    break
+                                rgot = _scan_msg(r, where)
+                                if rgot is None:
+                                    skipped += 1
+                                    continue
+                                scanned += 1
+                                pulled += 1
+                            rurl = "" if over else rd.get("@odata.nextLink", "")
+                if over:
+                    break
+                new_link = data.get("@odata.deltaLink", "")
+                url = data.get("@odata.nextLink", "")
+            if over:
+                truncated = True         # keep the OLD delta link: rescan, don't skip
+            elif new_link:
+                deltas[key] = new_link
+
+    # Opt-in 1:1/group chat coverage for named users, via the (licensed, possibly metered)
+    # Teams export API. Both parties to a chat surface the same messages, so ids are
+    # deduped within the sync; the watermark only advances for a user fully scanned.
+    raw_chat_users = creds.get("chat_users") or []
+    if isinstance(raw_chat_users, str):
+        raw_chat_users = [u.strip() for u in raw_chat_users.split(",")]
+    chat_users = [u for u in raw_chat_users if u][:_MAX_CHAT_USERS]
+    chat_marks: dict[str, str] = dict(state.get("chat_marks") or {})
+    chats_scanned = chat_errors = 0
+    if chat_users:
+        chat_names: dict[str, str] = {}
+        seen_ids: set[str] = set()
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for upn in chat_users:
+            q = urllib.parse.urlencode(
+                {"$filter": f"lastModifiedDateTime gt {chat_marks.get(upn) or since}",
+                 "$top": "50"})
+            url = (f"{_GRAPH_BASE}/users/{urllib.parse.quote(upn)}/chats/getAllMessages?{q}"
+                   + (f"&model={urllib.parse.quote(str(creds['chat_model']))}"
+                      if creds.get("chat_model") else ""))
+            over = False
+            try:
+                while url:
+                    data = _http_json(url, headers=hdrs)
+                    for m in data.get("value", []):
+                        mid = m.get("id", "")
+                        if mid and mid in seen_ids:
+                            continue     # the other party already surfaced this message
+                        seen_ids.add(mid)
+                        if scanned >= _MAX_MESSAGES_PER_SYNC:
+                            over = True
+                            break
+                        got = _scan_msg(m, _chat_where(chat_names, m.get("chatId", ""), hdrs))
+                        if got is None:
+                            skipped += 1
+                            continue
+                        scanned += 1
+                        chats_scanned += 1
+                    url = "" if over else data.get("@odata.nextLink", "")
+            except ConnectorError:
+                # Per-user licensing/permission failures must not discard the channel
+                # results already scanned — counted and surfaced instead.
+                chat_errors += 1
+                continue
+            if over:
+                truncated = True
+            else:
+                chat_marks[upn] = now_iso
+
+    connector.state = {**state, "teams_deltas": deltas, "chat_marks": chat_marks}
+    summary = {"teams": len(teams), "channels": channels_seen,
+               "messages": scanned, "findings": findings}
+    if skipped:
+        summary["skipped"] = skipped
+    if chats_scanned:
+        summary["chats"] = chats_scanned
+    if chat_errors:
+        # Surfaced, because a chat pull that silently stopped working reads exactly like
+        # users with nothing to say.
+        summary["chat_errors"] = chat_errors
+    if truncated:
+        summary["truncated"] = True
+    return summary
+
+
 PLATFORMS: dict[str, dict] = {
     "google_workspace": {
         "label": "Google Workspace",
@@ -1201,6 +1452,28 @@ PLATFORMS: dict[str, dict] = {
                  "across SharePoint sites via Graph delta queries (fully incremental "
                  "after the first sync). Text-shaped files are scanned; Office binaries "
                  "and PDFs are skipped. Rules-only detection on the collab surface.",
+    },
+    "teams_messages": {
+        "label": "Microsoft Teams message scanning",
+        "scan": scan_teams_messages,
+        "credential_fields": ["tenant_id", "client_id", "client_secret"],
+        "setup": "Entra ID app registration (same shape as the other Microsoft "
+                 "connectors) with admin-consented *application* Graph permissions "
+                 "ChannelMessage.Read.All, Group.Read.All, Channel.ReadBasic.All and "
+                 "User.Read.All. ChannelMessage.Read.All is a Microsoft protected API — "
+                 "request access for the app registration via Microsoft's protected-APIs "
+                 "form (one-time, per app). Every sync walks each team's channels via "
+                 "Graph delta queries (fully incremental after the first sync, which "
+                 "looks back 7 days) and scans message text plus thread replies for "
+                 "PII/PHI/secrets on the collab surface — a reply to a thread whose root "
+                 "left the window is only seen when that root changes again. Files shared "
+                 "in Teams live in SharePoint/OneDrive: pair this with the SharePoint / "
+                 "OneDrive scanning connector to cover them. Optional: a `chat_users` "
+                 "credential entry (comma-separated UPNs) also scans those users' 1:1 and "
+                 "group chats via the Teams export API — needs Chat.Read.All (also "
+                 "protected) and a `chat_model` entry of A or B per your licensing "
+                 "(without it Graph runs in evaluation mode with a low monthly cap). "
+                 "Rules-only detection.",
     },
     "salesforce": {
         "label": "Salesforce",

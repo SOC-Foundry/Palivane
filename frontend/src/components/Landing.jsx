@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { BrandClaude, BrandCursor, BrandCopilot, BrandGemini, BrandPerplexity, BrandOpenAI,
          BrandDrive, BrandSlack, BrandGit, BrandGitHub, BrandNpm, BrandActions,
-         BrandSharePoint, BrandSalesforce } from "./brandicons.jsx";
+         BrandSharePoint, BrandSalesforce, BrandTeams } from "./brandicons.jsx";
 import { SiteNav, SiteFooter, Shot, Clip, Lightbox } from "./SiteChrome.jsx";
 // Derived from the detector source at build time (frontend/scripts/gen-stats.mjs, CI
 // fails when stale) — the band can never claim different numbers than the engine ships.
@@ -34,13 +34,13 @@ const C = {
   claude: "#D97757", cursor: "#F2F2F2", copilot: "#F2F2F2", gemini: "#4285F4",
   openai: "#10A37F", perplexity: "#20B8CD", slack: "#36C5F0", drive: "#00AC47",
   sharepoint: "#038387", salesforce: "#00A1E0", git: "#F05133", github: "#F2F2F2",
-  npm: "#CB3837", actions: "#2088FF",
+  npm: "#CB3837", actions: "#2088FF", teams: "#7B83EB",
 };
 
 const CAPTURE = [
   { logos: [[BrandClaude, C.claude], [BrandCursor, C.cursor], [BrandOpenAI, C.openai], [BrandCopilot, C.copilot], [BrandGemini, C.gemini]], title: "In coding tools", body: "Claude Code, Cursor, Codex, Copilot, and Gemini CLI report every prompt and tool call, and any other OpenAI/Anthropic/Gemini-compatible CLI (Grok CLI) is captured through the gateway. Posture scans surface the agents that can't be hooked (Cline, Roo, Windsurf, Amazon Q, Antigravity). One line to install." },
   { logos: [[BrandOpenAI, C.openai], [BrandClaude, C.claude], [BrandGemini, C.gemini], [BrandPerplexity, C.perplexity]], more: stats.browser_sites - 4, title: "In the browser", body: `What people paste into ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, Qwen, Kimi. ${stats.browser_sites} AI sites in all, including the app builders (v0, Bolt, Lovable, Replit).` },
-  { logos: [[BrandSlack, C.slack], [BrandDrive, C.drive], [BrandSharePoint, C.sharepoint], [BrandSalesforce, C.salesforce]], title: "In the places it already sits", body: "Slack, Google Drive, SharePoint, and Salesforce, scanned where the data lives, because an AI rollout will index all of it long before anyone pastes it into a prompt. Read-only access, nothing installed anywhere." },
+  { logos: [[BrandSlack, C.slack], [BrandTeams, C.teams], [BrandDrive, C.drive], [BrandSharePoint, C.sharepoint], [BrandSalesforce, C.salesforce]], title: "In the places it already sits", body: "Slack, Microsoft Teams, Google Drive, SharePoint, and Salesforce, scanned where the data lives, because an AI rollout will index all of it long before anyone pastes it into a prompt. Read-only access, nothing installed anywhere." },
   { logos: [[BrandGit, C.git], [BrandGitHub, C.github], [BrandNpm, C.npm]], title: "In code and laptops", body: "Commits and dependencies before they land, and credentials already at rest." },
   { logos: [[BrandActions, C.actions]], title: "In GitHub Actions", body: "Coding agents running on CI runners with your production credentials." },
   { logos: [[BrandClaude, C.claude], [BrandOpenAI, C.openai]], title: "In desktop apps", body: "The AI apps that never touch a browser: Claude and ChatGPT desktop. The one plane that needs a system proxy and a trusted CA, so it is usually a second phase." },
@@ -216,7 +216,7 @@ export default function Landing({ onSignIn }) {
             <span className="lp-eyebrow">Lineage</span>
             <h2 className="lp-h2">Not just what leaked. Which document it came out of.</h2>
             <p className="lp-sub">Every document Palivane scans in Drive, SharePoint,
-              Salesforce, or Slack is fingerprinted. When text from one of them turns up in a
+              Salesforce, Slack, or Teams is fingerprinted. When text from one of them turns up in a
               prompt later, the finding names the source, and the exposure view works the
               other way too: pick a document and see everywhere it has surfaced.</p>
             <a className="lp-textlink" href="/use-cases">What that changes in an incident →</a>

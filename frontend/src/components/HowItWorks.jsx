@@ -17,7 +17,7 @@ const PIPELINE = [
 const SURFACES = [
   ["llm_io", "Prompts & responses on your own models"],
   ["ai_usage", "Content bound for external AI tools"],
-  ["collab", "Collaboration content (Slack) that AI integrations can read"],
+  ["collab", "Collaboration content (Slack, Teams) that AI integrations can read"],
   ["mcp", "Agent tool-use from AI assistants"],
   ["deps", "Dependency manifests (supply chain)"],
   ["ide", "Editor extensions"],
