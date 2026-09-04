@@ -967,8 +967,11 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
            Word/Excel/PowerPoint documents, plus screenshots when OCR is enabled on the
            deployment. What nothing can open (pre-2007 Office, encrypted PDFs, images with
            OCR off) is reported as skipped rather than counted clean. Findings land under the <code>collab</code> surface with alerts and
-           SIEM export as usual. Detection only: Slack permits no pre-delivery block, and no
-           edit of another person's message, outside Enterprise Grid's Discovery API.
+           SIEM export as usual. Deployments that set the Slack app's signing secret also
+           receive messages in real time (Events API), the moment they are sent, with the
+           scheduled pull as the safety net. Detection only: Slack permits no pre-delivery
+           block, and no edit of another person's message, outside Enterprise Grid's
+           Discovery API.
            <a href="/docs/slack-scanning" target="_blank" rel="noreferrer"> Full setup →</a></p>
       </div>
 

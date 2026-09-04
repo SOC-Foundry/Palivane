@@ -104,7 +104,8 @@ for pair in \
   "STRIPE_WEBHOOK_SECRET=palivane-stripe-webhook-secret" \
   "PALIVANE_LICENSE_SIGNING_KEY=palivane-license-signing-key" \
   "PALIVANE_RELEASE_SIGNING_KEY=palivane-release-signing-key" \
-  "PALIVANE_SLACK_CLIENT_SECRET=palivane-slack-client-secret"; do
+  "PALIVANE_SLACK_CLIENT_SECRET=palivane-slack-client-secret" \
+  "PALIVANE_SLACK_SIGNING_SECRET=palivane-slack-signing-secret"; do
   name="${pair##*=}"
   # Require an ENABLED VERSION, not merely that the secret exists. Terraform creates
   # palivane-smtp-pass deliberately empty (the value is added out of band), so a
