@@ -200,7 +200,7 @@ export default function HowItWorks() {
           <p className="lp-sub">Every verdict, across every plane, scored and triageable in one place.</p>
           {/* Real console, real seeded data — findings, discovery, policies, a live
               simulator block, and fleet health, recorded end to end. */}
-          <Clip lead src="/shots/console-tour1.mp4" poster="/shots/console-poster1.png"
+          <Clip lead src="/shots/console-tour2.mp4" poster="/shots/console-poster2.png"
                 caption="Thirty seconds through the console: findings and their evidence, the shadow-AI inventory, the policy catalog, and the simulator blocking a live injection + credential paste." />
         </div>
       </section>

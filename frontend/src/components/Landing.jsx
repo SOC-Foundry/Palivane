@@ -147,7 +147,7 @@ export default function Landing({ onSignIn }) {
             <a className="lp-textlink" href="/how-it-works">How the detection works →</a>
           </div>
           <div className="lp-split-media">
-            <Clip src="/shots/demo17.mp4" poster="/shots/demo-poster17.png" />
+            <Clip src="/shots/demo18.mp4" poster="/shots/demo-poster18.png" />
           </div>
         </div>
       </section>
