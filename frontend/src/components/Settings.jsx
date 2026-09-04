@@ -106,6 +106,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     gateway_enforce: enforceValue(tenant),
     client_enforce: clientEnforceValue(tenant),
     redact_mode: tenant?.redact_mode === true ? "on" : tenant?.redact_mode === false ? "off" : "inherit",
+    self_justify: tenant?.self_justify === true ? "on" : tenant?.self_justify === false ? "off" : "inherit",
     gateway_tokenize: tenant?.gateway_tokenize === true ? "on"
       : tenant?.gateway_tokenize === false ? "off" : "inherit",
     gateway_block_severity: tenant?.gateway_block_severity || "",
@@ -132,6 +133,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         gateway_enforce: org.gateway_enforce,
         client_enforce: org.client_enforce,
         redact_mode: org.redact_mode,
+        self_justify: org.self_justify,
         gateway_tokenize: org.gateway_tokenize,
         gateway_block_severity: org.gateway_block_severity,
         mcp_block_severity: org.mcp_block_severity,
@@ -730,6 +732,19 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
               When on, a prompt blocked <em>only</em> for a secret or PII becomes a warning that
               shows the redacted version and points to a sanctioned tool, the user chooses.
               Injection, source-code, and unsanctioned-destination blocks are unaffected.
+            </span>
+          </label>
+          <label>Justified proceed (Human Firewall)
+            <select value={org.self_justify} onChange={setField("self_justify")}>
+              <option value="inherit">Inherit (global)</option>
+              <option value="on">On, a justification unlocks the send</option>
+              <option value="off">Off, blocks are final</option>
+            </select>
+            <span className="muted" style={{ fontSize: 11.5, marginTop: 3 }}>
+              When on, a blocked user can record a business justification and send anyway.
+              The justification lands on the finding and in the audit log, so enforcement
+              teaches instead of queueing tickets. Confirmed secrets / PII stay blocked
+              regardless, those go to an admin via Request exception.
             </span>
           </label>
           <label>Gateway block severity

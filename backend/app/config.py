@@ -129,6 +129,9 @@ class Settings:
     # is the safe default); a tenant opts in. Named "redact" because the coaching UI surfaces
     # the redacted prompt the user can send instead.
     redact_mode: bool = _env("PALIVANE_REDACT_MODE", "").lower() in ("1", "true", "yes")
+    # Global default for self-service justification (tenants override tri-state): a blocked
+    # user records a business justification and proceeds; confirmed leaks stay blocked.
+    self_justify: bool = _env("PALIVANE_SELF_JUSTIFY", "").lower() in ("1", "true", "yes")
     # Encrypt stored finding content at rest (decrypted on read for authorized admins).
     # Opt-in: requires a durable PALIVANE_ENCRYPTION_KEY/PALIVANE_SECRET_KEY (key loss = data loss).
     encrypt_findings: bool = _env("PALIVANE_ENCRYPT_FINDINGS", "").lower() in ("1", "true", "yes")

@@ -51,6 +51,21 @@ class AIUsageIngest(BaseModel):
     destination: str = ""   # AI tool URL/domain
     user: str = ""          # end-user identity (from SSO/extension)
     tool: str = ""          # capturing tool id (e.g. "claude-code") for per-tool policy
+    # Short-lived grant from POST /api/ingest/justify: resubmitting the same content with
+    # it downgrades that block to a proceed (never a confirmed force_block leak).
+    override_token: str = ""
+
+
+class JustifyRequest(BaseModel):
+    """A blocked user's business justification — recorded on the finding, exchanged for a
+    short-lived override token that lets the SAME content through once policy allows."""
+    finding_id: int
+    justification: str = Field(min_length=10, max_length=2000)
+    user: str = ""          # end-user identity (from SSO/extension)
+    # SHA-256 hex of the exact blocked content. When given, the override token only
+    # unlocks THAT text — without it, the binding is finding-level (same actor + same
+    # violation classes + same destination fold into one finding), which is looser.
+    content_hash: str = ""
 
 
 class A2AIngest(BaseModel):
@@ -362,6 +377,7 @@ class TenantUpdate(BaseModel):
     # follows the global CLIENT_ENFORCE (default monitor).
     client_enforce: Literal["on", "off", "inherit"] | None = None
     redact_mode: Literal["on", "off", "inherit"] | None = None   # coaching mode (tri-state)
+    self_justify: Literal["on", "off", "inherit"] | None = None  # justified-proceed (tri-state)
     # Tokenize personal data in gateway traffic for this org (tri-state).
     gateway_tokenize: Literal["on", "off", "inherit"] | None = None
     gateway_block_severity: str | None = None  # ""|low|suspicious|high|critical
