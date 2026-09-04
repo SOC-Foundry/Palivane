@@ -187,7 +187,7 @@ const APP_HOST = 'app.palivane.io';
 // assets and the CLI download endpoints and bounce them across hosts on every request.
 const SITE_PAGES = new Set([
   '/', '/pricing', '/why-palivane', '/use-cases', '/how-it-works', '/coverage',
-  '/setup', '/trust', '/privacy', '/terms',
+  '/setup', '/trust', '/eu-ai-act', '/support', '/privacy', '/terms',
 ]);
 const isSitePage = (p) => SITE_PAGES.has(p) || p === '/docs' || p.startsWith('/docs/');
 const isConsolePage = (p) => p === '/app' || p.startsWith('/app/');
