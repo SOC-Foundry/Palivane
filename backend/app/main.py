@@ -2239,8 +2239,11 @@ def scan_ci(
     flagged: list[dict] = []
     worst = 0
     for wf in body.workflows[:500]:
+        # Findings name the CI system they came from — the scanner ships GitLab files
+        # (.gitlab-ci.yml) through the same plane as GitHub workflows.
+        chan = "gitlab-ci" if "gitlab-ci" in (wf.path or "") else "github-actions"
         item = AnalysisInput(content=wf.content, subject=wf.path or "workflow",
-                             sender=actor, channel="github-actions", surface=Surface.CI,
+                             sender=actor, channel=chan, surface=Surface.CI,
                              metadata={"kind": "ci_workflow", "repo": repo,
                                        "ref": body.ref, "workflow": wf.path})
         result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
