@@ -466,6 +466,25 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
       flash("SAML settings saved.");
     } catch (e) { err(e); }
   }
+  // --- SCIM provisioning ---
+  const [scimToken, setScimToken] = useState("");   // plaintext, shown once after mint
+  async function mintScim() {
+    if (tenant?.scim_enabled &&
+        !window.confirm("Rotate the SCIM token? The IdP keeps failing until it gets the new one.")) return;
+    try {
+      const r = await api.scimTokenMint(); setScimToken(r.token);
+      onTenant?.({ ...tenant, scim_enabled: true });
+    } catch (e) { err(e); }
+  }
+  async function revokeScim() {
+    if (!window.confirm("Revoke the SCIM token? Provisioning stops immediately.")) return;
+    try {
+      await api.scimTokenRevoke(); setScimToken("");
+      onTenant?.({ ...tenant, scim_enabled: false });
+      flash("SCIM token revoked.");
+    } catch (e) { err(e); }
+  }
+
   async function disableSaml() {
     try { await api.deleteSaml(); await loadSaml(); flash("SAML removed."); } catch (e) { err(e); }
   }
@@ -1185,6 +1204,28 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <button type="button" className="mini-btn" onClick={() => saveSaml({ enabled: true })}>Save &amp; enable</button>
           <button type="button" className="mini-btn" onClick={() => saveSaml({ enabled: false })}>Save (disabled)</button>
           <button type="button" className="mini-btn danger" onClick={disableSaml}>Remove SAML</button>
+        </div>
+      </div>
+
+      {/* SCIM provisioning */}
+      <div className="panel settings-card">
+        <div className="settings-head"><h2>User provisioning (SCIM 2.0)</h2>
+          {tenant?.scim_enabled && <span className="chip chip-on">enabled</span>}</div>
+        <p className="muted">Let your IdP (Okta, Entra ID, OneLogin) create and deactivate
+          Palivane users automatically. Point it at <code>{`${location.origin}/scim/v2`}</code> with
+          the bearer token below, someone removed from the directory is deactivated here on the
+          IdP's next sync, sessions killed immediately. SCIM users arrive as analysts; roles stay
+          a console decision. Deleting in the IdP deactivates (findings history survives).</p>
+        {scimToken && (
+          <p style={{ wordBreak: "break-all" }}><strong>Token (shown once):</strong>{" "}
+            <code>{scimToken}</code></p>
+        )}
+        <div className="detail-actions">
+          <button type="button" className="mini-btn" onClick={mintScim}>
+            {tenant?.scim_enabled ? "Rotate token" : "Generate token"}</button>
+          {tenant?.scim_enabled && (
+            <button type="button" className="mini-btn danger" onClick={revokeScim}>Revoke</button>
+          )}
         </div>
       </div>
 

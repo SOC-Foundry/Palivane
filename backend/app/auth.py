@@ -1095,6 +1095,32 @@ def delete_judge_key(current: User = Depends(require_admin), db: Session = Depen
 _JUDGE = {"on": True, "off": False, "inherit": None}
 
 
+@router.post("/scim/token")
+def scim_token_mint(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Mint (or rotate) the org's SCIM 2.0 bearer token. Plaintext is returned exactly
+    once — only its hash is stored. Point the IdP at /scim/v2 with this token."""
+    from . import audit_log
+    from .scim import mint_token
+    tenant = db.get(Tenant, current.tenant_id)
+    rotated = bool(tenant.scim_token_hash)
+    token = mint_token(db, tenant)
+    db.commit()
+    audit_log.record(db, current.tenant_id, current.email,
+                     "scim.token_rotated" if rotated else "scim.token_minted")
+    return {"token": token, "base_url": "/scim/v2", "rotated": rotated}
+
+
+@router.delete("/scim/token")
+def scim_token_revoke(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Revoke the org's SCIM token — provisioning stops until a new one is minted."""
+    from . import audit_log
+    tenant = db.get(Tenant, current.tenant_id)
+    tenant.scim_token_hash = ""
+    db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "scim.token_revoked")
+    return {"ok": True}
+
+
 @router.patch("/tenant")
 def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
                   db: Session = Depends(get_db)):
