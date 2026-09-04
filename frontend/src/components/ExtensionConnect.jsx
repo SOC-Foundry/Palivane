@@ -70,7 +70,7 @@ export default function ExtensionConnect() {
   return (
     <div className="login-screen">
       <div className="login-card" style={{ textAlign: "center" }}>
-        <img className="login-logo" src="/palivane-logo.png" alt="Palivane" width="120" height="120" />
+        <img className="login-logo" src="/palivane-emblem.svg" alt="Palivane" width="120" height="120" />
         {status === "connecting" && <p className="login-sub">Connecting your browser extension...</p>}
         {status === "done" && (
           <p className="login-sub">Connected as <strong>{detail}</strong>. You can close this tab.</p>

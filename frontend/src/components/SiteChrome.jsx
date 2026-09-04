@@ -66,7 +66,7 @@ export function SiteNav({ onSignIn }) {
   return (
     <header className="lp-nav" ref={navRef}>
       <a className="lp-brand" href="/">
-        <img src="/palivane-emblem.png" alt="" className="lp-brand-emblem" />
+        <img src="/palivane-emblem.svg" alt="" className="lp-brand-emblem" />
         <span>Palivane</span>
       </a>
 
@@ -181,7 +181,7 @@ export function Clip({ src, poster = "", caption = "", lead = false }) {
                         maxHeight: "70vh", objectFit: "cover", background: "#0b0f17" }} />
         {!started && (
           <button type="button" className="lp-play" onClick={start} aria-label="Play video">
-            <img src="/palivane-emblem.png" alt="" />
+            <img src="/palivane-emblem.svg" alt="" />
             <span className="lp-play-tri" />
           </button>
         )}
@@ -225,7 +225,7 @@ export function SiteFooter() {
       <div className="lp-foot-grid">
         <div className="lp-foot-brand">
           <a className="lp-brand" href="/">
-            <img src="/palivane-emblem.png" alt="" className="lp-brand-emblem" />
+            <img src="/palivane-emblem.svg" alt="" className="lp-brand-emblem" />
             <span>Palivane</span>
           </a>
           <p className="lp-foot-blurb">
