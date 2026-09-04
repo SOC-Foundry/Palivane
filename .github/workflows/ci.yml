@@ -120,9 +120,15 @@ jobs:
               - 'deploy/terraform/**'
 
       # Real plan against remote state — only when TF changed, on same-repo PRs (forks don't
-      # get creds), and only when the GCP/WIF variables are configured.
+      # get creds), and only when the GCP/WIF variables are configured. continue-on-error:
+      # the WIF trust policy deliberately scopes impersonation to the deploy workflow's
+      # refs, so PR-branch runs may be REFUSED a token — that refusal is the trust policy
+      # working, not a broken plan. fmt+validate above stay the hard PR gate; the
+      # authenticated plan runs wherever the trust policy allows it and is skipped
+      # (visibly, as a skipped step) where it doesn't.
       - name: Authenticate to GCP
         id: auth
+        continue-on-error: true
         if: >-
           steps.changes.outputs.tf == 'true'
           && github.event.pull_request.head.repo.full_name == github.repository
@@ -131,6 +137,9 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
+          # Mint a real token NOW (default mode only writes a credential config, so a
+          # ref the trust policy excludes "succeeds" here and explodes inside plan).
+          token_format: access_token
       - name: Terraform plan
         if: steps.auth.outcome == 'success'
         env:
