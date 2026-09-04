@@ -81,6 +81,16 @@ class Settings:
     # install flow is off; tenants can still paste a hand-built app's bot token.
     # redirect_url overrides the auto-derived callback (set it when a proxy rewrites
     # the scheme/host the app sees).
+    # Cloud-contract Claude upstreams for the gateway (/v1/messages forwards): orgs on
+    # GCP/AWS agreements route Claude through Vertex AI or Bedrock instead of an Anthropic
+    # API key. Vertex auth = Application Default Credentials (on Cloud Run the runtime
+    # service account; per-tenant override = an SA key in the tenant upstream). Bedrock
+    # auth = a Bedrock API key (bearer) or, when empty, the standard AWS credential chain
+    # (SigV4). Used only when no Anthropic key resolves — an API key always wins.
+    gateway_vertex_project: str = _env("GATEWAY_VERTEX_PROJECT", "").strip()
+    gateway_vertex_region: str = _env("GATEWAY_VERTEX_REGION", "us-east5").strip()
+    gateway_bedrock_region: str = _env("GATEWAY_BEDROCK_REGION", "").strip()
+    gateway_bedrock_key: str = _env("GATEWAY_BEDROCK_KEY", "").strip()
     slack_client_id: str = _env("PALIVANE_SLACK_CLIENT_ID", "").strip()
     slack_client_secret: str = _env("PALIVANE_SLACK_CLIENT_SECRET", "").strip()
     slack_redirect_url: str = _env("PALIVANE_SLACK_REDIRECT_URL", "").strip()

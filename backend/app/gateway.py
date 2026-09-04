@@ -1195,17 +1195,33 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
     if _agentic_block(agentic, pol):
         return _anthropic_error(agentic)
 
+    # An Anthropic API key (tenant or global) always wins; the cloud-contract resolver
+    # (Vertex/Bedrock) is consulted only when none is configured. Checked through the
+    # module-level resolve_upstream import — the seam the tests stub.
     base, key = resolve_upstream("anthropic", principal.tenant_id, db)
     if key:
-        if payload.get("stream"):
-            url = base.rstrip("/") + "/v1/messages"
-            headers = _anthropic_headers(request, key)
+        up = {"flavor": "anthropic", "base": base, "key": key}
+    else:
+        from .upstreams import resolve_anthropic_upstream
+        up = resolve_anthropic_upstream(principal.tenant_id, db)
+    if up:
+        flavor = up["flavor"]
+        # True streaming for Anthropic and Vertex (both speak SSE). Bedrock streams AWS
+        # eventstream framing, not SSE, so its stream=true calls fall through to the
+        # buffered path below and are answered as one synthesized SSE burst.
+        if payload.get("stream") and flavor != "bedrock":
             sent, tokens = _tokenize_out(payload, principal, db)
+            if flavor == "anthropic":
+                url = up["base"].rstrip("/") + "/v1/messages"
+                headers = _anthropic_headers(request, up["key"])
+                body = sent
+            else:
+                url, body, headers = _anthropic_transport(up, sent, request, stream=True)
             if not pol.enforce:
-                return _passthrough_stream(url, sent, headers, model, tool, principal,
+                return _passthrough_stream(url, body, headers, model, tool, principal,
                                            tokens)  # monitor: live output (teed)
             # enforce: buffer, inspect the assembled tool_use, block or replay verbatim.
-            status, ctype, raw = _read_stream(url, sent, headers)
+            status, ctype, raw = _read_stream(url, body, headers)
             decoded = raw.decode("utf-8", "replace")
             act = _stream_tool_use_anthropic(decoded)
             if act:
@@ -1220,7 +1236,12 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
                 raw = _reverse_bytes(raw, tokens, tool)
             return Response(content=raw, status_code=status, media_type=ctype)
         sent, tokens = _tokenize_out(payload, principal, db)
-        status, data = _post_upstream_anthropic("/v1/messages", sent, request, base, key)
+        if flavor == "anthropic":
+            status, data = _post_upstream_anthropic("/v1/messages", sent, request,
+                                                    up["base"], up["key"])
+        else:
+            url, body, headers = _anthropic_transport(up, sent, request, stream=False)
+            status, data = _post_upstream_raw(url, body, headers)
         # Response-side: DLP on the model's output (secrets/PII), and block a dangerous
         # tool_use it just requested, before the client sees/executes it (non-streaming).
         # Both run on the provider's reply as it arrived; a token carries no personal data,
@@ -1235,8 +1256,94 @@ async def messages(request: Request, principal: Principal = Depends(get_gateway_
                 return _anthropic_error(ragentic)
         if tokens:
             data = _reverse_obj(data, tokens, tool)
+        if payload.get("stream") and flavor == "bedrock" and status == 200:
+            return Response(content=_synthesize_anthropic_sse(data),
+                            status_code=200, media_type="text/event-stream")
         return JSONResponse(status_code=status, content=data)
     return JSONResponse(content=_anthropic_stub(model, verdict))
+
+
+# --- cloud-contract transports: the same Anthropic-shaped call, different wire ------------
+# Vertex speaks the Messages API natively (rawPredict/streamRawPredict, SSE on streams);
+# Bedrock speaks it per-model (/invoke) but streams AWS eventstream framing, not SSE — so
+# Bedrock "streaming" is served as a buffered invoke re-emitted as one valid SSE burst.
+
+def _anthropic_transport(up: dict, payload: dict, request: Request,
+                         stream: bool) -> tuple[str, dict | bytes, dict]:
+    """(url, body, headers) for an Anthropic-shaped forward through `up` (a
+    resolve_anthropic_upstream result). Bedrock bodies come back as bytes — SigV4 signs
+    exact bytes, so they must be serialized once, here."""
+    from urllib.parse import quote
+    from .upstreams import bedrock_headers, vertex_token
+    model = str(payload.get("model", ""))
+    if up["flavor"] == "vertex":
+        body = {k: v for k, v in payload.items() if k not in ("model", "stream")}
+        body["anthropic_version"] = "vertex-2023-10-16"
+        if stream:
+            body["stream"] = True
+        verb = "streamRawPredict" if stream else "rawPredict"
+        url = (f"https://{up['region']}-aiplatform.googleapis.com/v1/projects/"
+               f"{quote(up['project'])}/locations/{up['region']}/publishers/anthropic/"
+               f"models/{quote(model)}:{verb}")
+        return url, body, {"Content-Type": "application/json",
+                           "Authorization": f"Bearer {vertex_token(up.get('sa_json'))}"}
+    # bedrock — always the buffered invoke (streaming is synthesized from the result)
+    body = {k: v for k, v in payload.items() if k not in ("model", "stream")}
+    body["anthropic_version"] = "bedrock-2023-05-31"
+    url = (f"https://bedrock-runtime.{up['region']}.amazonaws.com/model/"
+           f"{quote(model, safe='')}/invoke")
+    raw = json.dumps(body).encode()
+    return url, raw, bedrock_headers(up["region"], up.get("key") or "", url, raw)
+
+
+def _post_upstream_raw(url: str, body: dict | bytes, headers: dict) -> tuple[int, dict]:
+    with safe_client(timeout=120) as c:
+        if isinstance(body, (bytes, str)):
+            r = c.post(url, content=body, headers=headers)
+        else:
+            r = c.post(url, json=body, headers=headers)
+        try:
+            return r.status_code, r.json()
+        except ValueError:
+            return r.status_code, {"type": "error", "error": {
+                "type": "upstream_error", "message": r.text[:500]}}
+
+
+def _synthesize_anthropic_sse(data: dict) -> bytes:
+    """Re-emit a complete Messages response as one valid Anthropic SSE burst — how a
+    stream=true call is answered when the upstream (Bedrock) cannot stream SSE. Every
+    event the wire protocol promises is present; they just arrive together."""
+    out: list[str] = []
+
+    def ev(name: str, obj: dict) -> None:
+        out.append(f"event: {name}\ndata: {json.dumps(obj)}\n\n")
+
+    head = {k: v for k, v in data.items() if k != "content"}
+    ev("message_start", {"type": "message_start", "message": {**head, "content": []}})
+    for i, block in enumerate(data.get("content") or []):
+        if block.get("type") == "text":
+            ev("content_block_start", {"type": "content_block_start", "index": i,
+                                       "content_block": {"type": "text", "text": ""}})
+            ev("content_block_delta", {"type": "content_block_delta", "index": i,
+                                       "delta": {"type": "text_delta",
+                                                 "text": block.get("text", "")}})
+        else:
+            start = {k: v for k, v in block.items() if k != "input"}
+            if block.get("type") == "tool_use":
+                start["input"] = {}
+            ev("content_block_start", {"type": "content_block_start", "index": i,
+                                       "content_block": start})
+            if block.get("type") == "tool_use":
+                ev("content_block_delta", {"type": "content_block_delta", "index": i,
+                                           "delta": {"type": "input_json_delta",
+                                                     "partial_json": json.dumps(block.get("input") or {})}})
+        ev("content_block_stop", {"type": "content_block_stop", "index": i})
+    ev("message_delta", {"type": "message_delta",
+                         "delta": {"stop_reason": data.get("stop_reason"),
+                                   "stop_sequence": data.get("stop_sequence")},
+                         "usage": {"output_tokens": (data.get("usage") or {}).get("output_tokens", 0)}})
+    ev("message_stop", {"type": "message_stop"})
+    return "".join(out).encode()
 
 
 def _anthropic_headers(request: Request, key: str) -> dict:
