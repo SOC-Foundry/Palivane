@@ -1,5 +1,6 @@
 {
   "detection_checks": 44,
   "secret_formats": 56,
-  "browser_sites": 21
+  "browser_sites": 21,
+  "catalog_tools": 538
 }

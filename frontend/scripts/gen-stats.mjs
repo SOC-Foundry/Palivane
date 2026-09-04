@@ -48,8 +48,14 @@ const sites = new Set(
     return ALIAS[host] || host;
   }));
 
+// Distinct AI tools in the shadow-AI catalog (canonical NAMES, not destination rows —
+// chatgpt.com and chat.openai.com are one tool; counting rows would quietly overclaim).
+const catalogSrc = readFileSync(join(here, "..", "..", "backend", "app", "ai_catalog.py"), "utf8");
+const catBlock = catalogSrc.split("CATALOG: dict")[1].split("CATEGORY_LABEL")[0];
+const tools = new Set([...catBlock.matchAll(/\(\s*"([^"]+)",\s*"[a-z_]+"\s*\)/g)].map((m) => m[1]));
+
 const stats = { detection_checks: titles.size, secret_formats: formats.size,
-                browser_sites: sites.size };
+                browser_sites: sites.size, catalog_tools: tools.size };
 const next = JSON.stringify(stats, null, 2) + "\n";
 
 if (process.argv.includes("--check")) {
