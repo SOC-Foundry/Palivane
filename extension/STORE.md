@@ -15,6 +15,10 @@ account-bound and must be done from your own developer account.
 
 ## What only you can do (account-bound)
 
+> **Published**: the public listing is live — id `fnejondlaacijahdjkhcgiijlnjoapho`
+> (chromewebstore.google.com/detail/fnejondlaacijahdjkhcgiijlnjoapho), wired into the
+> deployment as `PALIVANE_EXTENSION_ID`.
+
 > **This is a fresh listing under SOC Foundry, not a transfer.** A Chrome Web Store item id
 > is issued to the developer account that published it, so the previous item cannot come
 > along; publishing here mints a **new id**. Once you have it, set `PALIVANE_EXTENSION_ID`
