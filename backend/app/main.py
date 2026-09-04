@@ -22,6 +22,7 @@ from .billing import router as billing_router
 from .demo import router as demo_router
 from .slack_events import router as slack_events_router
 from .scim import router as scim_router
+from .webhooks_graph import router as graph_webhook_router
 from .google_login import router as google_login_router
 from .domains import router as domains_router
 from .config import settings, _env
@@ -315,6 +316,7 @@ app.include_router(billing_router)
 app.include_router(demo_router)
 app.include_router(slack_events_router)
 app.include_router(scim_router)
+app.include_router(graph_webhook_router)
 app.include_router(google_login_router)
 app.include_router(domains_router)
 app.include_router(distribution_router)
