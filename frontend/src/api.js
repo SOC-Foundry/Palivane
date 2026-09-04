@@ -228,5 +228,7 @@ export const api = {
   saml: () => req("/saml"),
   setSaml: (payload) => req("/saml", { method: "PUT", body: JSON.stringify(payload) }),
   deleteSaml: () => req("/saml", { method: "DELETE" }),
+  scimTokenMint: () => req("/scim/token", { method: "POST" }),
+  scimTokenRevoke: () => req("/scim/token", { method: "DELETE" }),
   logoutAll: () => req("/auth/logout-all", { method: "POST" }),
 };
