@@ -30,7 +30,7 @@ auditor can be shown.
 | 1 | **No branch protection on `main`** | Upgrade the GitHub org to Team ($4/user/mo) and require PRs + passing checks on `main` | GitHub Free doesn't offer protection on private repos — today nothing *technically* stops a direct push; the PR-only history is convention |
 | 2 | **No uptime monitoring / availability evidence** | GCP uptime checks on `palivane.io` + `app.palivane.io/api/health`, alerting to email/Slack; add a public status page later | Availability criterion needs measured uptime, not vibes |
 | 3 | **Solo-maintainer change review** | Document compensating controls (CI gates, protected main, deploy separation, post-merge review cadence) in the change-mgmt policy; add a second reviewer when headcount allows | Auditors accept documented compensating controls for small teams |
-| 4 | **No tested restore** | Perform + document a Cloud SQL restore test now, then quarterly (calendar) | A backup nobody restored is a hope, not a control |
+| 4 | **Restore-test cadence** | /trust records a verified drill (July 2026, ~35 min full restore); the gap is the CADENCE — calendar a quarterly drill (next due Oct 2026) and file each write-up here | A backup nobody restored recently is a hope, not a control |
 | 5 | **No formal risk assessment** | Complete `risk-register.md` (started); review annually | |
 | 6 | **No vendor register / reviews** | Complete `vendor-register.md` (started); annual review of critical vendors' SOC 2 reports | GCP, Cloudflare, GitHub, Stripe, Google Workspace, model providers |
 
