@@ -164,6 +164,22 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
         </div>
       )}
 
+      {finding.owner_response && (
+        <div className="detail-section">
+          <h4>
+            {finding.owner_response.action === "justified"
+              ? "Owner justification (proceeded)" : "Owner response"}
+          </h4>
+          <p style={{ margin: "4px 0" }}>
+            {finding.owner_response.note || <em>(no note)</em>}
+          </p>
+          <p className="muted" style={{ fontSize: 12 }}>
+            {finding.owner_response.action} · {finding.owner_response.by}
+            {finding.owner_response.at && <> · {new Date(finding.owner_response.at).toLocaleString()}</>}
+          </p>
+        </div>
+      )}
+
       {steps.length > 0 && (
         <div className="detail-section remediation">
           <h4>How to fix</h4>
