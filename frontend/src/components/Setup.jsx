@@ -97,9 +97,11 @@ export default function Setup() {
 
       <section className="lp-section">
         <div className="lp-wrap">
-          <h2 className="lp-h2">Part 3, your GitHub Actions (optional)</h2>
+          <h2 className="lp-h2">Part 3, your CI pipelines (optional)</h2>
           <p className="lp-sub">Cover the machines nobody is sitting at. If coding agents run in your
-             CI, this is where they hold credentials and act unsupervised, one workflow file covers it.</p>
+             CI, this is where they hold credentials and act unsupervised, one workflow file covers it.
+             On GitLab, the same scanner runs as a job against the checkout and applies the GitLab
+             rules (remote includes, fork-MR privilege reach, runner tags).</p>
           <Steps items={CI} />
         </div>
       </section>

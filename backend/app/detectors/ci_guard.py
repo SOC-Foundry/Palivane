@@ -1,4 +1,4 @@
-"""GitHub Actions runner/workflow posture (surface=ci).
+"""CI runner/pipeline posture (surface=ci) — GitHub Actions and GitLab CI.
 
 Given a workflow file's YAML, flag the configurations that get CI runners popped or that
 put AI agents in the blast radius:
@@ -14,6 +14,16 @@ put AI agents in the blast radius:
   * AI agents running in CI (Claude Code, Codex, Gemini, aider, …, as actions or CLIs) —
     inventory for shadow-AI discovery, and a hard flag when a step hands one deploy/cloud
     credentials or runs it with autonomy flags (--dangerously-skip-permissions, --yolo)
+
+GitLab CI (.gitlab-ci.yml) gets the same treatment with its own shapes:
+
+  * remote/mutable includes — `include: remote:` pulls arbitrary URL-hosted config, and a
+    `project:` include floating on a branch is the unpinned-action class of risk
+  * privileged variables on MR-triggered jobs — the fork-MR equivalent of pwn-request
+    (job rules match merge_request_event AND the script reaches deploy/cloud variables)
+  * specific runner tags on MR-triggered jobs — fork MR code on your own runners
+  * the same AI-agent inventory, autonomy flags, and secrets-to-agent checks, matched on
+    script/before_script/after_script and $VAR references instead of `secrets.` refs
 
 Structural, not content-based: the interesting evidence is the workflow shape, so this
 parses YAML (best-effort — a broken file falls back to text checks) rather than scanning
@@ -62,6 +72,17 @@ _SECRET_REF = re.compile(r"secrets\.([A-Za-z_][A-Za-z0-9_]*)")
 _ID_TOKEN_WRITE = re.compile(r"id-token\s*:\s*write")
 _PR_HEAD_REF = re.compile(
     r"github\.event\.pull_request\.head\.(?:sha|ref)|github\.head_ref")
+
+# --- GitLab CI shapes ---------------------------------------------------------------------
+# Keys of .gitlab-ci.yml that are configuration, not jobs.
+_GL_RESERVED = {"stages", "variables", "include", "default", "workflow", "image",
+                "services", "before_script", "after_script", "cache", "pages", "types"}
+# $VARIABLES in a script that look like non-model credentials (GitLab has no `secrets.`
+# namespace — everything arrives as a variable, so the NAME is the tell).
+_GL_RISKY_VAR = re.compile(
+    r"\$\{?((?:AWS|GCP|GOOGLE|AZURE|KUBE|DEPLOY|PROD|DB|SSH|DOCKER|REGISTRY|NPM|PYPI)"
+    r"[A-Z0-9_]*|[A-Z0-9_]*(?:SECRET|PASSWORD|PASSWD|CREDENTIALS)[A-Z0-9_]*)\b")
+_GL_MR_EVENT = re.compile(r"merge_request_event|CI_MERGE_REQUEST")
 
 
 def _as_list(v) -> list:
@@ -117,6 +138,8 @@ class CIGuardDetector:
             doc = None
         if not isinstance(doc, dict):
             return self._text_only(item.content)
+        if self._is_gitlab(doc):
+            return self._gitlab(doc, item.content)
         signals: list[Signal] = []
         signals += self._triggers(doc, item.content)
         signals += self._pins(doc, item.content)
@@ -279,6 +302,154 @@ class CIGuardDetector:
                         evidence=_AUTONOMY_FLAGS.search(text).group(0),
                         check="unsafe_autonomy"))
         return out
+
+    # --- GitLab CI -----------------------------------------------------------------
+
+    @staticmethod
+    def _is_gitlab(doc: dict) -> bool:
+        """GitHub workflows have jobs+on; GitLab files are flat job maps with script
+        keys (or stages/include). A file that is neither takes the GitHub path, whose
+        rules simply find nothing."""
+        if isinstance(doc.get("jobs"), dict) or "on" in doc or True in doc:
+            return False
+        if "stages" in doc or "include" in doc:
+            return True
+        return any(isinstance(v, dict) and ("script" in v or "before_script" in v)
+                   for v in doc.values())
+
+    @staticmethod
+    def _gl_jobs(doc: dict) -> dict:
+        return {k: v for k, v in doc.items()
+                if k not in _GL_RESERVED and isinstance(v, dict)
+                and ("script" in v or "before_script" in v or "after_script" in v)}
+
+    @staticmethod
+    def _gl_script(job: dict) -> str:
+        parts: list[str] = []
+        for key in ("before_script", "script", "after_script"):
+            parts += [str(x) for x in _as_list(job.get(key))]
+        for k, v in (job.get("variables") or {}).items() if isinstance(job.get("variables"), dict) else []:
+            parts.append(f"{k}={v}")
+        return "\n".join(parts)
+
+    def _gl_includes(self, doc: dict, raw: str) -> list[Signal]:
+        """Remote and mutably-pinned includes — GitLab's unpinned-action class. A remote
+        include executes whatever the URL serves today; a project include floating on a
+        branch moves under you the same way a hijacked action tag does."""
+        out: list[Signal] = []
+        remote, floating = [], []
+        for inc in _as_list(doc.get("include")):
+            if isinstance(inc, str):
+                if inc.startswith("http"):
+                    remote.append(inc)
+                continue
+            if not isinstance(inc, dict):
+                continue
+            if inc.get("remote"):
+                remote.append(str(inc["remote"]))
+            elif inc.get("project"):
+                ref = str(inc.get("ref") or "")
+                if not _SHA_REF.match(ref):
+                    floating.append(f"{inc['project']}@{ref or 'default branch'}")
+        privileged = bool(_GL_RISKY_VAR.search(raw))
+        if remote:
+            shown = ", ".join(remote[:3]) + (f" (+{len(remote) - 3} more)"
+                                             if len(remote) > 3 else "")
+            out.append(Signal(
+                category=Category.CI_WORKFLOW_RISK, title="Remote CI include",
+                detail=f"Pipeline includes URL-hosted config: {shown}. Whatever that URL "
+                       "serves runs in every pipeline — vendor the file into a repo you "
+                       "control, or include by project + commit SHA."
+                       + (" This pipeline reaches credential-shaped variables, so a "
+                          "swapped include runs with them." if privileged else ""),
+                weight=0.7 if privileged else 0.55, confidence=0.9,
+                detector=self.name, evidence=shown, check="ci_unpinned_action"))
+        if floating:
+            shown = ", ".join(floating[:3]) + (f" (+{len(floating) - 3} more)"
+                                               if len(floating) > 3 else "")
+            out.append(Signal(
+                category=Category.CI_WORKFLOW_RISK, title="Unpinned CI include",
+                detail=f"{len(floating)} project include(s) float on a mutable ref: "
+                       f"{shown}. Pin each to a full commit SHA.",
+                weight=0.6 if privileged else 0.45, confidence=0.85,
+                detector=self.name, evidence=shown, check="ci_unpinned_action"))
+        return out
+
+    def _gitlab(self, doc: dict, raw: str) -> list[Signal]:
+        signals: list[Signal] = []
+        signals += self._gl_includes(doc, raw)
+        jobs = self._gl_jobs(doc)
+        mr_pipeline = bool(_GL_MR_EVENT.search(raw))
+        for name, job in jobs.items():
+            text = self._gl_script(job)
+            job_mr = mr_pipeline and (name.startswith(".") is False)
+            risky = sorted({m for m in _GL_RISKY_VAR.findall(text)
+                            if not _MODEL_KEY.search(m) and not m.startswith("CI_")})
+            # Fork-MR privilege reach — GitLab's pwn-request class. Confidence is capped:
+            # whether fork pipelines actually run here is a project setting the file
+            # cannot show, so this reads as "audit", not "confirmed".
+            if job_mr and risky and self._job_matches_mr(job, doc):
+                signals.append(Signal(
+                    category=Category.CI_WORKFLOW_RISK,
+                    title="Privileged variables on MR-triggered job",
+                    detail=f"Job '{name}' can run on merge_request_event and its script "
+                           f"reaches {', '.join(risky[:5])} — with fork pipelines enabled, "
+                           "fork code runs with those credentials. Restrict the variables "
+                           "to protected branches or gate the job.",
+                    weight=0.55, confidence=0.7, detector=self.name,
+                    evidence=", ".join(risky[:5]), check="ci_unsafe_trigger"))
+            if job_mr and not name.startswith("."):
+                tags = " ".join(str(t) for t in _as_list(job.get("tags")))
+                if tags:
+                    signals.append(Signal(
+                        category=Category.CI_WORKFLOW_RISK,
+                        title="Specific runner tags on MR-triggered job",
+                        detail=f"Job '{name}' targets runners tagged '{tags}' and can run "
+                               "on merge requests — a fork MR is code execution on those "
+                               "runners.",
+                        weight=0.45, confidence=0.7, detector=self.name,
+                        evidence=tags, check="ci_self_hosted_runner"))
+            # AI agents: same CLI matchers as the GitHub path, on the script body.
+            for pat, aitool in _AI_CLIS:
+                if pat.search(text):
+                    signals.append(Signal(
+                        category=Category.UNSANCTIONED_AI, title="AI agent in CI",
+                        detail=f"{aitool} runs on the CI runner (job '{name}') with "
+                               "whatever the job can reach. Inventory + policy: is this "
+                               "sanctioned here?",
+                        weight=0.35, confidence=0.9, detector=self.name,
+                        evidence=aitool, check="ci_ai_agent"))
+                    if risky:
+                        signals.append(Signal(
+                            category=Category.SECRET_LEAK,
+                            title="Non-model secrets handed to AI step",
+                            detail=f"Job '{name}' passes {', '.join(risky[:5])} to "
+                                   f"{aitool}, deploy/cloud credentials inside an AI "
+                                   "agent's context.",
+                            weight=0.8, confidence=0.85, detector=self.name,
+                            evidence=", ".join(risky[:5]), check="ci_secrets_to_ai"))
+                    break
+            m = _AUTONOMY_FLAGS.search(text)
+            if m:
+                signals.append(Signal(
+                    category=Category.UNSAFE_AUTONOMY, title="Autonomous AI agent in CI",
+                    detail=f"Job '{name}' runs an agent with approval prompts disabled "
+                           f"({m.group(0)}) on the runner.",
+                    weight=0.7, confidence=0.9, detector=self.name,
+                    evidence=m.group(0), check="unsafe_autonomy"))
+        return signals
+
+    @staticmethod
+    def _job_matches_mr(job: dict, doc: dict) -> bool:
+        """Whether this job (or the workflow) has rules/only matching merge requests —
+        textual, best-effort over the rule blocks."""
+        import json as _json
+        for scope in (job, doc.get("workflow") or {}):
+            blob = _json.dumps({k: scope.get(k) for k in ("rules", "only", "except")
+                                if isinstance(scope, dict) and scope.get(k) is not None})
+            if _GL_MR_EVENT.search(blob) or '"merge_requests"' in blob:
+                return True
+        return False
 
     # --- degraded path for unparseable YAML ---------------------------------------
 
