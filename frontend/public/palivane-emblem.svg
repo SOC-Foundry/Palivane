@@ -1,11 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Palivane">
-  <!-- Chamfered octagon with a vertical split; the right half is cut into three bars.
-       Redrawn as geometry from the supplied wordmark so it stays crisp at any size —
-       the source was a 42px raster crop. Brand green #239D74. -->
-  <path fill="#239D74" fill-rule="evenodd" d="
-    M 28.6 0 H 71.4 L 100 28.6 V 71.4 L 71.4 100 H 28.6 L 0 71.4 V 28.6 Z
-    M 47.6 0 V 100 H 52.4 V 0 Z
-    M 52.4 28.6 V 35.7 H 100 V 28.6 Z
-    M 52.4 64.3 V 71.4 H 100 V 64.3 Z
-  "/>
+  <!-- Palivane mark: tall stem, a capsule, two dots, and a dropped capsule — a glossy
+       green rhythm. Brand green with a lit gradient, top sheen, and a soft glow. -->
+  <defs>
+    <linearGradient id="pf" x1="14" y1="6" x2="86" y2="94" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#68D6AC"/>
+      <stop offset="1" stop-color="#2C9E77"/>
+    </linearGradient>
+    <linearGradient id="pg" x1="0" y1="0" x2="0" y2="30" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".40"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="pw" x="-25%" y="-20%" width="150%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="1" flood-color="#4FD69D" flood-opacity=".35"/>
+    </filter>
+    <clipPath id="pc">
+      <rect x="16.5" y="6" width="14" height="88" rx="7"/>
+      <rect x="34.5" y="6" width="14" height="45" rx="7"/>
+      <circle cx="58.5" cy="10" r="4.5"/>
+      <circle cx="58.5" cy="47" r="4.5"/>
+      <rect x="69.5" y="14" width="14" height="30" rx="7"/>
+    </clipPath>
+  </defs>
+  <g filter="url(#pw)" fill="url(#pf)">
+    <rect x="16.5" y="6" width="14" height="88" rx="7"/>
+    <rect x="34.5" y="6" width="14" height="45" rx="7"/>
+    <circle cx="58.5" cy="10" r="4.5"/>
+    <circle cx="58.5" cy="47" r="4.5"/>
+    <rect x="69.5" y="14" width="14" height="30" rx="7"/>
+  </g>
+  <rect x="0" y="0" width="100" height="30" fill="url(#pg)" clip-path="url(#pc)"/>
 </svg>
