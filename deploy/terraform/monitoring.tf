@@ -104,7 +104,7 @@ resource "google_monitoring_alert_policy" "server_errors" {
         "metric.label.response_code_class=\"5xx\"",
       ])
       comparison      = "COMPARISON_GT"
-      threshold_value = 0.5   # >0.5 errors/sec sustained — tune once real traffic sets a baseline
+      threshold_value = 0.5 # >0.5 errors/sec sustained — tune once real traffic sets a baseline
       duration        = "300s"
       aggregations {
         alignment_period   = "60s"
