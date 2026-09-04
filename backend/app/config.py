@@ -84,6 +84,10 @@ class Settings:
     slack_client_id: str = _env("PALIVANE_SLACK_CLIENT_ID", "").strip()
     slack_client_secret: str = _env("PALIVANE_SLACK_CLIENT_SECRET", "").strip()
     slack_redirect_url: str = _env("PALIVANE_SLACK_REDIRECT_URL", "").strip()
+    # Signing secret of the same app enables POST /api/slack/events — real-time message
+    # scanning pushed by Slack the moment a message is sent, beside the cron pull.
+    # Empty = the endpoint is off (pull-based sync is unaffected).
+    slack_signing_secret: str = _env("PALIVANE_SLACK_SIGNING_SECRET", "").strip()
     # Session behavioral correlation: after a finding is stored, look across the actor's
     # recent activity for an escalating attack CHAIN (recon → collection → exfil) that no
     # single event trips. On by default; window is how far back to look (minutes).
