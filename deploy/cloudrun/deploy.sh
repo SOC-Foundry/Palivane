@@ -84,6 +84,10 @@ ENV_VARS+="|SEED_ON_START=${SEED_ON_START:-false}"
 # secret; the client secret rides in via the optional-secrets loop below (create secret
 # 'palivane-slack-client-secret' to enable). Redirect override for proxied deployments.
 [ -n "${PALIVANE_SLACK_CLIENT_ID:-}" ] && ENV_VARS+="|PALIVANE_SLACK_CLIENT_ID=${PALIVANE_SLACK_CLIENT_ID}"
+# Cloud-contract Claude upstreams: Vertex project/region are not secrets (auth is the
+# runtime service account); the Bedrock key rides in via the optional-secrets loop.
+[ -n "${GATEWAY_VERTEX_PROJECT:-}" ] && ENV_VARS+="|GATEWAY_VERTEX_PROJECT=${GATEWAY_VERTEX_PROJECT}|GATEWAY_VERTEX_REGION=${GATEWAY_VERTEX_REGION:-us-east5}"
+[ -n "${GATEWAY_BEDROCK_REGION:-}" ] && ENV_VARS+="|GATEWAY_BEDROCK_REGION=${GATEWAY_BEDROCK_REGION}"
 [ -n "${PALIVANE_SLACK_REDIRECT_URL:-}" ] && ENV_VARS+="|PALIVANE_SLACK_REDIRECT_URL=${PALIVANE_SLACK_REDIRECT_URL}"
 
 # Secrets — must exist in Secret Manager (see README). Optional ones are added if present.
@@ -105,7 +109,8 @@ for pair in \
   "PALIVANE_LICENSE_SIGNING_KEY=palivane-license-signing-key" \
   "PALIVANE_RELEASE_SIGNING_KEY=palivane-release-signing-key" \
   "PALIVANE_SLACK_CLIENT_SECRET=palivane-slack-client-secret" \
-  "PALIVANE_SLACK_SIGNING_SECRET=palivane-slack-signing-secret"; do
+  "PALIVANE_SLACK_SIGNING_SECRET=palivane-slack-signing-secret" \
+  "GATEWAY_BEDROCK_KEY=gateway-bedrock-key"; do
   name="${pair##*=}"
   # Require an ENABLED VERSION, not merely that the secret exists. Terraform creates
   # palivane-smtp-pass deliberately empty (the value is added out of band), so a
