@@ -40,6 +40,15 @@ const SECTIONS = [
     ],
   },
   {
+    title: "Vulnerability disclosure",
+    items: [
+      ["Reporting channel", "security@palivane.io, also machine-readable at /.well-known/security.txt (RFC 9116). Reports get a human acknowledgement within 2 business days and triage within 5."],
+      ["Safe harbor", "Good-faith research against your own Palivane org or the public site is authorized: we will not pursue legal action for testing that respects other tenants' data, avoids service degradation, and gives us reasonable time to fix before disclosure."],
+      ["Scope", "palivane.io, app.palivane.io, the published browser extension, and the open-source clients. Out of scope: denial of service, social engineering, and third-party services we run on (report those to the vendor)."],
+      ["Independent testing", "Internal adversarial bug bashes run routinely against each release; an independent penetration test is scheduled within the SOC 2 observation window and its summary will be available under NDA."],
+    ],
+  },
+  {
     title: "Resilience",
     items: [
       ["Backups", "Daily automated backups with 14-day point-in-time recovery."],
