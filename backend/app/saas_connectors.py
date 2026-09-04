@@ -29,6 +29,7 @@ from datetime import datetime, timedelta, timezone
 
 from authlib.jose import jwt
 
+from .config import settings
 from .crypto import decrypt, encrypt
 from .discovery import ingest_oauth_grants
 from .schemas import OAuthGrant
@@ -1047,10 +1048,135 @@ _GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 _MAX_SITES_PER_SYNC = 50
 
 
+def _scan_drive(db, connector, hdrs: dict, custom_pii: str, did: str, dname: str,
+                deltas: dict, *, scanned: int = 0) -> tuple[int, int, int, bool]:
+    """One drive's delta pass (shared by the full sync and the change-notification
+    webhook). Mutates `deltas` in place; keeps the OLD delta link on budget overrun so
+    the unscanned changes rescan next pass. Returns (scanned, findings, skipped, over)."""
+    findings = skipped = 0
+    url = deltas.get(did) or f"{_GRAPH_BASE}/drives/{did}/root/delta"
+    new_link, over = "", False
+    while url:
+        data = _http_json(url, headers=hdrs)
+        for item in data.get("value", []):
+            fobj = item.get("file") or {}
+            if not fobj:
+                continue                       # folders / deleted markers
+            if scanned >= _MAX_FILES_PER_SYNC:
+                over = True
+                break
+            name = item.get("name", "")
+            mime = fobj.get("mimeType", "")
+            if (not _readable_doc(name, mime)
+                    or int(item.get("size") or 0) > _MAX_FILE_BYTES):
+                skipped += 1
+                continue
+            try:
+                text = _fetch_doc_text(f"{_GRAPH_BASE}/drives/{did}/items/"
+                                       f"{item.get('id')}/content", hdrs, name, mime)
+            except ConnectorError:
+                skipped += 1
+                continue
+            if not text.strip():
+                skipped += 1    # downloaded but unreadable: counted, never called clean
+                continue
+            sender = (((item.get("lastModifiedBy") or {}).get("user") or {})
+                      .get("email") or "")
+            subject = f"{dname or 'library'}/{name}"
+            hit = _scan_blob(db, connector, custom_pii, content=text, sender=sender,
+                             subject=subject, channel="sharepoint")
+            if hit:
+                findings += 1
+            from . import content_origin
+            content_origin.store_fingerprint(db, connector.tenant_id, "sharepoint",
+                                             item.get("id", ""), subject, sender, text,
+                                             sensitive=hit)
+            scanned += 1
+        if over:
+            break
+        new_link = data.get("@odata.deltaLink", "")
+        url = data.get("@odata.nextLink", "")
+    if not over and new_link:
+        deltas[did] = new_link
+    return scanned, findings, skipped, over
+
+
+# Graph change-notification subscriptions: max lifetime for driveItem resources is ~30
+# days; we take 28 and renew during any sync with less than a week left. clientState is a
+# signed token binding the connector, so the public webhook can authenticate and route a
+# notification without a lookup table.
+_GRAPH_SUB_DAYS = 28
+_GRAPH_SUB_RENEW_DAYS = 7
+
+
+def _ensure_graph_subscriptions(db, connector, hdrs: dict, drives: list[dict]) -> dict:
+    """Create/renew one change subscription per drive so edits scan on write instead of
+    on the next cron. No-op without a public URL (Graph must reach the webhook). Failures
+    are counted, never fatal — the pull sync remains the safety net."""
+    if not settings.public_base_url:
+        return {}
+    from .security import create_token
+    notification_url = f"{settings.public_base_url}/api/webhooks/graph"
+    state = connector.state
+    subs: dict[str, dict] = dict(state.get("graph_subs") or {})
+    by_drive = {v.get("drive"): (k, v) for k, v in subs.items()}
+    now = datetime.now(timezone.utc)
+    created = renewed = errors = 0
+    for drive in drives:
+        did = drive.get("id", "")
+        if not did:
+            continue
+        existing = by_drive.get(did)
+        try:
+            if existing:
+                sub_id, meta = existing
+                exp = datetime.fromisoformat((meta.get("exp") or "").replace("Z", "+00:00"))
+                if (exp - now).days > _GRAPH_SUB_RENEW_DAYS:
+                    continue
+                new_exp = (now + timedelta(days=_GRAPH_SUB_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                _http_json(f"{_GRAPH_BASE}/subscriptions/{sub_id}",
+                           headers={**hdrs, "Content-Type": "application/json",
+                                    "X-HTTP-Method-Override": "PATCH"},
+                           data=json.dumps({"expirationDateTime": new_exp}).encode())
+                subs[sub_id] = {**meta, "exp": new_exp}
+                renewed += 1
+                continue
+            exp = (now + timedelta(days=_GRAPH_SUB_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            body = {
+                "changeType": "updated",
+                "notificationUrl": notification_url,
+                "resource": f"/drives/{did}/root",
+                "expirationDateTime": exp,
+                "clientState": create_token({"typ": "graph_sub",
+                                             "connector_id": connector.id},
+                                            ttl=60 * 86400),
+            }
+            resp = _http_json(f"{_GRAPH_BASE}/subscriptions",
+                              headers={**hdrs, "Content-Type": "application/json"},
+                              data=json.dumps(body).encode())
+            sid = resp.get("id", "")
+            if sid:
+                subs[sid] = {"drive": did, "name": drive.get("name", ""), "exp": exp}
+                created += 1
+        except ConnectorError:
+            errors += 1                     # webhook unreachable / permission missing
+    connector.state = {**state, "graph_subs": subs}
+    out = {}
+    if created:
+        out["subs_created"] = created
+    if renewed:
+        out["subs_renewed"] = renewed
+    if errors:
+        out["subs_errors"] = errors        # surfaced: silent = "realtime quietly off"
+    return out
+
+
 def scan_sharepoint_files(db, connector, creds: dict) -> dict:
     """Scan changed files in SharePoint document libraries via Graph delta queries.
     Per-drive deltaLinks in connector.state make every sync incremental; a drive whose
-    budget runs out keeps its old link (its changes rescan next sync — recurrences fold)."""
+    budget runs out keeps its old link (its changes rescan next sync — recurrences fold).
+    Each sync also creates/renews Graph change subscriptions per drive, so between crons
+    an edited file is scanned the moment Graph notifies /api/webhooks/graph."""
     token = _microsoft_access_token(creds)
     hdrs = {"Authorization": f"Bearer {token}"}
     state = connector.state
@@ -1083,56 +1209,18 @@ def scan_sharepoint_files(db, connector, creds: dict) -> dict:
         if scanned >= _MAX_FILES_PER_SYNC:
             truncated = True
             break
-        url = deltas.get(did) or f"{_GRAPH_BASE}/drives/{did}/root/delta"
-        new_link, over = "", False
-        while url:
-            data = _http_json(url, headers=hdrs)
-            for item in data.get("value", []):
-                fobj = item.get("file") or {}
-                if not fobj:
-                    continue                       # folders / deleted markers
-                if scanned >= _MAX_FILES_PER_SYNC:
-                    over = True
-                    break
-                name = item.get("name", "")
-                mime = fobj.get("mimeType", "")
-                if (not _readable_doc(name, mime)
-                        or int(item.get("size") or 0) > _MAX_FILE_BYTES):
-                    skipped += 1
-                    continue
-                try:
-                    text = _fetch_doc_text(f"{_GRAPH_BASE}/drives/{did}/items/"
-                                           f"{item.get('id')}/content", hdrs, name, mime)
-                except ConnectorError:
-                    skipped += 1
-                    continue
-                if not text.strip():
-                    skipped += 1    # downloaded but unreadable: counted, never called clean
-                    continue
-                sender = (((item.get("lastModifiedBy") or {}).get("user") or {})
-                          .get("email") or "")
-                subject = f"{drive.get('name', 'library')}/{name}"
-                hit = _scan_blob(db, connector, custom_pii, content=text, sender=sender,
-                                 subject=subject, channel="sharepoint")
-                if hit:
-                    findings += 1
-                from . import content_origin
-                content_origin.store_fingerprint(db, connector.tenant_id, "sharepoint",
-                                                 item.get("id", ""), subject, sender, text,
-                                                 sensitive=hit)
-                scanned += 1
-            if over:
-                break
-            new_link = data.get("@odata.deltaLink", "")
-            url = data.get("@odata.nextLink", "")
+        scanned, f2, s2, over = _scan_drive(db, connector, hdrs, custom_pii, did,
+                                            drive.get("name", "library"), deltas,
+                                            scanned=scanned)
+        findings += f2
+        skipped += s2
         if over:
-            truncated = True                       # keep the OLD delta link: rescan, don't skip
-        elif new_link:
-            deltas[did] = new_link
+            truncated = True
 
-    connector.state = {**state, "deltas": deltas}
+    sub_stats = _ensure_graph_subscriptions(db, connector, hdrs, drives)
+    connector.state = {**connector.state, "deltas": deltas}
     summary = {"sites": len(sites), "drives": len(drives), "files": scanned,
-               "skipped": skipped, "findings": findings}
+               "skipped": skipped, "findings": findings, **sub_stats}
     if truncated:
         summary["truncated"] = True
     return summary
