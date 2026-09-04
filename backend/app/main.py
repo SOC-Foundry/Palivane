@@ -34,6 +34,7 @@ from .models import (Agent, AgentRole, CorpusSample, Finding, PolicyOverride, Sa
 from .schemas import (
     A2AIngest,
     AIUsageIngest,
+    JustifyRequest,
     AnalyzeRequest,
     BatchAnalyzeRequest,
     AgentConfigScan,
@@ -1128,6 +1129,38 @@ def ingest_ai_usage(
             force_block = False
             coached = True
             redacted_content = redact_text(body.content)
+    # Justified proceed: an override token minted by /api/ingest/justify lets the SAME
+    # content (recurrence-folds into the same finding), from the SAME actor, through as a
+    # warn — recorded, never silent. Confirmed PII/PHI is justifiable (business-need sends
+    # exist); a confirmed CREDENTIAL is not — no token unblocks a live key.
+    justifiable = _justifiable(result["signals"])
+    self_justify = (action == "block" and justifiable
+                    and _tenant_self_justify(tenant_id, db))
+    overridden = False
+    if body.override_token and action == "block" and justifiable:
+        from .security import TokenError, decode_token
+        try:
+            tok = decode_token(body.override_token)
+            import hashlib
+            want = (tok.get("content_hash") or "").lower()
+            have = hashlib.sha256(body.content.encode()).hexdigest()
+            if (tok.get("typ") == "justify"
+                    and int(tok.get("tenant_id") or 0) == tenant_id
+                    and result["finding_id"] is not None
+                    and tok.get("finding_id") == result["finding_id"]
+                    and (tok.get("actor") or "") == (actor or "")
+                    # findings fold on violation CLASSES, not text — the hash (when the
+                    # client supplied one) pins the grant to the exact blocked message
+                    and (not want or want == have)):
+                action = "warn"
+                force_block = False       # the justified send goes through, once
+                overridden = True
+                from . import audit_log
+                audit_log.record(db, tenant_id, actor, "finding.justified_proceed",
+                                 target=str(result["finding_id"]),
+                                 detail={"destination": body.destination})
+        except TokenError:
+            pass
     return {
         "action": action,
         "risk_score": result["risk_score"],
@@ -1141,6 +1174,11 @@ def ingest_ai_usage(
         # the safe-to-send version, and offer the sanctioned tools below.
         "coached": coached,
         "redacted_content": redacted_content,
+        # Justified proceed: when true the block UI offers "send anyway with a
+        # justification" (POST /api/ingest/justify -> override_token -> resubmit).
+        "self_justify": self_justify,
+        # This submission carried a valid override token and went through as a warn.
+        "overridden": overridden,
         # A confirmed secret/PII leak: the client should block regardless of its local
         # enforce flag ("block the certain" — monitor everything else). Off under coaching.
         "force_block": force_block,
@@ -1207,6 +1245,48 @@ def _sanctioned_list(raw: str) -> list[dict]:
         url = f"https://{host}" if ("." in host and " " not in host) else ""
         out.append({"label": e, "url": url})
     return out
+
+
+@app.post("/api/ingest/justify")
+def ingest_justify(
+    body: JustifyRequest,
+    x_palivane_token: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Record a blocked user's business justification and mint a short-lived override
+    token for that exact finding + actor. The user proceeds immediately (enforcement
+    that teaches instead of ticket-queueing); the justification lands on the finding's
+    owner_response and in the audit log for review. A confirmed secret/PII leak is never
+    self-overridable — those keep the async exception-request path to an admin."""
+    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
+    _enforce_rate(db, tenant_id)
+    if not _tenant_self_justify(tenant_id, db):
+        raise HTTPException(status_code=403, detail="self-justification is not enabled")
+    actor = (body.user or default_actor or "").strip()
+    row = (db.query(Finding).filter(Finding.tenant_id == tenant_id,
+                                    Finding.id == body.finding_id).first())
+    # 404 (not 403) on any mismatch: whether someone ELSE's finding exists is not
+    # something a capture key should be able to probe.
+    if row is None or (row.sender or "") != actor:
+        raise HTTPException(status_code=404, detail="finding not found")
+    if not _justifiable(row.signals or []):
+        raise HTTPException(status_code=403,
+                            detail="a confirmed credential cannot be self-overridden; "
+                                   "use Request exception to ask an admin")
+    from datetime import datetime as _dt, timezone as _tz
+    row.owner_response = {"action": "justified", "note": body.justification.strip()[:2000],
+                          "by": actor, "at": _dt.now(_tz.utc).isoformat()}
+    if row.status == "open":
+        row.status = "triaged"          # answered, not closed — an admin still reviews
+    db.commit()
+    from . import audit_log
+    audit_log.record(db, tenant_id, actor, "finding.justified", target=str(row.id),
+                     detail={"note": body.justification.strip()[:200]})
+    from .security import create_token
+    token = create_token({"typ": "justify", "tenant_id": tenant_id,
+                          "finding_id": row.id, "actor": actor,
+                          "content_hash": (body.content_hash or "").lower()}, ttl=600)
+    return {"ok": True, "override_token": token, "expires_in": 600}
 
 
 @app.post("/api/exception-request")
@@ -1363,6 +1443,26 @@ def _tenant_redact_mode(tenant_id: int | None, db: Session) -> bool:
         if t is not None and t.redact_mode is not None:
             return bool(t.redact_mode)
     return settings.redact_mode
+
+
+def _tenant_self_justify(tenant_id: int | None, db: Session) -> bool:
+    """Whether justified-proceed is on for this tenant (tri-state override, else global)."""
+    if tenant_id is not None:
+        t = db.get(Tenant, tenant_id)
+        if t is not None and t.self_justify is not None:
+            return bool(t.self_justify)
+    return settings.self_justify
+
+
+def _justifiable(signals) -> bool:
+    """Whether a finding is one a user may talk their way past. Everything except a
+    confirmed CREDENTIAL: PII/PHI has legitimate business-need sends (a support rep
+    handling a customer's own record), but there is no business justification for
+    handing an AI tool a live key — those keep the admin-only exception path."""
+    from .detectors.shadow_ai import HIGH_ENTROPY_TITLE
+    return not any(
+        s.get("category") == "secret_leak" and s.get("title") != HIGH_ENTROPY_TITLE
+        for s in signals)
 
 
 # The data-loss categories redact_text() can actually strip. Coaching only downgrades a
