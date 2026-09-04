@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import StripeCheckout from "./StripeCheckout.jsx";
 
-const PROVIDERS = { openai: "OpenAI", anthropic: "Anthropic", gemini: "Gemini", xai: "xAI (Grok)" };
+const PROVIDERS = { openai: "OpenAI", anthropic: "Anthropic", gemini: "Gemini", xai: "xAI (Grok)",
+                    vertex: "Claude on Vertex AI", bedrock: "Claude on Bedrock" };
 
 function judgeValue(t) {
   return t?.judge_enabled === true ? "on" : t?.judge_enabled === false ? "off" : "inherit";
