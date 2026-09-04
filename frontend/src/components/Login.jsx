@@ -175,7 +175,7 @@ export default function Login({ onAuthed, onBack }) {
       <div className="login-screen">
         <form className="login-card" onSubmit={submitMfa}>
           <img className="login-logo" src="/palivane-emblem.svg" alt="Palivane" width="76" height="76" />
-          <div className="brand"><span className="logo">◆</span> Palivane</div>
+          <div className="login-wordmark">PALIVANE</div>
           <p className="login-sub">Enter the 6-digit code from your authenticator app (or a recovery code).</p>
           <input autoFocus inputMode="numeric" placeholder="123456" value={mfaCode}
                  onChange={(e) => setMfaCode(e.target.value)} required />
