@@ -122,6 +122,9 @@ class Tenant(Base):
     # enforcement teaches instead of ticket-queueing. Confirmed secret/PII leaks
     # (force_block) are NEVER self-overridable.
     self_justify = Column(Boolean, nullable=True, default=None)
+    # SCIM 2.0 provisioning: SHA-256 of the org's bearer token (plaintext shown once at
+    # mint; minting again rotates). Empty = SCIM is off for the org.
+    scim_token_hash = Column(String(64), default="")
     # Per-org gateway tokenization (tri-state; NULL inherits GATEWAY_TOKENIZE). Separate
     # from the global because turning it on changes what a provider receives, so it has to
     # be possible to pilot on one org rather than all of them at once.
@@ -232,6 +235,7 @@ class Tenant(Base):
                 "client_enforce": self.client_enforce,
                 "redact_mode": self.redact_mode,
                 "self_justify": self.self_justify,
+                "scim_enabled": bool(self.scim_token_hash),
                 "gateway_tokenize": self.gateway_tokenize,
                 "gateway_block_severity": self.gateway_block_severity or "",
                 "mcp_block_severity": self.mcp_block_severity or "",

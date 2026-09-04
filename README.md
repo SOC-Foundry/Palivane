@@ -539,6 +539,8 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/discovery/ingest`  | Classify AI usage from CASB/SWG/proxy/DNS logs into the shadow-AI inventory (admin). |
 | GET    | `/api/discovery/inventory` | The shadow-AI inventory: AI tools by tool and by team, sanctioned/unsanctioned + real exposure (admin). |
 | *      | `/api/discovery/connectors…` | Live SaaS connectors: recurring OAuth-grant pulls (Google Workspace, M365, Slack, Salesforce) **and Slack + Microsoft Teams message scanning** — cursor-incremental PII/PHI/secret detection over channel/chat content on the `collab` surface (admin; sync via console/cron). Teams covers channel messages + thread replies via Graph delta, and opted-in users' 1:1/group chats via the export API. |
+| POST/DELETE | `/api/scim/token`   | Mint/rotate or revoke the org's SCIM 2.0 bearer token (admin; plaintext shown once, hash stored). |
+| *      | `/scim/v2/…`             | SCIM 2.0 provisioning for IdPs (Okta / Entra ID / OneLogin): Users create, filter probe (`userName eq`), PUT/PATCH rename + activate/deactivate (Okta and Entra PATCH shapes), soft DELETE (deactivates; sessions killed via token_version bump). Last active admin cannot be deactivated over SCIM. |
 | GET    | `/api/slack/install`     | The "Add to Slack" authorize URL for this org — one-click install of the published Palivane app; the callback stores the workspace bot token as a `slack_messages` connector (admin). |
 | GET    | `/api/activity/users`    | Per-registered-user scan log — findings count, severity mix, top categories, last-seen (admin). |
 | GET    | `/api/policies`          | Detection-policy catalog: every check grouped, enabled state, presets, and per-user/group overrides (admin). |
