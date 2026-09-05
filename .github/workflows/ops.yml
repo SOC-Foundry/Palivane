@@ -41,6 +41,9 @@ jobs:
       PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       REGION: ${{ vars.GCP_REGION }}
     steps:
+      # The runner script may need repo files (e.g. terraform apply of deploy/terraform);
+      # `contents: read` above already scopes this.
+      - uses: actions/checkout@v7
       - name: Authenticate to GCP
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
@@ -64,6 +67,10 @@ jobs:
         env:
           OPS_RUNNER_SCRIPT: ${{ secrets.OPS_RUNNER_SCRIPT }}
           OPS_SCRIPT: ${{ secrets.OPS_SCRIPT }}
+          # For gcloud/terraform tasks the script runs (all optional; empty when unset).
+          GCP_DEPLOY_SA: ${{ vars.GCP_DEPLOY_SA }}
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_VAR_db_password: ${{ secrets.TF_DB_PASSWORD }}
         run: |
           set -euo pipefail
           if [ -z "$OPS_RUNNER_SCRIPT" ] && [ -z "$OPS_SCRIPT" ]; then
