@@ -29,10 +29,12 @@ import importlib.util
 import os
 
 _IMAGE_EXTS = ("png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "tif")
-_DOC_EXTS = ("pdf", "docx", "docm", "xlsx", "xlsm", "pptx", "pptm")
+_DOC_EXTS = ("pdf", "docx", "docm", "xlsx", "xlsm", "pptx", "pptm",
+             "rtf", "odt", "ods", "odp")   # RTF is text; OpenDocument is a ZIP of XML
 # Containers this cannot open. Listed so the caller can say WHY, rather than lumping them
-# in with "unknown": pre-2007 Office is a binary OLE format and needs a parser library.
-_KNOWN_UNREADABLE = ("doc", "xls", "ppt", "rtf", "pages", "numbers", "key", "odt", "ods")
+# in with "unknown": pre-2007 Office (.doc/.xls/.ppt) is a binary OLE format that needs a
+# parser library, and Apple iWork stores its body as proprietary binary inside the zip.
+_KNOWN_UNREADABLE = ("doc", "xls", "ppt", "pages", "numbers", "key")
 
 _detect = None
 

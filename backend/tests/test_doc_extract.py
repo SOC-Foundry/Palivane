@@ -169,3 +169,48 @@ def test_pdf_whose_deflate_payload_ends_in_a_newline():
            + b"\nendstream\nendobj\ntrailer<<>>\n%%EOF")
     text, how = extract("export.pdf", pdf)
     assert how == "document" and AWS in text
+
+
+# --- newly readable: RTF (text format) + OpenDocument (zip of XML) --------------------------
+
+def _odf(*paragraphs: str) -> bytes:
+    buf = io.BytesIO()
+    body = "".join(f"<text:p>{p}</text:p>" for p in paragraphs)
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("mimetype", "application/vnd.oasis.opendocument.text")
+        z.writestr("content.xml",
+                   '<?xml version="1.0"?><office:document-content xmlns:office="a" '
+                   f'xmlns:text="b"><office:body><office:text>{body}'
+                   "</office:text></office:body></office:document-content>")
+    return buf.getvalue()
+
+
+def _rtf(*paragraphs: str) -> bytes:
+    body = r"\par ".join(paragraphs)
+    return (r"{\rtf1\ansi\deff0{\fonttbl{\f0 Arial;}}\f0\fs24 " + body + "}").encode("latin-1")
+
+
+def test_rtf_is_now_readable_and_scanned():
+    assert kind_of("leak.rtf") == "document"
+    text, how = extract("leak.rtf", _rtf(f"prod key {AWS}", f"customer SSN {SSN}"))
+    assert how == "document"
+    cats = {c for c, _, _, _ in d.scan_all(text)}
+    assert "secret_leak" in cats and "pii_exposure" in cats
+
+
+def test_odt_is_now_readable_and_scanned():
+    assert kind_of("notes.odt") == "document"
+    text, how = extract("notes.odt", _odf("Confidential board pack", f"SSN {SSN}"))
+    assert how == "document" and SSN in text
+
+
+def test_ods_spreadsheet_readable():
+    assert kind_of("book.ods") == "document"
+    text, _ = extract("book.ods", _odf("name", "ssn", f"Jane Roe {SSN}"))
+    assert SSN in text
+
+
+def test_legacy_binary_office_still_unreadable():
+    # .doc/.xls/.ppt (OLE2 binary) and iWork stay unread — honest, they need real deps.
+    for ext in ("doc", "xls", "ppt", "pages", "numbers"):
+        assert kind_of(f"x.{ext}") == "", ext
