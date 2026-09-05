@@ -32,8 +32,10 @@ for (const f of readdirSync(detectors).filter((f) => f.endsWith(".py"))) {
 
 // Distinct credential formats in the tier-1 secret library (labels, deduped — some
 // formats need two regexes).
+// Anchor on the definition signature (`SECRET_PATTERNS: list`), not the bare name — a
+// comment or env-var reference like CUSTOM_SECRET_PATTERNS must not steal the split.
 const patterns = readFileSync(join(detectors, "patterns.py"), "utf8");
-const block = patterns.split("SECRET_PATTERNS")[1].split("\n]")[0];
+const block = patterns.split("SECRET_PATTERNS: list")[1].split("\n]")[0];
 const formats = new Set([...block.matchAll(/^\s*\("([^"]+)",/gm)].map((m) => m[1]));
 
 // Distinct AI sites the browser extension covers, from the extension's own content-script
