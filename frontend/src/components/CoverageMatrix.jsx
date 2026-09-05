@@ -158,6 +158,19 @@ const BYPASSES = [
   ["Novel or self-hosted AI endpoints", "The egress proxy inspects known AI hosts. An unlisted endpoint (a personal VPS running an open-weights model) passes as ordinary HTTPS unless you add it to the inspected list."],
 ];
 
+// What Palivane does with what it captures. The tables above are about seeing; this is
+// about governing and enforcing, the plane an evaluator scoping "coverage" as the whole
+// product will look for. Kept off the capture tables on purpose (these aren't interception
+// points), but named here so nothing reads as missing.
+const GOVERNANCE = [
+  ["Enforcement, per surface", "Every plane starts in monitor mode; blocking is a per-org switch. Actions are allow / warn / redact / tokenize, and a confirmed secret or PII leak hard-blocks even in monitor mode. Block thresholds are set per surface (gateway, capture planes, CI) by severity."],
+  ["Justified proceed (Human Firewall)", "When it's enabled, a blocked user records a business justification and proceeds immediately, in the browser and in the coding-tool hooks. The reason lands on the finding and in the audit log, so enforcement teaches instead of queueing tickets. Confirmed credentials stay non-overridable."],
+  ["Agent least-privilege", "AI agents get their own short-lived identities (API key or OIDC workload identity), per-agent rate limits, and role policies (allowed servers/tools/commands, need-to-know data scopes). MCP tool-calls are checked before they execute, not logged after."],
+  ["Identity & provisioning", "Per-org SSO (OIDC + SAML 2.0) and TOTP MFA. SCIM 2.0 lets Okta / Entra ID own the user lifecycle: a person removed from the directory is deactivated here on the next sync, live sessions killed immediately; the last active admin can't be deactivated over SCIM."],
+  ["Alerting & reporting", "Real-time webhook/Slack alerts and a first-sighting page when a new AI tool appears in the org; a weekly exec email (findings, new tools, top actors); and continuous export to your SIEM (Splunk HEC / CEF / JSON) or an S3 data lake."],
+  ["Data governance", "Metadata-first by default (the verdict, not the prompt); per-org retention with content TTL separate from metadata; redaction and tokenization before storage; self-serve JSON export and organization deletion; an in-product DPA with versioned acceptance."],
+];
+
 function ModeBadge({ mode }) {
   return mode === "block"
     ? <span className="cov-badge cov-block">can block</span>
@@ -282,6 +295,22 @@ export default function CoverageMatrix() {
                  CPU-only, deterministic, sub-millisecond, no model service in the loop, weights
                  and eval shipped in the repo.</p>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="lp-section">
+        <div className="lp-wrap">
+          <h2 className="lp-h2">Governance & enforcement</h2>
+          <p className="lp-sub">The tables above are what Palivane <em>sees</em>. This is what it
+             <em> does</em> with it, the part that isn't a capture point but is still coverage.</p>
+          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
+            {GOVERNANCE.map(([title, body]) => (
+              <div className="lp-card" key={title}>
+                <h3>{title}</h3>
+                <p style={{ marginTop: 8 }}>{body}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
