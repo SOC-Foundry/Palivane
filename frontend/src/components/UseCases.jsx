@@ -2,46 +2,46 @@
 // the real capture planes and detectors. Reuses the landing (lp-*) design language.
 import { SiteNav, SiteFooter, Shot } from "./SiteChrome.jsx";
 import { signInUrl } from "../deployment.js";
-import { IconTarget, IconShield, IconAlert, IconInbox, IconClipboard, IconPlug } from "./icons.jsx";
+import { IconBadgeCheck, IconBot, IconEye, IconKey, IconMessageAlert, IconNodes, IconRadar, IconShield, IconTerminal } from "./icons.jsx";
 
 const CASES = [
   {
-    icon: <IconTarget />, tag: "The obvious one",
+    icon: <IconMessageAlert />, tag: "The obvious one",
     seg: "security", title: "Someone pastes customer data into ChatGPT",
     body: "It happens on a deadline, with good intentions. Palivane checks what people send to ChatGPT, Claude, Gemini, and Copilot and stops the customer records, passwords, and source code, then points them at a tool you've approved instead of just saying no.",
   },
   {
-    icon: <IconShield />, tag: "Developers move fast",
+    icon: <IconTerminal />, tag: "Developers move fast",
     seg: "engineering", title: "Your engineers want Claude Code and Cursor",
     body: "Good, they're faster with them. Palivane lets the assistant read the code it's meant to work on, while still catching API keys and credentials hidden in it, flagging the settings that let it act without asking, and stopping destructive commands before they run.",
   },
   {
-    icon: <IconInbox />, tag: "Your own AI overshares",
+    icon: <IconEye />, tag: "Your own AI overshares",
     seg: "compliance", title: "Your internal AI answers questions it shouldn't",
     body: "Copilot, Glean, or your own internal assistant will happily surface HR files, salary data, or a confidential deal to whoever asks. Palivane checks each answer against who's allowed to see what, and flags or blocks when restricted material reaches the wrong person.",
   },
   {
-    icon: <IconAlert />, tag: "Assistants that act",
+    icon: <IconBot />, tag: "Assistants that act",
     seg: "engineering", title: "An AI assistant has real access to your systems",
     body: "Modern assistants don't just answer, they read files, run commands, and call other services. Palivane gives each one a boundary: which tools it may use, which commands it may run, which files it may open. Anything outside that gets stopped, not just logged.",
   },
   {
-    icon: <IconClipboard />, tag: "Credentials already loose",
+    icon: <IconKey />, tag: "Credentials already loose",
     seg: "security", title: "Keys are sitting on laptops and in your repos",
     body: "Prompts aren't the only way a secret escapes. Palivane finds credentials already sitting on developer machines (the first place info-stealing malware looks) and keeps new ones out of your repositories, with a one-time sweep of what's already committed.",
   },
   {
-    icon: <IconAlert />, tag: "Agents nobody is watching",
+    icon: <IconRadar />, tag: "Agents nobody is watching",
     seg: "engineering", title: "An AI agent runs in CI with your deploy keys",
     body: "Handing a coding agent a GitHub Actions job is the new normal, and that job often holds cloud credentials no developer would paste into a chat window. Palivane reads your workflows before you merge them: which agents run there, what secrets reach them, whether approvals are switched off, and the trigger and permission mistakes that let a fork's pull request run in your CI at all.",
   },
   {
-    icon: <IconInbox />, tag: "You ship AI yourself",
+    icon: <IconNodes />, tag: "You ship AI yourself",
     seg: "engineering", title: "The AI feature in your product needs a guard",
     body: "Point your own app at Palivane and every prompt gets checked for the attacks aimed at AI: hijacking its instructions, talking it past its rules, or coaxing out its hidden setup and data. It checks the answers on the way back out, too.",
   },
   {
-    icon: <IconPlug />, tag: "Someone asks for proof",
+    icon: <IconBadgeCheck />, tag: "Someone asks for proof",
     seg: "compliance", title: "Your auditor or biggest customer asks what you do about AI",
     body: "Palivane shows which people and teams are actually covered and which aren't, keeps a full record of every decision it made, and produces a monthly summary you can hand to a board or a security questionnaire. Signed DPA available.",
   },
