@@ -47,13 +47,18 @@ ENV_VARS+="|SEED_ON_START=${SEED_ON_START:-false}"
 # PALIVANE_ALLOWED_HOSTS may need more than DOMAIN (e.g. the *.run.app hostname when a
 # fronting proxy/Worker reaches the service by its run.app origin) — allow an override.
 [ -n "$DOMAIN" ] && ENV_VARS+="|CORS_ORIGINS=https://${DOMAIN}|PALIVANE_PUBLIC_URL=https://${DOMAIN}|PALIVANE_ALLOWED_HOSTS=${PALIVANE_ALLOWED_HOSTS:-$DOMAIN}"
-# Email plane (password reset / join verification / invites). Two transports: SMTP
-# (SMTP_PASS rides in via the optional-secrets loop below — create 'palivane-smtp-pass')
-# or the Cloudflare Email Service REST API (token via 'palivane-cf-email-token', account
-# id here — it is not a secret). MAIL_FROM is shared by both, so it is threaded
-# independently of which transport is configured.
+# Email plane (password reset / join verification / invites). Three transports: the Gmail
+# API (GMAIL_SA_JSON secret + GMAIL_SEND_AS — the ONLY Gmail path that works from Cloud
+# Run, which blocks outbound SMTP to Gmail), SMTP (SMTP_PASS rides in via the
+# optional-secrets loop below — create 'palivane-smtp-pass'), or the Cloudflare Email
+# Service REST API (token via 'palivane-cf-email-token', account id here — not a secret).
+# MAIL_FROM is shared by all, so it is threaded independently of which transport is set.
+# GMAIL_SEND_AS is the impersonated sender for the SA's domain-wide delegation; without it
+# _gmail_configured() is false and email silently falls back to the SMTP path Cloud Run
+# blocks — so it must be threaded whenever the gmail-sa-json secret is in play.
 [ -n "${SMTP_HOST:-}" ] && ENV_VARS+="|SMTP_HOST=${SMTP_HOST}|SMTP_PORT=${SMTP_PORT:-587}|SMTP_USER=${SMTP_USER:-}"
 [ -n "${CF_EMAIL_ACCOUNT_ID:-}" ] && ENV_VARS+="|CF_EMAIL_ACCOUNT_ID=${CF_EMAIL_ACCOUNT_ID}"
+[ -n "${GMAIL_SEND_AS:-}" ] && ENV_VARS+="|GMAIL_SEND_AS=${GMAIL_SEND_AS}"
 [ -n "${MAIL_FROM:-}" ] && ENV_VARS+="|MAIL_FROM=${MAIL_FROM}"
 # MCP reputation feed (opt-in): point at the shipped starter dataset
 # (/app/data/mcp-reputation-starter.json) or a licensed one.
