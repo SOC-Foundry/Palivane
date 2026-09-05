@@ -1115,9 +1115,11 @@ def ingest_ai_usage(
     _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool, user_agent)
     result, meta = _score_ai_usage(body.content, actor, body.tool, body.destination,
                                    tenant_id, agent, db)
-    from .detectors.shadow_ai import confirmed_leak
     action = _action_for(result["severity"])
-    force_block = settings.gateway_enforce_secrets and confirmed_leak(result["signals"])
+    # confirmed_leak is computed pre-filter in run_analysis, so a disabled check (tenant
+    # default or a per-user/group override) can't silently defeat the hard block on a
+    # confirmed live credential — the documented "certain leaks always block" guarantee.
+    force_block = settings.gateway_enforce_secrets and bool(result.get("confirmed_leak"))
     coached = redacted_content = None
     # Coaching mode: if this would block ONLY because of redactable data loss (secrets/PII),
     # downgrade to a warn and hand back the cleaned prompt + the sanctioned-tool redirect.
@@ -1154,9 +1156,11 @@ def ingest_ai_usage(
                     and result["finding_id"] is not None
                     and tok.get("finding_id") == result["finding_id"]
                     and (tok.get("actor") or "") == (actor or "")
-                    # findings fold on violation CLASSES, not text — the hash (when the
-                    # client supplied one) pins the grant to the exact blocked message
-                    and (not want or want == have)):
+                    # Findings fold on violation CLASSES, not text, so the content hash is
+                    # what pins the grant to the EXACT justified message — mandatory and
+                    # always enforced (a token with no/blank hash never matches), so one
+                    # justification can't wave through other same-class content.
+                    and want and want == have):
                 action = "warn"
                 force_block = False       # the justified send goes through, once
                 overridden = True
@@ -1306,6 +1310,14 @@ def exception_request(
     from . import audit_log
     tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
+    # Don't let a caller attach a request to a finding that isn't theirs: a cross-tenant
+    # finding_id would surface another org's finding in this tenant's Exceptions queue.
+    if body.finding_id:
+        from .models import Finding
+        owns = db.query(Finding.id).filter(
+            Finding.id == body.finding_id, Finding.tenant_id == tenant_id).first()
+        if not owns:
+            raise HTTPException(status_code=404, detail="finding not found")
     audit_log.record(
         db, tenant_id, body.user or default_actor, "exception_requested",
         target=body.destination or "",
@@ -2507,6 +2519,11 @@ def update_status(finding_id: int, body: StatusUpdate,
     row = db.get(Finding, finding_id)
     if not row or row.tenant_id != current.tenant_id:
         raise HTTPException(status_code=404, detail="finding not found")
+    # Dismissing is closing a security finding — admin only. Otherwise a non-admin (every
+    # non-admin can reach this endpoint) could bury any finding, including their own leak,
+    # defeating the /api/my/findings design where an owner can answer but never dismiss.
+    if body.status == "dismissed" and current.role != "admin":
+        raise HTTPException(status_code=403, detail="only an admin can dismiss a finding")
     row.status = body.status
     db.commit()
     from . import audit_log
@@ -2520,6 +2537,8 @@ def bulk_update_status(body: BulkStatusUpdate, current: User = Depends(get_curre
                        db: Session = Depends(get_db)):
     """Set the status of many findings at once (group triage from the console). Only rows
     in the caller's tenant are touched; unknown/foreign ids are silently skipped."""
+    if body.status == "dismissed" and current.role != "admin":
+        raise HTTPException(status_code=403, detail="only an admin can dismiss findings")
     n = (db.query(Finding)
          .filter(Finding.tenant_id == current.tenant_id, Finding.id.in_(body.ids))
          .update({Finding.status: body.status}, synchronize_session=False))

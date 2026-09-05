@@ -558,6 +558,12 @@ class ShadowAIDetector:
             signals.extend(self._scan_secrets(text, low_signal, raw_secrets))
             signals.extend(self._scan_high_entropy(text, item.channel, low_signal,
                                                    has_tier1=bool(raw_secrets)))
+        # Labeled/classified material is data-loss wherever it's shared, so the marker+label
+        # pass also runs on collab (a CONFIDENTIAL deck posted to Slack/Teams/email must
+        # flag). The ML *prose* fallback stays ai_usage-only — we don't score every chat
+        # message with the model.
+        if item.surface == Surface.COLLAB:
+            signals.extend(self._scan_proprietary(text, item.metadata, ml_fallback=False))
         # Proprietary-code / unsanctioned-destination remain ai_usage-only (sending code to
         # your *own* LLM is expected; there's no external AI destination on llm_io/mcp).
         if item.surface == Surface.AI_USAGE:
@@ -792,7 +798,8 @@ class ShadowAIDetector:
             evidence="; ".join(found[:4]),
         )]
 
-    def _scan_proprietary(self, text: str, meta: dict | None = None) -> list[Signal]:
+    def _scan_proprietary(self, text: str, meta: dict | None = None,
+                          ml_fallback: bool = True) -> list[Signal]:
         out: list[Signal] = []
 
         # Confidential business content: keyword markers + applied sensitivity labels
@@ -811,7 +818,7 @@ class ShadowAIDetector:
                 weight=0.6, confidence=0.65, detector=self.name,
                 evidence=ev,
             ))
-        else:
+        elif ml_fallback:
             # Nothing marked it. That is the common case for the material that matters most
             # — a term sheet, a pipeline export, a comp review — and the marker path above
             # finds none of it. Ask the classifier, if one is loaded.
@@ -846,7 +853,10 @@ class ShadowAIDetector:
         # internal-service calls, business-domain identifiers, a curated hint) rather than
         # matching literal snippets — so it generalizes to internal code it has never seen and
         # stays quiet on generic tutorial/framework code. See the module-level notes above.
-        out.extend(self._scan_source_code(text))
+        # ai_usage-only: eng teams routinely paste snippets into chat, so structural code
+        # scoring on collab would be noise.
+        if ml_fallback:
+            out.extend(self._scan_source_code(text))
         return out
 
     def _scan_source_code(self, text: str) -> list[Signal]:

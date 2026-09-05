@@ -62,10 +62,10 @@ class JustifyRequest(BaseModel):
     finding_id: int
     justification: str = Field(min_length=10, max_length=2000)
     user: str = ""          # end-user identity (from SSO/extension)
-    # SHA-256 hex of the exact blocked content. When given, the override token only
-    # unlocks THAT text — without it, the binding is finding-level (same actor + same
-    # violation classes + same destination fold into one finding), which is looser.
-    content_hash: str = ""
+    # SHA-256 hex of the EXACT blocked content — required. Findings fold on violation
+    # classes not text, so the override token is pinned to this hash and enforced on
+    # redemption; without it one justification could wave through other same-class content.
+    content_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-fA-F]{64}$")
 
 
 class A2AIngest(BaseModel):
