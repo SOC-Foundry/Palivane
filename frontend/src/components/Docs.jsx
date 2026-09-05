@@ -17,6 +17,10 @@ import pilotMd from "../../../docs/pilot-smoke-test.md?raw";
 import corpChecklistMd from "../../../docs/corporate-deployment-checklist.md?raw";
 import existingProxyMd from "../../../docs/existing-proxy-vpn.md?raw";
 import slackMd from "../../../docs/slack-scanning.md?raw";
+import teamsMd from "../../../docs/teams-scanning.md?raw";
+import emailMd from "../../../docs/email-scanning.md?raw";
+import realtimeMd from "../../../docs/realtime-scanning.md?raw";
+import scimMd from "../../../docs/scim-provisioning.md?raw";
 import siemMd from "../../../docs/siem-and-s3-delivery.md?raw";
 
 const DOCS = [
@@ -29,6 +33,10 @@ const DOCS = [
   { slug: "tokens-and-identity", title: "Tokens & identity", md: tokensMd },
   { slug: "at-rest-scanning", title: "S3 & repo scanning", md: atRestMd },
   { slug: "slack-scanning", title: "Slack scanning", md: slackMd },
+  { slug: "teams-scanning", title: "Microsoft Teams scanning", md: teamsMd },
+  { slug: "email-scanning", title: "Email scanning (Gmail & Outlook)", md: emailMd },
+  { slug: "realtime-scanning", title: "Real-time & on-write scanning", md: realtimeMd },
+  { slug: "scim-provisioning", title: "SCIM provisioning (Okta / Entra)", md: scimMd },
   { slug: "siem-and-s3-delivery", title: "SIEM & S3 delivery", md: siemMd },
   { slug: "data-flows", title: "Data flows: what leaves the machine", md: dataFlowsMd },
   { slug: "verifying-downloads", title: "Verifying what you install", md: verifyMd },
