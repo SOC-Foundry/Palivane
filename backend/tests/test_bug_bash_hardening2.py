@@ -16,35 +16,51 @@ import pytest
 from pydantic import ValidationError
 
 from app.detectors.base import AnalysisInput, Category, Surface
+from app.detectors import patterns as P
 from app.detectors.patterns import _safe_custom_regex
 from app.detectors.shadow_ai import ShadowAIDetector
 
 
-# --- ReDoS guard on tenant/admin custom regex -----------------------------------------
+# --- tenant/admin custom-regex safety: compile guard + runtime timeout ----------------
 
 @pytest.mark.parametrize("rx", [
-    r"(a|a)*$",      # confirmed exploit: quantified overlapping alternation (136 s hang)
-    r"(a+)+",        # nested quantifiers
+    r"(a+)+",        # nested quantifiers — the classic footgun, cheap to reject at compile
     r"(a*)*",
     r"(.*)*",
-    r"(a|ab)+",
     r"(\d+)*",
     "x" * 401,       # over-long
 ])
-def test_redos_and_overlong_patterns_are_rejected(rx):
+def test_nested_quantifier_and_overlong_patterns_are_rejected(rx):
     assert _safe_custom_regex(rx) is None
 
 
 @pytest.mark.parametrize("rx", [
     r"ACME-\d{6}",
     r"MRN\s*\d+",
-    r"(foo)",         # a group with no outer quantifier is linear -> allowed
-    r"(cat|dog)",     # alternation with no outer quantifier -> allowed
+    r"(foo)",
+    r"(cat|dog)",
+    r"(foo|bar)+",    # safe alternation — now ALLOWED (runtime timeout replaces the guess)
+    r"(a|a)*$",       # the old 136 s hang — the regex engine collapses it; timeout backstops it
     r"sk-[a-z]{16}",
     r"\d{3}-\d{4}",
 ])
-def test_safe_patterns_still_compile(rx):
+def test_safe_and_alternation_patterns_compile(rx):
     assert _safe_custom_regex(rx) is not None
+
+
+def test_runtime_timeout_bounds_an_expensive_custom_pattern(monkeypatch):
+    # A pattern the engine can't optimise must not hang the scan: it yields no matches within
+    # the wall-clock budget instead of blocking the worker.
+    monkeypatch.setattr(P, "_CUSTOM_MATCH_TIMEOUT", 0.2)
+    pat = _safe_custom_regex(r"(?:supercalifragilisticexpialidocious){e<=25}")
+    assert pat is not None
+    haystack = "qwertyuiopasdfghjklzxcvbnm" * 40000   # ~1 MB, no near-match -> maximal work
+    assert pat.finditer(haystack) == []                # bounded, empty, no hang
+
+
+def test_custom_pattern_still_matches_normally():
+    pat = _safe_custom_regex(r"ACME-\d{6}")
+    assert [m.group(0) for m in pat.finditer("ref ACME-123456 done")] == ["ACME-123456"]
 
 
 # --- exception-request finding ownership ----------------------------------------------

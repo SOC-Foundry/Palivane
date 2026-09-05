@@ -9,33 +9,71 @@ from __future__ import annotations
 
 import base64
 import binascii
+import logging
 import math
 import os
 import re
 from collections import Counter
 
-# Reject the classic catastrophic-backtracking (ReDoS) constructs in ADMIN/ENV-supplied
-# regexes — a nested unbounded quantifier like (a+)+ / (a*)* / (.*)+ can hang on crafted
-# input, and these patterns run on request content on the shared capture path. Not an
-# exhaustive ReDoS detector (undecidable in general), but it blocks the common footguns.
-# Reject the catastrophic-backtracking families at compile time — stdlib `re` has no match
-# timeout, so this is the only defense for tenant/admin-supplied regexes (they run on up to
-# 200 KB of content, and one bad one hangs the worker: a confirmed `(a|a)*$` took 136 s on
-# 31 chars). Matches a parenthesised group that CONTAINS an alternation or inner quantifier
-# and is immediately followed by an OUTER quantifier — `(a+)+`, `(a*)*`, `(a|a)*`, `(.*)*`,
-# `(a|ab)+`. Over-rejects some safe quantified-alternation groups like `(foo|bar)+` (they're
-# skipped, not run) — the right trade: a dropped custom pattern is visible and harmless; a
-# ReDoS hang is neither.
-_REDOS_RISKY = re.compile(r"\((?=[^()]*[|*+])[^()]*\)[?*+]*[*+{]")
+import regex as _regex   # backtracking-resistant engine + per-match timeout (see below)
+
+_log = logging.getLogger("palivane.patterns")
+
+# --- tenant/admin custom-regex safety -------------------------------------------------
+# Custom patterns (CUSTOM_SECRET_PATTERNS / CUSTOM_PII_PATTERNS / per-tenant PII) run on up
+# to 200 KB of request content on the shared capture path, so a ReDoS pattern would hang the
+# worker (a confirmed `(a|a)*$` took 136 s on 31 chars under stdlib `re`). Two layers guard
+# this now:
+#   1. Compile with the `regex` module, whose engine collapses the classic catastrophic
+#      families (nested/overlapping quantifiers) that make stdlib `re` explode.
+#   2. Run every match under a hard wall-clock budget via regex's `timeout=` — the real
+#      backstop for anything the engine can't optimise. On timeout the pattern yields no
+#      matches for that scan (and logs) rather than blocking the request.
+# A cheap compile-time reject of the nested-quantifier footgun (`(a+)+`, `(a*)*`) stays, so a
+# known-bad pattern never even burns the per-scan budget on every request. It deliberately no
+# longer rejects safe alternations like `(foo|bar)+` — the timeout makes that guesswork
+# unnecessary.
+_CUSTOM_MATCH_TIMEOUT = float(os.getenv("PALIVANE_CUSTOM_REGEX_TIMEOUT", "0.25"))
+_REDOS_RISKY = re.compile(r"\([^()]*[+*][^()]*\)[?]?[*+]")
 
 
-def _safe_custom_regex(rx: str) -> re.Pattern | None:
-    """Compile a user-supplied regex, or None if it's invalid, over-long, or ReDoS-risky."""
+class _TimedPattern:
+    """A compiled custom regex whose match ops enforce `_CUSTOM_MATCH_TIMEOUT`. Exposes the
+    subset the call sites use (`finditer`, `search`) so it drops in for an `re.Pattern`; on
+    timeout it returns no matches instead of raising into the scan."""
+    __slots__ = ("_rx", "_src")
+
+    def __init__(self, rx: "_regex.Pattern", src: str):
+        self._rx = rx
+        self._src = src
+
+    def finditer(self, text: str):
+        # regex's timeout is cumulative across the iteration, so materialising here bounds the
+        # whole scan of `text`, not just the first step.
+        try:
+            return list(self._rx.finditer(text, timeout=_CUSTOM_MATCH_TIMEOUT))
+        except TimeoutError:
+            _log.warning("custom regex exceeded %.2fs budget, skipped this scan: %r",
+                         _CUSTOM_MATCH_TIMEOUT, self._src[:80])
+            return []
+
+    def search(self, text: str):
+        try:
+            return self._rx.search(text, timeout=_CUSTOM_MATCH_TIMEOUT)
+        except TimeoutError:
+            _log.warning("custom regex exceeded %.2fs budget, skipped this scan: %r",
+                         _CUSTOM_MATCH_TIMEOUT, self._src[:80])
+            return None
+
+
+def _safe_custom_regex(rx: str) -> _TimedPattern | None:
+    """Compile a user-supplied regex into a timeout-enforcing pattern, or None if it's
+    invalid, over-long, or a nested-quantifier ReDoS footgun."""
     if len(rx) > 400 or _REDOS_RISKY.search(rx):
         return None
     try:
-        return re.compile(rx)
-    except re.error:
+        return _TimedPattern(_regex.compile(rx), rx)
+    except _regex.error:
         return None
 
 # (label, compiled regex) — label is human-facing evidence.
@@ -153,10 +191,10 @@ EVASION_PATTERNS: list[tuple[str, re.Pattern]] = [
 ]
 
 
-_CUSTOM_PATTERNS_CACHE: tuple[str, list[tuple[str, re.Pattern]]] | None = None
+_CUSTOM_PATTERNS_CACHE: tuple[str, list[tuple[str, _TimedPattern]]] | None = None
 
 
-def custom_patterns() -> list[tuple[str, re.Pattern]]:
+def custom_patterns() -> list[tuple[str, _TimedPattern]]:
     """Org-specific secret patterns from CUSTOM_SECRET_PATTERNS — one `label=regex` per
     line. Read at call time so deployments can add their own token formats without a code
     change; the compiled result is cached and only rebuilt when the env value changes
@@ -165,7 +203,7 @@ def custom_patterns() -> list[tuple[str, re.Pattern]]:
     raw = os.getenv("CUSTOM_SECRET_PATTERNS", "")
     if _CUSTOM_PATTERNS_CACHE is not None and _CUSTOM_PATTERNS_CACHE[0] == raw:
         return _CUSTOM_PATTERNS_CACHE[1]
-    out: list[tuple[str, re.Pattern]] = []
+    out: list[tuple[str, _TimedPattern]] = []
     for line in raw.splitlines():
         line = line.strip()
         if not line or "=" not in line:
@@ -278,12 +316,12 @@ def find_secrets(text: str) -> list[str]:
     return out
 
 
-def custom_pii_patterns(extra: str = "") -> list[tuple[str, re.Pattern]]:
+def custom_pii_patterns(extra: str = "") -> list[tuple[str, _TimedPattern]]:
     """Org-specific PII / confidential-data patterns — `label=regex` per line (newline- or
     `;`-separated). Sourced from the global CUSTOM_PII_PATTERNS env AND a per-tenant `extra`
     string (so each org can add its own customer-ID / account-number / MRN / codename formats
     without a code change). Read at call time; invalid regexes are skipped."""
-    out: list[tuple[str, re.Pattern]] = []
+    out: list[tuple[str, _TimedPattern]] = []
     for src in (os.getenv("CUSTOM_PII_PATTERNS", ""), extra or ""):
         for line in src.replace(";", "\n").splitlines():
             line = line.strip()
