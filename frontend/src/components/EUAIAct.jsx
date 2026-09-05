@@ -4,6 +4,9 @@
 // of GPAI under the Act; this page maps their concrete obligations to the control or
 // evidence Palivane produces, and says plainly what Palivane does not do.
 import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
+import { DuoMessageAlert, DuoGhost, DuoEye, DuoLock, DuoFileSearch, DuoBadgeCheck, DuoScale } from "./duoicons.jsx";
+
+const ICONS = [<DuoMessageAlert />, <DuoGhost />, <DuoEye />, <DuoLock />, <DuoFileSearch />, <DuoBadgeCheck />, <DuoScale />];
 
 const ROWS = [
   ["Art. 4", "AI literacy",
@@ -57,9 +60,10 @@ export default function EUAIAct() {
         <div className="lp-wrap">
           <h2 className="lp-h2">Obligation → control mapping</h2>
           <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))" }}>
-            {ROWS.map(([art, name, duty, control]) => (
+            {ROWS.map(([art, name, duty, control], i) => (
               <div key={art} className="lp-card">
-                <span className="lp-card-icon" style={{ fontSize: 13 }}>{art}</span>
+                <span className="lp-card-icon">{ICONS[i]}</span>
+                <div className="lp-eyebrow" style={{ marginTop: 2 }}>{art}</div>
                 <h3>{name}</h3>
                 <p style={{ opacity: 0.75, fontSize: 13 }}>{duty}</p>
                 <p>{control}</p>
