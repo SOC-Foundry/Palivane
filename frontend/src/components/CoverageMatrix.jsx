@@ -16,14 +16,27 @@ const GROUPS = [
     rows: [
       {
         surface: "Your own AI apps & API traffic",
-        how: "LLM gateway, an OpenAI-, Anthropic- and Gemini-compatible reverse proxy; prompts and responses are scored inline on the way to the provider",
+        how: "LLM gateway, an OpenAI-, Anthropic-, Gemini- and xAI-compatible reverse proxy; prompts and responses are scored inline on the way to the provider. Orgs on a cloud contract can route Claude through AWS Bedrock or GCP Vertex AI instead of an API key.",
         needs: "A base-URL change in the client or SDK. Nothing installed anywhere.",
         mode: "block",
       },
       {
-        surface: "SaaS content: Slack, Google Drive, SharePoint, Salesforce",
-        how: "Scheduled API scans of message history, document libraries, and record text, cursor-incremental, so each run covers what changed",
-        note: "Reads what the file actually is: plain text, PDFs, and Word/Excel/PowerPoint, plus screenshots where OCR is enabled. Anything nothing can open (pre-2007 Office, encrypted PDFs) is reported as unread, never counted clean. On Slack, Enterprise can additionally delete a confirmed leak, with every deletion written to the audit log.",
+        surface: "Collaboration messaging: Slack, Microsoft Teams",
+        how: "Slack scanned in real time (Events API push) and on a cursor; Teams channels + thread replies via Graph delta, with opted-in 1:1/group chats via the export API",
+        note: "PII/PHI/secret detection on the collab surface. On Slack, Enterprise can additionally delete a confirmed leak, every deletion written to the audit log. Real-time needs a public webhook URL; the scheduled pull is the safety net.",
+        needs: "A read-scoped bot token (Slack) or an Entra app registration with the protected ChannelMessage.Read.All (Teams). Nothing installed anywhere.",
+        mode: "observe",
+      },
+      {
+        surface: "Outbound email: Gmail, Outlook / Exchange Online",
+        how: "Scans each user's SENT mail, outbound is the leak surface, body + text attachments, watermark-incremental per mailbox",
+        needs: "Google domain-wide delegation (gmail.readonly) or an Entra app with Mail.Read. Nothing installed anywhere.",
+        mode: "observe",
+      },
+      {
+        surface: "Document stores: Google Drive, SharePoint / OneDrive, Salesforce",
+        how: "Drive and SharePoint/OneDrive scan on write (Drive changes.watch, Graph change subscriptions) as well as on a cursor; Salesforce record + attachment text on a cursor",
+        note: "Reads what the file actually is: plain text, PDFs, and Word/Excel/PowerPoint, plus screenshots where OCR is enabled. Anything nothing can open (pre-2007 Office, encrypted PDFs) is reported as unread, never counted clean.",
         needs: "A read-scoped token or connected app per platform. Nothing installed anywhere.",
         mode: "observe",
       },
@@ -42,7 +55,7 @@ const GROUPS = [
       {
         surface: "Browser AI (claude.ai, ChatGPT, Gemini, Microsoft Copilot web)",
         how: "Manifest V3 browser extension, intercepts the prompt before it's sent",
-        needs: "Extension install: browser-policy force-install via self-hosted CRX (public Web Store listing coming), or manual on unmanaged machines.",
+        needs: "Extension install: one click from the Chrome Web Store, browser-policy force-install on a managed fleet, or a self-hosted CRX for air-gapped ones.",
         mode: "block",
       },
       {
@@ -106,9 +119,9 @@ const GROUPS = [
         mode: "block",
       },
       {
-        surface: "Coding agents on GitHub Actions runners",
-        how: "Workflow scan (palivane-ci-scan): flags steps handing agents non-model credentials or disabling approvals, plus runner-posture risks",
-        needs: "A workflow step; runs pre-merge.",
+        surface: "Coding agents on CI runners (GitHub Actions, GitLab CI, CircleCI, Azure Pipelines)",
+        how: "Pipeline scan (palivane-ci-scan): flags steps handing agents non-model credentials or disabling approvals, plus runner-posture risks (pwn-request triggers, unpinned actions/orbs/includes, MR-privilege reach, self-hosted runners on fork triggers)",
+        needs: "A workflow step / job; runs pre-merge.",
         mode: "block",
       },
       {
@@ -129,7 +142,7 @@ const GAPS = [
   ["OTEL-bridge capture", "Orgs using the claude-otel bridge get monitor-only, post-hoc capture, the event has already happened when it's scored."],
   ["Slack private channels and DMs", "A bot token only reads conversations the bot was invited to; public channels can be joined automatically, private ones cannot. Uninvited private channels and direct messages are invisible. Reaching them needs Slack's Discovery API, which Slack restricts to Enterprise Grid and to approved DLP partners: a partnership, not a feature we can build."],
   ["Formats nothing can open", "Pre-2007 Office files (.doc/.xls/.ppt) are binary containers and encrypted PDFs are encrypted; neither is readable. Images need OCR, which runs locally and is off unless enabled. All three are counted and reported as unread rather than passed over, so a scan never quietly implies it looked."],
-  ["SaaS scanning is periodic, not inline", "Slack, Drive, SharePoint, and Salesforce are scanned on a schedule against a cursor. A document is found after it lands, not before; these platforms expose no pre-delivery inspection point below Enterprise Grid."],
+  ["SaaS scanning is detect-after, not pre-delivery", "Slack (Events API), SharePoint/OneDrive and Drive (change notifications) now scan within seconds of a message or file landing when a public webhook URL is set; Teams, email and Salesforce run on a cursor. Either way a leak is found AFTER it lands, not before, these platforms expose no pre-delivery inspection point below Enterprise Grid, so this plane is observe-only by construction."],
   ["Mobile apps", "Native mobile AI apps are not covered. The browser extension covers mobile web only where the browser supports extensions."],
   ["Agentic browsers", "Where the agent IS the browser (Perplexity Comet, Dia, the ChatGPT desktop app that absorbed Atlas), the model call originates from the browser itself, not a page fetch the extension wraps. The egress proxy now parses Comet's assistant SSE and flags its agent WebSocket, and the ChatGPT desktop app rides the proxy's existing chatgpt.com handling (but none of it has been verified against a real build yet (no Linux builds exist; the macOS/Windows pass is docs/agentic-browser-verification.md). Until that pass lands, treat these as discover-only: we see the usage, inline interception is built but unproven. Dia stays discovery-only by design) its real API hosts are unverified (catalog row flagged provisional)."],
 ];
@@ -229,8 +242,10 @@ export default function CoverageMatrix() {
         <div className="lp-wrap">
           <h2 className="lp-h2">Measured detection quality</h2>
           <p className="lp-sub" style={{ textAlign: "left" }}>
-            Numbers from our own labeled corpora, offline detectors only (the optional LLM
-            judge disabled), measured 2026-08-12. The corpora and the harnesses that produce
+            Detection is layered: deterministic rules, two on-box ML classifiers, and an
+            optional LLM judge. Numbers below are from our own labeled corpora with the LLM
+            judge disabled, measured 2026-08-12 (the ML classifier evals ship with their
+            weights and are dated there). The corpora and the harnesses that produce
             these are in the repo, reproduce it yourself:
             {" "}<code>pytest tests/bench_recall.py tests/bench_false_positives.py tests/bench_evasion.py tests/bench_code_discrimination.py -s</code>.
             We publish the weak numbers too; a benchmark that only flatters is a brochure.
@@ -256,6 +271,16 @@ export default function CoverageMatrix() {
                  that still defeat the offline detectors in our own evasion matrix. Tracked, not
                  hidden, the LLM judge closes most of these when enabled. Encoded-payload
                  wrappers (base64/hex/url) are now decoded and re-scanned.</p>
+            </div>
+            <div className="lp-card">
+              <div className="bench-stat">2</div>
+              <h3>On-box ML classifiers</h3>
+              <p>Beside the rules: a code/prose classifier (98% accuracy, 99% precision
+                 held-out) that catches config-shaped fragments the keyword rules read past,
+                 and a prompt-injection classifier (precision 1.0 held-out, zero false
+                 positives on a benign-prose check) that catches paraphrased phrasing. Both
+                 CPU-only, deterministic, sub-millisecond, no model service in the loop, weights
+                 and eval shipped in the repo.</p>
             </div>
           </div>
         </div>
