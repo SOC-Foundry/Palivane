@@ -73,6 +73,10 @@ class Tenant(Base):
     # into a rollup (criticals still fire real-time). alert_digest_last tracks the window.
     alert_digest = Column(String(16), default="off")
     alert_digest_last = Column(DateTime, nullable=True)
+    # Weekly exec report by email (to the org's admins): findings by severity, newly
+    # discovered AI tools, top actors. weekly_report_last is the send-window claim.
+    weekly_report = Column(Boolean, default=False)
+    weekly_report_last = Column(DateTime, nullable=True)
     # SIEM forwarding: push findings >= siem_min_severity to a collector (Splunk HEC / generic
     # HTTP / CEF). Vendor-neutral — the SIEM specifics are the customer's URL + token + format.
     siem_url = Column(String(1024), default="")
@@ -207,6 +211,7 @@ class Tenant(Base):
                 "alert_webhook_set": bool((self.alert_webhook or "").strip()),
                 "alert_min_severity": self.alert_min_severity or "high",
                 "alert_digest": self.alert_digest or "off",
+                "weekly_report": bool(self.weekly_report),
                 # siem_token is write-only — never returned; expose whether one is set.
                 "siem_url": self.siem_url or "",
                 "siem_min_severity": self.siem_min_severity or "high",

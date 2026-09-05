@@ -8,6 +8,7 @@ blocking, for the "test webhook" button.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import urllib.request
 
@@ -146,6 +147,86 @@ def _digest_payload(tenant, findings: list, since, now) -> dict:
             f"since {since:%Y-%m-%d %H:%M} UTC\n{by_sev}\n{lines}{more}")
     return {"text": text, **_envelope({"digest": tenant.alert_digest, "count": len(findings),
                                        "by_severity": dict(c), "org": tenant.slug})}
+
+
+def notify_new_tool(webhook: str, tool: str, category: str, actor: str,
+                    source: str) -> bool:
+    """Fire-and-forget: an AI tool was seen in this org for the FIRST time — the moment
+    shadow AI stops being shadow. Org-first is rare by construction (once per tool ever),
+    so this never floods a channel."""
+    if not webhook:
+        return False
+    return send_sync(webhook.strip(), {
+        "text": f":new: First sighting of *{tool}* ({category or 'AI tool'}) in your org "
+                f"— first actor: {actor or 'unknown'}, via {source}. Review it in "
+                "Discovery and sanction or block accordingly.",
+        **_envelope({"kind": "new_ai_tool", "tool": tool, "category": category,
+                     "actor": actor, "source": source}),
+    })
+
+
+def run_weekly_reports(db, now=None) -> int:
+    """Send due weekly exec summaries by email to each opted-in org's admins: findings by
+    severity, newly discovered AI tools, top actors. Window-claimed like run_digests so
+    concurrent workers can't double-send. Returns #tenants mailed."""
+    from datetime import datetime, timedelta
+    from .models import DiscoveredUsage, Finding, Tenant, User
+    from . import email as email_mod
+    now = now or datetime.utcnow()
+    week = timedelta(days=7)
+    sent = 0
+    for t in db.query(Tenant).filter(Tenant.weekly_report.is_(True)).all():
+        last = t.weekly_report_last
+        if last and (now - last) < week:
+            continue
+        since = last or (now - week)
+        cond = (Tenant.weekly_report_last == last) if last else Tenant.weekly_report_last.is_(None)
+        claimed = (db.query(Tenant).filter(Tenant.id == t.id, cond)
+                   .update({Tenant.weekly_report_last: now}, synchronize_session=False))
+        db.commit()
+        if not claimed:
+            continue
+        findings = (db.query(Finding)
+                    .filter(Finding.tenant_id == t.id, Finding.created_at > since).all())
+        by_sev: dict[str, int] = {}
+        actors: dict[str, int] = {}
+        for f in findings:
+            by_sev[f.severity] = by_sev.get(f.severity, 0) + 1
+            if f.sender:
+                actors[f.sender] = actors.get(f.sender, 0) + 1
+        new_tools = (db.query(DiscoveredUsage)
+                     .filter(DiscoveredUsage.tenant_id == t.id,
+                             DiscoveredUsage.first_seen > since).all())
+        tool_names = sorted({u.tool for u in new_tools})
+        top = sorted(actors.items(), key=lambda kv: -kv[1])[:5]
+        lines = [
+            f"Palivane weekly report for {t.name or t.slug}",
+            f"Window: {since:%Y-%m-%d} to {now:%Y-%m-%d}",
+            "",
+            f"Findings: {len(findings)} total — " + (", ".join(
+                f"{by_sev[s]} {s}" for s in ("critical", "high", "suspicious", "low")
+                if by_sev.get(s)) or "none"),
+            "",
+            "New AI tools first seen this week: " + (", ".join(tool_names[:15]) or "none"),
+        ]
+        if top:
+            lines += ["", "Most-flagged actors:"] + [
+                f"  {a}: {n} finding(s)" for a, n in top]
+        lines += ["", "Full detail: your Palivane console -> Findings / Discovery."]
+        body = "\n".join(lines)
+        admins = (db.query(User).filter(User.tenant_id == t.id, User.role == "admin",
+                                        User.active.is_(True)).all())
+        mailed = False
+        for a in admins:
+            try:
+                email_mod.send(a.email, "Palivane weekly report", body)
+                mailed = True
+            except Exception:                                     # noqa: BLE001
+                logging.getLogger("palivane.alerts").warning(
+                    "weekly report to %s failed", a.email)
+        if mailed:
+            sent += 1
+    return sent
 
 
 def run_digests(db, now=None) -> int:

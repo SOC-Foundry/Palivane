@@ -81,6 +81,11 @@ def _upsert(db, tenant_id, actor, hit, *, source, inc=1, sensitive=False, risk=0
              .one_or_none())
     when = when or _now()
     if row is None:
+        # Org-first check BEFORE inserting: is this tool new to the whole org, not just
+        # to this actor? That moment — shadow AI stops being shadow — is worth a page.
+        org_first = (db.query(DiscoveredUsage.id)
+                       .filter(DiscoveredUsage.tenant_id == tenant_id,
+                               DiscoveredUsage.tool == hit["tool"]).first() is None)
         row = DiscoveredUsage(
             tenant_id=tenant_id, actor=actor_n, tool=hit["tool"], domain=hit["domain"],
             category=hit["category"], source=source, event_count=0, sensitive_count=0,
@@ -88,6 +93,16 @@ def _upsert(db, tenant_id, actor, hit, *, source, inc=1, sensitive=False, risk=0
         )
         db.add(row)
         db.flush()
+        if org_first:
+            from .models import Tenant
+            t = db.get(Tenant, tenant_id)
+            if t is not None and (t.alert_webhook or "").strip():
+                from . import alerts
+                try:
+                    alerts.notify_new_tool(t.alert_webhook, hit["tool"],
+                                           hit.get("category", ""), actor_n, source)
+                except Exception:                                 # noqa: BLE001
+                    pass                       # alerting is never allowed to sink ingest
     if not row.account_type:                # classify once; cheap, and stable per actor
         row.account_type = _account_type(db, tenant_id, actor_n)
     row.event_count = (row.event_count or 0) + inc

@@ -1147,6 +1147,8 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
     if body.ml_capture is not None:
         # Explicit consent flag for ML-corpus capture (no inherit; audit-logged below).
         tenant.ml_capture = body.ml_capture
+    if body.weekly_report is not None:
+        tenant.weekly_report = bool(body.weekly_report)
     if body.redact_mode is not None:
         tenant.redact_mode = _JUDGE[body.redact_mode]       # coaching mode (tri-state)
     if body.self_justify is not None:
