@@ -1975,7 +1975,7 @@ PLATFORMS: dict[str, dict] = {
                  "([{sobject, fields, title, actor}]) to scan custom objects. Watermark-"
                  "incremental on LastModifiedDate (first sync looks back 7 days). "
                  "Attached files (ContentVersion, latest version only) are scanned too: "
-                 "text, PDFs and Office documents, plus images when OCR is enabled. An org "
+                 "text, PDFs, Office, RTF and OpenDocument documents, plus images when OCR is enabled. An org "
                  "whose run-as user cannot read ContentVersion keeps its record scan. Rules-only.",
     },
     "notion": {
