@@ -52,3 +52,42 @@ export const IconBook = (p) => (
 export const IconGear = (p) => (
   <svg {...base} {...p}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
 );
+
+// --- subject icons (added when the marketing cards outgrew the original set: every card
+// on a page gets its own glyph — repeats read as filler) ---
+export const IconKey = (p) => (
+  <svg {...base} {...p}><circle cx="8" cy="15" r="4" /><path d="M10.8 12.2L20 3M15 5l3 3M12 8l2.5 2.5" /></svg>
+);
+export const IconGhost = (p) => (
+  <svg {...base} {...p}><path d="M5 21v-9a7 7 0 0 1 14 0v9l-2.4-1.9L14.3 21l-2.3-1.9L9.7 21l-2.3-1.9L5 21z" /><path d="M9.5 11h.01M14.5 11h.01" /></svg>
+);
+export const IconTool = (p) => (
+  <svg {...base} {...p}><path d="M14.5 6.5a4 4 0 0 0-5.6 5L3 17.4 6.6 21l5.9-5.9a4 4 0 0 0 5-5.6L14.6 12 12 9.4l2.5-2.9z" /></svg>
+);
+export const IconPackage = (p) => (
+  <svg {...base} {...p}><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" /><path d="M4 7.5l8 4.5 8-4.5M12 12v9" /></svg>
+);
+export const IconEye = (p) => (
+  <svg {...base} {...p}><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="2.5" /></svg>
+);
+export const IconNodes = (p) => (
+  <svg {...base} {...p}><circle cx="6" cy="6" r="2.2" /><circle cx="18" cy="8" r="2.2" /><circle cx="12" cy="18" r="2.2" /><path d="M8 7l7.8.8M7 8l4 8M16.8 10l-3.6 6" /></svg>
+);
+export const IconTerminal = (p) => (
+  <svg {...base} {...p}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 9l3 3-3 3M13 15h4" /></svg>
+);
+export const IconMessageAlert = (p) => (
+  <svg {...base} {...p}><path d="M4 5h16v11H9.5L4 20V5z" /><path d="M12 8v3M12 13.5h.01" /></svg>
+);
+export const IconMail = (p) => (
+  <svg {...base} {...p}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 7l9 6 9-6" /></svg>
+);
+export const IconFileSearch = (p) => (
+  <svg {...base} {...p}><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8l-5-5z" /><path d="M14 3v5h5" /><circle cx="11" cy="14" r="2.5" /><path d="M13 16l2.5 2.5" /></svg>
+);
+export const IconLock = (p) => (
+  <svg {...base} {...p}><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3M12 15v2" /></svg>
+);
+export const IconBadgeCheck = (p) => (
+  <svg {...base} {...p}><path d="M12 2l2.4 2 3.1-.3 1 3 2.8 1.4-1 3 1 2.9-2.8 1.4-1 3-3.1-.3-2.4 2-2.4-2-3.1.3-1-3L2.7 14l1-2.9-1-3L5.5 6.7l1-3 3.1.3L12 2z" /><path d="M9 12l2 2 4-4" /></svg>
+);
