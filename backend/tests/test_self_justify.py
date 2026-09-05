@@ -48,7 +48,7 @@ def test_off_by_default_and_endpoint_refuses(client):
     r = client.post("/api/ingest/justify",
                     json={"finding_id": v["finding_id"],
                           "justification": "legitimate vendor export request",
-                          "user": "dev@acme.com"},
+                          "user": "dev@acme.com", "content_hash": _h(PII_PROMPT)},
                     headers={"X-Palivane-Token": key})
     assert r.status_code == 403
 
@@ -94,7 +94,7 @@ def test_confirmed_leak_never_self_overridable(client):
     r = client.post("/api/ingest/justify",
                     json={"finding_id": v["finding_id"],
                           "justification": "I really need to share this key",
-                          "user": "dev@acme.com"},
+                          "user": "dev@acme.com", "content_hash": _h(SECRET_PROMPT)},
                     headers={"X-Palivane-Token": key})
     assert r.status_code == 403
     assert "confirmed" in r.json()["detail"]
@@ -126,6 +126,6 @@ def test_justify_wrong_owner_is_404(client):
     r = client.post("/api/ingest/justify",
                     json={"finding_id": v["finding_id"],
                           "justification": "not my finding but let me through",
-                          "user": "someone-else@acme.com"},
+                          "user": "someone-else@acme.com", "content_hash": _h(PII_PROMPT)},
                     headers={"X-Palivane-Token": key})
     assert r.status_code == 404

@@ -132,8 +132,14 @@ def test_verdict_offers_sanctioned_alternatives(client, raw_client):
 
 def test_exception_request_recorded_to_audit(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "ext", "actor": "e@acme.com"}).json()["token"]
+    # A real finding owned by this tenant (exception-request now validates ownership).
+    fid = raw_client.post("/api/ingest/ai-usage",
+                          json={"content": "customer SSN 078-05-1120", "destination": "https://chatgpt.com/",
+                                "user": "bob@acme.com"},
+                          headers={"X-Palivane-Token": key}).json()["finding_id"]
+    assert fid is not None
     r = raw_client.post("/api/exception-request",
-                        json={"finding_id": 1, "destination": "https://chatgpt.com/",
+                        json={"finding_id": fid, "destination": "https://chatgpt.com/",
                               "reason": "need it for a customer ticket",
                               "categories": ["pii_exposure"], "user": "bob@acme.com"},
                         headers={"X-Palivane-Token": key})

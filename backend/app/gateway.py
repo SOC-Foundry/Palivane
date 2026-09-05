@@ -213,6 +213,11 @@ def _should_block(verdict: dict, pol: GatewayPolicy) -> bool:
     if pol.enforce and _blocked(verdict, pol):
         return True
     if settings.gateway_enforce_secrets:
+        # Prefer the pre-filter flag from run_analysis — a disabled check must not defeat
+        # the certain-leak block. Fall back to re-deriving for verdicts not produced by
+        # run_analysis (e.g. agentic tool-use captures).
+        if "confirmed_leak" in verdict:
+            return bool(verdict["confirmed_leak"])
         from .detectors.shadow_ai import confirmed_leak
         return confirmed_leak(verdict.get("signals", []))
     return False
@@ -1276,6 +1281,11 @@ def _anthropic_transport(up: dict, payload: dict, request: Request,
     from urllib.parse import quote
     from .upstreams import bedrock_headers, vertex_token
     model = str(payload.get("model", ""))
+    # The model id is fully caller-controlled (payload["model"]). Reject path metacharacters
+    # so it can't rewrite the Vertex/Bedrock URL path to a different project/publisher/model,
+    # and always percent-encode it with safe='' (no unescaped '/').
+    if "/" in model or ".." in model:
+        raise HTTPException(status_code=400, detail="invalid model id")
     if up["flavor"] == "vertex":
         body = {k: v for k, v in payload.items() if k not in ("model", "stream")}
         body["anthropic_version"] = "vertex-2023-10-16"
@@ -1284,7 +1294,7 @@ def _anthropic_transport(up: dict, payload: dict, request: Request,
         verb = "streamRawPredict" if stream else "rawPredict"
         url = (f"https://{up['region']}-aiplatform.googleapis.com/v1/projects/"
                f"{quote(up['project'])}/locations/{up['region']}/publishers/anthropic/"
-               f"models/{quote(model)}:{verb}")
+               f"models/{quote(model, safe='')}:{verb}")
         return url, body, {"Content-Type": "application/json",
                            "Authorization": f"Bearer {vertex_token(up.get('sa_json'))}"}
     # bedrock — always the buffered invoke (streaming is synthesized from the result)
@@ -1467,14 +1477,25 @@ async def _gemini_entry(model: str, method: str, request: Request,
     if key:
         sent, tokens = _tokenize_out(payload, principal, db)
         resp = _forward_gemini(model, method, sent, request, base, key)
-        # Response-side DLP on the non-streaming JSON reply (streaming is passed through).
-        if settings.gateway_scan_responses and method == "generateContent":
+        # Response-side DLP. _forward_gemini buffers the whole upstream body for BOTH
+        # generateContent (a JSON object) and streamGenerateContent (a JSON array of
+        # chunks, or SSE) — scan either, so a streamed completion can't exfiltrate
+        # uninspected (the earlier generateContent-only gate was a real DLP hole).
+        if settings.gateway_scan_responses:
+            out_text = ""
             try:
                 data = json.loads(resp.body)
             except (ValueError, TypeError):
                 data = None
             if isinstance(data, dict):
-                dlp = _capture_response_dlp(_response_output_text(data), model, tool, principal, db)
+                out_text = _response_output_text(data)
+            elif isinstance(data, list):                       # streamed chunk array
+                out_text = "\n".join(_response_output_text(d) for d in data
+                                     if isinstance(d, dict))
+            else:                                              # SSE fallback: data: lines
+                out_text = _stream_output_text(resp.body.decode("utf-8", "replace"))
+            if out_text:
+                dlp = _capture_response_dlp(out_text, model, tool, principal, db)
                 if pol.enforce and dlp and _blocked(dlp, pol):
                     return _gemini_error(dlp)
         if tokens:
