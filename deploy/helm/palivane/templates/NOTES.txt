@@ -1,0 +1,15 @@
+Palivane is deploying.
+
+1. Wait for readiness:   kubectl rollout status deploy/{{ include "palivane.fullname" . }}
+2. First-run seed (optional, demo data):
+     kubectl exec deploy/{{ include "palivane.fullname" . }} -- python -m app.seed
+3. Reach the console:
+{{- if .Values.ingress.enabled }}
+     https://{{ .Values.ingress.host }}
+{{- else }}
+     kubectl port-forward svc/{{ include "palivane.fullname" . }} 8080:{{ .Values.service.port }}
+     open http://localhost:8080
+{{- end }}
+
+Signup is OFF by default (PALIVANE_ALLOW_SIGNUP) — create the first org with the seed or
+the operator CLI. Bring-your-own Postgres is expected; SQLite works for evaluation only.
