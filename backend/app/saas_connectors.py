@@ -621,6 +621,133 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
     return summary
 
 
+# --- Slack Discovery API (Enterprise Grid) ------------------------------------------------
+# The bot-token scanner above only sees channels the bot is in. On Enterprise Grid an Org
+# Owner can enable the Discovery API (email Slack) and install an app with discovery:read;
+# that token reads EVERY conversation org-wide, public + private + DMs + group DMs. It is
+# the customer's own key, not a Slack partnership. Read-only: no deletion (that needs
+# discovery:write). NOTE: built and unit-tested against a mocked Discovery API; not yet
+# verified against a live Grid org, so the connector setup text flags it provisional.
+
+_MAX_CONVERSATIONS_PER_SYNC = 5000
+
+
+def scan_slack_discovery(db, connector, creds: dict) -> dict:
+    """Scan every conversation in an Enterprise Grid org (public, private, DMs, group DMs)
+    for PII/PHI/secrets via the Discovery API, persisting findings on the collab surface.
+    Per-conversation watermarks in connector.state make each sync incremental (first sync
+    reaches back 7 days). A conversation the token cannot read is skipped, not fatal."""
+    token = (creds.get("discovery_token") or "").strip()
+    if not token.startswith("xox"):
+        raise ConnectorError("slack_discovery needs discovery_token — an Enterprise Grid "
+                             "token with the discovery:read scope (Org Owner enables the "
+                             "Discovery API and installs the app org-wide).")
+    hdrs = {"Authorization": f"Bearer {token}"}
+    from .detectors import AnalysisInput, Surface
+    from .models import Tenant
+    from .service import run_analysis
+    from . import content_origin
+
+    tenant = db.get(Tenant, connector.tenant_id)
+    custom_pii = (getattr(tenant, "custom_pii_patterns", "") or "") if tenant else ""
+    state = connector.state
+    marks: dict[str, str] = dict(state.get("conversations") or {})
+    default_oldest = f"{time.time() - _SCAN_LOOKBACK_SECS:.6f}"
+
+    # Enumerate conversations org-wide. discovery.conversations.list is offset-paginated
+    # (not cursor), so it can't reuse _slack_pages.
+    convs: list[dict] = []
+    offset = ""
+    while len(convs) < _MAX_CONVERSATIONS_PER_SYNC:
+        q = {"limit": "1000"}
+        if offset:
+            q["offset"] = offset
+        data = _http_json(f"{_SLACK_API_BASE}/discovery.conversations.list?"
+                          + urllib.parse.urlencode(q), headers=hdrs)
+        if not data.get("ok"):
+            err = data.get("error", "unknown_error")
+            hint = _SLACK_ERROR_HINTS.get(err, "")
+            raise ConnectorError(f"Slack Discovery error {err}"
+                                 + (f" — {hint}" if hint else ""))
+        convs += data.get("channels", [])
+        offset = data.get("offset", "")
+        if not offset:
+            break
+
+    def _where(ch: dict) -> str:
+        name = ch.get("name", "")
+        if ch.get("is_im"):
+            return "DM"
+        if ch.get("is_mpim"):
+            return "group DM"
+        if ch.get("is_private"):
+            return f"private #{name}" if name else "private channel"
+        return f"#{name}" if name else (ch.get("id") or "conversation")
+
+    users: dict[str, str] = {}
+    scanned = findings = skipped = 0
+    truncated = False
+    for ch in convs:
+        cid = ch.get("id", "")
+        if not cid:
+            continue
+        remaining = _MAX_MESSAGES_PER_SYNC - scanned
+        if remaining <= 0:
+            truncated = True
+            break
+        team = ch.get("team_id") or ch.get("team") or ""
+        where = _where(ch)
+        hq = {"channel": cid, "limit": "200", "oldest": marks.get(cid, default_oldest)}
+        if team:
+            hq["team"] = team
+        try:
+            data = _http_json(f"{_SLACK_API_BASE}/discovery.conversations.history?"
+                              + urllib.parse.urlencode(hq), headers=hdrs)
+        except ConnectorError:
+            skipped += 1
+            continue
+        if not data.get("ok"):
+            skipped += 1                  # a conversation this token can't open — not fatal
+            continue
+        # History is newest-first; a partial window must not advance the watermark past the
+        # older, unfetched messages, same discipline as the bot-token scanner.
+        window, over = [], False
+        for m in data.get("messages", []):
+            if m.get("subtype") or not m.get("user") or not (m.get("text") or "").strip():
+                continue
+            window.append(m)
+            if len(window) > remaining:
+                over = True
+                window.pop()
+                break
+        for m in sorted(window, key=lambda x: float(x.get("ts", "0"))):
+            actor = _slack_actor(users, m["user"], hdrs)
+            result = run_analysis(
+                AnalysisInput(content=m["text"], sender=actor, channel="slack",
+                              subject=where, surface=Surface.COLLAB,
+                              metadata={"custom_pii": custom_pii, "via": "discovery"}),
+                persist=True, db=db, tenant_id=connector.tenant_id,
+                persist_benign=False, use_judge=False)
+            content_origin.store_fingerprint(
+                db, connector.tenant_id, "slack", f"{cid}:{m['ts']}", where, actor,
+                m["text"], sensitive=result.get("finding_id") is not None)
+            scanned += 1
+            if not over:
+                marks[cid] = m["ts"]
+            if result.get("finding_id") is not None:
+                findings += 1
+        if over:
+            truncated = True
+
+    connector.state = {**state, "conversations": marks}
+    summary = {"conversations": len(convs), "messages": scanned, "findings": findings}
+    if skipped:
+        summary["skipped"] = skipped
+    if truncated:
+        summary["truncated"] = True
+    return summary
+
+
 # --- Salesforce --------------------------------------------------------------------------
 
 _SF_API_VERSION = "v60.0"
@@ -1891,6 +2018,23 @@ PLATFORMS: dict[str, dict] = {
                  "deployment. Anything nothing can open (pre-2007 Office, encrypted PDFs) "
                  "is counted as skipped, never as clean. Rules-only detection on the "
                  "collab surface.",
+    },
+    "slack_discovery": {
+        "label": "Slack Discovery (Enterprise Grid — private channels & DMs)",
+        "scan": scan_slack_discovery,
+        "credential_fields": ["discovery_token"],
+        "setup": "Enterprise Grid only, and no Palivane Slack app is involved. Your Org "
+                 "Owner enables the Discovery API (email exports@slack.com), creates an "
+                 "INTERNAL app in your own org (or reuses one) with the discovery:read "
+                 "scope, installs it org-wide, and pastes that token here. It is entirely "
+                 "your own key — not our app and not a Slack partnership. This reads "
+                 "EVERY conversation in the org "
+                 "(public, private, DMs, group DMs), watermark-incremental per "
+                 "conversation (first sync looks back 7 days), on the collab surface. "
+                 "Read-only (no deletion). Use this INSTEAD of the bot-token connector on "
+                 "Grid, where the bot can't see private channels or DMs. Note: built and "
+                 "unit-tested against the Discovery API's documented shape but not yet "
+                 "verified against a live Grid org — pilot before relying on it.",
     },
     "gmail_messages": {
         "label": "Gmail sent-mail scanning",
