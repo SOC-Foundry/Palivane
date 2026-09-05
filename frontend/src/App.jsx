@@ -37,7 +37,7 @@ import Simulator from "./components/Simulator.jsx";
 import Report from "./components/Report.jsx";
 import Help from "./components/Help.jsx";
 import MyFindings from "./components/MyFindings.jsx";
-import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard, IconInbox, IconTarget, IconRadar, IconSliders, IconActivity, IconBot, IconBook } from "./components/icons.jsx";
+import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard, IconInbox, IconTarget, IconRadar, IconSliders, IconActivity, IconBot, IconBook, IconTerminal, IconEye, IconNodes, IconBeaker, IconLink, IconFileSearch } from "./components/icons.jsx";
 
 // Sidebar navigation, grouped.
 //
@@ -56,28 +56,28 @@ const NAV = [
     // the whole point is that it does not need a security person in the loop.
     { v: "mine",        icon: <IconInbox />,     label: "Your findings", admin: false },
     { v: "sessions",    icon: <IconActivity />,  label: "Sessions" },
-    { v: "scanlog",     icon: <IconActivity />,  label: "Scan log" },
+    { v: "scanlog",     icon: <IconTerminal />,  label: "Scan log" },
   ]},
   { head: "Inventory", items: [
     { v: "discovery",   icon: <IconRadar />,     label: "Discovery" },
-    { v: "exposure",    icon: <IconRadar />,     label: "Exposure" },
+    { v: "exposure",    icon: <IconEye />,       label: "Exposure" },
     { v: "coverage",    icon: <IconTarget />,    label: "Coverage" },
-    { v: "fleet",       icon: <IconActivity />,  label: "Fleet" },
+    { v: "fleet",       icon: <IconNodes />,     label: "Fleet" },
     { v: "agents",      icon: <IconBot />,       label: "Agents" },
   ]},
   { head: "Policy", items: [
     { v: "policies",    icon: <IconSliders />,   label: "Policies" },
-    { v: "simulator",   icon: <IconTarget />,    label: "Simulator" },
+    { v: "simulator",   icon: <IconBeaker />,    label: "Simulator" },
   ]},
   { head: "Setup", items: [
     { v: "connect",     icon: <IconPlug />,      label: "Connect" },
-    { v: "connections", icon: <IconInbox />,     label: "Connections" },
+    { v: "connections", icon: <IconLink />,      label: "Connections" },
     { v: "users",       icon: <IconUsers />,     label: "Users" },
     { v: "settings",    icon: <IconGear />,      label: "Settings" },
   ]},
   { head: "Records", items: [
     { v: "report",      icon: <IconClipboard />, label: "Report" },
-    { v: "audit",       icon: <IconClipboard />, label: "Audit" },
+    { v: "audit",       icon: <IconFileSearch />, label: "Audit" },
   ]},
   // No heading: Help is not a record, and a non-admin sees only Findings, Your findings
   // and Help, so a lone "RECORDS" label above it would be the one heading they ever saw,
