@@ -140,6 +140,8 @@ class CIGuardDetector:
             return self._text_only(item.content)
         if self._is_gitlab(doc):
             return self._gitlab(doc, item.content)
+        if self._is_circleci(doc) or self._is_azure(doc):
+            return self._steps_pipeline(doc, item.content)
         signals: list[Signal] = []
         signals += self._triggers(doc, item.content)
         signals += self._pins(doc, item.content)
@@ -450,6 +452,96 @@ class CIGuardDetector:
             if _GL_MR_EVENT.search(blob) or '"merge_requests"' in blob:
                 return True
         return False
+
+    # --- CircleCI / Azure Pipelines ---------------------------------------------------
+    # Same AI-agent / autonomy / secrets-to-agent checks over their step shapes, plus the
+    # vendor-specific supply-chain tell each has: CircleCI orbs floating on volatile
+    # versions, Azure task refs without a pinned major.
+
+    @staticmethod
+    def _is_circleci(doc: dict) -> bool:
+        return "version" in doc and isinstance(doc.get("jobs"), dict) and any(
+            isinstance(j, dict) and "steps" in j for j in doc["jobs"].values())
+
+    @staticmethod
+    def _is_azure(doc: dict) -> bool:
+        return any(k in doc for k in ("steps", "stages", "pool")) and (
+            "trigger" in doc or "pr" in doc or "pool" in doc)
+
+    def _steps_pipeline(self, doc: dict, raw: str) -> list[Signal]:
+        signals: list[Signal] = []
+        # CircleCI orbs pinned to volatile — the unpinned-action class of risk.
+        orbs = doc.get("orbs")
+        if isinstance(orbs, dict):
+            floating = [f"{k}: {v}" for k, v in orbs.items()
+                        if isinstance(v, str) and ("volatile" in v or v.endswith("@latest"))]
+            if floating:
+                signals.append(Signal(
+                    category=Category.CI_WORKFLOW_RISK, title="Unpinned CI include",
+                    detail=f"{len(floating)} orb(s) float on a volatile version: "
+                           f"{', '.join(floating[:3])}. Pin to an exact version.",
+                    weight=0.5, confidence=0.85, detector=self.name,
+                    evidence=", ".join(floating[:3]), check="ci_unpinned_action"))
+        # Gather every step-ish run body across both vendors' shapes.
+        bodies: list[tuple[str, str]] = []      # (where, text)
+
+        def collect(name: str, steps) -> None:
+            for st in _as_list(steps):
+                if isinstance(st, str):
+                    bodies.append((name, st))
+                elif isinstance(st, dict):
+                    for key in ("run", "command", "script", "bash", "powershell"):
+                        v = st.get(key)
+                        if isinstance(v, str):
+                            bodies.append((name, v))
+                        elif isinstance(v, dict) and isinstance(v.get("command"), str):
+                            bodies.append((name, v["command"]))
+                    env = st.get("env") or st.get("environment")
+                    if isinstance(env, dict):
+                        bodies.append((name, "\n".join(f"{k}={v}" for k, v in env.items())))
+
+        for jname, job in (doc.get("jobs") or {}).items():          # CircleCI
+            if isinstance(job, dict):
+                collect(jname, job.get("steps"))
+        collect("pipeline", doc.get("steps"))                        # Azure top-level
+        for stage in _as_list(doc.get("stages")):                    # Azure stages/jobs
+            if isinstance(stage, dict):
+                for job in _as_list(stage.get("jobs")):
+                    if isinstance(job, dict):
+                        collect(str(job.get("job") or job.get("deployment") or "job"),
+                                job.get("steps"))
+
+        for where, text in bodies:
+            for pat, aitool in _AI_CLIS:
+                if pat.search(text):
+                    signals.append(Signal(
+                        category=Category.UNSANCTIONED_AI, title="AI agent in CI",
+                        detail=f"{aitool} runs on the CI runner (job '{where}') with "
+                               "whatever the job can reach. Inventory + policy: is this "
+                               "sanctioned here?",
+                        weight=0.35, confidence=0.9, detector=self.name,
+                        evidence=aitool, check="ci_ai_agent"))
+                    risky = sorted({m for m in _GL_RISKY_VAR.findall(text)
+                                    if not _MODEL_KEY.search(m) and not m.startswith("CI_")})
+                    if risky:
+                        signals.append(Signal(
+                            category=Category.SECRET_LEAK,
+                            title="Non-model secrets handed to AI step",
+                            detail=f"Job '{where}' passes {', '.join(risky[:5])} to "
+                                   f"{aitool}, deploy/cloud credentials inside an AI "
+                                   "agent's context.",
+                            weight=0.8, confidence=0.85, detector=self.name,
+                            evidence=", ".join(risky[:5]), check="ci_secrets_to_ai"))
+                    break
+            m = _AUTONOMY_FLAGS.search(text)
+            if m:
+                signals.append(Signal(
+                    category=Category.UNSAFE_AUTONOMY, title="Autonomous AI agent in CI",
+                    detail=f"Job '{where}' runs an agent with approval prompts disabled "
+                           f"({m.group(0)}) on the runner.",
+                    weight=0.7, confidence=0.9, detector=self.name,
+                    evidence=m.group(0), check="unsafe_autonomy"))
+        return signals
 
     # --- degraded path for unparseable YAML ---------------------------------------
 
