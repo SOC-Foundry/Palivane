@@ -326,3 +326,73 @@ def test_auth_rejection_is_flagged_but_transient_failure_is_not():
         assert hook._auth_rejected({"action": "allow", "reason": reason}) is False, reason
     assert hook._auth_rejected({"action": "allow"}) is False          # no reason at all
     assert hook._auth_rejected({"action": "block", "severity": "critical"}) is False
+
+
+# --- justified proceed (CLI edition) ---------------------------------------------------
+
+def test_block_with_self_justify_saves_state_and_extends_reason(tmp_path, monkeypatch):
+    monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path))
+    verdict = {"action": "block", "risk_score": 80, "severity": "high",
+               "self_justify": True, "finding_id": 77, "signals": [], "remediation": []}
+    out = hook.prompt_block_output(verdict)
+    # main() appends the instructions; simulate its branch directly
+    hook._save_last_block("customer SSN 078-05-1120", verdict)
+    saved = json.loads((tmp_path / "last-block.json").read_text())
+    assert saved["finding_id"] == 77 and len(saved["content_hash"]) == 64
+    assert "decision" in out and out["decision"] == "block"
+
+
+def test_cmd_justify_posts_and_stores_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path))
+    (tmp_path / "last-block.json").write_text(
+        json.dumps({"finding_id": 42, "content_hash": "ab" * 32}))
+    monkeypatch.setattr(hook, "read_config", lambda: {
+        "url": "https://pal.example", "token": "ak_x", "user": "dev@acme.com",
+        "timeout": 5, "enforce": False, "exclude": []})
+    captured = {}
+
+    class _Resp:
+        def read(self):
+            return json.dumps({"ok": True, "override_token": "tok123",
+                               "expires_in": 600}).encode()
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        captured["body"] = json.loads(req.data)
+        return _Resp()
+
+    monkeypatch.setattr(hook.urllib.request, "urlopen", fake_urlopen)
+    assert hook.cmd_justify("approved vendor export #482") == 0
+    assert captured["url"].endswith("/api/ingest/justify")
+    assert captured["body"]["finding_id"] == 42
+    assert captured["body"]["content_hash"] == "ab" * 32
+    tok = json.loads((tmp_path / "override-token.json").read_text())
+    assert tok["token"] == "tok123"
+    # the loader honors freshness
+    assert hook._load_override_token() == "tok123"
+
+
+def test_cmd_justify_without_block_on_record(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(hook, "read_config", lambda: {
+        "url": "https://pal.example", "token": "ak_x", "user": "", "timeout": 5,
+        "enforce": False, "exclude": []})
+    assert hook.cmd_justify("a legitimate reason here") == 1
+    assert "nothing to justify" in capsys.readouterr().err
+
+
+def test_override_token_expiry_and_clear(tmp_path, monkeypatch):
+    monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path))
+    import time as _t
+    (tmp_path / "override-token.json").write_text(
+        json.dumps({"token": "stale", "expires": _t.time() - 5}))
+    assert hook._load_override_token() == ""
+    (tmp_path / "override-token.json").write_text(
+        json.dumps({"token": "fresh", "expires": _t.time() + 500}))
+    assert hook._load_override_token() == "fresh"
+    hook._clear_override_token()
+    assert hook._load_override_token() == ""
