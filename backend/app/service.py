@@ -155,6 +155,14 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                                                  channel=item.channel)
     else:
         effective_disabled = base_disabled
+    # The confirmed secret/PII hard block must survive a disabled check: a policy override
+    # (or tenant disabled_checks) may legitimately stop a check from RAISING the score, but
+    # it must not silently defeat the "a confirmed live credential always hard-blocks"
+    # guarantee the gateway/ingest enforce even in monitor mode. Compute it from the raw,
+    # UNFILTERED detector output and carry the flag on the result; the enforce sites read
+    # the flag instead of re-deriving it from the (filtered) signal list.
+    from .detectors.shadow_ai import confirmed_leak as _confirmed_leak
+    confirmed_pre_filter = _confirmed_leak(verdict.signals)
     check_filter = checks_signal_filter(effective_disabled)
     filters = [f for f in (check_filter, signal_filter) if f is not None]
     if filters or extra_signals:
@@ -201,6 +209,10 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             detector="content_origin", evidence=where)] + list(verdict.signals)
 
     result = verdict.to_dict()
+    # A confirmed leak in the raw detector output stays confirmed even if a check filter
+    # dropped its signal — see confirmed_pre_filter above. Origin-matched real org data is
+    # likewise a confirmed data-loss event.
+    result["confirmed_leak"] = confirmed_pre_filter or bool(origin)
     if origin:
         result["origin"] = origin   # carried to the alert / SIEM / archival sinks below
     # Raw event archival: EVERY analyzed event (benign included, findings or not) streams

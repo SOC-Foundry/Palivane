@@ -18,12 +18,20 @@ from collections import Counter
 # regexes — a nested unbounded quantifier like (a+)+ / (a*)* / (.*)+ can hang on crafted
 # input, and these patterns run on request content on the shared capture path. Not an
 # exhaustive ReDoS detector (undecidable in general), but it blocks the common footguns.
-_REDOS_RISKY = re.compile(r"\([^()]*[+*][^()]*\)[?*]*[+*]")
+# Reject the catastrophic-backtracking families at compile time — stdlib `re` has no match
+# timeout, so this is the only defense for tenant/admin-supplied regexes (they run on up to
+# 200 KB of content, and one bad one hangs the worker: a confirmed `(a|a)*$` took 136 s on
+# 31 chars). Matches a parenthesised group that CONTAINS an alternation or inner quantifier
+# and is immediately followed by an OUTER quantifier — `(a+)+`, `(a*)*`, `(a|a)*`, `(.*)*`,
+# `(a|ab)+`. Over-rejects some safe quantified-alternation groups like `(foo|bar)+` (they're
+# skipped, not run) — the right trade: a dropped custom pattern is visible and harmless; a
+# ReDoS hang is neither.
+_REDOS_RISKY = re.compile(r"\((?=[^()]*[|*+])[^()]*\)[?*+]*[*+{]")
 
 
 def _safe_custom_regex(rx: str) -> re.Pattern | None:
-    """Compile a user-supplied regex, or None if it's invalid or ReDoS-risky."""
-    if _REDOS_RISKY.search(rx):
+    """Compile a user-supplied regex, or None if it's invalid, over-long, or ReDoS-risky."""
+    if len(rx) > 400 or _REDOS_RISKY.search(rx):
         return None
     try:
         return re.compile(rx)

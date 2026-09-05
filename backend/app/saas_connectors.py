@@ -49,14 +49,21 @@ class ConnectorError(Exception):
 
 def _http_json(url: str, *, headers: dict | None = None, data: bytes | None = None,
                timeout: int = 20) -> dict:
+    # Route through the SSRF-guarded, IP-pinned client (same guard the gateway uses): admin-
+    # supplied bases (e.g. a Salesforce instance URL) can't reach internal/metadata hosts, and
+    # redirects aren't followed — so a 3xx can't smuggle the bearer token to another host.
+    import httpx
+
+    from . import netguard
     req = urllib.request.Request(url, data=data, headers=headers or {})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", errors="replace")[:200]
-        raise ConnectorError(f"HTTP {e.code} from {urllib.parse.urlparse(url).netloc}: {detail}")
-    except (urllib.error.URLError, OSError, ValueError) as e:
+        r = netguard.safe_urlopen(req, timeout=timeout)
+        return json.loads(r.content.decode("utf-8"))
+    except httpx.HTTPStatusError as e:
+        detail = e.response.text[:200]
+        raise ConnectorError(
+            f"HTTP {e.response.status_code} from {urllib.parse.urlparse(url).netloc}: {detail}")
+    except (httpx.HTTPError, OSError, ValueError) as e:
         raise ConnectorError(f"request failed: {e}")
 
 
@@ -377,10 +384,8 @@ def _slack_file_text(f: dict, hdrs: dict) -> tuple[str, str]:
     if not url:
         return "", ""
     try:
-        req = urllib.request.Request(url, headers=hdrs)
-        with urllib.request.urlopen(req, timeout=30) as r:
-            raw = r.read(_MAX_FILE_BYTES)
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError):
+        raw = _http_fetch_capped(url, hdrs, _MAX_FILE_BYTES)   # SSRF-guarded, capped
+    except ConnectorError:
         return "", ""
     from .doc_extract import extract
     return extract(_slack_file_name(f), raw, f.get("mimetype") or "")
@@ -1022,28 +1027,38 @@ def _texty(mime: str, name: str) -> bool:
     return (name or "").lower().endswith(_TEXTY_EXT)
 
 
+def _http_fetch_capped(url: str, headers: dict, cap: int) -> bytes:
+    """GET a (possibly redirecting) content URL through the SSRF-guarded client, capping the
+    read. Redirects are followed but every hop is IP-validated by the pinned transport, and
+    httpx strips the Authorization header on a cross-host redirect — so a download URL that
+    bounces to a CDN still works, while one aimed at an internal host is refused."""
+    import httpx
+
+    from . import netguard
+    try:
+        with netguard.safe_client(timeout=30, follow_redirects=True) as c:
+            with c.stream("GET", url, headers=headers) as r:
+                r.raise_for_status()
+                buf = bytearray()
+                for chunk in r.iter_bytes():
+                    buf.extend(chunk)
+                    if len(buf) >= cap:
+                        return bytes(buf[:cap])
+                return bytes(buf)
+    except httpx.HTTPStatusError as e:
+        raise ConnectorError(f"HTTP {e.response.status_code} fetching content")
+    except (httpx.HTTPError, OSError) as e:
+        raise ConnectorError(f"content fetch failed: {e}")
+
+
 def _http_text(url: str, headers: dict, cap: int = _MAX_CONTENT_BYTES) -> str:
     """GET a (possibly redirecting) content URL, decode best-effort, cap the read."""
-    req = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return r.read(cap).decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as e:
-        raise ConnectorError(f"HTTP {e.code} fetching content: {str(e)[:120]}")
-    except (urllib.error.URLError, OSError) as e:
-        raise ConnectorError(f"content fetch failed: {e}")
+    return _http_fetch_capped(url, headers, cap).decode("utf-8", errors="replace")
 
 
 def _http_bytes(url: str, headers: dict, cap: int = _MAX_CONTENT_BYTES) -> bytes:
     """The same fetch, undecoded — a PDF or a .xlsx has to reach the extractor intact."""
-    req = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return r.read(cap)
-    except urllib.error.HTTPError as e:
-        raise ConnectorError(f"HTTP {e.code} fetching content: {str(e)[:120]}")
-    except (urllib.error.URLError, OSError) as e:
-        raise ConnectorError(f"content fetch failed: {e}")
+    return _http_fetch_capped(url, headers, cap)
 
 
 def _readable_doc(name: str, mime: str) -> bool:
