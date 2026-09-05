@@ -91,3 +91,9 @@ export const IconLock = (p) => (
 export const IconBadgeCheck = (p) => (
   <svg {...base} {...p}><path d="M12 2l2.4 2 3.1-.3 1 3 2.8 1.4-1 3 1 2.9-2.8 1.4-1 3-3.1-.3-2.4 2-2.4-2-3.1.3-1-3L2.7 14l1-2.9-1-3L5.5 6.7l1-3 3.1.3L12 2z" /><path d="M9 12l2 2 4-4" /></svg>
 );
+export const IconBeaker = (p) => (
+  <svg {...base} {...p}><path d="M9 3h6M10 3v6l-5 8a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-8V3" /><path d="M7.5 14h9" /></svg>
+);
+export const IconLink = (p) => (
+  <svg {...base} {...p}><path d="M9.5 13.5l5-5M8 10l-2.3 2.3a3.5 3.5 0 0 0 5 5L13 15M16 14l2.3-2.3a3.5 3.5 0 0 0-5-5L11 9" /></svg>
+);
