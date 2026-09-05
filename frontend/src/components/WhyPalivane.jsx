@@ -2,41 +2,41 @@
 // Reuses the landing (lp-*) design language.
 import { SiteNav, SiteFooter, Shot } from "./SiteChrome.jsx";
 import { signInUrl } from "../deployment.js";
-import { IconBadgeCheck, IconFileSearch, IconLock, IconPackage, IconPlug, IconShield, IconSliders } from "./icons.jsx";
+import { DuoBadgeCheck, DuoFileSearch, DuoLock, DuoPackage, DuoPlug, DuoShield, DuoSliders } from "./duoicons.jsx";
 
 const REASONS = [
   {
-    icon: <IconPackage />,
+    icon: <DuoPackage />,
     title: "No agent to package or roll out",
     body: "There is no proprietary always-on agent to build, sign, maintain, and explain to your developers. If you already use Jamf, Intune, or Group Policy, Palivane hands you the config to push through them. Some planes put nothing on a machine at all: the gateway is a base-URL change, and scanning Slack, Teams, Drive, SharePoint or Salesforce needs only read-only access (a bot token or a read-only app/service account). The endpoint planes do install something, a browser extension and a small CLI that wires the coding-tool hooks, and both go out through the same MDM.",
   },
   {
-    icon: <IconLock />,
+    icon: <DuoLock />,
     title: "No third-party AI sees your content",
     body: "Detection is Palivane's own engine, it calls no outside AI service to do its job. That keeps it fast, private, and predictable: the same input always gets the same answer. Run it as our hosted service or entirely inside your own infrastructure, and add an AI reviewer for hard cases only if you want one.",
   },
   {
-    icon: <IconSliders />,
+    icon: <DuoSliders />,
     title: "One tool instead of five",
     body: "Browser pastes, desktop apps, AI coding assistants, your own AI features, code commits, and credentials sitting on laptops all land in the same console under the same policy. No stitching together point products with five different rule sets.",
   },
   {
-    icon: <IconShield />,
+    icon: <DuoShield />,
     title: "It actually stops things",
     body: "Most tools tell you about the leak afterward. Palivane can block it as it happens, the browser refuses the paste, the AI tool gets an error, the commit fails. Start in watch-only mode, see what would have been caught, then turn blocking on when you trust it.",
   },
   {
-    icon: <IconPlug />,
+    icon: <DuoPlug />,
     title: "Works with what you already bought",
     body: "Claude, GPT, or Gemini. Palivane doesn't care which you use. It sits alongside GitHub secret scanning and your existing security stack rather than replacing them, and pulls results from scanners you already run into the same place.",
   },
   {
-    icon: <IconFileSearch />,
+    icon: <DuoFileSearch />,
     title: "Find the problem before you police it",
     body: "Palivane first shows you which AI tools are in use and by whom, so your policy is based on what's really happening. Then you decide: which checks matter, who they apply to, and where you want a hard stop versus a warning.",
   },
   {
-    icon: <IconBadgeCheck />,
+    icon: <DuoBadgeCheck />,
     title: "Answers for your auditors and customers",
     body: "A full audit trail, alerts, exports to your SIEM or data lake, a signed DPA, and a monthly summary you can hand upward. Export everything or delete your org in one click, it stays your data.",
   },
@@ -82,7 +82,7 @@ export default function WhyPalivane() {
       <section className="lp-cta-band">
         <div className="lp-wrap">
           <div className="lp-banner">
-            <IconBadgeCheck width={22} height={22} />
+            <DuoBadgeCheck width={22} height={22} />
             <div>
               <strong>Want the engineering detail?</strong> The technical overview covers every
               detection surface, the two-tier secret engine, and how scoring works.
