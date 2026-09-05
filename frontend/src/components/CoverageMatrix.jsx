@@ -36,7 +36,7 @@ const GROUPS = [
       {
         surface: "Document stores: Google Drive, SharePoint / OneDrive, Salesforce",
         how: "Drive and SharePoint/OneDrive scan on write (Drive changes.watch, Graph change subscriptions) as well as on a cursor; Salesforce record + attachment text on a cursor",
-        note: "Reads what the file actually is: plain text, PDFs, and Word/Excel/PowerPoint, plus screenshots where OCR is enabled. Anything nothing can open (pre-2007 Office, encrypted PDFs) is reported as unread, never counted clean.",
+        note: "Reads what the file actually is: plain text, PDFs, Word/Excel/PowerPoint, RTF and OpenDocument, plus screenshots where OCR is enabled. Anything nothing can open (pre-2007 Office, encrypted PDFs) is reported as unread, never counted clean.",
         needs: "A read-scoped token or connected app per platform. Nothing installed anywhere.",
         mode: "observe",
       },
@@ -127,7 +127,7 @@ const GROUPS = [
       {
         surface: "S3 buckets & GitHub repos at rest",
         how: "Scans that run where the data lives. Detection happens in the account that owns the bucket or on the machine running the sweep, and only findings travel: a category, a label, a line number, a masked preview",
-        note: "Reads documents, not just text: PDFs and Word/Excel/PowerPoint as well as source and exports. Read-only by design: it reports what is already exposed and how to fix it, and never deletes an object, rewrites history, or changes a bucket policy.",
+        note: "Reads documents, not just text: PDFs, Word/Excel/PowerPoint, RTF and OpenDocument as well as source and exports. Read-only by design: it reports what is already exposed and how to fix it, and never deletes an object, rewrites history, or changes a bucket policy.",
         needs: "Read credentials for the target (s3:GetObject / a read token). Nothing on devices.",
         mode: "observe",
       },
