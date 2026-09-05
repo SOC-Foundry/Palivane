@@ -1,0 +1,10 @@
+apiVersion: v2
+name: palivane
+description: >-
+  Self-hosted Palivane — the AI security gateway: browser-extension/CLI/proxy ingest,
+  LLM gateway, SaaS + email scanning, and the findings console, in one service.
+type: application
+version: 0.1.0
+appVersion: "latest"
+home: https://palivane.io
+sources: ["https://github.com/SOC-Foundry/Palivane"]

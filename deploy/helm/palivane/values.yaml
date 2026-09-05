@@ -1,0 +1,43 @@
+# Palivane self-hosted chart. The service is single-container (SPA + API on one port);
+# bring your own Postgres (recommended) or point databaseUrl at any SQLAlchemy URL.
+
+image:
+  repository: ghcr.io/soc-foundry/palivane   # or your registry copy of the compose image
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+# REQUIRED — the two real secrets. Set via --set-string or an existing secret.
+# existingSecret: name of a Secret with keys DATABASE_URL and PALIVANE_SECRET_KEY;
+# when set, databaseUrl/secretKey below are ignored (never rendered into a manifest).
+existingSecret: ""
+databaseUrl: ""        # e.g. postgresql+psycopg2://user:pass@postgres:5432/palivane
+secretKey: ""          # openssl rand -hex 32 — key loss = loss of encrypted content
+
+env:
+  PALIVANE_PUBLIC_URL: ""       # e.g. https://palivane.internal.example
+  CORS_ORIGINS: ""              # defaults to PALIVANE_PUBLIC_URL when empty
+  GATEWAY_ENFORCE: "true"
+  PALIVANE_ALLOW_SIGNUP: "false"
+  SEED_ON_START: "false"
+extraEnv: {}                    # any additional PALIVANE_*/GATEWAY_* settings
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  tls: []                       # [{secretName, hosts: [...]}]
+  annotations: {}
+
+resources:
+  requests: {cpu: 250m, memory: 512Mi}
+  limits: {memory: 1Gi}
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
