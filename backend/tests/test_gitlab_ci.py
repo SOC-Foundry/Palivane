@@ -158,3 +158,50 @@ review:
     assert body["workflows"], body
     rows = client.get("/api/findings?surface=ci").json()["findings"]
     assert rows and rows[0]["channel"] == "gitlab-ci"
+
+
+# --- CircleCI / Azure Pipelines ---------------------------------------------------------
+
+CIRCLE = """
+version: 2.1
+orbs:
+  aws-cli: circleci/aws-cli@volatile
+jobs:
+  review:
+    docker: [{image: cimg/python:3.12}]
+    steps:
+      - checkout
+      - run: npx @anthropic-ai/claude-code -p "review" --dangerously-skip-permissions $AWS_SECRET_ACCESS_KEY
+"""
+
+AZURE = """
+trigger: [main]
+pool: {vmImage: ubuntu-latest}
+steps:
+  - script: |
+      codex exec "fix the tests" --full-auto
+    env:
+      DEPLOY_TOKEN: $(DEPLOY_TOKEN)
+"""
+
+
+def test_circleci_orb_and_agent_rules():
+    checks = _checks(_analyze(CIRCLE))
+    assert {"ci_unpinned_action", "ci_ai_agent", "ci_secrets_to_ai",
+            "unsafe_autonomy"} <= checks
+
+
+def test_azure_pipeline_agent_rules():
+    checks = _checks(_analyze(AZURE))
+    assert {"ci_ai_agent", "unsafe_autonomy"} <= checks
+
+
+def test_vendor_pipelines_do_not_false_fire_github_rules():
+    clean = """
+version: 2.1
+jobs:
+  test:
+    docker: [{image: cimg/python:3.12}]
+    steps: [checkout, {run: make test}]
+"""
+    assert _analyze(clean) == []

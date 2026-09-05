@@ -42,7 +42,7 @@ const CAPTURE = [
   { logos: [[BrandOpenAI, C.openai], [BrandClaude, C.claude], [BrandGemini, C.gemini], [BrandPerplexity, C.perplexity]], more: stats.browser_sites - 4, title: "In the browser", body: `What people paste into ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, Qwen, Kimi. ${stats.browser_sites} AI sites in all, including the app builders (v0, Bolt, Lovable, Replit).` },
   { logos: [[BrandSlack, C.slack], [BrandTeams, C.teams], [BrandGmail, C.gmail], [BrandDrive, C.drive], [BrandSharePoint, C.sharepoint], [BrandSalesforce, C.salesforce]], title: "In the places it already sits", body: "Slack, Microsoft Teams, Gmail, Google Drive, SharePoint, and Salesforce, scanned where the data lives, because an AI rollout will index all of it long before anyone pastes it into a prompt. Outbound mail is covered too, it's where leaks actually leave. Read-only access, nothing installed anywhere." },
   { logos: [[BrandGit, C.git], [BrandGitHub, C.github], [BrandNpm, C.npm]], title: "In code and laptops", body: "Commits and dependencies before they land, and credentials already at rest." },
-  { logos: [[BrandActions, C.actions]], title: "In CI pipelines", body: "Coding agents running on CI runners with your production credentials. GitHub Actions and GitLab CI, one scanner." },
+  { logos: [[BrandActions, C.actions]], title: "In CI pipelines", body: "Coding agents running on CI runners with your production credentials. GitHub Actions, GitLab CI, CircleCI, and Azure Pipelines, one scanner." },
   { logos: [[BrandClaude, C.claude], [BrandOpenAI, C.openai]], title: "In desktop apps", body: "The AI apps that never touch a browser: Claude and ChatGPT desktop. The one plane that needs a system proxy and a trusted CA, so it is usually a second phase." },
 ];
 
