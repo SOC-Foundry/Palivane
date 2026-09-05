@@ -91,3 +91,32 @@ export const DuoRadar = duo(
   <circle cx="12" cy="12" r="9" />,
   <><path d="M12 3a9 9 0 1 0 9 9M12 12l6-4M12 12a5 5 0 1 0 5 5" />
     <circle cx="12" cy="12" r="1.4" style={dot} /></>);
+
+// Added for Trust (section headers), Pricing (tiers), and the EU AI Act page.
+export const DuoColumns = duo(
+  <><rect x="4" y="4" width="6" height="16" rx="1" /><rect x="14" y="4" width="6" height="16" rx="1" /></>,
+  <><rect x="4" y="4" width="6" height="16" rx="1" /><rect x="14" y="4" width="6" height="16" rx="1" /></>);
+
+export const DuoServer = duo(
+  <><rect x="4" y="4" width="16" height="7" rx="1.5" /><rect x="4" y="13" width="16" height="7" rx="1.5" /></>,
+  <><rect x="4" y="4" width="16" height="7" rx="1.5" /><rect x="4" y="13" width="16" height="7" rx="1.5" />
+    <path d="M7.5 7.5h.01M7.5 16.5h.01" /></>);
+
+export const DuoRefresh = duo(
+  <circle cx="12" cy="12" r="8" />,
+  <path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v3.5h-3.5" />);
+
+export const DuoUsers = duo(
+  <><circle cx="9" cy="8" r="3.2" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0z" /></>,
+  <><circle cx="9" cy="8" r="3.2" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" />
+    <path d="M16 6.2a3 3 0 0 1 0 5.6M17 20h3.5a5 5 0 0 0-4-4.9" /></>);
+
+export const DuoBeaker = duo(
+  <path d="M9 3.5h6l-.7 6.2 4.4 7a2 2 0 0 1-1.7 3.1H7a2 2 0 0 1-1.7-3.1l4.4-7L9 3.5z" />,
+  <><path d="M9 3.5h6M9.6 9.5h4.8" />
+    <path d="M9.7 9.7l-4.4 7A2 2 0 0 0 7 19.8h10a2 2 0 0 0 1.7-3.1l-4.4-7" /></>);
+
+export const DuoScale = duo(
+  <path d="M12 4v15M6 19h12" />,
+  <><path d="M12 4v15M6 19h12M12 6l-6 2 6-2 6 2-6-2" />
+    <path d="M3 12l3-6 3 6a3 3 0 0 1-6 0zM15 12l3-6 3 6a3 3 0 0 1-6 0z" /></>);

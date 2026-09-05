@@ -2,9 +2,11 @@
 // know before the attestation exists. Every claim here is implemented and verifiable;
 // keep it that way (this page is marketing's promise and engineering's checklist).
 import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
+import { DuoLock, DuoColumns, DuoKey, DuoServer, DuoShield, DuoRefresh, DuoBeaker } from "./duoicons.jsx";
 
 const SECTIONS = [
   {
+    icon: <DuoLock />,
     title: "Data protection",
     items: [
       ["Encryption in transit", "TLS everywhere: Cloudflare terminates public TLS; origin traffic is authenticated (IAM-signed) service-to-service."],
@@ -15,6 +17,7 @@ const SECTIONS = [
     ],
   },
   {
+    icon: <DuoColumns />,
     title: "Tenant isolation",
     items: [
       ["Row-Level Security", "Isolation is enforced in the database itself: Postgres RLS policies on every tenant-scoped table, keyed to the authenticated request, defense-in-depth beneath the application's own tenant scoping."],
@@ -22,6 +25,7 @@ const SECTIONS = [
     ],
   },
   {
+    icon: <DuoKey />,
     title: "Access & identity",
     items: [
       ["SSO & MFA", "OIDC and SAML 2.0 SSO per organization (Enterprise); TOTP two-factor authentication for password sign-ins."],
@@ -31,6 +35,7 @@ const SECTIONS = [
     ],
   },
   {
+    icon: <DuoServer />,
     title: "Infrastructure",
     items: [
       ["Hosting", "Google Cloud (us-central1). The application runs on Cloud Run, IAM-locked so only the Cloudflare front door can invoke it; the database is private-IP only, unreachable from the internet."],
@@ -40,6 +45,7 @@ const SECTIONS = [
     ],
   },
   {
+    icon: <DuoShield />,
     title: "Vulnerability disclosure",
     items: [
       ["Reporting channel", "security@palivane.io, also machine-readable at /.well-known/security.txt (RFC 9116). Reports get a human acknowledgement within 2 business days and triage within 5."],
@@ -49,6 +55,7 @@ const SECTIONS = [
     ],
   },
   {
+    icon: <DuoRefresh />,
     title: "Resilience",
     items: [
       ["Backups", "Daily automated backups with 14-day point-in-time recovery."],
@@ -57,6 +64,7 @@ const SECTIONS = [
     ],
   },
   {
+    icon: <DuoBeaker />,
     title: "Security testing",
     items: [
       ["Open endpoint code", "Everything Palivane runs on your machines (the browser extension, CLI capture hooks, and egress proxy) is public and Apache-2.0 licensed, auditable at github.com/SOC-Foundry/palivane-clients."],
@@ -91,7 +99,7 @@ export default function Trust() {
         <div className="lp-wrap">
           {SECTIONS.map((s) => (
             <div key={s.title} style={{ marginBottom: 36 }}>
-              <h2 className="lp-h2">{s.title}</h2>
+              <h2 className="lp-h2" style={{ display: "flex", alignItems: "center", gap: 10 }}><span className="lp-card-icon" style={{ width: 34, height: 34, marginBottom: 0 }}>{s.icon}</span>{s.title}</h2>
               <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
                 {s.items.map(([t, body]) => (
                   <div key={t} className="lp-card">

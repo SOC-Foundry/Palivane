@@ -2,9 +2,11 @@
 // 14-day trial; mirrors the real plan gates in backend app/plans.py, keep in sync.
 import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
 import { signInUrl } from "../deployment.js";
+import { DuoUsers, DuoBadgeCheck, DuoBeaker } from "./duoicons.jsx";
 
 const TIERS = [
   {
+    icon: <DuoUsers />,
     name: "Team", price: "$12", per: "per user / month ($10 annual)",
     blurb: "The plan most companies run. Covers everyone and tells you when something happens.",
     // Self-serve: sign into the console, then pay by card in Settings → Your plan. Uses
@@ -23,6 +25,7 @@ const TIERS = [
     ],
   },
   {
+    icon: <DuoBadgeCheck />,
     name: "Enterprise", price: "Custom", per: "annual license",
     blurb: "For when identity, audit, and a security review are part of the deal.",
     cta: { label: "Talk to sales →", href: "mailto:sales@palivane.io?subject=Palivane%20Enterprise" },
@@ -37,6 +40,7 @@ const TIERS = [
     ],
   },
   {
+    icon: <DuoBeaker />,
     name: "Trial", price: "14 days", per: "free, everything unlocked",
     blurb: "See real findings from your own traffic before you decide anything.",
     cta: { label: "Start a 14-day trial →", href: signInUrl() },
@@ -55,6 +59,7 @@ function Tier({ t }) {
     <div className="lp-card" style={t.featured ? {
       borderColor: "var(--accent)", boxShadow: "0 0 0 1px var(--accent), 0 18px 60px rgba(80,120,255,.12)",
     } : undefined}>
+      <span className="lp-card-icon">{t.icon}</span>
       <h3>{t.name}{t.featured && <span className="lp-tagline" style={{ fontSize: 11, marginLeft: 8 }}>MOST POPULAR</span>}</h3>
       <p style={{ margin: "6px 0 2px" }}>
         <span style={{ fontSize: 34, fontWeight: 800, color: "var(--text)" }}>{t.price}</span>
