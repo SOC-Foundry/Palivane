@@ -130,6 +130,7 @@ async def lifespan(_app: FastAPI):
                 db = SessionLocal()
                 try:
                     await asyncio.to_thread(alerts.run_digests, db)
+                    await asyncio.to_thread(alerts.run_weekly_reports, db)
                     # Fleet health: page when a sensor goes dark or a revoked key keeps
                     # being presented (edge-triggered inside; safe on every tick).
                     await asyncio.to_thread(alerts.run_fleet_alerts, db)

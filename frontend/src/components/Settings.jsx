@@ -153,10 +153,12 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   const [alertCfg, setAlertCfg] = useState({
     webhook: "", min: tenant?.alert_min_severity || "high",
     digest: tenant?.alert_digest || "off", webhookSet: !!tenant?.alert_webhook_set,
+    weekly: !!tenant?.weekly_report,
   });
   async function saveAlerts() {
     try {
-      const payload = { alert_min_severity: alertCfg.min, alert_digest: alertCfg.digest };
+      const payload = { alert_min_severity: alertCfg.min, alert_digest: alertCfg.digest,
+                        weekly_report: alertCfg.weekly };
       if (alertCfg.webhook) payload.alert_webhook = alertCfg.webhook;   // write-only; only if changed
       const t = await api.updateTenant(payload);
       onTenant?.(t); setAlertCfg((a) => ({ ...a, webhook: "", webhookSet: !!t.alert_webhook_set }));
@@ -828,6 +830,11 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
               <option value="hourly">hourly digest</option>
               <option value="daily">daily digest</option>
             </select></label>
+          <label style={{ alignSelf: "end" }}>
+            <input type="checkbox" checked={alertCfg.weekly}
+                   onChange={(e) => setAlertCfg((a) => ({ ...a, weekly: e.target.checked }))} />
+            {" "}Weekly report email to admins
+          </label>
         </div>
         <div className="form-row" style={{ gap: 10 }}>
           <button type="button" className="primary-btn slim" onClick={saveAlerts}>Save alerts</button>

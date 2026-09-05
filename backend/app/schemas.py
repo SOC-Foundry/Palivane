@@ -352,6 +352,7 @@ class TenantUpdate(BaseModel):
     alert_webhook: str | None = None        # Slack-compatible webhook for high/critical alerts
     alert_min_severity: str | None = None   # minimum severity to alert on
     alert_digest: str | None = None         # off | hourly | daily (batch non-critical alerts)
+    weekly_report: bool | None = None       # weekly exec summary email to org admins
     siem_url: str | None = None             # SIEM collector endpoint (push findings)
     # Bearer / Splunk-HEC token (write-only; sealed at rest). Cap keeps the sealed form
     # (Fernet + base64, ~1.5x + overhead) inside the 2048-char column.
