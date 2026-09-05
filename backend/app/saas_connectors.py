@@ -62,23 +62,25 @@ def _http_json(url: str, *, headers: dict | None = None, data: bytes | None = No
 
 # --- Google Workspace ------------------------------------------------------------------
 
-def _google_access_token(creds: dict, scopes: str = _GOOGLE_SCOPES) -> str:
-    """Service-account JWT grant (RFC 7523), impersonating the admin via `sub` — the
-    domain-wide-delegation flow Google requires for Admin SDK / Drive reads."""
+def _google_access_token(creds: dict, scopes: str = _GOOGLE_SCOPES,
+                         sub: str = "") -> str:
+    """Service-account JWT grant (RFC 7523) with domain-wide delegation. `sub` is who
+    the token acts as — the admin by default (Admin SDK / Drive reads); the Gmail scan
+    passes each mailbox owner in turn, which is how DWD is designed to be used."""
     sa = creds.get("service_account_json") or {}
     if isinstance(sa, str):                      # UI may store the key file as a string
         try:
             sa = json.loads(sa)
         except ValueError:
             raise ConnectorError("service_account_json is not valid JSON")
-    admin = (creds.get("admin_email") or "").strip()
-    if not sa.get("client_email") or not sa.get("private_key") or not admin:
+    sub = (sub or creds.get("admin_email") or "").strip()
+    if not sa.get("client_email") or not sa.get("private_key") or not sub:
         raise ConnectorError("google_workspace needs service_account_json (client_email, "
                              "private_key) and admin_email")
     now = int(time.time())
     assertion = jwt.encode(
         {"alg": "RS256"},
-        {"iss": sa["client_email"], "sub": admin, "scope": scopes,
+        {"iss": sa["client_email"], "sub": sub, "scope": scopes,
          "aud": _GOOGLE_TOKEN_URL, "iat": now, "exp": now + 3600},
         sa["private_key"])
     body = urllib.parse.urlencode({
@@ -1475,6 +1477,194 @@ def scan_teams_messages(db, connector, creds: dict) -> dict:
     return summary
 
 
+# --- Gmail sent-mail scanning --------------------------------------------------------------
+# Outbound email is the leak surface (what LEFT the org), so the scan covers each user's
+# SENT mail — body text plus text attachments — via the same service-account +
+# domain-wide-delegation credential the other Google connectors use, impersonating each
+# mailbox owner in turn (that is what DWD is for). Watermark-incremental per user.
+
+_GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1"
+_GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+_MAX_MAIL_USERS_PER_SYNC = 200
+_MAX_MESSAGES_PER_MAILBOX = 100
+
+
+def _gmail_header(payload: dict, name: str) -> str:
+    for h in (payload.get("headers") or []):
+        if str(h.get("name", "")).lower() == name.lower():
+            return str(h.get("value") or "")
+    return ""
+
+
+def _b64url(data: str) -> str:
+    import base64
+    pad = "=" * (-len(data) % 4)
+    try:
+        return base64.urlsafe_b64decode(data + pad).decode("utf-8", "replace")
+    except (ValueError, TypeError):
+        return ""
+
+
+def _gmail_text(payload: dict, hdrs: dict, user: str, mid: str,
+                budget: list[int]) -> tuple[str, int]:
+    """The message's readable text: walk the MIME tree, take text/plain and
+    (tag-stripped) text/html bodies, and fetch text-shaped attachments while the
+    per-sync byte budget lasts. Returns (text, attachments_skipped)."""
+    parts_text: list[str] = []
+    skipped = 0
+
+    def walk(part: dict) -> None:
+        nonlocal skipped
+        mime = str(part.get("mimeType") or "")
+        body = part.get("body") or {}
+        fname = part.get("filename") or ""
+        if mime.startswith("multipart/"):
+            for sub in (part.get("parts") or []):
+                walk(sub)
+            return
+        if fname:                                 # attachment
+            if not mime.startswith("text/") or int(body.get("size") or 0) > _MAX_FILE_BYTES:
+                skipped += 1                      # binary/oversize: counted, never clean
+                return
+            att_id = body.get("attachmentId")
+            if not att_id or budget[0] <= 0:
+                skipped += 1
+                return
+            try:
+                att = _http_json(f"{_GMAIL_BASE}/users/me/messages/{mid}/attachments/"
+                                 f"{att_id}", headers=hdrs)
+            except ConnectorError:
+                skipped += 1
+                return
+            text = _b64url(att.get("data") or "")
+            budget[0] -= len(text)
+            if text.strip():
+                parts_text.append(f"[attachment {fname}]\n{text}")
+            else:
+                skipped += 1
+            return
+        if mime.startswith("text/"):
+            text = _b64url((body.get("data") or ""))
+            if mime == "text/html":
+                text = html_lib.unescape(_TAG_RE.sub(" ", text))
+            if text.strip():
+                parts_text.append(text)
+
+    walk(payload)
+    return "\n".join(parts_text).strip(), skipped
+
+
+def scan_gmail_messages(db, connector, creds: dict) -> dict:
+    """Scan every user's SENT mail for PII/PHI/secrets on the collab surface.
+    Per-mailbox watermarks in connector.state keep each sync incremental (first sync
+    looks back 7 days); a mailbox the delegation cannot open (suspended user, scope
+    not granted) is counted in mail_errors, never allowed to sink the sync."""
+    from .detectors import AnalysisInput, Surface
+    from .service import run_analysis
+    from . import content_origin
+
+    admin_hdrs = {"Authorization": f"Bearer {_google_access_token(creds)}"}
+    custom_pii = _tenant_custom_pii(db, connector)
+    state = connector.state
+    marks: dict[str, int] = dict(state.get("mailboxes") or {})
+    default_after = int(time.time()) - _SCAN_LOOKBACK_SECS
+
+    users: list[str] = []
+    page = ""
+    while len(users) < _MAX_MAIL_USERS_PER_SYNC:
+        q = {"customer": "my_customer", "maxResults": "500",
+             "projection": "basic", "viewType": "admin_view"}
+        if page:
+            q["pageToken"] = page
+        data = _http_json(f"{_GOOGLE_ADMIN_BASE}/users?{urllib.parse.urlencode(q)}",
+                          headers=admin_hdrs)
+        users += [u.get("primaryEmail", "") for u in data.get("users", [])
+                  if u.get("primaryEmail")]
+        page = data.get("nextPageToken", "")
+        if not page:
+            break
+    users_truncated = bool(page)
+
+    scanned = findings = skipped = mail_errors = 0
+    att_budget = [_MAX_FILE_BYTES_PER_SYNC]
+    truncated = users_truncated
+    for user in users[:_MAX_MAIL_USERS_PER_SYNC]:
+        if scanned >= _MAX_MESSAGES_PER_SYNC:
+            truncated = True
+            break
+        try:
+            token = _google_access_token(creds, _GMAIL_SCOPE, sub=user)
+        except ConnectorError:
+            mail_errors += 1                  # delegation refused for this mailbox
+            continue
+        hdrs = {"Authorization": f"Bearer {token}"}
+        after = marks.get(user) or default_after
+        try:
+            listing = _http_json(
+                f"{_GMAIL_BASE}/users/me/messages?"
+                + urllib.parse.urlencode({"q": f"in:sent after:{after}",
+                                          "maxResults": str(_MAX_MESSAGES_PER_MAILBOX)}),
+                headers=hdrs)
+        except ConnectorError:
+            mail_errors += 1
+            continue
+        ids = [m.get("id") for m in (listing.get("messages") or []) if m.get("id")]
+        over = bool(listing.get("nextPageToken"))
+        msgs = []
+        for mid in ids:
+            if scanned + len(msgs) >= _MAX_MESSAGES_PER_SYNC:
+                over = True
+                break
+            try:
+                msgs.append(_http_json(f"{_GMAIL_BASE}/users/me/messages/{mid}?format=full",
+                                       headers=hdrs))
+            except ConnectorError:
+                skipped += 1
+        # Oldest-first so the watermark only moves past mail actually scanned.
+        newest_scanned = 0
+        for m in sorted(msgs, key=lambda x: int(x.get("internalDate") or 0)):
+            payload = m.get("payload") or {}
+            to = _gmail_header(payload, "To") or _gmail_header(payload, "Cc")
+            subj = _gmail_header(payload, "Subject") or "(no subject)"
+            text, att_skipped = _gmail_text(payload, hdrs, user, m.get("id", ""),
+                                            att_budget)
+            skipped += att_skipped
+            if not text:
+                skipped += 1
+                continue
+            where = f"to {to.split(',')[0].strip() or 'unknown'}: {subj}"[:300]
+            result = run_analysis(
+                AnalysisInput(content=text, sender=user, channel="gmail", subject=where,
+                              surface=Surface.COLLAB,
+                              metadata={"custom_pii": custom_pii, "recipients": to[:500]}),
+                persist=True, db=db, tenant_id=connector.tenant_id,
+                persist_benign=False, use_judge=False)
+            hit = result.get("finding_id") is not None
+            content_origin.store_fingerprint(db, connector.tenant_id, "gmail",
+                                             m.get("id", ""), where, user, text,
+                                             sensitive=hit)
+            if hit:
+                findings += 1
+            scanned += 1
+            newest_scanned = max(newest_scanned, int(m.get("internalDate") or 0) // 1000)
+        if over:
+            truncated = True                  # cursor stays put; rescan folds
+        elif newest_scanned:
+            marks[user] = newest_scanned
+
+    connector.state = {**state, "mailboxes": marks}
+    summary = {"users": len(users), "messages": scanned, "findings": findings}
+    if skipped:
+        summary["skipped"] = skipped
+    if mail_errors:
+        # Surfaced: a delegation that quietly stopped working reads exactly like a
+        # company that stopped emailing.
+        summary["mail_errors"] = mail_errors
+    if truncated:
+        summary["truncated"] = True
+    return summary
+
+
 PLATFORMS: dict[str, dict] = {
     "google_workspace": {
         "label": "Google Workspace",
@@ -1530,6 +1720,22 @@ PLATFORMS: dict[str, dict] = {
                  "deployment. Anything nothing can open (pre-2007 Office, encrypted PDFs) "
                  "is counted as skipped, never as clean. Rules-only detection on the "
                  "collab surface.",
+    },
+    "gmail_messages": {
+        "label": "Gmail sent-mail scanning",
+        "scan": scan_gmail_messages,
+        "credential_fields": ["service_account_json", "admin_email"],
+        "setup": "Same service account + domain-wide delegation as the other Google "
+                 "connectors, with scopes admin.directory.user.readonly (to enumerate "
+                 "mailboxes) and gmail.readonly granted in Admin Console; admin_email is "
+                 "the admin it impersonates for the directory read. Every sync walks each "
+                 "user's SENT mail — outbound is the leak surface — newer than the "
+                 "per-mailbox watermark (first sync looks back 7 days), reads the message "
+                 "body plus text attachments, and runs them through PII/PHI/secret "
+                 "detection on the collab surface. Binary/oversize attachments are "
+                 "counted as skipped, never as clean; mailboxes the delegation cannot "
+                 "open are counted in mail_errors. Detection only, rules-only — nothing "
+                 "is quarantined or recalled.",
     },
     "sharepoint_files": {
         "label": "SharePoint / OneDrive scanning",
