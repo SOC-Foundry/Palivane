@@ -4,7 +4,7 @@
 // "How detection works", kept accurate for a security-minded reader evaluating the engine.
 import { SiteNav, SiteFooter, Shot, Clip } from "./SiteChrome.jsx";
 import { signInUrl } from "../deployment.js";
-import { IconInbox, IconShield, IconList, IconTarget, IconAlert, IconClipboard, IconPlug } from "./icons.jsx";
+import { IconAlert, IconEye, IconGhost, IconInbox, IconKey, IconList, IconMessageAlert, IconNodes, IconPackage, IconShield, IconTarget, IconTerminal, IconTool } from "./icons.jsx";
 
 const PIPELINE = [
   { icon: <IconInbox />, label: "Capture", sub: "from the browser, desktop apps, coding tools, or GitHub Actions" },
@@ -27,14 +27,14 @@ const SURFACES = [
 ];
 
 const DETECTORS = [
-  { icon: <IconShield />, title: "Prompt threats", surface: "llm_io", body: "Instruction-override / injection, jailbreak & guardrail-evasion, and system-prompt / secret exfiltration. Matches a normalized view of the text (folds homoglyph, full-width, zero-width & spacing tricks) and decodes base64 blobs to re-scan hidden payloads." },
-  { icon: <IconTarget />, title: "Shadow-AI", surface: "ai_usage · mcp", body: "Secrets, PII (SSN with/without dashes, Luhn-valid cards, IBAN / national IDs, single-record combos), proprietary source code, and confidential business content, including classification labels (TLP, Purview/MIP)." },
-  { icon: <IconAlert />, title: "Agentic (MCP) guard", surface: "mcp", body: "Sensitive-file access, dangerous commands, tool-poisoning, and untrusted MCP servers, read off the agent's tool-use, even for local stdio MCP." },
-  { icon: <IconClipboard />, title: "Supply-chain & IDE", surface: "deps · ide", body: "Risky dependency manifests (install-script abuse, non-registry sources, known-bad packages + OSV CVEs) and unapproved editor extensions." },
-  { icon: <IconPlug />, title: "Credentials at rest", surface: "secrets", body: "Live keys on managed endpoints (cloud SA keys, .npmrc, .git-credentials, key files) optionally with TruffleHog/Gitleaks verification." },
-  { icon: <IconInbox />, title: "Agent safety & oversharing", surface: "ide · oversharing · ci", body: "Unsafe coding-agent autonomy (YOLO / auto-apply / --dangerously-skip-permissions), dangerous commands in AI chats, and need-to-know oversharing, an LLM returning restricted data to the wrong recipient." },
-  { icon: <IconTarget />, title: "ML classifier", surface: "ai_usage · llm_io · collab", body: "A hashed n-gram model (trained on a labeled code/prose corpus; 96% accuracy, 97% precision held-out) catches the source-code boundary cases keyword rules read past — config fragments, minified snippets — and a second model flags injection PHRASING (paraphrased 'ignore your instructions') at held-out precision 1.0. CPU-only and deterministic, sub-millisecond, runs on-box: no model service in the loop. Alone it corroborates; agreeing with the rules check it escalates." },
-  { icon: <IconAlert />, title: "CI runners", surface: "ci", body: "Agents on GitHub Actions runners (Claude Code, Codex, Gemini, aider, as actions or CLI steps), flagged when a step hands one non-model credentials or disables approvals. Plus the posture that exposes a runner: pull_request_target checking out PR head, unpinned third-party actions, write-all permissions, secrets: inherit, self-hosted runners on PR triggers." },
+  { icon: <IconMessageAlert />, title: "Prompt threats", surface: "llm_io", body: "Instruction-override / injection, jailbreak & guardrail-evasion, and system-prompt / secret exfiltration. Matches a normalized view of the text (folds homoglyph, full-width, zero-width & spacing tricks) and decodes base64 blobs to re-scan hidden payloads." },
+  { icon: <IconGhost />, title: "Shadow-AI", surface: "ai_usage · mcp", body: "Secrets, PII (SSN with/without dashes, Luhn-valid cards, IBAN / national IDs, single-record combos), proprietary source code, and confidential business content, including classification labels (TLP, Purview/MIP)." },
+  { icon: <IconTool />, title: "Agentic (MCP) guard", surface: "mcp", body: "Sensitive-file access, dangerous commands, tool-poisoning, and untrusted MCP servers, read off the agent's tool-use, even for local stdio MCP." },
+  { icon: <IconPackage />, title: "Supply-chain & IDE", surface: "deps · ide", body: "Risky dependency manifests (install-script abuse, non-registry sources, known-bad packages + OSV CVEs) and unapproved editor extensions." },
+  { icon: <IconKey />, title: "Credentials at rest", surface: "secrets", body: "Live keys on managed endpoints (cloud SA keys, .npmrc, .git-credentials, key files) optionally with TruffleHog/Gitleaks verification." },
+  { icon: <IconEye />, title: "Agent safety & oversharing", surface: "ide · oversharing · ci", body: "Unsafe coding-agent autonomy (YOLO / auto-apply / --dangerously-skip-permissions), dangerous commands in AI chats, and need-to-know oversharing, an LLM returning restricted data to the wrong recipient." },
+  { icon: <IconNodes />, title: "ML classifier", surface: "ai_usage · llm_io · collab", body: "A hashed n-gram model (trained on a labeled code/prose corpus; 96% accuracy, 97% precision held-out) catches the source-code boundary cases keyword rules read past — config fragments, minified snippets — and a second model flags injection PHRASING (paraphrased 'ignore your instructions') at held-out precision 1.0. CPU-only and deterministic, sub-millisecond, runs on-box: no model service in the loop. Alone it corroborates; agreeing with the rules check it escalates." },
+  { icon: <IconTerminal />, title: "CI runners", surface: "ci", body: "Agents on GitHub Actions runners (Claude Code, Codex, Gemini, aider, as actions or CLI steps), flagged when a step hands one non-model credentials or disables approvals. Plus the posture that exposes a runner: pull_request_target checking out PR head, unpinned third-party actions, write-all permissions, secrets: inherit, self-hosted runners on PR triggers." },
 ];
 
 const TIERS = [
