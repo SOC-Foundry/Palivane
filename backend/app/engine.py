@@ -20,6 +20,7 @@ from .detectors import (
     ExtGuardDetector,
     LLMJudgeDetector,
     MCPGuardDetector,
+    MLClassifierDetector,
     PromptThreatDetector,
     SecretsAtRestDetector,
     ShadowAIDetector,
@@ -33,6 +34,7 @@ class Engine:
         self.prompt_threats = PromptThreatDetector()
         self.shadow_ai = ShadowAIDetector()
         self.mcp_guard = MCPGuardDetector()
+        self.ml_classifier = MLClassifierDetector()
         self.dep_guard = DepGuardDetector()
         self.ext_guard = ExtGuardDetector()
         self.secrets_at_rest = SecretsAtRestDetector()
@@ -42,7 +44,7 @@ class Engine:
         self.ci_guard = CIGuardDetector()
         self.device_posture = DevicePostureDetector()
         self.judge = LLMJudgeDetector()
-        self.detectors = [self.prompt_threats, self.shadow_ai, self.mcp_guard,
+        self.detectors = [self.prompt_threats, self.shadow_ai, self.ml_classifier, self.mcp_guard,
                           self.dep_guard, self.ext_guard, self.secrets_at_rest,
                           self.agent_safety, self.agent_rules, self.oversharing,
                           self.ci_guard, self.device_posture, self.judge]
