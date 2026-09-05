@@ -131,5 +131,25 @@ What it will and will not touch:
 It is deletion, not redaction. Slack will not let any caller edit a message it did not
 author, on any plan, so "mask the SSN and leave the sentence" is genuinely Grid-only. If you
 are on Enterprise Grid and want in-place redaction or tombstoning, that is a different
-integration (Discovery API, org-owner install, Slack DLP-partner approval) and we will scope
-it with you.
+integration (Discovery API with discovery:write, org-owner install) and we will scope it with you.
+
+## Private channels & DMs on Enterprise Grid (Discovery API)
+
+A bot token only sees channels the bot is in — private channels must invite it, and DMs
+are invisible. On **Enterprise Grid** you can cover everything with the **Slack Discovery
+connector**, and it's your own key — **no Palivane Slack app is involved**:
+
+1. Your **Org Owner** enables the Discovery API for the org (email `exports@slack.com`;
+   Slack turns it on after confirming the requester is an Org Owner).
+2. The Org Owner creates an **internal** Slack app in your org (or reuses one) with the
+   `discovery:read` scope and installs it **org-wide** — on Grid, admin/Discovery-scoped
+   apps installed at the org level reach every workspace without being added to each.
+3. Paste that token into Palivane as a **`slack_discovery`** connector.
+
+Palivane then reads every conversation org-wide — public, private, DMs, group DMs —
+watermark-incremental per conversation, on the `collab` surface. Read-only (no deletion;
+that needs `discovery:write`). Use it **instead of** the bot-token connector on Grid.
+
+This is built and unit-tested against the Discovery API's documented shape but not yet
+verified against a live Grid org — pilot it before you rely on it, and tell us what the
+real API returns so we can lock it in.
