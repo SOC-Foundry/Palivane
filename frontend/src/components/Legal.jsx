@@ -2,7 +2,7 @@
 // Styled with the app's landing (lp-*) design language so it matches the brand.
 import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
 
-const UPDATED = "2 July 2026";
+const UPDATED = "5 September 2026";
 
 function PrivacyBody() {
   return (
@@ -19,7 +19,12 @@ function PrivacyBody() {
       <h2>What the extension does</h2>
       <p>
         On the supported AI tools (claude.ai, chatgpt.com, chat.openai.com,
-        gemini.google.com, copilot.microsoft.com, m365.cloud.microsoft, www.bing.com), the
+        gemini.google.com, copilot.microsoft.com, m365.cloud.microsoft, www.bing.com,
+        perplexity.ai, chat.mistral.ai, chat.deepseek.com, grok.com, aistudio.google.com,
+        poe.com, meta.ai, chat.qwen.ai, kimi.com, notebooklm.google.com, github.com
+        (Copilot), v0.dev, bolt.new, lovable.dev, replit.com — the authoritative list is
+        the extension manifest's content-script matches, and this policy is updated
+        whenever it grows), the
         extension reads the text of a prompt <strong>before it is sent</strong> so that it
         can be scanned for secrets, credentials, personal data, and proprietary content, and
         then <strong>warns or blocks</strong> risky submissions.
