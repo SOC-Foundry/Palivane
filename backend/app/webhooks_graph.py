@@ -1,5 +1,5 @@
-"""Microsoft Graph change-notification receiver — the on-write path for SharePoint/
-OneDrive scanning.
+"""Change-notification receivers — the on-write paths for SharePoint/OneDrive (Microsoft
+Graph subscriptions) and Google Drive (changes.watch channels).
 
 The cron pull sees a leaked document minutes-to-hours after it lands; Graph subscriptions
 (created and renewed by the sharepoint_files sync) tell us the moment a drive changes.
@@ -85,6 +85,47 @@ def _scan_notified_drive(connector_id: int, sub_id: str) -> None:
         _log.exception("graph notification scan failed (connector %s)", connector_id)
     finally:
         db.close()
+
+
+def _sync_notified_connector(connector_id: int) -> None:
+    """Google Drive notifications are opaque ("something changed"), and the gdrive scan
+    is already watermark-incremental — so the on-write path is simply: run that
+    connector's normal sync now. Own session; never raises (cron is the safety net)."""
+    from .database import SessionLocal, bind_tenant
+    from . import saas_connectors as sc
+
+    db = SessionLocal()
+    try:
+        from .models import SaasConnector
+        row = db.get(SaasConnector, connector_id)
+        if row is None or not row.active or row.platform != "gdrive_files":
+            return
+        if _debounced(connector_id, "gdrive"):
+            return
+        bind_tenant(db, row.tenant_id)
+        sc.sync_connector(db, row)
+    except Exception:                                             # noqa: BLE001
+        _log.exception("gdrive notification sync failed (connector %s)", connector_id)
+    finally:
+        db.close()
+
+
+@router.post("/webhooks/gdrive")
+async def gdrive_notifications(request: Request):
+    """Google Drive changes.watch receiver. Drive sends headers, not a body: the channel
+    token (our signed connector binding) authenticates; resource-state 'sync' is the
+    channel handshake and is just acked. Always 200 fast — Drive retries non-2xx."""
+    from .security import TokenError, decode_token
+    state = request.headers.get("X-Goog-Resource-State", "")
+    try:
+        claims = decode_token(request.headers.get("X-Goog-Channel-Token", ""))
+    except TokenError:
+        return JSONResponse(status_code=200, content={"ok": True})   # unauthenticated noise
+    if claims.get("typ") == "gdrive_watch" and state and state != "sync":
+        connector_id = int(claims.get("connector_id") or 0)
+        if connector_id:
+            _submit(_sync_notified_connector, connector_id)
+    return JSONResponse(status_code=200, content={"ok": True})
 
 
 @router.post("/webhooks/graph")

@@ -961,6 +961,55 @@ def _tenant_custom_pii(db, connector) -> str:
     return (getattr(tenant, "custom_pii_patterns", "") or "") if tenant else ""
 
 
+_GDRIVE_CHANNEL_TTL_MS = 24 * 3600 * 1000   # Drive caps changes.watch channels at ~a day
+
+
+def _ensure_gdrive_channel(db, connector, hdrs: dict) -> dict:
+    """Keep one Drive changes.watch channel alive per connector so edits scan on write
+    (the webhook just triggers this connector's normal incremental sync). Drive caps
+    channel lifetime at about a day, so between infrequent syncs realtime may lapse back
+    to pull-only — renewed on every sync and surfaced when creation fails."""
+    if not settings.public_base_url:
+        return {}
+    from .security import create_token
+    ch = dict(connector.state.get("gdrive_channel") or {})
+    now_ms = int(time.time() * 1000)
+    if ch.get("exp", 0) - now_ms > 6 * 3600 * 1000:
+        return {}                            # comfortably alive
+    try:
+        start = _http_json(f"{_GDRIVE_BASE}/changes/startPageToken?supportsAllDrives=true",
+                           headers=hdrs)
+        page = start.get("startPageToken", "")
+        if ch.get("id") and ch.get("resource_id"):
+            try:                             # stop the old channel; best-effort
+                _http_json("https://www.googleapis.com/drive/v3/channels/stop",
+                           headers={**hdrs, "Content-Type": "application/json"},
+                           data=json.dumps({"id": ch["id"],
+                                            "resourceId": ch["resource_id"]}).encode())
+            except ConnectorError:
+                pass
+        import uuid
+        cid = uuid.uuid4().hex
+        exp = now_ms + _GDRIVE_CHANNEL_TTL_MS
+        resp = _http_json(
+            f"{_GDRIVE_BASE}/changes/watch?pageToken={urllib.parse.quote(page)}"
+            "&supportsAllDrives=true&includeItemsFromAllDrives=true",
+            headers={**hdrs, "Content-Type": "application/json"},
+            data=json.dumps({
+                "id": cid, "type": "web_hook",
+                "address": f"{settings.public_base_url}/api/webhooks/gdrive",
+                "token": create_token({"typ": "gdrive_watch",
+                                       "connector_id": connector.id}, ttl=7 * 86400),
+                "expiration": str(exp),
+            }).encode())
+        connector.state = {**connector.state, "gdrive_channel": {
+            "id": cid, "resource_id": resp.get("resourceId", ""),
+            "exp": int(resp.get("expiration") or exp)}}
+        return {"watch_renewed": 1}
+    except ConnectorError:
+        return {"watch_errors": 1}           # surfaced: silent = realtime quietly off
+
+
 def scan_gdrive_files(db, connector, creds: dict) -> dict:
     """Scan changed Google Drive files (shared drives + the impersonated user's My Drive)
     for PII/PHI/secrets. Watermark-incremental on modifiedTime; oldest-first so the
@@ -1040,7 +1089,8 @@ def scan_gdrive_files(db, connector, creds: dict) -> dict:
             break
 
     connector.state = {**state, "modified_after": mark}
-    summary = {"files": scanned, "skipped": skipped, "findings": findings}
+    summary = {"files": scanned, "skipped": skipped, "findings": findings,
+               **_ensure_gdrive_channel(db, connector, hdrs)}
     if truncated:
         summary["truncated"] = True
     return summary
@@ -1477,6 +1527,127 @@ def scan_teams_messages(db, connector, creds: dict) -> dict:
     return summary
 
 
+# --- Outlook sent-mail scanning ------------------------------------------------------------
+# The M365 counterpart of the Gmail scanner: same Entra app registration as the other
+# Microsoft connectors, application permission Mail.Read, walking each user's Sent Items.
+
+def _outlook_text(msg: dict) -> str:
+    body = msg.get("body") or {}
+    content = str(body.get("content") or "")
+    if str(body.get("contentType", "")).lower() == "html":
+        content = html_lib.unescape(_TAG_RE.sub(" ", content))
+    return content.strip()
+
+
+def scan_outlook_messages(db, connector, creds: dict) -> dict:
+    """Scan every user's SENT mail (Outlook/Exchange Online) for PII/PHI/secrets on the
+    collab surface. Watermark-incremental per mailbox on sentDateTime; a mailbox Graph
+    refuses (unlicensed, disabled) is counted in mail_errors, never fatal."""
+    from .detectors import AnalysisInput, Surface
+    from .service import run_analysis
+    from . import content_origin
+
+    token = _microsoft_access_token(creds)
+    hdrs = {"Authorization": f"Bearer {token}"}
+    custom_pii = _tenant_custom_pii(db, connector)
+    state = connector.state
+    marks: dict[str, str] = dict(state.get("mailboxes") or {})
+    default_after = (datetime.now(timezone.utc)
+                     - timedelta(seconds=_SCAN_LOOKBACK_SECS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    users: list[str] = []
+    url = (f"{_GRAPH_BASE}/users?"
+           + urllib.parse.urlencode({"$select": "userPrincipalName", "$top": "999"}))
+    while url and len(users) < _MAX_MAIL_USERS_PER_SYNC:
+        data = _http_json(url, headers=hdrs)
+        users += [u.get("userPrincipalName", "") for u in data.get("value", [])
+                  if u.get("userPrincipalName")]
+        url = data.get("@odata.nextLink", "")
+    truncated = bool(url)
+
+    scanned = findings = skipped = mail_errors = 0
+    att_budget = _MAX_FILE_BYTES_PER_SYNC
+    for user in users[:_MAX_MAIL_USERS_PER_SYNC]:
+        if scanned >= _MAX_MESSAGES_PER_SYNC:
+            truncated = True
+            break
+        after = marks.get(user) or default_after
+        q = urllib.parse.urlencode({
+            "$filter": f"sentDateTime gt {after}", "$orderby": "sentDateTime asc",
+            "$top": str(_MAX_MESSAGES_PER_MAILBOX),
+            "$select": "subject,toRecipients,sentDateTime,body,hasAttachments"})
+        try:
+            data = _http_json(f"{_GRAPH_BASE}/users/{urllib.parse.quote(user)}"
+                              f"/mailFolders/SentItems/messages?{q}", headers=hdrs)
+        except ConnectorError:
+            mail_errors += 1                 # unlicensed/disabled mailbox
+            continue
+        over = bool(data.get("@odata.nextLink"))
+        newest = ""
+        for m in data.get("value", []):
+            if scanned >= _MAX_MESSAGES_PER_SYNC:
+                over = True
+                break
+            text = _outlook_text(m)
+            if m.get("hasAttachments") and m.get("id"):
+                try:
+                    atts = _http_json(f"{_GRAPH_BASE}/users/{urllib.parse.quote(user)}"
+                                      f"/messages/{m['id']}/attachments", headers=hdrs)
+                    for a in atts.get("value", []):
+                        ctype = str(a.get("contentType") or "")
+                        if (not ctype.startswith("text/")
+                                or int(a.get("size") or 0) > _MAX_FILE_BYTES
+                                or att_budget <= 0):
+                            skipped += 1     # binary/oversize: counted, never clean
+                            continue
+                        import base64
+                        try:
+                            blob = base64.b64decode(a.get("contentBytes") or "").decode(
+                                "utf-8", "replace")
+                        except (ValueError, TypeError):
+                            skipped += 1
+                            continue
+                        att_budget -= len(blob)
+                        text += f"\n[attachment {a.get('name', '')}]\n{blob}"
+                except ConnectorError:
+                    skipped += 1
+            if not text.strip():
+                skipped += 1
+                continue
+            to = ", ".join((r.get("emailAddress") or {}).get("address", "")
+                           for r in (m.get("toRecipients") or [])[:3])
+            subj = m.get("subject") or "(no subject)"
+            where = f"to {to.split(',')[0].strip() or 'unknown'}: {subj}"[:300]
+            result = run_analysis(
+                AnalysisInput(content=text, sender=user, channel="outlook", subject=where,
+                              surface=Surface.COLLAB,
+                              metadata={"custom_pii": custom_pii, "recipients": to[:500]}),
+                persist=True, db=db, tenant_id=connector.tenant_id,
+                persist_benign=False, use_judge=False)
+            hit = result.get("finding_id") is not None
+            content_origin.store_fingerprint(db, connector.tenant_id, "outlook",
+                                             m.get("id", ""), where, user, text,
+                                             sensitive=hit)
+            if hit:
+                findings += 1
+            scanned += 1
+            newest = max(newest, str(m.get("sentDateTime") or ""))
+        if over:
+            truncated = True                 # cursor stays; rescan folds
+        elif newest:
+            marks[user] = newest
+
+    connector.state = {**state, "mailboxes": marks}
+    summary = {"users": len(users), "messages": scanned, "findings": findings}
+    if skipped:
+        summary["skipped"] = skipped
+    if mail_errors:
+        summary["mail_errors"] = mail_errors
+    if truncated:
+        summary["truncated"] = True
+    return summary
+
+
 # --- Gmail sent-mail scanning --------------------------------------------------------------
 # Outbound email is the leak surface (what LEFT the org), so the scan covers each user's
 # SENT mail — body text plus text attachments — via the same service-account +
@@ -1736,6 +1907,19 @@ PLATFORMS: dict[str, dict] = {
                  "counted as skipped, never as clean; mailboxes the delegation cannot "
                  "open are counted in mail_errors. Detection only, rules-only — nothing "
                  "is quarantined or recalled.",
+    },
+    "outlook_messages": {
+        "label": "Outlook sent-mail scanning",
+        "scan": scan_outlook_messages,
+        "credential_fields": ["tenant_id", "client_id", "client_secret"],
+        "setup": "Same Entra app registration shape as the other Microsoft connectors, "
+                 "with admin-consented *application* Graph permissions Mail.Read + "
+                 "User.Read.All. Every sync walks each user's Sent Items — outbound is "
+                 "the leak surface — newer than the per-mailbox watermark (first sync "
+                 "looks back 7 days), reads the body plus text attachments, and runs "
+                 "them through PII/PHI/secret detection on the collab surface. "
+                 "Binary/oversize attachments are counted as skipped, never clean; "
+                 "unlicensed mailboxes land in mail_errors. Detection only.",
     },
     "sharepoint_files": {
         "label": "SharePoint / OneDrive scanning",
