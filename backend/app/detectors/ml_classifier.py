@@ -32,15 +32,17 @@ _WINDOW = 240           # must match the training chunk size (scripts/train_code
 _STRIDE = 400           # sparse stride: enough windows to find an embedded block, bounded
 _SCAN_CAP = 2800        # score at most ~7 windows — keeps worst-case inference ~2ms
 
-_WEIGHTS_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "code_classifier.json"
+_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+_INJ_THRESHOLD = 0.70   # held-out precision is 1.0 at 0.5; this adds margin, recall is
+                        # the sacrifice a corroborating signal can afford
 
 
-def _load() -> LogisticClassifier | None:
+def _load(name: str) -> LogisticClassifier | None:
+    path = _DATA_DIR / name
     try:
-        return LogisticClassifier.from_json(_WEIGHTS_PATH.read_text())
+        return LogisticClassifier.from_json(path.read_text())
     except (OSError, ValueError, KeyError):
-        _log.warning("code-classifier weights missing/unreadable (%s) — ML tier off",
-                     _WEIGHTS_PATH)
+        _log.warning("classifier weights missing/unreadable (%s) — that ML task off", path)
         return None
 
 
@@ -49,7 +51,8 @@ class MLClassifierDetector:
     surfaces = {Surface.AI_USAGE, Surface.LLM_IO, Surface.COLLAB}
 
     def __init__(self) -> None:
-        self._model = _load()
+        self._model = _load("code_classifier.json")
+        self._inj = _load("injection_classifier.json")
 
     def p_code(self, text: str) -> float:
         """P(the text contains source code). Scored in training-shaped windows (the model
@@ -63,12 +66,43 @@ class MLClassifierDetector:
         return max((self._model.proba(w) for w in windows if len(w) >= _MIN_LEN),
                    default=0.0)
 
+    def p_injection(self, text: str) -> float:
+        """P(the text carries a prompt injection). Same window-max treatment — an
+        injection appended to a long benign paste is the classic smuggle."""
+        if self._inj is None or len(text) < 25:
+            return 0.0
+        if len(text) <= 400:
+            return self._inj.proba(text)
+        # Dense, overlapping windows (unlike the code task's sparse sampling): an
+        # injection is a SHORT payload that must not fall between windows — and the tail
+        # is always scanned, because appended-after-a-long-paste is the classic smuggle.
+        head = text[:1200]
+        windows = [head[i:i + _WINDOW] for i in range(0, len(head), 120)]
+        windows.append(text[-_WINDOW:])
+        return max((self._inj.proba(w) for w in windows if len(w) >= 25), default=0.0)
+
     def analyze(self, item: AnalysisInput) -> list[Signal]:
+        out: list[Signal] = []
+        if item.surface in (Surface.LLM_IO, Surface.AI_USAGE):
+            pi = self.p_injection(item.content)
+            if pi >= _INJ_THRESHOLD:
+                iev = (self._inj.meta.get("eval") or {}) if self._inj else {}
+                out.append(Signal(
+                    category=Category.PROMPT_INJECTION,
+                    title="Prompt injection (ML classifier)",
+                    detail=f"The on-box classifier reads this as injection phrasing "
+                           f"(p={pi:.2f}; held-out precision "
+                           f"{iev.get('precision', '?')}, zero false positives on a "
+                           "benign-prose check). Catches the paraphrases the pattern "
+                           "rules miss.",
+                    weight=0.4, confidence=round(min(pi, 0.95), 2),
+                    detector=self.name, evidence=f"p(injection)={pi:.2f}",
+                    check="prompt_injection_ml"))
         p = self.p_code(item.content)
         if p < _THRESHOLD:
-            return []
+            return out
         ev = (self._model.meta.get("eval") or {}) if self._model else {}
-        return [Signal(
+        return out + [Signal(
             category=Category.SOURCE_CODE_LEAK,
             title="Source code (ML classifier)",
             detail=f"The on-box n-gram classifier reads this as source code (p={p:.2f}; "
