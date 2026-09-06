@@ -87,6 +87,10 @@ def test_webhook_rejects_bad_and_stale_signatures(raw_client, monkeypatch):
     bad = raw_client.post("/api/billing/webhook", content=body,
                           headers={"Stripe-Signature": "t=1,v1=deadbeef"})
     assert bad.status_code == 400
+    # A non-numeric timestamp must reject as 400, not blow up as a 500.
+    malformed = raw_client.post("/api/billing/webhook", content=body,
+                                headers={"Stripe-Signature": "t=notanumber,v1=deadbeef"})
+    assert malformed.status_code == 400
     stale_body, stale_sig = _signed({"type": "noop"}, t=int(time.time()) - 4000)
     stale = raw_client.post("/api/billing/webhook", content=stale_body,
                             headers={"Stripe-Signature": stale_sig})

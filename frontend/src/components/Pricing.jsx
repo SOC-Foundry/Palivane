@@ -9,10 +9,11 @@ const TIERS = [
     icon: <DuoUsers />,
     name: "Team", price: "$12", per: "per user / month ($10 annual)",
     blurb: "The plan most companies run. Covers everyone and tells you when something happens.",
-    // Self-serve: sign into the console, then pay by card in Settings → Your plan. Uses
-    // signInUrl() so it crosses to app.palivane.io on the split managed deployment (a bare
-    // "/" would strand the buyer on the marketing origin).
-    cta: { label: "Upgrade in the console →", href: signInUrl() },
+    // A cold visitor has no org yet, so "Upgrade" mismatches what the button does: it starts
+    // the 14-day trial (self-serve Team is then bought by card in Settings → Your plan).
+    // signInUrl() crosses to app.palivane.io on the split managed deployment (a bare "/"
+    // would strand the buyer on the marketing origin).
+    cta: { label: "Start free trial →", href: signInUrl() },
     featured: true,
     features: [
       "Per seat: bring your whole team, add or drop seats any time",
