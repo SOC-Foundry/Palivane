@@ -181,7 +181,13 @@ def _verify_signature(payload: bytes, header: str, tolerance: int = 300) -> bool
             t = v
         elif k == "v1":
             candidates.append(v)
-    if not t or not candidates or abs(time.time() - int(t or 0)) > tolerance:
+    if not t or not candidates:
+        return False
+    try:
+        ts = int(t)
+    except ValueError:
+        return False   # malformed timestamp in the header -> reject cleanly (400), never 500
+    if abs(time.time() - ts) > tolerance:
         return False
     expected = hmac.new(settings.stripe_webhook_secret.encode(),
                         f"{t}.".encode() + payload, sha256).hexdigest()
