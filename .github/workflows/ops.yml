@@ -122,7 +122,16 @@ jobs:
 
       - name: Job output
         if: always()
+        env:
+          OPS_SCRIPT: ${{ secrets.OPS_SCRIPT }}
         run: |
+          # Only the container job produces logs. A runner-only run (OPS_RUNNER_SCRIPT with
+          # no OPS_SCRIPT) never creates palivane-ops, so skip the wait + read that would
+          # otherwise print a misleading "could not read logs" line.
+          if [ -z "$OPS_SCRIPT" ]; then
+            echo "(runner-only run — no container job logs)"
+            exit 0
+          fi
           sleep 15   # Cloud Logging is eventually consistent
           gcloud logging read \
             'resource.type="cloud_run_job" AND resource.labels.job_name="palivane-ops"' \
@@ -133,4 +142,11 @@ jobs:
       - name: Delete job
         if: always()
         run: |
-          gcloud run jobs delete palivane-ops --project "$PROJECT_ID" --region "$REGION" --quiet || true
+          # Delete only if the job actually exists — a runner-only run never creates it, and a
+          # bare `delete` there logs a scary (but harmless) "job not found" error that reads
+          # like a failure in notification emails.
+          if gcloud run jobs describe palivane-ops --project "$PROJECT_ID" --region "$REGION" >/dev/null 2>&1; then
+            gcloud run jobs delete palivane-ops --project "$PROJECT_ID" --region "$REGION" --quiet || true
+          else
+            echo "(no palivane-ops container job to delete)"
+          fi
