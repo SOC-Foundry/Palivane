@@ -16,7 +16,7 @@ functional requirement.
 | Token | Who holds it | How many | Server-side name |
 | --- | --- | --- | --- |
 | **Upstream provider key** | Palivane server only, never users | 1 per provider, per company | `GATEWAY_ANTHROPIC_KEY`, `GATEWAY_GEMINI_KEY`, `GATEWAY_UPSTREAM_KEY` |
-| **Palivane API key** (`ak_…`) | Gateway clients (Claude Code, OpenAI/Gemini SDKs) | Your choice, see [below](#do-i-need-a-token-per-user) | minted at `/api/apikeys` |
+| **Palivane API key** (`ak_…`) | Gateway clients (Claude Code, OpenAI/Gemini SDKs); with a `console_*` scope, console API clients too (e.g. the MCP server) | Your choice, see [below](#do-i-need-a-token-per-user) | minted at `/api/apikeys`; `scope` picks the plane |
 | **Ingest token** | Browser extension + egress proxy | 1 per company (shared) | `EXTENSION_INGEST_TOKEN` |
 | **Console JWT** | Console/dashboard users (admins, analysts) | per login | signed with `PALIVANE_SECRET_KEY` |
 
@@ -31,7 +31,7 @@ GATEWAY_ANTHROPIC_KEY=sk-ant-...   # the REAL Anthropic key
 # GATEWAY_UPSTREAM_KEY=sk-...      # OpenAI-compatible upstream
 ```
 
-### 2. Palivane API keys (`ak_…`), gateway clients
+### 2. Palivane API keys (`ak_…`), gateway *and* console clients
 Prefixed `ak_` (`security.py: API_KEY_PREFIX = "ak_"`), minted by an admin and shown
 once. Validated by prefix lookup + timing-safe hash; accepted via `x-api-key`,
 `Authorization: Bearer`, or `x-goog-api-key`/`?key=` depending on the SDK.
@@ -43,6 +43,48 @@ curl -X POST https://palivane.corp.example.com/api/apikeys \
 ```
 
 The `actor` field is the attribution lever, see [below](#do-i-need-a-token-per-user).
+
+#### Scopes: which plane a key reaches
+
+A key's `scope` is fixed at mint time (`models.py: API_KEY_SCOPES`) and decides what the
+key is a credential *for*. There is no way to widen one afterwards — mint a new key.
+
+| Scope | Reaches | Acts as |
+| --- | --- | --- |
+| `ingest` (default) | The gateway and SIEM/ingest planes, exactly as before scopes existed | nobody, no user identity |
+| `console_read` | The console API, reads only (`GET`/`HEAD`/`OPTIONS`) | the admin who minted it |
+| `console_write` | The console API, plus a short allowlist of mutating routes | the admin who minted it |
+
+`ingest` is the default, and it is what **every key minted before scopes existed**
+carries (the migration sets it as the column's `server_default`), so no key already in
+the field gained console reach when this shipped. A console key has to be asked for
+explicitly:
+
+```bash
+curl -X POST https://palivane.corp.example.com/api/apikeys \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -d '{"label":"mcp-server","scope":"console_read"}'   # -> ak_...
+```
+
+That is what lets the [MCP server](../mcp-server/README.md) run on a long-lived
+credential instead of a console JWT that expires on `AUTH_TOKEN_TTL` (~12h).
+
+**A console key acts as the admin who minted it.** It carries that person's `user_id` and
+resolves to their real `User` row, so `require_admin` and the admin-only-dismiss rule
+apply to it with no parallel permission logic. Its reach is their role and never more,
+and it stops working the moment they are deactivated, deleted, or moved to another org.
+
+Two fences worth understanding before you issue one:
+
+- **`console_write` is a route allowlist, not a role check.** Only `PATCH
+  /api/findings/{id}` and `POST /api/discovery/connectors/{id}/sync` are writable by a
+  key. Everything else is session-only however privileged the key's user is — so no key
+  can change org settings, manage users, call logout-all, or mint a successor that
+  outlives the revocation of the one that leaked. A write outside the list gets a 403
+  that names the reason.
+- **An `ingest` key on the console API is refused as though it did not exist** — the same
+  bare `401 invalid API key` an unknown token gets, with the same detail string. Saying
+  "wrong scope" would confirm the key is real.
 
 ### 3. Ingest token, shared by extension *and* proxy
 One company-wide secret. The server checks it at `/api/ingest/ai-usage` against
@@ -68,7 +110,9 @@ Both shadow-AI capture planes authenticate with this **same** secret:
 HS256 JWTs signed with `PALIVANE_SECRET_KEY`, carrying `sub` / `tenant_id` / `role`
 claims (`auth.py`). This is the standard login path for **every** console user; the
 `role` claim (admin vs analyst) is what gates access, there is no separate
-"security-team" token type. End users of the AI tools never get a JWT; they're on the
+"security-team" token type. A `console_*`-scoped `ak_…` key is the one other way to reach
+the console API; it carries no claims of its own and inherits the role of the user it
+acts as, see [above](#2-palivane-api-keys-ak-gateway-and-console-clients). End users of the AI tools never get a JWT; they're on the
 `ak_` key (gateway) or the shared ingest token (extension/proxy).
 
 ---
