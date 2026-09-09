@@ -74,17 +74,55 @@ Read that correctly before repeating it:
 So: claim determinism and precision where they are true, claim breadth everywhere, and do
 not claim to out-detect an injection-focused vendor until the ML gate clears.
 
-### Known competitors, and what we actually know about them
+### The landscape, in two tiers that behave very differently
 
-Thin, and worth marking as thin rather than dressing up:
+The single most useful thing to know here: **the free competition and the paid competition
+are not the same companies, and they lose to us for opposite reasons.**
 
-- **Harmonic, Knostic** — both list on AWS Marketplace with public pricing
-  ([marketplaces/README.md](../marketing/marketplaces/README.md)).
-- **Lakera, Nightfall, Harmonic** — named in the ML baseline as catching phrasing rather
-  than literals, which is the specific axis where the regex engine loses.
+**Tier 1 — commercial AI-security vendors.** Harmonic, Nightfall, Knostic, Prompt Security,
+Lakera (acquired by Check Point). SaaS, sales-led. Two observations that matter:
 
-**Open:** no feature-by-feature teardown of any competitor exists. If a deal is lost on
-comparison, that is the first thing to write.
+- **None of them offers a free self-hosted edition.** Where free tiers exist they are
+  usage-capped SaaS (Azure 5K records/month, Model Armor 2M tokens/month, Portkey 10K
+  logs), not "run it yourself, indefinitely". Our free self-host is *more* generous than
+  the field, not a concession to it.
+- **None of them publishes usable prices on their own site**; every one routes to a demo.
+  (They do list public pricing on AWS Marketplace — Harmonic and Knostic both do — which
+  is a procurement channel, not a pricing page.) Publishing $12/seat is a different
+  posture from the field, deliberately.
+
+Where they beat us: detection of injection *phrasing* rather than literals — the axis
+[ml-classifier-baseline.md](ml-classifier-baseline.md) already names.
+
+**Tier 2 — the open-source guardrail layer.** LLM Guard (Protect AI, MIT), NeMo Guardrails
+(NVIDIA), Presidio (Microsoft, MIT), Guardrails AI, Llama Guard. Genuinely free, genuinely
+good, and the real competition for our free self-hosted edition.
+
+**They are libraries, not deployed systems.** LLM Guard is "import scanners and call them
+in your existing application code"; NeMo is a dialog-flow engine with its own DSL. They
+protect an LLM app *you are building*. They have no browser extension, no egress proxy, no
+SaaS OAuth discovery, no console, no attribution, no coverage reconciliation — they cannot
+tell you someone in finance pasted a customer list into ChatGPT, because they were never in
+that path.
+
+That distinction is the whole argument, and it is the same one as the moat ordering above:
+**we are not a better scanner, we are in places a scanner never is.**
+
+**Sourcing caveat, and it matters if you are about to say this out loud:** most of the
+pricing claims above come from comparison sites rather than vendor pages, and one is
+Nightfall's own competitor blog, which is not a neutral referee. Verify against primary
+sources before repeating any specific number to a prospect. What was actually read
+(2026-09-09):
+
+- [Nightfall, "Harmonic Security Alternatives"](https://www.nightfall.ai/blog/harmonic-security-alternatives) — Lakera/Check Point; **vendor blog, treat as adversarial**
+- [accuroai, "What AI Security Actually Costs in 2026"](https://accuroai.co/blog/what-ai-security-actually-costs) — the "nobody publishes prices" finding, and the capped free tiers
+- [tech-insider, "Harmonic vs Reco vs Nightfall 2026"](https://tech-insider.org/harmonic-vs-reco-vs-nightfall-shadow-ai-2026/)
+- [LLM Guard](https://appsecsanta.com/llm-guard) and [NeMo Guardrails](https://github.com/NVIDIA-NeMo/Guardrails) — the library-not-system distinction
+- [Cloudthrill, "LLM guardrail solutions: open source vs commercial"](https://cloudthrill.ca/llm-guardrail-solutions)
+
+**Still open:** no feature-by-feature teardown of any single competitor exists. The tiering
+tells you who you are losing to and why; it does not tell you what to say when a prospect
+has Harmonic in the other tab.
 
 ---
 
@@ -140,10 +178,23 @@ edition (full detection, no LLM key required)"*. So a technical buyer will ask, 
 
 > Why pay $12/seat when the self-hosted edition is free and detection is complete?
 
-That is a deliberate open-source strategy, and the answer is presumably hosting, support,
-the console, and the enterprise controls — but **it is not written down anywhere**, which
-means it currently gets improvised per call. Writing it is a pricing decision, not a docs
-task, so it is flagged here rather than answered.
+**The answer is not detection.** The free open-source layer (LLM Guard, NeMo Guardrails,
+Presidio) already has decent detection, and on injection recall it may well beat our regex
+engine. Arguing detection here loses on the merits.
+
+The answer is that **the free thing is a library and the paid thing is a deployed system.**
+Those tools scan text you hand them, from inside an app you wrote. What $12/seat buys is
+the part that is expensive to operate rather than expensive to compute: the capture planes
+that see traffic nobody instrumented, per-person attribution, coverage reconciliation
+against the shadow set, the console, hosting, and support. A team that only needs "scan
+this string" should genuinely use LLM Guard, and saying so costs nothing — they were never
+going to buy.
+
+What remains a **pricing decision, not a docs task**, is where exactly the line falls: which
+capabilities are in the free self-hosted edition versus Team. Today the public README says
+free self-host gets *"full detection"*, which is the right thing to give away under this
+argument — but nobody has decided whether it also gets, say, multi-user attribution or the
+connectors. Until that is decided, the line gets drawn improvisationally per call.
 
 Marketplaces matter to this question more than they look: enterprise procurement burns
 committed cloud spend, which makes a marketplace listing *effectively discounted* against
