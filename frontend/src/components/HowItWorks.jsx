@@ -230,6 +230,27 @@ export default function HowItWorks() {
         </div>
       </section>
 
+      {/* ...or skip the console — govern it from your assistant over MCP */}
+      <section className="lp-section alt">
+        <div className="lp-wrap">
+          <h2 className="lp-h2">…or skip the console entirely</h2>
+          <p className="lp-sub">Palivane ships an <strong>MCP server</strong>, so you can drive it from
+             the assistant you already use — ask what leaked today, work the triage queue, check
+             shadow-AI usage, or pull a compliance report from Claude or any MCP client, without ever
+             opening a dashboard.</p>
+          <figure className="lp-shot lp-shot-lead">
+            <video src="/shots/mcp-demo.mp4" poster="/shots/mcp-demo-poster.png" controls playsInline
+                   preload="metadata"
+                   style={{ display: "block", width: "100%", borderRadius: 12, border: "1px solid #22271F" }} />
+            <figcaption>Four questions, four MCP tool calls: findings, shadow-AI inventory, a triage
+               action, and OWASP Top-10 coverage.</figcaption>
+          </figure>
+          <p className="lp-sub" style={{ textAlign: "center" }}>
+            <a className="lp-textlink" href="https://github.com/SOC-Foundry/palivane-clients/tree/main/mcp-server">Wire it into Claude Code or Desktop →</a>
+          </p>
+        </div>
+      </section>
+
       {/* Offline-first CTA band */}
       <section className="lp-cta-band">
         <div className="lp-wrap">
