@@ -421,6 +421,11 @@ class ApiKeyCreate(BaseModel):
     label: str = ""
     actor: str = ""               # identity to attribute this key's traffic to
     expires_in_days: int | None = None
+    # "ingest" keeps the historical behaviour (gateway/SIEM only, no console API). The
+    # console_* scopes make the key usable as a console credential — e.g. for the MCP
+    # server — acting as the admin who minted it. Defaults to ingest so an existing
+    # caller that omits the field gets exactly what it got before.
+    scope: Literal["ingest", "console_read", "console_write"] = "ingest"
 
 
 class AgentCreate(BaseModel):
