@@ -1,7 +1,8 @@
 # Palivane pilot smoke test (no-MDM, self-serve)
 
 A ~15-minute checklist to prove the three capture planes work on a real machine before
-rolling out to the team. Run it on a Mac (primary) or Linux. Each step says what to do,
+rolling out to the team, plus a ~5-minute section 4 for the MCP server (a control surface,
+not a capture plane). Run it on a Mac (primary) or Linux. Each step says what to do,
 what you should see, and how to confirm in the console.
 
 **Test payload (safe, fake, trips the secret detector without being a real key):**
@@ -85,7 +86,44 @@ these will block on every surface. Everything is attributed to your `@palivane.i
 
 ---
 
-## 4. Console cross-check
+## 4. MCP server  (control surface, not a capture plane)
+> Adds ~5 minutes. This is the only step that proves the *console API key* path, which is
+> what the MCP server runs on — no password, no 12h session to re-paste.
+1. [ ] Console → **Connections → Console API key**. Label it `smoke-test`, scope **Read
+   only**, mint, copy the `ak_…` (shown once).
+2. [ ] Wire it into Claude Code (absolute paths; see [mcp-server/README.md](../mcp-server/README.md)
+   for the one-time venv):
+   ```bash
+   claude mcp add palivane \
+     --env PALIVANE_API_KEY=ak_... \
+     -- /abs/path/mcp-server/.venv/bin/python /abs/path/mcp-server/palivane_mcp.py
+   ```
+3. [ ] Ask the assistant: *"list my Palivane findings"*.
+   - ✅ **9 tools** advertised: `health`, `list_findings`, `get_finding`,
+     `ai_tool_inventory`, `list_connectors`, `gateway_usage`, `compliance_report`,
+     `set_finding_status`, `sync_connector`.
+   - ✅ It returns the findings from steps 1-3, your tenant only.
+4. [ ] Prove the read-only fence — ask it to *"triage finding N"*.
+   - ✅ Refused, and the refusal says why:
+     `403: this API key is read-only (scope console_read)` … *mint one with 'Read +
+     triage/sync' if you need set_finding_status*.
+5. [ ] Mint a second key scoped **Read + triage/sync**, swap it in, ask again.
+   - ✅ The triage succeeds and returns the new status.
+   - [ ] Console → **Findings**: that finding's status actually changed.
+6. [ ] Prove an *ingest* key is not a console credential. Every `ak_…` minted before scopes
+   existed is one, so this is the error an operator is most likely to hit. Point
+   `PALIVANE_API_KEY` at a gateway key from step 2 and ask anything.
+   - ✅ Refused with the same message a revoked or bogus key gets — the API deliberately
+     does not confirm that a key is real:
+     *"PALIVANE_API_KEY was rejected … or it is an ingest-scoped key, which the console API
+     does not accept."*
+7. [ ] The point of the whole thing: come back **the next day** and ask again without
+   touching the config. ✅ Still works — a console key does not expire on `AUTH_TOKEN_TTL`
+   the way a session JWT does.
+
+---
+
+## 5. Console cross-check
 - [ ] **Findings** shows entries on all three surfaces (`ai_usage` from extension + proxy,
       `llm_io` from the gateway), each attributed to your email.
 - [ ] **Scan log** lists you with the right counts.
@@ -96,7 +134,9 @@ these will block on every surface. Everything is attributed to your `@palivane.i
 - CLI: delete the `hooks`/`env` block from `~/.claude/settings.json` (or `rm -rf ~/.palivane`).
 - Desktop: `palivane-desktop uninstall` (then optionally remove the mitmproxy CA from the
   keychain / trust store).
-- Revoke any test keys in the console → **Team / API keys**.
+- Revoke any test keys in the console → **Team / API keys**, including the console
+  keys from step 4 (**Connections → Console API key**) — they are long-lived by design,
+  so nothing expires them for you.
 
 ## What "pass" means
 All three planes produce findings attributed to you, and the test payload is blocked in the
