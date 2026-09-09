@@ -1,0 +1,6 @@
+{
+  "agent": "gemini-cli",
+  "captured_from": "hand-written — REPLACE with a real capture",
+  "event": {"hook_event_name": "BeforeAgent", "prompt": "summarise this repo"},
+  "expect": {"kind": "prompt", "contains": "summarise"}
+}

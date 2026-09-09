@@ -8,6 +8,7 @@ gateway, browser extension, and egress proxy.
 from __future__ import annotations
 
 import hmac
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -1112,6 +1113,15 @@ def ingest_ai_usage(
     _enforce_rate(db, tenant_id)
     actor = body.user or default_actor
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
+    if body.parse_miss:
+        # The client recognised the event and got nothing out of it — vendor shape drift.
+        # There is no content to score, so this exists purely to make the drift visible:
+        # without it a fail-open client keeps checking in and the heartbeat stays green
+        # while coverage is gone. Answer with the allow shape a fail-open client expects.
+        _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool, user_agent,
+                          parse_miss=True)
+        return {"action": "allow", "risk_score": 0, "severity": "none", "signals": [],
+                "finding_id": None, "parse_miss": True}
     _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool, user_agent)
     result, meta = _score_ai_usage(body.content, actor, body.tool, body.destination,
                                    tenant_id, agent, db)
@@ -1536,8 +1546,19 @@ def _parse_client_ua(ua: str) -> tuple[str, str]:
     return name[:48], version[:24]
 
 
+def _parse_agent_ua(ua: str) -> tuple[str, str]:
+    """('claude-code', '2.1.4') from 'palivane-hook/1.1.0 (claude-code/2.1.4)'.
+
+    The host agent the sensor ran inside. Clients that predate this send no parenthetical
+    and yield ('', '') — the heartbeat keeps whatever it last knew rather than blanking it.
+    """
+    m = re.search(r"\(([A-Za-z0-9._-]{1,48})/([A-Za-z0-9._+-]{1,24})\)", ua or "")
+    return (m.group(1), m.group(2)) if m else ("", "")
+
+
 def _record_heartbeat(db: Session, tenant_id: int | None, actor: str,
-                      plane: str, tool: str = "", client_ua: str = "") -> None:
+                      plane: str, tool: str = "", client_ua: str = "",
+                      parse_miss: bool = False) -> None:
     """Best-effort fleet-health upsert — never breaks the capture path it rides on."""
     try:
         from datetime import datetime, timezone
@@ -1560,6 +1581,12 @@ def _record_heartbeat(db: Session, tenant_id: int | None, actor: str,
         client, version = _parse_client_ua(client_ua)
         if client:          # keep the last known build when a request carries no UA
             row.client, row.client_version = client, version
+        agent, agent_version = _parse_agent_ua(client_ua)
+        if agent:           # same rule: an older client without the parenthetical
+            row.agent, row.agent_version = agent, agent_version
+        if parse_miss:
+            row.parse_miss_count = (row.parse_miss_count or 0) + 1
+            row.last_parse_miss = now
         db.commit()
     except Exception:
         db.rollback()
@@ -1684,6 +1711,11 @@ def ingest_mcp(
     tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
+    if body.parse_miss:
+        _record_heartbeat(db, tenant_id, body.user or default_actor, "mcp", body.tool,
+                          user_agent, parse_miss=True)
+        return {"action": "allow", "risk_score": 0, "severity": "none", "signals": [],
+                "finding_id": None, "parse_miss": True}
     _record_heartbeat(db, tenant_id, body.user or default_actor, "mcp", body.tool, user_agent)
     return _score_mcp(body, tenant_id, default_actor, _tenant_mcp_allow(tenant_id, db),
                       _tenant_mcp_block_severity(tenant_id, db), db, agent=agent,
