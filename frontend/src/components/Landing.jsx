@@ -136,9 +136,15 @@ export default function Landing({ onSignIn }) {
       </section>
 
       {/* Shown, not described. Every value is visibly illustrative: both addresses sit on
-          .example (RFC 2606, reserved for documentation) and the key is the documented test
-          payload from docs/pilot-smoke-test.md — so nothing here implies a real customer
-          incident, and nothing reads as leftover test data either. The actor stays: "who
+          .example and the key is the documented test payload from docs/pilot-smoke-test.md,
+          so nothing here implies a real customer incident.
+
+          The TLD is not cosmetic. Every plausible company domain checked while writing this
+          was registered — contoso, fabrikam, northwind, acme, initech, globex, all of them
+          — so a realistic-looking domain here risks attributing a fabricated credential
+          leak to a company that actually exists. RFC 2606 reserves .example precisely so
+          that cannot happen. The company NAMES carry the realism instead; the TLD carries
+          the safety. The actor stays: "who
           sent it" is precisely what a CASB cannot tell you, which is the card's whole
           argument. */}
       <section className="lp-section" style={{ paddingTop: 0, paddingBottom: 0 }}>
@@ -147,7 +153,7 @@ export default function Landing({ onSignIn }) {
             <div className="lp-evidence-head">
               <span className="who">
                 <span className="lp-evidence-tag">BLOCKED</span>
-                <code>d.okafor@acme.example</code>
+                <code>d.okafor@harbourline.example</code>
                 <span aria-hidden="true" style={{ color: "var(--muted-2)" }}>→</span>
                 <code>chatgpt.com</code>
               </span>
