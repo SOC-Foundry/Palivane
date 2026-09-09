@@ -23,6 +23,7 @@ from . import crypto
 from .crypto import decrypt, encrypt, seal
 from .database import get_db
 from .models import (
+    CONSOLE_SCOPES,
     Agent, AgentRole, ApiKey, AuditLog, DiscoveredUsage, EnrollmentToken, Finding,
     GatewayUsage, LoginAttempt, PolicyOverride, Tenant, TenantOIDC, TenantSAML,
     TenantUpstream, User,
@@ -43,9 +44,23 @@ from .security import (
     generate_enrollment_token,
     hash_password,
     hash_token,
+    looks_like_api_key,
     needs_rehash,
     verify_password,
 )
+
+# Mutating routes a console_write API key may call. Everything not listed here is
+# session-only no matter how privileged the key's user is — so a key can never change the
+# org, touch users, or mint another key, which is what keeps a leaked key from being a
+# self-renewing foothold. Matched against the request path with the {id} segment wild.
+_KEY_WRITE_ALLOWLIST = (
+    ("PATCH", re.compile(r"^/api/findings/\d+$")),
+    ("POST", re.compile(r"^/api/discovery/connectors/\d+/sync$")),
+)
+
+
+def _key_write_allowed(method: str, path: str) -> bool:
+    return any(m == method and rx.match(path) for m, rx in _KEY_WRITE_ALLOWLIST)
 
 
 def _naive_utc() -> datetime:
@@ -73,6 +88,57 @@ def _session_payload(user: User, tenant: Tenant) -> dict:
 router = APIRouter(prefix="/api", tags=["auth"])
 
 
+def _user_for_api_key(request: Request, token: str, db: Session) -> User:
+    """Authenticate a console-scoped `ak_…` key and return the user it acts as.
+
+    Only console_read/console_write keys are accepted — an "ingest" key (every key minted
+    before scopes existed) is refused here exactly as it was before, so nothing already in
+    the field gained console reach. The key resolves to a real User row rather than a
+    synthesized principal, which means role checks like require_admin and the
+    admin-only-dismiss rule keep working on it with no special-casing.
+    """
+    key = (db.query(ApiKey)
+           .filter(ApiKey.prefix == token[:11], ApiKey.active.is_(True))
+           .first())
+    if key is None or not hmac.compare_digest(key.token_hash, hash_token(token)):
+        raise HTTPException(status_code=401, detail="invalid API key",
+                            headers={"WWW-Authenticate": "Bearer"})
+    if key.expires_at and key.expires_at < _naive_utc():
+        raise HTTPException(status_code=401, detail="API key expired",
+                            headers={"WWW-Authenticate": "Bearer"})
+    if (key.scope or "ingest") not in CONSOLE_SCOPES:
+        # Deliberately the same 401 an unknown key gets: an ingest key is simply not a
+        # credential for this API, and saying "wrong scope" would confirm the key is real.
+        raise HTTPException(status_code=401, detail="invalid API key",
+                            headers={"WWW-Authenticate": "Bearer"})
+    method = request.method
+    if method not in ("GET", "HEAD", "OPTIONS"):
+        if key.scope != "console_write":
+            raise HTTPException(status_code=403,
+                                detail="this API key is read-only (scope console_read)")
+        if not _key_write_allowed(method, request.url.path):
+            raise HTTPException(
+                status_code=403,
+                detail="an API key cannot call this endpoint — org settings, user "
+                       "management and key issuance require a signed-in session")
+    user = db.get(User, key.user_id) if key.user_id else None
+    if user is None or not user.active or user.tenant_id != key.tenant_id:
+        # The key outlived the user it acts as (deactivated, deleted, or moved org).
+        raise HTTPException(status_code=401,
+                            detail="the user this API key acts as is no longer active")
+    from .lifecycle import ensure_active
+    ensure_active(db, key.tenant_id)
+    try:                                   # best-effort last-used stamp, as the gateway does
+        key.last_used_at = _naive_utc()
+        db.commit()
+    except Exception:
+        db.rollback()
+    from .database import bind_tenant
+    bind_tenant(db, key.tenant_id)
+    request.state.api_key_id = key.id      # so audit entries can name the credential
+    return user
+
+
 def get_current_user(
     request: Request,
     authorization: str = Header(default=""),
@@ -82,6 +148,8 @@ def get_current_user(
     if scheme.lower() != "bearer" or not token:
         raise HTTPException(status_code=401, detail="missing bearer token",
                             headers={"WWW-Authenticate": "Bearer"})
+    if looks_like_api_key(token):
+        return _user_for_api_key(request, token, db)
     try:
         payload = decode_token(token)
     except TokenError as exc:
@@ -663,13 +731,17 @@ def create_api_key(body: ApiKeyCreate, current: User = Depends(require_admin),
     expires_at = None
     if body.expires_in_days:
         expires_at = _naive_utc() + timedelta(days=body.expires_in_days)
+    # A console key acts as the admin minting it, so its reach is that person's role and it
+    # dies with their account. An ingest key has no user identity at all (unchanged).
+    user_id = current.id if body.scope in CONSOLE_SCOPES else None
     key = ApiKey(tenant_id=current.tenant_id, label=body.label, actor=body.actor,
-                 prefix=prefix, token_hash=token_hash, expires_at=expires_at)
+                 prefix=prefix, token_hash=token_hash, expires_at=expires_at,
+                 scope=body.scope, user_id=user_id)
     db.add(key)
     db.commit()
     db.refresh(key)
     audit_log.record(db, current.tenant_id, current.email, "apikey.create",
-                     target=body.label or body.actor)
+                     target=body.label or body.actor, detail={"scope": body.scope})
     return {**key.to_dict(), "token": token}
 
 

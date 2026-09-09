@@ -295,14 +295,33 @@ class User(Base):
         }
 
 
+# What an api_key is allowed to reach. Historically every key was an ingest credential for
+# the gateway/SIEM planes, and NOTHING more — so the console API deliberately refused them.
+# Adding console access to that same credential type would have silently promoted every key
+# already in the field into an admin-capable one, so the capability is a scope, every
+# pre-existing row is grandfathered to "ingest", and only the two console_* scopes are
+# accepted by get_current_user.
+API_KEY_SCOPES = ("ingest", "console_read", "console_write")
+CONSOLE_SCOPES = ("console_read", "console_write")
+
+
 class ApiKey(Base):
-    """A long-lived machine credential (gateway / SIEM clients). Only the hash is stored."""
+    """A long-lived machine credential. `scope` decides which plane it can reach: "ingest"
+    (the original: gateway + SIEM, never the console API) or console_read/console_write —
+    see API_KEY_SCOPES. A console key also carries `user_id`: it acts AS that user, so every
+    existing per-role authz check applies to it unchanged instead of being re-derived here.
+    Only the hash is stored."""
 
     __tablename__ = "api_keys"
 
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
     label = Column(String(128), default="")
+    # "ingest" (default, and what every pre-scope key is) | "console_read" | "console_write".
+    scope = Column(String(32), default="ingest", nullable=False)
+    # The user a console key acts as — its role gates what the key can do. NULL for ingest
+    # keys, which have no user identity at all.
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     prefix = Column(String(16), index=True, nullable=False)
     token_hash = Column(String(64), nullable=False)
     actor = Column(String(320), default="")  # identity to attribute findings to
@@ -322,6 +341,7 @@ class ApiKey(Base):
         return {
             "id": self.id, "label": self.label, "prefix": self.prefix,
             "actor": self.actor, "active": self.active,
+            "scope": self.scope or "ingest", "user_id": self.user_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_used_at": self.last_used_at.isoformat() if self.last_used_at else None,
             "last_failed_at": self.last_failed_at.isoformat() if self.last_failed_at else None,
