@@ -135,16 +135,19 @@ export default function Landing({ onSignIn }) {
         </div>
       </section>
 
-      {/* Shown, not described. The values are the seeded demo org's — the same data anyone
-          sees at /#demo — and the key is the documented test payload from
-          docs/pilot-smoke-test.md, so nothing here implies a real customer incident. */}
+      {/* Shown, not described. Every value is visibly illustrative: both addresses sit on
+          .example (RFC 2606, reserved for documentation) and the key is the documented test
+          payload from docs/pilot-smoke-test.md — so nothing here implies a real customer
+          incident, and nothing reads as leftover test data either. The actor stays: "who
+          sent it" is precisely what a CASB cannot tell you, which is the card's whole
+          argument. */}
       <section className="lp-section" style={{ paddingTop: 0, paddingBottom: 0 }}>
         <div className="lp-wrap">
           <div className="lp-evidence">
             <div className="lp-evidence-head">
               <span className="who">
                 <span className="lp-evidence-tag">BLOCKED</span>
-                <code>bob@demo.local</code>
+                <code>d.okafor@acme.example</code>
                 <span aria-hidden="true" style={{ color: "var(--muted-2)" }}>→</span>
                 <code>chatgpt.com</code>
               </span>
