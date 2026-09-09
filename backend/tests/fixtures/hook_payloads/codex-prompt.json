@@ -1,0 +1,6 @@
+{
+  "agent": "codex-cli",
+  "captured_from": "hand-written — REPLACE with a real capture",
+  "event": {"hook_event_name": "UserPromptSubmit", "prompt": "write the migration"},
+  "expect": {"kind": "prompt", "contains": "migration"}
+}
