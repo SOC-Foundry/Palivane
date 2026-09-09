@@ -108,7 +108,7 @@ export default function Landing({ onSignIn }) {
   const [zoom, setZoom] = useState(null);   // {src, alt} when a screenshot is enlarged
   const [openQ, setOpenQ] = useState(0);
   return (
-    <div className="landing">
+    <div className="landing lp-atmos">
       <Lightbox src={zoom?.src} alt={zoom?.alt} onClose={() => setZoom(null)} />
       <SiteNav onSignIn={onSignIn} />
 
@@ -132,6 +132,41 @@ export default function Landing({ onSignIn }) {
             <code>curl -fsSL https://app.palivane.io/install.sh | bash</code>
             <span>one command, monitor mode, nothing blocked yet</span>
           </div>
+        </div>
+      </section>
+
+      {/* Shown, not described. The values are the seeded demo org's — the same data anyone
+          sees at /#demo — and the key is the documented test payload from
+          docs/pilot-smoke-test.md, so nothing here implies a real customer incident. */}
+      <section className="lp-section" style={{ paddingTop: 0, paddingBottom: 0 }}>
+        <div className="lp-wrap">
+          <div className="lp-evidence">
+            <div className="lp-evidence-head">
+              <span className="who">
+                <span className="lp-evidence-tag">BLOCKED</span>
+                <code>bob@demo.local</code>
+                <span aria-hidden="true" style={{ color: "var(--muted-2)" }}>→</span>
+                <code>chatgpt.com</code>
+              </span>
+              <code style={{ color: "var(--muted-2)", fontSize: 12 }}>before send · finding #4471</code>
+            </div>
+            <div className="lp-evidence-body">
+              <div className="lp-evidence-prompt">
+                clean up this customer list and fix the deploy script<br />
+                <span className="dim">name,email,plan,mrr</span><br />
+                <span className="hit">j.reyes@northwind.example,enterprise,4200</span><br />
+                <span className="dim">export AWS_ACCESS_KEY_ID=</span><span className="hit">AKIA4YTGH2NBQF7XZP3K</span>
+              </div>
+              <dl className="lp-evidence-meta">
+                <div><dt>What was in it</dt><dd>An AWS access key, and 1,848 customer records</dd></div>
+                <div><dt>Where it came from</dt><dd>Q3_accounts.csv, in Google Drive</dd></div>
+                <div><dt>Caught by</dt><dd>The browser extension, before the prompt sent</dd></div>
+              </dl>
+            </div>
+          </div>
+          <p className="lp-evidence-foot">
+            A CASB logs one line: <code>user visited chatgpt.com</code>. Everything above is the part that matters.
+          </p>
         </div>
       </section>
 
@@ -201,8 +236,8 @@ export default function Landing({ onSignIn }) {
       </section>
 
       <section className="lp-section">
-        <div className="lp-wrap lp-split lp-split-narrow">
-          <div className="lp-split-text sticky">
+        <div className="lp-wrap lp-split">
+          <div className="lp-split-text">
             <span className="lp-eyebrow">Headless</span>
             <h2 className="lp-h2">Run it from your own AI assistant</h2>
             <p className="lp-sub">Nobody wants another dashboard to check. Palivane ships an MCP
@@ -210,16 +245,17 @@ export default function Landing({ onSignIn }) {
               or any MCP client: ask what leaked today, triage a finding, sync a connector, pull a
               compliance report, without opening the console. The surface we secure, offered as the
               way you drive it.</p>
+            <ul className="lp-checklist lp-checklist-tight">
+              {MCP_ASKS.map((s) => (
+                <li key={s.title}><h3>{s.title}</h3></li>
+              ))}
+            </ul>
             <a className="lp-textlink" href="https://github.com/SOC-Foundry/palivane-clients/tree/main/mcp-server">Wire it into Claude Code or Desktop →</a>
           </div>
-          <ul className="lp-checklist">
-            {MCP_ASKS.map((s) => (
-              <li key={s.title}>
-                <h3>{s.title}</h3>
-                <p>{s.body}</p>
-              </li>
-            ))}
-          </ul>
+          <div className="lp-split-media">
+            <Clip src="/shots/mcp-demo.mp4" poster="/shots/mcp-demo-poster.png"
+                  caption="Working the triage queue from Claude, without opening the console." />
+          </div>
         </div>
       </section>
 
@@ -246,25 +282,34 @@ export default function Landing({ onSignIn }) {
         </div>
       </section>
 
+      {/* Lineage reads as a chain, so it runs horizontally — and it was the third
+          text-beside-a-list section in a row, which is the rhythm problem the styling
+          alone could not fix. */}
       <section className="lp-section">
-        <div className="lp-wrap lp-split lp-split-narrow">
-          <div className="lp-split-text sticky">
+        <div className="lp-wrap">
+          <div className="lp-band-head">
             <span className="lp-eyebrow">Lineage</span>
             <h2 className="lp-h2">Not just what leaked. Which document it came out of.</h2>
             <p className="lp-sub">Every document Palivane scans in Drive, SharePoint,
               Salesforce, Slack, or Teams is fingerprinted. When text from one of them turns up in a
               prompt later, the finding names the source, and the exposure view works the
               other way too: pick a document and see everywhere it has surfaced.</p>
-            <a className="lp-textlink" href="/use-cases">What that changes in an incident →</a>
           </div>
-          <ul className="lp-checklist">
-            {LINEAGE.map((s) => (
-              <li key={s.title}>
+          <div className="lp-trace">
+            {LINEAGE.map((s, i) => (
+              <div key={s.title}>
+                <div className="n">{String(i + 1).padStart(2, "0")}</div>
                 <h3>{s.title}</h3>
                 <p>{s.body}</p>
-              </li>
+              </div>
             ))}
-          </ul>
+          </div>
+          <div style={{ marginTop: 40 }}>
+            <Shot src="/shots/dashboard.png?v=7" alt="Exposure view: one document, everywhere it surfaced"
+                  caption="Start from a document instead of a finding."
+                  onZoom={(s, a) => setZoom({ src: s, alt: a })} />
+          </div>
+          <a className="lp-textlink" href="/use-cases" style={{ display: "inline-block", marginTop: 18 }}>What that changes in an incident →</a>
         </div>
       </section>
 
