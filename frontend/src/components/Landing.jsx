@@ -57,6 +57,17 @@ const LINEAGE = [
     body: "The source document rides along into webhooks, the SIEM export, and the report, so the context is there before anyone opens the console." },
 ];
 
+const MCP_ASKS = [
+  { title: "“What high-severity findings landed today, and who triggered them?”",
+    body: "Listed by actor and surface, in the chat, no login." },
+  { title: "“Mark finding 4821 triaged.”",
+    body: "Work the queue from the assistant. Dismissing stays admin-only, enforced by the API." },
+  { title: "“Which unsanctioned AI tools are in use, and what leaked to them?”",
+    body: "The shadow-AI inventory, without opening a dashboard." },
+  { title: "“Are we covered for the OWASP LLM Top 10?”",
+    body: "Framework coverage, control by control." },
+];
+
 const LOOKS_FOR = [
   { title: "Passwords, keys, and tokens", body: "Nearly sixty credential formats (cloud keys, API tokens, private keys, database passwords, and every major AI provider's own keys) in prompts and in what an assistant sends back." },
   { title: "Personal and customer data", body: "Social security numbers, payment cards, and customer records, tuned so ordinary engineering work does not trip it." },
@@ -186,6 +197,29 @@ export default function Landing({ onSignIn }) {
             <Shot src="/shots/agents.png?v=7" alt="AI assistant identity and limits"
                   onZoom={(s, a) => setZoom({ src: s, alt: a })} />
           </div>
+        </div>
+      </section>
+
+      <section className="lp-section">
+        <div className="lp-wrap lp-split lp-split-narrow">
+          <div className="lp-split-text sticky">
+            <span className="lp-eyebrow">Headless</span>
+            <h2 className="lp-h2">Run it from your own AI assistant</h2>
+            <p className="lp-sub">Nobody wants another dashboard to check. Palivane ships an MCP
+              server, so your team governs AI security from the assistant they already use, Claude
+              or any MCP client: ask what leaked today, triage a finding, sync a connector, pull a
+              compliance report, without opening the console. The surface we secure, offered as the
+              way you drive it.</p>
+            <a className="lp-textlink" href="/how-it-works">See how it fits together →</a>
+          </div>
+          <ul className="lp-checklist">
+            {MCP_ASKS.map((s) => (
+              <li key={s.title}>
+                <h3>{s.title}</h3>
+                <p>{s.body}</p>
+              </li>
+            ))}
+          </ul>
         </div>
       </section>
 
