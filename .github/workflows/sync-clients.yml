@@ -1,9 +1,9 @@
 name: Sync public clients mirror
 
-# Mirrors the endpoint-component directories (extension/ cli/ proxy/) to the public
-# SOC-Foundry/palivane-clients repo whenever they change on main. The public repo's
-# LICENSE and README are owned there and never overwritten; build artifacts and the
-# internal store runbook never leave.
+# Mirrors the endpoint-component directories (extension/ cli/ proxy/ mcp-server/) to the
+# public SOC-Foundry/palivane-clients repo whenever they change on main. The public repo's
+# LICENSE and README are owned there and never overwritten; build artifacts, virtualenvs,
+# and the internal store runbook never leave.
 #
 # Auth: CLIENTS_SYNC_TOKEN — a fine-grained PAT scoped to SOC-Foundry/palivane-clients
 # with Contents read/write ONLY (deploy keys are disabled org-wide on purpose; a
@@ -12,7 +12,7 @@ name: Sync public clients mirror
 on:
   push:
     branches: [main]
-    paths: ["extension/**", "cli/**", "proxy/**"]
+    paths: ["extension/**", "cli/**", "proxy/**", "mcp-server/**"]
   workflow_dispatch:
 
 permissions:
@@ -37,9 +37,9 @@ jobs:
             exit 0
           fi
           git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/SOC-Foundry/palivane-clients.git" /tmp/mirror
-          for d in extension cli proxy; do
+          for d in extension cli proxy mcp-server; do
             rsync -a --delete \
-              --exclude "*.zip" --exclude "STORE.md" --exclude "__pycache__" \
+              --exclude "*.zip" --exclude "STORE.md" --exclude "__pycache__" --exclude ".venv" \
               "$d/" "/tmp/mirror/$d/"
           done
           cd /tmp/mirror
