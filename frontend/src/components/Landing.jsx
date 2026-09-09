@@ -210,7 +210,7 @@ export default function Landing({ onSignIn }) {
               or any MCP client: ask what leaked today, triage a finding, sync a connector, pull a
               compliance report, without opening the console. The surface we secure, offered as the
               way you drive it.</p>
-            <a className="lp-textlink" href="/how-it-works">See how it fits together →</a>
+            <a className="lp-textlink" href="https://github.com/SOC-Foundry/palivane-clients/tree/main/mcp-server">Wire it into Claude Code or Desktop →</a>
           </div>
           <ul className="lp-checklist">
             {MCP_ASKS.map((s) => (
