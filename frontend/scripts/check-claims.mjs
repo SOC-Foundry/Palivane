@@ -44,6 +44,9 @@ const BANNED = [
   { phrase: "all ai tools",
     why: "same as 'every AI tool'",
     instead: 'say "the AI tools in use" and name what is not covered' },
+  { phrase: "browser extension, cli capture hooks, and egress proxy",
+    why: "shipped on Trust as the complete list of what's public, months after the MCP server joined it — an enumeration that omits a component reads as a closed set",
+    instead: "name every component, or say 'the endpoint components' and let the repo be the list" },
 ];
 
 // Legitimate uses, each tied to one file and justified. Adding to this list should mean
