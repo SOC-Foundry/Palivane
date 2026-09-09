@@ -36,8 +36,12 @@ Are we covered for the OWASP LLM Top 10? Show the gaps.
 - Pre-seed so the finding id you say out loud (e.g. `4821`) actually exists — rehearse once,
   note the real id, then record.
 - Prime Claude to answer tersely ("one short line per finding") so panels don't sprawl.
-- Silent-first: burn in the captions; music optional. Trim the tool-call "thinking" pauses
-  in the edit so it stays snappy.
+- The rendered `mcp-demo.mp4` already has a **lofi soundtrack** (same bed as the hero/setup
+  clips) baked in via `scripts/mcp_score.py`. PH still autoplays muted, so keep captions.
+  Regenerate the score with a numpy+scipy env:
+  `python scripts/mcp_score.py` → `marketing/mcp-demo-score.wav`, then mux:
+  `ffmpeg -i mcp-demo.mp4 -i mcp-demo-score.wav -map 0:v -map 1:a -c:v copy -c:a aac -movflags +faststart -shortest out.mp4`
+- Trim the tool-call "thinking" pauses in the edit so it stays snappy.
 - Optional 3s B-roll: the `claude mcp add palivane …` one-liner from the mcp-server README —
   reinforces "two minutes to wire in."
 - Setup: `github.com/SOC-Foundry/palivane-clients/tree/main/mcp-server`.
