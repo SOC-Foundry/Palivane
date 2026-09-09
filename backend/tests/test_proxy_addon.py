@@ -423,3 +423,119 @@ def test_intercept_patterns_match_host_and_subdomains(monkeypatch):
     assert not matches("machine.tail1234.ts.net:443")
     assert not matches("evil-anthropic.com:443")        # suffix must be a label boundary
     assert not matches("api.anthropic.com.evil.io:443")  # suffix must be at the end
+
+
+# --- TLS-inspecting VPN/ZTNA diagnosis -----------------------------------------------
+#
+# When a Zero-Trust client decrypts HTTPS between us and the AI host, our upstream handshake
+# fails against the public roots and every AI tool on the device dies with an opaque
+# "certificate verify failed" — which reads as Palivane breaking the network. The hint turns
+# that into a named vendor plus the two fixes.
+
+def test_ztna_vendor_recognizes_the_common_roots():
+    assert addon.ztna_vendor("CN=Cloudflare for Teams ECC Certificate Authority") \
+        == "Cloudflare WARP / Zero Trust Gateway"
+    assert addon.ztna_vendor("CN=Zscaler Root CA,O=Zscaler Inc.") == "Zscaler"
+    assert addon.ztna_vendor("O=netskope, CN=Netskope Certificate Authority") == "Netskope"
+    assert addon.ztna_vendor("CN=Cisco Umbrella Root CA") == "Cisco Umbrella"
+    assert addon.ztna_vendor("CN=Palo Alto Networks Inc") == "Palo Alto Prisma Access"
+    assert addon.ztna_vendor("CN=DigiCert Global Root G2") is None
+    assert addon.ztna_vendor("") is None
+
+
+def test_upstream_tls_hint_names_the_vendor_from_the_issuer():
+    hint = addon.upstream_tls_hint(
+        "api.anthropic.com",
+        "certificate verify failed: unable to get local issuer certificate",
+        ("CN=Cloudflare for Teams ECC Certificate Authority",))
+    assert hint is not None
+    assert "Cloudflare WARP / Zero Trust Gateway" in hint
+    # Both remedies must be present — the bypass and the trust flag.
+    assert "Do Not Inspect" in hint
+    assert "PALIVANE_UPSTREAM_CA" in hint
+
+
+def test_upstream_tls_hint_falls_back_to_a_generic_culprit():
+    """No issuer captured (the handshake died before we saw a chain) still yields a usable
+    message rather than silence."""
+    hint = addon.upstream_tls_hint(
+        "claude.ai", "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed", ())
+    assert hint is not None
+    assert "TLS-inspecting proxy or VPN/ZTNA client" in hint
+
+
+def test_upstream_tls_hint_reads_the_vendor_out_of_the_error_text():
+    hint = addon.upstream_tls_hint(
+        "chatgpt.com", "certificate verify failed: self signed certificate in "
+                       "certificate chain (issuer: Zscaler Root CA)")
+    assert hint is not None and "Zscaler" in hint
+
+
+def test_upstream_tls_hint_ignores_non_ai_hosts():
+    """Only hosts we actually intercept are ours to explain; the rest tunnel undecrypted and
+    any failure there is the network's, not Palivane's."""
+    assert addon.upstream_tls_hint("intranet.corp.example", "certificate verify failed") is None
+
+
+def test_upstream_tls_hint_ignores_failures_that_are_not_trust_problems():
+    for err in ("connection reset by peer", "timed out", "no route to host", ""):
+        assert addon.upstream_tls_hint("api.anthropic.com", err) is None
+
+
+def test_tls_failed_server_warns_once_per_host():
+    """A retry storm must not bury the message; one line per host is enough to act on."""
+    logged: list[str] = []
+
+    class _Cert:
+        issuer = "CN=Cloudflare for Teams ECC Certificate Authority"
+
+    class _Conn:
+        error = "certificate verify failed"
+        certificate_list = [_Cert()]
+
+    class _Server:
+        address = ("api.anthropic.com", 443)
+
+    class _Ctx:
+        server = _Server()
+
+    class _Data:
+        conn = _Conn()
+        context = _Ctx()
+
+    guard = addon.PalivaneGuard()
+    import logging
+    orig = logging.error
+    logging.error = lambda msg, *a, **k: logged.append(str(msg))
+    try:
+        guard.tls_failed_server(_Data())
+        guard.tls_failed_server(_Data())
+        guard.tls_failed_server(_Data())
+    finally:
+        logging.error = orig
+    assert len(logged) == 1
+    assert "Cloudflare" in logged[0]
+
+
+def test_tls_failed_server_survives_an_unexpected_hook_shape():
+    """mitmproxy's hook data shape shifts between versions; a diagnostic must never take the
+    proxy down with it."""
+    class _Bare:
+        pass
+
+    addon.PalivaneGuard().tls_failed_server(_Bare())   # must not raise
+
+
+def test_tls_failed_server_survives_a_context_without_a_connection():
+    """A shape with a resolvable host but no `conn` (seen across mitmproxy versions) must
+    degrade to silence, not an exception inside the proxy's event loop."""
+    class _Server:
+        address = ("api.anthropic.com", 443)
+
+    class _Ctx:
+        server = _Server()
+
+    class _Data:
+        context = _Ctx()
+
+    addon.PalivaneGuard().tls_failed_server(_Data())   # must not raise

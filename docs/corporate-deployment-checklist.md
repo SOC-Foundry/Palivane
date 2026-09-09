@@ -20,6 +20,14 @@ each in **Policies → Checks**.
 - [ ] **The corp proxy must not also intercept the AI hosts.** Double-decrypt works but
   doubles latency and muddies incident forensics, exempt `api.anthropic.com`, `claude.ai`
   (and the rest of the intercept list) from the SWG's TLS inspection.
+- [ ] **TLS-inspecting client with no proxy to chain to (Cloudflare WARP with Gateway HTTP
+  policies, Netskope/Prisma tunnel mode, Umbrella roaming client).** These decrypt at L3, so
+  there is no `PALIVANE_UPSTREAM_PROXY` to set — but our upstream leg is still inspected and
+  will fail cert verification, breaking every AI tool on the device. Set
+  `PALIVANE_UPSTREAM_CA=/path/to/their-root.pem` **on its own** (the installer merges it with
+  the system public roots), or add a Do-Not-Inspect / SSL-bypass rule for the AI hosts.
+  Prefer the bypass. See [alongside your proxy or VPN](existing-proxy-vpn.md).
+  *Continuous:* the proxy logs the detected vendor and both fixes instead of a bare TLS error.
 - [ ] **PAC files.** IT-pushed PAC files can silently override the system proxy Palivane
   sets. Confirm the *effective* proxy on a pilot device is Palivane, not just the setting.
 - [ ] **QUIC/HTTP-3, only if you deviate.** With the explicit-proxy model browsers don't
