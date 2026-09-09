@@ -223,13 +223,16 @@ def render(duration, sections, out_path):
 
 
 import os
-BASE = os.getenv("DEMO_WORK", "/tmp/palivane-demo")
-os.makedirs(BASE, exist_ok=True)
 
-# 123.40s hero cut. Sections follow the story: title, the three browser blocks, the three
-# agent blocks, infrastructure (AWS + GitHub), then the console payoff and a settle. The
-# length is whatever demo_video.py last printed; keep it in step or the mux trims the tail.
-render(123.40, [
+
+def _main():
+  BASE = os.getenv("DEMO_WORK", "/tmp/palivane-demo")
+  os.makedirs(BASE, exist_ok=True)
+
+  # 123.40s hero cut. Sections follow the story: title, the three browser blocks, the three
+  # agent blocks, infrastructure (AWS + GitHub), then the console payoff and a settle. The
+  # length is whatever demo_video.py last printed; keep it in step or the mux trims the tail.
+  render(123.40, [
     (0.0,   4.0,    ["C"],                        0.15),   # title card: sit on home
     (4.0,   32.5,   ["Dm", "G", "C", "Am"],       0.55),   # browser: claude / chatgpt / gemini
     (32.5,  59.5,   ["Dm", "G", "C", "Am"],       0.75),   # agents: claude code / codex / cursor
@@ -237,12 +240,12 @@ render(123.40, [
     (79.0,  98.5,   ["Dm", "G", "C", "Am"],       0.78),   # SaaS at rest: Drive, Slack
     (98.5,  118.5,  ["Dm", "G", "C", "Am"],       0.62),   # console tour
     (118.5, 123.40, ["Dm", "C"],                  0.30),   # settle out, unresolved to home
-], f"{BASE}/score.wav")
+  ], f"{BASE}/score.wav")
 
-# 58.96s setup cut. Its storyboard is calmer than the hero (title, Connect, the install
-# terminal, Settings, a second card, the MDM push, Findings, a closing brand card), so the
-# bed stays lower and only lifts for the two terminal beats.
-render(58.96, [
+  # 58.96s setup cut. Its storyboard is calmer than the hero (title, Connect, the install
+  # terminal, Settings, a second card, the MDM push, Findings, a closing brand card), so the
+  # bed stays lower and only lifts for the two terminal beats.
+  render(58.96, [
     (0.0,   4.5,    ["C"],                        0.15),   # title card
     (4.5,   17.0,   ["Dm", "G", "C", "Am"],       0.50),   # Connect page
     (17.0,  27.5,   ["Dm", "G"],                  0.70),   # one-command install terminal
@@ -250,4 +253,8 @@ render(58.96, [
     (36.0,  46.0,   ["F", "Em", "Dm", "G"],       0.72),   # MDM push terminal
     (46.0,  54.0,   ["Dm", "G", "C", "Am"],       0.58),   # Findings page
     (54.0,  58.96,  ["Dm", "C"],                  0.28),   # closing brand card
-], f"{BASE}/setup-score.wav")
+  ], f"{BASE}/setup-score.wav")
+
+
+if __name__ == "__main__":
+    _main()
