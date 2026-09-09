@@ -1,0 +1,6 @@
+{
+  "agent": "cursor",
+  "captured_from": "hand-written — REPLACE with a real capture",
+  "event": {"hook_event_name": "beforeSubmitPrompt", "prompt": "add a retry to the client"},
+  "expect": {"kind": "prompt", "contains": "retry"}
+}

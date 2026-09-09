@@ -925,6 +925,19 @@ class SensorHeartbeat(Base):
     # server-side detection updates instantly, but installed scripts don't.
     client = Column(String(48), default="")           # palivane-hook | palivane-proxy | …
     client_version = Column(String(24), default="")
+    # The HOST agent the sensor ran inside, from the parenthetical of our own UA
+    # ("palivane-hook/1.1.0 (claude-code/2.1.4)"). client_version says whether OUR plumbing
+    # is current; this says which vendor build was live — the difference between "a hook
+    # broke" and "Claude Code 2.1.4 broke it", which is the difference between an afternoon
+    # and a week when a shape changes under us.
+    agent = Column(String(48), default="")
+    agent_version = Column(String(24), default="")
+    # Shape drift. A hook that fires on a recognized event and extracts nothing is the one
+    # failure this table cannot otherwise see: fail-open means the sensor keeps checking in,
+    # so last_seen stays green while coverage is silently gone. Worse than going dark,
+    # because dark pages someone.
+    parse_miss_count = Column(Integer, default=0)
+    last_parse_miss = Column(DateTime, nullable=True)
     # Fleet alerting (alerts.run_fleet_alerts): when this sensor's gone-dark alert went
     # out. NULL = not alerted; cleared when a heartbeat resumes so a NEW dark episode
     # pages again (edge-triggered, not every sweep).
@@ -932,6 +945,9 @@ class SensorHeartbeat(Base):
 
     def to_dict(self) -> dict:
         return {"actor": self.actor, "plane": self.plane, "tool": self.tool,
+                "agent": self.agent or "", "agent_version": self.agent_version or "",
+                "parse_miss_count": self.parse_miss_count or 0,
+                "last_parse_miss": self.last_parse_miss.isoformat() if self.last_parse_miss else None,
                 "first_seen": self.first_seen.isoformat() if self.first_seen else None,
                 "last_seen": self.last_seen.isoformat() if self.last_seen else None,
                 "count": self.count, "client": self.client or "",

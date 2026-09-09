@@ -55,6 +55,11 @@ class AIUsageIngest(BaseModel):
     # it downgrades that block to a proceed (never a confirmed force_block leak).
     override_token: str = ""
 
+    # Set by a client whose extractor recognised the event but got nothing out of
+    # it (vendor shape drift). No content to score — it is recorded on the sensor
+    # heartbeat so silent coverage loss becomes visible.
+    parse_miss: bool = False
+
 
 class JustifyRequest(BaseModel):
     """A blocked user's business justification — recorded on the finding, exchanged for a
@@ -99,6 +104,11 @@ class MCPIngest(BaseModel):
     # IdP-governed actor identity (sub/email); opaque tokens attribute as opaque-token.
     # The raw credential is never persisted — only extracted metadata reaches the finding.
     authorization: str = Field("", max_length=8192)
+
+    # Set by a client whose extractor recognised the event but got nothing out of
+    # it (vendor shape drift). No content to score — it is recorded on the sensor
+    # heartbeat so silent coverage loss becomes visible.
+    parse_miss: bool = False
 
 
 class MCPBatchIngest(BaseModel):

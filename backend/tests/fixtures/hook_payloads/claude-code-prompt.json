@@ -1,0 +1,7 @@
+{
+  "agent": "claude-code",
+  "captured_from": "hand-written — REPLACE with a real capture",
+  "event": {"hook_event_name": "UserPromptSubmit", "cwd": "/tmp/proj",
+            "prompt": "refactor the billing module and push"},
+  "expect": {"kind": "prompt", "contains": "billing module"}
+}

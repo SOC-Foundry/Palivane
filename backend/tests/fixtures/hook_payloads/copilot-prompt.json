@@ -1,0 +1,6 @@
+{
+  "agent": "copilot",
+  "captured_from": "hand-written — REPLACE with a real capture",
+  "event": {"hook_event_name": "userPromptSubmitted", "prompt": "explain this stack trace"},
+  "expect": {"kind": "prompt", "contains": "stack trace"}
+}
