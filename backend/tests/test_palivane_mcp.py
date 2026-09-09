@@ -129,7 +129,7 @@ _ECHO_CHILD = (
 )
 
 
-def test_passthrough_byte_identical_with_backend_down():
+def test_passthrough_byte_identical_with_backend_down(tmp_path):
     frames = (b'{"jsonrpc":"2.0","id":1,"method":"tools/call",'
               b'"params":{"name":"x","arguments":{"a":"bb"}}}\n'
               b"not json at all\n")
@@ -137,13 +137,14 @@ def test_passthrough_byte_identical_with_backend_down():
         [sys.executable, str(_path), "--", sys.executable, "-c", _ECHO_CHILD],
         input=frames, stdout=subprocess.PIPE, timeout=30,
         env={"PALIVANE_URL": "http://127.0.0.1:9", "PALIVANE_TOKEN": "ak_dead",
-             "PALIVANE_MCP_TIMEOUT": "1", "PATH": "/usr/bin:/bin"},
+             "PALIVANE_MCP_TIMEOUT": "1", "PATH": "/usr/bin:/bin",
+             "PALIVANE_STATE_DIR": str(tmp_path)},
     )
     assert p.returncode == 0
     assert p.stdout == frames  # byte-identical: framing preserved, fail-open
 
 
-def test_enforce_blocks_request_before_child():
+def test_enforce_blocks_request_before_child(tmp_path):
     # Enforce + dead backend = fail-open too; enforce blocking is exercised via the
     # backend integration tests above. Here: enforce mode must still pass through.
     frames = b'{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"x"}}\n'
@@ -152,7 +153,7 @@ def test_enforce_blocks_request_before_child():
         input=frames, stdout=subprocess.PIPE, timeout=30,
         env={"PALIVANE_URL": "http://127.0.0.1:9", "PALIVANE_TOKEN": "ak_dead",
              "PALIVANE_MCP_ENFORCE": "true", "PALIVANE_MCP_TIMEOUT": "1",
-             "PATH": "/usr/bin:/bin"},
+             "PATH": "/usr/bin:/bin", "PALIVANE_STATE_DIR": str(tmp_path)},
     )
     assert p.returncode == 0
     assert p.stdout == frames
@@ -232,7 +233,7 @@ def test_fingerprint_hashes_resolved_binary(tmp_path):
 
 
 def test_check_pin_tofu_lifecycle(tmp_path, monkeypatch):
-    monkeypatch.setattr(wm, "_PIN_PATH", str(tmp_path / "pins.json"))
+    monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path))
     exe = tmp_path / "srv"
     exe.write_bytes(b"v1")
     fp = wm.server_fingerprint([str(exe)])
@@ -248,5 +249,15 @@ def test_check_pin_tofu_lifecycle(tmp_path, monkeypatch):
 
 
 def test_check_pin_unhashable_binary_is_silent(monkeypatch, tmp_path):
-    monkeypatch.setattr(wm, "_PIN_PATH", str(tmp_path / "pins.json"))
+    monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path))
     assert wm.check_pin({"command": "ghost", "binary": "/nonexistent", "sha256": ""}) == ""
+
+
+def test_pin_store_follows_state_dir(tmp_path, monkeypatch):
+    # The pin store is capture-plane state like the breaker: it must land under
+    # PALIVANE_STATE_DIR, never in the operator's real ~/.palivane during a test run.
+    monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path))
+    exe = tmp_path / "srv"
+    exe.write_bytes(b"v1")
+    assert wm.check_pin(wm.server_fingerprint([str(exe)])) == "new"
+    assert (tmp_path / "mcp-pins.json").exists()
