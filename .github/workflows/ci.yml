@@ -28,7 +28,18 @@ jobs:
         with:
           python-version: "3.12"
       - name: System deps for xmlsec (SAML)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxml2-dev libxmlsec1-dev libxmlsec1-openssl pkg-config
+        # `apt-get update` is deliberately allowed to fail. The runner image ships
+        # third-party apt repos this project doesn't use (Chrome, and friends), and when one
+        # of them serves inconsistent metadata the whole update exits 100 — on 2026-09-09
+        # dl.google.com published a Release file newer than its Packages.gz and every
+        # backend-tests run failed on it, twice in a row, with nothing wrong in the repo.
+        # apt says it plainly in that case ("They have been ignored, or old ones used
+        # instead"): Ubuntu's own indexes downloaded fine, so the install below works. If a
+        # package genuinely can't be found, install still fails and still fails the job —
+        # which is the signal we actually care about.
+        run: |
+          sudo apt-get update || echo "apt-get update reported errors; continuing to install"
+          sudo apt-get install -y --no-install-recommends libxml2-dev libxmlsec1-dev libxmlsec1-openssl pkg-config
       - name: Install
         working-directory: backend
         run: pip install -r requirements.txt
