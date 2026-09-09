@@ -2,8 +2,16 @@ name: CI
 
 # PR gate: backend tests, frontend build, Terraform fmt/validate, and (same-repo, when GCP
 # creds are configured) a Terraform plan so infra diffs are reviewed before merge.
+#
+# Also runs on push to main. Not every commit arrives through a PR — deploy.yml is manual
+# by design, so shipping a hotfix straight to main is a supported path, and until now those
+# commits reached the deploy dispatch having never been tested by anything. This trigger is
+# tests only: it reports on a commit that is already merged rather than gating one, and it
+# has no bearing on when the deploy runs.
 on:
   pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -120,7 +128,9 @@ jobs:
               - 'deploy/terraform/**'
 
       # Real plan against remote state — only when TF changed, on same-repo PRs (forks don't
-      # get creds), and only when the GCP/WIF variables are configured. continue-on-error:
+      # get creds), and only when the GCP/WIF variables are configured. The head-repo check
+      # is null on a push, so push-to-main runs stop at fmt+validate and never touch cloud
+      # credentials — a post-merge plan has no diff left to review anyway. continue-on-error:
       # the WIF trust policy deliberately scopes impersonation to the deploy workflow's
       # refs, so PR-branch runs may be REFUSED a token — that refusal is the trust policy
       # working, not a broken plan. fmt+validate above stay the hard PR gate; the
