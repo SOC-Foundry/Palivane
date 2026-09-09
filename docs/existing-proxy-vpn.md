@@ -1,7 +1,7 @@
 # Deploying alongside your existing proxy or VPN
 
-If your fleet already runs a VPN (Tailscale, WireGuard) or a secure web gateway
-(Zscaler, Netskope, Palo Alto Prisma, Cisco Umbrella, or any corporate SWG/SASE),
+If your fleet already runs a VPN (Tailscale, WireGuard, Cloudflare WARP) or a secure web
+gateway (Zscaler, Netskope, Palo Alto Prisma, Cisco Umbrella, or any corporate SWG/SASE),
 Palivane fits in without ripping any of it out. This page is the one decision you make
 before rollout, split by what you already run.
 
@@ -15,6 +15,59 @@ SWG never interacts with them at all.
 
 So the only question is how the egress proxy coexists with what you have. If you don't
 deploy the egress proxy, there's nothing to reconcile.
+
+**The one question that decides everything:** does your client **inspect TLS** (decrypt
+HTTPS with its own root CA), or does it only **route packets**? Route-only is free — no
+interaction at all. TLS inspection needs one config line, because otherwise our connection
+*to* the AI host is itself intercepted and fails certificate verification. Vendor names are
+a poor guide here: the same product does both depending on how you licensed it. Check
+whether you pushed a root CA to your fleet — if you did, you're inspecting.
+
+## If you run Cloudflare WARP
+
+**Depends on your mode**, and this is the case people get wrong most often — WARP is
+WireGuard-based, so it reads like "just a VPN", but Zero Trust turns it into an inspecting
+gateway.
+
+| WARP mode | What to do |
+| --- | --- |
+| Gateway with DoH (DNS filtering only) | **Nothing.** No TLS inspection, no proxy. |
+| WARP tunnel, no Gateway HTTP policies | **Nothing.** L3 tunnel; behaves exactly like Tailscale below. |
+| **Gateway with WARP + HTTP policies / TLS decryption on** | **One config line — see below.** |
+
+In that third mode WARP decrypts HTTPS and re-signs it with the Cloudflare Zero Trust root.
+Our proxy's *upstream* connection to `api.anthropic.com` then presents a Cloudflare-signed
+certificate that the public trust store doesn't recognize, the handshake fails, and **every
+AI tool on the device breaks with a certificate error**. Palivane detects this exact state
+and logs the vendor plus the fix rather than an opaque TLS error, but it can't repair it for
+you. Pick one:
+
+**Preferred — exempt the AI hosts from WARP's inspection.** In Zero Trust -> Gateway -> HTTP
+policies, add a **Do Not Inspect** rule for the hosts in Palivane's intercept list
+(`api.anthropic.com`, `claude.ai`, `chatgpt.com`, `api.openai.com`, ...; the full list is
+`AI_HOST_SUFFIXES` in `proxy/palivane_addon.py`). Palivane owns inspection for AI traffic,
+Cloudflare owns everything else — no double decryption, clean forensics.
+
+**Or — trust the Cloudflare root on our upstream leg.** Download your account's Zero Trust
+root certificate and:
+
+```
+PALIVANE_UPSTREAM_CA=/path/to/cloudflare-zero-trust-root.pem
+```
+
+Note there is **no `PALIVANE_UPSTREAM_PROXY` here** — WARP intercepts at layer 3 and is not
+an HTTP proxy, so there's nothing to chain to. The CA setting stands alone deliberately, and
+the installer merges your root *into* the system public roots rather than replacing them, so
+non-inspected hosts keep working.
+
+Everything else about WARP is a non-issue: it sets no system HTTP proxy, so unlike Zscaler
+Client Connector it never fights Palivane for that setting; loopback isn't routed through
+the tunnel, so the local proxy is reachable; and WARP's own control plane is never in
+Palivane's intercept list, so it's never decrypted.
+
+The same applies to any client that inspects TLS without offering a proxy to chain to —
+**Netskope and Prisma in tunnel mode, Cisco Umbrella's roaming client**: use
+`PALIVANE_UPSTREAM_CA` on its own, not the Option A chaining below.
 
 ## If you run Tailscale or a WireGuard VPN
 
@@ -39,10 +92,11 @@ Run Palivane's egress proxy in **upstream mode** so it sits in front of your gat
 
 ```
 PALIVANE_UPSTREAM_PROXY=http://corp-proxy:port
-# if the gateway inspects TLS, point Palivane at its CA so the upstream leg is trusted:
-ssl_verify_upstream_trusted_ca = /path/to/corp-proxy-ca.pem
+# if the gateway inspects TLS, point Palivane at its CA so the upstream leg is trusted
+# (merged with the system public roots, so normal trust is preserved):
+PALIVANE_UPSTREAM_CA=/path/to/corp-proxy-ca.pem
 # if the gateway requires proxy auth:
---upstream-auth user:pass
+PALIVANE_UPSTREAM_AUTH=user:pass
 ```
 
 Traffic then flows **app → Palivane (inspects AI content) → your gateway (corporate egress
@@ -77,9 +131,13 @@ continuously, not discovered months later:
   the moment it happens.
 - **Sensor gone dark**: if a SASE client quietly reclaims the proxy and Palivane stops
   seeing traffic, the fleet health alert pages you rather than leaving you silently blind.
+- **Upstream TLS inspected by someone else**: the proxy logs the *vendor* it detected
+  (Cloudflare, Zscaler, Netskope, ...) and the two ways to fix it, instead of a bare
+  "certificate verify failed" that looks like Palivane broke the network.
 
-All three surface in **Fleet** and can alert to your webhook; the checks are tunable in
-**Policies → Checks**.
+The first three surface in **Fleet** and can alert to your webhook; the checks are tunable
+in **Policies → Checks**. The fourth is local: it lands in the proxy's own log on the
+device, because at that point the device can't reach us to report it.
 
 ## A note on PAC files and effective proxy
 
@@ -93,6 +151,9 @@ Palivane is invisible until you check.
 | You run | Do this |
 | --- | --- |
 | Tailscale / WireGuard | Nothing: deploy Palivane normally |
+| Cloudflare WARP, DNS-only or tunnel without HTTP policies | Nothing: deploy Palivane normally |
+| Cloudflare WARP with Gateway TLS inspection | Do-Not-Inspect rule for the AI hosts, **or** `PALIVANE_UPSTREAM_CA` alone |
+| Any L3 TLS-inspecting client (Netskope/Prisma tunnel, Umbrella roaming) | `PALIVANE_UPSTREAM_CA` alone — no upstream proxy to chain to |
 | Zscaler / Netskope / SWG, devices can reach internet via it | Option A: chain upstream |
 | SASE client that re-asserts the system proxy | Option B: CLI-shim, skip system proxy |
 | No egress proxy deployed (browser + CLI + gateway only) | Nothing: no network-path overlap exists |
