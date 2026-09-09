@@ -136,15 +136,16 @@ export default function Landing({ onSignIn }) {
       </section>
 
       {/* Shown, not described. Every value is visibly illustrative: both addresses sit on
-          .example and the key is the documented test payload from docs/pilot-smoke-test.md,
-          so nothing here implies a real customer incident.
+          invented companies, and the key is the documented test payload from
+          docs/pilot-smoke-test.md.
 
-          The TLD is not cosmetic. Every plausible company domain checked while writing this
-          was registered — contoso, fabrikam, northwind, acme, initech, globex, all of them
-          — so a realistic-looking domain here risks attributing a fabricated credential
-          leak to a company that actually exists. RFC 2606 reserves .example precisely so
-          that cannot happen. The company NAMES carry the realism instead; the TLD carries
-          the safety. The actor stays: "who
+          READ THIS BEFORE CHANGING EITHER DOMAIN. These are real TLDs, chosen deliberately
+          over .example so the card reads as a real incident. That trade has a standing
+          cost: this page shows a fabricated credential leak next to a domain someone could
+          register. Both were undelegated when chosen (no A, no NS) and harbourline.com was
+          rejected because it IS registered and serving — but "unowned today" is not a
+          property that keeps. REGISTER harbourline.io AND northwind.io, or move back to
+          .example. Do not swap in another domain without checking it first. The actor stays: "who
           sent it" is precisely what a CASB cannot tell you, which is the card's whole
           argument. */}
       <section className="lp-section" style={{ paddingTop: 0, paddingBottom: 0 }}>
@@ -153,7 +154,7 @@ export default function Landing({ onSignIn }) {
             <div className="lp-evidence-head">
               <span className="who">
                 <span className="lp-evidence-tag">BLOCKED</span>
-                <code>d.okafor@harbourline.example</code>
+                <code>d.okafor@harbourline.io</code>
                 <span aria-hidden="true" style={{ color: "var(--muted-2)" }}>→</span>
                 <code>chatgpt.com</code>
               </span>
@@ -163,7 +164,7 @@ export default function Landing({ onSignIn }) {
               <div className="lp-evidence-prompt">
                 clean up this customer list and fix the deploy script<br />
                 <span className="dim">name,email,plan,mrr</span><br />
-                <span className="hit">j.reyes@northwind.example,enterprise,4200</span><br />
+                <span className="hit">j.reyes@northwind.io,enterprise,4200</span><br />
                 <span className="dim">export AWS_ACCESS_KEY_ID=</span><span className="hit">AKIA4YTGH2NBQF7XZP3K</span>
               </div>
               <dl className="lp-evidence-meta">
