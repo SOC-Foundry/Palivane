@@ -90,3 +90,42 @@ def test_mcp_parse_miss_records_on_its_own_plane(client, raw_client):
     assert r.status_code == 200 and r.json()["parse_miss"] is True
     hb = _sensor(client, "drift2@demo.local", "mcp")
     assert hb is not None and hb["parse_miss_count"] == 1
+
+
+# --- open vs. needs-review ---------------------------------------------------------------
+# Status and severity are independent axes: "open" means nobody has reviewed the row, which
+# is true of a benign finding too. These pin that /api/stats reports both numbers, so a
+# queue of benign records cannot inflate the one people act on.
+
+def test_stats_separates_unreviewed_from_actionable(client, raw_client):
+    key = client.post("/api/apikeys", json={"label": "stats"}).json()["token"]
+    for content in ("AKIA4YTGH2NBQF7XZP3K is the key", "SSN 123-45-6789"):
+        raw_client.post("/api/ingest/ai-usage",
+                        json={"content": content, "destination": "https://chatgpt.com/",
+                              "user": "a@demo.local"},
+                        headers={"X-Palivane-Token": key})
+    stats = client.get("/api/stats").json()
+    assert "open_needs_review" in stats
+    # Nothing benign was persisted here, so the two numbers agree — the sub-line stays hidden.
+    assert stats["open_needs_review"] == stats["open"]
+
+
+def test_benign_counts_as_open_but_not_as_work(client, db_factory):
+    """A benign row is unreviewed (open) and needs nothing doing. Both at once.
+
+    Inserted directly: reaching a genuinely benign verdict through ai-usage is awkward
+    because sending anything to an unsanctioned destination already scores low, and the
+    behaviour under test is the counting rule, not the scorer."""
+    from app.models import Finding, Tenant
+
+    db = db_factory()
+    tenant_id = db.query(Tenant).filter(Tenant.slug == "acme").one().id
+    db.add(Finding(tenant_id=tenant_id, severity="benign", status="open",
+                   surface="ai_usage", channel="llm", sender="quiet@demo.local"))
+    db.commit()
+    db.close()
+
+    stats = client.get("/api/stats").json()
+    assert stats["open"] >= 1
+    assert stats["open"] > stats["open_needs_review"], (
+        "a benign open row must count as unreviewed but not as work")

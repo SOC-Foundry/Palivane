@@ -41,13 +41,14 @@ const SEV_LABEL = {
   critical: "Critical", high: "High", suspicious: "Suspicious", low: "Low", benign: "Benign",
 };
 
-function StatCard({ icon, value, label, tone }) {
+function StatCard({ icon, value, label, tone, sub = "" }) {
   return (
     <div className={`stat-card stat-${tone}`}>
       <span className="stat-icon">{icon}</span>
       <div>
         <div className="stat-value">{value ?? 0}</div>
         <div className="stat-label">{label}</div>
+        {sub && <div className="stat-sub">{sub}</div>}
       </div>
     </div>
   );
@@ -125,7 +126,14 @@ export default function Dashboard({ stats }) {
     <>
       <div className="dashboard">
         <StatCard icon={<IconInbox />} value={stats.analyzed_total ?? stats.total} label="Total analyzed" tone="neutral" />
-        <StatCard icon={<IconList />} value={stats.open} label="Open" tone="neutral" />
+        {/* "Open" means unreviewed, which is a workflow fact and includes benign rows
+            nobody needs to act on. The sub-line appears only when those two numbers differ,
+            so it explains a gap when there is one and stays quiet when there is not. */}
+        <StatCard icon={<IconList />} value={stats.open} label="Open" tone="neutral"
+                  sub={typeof stats.open_needs_review === "number"
+                       && stats.open_needs_review !== stats.open
+                       ? `${stats.open_needs_review} need review`
+                       : ""} />
         <StatCard icon={<IconAlert />} value={stats.high_risk} label="High / critical" tone="danger" />
         <StatCard icon={<IconTarget />} value={stats.ai_weaponized} label="AI-weaponized" tone="warn" />
       </div>
