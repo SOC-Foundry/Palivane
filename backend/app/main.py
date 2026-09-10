@@ -157,10 +157,15 @@ async def lifespan(_app: FastAPI):
                 log.warning("digest loop error: %s", e)
 
     task = asyncio.create_task(_digest_loop())
-    try:
-        yield
-    finally:
-        task.cancel()
+    # The remote MCP transport keeps its own session manager, and Starlette does NOT run a
+    # mounted sub-app's lifespan — mounting it without this yields an app that accepts a
+    # request and then hangs. So the parent lifespan owns it.
+    from .mcp_remote import mcp as _mcp
+    async with _mcp.session_manager.run():
+        try:
+            yield
+        finally:
+            task.cancel()
         # Ship any buffered archive events before the instance goes away (Cloud Run
         # SIGTERM grace period) — the in-memory batch must not die with the process.
         from . import archive_s3
@@ -3647,6 +3652,13 @@ def stats(current: User = Depends(get_current_user), db: Session = Depends(get_d
 
 
 # --- Single-origin SPA serving (Cloud Run / any single-container deploy) --------------
+# Remote MCP endpoint. Under /api so it inherits the Cloudflare worker's rate limiting and
+# its never-redirect rule for API paths; mounted here, before the SPA catch-all below,
+# which is registered last and matches everything left over.
+from .mcp_remote import build_asgi_app as _build_mcp_app  # noqa: E402
+
+app.mount("/api/mcp", _build_mcp_app())
+
 # When PALIVANE_STATIC_DIR points at a built frontend (dist), serve it from this same app so
 # the SPA + API share one origin (no nginx). No-op in dev/tests (var unset). Registered
 # last so it never shadows the API routers/routes above.
