@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+
+import pytest
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
@@ -14,6 +16,25 @@ _spec.loader.exec_module(wp)
 
 
 # --- change-dedup cache -----------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _isolate_home(tmp_path_factory, monkeypatch):
+    """Point HOME at an empty directory for every test in this module.
+
+    palivane-posture's whole job is reading the developer's actual machine, so almost every
+    collector expands `~`. Two tests patched `collect_agent_configs` and `collect_agent_rules`
+    individually to dodge that, but `find_mcp_configs` reads ~/.claude.json directly and was
+    missed — invisible until someone ran `claude mcp add`, because synthesize_claude_config
+    returns None while `projects` is empty. Then the suite started failing on a real machine
+    while staying green in CI, which is the worst way for a test to be wrong: it fails for
+    the person who followed our own setup instructions.
+
+    Isolating HOME once covers every collector, including the ones added later.
+    """
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # expanduser's key on Windows
+
 
 def test_should_post_first_sight_and_change():
     cache = {"version": 1, "backend": "https://w.io", "entries": {}}
