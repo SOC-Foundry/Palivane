@@ -12,6 +12,17 @@ on:
   pull_request:
   push:
     branches: [main]
+    # Every merge already ran this suite on the PR, so the push run is a second copy whose
+    # only job is catching commits that never went through a PR. Paths that cannot change
+    # what the app does are therefore skipped here — and only here; the PR trigger above is
+    # unfiltered, so nothing loses coverage, it just stops being tested twice. The list
+    # mirrors the one deploy.yml documents for its own (disabled) push trigger, so both
+    # workflows agree on what "doesn't affect the app" means.
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "marketing/**"
+      - ".github/**"
   workflow_dispatch:
 
 permissions:
