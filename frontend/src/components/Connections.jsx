@@ -24,6 +24,7 @@ export default function Connections() {
   const [msg, setMsg] = useState(null);
   const [newLabel, setNewLabel] = useState("");
   const [newScope, setNewScope] = useState("console_read");
+  const [grants, setGrants] = useState([]);
   const [minted, setMinted] = useState(null);   // shown once — the plaintext is never re-served
   const [minting, setMinting] = useState(false);
   const flash = (text, ok = true) => { setMsg({ ok, text }); setTimeout(() => setMsg(null), 3000); };
@@ -38,7 +39,21 @@ export default function Connections() {
   const load = useCallback(() => {
     api.apiKeys().then((r) => setKeys(r.api_keys || [])).catch(() => {});
     api.enrollTokens().then((r) => setTokens(r.enrollment_tokens || [])).catch(() => {});
+    // Swallowed like its siblings: OAuth is disabled on a deployment that has not set
+    // PALIVANE_PUBLIC_URL, and an empty panel is the right answer there, not an error.
+    api("/api/oauth/grants").then((r) => setGrants(r.grants || [])).catch(() => setGrants([]));
   }, []);
+
+  async function revokeGrant(clientId, name) {
+    if (!window.confirm(`Revoke ${name}? It will lose access immediately.`)) return;
+    try {
+      await api(`/api/oauth/grants/${encodeURIComponent(clientId)}`, { method: "DELETE" });
+      setMsg({ ok: true, text: `${name} can no longer read your Palivane data.` });
+      load();
+    } catch (e) {
+      setMsg({ ok: false, text: e.message || "Could not revoke that app." });
+    }
+  }
   useEffect(() => { load(); }, [load]);
 
   async function mintConsoleKey(e) {
@@ -118,6 +133,38 @@ export default function Connections() {
             </tbody>
           </table>
         )}
+      </div>
+
+      {/* Apps a person approved through OAuth, as opposed to keys they minted. Grouped by
+          app: one approval writes an access and a refresh token, and every refresh rotation
+          writes another pair, so a raw token list would read as many grants for one click.
+          This is what the consent screen promises — it said so before this existed, which
+          was the bug. */}
+      <div className="panel settings-card">
+        <h2>Authorized apps ({grants.length})</h2>
+        <p className="muted">Applications you approved from a consent screen — an AI
+           assistant connecting over MCP, typically. They act as the person who approved
+           them and can only read. Revoking cuts one off immediately, access and refresh
+           together, so it cannot quietly mint itself a new token.</p>
+        {grants.length === 0
+          ? <p className="muted" style={{ marginTop: 10 }}>No apps have been authorized.</p>
+          : (
+            <table className="data-table">
+              <thead><tr><th>App</th><th>Approved by</th><th>Granted</th><th>Expires</th><th /></tr></thead>
+              <tbody>
+                {grants.map((g) => (
+                  <tr key={`${g.client_id}:${g.granted_by}`}>
+                    <td>{g.client_name}</td>
+                    <td>{g.granted_by}</td>
+                    <td>{g.granted_at ? new Date(g.granted_at).toLocaleDateString() : "—"}</td>
+                    <td>{g.expires_at ? new Date(g.expires_at).toLocaleDateString() : "—"}</td>
+                    <td><button type="button" className="link-btn"
+                                onClick={() => revokeGrant(g.client_id, g.client_name)}>revoke</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
       </div>
 
       <div className="panel settings-card">
