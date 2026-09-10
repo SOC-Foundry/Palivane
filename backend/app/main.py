@@ -150,6 +150,11 @@ async def lifespan(_app: FastAPI):
                     if ticks % 12 == 0:
                         from .service import scrub_expired_content
                         await asyncio.to_thread(scrub_expired_content, db)
+                    # Spent OAuth codes and dead tokens. Registration is open and every
+                    # refresh writes a new pair, so these tables only grow otherwise. ~hourly.
+                    if ticks % 12 == 0:
+                        from .oauth_provider import prune as _oauth_prune
+                        await asyncio.to_thread(_oauth_prune, db)
                 finally:
                     db.close()
             except asyncio.CancelledError:

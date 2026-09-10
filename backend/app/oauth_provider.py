@@ -319,3 +319,33 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
                 db.commit()
         finally:
             close()
+
+
+def prune(db, keep_revoked: timedelta = timedelta(days=7)) -> int:
+    """Drop spent codes and dead tokens. Called hourly from the app's periodic loop.
+
+    Without this the three OAuth tables only grow: registration is open by design, every
+    approval writes a code that is immediately spent, and every refresh writes a new pair
+    while revoking the old. None of it is ever read again.
+
+    Revoked tokens linger briefly rather than vanishing, because "this token was revoked"
+    is a more useful answer than "this token never existed" while someone is working out
+    why their client stopped — and after a week nobody is.
+    """
+    from .models import OAuthCode, OAuthToken as Row
+    now = _now()
+    gone = 0
+    try:
+        gone += (db.query(OAuthCode)
+                   .filter((OAuthCode.expires_at < now) | (OAuthCode.used_at.isnot(None)))
+                   .delete(synchronize_session=False))
+        gone += (db.query(Row)
+                   .filter(Row.expires_at < now - keep_revoked)
+                   .delete(synchronize_session=False))
+        gone += (db.query(Row)
+                   .filter(Row.revoked_at.isnot(None), Row.revoked_at < now - keep_revoked)
+                   .delete(synchronize_session=False))
+        db.commit()
+    except Exception:
+        db.rollback()
+    return gone
