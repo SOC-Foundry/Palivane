@@ -92,6 +92,14 @@ const BLOCKED_PATH = new RegExp(
   'remote/|telescope/|actuator/|solr/|jenkins|HNAP1)', 'i');
 const BLOCKED_EXT = /\.(?:php[0-9]?|asp|aspx|jsp|cgi|cfm)$/i;   // app serves none of these
 
+// The OAuth authorization server's endpoints. They live at the ROOT rather than under
+// /api because that is where the MCP spec's discovery document points clients, and the SDK
+// builds them there. That puts them outside the /api rate limiting below unless they are
+// named explicitly — which is what this does. /token in particular is a credential endpoint
+// and a brute-force target; leaving it unlimited because of where the spec puts it would be
+// a poor trade.
+const OAUTH_PATH = /^\/(?:authorize|token|register|revoke)$/;
+
 // Credential-stuffing / enumeration magnets (POST only — GETs here are the SPA shell).
 const AUTH_PATH = /^\/api\/auth\/(?:login|forgot|reset|mfa)|^\/api\/signup/;
 const AUTH_LIMIT = 20;    // POSTs per IP per minute across all auth endpoints (exact, DO)
@@ -233,8 +241,12 @@ export default {
     }
 
     const ip = request.headers.get('cf-connecting-ip') || 'unknown';
-    if (path.startsWith('/api/') || path.startsWith('/v1')) {
-      if (request.method === 'POST' && AUTH_PATH.test(path) && await authOverLimit(env, ip)) {
+    if (path.startsWith('/api/') || path.startsWith('/v1') || OAUTH_PATH.test(path)) {
+      // /token gets the STRICTER limiter, alongside login and password reset: it exchanges
+      // a credential, so it is the endpoint worth guessing at.
+      const isCredentialPost = request.method === 'POST'
+        && (AUTH_PATH.test(path) || path === '/token' || path === '/register');
+      if (isCredentialPost && await authOverLimit(env, ip)) {
         return deny(429, 'too many authentication attempts — slow down');
       }
       if (apiOverLimit(ip)) {
