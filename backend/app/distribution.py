@@ -180,6 +180,9 @@ def get_script(name: str):
 def install_sh():
     from . import release_signing
     base = _base_url()
+    # Only offer the extension step when this deployment knows which item to point at.
+    ext_url = (f"https://chromewebstore.google.com/detail/{settings.extension_id}"
+               if settings.extension_id else "")
     tools = " ".join(_CLI_TOOLS)
     pubkey = release_signing.release_pubkey_pem().strip()
     # When this deployment signs releases, the generated installer REQUIRES a valid
@@ -207,6 +210,10 @@ PALIVANE_URL="{base}"
 BIN="$HOME/.palivane/bin"
 TOOLS="{tools}"
 REQUIRE_SIG="{require_sig}"   # 1 when this deployment signs releases (fail closed)
+# Empty unless PALIVANE_EXTENSION_ID is configured. Deliberately not defaulted in code: a
+# Web Store id belongs to the account that published the item, and a stale default once
+# landed a third party's extension in the MDM forcelist (see config.extension_id).
+PALIVANE_EXT_URL="{ext_url}"
 PROXY_MODE="cli-only"   # cli-only (default) | desktop | none
 for a in "$@"; do
   [ "$a" = "--desktop" ] && PROXY_MODE="desktop"
@@ -313,6 +320,30 @@ case "$PROXY_MODE" in
     ;;
 esac
 
+echo ""
+# In-tab browser capture is the one plane this script cannot install. Chrome requires a
+# user gesture to add a Web Store item — there is no supported headless path short of an
+# enterprise managed policy, which is a system-wide change and belongs to MDM (see
+# docs/mdm-policy-pack.md), not to a piped shell script. So: say so, and make it one click.
+if [ -n "$PALIVANE_EXT_URL" ]; then
+  echo ""
+  echo "One more surface — the browser extension (what people paste into ChatGPT et al):"
+  echo "  $PALIVANE_EXT_URL"
+  # `curl … | bash` leaves stdin pointing at the script, so a bare `read` returns EOF
+  # immediately and would silently answer for the user. Read the answer from the terminal
+  # instead, and only when there is one and a desktop to open a browser on.
+  if [ -e /dev/tty ] && {{ [ -n "${{DISPLAY:-}}" ] || [ -n "${{WAYLAND_DISPLAY:-}}" ] || [ "$(uname)" = "Darwin" ]; }}; then
+    printf "Open the store page now? [y/N] "
+    if read -r _ans < /dev/tty 2>/dev/null; then
+      case "$_ans" in
+        y|Y|yes|YES)
+          if [ "$(uname)" = "Darwin" ]; then open "$PALIVANE_EXT_URL" >/dev/null 2>&1 || true
+          else xdg-open "$PALIVANE_EXT_URL" >/dev/null 2>&1 || true
+          fi ;;
+      esac
+    fi
+  fi
+fi
 echo ""
 echo "Done. Open a new terminal (or 'source ~/.zshrc') so 'palivane-connect' is on PATH."
 [ "$PROXY_MODE" = "desktop" ] && echo "Desktop apps + browsers are governed system-wide."
