@@ -3673,6 +3673,24 @@ def _wire_oauth() -> None:
 
     from .oauth_provider import READ_SCOPE, PalivaneOAuthProvider
 
+    # Discovery documents are the one place a wrong base URL is actively harmful. Everything
+    # else that falls back to app.palivane.io yields a bad docs link; here it would tell an
+    # MCP client that a customer's SELF-HOSTED server authorizes at our domain, sending their
+    # users to our login screen. So a production-shaped deployment that has not said what it
+    # is called does not get OAuth at all — the console-key path still works, and nothing
+    # advertises a URL nobody configured. SQLite means local dev, where the fallback is fine
+    # and refusing would only break the tests. Same prod/dev split the lifespan already uses
+    # for the weak-key refusal.
+    prod = not settings.database_url.startswith("sqlite")
+    if prod and not settings.public_base_url:
+        import logging
+        logging.getLogger("uvicorn.error").error(
+            "PALIVANE_PUBLIC_URL is not set, so the OAuth authorization server is disabled: "
+            "its discovery documents would advertise https://app.palivane.io as this "
+            "deployment's issuer and send your users there to sign in. Set "
+            "PALIVANE_PUBLIC_URL to this deployment's own origin to enable it. Console API "
+            "keys are unaffected.")
+        return
     base = (settings.public_base_url or "https://app.palivane.io").rstrip("/")
 
     def _factory():

@@ -241,3 +241,45 @@ def test_consent_refuses_a_dangerous_redirect_even_if_it_was_stored(client, db_f
                     json={"client_id": "legacy", "redirect_uri": "javascript:alert(1)",
                           "code_challenge": "chal"})
     assert r.status_code == 400
+
+
+# --- discovery must never name someone else's deployment --------------------------------
+
+def test_oauth_is_disabled_when_the_deployment_has_no_name(monkeypatch):
+    """A self-hosted install that never set PALIVANE_PUBLIC_URL must not publish
+    app.palivane.io as its issuer: an MCP client doing discovery against THEIR server would
+    be told to authorize against OURS, and their users would land on our login screen.
+
+    Rebuilt in isolation rather than asserted against the live app, because the routes are
+    wired once at import."""
+    from fastapi import FastAPI
+    from app import main as main_mod
+    from app.config import settings as cfg
+
+    monkeypatch.setattr(cfg, "public_base_url", "")
+    monkeypatch.setattr(cfg, "database_url", "postgresql://host/db")   # production-shaped
+
+    probe = FastAPI()
+    monkeypatch.setattr(main_mod, "app", probe)
+    main_mod._wire_oauth()
+
+    paths = {getattr(r, "path", "") for r in probe.router.routes}
+    assert not any(p.startswith("/.well-known/oauth") for p in paths), paths
+    assert "/token" not in paths and "/authorize" not in paths
+
+
+def test_oauth_is_wired_when_the_deployment_names_itself(monkeypatch):
+    from fastapi import FastAPI
+    from app import main as main_mod
+    from app.config import settings as cfg
+
+    monkeypatch.setattr(cfg, "public_base_url", "https://palivane.acme.example")
+    monkeypatch.setattr(cfg, "database_url", "postgresql://host/db")
+
+    probe = FastAPI()
+    monkeypatch.setattr(main_mod, "app", probe)
+    main_mod._wire_oauth()
+
+    paths = {getattr(r, "path", "") for r in probe.router.routes}
+    assert "/token" in paths and "/authorize" in paths
+    assert any(p.startswith("/.well-known/oauth") for p in paths)
