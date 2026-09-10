@@ -108,4 +108,9 @@ def test_bare_path_answers_the_challenge_instead_of_redirecting(raw_client):
     for path in ("/api/mcp", "/api/mcp/"):
         r = raw_client.post(path, json=INIT, headers=HDRS)
         assert r.status_code == 401, f"{path}: {r.status_code}"
-        assert r.headers.get("www-authenticate", "").startswith("Bearer "), path
+        wa = r.headers.get("www-authenticate", "")
+        assert wa.startswith("Bearer "), path
+        # RFC 9728: the challenge points at the protected-resource metadata so a client can
+        # discover the auth server without probing well-known paths by convention.
+        assert 'resource_metadata="' in wa and \
+               "/.well-known/oauth-protected-resource/api/mcp" in wa, wa
