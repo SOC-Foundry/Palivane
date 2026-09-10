@@ -3618,6 +3618,13 @@ def stats(current: User = Depends(get_current_user), db: Session = Depends(get_d
         .group_by(Finding.surface).all()
     )
     open_count = _count(scoped.filter(Finding.status == "open"))
+    # Status is workflow state; severity is judgement. They are independent on purpose, so a
+    # benign finding is legitimately "open" — nobody has looked at it — while needing nothing
+    # doing. `open` therefore keeps its plain meaning (unreviewed), and this is the subset
+    # that is actually work. Without the second number a queue of benign records inflates the
+    # first one, and a count people learn to ignore hides the finding that mattered.
+    open_needs_review = _count(scoped.filter(Finding.status == "open",
+                                             Finding.severity != "benign"))
     ai_attacks = _count(scoped.filter(Finding.ai_generated.is_(True), Finding.attack_intent.is_(True)))
     high_risk = _count(scoped.filter(Finding.severity.in_(["high", "critical"])))
     # True traffic volume (gateway + sensor/ingest requests metered per minute). Findings
@@ -3630,6 +3637,7 @@ def stats(current: User = Depends(get_current_user), db: Session = Depends(get_d
         "total": total,
         "analyzed_total": max(int(metered), total),
         "open": open_count,
+        "open_needs_review": open_needs_review,
         "high_risk": high_risk,
         "ai_weaponized": ai_attacks,
         "by_severity": by_severity,
