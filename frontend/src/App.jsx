@@ -12,6 +12,7 @@ import Audit from "./components/Audit.jsx";
 import Login from "./components/Login.jsx";
 import Landing from "./components/Landing.jsx";
 import Legal from "./components/Legal.jsx";
+import OAuthConsent from "./components/OAuthConsent.jsx";
 import HowItWorks from "./components/HowItWorks.jsx";
 import CoverageMatrix from "./components/CoverageMatrix.jsx";
 import Setup from "./components/Setup.jsx";
@@ -270,6 +271,11 @@ export default function App() {
   const legalPath = window.location.pathname.replace(/\/+$/, "");
   if (legalPath === "/privacy" || legalPath === "/terms") {
     return <Legal page={legalPath === "/terms" ? "terms" : "privacy"} />;
+  }
+  // OAuth consent. Requires a session (the whole point is proving who is approving), so it
+  // falls through to the sign-in screen below when there is none, and returns here after.
+  if (legalPath === "/app/oauth/consent" && auth) {
+    return <OAuthConsent />;
   }
   if (legalPath === "/how-it-works") {
     return <HowItWorks />;
