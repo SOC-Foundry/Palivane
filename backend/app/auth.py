@@ -88,14 +88,13 @@ def _session_payload(user: User, tenant: Tenant) -> dict:
 router = APIRouter(prefix="/api", tags=["auth"])
 
 
-def _user_for_api_key(request: Request, token: str, db: Session) -> User:
-    """Authenticate a console-scoped `ak_…` key and return the user it acts as.
+def authenticate_console_key(token: str, db: Session) -> ApiKey:
+    """Credential half of console-key auth: is this a real, live, console-scoped key?
 
-    Only console_read/console_write keys are accepted — an "ingest" key (every key minted
-    before scopes existed) is refused here exactly as it was before, so nothing already in
-    the field gained console reach. The key resolves to a real User row rather than a
-    synthesized principal, which means role checks like require_admin and the
-    admin-only-dismiss rule keep working on it with no special-casing.
+    Split out so the remote MCP endpoint (app/mcp_remote.py) can reuse it verbatim. That
+    transport multiplexes every call over one POST, so it cannot use the route allowlist
+    below — but it must not grow a second copy of the credential checks, which is how two
+    authentication paths drift apart and one of them stops rejecting something.
     """
     key = (db.query(ApiKey)
            .filter(ApiKey.prefix == token[:11], ApiKey.active.is_(True))
@@ -111,16 +110,15 @@ def _user_for_api_key(request: Request, token: str, db: Session) -> User:
         # credential for this API, and saying "wrong scope" would confirm the key is real.
         raise HTTPException(status_code=401, detail="invalid API key",
                             headers={"WWW-Authenticate": "Bearer"})
-    method = request.method
-    if method not in ("GET", "HEAD", "OPTIONS"):
-        if key.scope != "console_write":
-            raise HTTPException(status_code=403,
-                                detail="this API key is read-only (scope console_read)")
-        if not _key_write_allowed(method, request.url.path):
-            raise HTTPException(
-                status_code=403,
-                detail="an API key cannot call this endpoint — org settings, user "
-                       "management and key issuance require a signed-in session")
+    return key
+
+
+def user_for_console_key(key: ApiKey, db: Session) -> User:
+    """The user half: resolve the key to the person it acts as, and stamp it used.
+
+    Shared with the remote MCP endpoint for the same reason as above — a key that outlived
+    its user must die on every surface, not just the ones that remembered to check.
+    """
     user = db.get(User, key.user_id) if key.user_id else None
     if user is None or not user.active or user.tenant_id != key.tenant_id:
         # The key outlived the user it acts as (deactivated, deleted, or moved org).
@@ -135,6 +133,28 @@ def _user_for_api_key(request: Request, token: str, db: Session) -> User:
         db.rollback()
     from .database import bind_tenant
     bind_tenant(db, key.tenant_id)
+    return user
+
+
+def _user_for_api_key(request: Request, token: str, db: Session) -> User:
+    """Console-key auth for the REST API: credential, then the write-route allowlist.
+
+    Order is deliberate and unchanged — key checks, then the route gate, then the user —
+    so a disallowed write on a key whose user was deactivated still answers 403 about the
+    route rather than 401 about the user.
+    """
+    key = authenticate_console_key(token, db)
+    method = request.method
+    if method not in ("GET", "HEAD", "OPTIONS"):
+        if key.scope != "console_write":
+            raise HTTPException(status_code=403,
+                                detail="this API key is read-only (scope console_read)")
+        if not _key_write_allowed(method, request.url.path):
+            raise HTTPException(
+                status_code=403,
+                detail="an API key cannot call this endpoint — org settings, user "
+                       "management and key issuance require a signed-in session")
+    user = user_for_console_key(key, db)
     request.state.api_key_id = key.id      # so audit entries can name the credential
     return user
 
