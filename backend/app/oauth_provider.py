@@ -40,6 +40,7 @@ from datetime import datetime, timedelta, timezone
 
 from mcp.server.auth.provider import (
     AccessToken,
+    RegistrationError,
     AuthorizationCode,
     AuthorizationParams,
     OAuthAuthorizationServerProvider,
@@ -66,6 +67,27 @@ READ_SCOPE = "palivane:read"
 
 def _now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+# Redirect URIs are the one client-supplied value that a browser is later NAVIGATED to, so
+# the scheme is not cosmetic. javascript:, data: and file: all register happily and all turn
+# an approved grant into script execution in the console's own origin — where the session
+# token lives. https only, plus http on loopback because a local MCP client legitimately
+# listens on 127.0.0.1 and cannot present a certificate for it.
+_LOOPBACK = {"localhost", "127.0.0.1", "::1", "[::1]"}
+
+
+def valid_redirect_uri(uri: str) -> bool:
+    from urllib.parse import urlparse
+    try:
+        u = urlparse(uri)
+    except Exception:
+        return False
+    if u.scheme == "https":
+        return bool(u.netloc)
+    if u.scheme == "http":
+        return (u.hostname or "") in _LOOPBACK
+    return False
 
 
 def _consent_url() -> str:
@@ -113,6 +135,16 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
         uris = [str(u) for u in (client_info.redirect_uris or [])]
         if not uris:
             raise ValueError("at least one redirect_uri is required")
+        bad = [u for u in uris if not valid_redirect_uri(u)]
+        if bad:
+            # Registration is open, so this list is attacker-controlled. A javascript: or
+            # data: redirect stored here becomes script execution in the console's own
+            # origin the moment a user approves the grant — the session token is in reach
+            # from there. RegistrationError so the client gets the spec's error rather than
+            # a 500 that reads like our bug.
+            raise RegistrationError(
+                error="invalid_redirect_uri",
+                error_description="redirect_uri must be https, or http on loopback")
         db, close = self._session()
         try:
             db.add(OAuthClient(

@@ -3661,6 +3661,71 @@ from .mcp_remote import build_asgi_app as _build_mcp_app  # noqa: E402
 
 app.mount("/api/mcp", _build_mcp_app())
 
+# --- OAuth authorization server + discovery ---------------------------------------------
+# The SDK builds /authorize, /token, /register, /revoke and the authorization-server
+# metadata. They sit at the ROOT because that is where the spec's discovery points clients;
+# deploy/cloudflare/worker.js names them explicitly in its rate limiting for exactly that
+# reason, since its /api rule does not reach them.
+def _wire_oauth() -> None:
+    from mcp.server.auth.routes import create_auth_routes, create_protected_resource_routes
+    from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
+    from pydantic import AnyHttpUrl
+
+    from .oauth_provider import READ_SCOPE, PalivaneOAuthProvider
+
+    # Discovery documents are the one place a wrong base URL is actively harmful. Everything
+    # else that falls back to app.palivane.io yields a bad docs link; here it would tell an
+    # MCP client that a customer's SELF-HOSTED server authorizes at our domain, sending their
+    # users to our login screen. So a production-shaped deployment that has not said what it
+    # is called does not get OAuth at all — the console-key path still works, and nothing
+    # advertises a URL nobody configured. SQLite means local dev, where the fallback is fine
+    # and refusing would only break the tests. Same prod/dev split the lifespan already uses
+    # for the weak-key refusal.
+    prod = not settings.database_url.startswith("sqlite")
+    if prod and not settings.public_base_url:
+        import logging
+        logging.getLogger("uvicorn.error").error(
+            "PALIVANE_PUBLIC_URL is not set, so the OAuth authorization server is disabled: "
+            "its discovery documents would advertise https://app.palivane.io as this "
+            "deployment's issuer and send your users there to sign in. Set "
+            "PALIVANE_PUBLIC_URL to this deployment's own origin to enable it. Console API "
+            "keys are unaffected.")
+        return
+    base = (settings.public_base_url or "https://app.palivane.io").rstrip("/")
+
+    def _factory():
+        # The same session source the rest of the app uses, not SessionLocal directly.
+        # This runs outside dependency injection, so binding to the module engine would read
+        # a different database than requests are served from wherever an override is in
+        # play — which is how a client registered on one connection becomes "unknown client"
+        # on the next.
+        from .mcp_remote import _close, _session
+        db, gen = _session()
+        return db, (lambda: _close(db, gen))
+
+    provider = PalivaneOAuthProvider(_factory)
+    routes = create_auth_routes(
+        provider=provider,
+        issuer_url=AnyHttpUrl(base),
+        # Open registration is required for an MCP client to connect without an admin
+        # provisioning it, and grants nothing on its own — a registered client still reads
+        # nothing until a real user approves it at consent.
+        client_registration_options=ClientRegistrationOptions(
+            enabled=True, valid_scopes=[READ_SCOPE], default_scopes=[READ_SCOPE]),
+        revocation_options=RevocationOptions(enabled=True),
+    )
+    # Points MCP clients at the authorization server for this resource (RFC 9728).
+    routes += create_protected_resource_routes(
+        resource_url=AnyHttpUrl(f"{base}/api/mcp"),
+        authorization_servers=[AnyHttpUrl(base)],
+        scopes_supported=[READ_SCOPE],
+        resource_name="Palivane",
+    )
+    app.router.routes.extend(routes)
+
+
+_wire_oauth()
+
 # When PALIVANE_STATIC_DIR points at a built frontend (dist), serve it from this same app so
 # the SPA + API share one origin (no nginx). No-op in dev/tests (var unset). Registered
 # last so it never shadows the API routers/routes above.

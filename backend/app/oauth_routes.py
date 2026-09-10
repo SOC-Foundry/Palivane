@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from .auth import get_current_user
 from .database import get_db
 from .models import OAuthClient, OAuthCode, User
-from .oauth_provider import CODE_TTL, READ_SCOPE, _now
+from .oauth_provider import CODE_TTL, READ_SCOPE, _now, valid_redirect_uri
 from .schemas import OAuthConsentRequest
 from .security import hash_token
 
@@ -49,7 +49,8 @@ def pending_consent(client_id: str, redirect_uri: str,
     client = db.query(OAuthClient).filter(OAuthClient.client_id == client_id).one_or_none()
     if client is None:
         raise HTTPException(status_code=404, detail="unknown client")
-    if redirect_uri not in [u for u in (client.redirect_uris or "").split("\n") if u]:
+    if (redirect_uri not in [u for u in (client.redirect_uris or "").split("\n") if u]
+            or not valid_redirect_uri(redirect_uri)):
         # Same refusal as consent itself: if the redirect does not match, there is nothing
         # safe to show, because approving would send the code somewhere unregistered.
         raise HTTPException(status_code=400, detail="redirect_uri is not registered for this client")
@@ -83,6 +84,11 @@ def grant_consent(body: OAuthConsentRequest,
         # delivered to an attacker's callback.
         raise HTTPException(status_code=400,
                             detail="redirect_uri is not registered for this client")
+    if not valid_redirect_uri(body.redirect_uri):
+        # Belt and braces. Registration refuses these now, but a row stored before that
+        # check existed must not become a navigation: the browser is sent here, and
+        # javascript:/data: would execute in this origin with the session in reach.
+        raise HTTPException(status_code=400, detail="redirect_uri scheme is not allowed")
 
     if not body.code_challenge:
         # PKCE is not optional here. Without a challenge the code is bearer-only, and a code
