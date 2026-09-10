@@ -40,6 +40,7 @@ from fastapi import HTTPException
 from mcp.server.fastmcp import FastMCP
 
 from .auth import authenticate_console_key, require_admin, user_for_console_key
+from .config import settings
 from .database import SessionLocal, get_db
 
 log = logging.getLogger("uvicorn.error")
@@ -194,10 +195,28 @@ def gateway_usage() -> dict:
     return _read(main.usage, admin=True)
 
 
+def _resource_metadata_url() -> str | None:
+    """RFC 9728 protected-resource metadata URL for the 401 challenge, or None when the OAuth
+    server isn't wired (a prod deployment that never set PALIVANE_PUBLIC_URL — see
+    main._wire_oauth), so we never point a client at a route that doesn't exist. Mirrors that
+    function's prod/dev split and base-URL fallback exactly."""
+    prod = not settings.database_url.startswith("sqlite")
+    if prod and not settings.public_base_url:
+        return None
+    base = (settings.public_base_url or "https://app.palivane.io").rstrip("/")
+    return f"{base}/.well-known/oauth-protected-resource/api/mcp"
+
+
 def _unauthorized(message: str):
     from starlette.responses import JSONResponse
+    # RFC 9728 §5.1: point MCP clients at the protected-resource metadata (→ the authorization
+    # server) from the challenge itself, so OAuth discovery doesn't rely on well-known probing.
+    challenge = 'Bearer realm="palivane-mcp"'
+    rm = _resource_metadata_url()
+    if rm:
+        challenge += f', resource_metadata="{rm}"'
     return JSONResponse({"error": message}, status_code=401,
-                        headers={"WWW-Authenticate": 'Bearer realm="palivane-mcp"'})
+                        headers={"WWW-Authenticate": challenge})
 
 
 def build_asgi_app():
