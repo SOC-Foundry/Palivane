@@ -683,13 +683,26 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
               <option value="off">Off (no content sent to the LLM provider)</option>
             </select>
           </label>
+          {/* The old label read "redacted + encrypted per-tenant", which promised more than
+              the server necessarily does: service.py redacts, then returns the text as-is
+              unless settings.encrypt_findings is on — and that defaults OFF. An admin
+              choosing where prompt text lives has to know which of the two they are
+              getting, so the label states the part that is unconditional and the note
+              states the part that is not. */}
           <label>Store prompt content
             <select value={org.store_content} onChange={setField("store_content")}>
               <option value="inherit">Inherit (global, metadata-only)</option>
               <option value="off">Metadata only (recommended, no prompt text stored)</option>
-              <option value="on">Store full content (redacted + encrypted per-tenant)</option>
+              <option value="on">Store full content (always redacted first)</option>
             </select>
           </label>
+          <p className="field-note field-wide">
+            Stored content is always redacted for secrets and PII. It is additionally
+            <strong> encrypted at rest only if the server runs with encryption enabled</strong>
+            (<code>PALIVANE_ENCRYPT_FINDINGS</code>, off by default) — confirm with whoever
+            operates your deployment before turning this on, because prompt prose cannot be
+            redacted for concepts or intellectual property the way a credential can.
+          </p>
           <label>Findings retention (days, 0 = forever)
             <input type="number" min="0" value={org.retention_days} onChange={setField("retention_days")} /></label>
           <label>Gateway rate limit (req/min, 0 = unlimited)

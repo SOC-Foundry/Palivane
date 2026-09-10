@@ -202,7 +202,8 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
               Prompt text is not stored. Palivane keeps the verdict, the matched signals,
               redacted evidence and who sent it — never the prose itself, which cannot be
               redacted for concepts or IP and would make this store worth stealing.
-              An org that wants full text for its own triage can turn on content storage.
+              An admin who wants full text for their own triage can turn it on under
+              Settings → Store prompt content.
             </p>
           )}
       </div>
