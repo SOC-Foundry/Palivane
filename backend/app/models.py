@@ -900,6 +900,77 @@ class ContentFingerprint(Base):
     updated_at = Column(DateTime, default=_utcnow, index=True)
 
 
+# --- OAuth 2.1 authorization server (remote MCP) -----------------------------------------
+# Palivane is its own authorization server because it is its own identity provider: users,
+# roles and tenants live here, and there is no external IdP every tenant shares. The MCP SDK
+# supplies the protocol (PKCE verification, code exchange, metadata, DCR); these tables and
+# the provider in oauth_provider.py supply persistence and the consent binding.
+#
+# Nothing here is reachable yet — the routes are not wired. Storage and the provider land
+# first so the token mechanics can be reviewed before a browser can reach any of it.
+
+class OAuthClient(Base):
+    """A client registered through Dynamic Client Registration (RFC 7591).
+
+    Open registration is required by MCP clients and is NOT an access grant: registering
+    only says "this software exists and these are its redirect URIs". Nothing can be read
+    until a real user approves it at consent, and the token that results carries that
+    user's identity and no more.
+    """
+
+    __tablename__ = "oauth_clients"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(String(64), unique=True, index=True, nullable=False)
+    # Public clients (the MCP case) authenticate with PKCE and hold no secret; the column
+    # stays for confidential clients rather than being assumed absent.
+    client_secret_hash = Column(String(64), default="")
+    client_name = Column(String(200), default="")
+    # Exact-match allowlist. Never prefix- or wildcard-matched: a loose redirect_uri check
+    # is the classic way authorization codes get delivered to an attacker.
+    redirect_uris = Column(Text, default="")          # newline-separated, exact match
+    scope = Column(String(200), default="")
+    created_at = Column(DateTime, default=_utcnow, index=True)
+
+
+class OAuthCode(Base):
+    """A one-time authorization code, bound to the user who approved it."""
+
+    __tablename__ = "oauth_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code_hash = Column(String(64), unique=True, index=True, nullable=False)
+    client_id = Column(String(64), index=True, nullable=False)
+    # WHO approved. The whole point of the consent step: a code — and the token it becomes
+    # — can only ever read what this user can read.
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=True)
+    redirect_uri = Column(Text, default="")
+    # S256 only. `plain` is accepted by the spec and defeats the purpose, so it is refused.
+    code_challenge = Column(String(128), default="")
+    scopes = Column(String(200), default="")
+    expires_at = Column(DateTime, index=True)          # ~60s: a code is a handoff, not a token
+    used_at = Column(DateTime, nullable=True)          # single use; replay must fail
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class OAuthToken(Base):
+    """An issued access or refresh token. Stored hashed, like every other credential here."""
+
+    __tablename__ = "oauth_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token_hash = Column(String(64), unique=True, index=True, nullable=False)
+    kind = Column(String(8), default="access")         # access | refresh
+    client_id = Column(String(64), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=True)
+    scopes = Column(String(200), default="")
+    expires_at = Column(DateTime, index=True)
+    revoked_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow, index=True)
+
+
 class SensorHeartbeat(Base):
     """Last-seen per (actor, plane, tool) — the fleet-health ledger.
 
