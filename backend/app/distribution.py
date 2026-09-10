@@ -38,6 +38,12 @@ _ALLOW = {
     "palivane-codex-hook": "cli/palivane-codex-hook",
     "palivane-copilot-hook": "cli/palivane-copilot-hook",
     "palivane-mcp": "cli/palivane-mcp",
+    # Same script, clearer name. "palivane-mcp" is the GUARD that wraps somebody else's MCP
+    # server; "the Palivane MCP server" is the thing that exposes Palivane's own tools, and
+    # for months those two have shared a name in the one part of the product a launch
+    # visitor touches first. Installing both spellings fixes the confusion without breaking
+    # a single config in the field, which a rename would.
+    "palivane-mcp-guard": "cli/palivane-mcp",
     "palivane-posture": "cli/palivane-posture",
     "palivane-secrets": "cli/palivane-secrets",
     "palivane-s3-scan": "cli/palivane-s3-scan",
