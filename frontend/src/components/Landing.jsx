@@ -57,6 +57,8 @@ const LINEAGE = [
     body: "The source document rides along into webhooks, the SIEM export, and the report, so the context is there before anyone opens the console." },
 ];
 
+const INSTALL_CMD = "curl -fsSL https://app.palivane.io/install.sh | bash";
+
 const MCP_ASKS = [
   { title: "“What high-severity findings landed today, and who triggered them?”",
     body: "Listed by actor and surface, in the chat, no login." },
@@ -106,6 +108,31 @@ function ConsoleCta({ onSignIn }) {
 
 export default function Landing({ onSignIn }) {
   const [zoom, setZoom] = useState(null);   // {src, alt} when a screenshot is enlarged
+  const [copied, setCopied] = useState(false);
+  const copyInstall = async () => {
+    try {
+      // navigator.clipboard is undefined outside a secure context — a self-hosted console
+      // on plain http is precisely where someone copies this line, so the old
+      // execCommand path stays as the fallback rather than failing silently.
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(INSTALL_CMD);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = INSTALL_CMD;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* Clipboard denied by policy: the command stays selectable, so say nothing. */
+    }
+  };
   const [openQ, setOpenQ] = useState(0);
   return (
     <div className="landing lp-atmos">
@@ -129,7 +156,22 @@ export default function Landing({ onSignIn }) {
             <a className="lp-nav-ghost wide" href={demoUrl()}>See the live demo</a>
           </div>
           <div className="lp-hero-cmd">
-            <code>curl -fsSL https://app.palivane.io/install.sh | bash</code>
+            <div className="lp-cmd-row">
+              <code>{INSTALL_CMD}</code>
+              <button type="button" className="lp-copy" onClick={copyInstall}
+                      aria-label={copied ? "Copied" : "Copy install command"}>
+                {copied ? (
+                  <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                          strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                       <path d="M20 6L9 17l-5-5" /></svg>Copied</>
+                ) : (
+                  <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                       <rect x="9" y="9" width="11" height="11" rx="2" />
+                       <path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>Copy</>
+                )}
+              </button>
+            </div>
             <span>one command, monitor mode, nothing blocked yet</span>
           </div>
         </div>
