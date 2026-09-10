@@ -189,9 +189,22 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
         </div>
       )}
 
+      {/* An empty box reads as a bug. It is a policy: prompt prose is not persisted by
+          default (config.store_content) — the verdict, the signals, redacted evidence and
+          the attribution are, and those are what triage actually needs. Saying so turns a
+          hole into the privacy posture the landing page already claims. */}
       <div className="detail-section">
         <h4>Content</h4>
-        <pre className="content-block">{finding.content}</pre>
+        {finding.content
+          ? <pre className="content-block">{finding.content}</pre>
+          : (
+            <p className="content-empty">
+              Prompt text is not stored. Palivane keeps the verdict, the matched signals,
+              redacted evidence and who sent it — never the prose itself, which cannot be
+              redacted for concepts or IP and would make this store worth stealing.
+              An org that wants full text for its own triage can turn on content storage.
+            </p>
+          )}
       </div>
 
       <div className="detail-section">

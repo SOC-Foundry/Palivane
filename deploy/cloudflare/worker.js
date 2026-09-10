@@ -215,8 +215,19 @@ export default {
       if (url.hostname === SITE_HOST && isConsolePage(page)) {
         return Response.redirect('https://' + APP_HOST + page + url.search, 302);
       }
-      // '/' on the app host is excluded on purpose — see the note above.
-      if (url.hostname === APP_HOST && page !== '/' && isSitePage(page)) {
+      // The app host's root now opens the console rather than rendering the site. The
+      // original reason for leaving it alone still stands and is worth knowing before
+      // reverting: this is where every stale 301 from the pre-split arrangement lands, so
+      // anyone whose browser cached that redirect and typed palivane.io now arrives at a
+      // sign-in screen instead of the website. Judged acceptable because those 301s have
+      // had time to age out and the split is the point — one host is the site, the other is
+      // the product. To undo, drop this branch: the SPA already does the right thing on its
+      // own (signed out it renders the landing page, signed in App.jsx routes to
+      // /app/findings), which is what made leaving it alone viable in the first place.
+      if (url.hostname === APP_HOST && page === '/') {
+        return Response.redirect('https://' + APP_HOST + '/app/findings' + url.search, 302);
+      }
+      if (url.hostname === APP_HOST && isSitePage(page)) {
         return Response.redirect('https://' + SITE_HOST + page + url.search, 302);
       }
     }
