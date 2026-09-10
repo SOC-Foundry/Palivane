@@ -79,9 +79,14 @@ export default function OAuthConsent() {
           <div><dt>Access</dt><dd>Read only — it cannot change or delete anything</dd></div>
         </dl>
 
+        {/* Says what is true rather than what would be reassuring. There is no per-app
+            revocation screen yet, and a consent dialog that claims one is worse than a
+            consent dialog that admits the gap — the whole point of this screen is that the
+            person reading it can believe it. */}
         <p className="consent-note">
-          This grants exactly what your own account can see, and nothing beyond it. You can
-          revoke it at any time from Connections.
+          This grants exactly what your own account can see, and nothing beyond it. Access
+          lasts up to 30 days unless the app gives it up or your account is deactivated.
+          Revoking a single app from the console is not available yet.
         </p>
 
         <div className="consent-actions">

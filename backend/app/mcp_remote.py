@@ -75,6 +75,11 @@ def _close(db, gen):
 # A contextvar rather than a global: concurrent calls on one instance must not see each
 # other's identity.
 _CALLER: contextvars.ContextVar[int | None] = contextvars.ContextVar("mcp_caller", default=None)
+# Set instead of _CALLER when the credential was an OAuth access token rather than a console
+# key. Two ways in, one identity model: both resolve to a User, and the tools never learn
+# which was used — an authorization rule that depended on the credential type would be a
+# second permission system.
+_OAUTH_USER: contextvars.ContextVar[int | None] = contextvars.ContextVar("mcp_oauth_user", default=None)
 
 # stateless_http: this runs on Cloud Run behind a load balancer with min-instances 2, so
 # consecutive requests from one client can land on different instances. A session held in
@@ -91,10 +96,44 @@ mcp = FastMCP("palivane", stateless_http=True, streamable_http_path="/")
 # might run twice.
 
 
+def _oauth_user_id(token: str, db) -> int | None:
+    """Resolve an OAuth access token to its subject, honouring expiry and revocation."""
+    from .models import OAuthToken as OAuthTokenRow, User
+    from .security import hash_token
+    row = (db.query(OAuthTokenRow)
+             .filter(OAuthTokenRow.token_hash == hash_token(token),
+                     OAuthTokenRow.kind == "access")
+             .one_or_none())
+    if row is None or row.revoked_at is not None:
+        return None
+    if row.expires_at and row.expires_at < _utcnow_naive():
+        return None
+    user = db.get(User, row.user_id) if row.user_id else None
+    # The grant dies with the person: a token approved by someone since deactivated must
+    # stop working, exactly as a console key does.
+    if user is None or not user.active:
+        return None
+    return user.id
+
+
+def _utcnow_naive():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def _caller_and_db():
     """Re-resolve the calling user inside the tool, against a fresh session."""
     key_id = _CALLER.get()
-    if key_id is None:                       # middleware always sets it; belt and braces
+    oauth_user_id = _OAUTH_USER.get()
+    if key_id is None and oauth_user_id is not None:
+        from .models import User
+        db, gen = _session()
+        user = db.get(User, oauth_user_id)
+        if user is None or not user.active:
+            _close(db, gen)
+            raise HTTPException(status_code=401, detail="invalid or expired access token")
+        return user, db, gen
+    if key_id is None:                       # middleware always sets one of the two
         raise HTTPException(status_code=401, detail="unauthenticated")
     db, gen = _session()
     from .models import ApiKey
@@ -177,9 +216,18 @@ def build_asgi_app():
                 "Authorization: Bearer ak_…")(scope, receive, send)
         db, gen = _session()
         try:
-            key = authenticate_console_key(token, db)
-            user_for_console_key(key, db)    # rejects a key whose user is gone
-            key_id = key.id
+            if token.startswith("pat_"):
+                # An OAuth access token. It resolves to the user who approved consent, which
+                # is the same identity model as a console key — the tools cannot tell them
+                # apart, and neither can outrank the person behind them.
+                user_id = _oauth_user_id(token, db)
+                if user_id is None:
+                    return await _unauthorized("invalid or expired access token")(scope, receive, send)
+                key_id, oauth_user = None, user_id
+            else:
+                key = authenticate_console_key(token, db)
+                user_for_console_key(key, db)    # rejects a key whose user is gone
+                key_id, oauth_user = key.id, None
         except HTTPException as e:
             return await _unauthorized(str(e.detail))(scope, receive, send)
         except Exception:                    # never leak an internal error as an auth answer
@@ -188,9 +236,11 @@ def build_asgi_app():
         finally:
             _close(db, gen)
         tok = _CALLER.set(key_id)
+        utok = _OAUTH_USER.set(oauth_user)
         try:
             return await inner(scope, receive, send)
         finally:
             _CALLER.reset(tok)
+            _OAUTH_USER.reset(utok)
 
     return app
