@@ -3664,7 +3664,32 @@ def stats(current: User = Depends(get_current_user), db: Session = Depends(get_d
 # which is registered last and matches everything left over.
 from .mcp_remote import build_asgi_app as _build_mcp_app  # noqa: E402
 
-app.mount("/api/mcp", _build_mcp_app())
+_mcp_asgi = _build_mcp_app()
+app.mount("/api/mcp", _mcp_asgi)
+
+
+class _BareMCPPath:
+    """Serve `/api/mcp` (no trailing slash) as the endpoint instead of redirecting to it.
+
+    Starlette's Mount only matches `/api/mcp/…`, so the bare path fell through to the
+    router's redirect-slashes fallback — and in production, where PALIVANE_STATIC_DIR is
+    set, the GET-only SPA catch-all below matches it first and answers a POST with 405.
+    A 405 carries no WWW-Authenticate header, and that challenge is what starts OAuth
+    discovery, so `claude mcp add --transport http palivane https://…/api/mcp` stored a
+    URL that could never begin the flow. Both spellings now answer 401 with the challenge.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        await self.app({**scope, "path": "/", "raw_path": b"/"}, receive, send)
+
+
+# Appended here, well before the SPA catch-all is registered, so it wins the match.
+from starlette.routing import Route as _Route  # noqa: E402
+
+app.router.routes.append(_Route("/api/mcp", endpoint=_BareMCPPath(_mcp_asgi)))
 
 # --- OAuth authorization server + discovery ---------------------------------------------
 # The SDK builds /authorize, /token, /register, /revoke and the authorization-server

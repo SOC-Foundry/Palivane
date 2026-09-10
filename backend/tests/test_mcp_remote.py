@@ -96,3 +96,16 @@ def test_only_read_tools_are_exposed(client):
     assert names == {"list_findings", "get_finding", "ai_tool_inventory",
                      "list_connectors", "gateway_usage"}
     assert not {n for n in names if "set_" in n or "sync" in n}
+
+
+def test_bare_path_answers_the_challenge_instead_of_redirecting(raw_client):
+    """`claude mcp add … https://app.palivane.io/api/mcp` stores the slashless URL, and MCP
+    clients start OAuth discovery from the 401's WWW-Authenticate header. Starlette's Mount
+    only matches `/api/mcp/…`, so the bare path used to fall through — to a 307 locally, and
+    in production to the GET-only SPA catch-all, which answered a POST with a bare 405. Both
+    spellings must serve the endpoint itself and carry the challenge.
+    """
+    for path in ("/api/mcp", "/api/mcp/"):
+        r = raw_client.post(path, json=INIT, headers=HDRS)
+        assert r.status_code == 401, f"{path}: {r.status_code}"
+        assert r.headers.get("www-authenticate", "").startswith("Bearer "), path
