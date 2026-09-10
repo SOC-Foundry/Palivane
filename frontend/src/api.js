@@ -88,6 +88,16 @@ export const api = {
   deleteApiKey: (id) => req(`/apikeys/${id}`, { method: "DELETE" }),
   enrollTokens: () => req("/enroll/tokens"),
   deleteEnrollToken: (id) => req(`/enroll/tokens/${id}`, { method: "DELETE" }),
+  // OAuth authorization-server surface. `req` already prefixes /api, so these paths must
+  // not repeat it.
+  oauthPending: (clientId, redirectUri) =>
+    req(`/oauth/pending?client_id=${encodeURIComponent(clientId)}`
+        + `&redirect_uri=${encodeURIComponent(redirectUri)}`),
+  oauthConsent: (payload) =>
+    req("/oauth/consent", { method: "POST", body: JSON.stringify(payload) }),
+  oauthGrants: () => req("/oauth/grants"),
+  revokeOauthGrant: (clientId) =>
+    req(`/oauth/grants/${encodeURIComponent(clientId)}`, { method: "DELETE" }),
   provision: (payload) =>
     req("/provision", { method: "POST", body: JSON.stringify(payload) }),
   policyPack: (params = {}) => {

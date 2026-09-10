@@ -75,6 +75,12 @@ jobs:
         # blocklist of claims that actually shipped and had to be corrected, because
         # marketing copy drifts toward the flattering version one edit at a time.
         run: node scripts/check-claims.mjs
+      - name: API client is called the way it is defined
+        working-directory: frontend
+        # `vite build` bundles a bad API call happily — it is only wrong at runtime, and
+        # there are no frontend tests. Both OAuth components shipped calling `api` as a
+        # function when it is an object of methods, which blanked the consent screen.
+        run: node scripts/check-api-calls.mjs
       - name: Build
         working-directory: frontend
         run: npm ci && npm run build
