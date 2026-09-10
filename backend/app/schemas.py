@@ -631,3 +631,15 @@ class ConnectorCreate(BaseModel):
 
 class DiscoveryIngest(BaseModel):
     events: list[DiscoveryEvent] = Field(min_length=1, max_length=50000)
+
+
+class OAuthConsentRequest(BaseModel):
+    """An approval posted by the console's consent screen.
+
+    Deliberately carries no user field: the identity comes from the session token on the
+    request, so a body cannot name whose data it is granting access to.
+    """
+    client_id: str = Field(max_length=64)
+    redirect_uri: str = Field(max_length=2048)
+    code_challenge: str = Field(default="", max_length=128)
+    state: str = Field(default="", max_length=512)

@@ -1639,3 +1639,25 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 }
 .field-note code { color: var(--accent-2); font-size: 12px; }
 .field-note strong { color: var(--text); font-weight: 600; }
+
+/* OAuth consent. A decision screen, not a page of the console: centred, narrow, and
+   deliberately plain so the only things competing for attention are who is asking and
+   what they get. */
+.consent-wrap {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: 40px 20px; background: var(--bg);
+}
+.consent-card {
+  width: 100%; max-width: 520px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: 32px;
+}
+.consent-card h1 { font-size: 24px; font-weight: 700; line-height: 1.25; margin: 0 0 14px; color: #fff; }
+.consent-card h1 strong { color: var(--accent-2); font-weight: 700; }
+.consent-lead { font-size: 15px; line-height: 1.65; color: var(--muted); margin: 0 0 22px; }
+.consent-facts { margin: 0 0 22px; border-top: 1px solid var(--border-soft); }
+.consent-facts > div { display: flex; gap: 16px; padding: 11px 0; border-bottom: 1px solid var(--border-soft); }
+.consent-facts dt { flex: 0 0 150px; font-size: 12.5px; color: var(--muted-2); margin: 0; }
+.consent-facts dd { margin: 0; font-size: 13.5px; color: var(--text); word-break: break-all; }
+.consent-facts code { font-size: 12.5px; color: var(--accent-2); }
+.consent-note { font-size: 13px; line-height: 1.6; color: var(--muted-2); margin: 0 0 24px; }
+.consent-actions { display: flex; gap: 12px; align-items: center; }
