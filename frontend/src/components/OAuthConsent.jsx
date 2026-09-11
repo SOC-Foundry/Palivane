@@ -23,8 +23,7 @@ export default function OAuthConsent() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api(`/api/oauth/pending?client_id=${encodeURIComponent(clientId)}`
-        + `&redirect_uri=${encodeURIComponent(redirectUri)}`)
+    api.oauthPending(clientId, redirectUri)
       .then(setInfo)
       .catch((e) => setError(e.message || "This authorization request is not valid."));
   }, [clientId, redirectUri]);
@@ -32,10 +31,9 @@ export default function OAuthConsent() {
   const approve = async () => {
     setBusy(true);
     try {
-      const r = await api("/api/oauth/consent", {
-        method: "POST",
-        body: JSON.stringify({ client_id: clientId, redirect_uri: redirectUri,
-                               code_challenge: challenge, state }),
+      const r = await api.oauthConsent({
+        client_id: clientId, redirect_uri: redirectUri,
+        code_challenge: challenge, state,
       });
       window.location.replace(r.redirect_to);
     } catch (e) {

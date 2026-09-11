@@ -32,6 +32,25 @@ def test_security_headers_present(client):
     assert r.headers.get("X-Frame-Options") == "DENY"
 
 
+def test_csp_allows_the_beacon_without_loosening_script_src_generally(client):
+    """Cloudflare injects its analytics beacon at the edge, after this app has produced the
+    response, so the only thing refusing it here achieved was a CSP violation on every page
+    load. Allowing the two beacon origins is deliberate — allowing inline script is not, and
+    a policy that quietly grew 'unsafe-inline' would give up the property that makes the
+    rest of it worth having.
+    """
+    csp = client.get("/api/health").headers["Content-Security-Policy"]
+    directives = dict(
+        (d.strip().split(" ", 1) + [""])[:2] for d in csp.split(";") if d.strip()
+    )
+    assert "https://static.cloudflareinsights.com" in directives["script-src"]
+    assert "https://cloudflareinsights.com" in directives["connect-src"]
+    assert "'unsafe-inline'" not in directives["script-src"]
+    assert "'unsafe-eval'" not in directives["script-src"]
+    assert directives["object-src"] == "'none'"
+    assert directives["frame-ancestors"] == "'none'"
+
+
 def test_oidc_ssrf_guard():
     import pytest
     for bad in ("http://169.254.169.254/.well-known/openid-configuration",
