@@ -89,7 +89,18 @@ _OAUTH_USER: contextvars.ContextVar[int | None] = contextvars.ContextVar("mcp_oa
 # streamable_http_path="/": the SDK's app serves at /mcp by default, so mounting it under
 # /api/mcp would put the endpoint at /api/mcp/mcp and answer /api/mcp with a 307 the MCP
 # client does not follow. Serving at the mount root makes the URL the obvious one.
-mcp = FastMCP("palivane", stateless_http=True, streamable_http_path="/")
+# transport_security: the SDK auto-enables DNS-rebinding protection with a localhost-ONLY
+# host allowlist (FastMCP's default host is 127.0.0.1), so behind Cloudflare it answers every
+# request whose Host is app.palivane.io with 421 Misdirected Request — the client sees "Got
+# new credentials, but reconnecting failed: HTTP 421". That protection exists to stop a
+# malicious web page from rebinding to a LOCALLY-run MCP server; it is redundant here, where
+# the whole app (this mount included) already validates Host via TrustedHostMiddleware
+# (PALIVANE_ALLOWED_HOSTS) and sits behind Cloudflare. Disable it so the real host is served;
+# host validation stays with the app's own allowlist.
+from mcp.server.transport_security import TransportSecuritySettings  # noqa: E402
+
+mcp = FastMCP("palivane", stateless_http=True, streamable_http_path="/",
+              transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False))
 
 # The transport's session manager is SINGLE-USE: StreamableHTTPSessionManager.run() raises
 # on a second call for the same instance. One lifespan per process makes that invisible in
