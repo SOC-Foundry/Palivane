@@ -41,13 +41,13 @@ export default function Connections() {
     api.enrollTokens().then((r) => setTokens(r.enrollment_tokens || [])).catch(() => {});
     // Swallowed like its siblings: OAuth is disabled on a deployment that has not set
     // PALIVANE_PUBLIC_URL, and an empty panel is the right answer there, not an error.
-    api("/api/oauth/grants").then((r) => setGrants(r.grants || [])).catch(() => setGrants([]));
+    api.oauthGrants().then((r) => setGrants(r.grants || [])).catch(() => setGrants([]));
   }, []);
 
   async function revokeGrant(clientId, name) {
     if (!window.confirm(`Revoke ${name}? It will lose access immediately.`)) return;
     try {
-      await api(`/api/oauth/grants/${encodeURIComponent(clientId)}`, { method: "DELETE" });
+      await api.revokeOauthGrant(clientId);
       setMsg({ ok: true, text: `${name} can no longer read your Palivane data.` });
       load();
     } catch (e) {

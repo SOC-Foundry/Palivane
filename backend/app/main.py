@@ -248,6 +248,13 @@ async def _guard(request: Request, call_next):
     # CSP: the SPA loads only same-origin bundles (no inline/external scripts); React uses
     # inline style attributes (hence style 'unsafe-inline'); posters/video/data-URI icons are
     # same-origin or data:. frame-ancestors 'none' complements X-Frame-Options.
+    # Cloudflare Web Analytics injects its beacon at the edge, after this app has produced
+    # the response, so refusing it here does not stop the injection — it only turns every
+    # page load into a CSP violation in the console while the analytics silently do nothing.
+    # static.cloudflareinsights.com serves the script; cloudflareinsights.com receives the
+    # beacon (hence the connect-src entry). Both hosts, deliberately: scoping it to the
+    # marketing host would leave the console erroring unless auto-injection were also turned
+    # off there in the dashboard, which is state this repo cannot see or assert.
     # Stripe embedded Checkout mounts Stripe.js + its payment iframe — allowed ONLY when
     # self-serve billing is configured, so the extra origins aren't in the policy on
     # deployments that don't take card payments.
@@ -258,10 +265,11 @@ async def _guard(request: Request, call_next):
         stripe_connect = " https://api.stripe.com"
     resp.headers.setdefault(
         "Content-Security-Policy",
-        f"default-src 'self'; script-src 'self'{stripe_script}; "
+        f"default-src 'self'; script-src 'self'{stripe_script}"
+        " https://static.cloudflareinsights.com; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; media-src 'self'; font-src 'self' data:; "
-        f"connect-src 'self'{stripe_connect}; {stripe_frame}"
+        f"connect-src 'self'{stripe_connect} https://cloudflareinsights.com; {stripe_frame}"
         "frame-ancestors 'none'; base-uri 'self'; "
         "form-action 'self'; object-src 'none'")
     return resp
