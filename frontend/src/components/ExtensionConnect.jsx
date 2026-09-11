@@ -4,8 +4,24 @@
 // its chromiumapp.org callback with the token in the URL fragment.
 
 import { useEffect, useState } from "react";
-import { api, getToken } from "../api.js";
+import { api, getToken, setToken } from "../api.js";
 import Login from "./Login.jsx";
+
+// A present-but-EXPIRED session token must not count as signed in. `!!getToken()` did, so the
+// page skipped the login screen, called the token endpoint with a dead token, and dead-ended
+// on "token expired" (the extension) or simply never handed a token back (the CLI). Decode the
+// JWT's exp and treat an expired one as signed out.
+function sessionFresh() {
+  const t = getToken();
+  if (!t) return false;
+  try {
+    const b = t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const exp = JSON.parse(atob(b + "=".repeat((4 - (b.length % 4)) % 4))).exp;
+    return typeof exp === "number" && exp * 1000 > Date.now();
+  } catch {
+    return false;   // unparseable -> make them sign in rather than trust it
+  }
+}
 
 // Only ever redirect the token to a Chrome extension's callback (chromiumapp.org) or a
 // loopback address (the `palivane connect` CLI's local server, for Claude Code onboarding).
@@ -30,7 +46,7 @@ export default function ExtensionConnect() {
   // Which device is connecting (browser deviceId / palivane-connect hostname), relayed to the
   // token endpoint so re-connecting the same device rotates its key instead of piling up rows.
   const device = params.get("device") || "";
-  const [authed, setAuthed] = useState(!!getToken());
+  const [authed, setAuthed] = useState(sessionFresh());
   const [status, setStatus] = useState("init");   // init | connecting | done | error
   const [detail, setDetail] = useState("");
 
@@ -60,7 +76,12 @@ export default function ExtensionConnect() {
         setStatus("done"); setDetail(r.actor);
         window.location.href = u.toString();
       })
-      .catch((e) => { setStatus("error"); setDetail(String(e.message || e)); });
+      .catch((e) => {
+        // A dead/revoked session: the api layer already cleared the token on the 401, so send
+        // the user back to sign in and retry rather than dead-ending on "token expired".
+        if (!getToken()) { setToken(null); setAuthed(false); setStatus("init"); return; }
+        setStatus("error"); setDetail(String(e.message || e));
+      });
   }, [authed]);
 
   if (!authed) {
