@@ -44,9 +44,15 @@ _COMMENT_DIRECTIVE = re.compile(
 )
 
 # "read a credential store … and (send|post|include|exfiltrate) it" — the s1ngularity shape.
+# A NAMED credential store or a case-sensitive secret ENV VAR (FOO_TOKEN / X_API_KEY /
+# AWS_SECRET…) — deliberately NOT the bare lowercase word "token": "pass your token to the
+# API" is in every vendor SDK doc, and treating it as a credential store made ordinary API
+# documentation read as exfiltration. `(?-i:…)` keeps the env-var arm case-sensitive even
+# though the surrounding pattern is IGNORECASE.
 _CRED_PATH = (r"(?:~/\.aws|\.aws/credentials|~/\.ssh|id_rsa|\.env(?:\.\w+)?|"
               r"\.git-credentials|~/\.config|keychain|secrets?\.(?:json|ya?ml)|"
-              r"ANTHROPIC_API_KEY|OPENAI_API_KEY|AWS_SECRET|token)")
+              r"(?-i:[A-Z][A-Z0-9]*_(?:TOKEN|API_?KEY|KEY|SECRET|PASSWORD|CREDENTIALS?)))")
+_CRED_PATH_RE = re.compile(_CRED_PATH, re.IGNORECASE)
 _EXFIL = re.compile(
     r"(?:send|post|upload|exfiltrat\w*|transmit|email|include|append|attach|leak)\b"
     r"[^\n.]{0,80}?" + _CRED_PATH
@@ -54,9 +60,12 @@ _EXFIL = re.compile(
     + r"[^\n.]{0,80}?\b(?:send|post|upload|exfiltrat\w*|transmit|email|curl|https?://|to\s+\S+@)",
     re.IGNORECASE,
 )
-# A directive to push data to an external endpoint (URL, webhook, or email address).
+# A directive to push data to an external endpoint (URL, webhook, or email address). Only
+# meaningful as exfiltration when a real credential is ALSO referenced (gated at the call
+# site) — a bare "post to https://…" or "email support@…" is ordinary automation/docs.
+# Read verbs (curl/fetch) are excluded: fetching a URL pulls data IN, it is not exfiltration.
 _EXFIL_DEST = re.compile(
-    r"\b(?:send|post|upload|report|forward|email|curl|fetch)\b[^\n.]{0,60}?"
+    r"\b(?:send|post|upload|report|forward|email)\b[^\n.]{0,60}?"
     r"(?:https?://|hooks?\.|webhook|@[\w.-]+\.\w{2,})",
     re.IGNORECASE,
 )
@@ -130,7 +139,12 @@ class AgentRulesDetector:
 
         # 2. Exfiltration directives — read a credential store and send it out, or push
         #    data to an external endpoint. The Nx "s1ngularity" shape, in a rules file.
-        m = _find(_EXFIL, raw, norm) or _find(_EXFIL_DEST, raw, norm)
+        # _EXFIL already requires a credential near the send verb. The destination-only rule
+        # (push to an external URL/email) is exfil ONLY when the file also references a real
+        # credential somewhere — otherwise it is ordinary automation or API documentation.
+        m = _find(_EXFIL, raw, norm)
+        if not m and (_CRED_PATH_RE.search(raw) or _CRED_PATH_RE.search(norm)):
+            m = _find(_EXFIL_DEST, raw, norm)
         if m:
             signals.append(Signal(
                 category=Category.DATA_EXFILTRATION,
