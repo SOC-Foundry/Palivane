@@ -77,8 +77,8 @@ export default function ExtensionConnect() {
         window.location.href = u.toString();
       })
       .catch((e) => {
-        // A dead/revoked session: api.js already cleared the token on the 401, so send the
-        // user back to sign in and retry rather than dead-ending on "token expired".
+        // A dead/revoked session: the api layer already cleared the token on the 401, so send
+        // the user back to sign in and retry rather than dead-ending on "token expired".
         if (!getToken()) { setToken(null); setAuthed(false); setStatus("init"); return; }
         setStatus("error"); setDetail(String(e.message || e));
       });
