@@ -26,6 +26,16 @@ def test_unauthenticated_is_refused(raw_client):
     assert "console-scoped" in r.text
 
 
+def test_real_host_is_not_misdirected(raw_client):
+    """Behind Cloudflare the Host is app.palivane.io, not localhost. The SDK auto-enables
+    DNS-rebinding protection with a localhost-ONLY allowlist, which 421s every real request
+    ("Got new credentials, but reconnecting failed: HTTP 421"). It's disabled here — Host is
+    already validated by TrustedHostMiddleware — so a real host must reach auth, never 421."""
+    r = raw_client.post("/api/mcp/", json=INIT, headers={**HDRS, "host": "app.palivane.io"})
+    assert r.status_code != 421, "MCP transport is 421ing the production Host again"
+    assert r.status_code == 401
+
+
 def test_ingest_key_is_refused_exactly_like_a_fake_one(client, raw_client):
     """The 93beeb3 property, carried onto this transport: a wrong-scope key must not be
     distinguishable from an invented one, or the error confirms the key is real."""
