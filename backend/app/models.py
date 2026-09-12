@@ -584,6 +584,11 @@ class Finding(Base):
     # that person. An answer, not a verdict: responding never dismisses a finding, so a
     # real leak cannot be closed by the one person with a reason to want it closed.
     owner_response = Column(JSON, default=None)
+    # The read-only analyst agent's last investigation of this finding: {summary, assessment,
+    # related_activity, recommended_action, rationale, confidence, by, at}. Persisted so it
+    # survives a reload and is part of the record; overwritten on re-investigation. Advisory —
+    # it never changes status on its own (a human applies the recommendation).
+    investigation = Column(JSON, default=None)
 
     def to_summary(self) -> dict:
         return {
@@ -624,6 +629,7 @@ class Finding(Base):
         d["content"] = unseal_with(self.content, dek) if self.content else ""
         d["content_retained"] = bool(self.content)
         d["signals"] = self.signals or []
+        d["investigation"] = self.investigation or None
         return d
 
 

@@ -92,7 +92,7 @@ function checksOf(finding) {
 
 export default function FindingDetail({ finding, isAdmin, onClose, onStatusChange }) {
   const [suppressed, setSuppressed] = useState(null);
-  const [report, setReport] = useState(null);      // read-only analyst investigation
+  const [report, setReport] = useState(finding?.investigation || null);   // persisted or fresh
   const [investigating, setInvestigating] = useState(false);
   const [investigateErr, setInvestigateErr] = useState("");
   if (!finding) return null;
@@ -122,8 +122,10 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
   // recorded (via="analyst") as an AI recommendation a person approved. Dismiss stays
   // admin-only server-side. "quarantine"/"block" are enforcement recs with no finding-status
   // equivalent, so they apply as "triaged" (acknowledged, being handled).
+  const APPLY = { dismiss: "dismissed", triage: "triaged", keep_open: "open" };
+
   async function applyRecommendation() {
-    const target = report.recommended_action === "dismiss" ? "dismissed" : "triaged";
+    const target = APPLY[report.recommended_action] || "triaged";
     if (!window.confirm(`Apply the analyst's recommendation and mark this finding "${target}"?`)) return;
     try {
       await api.setStatus(finding.id, target, "analyst");
@@ -172,7 +174,7 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
       <div className="detail-section analyst">
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <button className="primary-btn slim" onClick={investigate} disabled={investigating}>
-            {investigating ? "Investigating…" : "🔎 Investigate (AI analyst)"}
+            {investigating ? "Investigating…" : report ? "🔎 Re-investigate" : "🔎 Investigate (AI analyst)"}
           </button>
           <span className="muted" style={{ fontSize: 12 }}>
             Reads the finding + this actor's history and recommends an action. It never applies it.
@@ -193,7 +195,7 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
             <p className="muted" style={{ fontSize: 13 }}>{report.rationale}</p>
             <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
               <button className="primary-btn slim" onClick={applyRecommendation}>
-                Apply: mark {report.recommended_action === "dismiss" ? "dismissed" : "triaged"}
+                Apply: mark {APPLY[report.recommended_action] || "triaged"}
               </button>
               <span className="muted" style={{ fontSize: 12 }}>You approve — the analyst never applies it.</span>
             </div>
