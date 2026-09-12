@@ -245,40 +245,37 @@ def test_consent_refuses_a_dangerous_redirect_even_if_it_was_stored(client, db_f
 
 # --- discovery must never name someone else's deployment --------------------------------
 
-def test_oauth_is_disabled_when_the_deployment_has_no_name(monkeypatch):
+def test_oauth_is_disabled_when_the_deployment_has_no_name():
     """A self-hosted install that never set PALIVANE_PUBLIC_URL must not publish
     app.palivane.io as its issuer: an MCP client doing discovery against THEIR server would
     be told to authorize against OURS, and their users would land on our login screen.
 
-    Rebuilt in isolation rather than asserted against the live app, because the routes are
-    wired once at import."""
+    Hermetic: wire into a throwaway app with a throwaway config, so this never depends on —
+    or is polluted by — the live `settings`/`app` singletons (which made it order-flaky)."""
+    from types import SimpleNamespace
+
     from fastapi import FastAPI
     from app import main as main_mod
-    from app.config import settings as cfg
-
-    monkeypatch.setattr(cfg, "public_base_url", "")
-    monkeypatch.setattr(cfg, "database_url", "postgresql://host/db")   # production-shaped
 
     probe = FastAPI()
-    monkeypatch.setattr(main_mod, "app", probe)
-    main_mod._wire_oauth()
+    cfg = SimpleNamespace(public_base_url="", database_url="postgresql://host/db")  # prod-shaped
+    main_mod._wire_oauth(probe, cfg)
 
     paths = {getattr(r, "path", "") for r in probe.router.routes}
     assert not any(p.startswith("/.well-known/oauth") for p in paths), paths
     assert "/token" not in paths and "/authorize" not in paths
 
 
-def test_oauth_is_wired_when_the_deployment_names_itself(monkeypatch):
+def test_oauth_is_wired_when_the_deployment_names_itself():
+    from types import SimpleNamespace
+
     from fastapi import FastAPI
     from app import main as main_mod
-    from app.config import settings as cfg
-
-    monkeypatch.setattr(cfg, "public_base_url", "https://palivane.acme.example")
-    monkeypatch.setattr(cfg, "database_url", "postgresql://host/db")
 
     probe = FastAPI()
-    monkeypatch.setattr(main_mod, "app", probe)
-    main_mod._wire_oauth()
+    cfg = SimpleNamespace(public_base_url="https://palivane.acme.example",
+                          database_url="postgresql://host/db")
+    main_mod._wire_oauth(probe, cfg)
 
     paths = {getattr(r, "path", "") for r in probe.router.routes}
     assert "/token" in paths and "/authorize" in paths
