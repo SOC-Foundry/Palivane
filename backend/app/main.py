@@ -3704,7 +3704,12 @@ app.router.routes.append(_Route("/api/mcp", endpoint=_BareMCPPath(_mcp_asgi)))
 # metadata. They sit at the ROOT because that is where the spec's discovery points clients;
 # deploy/cloudflare/worker.js names them explicitly in its rate limiting for exactly that
 # reason, since its /api rule does not reach them.
-def _wire_oauth() -> None:
+def _wire_oauth(target_app=None, cfg=None) -> None:
+    # Parameterized so the enable/disable behavior can be tested hermetically — pass a fresh
+    # app + a throwaway settings object instead of monkeypatching the shared singletons, which
+    # made the test order-dependent (a sibling test's live `settings`/`app` state leaked in).
+    target_app = target_app if target_app is not None else app
+    cfg = cfg if cfg is not None else settings
     from mcp.server.auth.routes import create_auth_routes, create_protected_resource_routes
     from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
     from pydantic import AnyHttpUrl
@@ -3719,8 +3724,8 @@ def _wire_oauth() -> None:
     # advertises a URL nobody configured. SQLite means local dev, where the fallback is fine
     # and refusing would only break the tests. Same prod/dev split the lifespan already uses
     # for the weak-key refusal.
-    prod = not settings.database_url.startswith("sqlite")
-    if prod and not settings.public_base_url:
+    prod = not cfg.database_url.startswith("sqlite")
+    if prod and not cfg.public_base_url:
         import logging
         logging.getLogger("uvicorn.error").error(
             "PALIVANE_PUBLIC_URL is not set, so the OAuth authorization server is disabled: "
@@ -3729,7 +3734,7 @@ def _wire_oauth() -> None:
             "PALIVANE_PUBLIC_URL to this deployment's own origin to enable it. Console API "
             "keys are unaffected.")
         return
-    base = (settings.public_base_url or "https://app.palivane.io").rstrip("/")
+    base = (cfg.public_base_url or "https://app.palivane.io").rstrip("/")
 
     def _factory():
         # The same session source the rest of the app uses, not SessionLocal directly.
@@ -3759,7 +3764,7 @@ def _wire_oauth() -> None:
         scopes_supported=[READ_SCOPE],
         resource_name="Palivane",
     )
-    app.router.routes.extend(routes)
+    target_app.router.routes.extend(routes)
 
 
 _wire_oauth()
