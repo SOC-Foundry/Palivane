@@ -1090,6 +1090,31 @@ def _capture_agent(x_palivane_token: str, x_palivane_agent: str, tenant_id, db: 
     return ""
 
 
+def _agent_attestation(x_palivane_token: str, x_palivane_agent: str, tenant_id, db: Session) -> str:
+    """How the acting agent proved identity on this request:
+      'oidc'  — a verified OIDC workload JWT resolved to a matching agent (cryptographic)
+      'token' — a bearer ag_ credential (possession, not attestation)
+      ''      — self-declared / none
+    The attestation tier the tool-call flag reasons about (2b)."""
+    from .security import hash_token, looks_like_agent_token, looks_like_jwt
+    tok = (x_palivane_agent or "").strip() or (x_palivane_token or "")
+    if looks_like_jwt(tok):
+        try:
+            ag = _resolve_agent_jwt(tok, db)
+        except HTTPException:
+            return ""
+        if ag is not None and (tenant_id is None or ag.tenant_id == tenant_id):
+            return "oidc"
+        return ""
+    if looks_like_agent_token(tok):
+        row = (db.query(Agent)
+                 .filter(Agent.token_hash == hash_token(tok), Agent.active.is_(True))
+                 .one_or_none())
+        if row is not None and (tenant_id is None or row.tenant_id == tenant_id):
+            return "token"
+    return ""
+
+
 def _score_ai_usage(content: str, actor: str, tool: str, destination: str,
                     tenant_id: int | None, agent: str, db: Session) -> tuple[dict, dict]:
     """Score one ai-usage capture on the AI_USAGE surface + feed discovery. Shared by the
@@ -1388,6 +1413,7 @@ async def otlp_logs(
     tenant_id, default_actor = _ingest_auth(x_palivane_token, db)   # 401 on a bad token
     _enforce_rate(db, tenant_id)
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
+    attested = _agent_attestation(x_palivane_token, x_palivane_agent, tenant_id, db)
     try:
         doc = await request.json()
     except Exception:
@@ -1410,7 +1436,8 @@ async def otlp_logs(
             elif name in ("tool_result", "mcp_server_connection"):
                 f = otel.mcp_fields(name, attrs)
                 if f:
-                    _score_mcp(MCPIngest(**f), tenant_id, default_actor, allowed, block, db, agent=agent)
+                    _score_mcp(MCPIngest(**f), tenant_id, default_actor, allowed, block, db,
+                               agent=agent, attested=attested)
                     processed += 1
         except Exception:
             continue  # one bad record never fails the whole export
@@ -1472,6 +1499,29 @@ def _agent_authz_probe(agent: str, tenant_id, body, db: Session):
         return out
 
     return _filter, dec
+
+
+def _attestation_signals(agent: str, attested: str, tenant_id, db: Session, body):
+    """(extra_signals, enforce_block) for the agent-attestation check. Fires only when the
+    tenant configured workload-identity OIDC (so attestation is expected), a named agent
+    acted, and the credential wasn't OIDC-verified."""
+    tenant = db.get(Tenant, tenant_id) if tenant_id is not None else None
+    if not (tenant and (tenant.agent_oidc_issuer or "").strip() and agent and attested != "oidc"):
+        return [], False
+    enforce = bool(getattr(tenant, "agent_attestation_enforce", False))
+    from .detectors.base import Category, Signal
+    how = "a bearer token" if attested == "token" else "a self-declared identity"
+    sig = Signal(
+        category=Category.AGENT_AUTHZ,
+        title="Agent tool call without workload-identity attestation",
+        detail=(f"The acting agent presented {how}, not a verified OIDC workload identity, "
+                f"though this org requires agent attestation "
+                f"({'enforce' if enforce else 'monitor'})."),
+        # Flag-only stays monitor-level; enforce carries weight AND hard-blocks below.
+        weight=0.85 if enforce else 0.35, confidence=0.9, detector="authz",
+        evidence=f"{agent} → {(body.tool or body.server or '')[:60]} (attestation={attested or 'none'})",
+        check="agent_attestation")
+    return [sig], enforce
 
 
 def _tenant_or_global(tenant_id: int | None, db: Session, attr: str, global_value: str) -> str:
@@ -1642,7 +1692,7 @@ def _tenant_sso_issuer(tenant_id: int | None, db: Session) -> str:
 
 def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
                allowed_servers: str, block_severity: str, db: Session, agent: str = "",
-               client_ua: str = "") -> dict:
+               client_ua: str = "", attested: str = "") -> dict:
     """Score one MCP activity on the `mcp` surface and return the client verdict.
 
     Benign (allow-level) verdicts aren't persisted unless PALIVANE_MCP_PERSIST_BENIGN is set
@@ -1688,14 +1738,20 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
     # below — independent of severity and of the disabled-checks/override filter, so authz is
     # a control, not a mutable signal.
     authz_filter, authz = _agent_authz_probe(agent, tenant_id, body, db)
+    # Agent identity attestation (2b): when the tenant configured workload-identity OIDC, a
+    # tool call by a NAMED agent that isn't OIDC-attested (a bearer ag_ token, or none) is an
+    # attestation gap. Flag it always; enforce hard-blocks like an authz enforce-deny.
+    attest_extra, attest_block = _attestation_signals(agent, attested, tenant_id, db, body)
     # EMA issuance-leg audit events (auth/id-jag.*) are benign by design but must persist
     # — they're the per-server grant trail the spec calls a use case and nobody else logs.
     is_ema_auth_event = body.method.startswith("auth/")
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
-                          signal_filter=authz_filter, agent=agent,
+                          signal_filter=authz_filter, agent=agent, extra_signals=attest_extra,
                           persist_benign=settings.mcp_persist_benign or is_ema_auth_event)
     action = _action_for(result["severity"], block_severity)
     if authz["enforce"] and authz["denied"]:
+        action = "block"
+    if attest_block:
         action = "block"
     # Feed shadow-AI discovery: the MCP surface has no destination domain, so the plane's
     # User-Agent (palivane-cursor-hook / -hook / -gemini / -codex / -mcp) names the tool. This
@@ -1737,9 +1793,10 @@ def ingest_mcp(
         return {"action": "allow", "risk_score": 0, "severity": "none", "signals": [],
                 "finding_id": None, "parse_miss": True}
     _record_heartbeat(db, tenant_id, body.user or default_actor, "mcp", body.tool, user_agent)
+    attested = _agent_attestation(x_palivane_token, x_palivane_agent, tenant_id, db)
     return _score_mcp(body, tenant_id, default_actor, _tenant_mcp_allow(tenant_id, db),
                       _tenant_mcp_block_severity(tenant_id, db), db, agent=agent,
-                      client_ua=user_agent)
+                      client_ua=user_agent, attested=attested)
 
 
 @app.post("/api/ingest/mcp/batch")
@@ -1761,8 +1818,9 @@ def ingest_mcp_batch(
                           body.items[0].tool, user_agent)
     allowed = _tenant_mcp_allow(tenant_id, db)
     block = _tenant_mcp_block_severity(tenant_id, db)
+    attested = _agent_attestation(x_palivane_token, x_palivane_agent, tenant_id, db)
     results = [_score_mcp(item, tenant_id, default_actor, allowed, block, db, agent=agent,
-                          client_ua=user_agent)
+                          client_ua=user_agent, attested=attested)
                for item in body.items]
     return {"results": results}
 

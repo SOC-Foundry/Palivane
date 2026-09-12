@@ -405,6 +405,7 @@ class TenantUpdate(BaseModel):
     agent_oidc_issuer: str | None = None         # workload-identity trust: issuer
     agent_oidc_jwks: str | None = None           # optional explicit JWKS URI (else discovered)
     agent_oidc_audience: str | None = None        # expected audience (validated if set)
+    agent_attestation_enforce: bool | None = None  # block tool calls not OIDC-attested
 
 
 class TenantDelete(BaseModel):
