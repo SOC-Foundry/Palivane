@@ -254,6 +254,9 @@ class S3Scan(BaseModel):
 
 class StatusUpdate(BaseModel):
     status: Literal["open", "triaged", "dismissed"]
+    # Optional provenance for the audit trail — e.g. "analyst" when a human applies the
+    # read-only analyst agent's recommendation with one click (AI recommends, human approves).
+    via: str = Field("", max_length=40)
 
 
 class BulkStatusUpdate(BaseModel):
