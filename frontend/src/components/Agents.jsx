@@ -16,7 +16,8 @@ export default function Agents({ tenant, onTenant }) {
   const [oidc, setOidc] = useState({
     agent_oidc_issuer: tenant?.agent_oidc_issuer || "",
     agent_oidc_jwks: tenant?.agent_oidc_jwks || "",
-    agent_oidc_audience: tenant?.agent_oidc_audience || "" });
+    agent_oidc_audience: tenant?.agent_oidc_audience || "",
+    agent_attestation_enforce: tenant?.agent_attestation_enforce || false });
   const [roleDraft, setRoleDraft] = useState(BLANK_ROLE);
   const [token, setToken] = useState(null);   // freshly minted/rotated token, shown once
   const [err, setErr] = useState(null);
@@ -150,6 +151,13 @@ export default function Agents({ tenant, onTenant }) {
           <input placeholder="audience (optional)" value={oidc.agent_oidc_audience}
                  onChange={(e) => setOidc((o) => ({ ...o, agent_oidc_audience: e.target.value }))} />
         </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 14 }}>
+          <input type="checkbox" checked={oidc.agent_attestation_enforce}
+                 onChange={(e) => setOidc((o) => ({ ...o, agent_attestation_enforce: e.target.checked }))} />
+          Block tool calls that aren't OIDC-attested
+          <span className="muted" style={{ fontSize: 12 }}>
+            (off = flag only; a bearer <code>ag_</code> token or none is flagged either way)</span>
+        </label>
         <button className="primary-btn slim" style={{ marginTop: 10 }} onClick={saveOidc}>Save workload identity</button>
       </div>
 

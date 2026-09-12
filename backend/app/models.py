@@ -157,6 +157,9 @@ class Tenant(Base):
     agent_oidc_issuer = Column(String(512), default="")
     agent_oidc_jwks = Column(String(512), default="")
     agent_oidc_audience = Column(String(255), default="")
+    # When agent OIDC is configured, block tool calls whose agent isn't OIDC-attested (a
+    # bearer ag_ token or none). Off = flag only. Meaningless without agent_oidc_issuer.
+    agent_attestation_enforce = Column(Boolean, default=False)
     # Data-processing agreement acceptance (compliance record; history in the audit log).
     dpa_version = Column(String(32), default="")
     dpa_accepted_at = Column(DateTime, nullable=True)
@@ -253,6 +256,7 @@ class Tenant(Base):
                 "agent_oidc_issuer": self.agent_oidc_issuer or "",
                 "agent_oidc_jwks": self.agent_oidc_jwks or "",
                 "agent_oidc_audience": self.agent_oidc_audience or "",
+                "agent_attestation_enforce": bool(self.agent_attestation_enforce),
                 "dpa_version": self.dpa_version or "",
                 "dpa_accepted_at": self.dpa_accepted_at.isoformat() if self.dpa_accepted_at else None,
                 "dpa_accepted_by": self.dpa_accepted_by or ""}
