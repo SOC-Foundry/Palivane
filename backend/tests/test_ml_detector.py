@@ -66,11 +66,33 @@ def test_short_input_is_ignored():
     assert det.analyze(AnalysisInput(content="x = 1", surface=Surface.AI_USAGE)) == []
 
 
-def test_engine_carries_the_signal_on_ml_surfaces_only(client):
-    r = client.post("/api/analyze", json={"content": CONFIG, "channel": "test"})
+# Proprietary code the rules-based check flags on its own (internal schema + service call).
+# The ML tier corroborates it — which is the only way its signal now reaches a verdict.
+PROPRIETARY = ("def charge(customer):\n"
+               "    row = billing_ledger.customer_invoices.get(customer.tenant_id)\n"
+               "    return payments_service.capture(row.amount, row.currency)\n") * 3
+
+
+def test_engine_carries_the_signal_when_corroborated(client):
+    # On ai_usage (code bound for an external AI tool) the rules check flags proprietary
+    # structure and the ML tier corroborates — its signal reaches the verdict.
+    r = client.post("/api/analyze", json={"content": PROPRIETARY, "surface": "ai_usage"})
     assert r.status_code == 200, r.text
     checks = {s.get("check") for s in r.json().get("signals", [])}
     assert "source_code_ml" in checks
+
+
+def test_lone_generic_code_stays_benign(client):
+    # Generic code with no proprietary tells, on the surface where code detection is active.
+    # The ML classifier still reads it as code (det.analyze emits the signal), but a LONE
+    # source_code_ml must not raise a finding — developers paste ordinary code into AI tools
+    # constantly. It's corroborating-only.
+    r = client.post("/api/analyze", json={"content": CONFIG, "surface": "ai_usage"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    cats = {s.get("category") for s in body.get("signals", [])}
+    assert "source_code_leak" not in cats
+    assert body["severity"] == "benign" and body["recommended_action"] == "allow"
 
 
 def test_inference_latency_budget():

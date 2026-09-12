@@ -83,6 +83,26 @@ _ATTACK_CATEGORIES = {
 }
 
 
+def _drop_uncorroborated_ml_code(signals: list[Signal]) -> list[Signal]:
+    """The ML code classifier scores code-ness, not proprietary-ness — it reads a generic SQL
+    join, a React counter, or a docker-compose file as source code exactly like an internal
+    module. On its own that is noise: developers paste ordinary code into AI tools constantly,
+    and a lone `source_code_ml` was raising a source_code_leak finding on every snippet. Its
+    own contract is to CORROBORATE the rules-based source-code check ("cannot max a verdict
+    alone"), so keep it only when a non-ML source-code / confidential signal also fired; drop
+    it when it stands alone, so a generic paste stays benign while proprietary code (which the
+    rules check flags on its structural tells) still escalates — now with the ML agreeing."""
+    if not any(s.effective_check == "source_code_ml" for s in signals):
+        return signals
+    corroborated = any(
+        s.effective_check != "source_code_ml"
+        and s.category in (Category.SOURCE_CODE_LEAK, Category.CONFIDENTIAL_DATA)
+        for s in signals)
+    if corroborated:
+        return signals
+    return [s for s in signals if s.effective_check != "source_code_ml"]
+
+
 def _saturating_combine(contributions: list[float]) -> float:
     """Probabilistic OR: 1 - Π(1 - c). Saturates toward 1.0."""
     acc = 1.0
@@ -107,6 +127,7 @@ def severity_for(risk: int) -> tuple[str, str]:
 
 
 def score(signals: list[Signal]) -> Verdict:
+    signals = _drop_uncorroborated_ml_code(signals)
     real = [s for s in signals if s.contribution > 0.0]
 
     ai_conf = _saturating_combine(
