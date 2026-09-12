@@ -11,6 +11,7 @@ const _csv = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
 export default function Agents({ tenant, onTenant }) {
   const [agents, setAgents] = useState(null);
   const [roles, setRoles] = useState([]);
+  const [graph, setGraph] = useState(null);   // A2A call-graph (flagged agent-to-agent hops)
   const [draft, setDraft] = useState({ name: "", kind: "service", oidc_subject: "" });
   const [oidc, setOidc] = useState({
     agent_oidc_issuer: tenant?.agent_oidc_issuer || "",
@@ -23,8 +24,9 @@ export default function Agents({ tenant, onTenant }) {
 
   const load = useCallback(async () => {
     try {
-      const [a, r] = await Promise.all([api.agents(), api.agentRoles()]);
-      setAgents(a.agents); setRoles(r.roles);
+      const [a, r, g] = await Promise.all([
+        api.agents(), api.agentRoles(), api.a2aGraph().catch(() => null)]);
+      setAgents(a.agents); setRoles(r.roles); setGraph(g);
     } catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -109,6 +111,30 @@ export default function Agents({ tenant, onTenant }) {
       </div>
 
       {err && <div className="error">{err}</div>}
+
+      {graph && graph.edges.length > 0 && (
+        <div className="panel settings-card">
+          <h2>Agent-to-agent flow</h2>
+          <p className="page-sub">Where a poisoned instruction or sensitive data crossed an
+             agent hop in the last {graph.window_days} days. Only flagged hops appear — this is
+             the risk graph, not every call.</p>
+          <table className="data-table">
+            <thead><tr><th>From</th><th></th><th>To</th><th>Messages</th><th>Worst</th><th>What crossed</th></tr></thead>
+            <tbody>
+              {graph.edges.map((e) => (
+                <tr key={`${e.from}->${e.to}`}>
+                  <td><strong>{e.from}</strong></td>
+                  <td aria-hidden="true">→</td>
+                  <td><strong>{e.to}</strong></td>
+                  <td>{e.messages}</td>
+                  <td><span className={`badge sev-${e.worst_severity}`}>{e.worst_severity}</span></td>
+                  <td className="muted" style={{ fontSize: 12 }}>{e.categories.join(", ") || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="panel settings-card">
         <h2>Workload identity (OIDC)</h2>

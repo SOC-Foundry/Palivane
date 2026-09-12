@@ -2991,6 +2991,17 @@ def audit_timeline(actor: str, current: User = Depends(require_admin),
             "events": session_audit.timeline(db, current.tenant_id, actor, days, limit)}
 
 
+@app.get("/api/agents/a2a-graph")
+def a2a_call_graph(current: User = Depends(get_current_user), db: Session = Depends(get_db),
+                   days: int = 30):
+    """The agent-to-agent call graph: nodes (agents) and directed from→to flows carrying the
+    message count, worst severity, categories, and sample finding ids. Built from flagged A2A
+    findings, so it's the risk graph — where a poisoned instruction or sensitive data crossed
+    an agent hop."""
+    from . import agent_graph
+    return agent_graph.a2a_graph(db, current.tenant_id, days=days)
+
+
 @app.get("/api/audit/export")
 def audit_export(current: _ExportPrincipal = Depends(require_export_auth),
                  db: Session = Depends(get_db),

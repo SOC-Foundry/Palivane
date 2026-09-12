@@ -49,6 +49,7 @@ async function req(path, opts = {}) {
 export const api = {
   health: () => req("/health"),
   investigateFinding: (id) => req(`/findings/${id}/investigate`, { method: "POST" }),
+  a2aGraph: (days = 30) => req(`/agents/a2a-graph?days=${days}`),
   login: (email, password, org = "") =>
     req("/auth/login", { method: "POST", body: JSON.stringify({ email, password, org }) }),
   mfaVerify: (challenge, code) =>
