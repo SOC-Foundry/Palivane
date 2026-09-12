@@ -2588,6 +2588,13 @@ def investigate_finding(finding_id: int, current: User = Depends(get_current_use
     if report is None:
         raise HTTPException(status_code=503,
                             detail="the analyst's LLM provider is unavailable right now")
+    # Persist on the finding so it survives a reload, shows without re-running, and is part of
+    # the record. Overwrites any prior investigation. Advisory only — never changes status.
+    from datetime import datetime, timezone
+    report["at"] = datetime.now(timezone.utc).isoformat()
+    row = db.get(Finding, finding_id)
+    row.investigation = report
+    db.commit()
     audit_log.record(db, current.tenant_id, current.email, "finding.investigated",
                      target=str(finding_id),
                      detail={"recommended": report.get("recommended_action"),

@@ -23,7 +23,11 @@ from sqlalchemy.orm import Session
 from .models import Finding
 
 _PEER_LIMIT = 8         # same-actor findings for pattern context; bounds tokens
-_ACTIONS = "dismiss | monitor | triage | quarantine | block"
+# Finding-native actions, so the recommendation maps 1:1 to what a human can apply to a
+# recorded finding: dismiss (benign / accepted), triage (real, being handled), keep_open
+# (undecided, leave for review). Enforcement verbs (quarantine/block) are policy decisions,
+# not actions on a past finding, so they are deliberately not offered here.
+_ACTIONS = "dismiss | triage | keep_open"
 
 _SYSTEM = (
     "You are a senior AI-security analyst working a finding in Palivane, an AI-security "
@@ -34,7 +38,8 @@ _SYSTEM = (
     "AI tool is serious; a generic code paste or a documentation example is usually not. Use "
     "the actor's other findings to spot a pattern (repeat leaker, escalating behavior) versus "
     "a one-off. Be concise and calibrated. `recommended_action` must be one of: "
-    f"{_ACTIONS}. Return the structured report."
+    f"{_ACTIONS} — dismiss a benign/false-positive or accepted finding, triage one that is "
+    "real and needs handling, keep_open when it's genuinely undecided. Return the report."
 )
 
 

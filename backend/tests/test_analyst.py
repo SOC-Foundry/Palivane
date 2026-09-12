@@ -15,7 +15,7 @@ class _FakeBackend:
             summary="A live AWS key was pasted into ChatGPT.",
             assessment="High — a production-looking credential left for an external AI tool.",
             related_activity="none observed",
-            recommended_action="quarantine",
+            recommended_action="triage",
             rationale="Confirmed secret leaving for an unsanctioned destination.",
             confidence=0.9,
         )
@@ -42,10 +42,20 @@ def test_investigate_returns_a_recommendation(client, monkeypatch):
     r = client.post(f"/api/findings/{fid}/investigate")
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["recommended_action"] == "quarantine"
+    assert body["recommended_action"] == "triage"
     assert body["finding_id"] == fid and body["by"]
     assert 0.0 <= body["confidence"] <= 1.0
     assert body["summary"] and body["rationale"]
+
+
+def test_investigation_persists_on_the_finding(client, monkeypatch):
+    _mock_provider(monkeypatch)
+    fid = _make_finding(client)
+    client.post(f"/api/findings/{fid}/investigate")
+    # Shows on the finding without re-running, with a timestamp — part of the record.
+    detail = client.get(f"/api/findings/{fid}").json()
+    inv = detail["investigation"]
+    assert inv and inv["recommended_action"] == "triage" and inv["at"]
 
 
 def test_investigate_is_read_only(client, monkeypatch):
