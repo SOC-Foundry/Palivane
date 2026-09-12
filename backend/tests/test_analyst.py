@@ -65,6 +65,18 @@ def test_investigate_is_audit_logged(client, monkeypatch):
     assert "finding.investigated" in acts
 
 
+def test_applying_recommendation_records_analyst_provenance(client, monkeypatch):
+    # 1b: approval-gated apply. A human sets the status with via="analyst" — the audit trail
+    # shows an AI recommendation a person approved, not an autonomous action.
+    _mock_provider(monkeypatch)
+    fid = _make_finding(client)
+    r = client.patch(f"/api/findings/{fid}", json={"status": "triaged", "via": "analyst"})
+    assert r.status_code == 200 and r.json()["status"] == "triaged"
+    entry = next(e for e in client.get("/api/audit").json()["entries"]
+                 if e["action"] == "finding.status" and e.get("target") == str(fid))
+    assert entry["detail"]["via"] == "analyst"
+
+
 def test_investigate_unknown_finding_is_404(client, monkeypatch):
     _mock_provider(monkeypatch)
     assert client.post("/api/findings/999999/investigate").status_code == 404
