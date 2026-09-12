@@ -134,14 +134,14 @@ class _AnthropicBackend:
         self._client = anthropic.Anthropic(api_key=api_key, timeout=settings.judge_timeout)
         self.model = model
 
-    def run(self, system: str, user: str) -> JudgeVerdict | None:
+    def run(self, system: str, user: str, output_format=JudgeVerdict):
         resp = self._client.messages.parse(
             model=self.model,
             max_tokens=2048,
             thinking={"type": "adaptive"},
             system=system,
             messages=[{"role": "user", "content": user}],
-            output_format=JudgeVerdict,
+            output_format=output_format,
         )
         return resp.parsed_output
 
@@ -153,7 +153,7 @@ class _OpenAIBackend:
                               **({"base_url": base_url} if base_url else {}))
         self.model = model
 
-    def run(self, system: str, user: str) -> JudgeVerdict | None:
+    def run(self, system: str, user: str, output_format=JudgeVerdict):
         completion = self._client.beta.chat.completions.parse(
             model=self.model,
             max_tokens=2048,
@@ -161,7 +161,7 @@ class _OpenAIBackend:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            response_format=JudgeVerdict,
+            response_format=output_format,
         )
         return completion.choices[0].message.parsed
 
@@ -175,14 +175,14 @@ class _GeminiBackend:
             http_options=genai.types.HttpOptions(timeout=int(settings.judge_timeout * 1000)))
         self.model = model
 
-    def run(self, system: str, user: str) -> JudgeVerdict | None:
+    def run(self, system: str, user: str, output_format=JudgeVerdict):
         resp = self._client.models.generate_content(
             model=self.model,
             contents=user,
             config=self._genai.types.GenerateContentConfig(
                 system_instruction=system,
                 response_mime_type="application/json",
-                response_schema=JudgeVerdict,
+                response_schema=output_format,
                 max_output_tokens=2048,
             ),
         )
@@ -207,14 +207,14 @@ class _VertexBackend:
                                        timeout=settings.judge_timeout)
         self.model = model
 
-    def run(self, system: str, user: str) -> JudgeVerdict | None:
+    def run(self, system: str, user: str, output_format=JudgeVerdict):
         resp = self._client.messages.parse(
             model=self.model,
             max_tokens=2048,
             thinking={"type": "adaptive"},
             system=system,
             messages=[{"role": "user", "content": user}],
-            output_format=JudgeVerdict,
+            output_format=output_format,
         )
         return resp.parsed_output
 
@@ -232,14 +232,14 @@ class _BedrockBackend:
         self._client = AnthropicBedrock(aws_region=region, timeout=settings.judge_timeout)
         self.model = model
 
-    def run(self, system: str, user: str) -> JudgeVerdict | None:
+    def run(self, system: str, user: str, output_format=JudgeVerdict):
         resp = self._client.messages.parse(
             model=self.model,
             max_tokens=2048,
             thinking={"type": "adaptive"},
             system=system,
             messages=[{"role": "user", "content": user}],
-            output_format=JudgeVerdict,
+            output_format=output_format,
         )
         return resp.parsed_output
 
@@ -274,11 +274,11 @@ class _ClaudeCLIBackend:
             raise ValueError(f"no JSON object in CLI reply: {text[:120]!r}")
         return text[start:end + 1]
 
-    def run(self, system: str, user: str) -> JudgeVerdict | None:
+    def run(self, system: str, user: str, output_format=JudgeVerdict):
         import json as _json
         import os
         import subprocess
-        schema = _json.dumps(JudgeVerdict.model_json_schema())
+        schema = _json.dumps(output_format.model_json_schema())
         prompt = (f"{system}\n\nRespond with ONLY a single JSON object matching this "
                   f"JSON schema — no prose, no code fences:\n{schema}\n\n"
                   f"Content to review:\n{user}")
@@ -294,7 +294,7 @@ class _ClaudeCLIBackend:
         envelope = _json.loads(out.stdout)
         if envelope.get("is_error"):
             raise RuntimeError(f"claude CLI error result: {str(envelope.get('result'))[:160]}")
-        return JudgeVerdict.model_validate_json(self._extract_json(str(envelope.get("result", ""))))
+        return output_format.model_validate_json(self._extract_json(str(envelope.get("result", ""))))
 
 
 def _resolve_key(provider: str) -> str:
@@ -477,7 +477,7 @@ class LLMJudgeDetector:
     def label(self) -> str:
         return _PROVIDER_LABELS.get(self.provider, "LLM judge")
 
-    def _run_with_failover(self, system: str, user: str, backends=None):
+    def _run_with_failover(self, system: str, user: str, backends=None, output_format=JudgeVerdict):
         """Try each provider in order; fall over on any error (billing, outage, rate
         limit). Returns (verdict, provider_label) or (None, None) if all providers fail.
         Failures are logged loudly — a dead provider must never silently disable the judge.
@@ -494,7 +494,7 @@ class LLMJudgeDetector:
         last_exc = None
         for provider, backend, model in use:
             try:
-                verdict = backend.run(system, user)
+                verdict = backend.run(system, user, output_format=output_format)
                 if last_exc is not None:
                     log.warning("judge: failed over to %s/%s after prior provider error", provider, model)
                 if health is not None:

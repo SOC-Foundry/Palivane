@@ -2565,6 +2565,36 @@ def get_finding(finding_id: int, current: User = Depends(get_current_user),
     return row.to_detail(dek)
 
 
+@app.post("/api/findings/{finding_id}/investigate")
+def investigate_finding(finding_id: int, current: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    """Read-only analyst agent: investigate a finding and RECOMMEND an action — it never
+    applies one (acting is a separate, approval-gated step). Uses the tenant's LLM providers
+    (or BYOK), the same as the judge, so it inherits the judge opt-out, BYOK, and plan gate."""
+    from . import analyst, audit_log
+    from .service import resolve_judge_backends
+    tenant = db.get(Tenant, current.tenant_id)
+    backends = resolve_judge_backends(tenant)
+    if backends == [] or (backends is None and not engine.judge_enabled):
+        raise HTTPException(
+            status_code=400,
+            detail="the analyst needs an LLM provider (the same one the judge uses); none is "
+                   "configured or enabled for this tenant")
+    try:
+        report = analyst.investigate(engine, db, current.tenant_id, finding_id,
+                                     judge_backends=(backends or None))
+    except LookupError:
+        raise HTTPException(status_code=404, detail="finding not found")
+    if report is None:
+        raise HTTPException(status_code=503,
+                            detail="the analyst's LLM provider is unavailable right now")
+    audit_log.record(db, current.tenant_id, current.email, "finding.investigated",
+                     target=str(finding_id),
+                     detail={"recommended": report.get("recommended_action"),
+                             "by": report.get("by")})
+    return report
+
+
 @app.patch("/api/findings/{finding_id}")
 def update_status(finding_id: int, body: StatusUpdate,
                   current: User = Depends(get_current_user), db: Session = Depends(get_db)):

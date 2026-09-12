@@ -206,6 +206,15 @@ def gateway_usage() -> dict:
     return _read(main.usage, admin=True)
 
 
+@mcp.tool()
+def investigate_finding(finding_id: int) -> dict:
+    """Run the read-only analyst on a finding: it gathers the finding's context and the
+    actor's other recent findings and returns a written investigation with a RECOMMENDED
+    action (it never applies one). Uses the tenant's LLM providers, the same as the judge."""
+    from . import main
+    return _read(main.investigate_finding, admin=False, finding_id=finding_id)
+
+
 def _resource_metadata_url() -> str | None:
     """RFC 9728 protected-resource metadata URL for the 401 challenge, or None when the OAuth
     server isn't wired (a prod deployment that never set PALIVANE_PUBLIC_URL — see
