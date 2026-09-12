@@ -95,6 +95,31 @@ def _fold_recurrence(db: Session, tenant_id, fp: str) -> Finding | None:
     return q.order_by(Finding.id.desc()).first()
 
 
+def resolve_judge_backends(tenant):
+    """Which LLM backends a tenant may use for judge-powered features (the judge, the analyst
+    agent). Mirrors run_analysis's resolution so both paths honor the same opt-out, BYOK, and
+    plan gate:
+      []   -> none available (tenant opted out, plan lacks the feature, nothing configured)
+      None -> use the operator's global providers
+      list -> the tenant's own BYOK backends
+    """
+    if tenant is not None and tenant.judge_enabled is False:   # consent opt-out wins
+        return []
+    if tenant is not None and getattr(tenant, "judge_byok_key_encrypted", ""):
+        from .detectors.llm_judge import byok_backends
+        byok = byok_backends(tenant.judge_byok_provider or "",
+                             crypto.unseal_secret(tenant.judge_byok_key_encrypted,
+                                                  crypto.tenant_dek_readonly(tenant)),
+                             tenant.judge_byok_model or "")
+        if byok:
+            return byok           # BYOK is exempt from the plan gate — they pay for it
+    if settings.judge_plan_gated:
+        from .plans import has_feature
+        if not has_feature(tenant, "judge"):
+            return []
+    return None                   # operator's global providers
+
+
 def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                  tenant_id: int | None = None, signal_filter=None,
                  persist_benign: bool = True, agent: str = "",

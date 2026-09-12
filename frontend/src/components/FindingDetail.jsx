@@ -92,6 +92,9 @@ function checksOf(finding) {
 
 export default function FindingDetail({ finding, isAdmin, onClose, onStatusChange }) {
   const [suppressed, setSuppressed] = useState(null);
+  const [report, setReport] = useState(null);      // read-only analyst investigation
+  const [investigating, setInvestigating] = useState(false);
+  const [investigateErr, setInvestigateErr] = useState("");
   if (!finding) return null;
   const status = finding.status || "open";
   const steps = remediationFor(finding);
@@ -100,6 +103,19 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
   async function setStatus(s) {
     await api.setStatus(finding.id, s);
     onStatusChange();
+  }
+
+  // Read-only AI analyst: it investigates and RECOMMENDS an action; a human still applies it
+  // via the status buttons. Never mutates the finding on its own.
+  async function investigate() {
+    setInvestigating(true); setInvestigateErr("");
+    try {
+      setReport(await api.investigateFinding(finding.id));
+    } catch (e) {
+      setInvestigateErr(e.message || String(e));
+    } finally {
+      setInvestigating(false);
+    }
   }
 
   // One-click policy tuning: merge this check into the actor's per-user override, so
@@ -136,6 +152,32 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
           <span className="rec-action">recommend: {finding.recommended_action}</span>
         </div>
         <button className="link-btn" onClick={onClose}>close</button>
+      </div>
+
+      <div className="detail-section analyst">
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <button className="primary-btn slim" onClick={investigate} disabled={investigating}>
+            {investigating ? "Investigating…" : "🔎 Investigate (AI analyst)"}
+          </button>
+          <span className="muted" style={{ fontSize: 12 }}>
+            Reads the finding + this actor's history and recommends an action. It never applies it.
+          </span>
+        </div>
+        {investigateErr && <div className="error" style={{ marginTop: 10 }}>{investigateErr}</div>}
+        {report && (
+          <div className="analyst-report" style={{ marginTop: 12 }}>
+            <p><strong>Summary.</strong> {report.summary}</p>
+            <p><strong>Assessment.</strong> {report.assessment}</p>
+            <p><strong>Related activity.</strong> {report.related_activity}</p>
+            <p><strong>Recommended:</strong>{" "}
+              <span className={`status-chip status-${report.recommended_action}`}>
+                {report.recommended_action}</span>{" "}
+              <span className="muted" style={{ fontSize: 12 }}>
+                ({Math.round((report.confidence || 0) * 100)}% confidence · {report.by})</span>
+            </p>
+            <p className="muted" style={{ fontSize: 13 }}>{report.rationale}</p>
+          </div>
+        )}
       </div>
 
       <h3>{finding.subject || "(no subject)"}</h3>
