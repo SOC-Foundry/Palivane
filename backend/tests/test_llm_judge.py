@@ -14,7 +14,7 @@ def _verdict(mal):
 
 
 class _Boom:
-    def run(self, system, user):
+    def run(self, system, user, output_format=None):
         raise RuntimeError("credit balance is too low")
 
 
@@ -22,7 +22,7 @@ class _Good:
     def __init__(self, mal=0.9):
         self._mal = mal
 
-    def run(self, system, user):
+    def run(self, system, user, output_format=None):
         return _verdict(self._mal)
 
 
@@ -277,7 +277,7 @@ class _KeyCtor:
     def __init__(self, api_key, model):
         self.model = model
 
-    def run(self, system, user):
+    def run(self, system, user, output_format=None):
         return _verdict(0.0)
 
 
@@ -288,7 +288,7 @@ class _FakeVertex:
         _FakeVertex.built.append((project, region, model))
         self.model = model
 
-    def run(self, system, user):
+    def run(self, system, user, output_format=None):
         return _verdict(0.0)
 
 
@@ -299,7 +299,7 @@ class _FakeBedrock:
         _FakeBedrock.built.append((region, model))
         self.model = model
 
-    def run(self, system, user):
+    def run(self, system, user, output_format=None):
         return _verdict(0.0)
 
 

@@ -104,7 +104,8 @@ def test_only_read_tools_are_exposed(client):
     from app.mcp_remote import mcp
     names = {t.name for t in mcp._tool_manager.list_tools()}
     assert names == {"list_findings", "get_finding", "ai_tool_inventory",
-                     "list_connectors", "gateway_usage"}
+                     "list_connectors", "gateway_usage", "investigate_finding"}
+    # investigate_finding calls an LLM but is read-only — it recommends, never mutates.
     assert not {n for n in names if "set_" in n or "sync" in n}
 
 

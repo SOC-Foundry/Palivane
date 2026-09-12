@@ -29,7 +29,7 @@ class _FakeBackend:
         _FakeBackend.built_with.append((api_key, model))
         self.model = model
 
-    def run(self, system, user):
+    def run(self, system, user, output_format=None):
         return _verdict()
 
 
@@ -75,7 +75,7 @@ def test_byok_failure_never_touches_global_health(monkeypatch):
     from app.detectors.llm_judge import LLMJudgeDetector
 
     class _Boom:
-        def run(self, system, user):
+        def run(self, system, user, output_format=None):
             raise RuntimeError("tenant key is dead")
 
     det = LLMJudgeDetector()
@@ -182,7 +182,7 @@ class _DeadBackend:
     def __init__(self, api_key: str, model: str) -> None:
         self.model = model
 
-    def run(self, system, user):
+    def run(self, system, user, output_format=None):
         raise RuntimeError("credit balance is too low")
 
 
