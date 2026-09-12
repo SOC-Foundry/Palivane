@@ -81,7 +81,14 @@ def process_acs(req: dict, cfg, sp_entity_id: str, acs_url: str) -> dict:
     email = _pick_email(attrs, nameid)
     if not email:
         raise SAMLError("no email in SAML assertion")
-    return {"email": email, "nameid": nameid, "attributes": attrs}
+    # Replay protection material: the assertion id is unique per assertion, and its
+    # NotOnOrAfter bounds how long a captured response could be re-POSTed. The caller caches
+    # accepted ids until they expire and rejects reuse (the SDK checks signature/conditions
+    # but not single-use). get_last_assertion_not_on_or_after() is a list of unix timestamps.
+    noa = auth.get_last_assertion_not_on_or_after() or []
+    return {"email": email, "nameid": nameid, "attributes": attrs,
+            "assertion_id": auth.get_last_assertion_id() or "",
+            "not_on_or_after": max(noa) if noa else 0}
 
 
 def sp_metadata(cfg, sp_entity_id: str, acs_url: str) -> str:

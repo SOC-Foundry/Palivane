@@ -55,6 +55,21 @@ def test_acs_provisions_user_and_issues_session(client, raw_client, monkeypatch)
     assert me.json()["user"]["role"] == "analyst"
 
 
+def test_acs_rejects_replayed_assertion(client, raw_client, monkeypatch):
+    # An assertion is single-use: the same assertion id, posted twice, authenticates once and
+    # is rejected on replay (the SDK verifies signature/conditions but not one-time use).
+    _configure(client, auto_provision=True)
+    monkeypatch.setattr(saml_mod, "process_acs", lambda *a, **k: {
+        "email": "sso-saml@acme.com", "nameid": "x", "attributes": {},
+        "assertion_id": "_assert_replay_1", "not_on_or_after": 0})
+    post = lambda: raw_client.post("/api/auth/saml/acme/acs",
+                                   data={"SAMLResponse": "b64"}, follow_redirects=False)
+    first = post()
+    assert first.status_code == 303 and "#sso_token=" in first.headers["location"]
+    second = post()
+    assert second.status_code == 401 and "replay" in second.json()["detail"].lower()
+
+
 def test_acs_rejects_invalid_response(client, raw_client, monkeypatch):
     _configure(client)
     def _boom(*a, **k):
