@@ -2609,8 +2609,11 @@ def update_status(finding_id: int, body: StatusUpdate,
     row.status = body.status
     db.commit()
     from . import audit_log
+    detail = {"status": row.status}
+    if body.via:
+        detail["via"] = body.via[:40]     # e.g. "analyst" — a human approving the AI's rec
     audit_log.record(db, current.tenant_id, current.email, "finding.status",
-                     target=str(finding_id), detail={"status": row.status})
+                     target=str(finding_id), detail=detail)
     return {"id": finding_id, "status": row.status}
 
 

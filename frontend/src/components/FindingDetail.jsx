@@ -118,6 +118,21 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
     }
   }
 
+  // Approval-gated: the human applies the analyst's recommendation with one click; it's
+  // recorded (via="analyst") as an AI recommendation a person approved. Dismiss stays
+  // admin-only server-side. "quarantine"/"block" are enforcement recs with no finding-status
+  // equivalent, so they apply as "triaged" (acknowledged, being handled).
+  async function applyRecommendation() {
+    const target = report.recommended_action === "dismiss" ? "dismissed" : "triaged";
+    if (!window.confirm(`Apply the analyst's recommendation and mark this finding "${target}"?`)) return;
+    try {
+      await api.setStatus(finding.id, target, "analyst");
+      onStatusChange();
+    } catch (e) {
+      setInvestigateErr(e.message || String(e));
+    }
+  }
+
   // One-click policy tuning: merge this check into the actor's per-user override, so
   // expected behavior (e.g. a security engineer whose work trips the scanners) stops
   // generating findings at the source instead of being re-dismissed forever. Scoped to
@@ -176,6 +191,12 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
                 ({Math.round((report.confidence || 0) * 100)}% confidence · {report.by})</span>
             </p>
             <p className="muted" style={{ fontSize: 13 }}>{report.rationale}</p>
+            <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
+              <button className="primary-btn slim" onClick={applyRecommendation}>
+                Apply: mark {report.recommended_action === "dismiss" ? "dismissed" : "triaged"}
+              </button>
+              <span className="muted" style={{ fontSize: 12 }}>You approve — the analyst never applies it.</span>
+            </div>
           </div>
         )}
       </div>

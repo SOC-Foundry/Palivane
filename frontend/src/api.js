@@ -157,8 +157,8 @@ export const api = {
     return req("/findings" + (q ? `?${q}` : ""));
   },
   finding: (id) => req(`/findings/${id}`),
-  setStatus: (id, status) =>
-    req(`/findings/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  setStatus: (id, status, via = "") =>
+    req(`/findings/${id}`, { method: "PATCH", body: JSON.stringify({ status, via }) }),
   bulkStatus: (ids, status) =>
     req("/findings/bulk-status", { method: "POST", body: JSON.stringify({ ids, status }) }),
 
