@@ -50,6 +50,32 @@ clients, not just asserted in copy. Security tools that wedge developer workflow
 and every buyer who has been burned by one knows it. This is a real differentiator and costs
 nothing to say.
 
+### The third claim: inline agent governance (the agent-era wedge)
+
+Newer than the surface-coverage argument, and increasingly the reason a prospect is shopping
+at all. Palivane governs what agents *do*, inline, not just what prompts contain:
+
+| Capability | What it does | Where the evidence lives |
+|---|---|---|
+| Agent identity attestation | Binds a tool call to a workload-identity (OIDC) agent; an unattested call (`ag_` bearer or none) is flagged, and with enforcement on, hard-blocked | `app/main.py` `_agent_attestation` / the `agent_attestation` signal; `test_agent_attestation.py` |
+| A2A flow graph | A directed graph of which agent fed which, carrying the message count and the worst risk that crossed each hop | `app/agent_graph.py`; the Agents tab |
+| The analyst | A read-only investigator that gathers a finding's context + the actor's recent activity and recommends dismiss / triage / keep-open with a rationale and calibrated confidence — never acts on its own | `app/analyst.py`; `POST /api/findings/{id}/investigate` |
+| Least-privilege agent roles | Per-agent authz (an `AgentRole` allowlist of tools) so an agent token can only do what its role permits, enforced on the gateway and tool-call paths | `app/authz.py`, the `AgentRole` model, `_agent_authz_probe` / `_gw_authz` |
+| Local MCP inspection | Sees tool calls on local stdio MCP servers that never touch the network | `mcp-server/` wrapper (also the moat table below) |
+
+Why this is a distinct axis from the scanner vendors: attestation and the A2A graph are about
+*identity and action*, not *prompt content*. An injection-focused competitor can out-detect a
+malicious string and still have nothing to say about "which agent, attested how, called which
+tool, and fed which downstream agent." That is the sentence to use when a prospect frames the
+category as "prompt firewall."
+
+**The honest counterweight** (same register as everything else here): this axis is the
+*least* tenant-proven of the three moat claims. Attestation requires the tenant to wire
+workload-identity OIDC (real config burden), the analyst's quality rides the optional LLM
+judge tier, and none of it has run against real agent traffic yet — the same one-pilot
+constraint as the rest of the doc. Claim the *architecture* (inline, identity-aware, on
+surfaces a scanner isn't in); do not yet claim a measured outcome.
+
 ### What is NOT the moat, and must not be claimed as one
 
 Detection quality. The shipping engine is regex + heuristics; the ML classifier exists but
@@ -79,8 +105,10 @@ not claim to out-detect an injection-focused vendor until the ML gate clears.
 The single most useful thing to know here: **the free competition and the paid competition
 are not the same companies, and they lose to us for opposite reasons.**
 
-**Tier 1 — commercial AI-security vendors.** Harmonic, Nightfall, Knostic, Prompt Security,
-Lakera (acquired by Check Point). SaaS, sales-led. Two observations that matter:
+**Tier 1 — commercial AI-security vendors.** Harmonic, Nightfall, Knostic, Prompt Security
+(**acquired by SentinelOne in 2025** — now an incumbent-backed offering, not a startup),
+Lakera (acquired by Check Point). SaaS, sales-led. Per-competitor teardowns with sources are
+in [competitor-teardowns.md](competitor-teardowns.md); two observations that matter:
 
 - **None of them offers a free self-hosted edition.** Where free tiers exist they are
   usage-capped SaaS (Azure 5K records/month, Model Armor 2M tokens/month, Portkey 10K
@@ -120,9 +148,19 @@ sources before repeating any specific number to a prospect. What was actually re
 - [LLM Guard](https://appsecsanta.com/llm-guard) and [NeMo Guardrails](https://github.com/NVIDIA-NeMo/Guardrails) — the library-not-system distinction
 - [Cloudthrill, "LLM guardrail solutions: open source vs commercial"](https://cloudthrill.ca/llm-guardrail-solutions)
 
-**Still open:** no feature-by-feature teardown of any single competitor exists. The tiering
-tells you who you are losing to and why; it does not tell you what to say when a prospect
-has Harmonic in the other tab.
+**Now closed (2026-09):** per-competitor teardowns for Prompt Security, Nightfall, and
+Knostic exist in [competitor-teardowns.md](competitor-teardowns.md), with primary-source
+citations and a "what to actually say in the room" section. **Still open:** Harmonic and
+Lakera/Check Point have no teardown yet.
+
+**The teardowns forced one honest correction to the moat.** Surface *breadth* is narrower
+than the pitch above implies: Nightfall already ships a browser plugin, SaaS integrations,
+endpoint agents, and an MCP gateway; Prompt Security ships a browser/endpoint sensor and
+shadow-MCP discovery. The surfaces still genuinely differentiating are the **egress proxy**,
+**SaaS OAuth _discovery_** (vs per-app integrations), and **local _stdio_ MCP inspection** —
+plus free self-host, published pricing, and the agent primitives (attestation, A2A) none of
+the three evidence. Keep the breadth claim, but lead with those specifics, not a generic
+"we cover more surfaces."
 
 ---
 
