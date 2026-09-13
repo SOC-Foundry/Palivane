@@ -38,3 +38,6 @@ scripts/hero-video/node_modules/
 # Local no-Docker dev rig (see RUNNING-LOCALLY.md)
 .env.local
 /palivane-local.db
+
+# Rendered demo soundtracks — regenerable intermediates (only the muxed .mp4 is tracked)
+marketing/*-score.wav
