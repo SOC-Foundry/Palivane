@@ -305,7 +305,7 @@ export default function Landing({ onSignIn }) {
             <a className="lp-textlink" href="https://github.com/SOC-Foundry/palivane-clients/tree/main/mcp-server">Wire it into Claude Code or Desktop →</a>
           </div>
           <div className="lp-split-media">
-            <Clip src="/shots/mcp-demo.mp4" poster="/shots/mcp-demo-poster.png"
+            <Clip src="/shots/mcp-demo.mp4?v=2" poster="/shots/mcp-demo-poster.png"
                   caption="Working the triage queue from Claude, without opening the console." />
           </div>
         </div>
