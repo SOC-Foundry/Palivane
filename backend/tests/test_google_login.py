@@ -52,6 +52,29 @@ def test_existing_user_signs_in(client, raw_client, monkeypatch):
     assert r.status_code == 303 and "#sso_token=" in r.headers["location"]
 
 
+def test_return_to_lands_on_extension_connect(client, raw_client, monkeypatch):
+    # A connect-initiated "Continue with Google" comes back to /extension-connect (carried in
+    # the signed state) so the token handback completes instead of dead-ending on the console.
+    from app.security import create_token
+    _enable(monkeypatch)
+    _mock_google(monkeypatch, "admin@acme.com")
+    rt = "/extension-connect?redirect_uri=http%3A%2F%2F127.0.0.1%3A5000%2Fcb&state=s"
+    state = create_token({"typ": "google_state", "nonce": "n1", "return_to": rt}, ttl=600)
+    r = raw_client.get(f"/api/auth/google/callback?code=c&state={state}", follow_redirects=False)
+    loc = r.headers["location"]
+    assert r.status_code == 303 and "/extension-connect" in loc and "#sso_token=" in loc
+
+
+def test_google_ignores_open_redirect_return_to(client, raw_client, monkeypatch):
+    from app.security import create_token
+    _enable(monkeypatch)
+    _mock_google(monkeypatch, "admin@acme.com")
+    state = create_token({"typ": "google_state", "nonce": "n1",
+                          "return_to": "https://evil.example.com/x"}, ttl=600)
+    r = raw_client.get(f"/api/auth/google/callback?code=c&state={state}", follow_redirects=False)
+    assert "evil.example.com" not in r.headers["location"]
+
+
 def test_unverified_email_rejected(client, raw_client, monkeypatch):
     _enable(monkeypatch)
     _mock_google(monkeypatch, "admin@acme.com", verified=False)

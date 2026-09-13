@@ -51,6 +51,18 @@ export default function ExtensionConnect() {
   const [detail, setDetail] = useState("");
 
   useEffect(() => {
+    // Returning from a redirect provider (Google/SSO): the session comes back in the fragment
+    // (return_to landed us here, not the console). Consume it, keep the query (redirect_uri/
+    // state), and proceed as signed in so the token handback below runs.
+    const m = window.location.hash.match(/sso_token=([^&]+)/);
+    if (m) {
+      setToken(decodeURIComponent(m[1]));
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      setAuthed(true);
+    }
+  }, []);
+
+  useEffect(() => {
     if (!authed) return;
     const kind = redirectKind(redirectUri);
     if (!kind) {
