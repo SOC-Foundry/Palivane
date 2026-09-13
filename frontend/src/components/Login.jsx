@@ -122,9 +122,17 @@ export default function Login({ onAuthed, onBack }) {
     }
   }
 
+  // A redirect-based provider (SSO/Google) leaves the SPA, so carry the connect landing
+  // through it: on /extension-connect, return_to brings the browser back here after auth so
+  // the token handback to the extension/CLI completes instead of dead-ending on the console.
+  function returnToSuffix() {
+    if (window.location.pathname !== "/extension-connect") return "";
+    return `?return_to=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+  }
+
   function ssoLogin() {
     if (!org.trim()) { setErr("Enter your organization to sign in with SSO."); return; }
-    window.location.href = `/api/auth/sso/${encodeURIComponent(org.trim())}/login`;
+    window.location.href = `/api/auth/sso/${encodeURIComponent(org.trim())}/login${returnToSuffix()}`;
   }
 
   async function submitMfa(e) {
@@ -232,7 +240,7 @@ export default function Login({ onAuthed, onBack }) {
         )}
         {(mode === "signin" || mode === "signup") && googleLogin && (
           <button type="button" className="sso-btn"
-                  onClick={() => { window.location.href = "/api/auth/google/login"; }}>
+                  onClick={() => { window.location.href = `/api/auth/google/login${returnToSuffix()}`; }}>
             Continue with Google
           </button>
         )}

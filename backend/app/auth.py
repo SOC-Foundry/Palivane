@@ -1533,14 +1533,32 @@ def _enabled_oidc(org: str, db: Session) -> tuple[Tenant, TenantOIDC]:
     return tenant, row
 
 
+def _safe_return_to(rt: str) -> str:
+    """A same-origin relative landing path for the extension/CLI connect flow, or "" if unsafe.
+    The session token rides back in the redirect fragment, so an open redirect here would
+    exfiltrate it — allow only the /extension-connect page, never an absolute URL, a
+    protocol-relative //host, a scheme, or control chars."""
+    rt = (rt or "").strip()
+    if not rt.startswith("/extension-connect") or len(rt) > 1024:
+        return ""
+    # Legit values carry a URL-ENCODED redirect_uri (http%3A%2F%2F…), so a literal scheme,
+    # protocol-relative //host, backslash, control char, or its own fragment is an attack.
+    if (rt.startswith("//") or "\\" in rt or "://" in rt or "#" in rt
+            or "\n" in rt or "\r" in rt or "\t" in rt):
+        return ""
+    return rt
+
+
 @router.get("/auth/oidc/{org}/login")
-def oidc_login(org: str, request: Request, db: Session = Depends(get_db)):
+def oidc_login(org: str, request: Request, return_to: str = "", db: Session = Depends(get_db)):
     """Begin the SSO auth-code flow: redirect the browser to the tenant's IdP."""
     tenant, row = _enabled_oidc(org, db)
     meta = oidc.discover(row.issuer)   # raises OIDCError -> 500-ish; acceptable for misconfig
     nonce = secrets.token_urlsafe(16)
     # Signed, self-expiring state — no server-side session store needed (multi-worker safe).
-    state = create_token({"typ": "oidc_state", "org": tenant.slug, "nonce": nonce}, ttl=600)
+    # return_to carries the connect landing through the IdP round-trip (signed, so tamper-proof).
+    state = create_token({"typ": "oidc_state", "org": tenant.slug, "nonce": nonce,
+                          "return_to": _safe_return_to(return_to)}, ttl=600)
     base = str(request.base_url).rstrip("/")
     redirect_uri = f"{base}/api/auth/oidc/{tenant.slug}/callback"
     return RedirectResponse(oidc.authorize_url(meta, row.client_id, redirect_uri, state, nonce),
@@ -1572,11 +1590,11 @@ def oidc_callback(org: str, request: Request, code: str = "", state: str = "",
         raise HTTPException(status_code=401, detail=str(e))
 
     return _sso_complete(db, tenant, claims["email"], row.auto_provision,
-                         row.allowed_domain, base)
+                         row.allowed_domain, base, _safe_return_to(payload.get("return_to", "")))
 
 
 def _sso_complete(db: Session, tenant: Tenant, email: str, auto_provision: bool,
-                  allowed_domain: str, base: str) -> RedirectResponse:
+                  allowed_domain: str, base: str, return_to: str = "") -> RedirectResponse:
     """Shared SSO tail (OIDC + SAML): enforce domain, map/provision the user, mint a
     session, and hand it to the console via URL fragment."""
     from .lifecycle import ensure_active
@@ -1604,8 +1622,11 @@ def _sso_complete(db: Session, tenant: Tenant, email: str, auto_provision: bool,
     # client Host header — otherwise a spoofed Host would redirect the session token to an
     # attacker domain (open-redirect / token exfil). Fall back to request-derived base.
     origin = settings.public_base_url or base
-    # Hand the session to the SPA via URL fragment (not query — keeps it out of logs).
-    return RedirectResponse(f"{origin}/#sso_token={token}", status_code=303)
+    # Hand the session to the SPA via URL fragment (not query — keeps it out of logs). When a
+    # connect flow asked for it, land back on /extension-connect so the token handback to the
+    # extension/CLI completes instead of dead-ending on the console.
+    return RedirectResponse(f"{origin}{_safe_return_to(return_to) or '/'}#sso_token={token}",
+                            status_code=303)
 
 
 # --- per-tenant SAML SSO -------------------------------------------------------------
@@ -1690,12 +1711,14 @@ def _saml_sp(base: str, slug: str) -> tuple[str, str]:
 
 
 @router.get("/auth/saml/{org}/login")
-def saml_login(org: str, request: Request, db: Session = Depends(get_db)):
+def saml_login(org: str, request: Request, return_to: str = "", db: Session = Depends(get_db)):
     tenant, cfg = _enabled_saml(org, db)
     base = str(request.base_url).rstrip("/")
     sp_entity, acs = _saml_sp(base, tenant.slug)
+    # RelayState carries the connect landing back through the IdP; the ACS re-validates it.
+    relay = _safe_return_to(return_to) or base
     try:
-        url = saml.login_url(_saml_req(request), cfg, sp_entity, acs, relay_state=base)
+        url = saml.login_url(_saml_req(request), cfg, sp_entity, acs, relay_state=relay)
     except saml.SAMLError as e:
         raise HTTPException(status_code=500, detail=str(e))
     return RedirectResponse(url, status_code=302)
@@ -1708,6 +1731,7 @@ async def saml_acs(org: str, request: Request, db: Session = Depends(get_db)):
     sp_entity, acs = _saml_sp(base, tenant.slug)
     form = await request.form()
     req = _saml_req(request, post_data={k: v for k, v in form.items()})
+    return_to = _safe_return_to(str(form.get("RelayState") or ""))
     try:
         result = saml.process_acs(req, cfg, sp_entity, acs)
     except saml.SAMLError as e:
@@ -1734,7 +1758,8 @@ async def saml_acs(org: str, request: Request, db: Session = Depends(get_db)):
             db.rollback()
             raise HTTPException(status_code=401,
                                 detail="SAML assertion already used (replay rejected)")
-    return _sso_complete(db, tenant, result["email"], cfg.auto_provision, cfg.allowed_domain, base)
+    return _sso_complete(db, tenant, result["email"], cfg.auto_provision, cfg.allowed_domain,
+                         base, return_to)
 
 
 @router.get("/auth/saml/{org}/metadata")
@@ -1751,15 +1776,18 @@ def saml_metadata(org: str, request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/auth/sso/{org}/login")
-def sso_login(org: str, request: Request, db: Session = Depends(get_db)):
+def sso_login(org: str, request: Request, return_to: str = "", db: Session = Depends(get_db)):
     """Unified SSO entry: redirect to whichever protocol the org has enabled."""
     base = str(request.base_url).rstrip("/")
+    from urllib.parse import quote
+    rt = _safe_return_to(return_to)
+    q = f"?return_to={quote(rt, safe='')}" if rt else ""
     tenant = db.query(Tenant).filter(Tenant.slug == org.strip().lower()).first()
     if tenant:
         o = db.query(TenantOIDC).filter(TenantOIDC.tenant_id == tenant.id).first()
         if o and o.enabled:
-            return RedirectResponse(f"{base}/api/auth/oidc/{tenant.slug}/login", status_code=307)
+            return RedirectResponse(f"{base}/api/auth/oidc/{tenant.slug}/login{q}", status_code=307)
         s = db.query(TenantSAML).filter(TenantSAML.tenant_id == tenant.id).first()
         if s and s.enabled:
-            return RedirectResponse(f"{base}/api/auth/saml/{tenant.slug}/login", status_code=307)
+            return RedirectResponse(f"{base}/api/auth/saml/{tenant.slug}/login{q}", status_code=307)
     raise HTTPException(status_code=404, detail="SSO is not configured for this organization")
