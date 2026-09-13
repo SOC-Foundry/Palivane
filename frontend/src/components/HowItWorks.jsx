@@ -239,7 +239,7 @@ export default function HowItWorks() {
              shadow-AI usage, or pull a compliance report from Claude or any MCP client, without ever
              opening a dashboard.</p>
           <figure className="lp-shot lp-shot-lead">
-            <video src="/shots/mcp-demo.mp4" poster="/shots/mcp-demo-poster.png" controls playsInline
+            <video src="/shots/mcp-demo.mp4?v=2" poster="/shots/mcp-demo-poster.png" controls playsInline
                    preload="metadata"
                    style={{ display: "block", width: "100%", borderRadius: 12, border: "1px solid #22271F" }} />
             <figcaption>Four questions, four MCP tool calls: findings, shadow-AI inventory, a triage
@@ -261,7 +261,7 @@ export default function HowItWorks() {
              recommends, <strong>identity attestation</strong> that blocks unattested tool calls,
              and an <strong>agent-to-agent flow graph</strong> that shows where risk crossed a hop.</p>
           <figure className="lp-shot lp-shot-lead">
-            <video src="/shots/agent-demo.mp4" poster="/shots/agent-demo-poster.png" controls playsInline
+            <video src="/shots/agent-demo.mp4?v=2" poster="/shots/agent-demo-poster.png" controls playsInline
                    preload="metadata"
                    style={{ display: "block", width: "100%", borderRadius: 12, border: "1px solid #22271F" }} />
             <figcaption>The analyst investigating a credential-leak finding and recommending an
