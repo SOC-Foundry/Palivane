@@ -1129,3 +1129,17 @@ class UpgradeRequest(Base):
                 "status": self.status or "pending",
                 "created_at": self.created_at.isoformat() if self.created_at else None,
                 "closed_at": self.closed_at.isoformat() if self.closed_at else None}
+
+
+class UsedSamlAssertion(Base):
+    """Single-use record of an accepted SAML assertion, for replay protection. python3-saml
+    validates signature/audience/conditions but not one-time use, so a captured valid
+    SAMLResponse could be re-POSTed within its NotOnOrAfter window. We cache the assertion id
+    per tenant until it expires and reject reuse; rows are pruned once past expiry."""
+    __tablename__ = "used_saml_assertions"
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, index=True)
+    assertion_id = Column(String(255))
+    expires_at = Column(DateTime, index=True)
+    __table_args__ = (UniqueConstraint("tenant_id", "assertion_id",
+                                       name="uq_used_saml_assertion"),)

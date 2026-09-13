@@ -1710,6 +1710,28 @@ async def saml_acs(org: str, request: Request, db: Session = Depends(get_db)):
         result = saml.process_acs(req, cfg, sp_entity, acs)
     except saml.SAMLError as e:
         raise HTTPException(status_code=401, detail=str(e))
+    # Replay protection: an assertion is single-use. The SDK verified signature/conditions but
+    # not one-time use, so reject reuse of an assertion id we've already accepted for this
+    # tenant. The unique constraint is the real guarantee (race-safe: two simultaneous POSTs
+    # of the same assertion — one wins the insert, the other 401s).
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy.exc import IntegrityError
+
+    from .models import UsedSamlAssertion
+    aid = (result.get("assertion_id") or "").strip()
+    if aid:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        db.query(UsedSamlAssertion).filter(UsedSamlAssertion.expires_at < now).delete()
+        noa = result.get("not_on_or_after") or 0
+        exp = datetime.utcfromtimestamp(noa) if noa else now + timedelta(minutes=10)
+        db.add(UsedSamlAssertion(tenant_id=tenant.id, assertion_id=aid, expires_at=exp))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=401,
+                                detail="SAML assertion already used (replay rejected)")
     return _sso_complete(db, tenant, result["email"], cfg.auto_provision, cfg.allowed_domain, base)
 
 
