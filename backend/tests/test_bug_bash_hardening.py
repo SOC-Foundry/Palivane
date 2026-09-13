@@ -164,3 +164,26 @@ def test_oauth_grant_rejects_oversized_strings():
     from app.schemas import OAuthGrant
     with pytest.raises(ValidationError):
         OAuthGrant(app_name="a" * 1000)
+
+
+# --- production boot gate on a forgeable JWT key --------------------------------------
+#
+# The dev fallback secret keeps SQLite dev frictionless, but on a production-shaped
+# deployment (Postgres) an unset/well-known/short PALIVANE_SECRET_KEY makes every JWT
+# forgeable — anyone could mint an admin session for any tenant. The crypto module's
+# at-rest key also derives from this secret, so the same gate closes that fallback too.
+# The lifespan must refuse to boot rather than serve with a forgeable key.
+
+@pytest.mark.parametrize("bad_key", ["", "changeme", "dev-insecure-key-change-me", "short"])
+def test_prod_refuses_to_boot_with_a_weak_secret_key(monkeypatch, bad_key):
+    from app import main
+
+    monkeypatch.setattr(main.settings, "database_url", "postgresql://u:p@db/palivane")
+    monkeypatch.setattr(main.settings, "auth_secret_key", bad_key)
+
+    async def _boot():
+        async with main.lifespan(main.app):
+            pass
+
+    with pytest.raises(RuntimeError, match="PALIVANE_SECRET_KEY"):
+        asyncio.run(_boot())
