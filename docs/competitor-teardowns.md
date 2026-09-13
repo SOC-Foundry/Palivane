@@ -1,9 +1,10 @@
 # Competitor teardowns
 
 The feature-by-feature detail [competitive-position.md](competitive-position.md) says it
-lacks: *"what to say when a prospect has Harmonic in the other tab."* Three teardowns here,
-one per named competitor, in the same honest register — verified claims are sourced to the
-vendor's own site; anything secondhand is labelled and treated as adversarial.
+lacks: *"what to say when a prospect has Harmonic in the other tab."* Five teardowns here —
+Prompt Security, Nightfall, Knostic, Harmonic, and Lakera — in the same honest register:
+verified claims are sourced to the vendor's own site; anything secondhand is labelled and
+treated as adversarial.
 
 **Read the caveats.** These were assembled from public web sources in **September 2026**.
 Vendor sites change; acquisitions happen (one already did — see Prompt Security). Verify any
@@ -130,22 +131,105 @@ blog, OpenAnt blog). AWS Marketplace seller profile and funding/about pages are 
 
 ---
 
+## Harmonic Security — "AI Governance & Control Platform"
+
+**Independent** (Series A ~$17.5M, Apr 2025; ~$26M total — no acquisition found). Browser-
+and desktop-first, and the closest surface overlap to Palivane of anyone here.
+
+- **What they are** — governance platform built on understanding *how* AI is used, so
+  "security decisions follow the work instead of blocking it." Multi-surface SaaS, rolled out
+  via Intune/JAMF/Kandji/Group Policy. Three tiers: Explore (discovery), Guide (real-time
+  browser/desktop control), Command (governance for humans + agents). No self-host advertised.
+- **Surfaces** — browser extension across 10+ browsers (Chrome, Edge, Firefox, Safari, Arc,
+  Brave, Comet, Dia…); desktop AI apps (Claude Desktop, ChatGPT Desktop, Cursor, Windsurf);
+  embedded AI (Canva, Grammarly, Google AI mode); and an **MCP gateway on Windows/macOS/
+  Linux** for agentic workflows. Egress proxy, SaaS OAuth *discovery*, dedicated endpoint DLP:
+  not confirmed on primary pages (discovery reads as browser/desktop telemetry, not OAuth-graph).
+- **Detection** — explicitly anti-regex: "classify the meaning of the work, not the shape of
+  the string," via small language models reading the full interaction in <200 ms. No prominent
+  prompt-injection claim.
+- **Pricing** — demo-gated on their own site, but their **AWS Marketplace listing publishes
+  ~$163/user/year** (12-month, 200-user minimum). That's ≈ $13.60/user/mo — **comparable to
+  our $12**, so pricing is *not* a clean win against Harmonic; say so.
+- **Agent story** — real and specific: govern "at the MCP layer and the tool surface,"
+  granular per-MCP-server read/write/act permissions, "least agency" + human oversight for
+  high-risk tasks. **No agent identity attestation, unattested-tool-call blocking, or A2A flow
+  modeling found.**
+- **Palivane wins:** free self-host (Harmonic has none); the specific agent primitives
+  (attestation + *blocking* unattested tool calls + A2A graph) vs their MCP permissions;
+  egress proxy, OAuth discovery, local stdio MCP; fail-open.
+- **Palivane loses / caveats:** **browser-surface overlap is real and Harmonic's is likely
+  broader** (10+ browsers, desktop apps, embedded AI) — do not out-claim browser breadth. Their
+  ML/SLM data detection beats our regex; they have funding, a marketplace listing, and implied
+  customers; we have no cited tenant. And pricing is a wash, not a win.
+
+Sources: harmonic.security (+ /products/harmonic-protect, /pricing, /solutions/ai-agent-
+security-mcp-gateway), Harmonic's own AWS Marketplace listing. Funding figures secondary.
+
+---
+
+## Lakera — "Lakera Guard," now a Check Point company
+
+**Acquired by Check Point Software (announced Sept 16, 2025)**; now the foundation of Check
+Point's "Global Center of Excellence for AI Security," folded into the Infinity platform.
+
+**This is a different category — an API guardrail you embed in an app you build**, the same
+distinction Palivane's own docs draw for LLM Guard / NeMo. Lakera is *not* a capture plane.
+
+- **What they are** — AI-native runtime protection for GenAI/agents/MCP, API-first SaaS.
+  Flagship **Lakera Guard**: a low-latency detection API (`POST api.lakera.ai/v2/guard`),
+  called from your own app via any HTTP client.
+- **Surfaces** — inline in the app's LLM path only. **No browser extension, egress proxy, or
+  SaaS OAuth discovery** in Guard's own docs. Self-host exists (Docker / Helm / air-gapped) but
+  is **Enterprise-license-only**. MCP/agent: "AI Agent Security" protects prompts, RAG, and
+  MCP-connected tools incl. indirect injection, plus action governance. (Parent Check Point
+  markets shadow-AI/browser discovery separately — not Guard's path.)
+- **Detection (their strength)** — real-time ML across prompt attacks (injection/jailbreak),
+  data leakage/PII, content violations, malicious links; trained on the largest prompt-injection
+  corpus, sourced from their **Gandalf** game (Check Point cites 80M+ adversarial patterns),
+  sub-50 ms latency claimed.
+- **Pricing** — a free developer tier exists (~10k requests/mo — JS-gated page, treat the exact
+  cap as lightly verified); Pro/Enterprise are quote-gated. No published per-seat pricing.
+- **Agent story** — strong and current (MCP tool discovery, indirect-injection protection,
+  action governance). Agent-to-agent and *identity attestation* not explicitly claimed —
+  governance is framed as guardrails/policy, not identity.
+- **Palivane wins:** capture breadth — browser, egress proxy, OAuth discovery, local stdio MCP
+  — none of which Lakera Guard sits in front of (it only sees paths the app author wires it
+  into); inline agent governance with *identity* (attestation/A2A/analyst); free self-host
+  (Lakera gates self-host behind Enterprise); published per-seat pricing; fail-open.
+- **Palivane loses — decisively — on prompt-injection detection.** Lakera is best-in-class,
+  ML-trained on the largest real attack corpus. This is exactly our stated weakness (regex,
+  ~0.22 recall on real injections). **Do not compete on detection accuracy here** — compete on
+  placement, breadth, and identity-aware governance.
+
+Sources: lakera.ai (+ /ai-agent-security), Check Point acquisition press release, docs.lakera.ai
+(quickstart, selfhosting), Lakera Gandalf datasets on Hugging Face. Pricing page JS-gated
+(secondary).
+
+---
+
 ## What to actually say in the room
 
 1. **"Prompt firewall" framing** → pivot to identity + action: "attestation and the A2A graph
    are about *which agent, attested how, called which tool, and fed which downstream agent* —
-   not just whether a string looks malicious." None of the three evidence attestation or A2A.
-2. **"We already have a browser extension / MCP" (Nightfall, Prompt Security)** → concede the
-   surface, move to the *differentiated* ones: egress proxy, OAuth discovery, local stdio MCP,
-   and **free self-host** (Nightfall can't match self-host; it's SaaS-only).
-3. **"Your detection is worse"** → true on injection recall; don't argue it. "For secrets and
+   not just whether a string looks malicious." None of the five evidence attestation or A2A.
+2. **"We already have a browser extension / MCP" (Nightfall, Prompt Security, Harmonic)** →
+   concede the surface — Harmonic's browser coverage is probably *broader* than ours, don't
+   pretend otherwise — and move to the *differentiated* ones: egress proxy, OAuth discovery,
+   local stdio MCP, and **free self-host** (Nightfall and Harmonic are SaaS-only).
+3. **"Your detection is worse" — especially vs Lakera/Check Point** → true on injection recall;
+   **do not argue it, and never argue it against Lakera** (they're the best-in-class injection
+   detector, trained on the Gandalf corpus — this is their whole moat). Say: "For secrets and
    PII, deterministic precision is the product — we don't cry wolf, which is what makes
-   enforcement survivable. For injection phrasing, a specialist may out-detect us today." Then
-   move back to breadth + agent governance + self-host + price.
+   enforcement survivable. For injection phrasing, a specialist out-detects us today." Then move
+   back to breadth + agent governance + self-host. Note Lakera is a *library you embed*, not a
+   capture plane — often complementary to us, not competing.
 4. **Knostic in the tab** → "different problem." They do need-to-know oversharing for Copilot;
    we do shadow-AI capture and inline agent control. Often complementary, not competing.
-5. **Price** → we publish $12/seat; two of three are demo-gated, and the one that publishes
-   (Knostic) floors at $15 and jumps to $850 for Pro.
+5. **Price** → we publish $12/seat. Prompt Security, Nightfall, and Lakera are demo-/quote-
+   gated above any free tier. The two that publish are *not* a clean loss to argue: Knostic
+   floors at $15 (and jumps to $850 for Pro), and Harmonic's marketplace price (~$13.60/mo) is
+   roughly ours — so lead with *transparency* ("here's the number, on the page"), not "cheaper."
 
 **The standing weakness across all five:** no cited production tenant. Every teardown ends at
 the same place competitive-position.md does — one referenceable pilot resolves the maturity

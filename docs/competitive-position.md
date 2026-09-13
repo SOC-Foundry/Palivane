@@ -148,10 +148,10 @@ sources before repeating any specific number to a prospect. What was actually re
 - [LLM Guard](https://appsecsanta.com/llm-guard) and [NeMo Guardrails](https://github.com/NVIDIA-NeMo/Guardrails) — the library-not-system distinction
 - [Cloudthrill, "LLM guardrail solutions: open source vs commercial"](https://cloudthrill.ca/llm-guardrail-solutions)
 
-**Now closed (2026-09):** per-competitor teardowns for Prompt Security, Nightfall, and
-Knostic exist in [competitor-teardowns.md](competitor-teardowns.md), with primary-source
-citations and a "what to actually say in the room" section. **Still open:** Harmonic and
-Lakera/Check Point have no teardown yet.
+**Now closed (2026-09):** per-competitor teardowns for all five named tier-1 vendors — Prompt
+Security, Nightfall, Knostic, Harmonic, and Lakera/Check Point — exist in
+[competitor-teardowns.md](competitor-teardowns.md), with primary-source citations and a "what
+to actually say in the room" section.
 
 **The teardowns forced one honest correction to the moat.** Surface *breadth* is narrower
 than the pitch above implies: Nightfall already ships a browser plugin, SaaS integrations,
