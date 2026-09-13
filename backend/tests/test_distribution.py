@@ -22,6 +22,18 @@ def test_install_sh_served_public_with_baked_url(raw_client, monkeypatch):
     assert 'palivane-desktop" install --cli-only' in body
 
 
+def test_install_prompts_for_desktop_coverage_interactively(raw_client):
+    # No proxy flag given: the installer must ask (via /dev/tty, so it works even under
+    # `curl | bash`) whether to extend to desktop apps + browsers, defaulting to NO so a
+    # non-interactive pipe stays sudo-free and never hangs. And it must say plainly, in
+    # cli-only mode, that native desktop apps are NOT covered.
+    body = raw_client.get("/install.sh").text
+    assert 'PROXY_EXPLICIT=' in body                       # explicit flags skip the prompt
+    assert "-r /dev/tty" in body and "read ans < /dev/tty" in body   # asks on the terminal
+    assert "[y/N]" in body                                 # default no
+    assert "NOT covered: native desktop apps" in body      # honest coverage summary
+
+
 def test_cli_scripts_served(raw_client):
     for name in ("palivane-connect", "palivane-reenroll", "palivane-reenroll.ps1", "palivane-hook",
                  "palivane-desktop", "palivane-desktop.ps1", "palivane_addon.py"):
