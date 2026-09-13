@@ -17,15 +17,15 @@ So the only question is how the egress proxy coexists with what you have. If you
 deploy the egress proxy, there's nothing to reconcile.
 
 **The one question that decides everything:** does your client **inspect TLS** (decrypt
-HTTPS with its own root CA), or does it only **route packets**? Route-only is free — no
+HTTPS with its own root CA), or does it only **route packets**? Route-only is free, with no
 interaction at all. TLS inspection needs one config line, because otherwise our connection
 *to* the AI host is itself intercepted and fails certificate verification. Vendor names are
 a poor guide here: the same product does both depending on how you licensed it. Check
-whether you pushed a root CA to your fleet — if you did, you're inspecting.
+whether you pushed a root CA to your fleet. If you did, you're inspecting.
 
 ## If you run Cloudflare WARP
 
-**Depends on your mode**, and this is the case people get wrong most often — WARP is
+**Depends on your mode**, and this is the case people get wrong most often. WARP is
 WireGuard-based, so it reads like "just a VPN", but Zero Trust turns it into an inspecting
 gateway.
 
@@ -33,7 +33,7 @@ gateway.
 | --- | --- |
 | Gateway with DoH (DNS filtering only) | **Nothing.** No TLS inspection, no proxy. |
 | WARP tunnel, no Gateway HTTP policies | **Nothing.** L3 tunnel; behaves exactly like Tailscale below. |
-| **Gateway with WARP + HTTP policies / TLS decryption on** | **One config line — see below.** |
+| **Gateway with WARP + HTTP policies / TLS decryption on** | **One config line (see below).** |
 
 In that third mode WARP decrypts HTTPS and re-signs it with the Cloudflare Zero Trust root.
 Our proxy's *upstream* connection to `api.anthropic.com` then presents a Cloudflare-signed
@@ -42,20 +42,20 @@ AI tool on the device breaks with a certificate error**. Palivane detects this e
 and logs the vendor plus the fix rather than an opaque TLS error, but it can't repair it for
 you. Pick one:
 
-**Preferred — exempt the AI hosts from WARP's inspection.** In Zero Trust -> Gateway -> HTTP
+**Preferred: exempt the AI hosts from WARP's inspection.** In Zero Trust -> Gateway -> HTTP
 policies, add a **Do Not Inspect** rule for the hosts in Palivane's intercept list
 (`api.anthropic.com`, `claude.ai`, `chatgpt.com`, `api.openai.com`, ...; the full list is
 `AI_HOST_SUFFIXES` in `proxy/palivane_addon.py`). Palivane owns inspection for AI traffic,
-Cloudflare owns everything else — no double decryption, clean forensics.
+Cloudflare owns everything else, so there's no double decryption and clean forensics.
 
-**Or — trust the Cloudflare root on our upstream leg.** Download your account's Zero Trust
+**Or: trust the Cloudflare root on our upstream leg.** Download your account's Zero Trust
 root certificate and:
 
 ```
 PALIVANE_UPSTREAM_CA=/path/to/cloudflare-zero-trust-root.pem
 ```
 
-Note there is **no `PALIVANE_UPSTREAM_PROXY` here** — WARP intercepts at layer 3 and is not
+Note there is **no `PALIVANE_UPSTREAM_PROXY` here**: WARP intercepts at layer 3 and is not
 an HTTP proxy, so there's nothing to chain to. The CA setting stands alone deliberately, and
 the installer merges your root *into* the system public roots rather than replacing them, so
 non-inspected hosts keep working.
@@ -65,8 +65,8 @@ Client Connector it never fights Palivane for that setting; loopback isn't route
 the tunnel, so the local proxy is reachable; and WARP's own control plane is never in
 Palivane's intercept list, so it's never decrypted.
 
-The same applies to any client that inspects TLS without offering a proxy to chain to —
-**Netskope and Prisma in tunnel mode, Cisco Umbrella's roaming client**: use
+The same applies to any client that inspects TLS without offering a proxy to chain to,
+such as **Netskope and Prisma in tunnel mode, Cisco Umbrella's roaming client**: use
 `PALIVANE_UPSTREAM_CA` on its own, not the Option A chaining below.
 
 ## If you run Tailscale or a WireGuard VPN
@@ -153,7 +153,7 @@ Palivane is invisible until you check.
 | Tailscale / WireGuard | Nothing: deploy Palivane normally |
 | Cloudflare WARP, DNS-only or tunnel without HTTP policies | Nothing: deploy Palivane normally |
 | Cloudflare WARP with Gateway TLS inspection | Do-Not-Inspect rule for the AI hosts, **or** `PALIVANE_UPSTREAM_CA` alone |
-| Any L3 TLS-inspecting client (Netskope/Prisma tunnel, Umbrella roaming) | `PALIVANE_UPSTREAM_CA` alone — no upstream proxy to chain to |
+| Any L3 TLS-inspecting client (Netskope/Prisma tunnel, Umbrella roaming) | `PALIVANE_UPSTREAM_CA` alone (no upstream proxy to chain to) |
 | Zscaler / Netskope / SWG, devices can reach internet via it | Option A: chain upstream |
 | SASE client that re-asserts the system proxy | Option B: CLI-shim, skip system proxy |
 | No egress proxy deployed (browser + CLI + gateway only) | Nothing: no network-path overlap exists |

@@ -117,7 +117,7 @@ export default function Agents({ tenant, onTenant }) {
         <div className="panel settings-card">
           <h2>Agent-to-agent flow</h2>
           <p className="page-sub">Where a poisoned instruction or sensitive data crossed an
-             agent hop in the last {graph.window_days} days. Only flagged hops appear — this is
+             agent hop in the last {graph.window_days} days. Only flagged hops appear: this is
              the risk graph, not every call.</p>
           <table className="data-table">
             <thead><tr><th>From</th><th></th><th>To</th><th>Messages</th><th>Worst</th><th>What crossed</th></tr></thead>
@@ -129,7 +129,7 @@ export default function Agents({ tenant, onTenant }) {
                   <td><strong>{e.to}</strong></td>
                   <td>{e.messages}</td>
                   <td><span className={`badge sev-${e.worst_severity}`}>{e.worst_severity}</span></td>
-                  <td className="muted" style={{ fontSize: 12 }}>{e.categories.join(", ") || "—"}</td>
+                  <td className="muted" style={{ fontSize: 12 }}>{e.categories.join(", ") || "-"}</td>
                 </tr>
               ))}
             </tbody>

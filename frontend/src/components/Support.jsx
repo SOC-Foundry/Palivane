@@ -14,7 +14,7 @@ const SELF_SERVE = [
 
 // What actually reaches a human, by plan — mirrors what each tier includes, nothing more.
 const BY_PLAN = [
-  ["Trial & self-hosted", "Documentation and community. The endpoint clients are open source — file issues at github.com/SOC-Foundry/palivane-clients."],
+  ["Trial & self-hosted", "Documentation and community. The endpoint clients are open source. File issues at github.com/SOC-Foundry/palivane-clients."],
   ["Team", "Priority email support at support@palivane.io. Bring the org name and the plane involved and we can usually resolve it in one round trip."],
   ["Enterprise", "A named contact, plus help through security reviews and onboarding. Custom terms and a signed DPA are part of the agreement."],
 ];
@@ -36,7 +36,7 @@ export default function Support() {
         <div className="lp-tagline">SUPPORT</div>
         <h1>Get help with Palivane</h1>
         <p>Most answers are in the docs. When you need a person, email{" "}
-           <a href="mailto:support@palivane.io">support@palivane.io</a> — the more specific you
+           <a href="mailto:support@palivane.io">support@palivane.io</a>. The more specific you
            are, the faster we can help.</p>
       </section>
 

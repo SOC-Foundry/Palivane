@@ -54,7 +54,7 @@ export default function OAuthConsent() {
           <p className="consent-lead">{error}</p>
           <p className="consent-note">
             Nothing was authorized. If you started this from an AI assistant, try connecting
-            again — and if it keeps failing, the app may be registered with a different
+            again. If it keeps failing, the app may be registered with a different
             redirect address than the one it is using.
           </p>
           <button type="button" className="primary-btn slim" onClick={deny}>Back to the console</button>
@@ -74,7 +74,7 @@ export default function OAuthConsent() {
         <dl className="consent-facts">
           <div><dt>Granting as</dt><dd>{info.granting_as.email} ({info.granting_as.role})</dd></div>
           <div><dt>Sends you back to</dt><dd><code>{info.redirect_uri}</code></dd></div>
-          <div><dt>Access</dt><dd>Read only — it cannot change or delete anything</dd></div>
+          <div><dt>Access</dt><dd>Read only, so it cannot change or delete anything</dd></div>
         </dl>
 
         {/* True again as of the Authorized apps panel in Connections. It briefly said this
