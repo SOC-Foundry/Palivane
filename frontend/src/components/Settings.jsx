@@ -117,6 +117,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
     tool_suppress: tenant?.tool_suppress || "",
     custom_pii_patterns: tenant?.custom_pii_patterns || "",
     oversharing_rules: tenant?.oversharing_rules || "",
+    analyst_enabled: tenant?.analyst_enabled === true,
   });
   const setField = (k) => (e) => setOrgState((o) => ({ ...o, [k]: e.target.value }));
 
@@ -143,6 +144,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
         tool_suppress: org.tool_suppress,
         custom_pii_patterns: org.custom_pii_patterns,
         oversharing_rules: org.oversharing_rules,
+        analyst_enabled: org.analyst_enabled,
       });
       onTenant?.(t);
       flash("Organization settings saved.");
@@ -683,6 +685,16 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
               <option value="off">Off (no content sent to the LLM provider)</option>
             </select>
           </label>
+          <label className="check">
+            <input type="checkbox" checked={org.analyst_enabled}
+                   onChange={(e) => setOrgState((o) => ({ ...o, analyst_enabled: e.target.checked }))} />
+            AI analyst (off by default)
+          </label>
+          <p className="muted" style={{ marginTop: -6 }}>
+            Lets a person click Investigate on a finding to get an AI-written summary and a
+            recommended action. It sends the finding's redacted context (not the raw prompt) to
+            your configured LLM provider, so it stays off until you turn it on here.
+          </p>
           {/* The old label read "redacted + encrypted per-tenant", which promised more than
               the server necessarily does: service.py redacts, then returns the text as-is
               unless settings.encrypt_findings is on — and that defaults OFF. An admin

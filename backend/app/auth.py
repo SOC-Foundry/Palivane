@@ -1374,6 +1374,8 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
             setattr(tenant, _f, _v.strip())
     if body.agent_attestation_enforce is not None:
         tenant.agent_attestation_enforce = bool(body.agent_attestation_enforce)
+    if body.analyst_enabled is not None:
+        tenant.analyst_enabled = bool(body.analyst_enabled)
     if body.tool_suppress is not None:
         cleaned = body.tool_suppress.strip()
         if any(":" not in seg for seg in cleaned.split(";") if seg.strip()):
