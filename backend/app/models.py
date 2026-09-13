@@ -160,6 +160,9 @@ class Tenant(Base):
     # When agent OIDC is configured, block tool calls whose agent isn't OIDC-attested (a
     # bearer ag_ token or none). Off = flag only. Meaningless without agent_oidc_issuer.
     agent_attestation_enforce = Column(Boolean, default=False)
+    # Opt-in for the read-only AI analyst. OFF by default: investigating a finding sends its
+    # redacted context to the tenant's LLM provider, so it stays off until an admin turns it on.
+    analyst_enabled = Column(Boolean, default=False)
     # Data-processing agreement acceptance (compliance record; history in the audit log).
     dpa_version = Column(String(32), default="")
     dpa_accepted_at = Column(DateTime, nullable=True)
@@ -257,6 +260,7 @@ class Tenant(Base):
                 "agent_oidc_jwks": self.agent_oidc_jwks or "",
                 "agent_oidc_audience": self.agent_oidc_audience or "",
                 "agent_attestation_enforce": bool(self.agent_attestation_enforce),
+                "analyst_enabled": bool(self.analyst_enabled),
                 "dpa_version": self.dpa_version or "",
                 "dpa_accepted_at": self.dpa_accepted_at.isoformat() if self.dpa_accepted_at else None,
                 "dpa_accepted_by": self.dpa_accepted_by or ""}

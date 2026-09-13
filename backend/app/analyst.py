@@ -70,6 +70,24 @@ def _context(db: Session, tenant_id: int, finding_id: int):
     return row.to_summary(), peers
 
 
+_REDACTED = "[redacted]"
+
+
+def _redact(summary):
+    """A copy of a finding summary with the actor's email (`sender`) and the message `subject`
+    masked before it leaves to the LLM provider. These are identifiers, not evidence: the
+    analyst correlates peers by actor internally (they are the same sender by construction) and
+    the 'SAME ACTOR' framing carries that, so the provider never needs the address or subject."""
+    if not isinstance(summary, dict):
+        return summary
+    out = dict(summary)
+    if out.get("sender"):
+        out["sender"] = _REDACTED
+    if out.get("subject"):
+        out["subject"] = _REDACTED
+    return out
+
+
 def investigate(engine, db: Session, tenant_id: int, finding_id: int,
                 judge_backends=None) -> dict | None:
     """Run the read-only investigation. Returns the report dict, None if no LLM provider is
@@ -78,6 +96,8 @@ def investigate(engine, db: Session, tenant_id: int, finding_id: int,
     if ctx is None:
         raise LookupError("finding not found")
     finding, peers = ctx
+    finding = _redact(finding)                 # sender/subject never leave to the provider
+    peers = [_redact(p) for p in peers]
 
     judge = engine.judge
     use = judge_backends if judge_backends is not None else judge._backends

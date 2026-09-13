@@ -406,6 +406,7 @@ class TenantUpdate(BaseModel):
     agent_oidc_jwks: str | None = None           # optional explicit JWKS URI (else discovered)
     agent_oidc_audience: str | None = None        # expected audience (validated if set)
     agent_attestation_enforce: bool | None = None  # block tool calls not OIDC-attested
+    analyst_enabled: bool | None = None            # opt-in for the read-only AI analyst
 
 
 class TenantDelete(BaseModel):

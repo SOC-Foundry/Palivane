@@ -503,6 +503,7 @@ export default function App() {
                     key={selected.id}
                     finding={selected}
                     isAdmin={isAdmin}
+                    analystEnabled={auth.tenant?.analyst_enabled === true}
                     onClose={() => navigate(DEFAULT_VIEW)}
                     onStatusChange={async () => {
                       await refresh();

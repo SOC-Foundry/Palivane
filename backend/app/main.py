@@ -2632,6 +2632,13 @@ def investigate_finding(finding_id: int, current: User = Depends(get_current_use
     from . import analyst, audit_log
     from .service import resolve_judge_backends
     tenant = db.get(Tenant, current.tenant_id)
+    # Opt-in: OFF by default. Investigating sends the finding's redacted context to the LLM
+    # provider, so it stays off until an admin turns it on in Settings.
+    if not getattr(tenant, "analyst_enabled", False):
+        raise HTTPException(
+            status_code=403,
+            detail="the AI analyst is off. An admin can enable it in Settings; investigating "
+                   "sends a finding's redacted context to your configured LLM provider.")
     backends = resolve_judge_backends(tenant)
     if backends == [] or (backends is None and not engine.judge_enabled):
         raise HTTPException(

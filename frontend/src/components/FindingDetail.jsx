@@ -90,7 +90,7 @@ function checksOf(finding) {
   return [...seen.entries()];
 }
 
-export default function FindingDetail({ finding, isAdmin, onClose, onStatusChange }) {
+export default function FindingDetail({ finding, isAdmin, analystEnabled, onClose, onStatusChange }) {
   const [suppressed, setSuppressed] = useState(null);
   const [report, setReport] = useState(finding?.investigation || null);   // persisted or fresh
   const [investigating, setInvestigating] = useState(false);
@@ -173,11 +173,15 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
 
       <div className="detail-section analyst">
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <button className="primary-btn slim" onClick={investigate} disabled={investigating}>
+          <button className="primary-btn slim" onClick={investigate}
+                  disabled={investigating || !analystEnabled}
+                  title={analystEnabled ? undefined : "Turn on the AI analyst in Settings first"}>
             {investigating ? "Investigating…" : report ? "🔎 Re-investigate" : "🔎 Investigate (AI analyst)"}
           </button>
           <span className="muted" style={{ fontSize: 12 }}>
-            Reads the finding + this actor's history and recommends an action. It never applies it.
+            {analystEnabled
+              ? "Reads the finding + this actor's history and recommends an action. It never applies it."
+              : "Off by default. An admin can enable the AI analyst in Settings — it sends the finding's redacted context to your LLM provider."}
           </span>
         </div>
         {investigateErr && <div className="error" style={{ marginTop: 10 }}>{investigateErr}</div>}
