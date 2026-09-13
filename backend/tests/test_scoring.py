@@ -32,6 +32,19 @@ def test_attack_drives_base_risk():
     assert v.risk_score >= 60
 
 
+def test_data_leak_scores_risk_but_is_not_attack_intent():
+    # A leaked secret is a real risk that must drive the score, but it is a data/hygiene
+    # problem, not an adversary — so attack_intent stays False (the FP we fixed).
+    v = score([_sig(Category.SECRET_LEAK, 0.9, 0.9)])
+    assert v.risk_score >= 60          # still scores as a serious risk
+    assert v.attack_intent is False    # ...but is not labeled an attack
+
+
+def test_injection_is_attack_intent():
+    v = score([_sig(Category.PROMPT_INJECTION, 0.9, 0.9)])
+    assert v.attack_intent is True     # a genuine adversarial category still flags
+
+
 def test_ai_plus_attack_escalates_above_attack_alone():
     attack_only = score([_sig(Category.PROMPT_INJECTION, 0.8, 0.7)])
     combined = score([

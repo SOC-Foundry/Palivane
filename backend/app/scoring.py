@@ -48,7 +48,11 @@ class Verdict:
 
 
 _AI_CATEGORIES = {Category.AI_GENERATED}
-_ATTACK_CATEGORIES = {
+# Everything that drives base risk. Named for what it does — a leaked secret, exposed PII, a
+# posture gap or a credential at rest is a real risk that should score, even though no attacker
+# is present. (Was _ATTACK_CATEGORIES, which overloaded "risk" and "attack" onto one set and
+# so stamped every data-leak finding as "attack intent" — a false positive.)
+_RISK_CATEGORIES = {
     # Protect our AI — an injection/jailbreak/exfil attempt is itself the attack.
     Category.PROMPT_INJECTION,
     Category.JAILBREAK,
@@ -80,6 +84,22 @@ _ATTACK_CATEGORIES = {
     # Device health — a capture plane that is down/conflicted/failing-open IS the exposure
     # (traffic passing ungoverned), even though no attacker is present in the content.
     Category.POSTURE_GAP,
+}
+
+
+# `attack_intent` means an adversary is trying to subvert the AI or the system — an injection,
+# a jailbreak, an exfiltration attempt, or a poisoned/tampered tool or server. It is a strict
+# subset of the risk set above and deliberately NARROW: a leaked secret, exposed PII, source
+# code, oversharing, a posture gap or a credential at rest is a real risk that drives the score
+# but is a data/hygiene problem, not evidence of an attacker. Labeling those "attack intent"
+# was the false positive (e.g. a credential passed to an MCP tool read as an attack).
+_ADVERSARIAL_CATEGORIES = {
+    Category.PROMPT_INJECTION,
+    Category.JAILBREAK,
+    Category.DATA_EXFILTRATION,
+    Category.TOOL_POISONING,
+    Category.MCP_INTEGRITY,
+    Category.MCP_UNTRUSTED_SERVER,
 }
 
 
@@ -133,21 +153,26 @@ def score(signals: list[Signal]) -> Verdict:
     ai_conf = _saturating_combine(
         [s.contribution for s in real if s.category in _AI_CATEGORIES]
     )
-    attack_conf = _saturating_combine(
-        [s.contribution for s in real if s.category in _ATTACK_CATEGORIES]
+    risk_conf = _saturating_combine(
+        [s.contribution for s in real if s.category in _RISK_CATEGORIES]
+    )
+    # Attack intent uses the narrow adversarial subset only, so a data-leak/hygiene finding
+    # (secret, PII, source, posture gap) scores on risk but is not mislabeled an attack.
+    adversarial_conf = _saturating_combine(
+        [s.contribution for s in real if s.category in _ADVERSARIAL_CATEGORIES]
     )
 
-    # Base risk is driven by attack intent; AI-generation is an amplifier, not a
-    # threat on its own (plenty of benign mail is AI-written).
-    base = attack_conf
-    # Synergy: AI-crafted *and* attacking → escalate. Up to +35% of headroom.
-    synergy = 0.35 * ai_conf * attack_conf
+    # Base risk is driven by the risk signals; AI-generation is an amplifier, not a
+    # threat on its own (plenty of benign mail is AI-written). Risk math is unchanged.
+    base = risk_conf
+    # Synergy: AI-crafted *and* risky → escalate. Up to +35% of headroom.
+    synergy = 0.35 * ai_conf * risk_conf
     combined = min(1.0, base + synergy)
 
     risk = round(combined * 100)
 
     ai_generated = ai_conf >= 0.5
-    attack_intent = attack_conf >= 0.45
+    attack_intent = adversarial_conf >= 0.45
 
     severity, action = severity_for(risk)
 
