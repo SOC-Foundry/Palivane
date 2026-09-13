@@ -103,6 +103,37 @@ def test_last_admin_cannot_be_deactivated(client):
     assert "last active admin" in r.json()["detail"]
 
 
+def test_admin_cannot_be_renamed_over_scim(client):
+    # A provisioning-scoped token must not be able to hijack a privileged account's login
+    # identity by changing its email — via PUT or PATCH. Admins are console-managed.
+    tok = _mint(client)
+    admin_id = client.get('/scim/v2/Users?filter=userName eq "admin@acme.com"',
+                          headers=_h(tok)).json()["Resources"][0]["id"]
+
+    r = client.put(f"/scim/v2/Users/{admin_id}", headers=_h(tok),
+                   json={"userName": "attacker@acme.com", "active": True})
+    assert r.status_code == 403 and r.json()["scimType"] == "mutability"
+
+    r = client.patch(f"/scim/v2/Users/{admin_id}", headers=_h(tok),
+                     json={"Operations": [{"op": "replace", "path": "userName",
+                                           "value": "attacker@acme.com"}]})
+    assert r.status_code == 403 and r.json()["scimType"] == "mutability"
+
+    # the admin's email is untouched
+    assert client.get(f"/scim/v2/Users/{admin_id}", headers=_h(tok)).json()[
+        "userName"] == "admin@acme.com"
+
+
+def test_analyst_rename_still_works(client):
+    # The guard is admin-only: ordinary provisioned members still rename normally.
+    tok = _mint(client)
+    uid = client.post("/scim/v2/Users", headers=_h(tok),
+                      json={"userName": "mover@acme.com"}).json()["id"]
+    r = client.put(f"/scim/v2/Users/{uid}", headers=_h(tok),
+                   json={"userName": "mover-new@acme.com"})
+    assert r.status_code == 200 and r.json()["userName"] == "mover-new@acme.com"
+
+
 def test_unsupported_filter_is_501_not_wrong(client):
     tok = _mint(client)
     r = client.get('/scim/v2/Users?filter=emails co "acme"', headers=_h(tok))

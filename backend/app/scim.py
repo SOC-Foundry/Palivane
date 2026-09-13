@@ -16,6 +16,9 @@ Semantics worth naming:
   - Deactivation bumps token_version, killing the user's live sessions immediately.
   - The last active admin cannot be deactivated over SCIM: a mis-scoped IdP push must
     not be able to lock an org out of its own console.
+  - Admins cannot be renamed over SCIM: a provisioning-scoped credential (leaked or
+    mis-scoped) must not be able to hijack a privileged account's login identity by
+    changing its email. Admin lifecycle is a console decision, same as role.
 """
 
 from __future__ import annotations
@@ -200,6 +203,26 @@ def _apply_active(db, tenant, u: User, active: bool) -> JSONResponse | None:
     return None
 
 
+def _apply_rename(db, tenant, u: User, raw_email: str) -> JSONResponse | None:
+    """Apply a userName (email) change, or return the SCIM error response that blocks it.
+
+    Admins are console-managed: a provisioning-scoped credential must not be able to rename
+    a privileged account, which would hand identity takeover to a leaked or mis-scoped IdP
+    token (rename the admin's email away, then re-point a controlled account at it). A
+    collision with an existing member is a SCIM uniqueness error, per RFC 7644."""
+    email = raw_email.lower().strip()
+    if not email or email == u.email:
+        return None
+    if u.role == "admin":
+        return _err(403, "cannot rename an admin over SCIM; manage admins in the console",
+                    "mutability")
+    if db.query(User).filter(User.tenant_id == tenant.id, User.email == email).first():
+        return _err(409, f"user {email} already exists", "uniqueness")
+    _audit(db, tenant, "scim.user_renamed", u.email, {"to": email})
+    u.email = email
+    return None
+
+
 @router.put("/Users/{user_id}")
 def replace_user(user_id: str, body: dict, tenant: Tenant = Depends(scim_tenant),
                  db: Session = Depends(get_db)):
@@ -207,12 +230,9 @@ def replace_user(user_id: str, body: dict, tenant: Tenant = Depends(scim_tenant)
         u = _get_user(db, tenant, user_id)
     except ScimError as e:
         return _err(e.status_code, e.detail, e.scim_type)
-    email = str(body.get("userName") or "").lower().strip()
-    if email and email != u.email:
-        if db.query(User).filter(User.tenant_id == tenant.id, User.email == email).first():
-            return _err(409, f"user {email} already exists", "uniqueness")
-        _audit(db, tenant, "scim.user_renamed", u.email, {"to": email})
-        u.email = email
+    blocked = _apply_rename(db, tenant, u, str(body.get("userName") or ""))
+    if blocked is not None:
+        return blocked
     if "active" in body:
         blocked = _apply_active(db, tenant, u, bool(body.get("active")))
         if blocked is not None:
@@ -246,13 +266,9 @@ def patch_user(user_id: str, body: dict, tenant: Tenant = Depends(scim_tenant),
                 if blocked is not None:
                     return blocked
             elif key == "userName" and val:
-                email = str(val).lower().strip()
-                if email != u.email:
-                    if db.query(User).filter(User.tenant_id == tenant.id,
-                                             User.email == email).first():
-                        return _err(409, f"user {email} already exists", "uniqueness")
-                    _audit(db, tenant, "scim.user_renamed", u.email, {"to": email})
-                    u.email = email
+                blocked = _apply_rename(db, tenant, u, str(val))
+                if blocked is not None:
+                    return blocked
     db.commit()
     db.refresh(u)
     return JSONResponse(media_type=_SCIM_CT, content=_resource(u))
