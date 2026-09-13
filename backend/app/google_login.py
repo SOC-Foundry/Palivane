@@ -24,7 +24,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from . import oidc
-from .auth import _naive_utc, _slugify, _unique_slug
+from .auth import _naive_utc, _safe_return_to, _slugify, _unique_slug
 from .config import settings
 from .database import get_db
 from .models import Tenant, User
@@ -52,14 +52,16 @@ def _redirect_uri(request: Request) -> str:
 
 
 @router.get("/auth/google/login")
-def google_login(request: Request):
+def google_login(request: Request, return_to: str = ""):
     """Begin the flow: bounce the browser to Google's consent screen."""
     if not enabled():
         raise HTTPException(status_code=404, detail="Google sign-in is not configured")
     meta = oidc.discover(ISSUER)
     nonce = secrets.token_urlsafe(16)
     # Signed, self-expiring state — no server-side session store needed (multi-worker safe).
-    state = create_token({"typ": "google_state", "nonce": nonce}, ttl=600)
+    # return_to carries the connect landing through Google (signed, so it can't be tampered).
+    state = create_token({"typ": "google_state", "nonce": nonce,
+                          "return_to": _safe_return_to(return_to)}, ttl=600)
     return RedirectResponse(
         oidc.authorize_url(meta, settings.google_oauth_client_id,
                            _redirect_uri(request), state, nonce),
@@ -95,12 +97,13 @@ def google_callback(request: Request, code: str = "", state: str = "",
         raise HTTPException(status_code=401, detail="Google account email is not verified")
 
     origin = _origin(request)
+    return_to = _safe_return_to(payload.get("return_to", ""))
 
     # 1. Existing account(s). One match signs in; the same email in several orgs is
     # ambiguous with no org context, so those keep using password/SSO.
     users = db.query(User).filter(User.email == email, User.active.is_(True)).all()
     if len(users) == 1:
-        return _signin(db, users[0], origin)
+        return _signin(db, users[0], origin, return_to)
     if len(users) > 1:
         raise HTTPException(status_code=409,
                             detail="this email belongs to several organizations; "
@@ -120,7 +123,7 @@ def google_callback(request: Request, code: str = "", state: str = "",
             db.add(user)
             db.commit()
             db.refresh(user)
-            return _signin(db, user, origin)
+            return _signin(db, user, origin, return_to)
         req = (db.query(JoinRequest)
                .filter(JoinRequest.tenant_id == tenant.id, JoinRequest.email == email)
                .first())
@@ -156,13 +159,15 @@ def google_callback(request: Request, code: str = "", state: str = "",
     db.add(user)
     db.commit()
     db.refresh(user)
-    return _signin(db, user, origin)
+    return _signin(db, user, origin, return_to)
 
 
-def _signin(db: Session, user: User, origin: str) -> RedirectResponse:
+def _signin(db: Session, user: User, origin: str, return_to: str = "") -> RedirectResponse:
     from .lifecycle import ensure_active
     ensure_active(db, user.tenant_id)
     token = create_token({"sub": str(user.id), "tenant_id": user.tenant_id,
                           "role": user.role, "tv": user.token_version})
-    # Fragment, not query: the token stays out of server/proxy logs (same as tenant SSO).
-    return RedirectResponse(f"{origin}/#sso_token={token}", status_code=303)
+    # Fragment, not query: the token stays out of server/proxy logs (same as tenant SSO). When a
+    # connect flow asked for it, land on /extension-connect so the token handback completes.
+    return RedirectResponse(f"{origin}{_safe_return_to(return_to) or '/'}#sso_token={token}",
+                            status_code=303)

@@ -200,10 +200,12 @@ export default function App() {
 
   useEffect(() => {
     // SSO (OIDC) hands the session back in the URL fragment, pick it up, then clean the URL.
+    // /extension-connect owns its own fragment (it also needs its query kept), so skip it here;
+    // and preserve the query when cleaning so a connect landing doesn't lose redirect_uri/state.
     const m = window.location.hash.match(/sso_token=([^&]+)/);
-    if (m) {
+    if (m && window.location.pathname !== "/extension-connect") {
       setToken(decodeURIComponent(m[1]));
-      window.history.replaceState(null, "", window.location.pathname);
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
     }
     if (!getToken()) {
       setBooting(false);

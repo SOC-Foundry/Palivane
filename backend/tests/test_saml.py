@@ -70,6 +70,43 @@ def test_acs_rejects_replayed_assertion(client, raw_client, monkeypatch):
     assert second.status_code == 401 and "replay" in second.json()["detail"].lower()
 
 
+def test_safe_return_to_validation():
+    from app.auth import _safe_return_to
+    # Accept the connect landing (redirect_uri arrives URL-encoded, so no literal scheme).
+    ok = "/extension-connect?redirect_uri=http%3A%2F%2F127.0.0.1%3A5000%2Fcb&state=s"
+    assert _safe_return_to(ok) == ok
+    # Reject anything that could redirect the session token off-origin.
+    for bad in ("https://evil.example.com/x", "//evil.example.com", "/console",
+                "/extension-connect://evil", "/extension-connect#@evil", "/extension-connect\\x",
+                "", "  "):
+        assert _safe_return_to(bad) == ""
+
+
+def test_acs_return_to_lands_on_extension_connect(client, raw_client, monkeypatch):
+    # A connect-initiated SSO comes back with RelayState = the /extension-connect landing, so
+    # the token handback to the extension/CLI can complete instead of dead-ending on the console.
+    _configure(client, auto_provision=True)
+    monkeypatch.setattr(saml_mod, "process_acs", lambda *a, **k: {"email": "sso-saml@acme.com",
+                                                                  "nameid": "x", "attributes": {}})
+    rt = "/extension-connect?redirect_uri=http%3A%2F%2F127.0.0.1%3A5000%2Fcb&state=s"
+    r = raw_client.post("/api/auth/saml/acme/acs",
+                        data={"SAMLResponse": "b64", "RelayState": rt}, follow_redirects=False)
+    loc = r.headers["location"]
+    assert r.status_code == 303 and "/extension-connect" in loc and "#sso_token=" in loc
+
+
+def test_acs_rejects_open_redirect_relaystate(client, raw_client, monkeypatch):
+    # A malicious RelayState must not steer the token-bearing redirect off-origin.
+    _configure(client, auto_provision=True)
+    monkeypatch.setattr(saml_mod, "process_acs", lambda *a, **k: {"email": "sso-saml@acme.com",
+                                                                  "nameid": "x", "attributes": {}})
+    r = raw_client.post("/api/auth/saml/acme/acs",
+                        data={"SAMLResponse": "b64", "RelayState": "https://evil.example.com/x"},
+                        follow_redirects=False)
+    loc = r.headers["location"]
+    assert "evil.example.com" not in loc and "#sso_token=" in loc
+
+
 def test_acs_rejects_invalid_response(client, raw_client, monkeypatch):
     _configure(client)
     def _boom(*a, **k):
