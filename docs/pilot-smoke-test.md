@@ -88,7 +88,7 @@ these will block on every surface. Everything is attributed to your `@palivane.i
 
 ## 4. MCP server  (control surface, not a capture plane)
 > Adds ~5 minutes. This is the only step that proves the *console API key* path, which is
-> what the MCP server runs on — no password, no 12h session to re-paste.
+> what the MCP server runs on: no password, no 12h session to re-paste.
 1. [ ] Console → **Connections → Console API key**. Label it `smoke-test`, scope **Read
    only**, mint, copy the `ak_…` (shown once).
 2. [ ] Wire it into Claude Code (absolute paths; see [mcp-server/README.md](../mcp-server/README.md)
@@ -103,7 +103,7 @@ these will block on every surface. Everything is attributed to your `@palivane.i
      `ai_tool_inventory`, `list_connectors`, `gateway_usage`, `compliance_report`,
      `set_finding_status`, `sync_connector`.
    - ✅ It returns the findings from steps 1-3, your tenant only.
-4. [ ] Prove the read-only fence — ask it to *"triage finding N"*.
+4. [ ] Prove the read-only fence by asking it to *"triage finding N"*.
    - ✅ Refused, and the refusal says why:
      `403: this API key is read-only (scope console_read)` … *mint one with 'Read +
      triage/sync' if you need set_finding_status*.
@@ -113,12 +113,12 @@ these will block on every surface. Everything is attributed to your `@palivane.i
 6. [ ] Prove an *ingest* key is not a console credential. Every `ak_…` minted before scopes
    existed is one, so this is the error an operator is most likely to hit. Point
    `PALIVANE_API_KEY` at a gateway key from step 2 and ask anything.
-   - ✅ Refused with the same message a revoked or bogus key gets — the API deliberately
+   - ✅ Refused with the same message a revoked or bogus key gets. The API deliberately
      does not confirm that a key is real:
      *"PALIVANE_API_KEY was rejected … or it is an ingest-scoped key, which the console API
      does not accept."*
 7. [ ] The point of the whole thing: come back **the next day** and ask again without
-   touching the config. ✅ Still works — a console key does not expire on `AUTH_TOKEN_TTL`
+   touching the config. ✅ Still works, because a console key does not expire on `AUTH_TOKEN_TTL`
    the way a session JWT does.
 
 ---
@@ -135,7 +135,7 @@ these will block on every surface. Everything is attributed to your `@palivane.i
 - Desktop: `palivane-desktop uninstall` (then optionally remove the mitmproxy CA from the
   keychain / trust store).
 - Revoke any test keys in the console → **Team / API keys**, including the console
-  keys from step 4 (**Connections → Console API key**) — they are long-lived by design,
+  keys from step 4 (**Connections → Console API key**). They are long-lived by design,
   so nothing expires them for you.
 
 ## What "pass" means

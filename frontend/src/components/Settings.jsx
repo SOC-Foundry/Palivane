@@ -360,7 +360,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
   const loadBilling = useCallback(() => api.billing().then(setBilling).catch(() => {}), []);
   useEffect(() => {   // embedded Checkout returns to /#billing=success on completion
     if (window.location.hash === "#billing=success") {
-      flash("Payment received — your Team plan activates in a few seconds. Thanks!");
+      flash("Payment received. Your Team plan activates in a few seconds. Thanks!");
       window.history.replaceState(null, "", window.location.pathname);
       setTimeout(() => { loadBilling(); onTenant?.(); }, 4000);
     }
@@ -699,7 +699,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <p className="field-note field-wide">
             Stored content is always redacted for secrets and PII. It is additionally
             <strong> encrypted at rest only if the server runs with encryption enabled</strong>
-            (<code>PALIVANE_ENCRYPT_FINDINGS</code>, off by default) — confirm with whoever
+            (<code>PALIVANE_ENCRYPT_FINDINGS</code>, off by default). Confirm with whoever
             operates your deployment before turning this on, because prompt prose cannot be
             redacted for concepts or intellectual property the way a credential can.
           </p>
@@ -979,7 +979,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
                    onChange={(e) => setSlackRemediate(c.id, e.target.checked)} />
             <span style={{ fontSize: 12 }}>Delete confirmed leaks from{" "}
               <strong>{c.label || "this workspace"}</strong>{" "}
-              <span className="muted">— a message this scan flags at high or critical is
+              <span className="muted">a message this scan flags at high or critical is
               removed from Slack, and the deletion is written to the audit log. Needs the
               workspace-admin user token (<code>xoxp-…</code>) on this connector; the bot
               token cannot delete anyone else's message. Deletion is all Slack allows below
@@ -994,7 +994,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
                    onChange={(e) => setSlackAutoJoin(c.id, e.target.checked)} />
             <span style={{ fontSize: 12 }}>Scan every public channel in{" "}
               <strong>{c.label || "this workspace"}</strong>{" "}
-              <span className="muted">— joins the ones it is not in, which posts a visible
+              <span className="muted">joins the ones it is not in, which posts a visible
               "joined the channel" line in each. Private channels and DMs still need an
               invite.</span></span>
           </label>

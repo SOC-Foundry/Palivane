@@ -47,7 +47,7 @@ The `actor` field is the attribution lever, see [below](#do-i-need-a-token-per-u
 #### Scopes: which plane a key reaches
 
 A key's `scope` is fixed at mint time (`models.py: API_KEY_SCOPES`) and decides what the
-key is a credential *for*. There is no way to widen one afterwards — mint a new key.
+key is a credential *for*. There is no way to widen one afterwards; mint a new key.
 
 | Scope | Reaches | Acts as |
 | --- | --- | --- |
@@ -78,11 +78,11 @@ Two fences worth understanding before you issue one:
 
 - **`console_write` is a route allowlist, not a role check.** Only `PATCH
   /api/findings/{id}` and `POST /api/discovery/connectors/{id}/sync` are writable by a
-  key. Everything else is session-only however privileged the key's user is — so no key
+  key. Everything else is session-only however privileged the key's user is, so no key
   can change org settings, manage users, call logout-all, or mint a successor that
   outlives the revocation of the one that leaked. A write outside the list gets a 403
   that names the reason.
-- **An `ingest` key on the console API is refused as though it did not exist** — the same
+- **An `ingest` key on the console API is refused as though it did not exist.** It gets the same
   bare `401 invalid API key` an unknown token gets, with the same detail string. Saying
   "wrong scope" would confirm the key is real.
 

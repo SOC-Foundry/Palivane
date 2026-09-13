@@ -34,7 +34,7 @@ const DETECTORS = [
   { icon: <DuoPackage />, title: "Supply-chain & IDE", surface: "deps · ide", body: "Risky dependency manifests (install-script abuse, non-registry sources, known-bad packages + OSV CVEs) and unapproved editor extensions." },
   { icon: <DuoKey />, title: "Credentials at rest", surface: "secrets", body: "Live keys on managed endpoints (cloud SA keys, .npmrc, .git-credentials, key files) optionally with TruffleHog/Gitleaks verification." },
   { icon: <DuoEye />, title: "Agent safety & oversharing", surface: "ide · oversharing · ci", body: "Unsafe coding-agent autonomy (YOLO / auto-apply / --dangerously-skip-permissions), dangerous commands in AI chats, and need-to-know oversharing, an LLM returning restricted data to the wrong recipient." },
-  { icon: <DuoNodes />, title: "ML classifier", surface: "ai_usage · llm_io · collab", body: "A hashed n-gram model (trained on a labeled code/prose corpus; 96% accuracy, 97% precision held-out) catches the source-code boundary cases keyword rules read past — config fragments, minified snippets — and a second model flags injection PHRASING (paraphrased 'ignore your instructions') at held-out precision 1.0. CPU-only and deterministic, sub-millisecond, runs on-box: no model service in the loop. Alone it corroborates; agreeing with the rules check it escalates." },
+  { icon: <DuoNodes />, title: "ML classifier", surface: "ai_usage · llm_io · collab", body: "A hashed n-gram model (trained on a labeled code/prose corpus; 96% accuracy, 97% precision held-out) catches the source-code boundary cases keyword rules read past (config fragments, minified snippets), and a second model flags injection PHRASING (paraphrased 'ignore your instructions') at held-out precision 1.0. CPU-only and deterministic, sub-millisecond, runs on-box: no model service in the loop. Alone it corroborates; agreeing with the rules check it escalates." },
   { icon: <DuoTerminal />, title: "CI runners", surface: "ci", body: "Agents on GitHub Actions runners (Claude Code, Codex, Gemini, aider, as actions or CLI steps), flagged when a step hands one non-model credentials or disables approvals. Plus the posture that exposes a runner: pull_request_target checking out PR head, unpinned third-party actions, write-all permissions, secrets: inherit, self-hosted runners on PR triggers." },
 ];
 
@@ -235,7 +235,7 @@ export default function HowItWorks() {
         <div className="lp-wrap">
           <h2 className="lp-h2">…or skip the console entirely</h2>
           <p className="lp-sub">Palivane ships an <strong>MCP server</strong>, so you can drive it from
-             the assistant you already use — ask what leaked today, work the triage queue, check
+             the assistant you already use: ask what leaked today, work the triage queue, check
              shadow-AI usage, or pull a compliance report from Claude or any MCP client, without ever
              opening a dashboard.</p>
           <figure className="lp-shot lp-shot-lead">
@@ -257,7 +257,7 @@ export default function HowItWorks() {
           <h2 className="lp-h2">Built for agents that act</h2>
           <p className="lp-sub">When agents take actions on their own, three questions matter:
              is this finding real, is the agent who it claims to be, and which agent fed which?
-             Palivane answers all three — an <strong>analyst</strong> that investigates and
+             Palivane answers all three: an <strong>analyst</strong> that investigates and
              recommends, <strong>identity attestation</strong> that blocks unattested tool calls,
              and an <strong>agent-to-agent flow graph</strong> that shows where risk crossed a hop.</p>
           <figure className="lp-shot lp-shot-lead">

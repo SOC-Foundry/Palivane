@@ -100,7 +100,7 @@ export default function MyFindings() {
             {f.owner_response
               ? <p className="muted" style={{ marginTop: 8 }}>
                   You said: {LABEL[f.owner_response.action]}
-                  {f.owner_response.note ? ` — ${f.owner_response.note}` : ""}</p>
+                  {f.owner_response.note ? `: ${f.owner_response.note}` : ""}</p>
               : openId === f.id
                 ? (
                   <div style={{ marginTop: 10 }}>

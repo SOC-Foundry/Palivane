@@ -22,7 +22,7 @@ function PrivacyBody() {
         gemini.google.com, copilot.microsoft.com, m365.cloud.microsoft, www.bing.com,
         perplexity.ai, chat.mistral.ai, chat.deepseek.com, grok.com, aistudio.google.com,
         poe.com, meta.ai, chat.qwen.ai, kimi.com, notebooklm.google.com, github.com
-        (Copilot), v0.dev, bolt.new, lovable.dev, replit.com — the authoritative list is
+        (Copilot), v0.dev, bolt.new, lovable.dev, replit.com: the authoritative list is
         the extension manifest's content-script matches, and this policy is updated
         whenever it grows), the
         extension reads the text of a prompt <strong>before it is sent</strong> so that it

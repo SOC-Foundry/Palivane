@@ -197,7 +197,7 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
               <button className="primary-btn slim" onClick={applyRecommendation}>
                 Apply: mark {APPLY[report.recommended_action] || "triaged"}
               </button>
-              <span className="muted" style={{ fontSize: 12 }}>You approve — the analyst never applies it.</span>
+              <span className="muted" style={{ fontSize: 12 }}>You approve. The analyst never applies it.</span>
             </div>
           </div>
         )}
@@ -223,7 +223,7 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
           </p>
           <p className="origin-note">
             {finding.origin.sensitive
-              ? "This source document itself holds sensitive data — severity was raised because a known-confidential file reached an AI tool. "
+              ? "This source document itself holds sensitive data, so severity was raised because a known-confidential file reached an AI tool. "
               : "Confirmed as real organizational data (not just sensitive-looking text), so severity was raised. "}
             Restrict access at the source to stop the leak at its root.</p>
         </div>
@@ -265,7 +265,7 @@ export default function FindingDetail({ finding, isAdmin, onClose, onStatusChang
           : (
             <p className="content-empty">
               Prompt text is not stored. Palivane keeps the verdict, the matched signals,
-              redacted evidence and who sent it — never the prose itself, which cannot be
+              redacted evidence and who sent it, never the prose itself, which cannot be
               redacted for concepts or IP and would make this store worth stealing.
               An admin who wants full text for their own triage can turn it on under
               Settings → Store prompt content.

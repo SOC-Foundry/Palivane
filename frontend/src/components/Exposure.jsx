@@ -70,7 +70,7 @@ export default function Exposure() {
               </div>
               <div className="exposure-foot muted">
                 {Math.round((d.max_containment || 0) * 100)}% content match ·
-                {" "}last seen {(d.last_seen || "").slice(0, 10) || "—"} ·
+                {" "}last seen {(d.last_seen || "").slice(0, 10) || "-"} ·
                 {" "}users: {d.users.join(", ")}
               </div>
             </div>

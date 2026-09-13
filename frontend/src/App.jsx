@@ -397,7 +397,7 @@ export default function App() {
             demo session is. */}
         {auth.demo && (
           <div className="flash-ok" style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between" }}>
-            <span>You're browsing the <strong>live demo</strong> — sample data, read-only.</span>
+            <span>You're browsing the <strong>live demo</strong>: sample data, read-only.</span>
             <a className="primary-btn slim" href="/pricing" style={{ whiteSpace: "nowrap" }}>
               Try it on your own traffic →
             </a>

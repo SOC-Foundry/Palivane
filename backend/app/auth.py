@@ -152,7 +152,7 @@ def _user_for_api_key(request: Request, token: str, db: Session) -> User:
         if not _key_write_allowed(method, request.url.path):
             raise HTTPException(
                 status_code=403,
-                detail="an API key cannot call this endpoint — org settings, user "
+                detail="an API key cannot call this endpoint: org settings, user "
                        "management and key issuance require a signed-in session")
     user = user_for_console_key(key, db)
     request.state.api_key_id = key.id      # so audit entries can name the credential
@@ -179,7 +179,7 @@ def get_current_user(
     # mutates is not — a shared demo org must look the same for the next visitor.
     if payload.get("demo") and request.method not in ("GET", "HEAD", "OPTIONS"):
         raise HTTPException(status_code=403,
-                            detail="the demo is read-only — sign up to work with your own data")
+                            detail="the demo is read-only. Sign up to work with your own data")
     # Hand the claim to the handlers too, so /auth/me can tell the console it is looking at
     # sample data. The browser used to keep its own copy of this and the two could disagree.
     request.state.demo_session = bool(payload.get("demo"))

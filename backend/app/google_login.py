@@ -103,7 +103,7 @@ def google_callback(request: Request, code: str = "", state: str = "",
         return _signin(db, users[0], origin)
     if len(users) > 1:
         raise HTTPException(status_code=409,
-                            detail="this email belongs to several organizations — "
+                            detail="this email belongs to several organizations; "
                                    "sign in with your password instead")
 
     # 2. Claimed + verified domain -> this signup belongs to that org. The join flow's
@@ -138,7 +138,7 @@ def google_callback(request: Request, code: str = "", state: str = "",
     # the same shape /api/auth/signup produces.
     if not settings.allow_signup:
         raise HTTPException(status_code=403,
-                            detail="no account for this email — ask your admin for an invite")
+                            detail="no account for this email. Ask your admin for an invite")
     local, _, dom = email.partition("@")
     org_name = local if dom in domains_mod.FREE_MAIL else dom
     from datetime import timedelta

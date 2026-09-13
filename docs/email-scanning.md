@@ -1,7 +1,7 @@
 # Email scanning (Gmail & Outlook sent mail)
 
 Outbound email is where data actually leaves the org, so Palivane scans each user's
-**sent** mail — body plus text attachments — on the `collab` surface. Detection only:
+**sent** mail (body plus text attachments) on the `collab` surface. Detection only:
 nothing is quarantined or recalled.
 
 ## Gmail (Google Workspace)
@@ -18,7 +18,7 @@ connectors:
    an admin email (used only for the directory read). Sync.
 
 Watermarks are per mailbox (first sync looks back 7 days). A mailbox the delegation can't
-open (suspended user, missing scope) is counted in `mail_errors` — visible in the sync
+open (suspended user, missing scope) is counted in `mail_errors`, visible in the sync
 summary rather than silently skipped.
 
 ## Outlook / Exchange Online
@@ -26,7 +26,7 @@ summary rather than silently skipped.
 Reuses the Entra app registration your other Microsoft connectors use:
 
 1. Application permissions `Mail.Read` + `User.Read.All`, admin-consented. (Not protected
-   APIs — no Microsoft form needed, unlike Teams.)
+   APIs, so no Microsoft form needed, unlike Teams.)
 2. Palivane: Settings → connectors → **Outlook sent-mail scanning** → tenant id, client
    id, client secret. Sync.
 
@@ -36,5 +36,5 @@ clean), unlicensed mailboxes in `mail_errors`.
 
 **Scoping tip:** application `Mail.Read` grants tenant-wide mailbox read. If your security
 review wants it narrower, use an Exchange **application access policy**
-(`New-ApplicationAccessPolicy`) to restrict the app to a mail-enabled security group —
+(`New-ApplicationAccessPolicy`) to restrict the app to a mail-enabled security group.
 Palivane then scans only those mailboxes and counts the rest in `mail_errors`.

@@ -22,7 +22,7 @@ each in **Policies → Checks**.
   (and the rest of the intercept list) from the SWG's TLS inspection.
 - [ ] **TLS-inspecting client with no proxy to chain to (Cloudflare WARP with Gateway HTTP
   policies, Netskope/Prisma tunnel mode, Umbrella roaming client).** These decrypt at L3, so
-  there is no `PALIVANE_UPSTREAM_PROXY` to set — but our upstream leg is still inspected and
+  there is no `PALIVANE_UPSTREAM_PROXY` to set, but our upstream leg is still inspected and
   will fail cert verification, breaking every AI tool on the device. Set
   `PALIVANE_UPSTREAM_CA=/path/to/their-root.pem` **on its own** (the installer merges it with
   the system public roots), or add a Do-Not-Inspect / SSL-bypass rule for the AI hosts.
