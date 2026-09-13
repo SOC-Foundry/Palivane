@@ -20,6 +20,7 @@ auditor can be shown.
 | DPA | Versioned in-product acceptance, recorded with who/when |
 | Vulnerability mgmt (partial) | Dependabot-class updates via PRs; internal security bug bash (#106–#107) with fixes shipped |
 | IaC | Terraform-defined production, drift-free state |
+| Availability monitoring | GCP uptime checks on both public hosts (multi-region, 60s) with down-alerting; Cloud Run 5xx-rate alert; application-error log-based metric + alert — all to the security mailbox (`deploy/terraform/monitoring.tf`, `deploy/terraform/error-alerting.tf`) |
 
 ## Gaps (the actual work)
 
@@ -28,7 +29,7 @@ auditor can be shown.
 | # | Gap | Action | Notes |
 |---|---|---|---|
 | 1 | **No branch protection on `main`** | Upgrade the GitHub org to Team ($4/user/mo) and require PRs + passing checks on `main` | GitHub Free doesn't offer protection on private repos — today nothing *technically* stops a direct push; the PR-only history is convention |
-| 2 | **No uptime monitoring / availability evidence** | GCP uptime checks on `palivane.io` + `app.palivane.io/api/health`, alerting to email/Slack; add a public status page later | Availability criterion needs measured uptime, not vibes |
+| 2 | ~~No uptime monitoring / availability evidence~~ **CLOSED 2026-09** | Uptime checks on `palivane.io` + `app.palivane.io/api/health` (multi-region, 60s) with down-alerting, plus Cloud Run 5xx-rate and application-error alerts, all to the security mailbox — `deploy/terraform/monitoring.tf`, `deploy/terraform/error-alerting.tf`. Remaining polish: a public status page (nice-to-have, not required for the criterion) | Availability criterion needs measured uptime, not vibes |
 | 3 | **Solo-maintainer change review** | Document compensating controls (CI gates, protected main, deploy separation, post-merge review cadence) in the change-mgmt policy; add a second reviewer when headcount allows | Auditors accept documented compensating controls for small teams |
 | 4 | **Restore-test cadence** | /trust records a verified drill (July 2026, ~35 min full restore); the gap is the CADENCE — calendar a quarterly drill (next due Oct 2026) and file each write-up here | A backup nobody restored recently is a hope, not a control |
 | 5 | **No formal risk assessment** | Complete `risk-register.md` (started); review annually | |
@@ -60,7 +61,9 @@ statements in the policy pack and confidentiality commitments consistency check 
 ToS/DPA.
 
 ## Availability criterion notes
-Needs: uptime monitoring (gap #2), documented BCDR with RTO/RPO (Cloud Run is
-multi-instance; Cloud SQL PITR gives RPO in minutes — write the numbers down), restore
-tests (gap #4), and capacity/error alerting (ops webhook exists for judge health; extend
-to 5xx-rate alerting).
+Uptime monitoring and capacity/error alerting are now in place (gap #2 CLOSED): uptime
+checks on both public hosts, a Cloud Run 5xx-rate alert, and an application-error
+log-based alert, all paging the security mailbox (`deploy/terraform/monitoring.tf`,
+`deploy/terraform/error-alerting.tf`) — alongside the existing ops webhook for judge
+health. Remaining: documented BCDR with RTO/RPO written down (Cloud Run is multi-instance;
+Cloud SQL PITR gives RPO in minutes) and the restore-drill cadence (gap #4).
