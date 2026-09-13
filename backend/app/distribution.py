@@ -200,11 +200,13 @@ def install_sh():
 # `palivane connect` (browser sign-in -> Claude Code + local hooks + Cursor), then stands
 # up the local egress proxy so traffic those tools make directly is inspected too.
 #
-# By default it governs AI CLIs (Claude Code, Codex, Gemini) via per-tool shims — no sudo:
+# By default it governs AI CLIs (Claude Code, Codex, Gemini) via per-tool shims — no sudo.
+# When run in a terminal (even piped) with no proxy flag, it ASKS whether to also cover
+# desktop apps + browsers system-wide; answer no (the default) and it stays sudo-free.
 #   curl -fsSL {base}/install.sh | bash
 #
 #   --desktop    also govern desktop AI apps + browsers system-wide (system proxy + CA; needs sudo)
-#   --cli-only   the default; kept as an explicit opt-in for clarity
+#   --cli-only   CLI + shims + sudo-free proxy; skip the desktop prompt
 #   --no-proxy   CLI + hooks only; skip the egress proxy entirely
 #
 # Windows (PowerShell, no admin needed):
@@ -221,12 +223,22 @@ REQUIRE_SIG="{require_sig}"   # 1 when this deployment signs releases (fail clos
 # landed a third party's extension in the MDM forcelist (see config.extension_id).
 PALIVANE_EXT_URL="{ext_url}"
 PROXY_MODE="cli-only"   # cli-only (default) | desktop | none
+PROXY_EXPLICIT=""       # set when a proxy flag was passed, so the prompt is skipped
 for a in "$@"; do
-  [ "$a" = "--desktop" ] && PROXY_MODE="desktop"
-  [ "$a" = "--cli-only" ] && PROXY_MODE="cli-only"
-  [ "$a" = "--no-proxy" ] && PROXY_MODE="none"
+  [ "$a" = "--desktop" ] && {{ PROXY_MODE="desktop"; PROXY_EXPLICIT=1; }}
+  [ "$a" = "--cli-only" ] && {{ PROXY_MODE="cli-only"; PROXY_EXPLICIT=1; }}
+  [ "$a" = "--no-proxy" ] && {{ PROXY_MODE="none"; PROXY_EXPLICIT=1; }}
   [ "$a" = "--no-verify" ] && REQUIRE_SIG="skip"   # opt out of integrity checks (not advised)
 done
+
+# No proxy flag given: if we can reach a terminal — /dev/tty is the user's terminal even under
+# `curl ... | bash`, where stdin is the script — offer full coverage. Default NO, so a piped
+# run with no tty (CI, provisioning) stays on the safe, sudo-free CLI setup and never hangs.
+if [ -z "$PROXY_EXPLICIT" ] && [ -r /dev/tty ]; then
+  printf "\\nAlso govern desktop AI apps (Claude/ChatGPT) + browsers system-wide?\\n  This needs sudo: it installs a local CA and sets the system proxy. [y/N] " > /dev/tty
+  read ans < /dev/tty || ans=""
+  case "$ans" in [Yy]*) PROXY_MODE="desktop" ;; esac
+fi
 
 # The release-signing public key this installer pins. A signature that doesn't verify
 # against THIS key is rejected — so a network attacker who can rewrite the served scripts
@@ -352,7 +364,8 @@ if [ -n "$PALIVANE_EXT_URL" ]; then
 fi
 echo ""
 echo "Done. Open a new terminal (or 'source ~/.zshrc') so 'palivane-connect' is on PATH."
-[ "$PROXY_MODE" = "desktop" ] && echo "Desktop apps + browsers are governed system-wide."
+[ "$PROXY_MODE" = "desktop" ] && echo "Covered: AI CLIs + desktop apps (Claude/ChatGPT) + browsers, system-wide."
+[ "$PROXY_MODE" = "cli-only" ] && echo "Covered: AI CLIs. NOT covered: native desktop apps (Claude/ChatGPT) + browsers — add them with:  palivane-desktop install --desktop"
 [ "$PROXY_MODE" = "none" ] && echo "To also govern AI CLIs:  palivane-desktop install --cli-only   (or --desktop for system-wide)"
 """
     return PlainTextResponse(script, media_type="text/x-shellscript")
