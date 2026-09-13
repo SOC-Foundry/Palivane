@@ -357,7 +357,7 @@ export default function Landing({ onSignIn }) {
             ))}
           </div>
           <div style={{ marginTop: 40 }}>
-            <Shot src="/shots/dashboard.png?v=7" alt="Exposure view: one document, everywhere it surfaced"
+            <Shot src="/shots/dashboard.png?v=8" alt="Exposure view: one document, everywhere it surfaced"
                   caption="Start from a document instead of a finding."
                   onZoom={(s, a) => setZoom({ src: s, alt: a })} />
           </div>

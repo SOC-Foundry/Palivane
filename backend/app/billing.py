@@ -124,7 +124,7 @@ def create_checkout(body: CheckoutRequest, current: User = Depends(require_admin
                             detail="Enterprise plans are managed with sales, not by card")
     if tenant.stripe_subscription_id:
         raise HTTPException(status_code=409,
-                            detail="already subscribed — use 'Manage billing' to change seats")
+                            detail="already subscribed. Use 'Manage billing' to change seats")
     seats = max(1, min(int(body.seats or 1), 1000))
     users = db.query(User).filter(User.tenant_id == tenant.id).count()
     seats = max(seats, users)   # can't buy fewer seats than existing members
