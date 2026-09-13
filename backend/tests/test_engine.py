@@ -40,7 +40,10 @@ def test_data_loss_flagged_on_ai_usage():
         surface=Surface.AI_USAGE,
         metadata={"destination": "https://chat.openai.com/"},
     ))
-    assert v.attack_intent
+    # A data leak scores as a real risk, but it is NOT an attack — no adversary is present.
+    # Labeling secret/PII exposure "attack intent" was a false positive; it stays off here.
+    assert v.risk_score >= 60 and v.severity in {"high", "critical"}
+    assert v.attack_intent is False
     cats = {s.category for s in v.signals}
     assert Category.SECRET_LEAK in cats and Category.PII_EXPOSURE in cats
 
