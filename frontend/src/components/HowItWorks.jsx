@@ -251,6 +251,26 @@ export default function HowItWorks() {
         </div>
       </section>
 
+      {/* Built for agents that act */}
+      <section className="lp-section">
+        <div className="lp-wrap">
+          <h2 className="lp-h2">Built for agents that act</h2>
+          <p className="lp-sub">When agents take actions on their own, three questions matter:
+             is this finding real, is the agent who it claims to be, and which agent fed which?
+             Palivane answers all three — an <strong>analyst</strong> that investigates and
+             recommends, <strong>identity attestation</strong> that blocks unattested tool calls,
+             and an <strong>agent-to-agent flow graph</strong> that shows where risk crossed a hop.</p>
+          <figure className="lp-shot lp-shot-lead">
+            <video src="/shots/agent-demo.mp4" poster="/shots/agent-demo-poster.png" controls playsInline
+                   preload="metadata"
+                   style={{ display: "block", width: "100%", borderRadius: 12, border: "1px solid #22271F" }} />
+            <figcaption>The analyst investigating a credential-leak finding and recommending an
+               action, attestation allowing an OIDC agent while blocking an unattested one, and the
+               A2A flow graph.</figcaption>
+          </figure>
+        </div>
+      </section>
+
       {/* Offline-first CTA band */}
       <section className="lp-cta-band">
         <div className="lp-wrap">
