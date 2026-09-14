@@ -39,6 +39,7 @@ const MENU = [
   { label: "Resources", items: [
     { href: "/docs",    label: "Documentation", note: "Setup, deployment, reference" },
     { href: "/setup",   label: "Set it up",     note: "One command, one afternoon" },
+    { href: "/security", label: "Security",        note: "Where your data goes, and who runs it" },
     { href: "/trust",   label: "Trust & security", note: "Posture, data handling, disclosure" },
     { href: "/support", label: "Support",       note: "Get help, by plan" },
   ]},
@@ -217,7 +218,7 @@ export function SiteFooter() {
       ["/support", "Support"],
     ]},
     { head: "Trust", links: [
-      ["/trust", "Trust & security"], ["/eu-ai-act", "EU AI Act"],
+      ["/security", "Security"], ["/trust", "Trust & security"], ["/eu-ai-act", "EU AI Act"],
       ["/privacy", "Privacy"], ["/terms", "Terms"],
     ]},
   ];
