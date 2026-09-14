@@ -26,7 +26,7 @@ const components = join(here, "..", "src", "components");
 
 // The public pages. The console is excluded: it talks to people who already bought.
 const PAGES = ["Landing", "WhyPalivane", "UseCases", "HowItWorks", "Pricing", "Trust", "Support",
-               "Setup", "CoverageMatrix", "SiteChrome", "Legal", "Docs"];
+               "Setup", "CoverageMatrix", "SiteChrome", "Legal", "Docs", "Security"];
 
 const BANNED = [
   { phrase: "nothing to install",
