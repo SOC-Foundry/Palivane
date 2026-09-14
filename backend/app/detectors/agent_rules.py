@@ -49,15 +49,43 @@ _COMMENT_DIRECTIVE = re.compile(
 # API" is in every vendor SDK doc, and treating it as a credential store made ordinary API
 # documentation read as exfiltration. `(?-i:…)` keeps the env-var arm case-sensitive even
 # though the surrounding pattern is IGNORECASE.
-_CRED_PATH = (r"(?:~/\.aws|\.aws/credentials|~/\.ssh|id_rsa|\.env(?:\.\w+)?|"
-              r"\.git-credentials|~/\.config|keychain|secrets?\.(?:json|ya?ml)|"
-              r"(?-i:[A-Z][A-Z0-9]*_(?:TOKEN|API_?KEY|KEY|SECRET|PASSWORD|CREDENTIALS?)))")
+# Credential FILES / stores — reading one of these and sending it out is the s1ngularity
+# shape. Kept separate from the env-var-NAME arm below because doc/skill files MENTION env-var
+# names constantly ("set AWS_SECRET_KEY"), so a bare name near a URL is not exfil — only a
+# credential FILE reference is strong enough to gate the destination-only rule.
+# `.env` must be a FILE, not JS env access: `(?<![\w.])` excludes process.env.X /
+# import.meta.env.X (env-var reads), which were matching as a ".env file" in vendor docs.
+_CRED_FILE = (r"(?:~/\.aws|\.aws/credentials|~/\.ssh|id_rsa|(?<![\w.])\.env(?:\.\w+)?|"
+              r"\.git-credentials|~/\.config|keychain|secrets?\.(?:json|ya?ml))")
+_CRED_FILE_RE = re.compile(_CRED_FILE, re.IGNORECASE)
+# NB: wrapped as one non-capturing group. Unwrapped, its internal `|` leaked to the top level
+# of _EXFIL, so a BARE credential mention (a lone `.env` / `API_KEY`) matched as exfiltration
+# with no send verb at all — the root of the skill-doc false positives.
+_CRED_PATH = (r"(?:" + _CRED_FILE +
+              r"|(?-i:[A-Z][A-Z0-9]*_(?:TOKEN|API_?KEY|KEY|SECRET|PASSWORD|CREDENTIALS?)))")
 _CRED_PATH_RE = re.compile(_CRED_PATH, re.IGNORECASE)
+# A credential ASSIGNED to a placeholder is documentation, not a real store — vendor skill
+# docs are full of `API_KEY=local-dev-key`, `TOKEN=<your-token>`, `SECRET=changeme`.
+_EXAMPLE_VALUE = re.compile(
+    r"[=:]\s*[\"'`]?(?:local[-_]?dev|example|changeme|your[-_]|<[^>]{1,40}>|dummy|sample|"
+    r"placeholder|xxx+|todo|test[-_]|redacted|fake|abc123|key[-_]?here|token[-_]?here|"
+    r"\.\.\.|\$\{|\{\{)", re.IGNORECASE)
+# The s1ngularity shape: an EXFIL verb and a credential in the same clause, either order.
+# Requires an explicit send/exfil verb — a credential merely sitting near a URL or a `curl`
+# (a READ) is ordinary API documentation, which is what produced the skill-doc false positives.
+_EXFIL_VERB = r"(?:send|post|upload|exfiltrat\w*|transmit|email|forward|leak)"
 _EXFIL = re.compile(
-    r"(?:send|post|upload|exfiltrat\w*|transmit|email|include|append|attach|leak)\b"
-    r"[^\n.]{0,80}?" + _CRED_PATH
-    + r"|" + _CRED_PATH
-    + r"[^\n.]{0,80}?\b(?:send|post|upload|exfiltrat\w*|transmit|email|curl|https?://|to\s+\S+@)",
+    _EXFIL_VERB + r"\b[^\n.]{0,80}?" + _CRED_PATH
+    + r"|" + _CRED_PATH + r"[^\n.]{0,80}?\b(?:" + _EXFIL_VERB + r"|to\s+\S+@)",
+    re.IGNORECASE,
+)
+# The destination-only rule (push to a URL/email) needs the credential FILE to actually be
+# READ/accessed nearby — not just mentioned ("store secrets in `.env`"). Without this, a long
+# doc that separately mentions a `.env` and a "POST to https://…" example trips the rule.
+_CRED_READ = re.compile(
+    r"(?:read|load|cat|open|access|dump|print|echo|grab|include|exfiltrat\w*|send|post|upload|copy)"
+    r"\b[^\n.]{0,40}?" + _CRED_FILE
+    + r"|" + _CRED_FILE + r"\b[^\n.]{0,25}?\b(?:contents?|values?|secrets?|keys?)\b",
     re.IGNORECASE,
 )
 # A directive to push data to an external endpoint (URL, webhook, or email address). Only
@@ -143,7 +171,12 @@ class AgentRulesDetector:
         # (push to an external URL/email) is exfil ONLY when the file also references a real
         # credential somewhere — otherwise it is ordinary automation or API documentation.
         m = _find(_EXFIL, raw, norm)
-        if not m and (_CRED_PATH_RE.search(raw) or _CRED_PATH_RE.search(norm)):
+        if m and _EXAMPLE_VALUE.search(m.group(0)):
+            m = None      # the "credential" is a doc placeholder (API_KEY=local-dev-key)
+        # Destination-only (push to a URL/email) needs the credential FILE to be READ/accessed
+        # somewhere (not just mentioned as advice), else a long doc that separately mentions a
+        # `.env` and a "POST to https://…" example trips the rule — the last skill-doc FP.
+        if not m and _find(_CRED_READ, raw, norm):
             m = _find(_EXFIL_DEST, raw, norm)
         if m:
             signals.append(Signal(

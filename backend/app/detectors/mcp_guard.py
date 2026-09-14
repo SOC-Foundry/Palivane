@@ -103,10 +103,18 @@ _TOOL_POISON = re.compile(
     r"ignore\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|above|earlier)\s+"
     r"(?:instructions|guidance|rules|context)"
     r"|disregard\s+(?:the\s+|any\s+|all\s+|earlier\s+)?(?:system\s+prompt|previous|instructions|guidance)"
-    r"|system\s+prompt|<important>|do\s+not\s+(?:tell|inform|mention|reveal)\s+(?:the\s+)?user"
+    # An adversarial verb before "system prompt" — bare "system prompt" over-matched legitimate
+    # tool descriptions that merely MENTION it ("the agent's system prompt gets an instruction
+    # appended"), which is not poisoning.
+    r"|(?:reveal|expose|leak|exfiltrat\w*|print|dump|output|return|send|repeat)\s+"
+    r"(?:the\s+|your\s+|its\s+|my\s+|full\s+|entire\s+)*system\s+prompt"
+    r"|<important>|do\s+not\s+(?:tell|inform|mention|reveal)\s+(?:the\s+)?user"
     r"|(?:silently|secretly|without\s+telling)"
     r"|exfiltrat|send\s+(?:the\s+)?(?:contents?|secrets?|keys?|env|file)\s+to"
-    r"|(?:read|include|attach|append)\s+[^\n]{0,40}(?:\.env|\.ssh|id_rsa|credentials|secret|api[_ -]?key)"
+    # Read/attach a CREDENTIAL FILE. Narrowed to file paths: bare "secret"/"api_key" as targets
+    # matched benign — often DEFENSIVE — description copy ("do not include api_key values").
+    r"|(?:read|include|attach|append|cat|upload|send)\s+[^\n]{0,40}"
+    r"(?:\.env\b|\.ssh\b|id_rsa|~/\.aws|/\.aws/|\.pem\b|credentials\.(?:json|ya?ml|txt))"
     r"|before\s+(?:using|calling|running)\s+this\s+tool,?\s+(?:you\s+must|first|always)",
     re.IGNORECASE,
 )
