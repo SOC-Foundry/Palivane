@@ -303,6 +303,29 @@ def test_is_excluded_paths():
     assert hook._is_excluded("/repo/palivane", []) is False              # nothing excluded
 
 
+def test_touches_excluded_matches_the_path_not_just_the_cwd():
+    """The gap that made the exclusion useless in practice.
+
+    _is_excluded asks where the SESSION started. A session rooted at ~ that reads
+    ~/palivane/backend/tests/fixtures is not excluded by that question, so the repo's
+    deliberately realistic fixtures (AKIA keys, .aws/credentials, `rm -rf /` in the detector
+    corpora) kept producing critical findings — which is the exact thing setting
+    PALIVANE_HOOK_EXCLUDE_DIRS was meant to stop.
+    """
+    ex = [hook.os.path.realpath("/repo/palivane")]
+    assert hook._touches_excluded({"file_path": "/repo/palivane/backend/app/main.py"}, ex) is True
+    assert hook._touches_excluded({"file_path": "/repo/other/main.py"}, ex) is False
+    # Nested and list-valued inputs are harvested too — an Edit carries more than one string.
+    assert hook._touches_excluded(
+        {"edits": [{"path": "/repo/palivane/x.py"}]}, ex) is True
+    # A sibling directory that merely shares the prefix is a different repo.
+    assert hook._touches_excluded({"file_path": "/repo/palivane-other/x.py"}, ex) is False
+    # Nothing excluded, or nothing path-shaped, must never suppress.
+    assert hook._touches_excluded({"file_path": "/repo/palivane/x.py"}, []) is False
+    assert hook._touches_excluded({"command": "echo hello"}, ex) is False
+    assert hook._touches_excluded({}, ex) is False
+
+
 def test_config_parses_exclude_dirs(monkeypatch):
     monkeypatch.setenv("PALIVANE_HOOK_EXCLUDE_DIRS", "/a/repo,/b/dir")
     ex = hook.read_config()["exclude"]

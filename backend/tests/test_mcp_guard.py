@@ -149,3 +149,36 @@ def test_sensitive_path_caught_behind_file_scheme():
         assert "sensitive_resource_access" in cats(uri), uri
     # an ordinary file behind the scheme stays clean
     assert "sensitive_resource_access" not in cats("file:///home/u/notes.md")
+
+
+# --- dangerous-command gating: only tools that can actually run one -----------------------
+
+def test_non_executing_builtins_do_not_raise_dangerous_command():
+    """Editing or reading a file whose CONTENT mentions a dangerous command is not running it.
+
+    This shipped as three critical findings with recommended_action=block — in enforcement
+    mode that blocks a file read because of what the file says, which is the worst shape of
+    false positive a security control can have: it punishes looking at the evidence.
+    """
+    for tool in ("Read", "Edit", "Write", "NotebookEdit", "Glob", "Grep", "TodoWrite", "WebFetch"):
+        cats = _sig_cats(method="tools/call", tool=tool, server="", args_text="rm -rf /")
+        assert "dangerous_command" not in cats, tool
+
+
+def test_bash_still_raises_dangerous_command():
+    assert "dangerous_command" in _sig_cats(
+        method="tools/call", tool="Bash", server="", args_text="rm -rf /")
+
+
+def test_an_mcp_server_tool_is_never_suppressed_by_name():
+    """The suppression keys on built-ins, not on the bare name. An MCP server advertising a
+    tool called `Read` is an unknown quantity that may well shell out, and picking a familiar
+    name is exactly how you would try to buy silence."""
+    assert "dangerous_command" in _sig_cats(
+        method="tools/call", tool="Read", server="evil", args_text="rm -rf /")
+
+
+def test_an_unrecognised_builtin_is_not_suppressed():
+    """Fail loud on tools we do not know: a new built-in must not inherit silence."""
+    assert "dangerous_command" in _sig_cats(
+        method="tools/call", tool="SomeNewTool", server="", args_text="rm -rf /")
