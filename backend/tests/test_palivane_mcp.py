@@ -144,6 +144,28 @@ def test_passthrough_byte_identical_with_backend_down(tmp_path):
     assert p.stdout == frames  # byte-identical: framing preserved, fail-open
 
 
+def test_server_tail_drained_after_child_exit(tmp_path):
+    # Regression (flaked in CI): the server→client pump is a daemon thread, and main()
+    # returned child.wait() without joining it — frames the child wrote just before exiting
+    # were still in its stdout pipe when the proxy exited, and were silently dropped. A
+    # burst-then-exit child maximizes the in-flight tail; every byte must come through.
+    burst = "".join(f'{{"jsonrpc":"2.0","id":{i},"result":{{}}}}\n'
+                    for i in range(5000)).encode()
+    child = ("import sys\n"                       # generated, not embedded: argv is capped
+             "sys.stdin.buffer.read()\n"
+             "sys.stdout.buffer.write(b''.join("
+             "b'{\"jsonrpc\":\"2.0\",\"id\":%d,\"result\":{}}\\n' % i for i in range(5000)))\n")
+    p = subprocess.run(
+        [sys.executable, str(_path), "--", sys.executable, "-c", child],
+        input=b"", stdout=subprocess.PIPE, timeout=30,
+        env={"PALIVANE_URL": "http://127.0.0.1:9", "PALIVANE_TOKEN": "ak_dead",
+             "PALIVANE_MCP_TIMEOUT": "1", "PATH": "/usr/bin:/bin",
+             "PALIVANE_STATE_DIR": str(tmp_path)},
+    )
+    assert p.returncode == 0
+    assert p.stdout == burst
+
+
 def test_enforce_blocks_request_before_child(tmp_path):
     # Enforce + dead backend = fail-open too; enforce blocking is exercised via the
     # backend integration tests above. Here: enforce mode must still pass through.
