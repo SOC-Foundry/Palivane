@@ -340,6 +340,12 @@ def custom_pii_patterns(extra: str = "") -> list[tuple[str, _TimedPattern]]:
 # and `.` so UUIDs, dotted ids, and kebab-case phrases don't qualify.
 _TOKEN_CANDIDATE_RE = re.compile(r"[A-Za-z0-9_]{24,80}")
 _HEX_RE = re.compile(r"^[0-9a-fA-F]+$")   # git SHAs / md5 / sha digests — not secrets
+# A candidate immediately followed by a dotted suffix is the STEM of a filename, hostname, or
+# dotted identifier — not a standalone credential: `0be77fbc37f7_analyst_enabled`.py (a
+# migration file), `Screenshot_20260913_115127`.png, `…-6hlslj6635…`.apps.googleusercontent.com
+# (a PUBLIC Google client id). A real bare secret isn't glued to a `.ext`/`.host`. Skipping
+# these removes a whole warn-level FP class (git/migration filenames, screenshots, client ids).
+_DOTTED_SUFFIX_RE = re.compile(r"\.[A-Za-z][A-Za-z0-9]{0,7}")
 
 # Provider-issued correlation ids: prefix + random suffix, so they pass every entropy gate
 # while carrying no credential. They dominate AI-tool traffic (one tool_use id per tool call),
@@ -508,6 +514,8 @@ def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
         tok = m.group(0)
         if tok in seen or _HEX_RE.match(tok):
             continue
+        if _DOTTED_SUFFIX_RE.match(text, m.end()):
+            continue   # a filename/hostname/dotted-id stem (foo.py, id.apps.googleusercontent.com)
         if any(s <= m.start() < e for s, e in masked):
             continue   # inside a data URI / integrity hash / ssh public key
         classes = (any(c.islower() for c in tok) + any(c.isupper() for c in tok)

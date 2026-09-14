@@ -135,6 +135,17 @@ def test_provider_correlation_ids_not_flagged():
         assert find_high_entropy_tokens(tok) == [], tok
 
 
+def test_dotted_suffix_identifiers_not_flagged():
+    # A high-entropy stem immediately followed by a short dotted suffix is a filename,
+    # hostname, or dotted id (module path, bundle name) — not a credential. These flooded
+    # the console as false high-entropy criticals from skill docs and build output.
+    for tok in ("aB3kZ9qWmX7vP2.js",
+                "x7Kp2mQ9wZ4nR8.min.css",
+                "d41d8cd98f00b204e9800998.chunk.js",
+                "kf83jdLm29xQ.internal.example.com"):
+        assert find_high_entropy_tokens(tok) == [], tok
+
+
 def test_bare_base64_public_keys_not_flagged():
     # PEM-armoured public keys were already masked; MCP/JSON payloads carry the bare SPKI
     # body with no -----BEGIN----- header. A PUBLIC key is not a secret.
