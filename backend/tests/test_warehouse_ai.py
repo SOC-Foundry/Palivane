@@ -127,14 +127,51 @@ def test_databricks_sync_scores_inference_payloads(client, monkeypatch):
     assert body["findings"] >= 1     # the SSN payload
 
 
-def test_snowflake_sync_advances_watermark(client, db_factory, monkeypatch):
+def _seed_watermark(db_factory, connector_id, value):
+    """Give the sync a known starting watermark.
+
+    Without one, `since` falls back to now-minus-24h, so what the watermark does to a fixed
+    timestamp depends on the day the suite runs. That is what broke this test: it asserted a
+    hardcoded 2026-09-13 11:22:33 became the watermark, which only held while the clock was
+    within 24h of it — roughly one day after it was written.
+    """
     from app.models import SaasConnector
+    db = db_factory()
+    row = db.query(SaasConnector).filter_by(id=connector_id).first()
+    row.state = {**(row.state or {}), "cortex_since": value}
+    db.commit()
+    db.close()
+
+
+def _watermark(db_factory, connector_id):
+    from app.models import SaasConnector
+    db = db_factory()
+    row = db.query(SaasConnector).filter_by(id=connector_id).first()
+    mark = (row.state or {}).get("cortex_since")
+    db.close()
+    return mark
+
+
+def test_snowflake_sync_advances_watermark(client, db_factory, monkeypatch):
     c = _mk_snowflake(client)
+    _seed_watermark(db_factory, c["id"], "2026-09-13 10:00:00")
     monkeypatch.setattr(wa, "poll_query_history", lambda creds, since: [
         {"QUERY_ID": "q1", "USER_NAME": "u@acme.com", "START_TIME": "2026-09-13 11:22:33",
          "QUERY_TEXT": "SELECT AI_COMPLETE('m', 'hello')"}])
     client.post(f"/api/discovery/connectors/{c['id']}/sync")
-    db = db_factory()
-    row = db.query(SaasConnector).filter_by(id=c["id"]).first()
-    assert (row.state or {}).get("cortex_since") == "2026-09-13 11:22:33"
-    db.close()
+    assert _watermark(db_factory, c["id"]) == "2026-09-13 11:22:33"
+
+
+def test_snowflake_watermark_never_moves_backwards(client, db_factory, monkeypatch):
+    """The invariant the previous test accidentally asserted the opposite of.
+
+    A row older than the current watermark must leave it alone — re-polling a window that
+    returns stale rows must not rewind the cursor and re-scan everything behind it.
+    """
+    c = _mk_snowflake(client)
+    _seed_watermark(db_factory, c["id"], "2026-09-13 12:00:00")
+    monkeypatch.setattr(wa, "poll_query_history", lambda creds, since: [
+        {"QUERY_ID": "old", "USER_NAME": "u@acme.com", "START_TIME": "2026-09-13 09:00:00",
+         "QUERY_TEXT": "SELECT AI_COMPLETE('m', 'hello')"}])
+    client.post(f"/api/discovery/connectors/{c['id']}/sync")
+    assert _watermark(db_factory, c["id"]) == "2026-09-13 12:00:00"
