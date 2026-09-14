@@ -120,6 +120,14 @@ _TOOL_POISON = re.compile(
 )
 
 
+# Claude Code built-ins that cannot spawn a shell. Their arguments routinely CONTAIN command
+# text (a file being read or written), which is not the same as running it. Bash is absent on
+# purpose — it is the one that executes.
+_NON_EXECUTING_BUILTINS = frozenset({
+    "Read", "Edit", "Write", "NotebookEdit", "Glob", "Grep", "TodoWrite", "WebFetch",
+})
+
+
 def _parse_allow(value) -> set[str]:
     items = value if isinstance(value, (list, tuple, set)) else str(value or "").split(",")
     return {str(s).strip().lower() for s in items if str(s).strip()}
@@ -196,8 +204,17 @@ class MCPGuardDetector:
         # 3) Dangerous command execution. Scan every de-obfuscated view (normalized, leet-
         # folded, URL-decoded, hex-decoded) so homoglyph / fullwidth / zero-width / leetspeak
         # (cur1…|5h) / URL- and hex-encoded wrappers of `curl … | sh` can't slip past.
+        #
+        # ...but only for a tool that can actually run one. A built-in editor tool carries the
+        # text of the file being edited, so writing documentation that mentions `rm -rf /`
+        # scored critical with recommended_action=block — in enforcement mode that blocks a
+        # file edit because of what the file SAYS. The suppression is deliberately narrow:
+        # only built-ins (server == "") on the known non-executing list. An unrecognised tool,
+        # and every tool on an MCP server, still gets scanned, because we cannot know what it
+        # does and a silent miss there is far worse than a noisy hit.
+        can_execute = bool(server) or tool not in _NON_EXECUTING_BUILTINS
         mcmd = next((mm for v in _command_views(args_text)
-                     if (mm := _DANGEROUS_CMD.search(v))), None)
+                     if (mm := _DANGEROUS_CMD.search(v))), None) if can_execute else None
         if mcmd:
             signals.append(Signal(
                 category=Category.DANGEROUS_COMMAND,
