@@ -1983,6 +1983,11 @@ def _scan_snowflake(db, connector, creds):
     return scan_snowflake_cortex(db, connector, creds)
 
 
+def _scan_databricks(db, connector, creds):
+    from .warehouse_ai import scan_databricks
+    return scan_databricks(db, connector, creds)
+
+
 PLATFORMS: dict[str, dict] = {
     "snowflake": {
         "label": "Snowflake Cortex",
@@ -1995,6 +2000,20 @@ PLATFORMS: dict[str, dict] = {
                  "the LITERAL prompts in Cortex/AI_* calls for secrets/PII/confidential data — "
                  "post-hoc monitoring (~45-min lag); a prompt sourced from a column is counted "
                  "but not scored (its text isn't in the SQL).",
+    },
+    "databricks": {
+        "label": "Databricks (Model Serving)",
+        "scan": _scan_databricks,
+        "credential_fields": ["host", "client_id", "client_secret", "warehouse_id",
+                              "inference_table"],
+        "setup": "Read-only OAuth service principal (client_id/client_secret). Enable an AI "
+                 "Gateway INFERENCE TABLE on the model-serving endpoint(s) so request/response "
+                 "payloads are logged to a Unity Catalog Delta table; set `inference_table` to "
+                 "it (e.g. main.ai.payload_logging) and `warehouse_id` to a SQL warehouse the "
+                 "SP can use. Grant the SP USE CATALOG/SCHEMA + SELECT on that table. Each sync "
+                 "scores the prompts in logged requests for secrets/PII/confidential data — "
+                 "post-hoc monitoring. Without an inference table there's nothing to read "
+                 "(system.query.history statement text is redacted by default).",
     },
     "google_workspace": {
         "label": "Google Workspace",
