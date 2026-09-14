@@ -1978,7 +1978,24 @@ def scan_gmail_messages(db, connector, creds: dict) -> dict:
     return summary
 
 
+def _scan_snowflake(db, connector, creds):
+    from .warehouse_ai import scan_snowflake_cortex   # lazy: keeps cryptography/JWT off the hot path
+    return scan_snowflake_cortex(db, connector, creds)
+
+
 PLATFORMS: dict[str, dict] = {
+    "snowflake": {
+        "label": "Snowflake Cortex",
+        "scan": _scan_snowflake,
+        "credential_fields": ["account", "user", "private_key", "passphrase"],
+        "setup": "Read-only key-pair (JWT) service account. Grant a role USAGE_VIEWER + "
+                 "GOVERNANCE_VIEWER (or IMPORTED PRIVILEGES on the SNOWFLAKE db) so it can read "
+                 "ACCOUNT_USAGE.QUERY_HISTORY. `account` is the account identifier (or set "
+                 "`host`); `private_key` is the PEM (`passphrase` optional). Each sync scores "
+                 "the LITERAL prompts in Cortex/AI_* calls for secrets/PII/confidential data — "
+                 "post-hoc monitoring (~45-min lag); a prompt sourced from a column is counted "
+                 "but not scored (its text isn't in the SQL).",
+    },
     "google_workspace": {
         "label": "Google Workspace",
         "fetch": fetch_google_workspace,
