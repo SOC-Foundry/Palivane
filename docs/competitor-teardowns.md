@@ -16,8 +16,8 @@ and vendor competitor-blogs were deliberately excluded or flagged.
 integrations, endpoint agents, and an MCP gateway; Prompt Security ships a browser/endpoint
 sensor and shadow-MCP discovery. The surfaces that are still genuinely differentiating are
 the **egress proxy**, **SaaS OAuth _discovery_** (as opposed to per-app integrations), and
-**local _stdio_ MCP inspection** — plus the **free self-hosted edition**, **published
-per-seat pricing**, and the specific **agent primitives** (identity attestation, A2A graph)
+**local _stdio_ MCP inspection** — plus **published price bands** (the field publishes
+nothing) and the specific **agent primitives** (identity attestation, A2A graph)
 that none of the three evidence. Lead with those, not with a generic "we cover more surfaces."
 
 ---
@@ -46,7 +46,8 @@ startup, in any deal.
   **Agent identity attestation and A2A governance are not mentioned on primary pages.**
 - **Palivane wins:** SaaS OAuth *discovery* and local *stdio* MCP inspection (neither shown);
   the specific agent primitives (attestation that *blocks* unattested tool calls, A2A graph,
-  read-only analyst) vs their higher-level "governance"; free self-host; published $12/seat;
+  read-only analyst) vs their higher-level "governance"; self-hosting as a supported
+  deployment; published price bands;
   fail-open commitment.
 - **Palivane loses:** SentinelOne's detection heritage, reference customers, MSSP GTM, and
   broad service coverage. Our low injection recall and no cited production tenant are exactly
@@ -78,7 +79,7 @@ secondary sources ($250M vs $300M) — unverified.
   "autonomous DLP analyst… that sees, reasons, and acts." Data-classification-centric.
   **Agent identity attestation, A2A flow graphs, and blocking unattested tool calls are not
   evidenced.**
-- **Palivane wins:** free self-host (they're SaaS-only); published per-seat pricing; the agent
+- **Palivane wins:** self-hosting at all (they're SaaS-only); published price bands; the agent
   *primitives* (attestation/A2A) vs their data-classification agent story; local stdio MCP;
   egress proxy; SaaS OAuth *discovery*; fail-open.
 - **Palivane loses:** detection quality — their ML detectors almost certainly beat our regex
@@ -118,8 +119,9 @@ it's at the edges.
   identity attestation, A2A graph, or inline tool-call blocking** as Palivane frames it.
 - **Palivane wins:** capture-surface breadth (browser, egress proxy, OAuth discovery, local
   stdio MCP — none confirmed at Knostic); inline agent governance (attestation/A2A/analyst vs
-  their scan+label); free self-host (only their narrow OpenAnt tool is self-hostable);
-  transparent $12/seat vs their $15 floor / $850 Pro; fail-open.
+  their scan+label); self-hosting of the whole system (only their narrow OpenAnt tool is
+  self-hostable);
+  published bands vs their $15 floor / $850 Pro; fail-open.
 - **Palivane loses / doesn't address:** need-to-know oversharing for Copilot/Glean — deep
   entitlement simulation and file-level remediation Palivane's prompt model doesn't do.
   Gartner Cool Vendor recognition, named funding, published AgentMesh catalog, AWS private
@@ -149,13 +151,14 @@ and desktop-first, and the closest surface overlap to Palivane of anyone here.
   the string," via small language models reading the full interaction in <200 ms. No prominent
   prompt-injection claim.
 - **Pricing** — demo-gated on their own site, but their **AWS Marketplace listing publishes
-  ~$163/user/year** (12-month, 200-user minimum). That's ≈ $13.60/user/mo — **comparable to
-  our $12**, so pricing is *not* a clean win against Harmonic; say so.
+  ~$163/user/year** (12-month, 200-user minimum). That's ≈ $13.60/user/mo. Our bands work
+  out to roughly $10–30/user/mo at the 50–100 band and less above it, so we are **in the same
+  range, not obviously cheaper** — pricing is *not* a clean win against Harmonic; say so.
 - **Agent story** — real and specific: govern "at the MCP layer and the tool surface,"
   granular per-MCP-server read/write/act permissions, "least agency" + human oversight for
   high-risk tasks. **No agent identity attestation, unattested-tool-call blocking, or A2A flow
   modeling found.**
-- **Palivane wins:** free self-host (Harmonic has none); the specific agent primitives
+- **Palivane wins:** self-hosting (Harmonic has none); the specific agent primitives
   (attestation + *blocking* unattested tool calls + A2A graph) vs their MCP permissions;
   egress proxy, OAuth discovery, local stdio MCP; fail-open.
 - **Palivane loses / caveats:** **browser-surface overlap is real and Harmonic's is likely
@@ -195,8 +198,9 @@ distinction Palivane's own docs draw for LLM Guard / NeMo. Lakera is *not* a cap
   governance is framed as guardrails/policy, not identity.
 - **Palivane wins:** capture breadth — browser, egress proxy, OAuth discovery, local stdio MCP
   — none of which Lakera Guard sits in front of (it only sees paths the app author wires it
-  into); inline agent governance with *identity* (attestation/A2A/analyst); free self-host
-  (Lakera gates self-host behind Enterprise); published per-seat pricing; fail-open.
+  into); inline agent governance with *identity* (attestation/A2A/analyst); published price
+  bands; fail-open. **Self-hosting is no longer a win here** — Lakera gates it behind
+  Enterprise and so do we now. Do not claim it against Lakera.
 - **Palivane loses — decisively — on prompt-injection detection.** Lakera is best-in-class,
   ML-trained on the largest real attack corpus. This is exactly our stated weakness (regex,
   ~0.22 recall on real injections). **Do not compete on detection accuracy here** — compete on
@@ -216,7 +220,7 @@ Sources: lakera.ai (+ /ai-agent-security), Check Point acquisition press release
 2. **"We already have a browser extension / MCP" (Nightfall, Prompt Security, Harmonic)** →
    concede the surface — Harmonic's browser coverage is probably *broader* than ours, don't
    pretend otherwise — and move to the *differentiated* ones: egress proxy, OAuth discovery,
-   local stdio MCP, and **free self-host** (Nightfall and Harmonic are SaaS-only).
+   local stdio MCP, and **self-hosting at all** (Nightfall and Harmonic are SaaS-only).
 3. **"Your detection is worse" — especially vs Lakera/Check Point** → true on injection recall;
    **do not argue it, and never argue it against Lakera** (they're the best-in-class injection
    detector, trained on the Gandalf corpus — this is their whole moat). Say: "For secrets and
@@ -226,7 +230,7 @@ Sources: lakera.ai (+ /ai-agent-security), Check Point acquisition press release
    capture plane — often complementary to us, not competing.
 4. **Knostic in the tab** → "different problem." They do need-to-know oversharing for Copilot;
    we do shadow-AI capture and inline agent control. Often complementary, not competing.
-5. **Price** → we publish $12/seat. Prompt Security, Nightfall, and Lakera are demo-/quote-
+5. **Price** → we publish bands by protected users. Prompt Security, Nightfall, and Lakera are demo-/quote-
    gated above any free tier. The two that publish are *not* a clean loss to argue: Knostic
    floors at $15 (and jumps to $850 for Pro), and Harmonic's marketplace price (~$13.60/mo) is
    roughly ours — so lead with *transparency* ("here's the number, on the page"), not "cheaper."

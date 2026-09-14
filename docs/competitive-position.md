@@ -110,21 +110,26 @@ are not the same companies, and they lose to us for opposite reasons.**
 Lakera (acquired by Check Point). SaaS, sales-led. Per-competitor teardowns with sources are
 in [competitor-teardowns.md](competitor-teardowns.md); two observations that matter:
 
-- **None of them offers a free self-hosted edition.** Where free tiers exist they are
-  usage-capped SaaS (Azure 5K records/month, Model Armor 2M tokens/month, Portkey 10K
-  logs), not "run it yourself, indefinitely". Our free self-host is *more* generous than
-  the field, not a concession to it.
+- **Most of them cannot be self-hosted at all.** Harmonic and Nightfall are SaaS-only;
+  Lakera gates self-hosting behind Enterprise, which is now also where ours sits, so it is
+  a parity claim against Lakera and a real win against the SaaS-only vendors. Where free
+  tiers exist in this tier they are usage-capped SaaS (Azure 5K records/month, Model Armor
+  2M tokens/month, Portkey 10K logs), not "run it yourself".
+
+  **This used to read "our free self-host is more generous than the field."** It is not
+  true any more and should not be repeated: self-hosting is an Enterprise deployment.
 - **None of them publishes usable prices on their own site**; every one routes to a demo.
   (They do list public pricing on AWS Marketplace — Harmonic and Knostic both do — which
-  is a procurement channel, not a pricing page.) Publishing $12/seat is a different
-  posture from the field, deliberately.
+  is a procurement channel, not a pricing page.) We still publish bands where the field
+  publishes nothing, which is the differentiator worth keeping — the number changed, the
+  posture did not.
 
 Where they beat us: detection of injection *phrasing* rather than literals — the axis
 [ml-classifier-baseline.md](ml-classifier-baseline.md) already names.
 
 **Tier 2 — the open-source guardrail layer.** LLM Guard (Protect AI, MIT), NeMo Guardrails
 (NVIDIA), Presidio (Microsoft, MIT), Guardrails AI, Llama Guard. Genuinely free, genuinely
-good, and the real competition for our free self-hosted edition.
+good, and the real competition for anyone who would otherwise self-host us.
 
 **They are libraries, not deployed systems.** LLM Guard is "import scanners and call them
 in your existing application code"; NeMo is a dialog-flow engine with its own DSL. They
@@ -158,7 +163,8 @@ than the pitch above implies: Nightfall already ships a browser plugin, SaaS int
 endpoint agents, and an MCP gateway; Prompt Security ships a browser/endpoint sensor and
 shadow-MCP discovery. The surfaces still genuinely differentiating are the **egress proxy**,
 **SaaS OAuth _discovery_** (vs per-app integrations), and **local _stdio_ MCP inspection** —
-plus free self-host, published pricing, and the agent primitives (attestation, A2A) none of
+plus self-hosting as a real deployment, published pricing, and the agent primitives
+(attestation, A2A) none of
 the three evidence. Keep the breadth claim, but lead with those specifics, not a generic
 "we cover more surfaces."
 
@@ -208,31 +214,48 @@ discovering it is what makes the problem feel urgent rather than theoretical.
 
 ## 5. Will they pay?
 
-Priced today: **Team $12/user/month** ($10 annual), **Enterprise** custom annual, 14-day
-full-feature trial.
+Priced today: **by protected users**, published bands — $1,000–1,500/mo at 50–100 users,
+$2,500–5,000 at 100–500, $6,000–12,000 at 500–2,000, custom above that. The first thing
+sold is a **7–14 day AI Exposure Assessment**, not a subscription. Self-hosting is an
+Enterprise deployment.
 
-**The objection to have an answer ready for.** The public repo offers *"a free self-hosted
-edition (full detection, no LLM key required)"*. So a technical buyer will ask, reasonably:
+**This reverses the previous model** ($12/user/month self-serve, free self-hosted edition),
+and the reversal is deliberate, so the reasoning is worth keeping:
 
-> Why pay $12/seat when the self-hosted edition is free and detection is complete?
+- **A low self-serve price fought the buyer.** The ICP is a 100–2,000 person company with a
+  CISO and a risk-reduction budget. That buyer does not expense security infrastructure on a
+  card; they run a procurement process and expect a pilot. $12/seat anchored the product as
+  a tool rather than a control, and priced it below the cost of the security review it has
+  to survive.
+- **Pricing by seat priced the wrong thing.** Palivane's value scales with how much AI a
+  company uses, but so did the bill — the product taxes the behaviour it exists to make
+  safe. Protected users is the unit the buyer already budgets in. Never tokens.
+- **"Free self-hosted" was answering an objection we should not accept.** It existed to
+  answer *"why pay when I can run it myself"*, which is a question a self-serve buyer asks.
+  The enterprise buyer asks the opposite: *can I run this in my own infrastructure, and what
+  will it cost me?* Self-hosting as an Enterprise deployment answers that, and it is honest
+  about what self-hosting actually is here — a supported hand-over, not a download link.
 
-**The answer is not detection.** The free open-source layer (LLM Guard, NeMo Guardrails,
-Presidio) already has decent detection, and on injection recall it may well beat our regex
-engine. Arguing detection here loses on the merits.
+**The objection that remains, and the answer.** A technical buyer will still ask why pay
+when LLM Guard, NeMo Guardrails and Presidio are free and their injection recall may beat
+our regex engine. Arguing detection loses on the merits, so do not.
 
 The answer is that **the free thing is a library and the paid thing is a deployed system.**
-Those tools scan text you hand them, from inside an app you wrote. What $12/seat buys is
-the part that is expensive to operate rather than expensive to compute: the capture planes
-that see traffic nobody instrumented, per-person attribution, coverage reconciliation
-against the shadow set, the console, hosting, and support. A team that only needs "scan
-this string" should genuinely use LLM Guard, and saying so costs nothing — they were never
-going to buy.
+Those tools scan text you hand them, from inside an app you wrote. What a subscription buys
+is the part that is expensive to operate rather than expensive to compute: the capture
+planes that see traffic nobody instrumented, per-person attribution, coverage
+reconciliation against the shadow set, the console, hosting, and support. A team that only
+needs "scan this string" should genuinely use LLM Guard, and saying so costs nothing — they
+were never going to buy.
 
-What remains a **pricing decision, not a docs task**, is where exactly the line falls: which
-capabilities are in the free self-hosted edition versus Team. Today the public README says
-free self-host gets *"full detection"*, which is the right thing to give away under this
-argument — but nobody has decided whether it also gets, say, multi-user attribution or the
-connectors. Until that is decided, the line gets drawn improvisationally per call.
+**Still unsettled, and now more urgent:** the published bands are a *hypothesis*, not a
+tested price. Nobody has paid any of them. The assessment is what tests them, which is one
+more reason it is the entry offer rather than a subscription page.
+
+**Also unsettled: the product still sells the old price.** Self-serve Stripe checkout at
+$12/user is live in the console (`STRIPE_PUBLISHABLE_KEY` is set in production). Until that
+is turned off or repriced, the site and the product disagree. See the note in the PR that
+made this change.
 
 Marketplaces matter to this question more than they look: enterprise procurement burns
 committed cloud spend, which makes a marketplace listing *effectively discounted* against
