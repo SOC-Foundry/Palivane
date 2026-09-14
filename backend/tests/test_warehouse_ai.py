@@ -80,6 +80,53 @@ def test_snowflake_sync_scores_prompts_into_findings(client, monkeypatch):
     assert ssn, "expected a finding attributed to the Cortex caller"
 
 
+# --- Databricks prompt extraction (Model Serving inference-table payloads) ------------------
+
+def test_dbx_extract_chat_last_user_turn():
+    req = '{"messages":[{"role":"system","content":"be brief"},' \
+          '{"role":"user","content":"my card is 4111 1111 1111 1111"}]}'
+    assert "4111 1111 1111 1111" in wa.extract_databricks_prompt(req)
+
+
+def test_dbx_extract_completions_prompt():
+    assert wa.extract_databricks_prompt({"prompt": "leak: AKIAIOSFODNN7EXAMPLE"}) \
+        == "leak: AKIAIOSFODNN7EXAMPLE"
+
+
+def test_dbx_extract_custom_pyfunc_harvests_strings():
+    req = {"dataframe_records": [{"text": "SSN 123-45-6789", "id": 7}]}
+    assert "123-45-6789" in wa.extract_databricks_prompt(req)
+
+
+def test_dbx_extract_non_json_falls_back_to_raw():
+    assert wa.extract_databricks_prompt("not json but has AKIAIOSFODNN7EXAMPLE").strip() \
+        .endswith("AKIAIOSFODNN7EXAMPLE")
+
+
+def _mk_databricks(client):
+    r = client.post("/api/discovery/connectors", json={
+        "platform": "databricks", "label": "prod",
+        "credentials": {"host": "dbc-abc.cloud.databricks.com", "client_id": "sp-123",
+                        "client_secret": "sekret", "warehouse_id": "wh1",
+                        "inference_table": "main.ai.payload_logging"}})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_databricks_sync_scores_inference_payloads(client, monkeypatch):
+    c = _mk_databricks(client)
+    monkeypatch.setattr(wa, "poll_inference_table", lambda creds, since: [
+        {"request": '{"messages":[{"role":"user","content":"summarize: SSN 123-45-6789"}]}',
+         "request_time": "2026-09-13 10:00:00"},
+        {"request": '{"prompt":"the weather is nice"}', "request_time": "2026-09-13 10:01:00"},
+    ])
+    out = client.post(f"/api/discovery/connectors/{c['id']}/sync")
+    assert out.status_code == 200, out.text
+    body = out.json()
+    assert body["rows"] == 2 and body["scanned_calls"] == 2
+    assert body["findings"] >= 1     # the SSN payload
+
+
 def test_snowflake_sync_advances_watermark(client, db_factory, monkeypatch):
     from app.models import SaasConnector
     c = _mk_snowflake(client)

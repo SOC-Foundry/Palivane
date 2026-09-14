@@ -18,6 +18,7 @@ import hashlib
 import json
 import re
 import time
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
@@ -216,3 +217,153 @@ def scan_snowflake_cortex(db, connector, creds: dict) -> dict:
     connector.state = state
     return {"scanned_calls": scanned, "findings": findings,
             "column_bound": column_bound, "queries": len(rows)}
+
+
+# --- Databricks (Model Serving inference tables) --------------------------------------------
+#
+# Phase 2. Model Serving / ai_query calls run server-side too; the reliable prompt source is
+# an AI Gateway INFERENCE TABLE (a UC Delta table logging full request/response payloads,
+# customer-enabled per endpoint). We poll it with a read-only service principal (OAuth M2M) via
+# the SQL Statement Execution API, extract the prompt from each `request` payload, and score
+# it. Honest limits (docs/warehouse-ai-governance.md): inference tables must be pre-enabled
+# (else there's nothing to read — system.query.history.statement_text is redacted by default);
+# payloads >1 MiB or sampled-out are missed; monitoring, not inline blocking.
+
+def _harvest_strings(obj, out: list[str], budget: int = 60) -> None:
+    if len(out) >= budget:
+        return
+    if isinstance(obj, str):
+        if obj.strip():
+            out.append(obj)
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            _harvest_strings(v, out, budget)
+    elif isinstance(obj, list):
+        for v in obj:
+            _harvest_strings(v, out, budget)
+
+
+def extract_databricks_prompt(request) -> str:
+    """The user-authored text from a Model Serving inference-table `request` payload. Handles
+    chat (messages), completions/FMAPI (prompt), and custom pyfunc shapes (inputs/dataframe*);
+    falls back to harvesting all string values so a proprietary shape is still scanned."""
+    if isinstance(request, (bytes, bytearray)):
+        request = request.decode("utf-8", "replace")
+    if isinstance(request, str):
+        try:
+            request = json.loads(request)
+        except (ValueError, TypeError):
+            return request.strip()[:200000]
+    if not isinstance(request, dict):
+        return ""
+    # Chat completions: the last user turn.
+    msgs = request.get("messages")
+    if isinstance(msgs, list):
+        last = ""
+        for m in msgs:
+            if not isinstance(m, dict) or m.get("role") != "user":
+                continue
+            c = m.get("content")
+            if isinstance(c, str) and c.strip():
+                last = c
+            elif isinstance(c, list):
+                t = "\n".join(b["text"] for b in c
+                              if isinstance(b, dict) and isinstance(b.get("text"), str))
+                if t.strip():
+                    last = t
+        if last:
+            return last
+    # Completions / Foundation Model APIs: prompt (str or list of str).
+    p = request.get("prompt")
+    if isinstance(p, str) and p.strip():
+        return p
+    if isinstance(p, list):
+        joined = "\n".join(x for x in p if isinstance(x, str))
+        if joined.strip():
+            return joined
+    # Custom pyfunc / batch shapes, then a whole-payload fallback.
+    out: list[str] = []
+    for key in ("inputs", "dataframe_records", "dataframe_split", "instances", "input"):
+        if key in request:
+            _harvest_strings(request[key], out)
+    if not out:
+        _harvest_strings(request, out)
+    return "\n".join(out)[:200000]
+
+
+def databricks_token(host: str, client_id: str, client_secret: str, timeout: float = 30.0) -> str:
+    """OAuth M2M token for a service principal (client_credentials, scope=all-apis)."""
+    url = f"https://{host}/oidc/v1/token"
+    data = urllib.parse.urlencode({"grant_type": "client_credentials",
+                                   "scope": "all-apis"}).encode()
+    basic = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+    req = urllib.request.Request(url, data=data, method="POST", headers={
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": f"Basic {basic}",
+        "User-Agent": "palivane-warehouse/1.0",
+    })
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())["access_token"]
+
+
+def databricks_query(host: str, token: str, warehouse_id: str, sql: str,
+                     timeout: float = 60.0) -> list[dict]:
+    """Run one statement via the SQL Statement Execution API; return rows as list[dict]."""
+    url = f"https://{host}/api/2.0/sql/statements"
+    body = json.dumps({"statement": sql, "warehouse_id": warehouse_id,
+                       "wait_timeout": "30s", "format": "JSON_ARRAY"}).encode()
+    req = urllib.request.Request(url, data=body, method="POST", headers={
+        "Content-Type": "application/json", "Authorization": f"Bearer {token}",
+        "User-Agent": "palivane-warehouse/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        payload = json.loads(r.read())
+    cols = [c["name"] for c in
+            payload.get("manifest", {}).get("schema", {}).get("columns", [])]
+    rows = (payload.get("result") or {}).get("data_array") or []
+    return [dict(zip(cols, row)) for row in rows]
+
+
+# Inference tables carry request_time; a UC-safe identifier for the table is customer-supplied.
+_DBX_POLL_SQL = ("SELECT request, request_time FROM {table} "
+                 "WHERE request_time > '{since}' ORDER BY request_time ASC LIMIT 1000")
+
+
+def poll_inference_table(creds: dict, since_iso: str) -> list[dict]:
+    """Pull inference-table rows newer than since_iso. Isolated so tests mock it."""
+    token = databricks_token(creds["host"], creds["client_id"], creds["client_secret"])
+    sql = _DBX_POLL_SQL.format(table=creds["inference_table"], since=since_iso)
+    return databricks_query(creds["host"], token, creds["warehouse_id"], sql)
+
+
+def scan_databricks(db, connector, creds: dict) -> dict:
+    """Registry `scan` entry: poll a Databricks inference table, score each request payload's
+    prompt, persist findings. Advances a per-connector watermark. Rules-only (no LLM judge)."""
+    from .detectors.base import AnalysisInput, Surface
+    from .service import run_analysis
+
+    state = dict(connector.state or {})
+    since = state.get("dbx_since") or (_utcnow() - timedelta(hours=24)).isoformat(sep=" ")
+    rows = poll_inference_table(creds, since)
+
+    scanned = findings = 0
+    newest = since
+    for r in rows:
+        st = str(r.get("request_time") or "")
+        if st > newest:
+            newest = st
+        prompt = extract_databricks_prompt(r.get("request") or "")
+        if not prompt.strip():
+            continue
+        scanned += 1
+        item = AnalysisInput(
+            content=prompt, subject="Databricks model serving", sender="",
+            channel="warehouse", surface=Surface.AI_USAGE,
+            metadata={"destination": "databricks", "tool": "databricks"})
+        verdict = run_analysis(item, persist=True, db=db, tenant_id=connector.tenant_id,
+                               use_judge=False)
+        if verdict.get("finding_id"):
+            findings += 1
+
+    state["dbx_since"] = newest
+    connector.state = state
+    return {"scanned_calls": scanned, "findings": findings, "rows": len(rows)}
