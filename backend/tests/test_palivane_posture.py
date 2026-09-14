@@ -133,6 +133,43 @@ def test_run_failed_post_retries_next_run(tmp_path, monkeypatch):
     assert sorted(calls) == ["/api/scan/device-posture", "/api/scan/ide-extensions"]
 
 
+def test_run_killed_mid_run_keeps_earlier_marks(tmp_path, monkeypatch):
+    # Regression: the cache was written once at the END of run() (after self_update's
+    # network fetches), so an --async child killed mid-run forgot every successful post
+    # and re-posted the whole run's findings next session. Marks must persist per post.
+    monkeypatch.setattr(wp, "collect_ide_extensions", lambda: ["ext.one"])
+    monkeypatch.setattr(wp, "collect_agent_configs", lambda: [])
+    monkeypatch.setattr(wp, "collect_agent_rules", lambda cwd=".": [])
+    calls: list[str] = []
+
+    def die_after_first(cfg, path, body, timeout=10.0):
+        if calls:                       # second item: the child is killed here
+            raise KeyboardInterrupt
+        calls.append(path)
+        return True
+    monkeypatch.setattr(wp, "_post", die_after_first)
+    cache_path = str(tmp_path / "cache.json")
+    cfg = {"url": "https://w.io", "token": "ak_x"}
+    with pytest.raises(KeyboardInterrupt):
+        wp.run(cfg, cache_path=cache_path, cwd=str(tmp_path), quiet=True)
+
+    # the completed post survived the crash -> only the unposted item retries
+    retries: list[str] = []
+    monkeypatch.setattr(wp, "_post", lambda cfg, path, body, timeout=10.0: retries.append(path) or True)
+    wp.run(cfg, cache_path=cache_path, cwd=str(tmp_path), quiet=True)
+    assert calls == ["/api/scan/ide-extensions"]
+    assert retries == ["/api/scan/device-posture"]
+
+
+def test_save_cache_leaves_no_temp_file(tmp_path):
+    p = str(tmp_path / "cache.json")
+    cache = wp.load_cache(p)
+    wp._mark_posted(cache, "https://w.io", "k", "d1")
+    wp.save_cache(p, cache)
+    assert wp.load_cache(p)["entries"]["k"]["sha256"] == "d1"
+    assert [f.name for f in tmp_path.iterdir()] == ["cache.json"]  # tmp swapped, not left
+
+
 # --- integration: collected payloads accepted by the real scan endpoints ---------------
 
 def _key(client):
