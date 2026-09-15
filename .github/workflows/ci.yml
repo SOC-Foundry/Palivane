@@ -374,6 +374,62 @@ jobs:
             echo "OK on ${{ matrix.image }}"
           '
 
+  # Tenant isolation, enforced by the database rather than asserted by the application.
+  #
+  # tests/test_rls.py has existed for a while and has never once run: it skips unless
+  # PALIVANE_RLS_TEST_URL points at a Postgres reachable as a NON-superuser, because RLS is
+  # not enforced for superusers and the policies use FORCE for the owner. So the test that
+  # proves one tenant cannot read or write another tenant's rows — the property /trust sells
+  # to buyers — was permanently skipped, and nothing said so out loud.
+  #
+  # native-install checks that policies EXIST (pg_policies). This checks they WORK.
+  rls:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: palivane
+          POSTGRES_PASSWORD: palivane
+          POSTGRES_DB: palivane
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U palivane" --health-interval 5s
+          --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install
+        working-directory: backend
+        run: pip install -r requirements.txt
+      - name: Migrate
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg2://palivane:palivane@127.0.0.1:5432/palivane
+          PALIVANE_SECRET_KEY: ci-only-not-a-real-key-0123456789abcdef
+        run: alembic upgrade head
+      - name: Create the non-superuser role the policies actually apply to
+        env:
+          PGPASSWORD: palivane
+        run: |
+          psql -h 127.0.0.1 -U palivane -d palivane -v ON_ERROR_STOP=1 -c "
+            CREATE ROLE palivane_rls LOGIN PASSWORD 'rls';
+            GRANT USAGE ON SCHEMA public TO palivane_rls;
+            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO palivane_rls;
+            GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO palivane_rls;"
+      - name: Tenant isolation holds
+        working-directory: backend
+        env:
+          PALIVANE_RLS_TEST_URL: postgresql://palivane_rls:rls@127.0.0.1:5432/palivane
+        # -rs and the grep: a skip here is a FAILURE. The whole reason this job exists is
+        # that the test skipped silently for months, so "0 passed, 1 skipped" must not be
+        # mistaken for green a second time.
+        run: |
+          python -m pytest tests/test_rls.py -q -rs | tee /tmp/rls.txt
+          grep -q "1 passed" /tmp/rls.txt || { echo "RLS test did not RUN — see skip reason above"; exit 1; }
+
   terraform:
     runs-on: ubuntu-latest
     defaults:
