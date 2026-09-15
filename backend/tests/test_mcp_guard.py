@@ -182,3 +182,41 @@ def test_an_unrecognised_builtin_is_not_suppressed():
     """Fail loud on tools we do not know: a new built-in must not inherit silence."""
     assert "dangerous_command" in _sig_cats(
         method="tools/call", tool="SomeNewTool", server="", args_text="rm -rf /")
+
+
+# --- sensitive paths: targeting one is not the same as mentioning one ---------------------
+
+def test_editor_content_mentioning_a_credential_path_is_not_access():
+    """An Edit/Write carries the file's CONTENT in args_text, so scanning it for sensitive
+    paths could not distinguish "opened ~/.aws/credentials" from "wrote a sentence containing
+    .aws/credentials". On the live tenant that scored documentation and detector fixtures as
+    critical sensitive-resource access, and it was the largest remaining false-positive class
+    behind a 49% critical rate.
+    """
+    for tool in ("Edit", "Write", "NotebookEdit"):
+        cats = _sig_cats(method="tools/call", tool=tool, server="",
+                         resource="/repo/docs/setup.md",
+                         args_text="see ~/.aws/credentials and .env for details")
+        assert "sensitive_resource_access" not in cats, tool
+
+
+def test_editing_the_credential_file_itself_still_fires():
+    """The target moved to `resource`; it did not stop being checked."""
+    cats = _sig_cats(method="tools/call", tool="Edit", server="",
+                     resource="/home/u/.aws/credentials", args_text="whatever")
+    assert "sensitive_resource_access" in cats
+
+
+def test_reading_and_shelling_at_a_sensitive_path_still_fire():
+    assert "sensitive_resource_access" in _sig_cats(
+        method="resources/read", tool="Read", server="", resource="/app/.env", args_text="")
+    assert "sensitive_resource_access" in _sig_cats(
+        method="tools/call", tool="Bash", server="", args_text="cat /app/.env")
+
+
+def test_mcp_server_tools_are_never_content_exempt():
+    """The exemption is for built-ins whose args are file content. A server tool's arguments
+    are what it will act on, whatever it is called, so the full text is still scanned."""
+    assert "sensitive_resource_access" in _sig_cats(
+        method="tools/call", tool="Edit", server="somebody-elses-server",
+        args_text="read /home/u/.aws/credentials")
