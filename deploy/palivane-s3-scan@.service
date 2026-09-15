@@ -5,7 +5,7 @@
 #   systemctl enable --now "palivane-s3-scan@$(systemd-escape my.bucket).timer"
 [Unit]
 Description=Palivane S3 secret & PII scan — bucket %i
-Documentation=https://github.com/your-org/palivane
+Documentation=https://palivane.io/docs
 After=network-online.target
 Wants=network-online.target
 
