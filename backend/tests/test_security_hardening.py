@@ -68,3 +68,34 @@ def test_recovery_code_consume_constant_time_still_correct():
     remaining = totp.consume_recovery(stored, codes[1])
     assert remaining is not None and totp.hash_code(codes[1]) not in remaining
     assert len(remaining) == 3
+
+
+# --- the shipped placeholder must not pass as a real key ---------------------------------
+
+def test_placeholder_secret_keys_are_treated_as_weak():
+    """deploy/palivane.env.example ships PALIVANE_SECRET_KEY=replace-me-with-a-long-random-secret.
+
+    install.sh substitutes a random key, so this only survives an env file written by hand —
+    which is exactly the install nobody reviews. The placeholder is 36 characters, so it
+    defeated the length check and was not on the weak list: it passed every test silently,
+    and every customer holding a tarball knows the string. A known signing key means forgeable
+    admin sessions for any tenant.
+    """
+    from app.main import _is_placeholder_key
+    for bad in ("replace-me-with-a-long-random-secret",
+                "replace-with-a-long-random-string",
+                "CHANGE-ME-BEFORE-PRODUCTION-PLEASE-OK",
+                "your-secret-key-goes-here-abcdefgh",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"):
+        assert _is_placeholder_key(bad), bad
+
+
+def test_a_real_random_key_is_not_mistaken_for_a_placeholder():
+    """The marker check must not fire on real keys — `openssl rand -hex 32` output is what
+    install.sh writes, and a false positive here refuses to boot a correctly configured
+    production deployment."""
+    import secrets
+    from app.main import _is_placeholder_key
+    for _ in range(200):
+        assert not _is_placeholder_key(secrets.token_hex(32))
+    assert not _is_placeholder_key(secrets.token_urlsafe(48))

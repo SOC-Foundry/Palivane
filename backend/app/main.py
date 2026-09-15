@@ -81,6 +81,17 @@ if settings.database_url.startswith("sqlite"):
 
 _WEAK_SECRET_KEYS = {"dev-insecure-change-me", "dev-insecure-key-change-me",
                      "changeme", "change-me", "secret", "changeme123"}
+# Placeholder markers. deploy/native/install.sh substitutes a random key, so these only
+# survive an env file someone wrote by hand — but that is exactly the install nobody
+# reviews, and a long placeholder defeats the length check: the shipped
+# "replace-me-with-a-long-random-secret" is 36 characters and passed every test above.
+_PLACEHOLDER_MARKERS = ("replace-me", "replace-with", "change-me", "changeme", "your-secret",
+                        "example", "placeholder", "xxxx")
+
+
+def _is_placeholder_key(key: str) -> bool:
+    k = (key or "").strip().lower()
+    return any(m in k for m in _PLACEHOLDER_MARKERS)
 
 
 @asynccontextmanager
@@ -89,7 +100,7 @@ async def lifespan(_app: FastAPI):
     log = logging.getLogger("uvicorn.error")
     prod = not settings.database_url.startswith("sqlite")   # Postgres => a real deployment
     weak = using_insecure_key() or settings.auth_secret_key in _WEAK_SECRET_KEYS \
-        or len(settings.auth_secret_key) < 16
+        or len(settings.auth_secret_key) < 16 or _is_placeholder_key(settings.auth_secret_key)
     if weak:
         if prod:
             # Refuse to boot with a forgeable JWT key on a production-shaped deployment — an
@@ -100,6 +111,18 @@ async def lifespan(_app: FastAPI):
                 "JWTs would be forgeable and anyone could mint an admin session. Set "
                 "PALIVANE_SECRET_KEY to a strong random value (openssl rand -hex 32) and restart.")
         log.warning("PALIVANE_SECRET_KEY is unset/weak — using an insecure dev key (SQLite dev only).")
+
+    # SQLite is the first-boot default for a native install (install.sh writes it, then tells
+    # the operator to point at Postgres). Plenty of them will not, so say what that costs
+    # rather than letting /trust's "RLS on every tenant-scoped table" quietly become untrue:
+    # the RLS migration is a no-op off Postgres (dialect check in a9f1c3e5b7d0), and the
+    # weak-key refusal above degrades to this warning. Loud beats silent-and-wrong.
+    if not prod:
+        log.warning(
+            "Running on SQLite: Postgres row-level security is NOT active, so tenant "
+            "isolation rests on application scoping alone, and a weak PALIVANE_SECRET_KEY "
+            "warns instead of refusing to boot. Fine for evaluation and single-tenant use; "
+            "point DATABASE_URL at Postgres before this carries another org's data.")
 
     # Periodic alert digests: tick every few minutes and send any tenant digests that are due.
     # Each send is claimed via a conditional DB update, so multiple workers won't duplicate.
