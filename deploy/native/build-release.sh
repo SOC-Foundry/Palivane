@@ -19,6 +19,10 @@ echo "==> assembling release payload"
 # Backend runtime only (no venv, tests, or caches).
 cp -r backend/app "$STAGE/backend/app"
 cp -r backend/migrations "$STAGE/backend/migrations"
+# Detector data: the ML classifier weights and the MCP reputation starter set. Omitting it
+# did not fail the boot, it degraded — the service logged "classifier weights
+# missing/unreadable" on every start and the affected detectors quietly did less. 2.2MB.
+cp -r backend/data "$STAGE/backend/data"
 cp backend/requirements.txt backend/alembic.ini backend/docker-entrypoint.sh "$STAGE/backend/"
 find "$STAGE/backend" -name '__pycache__' -type d -prune -exec rm -rf {} +
 cp -r frontend/dist "$STAGE/static"                 # prebuilt SPA (served single-origin)

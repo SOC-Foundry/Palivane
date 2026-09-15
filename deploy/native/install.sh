@@ -76,8 +76,15 @@ systemctl is-active --quiet palivane-api && echo "   palivane-api is running" ||
 # Admin helper so operators don't have to remember the env-sourcing dance.
 cat > /usr/local/bin/palivane-admin <<WRAP
 #!/usr/bin/env bash
+set -euo pipefail
 set -a; . $ENVFILE; set +a
+# The systemd unit sets WorkingDirectory=$PREFIX/backend; this wrapper must do the same.
+# The payload is a source tree, not an installed distribution, so \`python -m app.users\`
+# from anywhere else dies with "No module named 'app'" — which is what every operator hit
+# on the very next command the README tells them to run after installing.
+cd $PREFIX/backend
 exec sudo -u $SVCUSER env DATABASE_URL="\$DATABASE_URL" PALIVANE_SECRET_KEY="\$PALIVANE_SECRET_KEY" \\
+  PYTHONPATH=$PREFIX/backend \\
   $PREFIX/backend/.venv/bin/python -m app.users "\$@"
 WRAP
 chmod +x /usr/local/bin/palivane-admin
