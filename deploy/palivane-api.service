@@ -1,6 +1,6 @@
 [Unit]
 Description=Palivane API (FastAPI/uvicorn)
-Documentation=https://github.com/your-org/palivane
+Documentation=https://palivane.io/docs
 After=network-online.target
 Wants=network-online.target
 
