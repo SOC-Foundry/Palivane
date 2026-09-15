@@ -39,9 +39,17 @@ A competitor does not out-feature this; they have to rebuild every plane:
 | SaaS OAuth discovery | Third-party AI apps granted access to Workspace/M365/Slack/Salesforce | Four different admin APIs, four different consent models |
 | MCP wrapper (`cli/palivane-mcp`) | Local stdio MCP servers | Nobody else is inspecting this surface inline |
 | MCP server (`mcp-server/`) | Palivane itself, from the assistant | Product surface, not just capture |
+| Warehouse AI (`warehouse_ai`) | Snowflake Cortex, Databricks Model Serving | The prompt never leaves the warehouse — no browser, no laptop, no egress path to sit in front of |
 
 The MCP planes are the sharpest wedge: local stdio MCP servers never touch the network, so
 an egress-based competitor structurally cannot see them.
+
+Warehouse AI is the same argument on a different axis, and an easier one to explain to a
+CISO: when an analyst calls `AI_COMPLETE` on a customer table, the prompt is assembled and
+answered inside Snowflake. There is no device to instrument and no egress to intercept, so
+a vendor whose model is "sit in the network path" has nothing to sit in. The honest caveat
+belongs in the same breath — it is polled after the fact, so it reports rather than blocks,
+and a prompt bound from a column carries no text to score.
 
 ### The second claim: fail-open as a stated commitment
 
