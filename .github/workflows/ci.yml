@@ -139,6 +139,21 @@ jobs:
           CHECK
           # the /install.sh distribution endpoint must be present in the self-host image too
           curl -sf http://localhost:8080/install.sh | head -1 | grep -q '#!/usr/bin/env bash'
+      - uses: actions/setup-node@v7
+        if: steps.changes.outputs.img == 'true'
+        with:
+          node-version: "24"
+      - name: Every page renders
+        if: steps.changes.outputs.img == 'true'
+        working-directory: frontend
+        env:
+          BASE: http://localhost:8080
+        # The stack is already up with a seeded demo admin, so this costs one npm ci and
+        # about thirty seconds. `vite build` cannot catch a page that throws on mount — that
+        # is how a blank OAuth consent screen reached every remote-MCP user through a green
+        # pipeline. Uses the runner's preinstalled Chrome; playwright-core ships no browser.
+        run: npm ci && node scripts/render-smoke.mjs
+
       - name: Logs on failure
         if: failure() && steps.changes.outputs.img == 'true'
         run: docker compose logs --no-color | tail -100
