@@ -354,10 +354,10 @@ Self-hosted Palivane runs the **Free** tier out of the box (5 users, core captur
 A vendor-issued license unlocks Team (alerts, MDM packs) or Enterprise (SSO, SIEM, S3
 delivery) instance-wide, see `/pricing` or contact sales@palivane.io.
 
-The license is a signed blob (`WDN1.…`). Set it as the value of `PALIVANE_LICENSE`, or
+The license is a signed blob (`PVN1.…`). Set it as the value of `PALIVANE_LICENSE`, or
 point `PALIVANE_LICENSE` at a file containing it, and restart:
 
-    PALIVANE_LICENSE=WDN1.eyJ2IjoxLCJvcmciOi...   # or PALIVANE_LICENSE=/etc/palivane/license
+    PALIVANE_LICENSE=PVN1.eyJ2IjoxLCJvcmciOi...   # or PALIVANE_LICENSE=/etc/palivane/license
 
 `GET /api/health` shows the active license (`org`, `plan`, `expires`). An invalid or
 expired license is ignored with a startup warning, the instance falls back to Free,
