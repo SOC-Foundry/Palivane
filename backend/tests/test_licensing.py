@@ -36,7 +36,7 @@ def test_issue_verify_roundtrip(keypair):
     priv, pub = keypair
     exp = (date.today() + timedelta(days=30)).isoformat()
     blob = licensing.issue(priv, "Acme Corp", "enterprise", 200, exp)
-    assert blob.startswith("WDN1.")
+    assert blob.startswith("PVN1.")   # WDN1 still verifies — see the prefix tests below
     payload = licensing.verify(blob, pub)
     assert payload["org"] == "Acme Corp" and payload["plan"] == "enterprise"
     assert payload["seats"] == 200 and payload["expires"] == exp
@@ -222,3 +222,46 @@ def test_admin_issue_503_without_signing_key(raw_client, monkeypatch):
     r = raw_client.post("/api/admin/licenses", json={"org": "X", "plan": "team"},
                         headers={"Authorization": "Bearer op-tok"})
     assert r.status_code == 503
+
+
+# --- blob prefix: renamed off the pre-rebrand name, without breaking issued licenses ------
+
+def test_new_licenses_carry_the_palivane_prefix(keypair):
+    """WDN1 is pre-rebrand ("Warden") and a customer sees it every time they paste a
+    license into PALIVANE_LICENSE. New blobs are issued as PVN1."""
+    priv, _ = keypair
+    assert licensing.issue(priv, "Acme", "team", 5, "2099-01-01").startswith("PVN1.")
+
+
+def test_a_wdn1_license_still_verifies(keypair):
+    """The rename must not invalidate anything already in the field.
+
+    A prefix is not a security boundary — the Ed25519 signature is — so accepting both costs
+    nothing, while a clean break would silently drop every issued license to Free with only a
+    startup warning. The registry is not visible from here, so "there probably aren't any"
+    is not a basis for breaking them.
+    """
+    priv, pub = keypair
+    blob = licensing.issue(priv, "Acme", "enterprise", 50, "2099-01-01")
+    legacy = "WDN1." + blob.split(".", 1)[1]        # same payload and signature
+    payload = licensing.verify(legacy, pubkey_pem=pub)
+    assert payload["plan"] == "enterprise" and payload["seats"] == 50
+
+
+def test_an_unknown_prefix_is_still_rejected(keypair):
+    priv, pub = keypair
+    blob = licensing.issue(priv, "Acme", "team", 5, "2099-01-01")
+    with pytest.raises(licensing.LicenseError):
+        licensing.verify("NOPE." + blob.split(".", 1)[1], pubkey_pem=pub)
+
+
+def test_a_license_file_path_is_still_read_for_either_prefix(tmp_path, monkeypatch, keypair):
+    """_license_blob distinguishes "this is a blob" from "this is a path" by the prefix, so
+    it had to learn the second one or a PVN1 blob in a file would be treated as a path."""
+    priv, _ = keypair
+    for prefix in ("PVN1", "WDN1"):
+        blob = prefix + "." + licensing.issue(priv, "Acme", "team", 5, "2099-01-01").split(".", 1)[1]
+        f = tmp_path / f"license-{prefix}"
+        f.write_text(blob + "\n")
+        monkeypatch.setenv("PALIVANE_LICENSE", str(f))
+        assert licensing._license_blob() == blob, prefix

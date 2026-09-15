@@ -6,7 +6,7 @@ reached that way, so they carry a **license file**: an Ed25519-signed blob the v
 issues, which lifts every tenant on that instance to the licensed plan (and seat count)
 for as long as it's valid. No license = the Free tier, which is fully functional.
 
-    WDN1.<b64url(payload-json)>.<b64url(ed25519-sig)>
+    PVN1.<b64url(payload-json)>.<b64url(ed25519-sig)>   (WDN1 still verifies)
 
 The payload is canonical JSON: {v, id, org, plan, seats, issued, expires}. The signature
 covers the exact payload bytes, so any edit (plan bump, seat bump, expiry push) breaks it.
@@ -16,7 +16,7 @@ Vendor side (Palivane) — this module doubles as the issuing CLI:
     python -m app.licensing keygen --out vendor-license-key.pem      # once, keep PRIVATE
     python -m app.licensing issue --key vendor-license-key.pem \\
         --org "Acme Corp" --plan enterprise --seats 200 --days 365
-    python -m app.licensing verify WDN1....                          # sanity-check a blob
+    python -m app.licensing verify PVN1....                          # sanity-check a blob
 
 The production signing key lives in Secret Manager (palivane-license-signing-key) — it
 never ships in the repo or image. Only the PUBLIC key is embedded below; a self-hosted
@@ -41,7 +41,13 @@ MCowBQYDK2VwAyEAtVA/cNp4QTKPiU70WZcopZzwOSNe1z47GouPSGT2s3I=
 -----END PUBLIC KEY-----
 """
 
-_PREFIX = "WDN1"
+# The blob prefix a customer sees every time they paste a license. "WDN1" is pre-rebrand
+# (Warden), so new licenses are issued as PVN1 — but verification accepts BOTH, forever.
+# A prefix is not a security boundary (the Ed25519 signature is), so widening it costs
+# nothing, while a clean break would silently invalidate every license already in the field
+# and we cannot see the registry from here to know there are none.
+_PREFIX = "PVN1"
+_ACCEPTED_PREFIXES = ("PVN1", "WDN1")
 PLAN_RANK = {"free": 0, "team": 1, "enterprise": 2}
 # Short default term under the renewal model: the signed blob lives ~6 weeks, the
 # instance renews against the vendor before it lapses. Bounds revocation blast radius.
@@ -91,8 +97,8 @@ def verify(blob: str, pubkey_pem: str | None = None, allow_expired: bool = False
     from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives.serialization import load_pem_public_key
     parts = (blob or "").strip().split(".")
-    if len(parts) != 3 or parts[0] != _PREFIX:
-        raise LicenseError("malformed license (expected WDN1.<payload>.<sig>)")
+    if len(parts) != 3 or parts[0] not in _ACCEPTED_PREFIXES:
+        raise LicenseError("malformed license (expected PVN1.<payload>.<sig>)")
     try:
         payload_raw, sig = _b64d(parts[1]), _b64d(parts[2])
     except Exception:
@@ -124,7 +130,7 @@ def _pubkey_pem() -> str:
 def _license_blob() -> str:
     """PALIVANE_LICENSE is the blob itself, or a path to a file containing it."""
     raw = _env("PALIVANE_LICENSE", "").strip()
-    if raw and not raw.startswith(_PREFIX) and os.path.exists(raw):
+    if raw and not raw.startswith(_ACCEPTED_PREFIXES) and os.path.exists(raw):
         try:
             raw = open(raw).read().strip()
         except OSError:
