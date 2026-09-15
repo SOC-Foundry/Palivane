@@ -98,6 +98,9 @@ jobs:
         with:
           filters: |
             img:
+              # The workflow itself, so editing this job actually runs this job — without it
+              # a change to the assertions below reports green having skipped every step.
+              - '.github/workflows/ci.yml'
               - 'backend/**'
               - 'frontend/**'
               - 'cli/**'
@@ -170,6 +173,7 @@ jobs:
         with:
           filters: |
             native:
+              - '.github/workflows/ci.yml'      # ditto: edit the job, run the job
               - 'backend/**'
               - 'frontend/**'
               - 'cli/**'
