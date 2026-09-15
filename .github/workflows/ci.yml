@@ -98,6 +98,9 @@ jobs:
         with:
           filters: |
             img:
+              # The workflow itself, so editing this job actually runs this job — without it
+              # a change to the assertions below reports green having skipped every step.
+              - '.github/workflows/ci.yml'
               - 'backend/**'
               - 'frontend/**'
               - 'cli/**'
@@ -115,10 +118,25 @@ jobs:
         run: |
           curl -sf --retry 5 --retry-delay 3 http://localhost:8080/api/health
           # a demo admin is seeded; confirm the app + DB + a real endpoint work end to end
-          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8080/api/auth/login \
+          tok=$(curl -s -X POST http://localhost:8080/api/auth/login \
             -H 'content-type: application/json' \
-            -d '{"email":"admin@demo.local","password":"changeme123"}')
-          test "$code" = "200" || { echo "login returned $code"; exit 1; }
+            -d '{"email":"admin@demo.local","password":"changeme123"}' \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("access_token",""))')
+          [ -n "$tok" ] || { echo "login failed"; exit 1; }
+          # The step is called "core detection", so detect something. Health plus a login
+          # proves the container and the database are up; it says nothing about whether the
+          # product still works, which is the failure this job exists to catch.
+          out=$(curl -sf -X POST http://localhost:8080/api/analyze \
+            -H "authorization: Bearer $tok" -H 'content-type: application/json' \
+            -d '{"content":"here is the key AKIA4YTGH2NBQF7XZP3K please use it","subject":"ci","surface":"ai_usage","persist":true}')
+          echo "$out"
+          python3 - "$out" <<'CHECK'
+          import json, sys
+          v = json.loads(sys.argv[1])
+          cats = {s.get("category") for s in (v.get("signals") or [])}
+          assert "secret_leak" in cats, f"no secret_leak signal; got {cats}"
+          print("detection ok:", v.get("severity"), sorted(c for c in cats if c))
+          CHECK
           # the /install.sh distribution endpoint must be present in the self-host image too
           curl -sf http://localhost:8080/install.sh | head -1 | grep -q '#!/usr/bin/env bash'
       - name: Logs on failure
@@ -127,6 +145,137 @@ jobs:
       - name: Teardown
         if: always() && steps.changes.outputs.img == 'true'
         run: docker compose down -v
+
+  # The deployment README calls "recommended for real deployments" — and until now the only
+  # one with no automated test. deploy/native/'s two smoke scripts cover the ENDPOINT
+  # installer's CA trust stores, not the server. This installs the real release tarball the
+  # way a customer does (as root, systemd, Postgres) and asserts the things a customer would
+  # notice broken: the service starts, RLS is actually applied, detection actually detects,
+  # and a placeholder signing key actually refuses to boot.
+  native-install:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: palivane
+          POSTGRES_PASSWORD: palivane
+          POSTGRES_DB: palivane
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U palivane" --health-interval 5s
+          --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Detect changes that affect the server install
+        id: changes
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            native:
+              - '.github/workflows/ci.yml'      # ditto: edit the job, run the job
+              - 'backend/**'
+              - 'frontend/**'
+              - 'cli/**'
+              - 'proxy/**'
+              - 'deploy/native/**'
+              - 'deploy/palivane.env.example'
+      - uses: actions/setup-python@v7
+        if: steps.changes.outputs.native == 'true'
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v7
+        if: steps.changes.outputs.native == 'true'
+        with:
+          node-version: "24"
+
+      - name: Build the release tarball
+        if: steps.changes.outputs.native == 'true'
+        run: ./deploy/native/build-release.sh
+
+      - name: Install it the way a customer does
+        if: steps.changes.outputs.native == 'true'
+        run: |
+          set -euo pipefail
+          tar xzf dist/palivane-native-*.tar.gz -C /tmp
+          sudo /tmp/palivane/install.sh            # first run: generates env, SQLite, systemd
+
+      - name: Repoint at Postgres and re-install (the production shape, and idempotency)
+        if: steps.changes.outputs.native == 'true'
+        run: |
+          set -euo pipefail
+          sudo sed -i "s#^DATABASE_URL=.*#DATABASE_URL=postgresql+psycopg2://palivane:palivane@127.0.0.1:5432/palivane#" \
+            /etc/palivane/palivane.env
+          sudo /tmp/palivane/install.sh            # second run must be a no-op apart from migrations
+          sudo systemctl restart palivane-api
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8088/api/health && break; sleep 2; done
+          curl -sf http://127.0.0.1:8088/api/health
+
+      - name: Row-level security is actually applied
+        if: steps.changes.outputs.native == 'true'
+        # /trust tells buyers "RLS policies on every tenant-scoped table". The migration is a
+        # no-op off Postgres, so this is the only place that claim gets checked against a
+        # real database rather than against the migration file.
+        run: |
+          set -euo pipefail
+          n=$(PGPASSWORD=palivane psql -h 127.0.0.1 -U palivane -d palivane -tAc \
+                "select count(*) from pg_policies where schemaname='public'")
+          echo "RLS policies: $n"
+          test "$n" -gt 0 || { echo "no RLS policies — tenant isolation is not enforced in the DB"; exit 1; }
+
+      - name: The console is served, and detection actually detects
+        if: steps.changes.outputs.native == 'true'
+        run: |
+          set -euo pipefail
+          # SPA comes off PALIVANE_STATIC_DIR, not a separate web container.
+          curl -sf http://127.0.0.1:8088/ | grep -qi "<!doctype html" || { echo "SPA not served"; exit 1; }
+
+          sudo palivane-admin create-tenant --slug acme --name "Acme"
+          sudo palivane-admin create-user --tenant acme --email admin@acme.local \
+            --role admin --password 'ci-Passw0rd!-long-enough'
+          TOK=$(curl -sf -X POST http://127.0.0.1:8088/api/auth/login \
+                 -H 'content-type: application/json' \
+                 -d '{"email":"admin@acme.local","password":"ci-Passw0rd!-long-enough","org":"acme"}' \
+                 | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+          [ -n "$TOK" ] || { echo "login failed"; exit 1; }
+
+          # The documented test payload. If this stops being a finding, the product is broken
+          # in the one way no health check would ever show.
+          out=$(curl -sf -X POST http://127.0.0.1:8088/api/analyze \
+                 -H "authorization: Bearer $TOK" -H 'content-type: application/json' \
+                 -d '{"content":"here is the key AKIA4YTGH2NBQF7XZP3K please use it","subject":"ci","surface":"ai_usage","persist":true}')
+          echo "$out"
+          python3 - "$out" <<'CHECK'
+          import json, sys
+          v = json.loads(sys.argv[1])
+          cats = {s.get("category") for s in (v.get("signals") or [])}
+          assert "secret_leak" in cats, f"no secret_leak signal; got {cats}"
+          assert v.get("severity") in ("high", "critical"), f"severity={v.get('severity')}"
+          print("detection ok:", v.get("severity"), sorted(c for c in cats if c))
+          CHECK
+
+      - name: A placeholder signing key must refuse to boot
+        if: steps.changes.outputs.native == 'true'
+        # Proves the guard in the real deployment, not just in a unit test: on Postgres a
+        # known key means forgeable admin sessions for every tenant.
+        run: |
+          set -euo pipefail
+          sudo cp /etc/palivane/palivane.env /tmp/palivane.env.bak
+          sudo sed -i "s#^PALIVANE_SECRET_KEY=.*#PALIVANE_SECRET_KEY=replace-me-with-a-long-random-secret#" \
+            /etc/palivane/palivane.env
+          sudo systemctl restart palivane-api || true
+          sleep 6
+          if systemctl is-active --quiet palivane-api && curl -sf http://127.0.0.1:8088/api/health; then
+            echo "FAIL: booted with a placeholder signing key"; exit 1
+          fi
+          echo "refused to boot, as it should"
+          sudo cp /tmp/palivane.env.bak /etc/palivane/palivane.env
+          sudo systemctl restart palivane-api
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8088/api/health && break; sleep 2; done
+
+      - name: Service logs on failure
+        if: failure() && steps.changes.outputs.native == 'true'
+        run: sudo journalctl -u palivane-api -n 120 --no-pager || true
 
   terraform:
     runs-on: ubuntu-latest
