@@ -6,7 +6,7 @@ findings streaming in. Pick one of three paths:
 - **[Native install](#path-a--native-install-recommended)**, a release tarball installed
   as a systemd service; no Docker or container runtime on the server. **Recommended for
   real deployments.**
-- **[Docker](#path-b--docker-whole-stack)**. Postgres + backend + nginx-served console,
+- **[Docker](#path-b--docker-whole-stack)**. Postgres + the same single-origin image,
   one command. Handy for a quick demo or if your fleet is already compose-based.
 - **[From source](#path-c--from-source-dev)**, run the backend and frontend dev servers
   directly (SQLite, hot reload). Best for iterating on the code.
@@ -49,11 +49,16 @@ your database. There's no Palivane cloud. It's two layers, **one server you host
   own cloud): Postgres, the backend (FastAPI, the API, the **detection engine**, and the
   LLM gateway), and the console. The recommended shape is the
   [native install](#path-a--native-install-recommended), a single systemd service that
-  serves the console and API together; the same stack also ships as three
-  `docker-compose` services if you prefer containers.
+  serves the console and API together; the same stack also ships as two
+  `docker-compose` services (Postgres plus the app) if you prefer containers.
 - **The detection compute runs inside `backend`**, local CPU work (see
-  [how detection works](../README.md#how-detection-works)). The only outbound calls are
-  *optional*: the LLM judge, and the gateway forwarding allowed calls to your upstream.
+  [how detection works](../README.md#how-detection-works)). Outbound calls are limited, and
+  worth stating precisely because a reviewer will ask:
+  - *optional* — the LLM judge (only if you set a provider key), and the gateway forwarding
+    allowed calls to your upstream;
+  - *only if you apply a license* — the instance re-fetches a fresh short-term blob from
+    Palivane before its term ends (see §6). An unlicensed Free instance makes neither call
+    and never contacts us at all.
 - **Capture planes** sit where AI is actually used and call back to the server's API.
 
 ### What runs on each end-user's machine?
@@ -350,7 +355,9 @@ high-volume triage).
 
 ## 6. (Optional) Apply a license. Team / Enterprise tiers
 
-Self-hosted Palivane runs the **Free** tier out of the box (5 users, core capture planes).
+Self-hosted Palivane runs the **Free** tier out of the box: the core capture planes and
+full detection, capped at **5 users, 10 API keys and 2,000 ingested events per day**, with
+no alerting. Detection itself is never gated — the caps are on fleet size and volume.
 A vendor-issued license unlocks Team (alerts, MDM packs) or Enterprise (SSO, SIEM, S3
 delivery) instance-wide, see `/pricing` or contact sales@palivane.io.
 
@@ -362,6 +369,12 @@ point `PALIVANE_LICENSE` at a file containing it, and restart:
 `GET /api/health` shows the active license (`org`, `plan`, `expires`). An invalid or
 expired license is ignored with a startup warning, the instance falls back to Free,
 nothing breaks. Licensed seat count becomes the default users quota.
+
+**Renewal needs outbound access.** Licensed blobs carry a short term (~45 days) and the
+instance re-fetches a fresh one from Palivane before it lapses. If it cannot reach us it
+keeps working until the current term ends, then falls back to Free. An air-gapped
+deployment needs a long-term blob issued up front instead — ask for one, and know that it
+cannot then be revoked remotely.
 
 On the hosted SaaS there is no license file, your plan is managed by the vendor.
 
