@@ -6,7 +6,7 @@ deployment model:
 | Deployment | The license is... | You grant it with... |
 |---|---|---|
 | Hosted SaaS (app.palivane.io) | the `tenant.plan` column | `set-plan` (below) |
-| Self-hosted | a signed `WDN1.…` license file | `app.licensing issue` (below) |
+| Self-hosted | a signed `PVN1.…` license file | `app.licensing issue` (below) |
 
 Plan gates and quotas live in `backend/app/plans.py`; the license format and
 verification in `backend/app/licensing.py`. Customer-facing instructions:
@@ -55,7 +55,7 @@ almost always want, because it makes the license visible and revocable):
 - `--term-days`, the signed blob's life (default: the short renewal term, ~45d). The
   customer's instance renews before it lapses; you don't hand-reissue every term.
 - `--contract-months`, the hard stop: renewals are refused past this (0 = no stop).
-- prints the `WDN1.…` blob to send the customer AND records `lic_…` in the registry.
+- prints the `PVN1.…` blob to send the customer AND records `lic_…` in the registry.
 
 The customer sets `PALIVANE_LICENSE` to the blob (or a file path) and restarts;
 `GET /api/health` shows `{org, plan, expires}`. `python -m app.licensing issue …` (no
