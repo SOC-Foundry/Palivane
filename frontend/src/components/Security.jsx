@@ -47,6 +47,7 @@ const FLOWS = [
   ["Egress proxy (desktop apps)", "Traffic is inspected by the proxy on your own machine. The verdict is what leaves it."],
   ["MCP — local stdio wrapper and hosted endpoint", "Tool calls are inspected. Benign captures are discarded rather than stored, unless you turn that on."],
   ["SaaS connectors — Workspace, M365, Slack, Salesforce", "Read-only API access under credentials you grant and can revoke from the console at any time."],
+  ["Warehouse AI — Snowflake Cortex, Databricks Model Serving", "Read-only queries against the platform's own logs, under a credential you issue and can revoke. We read records of AI calls your warehouse already kept; nothing is added to it."],
   ["Optional LLM judge", "Off unless you enable it. When on, the content it reviews goes to a model provider — your own account if you supply a key, and otherwise ours, which is why Anthropic appears in our subprocessor list. Detection without the judge is deterministic and involves no AI service at all."],
 ];
 

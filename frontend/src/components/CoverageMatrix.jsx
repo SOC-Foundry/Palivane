@@ -41,6 +41,13 @@ const GROUPS = [
         mode: "observe",
       },
       {
+        surface: "AI inside the warehouse: Snowflake Cortex, Databricks Model Serving",
+        how: "Polled from the platform's own records — Snowflake QUERY_HISTORY for Cortex/AI_* calls, Databricks inference tables for Model Serving — then scored like any other prompt. This is where analysts and pipelines call an LLM without a browser, a laptop or an egress path anything else could watch.",
+        note: "Detect-after, not inline: the call has already run when it is scored, so this surface reports and alerts, it does not block. Prompts written as SQL literals are scored; a prompt bound from a column is counted and reported as unscored rather than passed over silently (see the gaps below).",
+        needs: "A read-scoped warehouse credential — key-pair JWT for Snowflake, a service principal for Databricks. Nothing installed anywhere.",
+        mode: "observe",
+      },
+      {
         surface: "Alerts, SIEM, data lake",
         how: "Findings pushed from the backend (Slack/webhook alerts, Splunk HEC / CEF / JSON, S3 NDJSON archive)",
         needs: "A destination URL or bucket. Nothing installed anywhere.",
@@ -139,6 +146,7 @@ const GROUPS = [
 const GAPS = [
   ["Unmanaged, unenrolled devices", "A personal laptop with no extension, proxy, or hooks is invisible. The coverage view in the console exists precisely to show you who that is."],
   ["Copilot prompts", "Copilot's hook API allows inspecting tool calls (deniable) but exposes prompts observe-only, we can see them, not stop them."],
+  ["Column-bound warehouse prompts", "A Cortex or Model Serving call whose prompt comes from a table column rather than a SQL literal does not carry the text in the query record, so there is nothing to score. Those calls are counted and surfaced as column-bound, so the number is visible rather than being quietly absent from the total."],
   ["OTEL-bridge capture", "Orgs using the claude-otel bridge get monitor-only, post-hoc capture, the event has already happened when it's scored."],
   ["Slack private channels and DMs (below Enterprise Grid)", "With a bot token, Palivane reads only conversations the bot is in: public channels can be auto-joined, private ones must invite it, and DMs are invisible. On Enterprise Grid this is fully covered, your Org Owner enables the Discovery API and hands Palivane a discovery:read token (the Slack Discovery connector, your own key, no Palivane app) which reads every private channel and DM org-wide. Below Grid, Slack exposes no equivalent API, so uninvited private channels and DMs stay out of reach."],
   ["Formats nothing can open", "Pre-2007 Office files (.doc/.xls/.ppt) are binary containers and encrypted PDFs are encrypted; neither is readable. Images need OCR, which runs locally and is off unless enabled. All three are counted and reported as unread rather than passed over, so a scan never quietly implies it looked."],
