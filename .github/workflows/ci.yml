@@ -277,6 +277,103 @@ jobs:
         if: failure() && steps.changes.outputs.native == 'true'
         run: sudo journalctl -u palivane-api -n 120 --no-pager || true
 
+  # Portability of the SERVER installer, which the Ubuntu job above cannot answer.
+  # install.sh reaches into OS-specific territory the moment it leaves Debian: the nologin
+  # shell lives at /usr/sbin/nologin on Debian and /sbin/nologin on RHEL, useradd comes from
+  # a differently-named package, and RHEL 9 ships Python 3.9 as `python3` so the version gate
+  # fires unless an operator installs 3.12 first.
+  #
+  # Containers have no systemd, so `systemctl` is stubbed — and ONLY systemctl. Everything
+  # that actually differs between distros (useradd, the venv, pip, migrations, the generated
+  # admin wrapper) runs for real, and the service is then started directly to prove the
+  # install produced something that boots.
+  #
+  # Gated on deploy/native/** alone, not on backend changes: the risk being tested lives in
+  # the installer, and a four-distro matrix on every backend PR is not worth the minutes.
+  native-install-distros:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["debian:stable", "fedora:latest", "rockylinux:9"]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Detect installer changes
+        id: changes
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            installer:
+              - '.github/workflows/ci.yml'
+              - 'deploy/native/**'
+      - uses: actions/setup-python@v7
+        if: steps.changes.outputs.installer == 'true'
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v7
+        if: steps.changes.outputs.installer == 'true'
+        with:
+          node-version: "24"
+      - name: Build the release tarball
+        if: steps.changes.outputs.installer == 'true'
+        run: ./deploy/native/build-release.sh
+
+      - name: Install on ${{ matrix.image }}
+        if: steps.changes.outputs.installer == 'true'
+        run: |
+          set -euo pipefail
+          tar xzf dist/palivane-native-*.tar.gz -C /tmp
+          docker run --rm -v /tmp/palivane:/payload:ro -w /root "${{ matrix.image }}" bash -euo pipefail -c '
+            case "${{ matrix.image }}" in
+              debian:*|ubuntu:*)
+                export DEBIAN_FRONTEND=noninteractive
+                apt-get update -qq >/dev/null
+                apt-get install -y -qq python3 python3-venv python3-pip openssl sudo passwd curl >/dev/null
+                ;;
+              fedora:*)
+                dnf install -y -q python3 python3-pip openssl sudo shadow-utils curl >/dev/null
+                ;;
+              rockylinux:*|almalinux:*)
+                # NOT `curl`: RHEL 9 images ship curl-minimal, and installing curl conflicts
+                # with it (dnf fails the whole transaction). /usr/bin/curl is already there.
+                dnf install -y -q python3.12 python3.12-pip openssl sudo shadow-utils >/dev/null
+                # RHEL 9 ships 3.9 as python3, which install.sh correctly refuses. Do what an
+                # operator would: make 3.12 the python3 on PATH. That the installer refuses
+                # 3.9 in the first place is the behaviour we want — this proves the supported
+                # path works once the prerequisite is met.
+                ln -sf /usr/bin/python3.12 /usr/local/bin/python3
+                ;;
+            esac
+
+            # Stub ONLY systemd — a container has no PID 1 to talk to. Everything else is real.
+            # The unit directory has to exist too: install.sh drops the unit file there, and
+            # without systemd installed the path is simply absent (an artefact of the
+            # container, not a distro difference).
+            printf "#!/bin/sh\nexit 0\n" > /usr/local/bin/systemctl
+            chmod +x /usr/local/bin/systemctl
+            mkdir -p /etc/systemd/system
+
+            cp -r /payload /root/palivane
+            cd /root/palivane && ./install.sh
+
+            # The install must have produced a usable admin wrapper. This is the exact bug the
+            # Ubuntu job caught (no WorkingDirectory -> No module named app); it is also the
+            # one most likely to differ per distro, because the wrapper shells out via sudo.
+            palivane-admin create-tenant --slug acme --name Acme
+            palivane-admin create-user --tenant acme --email a@acme.local --role admin \
+              --password "ci-Passw0rd!-long-enough"
+
+            # And the thing systemd would have started must actually start and serve.
+            set -a; . /etc/palivane/palivane.env; set +a
+            cd /opt/palivane/backend
+            sudo -u palivane env DATABASE_URL="$DATABASE_URL" PALIVANE_SECRET_KEY="$PALIVANE_SECRET_KEY" \
+              PALIVANE_STATIC_DIR="$PALIVANE_STATIC_DIR" \
+              /opt/palivane/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8088 &
+            for i in $(seq 1 40); do curl -sf http://127.0.0.1:8088/api/health >/dev/null && break; sleep 2; done
+            curl -sf http://127.0.0.1:8088/api/health
+            echo "OK on ${{ matrix.image }}"
+          '
+
   terraform:
     runs-on: ubuntu-latest
     defaults:
