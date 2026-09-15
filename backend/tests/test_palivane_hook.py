@@ -419,3 +419,22 @@ def test_override_token_expiry_and_clear(tmp_path, monkeypatch):
     assert hook._load_override_token() == "fresh"
     hook._clear_override_token()
     assert hook._load_override_token() == ""
+
+
+def test_editor_tools_report_their_file_path_as_the_resource():
+    """The backend judges "targets a sensitive path" on `resource` for content-bearing
+    tools, so the hook has to put the path there. Left in args_text alongside the file's
+    content, a real edit of ~/.aws/credentials would have become invisible at the same
+    moment the false positives were suppressed."""
+    for tool, field in (("Edit", "file_path"), ("Write", "file_path"),
+                        ("NotebookEdit", "notebook_path")):
+        act = hook.build_activity(tool, {field: "/home/u/.aws/credentials",
+                                         "new_string": "some content"})
+        assert act["resource"] == "/home/u/.aws/credentials", tool
+        assert "some content" in act["args_text"], tool   # content still scanned for secrets
+
+
+def test_a_tool_without_a_path_still_reports_no_resource():
+    act = hook.build_activity("WebFetch", {"url": "https://example.com", "prompt": "hi"})
+    assert act["resource"] == ""
+    assert "example.com" in act["args_text"]

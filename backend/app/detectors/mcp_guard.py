@@ -123,6 +123,10 @@ _TOOL_POISON = re.compile(
 # Claude Code built-ins that cannot spawn a shell. Their arguments routinely CONTAIN command
 # text (a file being read or written), which is not the same as running it. Bash is absent on
 # purpose — it is the one that executes.
+# Built-ins whose arguments are dominated by file CONTENT rather than by what they act on.
+# Read is absent on purpose: the hook sends its path as `resource` and no content at all.
+_CONTENT_BEARING_BUILTINS = frozenset({"Edit", "Write", "NotebookEdit"})
+
 _NON_EXECUTING_BUILTINS = frozenset({
     "Read", "Edit", "Write", "NotebookEdit", "Glob", "Grep", "TodoWrite", "WebFetch",
 })
@@ -190,7 +194,15 @@ class MCPGuardDetector:
 
         # 2) Sensitive resource / path access. Normalize first so /etc/./passwd,
         # /etc//passwd, and backslash paths don't slip past the pattern.
-        haystack = _norm_path(f"{resource}\n{args_text}")
+        #
+        # For an editor built-in, args_text is the CONTENT of the file being written, and
+        # scanning it here could not tell "opened ~/.aws/credentials" from "wrote a sentence
+        # containing .aws/credentials". Documentation and detector fixtures duly scored
+        # critical. Those tools carry their real target in `resource`, so scan only that.
+        # Everything else — Bash, unknown built-ins, every MCP server tool — still gets the
+        # full text, because for them a path in the arguments IS the target.
+        content_bearing = not server and tool in _CONTENT_BEARING_BUILTINS
+        haystack = _norm_path(resource if content_bearing else f"{resource}\n{args_text}")
         mres = _SENSITIVE_PATH.search(haystack)
         if mres:
             signals.append(Signal(
