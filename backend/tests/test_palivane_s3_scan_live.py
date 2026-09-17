@@ -19,7 +19,7 @@ Skipped unless MinIO is reachable. To run it:
 
     docker run -d --name pv-minio -p 9100:9000 \\
       -e MINIO_ROOT_USER=palivanetest -e MINIO_ROOT_PASSWORD=palivanetest123 \\
-      minio/minio:latest server /data
+      quay.io/minio/minio:latest server /data
 """
 from __future__ import annotations
 
