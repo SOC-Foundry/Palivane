@@ -539,3 +539,33 @@ def test_tls_failed_server_survives_a_context_without_a_connection():
         context = _Ctx()
 
     addon.PalivaneGuard().tls_failed_server(_Data())   # must not raise
+
+
+# --- compressed request bodies ------------------------------------------------------------
+
+def test_gzipped_json_defeats_prompt_extraction():
+    """The shape of the bug, isolated: a gzipped body is not JSON and never will be.
+
+    Claude Desktop sets `content-encoding: gzip` on every request (it identifies itself as
+    anthropic-client-platform: desktop_app). The addon read `raw_content`, which is the body
+    exactly as it arrived — still compressed — so extract_prompt got gzip bytes, found no
+    JSON, returned nothing, and the prompt was never scanned. A browser sending the same
+    sentence uncompressed was blocked correctly, which is precisely why this looked like it
+    worked for everyone who tested it with curl.
+    """
+    import gzip, json
+    body = json.dumps({"prompt": "here is my SSN 000-00-0000"}).encode()
+    assert addon.extract_prompt(body) == "here is my SSN 000-00-0000"
+    assert "000-00-0000" not in addon.extract_prompt(gzip.compress(body))
+
+
+def test_the_addon_reads_the_decoded_body(monkeypatch):
+    """mitmproxy exposes both: `.content` is decoded, `.raw_content` is not. Reading the
+    decoded one is the fix, and this pins which attribute is used so it cannot regress
+    back to raw_content in a refactor."""
+    import gzip, json, inspect
+    src = inspect.getsource(addon.PalivaneGuard.request)
+    assert "req.content" in src, "request path must read the DECODED body"
+    # raw_content may still appear, but only as the fallback for an undecodable encoding.
+    assert src.index("req.content") < src.index("req.raw_content"), \
+        "decoded body must be preferred over raw"

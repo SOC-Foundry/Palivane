@@ -177,3 +177,69 @@ def test_no_proxy_defaults_exclude_tailnets_and_private_ranges():
     for entry in ("localhost", "127.0.0.1", "::1", ".ts.net", "100.64.0.0/10",
                   "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"):
         assert entry in out, entry
+
+
+# --- status reports the capture PATH, not just whether a process is up --------------------
+
+def test_status_check_names_the_consequence_not_the_mechanism():
+    """`status` printed "proxy: active" while three independent failures kept Claude Desktop
+    entirely uncaptured for a week: a revoked token (every scan 401s, fail open), no Electron
+    --proxy-server override (traffic never reached the proxy), and a CA trusted in neither
+    store. All three fail OPEN, so nothing blocked and nothing said so.
+
+    A failure line has to say what breaks, because "NSS: no" means nothing to someone
+    debugging this at 11pm.
+    """
+    out = _run('status_check "CA trusted by Electron apps (NSS)" 0 '
+               '"Claude/ChatGPT desktop will show ERR_CERT_AUTHORITY_INVALID"; true')
+    assert "FAIL" in out
+    assert "ERR_CERT_AUTHORITY_INVALID" in out
+
+
+def test_status_check_passes_quietly():
+    out = _run('status_check "backend credential" 1; true')
+    assert "ok" in out and "FAIL" not in out
+
+
+def test_a_failed_check_marks_the_whole_run_bad():
+    """One FAIL means capture is incomplete — the summary line exists so a passing-looking
+    list cannot be skimmed past."""
+    out = _run('STATUS_BAD=0; status_check "x" 1; status_check "y" 0 "z"; echo "BAD=$STATUS_BAD"')
+    assert "BAD=1" in out
+
+
+def test_svc_env_reads_the_installed_unit_not_the_shell(tmp_path):
+    """status must report what the RUNNING proxy uses. Reading the caller's environment would
+    have shown the new token while the service still held the revoked one — which is exactly
+    the state that went unnoticed."""
+    home = tmp_path / "home"
+    (home / ".config/systemd/user").mkdir(parents=True)
+    (home / ".config/systemd/user/palivane-proxy.service").write_text(
+        "[Service]\nEnvironment=PALIVANE_URL=https://unit.example\n"
+        "Environment=PALIVANE_TOKEN=ak_from_the_unit\n")
+    # HOME, not HOME_DIR: the script sets HOME_DIR="${HOME}" at load, so overriding the
+    # derived name is ignored and the test reads the developer's REAL unit file — which is
+    # both a false pass and a way to print a live token into test output.
+    out = _run('svc_env PALIVANE_TOKEN; svc_env PALIVANE_URL',
+               env={"HOME": str(home), "OS": "Linux",
+                    "PALIVANE_TOKEN": "ak_from_the_shell"})
+    assert "ak_from_the_unit" in out
+    assert "ak_from_the_shell" not in out
+    assert "https://unit.example" in out
+
+
+def test_status_probes_the_path_end_to_end_not_just_its_parts():
+    """Every structural check passed while nothing from Claude Desktop was scanned.
+
+    The proxy was running, the CA was trusted, the app was wired — and the addon read
+    raw_content, so it handed gzip bytes to the parser and extracted nothing. A status
+    command that only verifies the parts would have reported all-clear through the entire
+    outage, which is what it did. So it sends a known-bad payload the way the app actually
+    sends one (gzipped) and requires a refusal.
+    """
+    import inspect, pathlib
+    src = pathlib.Path(SCRIPT).read_text()
+    probe = src[src.index("a compressed prompt carrying PII is refused") - 1500:]
+    assert "content-encoding: gzip" in probe, "the probe must be compressed like the real client"
+    assert "000-00-0000" in probe, "use an unambiguously synthetic value"
+    assert '"$probe_code" = "400"' in probe, "a refusal is the pass condition"
