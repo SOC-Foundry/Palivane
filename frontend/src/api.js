@@ -84,6 +84,7 @@ export const api = {
     req("/users", { method: "POST", body: JSON.stringify(payload) }),
   updateUser: (id, payload) =>
     req(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  offboardUser: (id) => req(`/users/${id}/offboard`, { method: "POST" }),
   createApiKey: (payload) =>
     req("/apikeys", { method: "POST", body: JSON.stringify(payload) }),
   apiKeys: () => req("/apikeys"),
