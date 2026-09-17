@@ -51,7 +51,13 @@ def test_different_actor_stays_distinct(client, raw_client):
     assert a["finding_id"] != b["finding_id"]
 
 
-def test_dismissed_recurrence_stays_dismissed(client, raw_client):
+def test_a_dismissal_does_not_mute_the_next_real_leak(client, raw_client):
+    """This used to assert the opposite — that a dismissed row absorbed every later
+    occurrence silently — and that is how an SSN pasted into an assistant went missing
+    from a console whose default filter is status=open. Dismissing settles the events
+    you looked at; it cannot settle one that has not happened yet. So the repeat still
+    FOLDS (one row, seen_count 2 — the dedup is not the bug) but the row comes back
+    open. See test_recurrence_after_dismissal.py for the surface/severity boundary."""
     key = _key(client)
     fid = _ingest(raw_client, key, SECRET_A)["finding_id"]
     client.patch(f"/api/findings/{fid}", json={"status": "dismissed"})
@@ -59,7 +65,7 @@ def test_dismissed_recurrence_stays_dismissed(client, raw_client):
     again = _ingest(raw_client, key, SECRET_A)
     assert again["finding_id"] == fid
     fs = client.get("/api/findings").json()["findings"]
-    assert len(fs) == 1 and fs[0]["status"] == "dismissed" and fs[0]["seen_count"] == 2
+    assert len(fs) == 1 and fs[0]["status"] == "open" and fs[0]["seen_count"] == 2
 
 
 def test_bulk_status_scoped_to_tenant(client, raw_client, db_factory):
