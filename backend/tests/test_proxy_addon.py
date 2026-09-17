@@ -569,3 +569,40 @@ def test_the_addon_reads_the_decoded_body(monkeypatch):
     # raw_content may still appear, but only as the fallback for an undecodable encoding.
     assert src.index("req.content") < src.index("req.raw_content"), \
         "decoded body must be preferred over raw"
+
+
+# --- claude.ai is parsed, not harvested ---------------------------------------------------
+
+def test_claude_ai_is_not_harvested():
+    """Harvesting claude.ai was harmless only while its body arrived gzipped and matched
+    nothing. Once decoding was fixed, "every string value" meant the 57KB envelope —
+    conversation UUIDs, a device id, a sessionKey, sha256 file hashes — and the entropy
+    detector made a SEPARATE secret finding out of each. One prompt produced four findings,
+    none of them the user's data. The completion body is a known shape; parse it."""
+    assert addon.needs_harvest("claude.ai") is False
+    assert addon.needs_harvest("chatgpt.com") is True   # no evidence for its shape; unchanged
+
+
+def test_the_envelope_is_not_scanned_only_the_prompt():
+    import json
+    body = json.dumps({
+        "prompt": "my ssn is 000-00-0000",
+        "parent_message_uuid": "8f14e45f-ceea-467a-9f4a-1f2c3d4e5a6b",
+        "files": [{"file_name": "notes.pdf", "sha256": "sha256_59b1a0c3de"}],
+        "timezone": "UTC",
+    }).encode()
+    got = addon.extract_prompt(body)
+    assert got == "my ssn is 000-00-0000"
+    for noise in ("8f14e45f", "sha256_59b1a0c3de", "notes.pdf", "UTC"):
+        assert noise not in got, f"{noise} reached the scanner"
+    # And the harvest path — still correct for hosts we cannot parse — would have included it.
+    assert "sha256_59b1a0c3de" in addon.harvest_prompt(body)
+
+
+def test_only_prompt_endpoints_warn_on_a_parse_miss():
+    """A telemetry or sync POST parsing to nothing is normal and must stay quiet, or the
+    warning becomes noise nobody reads and the real shape drift hides in it."""
+    assert addon._carries_a_prompt("/api/organizations/x/chat_conversations/y/completion")
+    assert addon._carries_a_prompt("/v1/messages")
+    assert not addon._carries_a_prompt("/api/v2/rum?ddsource=browser")
+    assert not addon._carries_a_prompt("/api/event_logging/v2/batch")
