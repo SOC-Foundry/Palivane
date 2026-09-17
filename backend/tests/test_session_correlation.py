@@ -147,3 +147,40 @@ def test_correlated_finding_folds_not_duplicates(db_factory, monkeypatch):
     assert len(chain) == 1
     assert chain[0].seen_count >= 2
     db.close()
+
+
+# --- an unsanctioned destination is not a kill-chain stage --------------------------------
+
+def test_one_sensitive_prompt_is_not_an_attack_chain():
+    """Reported from the console: typing an SSN into Claude Code produced a critical
+    "attack chain: collection → exfiltration" alongside the SSN finding itself.
+
+    No sequence had happened. A single finding carried pii_exposure (collection) AND
+    unsanctioned_ai — and unsanctioned_ai was mapped to exfiltration, a payoff stage, so the
+    correlation fired on one event. Its evidence was `https://api.anthropic.com`: the user's
+    own AI tool, unsanctioned because a fresh tenant has nothing on the list. Every sensitive
+    prompt was therefore an "attack chain", which is the fastest way to teach someone to
+    ignore the one that matters.
+    """
+    from app.session_correlation import stages_in, _should_correlate
+    sig = [{"category": "pii_exposure"}, {"category": "unsanctioned_ai"}]
+    assert stages_in(sig) == {"collection"}
+    assert _should_correlate(stages_in(sig)) is False
+
+
+def test_a_real_sequence_still_correlates():
+    """The signal the module exists for: read a secret, run something, send it out."""
+    from app.session_correlation import stages_in, _should_correlate
+    sig = [{"category": "secret_leak"}, {"category": "dangerous_command"},
+           {"category": "data_exfiltration"}]
+    assert stages_in(sig) == {"collection", "execution", "exfiltration"}
+    assert _should_correlate(stages_in(sig)) is True
+
+
+def test_real_exfiltration_still_reaches_the_payoff_stage():
+    """Unmapping unsanctioned_ai must not leave exfiltration unreachable — data_exfiltration
+    is the category that means data actually left."""
+    from app.session_correlation import stages_in, _should_correlate
+    sig = [{"category": "pii_exposure"}, {"category": "data_exfiltration"}]
+    assert "exfiltration" in stages_in(sig)
+    assert _should_correlate(stages_in(sig)) is True
