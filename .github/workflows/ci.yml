@@ -478,12 +478,16 @@ jobs:
       - name: Start MinIO
         if: steps.changes.outputs.s3 == 'true'
         # `docker run` rather than a service container: MinIO needs `server /data` as its
-        # command, and a services: block cannot pass one. This is the exact invocation the
-        # test file documents, which is also the one verified locally before this job existed.
+        # command, and a services: block cannot pass one.
+        #
+        # quay.io, not Docker Hub. `docker run minio/minio` works on a machine that pulled it
+        # before MinIO moved registries and fails everywhere else with "repository does not
+        # exist" — which is what a clean runner is, and what a customer following the test
+        # file's own instructions would hit.
         run: |
           docker run -d --name pv-minio -p 9100:9000 \
             -e MINIO_ROOT_USER=palivanetest -e MINIO_ROOT_PASSWORD=palivanetest123 \
-            minio/minio:latest server /data
+            quay.io/minio/minio:latest server /data
           for i in $(seq 1 40); do
             curl -sf http://localhost:9100/minio/health/live >/dev/null && break
             sleep 2
