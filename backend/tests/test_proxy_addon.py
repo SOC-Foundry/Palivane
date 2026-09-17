@@ -606,3 +606,37 @@ def test_only_prompt_endpoints_warn_on_a_parse_miss():
     assert addon._carries_a_prompt("/v1/messages")
     assert not addon._carries_a_prompt("/api/v2/rum?ddsource=browser")
     assert not addon._carries_a_prompt("/api/event_logging/v2/batch")
+
+
+# --- deferring prompt capture to a live local hook ----------------------------------------
+
+def test_hooked_tools_fails_closed(monkeypatch):
+    """Any error, timeout or unreachable backend must leave the set EMPTY so the proxy keeps
+    scanning. Losing a duplicate finding is cheap; losing the capture is not — and this is
+    the direction a bug would take if it assumed success."""
+    addon._HOOKED.update({"tools": frozenset(), "at": 0.0})
+    monkeypatch.setenv("PALIVANE_URL", "http://127.0.0.1:1")   # nothing listening
+    monkeypatch.setenv("PALIVANE_TOKEN", "ak_x")
+    assert addon.hooked_tools() == frozenset()
+
+
+def test_hooked_tools_empty_without_a_backend(monkeypatch):
+    addon._HOOKED.update({"tools": frozenset(), "at": 0.0})
+    monkeypatch.setenv("PALIVANE_URL", "")
+    monkeypatch.setenv("PALIVANE_TOKEN", "")
+    assert addon.hooked_tools() == frozenset()
+
+
+def test_hooked_tools_is_cached(monkeypatch):
+    """One lookup per TTL, not one per request — this runs on the hot path of every POST."""
+    addon._HOOKED.update({"tools": frozenset({"claude-code"}), "at": __import__("time").time()})
+    monkeypatch.setenv("PALIVANE_URL", "http://127.0.0.1:1")   # would fail if consulted
+    assert addon.hooked_tools() == frozenset({"claude-code"})
+
+
+def test_deference_keys_on_the_agent_not_the_host():
+    """The skip must identify the CLIENT. A browser hitting the same host has no local hook
+    and must still be scanned, so keying on the destination would create a real blind spot."""
+    assert addon.detect_tool("claude-cli/2.1.4") == "claude-code"
+    assert addon.detect_tool("Mozilla/5.0 (X11; Linux x86_64) Chrome/141") not in (
+        "claude-code", "cursor", "copilot")

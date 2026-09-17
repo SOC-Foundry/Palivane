@@ -103,6 +103,10 @@ class Settings:
     # single event trips. On by default; window is how far back to look (minutes).
     session_correlation: bool = _env("PALIVANE_SESSION_CORRELATION", "true").lower() in ("1", "true", "yes")
     session_window_min: int = int(_env("PALIVANE_SESSION_WINDOW_MIN", "30"))
+    # How recently a local hook must have reported before the egress proxy will defer prompt
+    # capture to it. Deliberately short: deference is only safe while the hook is DEMONSTRABLY
+    # alive, because "a hook is installed" is a signal the person being watched can remove.
+    hook_defer_window_min: int = int(_env("PALIVANE_HOOK_DEFER_WINDOW_MIN", "15"))
     # MCP server reputation/provenance (beyond allowlist + TOFU pinning): a known-bad
     # denylist (server names or packages, comma-separated), and an opt-in registry
     # freshness check that flags freshly-published / freshly-republished packages — the

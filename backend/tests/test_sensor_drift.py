@@ -129,3 +129,52 @@ def test_benign_counts_as_open_but_not_as_work(client, db_factory):
     assert stats["open"] >= 1
     assert stats["open"] > stats["open_needs_review"], (
         "a benign open row must count as unreviewed but not as work")
+
+
+# --- /api/capture/hooked: liveness, not installation ---------------------------------------
+
+def _hb(db_factory, tenant_id, actor, tool, client, minutes_ago=0):
+    from datetime import datetime, timedelta, timezone
+    from app.models import SensorHeartbeat
+    db = db_factory()
+    t = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=minutes_ago)
+    db.add(SensorHeartbeat(tenant_id=tenant_id, actor=actor, tool=tool, client=client,
+                           plane="ai-usage", first_seen=t, last_seen=t, count=1))
+    db.commit(); db.close()
+
+
+def test_hooked_reports_a_live_hook(client, raw_client, db_factory):
+    key = client.post("/api/apikeys", json={"label": "k", "actor": "dev@acme.com"}).json()["token"]
+    me = client.get("/api/auth/me").json()["user"]
+    _hb(db_factory, me["tenant_id"], "dev@acme.com", "claude-code", "palivane-hook", 1)
+    r = raw_client.get("/api/capture/hooked", headers={"X-Palivane-Token": key})
+    assert r.status_code == 200, r.text
+    assert "claude-code" in r.json()["tools"]
+
+
+def test_a_stale_hook_is_not_deferred_to(client, raw_client, db_factory):
+    """The whole point of liveness over installation: a hook that stopped reporting must NOT
+    keep the proxy quiet. "A hook is installed" is a signal the monitored person can remove;
+    "a hook reported two minutes ago" is not."""
+    key = client.post("/api/apikeys", json={"label": "k2", "actor": "stale@acme.com"}).json()["token"]
+    me = client.get("/api/auth/me").json()["user"]
+    _hb(db_factory, me["tenant_id"], "stale@acme.com", "claude-code", "palivane-hook", 600)
+    r = raw_client.get("/api/capture/hooked", headers={"X-Palivane-Token": key})
+    assert r.json()["tools"] == []
+
+
+def test_the_proxys_own_heartbeat_is_not_mistaken_for_a_hook(client, raw_client, db_factory):
+    """Deferring to itself would disable capture entirely, quietly."""
+    key = client.post("/api/apikeys", json={"label": "k3", "actor": "self@acme.com"}).json()["token"]
+    me = client.get("/api/auth/me").json()["user"]
+    _hb(db_factory, me["tenant_id"], "self@acme.com", "claude-code", "palivane-proxy", 1)
+    r = raw_client.get("/api/capture/hooked", headers={"X-Palivane-Token": key})
+    assert r.json()["tools"] == []
+
+
+def test_another_persons_hook_does_not_silence_yours(client, raw_client, db_factory):
+    key = client.post("/api/apikeys", json={"label": "k4", "actor": "mine@acme.com"}).json()["token"]
+    me = client.get("/api/auth/me").json()["user"]
+    _hb(db_factory, me["tenant_id"], "someone-else@acme.com", "claude-code", "palivane-hook", 1)
+    r = raw_client.get("/api/capture/hooked", headers={"X-Palivane-Token": key})
+    assert r.json()["tools"] == []

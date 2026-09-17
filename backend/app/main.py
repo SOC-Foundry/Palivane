@@ -3629,6 +3629,41 @@ def report_summary(days: int = 30, current: User = Depends(require_admin),
                 by_category, by_severity, len(actors), len(covered))}
 
 
+@app.get("/api/capture/hooked")
+def hooked_tools(x_palivane_token: str = Header(default=""), db: Session = Depends(get_db)):
+    """Which of this actor's tools have a LIVE local hook, so the egress proxy can stop
+    double-recording them.
+
+    A prompt typed into Claude Code is captured twice today: by the hook before it leaves,
+    and again by the proxy when Claude Code calls api.anthropic.com. Both are correct; the
+    result is two findings for one action, inflating every count and — until it was unmapped
+    — supplying the second finding an attack-chain correlation needed.
+
+    The proxy defers to the hook because the hook sees the better artefact: the prompt the
+    person actually typed, rather than the whole request payload with the agent's context
+    scaffold attached.
+
+    LIVENESS is the point, not installation. "A hook is present" is a signal the person being
+    monitored can remove, so deferring on presence would hand them a way to disable capture
+    by disabling the cheaper half. This answers "did that hook actually report in the last
+    N minutes", which an attacker cannot fake by deleting something.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from .models import SensorHeartbeat
+    tenant_id, actor = _ingest_auth(x_palivane_token, db)
+    window = max(1, settings.hook_defer_window_min)
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=window)
+    q = (db.query(SensorHeartbeat.tool)
+         .filter(SensorHeartbeat.tenant_id == tenant_id,
+                 SensorHeartbeat.client == "palivane-hook",
+                 SensorHeartbeat.last_seen >= since))
+    if actor:
+        q = q.filter(func.lower(SensorHeartbeat.actor) == actor.strip().lower())
+    tools = sorted({t for (t,) in q.distinct().all() if t})
+    return {"tools": tools, "window_min": window}
+
+
 def _report_shadow(db: Session, tenant_id: int) -> dict:
     """Which AI tools are in use that nobody sanctioned, and how many people use them.
 
