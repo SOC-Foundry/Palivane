@@ -143,7 +143,7 @@ class DepGuardDetector:
     name = "dep_guard"
     # DEPS = the /api/scan/deps manifest scan; MCP = a manifest written via an agent tool call
     # (a package.json Write), which would otherwise only trip the generic dangerous_command check.
-    surfaces: set[Surface] = {Surface.DEPS, Surface.MCP}
+    surfaces: set[Surface] = {Surface.DEPS, Surface.MCP, Surface.AGENT_TOOLS}
 
     def analyze(self, item: AnalysisInput) -> list[Signal]:
         fname = (item.subject or "").lower()

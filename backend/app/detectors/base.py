@@ -22,7 +22,11 @@ class Surface(str, Enum):
 
     LLM_IO = "llm_io"     # Protect our AI — prompts/responses on the org's own LLMs
     AI_USAGE = "ai_usage" # Shadow-AI governance — content sent to external AI tools
-    MCP = "mcp"           # Agentic tool-use — MCP calls from AI coding assistants
+    MCP = "mcp"           # Agentic tool-use — MCP calls, local stdio or remote
+    AGENT_TOOLS = "agent_tools"  # An AI assistant's OWN tools (Bash/Edit/Read/…), not MCP.
+                          # Split out because 90% of what landed under `mcp` was this, which
+                          # inflated the one surface no competitor covers and made a prospect
+                          # drilling into "MCP activity" find shell commands.
     DEPS = "deps"         # Dependency manifests — supply-chain risk in package files
     IDE = "ide"           # IDE extensions — known-bad / unapproved editor plugins
     SECRETS = "secrets"   # Endpoint credential hygiene — secrets at rest on a device
