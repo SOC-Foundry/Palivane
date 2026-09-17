@@ -1661,3 +1661,25 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 .consent-facts code { font-size: 12.5px; color: var(--accent-2); }
 .consent-note { font-size: 13px; line-height: 1.6; color: var(--muted-2); margin: 0 0 24px; }
 .consent-actions { display: flex; gap: 12px; align-items: center; }
+
+/* --- AI Exposure Assessment (Report) -------------------------------------------------
+   The report is a document before it is a console page: it gets forwarded, and it gets
+   printed. The lede carries the finding a reader repeats out loud, so it is set larger
+   than body text and given room. */
+.report-lede { font-size: 1.05rem; line-height: 1.7; max-width: 68ch; margin: 0 0 14px; }
+.report-recs { margin: 8px 0 0; padding-left: 22px; display: flex; flex-direction: column; gap: 16px; }
+.report-recs li { padding-left: 4px; }
+.rec-policy { font-weight: 600; display: block; }
+.rec-evidence {
+  display: inline-block; margin-top: 3px; font-size: .78rem; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--muted);
+}
+.rec-why { margin: 6px 0 0; color: var(--muted); max-width: 70ch; }
+.report-foot { margin-top: 20px; max-width: 70ch; font-size: .85rem; }
+
+@media print {
+  .no-print, .nav, .sidebar, .app-nav { display: none !important; }
+  .report-doc .panel { break-inside: avoid; box-shadow: none; border-color: #ccc; }
+  .report-doc { color: #000; }
+  .report-lede { font-size: 11pt; }
+}

@@ -3623,7 +3623,86 @@ def report_summary(days: int = 30, current: User = Depends(require_admin),
             # Content-origin lineage: leaks traced back to a known scanned document, and how
             # many distinct source documents leaked — "which of our data is walking out."
             "leaks_with_known_source": traced,
-            "leaked_source_documents": len(leaked_docs)}
+            "leaked_source_documents": len(leaked_docs),
+            "shadow": _report_shadow(db, current.tenant_id),
+            "recommendations": _report_recommendations(
+                by_category, by_severity, len(actors), len(covered))}
+
+
+def _report_shadow(db: Session, tenant_id: int) -> dict:
+    """Which AI tools are in use that nobody sanctioned, and how many people use them.
+
+    This is the finding an assessment is bought for. The severity counts tell a security lead
+    what happened; this tells them something they did not know — that N people are using tools
+    the org never approved. Discovery already reconciles usage against the tenant's allowlist,
+    so this reads that rather than recomputing it."""
+    from .discovery import build_inventory
+    sanctioned = _tenant_or_global(tenant_id, db, "sanctioned_ai_tools",
+                                   settings.sanctioned_ai_tools)
+    inv = build_inventory(db, tenant_id, sanctioned) or {}
+    tools = [t for t in (inv.get("tools") or []) if not t.get("sanctioned")]
+    tools.sort(key=lambda t: -(t.get("user_count") or 0))
+    people = set()
+    for t in tools:
+        people.update(t.get("users") or ())
+    return {
+        "unsanctioned_tools": len(tools),
+        "people_using_unsanctioned": len(people),
+        "top": [{"tool": t.get("tool"), "domain": t.get("domain"),
+                 "users": t.get("user_count") or 0,
+                 "events": t.get("events") or 0} for t in tools[:8]],
+    }
+
+
+# What to turn on, derived from what actually fired. Deliberately not a canned checklist:
+# each entry names its own evidence, so a reader can check the recommendation against the
+# numbers on the same page instead of taking it on faith.
+_POLICY_ADVICE = [
+    ("secret_leak", "Block credentials before they leave",
+     "Credential patterns are deterministic matches, not judgement calls — this is the one "
+     "category where enforcement rarely produces a false positive, so it is the safest place "
+     "to switch from monitoring to blocking first."),
+    ("unsanctioned_ai", "Decide on the tools people are already using",
+     "Every one of these is in use today. Sanction the ones that are fine and block the rest; "
+     "leaving them undecided means the policy is whatever each person chose."),
+    ("dangerous_command", "Turn on pre-execution checks for agent shell commands",
+     "These were caught before the command ran. Enforcement here stops an action rather than "
+     "recording it after the fact."),
+    ("pii_exposure", "Extend masking to the surfaces where PII appeared",
+     "Masking happens before storage, so this reduces what is retained as well as what is sent."),
+    ("phi_exposure", "Treat the health-data surface as in scope for HIPAA review",
+     "PHI appearing in AI traffic is a reportable-exposure question, not only a security one."),
+    ("prompt_injection", "Review agent instruction files and MCP tool descriptions",
+     "Injection reaching an agent usually arrives through content it was told to trust, not "
+     "through a user prompt."),
+    ("tool_poisoning", "Pin and re-vet the MCP servers in use",
+     "A tool description is instructions to the model. A changed one deserves the same scrutiny "
+     "as a changed binary."),
+]
+
+
+def _report_recommendations(by_category: dict, by_severity: dict,
+                            actors: int, covered: int) -> list[dict]:
+    out = []
+    for key, title, why in _POLICY_ADVICE:
+        n = by_category.get(key) or 0
+        if n:
+            out.append({"policy": title, "why": why,
+                        "evidence": f"{n} finding{'s' if n != 1 else ''} in this window",
+                        "category": key})
+    # The coverage gap is not a category — it is the difference between who is generating
+    # findings and who has a capture plane reporting in. It is also the single most useful
+    # line in the report, because it is the part the reader cannot see any other way.
+    gap = actors - covered
+    if gap > 0:
+        out.insert(0, {
+            "policy": f"Extend coverage to {gap} more {'person' if gap == 1 else 'people'}",
+            "why": ("These people show up in findings but have no capture plane reporting in, "
+                    "so what you are seeing from them is the part that happened to cross a "
+                    "surface we do cover. The rest is not visible."),
+            "evidence": f"{actors} actors with findings, {covered} reporting a sensor",
+            "category": "coverage"})
+    return out
 
 
 # --- Protection simulator (nothing persisted) --------------------------------------------
