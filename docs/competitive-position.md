@@ -86,27 +86,53 @@ surfaces a scanner isn't in); do not yet claim a measured outcome.
 
 ### What is NOT the moat, and must not be claimed as one
 
-Detection quality. The shipping engine is regex + heuristics; the ML classifier exists but
-**is not wired into the live path** and has not cleared its gate.
+Detection quality — but the previous version of this section was wrong about why, in a way
+that sales could be contradicted on by any engineer, so read this carefully.
+
+**ML is in the live path and has been.** `MLClassifierDetector` sits in `engine.detectors`
+alongside the rules, and two logistic-regression models run on every AI-usage and gateway
+prompt:
+
+| model | fires at | emits | held-out |
+|---|---|---|---|
+| code classifier | p ≥ 0.85 | `source_code_leak` | 98% accuracy, 99% precision |
+| injection classifier | p ≥ 0.70 | `prompt_injection`, weight 0.4 | precision 1.0 at p ≥ 0.5 |
+
+Both are deliberately **corroborating signals, not authorities** — the detector's own words:
+*"a scorer, never an authority on its own"*, and under the saturating-OR scorer it *"cannot
+max a verdict alone."* Rules and ML agreeing escalates; ML alone does not.
+
+What has NOT cleared is the **gate** in `ml-classifier-baseline.md` — the bar for training
+on real captured, analyst-labelled traffic and letting the classifier carry more weight.
+That is a different claim from "ML isn't running", which is what this doc used to say.
 
 Measured, on our own benchmark:
 
 | | precision | recall | corpus |
 |---|---|---|---|
-| regex (shipping) | 1.00 | **0.34** | synthetic injection paraphrases |
-| regex (shipping) | — | **0.22** | human-written real injections |
+| deterministic tier | 1.00 | **0.34** | synthetic injection paraphrases |
+| deterministic tier | — | **0.22** | human-written real injections |
 
-Read that correctly before repeating it:
+Read that correctly before repeating it, because the number is easy to misquote:
 
-- **For secrets and PII, regex is the right tool and precision is the product.** A leaked
-  `AKIA…` key is a deterministic match, not a judgment call. 1.00 precision means Palivane
-  does not cry wolf, which is what makes enforcement mode survivable.
-- **For prompt injection, 0.22 recall on real attacks is a real gap**, and
+- **0.22 is the DETERMINISTIC tier's recall, not the system's.** The ML tier adds paraphrase
+  coverage on top of it. Nobody has measured the pair end-to-end against real attacks, so the
+  honest sentence is *"the deterministic tier catches about a fifth of real injections, ML
+  adds phrasing coverage, and we have not measured the combination"* — not "we catch 22%".
+- **For secrets and PII, deterministic matching is the right tool and precision is the
+  product.** A leaked `AKIA…` key is a match, not a judgment call. 1.00 precision means
+  Palivane does not cry wolf, which is what makes enforcement mode survivable.
+- **Against an injection specialist we still lose**, and
   `ml-classifier-baseline.md` says so plainly: *"Lakera/Nightfall/Harmonic catch phrasing,
-  not just literals."*
+  not just literals."* Running a low-weight classifier does not change that.
 
 So: claim determinism and precision where they are true, claim breadth everywhere, and do
-not claim to out-detect an injection-focused vendor until the ML gate clears.
+not claim to out-detect an injection-focused vendor until the gate clears on real data.
+
+**One deployment caveat worth knowing before a self-hosted pilot:** the native install
+tarball omitted `backend/data/` until 2026-09-15, so native self-hosted deployments before
+that build ran with no classifier weights at all — genuinely rules-only, logging *"classifier
+weights missing/unreadable"* on every start. Docker and the hosted service were always fine.
 
 ### The landscape, in two tiers that behave very differently
 
@@ -291,7 +317,8 @@ says "this week"; nothing in the repo records that it happened.
 ## The honest summary
 
 Palivane is **feature-rich and evidence-poor**. Nearly every competitive track reads *built,
-unverified*: the ML gate is not cleared, agentic-browser parsing ships unverified (no Linux
+unverified*: the ML gate is not cleared on real captured data (the classifier runs — it just
+cannot carry a verdict alone), agentic-browser parsing ships unverified (no Linux
 builds exist to verify against), and three of four SaaS connectors have not been run against
 a real tenant.
 
