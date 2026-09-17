@@ -445,6 +445,67 @@ jobs:
           python -m pytest tests/test_rls.py -q -rs | tee /tmp/rls.txt
           grep -q "1 passed" /tmp/rls.txt || { echo "RLS test did not RUN — see skip reason above"; exit 1; }
 
+  # The S3 at-rest scanner against a real S3 API. Eight tests that have never run: every
+  # other test for this scanner injects a FakeS3, so the parts that actually talk to the
+  # service — pagination, the binary and size skips, the bucket-exposure calls — were
+  # exercised by nothing. MinIO speaks the S3 API and supports two of the three inputs to
+  # is_public(), which is enough for the direction that misfires more often: calling a
+  # private bucket public.
+  #
+  # The file is explicit that the POSITIVE exposure paths still need real AWS, and this job
+  # does not pretend otherwise.
+  s3-at-rest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Detect changes that affect the S3 scanner
+        id: changes
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            s3:
+              - '.github/workflows/ci.yml'
+              - 'backend/app/**'
+              - 'cli/palivane-s3-scan'
+      - uses: actions/setup-python@v7
+        if: steps.changes.outputs.s3 == 'true'
+        with:
+          python-version: "3.12"
+      - name: Install
+        if: steps.changes.outputs.s3 == 'true'
+        working-directory: backend
+        run: pip install -r requirements.txt
+      - name: Start MinIO
+        if: steps.changes.outputs.s3 == 'true'
+        # `docker run` rather than a service container: MinIO needs `server /data` as its
+        # command, and a services: block cannot pass one.
+        #
+        # quay.io, not Docker Hub. `docker run minio/minio` works on a machine that pulled it
+        # before MinIO moved registries and fails everywhere else with "repository does not
+        # exist" — which is what a clean runner is, and what a customer following the test
+        # file's own instructions would hit.
+        run: |
+          docker run -d --name pv-minio -p 9100:9000 \
+            -e MINIO_ROOT_USER=palivanetest -e MINIO_ROOT_PASSWORD=palivanetest123 \
+            quay.io/minio/minio:latest server /data
+          for i in $(seq 1 40); do
+            curl -sf http://localhost:9100/minio/health/live >/dev/null && break
+            sleep 2
+          done
+          curl -sf http://localhost:9100/minio/health/live
+      - name: Scanner works against a real S3 API
+        if: steps.changes.outputs.s3 == 'true'
+        working-directory: backend
+        # A SKIP here is a failure. These tests skipped themselves on a missing service for
+        # months and nothing said so — the same shape as test_rls.py, and as native-install
+        # reporting success having run nothing at all.
+        run: |
+          python -m pytest tests/test_palivane_s3_scan_live.py -q -rs | tee /tmp/s3.txt
+          grep -q "8 passed" /tmp/s3.txt || { echo "S3 tests did not RUN — see skip reason"; exit 1; }
+      - name: MinIO logs on failure
+        if: failure() && steps.changes.outputs.s3 == 'true'
+        run: docker logs pv-minio 2>&1 | tail -40 || true
+
   terraform:
     runs-on: ubuntu-latest
     defaults:
