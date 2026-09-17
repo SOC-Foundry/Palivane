@@ -1,4 +1,7 @@
-"""MCP capture endpoint: /api/ingest/mcp (agentic tool-use, surface=mcp)."""
+"""MCP capture endpoint: /api/ingest/mcp — agentic tool-use.
+
+Carries two surfaces: `mcp` for calls that name a server, `agent_tools` for an
+assistant's own built-ins, which name none."""
 
 from __future__ import annotations
 
@@ -86,3 +89,51 @@ def test_verdict_carries_org_enforce_stance(client, raw_client):
     body = _post(raw_client, key, method="tools/call", tool="list_files",
                  args_text="path=./src").json()
     assert body["enforce"] is True
+
+
+# --- MCP is MCP; an assistant's own tools are not -----------------------------------------
+
+def _ingest(client, raw_client, **over):
+    body = {"method": "tools/call", "server": "", "tool": "Bash",
+            "args_text": "echo hello", "resource": "", "transport": "stdio"}
+    body.update(over)
+    return _post(raw_client, _key(client), **body)
+
+
+def test_a_builtin_tool_call_is_not_labelled_mcp(client, raw_client, db_factory):
+    """90% of what landed under surface=mcp was Bash/Edit/Write/Read — the assistant's own
+    tools, which carry no server. That inflated the one capture surface no competitor covers,
+    and a customer who drilled into "MCP activity" to see it found shell commands.
+    """
+    from app.models import Finding
+    r = _ingest(client, raw_client, tool="Bash", args_text="cat /app/.env")
+    assert r.status_code == 200, r.text
+    db = db_factory()
+    f = db.query(Finding).order_by(Finding.id.desc()).first()
+    assert f.surface == "agent_tools", f.surface
+    assert f.subject.startswith("Agent tool"), f.subject
+    db.close()
+
+
+def test_a_real_mcp_call_still_is(client, raw_client, db_factory):
+    from app.models import Finding
+    r = _ingest(client, raw_client, server="some-server", tool="fetch", args_text="cat /app/.env")
+    assert r.status_code == 200, r.text
+    db = db_factory()
+    f = db.query(Finding).order_by(Finding.id.desc()).first()
+    assert f.surface == "mcp", f.surface
+    assert f.subject.startswith("MCP"), f.subject
+    db.close()
+
+
+def test_the_split_does_not_stop_anything_being_detected(client, raw_client, db_factory):
+    """The surface moved; the inspection must not. Every detector that declared MCP declares
+    the new surface too — without that, splitting it out would have quietly turned off
+    dangerous-command, sensitive-path and secret scanning for most agent traffic."""
+    from app.models import Finding
+    _ingest(client, raw_client, tool="Bash", args_text="cat ~/.aws/credentials && rm -rf /")
+    db = db_factory()
+    f = db.query(Finding).order_by(Finding.id.desc()).first()
+    cats = {s.get("category") for s in (f.signals or [])}
+    assert "dangerous_command" in cats and "sensitive_resource_access" in cats, cats
+    db.close()

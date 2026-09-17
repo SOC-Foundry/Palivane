@@ -22,6 +22,7 @@ const SURFACE = {
   llm_io: { label: "protect-ai", cls: "atk" },
   ai_usage: { label: "shadow-ai", cls: "ai" },
   mcp: { label: "mcp", cls: "atk" },
+  agent_tools: { label: "agent tools", cls: "atk" },
   deps: { label: "deps", cls: "ai" },
   ide: { label: "ide", cls: "ai" },
   secrets: { label: "secrets", cls: "atk" },
@@ -157,7 +158,7 @@ function GroupRow({ g, expanded, onToggle, selectedId, onSelect, onBulkStatus })
 export default function FindingsList({ findings, selectedId, onSelect, filter, onFilter,
                                        status, onStatus, onConnect, onBulkStatus }) {
   const severities = ["actionable", "", "critical", "high", "suspicious", "low", "benign"];
-  const surfaces = ["", "llm_io", "ai_usage", "mcp", "deps", "ide", "secrets", "collab"];
+  const surfaces = ["", "llm_io", "ai_usage", "mcp", "agent_tools", "deps", "ide", "secrets", "collab"];
   const [surface, setSurface] = useState("");
   const [grouped, setGrouped] = useState(true);
   const [expanded, setExpanded] = useState(() => new Set());

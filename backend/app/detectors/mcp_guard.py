@@ -144,7 +144,7 @@ def _server_allowed(server: str, allow: set[str]) -> bool:
 
 class MCPGuardDetector:
     name = "mcp_guard"
-    surfaces: set[Surface] = {Surface.MCP}
+    surfaces: set[Surface] = {Surface.MCP, Surface.AGENT_TOOLS}
 
     def analyze(self, item: AnalysisInput) -> list[Signal]:
         m = item.metadata or {}

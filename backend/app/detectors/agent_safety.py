@@ -69,7 +69,7 @@ def _is_coding_tool(item: AnalysisInput) -> bool:
 
 class AgentSafetyDetector:
     name = "agent_safety"
-    surfaces = {Surface.IDE, Surface.AI_USAGE, Surface.MCP}
+    surfaces = {Surface.IDE, Surface.AI_USAGE, Surface.MCP, Surface.AGENT_TOOLS}
 
     def analyze(self, item: AnalysisInput) -> list[Signal]:
         text = f"{item.subject}\n{item.content}"
