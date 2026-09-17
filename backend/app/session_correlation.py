@@ -61,7 +61,13 @@ _CATEGORY_STAGE = {
     "dangerous_command": "execution",
     # exfiltration — data leaving for somewhere it shouldn't
     "data_exfiltration": "exfiltration",
-    "unsanctioned_ai": "exfiltration",
+    # NOT unsanctioned_ai. It describes the DESTINATION, not an action in a sequence, and it
+    # fires on every prompt to any tool the org has not sanctioned — which on a fresh tenant
+    # is all of them. Mapped to a payoff stage it turned every sensitive prompt into a
+    # two-stage "collection → exfiltration" chain scored critical, so the correlated finding
+    # stopped meaning "I saw an attack pattern" and started meaning "you typed something
+    # sensitive into an AI tool" — which the underlying finding already said, at the right
+    # severity. Real egress still reaches this stage through data_exfiltration.
 }
 # Categories that never contribute to a chain (authorship noise, and correlation's own output).
 _IGNORED = {"ai_generated", "session_correlation"}
