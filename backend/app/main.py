@@ -1740,10 +1740,16 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
         body.args_text, body.resource, "\n".join(body.tool_descriptions),
     ] if p) or f"MCP {body.method} {body.tool or body.server}".strip()
 
+    # An MCP call names its server; an assistant's own built-in tool does not (the hook's
+    # contract: "built-in tools send server=''"). Everything used to land as MCP, so the
+    # surface that is genuinely uncontested read as ~12x its real volume and a customer
+    # inspecting "MCP activity" found Bash and Edit calls.
+    is_mcp = bool(body.server)
     item = AnalysisInput(
         content=content, sender=actor, channel=body.tool or "mcp",
-        subject=f"MCP {body.method}".strip(),
-        surface=Surface.MCP,
+        subject=(f"MCP {body.method}".strip() if is_mcp
+                 else f"Agent tool: {body.tool}".strip().rstrip(":")),
+        surface=Surface.MCP if is_mcp else Surface.AGENT_TOOLS,
         metadata={
             "method": body.method, "server": body.server, "tool": body.tool,
             "args_text": body.args_text, "resource": body.resource,
