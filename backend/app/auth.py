@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from . import audit_log, oidc, saml, totp
@@ -681,6 +682,62 @@ def update_user(user_id: int, body: UserUpdate, current: User = Depends(require_
     audit_log.record(db, current.tenant_id, current.email, "user.update",
                      target=user.email, detail={"role": user.role, "active": user.active})
     return user.to_dict()
+
+
+@router.post("/users/{user_id}/offboard")
+def offboard_user(user_id: int, current: User = Depends(require_admin),
+                  db: Session = Depends(get_db)):
+    """Someone left: close every way in, in one action.
+
+    `active: false` alone does not do this. It stops a fresh sign-in and nothing else — an
+    already-issued JWT stays valid until it expires, and the person's API keys keep working
+    indefinitely, including the capture key their browser extension uses. An admin who
+    toggles a leaver to inactive and moves on has revoked the least important credential.
+
+    This is deliberately NOT a delete. Findings attribute by EMAIL STRING, not by user id, so
+    removing the row would orphan nothing and erase nothing — the person's address stays in
+    every finding, audit entry and discovery record. Keeping the user preserves the
+    attribution that makes a six-month-old finding mean something, and keeps role history in
+    the audit log. Erasing a person is a different job (rewrite the actor across every table)
+    and should not hide behind a button that reads like offboarding.
+
+    Reversible: reactivate the user and issue fresh keys. Revoked keys stay revoked.
+    """
+    user = db.get(User, user_id)
+    if user is None or user.tenant_id != current.tenant_id:
+        raise HTTPException(status_code=404, detail="user not found")
+    if user.id == current.id:
+        raise HTTPException(status_code=400, detail="you cannot offboard your own account")
+    if user.role == "admin" and _active_admin_count(db, current.tenant_id) <= 1:
+        raise HTTPException(status_code=400, detail="cannot remove the last active admin")
+
+    user.active = False
+    # Bumping token_version is what actually ends a live session: every JWT carries `tv` and
+    # is checked against it on each request, so this logs them out everywhere at once rather
+    # than waiting for expiry.
+    user.token_version += 1
+
+    # Both kinds of key they could hold: console keys bound by user_id, and capture keys
+    # (browser extension, palivane-connect) bound only by the actor they attribute to.
+    email = (user.email or "").strip().lower()
+    keys = db.query(ApiKey).filter(
+        ApiKey.tenant_id == user.tenant_id,
+        ApiKey.active.is_(True),
+        or_(ApiKey.user_id == user.id,
+            func.lower(ApiKey.actor) == email),
+    ).all()
+    for k in keys:
+        k.active = False
+    db.commit()
+
+    audit_log.record(db, current.tenant_id, current.email, "user.offboard",
+                     target=user.email,
+                     detail={"sessions_revoked": True, "api_keys_revoked": len(keys),
+                             "keys": [k.label or str(k.id) for k in keys]})
+    return {"user": user.to_dict(), "sessions_revoked": True,
+            "api_keys_revoked": len(keys),
+            "note": ("Login disabled, sessions ended and keys revoked. Findings keep this "
+                     "person's attribution on purpose — offboarding is not erasure.")}
 
 
 @router.post("/extension/token")

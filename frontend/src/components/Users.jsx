@@ -6,6 +6,8 @@ export default function Users({ currentUser }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  // Offboard reports what it revoked; a silent success hides whether keys were caught.
+  const [note, setNote] = useState(null);
 
   // add-user form
   const [email, setEmail] = useState("");
@@ -55,12 +57,36 @@ export default function Users({ currentUser }) {
   }
 
   async function patch(u, payload) {
-    setBusyId(u.id); setErr(null);
+    setBusyId(u.id); setErr(null); setNote(null);
     try {
       await api.updateUser(u.id, payload);
       await load();
     } catch (e) {
       // Surface the backend's guardrail message (last-admin, self-lockout, ...).
+      const msg = String(e.message || e).replace(/^\d+:\s*/, "");
+      try { setErr(JSON.parse(msg.slice(msg.indexOf("{"))).detail || msg); }
+      catch { setErr(msg); }
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function offboard(u) {
+    // Irreversible for the keys (revoked stays revoked), so it asks — and says what it does,
+    // because "Offboard" alone does not tell an admin that sessions and keys go too.
+    if (!window.confirm(
+      `Offboard ${u.email}?\n\n` +
+      "• Login disabled\n• Any signed-in session ends immediately\n" +
+      "• Their API keys are revoked, including a browser-extension capture key\n\n" +
+      "Their findings keep their name — this is offboarding, not erasure. " +
+      "You can re-enable login later, but revoked keys stay revoked.")) return;
+    setBusyId(u.id); setErr(null); setNote(null);
+    try {
+      const r = await api.offboardUser(u.id);
+      await load();
+      setNote(`${u.email} offboarded — sessions ended, ${r.api_keys_revoked} `
+              + `${r.api_keys_revoked === 1 ? "key" : "keys"} revoked.`);
+    } catch (e) {
       const msg = String(e.message || e).replace(/^\d+:\s*/, "");
       try { setErr(JSON.parse(msg.slice(msg.indexOf("{"))).detail || msg); }
       catch { setErr(msg); }
@@ -119,6 +145,7 @@ export default function Users({ currentUser }) {
       </form>
 
       {err && <div className="error users-error">{err}</div>}
+      {note && <div className="ok users-note">{note}</div>}
 
       {joinReqs.length > 0 && (
         <div className="panel">
@@ -244,11 +271,25 @@ export default function Users({ currentUser }) {
                         </button>
                       )}
                       {u.active ? (
+                        <>
                         <button className="mini-btn danger" disabled={busy || isSelf || lastAdmin}
                                 title={isSelf ? "You can't disable yourself" : lastAdmin ? "Can't disable the last admin" : ""}
                                 onClick={() => patch(u, { active: false })}>
                           Disable login
                         </button>
+                        {/* Distinct from "Disable login", which stops a NEW sign-in and
+                            nothing else: an issued session keeps working until it expires and
+                            their API keys keep working indefinitely. Offboard closes all
+                            three. Not a delete — findings attribute by email, so the person
+                            stays attributable and the audit trail stays readable. */}
+                        <button className="mini-btn danger" disabled={busy || isSelf || lastAdmin}
+                                title={isSelf ? "You can't offboard yourself"
+                                     : lastAdmin ? "Can't offboard the last admin"
+                                     : "Disable login, end their sessions and revoke their API keys"}
+                                onClick={() => offboard(u)}>
+                          Offboard
+                        </button>
+                        </>
                       ) : (
                         <button className="mini-btn" disabled={busy}
                                 onClick={() => patch(u, { active: true })}>
