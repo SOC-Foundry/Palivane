@@ -3870,7 +3870,14 @@ def stats(current: User = Depends(get_current_user), db: Session = Depends(get_d
     open_needs_review = _count(scoped.filter(Finding.status == "open",
                                              Finding.severity != "benign"))
     ai_attacks = _count(scoped.filter(Finding.ai_generated.is_(True), Finding.attack_intent.is_(True)))
-    high_risk = _count(scoped.filter(Finding.severity.in_(["high", "critical"])))
+    # OPEN high/critical, not every one ever recorded. This sits beside `open` on the
+    # dashboard in the same visual language, so counting a different universe made the two
+    # tiles disagree in a way nothing on screen explained: closing every finding drove one to
+    # zero and left the other at 89, which reads as the console being broken rather than as
+    # two different questions. The all-time census belongs in the report, and anyone who
+    # wants it can filter by severity.
+    high_risk = _count(scoped.filter(Finding.severity.in_(["high", "critical"]),
+                                     Finding.status == "open"))
     # True traffic volume (gateway + sensor/ingest requests metered per minute). Findings
     # no longer track it since benign captures aren't persisted; floor at the findings
     # count for tenants whose only traffic is unmetered manual /api/analyze submissions.
