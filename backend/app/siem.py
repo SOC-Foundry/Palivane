@@ -36,6 +36,10 @@ def _fields(verdict: dict, subject: str, actor: str, surface: str, org: str) -> 
         "top_signals": top_signals(verdict.get("signals"), 3),
         "surface": surface, "subject": subject, "actor": actor,
         "finding_id": verdict.get("finding_id"), "org": org,
+        # A recurrence of a finding somebody had closed. Carried so a SIEM rule can treat
+        # "closed and came back" differently from a first sighting — it is a different fact.
+        "reopened": bool(verdict.get("reopened")),
+        "recurrence": verdict.get("recurrence") or None,
         # Content-origin lineage: the source document the leaked content came from, when
         # matched, so a SIEM correlation rule can pivot on the leaking file/owner.
         "origin": verdict.get("origin") or None,

@@ -73,3 +73,77 @@ def test_run_digests_skips_when_off_or_no_webhook(client, db_factory, monkeypatc
     db.commit()
     assert alerts.run_digests(db) == 0 and sent == []      # off -> not batched
     db.close()
+
+
+# --- recurrences must reach the digest --------------------------------------------------
+#
+# Recurrence folding reuses the first finding's row, so a repeat produces no new row and no
+# new created_at — only `last_seen` moves. Both rollups filtered on created_at, so an event
+# class was reported exactly once, in the window it first appeared, and never again however
+# often it came back. The reopen change makes it worse: a dismissed finding that returns is
+# the thing a digest most needs to carry, and it has an old created_at by definition.
+
+def _recurring(db, tenant_id, severity, created_min_ago, seen_min_ago):
+    f = Finding(tenant_id=tenant_id, surface="ai_usage", subject="recurring leak",
+                sender="dev@acme.com", severity=severity, risk_score=90, status="open",
+                seen_count=7,
+                created_at=datetime.utcnow() - timedelta(minutes=created_min_ago),
+                last_seen=datetime.utcnow() - timedelta(minutes=seen_min_ago))
+    db.add(f); db.commit()
+    return f
+
+
+def test_a_recurrence_of_an_old_finding_is_in_the_digest(client, db_factory, monkeypatch):
+    """Created long before the window, seen inside it. Before the fix: count 0, no send."""
+    sent = []
+    monkeypatch.setattr(alerts, "send_sync", lambda url, payload, **k: sent.append(payload) or True)
+    db = db_factory()
+    t = _tenant(db)
+    t.alert_webhook = "https://hooks.example.com/x"
+    t.alert_min_severity = "high"
+    t.alert_digest = "hourly"
+    t.alert_digest_last = datetime.utcnow() - timedelta(hours=2)
+    _recurring(db, t.id, "critical", created_min_ago=60 * 24 * 30, seen_min_ago=5)
+    db.commit()
+
+    assert alerts.run_digests(db) == 1
+    assert sent[0]["palivane"]["count"] == 1
+    db.close()
+
+
+def test_a_genuinely_quiet_finding_stays_out(client, db_factory, monkeypatch):
+    """The fix must not widen the window to "everything ever recorded" — a finding that has
+    not been seen since the last digest has nothing new to report."""
+    sent = []
+    monkeypatch.setattr(alerts, "send_sync", lambda url, payload, **k: sent.append(payload) or True)
+    db = db_factory()
+    t = _tenant(db)
+    t.alert_webhook = "https://hooks.example.com/x"
+    t.alert_min_severity = "high"
+    t.alert_digest = "hourly"
+    t.alert_digest_last = datetime.utcnow() - timedelta(hours=2)
+    _recurring(db, t.id, "critical", created_min_ago=60 * 24 * 30, seen_min_ago=60 * 24 * 10)
+    db.commit()
+
+    assert alerts.run_digests(db) == 0 and sent == []
+    db.close()
+
+
+def test_a_row_predating_the_last_seen_column_still_counts(client, db_factory, monkeypatch):
+    """NULL last_seen must fall back to created_at rather than dropping out — the reason the
+    filter is an OR and not a coalesce."""
+    sent = []
+    monkeypatch.setattr(alerts, "send_sync", lambda url, payload, **k: sent.append(payload) or True)
+    db = db_factory()
+    t = _tenant(db)
+    t.alert_webhook = "https://hooks.example.com/x"
+    t.alert_min_severity = "high"
+    t.alert_digest = "hourly"
+    t.alert_digest_last = datetime.utcnow() - timedelta(hours=2)
+    f = _mk_finding(db, t.id, "critical", 10)
+    f.last_seen = None
+    db.commit()
+
+    assert alerts.run_digests(db) == 1
+    assert sent[0]["palivane"]["count"] == 1
+    db.close()
