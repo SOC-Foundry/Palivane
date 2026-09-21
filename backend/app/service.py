@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .detectors import AnalysisInput
+from .detectors.base import Surface
 from .engine import engine
 from .models import Finding, Tenant
 from . import crypto
@@ -74,6 +75,15 @@ def _stored_content(content: str, tenant, db) -> str:
 
 
 _ALLOW_LEVEL = {"benign", "low"}  # verdicts below the warn threshold
+
+# Surfaces where every capture is a distinct act at a point in time — a prompt actually
+# submitted, a tool actually called — as opposed to a periodic re-scan of a static artifact
+# (secrets at rest, dependency manifests, IDE extensions, CI workflows, agent rule files),
+# where the same row legitimately re-fires forever and a dismissal must hold. Used by the
+# recurrence fold to decide whether a repeat is news. Deliberately excludes `collab`: the
+# SaaS connectors re-read messages, so a repeat there can be the same message seen twice.
+_LIVE_ACT_SURFACES = {Surface.AI_USAGE, Surface.LLM_IO, Surface.MCP,
+                      Surface.AGENT_TOOLS, Surface.A2A}
 
 
 def _fingerprint(tenant_id, item: AnalysisInput, signals: list[dict]) -> str:
@@ -274,6 +284,24 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             from datetime import datetime, timezone
             prior.seen_count = (prior.seen_count or 1) + 1
             prior.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
+            # A dismissal silences the BACKLOG, not the future. Folding used to carry the
+            # prior row's status unconditionally, so a bulk "clear the queue" quietly muted
+            # every event class the tenant had ever seen: an SSN pasted into an assistant
+            # today bumped seen_count on a dismissed row and never surfaced in the console,
+            # whose default filter is status=open. Silence is indistinguishable from
+            # nothing-happened — the worst failure mode a detection product has.
+            #
+            # The axis is NOT severity alone, it is whether a repeat is a new ACT or the
+            # same artifact seen again. An at-rest scan re-reading the same hardcoded key
+            # every hour is one fact re-observed; dismissing it has to hold or the queue
+            # refills by itself. A prompt submitted, a tool called, a message sent — each
+            # is a distinct thing a person did, and "again" there is genuinely new. So a
+            # dismissal is overridden only for a live act at high/critical: serious, and
+            # happening right now. Everything else stays dismissed.
+            reopened = (prior.status == "dismissed" and verdict.severity in ("high", "critical")
+                        and item.surface in _LIVE_ACT_SURFACES)
+            if reopened:
+                prior.status = "open"
             # Backfill a source discovered since this finding first fired (the at-rest scan
             # that fingerprinted it may have run after the first leak) — and lift its
             # severity to the origin-boosted score (same fingerprint = same base risk).
@@ -284,8 +312,23 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                     prior.severity = verdict.severity
                     prior.recommended_action = verdict.recommended_action
             db.commit()
+            # Alert on the REOPEN. Every other path treats status as something only the
+            # console reads, which is why a reopened finding surfaced nowhere a responder
+            # looks: sinks fire in the new-row branch below, and the digests keyed on
+            # created_at. A finding coming back after somebody closed it is the most
+            # alert-worthy thing the fold produces — it is the one case where an analyst's
+            # own judgement has just been contradicted by events.
+            #
+            # No cooldown column, because the transition is its own rate limit: this fires
+            # on the dismissed -> open EDGE, and the row is open afterwards, so the
+            # hundredth recurrence folds into an open row and sends nothing. Firing again
+            # takes a human dismissing it again — exactly when they would want telling.
+            if reopened:
+                _dispatch_sinks(tenant, {**result, "finding_id": prior.id, "reopened": True,
+                                         "recurrence": prior.seen_count},
+                                item.subject, item.sender, item.surface.value)
             return {"finding_id": prior.id, "recurrence": prior.seen_count,
-                    "judge_used": judge_ran, **result}
+                    "reopened": reopened, "judge_used": judge_ran, **result}
         finding = Finding(
             tenant_id=tenant_id,
             fingerprint=fp,

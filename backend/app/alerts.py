@@ -37,15 +37,42 @@ def _payload(verdict: dict, subject: str, actor: str, surface: str) -> dict:
         origin_line = (f"\n  ↳ from {src} ({origin.get('source', 'at-rest')}, "
                        f"{int(origin.get('containment', 0) * 100)}% match"
                        + (", sensitive source" if origin.get("sensitive") else "") + ")")
-    text = (f":shield: *Palivane {verdict.get('severity', '?').upper()}* — "
+    # A reopen has to announce itself. It arrives looking like any other alert, but the
+    # responder has already seen and closed this one — without the marker the likely
+    # reaction is to close it again, which is how a recurring leak becomes routine.
+    reopened = bool(verdict.get("reopened"))
+    seen = verdict.get("recurrence") or 0
+    head = "REOPENED " if reopened else ""
+    recur = (f"\n  ↻ dismissed earlier and has now happened {seen} time(s) — "
+             "the close did not hold.") if reopened else ""
+    text = (f":shield: *Palivane {head}{verdict.get('severity', '?').upper()}* — "
             f"{subject or 'finding'} ({actor or 'unknown'})\n"
-            f"{cats} · risk {verdict.get('risk_score', '?')} · surface {surface}{lines}{origin_line}")
+            f"{cats} · risk {verdict.get('risk_score', '?')} · surface {surface}"
+            f"{lines}{origin_line}{recur}")
     return {"text": text, **_envelope({
         "severity": verdict.get("severity"), "risk_score": verdict.get("risk_score"),
         "categories": cats, "actor": actor, "surface": surface,
         "finding_id": verdict.get("finding_id"), "top_signals": tops,
-        "origin": origin,
+        "origin": origin, "reopened": reopened, "recurrence": seen or None,
     })}
+
+
+def _active_in_window(since):
+    """Findings that saw activity since `since` — created OR last seen inside the window.
+
+    `created_at > since` alone silently dropped recurrences. Recurrence folding reuses the
+    first finding's row, so the tenth time somebody pastes the same secret there is no new
+    row and no new created_at — only `last_seen` moves. A digest keyed on creation therefore
+    reported an event class exactly once, the window it first appeared, and never again no
+    matter how often it recurred. Worse alongside the reopen change: a dismissed finding that
+    comes back is precisely what a digest exists to carry, and it has an old created_at by
+    definition.
+
+    ORed rather than coalesced so the (tenant_id, last_seen) index stays usable and rows
+    predating the column (NULL last_seen) still match on their created_at.
+    """
+    from .models import Finding
+    return (Finding.last_seen > since) | (Finding.created_at > since)
 
 
 def send_sync(webhook: str, payload: dict, timeout: float = 8.0) -> bool:
@@ -187,7 +214,7 @@ def run_weekly_reports(db, now=None) -> int:
         if not claimed:
             continue
         findings = (db.query(Finding)
-                    .filter(Finding.tenant_id == t.id, Finding.created_at > since).all())
+                    .filter(Finding.tenant_id == t.id, _active_in_window(since)).all())
         by_sev: dict[str, int] = {}
         actors: dict[str, int] = {}
         for f in findings:
@@ -255,7 +282,7 @@ def run_digests(db, now=None) -> int:
             continue
         min_rank = _RANK.get(t.alert_min_severity or "high", 3)
         findings = [f for f in db.query(Finding)
-                    .filter(Finding.tenant_id == t.id, Finding.created_at > since).all()
+                    .filter(Finding.tenant_id == t.id, _active_in_window(since)).all()
                     if _RANK.get(f.severity, 0) >= min_rank]
         if not findings:
             continue
