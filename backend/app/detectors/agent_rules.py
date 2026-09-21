@@ -98,11 +98,30 @@ _EXFIL_DEST = re.compile(
     re.IGNORECASE,
 )
 
-# A rules file instructing the agent to hide its behavior from the user.
+# A rules file instructing the agent to hide its behavior FROM THE PERSON USING IT.
+#
+# Every arm names who is kept in the dark. The two arms that did not — a bare "without
+# telling", a bare "don't tell" — matched ordinary English in vendor-supplied skill docs
+# and reported Anthropic's own bundled skills as backdoors:
+#
+#   "give two outputs to an independent agent without telling it which is which"
+#       — blind A/B evaluation. The thing kept in the dark is a grader, not a person.
+#   "don't tell them to enable something and come back"
+#       — guidance about what advice to give.
+#
+# The second is the subtler one, and it is grammatical: "tell" has two senses, and only
+# one of them can be a backdoor. Telling someone ABOUT something is informing, and
+# withholding it is concealment. Telling someone TO DO something is instructing, and
+# withholding it is just editorial judgement. `(?!\s+to\b)` is what separates them.
+_AUDIENCE = r"(?:the\s+)?(?:user|human|operator|owner|them|anyone)"
 _SECRECY = re.compile(
-    r"do not (?:tell|inform|mention|reveal|notify|alert)\s+the\s+user"
-    r"|without (?:telling|informing|notifying|alerting|the user'?s? knowledge)"
-    r"|don'?t (?:tell|mention|reveal|let the user)"
+    r"do not (?:tell|inform|mention|reveal|notify|alert)\s+" + _AUDIENCE + r"\b(?!\s+to\b)"
+    r"|without (?:telling|informing|notifying|alerting)\s+" + _AUDIENCE + r"\b(?!\s+to\b)"
+    r"|without the user'?s? knowledge"
+    r"|don'?t\s+(?:tell|inform|notify|alert)\s+" + _AUDIENCE + r"\b(?!\s+to\b)"
+    r"|don'?t\s+(?:mention|reveal|disclose)\s+(?:this|it|that|these|those)\b"
+    r"|don'?t\s+(?:mention|reveal|disclose)\b[^\n.]{0,60}?\bto\s+" + _AUDIENCE + r"\b"
+    r"|don'?t\s+let\s+the\s+user\b"
     r"|keep (?:this|it) (?:secret|hidden|between us|to yourself|confidential)"
     r"|(?:silently|secretly|covertly|quietly)\s+(?:run|execute|send|do|perform|fetch|read)"
     r"|do not (?:log|report|surface|show)\s+(?:this|it|these)",
