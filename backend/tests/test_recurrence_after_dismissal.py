@@ -103,3 +103,87 @@ def test_triage_in_progress_is_left_alone(client):
     client.patch(f"/api/findings/{fid}", json={"status": "triaged"})
     _analyze(client)
     assert _row(client, fid)["status"] == "triaged"
+
+
+# --- the reopen has to reach somebody ---------------------------------------------------
+#
+# Reopening the row fixes the console. It fixed nothing for the people who do not sit in the
+# console: sinks fire only in the new-row branch, so a reopen — the one case where an
+# analyst's own judgement has just been contradicted by events — went out to nobody.
+
+def _webhooked(client, db_factory, monkeypatch):
+    """Point the tenant's alert webhook at a list instead of the network."""
+    from app import alerts
+    sent = []
+    monkeypatch.setattr(alerts, "send_sync", lambda url, payload, **k: sent.append(payload) or True)
+    # Real-time alerting is gated on severity AND digest mode; "off" is the real-time mode.
+    db = db_factory()
+    from app.models import Tenant
+    t = db.query(Tenant).first()
+    t.alert_webhook = "https://hooks.example.com/x"
+    t.alert_min_severity = "high"
+    t.alert_digest = "off"
+    db.commit(); db.close()
+    return sent
+
+
+def test_a_reopen_fires_the_alert_sinks(client, db_factory, monkeypatch):
+    sent = _webhooked(client, db_factory, monkeypatch)
+    fid = _analyze(client)["finding_id"]
+    client.patch(f"/api/findings/{fid}", json={"status": "dismissed"})
+    sent.clear()                      # ignore the first-sighting alert
+
+    r = _analyze(client)
+    assert r["reopened"] is True
+    assert len(sent) == 1, "the reopen reached nobody outside the console"
+
+
+def test_the_alert_says_it_is_a_reopen(client, db_factory, monkeypatch):
+    """It arrives looking like any other alert, and the responder has already closed this
+    one. Unmarked, the likely reaction is to close it again."""
+    sent = _webhooked(client, db_factory, monkeypatch)
+    fid = _analyze(client)["finding_id"]
+    client.patch(f"/api/findings/{fid}", json={"status": "dismissed"})
+    sent.clear()
+    _analyze(client)
+
+    text = sent[0]["text"]
+    assert "REOPENED" in text, text
+    assert sent[0]["palivane"]["reopened"] is True
+    assert sent[0]["palivane"]["recurrence"] == 2
+
+
+def test_it_fires_on_the_edge_only_not_on_every_repeat(client, db_factory, monkeypatch):
+    """This is the rate limit, and the reason there is no cooldown column: the transition
+    fires, and the row is open afterwards, so further repeats fold into an open row and
+    send nothing. Ringing the webhook once per recurrence would be its own outage."""
+    sent = _webhooked(client, db_factory, monkeypatch)
+    fid = _analyze(client)["finding_id"]
+    client.patch(f"/api/findings/{fid}", json={"status": "dismissed"})
+    sent.clear()
+
+    _analyze(client)                  # dismissed -> open: one alert
+    for _ in range(5):
+        _analyze(client)              # already open: silent
+    assert len(sent) == 1, f"fired {len(sent)} times for one reopen"
+
+
+def test_a_recurrence_that_stays_dismissed_alerts_nobody(client, raw_client, db_factory,
+                                                         monkeypatch):
+    """The at-rest half. No reopen, so no alert — otherwise dismissing a re-scanned fixture
+    secret would page somebody on every scan pass."""
+    sent = _webhooked(client, db_factory, monkeypatch)
+    key = client.post("/api/apikeys",
+                      json={"label": "scan2", "actor": "dev@acme.com"}).json()["token"]
+    body = {"host": "laptop-1", "record": True,
+            "items": [{"path": "/home/dev/.aws/credentials", "masked": "AKIA****************",
+                       "secret_types": ["aws_access_key"], "world_readable": True,
+                       "verified": True, "source": "palivane-secrets"}]}
+    raw_client.post("/api/scan/secrets", json=body, headers={"X-Palivane-Token": key})
+    rows = client.get("/api/findings", params={"limit": 500}).json()["findings"]
+    fid = next(f["id"] for f in rows if f["surface"] == "secrets")
+    client.patch(f"/api/findings/{fid}", json={"status": "dismissed"})
+    sent.clear()
+
+    raw_client.post("/api/scan/secrets", json=body, headers={"X-Palivane-Token": key})
+    assert sent == []

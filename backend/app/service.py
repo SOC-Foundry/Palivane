@@ -298,8 +298,9 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             # is a distinct thing a person did, and "again" there is genuinely new. So a
             # dismissal is overridden only for a live act at high/critical: serious, and
             # happening right now. Everything else stays dismissed.
-            if (prior.status == "dismissed" and verdict.severity in ("high", "critical")
-                    and item.surface in _LIVE_ACT_SURFACES):
+            reopened = (prior.status == "dismissed" and verdict.severity in ("high", "critical")
+                        and item.surface in _LIVE_ACT_SURFACES)
+            if reopened:
                 prior.status = "open"
             # Backfill a source discovered since this finding first fired (the at-rest scan
             # that fingerprinted it may have run after the first leak) — and lift its
@@ -311,8 +312,23 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                     prior.severity = verdict.severity
                     prior.recommended_action = verdict.recommended_action
             db.commit()
+            # Alert on the REOPEN. Every other path treats status as something only the
+            # console reads, which is why a reopened finding surfaced nowhere a responder
+            # looks: sinks fire in the new-row branch below, and the digests keyed on
+            # created_at. A finding coming back after somebody closed it is the most
+            # alert-worthy thing the fold produces — it is the one case where an analyst's
+            # own judgement has just been contradicted by events.
+            #
+            # No cooldown column, because the transition is its own rate limit: this fires
+            # on the dismissed -> open EDGE, and the row is open afterwards, so the
+            # hundredth recurrence folds into an open row and sends nothing. Firing again
+            # takes a human dismissing it again — exactly when they would want telling.
+            if reopened:
+                _dispatch_sinks(tenant, {**result, "finding_id": prior.id, "reopened": True,
+                                         "recurrence": prior.seen_count},
+                                item.subject, item.sender, item.surface.value)
             return {"finding_id": prior.id, "recurrence": prior.seen_count,
-                    "judge_used": judge_ran, **result}
+                    "reopened": reopened, "judge_used": judge_ran, **result}
         finding = Finding(
             tenant_id=tenant_id,
             fingerprint=fp,
