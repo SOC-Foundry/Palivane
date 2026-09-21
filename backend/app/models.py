@@ -1001,7 +1001,11 @@ class SensorHeartbeat(Base):
     tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=True)
     actor = Column(String(320), default="")   # who the sensor reports as (key actor/user)
     plane = Column(String(32), default="")    # ai-usage | mcp | posture | ci
-    tool = Column(String(64), default="")     # claude-code, cursor, claude.ai, …
+    # NAMESPACE VARIES BY PLANE — this is not one vocabulary, and reading it as one was a
+    # bug. ai-usage: the assistant captured ("claude-code"). mcp: the tool CALLED
+    # ("ToolSearch"). posture: the scan kind ("ide-extensions"). ci: a repo. a2a: the
+    # sending agent. Always filter by plane before comparing this against anything.
+    tool = Column(String(64), default="")
     first_seen = Column(DateTime, default=_utcnow)
     last_seen = Column(DateTime, default=_utcnow, index=True)
     count = Column(Integer, default=0)

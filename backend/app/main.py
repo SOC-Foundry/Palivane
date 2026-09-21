@@ -3654,9 +3654,21 @@ def hooked_tools(x_palivane_token: str = Header(default=""), db: Session = Depen
     tenant_id, actor = _ingest_auth(x_palivane_token, db)
     window = max(1, settings.hook_defer_window_min)
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=window)
+    # Scoped to the ai-usage plane, because `tool` holds a different NAMESPACE per plane.
+    # On ai-usage it is the assistant whose prompt was captured ("claude-code") — the
+    # namespace the proxy compares its own User-Agent against. On mcp it is the tool being
+    # CALLED ("ToolSearch", "list_findings"); on posture it is the scan kind
+    # ("ide-extensions", "agent-rules"); on ci, a repo. Unscoped, this returned all of them
+    # mixed together — ["ToolSearch","ai_tool_inventory","claude-code",…] — where only
+    # "claude-code" could ever match. Cosmetically that is junk in an API response. The
+    # reason it matters is that it is a deference gate: every extra name is a string that,
+    # if it ever collided with a client UA, would silently switch off proxy capture for
+    # that client. An MCP server's tool names are attacker-influenced in a way the plane
+    # itself is not, so the set this answers with must not grow with them.
     q = (db.query(SensorHeartbeat.tool)
          .filter(SensorHeartbeat.tenant_id == tenant_id,
                  SensorHeartbeat.client == "palivane-hook",
+                 SensorHeartbeat.plane == "ai-usage",
                  SensorHeartbeat.last_seen >= since))
     if actor:
         q = q.filter(func.lower(SensorHeartbeat.actor) == actor.strip().lower())

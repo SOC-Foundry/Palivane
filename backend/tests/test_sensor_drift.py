@@ -133,13 +133,16 @@ def test_benign_counts_as_open_but_not_as_work(client, db_factory):
 
 # --- /api/capture/hooked: liveness, not installation ---------------------------------------
 
-def _hb(db_factory, tenant_id, actor, tool, client, minutes_ago=0):
+def _hb(db_factory, tenant_id, actor, tool, client, minutes_ago=0, plane="ai-usage"):
+    # `plane` is a parameter because it is load-bearing, not scenery: SensorHeartbeat.tool
+    # means something different on each plane. Defaulting it and never varying it is what
+    # let the mixed-namespace bug below through.
     from datetime import datetime, timedelta, timezone
     from app.models import SensorHeartbeat
     db = db_factory()
     t = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=minutes_ago)
     db.add(SensorHeartbeat(tenant_id=tenant_id, actor=actor, tool=tool, client=client,
-                           plane="ai-usage", first_seen=t, last_seen=t, count=1))
+                           plane=plane, first_seen=t, last_seen=t, count=1))
     db.commit(); db.close()
 
 
@@ -178,3 +181,48 @@ def test_another_persons_hook_does_not_silence_yours(client, raw_client, db_fact
     _hb(db_factory, me["tenant_id"], "someone-else@acme.com", "claude-code", "palivane-hook", 1)
     r = raw_client.get("/api/capture/hooked", headers={"X-Palivane-Token": key})
     assert r.json()["tools"] == []
+
+
+def test_an_mcp_tool_name_is_not_an_assistant_name(client, raw_client, db_factory):
+    """SensorHeartbeat.tool is a different namespace on every plane: on ai-usage it is the
+    assistant captured ("claude-code"), on mcp it is the tool CALLED ("ToolSearch"). This
+    endpoint answered with all of them mixed together.
+
+    It reads as cosmetic and is not. This is a deference gate — the proxy stops capturing a
+    client when that client's name comes back here — so every stray name is a string that
+    would switch off capture if it ever collided with a client UA. MCP tool names are
+    supplied by whatever server the user connected, which makes the unscoped version a set
+    an outside party can grow."""
+    key = client.post("/api/apikeys",
+                      json={"label": "k5", "actor": "mcp@acme.com"}).json()["token"]
+    me = client.get("/api/auth/me").json()["user"]
+    for name in ("ToolSearch", "list_findings", "ai_tool_inventory"):
+        _hb(db_factory, me["tenant_id"], "mcp@acme.com", name, "palivane-hook", 1, plane="mcp")
+    r = raw_client.get("/api/capture/hooked", headers={"X-Palivane-Token": key})
+    assert r.json()["tools"] == [], "MCP tool names leaked into the deference set"
+
+
+def test_a_posture_scan_does_not_read_as_a_live_prompt_hook(client, raw_client, db_factory):
+    """Same bug, different plane. A posture scan writes its scan KIND into `tool`; running
+    one must not imply a prompt hook is live for anything."""
+    key = client.post("/api/apikeys",
+                      json={"label": "k6", "actor": "posture@acme.com"}).json()["token"]
+    me = client.get("/api/auth/me").json()["user"]
+    _hb(db_factory, me["tenant_id"], "posture@acme.com", "agent-rules", "palivane-hook",
+        1, plane="posture")
+    r = raw_client.get("/api/capture/hooked", headers={"X-Palivane-Token": key})
+    assert r.json()["tools"] == []
+
+
+def test_the_real_hook_still_gets_through_the_scoping(client, raw_client, db_factory):
+    """The scoping must not be so tight that deference never happens — that would restore
+    the duplicate capture this whole mechanism exists to stop. Noise alongside the real
+    entry is the realistic case: one person runs MCP tools and submits prompts."""
+    key = client.post("/api/apikeys",
+                      json={"label": "k7", "actor": "both@acme.com"}).json()["token"]
+    me = client.get("/api/auth/me").json()["user"]
+    _hb(db_factory, me["tenant_id"], "both@acme.com", "ToolSearch", "palivane-hook", 1,
+        plane="mcp")
+    _hb(db_factory, me["tenant_id"], "both@acme.com", "claude-code", "palivane-hook", 1)
+    r = raw_client.get("/api/capture/hooked", headers={"X-Palivane-Token": key})
+    assert r.json()["tools"] == ["claude-code"]
