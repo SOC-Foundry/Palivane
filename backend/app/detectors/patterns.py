@@ -221,6 +221,11 @@ def custom_patterns() -> list[tuple[str, _TimedPattern]]:
 # what stops .env.example / tutorial snippets from false-positiving as a secret leak.
 _PLACEHOLDER_VALUE_RE = re.compile(
     r"(?i)^(?:x{3,}|\*{3,}|\.{3,}|changeme|change[_-]?me|your[_-].*|my[_-].*|some[_-].*|"
+    # Separator-free doc placeholders. The `my[_-].*` arm above needs a separator, so the
+    # `qpdf --password=mypassword` line in Anthropic's own pdf skill scored a high-severity
+    # credential leak (production, 2026-09-22). No real credential is literally "mypassword".
+    r"(?:my|your|our|the)(?:password|passwd|pass|secret|key|token|apikey)|"
+    r"(?:user|owner|admin|root|test|demo|example|sample)(?:password|passwd|pass)|"
     r"placeholder|example|examplekey|sample|todo|tbd|fixme|none|null|nil|test|testing|"
     r"dummy|fake|redacted|secret|password|passwd|<[^>]+>|\$?\{[^}]+\}|\$[a-z_]+|env\.[a-z_.]+)$")
 
