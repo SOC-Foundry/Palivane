@@ -2656,27 +2656,29 @@ def get_finding(finding_id: int, current: User = Depends(get_current_user),
 def investigate_finding(finding_id: int, current: User = Depends(get_current_user),
                         db: Session = Depends(get_db)):
     """Read-only analyst agent: investigate a finding and RECOMMEND an action — it never
-    applies one (acting is a separate, approval-gated step). Uses the tenant's LLM providers
-    (or BYOK), the same as the judge, so it inherits the judge opt-out, BYOK, and plan gate."""
+    applies one (acting is a separate, approval-gated step). Runs on the tenant's OWN LLM key
+    (BYOK) and nothing else — unlike the judge there is no operator-provider fallback, so the
+    finding context an admin sends out goes to their provider account, never Palivane's."""
     from . import analyst, audit_log
-    from .service import resolve_judge_backends
+    from .service import resolve_analyst_backends
     tenant = db.get(Tenant, current.tenant_id)
-    # Opt-in: OFF by default. Investigating sends the finding's redacted context to the LLM
-    # provider, so it stays off until an admin turns it on in Settings.
+    # Opt-in: OFF by default. Investigating sends the finding's redacted context to the org's
+    # own LLM provider, so it stays off until an admin turns it on in Settings.
     if not getattr(tenant, "analyst_enabled", False):
         raise HTTPException(
             status_code=403,
             detail="the AI analyst is off. An admin can enable it in Settings; investigating "
-                   "sends a finding's redacted context to your configured LLM provider.")
-    backends = resolve_judge_backends(tenant)
-    if backends == [] or (backends is None and not engine.judge_enabled):
+                   "sends a finding's redacted context to your org's own LLM provider.")
+    backends = resolve_analyst_backends(tenant)
+    if not backends:
         raise HTTPException(
             status_code=400,
-            detail="the analyst needs an LLM provider (the same one the judge uses); none is "
-                   "configured or enabled for this tenant")
+            detail="the analyst runs on your org's own LLM key only. Add one under Settings → "
+                   "LLM judge, bring your own key. There is no fallback to Palivane's provider "
+                   "account: a finding's context never leaves to a model vendor of ours.")
     try:
         report = analyst.investigate(engine, db, current.tenant_id, finding_id,
-                                     judge_backends=(backends or None))
+                                     judge_backends=backends)
     except LookupError:
         raise HTTPException(status_code=404, detail="finding not found")
     if report is None:
