@@ -103,7 +103,26 @@ def _resolve_api_key(token: str, db: Session) -> Principal:
         db.commit()
     except Exception:
         db.rollback()
-    return Principal(tenant_id=key.tenant_id, actor=key.actor or key.label or "api-key")
+    return Principal(tenant_id=key.tenant_id, actor=_key_identity(key, db))
+
+
+def _key_identity(key: ApiKey, db: Session) -> str:
+    """Who findings captured with this key belong to.
+
+    `key.label` is emphatically NOT that. It is a human-facing name for the key ("new token",
+    "laptop"), and falling back to it wrote display strings into an identity field that drives
+    the per-user scan log, per-user policy overrides and offboarding — one person showed up as
+    three actors, one of them called "new token" (production, 2026-09-22). A console key is
+    bound to the user who minted it, so ask that binding before giving up; an ingest key with
+    no actor has no identity to report, and "api-key" says so honestly.
+    """
+    if key.actor:
+        return key.actor
+    if key.user_id:
+        email = db.query(User.email).filter(User.id == key.user_id).scalar()
+        if email:
+            return email
+    return "api-key"
 
 
 def get_gateway_principal(request: Request, db: Session = Depends(get_db)) -> Principal:
