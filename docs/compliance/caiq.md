@@ -66,7 +66,7 @@ headcount-based separation of duties. Our SOC 2 Type II program is underway.
 | Tenant isolation? | Application-level scoping **plus** Postgres Row-Level Security enforced in the database on every tenant-scoped table. |
 | Data residency? | us-central1 (US). Self-hosted deployments keep all data in customer infrastructure. |
 | Customer data deletion/export? | Self-serve full JSON export and self-serve complete org deletion; backups age out ≤ 14 days. DPA presented in-product with versioned acceptance. |
-| Is customer data used for training? | No. The optional LLM judge (Anthropic, per-org opt-out) is API-only; Anthropic does not train on API data. |
+| Is customer data used for training? | No. Two optional features send content to an LLM, both off unless enabled. (1) The **LLM judge** (Anthropic, per-org opt-out) is API-only; Anthropic does not train on API data. (2) The **read-only analyst** sends a finding's redacted context (evidence labels, not raw content) on an admin's explicit click — **BYOK-only**, to the org's own provider account, with no fallback to Palivane's, so it adds no subprocessor and no data reaches a model vendor of ours. |
 
 ## GRC. Governance, Risk & Compliance
 

@@ -49,6 +49,7 @@ const FLOWS = [
   ["SaaS connectors — Workspace, M365, Slack, Salesforce", "Read-only API access under credentials you grant and can revoke from the console at any time."],
   ["Warehouse AI — Snowflake Cortex, Databricks Model Serving", "Read-only queries against the platform's own logs, under a credential you issue and can revoke. We read records of AI calls your warehouse already kept; nothing is added to it."],
   ["Optional LLM judge", "Off unless you enable it. When on, the content it reviews goes to a model provider — your own account if you supply a key, and otherwise ours, which is why Anthropic appears in our subprocessor list. Detection without the judge is deterministic and involves no AI service at all."],
+  ["Optional AI analyst", "Off unless you enable it, and then it runs only when someone clicks Investigate on one finding. It sends that finding's redacted context — evidence labels like “AWS access key id”, not the key — to your own provider account. Unlike the judge there is no fallback to ours: no key of yours, no analyst. It recommends an action and never applies one."],
 ];
 
 const RETENTION = [
