@@ -135,6 +135,23 @@ _NON_EXECUTING_BUILTINS = frozenset({
 def _parse_allow(value) -> set[str]:
     items = value if isinstance(value, (list, tuple, set)) else str(value or "").split(",")
     return {str(s).strip().lower() for s in items if str(s).strip()}
+def _match_context(m: re.Match, before: int = 44, after: int = 60) -> str:
+    """Evidence that shows WHY a description matched: the offending phrase plus a little text
+    either side. It used to be `desc[:120]` — the OPENING of the description, which for a long
+    tool description has nothing to do with the match. Reviewers got a critical finding whose
+    evidence read like ordinary product copy and no way to see the trigger short of fetching
+    the server's manifest by hand; one such finding recurred 165 times without being triaged.
+
+    Sliced from `m.string`, so a match found on the normalized (de-obfuscated) view quotes that
+    view rather than mis-slicing the original at shifted offsets.
+    """
+    s = m.string
+    lo, hi = max(0, m.start() - before), min(len(s), m.end() + after)
+    context = " ".join(s[lo:hi].split())
+    return (f"matched \u201c{m.group(0)[:60]}\u201d in: "
+            + ("\u2026" if lo else "") + context + ("\u2026" if hi < len(s) else ""))
+
+
 
 
 def _server_allowed(server: str, allow: set[str]) -> bool:
@@ -239,15 +256,18 @@ class MCPGuardDetector:
         # 4) Tool poisoning — injection hidden in a tool description (scan a normalized view
         # so homoglyph / zero-width / fullwidth obfuscation of the directive can't hide it).
         for desc in descriptions:
-            if isinstance(desc, str) and (_TOOL_POISON.search(desc)
-                                          or _TOOL_POISON.search(normalize_for_match(desc))):
-                signals.append(Signal(
-                    category=Category.TOOL_POISONING,
-                    title="Poisoned MCP tool description",
-                    detail="An advertised MCP tool description contains hidden instructions "
-                           "aimed at the model (tool-poisoning / prompt injection).",
-                    weight=0.9, confidence=0.85, detector=self.name,
-                    evidence=desc[:120],
-                ))
+            if not isinstance(desc, str):
+                continue
+            m = _TOOL_POISON.search(desc) or _TOOL_POISON.search(normalize_for_match(desc))
+            if not m:
+                continue
+            signals.append(Signal(
+                category=Category.TOOL_POISONING,
+                title="Poisoned MCP tool description",
+                detail="An advertised MCP tool description contains hidden instructions "
+                       "aimed at the model (tool-poisoning / prompt injection).",
+                weight=0.9, confidence=0.85, detector=self.name,
+                evidence=_match_context(m),
+            ))
 
         return signals
