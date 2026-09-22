@@ -85,30 +85,74 @@ function RiskDistribution({ bySeverity, total }) {
   );
 }
 
+// Every surface the engine can label a finding with, in a fixed order. Two product fronts
+// first, then the agentic planes, then the endpoint/supply-chain ones. Declared rather than
+// derived so the rows keep their position as counts move, and so a surface at zero still
+// says "nothing here" instead of vanishing.
+const SURFACES = [
+  ["llm_io", "Protect our AI", "prompt injection · jailbreak · exfiltration"],
+  ["ai_usage", "Shadow-AI governance", "secrets · PII · source code"],
+  ["agent_tools", "Assistant tool-use", "Bash · Edit · Read — the agent's own tools"],
+  ["mcp", "MCP", "agentic tool calls, local stdio or remote"],
+  ["agent_rules", "Agent rules files", "CLAUDE.md · .cursorrules · SKILL.md"],
+  ["session", "Session correlation", "attack chains across an actor's activity"],
+  ["a2a", "Agent-to-agent", "one agent's output feeding another"],
+  ["oversharing", "Need-to-know", "an LLM answering outside the allowed group"],
+  ["collab", "Collaboration content", "Slack and other AI-readable messages"],
+  ["deps", "Dependencies", "supply-chain risk in package manifests"],
+  ["ide", "IDE extensions", "unapproved or known-bad editor plugins"],
+  ["ci", "CI runners", "workflow posture and AI agents in CI"],
+  ["secrets", "Credentials at rest", "secrets on the device itself"],
+  ["device", "Device health", "capture-plane collisions and coverage gaps"],
+];
+const HEADLINE = new Set(["llm_io", "ai_usage"]);   // the two fronts: shown even at zero
+
 function SurfaceSplit({ bySurface }) {
-  const llm = bySurface?.llm_io || 0;
-  const ai = bySurface?.ai_usage || 0;
-  const max = Math.max(llm, ai, 1);
-  const rows = [
-    { key: "llm_io", label: "Protect our AI", sub: "prompt injection · jailbreak · exfiltration", n: llm, cls: "atk" },
-    { key: "ai_usage", label: "Shadow-AI governance", sub: "secrets · PII · source code", n: ai, cls: "ai" },
-  ];
+  const counts = bySurface || {};
+  // Share of ALL findings, not of the largest row. Normalizing to the max meant whichever
+  // surface led was pinned at 100% whatever its count — with only two rows that bar could
+  // never move, which is exactly how it read.
+  const total = Object.values(counts).reduce((a, b) => a + (b || 0), 0);
+  const known = new Set(SURFACES.map(([k]) => k));
+  const other = Object.entries(counts)
+    .filter(([k, n]) => !known.has(k) && n > 0)
+    .reduce((a, [, n]) => a + n, 0);
+
+  // Sorted by count, so the panel reads top-down like the bar chart it is and an empty
+  // headline surface sits at the bottom instead of leading with a zero. Safe to sort here
+  // because every bar shares one hue — nothing about the colour is tied to row position.
+  const rows = SURFACES
+    .filter(([k]) => HEADLINE.has(k) || (counts[k] || 0) > 0)
+    .map(([key, label, sub]) => ({ key, label, sub, n: counts[key] || 0 }))
+    .sort((a, b) => b.n - a.n);
+  // A surface the engine grows and this list has not caught up with lands here rather than
+  // disappearing from a panel that claims to break down the whole.
+  if (other > 0) rows.push({ key: "other", label: "Other", sub: "surfaces not broken out above", n: other });
+
   return (
     <div className="panel chart-panel">
       <h2>By surface</h2>
       <ul className="surface-list">
-        {rows.map((r) => (
-          <li key={r.key} className="surface-row">
-            <div className="surface-head">
-              <span className="surface-label">{r.label}</span>
-              <span className="surface-count">{r.n}</span>
-            </div>
-            <div className="surface-track">
-              <span className={`surface-fill fill-${r.cls}`} style={{ width: `${(r.n / max) * 100}%` }} />
-            </div>
-            <div className="surface-sub">{r.sub}</div>
-          </li>
-        ))}
+        {rows.map((r) => {
+          const pct = total ? (r.n / total) * 100 : 0;
+          return (
+            <li key={r.key} className="surface-row"
+                title={`${r.label}: ${r.n} of ${total} (${pct.toFixed(pct < 10 ? 1 : 0)}%)`}>
+              <div className="surface-head">
+                <span className="surface-label">{r.label}</span>
+                <span className="surface-count">{r.n}</span>
+              </div>
+              {/* One hue for every bar. Surfaces are nominal categories of a single measure,
+                  so length and label already carry identity — a hue per row would re-encode
+                  that, and would collide with the severity palette in the panel beside it,
+                  where the same red means "critical". */}
+              <div className="surface-track">
+                <span className="surface-fill" style={{ width: `${pct}%` }} />
+              </div>
+              <div className="surface-sub">{r.sub}</div>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

@@ -239,7 +239,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); paddi
 @keyframes pulse { 0%,100% { opacity: 0.35; } 50% { opacity: 0.65; } }
 
 /* ===== Charts ===== */
-.charts-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; margin-bottom: 22px; }
+/* align-items: start — the default `stretch` sized both panels to the taller one, so once
+   "By surface" listed every surface instead of two, Risk distribution grew ~370px of empty
+   panel below its legend. Same dead-space problem as the note below, different axis. */
+.charts-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; margin-bottom: 22px; align-items: start; }
 /* Three panels in a two-column grid left the second cell of row two empty, a full panel
    of dead space above the fold that pushed the findings list down. Coverage is a short
    list, so it reads across the full width rather than leaving a hole beside it. */
@@ -266,15 +269,19 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); paddi
 .dist-name { color: var(--muted); }
 .dist-count { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
 
-.surface-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
-.surface-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.surface-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.surface-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
 .surface-label { font-size: 13.5px; font-weight: 600; color: var(--text); }
-.surface-count { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; color: #ffffff; }
-.surface-track { height: 9px; border-radius: 999px; background: var(--panel-2); overflow: hidden; border: 1px solid var(--border-soft); }
-.surface-fill { display: block; height: 100%; border-radius: 999px; transition: width 0.4s ease; min-width: 2px; }
-.fill-atk { background: var(--crit);  }
-.fill-ai { background: var(--accent-soft);  }
-.surface-sub { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+.surface-count { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; color: #ffffff; }
+.surface-track { height: 9px; border-radius: 0 4px 4px 0; background: var(--panel-2); overflow: hidden; border: 1px solid var(--border-soft); }
+/* Square at the baseline, 4px rounded at the data end — the bar grows from a fixed origin,
+   so rounding both ends draws a pill that reads as a token rather than a measured length.
+   --accent, not --accent-soft: the latter is a BACKGROUND tint (hover states, panel fills)
+   and sits at 1.02:1 against this track, so the bar rendered its full width in a colour
+   indistinguishable from the empty groove. --accent clears the OKLCH dark band and 3:1. */
+.surface-fill { display: block; height: 100%; border-radius: 0 4px 4px 0; background: var(--accent); transition: width 0.4s ease; }
+.surface-row:hover .surface-fill { background: var(--accent-2); }
+.surface-sub { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
 
 /* ===== Layout ===== */
 .main-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 18px; align-items: start; }
