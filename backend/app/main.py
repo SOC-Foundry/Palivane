@@ -1012,6 +1012,29 @@ def _ingest_auth(x_palivane_token: str, db: Session) -> tuple[int | None, str]:
     return _ingest_tenant_id(db), ""
 
 
+
+def _attributed_actor(claimed: str, default_actor: str) -> str:
+    """Who a token-gated capture belongs to, given what the client claimed and what the key
+    proves.
+
+    A client self-declares `user` because one fleet-wide ingest key serves many people, so a
+    claim normally wins — that is how an MDM-deployed key attributes per person at all. It
+    must not win when it is a bare OS username and the key already carries a verified email:
+    `palivane-posture` sends getpass.getuser(), which split one human across `davidk` and
+    `david@acme.com`, gave the scan log two rows for one person, and meant a per-user policy
+    override or an offboard keyed on the email missed everything the username captured.
+
+    An email claim still wins, so fleet keys are unaffected. Only an unverified local
+    username loses, and only to an identity the server established at sign-in.
+    """
+    claimed = (claimed or "").strip()
+    if not claimed:
+        return default_actor or ""
+    if "@" not in claimed and "@" in (default_actor or ""):
+        return default_actor
+    return claimed
+
+
 def _naive_now():
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -1179,7 +1202,7 @@ def ingest_ai_usage(
     Returns an action the client enforces: allow / warn / block."""
     tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
-    actor = body.user or default_actor
+    actor = _attributed_actor(body.user, default_actor)
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     if body.parse_miss:
         # The client recognised the event and got nothing out of it — vendor shape drift.
@@ -1349,7 +1372,7 @@ def ingest_justify(
     _enforce_rate(db, tenant_id)
     if not _tenant_self_justify(tenant_id, db):
         raise HTTPException(status_code=403, detail="self-justification is not enabled")
-    actor = (body.user or default_actor or "").strip()
+    actor = _attributed_actor(body.user, default_actor)
     row = (db.query(Finding).filter(Finding.tenant_id == tenant_id,
                                     Finding.id == body.finding_id).first())
     # 404 (not 403) on any mismatch: whether someone ELSE's finding exists is not
@@ -1397,7 +1420,7 @@ def exception_request(
         if not owns:
             raise HTTPException(status_code=404, detail="finding not found")
     audit_log.record(
-        db, tenant_id, body.user or default_actor, "exception_requested",
+        db, tenant_id, _attributed_actor(body.user, default_actor), "exception_requested",
         target=body.destination or "",
         detail={"finding_id": body.finding_id, "reason": body.reason[:500],
                 "categories": body.categories[:8]})
@@ -1406,7 +1429,7 @@ def exception_request(
     from .models import ExceptionRecord
     row = ExceptionRecord(
         tenant_id=tenant_id, finding_id=body.finding_id,
-        actor=(body.user or default_actor)[:320],
+        actor=_attributed_actor(body.user, default_actor)[:320],
         destination=body.destination[:2048],
         categories=",".join(dict.fromkeys(c.strip() for c in body.categories[:8] if c.strip())),
         reason=body.reason[:2000])
@@ -1733,7 +1756,8 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
         from . import oidc
         ema = oidc.inspect_ema_token(body.authorization,
                                      trusted_issuer=_tenant_sso_issuer(tenant_id, db))
-    actor = ema.get("email") or ema.get("sub") or body.user or default_actor
+    actor = (ema.get("email") or ema.get("sub")
+             or _attributed_actor(body.user, default_actor))
     # Synthesize the scannable text: tool arguments, resource URI, and advertised tool
     # descriptions — so shadow-AI catches secrets/PII in args and the finding has context.
     content = "\n".join(p for p in [
@@ -1817,11 +1841,13 @@ def ingest_mcp(
     _enforce_rate(db, tenant_id)
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     if body.parse_miss:
-        _record_heartbeat(db, tenant_id, body.user or default_actor, "mcp", body.tool,
+        _record_heartbeat(db, tenant_id, _attributed_actor(body.user, default_actor),
+                          "mcp", body.tool,
                           user_agent, parse_miss=True)
         return {"action": "allow", "risk_score": 0, "severity": "none", "signals": [],
                 "finding_id": None, "parse_miss": True}
-    _record_heartbeat(db, tenant_id, body.user or default_actor, "mcp", body.tool, user_agent)
+    _record_heartbeat(db, tenant_id, _attributed_actor(body.user, default_actor),
+                      "mcp", body.tool, user_agent)
     attested = _agent_attestation(x_palivane_token, x_palivane_agent, tenant_id, db)
     return _score_mcp(body, tenant_id, default_actor, _tenant_mcp_allow(tenant_id, db),
                       _tenant_mcp_block_severity(tenant_id, db), db, agent=agent,
@@ -2281,7 +2307,7 @@ def scan_agent_config(
     sensor / cursor hook."""
     tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
-    actor = body.user or default_actor
+    actor = _attributed_actor(body.user, default_actor)
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     _record_heartbeat(db, tenant_id, actor, "posture", body.tool or "agent-config", user_agent)
     item = AnalysisInput(content=body.content, sender=actor,
@@ -2314,7 +2340,7 @@ def scan_device_posture(
     plane can't see (WSL/containers). Token-gated for the posture sensor."""
     tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
-    actor = body.user or default_actor
+    actor = _attributed_actor(body.user, default_actor)
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     _record_heartbeat(db, tenant_id, actor, "posture", "device-posture", user_agent)
     item = AnalysisInput(content=body.content, sender=actor, channel="device-posture",
@@ -2345,7 +2371,7 @@ def scan_agent_rules(
     are a distinct attack surface. Token-gated for the posture sensor / git plane."""
     tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
-    actor = body.user or default_actor
+    actor = _attributed_actor(body.user, default_actor)
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     _record_heartbeat(db, tenant_id, actor, "posture", "agent-rules", user_agent)
     item = AnalysisInput(
@@ -2656,27 +2682,29 @@ def get_finding(finding_id: int, current: User = Depends(get_current_user),
 def investigate_finding(finding_id: int, current: User = Depends(get_current_user),
                         db: Session = Depends(get_db)):
     """Read-only analyst agent: investigate a finding and RECOMMEND an action — it never
-    applies one (acting is a separate, approval-gated step). Uses the tenant's LLM providers
-    (or BYOK), the same as the judge, so it inherits the judge opt-out, BYOK, and plan gate."""
+    applies one (acting is a separate, approval-gated step). Runs on the tenant's OWN LLM key
+    (BYOK) and nothing else — unlike the judge there is no operator-provider fallback, so the
+    finding context an admin sends out goes to their provider account, never Palivane's."""
     from . import analyst, audit_log
-    from .service import resolve_judge_backends
+    from .service import resolve_analyst_backends
     tenant = db.get(Tenant, current.tenant_id)
-    # Opt-in: OFF by default. Investigating sends the finding's redacted context to the LLM
-    # provider, so it stays off until an admin turns it on in Settings.
+    # Opt-in: OFF by default. Investigating sends the finding's redacted context to the org's
+    # own LLM provider, so it stays off until an admin turns it on in Settings.
     if not getattr(tenant, "analyst_enabled", False):
         raise HTTPException(
             status_code=403,
             detail="the AI analyst is off. An admin can enable it in Settings; investigating "
-                   "sends a finding's redacted context to your configured LLM provider.")
-    backends = resolve_judge_backends(tenant)
-    if backends == [] or (backends is None and not engine.judge_enabled):
+                   "sends a finding's redacted context to your org's own LLM provider.")
+    backends = resolve_analyst_backends(tenant)
+    if not backends:
         raise HTTPException(
             status_code=400,
-            detail="the analyst needs an LLM provider (the same one the judge uses); none is "
-                   "configured or enabled for this tenant")
+            detail="the analyst runs on your org's own LLM key only. Add one under Settings → "
+                   "LLM judge, bring your own key. There is no fallback to Palivane's provider "
+                   "account: a finding's context never leaves to a model vendor of ours.")
     try:
         report = analyst.investigate(engine, db, current.tenant_id, finding_id,
-                                     judge_backends=(backends or None))
+                                     judge_backends=backends)
     except LookupError:
         raise HTTPException(status_code=404, detail="finding not found")
     if report is None:

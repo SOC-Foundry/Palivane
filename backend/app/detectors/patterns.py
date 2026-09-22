@@ -221,6 +221,11 @@ def custom_patterns() -> list[tuple[str, _TimedPattern]]:
 # what stops .env.example / tutorial snippets from false-positiving as a secret leak.
 _PLACEHOLDER_VALUE_RE = re.compile(
     r"(?i)^(?:x{3,}|\*{3,}|\.{3,}|changeme|change[_-]?me|your[_-].*|my[_-].*|some[_-].*|"
+    # Separator-free doc placeholders. The `my[_-].*` arm above needs a separator, so the
+    # `qpdf --password=mypassword` line in Anthropic's own pdf skill scored a high-severity
+    # credential leak (production, 2026-09-22). No real credential is literally "mypassword".
+    r"(?:my|your|our|the)(?:password|passwd|pass|secret|key|token|apikey)|"
+    r"(?:user|owner|admin|root|test|demo|example|sample)(?:password|passwd|pass)|"
     r"placeholder|example|examplekey|sample|todo|tbd|fixme|none|null|nil|test|testing|"
     r"dummy|fake|redacted|secret|password|passwd|<[^>]+>|\$?\{[^}]+\}|\$[a-z_]+|env\.[a-z_.]+)$")
 
@@ -301,18 +306,38 @@ def only_generic_secrets(labels: list[str]) -> bool:
 def find_secrets(text: str) -> list[str]:
     """Return the labels of every secret pattern that matches `text` — canonical formats,
     their separator-stripped (evasion) variants, and any custom patterns. Skips placeholder
-    assignments (`API_KEY=your-key-here`) so config templates don't false-positive."""
+    assignments (`API_KEY=your-key-here`) so config templates don't false-positive, and skips
+    an evasion-variant hit that lands inside a base64 attachment (see below)."""
     out: list[str] = []
-    for label, rx in SECRET_PATTERNS + EVASION_PATTERNS + custom_patterns():
-        for m in rx.finditer(text):
-            if _DUMMY_RUN_RE.search(m.group(0)):
-                continue   # masked/placeholder stand-in (sk_test_xxxx…), not a real key
-            if label == "Credential assignment" and _is_placeholder_assignment(m.group(0)):
-                continue
-            if label == "Connection string credential" and _is_placeholder_conn(m.group(0)):
-                continue
-            out.append(label)
-            break   # one confirmed match per label is enough
+    media: list[tuple[int, int]] | None = None     # lazy: only an evasion hit has to pay for it
+    for patterns, evasion in ((SECRET_PATTERNS, False), (EVASION_PATTERNS, True),
+                              (custom_patterns(), False)):
+        for label, rx in patterns:
+            for m in rx.finditer(text):
+                if _DUMMY_RUN_RE.search(m.group(0)):
+                    continue   # masked/placeholder stand-in (sk_test_xxxx…), not a real key
+                if label == "Credential assignment" and _is_placeholder_assignment(m.group(0)):
+                    continue
+                if label == "Connection string credential" and _is_placeholder_conn(m.group(0)):
+                    continue
+                # Stripping the separator leaves a 3–4 character literal and a permissive
+                # class: `gh[pousr][A-Za-z0-9]{30,}` hits roughly 11 times per megabyte of
+                # base64 BY CHANCE. Measured 2026-09-22 on 8 MiB of random bytes containing no
+                # credential at all: the GitHub and npm variants fired on 8 of 8 blobs. In
+                # production that made three critical findings out of pasted screenshots — and
+                # labelled them "likely bypass", which accuses the user of evading DLP.
+                #
+                # So an evasion variant does not get to match inside a recognised attachment.
+                # The canonical patterns are exempt: they still carry their separator (`ghp_`,
+                # `npm_`), which is specific enough to survive a blob, so a real key embedded
+                # in one is still caught.
+                if evasion:
+                    if media is None:
+                        media = _media_blob_spans(text)
+                    if any(s <= m.start() < e for s, e in media):
+                        continue
+                out.append(label)
+                break   # one confirmed match per label is enough
     return out
 
 
@@ -384,6 +409,81 @@ _NONSECRET_BLOB_RE = re.compile(
     # so cert files don't read as high-entropy tokens.
     r"|-----BEGIN (?:CERTIFICATE|[A-Z ]*PUBLIC KEY)-----[A-Za-z0-9+/=\s]*?-----END (?:CERTIFICATE|[A-Z ]*PUBLIC KEY)-----",
     re.IGNORECASE)
+
+
+# A base64 run long enough to be a file, whose decoded head carries a known container magic.
+# These arrive with no `data:` URI to match on: claude.ai and the Messages/Gemini APIs carry an
+# attachment as a JSON field — {"type":"base64","media_type":"image/jpeg","data":"/9j/4AAQ…"} —
+# so the blob rule above never fires and the entropy scan shreds the body into "tokens". One
+# screenshot pasted into a chat produced 21 separate high-severity findings that way (measured
+# 2026-09-22), every one of them carrying the same JPEG quantization-table and ICC-profile
+# fragments — an evidence string that repeats byte-identically across findings is a file
+# format, not a credential.
+#
+# Scope is deliberately the Tier-2 entropy heuristic only. The Tier-1 named-format patterns
+# still scan straight through a media blob, so hiding `ghp_…` inside something shaped like a
+# JPEG buys an attacker nothing.
+_B64_RUN_RE = re.compile(r"[A-Za-z0-9+/]{128,}={0,2}")
+_MEDIA_MAGIC = (
+    b"\xff\xd8\xff",              # JPEG
+    b"\x89PNG\r\n\x1a\n",        # PNG
+    b"GIF87a", b"GIF89a",          # GIF
+    b"%PDF-",                      # PDF
+    b"RIFF",                       # WebP / WAV (container)
+    b"PK\x03\x04",                # ZIP — docx/xlsx/pptx and friends
+    b"II*\x00", b"MM\x00*",        # TIFF
+    b"\x00\x00\x01\x00",          # ICO
+    b"OggS",                       # Ogg
+    b"\x1a\x45\xdf\xa3",          # Matroska / WebM
+    b"fLaC",
+)
+
+
+def _media_blob_spans(text: str) -> list[tuple[int, int]]:
+    """Spans of long base64 runs that decode to a known media/archive container. Only the head
+    is decoded — enough for the magic, not the whole attachment, so a multi-megabyte paste
+    costs a few bytes rather than a full decode."""
+    spans: list[tuple[int, int]] = []
+    for m in _B64_RUN_RE.finditer(text):
+        head = m.group(0)[:16]
+        head = head[:len(head) - len(head) % 4]      # whole base64 quanta only
+        try:
+            raw = base64.b64decode(head, validate=True)
+        except (binascii.Error, ValueError):
+            continue
+        if raw.startswith(_MEDIA_MAGIC):
+            spans.append((m.start(), m.end()))
+    return spans
+
+
+# What a stripped attachment leaves behind. Deliberately boring: no colon, no vendor name, no
+# token-shaped run, nothing any detector keys on.
+ATTACHMENT_PLACEHOLDER = "[attachment omitted]"
+
+
+def strip_media_blobs(text: str) -> str:
+    """`text` with every recognised base64 attachment replaced by ATTACHMENT_PLACEHOLDER.
+
+    The engine calls this once, upstream of the detector chain, because scanning an attachment
+    body as if it were prose is a whole FP class rather than one detector's bug: base64
+    contains `NDA` between two digits (confidential-material marker), scores p(code)=1.00 on
+    the source-code classifier, and carries chance hits for any short-prefix credential
+    pattern. Masking per detector fixed those one at a time and never converged.
+
+    NOT a security boundary on its own: the engine runs the Tier-1 secret pass over the
+    ORIGINAL bytes first and hands the result down, so wrapping a real `ghp_…` in something
+    shaped like a JPEG still gets caught. See Engine._without_attachments.
+    """
+    spans = _media_blob_spans(text)
+    if not spans:
+        return text
+    out, end = [], 0
+    for start, stop in spans:                 # finditer spans: ordered, non-overlapping
+        out.append(text[end:start])
+        out.append(ATTACHMENT_PLACEHOLDER)
+        end = stop
+    out.append(text[end:])
+    return "".join(out)
 
 
 def _shannon_entropy(s: str) -> float:
@@ -510,6 +610,7 @@ def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
     masked = [(m.start(), m.end()) for m in _NONSECRET_BLOB_RE.finditer(text)]
+    masked += _media_blob_spans(text)      # base64 attachments carried as a bare JSON field
     for m in _TOKEN_CANDIDATE_RE.finditer(text):
         tok = m.group(0)
         if tok in seen or _HEX_RE.match(tok):

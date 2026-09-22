@@ -693,7 +693,9 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <p className="muted" style={{ marginTop: -6 }}>
             Lets a person click Investigate on a finding to get an AI-written summary and a
             recommended action. It sends the finding's redacted context (not the raw prompt) to
-            your configured LLM provider, so it stays off until you turn it on here.
+            <strong> your own</strong> LLM provider — it runs on the key you set below under
+            "LLM judge, bring your own key" and has no fallback to ours, so without that key
+            Investigate stays unavailable even with this on.
           </p>
           {/* The old label read "redacted + encrypted per-tenant", which promised more than
               the server necessarily does: service.py redacts, then returns the text as-is

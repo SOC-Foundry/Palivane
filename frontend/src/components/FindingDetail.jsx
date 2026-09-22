@@ -180,8 +180,8 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
           </button>
           <span className="muted" style={{ fontSize: 12 }}>
             {analystEnabled
-              ? "Reads the finding + this actor's history and recommends an action. It never applies it."
-              : "Off by default. An admin can enable the AI analyst in Settings — it sends the finding's redacted context to your LLM provider."}
+              ? "Reads the finding + this actor's history and recommends an action. It never applies it. Runs on your org's own LLM key."
+              : "Off by default. An admin can enable the AI analyst in Settings — it sends the finding's redacted context to your org's own LLM provider (your key, never ours)."}
           </span>
         </div>
         {investigateErr && <div className="error" style={{ marginTop: 10 }}>{investigateErr}</div>}

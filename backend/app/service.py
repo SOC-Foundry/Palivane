@@ -106,9 +106,9 @@ def _fold_recurrence(db: Session, tenant_id, fp: str) -> Finding | None:
 
 
 def resolve_judge_backends(tenant):
-    """Which LLM backends a tenant may use for judge-powered features (the judge, the analyst
-    agent). Mirrors run_analysis's resolution so both paths honor the same opt-out, BYOK, and
-    plan gate:
+    """Which LLM backends a tenant may use for the LLM judge. Mirrors run_analysis's
+    resolution so both paths honor the same opt-out, BYOK, and plan gate. The analyst agent
+    does NOT use this — see resolve_analyst_backends, which has no operator fallback:
       []   -> none available (tenant opted out, plan lacks the feature, nothing configured)
       None -> use the operator's global providers
       list -> the tenant's own BYOK backends
@@ -128,6 +128,32 @@ def resolve_judge_backends(tenant):
         if not has_feature(tenant, "judge"):
             return []
     return None                   # operator's global providers
+
+
+def resolve_analyst_backends(tenant):
+    """Which LLM backends the read-only analyst agent may use: the tenant's OWN key, or none.
+
+    Deliberately narrower than resolve_judge_backends, which falls back to the operator's
+    global providers. The judge can do that because it is disclosed as such (Anthropic is on
+    the subprocessor list, scoped to the judge, with a per-org opt-out). The analyst cannot:
+    an admin clicks Investigate having been told the context goes to "your LLM provider", and
+    for any tenant without a key of their own that would have meant *Palivane's* provider
+    account. An AI-security product forwarding a customer's findings to its own LLM vendor is
+    exactly the thing this product exists to catch, so there is no fallback here.
+
+      []   -> no key of their own, or opted out of judge-powered features
+      list -> the tenant's own BYOK backends
+    """
+    if tenant is None or tenant.judge_enabled is False:      # consent opt-out wins
+        return []
+    if not getattr(tenant, "judge_byok_key_encrypted", ""):
+        return []
+    from .detectors.llm_judge import byok_backends
+    # No plan gate: BYOK is exempt in the judge path too — they are paying their own provider.
+    return byok_backends(tenant.judge_byok_provider or "",
+                         crypto.unseal_secret(tenant.judge_byok_key_encrypted,
+                                              crypto.tenant_dek_readonly(tenant)),
+                         tenant.judge_byok_model or "")
 
 
 def run_analysis(item: AnalysisInput, persist: bool, db: Session,

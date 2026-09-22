@@ -9,9 +9,11 @@ a recommendation is a separate, approval-gated step — deliberately so, because
 `unsafe_autonomy` detector flags coding agents set to act without confirmation, and this agent
 must be governed the way we tell customers to govern theirs.
 
-Identity/providers mirror the LLM judge exactly: the operator's configured providers, or a
-tenant's BYOK key. It sends the redacted finding context (to_summary — evidence snippets, not
-raw decrypted content), the same data-sharing posture enabling the judge already accepts.
+Providers: the tenant's OWN key (BYOK) and nothing else. The judge may fall back to the
+operator's global providers because that is disclosed and opt-out-able; the analyst may not,
+because an admin pressing Investigate is told the context goes to *their* provider — see
+service.resolve_analyst_backends. It sends the redacted finding context (to_summary — evidence
+snippets, not raw decrypted content), never to a model vendor of Palivane's.
 """
 from __future__ import annotations
 
@@ -55,7 +57,9 @@ class InvestigationReport(BaseModel):
 
 def _context(db: Session, tenant_id: int, finding_id: int):
     """(finding_summary, peer_summaries) or None if the finding isn't this tenant's. Uses
-    to_summary() — redacted evidence, never raw decrypted content."""
+    to_summary() — redacted evidence, never raw decrypted content. Evidence is label-only for
+    secrets/PII/PHI (the detectors emit the pattern's name, not its match) and truncated for
+    the entropy heuristic, so what leaves names the kind of thing found, not the thing."""
     row = db.get(Finding, finding_id)
     if not row or row.tenant_id != tenant_id:
         return None
