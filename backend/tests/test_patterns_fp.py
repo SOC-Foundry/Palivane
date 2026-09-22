@@ -326,3 +326,17 @@ def test_strip_media_blobs_leaves_ordinary_text_alone():
     from app.detectors.patterns import strip_media_blobs
     text = "nothing to see here, just prose with a sha256-abc hash"
     assert strip_media_blobs(text) is text
+
+
+# --- Doc placeholders written without a separator ----------------------------------------
+
+def test_separatorless_doc_placeholders_not_credentials():
+    for line in ("qpdf --password=mypassword --decrypt in.pdf out.pdf",
+                 'writer.encrypt("userpassword", "ownerpassword")',
+                 "password=yourpassword", "api_key=mykey"):
+        assert find_secrets(line) == [], line
+
+
+def test_real_assignment_values_still_flagged_after_placeholder_widening():
+    for line in ("password=Tr0ub4dor&3xKcd", "DB_PASSWORD=hunter2correct"):
+        assert "Credential assignment" in find_secrets(line), line

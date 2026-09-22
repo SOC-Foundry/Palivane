@@ -109,32 +109,32 @@ _TOOL_POISON = re.compile(
     r"|(?:reveal|expose|leak|exfiltrat\w*|print|dump|output|return|send|repeat)\s+"
     r"(?:the\s+|your\s+|its\s+|my\s+|full\s+|entire\s+)*system\s+prompt"
     r"|<important>|do\s+not\s+(?:tell|inform|mention|reveal)\s+(?:the\s+)?user"
-    r"|(?:silently|secretly|without\s+telling)"
+    # Concealment needs an object, the same way the agent-rules secrecy check was bound to an
+    # audience in #254. A bare "silently"/"without telling" matched ordinary tool-doc English
+    # — "unsupported elements are silently dropped", "give it to a grader without telling it
+    # which is which" — and scored Claude's own built-in tool descriptions critical, 201
+    # recurrences deep (production, 2026-09-22). Either the adverb governs an exfiltrating
+    # verb, or the concealment names a person being kept in the dark.
+    r"|(?:silently|secretly|covertly|quietly)\s+(?:\w+\s+){0,3}?"
+    r"(?:send|upload|post|forward|transmit|exfiltrat\w*|leak|cop(?:y|ie)|email|include|attach|"
+    r"read|fetch|collect|record|log|report)\w{0,4}\b"
+    r"|without\s+(?:telling|informing|notifying|alerting|asking)\s+(?:the\s+|your\s+|any\s+)?"
+    r"(?:user|human|operator|caller|owner|developer|person|admin)"
     r"|exfiltrat|send\s+(?:the\s+)?(?:contents?|secrets?|keys?|env|file)\s+to"
     # Read/attach a CREDENTIAL FILE. Narrowed to file paths: bare "secret"/"api_key" as targets
     # matched benign — often DEFENSIVE — description copy ("do not include api_key values").
     r"|(?:read|include|attach|append|cat|upload|send)\s+[^\n]{0,40}"
     r"(?:\.env\b|\.ssh\b|id_rsa|~/\.aws|/\.aws/|\.pem\b|credentials\.(?:json|ya?ml|txt))"
-    r"|before\s+(?:using|calling|running)\s+this\s+tool,?\s+(?:you\s+must|first|always)",
+    # A "before using this tool…" prelude is how real tool docs open ("Before calling this
+    # tool, you must first authenticate"), so the prelude alone is not evidence. It flags when
+    # what follows is the kind of thing a poisoned description asks for.
+    r"|before\s+(?:using|calling|running)\s+this\s+tool,?\s+(?:you\s+must\s+|first\s+|always\s+)"
+    r"(?:\w+\s+){0,4}?(?:read|open|cat|fetch|send|upload|forward|exfiltrat\w*|ignore|"
+    r"disregard|reveal|print|dump|include|attach)\w{0,4}\b",
     re.IGNORECASE,
 )
 
 
-# Claude Code built-ins that cannot spawn a shell. Their arguments routinely CONTAIN command
-# text (a file being read or written), which is not the same as running it. Bash is absent on
-# purpose — it is the one that executes.
-# Built-ins whose arguments are dominated by file CONTENT rather than by what they act on.
-# Read is absent on purpose: the hook sends its path as `resource` and no content at all.
-_CONTENT_BEARING_BUILTINS = frozenset({"Edit", "Write", "NotebookEdit"})
-
-_NON_EXECUTING_BUILTINS = frozenset({
-    "Read", "Edit", "Write", "NotebookEdit", "Glob", "Grep", "TodoWrite", "WebFetch",
-})
-
-
-def _parse_allow(value) -> set[str]:
-    items = value if isinstance(value, (list, tuple, set)) else str(value or "").split(",")
-    return {str(s).strip().lower() for s in items if str(s).strip()}
 def _match_context(m: re.Match, before: int = 44, after: int = 60) -> str:
     """Evidence that shows WHY a description matched: the offending phrase plus a little text
     either side. It used to be `desc[:120]` — the OPENING of the description, which for a long
@@ -152,6 +152,21 @@ def _match_context(m: re.Match, before: int = 44, after: int = 60) -> str:
             + ("\u2026" if lo else "") + context + ("\u2026" if hi < len(s) else ""))
 
 
+# Claude Code built-ins that cannot spawn a shell. Their arguments routinely CONTAIN command
+# text (a file being read or written), which is not the same as running it. Bash is absent on
+# purpose — it is the one that executes.
+# Built-ins whose arguments are dominated by file CONTENT rather than by what they act on.
+# Read is absent on purpose: the hook sends its path as `resource` and no content at all.
+_CONTENT_BEARING_BUILTINS = frozenset({"Edit", "Write", "NotebookEdit"})
+
+_NON_EXECUTING_BUILTINS = frozenset({
+    "Read", "Edit", "Write", "NotebookEdit", "Glob", "Grep", "TodoWrite", "WebFetch",
+})
+
+
+def _parse_allow(value) -> set[str]:
+    items = value if isinstance(value, (list, tuple, set)) else str(value or "").split(",")
+    return {str(s).strip().lower() for s in items if str(s).strip()}
 
 
 def _server_allowed(server: str, allow: set[str]) -> bool:

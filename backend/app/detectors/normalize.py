@@ -55,14 +55,24 @@ def command_leet_fold(text: str) -> str:
     return normalize_for_match(text).translate(_CMD_LEET_TABLE)
 
 
+def normalize_keep_lines(text: str) -> str:
+    """normalize_for_match without the whitespace collapse: same NFKC / zero-width /
+    homoglyph folding, but line structure survives. For patterns that must anchor to the
+    start of a line — a forged `system:` turn marker is an injection, the tail of
+    "a three-level loading system:" is not, and only the line break tells them apart."""
+    if not text:
+        return text
+    t = unicodedata.normalize("NFKC", text)
+    t = _ZERO_WIDTH.sub("", t)
+    return t.translate(_HOMOGLYPH_TABLE)
+
+
 def normalize_for_match(text: str) -> str:
     """Return a folded view of `text` for keyword matching (NFKC, no zero-width,
     homoglyphs→Latin, collapsed whitespace)."""
     if not text:
         return text
-    t = unicodedata.normalize("NFKC", text)
-    t = _ZERO_WIDTH.sub("", t)
-    t = t.translate(_HOMOGLYPH_TABLE)
+    t = normalize_keep_lines(text)
     # Collapse ANY whitespace run (incl. newlines/tabs/nbsp) to a single space, so a keyword
     # split across lines ("ignore\nall\nprevious") still matches the phrase lists.
     t = re.sub(r"\s+", " ", t)
