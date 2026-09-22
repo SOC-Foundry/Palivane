@@ -219,3 +219,110 @@ def test_bare_base64_without_a_secret_label_is_not_an_aws_secret():
                  "keep this secret, please do not share it with anyone at all",
                  "kind: Secret\nmetadata:\n  name: my-app-credentials-config"):
         assert "AWS secret access key" not in find_secrets(text), text
+
+
+# --- Tier-2 entropy: a base64 attachment is a file, not a pile of credentials ------------
+# One screenshot pasted into claude.ai produced 21 separate high-severity findings, because
+# the transports carry an image as a bare JSON field (no `data:` URI for the blob rule to
+# match) and the entropy scan shredded the body into "tokens". Every finding quoted the same
+# JPEG/ICC fragments — evidence that repeats byte-identically across findings is a file
+# format. Paired with recall guards: the mask must not become a place to hide a key.
+
+def _b64(raw: bytes) -> str:
+    import base64
+    return base64.b64encode(raw).decode()
+
+
+_JPEG = (b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+         b"\xff\xdb\x00C\x00" + bytes(range(256)) * 8)
+_PNG = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + bytes(range(256)) * 8
+
+
+def test_json_carried_base64_image_is_not_a_pile_of_secrets():
+    import json
+    for media, raw in (("image/jpeg", _JPEG), ("image/png", _PNG)):
+        payload = json.dumps({"type": "image",
+                              "source": {"type": "base64", "media_type": media,
+                                         "data": _b64(raw)}})
+        assert find_high_entropy_tokens(payload) == [], media
+
+
+def test_data_uri_image_still_masked():
+    # The pre-existing blob rule keeps working; the new magic-based span is additive.
+    assert find_high_entropy_tokens("data:image/jpeg;base64," + _b64(_JPEG)) == []
+
+
+def test_pdf_and_zip_attachments_not_flagged():
+    for raw in (b"%PDF-1.7\n" + bytes(range(256)) * 8,
+                b"PK\x03\x04\x14\x00" + bytes(range(256)) * 8):
+        assert find_high_entropy_tokens(_b64(raw)) == []
+
+
+def test_secret_next_to_an_attachment_still_flagged():
+    # Recall: masking the attachment must not mask the message it travels in.
+    import json
+    payload = json.dumps({"source": {"type": "base64", "data": _b64(_JPEG)},
+                          "note": "deploy with xQ3mZp8Wd2Lk9Rt4Vb7Nc1Hj5Fs6Gy0A"})
+    assert any(t.startswith("xQ3mZp8Wd2") for t in find_high_entropy_tokens(payload))
+
+
+def test_base64_without_a_media_magic_is_still_scanned():
+    # Recall: only a run whose decoded head IS a known container gets masked. A long random
+    # base64 blob — the shape of an actual exfiltrated key — must not ride through by length.
+    import base64
+    blob = base64.b64encode(bytes((i * 37 + 11) % 256 for i in range(400))).decode()
+    assert find_high_entropy_tokens(blob), "recall regression: bare base64 no longer scanned"
+
+
+def test_named_format_secret_hidden_inside_a_fake_image_still_caught():
+    # The mask is scoped to the Tier-2 entropy heuristic on purpose: wrapping a key in
+    # something shaped like a JPEG must not buy an attacker anything at Tier 1.
+    payload = _b64(_JPEG) + " ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
+    assert any("GitHub" in lbl for lbl in find_secrets(payload)), find_secrets(payload)
+
+
+# --- Tier-1 evasion variants: a separator-stripped pattern is chance-prone in base64 -------
+# `gh[pousr][A-Za-z0-9]{30,}` is four literal characters and a permissive class, so it hits by
+# chance roughly 11 times per megabyte of base64. On 8 MiB of random bytes with no credential
+# in them at all, the GitHub and npm variants fired on 8 of 8 blobs (measured 2026-09-22); in
+# production that turned pasted screenshots into critical findings labelled "likely bypass".
+
+def test_evasion_variants_do_not_fire_inside_an_attachment():
+    import json
+    payload = json.dumps({"source": {"type": "base64", "media_type": "image/jpeg",
+                                     "data": _b64(_JPEG + bytes(range(256)) * 400)}})
+    assert [lbl for lbl in find_secrets(payload) if "separator stripped" in lbl] == []
+
+
+def test_canonical_key_inside_the_same_payload_still_caught():
+    # Recall: the exemption is for the EVASION tier only. A canonical token keeps its
+    # separator, which is specific enough to survive a blob, so it must still fire.
+    import json
+    payload = json.dumps({"source": {"type": "base64", "data": _b64(_JPEG)},
+                          "note": "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7"})
+    assert "GitHub token" in find_secrets(payload)
+
+
+def test_separator_stripped_token_in_prose_still_flagged():
+    # Recall: the evasion tier exists to catch a real DLP bypass, and outside an attachment
+    # it still does.
+    labels = find_secrets("here you go: ghpA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7 use it")
+    assert any("separator stripped" in lbl for lbl in labels), labels
+
+
+# --- Upstream attachment stripping -------------------------------------------------------
+
+def test_strip_media_blobs_replaces_attachment_with_a_placeholder():
+    import json
+    from app.detectors.patterns import ATTACHMENT_PLACEHOLDER, strip_media_blobs
+    payload = json.dumps({"source": {"media_type": "image/jpeg", "data": _b64(_JPEG)},
+                          "note": "see attached"})
+    out = strip_media_blobs(payload)
+    assert ATTACHMENT_PLACEHOLDER in out and "see attached" in out
+    assert len(out) < len(payload) // 4
+
+
+def test_strip_media_blobs_leaves_ordinary_text_alone():
+    from app.detectors.patterns import strip_media_blobs
+    text = "nothing to see here, just prose with a sha256-abc hash"
+    assert strip_media_blobs(text) is text
