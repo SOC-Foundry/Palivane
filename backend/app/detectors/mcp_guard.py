@@ -109,15 +109,47 @@ _TOOL_POISON = re.compile(
     r"|(?:reveal|expose|leak|exfiltrat\w*|print|dump|output|return|send|repeat)\s+"
     r"(?:the\s+|your\s+|its\s+|my\s+|full\s+|entire\s+)*system\s+prompt"
     r"|<important>|do\s+not\s+(?:tell|inform|mention|reveal)\s+(?:the\s+)?user"
-    r"|(?:silently|secretly|without\s+telling)"
+    # Concealment needs an object, the same way the agent-rules secrecy check was bound to an
+    # audience in #254. A bare "silently"/"without telling" matched ordinary tool-doc English
+    # — "unsupported elements are silently dropped", "give it to a grader without telling it
+    # which is which" — and scored Claude's own built-in tool descriptions critical, 201
+    # recurrences deep (production, 2026-09-22). Either the adverb governs an exfiltrating
+    # verb, or the concealment names a person being kept in the dark.
+    r"|(?:silently|secretly|covertly|quietly)\s+(?:\w+\s+){0,3}?"
+    r"(?:send|upload|post|forward|transmit|exfiltrat\w*|leak|cop(?:y|ie)|email|include|attach|"
+    r"read|fetch|collect|record|log|report)\w{0,4}\b"
+    r"|without\s+(?:telling|informing|notifying|alerting|asking)\s+(?:the\s+|your\s+|any\s+)?"
+    r"(?:user|human|operator|caller|owner|developer|person|admin)"
     r"|exfiltrat|send\s+(?:the\s+)?(?:contents?|secrets?|keys?|env|file)\s+to"
     # Read/attach a CREDENTIAL FILE. Narrowed to file paths: bare "secret"/"api_key" as targets
     # matched benign — often DEFENSIVE — description copy ("do not include api_key values").
     r"|(?:read|include|attach|append|cat|upload|send)\s+[^\n]{0,40}"
     r"(?:\.env\b|\.ssh\b|id_rsa|~/\.aws|/\.aws/|\.pem\b|credentials\.(?:json|ya?ml|txt))"
-    r"|before\s+(?:using|calling|running)\s+this\s+tool,?\s+(?:you\s+must|first|always)",
+    # A "before using this tool…" prelude is how real tool docs open ("Before calling this
+    # tool, you must first authenticate"), so the prelude alone is not evidence. It flags when
+    # what follows is the kind of thing a poisoned description asks for.
+    r"|before\s+(?:using|calling|running)\s+this\s+tool,?\s+(?:you\s+must\s+|first\s+|always\s+)"
+    r"(?:\w+\s+){0,4}?(?:read|open|cat|fetch|send|upload|forward|exfiltrat\w*|ignore|"
+    r"disregard|reveal|print|dump|include|attach)\w{0,4}\b",
     re.IGNORECASE,
 )
+
+
+def _match_context(m: re.Match, before: int = 44, after: int = 60) -> str:
+    """Evidence that shows WHY a description matched: the offending phrase plus a little text
+    either side. It used to be `desc[:120]` — the OPENING of the description, which for a long
+    tool description has nothing to do with the match. Reviewers got a critical finding whose
+    evidence read like ordinary product copy and no way to see the trigger short of fetching
+    the server's manifest by hand; one such finding recurred 165 times without being triaged.
+
+    Sliced from `m.string`, so a match found on the normalized (de-obfuscated) view quotes that
+    view rather than mis-slicing the original at shifted offsets.
+    """
+    s = m.string
+    lo, hi = max(0, m.start() - before), min(len(s), m.end() + after)
+    context = " ".join(s[lo:hi].split())
+    return (f"matched \u201c{m.group(0)[:60]}\u201d in: "
+            + ("\u2026" if lo else "") + context + ("\u2026" if hi < len(s) else ""))
 
 
 # Claude Code built-ins that cannot spawn a shell. Their arguments routinely CONTAIN command
@@ -239,15 +271,18 @@ class MCPGuardDetector:
         # 4) Tool poisoning — injection hidden in a tool description (scan a normalized view
         # so homoglyph / zero-width / fullwidth obfuscation of the directive can't hide it).
         for desc in descriptions:
-            if isinstance(desc, str) and (_TOOL_POISON.search(desc)
-                                          or _TOOL_POISON.search(normalize_for_match(desc))):
-                signals.append(Signal(
-                    category=Category.TOOL_POISONING,
-                    title="Poisoned MCP tool description",
-                    detail="An advertised MCP tool description contains hidden instructions "
-                           "aimed at the model (tool-poisoning / prompt injection).",
-                    weight=0.9, confidence=0.85, detector=self.name,
-                    evidence=desc[:120],
-                ))
+            if not isinstance(desc, str):
+                continue
+            m = _TOOL_POISON.search(desc) or _TOOL_POISON.search(normalize_for_match(desc))
+            if not m:
+                continue
+            signals.append(Signal(
+                category=Category.TOOL_POISONING,
+                title="Poisoned MCP tool description",
+                detail="An advertised MCP tool description contains hidden instructions "
+                       "aimed at the model (tool-poisoning / prompt injection).",
+                weight=0.9, confidence=0.85, detector=self.name,
+                evidence=_match_context(m),
+            ))
 
         return signals
