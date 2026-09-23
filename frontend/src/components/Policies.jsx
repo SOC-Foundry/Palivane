@@ -126,13 +126,13 @@ export default function Policies({ tenant, onTenant }) {
   }
   const checkLabel = (key) => (cat?.checks.find((c) => c.key === key)?.label || key);
 
-  if (!cat) return <div className="connect"><p className="muted">Loading policies...</p></div>;
+  if (!cat) return <div className="connect policies-page"><p className="muted">Loading policies...</p></div>;
 
   const total = cat.checks.length;
   const on = cat.checks.filter((c) => c.enabled).length;
 
   return (
-    <div className="connect">
+    <div className="connect policies-page">
       <div className="content-head">
         <div>
           <h1 className="page-title">Policies</h1>
