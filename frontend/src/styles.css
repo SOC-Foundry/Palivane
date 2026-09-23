@@ -183,7 +183,12 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); paddi
 .signout:hover { border-color: rgba(244, 63, 94, 0.4); color: var(--crit); background: rgba(244, 63, 94, 0.06); }
 
 /* ===== Content ===== */
-.content { padding: 32px 40px 64px; max-width: 1360px; width: 100%; margin: 0 auto; }
+/* The zoom steps below scale the whole UI on large monitors, but this cap is in CSS
+   pixels, so an ultrawide got bigger text inside the SAME narrow column and a third
+   of the screen went to dead margin either side. 1760 keeps a readable measure while
+   letting the two-column grid actually use the display. Below ~1800px the viewport
+   is the constraint, so nothing changes on a laptop. */
+.content { padding: 32px 40px 64px; max-width: 1760px; width: 100%; margin: 0 auto; }
 .content-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 26px; gap: 18px; }
 .page-title {
   font-size: 24px; font-weight: 800; margin: 0; letter-spacing: -0.4px;
@@ -233,7 +238,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); paddi
 .stat-label { font-size: 11px; color: var(--muted); margin-top: 5px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700; }
 .stat-danger .stat-icon { color: var(--crit); background: rgba(244, 63, 94, 0.12); border-color: rgba(244, 63, 94, 0.3); }
 .stat-danger .stat-value { color: var(--crit); }
-.stat-warn .stat-icon { color: var(--ai); background: var(--ai); border-color: var(--ai); }
+/* Same shape as .stat-danger above: the tint carries the tone, the glyph stays legible
+   on top of it. This set color AND background to --ai, so the target icon was drawn
+   in exactly its own backdrop and the tile read as a solid purple chip. */
+.stat-warn .stat-icon { color: var(--ai); background: rgba(154, 107, 212, 0.12); border-color: rgba(154, 107, 212, 0.3); }
 .stat-warn .stat-value { color: var(--ai); }
 .stat-skeleton { height: 80px; opacity: 0.5; animation: pulse 1.3s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: 0.35; } 50% { opacity: 0.65; } }
@@ -242,11 +250,15 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); paddi
 /* align-items: start — the default `stretch` sized both panels to the taller one, so once
    "By surface" listed every surface instead of two, Risk distribution grew ~370px of empty
    panel below its legend. Same dead-space problem as the note below, different axis. */
-.charts-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; margin-bottom: 22px; align-items: start; }
-/* Three panels in a two-column grid left the second cell of row two empty, a full panel
-   of dead space above the fold that pushed the findings list down. Coverage is a short
-   list, so it reads across the full width rather than leaving a hole beside it. */
-.setup-health { grid-column: 1 / -1; }
+/* By surface is far the tallest of the three panels, so a plain two-column row left an
+   L-shaped void under Risk distribution and pushed Coverage into a full-width band of its
+   own below. Stacking the two short panels beside the tall one squares the row off and
+   removes that band, which is most of the height this view used to waste. */
+.charts-grid {
+  display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; margin-bottom: 22px;
+  align-items: start;
+}
+.charts-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .setup-health .plane-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 32px; }
 .chart-panel h2 { margin-bottom: 16px; }
 .chart-empty { color: var(--muted); font-size: 13px; margin: 8px 0; }
@@ -283,6 +295,13 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); paddi
 .surface-row:hover .surface-fill { background: var(--accent-2); }
 .surface-sub { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
 
+/* A zero surface drew a full-width empty groove, which reads as a bar that failed to load
+   rather than a measured nothing. Collapse the track to a baseline rule and recede the row
+   so the eye skips it on the way to the surfaces that actually have traffic. */
+.surface-row.is-zero { opacity: 0.5; }
+.surface-row.is-zero .surface-track { height: 3px; background: var(--border-soft); border: 0; }
+.surface-row.is-zero .surface-count { color: var(--muted); }
+
 /* ===== Layout ===== */
 .main-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 18px; align-items: start; }
 .main-grid > * { min-width: 0; }
@@ -294,7 +313,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); paddi
 /* ===== Headings ===== */
 h2 {
   font-size: 12px; margin: 0; text-transform: uppercase; letter-spacing: 1.2px;
-  color: var(--muted); display: flex; align-items: center; gap: 8px; font-weight: 700;
+  color: var(--text); display: flex; align-items: center; gap: 8px; font-weight: 700;
 }
 h3 { margin: 8px 0 4px; font-size: 17px; font-weight: 700; color: #ffffff; }
 h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin: 20px 0 10px; font-weight: 700; }
@@ -308,15 +327,31 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
   display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
   gap: 12px; flex-wrap: wrap;
 }
+/* appearance:none — otherwise the platform paints its own chevron and control face over
+   the panel styling, which is why these read as OS widgets dropped into the console. The
+   arrow is an inline SVG in --muted so it matches the surrounding text, and the extra right
+   padding keeps a long option ("actionable (warn+)") off it instead of clipping mid-word. */
 .findings-head select {
-  width: 160px; min-width: 96px; flex: 0 1 160px;
-  background: var(--panel-2); border: 1px solid var(--border);
-  color: var(--text); border-radius: 4px; padding: 9px 12px; font-family: inherit; font-size: 13px;
+  width: 176px; min-width: 96px; flex: 0 1 176px;
+  -webkit-appearance: none; -moz-appearance: none; appearance: none;
+  background-color: var(--panel-2);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239BA6A0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 11px center;
+  border: 1px solid var(--border);
+  color: var(--text); border-radius: 4px; padding: 9px 32px 9px 12px; font-family: inherit; font-size: 13px;
+  text-overflow: ellipsis;
   transition: all 0.15s ease;
 }
+.findings-head select:hover { border-color: var(--border-bright); }
 .findings-head select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .empty, .placeholder p { color: var(--muted); }
 .empty { padding: 36px 0; text-align: center; font-size: 13.5px; }
+/* An empty list under a page whose own counters read in the hundreds looks broken, so this
+   state says what is being hidden and hands back the control that hides it. */
+.empty-filtered { padding: 32px 24px; }
+.empty-filtered strong { color: var(--text-heading); font-size: 14.5px; }
+.empty-filtered p { margin: 0 0 10px; line-height: 1.6; }
+.empty-filtered .ghost-btn { margin-top: 4px; }
 .finding-rows { list-style: none; margin: 0; padding: 0; }
 .finding-row {
   display: flex; align-items: center; gap: 14px; padding: 13px 14px;
@@ -470,7 +505,7 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 
 /* ===== Placeholder ===== */
 .placeholder {
-  background: var(--panel); border: 1px dashed var(--border-bright); border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
   padding: 56px 32px; text-align: center; display: flex; flex-direction: column;
   align-items: center; gap: 6px; color: var(--muted);
 }
