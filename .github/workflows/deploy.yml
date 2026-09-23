@@ -99,3 +99,42 @@ jobs:
           PALIVANE_SLACK_CLIENT_ID: ${{ vars.PALIVANE_SLACK_CLIENT_ID }}
           PALIVANE_SLACK_REDIRECT_URL: ${{ vars.PALIVANE_SLACK_REDIRECT_URL }}
         run: ./deploy/cloudrun/deploy.sh
+
+      # Release signing is configuration, not code: the sign/verify logic has been covered
+      # by unit tests all along, yet production served an unsigned manifest for months
+      # because the Secret Manager entry did not exist. Nothing in CI could see that. This
+      # step can: it proves the LIVE service signs, and that the signature verifies against
+      # the very key its own generated installer pins.
+      - name: Verify the deployed release signature
+        env:
+          ORIGIN: https://app.palivane.io
+        run: |
+          set -euo pipefail
+          curl -fsS "$ORIGIN/api/health" > /dev/null
+
+          if ! curl -fsS "$ORIGIN/cli/manifest.sig" -o manifest.sig; then
+            echo "::error::/cli/manifest.sig is not being served — PALIVANE_RELEASE_SIGNING_KEY" \
+                 "is not reaching the service, so every curl|bash install runs unverified" \
+                 "while the docs promise a signature. Check the palivane-release-signing-key" \
+                 "secret has an enabled version."
+            exit 1
+          fi
+          curl -fsS "$ORIGIN/cli/manifest.json" -o manifest.json
+
+          # The installer bakes in the key it will verify against, so take the key from
+          # there rather than from this checkout: that compares what the service actually
+          # serves against what it actually tells clients to trust.
+          curl -fsS "$ORIGIN/install.sh" \
+            | sed -n '/BEGIN PUBLIC KEY/,/END PUBLIC KEY/p' > served-pub.pem
+          test -s served-pub.pem || { echo "::error::installer pins no public key"; exit 1; }
+
+          python3 -c 'import json,sys;f=json.load(open("manifest.json"))["files"];sys.stdout.write(json.dumps({k:v["sha256"] for k,v in f.items()},separators=(",",":"),sort_keys=True))' > digest
+          openssl base64 -d -A -in manifest.sig -out sig.der
+          if ! openssl dgst -sha256 -verify served-pub.pem -signature sig.der digest; then
+            echo "::error::the served manifest signature does not verify against the key the" \
+                 "served installer pins — a client following the documented flow would reject" \
+                 "this release. Most likely the signing secret and VENDOR_RELEASE_PUBKEY_PEM" \
+                 "have drifted apart."
+            exit 1
+          fi
+          echo "release signature verifies against the key the installer pins"
