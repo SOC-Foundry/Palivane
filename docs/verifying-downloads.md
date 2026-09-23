@@ -55,14 +55,52 @@ sha256sum palivane-connect     # the two hashes must match
 
 ```
 -----BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEpJPi60i2koK+QeU/hJOpMnCH1TIQ
-DOr+Qjb3j446+61ofaZGRQNI68sEG6g+N7z4f78mArB2tshax27gy41enA==
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEYzLBG9xT5RSIKJoCrD/OMV/YXnjz
+ubjJD5E+aWPwopHCPTuMajbqwJaEN7rJZ+ULhyN/ff9DrzSUYTXuHrXJEw==
 -----END PUBLIC KEY-----
 ```
 
 Save it as `release-pubkey.pem`. This is the vendor key for the managed service; a
 self-hosted deployment that signs with its own key serves its own public half and bakes it
 into the installer it generates (`PALIVANE_RELEASE_PUBKEY`).
+
+## Verifying a server release tarball
+
+The self-hosted server is handed over as a tarball rather than fetched over TLS, so it
+carries its own manifest and signature — same ECDSA P-256 key and the same canonical
+`{name: sha256}` digest as the CLI manifest above, so one recipe covers both.
+
+You receive three files:
+
+```
+palivane-native-<tag>.tar.gz            the release
+palivane-native-<tag>.manifest.json     its name, SHA-256, build time and release tag
+palivane-native-<tag>.manifest.sig      ECDSA P-256 signature over the canonical digest
+```
+
+```bash
+TAG=<tag>
+
+# 1) the tarball matches the hash the manifest claims
+python3 -c 'import json,sys;m=json.load(open(sys.argv[1]))["artifact"];print(m["sha256"]+"  "+m["name"])' \
+  "palivane-native-$TAG.manifest.json" | sha256sum -c      # -> OK
+
+# 2) that claim is one we signed
+python3 - "palivane-native-$TAG.manifest.json" > digest <<'PY'
+import json, sys
+a = json.load(open(sys.argv[1]))["artifact"]
+sys.stdout.write(json.dumps({a["name"]: a["sha256"]}, separators=(",", ":"), sort_keys=True))
+PY
+openssl base64 -d -A -in "palivane-native-$TAG.manifest.sig" -out sig.der
+openssl dgst -sha256 -verify release-pubkey.pem -signature sig.der digest   # -> Verified OK
+```
+
+Both must pass. Step 1 alone only proves the tarball matches a manifest that travelled
+beside it; step 2 is what ties it to a release Palivane built.
+
+A release built before a signing key was provisioned ships the manifest with **no** `.sig`
+— the hash is still checkable, but nothing binds it to us, so treat an unsigned tarball as
+unverified and ask for a signed one.
 
 ## Reproducible builds
 
@@ -109,3 +147,16 @@ the secret exists. Once it's set, `/cli/manifest.sig` starts returning a signatu
 every freshly generated `install.sh` enforces it. Rotating the key = new secret version +
 update `VENDOR_RELEASE_PUBKEY_PEM` to the new public half (installers already in the wild
 pin the old key, so announce rotations).
+
+The **same** key signs server release tarballs. `deploy/native/build-release.sh` reads
+`PALIVANE_RELEASE_SIGNING_KEY` from the build environment and, when it is set, writes a
+`.manifest.sig` beside the tarball; when it is not, it prints a warning and the release
+goes out unsigned. One trust anchor for both artifacts, so a customer who has pinned the
+key for `curl … | install.sh` can verify a handed-over tarball with it too:
+
+```bash
+PALIVANE_RELEASE_SIGNING_KEY="$(cat release-priv.pem)" ./deploy/native/build-release.sh
+```
+
+Keep the private half out of CI unless the build box is one you would trust to mint a
+release: anything holding it can sign bytes that every pinned installer will accept.
