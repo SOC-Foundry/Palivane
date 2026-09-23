@@ -123,11 +123,20 @@ clean checkout and confirm the vendor signature over it.
 
 ## VS Code extension
 
-The extension ships as a committed `.vsix`. Until it's published to the Marketplace (which
-signs and verifies on install) verify it out-of-band: compare its SHA-256 against the value
-in the release notes, and install with `code --install-extension palivane-vscode-<v>.vsix`.
-Marketplace publishing, which gives you signature verification for free, is tracked
-separately.
+The extension ships as a `.vsix` in the public clients repo, alongside its source:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/SOC-Foundry/palivane-clients/main/vscode-extension/palivane-vscode-0.2.0.vsix
+sha256sum palivane-vscode-0.2.0.vsix        # compare against the release notes
+code --install-extension palivane-vscode-0.2.0.vsix
+```
+
+Until it is published to the Marketplace (which signs and verifies on install) that
+SHA-256 comparison is the only integrity check, so do it out of band rather than from the
+same page that served the file. Marketplace publishing is tracked separately.
+
+The extension is MIT, not Apache-2.0 like the rest of that repo; `vscode-extension/LICENSE`
+governs it.
 
 ## Operator: turning on signing
 
