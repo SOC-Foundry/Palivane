@@ -58,7 +58,7 @@ function RiskDistribution({ bySeverity, total }) {
   const segs = SEV_ORDER.map((s) => ({ s, n: bySeverity?.[s] || 0 })).filter((x) => x.n > 0);
   const sum = segs.reduce((a, x) => a + x.n, 0);
   return (
-    <div className="panel chart-panel">
+    <div className="panel chart-panel risk-panel">
       <h2>Risk distribution</h2>
       {sum === 0 ? (
         <p className="chart-empty">No findings yet.</p>
@@ -130,13 +130,13 @@ function SurfaceSplit({ bySurface }) {
   if (other > 0) rows.push({ key: "other", label: "Other", sub: "surfaces not broken out above", n: other });
 
   return (
-    <div className="panel chart-panel">
+    <div className="panel chart-panel surface-panel">
       <h2>By surface</h2>
       <ul className="surface-list">
         {rows.map((r) => {
           const pct = total ? (r.n / total) * 100 : 0;
           return (
-            <li key={r.key} className="surface-row"
+            <li key={r.key} className={`surface-row${r.n === 0 ? " is-zero" : ""}`}
                 title={`${r.label}: ${r.n} of ${total} (${pct.toFixed(pct < 10 ? 1 : 0)}%)`}>
               <div className="surface-head">
                 <span className="surface-label">{r.label}</span>
@@ -181,10 +181,16 @@ export default function Dashboard({ stats }) {
         <StatCard icon={<IconAlert />} value={stats.high_risk} label="High / critical" tone="danger" />
         <StatCard icon={<IconTarget />} value={stats.ai_weaponized} label="AI-weaponized" tone="warn" />
       </div>
+      {/* Two short panels stacked beside one tall one. Nested rather than a three-cell
+          grid: with grid rows the short pair gets spaced to the tall panel's row heights
+          and drifts apart, and squaring them up by stretching instead strands each
+          heading above a floating body. A flex column just lets them sit. */}
       <div className="charts-grid">
-        <RiskDistribution bySeverity={stats.by_severity} total={stats.total} />
+        <div className="charts-col">
+          <RiskDistribution bySeverity={stats.by_severity} total={stats.total} />
+          <SetupHealth />
+        </div>
         <SurfaceSplit bySurface={stats.by_surface} />
-        <SetupHealth />
       </div>
     </>
   );
