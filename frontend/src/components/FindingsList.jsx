@@ -193,7 +193,7 @@ export default function FindingsList({ findings, selectedId, onSelect, filter, o
   return (
     <div className="findings panel">
       <div className="findings-head">
-        <h2>Findings <span className="count-pill">{grouped ? groups.length : shown.length}</span></h2>
+        <h2>Queue <span className="count-pill">{grouped ? groups.length : shown.length}</span></h2>
         <div className="findings-filters">
           <label className="group-toggle" title="Collapse similar findings (same user, surface, and signal types) into one incident row">
             <input type="checkbox" checked={grouped} onChange={(e) => setGrouped(e.target.checked)} />
@@ -227,8 +227,26 @@ export default function FindingsList({ findings, selectedId, onSelect, filter, o
           {onConnect && <button className="primary-btn slim" onClick={onConnect}>Connect a source →</button>}
         </div>
       )}
+      {/* The stat tiles above count every finding, this list counts what survives the
+          filters, and the default filters are narrow. "No findings match this filter" next
+          to a tile reading 33 open looks like a fetch that failed, so say which rows are
+          being withheld and offer the control that is withholding them. */}
       {shown.length === 0 && findings.length > 0 && (
-        <div className="empty">No findings match this filter.</div>
+        <div className="empty empty-filtered">
+          <p><strong>
+            {findings.length} {status === "open" ? "open " : ""}
+            finding{findings.length === 1 ? "" : "s"}, none matching these filters.
+          </strong></p>
+          <p>
+            {filter === "actionable"
+              ? "Nothing recorded here reaches warn level — the queue is quiet, not empty."
+              : "Nothing recorded here matches the selected severity."}
+          </p>
+          <button type="button" className="ghost-btn slim"
+                  onClick={() => { onFilter(""); setSurface(""); }}>
+            Show everything {status === "open" ? "open" : "recorded"}
+          </button>
+        </div>
       )}
       <ul className="finding-rows">
         {grouped
