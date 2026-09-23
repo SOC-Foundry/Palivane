@@ -474,7 +474,11 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 .empty-onboard .primary-btn { margin-top: 12px; }
 
 /* Live indicator (auto-refresh) */
-.head-actions { display: flex; align-items: center; gap: 14px; }
+/* No wrap meant a page with four header buttons (Policies: three presets + the CSV
+   export) pushed the last one straight out through the card's right edge on a narrow
+   window, where it was unreachable rather than merely ugly. */
+.head-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
+.content-head { flex-wrap: wrap; }
 .toggle-inline { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
 .toggle-inline input { cursor: pointer; accent-color: var(--accent); }
 .live-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
@@ -565,11 +569,19 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 .login-card input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
 /* ===== Connect ===== */
+/* margin-inline:auto — this capped at 900px with no centring, so every page built on it
+   sat hard against the sidebar with the rest of the window empty to the right. Unnoticeable
+   while .content capped at 1360px; once that went to 1760 the gap was most of the screen.
+   900px stays the reading measure for the prose-and-config pages; the data-dense ones
+   widen it below. */
 .connect {
   background: var(--panel);
   border: 1px solid var(--border); border-radius: 6px; padding: 26px;
-  box-shadow: var(--shadow); max-width: 900px;
+  box-shadow: var(--shadow); max-width: 900px; margin-inline: auto;
 }
+/* Policies is a 28-row check list with chips and toggles, plus an overrides table seven
+   columns wide. At 900px the table scrolls sideways and every row wraps. */
+.policies-page { max-width: 1240px; }
 .connect-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .connect-head h2 { font-size: 20px; text-transform: none; letter-spacing: -0.3px; color: #ffffff; font-weight: 800; }
 .primary-btn.slim { width: auto; padding: 10px 18px; font-size: 13.5px; }
@@ -1380,9 +1392,19 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 .help-list .link-btn { font-size: inherit; padding: 0; vertical-align: baseline; }
 
 /* Policies page */
-.policy-list { display: flex; flex-direction: column; }
+/* Two columns once there is room. A single full-width column at this card width strands
+   each toggle ~1000px from the label it switches, which is a worse control than the narrow
+   layout it replaced; side-by-side keeps the switch beside its text and halves the scroll.
+   Below 1100px it collapses back to one column. */
+.policy-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 36px; }
 .policy-row { display: flex; align-items: center; gap: 20px; padding: 16px 4px; border-top: 1px solid var(--border-soft); }
-.policy-row:first-child { border-top: none; }
+/* :first-child only cleared the rule above row one; in two columns the second row of the
+   grid also sits at the top of its column and needs the same treatment. */
+.policy-row:nth-child(-n + 2) { border-top: none; }
+@media (max-width: 1100px) {
+  .policy-list { grid-template-columns: minmax(0, 1fr); }
+  .policy-row:nth-child(2) { border-top: 1px solid var(--border-soft); }
+}
 .policy-text { flex: 1; min-width: 0; }
 .policy-name { font-size: 15px; font-weight: 600; color: #ffffff; display: flex; align-items: center; gap: 10px; }
 .policy-state { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 3px 8px; border-radius: 3px; }
