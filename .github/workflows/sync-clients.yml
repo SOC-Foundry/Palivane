@@ -13,7 +13,31 @@ name: Sync public clients mirror
 on:
   push:
     branches: [main]
-    paths: ["extension/**", "cli/**", "proxy/**", "mcp-server/**", "git/**", "vscode-extension/**", ".pre-commit-hooks.yaml"]
+    # This list includes THIS FILE on purpose. Adding a directory to the mirror is a change
+    # to the workflow and usually to nothing else, so without that entry the very commit
+    # that widens the mirror does not match its own filter and never runs — the new
+    # component stays unpublished until somebody happens to edit a file inside it. That is
+    # exactly what happened when vscode-extension/ was added (PR #262): the merge triggered
+    # nothing and the extension stayed unobtainable until the workflow was dispatched by
+    # hand. git/ escaped it only by luck, because that PR also moved a file the filter
+    # already matched.
+    paths:
+      - "extension/**"
+      - "cli/**"
+      - "proxy/**"
+      - "mcp-server/**"
+      - "git/**"
+      - "vscode-extension/**"
+      - ".pre-commit-hooks.yaml"
+      - ".github/workflows/sync-clients.yml"
+  # Backstop. The push trigger only fires on a matching change, so anything that puts the
+  # mirror out of step WITHOUT one leaves it stale indefinitely: a transient failure, a
+  # direct commit to the mirror, a path added through some route the filter misses. A daily
+  # reconcile costs about fifteen seconds — the job exits at "mirror already current" when
+  # there is no diff — and means the worst case for drift is a day rather than forever.
+  # NOTE: GitHub disables scheduled workflows in a repo with no activity for 60 days.
+  schedule:
+    - cron: "17 6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -57,9 +81,18 @@ jobs:
             echo "mirror already current"
             exit 0
           fi
+          # Name the trigger in the message. A scheduled run that finds a diff means the
+          # mirror had drifted out of step with main and nothing had noticed — worth being
+          # able to spot in the log rather than having it look like an ordinary push sync.
+          case "${GITHUB_EVENT_NAME}" in
+            schedule) WHY="reconcile: the daily check found the mirror out of step" ;;
+            workflow_dispatch) WHY="sync: mirrored on request" ;;
+            *) WHY="sync: mirror endpoint components from the main repository" ;;
+          esac
+          echo "changed:"; git diff --cached --name-status | sed 's/^/  /'
           git -c user.name="palivane-sync" -c user.email="noreply@palivane.io" \
-            commit -m "sync: mirror endpoint components from the main repository
+            commit -m "$WHY
 
-          Source: SOC-Foundry/Palivane@${GITHUB_SHA}"
+          Source: SOC-Foundry/Palivane@${GITHUB_SHA} (${GITHUB_EVENT_NAME})"
           git push
           echo "mirror updated to ${GITHUB_SHA}"
