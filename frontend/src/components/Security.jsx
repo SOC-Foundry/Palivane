@@ -197,9 +197,10 @@ export default function Security() {
             <p className="lp-sub">
               Self-hosting is a real, supported deployment — and today it goes through us
               rather than a download link. Everything that runs on your machines is already
-              public and Apache-2.0 at{" "}
-              <a href="https://github.com/SOC-Foundry/palivane-clients">github.com/SOC-Foundry/palivane-clients</a>,
-              so you can audit the capture side before you talk to anyone. The server package
+              public at{" "}
+              <a href="https://github.com/SOC-Foundry/palivane-clients">github.com/SOC-Foundry/palivane-clients</a>{" "}
+              — Apache-2.0, apart from the VS Code extension, which is MIT — so you can
+              audit the capture side before you talk to anyone. The server package
               is not yet a self-serve release; we hand it over, help you stand it up and
               support it from there.
             </p>
