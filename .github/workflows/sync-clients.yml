@@ -1,6 +1,7 @@
 name: Sync public clients mirror
 
-# Mirrors the endpoint-component directories (extension/ cli/ proxy/ mcp-server/ git/) to the
+# Mirrors the endpoint-component directories (extension/ cli/ proxy/ mcp-server/ git/
+# vscode-extension/) to the
 # public SOC-Foundry/palivane-clients repo whenever they change on main. The public repo's
 # LICENSE and README are owned there and never overwritten; build artifacts, virtualenvs,
 # and the internal store runbook never leave.
@@ -12,7 +13,7 @@ name: Sync public clients mirror
 on:
   push:
     branches: [main]
-    paths: ["extension/**", "cli/**", "proxy/**", "mcp-server/**", "git/**", ".pre-commit-hooks.yaml"]
+    paths: ["extension/**", "cli/**", "proxy/**", "mcp-server/**", "git/**", "vscode-extension/**", ".pre-commit-hooks.yaml"]
   workflow_dispatch:
 
 permissions:
@@ -37,9 +38,14 @@ jobs:
             exit 0
           fi
           git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/SOC-Foundry/palivane-clients.git" /tmp/mirror
-          for d in extension cli proxy mcp-server git; do
+          for d in extension cli proxy mcp-server git vscode-extension; do
+            # *.vsix is deliberately NOT excluded despite being a build artifact: it is
+            # the file customers install (`code --install-extension`), there is no
+            # Marketplace listing yet and the backend does not serve it, so the mirror is
+            # the only place they can get it. 31KB.
             rsync -a --delete \
               --exclude "*.zip" --exclude "STORE.md" --exclude "__pycache__" --exclude ".venv" \
+              --exclude "node_modules" \
               "$d/" "/tmp/mirror/$d/"
           done
           # pre-commit reads its manifest from the CLONE ROOT, so the hook repo is the
