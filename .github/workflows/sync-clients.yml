@@ -1,6 +1,6 @@
 name: Sync public clients mirror
 
-# Mirrors the endpoint-component directories (extension/ cli/ proxy/ mcp-server/) to the
+# Mirrors the endpoint-component directories (extension/ cli/ proxy/ mcp-server/ git/) to the
 # public SOC-Foundry/palivane-clients repo whenever they change on main. The public repo's
 # LICENSE and README are owned there and never overwritten; build artifacts, virtualenvs,
 # and the internal store runbook never leave.
@@ -12,7 +12,7 @@ name: Sync public clients mirror
 on:
   push:
     branches: [main]
-    paths: ["extension/**", "cli/**", "proxy/**", "mcp-server/**"]
+    paths: ["extension/**", "cli/**", "proxy/**", "mcp-server/**", "git/**", ".pre-commit-hooks.yaml"]
   workflow_dispatch:
 
 permissions:
@@ -37,11 +37,14 @@ jobs:
             exit 0
           fi
           git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/SOC-Foundry/palivane-clients.git" /tmp/mirror
-          for d in extension cli proxy mcp-server; do
+          for d in extension cli proxy mcp-server git; do
             rsync -a --delete \
               --exclude "*.zip" --exclude "STORE.md" --exclude "__pycache__" --exclude ".venv" \
               "$d/" "/tmp/mirror/$d/"
           done
+          # pre-commit reads its manifest from the CLONE ROOT, so the hook repo is the
+          # mirror, not this one: the root copy must travel with git/.
+          cp .pre-commit-hooks.yaml /tmp/mirror/.pre-commit-hooks.yaml
           cd /tmp/mirror
           git add -A
           if git diff --cached --quiet; then
