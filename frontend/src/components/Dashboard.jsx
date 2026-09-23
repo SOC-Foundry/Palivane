@@ -14,7 +14,10 @@ function SetupHealth() {
   ];
   return (
     <div className="panel chart-panel setup-health">
-      <h2>Coverage &amp; enforcement</h2>
+      {/* Fixed 24h, and says so: this panel reads a separate per-plane counter that is
+          only kept for the last day, so it deliberately does NOT follow the picker. Left
+          unlabelled it would look like the one panel ignoring the control. */}
+      <h2>Coverage &amp; enforcement <span className="panel-scope">last 24h</span></h2>
       <ul className="plane-list">
         {planes.map(([label, n]) => (
           <li key={label} className="plane-row">
@@ -41,25 +44,60 @@ const SEV_LABEL = {
   critical: "Critical", high: "High", suspicious: "Suspicious", low: "Low", benign: "Benign",
 };
 
-function StatCard({ icon, value, label, tone, sub = "" }) {
+const WINDOWS = [["24h", "24h"], ["7d", "7d"], ["30d", "30d"], ["all", "all time"]];
+const WINDOW_LABEL = { "24h": "last 24h", "7d": "last 7 days", "30d": "last 30 days", all: "all time" };
+
+/* A flow tile compares its window against the one before it. No arrow when there is
+   nothing to compare with — on "all time", or a first window with no prior traffic —
+   because "+100%" against zero history is noise dressed as a signal. */
+function Delta({ now, before }) {
+  if (before === null || before === undefined) return null;
+  const d = (now ?? 0) - before;
+  if (d === 0) return <span className="stat-delta flat">no change</span>;
+  const dir = d > 0 ? "up" : "down";
+  return (
+    <span className={`stat-delta ${dir}`} title={`${before} in the previous window`}>
+      {d > 0 ? "+" : "−"}{Math.abs(d)} vs previous
+    </span>
+  );
+}
+
+function StatCard({ icon, value, label, tone, sub = "", scope, delta }) {
   return (
     <div className={`stat-card stat-${tone}`}>
       <span className="stat-icon">{icon}</span>
       <div>
         <div className="stat-value">{value ?? 0}</div>
         <div className="stat-label">{label}</div>
+        {/* Which clock this number is on. The page carries both kinds and they cannot be
+            told apart by looking — the whole reason the old dashboard was unreadable. */}
+        {scope && <div className="stat-scope">{scope}</div>}
+        {delta}
         {sub && <div className="stat-sub">{sub}</div>}
       </div>
     </div>
   );
 }
 
-function RiskDistribution({ bySeverity, total }) {
+function WindowPicker({ value, onChange }) {
+  return (
+    <div className="window-picker" role="group" aria-label="Dashboard time window">
+      {WINDOWS.map(([v, label]) => (
+        <button key={v} type="button"
+                className={`window-opt ${v === value ? "is-on" : ""}`}
+                aria-pressed={v === value}
+                onClick={() => onChange(v)}>{label}</button>
+      ))}
+    </div>
+  );
+}
+
+function RiskDistribution({ bySeverity, total, scope }) {
   const segs = SEV_ORDER.map((s) => ({ s, n: bySeverity?.[s] || 0 })).filter((x) => x.n > 0);
   const sum = segs.reduce((a, x) => a + x.n, 0);
   return (
     <div className="panel chart-panel risk-panel">
-      <h2>Risk distribution</h2>
+      <h2>Risk distribution <span className="panel-scope">{scope}</span></h2>
       {sum === 0 ? (
         <p className="chart-empty">No findings yet.</p>
       ) : (
@@ -107,7 +145,7 @@ const SURFACES = [
 ];
 const HEADLINE = new Set(["llm_io", "ai_usage"]);   // the two fronts: shown even at zero
 
-function SurfaceSplit({ bySurface }) {
+function SurfaceSplit({ bySurface, scope }) {
   const counts = bySurface || {};
   // Share of ALL findings, not of the largest row. Normalizing to the max meant whichever
   // surface led was pinned at 100% whatever its count — with only two rows that bar could
@@ -131,7 +169,7 @@ function SurfaceSplit({ bySurface }) {
 
   return (
     <div className="panel chart-panel surface-panel">
-      <h2>By surface</h2>
+      <h2>By surface <span className="panel-scope">{scope}</span></h2>
       <ul className="surface-list">
         {rows.map((r) => {
           const pct = total ? (r.n / total) * 100 : 0;
@@ -158,7 +196,7 @@ function SurfaceSplit({ bySurface }) {
   );
 }
 
-export default function Dashboard({ stats }) {
+export default function Dashboard({ stats, window: win = "24h", onWindow }) {
   if (!stats) {
     return (
       <div className="dashboard">
@@ -168,18 +206,32 @@ export default function Dashboard({ stats }) {
   }
   return (
     <>
+      {/* Flow above, stock below — the tiles are ordered so the two clocks do not
+          interleave, and each says which it is on. */}
+      <div className="dashboard-head">
+        <h2>Activity</h2>
+        {onWindow && <WindowPicker value={win} onChange={onWindow} />}
+      </div>
       <div className="dashboard">
-        <StatCard icon={<IconInbox />} value={stats.analyzed_total ?? stats.total} label="Total analyzed" tone="neutral" />
+        <StatCard icon={<IconInbox />} value={stats.analyzed_total ?? stats.total} label="Analyzed" tone="neutral"
+                  scope={WINDOW_LABEL[win]}
+                  delta={<Delta now={stats.analyzed_total ?? stats.total} before={stats.previous?.analyzed_total} />} />
         {/* "Open" means unreviewed, which is a workflow fact and includes benign rows
             nobody needs to act on. The sub-line appears only when those two numbers differ,
             so it explains a gap when there is one and stays quiet when there is not. */}
-        <StatCard icon={<IconList />} value={stats.open} label="Open" tone="neutral"
+        <StatCard icon={<IconTarget />} value={stats.ai_weaponized} label="AI-weaponized" tone="warn"
+                  scope={WINDOW_LABEL[win]}
+                  delta={<Delta now={stats.ai_weaponized} before={stats.previous?.ai_weaponized} />} />
+        {/* Queue depth, never windowed: a backlog filtered to the last 24h stops being a
+            backlog. Marked "open now" so it reads as a different question, not a
+            disagreeing answer to the same one. */}
+        <StatCard icon={<IconList />} value={stats.open} label="Open" tone="neutral" scope="open now"
                   sub={typeof stats.open_needs_review === "number"
                        && stats.open_needs_review !== stats.open
                        ? `${stats.open_needs_review} need review`
                        : ""} />
-        <StatCard icon={<IconAlert />} value={stats.high_risk} label="High / critical" tone="danger" />
-        <StatCard icon={<IconTarget />} value={stats.ai_weaponized} label="AI-weaponized" tone="warn" />
+        <StatCard icon={<IconAlert />} value={stats.high_risk} label="High / critical" tone="danger"
+                  scope="open now" />
       </div>
       {/* Two short panels stacked beside one tall one. Nested rather than a three-cell
           grid: with grid rows the short pair gets spaced to the tall panel's row heights
@@ -187,10 +239,10 @@ export default function Dashboard({ stats }) {
           heading above a floating body. A flex column just lets them sit. */}
       <div className="charts-grid">
         <div className="charts-col">
-          <RiskDistribution bySeverity={stats.by_severity} total={stats.total} />
+          <RiskDistribution bySeverity={stats.by_severity} total={stats.total} scope={WINDOW_LABEL[win]} />
           <SetupHealth />
         </div>
-        <SurfaceSplit bySurface={stats.by_surface} />
+        <SurfaceSplit bySurface={stats.by_surface} scope={WINDOW_LABEL[win]} />
       </div>
     </>
   );

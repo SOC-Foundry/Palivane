@@ -220,6 +220,30 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); paddi
 }
 
 /* ===== Stat cards ===== */
+/* Window control + the row heading it governs. */
+.dashboard-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; flex-wrap: wrap; }
+.window-picker { display: inline-flex; background: var(--panel-2); border: 1px solid var(--border); border-radius: 5px; padding: 2px; gap: 2px; }
+.window-opt {
+  background: none; border: 0; color: var(--muted); cursor: pointer;
+  font: 600 12px/1 inherit; padding: 7px 12px; border-radius: 3px;
+  transition: color .12s ease, background .12s ease;
+}
+.window-opt:hover { color: var(--text); }
+.window-opt.is-on { background: var(--accent-soft); color: var(--accent-2); box-shadow: inset 0 0 0 1px var(--accent); }
+.window-opt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Which clock a number is on. Deliberately quiet — it is a qualifier on the figure above,
+   not a competing label — but always present, because a dashboard carrying both a rate and
+   a backlog is unreadable when they look identical. */
+.stat-scope { font-size: 10.5px; color: var(--muted-2); margin-top: 3px; letter-spacing: .02em; }
+.panel-scope { font-size: 10.5px; color: var(--muted-2); font-weight: 600; text-transform: none; letter-spacing: 0; margin-left: 2px; }
+.stat-delta { display: inline-block; font-size: 11px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+/* Colour says direction, not good/bad: more findings is not automatically worse (it can be
+   a capture plane finally reporting), so this stays a neutral accent rather than red. */
+.stat-delta.up { color: var(--text); }
+.stat-delta.down { color: var(--benign); }
+.stat-delta.flat { color: var(--muted-2); font-weight: 600; }
+
 .dashboard { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 18px; }
 .stat-card {
   display: flex; align-items: center; gap: 16px;
