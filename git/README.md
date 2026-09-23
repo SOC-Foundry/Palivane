@@ -32,7 +32,7 @@ protect, add to `.pre-commit-config.yaml`:
 
 ```yaml
 repos:
-  - repo: https://github.com/SOC-Foundry/Palivane
+  - repo: https://github.com/SOC-Foundry/palivane-clients
     rev: main                       # pin to a tag/SHA in real use
     hooks:
       - id: palivane-secret-scan
