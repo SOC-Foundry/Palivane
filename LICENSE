@@ -1,0 +1,84 @@
+Palivane Software Licence Agreement
+Copyright (c) 2026 Palivane. All rights reserved.
+
+This software is proprietary. It is not open source, and no rights are granted
+except those set out below or in a separate written agreement signed by Palivane.
+
+1. DEFINITIONS
+   "Software" means the Palivane server distribution accompanying this file,
+   including the backend, console, detection engine, database migrations and
+   bundled detector data.
+   "You" means the individual or entity Palivane supplied this copy to.
+   "Agreement" means a separately executed commercial agreement between You and
+   Palivane covering the Software.
+
+2. EVALUATION GRANT
+   Absent an Agreement, Palivane grants You a non-exclusive, non-transferable,
+   revocable licence to install and run one instance of the Software on
+   infrastructure You control, for the sole purpose of internal evaluation, for
+   ninety (90) days from the date You received it.
+
+3. COMMERCIAL USE
+   Production use, use beyond the evaluation period, and any use on behalf of a
+   third party require an Agreement. Contact sales@palivane.io.
+
+4. RESTRICTIONS
+   You may not, and may not permit others to:
+   (a) distribute, sublicense, sell, rent, lease or host the Software, or make
+       it available to any third party, whether or not for a fee;
+   (b) offer the Software, or any service substantially derived from it, as a
+       commercial or managed service;
+   (c) modify or create derivative works of the Software except as necessary to
+       configure and operate Your own instance under this licence;
+   (d) reverse engineer, decompile or disassemble the Software, except to the
+       extent that applicable law expressly permits this despite this term;
+   (e) remove, obscure or alter any copyright, trademark or licence notice; or
+   (f) disable, circumvent or tamper with any licence check, usage metering or
+       release-signature verification in the Software.
+
+5. CLIENT COMPONENTS
+   The endpoint components distributed at
+   https://github.com/SOC-Foundry/palivane-clients (browser extension, CLI
+   capture hooks, egress proxy, MCP server and git capture plane) are licensed
+   separately under Apache-2.0 and are not subject to this licence. Copies of
+   those components bundled with the Software, so that it can serve them to Your
+   endpoints, remain under Apache-2.0. The Palivane VS Code extension is
+   licensed under the MIT licence accompanying it. Where a component carries its
+   own licence file, that file governs it and this licence does not.
+
+6. FEEDBACK
+   If You send Palivane suggestions about the Software, Palivane may use them
+   without restriction or obligation to You.
+
+7. OWNERSHIP
+   Palivane retains all right, title and interest in the Software. This licence
+   conveys no ownership and no rights to any Palivane trademark.
+
+8. TERMINATION
+   This licence terminates automatically if You breach it, and may be
+   terminated by Palivane on written notice. On termination You must stop using
+   the Software and destroy all copies. Sections 4, 6, 7, 9 and 10 survive.
+
+9. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. Palivane does not
+   warrant that the Software will detect every threat or prevent every loss of
+   data; it is one control among many and is not a substitute for Your own
+   security programme.
+
+10. LIMITATION OF LIABILITY
+   TO THE MAXIMUM EXTENT PERMITTED BY LAW, PALIVANE SHALL NOT BE LIABLE FOR ANY
+   INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL OR PUNITIVE DAMAGES, OR ANY LOSS
+   OF PROFITS, REVENUE, DATA OR GOODWILL. PALIVANE'S TOTAL LIABILITY ARISING OUT
+   OF OR RELATED TO THIS LICENCE SHALL NOT EXCEED THE GREATER OF THE AMOUNTS YOU
+   PAID PALIVANE FOR THE SOFTWARE IN THE TWELVE MONTHS PRECEDING THE CLAIM, OR
+   ONE HUNDRED US DOLLARS (USD 100).
+
+11. GENERAL
+   If any provision is unenforceable it shall be modified to the minimum extent
+   necessary and the remainder shall stay in effect. This licence is the entire
+   agreement about the Software absent an Agreement, which prevails over it in
+   the event of conflict.
+
+Questions: legal@palivane.io
