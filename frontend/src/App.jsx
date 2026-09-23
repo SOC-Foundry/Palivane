@@ -116,6 +116,12 @@ export default function App() {
   const [health, setHealth] = useState(null);
   const [stats, setStats] = useState(null);
   const [findings, setFindings] = useState([]);
+  // Dashboard window. 24h by default: all-time only ever grows, so nothing on the page
+  // can improve and today's burst barely moves a mix averaged over months. Remembered
+  // per browser because an operator who works in 7d wants 7d tomorrow too.
+  const [statsWindow, setStatsWindow] = useState(() => {
+    try { return localStorage.getItem("palivane.statsWindow") || "24h"; } catch { return "24h"; }
+  });
   const [filter, setFilter] = useState("actionable");   // severity (client-side; "actionable" = warn+)
   const [statusFilter, setStatusFilter] = useState("open");
   const [selected, setSelected] = useState(null);
@@ -218,12 +224,17 @@ export default function App() {
   const refresh = useCallback(async () => {
     if (!auth) return;
     const [s, f] = await Promise.all([
-      api.stats(),
+      api.stats(statsWindow),
       api.findings({ status: statusFilter, limit: 500 }),
     ]);
     setStats(s);
     setFindings(f.findings);
-  }, [statusFilter, auth]);
+  }, [statusFilter, statsWindow, auth]);
+
+  const changeWindow = useCallback((w) => {
+    setStatsWindow(w);
+    try { localStorage.setItem("palivane.statsWindow", w); } catch { /* private mode */ }
+  }, []);
 
   useEffect(() => {
     if (!auth) return;
@@ -485,7 +496,7 @@ export default function App() {
               </div>
             </div>
 
-            <Dashboard stats={stats} />
+            <Dashboard stats={stats} window={statsWindow} onWindow={changeWindow} />
             <div className="main-grid">
               <div className="left-col">
                 <FindingsList

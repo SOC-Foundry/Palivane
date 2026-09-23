@@ -148,7 +148,7 @@ export const api = {
   discoveryInventory: () => req("/discovery/inventory"),
   discoveryIngest: (events) =>
     req("/discovery/ingest", { method: "POST", body: JSON.stringify({ events }) }),
-  stats: () => req("/stats"),
+  stats: (window = "24h") => req(`/stats?window=${encodeURIComponent(window)}`),
   setupStatus: () => req("/setup-status"),
   analyze: (payload) =>
     req("/analyze", { method: "POST", body: JSON.stringify(payload) }),

@@ -10,6 +10,7 @@ from __future__ import annotations
 import hmac
 import re
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -3920,20 +3921,64 @@ def provision(body: ProvisionRequest, current: User = Depends(require_admin),
                     "/api/enroll/tokens." + expiry_note}
 
 
+# How long "recently" is. All-time stays reachable, but it is not the default: it only
+# ever grows, so nothing on the dashboard can improve and a burst today barely moves a
+# mix averaged over months. It is also not really all-time — per-tenant retention_days
+# prunes old findings, so the number means "everything not yet deleted" and two orgs with
+# identical traffic report differently depending on a retention setting.
+STATS_WINDOWS = {"24h": timedelta(hours=24), "7d": timedelta(days=7), "30d": timedelta(days=30)}
+
+
 @app.get("/api/stats")
-def stats(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def stats(window: str = "24h", current: User = Depends(get_current_user),
+          db: Session = Depends(get_db)):
+    """Dashboard aggregates.
+
+    Two kinds of number live here and they are windowed differently on purpose:
+
+    * FLOW — what happened: findings recorded, the severity mix, traffic by surface,
+      AI-weaponized attempts. These answer "is anything going on right now", so they are
+      scoped to `window` and fall back down when activity stops.
+    * STOCK — what is outstanding: open, open_needs_review, high_risk. These are queue
+      depth, not a rate. Windowing them would hide a backlog, which is the one thing a
+      queue count exists to show, so they stay absolute however the window is set.
+
+    The page used to mix both, plus a Coverage panel on its own fixed 24h, with nothing
+    on screen saying which was which.
+    """
+    delta = STATS_WINDOWS.get(window)
+    if window != "all" and delta is None:
+        raise HTTPException(status_code=400,
+                            detail=f"window must be one of: {', '.join(STATS_WINDOWS)}, all")
+    now = datetime.now(timezone.utc)
+    cutoff = None if delta is None else now - delta
+    # Previous window of equal length, for the change indicator. Undefined for "all".
+    prev_cutoff = None if cutoff is None else cutoff - delta
+
     scoped = db.query(Finding).filter(Finding.tenant_id == current.tenant_id)
 
     def _count(q):
         return q.with_entities(func.count(Finding.id)).scalar() or 0
 
-    total = _count(scoped)
+    # last_seen, not created_at: a repeat of an existing finding bumps seen_count and
+    # last_seen on the original row rather than inserting a new one (see Finding), so
+    # created_at would report a finding recurring every hour today as months-old silence.
+    # ix_findings_tenant_last_seen covers this.
+    def _in(q, lo, hi=None):
+        if lo is not None:
+            q = q.filter(Finding.last_seen >= lo)
+        if hi is not None:
+            q = q.filter(Finding.last_seen < hi)
+        return q
+
+    flow = _in(scoped, cutoff)
+    total = _count(flow)
     by_severity = dict(
-        scoped.with_entities(Finding.severity, func.count(Finding.id))
+        flow.with_entities(Finding.severity, func.count(Finding.id))
         .group_by(Finding.severity).all()
     )
     by_surface = dict(
-        scoped.with_entities(Finding.surface, func.count(Finding.id))
+        flow.with_entities(Finding.surface, func.count(Finding.id))
         .group_by(Finding.surface).all()
     )
     open_count = _count(scoped.filter(Finding.status == "open"))
@@ -3944,7 +3989,8 @@ def stats(current: User = Depends(get_current_user), db: Session = Depends(get_d
     # first one, and a count people learn to ignore hides the finding that mattered.
     open_needs_review = _count(scoped.filter(Finding.status == "open",
                                              Finding.severity != "benign"))
-    ai_attacks = _count(scoped.filter(Finding.ai_generated.is_(True), Finding.attack_intent.is_(True)))
+    ai_attacks = _count(_in(scoped, cutoff).filter(Finding.ai_generated.is_(True),
+                                                   Finding.attack_intent.is_(True)))
     # OPEN high/critical, not every one ever recorded. This sits beside `open` on the
     # dashboard in the same visual language, so counting a different universe made the two
     # tiles disagree in a way nothing on screen explained: closing every finding drove one to
@@ -3957,9 +4003,33 @@ def stats(current: User = Depends(get_current_user), db: Session = Depends(get_d
     # no longer track it since benign captures aren't persisted; floor at the findings
     # count for tenants whose only traffic is unmetered manual /api/analyze submissions.
     from .models import GatewayUsage
-    metered = (db.query(func.coalesce(func.sum(GatewayUsage.count), 0))
-               .filter(GatewayUsage.tenant_id == current.tenant_id).scalar() or 0)
+
+    def _metered(lo, hi=None):
+        q = (db.query(func.coalesce(func.sum(GatewayUsage.count), 0))
+             .filter(GatewayUsage.tenant_id == current.tenant_id))
+        if lo is not None:
+            q = q.filter(GatewayUsage.window_start >= lo)
+        if hi is not None:
+            q = q.filter(GatewayUsage.window_start < hi)
+        return int(q.scalar() or 0)
+
+    metered = _metered(cutoff)
+
+    # The previous window of the same length, so a tile can say whether today is heavier
+    # than yesterday. Only flow has a meaningful delta: comparing a queue depth against
+    # its own past would need a snapshot nobody records.
+    previous = None
+    if cutoff is not None:
+        prev = _in(scoped, prev_cutoff, cutoff)
+        prev_total = _count(prev)
+        previous = {
+            "total": prev_total,
+            "analyzed_total": max(_metered(prev_cutoff, cutoff), prev_total),
+            "ai_weaponized": _count(prev.filter(Finding.ai_generated.is_(True),
+                                                Finding.attack_intent.is_(True))),
+        }
     return {
+        "window": window,
         "total": total,
         "analyzed_total": max(int(metered), total),
         "open": open_count,
@@ -3968,6 +4038,7 @@ def stats(current: User = Depends(get_current_user), db: Session = Depends(get_d
         "ai_weaponized": ai_attacks,
         "by_severity": by_severity,
         "by_surface": by_surface,
+        "previous": previous,
         "judge_enabled": engine.judge_enabled,
     }
 
