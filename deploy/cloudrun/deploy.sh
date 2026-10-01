@@ -124,9 +124,37 @@ for pair in \
   #   spec...secret_key_ref.name: Secret projects/N/secrets/palivane-smtp-pass ... 
   # That failed every full deploy while an image-only `gcloud run deploy` kept working,
   # because the latter reuses the existing revision's config instead of rebuilding it.
-  if gcloud secrets versions list "$name" --project "$PROJECT_ID" \
-       --filter "state=ENABLED" --format "value(name)" --limit 1 2>/dev/null | grep -q .; then
-    SECRETS+=",${pair}:latest"
+  newest="$(gcloud secrets versions list "$name" --project "$PROJECT_ID" \
+       --filter "state=ENABLED" --sort-by "~createTime" --format "value(name)" --limit 1 \
+       2>/dev/null || true)"
+  present="$newest"
+  if [ -z "$present" ]; then
+    # Nothing came back from the ordered query. Ask the way this check always did before
+    # deciding the secret is absent, so a problem with the ordering can only ever cost the
+    # pin below and never drop the secret from the revision (which, for the signing key,
+    # would silently switch release signing off).
+    present="$(gcloud secrets versions list "$name" --project "$PROJECT_ID" \
+         --filter "state=ENABLED" --format "value(name)" --limit 1 2>/dev/null || true)"
+  fi
+  if [ -n "$present" ]; then
+    version=latest
+    # The release signing key is bound by VERSION, not :latest. Cloud Run resolves `latest`
+    # each time an instance STARTS, so a version added later reaches every new instance of the
+    # LIVE revision (a scale-out, a recycle) with no deploy at all. The service refuses to
+    # boot when its signing key is not the one the installer pins (release_signing.py), so
+    # a rotation staged ahead of its code would turn into crashing instances. Bound by
+    # number, the live revision cannot change until a deploy picks the version up on purpose.
+    # The other secrets stay on :latest: rotating them is meant to be a new version plus a
+    # restart. Anything short of a plain version number from the ordered query (it failed, or
+    # the name is not numeric) stays on :latest rather than failing the deploy over the pin.
+    if [ "$name" = "palivane-release-signing-key" ] && [ -n "$newest" ]; then
+      number="${newest##*/}"
+      case "$number" in
+        ''|*[!0-9]*) ;;
+        *) version="$number"; echo "==> $name pinned to version $number" ;;
+      esac
+    fi
+    SECRETS+=",${pair}:${version}"
   fi
 done
 
