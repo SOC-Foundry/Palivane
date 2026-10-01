@@ -39,6 +39,7 @@ jobs:
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
       - name: Build + deploy
+        id: deploy
         env:
           PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
           REGION: ${{ vars.GCP_REGION }}
@@ -99,6 +100,15 @@ jobs:
           PALIVANE_SLACK_CLIENT_ID: ${{ vars.PALIVANE_SLACK_CLIENT_ID }}
           PALIVANE_SLACK_REDIRECT_URL: ${{ vars.PALIVANE_SLACK_REDIRECT_URL }}
         run: ./deploy/cloudrun/deploy.sh
+
+      # A deploy that fails above leaves the previous revision serving: Cloud Run only moves
+      # traffic to a revision that passes its startup probe. Why a revision would not start
+      # is in THAT revision's logs and not in this job's, so say where to look, and what the
+      # one refusal we expect reads like.
+      - name: If the new revision did not start
+        if: failure() && steps.deploy.outcome == 'failure'
+        run: |
+          echo "::error::The deploy failed and the previous revision is still serving. If Cloud Run says the new revision is not ready, the reason is in that revision's logs (Cloud Run, Logs, severity ERROR), not in this job. A release signing key that is not the one the installer pins is refused at startup: 'PALIVANE_RELEASE_SIGNING_KEY signs with a key (...) that is not the one the installer pins (...)'. See docs/verifying-downloads.md, Operator."
 
       # Release signing is configuration, not code: the sign/verify logic has been covered
       # by unit tests all along, yet production served an unsigned manifest for months
