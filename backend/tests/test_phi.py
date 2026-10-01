@@ -132,3 +132,26 @@ def test_phi_check_is_toggleable(client):
     res2 = client.post("/api/analyze", json={
         "content": "Patient MRN 4859302 admitted for observation", "persist": False})
     assert "phi_exposure" in {s["category"] for s in res2.json()["signals"]}
+
+
+# --- false positives read off the live console (2026-10-01) -------------------------------
+
+def test_patient_record_needs_identity_beside_the_clinical_word():
+    """A clinical word anywhere plus an email/phone/date anywhere made a "patient record" -
+    298 recurrences of one finding. In anything longer than a paragraph that is a coincidence
+    waiting to happen; PHI is health information LINKED to a person, so the two have to sit
+    together."""
+    far = ("Clinical decision support overview. " + "Filler sentence about unrelated build tooling. " * 12
+           + "Questions: ask jane@acme.com.")
+    assert _phi(far) == []
+    # recall: together, in either order
+    assert "patient record" in _evidence("patient Jane Doe, DOB 04/12/1987, starts chemo next week")
+    assert "patient record" in _evidence("reach her at jane@gmail.com about the patient's lab result")
+
+
+def test_a_no_reply_address_or_a_changelog_date_is_not_patient_identity():
+    assert _phi("Clinical trial notes. Co-Authored-By: Claude <noreply@anthropic.com>") == []
+    assert _phi("patient portal release notes, shipped 2026-09-14") == []
+    assert _phi("EHR integration planned for 10/01/2026") == []
+    # recall: a cued birth date still links the clinical word to a person
+    assert "patient record" in _evidence("patient portal export: DOB 1985-04-12")

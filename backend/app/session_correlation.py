@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from . import config          # read config.settings.* (not a captured ref) so a config
@@ -73,10 +74,32 @@ _CATEGORY_STAGE = {
 _IGNORED = {"ai_generated", "session_correlation"}
 
 
+# Below this strength (weight x confidence) a signal is a HINT, not an event, and cannot be a
+# link in a chain. The module exists to catch a sequence of events that are each sub-block;
+# it was being fed by guesses. The warn-level entropy token is 0.49, "patient record" 0.49,
+# "personal record" 0.41, the ML code/injection classifiers 0.34-0.4, while a known-format
+# secret is 0.77, a dashed SSN 0.6, a dangerous command 0.86, a sensitive path 0.81. On one
+# developer's own traffic the hints chained into six block-recommended "attack chains", one of
+# them 50 recurrences deep. Each hint is still its own finding; it just no longer vouches for a
+# stranger. A signal stored without a weight (older rows) counts: absence is not weakness.
+_MIN_LINK_STRENGTH = 0.5
+
+
+def _is_link(sig) -> bool:
+    w = sig.get("weight") if isinstance(sig, dict) else getattr(sig, "weight", None)
+    c = sig.get("confidence") if isinstance(sig, dict) else getattr(sig, "confidence", None)
+    if w is None or c is None:
+        return True
+    return w * c >= _MIN_LINK_STRENGTH
+
+
 def stages_in(signals) -> set[str]:
-    """The distinct kill-chain stages present in a finding's signal list."""
+    """The distinct kill-chain stages present in a finding's signal list. Hint-strength
+    signals (see `_MIN_LINK_STRENGTH`) do not count."""
     out: set[str] = set()
     for s in signals or []:
+        if not _is_link(s):
+            continue
         cat = (s.get("category") if isinstance(s, dict) else getattr(s, "category", "")) or ""
         cat = getattr(cat, "value", cat)
         stage = _CATEGORY_STAGE.get(cat)
@@ -138,10 +161,13 @@ def correlate(db: Session, tenant_id: int | None, actor: str, agent: str = "",
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     since = now - timedelta(minutes=max(1, config.settings.session_window_min))
 
+    # A finding a human has dismissed is not part of anyone's story. Without this filter,
+    # triaging the noise did not make the "attack chain" built on it go away.
     recent = (db.query(Finding)
               .filter(Finding.tenant_id == tenant_id,
                       Finding.sender == actor,
-                      Finding.last_seen >= since)
+                      Finding.last_seen >= since,
+                      or_(Finding.status.is_(None), Finding.status != "dismissed"))
               .order_by(Finding.last_seen.desc())
               .limit(300).all())
 

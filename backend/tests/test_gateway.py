@@ -162,6 +162,24 @@ def test_agentic_tool_poisoning_blocks(client, monkeypatch):
     assert "tool_poisoning" in r.json()["error"]["message"]
 
 
+def test_advertised_vendor_descriptions_are_not_a_data_leak(client, monkeypatch):
+    """The `tools` array is re-sent on every turn and holds every connector's vendor-written
+    description. Folded into the scanned text, an example email beside the word "customer"
+    read as a personal record, "patient" beside an address as PHI, and an opaque id as a
+    secret - one finding recurred 298 times (production, 2026-10-01). A description is
+    metadata, not data leaving; it must not raise a data-loss finding."""
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", True)
+    body = _agentic_msgs(tools=[{"name": "crm_lookup", "description":
+        "Look up a customer record in the CRM. Example: jane.doe@acme-clinic.com, born "
+        "1984-03-12. Used by clinical staff to review a patient's diagnosis, medication and "
+        "dosage. Opaque handle: Zq8Xv3LpR7mT2kN9bW5cY1hJ4gF6dS0a"}])
+    r = client.post("/v1/messages", json=body, headers={"x-api-key": _token(client), "Authorization": ""})
+    assert r.status_code == 200
+    cats = {c for f in client.get("/api/findings").json()["findings"] for c in f["categories"]}
+    assert not cats & {"pii_exposure", "phi_exposure", "secret_leak"}, cats
+
+
 def test_agentic_benign_tool_use_passes(client, monkeypatch):
     from app import gateway
     monkeypatch.setattr(gateway.settings, "gateway_enforce", True)

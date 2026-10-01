@@ -340,3 +340,53 @@ def test_separatorless_doc_placeholders_not_credentials():
 def test_real_assignment_values_still_flagged_after_placeholder_widening():
     for line in ("password=Tr0ub4dor&3xKcd", "DB_PASSWORD=hunter2correct"):
         assert "Credential assignment" in find_secrets(line), line
+
+
+# --- false positives read off the live console (2026-10-01) -------------------------------
+# Tier-2 entropy flagged 29 findings in two weeks on one developer's traffic. Reproduced on
+# the real strings' shapes: names and identifiers, which are long and mixed-case and carry
+# digits - everything the net looks for - without being credentials.
+
+def test_names_made_of_words_and_dates_are_not_secrets():
+    """`Northwind_Cloudflare_Audit_20260930`: a customer, a vendor, a word and a date, joined by
+    underscores. The dictionary guard knows `audit`; it has never heard of the customer or
+    the vendor, so it let the whole name through (four findings on one audit folder)."""
+    for tok in ("Northwind_Cloudflare_Audit_20260930",
+                "cf_audit_20261001_summary",
+                "Acme_Q3_Forecast_Final_Review_v2_20261001",
+                "NorthwindCloudflareAudit20260930"):
+        assert find_high_entropy_tokens(f"wrote {tok} to the shared folder") == [], tok
+
+
+def test_random_tokens_are_still_flagged_after_the_name_guard():
+    """Recall: nothing that is not a run of whole words and numbers is exempt - including a
+    random token that merely contains underscores, or a name with a random tail."""
+    for tok in ("Zq8Xv3LpR7mT2kN9bW5cY1hJ4gF6dS0a",
+                "svc_prod_4eC39HqLyjWDarjtT1zdp7dcXq",
+                "a9f3_X7kQ2mP_rT5wZ8nB_cV1d3HsQ0e",
+                "Northwind_Cloudflare_Audit_Zq8Xv3LpR7mT2kN9bW5c",
+                "1AT5mzfNxAqW3eRtYuIoP9sDfGhJkLzXcVbNm_12345a"):
+        assert find_high_entropy_tokens(f"here: {tok}"), tok
+
+
+def test_a_document_id_named_by_its_url_or_field_is_not_a_secret():
+    """A Drive/Docs id is 33-44 random-looking characters by design. Inside a /d/<id>/ URL, an
+    ?id= parameter, or next to the words folder / file id, it is an address, not a credential."""
+    doc_id = "1AT5mzfNxAqW3eRtYuIoP9sDfGhJkLzXcVbNm_12345a"
+    for text in (f"https://docs.google.com/document/d/{doc_id}/edit",
+                 f"https://drive.google.com/drive/folders/{doc_id}",
+                 f"https://drive.google.com/open?id={doc_id}",
+                 f"fileId: {doc_id}",
+                 f'{{"folderId": "{doc_id}"}}',
+                 f"Drive folder {doc_id}",
+                 f"file_id={doc_id}"):
+        assert find_high_entropy_tokens(text) == [], text
+
+
+def test_the_same_token_beside_a_credential_word_or_bare_still_flags():
+    """Recall: the exemption is the context, not the shape. `profile_id` and `key` do not
+    borrow it, and neither does a token with no context at all."""
+    doc_id = "1AT5mzfNxAqW3eRtYuIoP9sDfGhJkLzXcVbNm_12345a"
+    for text in (f"api_key = '{doc_id}'", f"token: {doc_id}", f"password {doc_id}",
+                 f"profile_id={doc_id}", f"file key {doc_id}", doc_id):
+        assert find_high_entropy_tokens(text), text

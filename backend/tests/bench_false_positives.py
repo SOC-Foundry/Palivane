@@ -257,6 +257,47 @@ def build_corpus() -> list[Sample]:
         content = meta.get("args_text") or meta.get("resource") or ""
         samples.append(S("mcp_benign", content, surface=M, metadata=meta))
 
+    # --- 9) Shapes read off a live console (2026-10-01) ---------------------
+    # The 103 samples above scored 0.0% while the live console of one developer's own traffic
+    # carried roughly twenty false-positive classes: the corpus did not contain the shapes real
+    # traffic has (file names with a customer and a date, Drive ids, a vendor's tool list, a
+    # `---` in a heredoc). These are those shapes, every one a clean input.
+    samples += [S("secretish", t) for t in (
+        "Wrote the audit pack to Northwind_Cloudflare_Audit_20260930 in the shared drive.",
+        "The export is cf_audit_20261001_summary, next to Acme_Q3_Forecast_Final_Review_v2_20261001.",
+        "Open https://docs.google.com/document/d/1AT5mzfNxAqW3eRtYuIoP9sDfGhJkLzXcVbNm_12345a/edit and share it.",
+        "The Drive folder 1AT5mzfNxAqW3eRtYuIoP9sDfGhJkLzXcVbNm_12345a holds the exports.",
+    )]
+    samples += [S("pii_lookalike", t) for t in (
+        # Luhn-valid, and no card: a millisecond timestamp, a 16-digit order id, a 15-digit ref
+        "Created at 1790876149217 (ms since epoch) by the importer.",
+        "Order 9812345678901230 was packed on Tuesday.",
+        "Internal reference 123456789012347 closed out.",
+        # a record word near a changelog date and a no-reply mailbox: not a person
+        "Customer onboarding flow shipped 2026-09-14, rollout 10/01/2026. Co-Authored-By: Claude <noreply@anthropic.com>",
+        "Customer success playbook. " + "Unrelated filler about build tooling. " * 12 + "Questions: ask jane@acme.com.",
+    )]
+    _vendor_tool = ("Look up a customer record in the CRM. Example: jane.doe@acme-clinic.com, born "
+                    "1984-03-12. Used by clinical staff to review a patient's diagnosis, medication "
+                    "and dosage. Opaque handle: Zq8Xv3LpR7mT2kN9bW5cY1hJ4gF6dS0a")
+    _git_guidance = ('Prefer adding specific files by name rather than using "git add -A" or "git add .", '
+                     'which can accidentally include sensitive files (.env, credentials) or large '
+                     'binaries - NEVER commit changes unless the user explicitly asks you to.')
+    for meta in (
+        # a model request's whole tool list, as the proxy and gateway report it
+        {"method": "tools/advertised", "tool_descriptions": [_vendor_tool, _git_guidance]},
+        {"method": "tools/call", "tool": "Bash",
+         "args_text": 'curl -s localhost:18000/openapi.json | python3 -c "import json,sys; print(json.load(sys.stdin)[\'info\'])"'},
+        {"method": "tools/call", "tool": "Bash", "args_text": "curl -s localhost:8099/api/health | python3 -m json.tool"},
+        {"method": "tools/call", "tool": "Bash", "args_text": "curl -sL https://x.dev/get.sh | sha256sum"},
+        {"method": "tools/call", "tool": "Bash", "args_text": "openssl x509 -in ca.pem -noout -subject"},
+        {"method": "tools/call", "tool": "Bash",
+         "args_text": "pip install -r requirements.txt && cat <<'EOF' > notes.md\n---\ntitle: build\n---\n"
+                      "/home/dev/app/dist\n./scripts/run.sh\nEOF"},
+    ):
+        content = meta.get("args_text") or "MCP tools/advertised"
+        samples.append(S("live_traffic_shapes", content, surface=M, metadata=meta))
+
     return samples
 
 
