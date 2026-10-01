@@ -43,6 +43,15 @@ _NPM_INSTALL_KEYS = ("preinstall", "install", "postinstall", "prepare", "prepubl
 _NONREGISTRY = re.compile(r"^(?:git\+|git:|https?:|file:|link:|github:|bitbucket:|gitlab:|/|\.\.?/)", re.I)
 
 
+# pip options whose VALUE is where packages come from: an editable path or VCS URL, an index,
+# a find-links location. Every other dash-prefixed line (`--hash=…`, `--require-hashes`,
+# `--no-binary`, a markdown `---`) says nothing about a source. This used to be
+# `startswith("--")`, which flagged all of them, and missed the short forms `-i` and `-f`.
+_PIP_SOURCE_OPTION = re.compile(
+    r"^(?:-e|--editable|-i|--index-url|--extra-index-url|-f|--find-links)(?:[\s=]|$)", re.I)
+# A bare path whose file name is a requirements file: `/proj/requirements.txt`.
+_REQ_PATH_LINE = re.compile(r"(?:\S*[/\\])?requirements[\w.-]*\.txt", re.I)
+
 _EXACT_VERSION = re.compile(r"^\d+\.\d+")
 _REQ_PIN = re.compile(r"^([A-Za-z0-9._-]+)==([0-9][\w.\-]*)")
 
@@ -113,9 +122,26 @@ def extract_pinned(content: str, subject: str = "") -> list[tuple[str, str, str]
     return pins
 
 
+def _requirements_written(content: str, resource: str = "") -> str | None:
+    """The body of a requirements file that a tool call is WRITING, or None.
+
+    A mention is not a write. `pip install -r requirements.txt`, `git add requirements.txt`, a
+    heredoc that names it: none of those is the file, but the old test - "the word
+    requirements.txt appears anywhere in the text" - read every line of such a command as a
+    requirement, so `/abs/path`, `./script` and `https://…` lines each became a "non-registry
+    dependency". The file's path has to stand alone, as the call's resource or as the first
+    line of its arguments (how a Write/Edit and an MCP filesystem write_file both arrive).
+    The path lines are dropped from the body: a path is not a requirement either."""
+    lines = content.split("\n")
+    path_lines = {s for s in ((lines[0] if lines else "").strip(), (resource or "").strip())
+                  if s and _REQ_PATH_LINE.fullmatch(s)}
+    if not path_lines:
+        return None
+    return "\n".join(ln for ln in lines if ln.strip() not in path_lines)
+
+
 _MANIFEST_KEYS = {"dependencies", "devDependencies", "scripts"}
 _JSON_DECODER = json.JSONDecoder()
-_REQUIREMENTS_RE = re.compile(r"\brequirements[\w.-]*\.txt\b", re.I)
 
 
 def _extract_manifest_json(content: str) -> str | None:
@@ -164,8 +190,9 @@ class DepGuardDetector:
         pkg = _extract_manifest_json(content)
         if pkg is not None:
             return self._scan_package_json(pkg, deny)
-        if _REQUIREMENTS_RE.search(content):
-            return self._scan_requirements(content, deny)
+        body = _requirements_written(content, m.get("resource") or "")
+        if body is not None:
+            return self._scan_requirements(body, deny)
         return []
 
     def _sig(self, title: str, detail: str, evidence: str, weight: float, conf: float) -> Signal:
@@ -209,17 +236,24 @@ class DepGuardDetector:
     def _scan_requirements(self, content: str, deny: set) -> list[Signal]:
         signals: list[Signal] = []
         names = []
+        seen: set[str] = set()
         for raw in content.splitlines():
             line = raw.strip()
             if not line or line.startswith("#"):
                 continue
-            if _NONREGISTRY.search(line) or line.startswith(("-e ", "--")):
-                signals.append(self._sig(
-                    "Non-registry dependency source",
-                    "A requirement resolves from a URL / VCS / local path, bypassing index review.",
-                    line[:80], 0.55, 0.8))
+            if _NONREGISTRY.search(line) or _PIP_SOURCE_OPTION.match(line):
+                # One signal per distinct line. Identical signals each add weight, so twelve
+                # copies of the same line once scored a harmless command a perfect 100.
+                if line[:80] not in seen:
+                    seen.add(line[:80])
+                    signals.append(self._sig(
+                        "Non-registry dependency source",
+                        "A requirement resolves from a URL / VCS / local path, bypassing index review.",
+                        line[:80], 0.55, 0.8))
                 continue
-            names.append(re.split(r"[<>=!~\[ ]", line, 1)[0].strip())
+            if line.startswith("-"):
+                continue            # an option that names no source (--hash=…, --pre, ---)
+            names.append(re.split(r"[<>=!~\[ ]", line, maxsplit=1)[0].strip())
         signals.extend(self._denylist_signals(((n, "") for n in names if n), deny))
         return signals
 
