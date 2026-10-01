@@ -39,8 +39,9 @@ _YOLO_OFF = re.compile(r"\b(false|off|disabled|no|0)\b", re.IGNORECASE)
 
 # Destructive / dangerous commands in generated code or chat (shared spirit with mcp_guard).
 _DANGEROUS_CMD = re.compile(
-    r"(?:curl|wget)\s+[^\n|;&]*\|\s*(?:sudo\s+)?(?:ba)?sh"     # curl … | sh
-    r"|base64\s+-d[^\n|]*\|\s*(?:ba)?sh"                        # base64 -d | sh
+    # \b after sh: `| sha256sum` / `| shasum` / `| shellcheck` are not `| sh`.
+    r"(?:curl|wget)\s+[^\n|;&]*\|\s*(?:sudo\s+)?(?:ba)?sh\b"   # curl … | sh
+    r"|base64\s+-d[^\n|]*\|\s*(?:ba)?sh\b"                      # base64 -d | sh
     r"|rm\s+-rf\s+(?:/|~|\$HOME|\*|--no-preserve-root)"        # rm -rf /
     r"|nc\s+-e|/dev/tcp/|bash\s+-i\s*>&"                        # reverse shells
     r"|mkfs\.|dd\s+if=/dev/(?:zero|random)\s+of=/dev/"         # wipe a disk

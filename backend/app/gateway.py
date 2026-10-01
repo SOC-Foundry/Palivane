@@ -477,12 +477,16 @@ def _capture_activity_dict(act: dict | None, tool: str, principal: Principal, db
     on the mcp surface. Shared by the OpenAI/Anthropic and Responses-API request paths."""
     if not act:
         return None
-    content = "\n".join(p for p in [act["args_text"], act["result_text"],
-                                    "\n".join(act["tool_descriptions"])] if p)
-    if not content:
+    # Scanned text is what the call moves: its arguments and the result it got back. The
+    # advertised tool descriptions stay in `metadata` for mcp_guard and out of the data-loss
+    # scan (see main._score_mcp: they are vendor metadata, re-sent on every request). An event
+    # that carries ONLY descriptions must still be analysed, or tool poisoning goes unseen.
+    content = "\n".join(p for p in [act["args_text"], act["result_text"]] if p)
+    if not content and not act["tool_descriptions"]:
         return None
     item = AnalysisInput(
-        content=content, subject=f"agent {act['method']}".strip(), sender=principal.actor,
+        content=content or f"agent {act['method']}",
+        subject=f"agent {act['method']}".strip(), sender=principal.actor,
         channel=tool or "agent", surface=Surface.MCP,
         metadata={"method": act["method"], "tool": act["tool"],
                   "args_text": act["args_text"], "tool_descriptions": act["tool_descriptions"]},
