@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import binascii
 import re
+import shlex
 import urllib.parse
 
 from ..config import settings
@@ -43,6 +44,30 @@ _SENSITIVE_PATH = re.compile(
     r")",
     re.IGNORECASE,
 )
+
+# A .pem is only a credential when it holds a key. These are the conventional names of the
+# PUBLIC half (the CA certificate a proxy asks you to trust, a server's chain), which exist
+# to be handed around. Deliberately a short list of names rather than "anything with cert in
+# it": `mitmproxy-ca.pem` carries the CA's PRIVATE key and must keep flagging, and a private
+# key inside a PEM is still caught by content (the "Private key block" pattern) wherever its
+# text reaches an AI tool. `[\w.-]+\.pem` used to match them all, so `openssl x509 -in ca.pem`
+# scored critical/block with a perfect 100.
+_PUBLIC_CERT_NAME = re.compile(
+    r"(?:ca|cacert|ca-cert|ca-bundle|ca-certificates|cert|certs|certificate|chain|fullchain"
+    r"|root-?ca|[\w.-]*[-_.]cert|[\w.-]*[-_.]certificate)\.pem",
+    re.IGNORECASE,
+)
+
+
+def _sensitive_path(haystack: str) -> re.Match | None:
+    """The first sensitive path in `haystack`, skipping public certificates. Walks every
+    match rather than taking the first, so a harmless `ca.pem` named earlier in a command
+    cannot hide the `privkey.pem` named after it."""
+    for m in _SENSITIVE_PATH.finditer(haystack):
+        if _PUBLIC_CERT_NAME.fullmatch(m.group(1)):
+            continue
+        return m
+    return None
 
 
 _HEX_RUN_RE = re.compile(r"(?:[0-9a-fA-F]{2}){12,}")
@@ -86,7 +111,8 @@ def _norm_path(s: str) -> str:
 
 # High-risk shell patterns an agent might execute via a run-command tool.
 _DANGEROUS_CMD = re.compile(
-    r"(?:curl|wget)\s+[^\n|;&]*\|\s*(?:sudo\s+)?(?:ba)?sh"     # curl … | sh
+    # \b: without it `| sha256sum` / `| shasum` / `| shellcheck` matched as `| sh`.
+    r"(?:curl|wget)\s+[^\n|;&]*\|\s*(?:sudo\s+)?(?:ba)?sh\b"   # curl … | sh
     r"|(?:curl|wget)\s+[^\n|;&]*\|\s*(?:sudo\s+)?(?:python3?|perl|ruby|node|php)\b"  # curl … | python
     r"|base64\s+-d[^\n|]*\|\s*(?:sudo\s+)?(?:(?:ba)?sh|python3?|perl|ruby|node)\b"   # base64 -d | sh/python
     r"|rm\s+-rf\s+(?:/|~|\$HOME|--no-preserve-root)"           # rm -rf /
@@ -97,6 +123,78 @@ _DANGEROUS_CMD = re.compile(
     r"|history\s+-c|shred\s+|>\s*/dev/null\s+2>&1\s*;\s*rm",    # cover tracks
     re.IGNORECASE,
 )
+
+# `curl … | python3` is dangerous because the interpreter runs the download as its PROGRAM.
+# `curl … | python3 -c "…"` or `| python3 -m json.tool` hands it a program of its own and the
+# download is only data - how every one of us pretty-prints an API response. The pattern above
+# matches the pipe, not the behaviour, so a developer inspecting their own dev server scored
+# critical/block. These helpers look at what follows the interpreter and keep flagging the two
+# shapes that really execute the download: no program of its own, or inline code that runs
+# what it reads.
+_PIPED_INTERPRETER = re.compile(r"\|\s*(?:sudo\s+)?(python3?|perl|ruby|node|php)$", re.IGNORECASE)
+# Per interpreter: the flags that give it a program of its own, and the options that consume
+# the next word as a value (so `python3 -W ignore` is not mistaken for running a script named
+# "ignore"). Per interpreter because the same letter means different things: `-r` is PHP's
+# inline code but Node's and Ruby's "require", and `perl -p` is a loop with no program at all.
+_INTERPRETERS = {
+    "python": (re.compile(r"-[cm]"), {"-W", "-X", "-Q"}),
+    "node": (re.compile(r"-[ep]|--(?:eval|print)"), {"-r", "--require", "--import", "--loader"}),
+    # Only real switch letters may precede the e: `-ne`, `-lane`, `-pe`. A module flag such as
+    # `-Mfeature` also ends in e, and is not inline code.
+    "perl": (re.compile(r"-[lanpisSwWtTuUxcdf]*[eE]"), {"-I"}),
+    "ruby": (re.compile(r"-[nplaw]*e"), {"-r", "-I"}),
+    "php": (re.compile(r"-r"), set()),
+}
+# Inline code that EXECUTES its input (as opposed to parsing it).
+_EXEC_PRIMITIVES = re.compile(
+    r"\bexec\w*\s*\(|\beval\b|\bos\.system\b|\bsystem\s*\(|\bsystem\s+[\"'$<]|\bpopen\b"
+    r"|\bsubprocess\b|\bspawn\w*\b|\bchild_process\b|\b__import__\b|\$\(|`",
+    re.IGNORECASE,
+)
+
+
+def _executes_stdin(interpreter: str, tail: str) -> bool:
+    """Does the interpreter that follows `curl … |` run its stdin as the program?
+    `tail` is the text right after the interpreter's name. Errs toward True (flag): it only
+    answers False for a flag or a script path that positively gives the interpreter a program
+    of its own."""
+    inline, takes_value = _INTERPRETERS["python" if interpreter.startswith("python") else interpreter]
+    line = tail.split("\n", 1)[0]
+    fallback = None
+    try:
+        toks = shlex.split(line)
+    except ValueError:                 # unbalanced quote: judge the program on the raw text
+        toks, fallback = line.split(), tail[:2000]
+    i = 0
+    while i < min(len(toks), 8):
+        tok = toks[i]
+        if tok in ("|", ";", "&&", "||", "&"):
+            break                       # end of this interpreter's own command line
+        if tok == "-":
+            return True                 # `python3 -` : stdin is the program, spelt out
+        if inline.fullmatch(tok):
+            program = fallback if fallback is not None else (toks[i + 1] if i + 1 < len(toks) else "")
+            return bool(_EXEC_PRIMITIVES.search(program))
+        if tok in takes_value:
+            i += 2                      # `-W ignore`: the value is not a script
+            continue
+        if tok.startswith("-"):
+            i += 1                      # -u, -B, ...: an option, not a program
+            continue
+        return False                    # a script path: stdin is its data
+    return True                         # bare interpreter: stdin IS the program
+
+
+def _first_dangerous_command(view: str) -> re.Match | None:
+    """The first dangerous-command match in one de-obfuscated view of a command line, passing
+    over `curl … | <interpreter>` that is not executing the download. Walks every match, so a
+    benign pipe earlier in the command cannot mask a dangerous one after it."""
+    for m in _DANGEROUS_CMD.finditer(view):
+        pipe = _PIPED_INTERPRETER.search(m.group(0))
+        if pipe and not _executes_stdin(pipe.group(1).lower(), view[m.end():]):
+            continue
+        return m
+    return None
 
 # Injection phrasing hidden in a tool's description (MCP "tool poisoning").
 _TOOL_POISON = re.compile(
@@ -123,8 +221,8 @@ _TOOL_POISON = re.compile(
     r"|exfiltrat|send\s+(?:the\s+)?(?:contents?|secrets?|keys?|env|file)\s+to"
     # Read/attach a CREDENTIAL FILE. Narrowed to file paths: bare "secret"/"api_key" as targets
     # matched benign — often DEFENSIVE — description copy ("do not include api_key values").
-    r"|(?:read|include|attach|append|cat|upload|send)\s+[^\n]{0,40}"
-    r"(?:\.env\b|\.ssh\b|id_rsa|~/\.aws|/\.aws/|\.pem\b|credentials\.(?:json|ya?ml|txt))"
+    r"|(?P<credfile>(?:read|include|attach|append|cat|upload|send)\s+[^\n]{0,40}"
+    r"(?:\.env\b|\.ssh\b|id_rsa|~/\.aws|/\.aws/|\.pem\b|credentials\.(?:json|ya?ml|txt)))"
     # A "before using this tool…" prelude is how real tool docs open ("Before calling this
     # tool, you must first authenticate"), so the prelude alone is not evidence. It flags when
     # what follows is the kind of thing a poisoned description asks for.
@@ -133,6 +231,35 @@ _TOOL_POISON = re.compile(
     r"disregard|reveal|print|dump|include|attach)\w{0,4}\b",
     re.IGNORECASE,
 )
+
+# The credential-file clause above cannot tell an instruction from a warning. Claude Code's
+# own Bash tool description says `…"git add .", which can accidentally include sensitive
+# files (.env, credentials) …` - the same verb and the same path, in a sentence telling the
+# model what NOT to do - and it scored critical/block, 16 recurrences deep. Where a negation
+# (or the "accidentally" that makes the sentence a warning) stands directly in front of the
+# verb, the clause is describing a hazard rather than directing one.
+#
+# "Directly in front" is the whole point. A window of a few words would let "never forget to
+# include .env in the reply" - an instruction - buy its own silence, so only the verb's
+# immediate lead-in is read: the cue, at most one adverb, an optional "to", then the verb.
+_DEFENSIVE_LEAD = re.compile(
+    r"(?:\b(?:never|not|avoid|accidentally|inadvertently|unintentionally|unknowingly)|n't)"
+    r"\s+(?:(?:\w+ly|also|ever|even)\s+)?(?:to\s+)?$",
+    re.IGNORECASE,
+)
+
+
+def _poison_match(text: str) -> re.Match | None:
+    """The first poisoning directive in `text`, passing over credential-file mentions that
+    are warnings. Keeps searching after a skipped one: a defensive sentence must not hide a
+    real directive that follows it."""
+    pos = 0
+    while (m := _TOOL_POISON.search(text, pos)) is not None:
+        if m.group("credfile") and _DEFENSIVE_LEAD.search(text[max(0, m.start() - 40):m.start()]):
+            pos = m.start() + 1
+            continue
+        return m
+    return None
 
 
 def _match_context(m: re.Match, before: int = 44, after: int = 60) -> str:
@@ -235,7 +362,7 @@ class MCPGuardDetector:
         # full text, because for them a path in the arguments IS the target.
         content_bearing = not server and tool in _CONTENT_BEARING_BUILTINS
         haystack = _norm_path(resource if content_bearing else f"{resource}\n{args_text}")
-        mres = _SENSITIVE_PATH.search(haystack)
+        mres = _sensitive_path(haystack)
         if mres:
             signals.append(Signal(
                 category=Category.SENSITIVE_RESOURCE_ACCESS,
@@ -258,7 +385,7 @@ class MCPGuardDetector:
         # does and a silent miss there is far worse than a noisy hit.
         can_execute = bool(server) or tool not in _NON_EXECUTING_BUILTINS
         mcmd = next((mm for v in _command_views(args_text)
-                     if (mm := _DANGEROUS_CMD.search(v))), None) if can_execute else None
+                     if (mm := _first_dangerous_command(v))), None) if can_execute else None
         if mcmd:
             signals.append(Signal(
                 category=Category.DANGEROUS_COMMAND,
@@ -273,7 +400,7 @@ class MCPGuardDetector:
         for desc in descriptions:
             if not isinstance(desc, str):
                 continue
-            m = _TOOL_POISON.search(desc) or _TOOL_POISON.search(normalize_for_match(desc))
+            m = _poison_match(desc) or _poison_match(normalize_for_match(desc))
             if not m:
                 continue
             signals.append(Signal(
