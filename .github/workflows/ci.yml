@@ -480,14 +480,23 @@ jobs:
         # `docker run` rather than a service container: MinIO needs `server /data` as its
         # command, and a services: block cannot pass one.
         #
-        # quay.io, not Docker Hub. `docker run minio/minio` works on a machine that pulled it
-        # before MinIO moved registries and fails everywhere else with "repository does not
-        # exist" — which is what a clean runner is, and what a customer following the test
-        # file's own instructions would hit.
+        # Chainguard's build, not MinIO's own image. MinIO Inc. archived the project and
+        # withdrew the channels it distributed through: quay.io/minio/minio and Docker Hub's
+        # minio/minio both answer 401 even for pinned release tags, and dl.min.io answers 410
+        # for the binaries. This job went red on 2026-10-01 for exactly that reason, on a
+        # clean runner, while still passing on any machine that had pulled the image earlier,
+        # which is also what a customer following the test file's own instructions would hit.
+        # Chainguard still builds MinIO from source (RELEASE.2026-09-22 when this was
+        # written), serves it without a login, and all eight tests pass against it unchanged.
+        # Their free tier serves only `latest`, so there is no tag to pin.
+        #
+        # The image runs as uid 65532, so /data has to be writable by it. A tmpfs does that
+        # without a chown step.
         run: |
           docker run -d --name pv-minio -p 9100:9000 \
             -e MINIO_ROOT_USER=palivanetest -e MINIO_ROOT_PASSWORD=palivanetest123 \
-            quay.io/minio/minio:latest server /data
+            --tmpfs /data:rw,mode=1777 \
+            cgr.dev/chainguard/minio:latest server /data
           for i in $(seq 1 40); do
             curl -sf http://localhost:9100/minio/health/live >/dev/null && break
             sleep 2
