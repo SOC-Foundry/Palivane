@@ -14,15 +14,15 @@ import { SELF_HOSTED, SIGN_IN_IS_CROSS_ORIGIN, demoUrl, signInUrl } from "../dep
 // centred heading + subhead + grid blocks, which gave a reader no sense of progress and
 // made every section feel equally weighted.
 
+// Number and label only. Each tile used to carry a second line of small print; the surfaces
+// are listed one section down and the data handling is the second FAQ answer.
 const STATS = [
-  { n: "8", l: "surfaces covered",
-    s: "browser, desktop, CLI, CI, MCP, cloud storage, repos, and your SaaS document libraries" },
+  { n: "8", l: "surfaces covered" },
   SELF_HOSTED
-    ? { n: "0", l: "content leaves your infrastructure", s: "detection runs on the backend you deploy" }
-    : { n: "0", l: "prompt text kept by default", s: "the verdict and its metadata, not what was typed" },
-  { n: `${stats.detection_checks}`, l: "detection checks",
-    s: `${stats.secret_formats} credential formats, PII, source code, prompt attacks, agent actions` },
-  { n: "1", l: "afternoon to set up", s: "one command, and your MDM pushes the rest" },
+    ? { n: "0", l: "content leaves your infrastructure" }
+    : { n: "0", l: "prompt text kept by default" },
+  { n: `${stats.detection_checks}`, l: "detection checks" },
+  { n: "1", l: "afternoon to set up" },
 ];
 
 // Ordered by what a buyer can turn on soonest, not by how the planes are built. Coding
@@ -40,24 +40,24 @@ const C = {
 };
 
 const CAPTURE = [
-  { logos: [[BrandClaude, C.claude], [BrandCursor, C.cursor], [BrandOpenAI, C.openai], [BrandCopilot, C.copilot], [BrandGemini, C.gemini]], title: "In coding tools", body: "Claude Code, Cursor, Codex, Copilot, and Gemini CLI report every prompt and tool call, and any other OpenAI/Anthropic/Gemini-compatible CLI (Grok CLI) is captured through the gateway. Posture scans surface the agents that can't be hooked (Cline, Roo, Windsurf, Amazon Q, Antigravity). One line to install." },
-  { logos: [[BrandOpenAI, C.openai], [BrandClaude, C.claude], [BrandGemini, C.gemini], [BrandPerplexity, C.perplexity]], more: stats.browser_sites - 4, title: "In the browser", body: `What people paste into ChatGPT, Claude, Gemini, Copilot, Perplexity, Grok, Qwen, Kimi. ${stats.browser_sites} AI sites in all, including the app builders (v0, Bolt, Lovable, Replit).` },
-  { logos: [[BrandSlack, C.slack], [BrandTeams, C.teams], [BrandGmail, C.gmail], [BrandDrive, C.drive], [BrandSharePoint, C.sharepoint], [BrandSalesforce, C.salesforce]], title: "In the places it already sits", body: "Slack, Microsoft Teams, Gmail, Google Drive, SharePoint, and Salesforce, scanned where the data lives, because an AI rollout will index all of it long before anyone pastes it into a prompt. Outbound mail is covered too, it's where leaks actually leave. Read-only access, nothing installed anywhere." },
+  { logos: [[BrandClaude, C.claude], [BrandCursor, C.cursor], [BrandOpenAI, C.openai], [BrandCopilot, C.copilot], [BrandGemini, C.gemini]], title: "In coding tools", body: "Claude Code, Cursor, Codex, Copilot, and Gemini CLI report every prompt and tool call. One line to install." },
+  { logos: [[BrandOpenAI, C.openai], [BrandClaude, C.claude], [BrandGemini, C.gemini], [BrandPerplexity, C.perplexity]], more: stats.browser_sites - 4, title: "In the browser", body: `What people paste into ${stats.browser_sites} AI sites, from ChatGPT and Claude to the app builders.` },
+  { logos: [[BrandSlack, C.slack], [BrandTeams, C.teams], [BrandGmail, C.gmail], [BrandDrive, C.drive], [BrandSharePoint, C.sharepoint], [BrandSalesforce, C.salesforce]], title: "In the places it already sits", body: "Slack, Teams, Gmail, Drive, SharePoint, and Salesforce, scanned where the data lives. Read-only, nothing installed." },
   { logos: [[BrandGit, C.git], [BrandGitHub, C.github], [BrandNpm, C.npm]], title: "In code and laptops", body: "Commits and dependencies before they land, and credentials already at rest." },
-  { logos: [[BrandSnowflake, C.snowflake], [BrandDatabricks, C.databricks]], title: "In the data warehouse", body: "AI called from inside the warehouse — Snowflake Cortex functions and Databricks Model Serving run on customer tables, where the prompt never touches a browser, a laptop, or any egress path. Read from the warehouse's own query history, so it reports rather than blocks." },
-  { logos: [[BrandActions, C.actions]], title: "In CI pipelines", body: "Coding agents running on CI runners with your production credentials. GitHub Actions, GitLab CI, CircleCI, and Azure Pipelines, one scanner." },
-  { logos: [[BrandClaude, C.claude], [BrandOpenAI, C.openai]], title: "In desktop apps", body: "The AI apps that never touch a browser: Claude and ChatGPT desktop. The one plane that needs a system proxy and a trusted CA, so it is usually a second phase." },
+  { logos: [[BrandSnowflake, C.snowflake], [BrandDatabricks, C.databricks]], title: "In the data warehouse", body: "Snowflake Cortex and Databricks Model Serving, read from the warehouse's own query history. It reports rather than blocks." },
+  { logos: [[BrandActions, C.actions]], title: "In CI pipelines", body: "Agents on CI runners with production credentials. GitHub Actions, GitLab CI, CircleCI, Azure Pipelines." },
+  { logos: [[BrandClaude, C.claude], [BrandOpenAI, C.openai]], title: "In desktop apps", body: "Claude and ChatGPT desktop. Needs a system proxy and a trusted CA, so it is usually phase two." },
 ];
 
 const LINEAGE = [
   { title: "The finding names the source",
-    body: "\"An AWS key went to ChatGPT\" is a ticket. \"The Q3 forecast in this Drive doc went to ChatGPT, pasted by this person, at this time\" is an answer." },
+    body: "\"An AWS key went to ChatGPT\" is a ticket. \"The Q3 forecast went to ChatGPT, pasted by this person\" is an answer." },
   { title: "Known org data scores higher",
-    body: "A leak of material Palivane has already seen in your own systems is treated as more serious than the same text arriving from nowhere, because it is." },
+    body: "Text Palivane has already seen in your own systems scores higher than the same text from nowhere." },
   { title: "Blast radius, per document",
-    body: "Start from a document instead of a finding: which prompts carried it, to which AI tools, from whom. The question an incident actually opens with." },
+    body: "Pick a document and see which prompts carried it, to which AI tools, from whom." },
   { title: "It travels with the alert",
-    body: "The source document rides along into webhooks, the SIEM export, and the report, so the context is there before anyone opens the console." },
+    body: "The source rides along into webhooks, the SIEM export, and the report." },
 ];
 
 const INSTALL_CMD = "curl -fsSL https://app.palivane.io/install.sh | bash";
@@ -67,37 +67,35 @@ const MCP_ASKS = [
     body: "Listed by actor and surface, in the chat, no login." },
   { title: "“Mark finding 4821 triaged.”",
     body: "Work the queue from the assistant. Dismissing stays admin-only, enforced by the API." },
-  { title: "“Which unsanctioned AI tools are in use, and what leaked to them?”",
-    body: "The shadow-AI inventory, without opening a dashboard." },
   { title: "“Are we covered for the OWASP LLM Top 10?”",
     body: "Framework coverage, control by control." },
 ];
 
 const LOOKS_FOR = [
-  { title: "Passwords, keys, and tokens", body: "Nearly sixty credential formats (cloud keys, API tokens, private keys, database passwords, and every major AI provider's own keys) in prompts and in what an assistant sends back." },
-  { title: "Personal and customer data", body: "Social security numbers, payment cards, and customer records, tuned so ordinary engineering work does not trip it." },
-  { title: "Whatever the file happens to be", body: "A leak is more often an exported spreadsheet, a signed PDF, or a pasted screenshot than a typed sentence. Palivane reads all three. What it genuinely cannot open it reports as unread, never as clean." },
-  { title: "Code and confidential documents", body: "Proprietary source, financials, contracts, and material carrying a classification label." },
-  { title: "Risky AI behaviour", body: "Attempts to hijack an assistant's instructions, talk it past its rules, or smuggle payloads through hidden characters." },
-  { title: "Dangerous agent actions", body: "File reads and shell commands an assistant proposes, checked before they run rather than logged after." },
-  { title: "A second opinion, optionally", body: "Everything above runs on the built-in engine. An LLM judge can review the ambiguous cases if you want one." },
+  { title: "Passwords, keys, and tokens", body: "Nearly sixty credential formats, in prompts and in what an assistant sends back." },
+  { title: "Personal and customer data", body: "Social security numbers, payment cards, and customer records." },
+  { title: "Whatever the file happens to be", body: "Spreadsheets, PDFs, and screenshots. What it cannot open is reported as unread, never as clean." },
+  { title: "Code and confidential documents", body: "Proprietary source, financials, contracts, and labelled material." },
+  { title: "Risky AI behaviour", body: "Hijacked instructions, jailbreaks, and payloads hidden in invisible characters." },
+  { title: "Dangerous agent actions", body: "File reads and shell commands, checked before they run." },
+  { title: "A second opinion, optionally", body: "An LLM judge can review the ambiguous cases if you want one." },
 ];
 
 const FAQ = [
   { q: "Does anyone have to touch every laptop?",
-    a: "No. Two things do go on a machine, a browser extension and a small CLI that wires the coding-tool hooks, but the extension is force-installed by browser policy and the CLI arrives through your MDM or one command a person runs once. Nothing needs a per-machine visit. The gateway and the SaaS connectors put nothing on a machine at all." },
+    a: "No. A browser extension and a small CLI do go on each machine, pushed by browser policy and your MDM (or one command a person runs once), so nothing needs a per-machine visit. The gateway and the SaaS connectors put nothing on a machine." },
   { q: "Where does our prompt text actually go?",
     a: SELF_HOSTED
-      ? "To the Palivane backend you deploy, and nowhere beyond it. It never leaves your infrastructure, so there is no vendor holding your prompts. Scoring is deterministic (rules and heuristics, no AI service in the loop) unless you switch on the optional LLM judge, which does send the content it reviews to the model provider you choose."
-      : "To Palivane, and nowhere beyond it. By default we record the verdict and its metadata and discard the text itself, so what we hold is that a prompt to ChatGPT carried an AWS key, not the prompt. Scoring is deterministic (rules and heuristics, no AI service in the loop) unless you switch on the optional LLM judge, which does send the content it reviews to a model provider — your own account if you supply a key, otherwise ours. Prefer that none of it reaches us at all? Self-hosting runs the same detection inside your own infrastructure, where none of it reaches us — a supported Enterprise deployment we hand over and help you stand up." },
+      ? "To the Palivane backend you deploy, and nowhere beyond it, so no vendor holds your prompts. Scoring is deterministic (rules and heuristics, no AI service in the loop) unless you switch on the optional LLM judge, which sends the content it reviews to the model provider you choose."
+      : "To Palivane, and nowhere beyond it. By default we keep the verdict and its metadata and discard the text itself: what we hold is that a prompt to ChatGPT carried an AWS key, not the prompt. Scoring is deterministic (rules and heuristics, no AI service in the loop) unless you switch on the optional LLM judge, which sends the content it reviews to a model provider (your own account if you supply a key, otherwise ours). Prefer that none of it reaches us? Self-hosting runs the same detection inside your own infrastructure, as a supported Enterprise deployment." },
   { q: "Will it break the AI tools people already pay for?",
-    a: "No. Personal Claude and ChatGPT sign-ins keep working, because the hooks score a prompt alongside the request rather than putting a gateway in its path, so the tool still talks to the provider itself with its own credentials. Gateway routing is available, and optional: OpenAI, Anthropic, Gemini, Azure OpenAI, or any OpenAI-compatible provider." },
+    a: "No. The hooks score a prompt alongside the request instead of sitting in its path, so personal Claude and ChatGPT sign-ins keep working. Gateway routing is available, and optional." },
   { q: "What happens the moment we turn it on?",
-    a: "Nothing is blocked. Palivane starts in monitor mode, so the first thing you get is an inventory of which AI tools are in use and what has been going to them. Enforcement is a switch you flip later." },
+    a: "Nothing is blocked. Palivane starts in monitor mode and gives you an inventory of the AI tools in use and what has been going to them. Enforcement is a switch you flip later." },
   { q: "What if the backend is unreachable?",
     a: "Capture fails open. A down collector never blocks a prompt or breaks a developer's tool. Confirmed secret and PII leaks are the exception and still hard-block." },
   { q: "How much of a team does this need to run?",
-    a: "One person, part time. It is designed to be set up once and then mostly leave you alone: domain claim for onboarding, policy defaults that are sensible on day one, and digests rather than a queue to work." },
+    a: "One person, part time. Set it up once, then work from digests rather than a queue." },
 ];
 
 // "Open the console" is sign-in for anyone not already signed in, so it crosses hosts on
@@ -147,10 +145,8 @@ export default function Landing({ onSignIn }) {
           <div className="lp-tagline">AI SECURITY FOR THE TOOLS YOUR TEAM ALREADY USES</div>
           <h1>Your secrets shouldn't leave with the prompt.</h1>
           <p className="lp-lead">
-            Your team uses ChatGPT, Claude, Copilot, and AI coding assistants every day. Your
-            CASB can tell you someone opened chatgpt.com. Palivane tells you <strong>a customer
-            export went into it</strong>, and stops the data, passwords, and source code that
-            shouldn't go.
+            Palivane stops the <strong>passwords, customer data, and source code</strong> your
+            team pastes into ChatGPT, Claude, Copilot, and AI coding assistants.
           </p>
           <div className="lp-cta">
             <ConsoleCta onSignIn={onSignIn} />
@@ -231,7 +227,6 @@ export default function Landing({ onSignIn }) {
             <div key={s.l} className="lp-stat">
               <span className="lp-stat-n">{s.n}</span>
               <span className="lp-stat-l">{s.l}</span>
-              <span className="lp-stat-s">{s.s}</span>
             </div>
           ))}
         </div>
@@ -242,9 +237,8 @@ export default function Landing({ onSignIn }) {
           <div className="lp-split-text">
             <span className="lp-eyebrow">See it work</span>
             <h2 className="lp-h2">The same secret, stopped eight times</h2>
-            <p className="lp-sub">A hundred seconds: one customer export and one AWS key blocked in
-              Claude, ChatGPT and Gemini, in Claude Code, Codex and Cursor, in an S3 bucket, and in
-              a GitHub Actions run. Then a walkthrough of every screen it lands in.</p>
+            <p className="lp-sub">A hundred-second tour: the browser, coding tools, S3, and CI,
+              then every screen it lands in.</p>
             <a className="lp-textlink" href="/how-it-works">How the detection works →</a>
           </div>
           <div className="lp-split-media">
@@ -258,12 +252,10 @@ export default function Landing({ onSignIn }) {
           <div className="lp-split-text">
             <span className="lp-eyebrow">Visibility</span>
             <h2 className="lp-h2">You finally know which AI tools are in use</h2>
-            <p className="lp-sub">The AI tools your company touches, who or which repo is using it,
-              and what data went where, including the ones nobody asked permission for. Every
-              destination is classified against a catalog of {stats.catalog_tools} AI tools that
-              ships with the engine. Unlike log-only tools, the exposure column shows the real
-              sensitive data each one received, and names the devices reporting nothing rather
-              than counting them as clean.</p>
+            <p className="lp-sub">Which AI tools your company uses, who uses them, and what data
+              each one received, including the ones nobody approved. Checked against a catalog of{" "}
+              {stats.catalog_tools} tools. Devices that report nothing are named, never counted as
+              clean.</p>
             <a className="lp-textlink" href="/coverage">What each surface requires →</a>
           </div>
           <div className="lp-split-media">
@@ -278,9 +270,8 @@ export default function Landing({ onSignIn }) {
           <div className="lp-split-text">
             <span className="lp-eyebrow">Agents</span>
             <h2 className="lp-h2">AI coding assistants stay inside the lines</h2>
-            <p className="lp-sub">Claude Code, Cursor, and Copilot read your files and run your
-              commands. Palivane gives each assistant its own identity and boundary, then checks
-              every action before it happens rather than logging it afterwards.</p>
+            <p className="lp-sub">Each assistant gets its own identity and limits, and every action
+              is checked before it runs, not logged afterwards.</p>
             <a className="lp-textlink" href="/use-cases#engineering">How engineering teams use it →</a>
           </div>
           <div className="lp-split-media">
@@ -295,11 +286,9 @@ export default function Landing({ onSignIn }) {
           <div className="lp-split-text">
             <span className="lp-eyebrow">Headless</span>
             <h2 className="lp-h2">Run it from your own AI assistant</h2>
-            <p className="lp-sub">Nobody wants another dashboard to check. Palivane ships an MCP
-              server, so your team governs AI security from the assistant they already use, Claude
-              or any MCP client: ask what leaked today, triage a finding, sync a connector, pull a
-              compliance report, without opening the console. The surface we secure, offered as the
-              way you drive it.</p>
+            <p className="lp-sub">Nobody wants another dashboard. Palivane ships an MCP server,
+              so you can ask Claude what leaked today, triage a finding, or pull a report, without
+              opening the console.</p>
             <ul className="lp-checklist lp-checklist-tight">
               {MCP_ASKS.map((s) => (
                 <li key={s.title}><h3>{s.title}</h3></li>
@@ -318,9 +307,8 @@ export default function Landing({ onSignIn }) {
         <div className="lp-wrap">
           <div className="lp-band-head">
             <h2 className="lp-h2">It works wherever your team uses AI</h2>
-            <p className="lp-sub">Nobody has to remember to run anything, and everything lands in
-              the same console. Only desktop-app coverage needs a system proxy and a certificate:
-              start with the rest and add it later, or never.</p>
+            <p className="lp-sub">Everything lands in one console. Only desktop apps need a system
+              proxy and a certificate, so start without them.</p>
           </div>
           <div className="lp-cards lp-cards-5">
             {CAPTURE.map((c) => (
@@ -345,10 +333,9 @@ export default function Landing({ onSignIn }) {
           <div className="lp-band-head">
             <span className="lp-eyebrow">Lineage</span>
             <h2 className="lp-h2">Not just what leaked. Which document it came out of.</h2>
-            <p className="lp-sub">Every document Palivane scans in Drive, SharePoint,
-              Salesforce, Slack, or Teams is fingerprinted. When text from one of them turns up in a
-              prompt later, the finding names the source, and the exposure view works the
-              other way too: pick a document and see everywhere it has surfaced.</p>
+            <p className="lp-sub">Palivane fingerprints every document it scans in Drive,
+              SharePoint, Salesforce, Slack, and Teams. When that text turns up in a prompt later,
+              the finding names the source.</p>
           </div>
           <div className="lp-trace">
             {LINEAGE.map((s, i) => (
@@ -373,10 +360,9 @@ export default function Landing({ onSignIn }) {
           <div className="lp-split-text sticky">
             <span className="lp-eyebrow">Detection</span>
             <h2 className="lp-h2">What Palivane looks for</h2>
-            <p className="lp-sub">Every check runs {SELF_HOSTED ? "inside your own deployment"
-              : "on your Palivane backend"} in milliseconds, deterministic rules with no
-              AI service in the loop. One risk score decides whether to allow, warn, or
-              block.</p>
+            <p className="lp-sub">Deterministic rules, run {SELF_HOSTED ? "inside your own deployment"
+              : "on your Palivane backend"} in milliseconds. One risk score decides: allow,
+              warn, or block.</p>
             <a className="lp-textlink" href="/how-it-works">The scoring model →</a>
           </div>
           <ul className="lp-checklist">
@@ -414,8 +400,7 @@ export default function Landing({ onSignIn }) {
         <div className="lp-wrap">
           <div className="lp-closing">
             <h2>Start by watching.</h2>
-            <p>Run it in monitor mode to see what your team is really sending, then switch on
-              blocking when you have seen enough.</p>
+            <p>Run it in monitor mode, then switch on blocking when you have seen enough.</p>
             {/* The one place on the landing page with a route to a human. The hero stays
                 two self-serve CTAs on purpose; someone who has read to the bottom and
                 still wants a conversation is exactly who should find this. */}
