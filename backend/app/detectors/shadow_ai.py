@@ -15,6 +15,7 @@ way "AI-written" + "attack intent" is Module A's. Fast, free, offline.
 
 from __future__ import annotations
 
+import itertools
 import re
 import unicodedata
 
@@ -210,7 +211,59 @@ _PII_STRUCT = [
 _RECORD_CTX_RE = re.compile(
     r"\b(full[ -]?name|first name|last name|d\.?o\.?b\.?|date of birth|patient|customer|"
     r"member|home address|mailing address|nationality|policy number)\b", re.I)
-_DOB_RE = re.compile(r"\b(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4})\b")
+# A date is only a BIRTH date when something says so. This used to be the bare date pattern, so
+# the word `customer` near any changelog date read as "DOB in context".
+_DATE_CORE = r"(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4})"
+_DOB_CUED_RE = re.compile(
+    r"\b(?:d\.?o\.?b\b\.?|date\s+of\s+birth|birth\s?date|birthday|born(?:\s+on)?)\b[\s:=\-]{0,6}"
+    + _DATE_CORE + r"\b", re.I)
+
+# Role and no-reply mailboxes name a function, not a person. Every request Claude Code sends
+# carries its own commit trailer (`Co-Authored-By: Claude <noreply@anthropic.com>`), which beside
+# the word `customer` used to read as a customer's contact details.
+_ROLE_LOCALPARTS = frozenset({
+    "noreply", "donotreply", "support", "help", "info", "sales", "admin", "administrator",
+    "billing", "contact", "hello", "team", "office", "service", "services", "security", "abuse",
+    "postmaster", "webmaster", "hostmaster", "notifications", "notification", "alerts", "updates",
+    "newsletter", "marketing", "press", "jobs", "careers", "hr", "legal", "privacy", "compliance",
+    "accounts", "accounting", "finance", "orders", "feedback", "enquiries", "inquiries",
+    "reception", "mailerdaemon",
+})
+
+
+def _is_role_address(addr: str) -> bool:
+    local = re.sub(r"[^a-z]", "", addr.split("@", 1)[0].lower())     # no-reply / do_not_reply
+    return local in _ROLE_LOCALPARTS or local.startswith(("noreply", "donotreply"))
+
+
+# How close a record word must be to an identifier for the two to be one record. Roughly a
+# sentence or two either side. `customer` somewhere in a prompt and an email somewhere else in
+# it is a coincidence, and a long prompt (the conversation so far) makes coincidence certain.
+_RECORD_WINDOW = 200
+_MAX_SCANNED_MATCHES = 64        # bound the pair check on a pathological paste
+
+
+def _identity_spans(text: str, with_ssn: bool = False) -> list[tuple[int, int]]:
+    """Where in `text` a person is identified: a personal (non-role) email, a phone number, a
+    CUED birth date, and optionally a dashed SSN."""
+    spans: list[tuple[int, int]] = []
+    rxs = [PHONE_RE, _DOB_CUED_RE] + ([SSN_RE] if with_ssn else [])
+    for rx in rxs:
+        spans += [m.span() for m in itertools.islice(rx.finditer(text), _MAX_SCANNED_MATCHES)]
+    spans += [m.span() for m in itertools.islice(EMAIL_RE.finditer(text), _MAX_SCANNED_MATCHES)
+              if not _is_role_address(m.group(0))]
+    return spans
+
+
+def _record_nearby(text: str, ctx_re: re.Pattern, spans: list[tuple[int, int]]) -> bool:
+    """Is any identifier within `_RECORD_WINDOW` characters of a record/clinical word?"""
+    if not spans:
+        return False
+    for c in itertools.islice(ctx_re.finditer(text), _MAX_SCANNED_MATCHES):
+        lo, hi = c.start() - _RECORD_WINDOW, c.end() + _RECORD_WINDOW
+        if any(s <= hi and e >= lo for s, e in spans):
+            return True
+    return False
 
 # --- PHI (protected health information) --------------------------------------------------
 # HIPAA-grade identifiers get their own category (phi_exposure) so a healthcare org can
@@ -501,6 +554,34 @@ def _luhn_ok(digits: str) -> bool:
     return total % 10 == 0
 
 
+def _card_shape_ok(d: str) -> bool:
+    """Does `d` look like something a card network issued: that network's prefix AND its length?
+
+    Luhn is a typo check, not a card test: it passes about one in ten of ANY long number, so a
+    13-digit millisecond timestamp or a 16-digit order id was a "payment card" one time in ten
+    (five findings, scored high, on a developer's prompts). Real PANs also start with their
+    network's issuer range and have its length. Ranges are the public IIN allocations."""
+    n = len(d)
+    p2, p3, p4 = int(d[:2]), int(d[:3]), int(d[:4])
+    if d[0] == "4":
+        return n in (13, 16, 19)                                    # Visa
+    if 51 <= p2 <= 55 or 2221 <= p4 <= 2720:
+        return n == 16                                              # Mastercard
+    if p2 in (34, 37):
+        return n == 15                                              # American Express
+    if p4 == 6011 or p2 == 65 or 644 <= p3 <= 649:
+        return 16 <= n <= 19                                        # Discover
+    if 3528 <= p4 <= 3589:
+        return 16 <= n <= 19                                        # JCB
+    if p2 in (36, 38, 39) or 300 <= p3 <= 305:
+        return 14 <= n <= 19                                        # Diners Club
+    if p2 == 62:
+        return 16 <= n <= 19                                        # UnionPay
+    if p4 in (5018, 5020, 5038, 5893, 6304, 6759) or 6761 <= p4 <= 6763:
+        return 12 <= n <= 19                                        # Maestro
+    return False
+
+
 def _sanctioned(override: str | None = None) -> set[str]:
     """Approved AI destinations — a per-tenant override when supplied (via metadata),
     else the global SANCTIONED_AI_TOOLS."""
@@ -682,6 +763,7 @@ class ShadowAIDetector:
         illustrative = bool(_TEST_CONTEXT_RE.search(text))
         cards = [m.group(0) for m in CC_CANDIDATE_RE.finditer(text)
                  if _luhn_ok(re.sub(r"[ -]", "", m.group(0)))
+                 and _card_shape_ok(re.sub(r"[ -]", "", m.group(0)))
                  and not (illustrative and re.sub(r"[ -]", "", m.group(0)) in _TEST_CARDS)]
         if cards:
             found.append(f"{len(cards)} payment card number(s)")
@@ -697,10 +779,13 @@ class ShadowAIDetector:
 
         # (C) A lone email/phone/DOB is PII when it sits in an obvious personal record —
         # the bulk (>=3) heuristic alone misses a single customer's record.
-        if _RECORD_CTX_RE.search(text) and (emails or phones or _DOB_RE.search(text)):
-            if not bulk_emails and not any("phone" in f for f in found):
-                found.append("personal record (contact/DOB in context)")
-                weight = max(weight, 0.55)
+        # The identifier has to sit next to the record word (not merely be somewhere in the same
+        # text), a no-reply/role mailbox is not a person, and a date counts only when cued as a
+        # birth date. Each of the three was a way for ordinary prose to become "a record".
+        if not bulk_emails and not any("phone" in f for f in found) \
+                and _record_nearby(text, _RECORD_CTX_RE, _identity_spans(text)):
+            found.append("personal record (contact/DOB in context)")
+            weight = max(weight, 0.55)
 
         # (B) Broadened identifiers: distinctive formats, then keyword-confirmed ones.
         for label, rx, w in _PII_STRONG:
@@ -777,9 +862,9 @@ class ShadowAIDetector:
                 weight = max(weight, w)
         # A person's identity co-occurring with clinical context is PHI even without a
         # formal identifier — "Jane's chemo starts Tuesday, reach her at jane@gmail.com".
-        if _CLINICAL_CTX_RE.search(text) and (
-                SSN_RE.search(text) or _DOB_RE.search(text)
-                or EMAIL_RE.search(text) or PHONE_RE.search(text)):
+        # "Linked to a person" means beside them: a clinical word and an identifier that merely
+        # share a long text are a coincidence (one such finding recurred 298 times).
+        if _record_nearby(text, _CLINICAL_CTX_RE, _identity_spans(text, with_ssn=True)):
             found.append("patient record (identity + clinical context)")
             weight = max(weight, 0.65)
 
