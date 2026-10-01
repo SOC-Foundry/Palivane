@@ -184,3 +184,72 @@ def test_real_exfiltration_still_reaches_the_payoff_stage():
     sig = [{"category": "pii_exposure"}, {"category": "data_exfiltration"}]
     assert "exfiltration" in stages_in(sig)
     assert _should_correlate(stages_in(sig)) is True
+
+
+# --- what counts as a link in a chain ------------------------------------------------------
+# A chain exists to catch a SEQUENCE of events that are each sub-block. It was being fed by
+# things that were not events: a warn-level entropy guess, a 0.35-weight ML hint, and findings
+# a human had already dismissed. On one developer's own traffic that manufactured six critical
+# or high, recommended_action=block "attack chains" out of noise - one of them 50 recurrences
+# deep - and dismissing the underlying findings did not make them go away (2026-10-01).
+
+def test_hint_strength_signals_are_not_links_in_a_chain():
+    """Strength is weight x confidence. The warn-level entropy guess is 0.49, and the ML
+    code / injection classifiers top out near 0.35-0.4. Neither is something that happened."""
+    assert sc.stages_in([{"category": "secret_leak", "weight": 0.7, "confidence": 0.7}]) == set()
+    assert sc.stages_in([{"category": "prompt_injection", "weight": 0.4, "confidence": 0.89}]) == set()
+    assert sc.stages_in([{"category": "source_code_leak", "weight": 0.35, "confidence": 0.98}]) == set()
+    assert sc.stages_in([{"category": "pii_exposure", "weight": 0.55, "confidence": 0.75}]) == set()
+
+
+def test_real_events_are_still_links():
+    """Recall: a known-format secret, a dangerous command, a sensitive path."""
+    assert sc.stages_in([{"category": "secret_leak", "weight": 0.9, "confidence": 0.85}]) == {"collection"}
+    assert sc.stages_in([{"category": "dangerous_command", "weight": 0.95, "confidence": 0.9}]) == {"execution"}
+    assert sc.stages_in([{"category": "sensitive_resource_access", "weight": 0.9,
+                          "confidence": 0.9}]) == {"recon"}
+    # a row stored without a weight (older findings) still counts: absence is not weakness
+    assert sc.stages_in([{"category": "dangerous_command"}]) == {"execution"}
+
+
+def test_a_dismissed_finding_is_no_longer_a_link(db_factory, monkeypatch):
+    monkeypatch.setattr(sc.config.settings, "session_correlation", True)
+    tid = _tenant(db_factory)
+    db = db_factory()
+    _recon(db, tid, "dev@acme.com")
+    for f in db.query(Finding).filter(Finding.tenant_id == tid).all():
+        f.status = "dismissed"                 # a human looked and said it is nothing
+    db.commit()
+    _exec(db, tid, "dev@acme.com")
+    assert not _correlated(db, tid)
+    db.close()
+
+
+def test_a_heuristic_guess_plus_a_command_is_not_an_attack_chain(db_factory, monkeypatch):
+    """A random-looking token in a prompt is the warn-level entropy guess: "collection" at
+    hint strength. Followed by any shell command it fired a critical chain."""
+    monkeypatch.setattr(sc.config.settings, "session_correlation", True)
+    tid = _tenant(db_factory)
+    db = db_factory()
+    run_analysis(AnalysisInput(
+        content="build token Zq8Xv3LpR7mT2kN9bW5cY1hJ4gF6dS0a for staging",
+        sender="dev@acme.com", channel="claude-code", surface=Surface.AI_USAGE,
+        metadata={"destination": "api.anthropic.com"}), persist=True, db=db, tenant_id=tid)
+    _exec(db, tid, "dev@acme.com")
+    assert not _correlated(db, tid)
+    db.close()
+
+
+def test_a_real_secret_plus_a_command_is_still_an_attack_chain(db_factory, monkeypatch):
+    """The control for the test above: same shape, but the first event is a known-format key."""
+    monkeypatch.setattr(sc.config.settings, "session_correlation", True)
+    tid = _tenant(db_factory)
+    db = db_factory()
+    run_analysis(AnalysisInput(
+        content="deploy key AKIAABCDEFGHIJKLMNOP for staging",
+        sender="dev@acme.com", channel="claude-code", surface=Surface.AI_USAGE,
+        metadata={"destination": "api.anthropic.com"}), persist=True, db=db, tenant_id=tid)
+    _exec(db, tid, "dev@acme.com")
+    chain = _correlated(db, tid)
+    assert len(chain) == 1 and "collection" in chain[0].signals[0]["evidence"]
+    db.close()
