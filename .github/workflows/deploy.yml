@@ -124,8 +124,15 @@ jobs:
           # The installer bakes in the key it will verify against, so take the key from
           # there rather than from this checkout: that compares what the service actually
           # serves against what it actually tells clients to trust.
+          #
+          # The installer holds the key as a shell assignment, PALIVANE_RELEASE_PUBKEY="-----BEGIN
+          # PUBLIC KEY----- ... -----END PUBLIC KEY-----", so the first line carries the variable
+          # name and the last a closing quote. OpenSSL only recognises a PEM whose BEGIN line
+          # starts the line, so cut both off or it cannot read the key at all.
           curl -fsS "$ORIGIN/install.sh" \
-            | sed -n '/BEGIN PUBLIC KEY/,/END PUBLIC KEY/p' > served-pub.pem
+            | sed -n '/BEGIN PUBLIC KEY/,/END PUBLIC KEY/p' \
+            | sed -e 's/^.*-----BEGIN PUBLIC KEY-----/-----BEGIN PUBLIC KEY-----/' \
+                  -e 's/-----END PUBLIC KEY-----.*$/-----END PUBLIC KEY-----/' > served-pub.pem
           test -s served-pub.pem || { echo "::error::installer pins no public key"; exit 1; }
 
           python3 -c 'import json,sys;f=json.load(open("manifest.json"))["files"];sys.stdout.write(json.dumps({k:v["sha256"] for k,v in f.items()},separators=(",",":"),sort_keys=True))' > digest
