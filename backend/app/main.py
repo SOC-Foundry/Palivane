@@ -1759,11 +1759,15 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
                                      trusted_issuer=_tenant_sso_issuer(tenant_id, db))
     actor = (ema.get("email") or ema.get("sub")
              or _attributed_actor(body.user, default_actor))
-    # Synthesize the scannable text: tool arguments, resource URI, and advertised tool
-    # descriptions — so shadow-AI catches secrets/PII in args and the finding has context.
-    content = "\n".join(p for p in [
-        body.args_text, body.resource, "\n".join(body.tool_descriptions),
-    ] if p) or f"MCP {body.method} {body.tool or body.server}".strip()
+    # Synthesize the scannable text: the tool's arguments and resource URI, i.e. what this call
+    # is about to MOVE, so shadow-AI catches secrets/PII in args and the finding has context.
+    # Advertised tool descriptions are deliberately not in it. They are vendor-written metadata,
+    # and the proxy reports the whole list on every model request, so scanning them for
+    # PII/PHI/secrets read a connector's example email as a personal record and one finding
+    # recurred 298 times. They still reach mcp_guard through `metadata`, and mcp_guard is the
+    # one detector that reads them (tool poisoning).
+    content = "\n".join(p for p in [body.args_text, body.resource] if p) \
+        or f"MCP {body.method} {body.tool or body.server}".strip()
 
     # An MCP call names its server; an assistant's own built-in tool does not (the hook's
     # contract: "built-in tools send server=''"). Everything used to land as MCP, so the
