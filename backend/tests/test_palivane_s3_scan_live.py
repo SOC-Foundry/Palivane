@@ -15,11 +15,14 @@ What IS covered is the direction that misfires more often: a private bucket, or 
 ordinary policy, must not read as public. A false positive there flags every bucket a
 customer owns.
 
-Skipped unless MinIO is reachable. To run it:
+Skipped unless MinIO is reachable. MinIO Inc. archived the project and withdrew its images
+(quay.io/minio/minio no longer serves), so use Chainguard's maintained build, the one CI
+runs:
 
     docker run -d --name pv-minio -p 9100:9000 \\
       -e MINIO_ROOT_USER=palivanetest -e MINIO_ROOT_PASSWORD=palivanetest123 \\
-      quay.io/minio/minio:latest server /data
+      --tmpfs /data:rw,mode=1777 \\
+      cgr.dev/chainguard/minio:latest server /data
 """
 from __future__ import annotations
 
