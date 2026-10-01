@@ -603,6 +603,56 @@ def _is_word_run(tok: str) -> bool:
     return covered / len(body) >= 0.8 if body else False
 
 
+_VOWEL_RE = re.compile(r"[aeiouy]", re.I)
+_NAME_CHUNK_RE = re.compile(r"([A-Za-z]+)(\d{0,8})")      # letters, then an optional number
+_NAME_LABEL_RE = re.compile(r"\d{1,4}[A-Za-z]{1,3}")      # 2FA, 3rd
+
+
+def _is_name_like(tok: str) -> bool:
+    """A NAME rather than a secret: underscore- or CamelCase-joined words, numbers and short
+    labels - `Northwind_Cloudflare_Audit_20260930`, `cf_audit_20261001_summary`,
+    `Acme_Q3_Forecast_Final_v2_20261001`.
+
+    `_is_dictionary_identifier` already knows ordinary English words, but a file or folder name
+    is built from a CUSTOMER and a VENDOR as often as from `audit`, and no dictionary lists
+    those, so the whole name read as a random token (four findings on one audit folder). The
+    test here is structural instead: every piece is a pronounceable word (at least two letters,
+    a vowel once it is three or more), a number, or a short label, and at least two are real
+    words. A random token fails it immediately - its pieces are one-letter humps and digits
+    inside letters - and so does a run of short labels, which has no words in it."""
+    words = 0
+    for chunk in tok.split("_"):
+        if not chunk or chunk.isdigit():
+            continue
+        m = _NAME_CHUNK_RE.fullmatch(chunk)
+        if m is None:
+            if _NAME_LABEL_RE.fullmatch(chunk):
+                continue
+            return False
+        letters = m.group(1)
+        if len(letters) <= 3:                       # a label: cf, id, Q3, v2
+            continue
+        pieces = _ID_SEGMENT_RE.findall(letters)
+        for p in pieces:
+            if len(p) < 2 or (len(p) >= 3 and not _VOWEL_RE.search(p)):
+                return False                        # a one-letter hump, or consonant soup
+            if len(p) >= 4:
+                words += 1
+    return words >= 2
+
+
+# A document id is 33-44 random-looking characters BY DESIGN (Drive, Docs, Sheets, Slides), and
+# nothing about its shape separates it from a key. What does is where it stands: in a /d/<id>/
+# path or an ?id= parameter, or directly after the word that names it (`folder`, `fileId:`,
+# `--drive-root-folder-id `). Context only, never shape: `api_key = <same token>`, `password
+# <same token>` and `file key <same token>` still flag, and so does the bare token.
+_DOC_ID_CONTEXT_RE = re.compile(
+    r"(?:/(?:d|folders|file/d)/"
+    r"|[?&](?:id|file_?id|folder_?id)="
+    r"|\b(?:drive|folders?|files?|docs?|documents?|sheets?|spreadsheets?|slides?|presentations?)"
+    r"[\s_-]*(?:id)?[\"']?\s*[:=]?\s*[\"'\[(]?)$", re.I)
+
+
 def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
     """Return truncated evidence for token-like substrings that look like secrets:
     24–80 chars of [A-Za-z0-9_], mixed character classes, high Shannon entropy, and not
@@ -632,6 +682,10 @@ def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
             continue
         if tok.startswith(_NONSECRET_ID_PREFIXES):
             continue   # provider-issued correlation id (tool_use, request, message), not a key
+        if _is_name_like(tok):
+            continue   # a file/folder name: words, numbers and labels, not a credential
+        if _DOC_ID_CONTEXT_RE.search(text[max(0, m.start() - 48):m.start()]):
+            continue   # a Drive/Docs id, named as one by its URL or field
         if tok.startswith(_PUBKEY_B64_PREFIXES):
             continue   # bare base64 SubjectPublicKeyInfo — a PUBLIC key is not a secret
         if _is_dictionary_identifier(tok):

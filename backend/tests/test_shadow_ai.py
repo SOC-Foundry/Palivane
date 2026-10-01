@@ -387,3 +387,73 @@ def test_expanded_vendor_secret_patterns():
     # PGP block: the pre-expansion regex required 'PRIVATE KEY-----' and missed the
     # '… KEY BLOCK-----' form entirely.
     assert "Private key block" in find_secrets("-----BEGIN PGP PRIVATE KEY BLOCK-----")
+
+
+# --- false positives read off the live console (2026-10-01) -------------------------------
+
+def _luhn_valid(prefix: str) -> str:
+    """`prefix` plus the one check digit that makes it pass Luhn - a number that looks like a
+    card to the checksum and to nothing else."""
+    return next(prefix + d for d in "0123456789" if _luhn_ok(prefix + d))
+
+
+def test_a_long_number_that_passes_luhn_is_not_a_card_unless_it_has_a_card_shape():
+    """Luhn alone accepts about one in ten of ANY 13-16 digit number: a millisecond timestamp,
+    an order id, a snowflake. A card also has a brand prefix and that brand's length. Five
+    "payment card" findings, scored high, on a developer's prompts."""
+    for prefix in ("179087614921",        # 13 digits: a millisecond epoch timestamp
+                   "981234567890123",     # 16 digits, no brand starts with 9
+                   "12345678901234",      # 15 digits, not 34/37
+                   "7000000000000",       # 14 digits, not a Diners prefix
+                   "4000000000000"):      # 14 digits starting 4: a Visa prefix, but no Visa is 14
+        n = _luhn_valid(prefix)
+        assert _luhn_ok(n)                # the premise: the checksum alone would have flagged it
+        assert Category.PII_EXPOSURE not in _cats(f"order {n} shipped"), n
+
+
+def test_real_card_numbers_of_every_major_brand_still_flag():
+    """Recall: the published test numbers for each network, with and without separators."""
+    for number in ("4111111111111111", "4222222222222",                    # Visa 16 / 13
+                   "5555555555554444", "2223003122003222",                 # Mastercard
+                   "378282246310005", "371449635398431",                   # Amex (15)
+                   "6011111111111117", "6011000990139424",                 # Discover
+                   "3530111333300000", "3566002020360505",                 # JCB
+                   "30569309025904", "38520000023237",                     # Diners (14)
+                   "6200000000000005", "6759649826438453"):                # UnionPay / Maestro
+        assert _luhn_ok(number), number                                    # the premise
+        assert Category.PII_EXPOSURE in _cats(f"charge {number} today"), number
+    assert Category.PII_EXPOSURE in _cats("charge 4111-1111-1111-1111 today")
+    assert Category.PII_EXPOSURE in _cats("charge 3782 822463 10005 today")
+
+
+def test_a_personal_record_needs_the_identifier_beside_the_record_word():
+    """`customer` anywhere plus an email anywhere was a "personal record": in a prompt that is
+    thousands of characters of conversation, that is every prompt that mentions a customer.
+    The record word and the identifier have to be in the same breath."""
+    far = ("Customer success playbook. " + "Unrelated filler about build tooling. " * 20
+           + "Questions: jane@acme.com.")
+    assert Category.PII_EXPOSURE not in _cats(far)
+    # recall: close together, in either order
+    assert Category.PII_EXPOSURE in _cats("customer full name: Jane Roe, email jane@x.com")
+    assert Category.PII_EXPOSURE in _cats("jane@x.com is the member on file")
+
+
+def test_a_no_reply_or_role_address_is_not_a_person():
+    """Every request Claude Code sends carries its own commit trailer,
+    `Co-Authored-By: Claude <noreply@anthropic.com>`. Beside the word `customer` that read as
+    a customer's contact details."""
+    assert Category.PII_EXPOSURE not in _cats(
+        "customer export notes. Co-Authored-By: Claude <noreply@anthropic.com>")
+    for addr in ("noreply@x.com", "no-reply@x.com", "donotreply@x.com", "support@x.com",
+                 "info@x.com", "sales@x.com", "admin@x.com", "billing@x.com"):
+        assert Category.PII_EXPOSURE not in _cats(f"customer inquiry via {addr}"), addr
+
+
+def test_a_date_is_not_a_birth_date_without_a_cue():
+    """The DOB pattern matched ANY date, so `customer` near a changelog date was "DOB in
+    context". A date only counts when something says it is a birth date."""
+    assert Category.PII_EXPOSURE not in _cats("customer onboarding shipped 2026-09-14, rollout 10/01/2026")
+    # recall: the cue is what makes it a birth date
+    assert Category.PII_EXPOSURE in _cats("customer record: DOB 1985-04-12")
+    assert Category.PII_EXPOSURE in _cats("patient date of birth: 04/12/1987")
+    assert Category.PII_EXPOSURE in _cats("member born on 1985-04-12")
