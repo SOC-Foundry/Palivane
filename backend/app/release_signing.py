@@ -35,12 +35,18 @@ import json
 
 from .config import _env
 
-# Palivane's release-signing public key (ECDSA P-256). The matching private key is the
-# vendor's alone (Secret Manager: palivane-release-signing-key). Override for forks/tests
-# via PALIVANE_RELEASE_PUBKEY.
+# Palivane's release-signing public key (ECDSA P-256). The matching private key lives in
+# Secret Manager as palivane-release-signing-key and nowhere else. Override for
+# forks/self-hosts via PALIVANE_RELEASE_PUBKEY.
+#
+# The key this replaced had no private half anywhere — which is why signing was never
+# switched on and /cli/manifest.sig answered 404 in production, while the docs described
+# an installer that fails closed. Rotating it is safe because /install.sh is generated per
+# request (distribution.py) and bakes in whatever key is current, so the documented
+# `curl … | bash` flow always gets this one.
 VENDOR_RELEASE_PUBKEY_PEM = """-----BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEYzLBG9xT5RSIKJoCrD/OMV/YXnjz
-ubjJD5E+aWPwopHCPTuMajbqwJaEN7rJZ+ULhyN/ff9DrzSUYTXuHrXJEw==
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtwIOdXmgRU12/7oDPzpkLqrud1DN
+s2ngn344uoGU+MF5HUF7gFG2emj+UG3aPvm5Jbh+ggQdxs9R7ZZ1PwoP9Q==
 -----END PUBLIC KEY-----
 """
 

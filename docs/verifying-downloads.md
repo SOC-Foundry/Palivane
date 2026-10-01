@@ -55,8 +55,8 @@ sha256sum palivane-connect     # the two hashes must match
 
 ```
 -----BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEYzLBG9xT5RSIKJoCrD/OMV/YXnjz
-ubjJD5E+aWPwopHCPTuMajbqwJaEN7rJZ+ULhyN/ff9DrzSUYTXuHrXJEw==
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtwIOdXmgRU12/7oDPzpkLqrud1DN
+s2ngn344uoGU+MF5HUF7gFG2emj+UG3aPvm5Jbh+ggQdxs9R7ZZ1PwoP9Q==
 -----END PUBLIC KEY-----
 ```
 
