@@ -123,6 +123,48 @@ def _drop_uncorroborated_ml_code(signals: list[Signal]) -> list[Signal]:
     return [s for s in signals if s.effective_check != "source_code_ml"]
 
 
+# Checks that are a model's read of the text rather than a finding in it. The on-box
+# classifiers (ml_classifier.py) are trained on synthetic data and say so in their own
+# contract: they corroborate, and "cannot max a verdict alone".
+_HINT_CHECKS = frozenset({"prompt_injection_ml", "source_code_ml"})
+
+# Signals about where the text is going, not what it says. Next to a hint they are not
+# corroboration: an unsanctioned destination does not make a sentence more likely to be an
+# injection.
+_CONTEXT_CATEGORIES = frozenset({Category.UNSANCTIONED_AI})
+
+# The most a hint standing alone may score: the top of the `low` band, one under
+# `suspicious` in severity_for (test_scoring pins the two together).
+_HINT_CAP = 34
+
+
+def _cap_uncorroborated_hints(risk: int, real: list[Signal]) -> int:
+    """Hold a verdict that rests on a model's hint alone at `low`.
+
+    The contract was already "alone it warns at most", and the arithmetic did not keep it:
+    the injection hint is weight 0.4 x confidence p, which is 28 to 38 points for p from 0.70
+    up, and 35 is the `suspicious` line. So p of 0.875 or more crossed it unaided, and any
+    lower p crossed it with the few points an unrecognized-destination signal adds to every
+    prompt sent to a host the org has not approved. The classifier reads phrasing, not
+    intent, so text that merely discusses or quotes an injection can score like one; of the
+    six hint-only findings one operator triaged (p from 0.70 to 0.89) every one was dismissed.
+
+    A hint is still recorded: it stays in the verdict's signals, scored as `low`, so the
+    classifier's read is visible and the trend is countable. What it cannot do alone is raise
+    an alert. A second check that saw an attack in the same text (a rule, the judge) is what
+    corroborates it, and then the verdict is the plain saturating OR, uncapped. A signal
+    about something else (a leaked secret) is not held down by a hint beside it: this only
+    applies when every risk signal is the hint or context about the destination."""
+    if not any(s.effective_check in _HINT_CHECKS for s in real):
+        return risk
+    corroborated = any(
+        s.effective_check not in _HINT_CHECKS
+        and s.category in _RISK_CATEGORIES
+        and s.category not in _CONTEXT_CATEGORIES
+        for s in real)
+    return risk if corroborated else min(risk, _HINT_CAP)
+
+
 def _saturating_combine(contributions: list[float]) -> float:
     """Probabilistic OR: 1 - Π(1 - c). Saturates toward 1.0."""
     acc = 1.0
@@ -169,7 +211,7 @@ def score(signals: list[Signal]) -> Verdict:
     synergy = 0.35 * ai_conf * risk_conf
     combined = min(1.0, base + synergy)
 
-    risk = round(combined * 100)
+    risk = _cap_uncorroborated_hints(round(combined * 100), real)
 
     ai_generated = ai_conf >= 0.5
     attack_intent = adversarial_conf >= 0.45
