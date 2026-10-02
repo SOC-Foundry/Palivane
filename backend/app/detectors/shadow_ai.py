@@ -18,6 +18,7 @@ from __future__ import annotations
 import itertools
 import re
 import unicodedata
+from urllib.parse import urlsplit
 
 from ..config import settings
 from .base import AnalysisInput, Category, Signal, Surface
@@ -582,11 +583,48 @@ def _card_shape_ok(d: str) -> bool:
     return False
 
 
+_HOST_PORT = re.compile(r"^[a-z0-9.-]+:\d+(?:/|$)")
+
+
+def _host_of(dest: str) -> str:
+    """What a destination points at, so it can be compared with what an admin sanctioned.
+
+    Destinations arrive as URLs (the egress proxy reports `https://api.anthropic.com`, some
+    agent traffic `wss://host/path`, the browser extension a page URL) or as a bare client or
+    tool name (`claude-code`, `snowflake-cortex`). The sanctioned list holds bare hosts and
+    names. A URL, or a host with a port or a path, is cut down to its host; anything else
+    comes back lowercased and otherwise unchanged, to be compared as a name."""
+    d = (dest or "").strip().lower()
+    if not d or any(c.isspace() for c in d):
+        return d
+    if "://" not in d and "/" not in d and not _HOST_PORT.match(d):
+        return d.rstrip(".")
+    try:
+        host = urlsplit(d if "://" in d else "//" + d).hostname
+    except ValueError:      # e.g. an unbalanced IPv6 bracket: not a URL after all, keep the name
+        return d
+    return (host or d).rstrip(".")
+
+
+def _on_host(host: str, domain: str) -> bool:
+    """`host` is `domain` or one of its subdomains. Whole labels only: 'pi.ai' is not inside
+    'api.airtable.com', and 'corp.com' does not cover 'evilcorp.com' or 'corp.com.attacker.net'."""
+    return host == domain or host.endswith("." + domain)
+
+
 def _sanctioned(override: str | None = None) -> set[str]:
     """Approved AI destinations — a per-tenant override when supplied (via metadata),
-    else the global SANCTIONED_AI_TOOLS."""
+    else the global SANCTIONED_AI_TOOLS. Hosts or tool names, comma or newline separated,
+    as discovery reads the same setting; an entry pasted as a URL stands for its host."""
     raw = override if override is not None else settings.sanctioned_ai_tools
-    return {t.strip().lower() for t in (raw or "").split(",") if t.strip()}
+    return {_host_of(t) for t in re.split(r"[,\n]", raw or "") if t.strip()}
+
+
+def _is_sanctioned(host: str, sanctioned: set[str], *names: str) -> bool:
+    """True when `host` is on a sanctioned domain (or is one), or a sanctioned entry names the
+    tool. The same rule discovery._is_sanctioned applies to the same list, so the console and
+    the detector cannot disagree about whether a tool is approved."""
+    return any(n in sanctioned for n in names) or any(_on_host(host, s) for s in sanctioned)
 
 
 def confirmed_leak(signals) -> bool:
@@ -1021,13 +1059,19 @@ class ShadowAIDetector:
         if not dest or dest in _FIRST_PARTY_CLIENTS:
             return []   # no destination, or Palivane's own governed client — not shadow AI
 
+        # Judge the host, not the string: `https://api.anthropic.com` is the destination the
+        # proxy reports and `api.anthropic.com` is what the admin sanctioned. Compared as
+        # whole strings they never matched, so a sanctioned host stayed "unrecognized" for
+        # every prompt that reached it as a URL. The evidence below stays the destination as
+        # received, since it is part of the finding's fingerprint.
+        host = _host_of(dest)
         override = item.metadata.get("sanctioned_tools") if item.metadata else None
         sanctioned = _sanctioned(override)
-        matched = next(((dom, name) for dom, name in KNOWN_AI_TOOLS.items() if dom in dest), None)
+        matched = next(((dom, name) for dom, name in KNOWN_AI_TOOLS.items() if _on_host(host, dom)), None)
 
         if matched:
             dom, name = matched
-            if dom in sanctioned or name.lower() in sanctioned:
+            if _is_sanctioned(host, sanctioned, dom, name.lower()):
                 return []  # explicitly approved tool
             # Tool-use alone is monitor-level; the alarm comes from pairing it with
             # sensitive-data signals via the scoring engine's saturating OR.
@@ -1040,7 +1084,7 @@ class ShadowAIDetector:
             )]
 
         # Unknown destination that isn't on the allowlist — lower-confidence flag.
-        if dest not in sanctioned:
+        if not _is_sanctioned(host, sanctioned):
             return [Signal(
                 category=Category.UNSANCTIONED_AI,
                 title="Unrecognized AI destination",

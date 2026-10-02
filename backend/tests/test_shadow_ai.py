@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.detectors.base import AnalysisInput, Category, Surface
 from app.detectors.patterns import find_high_entropy_tokens, find_secrets
 from app.detectors.shadow_ai import ShadowAIDetector, _luhn_ok
@@ -128,6 +130,115 @@ def test_sanctioned_tool_not_flagged(monkeypatch):
     monkeypatch.setattr(shadow_ai.settings, "sanctioned_ai_tools", "claude.ai")
     cats = _cats("just a brainstorm question", destination="claude.ai")
     assert Category.UNSANCTIONED_AI not in cats
+
+
+def _unsanctioned(destination, sanctioned=None):
+    """The unsanctioned_ai signals one prompt to `destination` produces, under a per-tenant
+    sanctioned list (the metadata override the ingest path fills from tenant settings)."""
+    meta = {"destination": destination}
+    if sanctioned is not None:
+        meta["sanctioned_tools"] = sanctioned
+    item = AnalysisInput(content="hello", surface=Surface.AI_USAGE, channel="ai_tool", metadata=meta)
+    return [s for s in det.analyze(item) if s.category == Category.UNSANCTIONED_AI]
+
+
+# The egress proxy reports a destination as `https://<host>` (and `wss://<host>/<path>` for
+# some agent traffic); the browser extension reports a page URL; the CLI hooks report a bare
+# client name. The sanctioned list holds bare hosts ("chatgpt.com, claude.ai", per the
+# Settings field). Sanctioning a host has to cover every shape that host arrives in.
+@pytest.mark.parametrize("destination", [
+    "https://api.anthropic.com",
+    "https://api.anthropic.com/",
+    "https://api.anthropic.com/v1/messages?beta=true",
+    "wss://api.anthropic.com/socket",
+    "API.Anthropic.com:443",
+    "api.anthropic.com",
+    "https://api.anthropic.com.",
+])
+def test_sanctioning_a_host_covers_every_shape_it_arrives_in(destination):
+    assert _unsanctioned(destination, sanctioned="api.anthropic.com") == []
+
+
+def test_sanctioning_a_domain_covers_its_subdomains():
+    # Discovery already reads the list this way (discovery._is_sanctioned); the detector has
+    # to agree, or the console shows a tool as approved while every prompt to it still scores.
+    assert _unsanctioned("https://api.anthropic.com", sanctioned="anthropic.com") == []
+    assert _unsanctioned("https://chat.openai.com/c/1", sanctioned="openai.com") == []
+    assert _unsanctioned("https://api.openai.com", sanctioned="openai.com") == []
+
+
+def test_sanctioned_entries_are_tolerant_of_how_an_admin_types_them():
+    typed = "  Claude.AI ,https://api.anthropic.com/ ,, snowflake-cortex "
+    assert _unsanctioned("https://claude.ai/new", typed) == []
+    assert _unsanctioned("https://api.anthropic.com", typed) == []
+    assert _unsanctioned("snowflake-cortex", typed) == []
+
+
+def test_sanctioned_list_may_be_newline_separated():
+    # discovery splits the same setting on newlines as well as commas.
+    assert _unsanctioned("https://api.anthropic.com", "claude.ai\napi.anthropic.com") == []
+    assert _unsanctioned("https://claude.ai", "claude.ai\napi.anthropic.com") == []
+
+
+def test_sanctioning_by_display_name_still_works():
+    assert _unsanctioned("https://claude.ai/", sanctioned="claude") == []
+    assert _unsanctioned("https://chatgpt.com", sanctioned="chatgpt") == []
+
+
+@pytest.mark.parametrize("destination, sanctioned", [
+    ("https://api.anthropic.com", "claude.ai"),                     # a different tool
+    ("https://chat.openai.com", "claude.ai"),
+    ("https://anthropic.com.attacker.net", "anthropic.com"),        # suffix of a longer name
+    ("https://notanthropic.com", "anthropic.com"),                  # no label boundary
+    ("https://claude.ai@evil.example/", "claude.ai"),               # userinfo is not the host
+    ("https://evil.example/claude.ai", "claude.ai"),                # path is not the host
+    ("https://evil.example/?next=claude.ai", "claude.ai"),
+    ("snowflake-cortex", "snowflake"),                              # names match whole, not by prefix
+])
+def test_a_lookalike_is_not_sanctioned(destination, sanctioned):
+    assert _unsanctioned(destination, sanctioned), f"{destination} must not ride on {sanctioned}"
+
+
+def test_an_unsanctioned_destination_still_flags_with_nothing_sanctioned():
+    assert _unsanctioned("https://api.anthropic.com", sanctioned="") != []
+    assert _unsanctioned("https://chat.openai.com/c/123", sanctioned="")[0].title == "Unsanctioned AI tool: ChatGPT"
+
+
+@pytest.mark.parametrize("destination, tool", [
+    ("https://chat.openai.com/c/1", "ChatGPT"),
+    ("https://api.openai.com", "OpenAI"),
+    ("https://www.perplexity.ai/search", "Perplexity"),
+    ("https://chat.deepseek.com/", "DeepSeek"),
+    ("https://gemini.google.com/app", "Gemini"),
+    ("claude.ai", "Claude"),
+])
+def test_known_tool_is_named_from_its_host(destination, tool):
+    assert _unsanctioned(destination, sanctioned="")[0].title == f"Unsanctioned AI tool: {tool}"
+
+
+@pytest.mark.parametrize("destination", [
+    "https://api.airtable.com",       # contains "pi.ai"
+    "https://vapi.ai",                # ends in "pi.ai"
+    "https://box.ai",                 # ends in "x.ai"
+    "https://hix.ai",
+    "https://11x.ai",
+    "https://notopenai.com",
+    "https://mypoe.com",
+    "https://claude.ai.evil.example",
+])
+def test_known_tool_names_are_not_matched_inside_other_hosts(destination):
+    # Same rule the catalog already applies (ai_catalog._key_matches): a short domain key must
+    # sit on label boundaries, or Airtable's API is reported as "Pi" and Box AI as "Grok".
+    [sig] = _unsanctioned(destination, sanctioned="")
+    assert sig.title == "Unrecognized AI destination", sig.title
+
+
+def test_destination_evidence_is_the_destination_as_received():
+    # Evidence is part of a finding's fingerprint. Matching on the host must not change what
+    # is recorded, or every open finding for a URL-shaped destination would fork into a new
+    # one on deploy.
+    [sig] = _unsanctioned("HTTPS://API.Anthropic.com/v1/messages", sanctioned="")
+    assert sig.evidence == "https://api.anthropic.com/v1/messages"
 
 
 def test_clean_content_no_destination_is_silent():
