@@ -113,6 +113,12 @@ async def lifespan(_app: FastAPI):
                 "PALIVANE_SECRET_KEY to a strong random value (openssl rand -hex 32) and restart.")
         log.warning("PALIVANE_SECRET_KEY is unset/weak — using an insecure dev key (SQLite dev only).")
 
+    # A signing key the installer does not pin makes every `curl | bash` install abort, and
+    # nothing else notices. On Cloud Run a revision that refuses to boot never gets traffic,
+    # so this turns a bad deploy into a failed deploy. See release_signing.key_pair_problem.
+    from . import release_signing
+    release_signing.enforce_key_pair(prod, log)
+
     # SQLite is the first-boot default for a native install (install.sh writes it, then tells
     # the operator to point at Postgres). Plenty of them will not, so say what that costs
     # rather than letting /trust's "RLS on every tenant-scoped table" quietly become untrue:

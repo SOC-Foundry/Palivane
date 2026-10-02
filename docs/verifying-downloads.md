@@ -152,10 +152,30 @@ gcloud secrets create palivane-release-signing-key --data-file=release-priv.pem
 ```
 
 `deploy.sh` mounts `palivane-release-signing-key` as `PALIVANE_RELEASE_SIGNING_KEY` when
-the secret exists. Once it's set, `/cli/manifest.sig` starts returning a signature and
-every freshly generated `install.sh` enforces it. Rotating the key = new secret version +
-update `VENDOR_RELEASE_PUBKEY_PEM` to the new public half (installers already in the wild
-pin the old key, so announce rotations).
+the secret has an enabled version, **pinned to that version number** (the newest enabled
+one when the deploy runs), so adding a version later changes nothing until the next deploy.
+Once it's set, `/cli/manifest.sig` starts returning a signature and every freshly generated
+`install.sh` enforces it, and that installer **refuses to install** when the signature does
+not verify against the key it pins.
+
+That makes the pairing matter, so the service checks it. The signing key's public half has
+to be the key the installer pins (`VENDOR_RELEASE_PUBKEY_PEM`, or `PALIVANE_RELEASE_PUBKEY`
+on a fork), and whatever order you do the steps in, **the deploy that binds a secret
+version must ship the matching public key**. A production deployment whose signing key is
+not the pinned one refuses to boot:
+
+```
+PALIVANE_RELEASE_SIGNING_KEY signs with a key (sha256:…) that is not the one the
+installer pins (sha256:…). …
+```
+
+On Cloud Run that fails the deploy and leaves the previous revision serving, instead of
+shipping an installer that rejects every release (SQLite dev only warns). The deploy
+workflow then verifies the live signature against the key the live installer pins.
+
+Rotating the key = new secret version + `VENDOR_RELEASE_PUBKEY_PEM` set to the new public
+half in the same release (installers already in the wild pin the old key, so announce
+rotations).
 
 The **same** key signs server release tarballs. `deploy/native/build-release.sh` reads
 `PALIVANE_RELEASE_SIGNING_KEY` from the build environment and, when it is set, writes a
