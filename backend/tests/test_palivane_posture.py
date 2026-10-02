@@ -373,3 +373,80 @@ def test_unparseable_config_is_still_scanned_and_redacted(tmp_path, monkeypatch)
     out = wp.mcp_findings("not json at all, token=" + _TOKEN)
     assert out and out[0]["label"] == "GitHub token"
     assert "server" not in out[0]
+
+
+# --- Palivane's own key is not a finding in the file the installer wrote it to -----------------
+#
+# `palivane connect` puts the capture key in ~/.claude/settings.json (PALIVANE_TOKEN, and
+# ANTHROPIC_AUTH_TOKEN when it routes through the gateway) because the hook cannot work
+# without it. The posture scan then read that file, took the key for a "possible secret", and
+# reported it on every enrolled machine; beside any real finding in the same file it also
+# tipped a warning into critical. Only those two values, only when they are our own `ak_` key.
+
+_OWN = "ak_vQ3xT8mZ2kL9pR4wN7cB5yH1dF6gJ0sA2eU8iO"        # fake; ak_ is our prefix
+_OTHER_OWN = "ak_Rm4Hd8Wq1Xc6Tb3Ny9Lp2Vs5Zk7Gf0JaEe8uQ"    # a second key pasted somewhere else
+_FOREIGN = "Zq8Xv3LpR7mT2kN9bW5c_Y1hJ4gF6dS0aQe7UtM1w"     # someone else's token, no ak_ prefix
+_AWS = "AKIAABCDEFGHIJKLMNOP"                              # fake id shaped like one
+
+
+def _agent_config_post(tmp_path, monkeypatch, settings: dict | str):
+    text = settings if isinstance(settings, str) else json.dumps(settings, indent=2)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(wp, "collect_ide_extensions", lambda: None)
+    monkeypatch.setattr(wp, "collect_agent_rules", lambda cwd=".": [])
+    monkeypatch.setattr(wp, "collect_agent_configs",
+                        lambda: [("claude-code:settings", text, "claude-code")])
+    posts = _run_capturing(tmp_path, monkeypatch)
+    _path, body = next(p for p in posts if p[0] == "/api/scan/agent-config")
+    return text, body
+
+
+def test_the_installers_own_capture_key_is_not_reported(tmp_path, monkeypatch):
+    _text, body = _agent_config_post(tmp_path, monkeypatch, {
+        "env": {"PALIVANE_URL": "https://app.palivane.io", "PALIVANE_TOKEN": _OWN,
+                "PALIVANE_ENFORCE": "false"}})
+    assert body["findings"] == []
+    assert _OWN not in json.dumps(body), "and the key still does not travel"
+
+
+def test_the_gateway_routing_key_is_ours_too(tmp_path, monkeypatch):
+    _text, body = _agent_config_post(tmp_path, monkeypatch, {
+        "env": {"ANTHROPIC_BASE_URL": "https://app.palivane.io", "ANTHROPIC_AUTH_TOKEN": _OWN,
+                "PALIVANE_TOKEN": _OWN}})
+    assert body["findings"] == []
+
+
+def test_a_real_finding_beside_it_is_still_reported_on_the_same_line(tmp_path, monkeypatch):
+    """The key is blanked in place, same length, so nothing after it moves: the line number a
+    finding carries is where the person has to look."""
+    settings = {
+        "env": {"PALIVANE_TOKEN": _OWN},
+        "autoMode": {"environment": ["Trusted network", f"The test bucket uses access key {_AWS} (read only)"]},
+    }
+    text, body = _agent_config_post(tmp_path, monkeypatch, settings)
+    want = next(i for i, ln in enumerate(text.splitlines(), 1) if _AWS in ln)
+    fd, = body["findings"]
+    assert fd["label"] == "AWS access key id" and fd["line"] == want
+    assert fd["masked"].startswith("AKIA") and _AWS not in json.dumps(body)
+
+
+def test_only_our_key_in_those_two_places_is_exempt(tmp_path, monkeypatch):
+    """The exemption is the installer-managed value, not 'anything that looks like ours':
+    a second ak_ key pasted somewhere else, and someone else's token in the same variable,
+    are both still reported."""
+    _text, body = _agent_config_post(tmp_path, monkeypatch, {
+        "env": {"PALIVANE_TOKEN": _OWN, "ANTHROPIC_AUTH_TOKEN": _FOREIGN},
+        "autoMode": {"environment": [f"Palivane key for the other machine: {_OTHER_OWN}"]}})
+    masked = sorted(f["masked"] for f in body["findings"])
+    assert len(masked) == 2, masked
+    assert any(m.startswith("Zq8X") for m in masked), "a foreign ANTHROPIC_AUTH_TOKEN still reports"
+    assert any(m.startswith("ak_R") for m in masked), "a key pasted elsewhere still reports"
+
+
+def test_own_key_blanking_preserves_every_other_byte():
+    text = ('{\n  "env": {\n    "PALIVANE_TOKEN": "%s",\n    "OTHER": "kept"\n  }\n}\n' % _OWN)
+    out = wp._without_own_credential(text)
+    assert len(out) == len(text) and out.count("\n") == text.count("\n")
+    assert _OWN not in out and '"OTHER": "kept"' in out
+    plain = "no credentials here\nPALIVANE_TOKEN = not json, left alone\n"
+    assert wp._without_own_credential(plain) == plain
