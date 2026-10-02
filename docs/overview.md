@@ -368,7 +368,7 @@ cd frontend && npm install && npm run dev
 | `GATEWAY_BLOCK_SEVERITY` | Severity threshold for blocking |
 | `EXTENSION_INGEST_TOKEN` | Shared auth token for extension/proxy |
 | `SANCTIONED_AI_TOOLS` | Allowlist of approved AI destinations |
-| `GATEWAY_TOOL_SUPPRESS` | Per-tool signal suppression |
+| `GATEWAY_TOOL_SUPPRESS` | Per-tool (or per-host, e.g. `claude.ai:source_code_leak`) signal suppression |
 | `CORS_ORIGINS` | Allowed frontend origins |
 
 ---

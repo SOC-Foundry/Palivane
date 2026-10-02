@@ -1183,7 +1183,8 @@ def _score_ai_usage(content: str, actor: str, tool: str, destination: str,
     )
     from .policy import detect_tool, signal_filter_for
     suppress = _tenant_or_global(tenant_id, db, "tool_suppress", settings.gateway_tool_suppress)
-    sig_filter = signal_filter_for(detect_tool(explicit=tool), extra=suppress)
+    sig_filter = signal_filter_for(detect_tool(explicit=tool), extra=suppress,
+                                   destination=destination)
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
                           signal_filter=sig_filter, agent=agent,
                           persist_benign=settings.usage_persist_benign)
@@ -3827,7 +3828,8 @@ def simulate(body: SimulateIn, current: User = Depends(require_admin),
     from .policy import detect_tool, signal_filter_for
     suppress = _tenant_or_global(current.tenant_id, db, "tool_suppress",
                                  settings.gateway_tool_suppress)
-    sig_filter = signal_filter_for(detect_tool(explicit=tool), extra=suppress)
+    sig_filter = signal_filter_for(detect_tool(explicit=tool), extra=suppress,
+                                   destination=destination)
     result = run_analysis(item, persist=False, db=db, tenant_id=current.tenant_id,
                           signal_filter=sig_filter)
 
