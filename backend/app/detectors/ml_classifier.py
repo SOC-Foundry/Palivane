@@ -14,7 +14,12 @@ shaped fragments, minified snippets, code without telltale keywords. It emits it
 low-weight signal rather than mutating other detectors' output: under the saturating-OR
 scorer it corroborates (rules + ML agree → escalation) but cannot max a verdict alone,
 and the sanctioned-coding-tool suppression that governs the source_code_leak category
-governs this signal identically."""
+governs this signal identically.
+
+"Cannot max a verdict alone" is enforced in scoring.py, not left to the weights: a lone
+code hint is dropped (_drop_uncorroborated_ml_code) and a lone injection hint is held at
+`low` (_cap_uncorroborated_hints). Both hints are recorded either way; what they cannot do
+without a rule-based check agreeing is raise an alert."""
 
 from __future__ import annotations
 
@@ -94,7 +99,9 @@ class MLClassifierDetector:
                            f"(p={pi:.2f}; held-out precision "
                            f"{iev.get('precision', '?')}, zero false positives on a "
                            "benign-prose check). Catches the paraphrases the pattern "
-                           "rules miss.",
+                           "rules miss. A hint: on its own it is recorded as low "
+                           "severity, and it escalates only when a rule-based check "
+                           "also flags the text.",
                     weight=0.4, confidence=round(min(pi, 0.95), 2),
                     detector=self.name, evidence=f"p(injection)={pi:.2f}",
                     check="prompt_injection_ml"))
