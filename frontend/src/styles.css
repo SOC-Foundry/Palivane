@@ -770,11 +770,61 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 }
 
 /* ===== Settings page ===== */
-.settings { max-width: 900px; }
+.settings { max-width: 1160px; }
 .settings-card { margin-bottom: 18px; }
 .settings-card > h2 { margin-bottom: 16px; }
 .settings-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
 .settings .muted { color: var(--muted); font-size: 13.5px; line-height: 1.6; margin: 0 0 16px; }
+
+/* Settings sections: a sub-navigation on the left, one group of cards on the right. The id of
+   the section is in the URL (/app/settings/<id>); see Settings.jsx. */
+.settings-layout { display: grid; grid-template-columns: 224px minmax(0, 1fr); gap: 28px; align-items: start; }
+/* z-index: a sticky element is its own stacking context, so without one the search results
+   (which hang over the content) were painted underneath the cards that come after the nav. */
+.settings-nav { position: sticky; top: 16px; z-index: 6; display: flex; flex-direction: column; gap: 16px; }
+.settings-body { min-width: 0; }
+.settings-search { position: relative; }
+.settings-search input {
+  width: 100%; box-sizing: border-box; padding: 8px 11px; border-radius: 4px;
+  background: var(--bg-2); color: var(--text); border: 1px solid var(--border);
+  font-family: inherit; font-size: 13px; font-weight: 500; line-height: 1.2;
+}
+.settings-search input::placeholder { color: var(--muted-2); }
+.settings-search input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.settings-results {
+  list-style: none; margin: 6px 0 0; padding: 4px; position: absolute; left: 0; z-index: 5;
+  width: 100%; min-width: 320px; max-height: 60vh; overflow-y: auto;
+  background: var(--panel-2); border: 1px solid var(--border-bright); border-radius: 4px;
+}
+.settings-results button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%;
+  padding: 7px 9px; border: 0; border-radius: 3px; background: transparent; cursor: pointer;
+  color: var(--text); font-family: inherit; font-size: 12.5px; font-weight: 600; text-align: left;
+}
+.settings-results button:hover, .settings-results button:focus-visible { background: var(--accent-soft); outline: none; }
+.settings-trail { font-size: 11px; font-weight: 500; color: var(--muted-2); }
+.settings-noresult { padding: 8px 9px; font-size: 12.5px; color: var(--muted); }
+.settings-tabs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.settings-tabs a {
+  display: block; padding: 8px 12px; border-radius: 4px; border: 1px solid transparent;
+  color: var(--muted); font-size: 13px; font-weight: 600; line-height: 1.2; text-decoration: none;
+  transition: all 0.15s ease;
+}
+.settings-tabs a:hover { background: var(--panel-2); color: var(--text); border-color: var(--panel-2); }
+.settings-tabs a.on, .settings-tabs a.on:hover { background: var(--accent-soft); color: var(--accent-2); border-color: var(--accent); }
+.settings-found { animation: settings-found 2.2s ease-out; border-radius: 4px; }
+@keyframes settings-found {
+  0%, 40% { box-shadow: 0 0 0 3px var(--accent); background: var(--accent-soft); }
+  100% { box-shadow: 0 0 0 3px transparent; background: transparent; }
+}
+@media (max-width: 900px) {
+  .settings-layout { grid-template-columns: 1fr; gap: 18px; }
+  .settings-nav { position: static; }
+  .settings-tabs { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+  .settings-tabs a { padding: 7px 10px; border-color: var(--border); }
+  .settings-results { min-width: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .settings-found { animation: none; box-shadow: 0 0 0 3px var(--accent); } }
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; margin-bottom: 16px; }
 .field-grid label { display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; color: var(--muted); font-weight: 600; }
 .field-grid label.field-wide { grid-column: 1 / -1; }

@@ -18,9 +18,10 @@
 export const CONSOLE_PREFIX = "/app";
 export const DEFAULT_VIEW = "findings";
 
-/** URL for a console view, plus the selected finding when there is one. */
-export function viewToPath(view, findingId = null) {
+/** URL for a console view, plus the selected finding (findings) or section (settings). */
+export function viewToPath(view, findingId = null, section = null) {
   const base = `${CONSOLE_PREFIX}/${view || DEFAULT_VIEW}`;
+  if (view === "settings") return section ? `${base}/${section}` : base;
   return findingId == null ? base : `${base}/${findingId}`;
 }
 
@@ -36,15 +37,21 @@ export function isRoot(pathname) {
  * tells "render the console" from "fall through to the public site". An unknown view or a
  * malformed finding id resolves to the default screen rather than 404ing: a stale
  * bookmark should land somewhere useful, and the sidebar is right there.
+ *
+ * Settings has sections (/app/settings/policy). The router only checks the shape of the
+ * segment; Settings owns the list of sections and falls back to its first for an unknown one.
  */
 export function parseRoute(pathname, validViews) {
   const clean = pathname.replace(/\/+$/, "");
   if (clean !== CONSOLE_PREFIX && !clean.startsWith(CONSOLE_PREFIX + "/")) return null;
   const [view = "", rest = ""] = clean.slice(CONSOLE_PREFIX.length + 1).split("/");
-  if (!view || !validViews.has(view)) return { view: DEFAULT_VIEW, findingId: null };
+  if (!view || !validViews.has(view)) return { view: DEFAULT_VIEW, findingId: null, section: null };
+  if (view === "settings") {
+    return { view, findingId: null, section: /^[a-z][a-z-]*$/.test(rest) ? rest : null };
+  }
   // Findings is the only screen with a sub-resource today. Ids are ints server-side
   // (models.py Finding.id) and FindingsList compares them with ===, so coerce, don't pass
   // the string through.
   const findingId = view === DEFAULT_VIEW && /^\d+$/.test(rest) ? Number(rest) : null;
-  return { view, findingId };
+  return { view, findingId, section: null };
 }

@@ -133,12 +133,12 @@ export default function App() {
   // A sixteen-item nav does not fit a 768px column, so it scrolls. Two consequences to
   // handle: land on Settings and the sidebar should already be showing Settings, and the
   // bottom fade should disappear once there is nothing further down to hint at.
-  const navigate = useCallback((nextView, findingId = null, { replace = false } = {}) => {
-    const path = viewToPath(nextView, findingId);
+  const navigate = useCallback((nextView, findingId = null, { replace = false, section = null } = {}) => {
+    const path = viewToPath(nextView, findingId, section);
     if (path !== window.location.pathname) {
       window.history[replace ? "replaceState" : "pushState"](null, "", path);
     }
-    setRoute({ view: nextView, findingId });
+    setRoute({ view: nextView, findingId, section });
   }, []);
   const selectFinding = useCallback((id) => navigate(DEFAULT_VIEW, id), [navigate]);
 
@@ -472,6 +472,8 @@ export default function App() {
             currentUser={auth.user}
             onTenant={(t) => setAuth((a) => ({ ...a, tenant: t }))}
             onLogout={logout}
+            section={route?.section ?? null}
+            onSection={(id, opts) => navigate("settings", null, { section: id, ...opts })}
           />
         ) : view === "audit" ? (
           <Audit />
