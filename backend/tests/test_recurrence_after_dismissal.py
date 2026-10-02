@@ -113,9 +113,14 @@ def test_triage_in_progress_is_left_alone(client):
 
 def _webhooked(client, db_factory, monkeypatch):
     """Point the tenant's alert webhook at a list instead of the network."""
+    import app.dispatch as dispatch
     from app import alerts
     sent = []
     monkeypatch.setattr(alerts, "send_sync", lambda url, payload, **k: sent.append(payload) or True)
+    # Alerts go out on the shared dispatch pool, so `sent` fills a moment after the request
+    # returns, and a loaded CI box lost that race (the reopen "reached nobody"). Run the
+    # delivery inline, as the SIEM tests do, so the assertion looks after delivery, not before.
+    monkeypatch.setattr(dispatch, "submit", lambda fn, *a, **k: fn(*a, **k))
     # Real-time alerting is gated on severity AND digest mode; "off" is the real-time mode.
     db = db_factory()
     from app.models import Tenant
