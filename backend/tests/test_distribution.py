@@ -74,6 +74,10 @@ def _with_terminal(script: str, typed: bytes, *flags: str) -> subprocess.Complet
     except OSError:
         pytest.skip("no pty on this machine")
     os.close(master); os.close(slave)
+    # pty.spawn hands the child the terminal as stdin too; `curl … | bash` does not (stdin is
+    # the pipe carrying the script), and an implementation that read stdin instead of
+    # /dev/tty would pass if this left it as the terminal. So take stdin away.
+    script = "exec < /dev/null\n" + script
     runner = ("import pty, sys; "
               "sys.exit(pty.spawn(['bash', '-c', sys.argv[1], 'palivane-install', *sys.argv[2:]]) >> 8)")
     return subprocess.run([sys.executable, "-c", runner, script, *flags], input=typed,
