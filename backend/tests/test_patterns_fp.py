@@ -390,3 +390,40 @@ def test_the_same_token_beside_a_credential_word_or_bare_still_flags():
     for text in (f"api_key = '{doc_id}'", f"token: {doc_id}", f"password {doc_id}",
                  f"profile_id={doc_id}", f"file key {doc_id}", doc_id):
         assert find_high_entropy_tokens(text), text
+
+
+# --- A UUID inside an identifier is an address, not a credential --------------------------
+#
+# A claude.ai connector's tools are named `mcp__<server uuid>__<tool>`, and Claude Code hands
+# those names to ToolSearch (`select:mcp__<uuid>__slack_read_canvas`). The candidate pattern
+# ends a token at `-`, so a UUID's last group (12 hex) starts a new candidate that runs on
+# through the underscore-joined tool name: `5c2b8d9e3a47__slack_read_canvas` is 31 characters
+# of mixed class and entropy 4.0, and no name-like gate recognises it because it begins with
+# hex. Every ToolSearch call that named such a tool raised a "possible secret": three findings
+# and 59 events for one operator, none of them a credential.
+
+UUID_LC = "7f3e9a12-b4c8-4d6e-a1f0-5c2b8d9e3a47"
+UUID_UC = "C91D0E7B-3A52-4F68-B2E4-8A6D15F07C93"
+
+
+def test_the_tail_of_a_uuid_inside_an_mcp_tool_name_is_not_a_secret():
+    for text in (
+        f"select:mcp__{UUID_LC}__slack_read_canvas",
+        f"select:mcp__{UUID_LC}__slack_read_canvas,mcp__{UUID_LC}__slack_search_channels",
+        f"select:mcp__{UUID_UC}__create_file,mcp__{UUID_UC}__download_file_content",
+        f"mcp__{UUID_LC}__notion_query_meeting_notes_and_more_things",
+        f'{{"query": "select:mcp__{UUID_LC}__slack_read_canvas", "max_results": 5}}',
+    ):
+        assert find_high_entropy_tokens(text) == [], text
+
+
+def test_a_secret_glued_to_a_uuid_is_still_flagged_and_the_evidence_is_the_secret():
+    """Recall: what is exempt is the UUID, not whatever follows it. A random token joined to
+    a UUID by an underscore is still a token, and the evidence names it rather than the UUID."""
+    secret = "Zq8Xv3LpR7mT2kN9bW5cY1hJ4gF6dS0a"
+    for text in (f"{UUID_LC}_{secret}", f"mcp__{UUID_LC}__{secret}", f"id={UUID_UC}_{secret}"):
+        assert find_high_entropy_tokens(text) == [secret[:10] + "…"], text
+
+
+def test_a_bare_uuid_was_never_this_heuristics_business():
+    assert find_high_entropy_tokens(f"api_key = {UUID_LC}") == []

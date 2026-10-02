@@ -653,6 +653,30 @@ _DOC_ID_CONTEXT_RE = re.compile(
     r"[\s_-]*(?:id)?[\"']?\s*[:=]?\s*[\"'\[(]?)$", re.I)
 
 
+# A UUID is an address, not a credential, and the candidate pattern cannot see one whole:
+# it ends a token at `-`, so the last group of a UUID (12 hex) starts a new candidate, and an
+# underscore-joined name after it runs on from there. `mcp__<server uuid>__slack_read_canvas`,
+# a claude.ai connector's tool name, which Claude Code passes to ToolSearch, becomes the
+# candidate `5c2b8d9e3a47__slack_read_canvas`. Hex up front defeats every name-like gate, so each
+# such call raised a "possible secret". The head of a canonical UUID is recognised here so the
+# tail can be taken off the candidate and what is left judged on its own.
+_UUID_HEAD_RE = re.compile(r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-")
+_UUID_HEAD_LEN = 24
+_UUID_TAIL_LEN = 12
+
+
+def _after_uuid_tail(text: str, start: int, tok: str) -> str:
+    """`tok` with the last group of a UUID taken off its front, when that is what it begins
+    with: twelve hex, then `_`, directly after a canonical `8-4-4-4-` head. Otherwise `tok`
+    unchanged. Only the UUID is dropped: a random token glued on behind it keeps its full
+    length and is judged like any other, so a secret cannot hide behind an identifier."""
+    if (len(tok) > _UUID_TAIL_LEN and tok[_UUID_TAIL_LEN] == "_"
+            and _HEX_RE.match(tok[:_UUID_TAIL_LEN])
+            and _UUID_HEAD_RE.fullmatch(text, max(0, start - _UUID_HEAD_LEN), start)):
+        return tok[_UUID_TAIL_LEN:].lstrip("_")
+    return tok
+
+
 def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
     """Return truncated evidence for token-like substrings that look like secrets:
     24–80 chars of [A-Za-z0-9_], mixed character classes, high Shannon entropy, and not
@@ -662,7 +686,9 @@ def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
     masked = [(m.start(), m.end()) for m in _NONSECRET_BLOB_RE.finditer(text)]
     masked += _media_blob_spans(text)      # base64 attachments carried as a bare JSON field
     for m in _TOKEN_CANDIDATE_RE.finditer(text):
-        tok = m.group(0)
+        tok = _after_uuid_tail(text, m.start(), m.group(0))
+        if len(tok) < 24:
+            continue   # what was left of a UUID-led name is too short to be a credential
         if tok in seen or _HEX_RE.match(tok):
             continue
         if _DOTTED_SUFFIX_RE.match(text, m.end()):
