@@ -817,8 +817,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout }) {
           <label className="field-wide">Sanctioned AI tools (comma-separated hosts; empty = inherit)
             <input placeholder="chatgpt.com, claude.ai"
                    value={org.sanctioned_ai_tools} onChange={setField("sanctioned_ai_tools")} /></label>
-          <label className="field-wide">Per-tool suppressions (tool:category;tool:category)
-            <input placeholder="claude-code:source_code_leak;cursor:pii_exposure"
+          <label className="field-wide">Per-tool or per-site suppressions (tool-or-host:category;...)
+            <input placeholder="claude-code:source_code_leak;claude.ai:source_code_leak"
                    value={org.tool_suppress} onChange={setField("tool_suppress")} /></label>
           <label className="field-wide">Custom PII / confidential patterns (one <code>label=regex</code> per line)
             <textarea rows={3} placeholder={"Customer ID=CUST-\\d{8}\nMRN=MRN\\d{7}\nProject codename=(Bluebird|Falcon)"}

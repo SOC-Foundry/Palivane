@@ -8,12 +8,19 @@ catching secrets/PII leaving through it.
 Suppressions are keyed by a tool id derived from the request (User-Agent or an explicit
 `x-palivane-tool` header / `tool` field). Defaults below; override per deployment with
 `GATEWAY_TOOL_SUPPRESS="claude-code:source_code_leak;cursor:source_code_leak"`.
+
+A web assistant has no User-Agent to key on: a prompt typed into claude.ai carries no tool name.
+A key that is a host (it contains a dot) is matched against where the prompt is going instead,
+on whole labels like the sanctioned list: `claude.ai:source_code_leak` allows source code to
+claude.ai and its subdomains and nowhere else, and still catches the secrets and PII in it.
 """
 
 from __future__ import annotations
 
 import os
 from typing import Callable
+
+from .hosts import host_of, on_host
 
 DEFAULT_SUPPRESSIONS: dict[str, set[str]] = {
     "claude-code": {"source_code_leak"},
@@ -45,6 +52,22 @@ def suppressions_for(tool: str, extra: str = "") -> set[str]:
     return merged.get((tool or "").lower(), set())
 
 
+def suppressions_for_destination(destination: str, extra: str = "") -> set[str]:
+    """Suppressed categories for where a prompt is going: the host keys of the deployment
+    setting and the per-tenant `extra` spec (same string format as the per-tool one) that
+    cover this destination. A key with no dot is a tool id and belongs to suppressions_for;
+    the built-in defaults are all tool ids, so they play no part here."""
+    host = host_of(destination)
+    if not host:
+        return set()
+    out: set[str] = set()
+    for spec in (os.getenv("GATEWAY_TOOL_SUPPRESS", ""), extra):
+        for key, cats in _parse_suppressions(spec).items():
+            if "." in key and on_host(host, key):
+                out |= cats
+    return out
+
+
 def detect_tool(user_agent: str = "", explicit: str = "") -> str:
     """Identify the calling tool from an explicit hint or its User-Agent."""
     if explicit:
@@ -67,10 +90,12 @@ def detect_tool(user_agent: str = "", explicit: str = "") -> str:
     return "unknown"
 
 
-def signal_filter_for(tool: str, extra: str = "") -> Callable[[list], list] | None:
-    """Return a signal filter that drops this tool's suppressed categories, or None.
-    `extra` is an optional per-tenant suppression spec overlaid on the global config."""
-    supp = suppressions_for(tool, extra)
+def signal_filter_for(tool: str, extra: str = "",
+                      destination: str = "") -> Callable[[list], list] | None:
+    """Return a signal filter that drops the categories suppressed for this tool and for
+    this destination, or None. `extra` is an optional per-tenant suppression spec overlaid on
+    the global config."""
+    supp = suppressions_for(tool, extra) | suppressions_for_destination(destination, extra)
     if not supp:
         return None
     return lambda signals: [s for s in signals if s.category.value not in supp]

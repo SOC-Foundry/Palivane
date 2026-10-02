@@ -18,9 +18,9 @@ from __future__ import annotations
 import itertools
 import re
 import unicodedata
-from urllib.parse import urlsplit
 
 from ..config import settings
+from ..hosts import host_of as _host_of, on_host as _on_host
 from .base import AnalysisInput, Category, Signal, Surface
 from .decode import decode_obfuscated
 from .normalize import normalize_for_match
@@ -581,35 +581,6 @@ def _card_shape_ok(d: str) -> bool:
     if p4 in (5018, 5020, 5038, 5893, 6304, 6759) or 6761 <= p4 <= 6763:
         return 12 <= n <= 19                                        # Maestro
     return False
-
-
-_HOST_PORT = re.compile(r"^[a-z0-9.-]+:\d+(?:/|$)")
-
-
-def _host_of(dest: str) -> str:
-    """What a destination points at, so it can be compared with what an admin sanctioned.
-
-    Destinations arrive as URLs (the egress proxy reports `https://api.anthropic.com`, some
-    agent traffic `wss://host/path`, the browser extension a page URL) or as a bare client or
-    tool name (`claude-code`, `snowflake-cortex`). The sanctioned list holds bare hosts and
-    names. A URL, or a host with a port or a path, is cut down to its host; anything else
-    comes back lowercased and otherwise unchanged, to be compared as a name."""
-    d = (dest or "").strip().lower()
-    if not d or any(c.isspace() for c in d):
-        return d
-    if "://" not in d and "/" not in d and not _HOST_PORT.match(d):
-        return d.rstrip(".")
-    try:
-        host = urlsplit(d if "://" in d else "//" + d).hostname
-    except ValueError:      # e.g. an unbalanced IPv6 bracket: not a URL after all, keep the name
-        return d
-    return (host or d).rstrip(".")
-
-
-def _on_host(host: str, domain: str) -> bool:
-    """`host` is `domain` or one of its subdomains. Whole labels only: 'pi.ai' is not inside
-    'api.airtable.com', and 'corp.com' does not cover 'evilcorp.com' or 'corp.com.attacker.net'."""
-    return host == domain or host.endswith("." + domain)
 
 
 def _sanctioned(override: str | None = None) -> set[str]:
