@@ -178,3 +178,16 @@ def test_arguments_are_still_scanned_when_descriptions_ride_along(client, raw_cl
                  args_text="key=AKIAABCDEFGHIJKLMNOP",
                  tool_descriptions=[_VENDOR_DESCRIPTION]).json()
     assert "secret_leak" in {s["category"] for s in body["signals"]}
+
+
+def test_toolsearch_naming_connector_tools_raises_nothing(client, raw_client):
+    """Claude Code passes a claude.ai connector's tool names, `mcp__<server uuid>__<tool>`, to
+    ToolSearch. The tail of that UUID read as a high-entropy token, so each such call became a
+    "possible secret" finding (three findings, 59 events, for one operator). It is a name."""
+    uuid = "7f3e9a12-b4c8-4d6e-a1f0-5c2b8d9e3a47"
+    r = _ingest(client, raw_client, tool="ToolSearch",
+                args_text=f"select:mcp__{uuid}__slack_read_canvas,mcp__{uuid}__slack_search_channels")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["action"] == "allow", body
+    assert not any(s.get("category") == "secret_leak" for s in body.get("signals", [])), body
