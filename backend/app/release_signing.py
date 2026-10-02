@@ -20,7 +20,9 @@ Server side: the private key comes from `PALIVANE_RELEASE_SIGNING_KEY` (PEM), mi
 `PALIVANE_LICENSE_SIGNING_KEY`; in production it lives in Secret Manager
 (`palivane-release-signing-key`). When it's unset the deployment serves an *unsigned*
 manifest and the generated installer warns-but-proceeds — so nothing breaks before the
-key is provisioned; enforcement flips on automatically once it is.
+key is provisioned; enforcement flips on automatically once it is. That flip is why
+`key_pair_problem` exists: the service refuses to boot (in production) if the key it signs
+with is not the one the installer pins.
 
 Client side: the generated `install.sh` bakes this deployment's public key and verifies
 `manifest.sig` against it, then checks each downloaded file's SHA-256. A fork/self-host
@@ -63,6 +65,86 @@ def _signing_key_pem() -> str:
 
 def signing_enabled() -> bool:
     return bool(_signing_key_pem())
+
+
+def _spki_der(public_key) -> bytes:
+    from cryptography.hazmat.primitives import serialization
+    return public_key.public_bytes(serialization.Encoding.DER,
+                                   serialization.PublicFormat.SubjectPublicKeyInfo)
+
+
+def _fingerprint(public_key) -> str:
+    """Short, non-secret name for a public key, so a message can say WHICH two keys disagree
+    without quoting either one."""
+    return "sha256:" + hashlib.sha256(_spki_der(public_key)).hexdigest()[:16]
+
+
+def key_pair_problem() -> str | None:
+    """Why the configured signing key cannot work with the key the installer pins, or None.
+
+    None when signing is off (nothing is signed, so nothing can disagree) and when the
+    signing key's public half IS the pinned key. Compared as keys, not as PEM text, so
+    wrapping or a trailing newline from a secret store does not read as a different key.
+
+    "Enforcement flips on automatically once the key is provisioned" (module docstring) is
+    the right default, and it has one sharp edge: the flip happens whenever the secret
+    exists and is bound, not when the matching public key reaches the code. On 2026-10-01
+    the secret was created for a change that had not merged, the next deploy bound it, and
+    the service signed with a key the installer did not pin. The installer is fail-closed
+    on a signature that does not verify, so every install aborted for 19 minutes, and
+    nothing in the service, the deploy or the metrics said so.
+
+    The service holds both halves, so it can check them itself, and the message names the
+    two keys by fingerprint and never quotes either."""
+    pem = _signing_key_pem()
+    if not pem:
+        return None
+    from cryptography.exceptions import UnsupportedAlgorithm
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import (
+        load_pem_private_key, load_pem_public_key)
+
+    try:
+        priv = load_pem_private_key(pem.encode(), password=None)
+    except (ValueError, TypeError, UnsupportedAlgorithm):
+        return ("PALIVANE_RELEASE_SIGNING_KEY is set but is not a readable, unencrypted PEM "
+                "private key, so the manifest cannot be signed. Store the key exactly as "
+                "`openssl ecparam -name prime256v1 -genkey -noout` wrote it.")
+    if not (isinstance(priv, ec.EllipticCurvePrivateKey) and isinstance(priv.curve, ec.SECP256R1)):
+        return ("PALIVANE_RELEASE_SIGNING_KEY is not an ECDSA P-256 key. The installer "
+                "verifies with the stock openssl CLI against P-256, so any other key "
+                "produces signatures every installer rejects.")
+    try:
+        pinned = load_pem_public_key(release_pubkey_pem().encode())
+    except (ValueError, TypeError, UnsupportedAlgorithm):
+        return ("The pinned release public key (VENDOR_RELEASE_PUBKEY_PEM, or "
+                "PALIVANE_RELEASE_PUBKEY when it is set) is not a readable PEM public key, "
+                "so installers cannot verify anything PALIVANE_RELEASE_SIGNING_KEY signs.")
+    if _spki_der(priv.public_key()) != _spki_der(pinned):
+        return (f"PALIVANE_RELEASE_SIGNING_KEY signs with a key "
+                f"({_fingerprint(priv.public_key())}) that is not the one the installer pins "
+                f"({_fingerprint(pinned)}). The installer is fail-closed on a signature that "
+                f"does not verify, so every install would abort. Make them the same key: "
+                f"set VENDOR_RELEASE_PUBKEY_PEM in release_signing.py (or "
+                f"PALIVANE_RELEASE_PUBKEY) to the signing key's public half, or remove the "
+                f"secret so releases go out unsigned.")
+    return None
+
+
+def enforce_key_pair(prod: bool, log) -> None:
+    """Startup gate, called from main.lifespan. A production-shaped deployment refuses to
+    boot on a key pair that would break every install, the same split the lifespan already
+    uses for a weak PALIVANE_SECRET_KEY; SQLite dev only warns.
+
+    On Cloud Run, refusing to boot is the safe outcome and not an outage: a revision that
+    fails its startup probe never receives traffic, so the previous revision keeps serving
+    and the deploy fails instead of the installer."""
+    problem = key_pair_problem()
+    if not problem:
+        return
+    if prod:
+        raise RuntimeError(problem)
+    log.warning(problem)
 
 
 def canonical_files_digest(files: dict) -> bytes:
