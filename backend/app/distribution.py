@@ -231,10 +231,17 @@ for a in "$@"; do
   [ "$a" = "--no-verify" ] && REQUIRE_SIG="skip"   # opt out of integrity checks (not advised)
 done
 
+# Is there a terminal to ask on? A permission check (`test -r /dev/tty`) is not that test: the
+# node is world-readable on every machine, so it passes in CI, Docker, cron and `ssh host cmd`
+# too, where opening it fails (ENXIO) and `set -e` would end the install at the first prompt,
+# with nothing installed and no flag to blame. Open it and see. (`true`, not `:`: a redirection
+# error on a special builtin ends a POSIX-mode shell, and this has to be a plain "no".)
+have_tty() {{ {{ true < /dev/tty; }} 2>/dev/null; }}
+
 # No proxy flag given: if we can reach a terminal — /dev/tty is the user's terminal even under
 # `curl ... | bash`, where stdin is the script — offer full coverage. Default NO, so a piped
 # run with no tty (CI, provisioning) stays on the safe, sudo-free CLI setup and never hangs.
-if [ -z "$PROXY_EXPLICIT" ] && [ -r /dev/tty ]; then
+if [ -z "$PROXY_EXPLICIT" ] && have_tty; then
   printf "\\nAlso govern desktop AI apps (Claude/ChatGPT) + browsers system-wide?\\n  This needs sudo: it installs a local CA and sets the system proxy. [y/N] " > /dev/tty
   read ans < /dev/tty || ans=""
   case "$ans" in [Yy]*) PROXY_MODE="desktop" ;; esac
@@ -350,7 +357,7 @@ if [ -n "$PALIVANE_EXT_URL" ]; then
   # `curl … | bash` leaves stdin pointing at the script, so a bare `read` returns EOF
   # immediately and would silently answer for the user. Read the answer from the terminal
   # instead, and only when there is one and a desktop to open a browser on.
-  if [ -e /dev/tty ] && {{ [ -n "${{DISPLAY:-}}" ] || [ -n "${{WAYLAND_DISPLAY:-}}" ] || [ "$(uname)" = "Darwin" ]; }}; then
+  if have_tty && {{ [ -n "${{DISPLAY:-}}" ] || [ -n "${{WAYLAND_DISPLAY:-}}" ] || [ "$(uname)" = "Darwin" ]; }}; then
     printf "Open the store page now? [y/N] "
     if read -r _ans < /dev/tty 2>/dev/null; then
       case "$_ans" in
