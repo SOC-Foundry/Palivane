@@ -336,7 +336,7 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `GATEWAY_VERTEX_PROJECT` / `GATEWAY_VERTEX_REGION` | *(empty)* / `us-east5` | Cloud-contract Claude via **Vertex AI** for Anthropic-shaped gateway traffic, used only when no Anthropic key resolves. Auth = Application Default Credentials (on Cloud Run the runtime service account); per-tenant override = a `vertex` upstream whose key is a JSON blob `{project, region, service_account_json}`. Clients send the Vertex model id (e.g. `claude-opus-4-8@20260115`). |
 | `GATEWAY_BEDROCK_REGION` / `GATEWAY_BEDROCK_KEY` | *(empty)* | Cloud-contract Claude via **AWS Bedrock** (same fallback rule). Key = a Bedrock API key (bearer); empty key = SigV4 via the standard AWS chain. Per-tenant override = a `bedrock` upstream whose key is `{region, key}`. Clients send the Bedrock model id (`us.anthropic.…-v1:0`). Streaming is served as one synthesized SSE burst (Bedrock streams eventstream framing, not SSE). |
 | `GATEWAY_GEMINI_BASE` / `GATEWAY_GEMINI_KEY` | `generativelanguage.googleapis.com` / `GEMINI_API_KEY` | Upstream for `/v1beta/models/{model}:generateContent` (google-genai SDK, Gemini CLI); empty key = stub. |
-| `GATEWAY_TOOL_SUPPRESS` | *(defaults)*           | Per-tool category suppression, e.g. `claude-code:source_code_leak;cursor:source_code_leak`. |
+| `GATEWAY_TOOL_SUPPRESS` | *(defaults)*           | Per-tool category suppression, e.g. `claude-code:source_code_leak;cursor:source_code_leak`. A key with a dot is a host and matches where the prompt is going (`claude.ai:source_code_leak`), for web assistants that have no User-Agent to key on. |
 | `GATEWAY_RATE_LIMIT` | `0` (unlimited)            | Default **gateway** (`/v1/*`) requests/min per tenant; a tenant's own `rate_limit` overrides. Over-limit → HTTP 429. |
 | `INGEST_RATE_LIMIT` | `0` (unlimited)            | Default **sensor/ingest** (`/api/ingest/*`, `/api/scan/*`) requests/min per tenant — counted separately from the gateway so agentic capture can't starve LLM traffic; a tenant's own `ingest_rate_limit` overrides. |
 | `PALIVANE_MCP_PERSIST_BENIGN` | `false`           | Store benign MCP tool-call findings (palivane-hook/palivane-mcp)? Default off — only warn+ verdicts persist (most tool calls are benign noise). |
@@ -648,7 +648,9 @@ suppresses `source_code_leak` for sanctioned coding tools (`claude-code`, `curso
 `copilot` by default; tune with `GATEWAY_TOOL_SUPPRESS`) — **secrets and PII are still
 caught and blocked**, but routine code doesn't bury the signal. The tool is identified
 from the User-Agent or an `x-palivane-tool` header, and the same policy applies to the
-egress proxy / extension (`ai_usage`) path.
+egress proxy / extension (`ai_usage`) path. A web assistant has no User-Agent to key on, so
+a key that is a host (`claude.ai:source_code_leak`) matches the destination instead: that
+host and its subdomains, nothing else, and the secrets and PII in the paste are still caught.
 
 The gateway is the recommended long-term capture point for first-party AI (centralized,
 sees 100% of traffic, enforces inline).

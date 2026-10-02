@@ -184,3 +184,33 @@ def test_empty_severity_clears_to_inherit(client):
     assert client.get("/api/auth/me").json()["tenant"]["gateway_block_severity"] == "critical"
     client.patch("/api/tenant", json={"gateway_block_severity": ""})
     assert client.get("/api/auth/me").json()["tenant"]["gateway_block_severity"] == ""
+
+
+# --- per-tenant suppression keyed by destination ----------------------------------------
+
+_CODE = ("def charge(customer):\n"
+         "    row = billing_ledger.customer_invoices.get(customer.tenant_id)\n"
+         "    return payments_service.capture(row.amount, row.currency)\n") * 3
+
+
+def test_source_code_can_be_allowed_for_one_destination(client, raw_client, monkeypatch):
+    """Source code pasted into a web assistant the org has approved is expected, and the
+    per-tool rule could not say so because a browser capture carries no tool name. A host key
+    does, for that host only, and only for that category."""
+    monkeypatch.setattr(main.settings, "gateway_tool_suppress", "")
+    key = _key(client)
+
+    def post(content, dest):
+        return raw_client.post("/api/ingest/ai-usage", json={"content": content, "destination": dest},
+                               headers={"X-Palivane-Token": key}).json()
+
+    def cats(r):
+        return {s["category"] for s in r["signals"]}
+
+    assert "source_code_leak" in cats(post(_CODE, "https://claude.ai/chat/abc"))        # baseline
+    assert client.patch("/api/tenant", json={"tool_suppress": "claude.ai:source_code_leak"}).status_code == 200
+
+    assert "source_code_leak" not in cats(post(_CODE, "https://claude.ai/chat/abc"))    # allowed there
+    assert "source_code_leak" in cats(post(_CODE, "https://chatgpt.com/c/1"))           # not elsewhere
+    leaky = _CODE + "\n# deploy key AKIAIOSFODNN7EXAMPLE\n"
+    assert "secret_leak" in cats(post(leaky, "https://claude.ai/chat/abc"))              # nor secrets
