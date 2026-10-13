@@ -777,38 +777,40 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                   )
                 )}
                 <div style={{ overflowX: "auto" }}>
-                  <table className="data-table plan-table">
-                    <thead>
-                      <tr>
-                        <th>Feature</th>
-                        {catalog.tiers.map((t) => (
-                          <th key={t.name} className={t.name === catalog.current ? "plan-col-current" : ""}>
-                            {t.label}{t.name === catalog.current && <span className="chip chip-on" style={{ marginLeft: 6 }}>current</span>}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td className="muted">Users included</td>
-                        {catalog.tiers.map((t) => (
-                          <td key={t.name} className={t.name === catalog.current ? "plan-col-current" : ""}>
-                            {t.user_quota ? t.user_quota : "Custom"}
-                          </td>
-                        ))}
-                      </tr>
-                      {catalog.features.map((f) => (
-                        <tr key={f.key}>
-                          <td className="muted">{f.label}</td>
+                  <div className="table-scroll">
+                    <table className="data-table plan-table">
+                      <thead>
+                        <tr>
+                          <th>Feature</th>
+                          {catalog.tiers.map((t) => (
+                            <th key={t.name} className={t.name === catalog.current ? "plan-col-current" : ""}>
+                              {t.label}{t.name === catalog.current && <span className="chip chip-on" style={{ marginLeft: 6 }}>current</span>}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="muted">Users included</td>
                           {catalog.tiers.map((t) => (
                             <td key={t.name} className={t.name === catalog.current ? "plan-col-current" : ""}>
-                              {t.includes[f.key] ? "✓" : "-"}
+                              {t.user_quota ? t.user_quota : "Custom"}
                             </td>
                           ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                        {catalog.features.map((f) => (
+                          <tr key={f.key}>
+                            <td className="muted">{f.label}</td>
+                            {catalog.tiers.map((t) => (
+                              <td key={t.name} className={t.name === catalog.current ? "plan-col-current" : ""}>
+                                {t.includes[f.key] ? "✓" : "-"}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}

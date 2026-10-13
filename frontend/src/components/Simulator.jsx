@@ -106,16 +106,18 @@ export default function Simulator() {
               <span className="muted">{redteam.caught} of {redteam.total} attacks caught · {redteam.missed} would slip through</span>
             </div>
             {redteam.misses.length > 0 && (
-              <table className="data-table" style={{ marginTop: 12 }}>
-                <thead><tr><th>Missed attack</th><th>Expected</th><th>Verdict</th></tr></thead>
-                <tbody>{redteam.misses.map((m) => (
-                  <tr key={m.id}>
-                    <td>{m.note || m.id}</td>
-                    <td className="muted">{m.expected.join(", ")}</td>
-                    <td><span className="badge sev-benign">{m.action}</span></td>
-                  </tr>
-                ))}</tbody>
-              </table>
+              <div className="table-scroll">
+                <table className="data-table" style={{ marginTop: 12 }}>
+                  <thead><tr><th>Missed attack</th><th>Expected</th><th>Verdict</th></tr></thead>
+                  <tbody>{redteam.misses.map((m) => (
+                    <tr key={m.id}>
+                      <td>{m.note || m.id}</td>
+                      <td className="muted">{m.expected.join(", ")}</td>
+                      <td><span className="badge sev-benign">{m.action}</span></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
             )}
           </div>
         )}
@@ -149,21 +151,23 @@ export default function Simulator() {
 
           <h2 style={{ marginTop: 14 }}>Signals</h2>
           {(res.signals || []).length ? (
-            <table className="data-table">
-              <thead><tr><th>Signal</th><th>Evidence</th><th>Check</th></tr></thead>
-              <tbody>
-                {res.signals.map((sig, i) => (
-                  <tr key={i}>
-                    <td>
-                      <div>{sig.title}</div>
-                      {sig.detail && <div className="muted" style={{ fontSize: 12.5 }}>{sig.detail}</div>}
-                    </td>
-                    <td className="muted">{sig.evidence ? <code>{sig.evidence}</code> : "-"}</td>
-                    <td className="muted"><code>{sig.check}</code></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead><tr><th>Signal</th><th>Evidence</th><th>Check</th></tr></thead>
+                <tbody>
+                  {res.signals.map((sig, i) => (
+                    <tr key={i}>
+                      <td>
+                        <div>{sig.title}</div>
+                        {sig.detail && <div className="muted" style={{ fontSize: 12.5 }}>{sig.detail}</div>}
+                      </td>
+                      <td className="muted">{sig.evidence ? <code>{sig.evidence}</code> : "-"}</td>
+                      <td className="muted"><code>{sig.check}</code></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : <p className="muted">No signals fired.</p>}
 
           {(res.remediation || []).length > 0 && (

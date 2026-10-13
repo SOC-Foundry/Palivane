@@ -39,7 +39,7 @@ import Simulator from "./components/Simulator.jsx";
 import Report from "./components/Report.jsx";
 import Help from "./components/Help.jsx";
 import MyFindings from "./components/MyFindings.jsx";
-import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard, IconInbox, IconTarget, IconRadar, IconSliders, IconActivity, IconBot, IconBook, IconTerminal, IconEye, IconNodes, IconBeaker, IconLink, IconFileSearch } from "./components/icons.jsx";
+import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard, IconInbox, IconTarget, IconRadar, IconSliders, IconActivity, IconBot, IconBook, IconTerminal, IconEye, IconNodes, IconBeaker, IconLink, IconFileSearch, IconMenu, IconClose } from "./components/icons.jsx";
 
 // Sidebar navigation, grouped.
 //
@@ -161,6 +161,21 @@ export default function App() {
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, [view]);   // "findings" | "connect"
+
+  // On a phone the sidebar is a slim top bar with a menu button, and the nav and footer open
+  // as a panel under it (styles.css, max-width 900px). Above that none of this shows: the
+  // sidebar is a fixed column and `navOpen` has no visible effect.
+  const [navOpen, setNavOpen] = useState(false);
+  const viewLabel = NAV.flatMap((g) => g.items).find((it) => it.v === view)?.label ?? "Menu";
+  useEffect(() => { setNavOpen(false); }, [view]);
+  useEffect(() => {
+    if (!navOpen) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") setNavOpen(false); };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";   // the panel scrolls, not the page behind it
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+  }, [navOpen]);
 
   // The console and every way into it belong to the console's ORIGIN, not merely to a path.
   //
@@ -354,7 +369,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <aside className={`sidebar${navOpen ? " open" : ""}`}>
         <div className="sidebar-brand">
           <img className="sidebar-emblem" src="/palivane-emblem.svg" alt="Palivane" />
           <div>
@@ -363,42 +378,50 @@ export default function App() {
           </div>
         </div>
 
-        <nav className="nav" aria-label="Console" ref={navRef}>
-          {NAV.map((group) => {
-            const shown = group.items.filter((it) => it.admin === false || isAdmin);
-            if (!shown.length) return null;   // a non-admin sees Findings, Your findings, Help
-            return (
-              <div key={group.head ?? "_"} className="nav-group">
-                {group.head && <span className="nav-head">{group.head}</span>}
-                {shown.map((it) => (
-                  <button key={it.v} type="button"
-                          className={`nav-item ${view === it.v ? "nav-on" : ""}`}
-                          aria-current={view === it.v ? "page" : undefined}
-                          onClick={() => navigate(it.v)}>
-                    {it.icon} <span>{it.label}</span>
-                  </button>
-                ))}
-              </div>
-            );
-          })}
-        </nav>
+        {/* Phones only (hidden by CSS above 900px). */}
+        <button type="button" className="nav-toggle" aria-expanded={navOpen} aria-controls="console-nav"
+                onClick={() => setNavOpen((o) => !o)}>
+          {navOpen ? <IconClose /> : <IconMenu />} <span>{navOpen ? "Close" : viewLabel}</span>
+        </button>
 
-        <div className="sidebar-foot">
-          {health && (
-            <div className={`judge-status ${health.judge_enabled ? "judge-on" : "judge-off"}`}>
-              <span className="judge-dot" />
-              <span>{health.judge_enabled
-                ? `LLM judge · ${health.judge_model}`
-                : "Offline detection"}</span>
+        <div className="sidebar-panel" id="console-nav">
+          <nav className="nav" aria-label="Console" ref={navRef}>
+            {NAV.map((group) => {
+              const shown = group.items.filter((it) => it.admin === false || isAdmin);
+              if (!shown.length) return null;   // a non-admin sees Findings, Your findings, Help
+              return (
+                <div key={group.head ?? "_"} className="nav-group">
+                  {group.head && <span className="nav-head">{group.head}</span>}
+                  {shown.map((it) => (
+                    <button key={it.v} type="button"
+                            className={`nav-item ${view === it.v ? "nav-on" : ""}`}
+                            aria-current={view === it.v ? "page" : undefined}
+                            onClick={() => { navigate(it.v); setNavOpen(false); }}>
+                      {it.icon} <span>{it.label}</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
+          </nav>
+
+          <div className="sidebar-foot">
+            {health && (
+              <div className={`judge-status ${health.judge_enabled ? "judge-on" : "judge-off"}`}>
+                <span className="judge-dot" />
+                <span>{health.judge_enabled
+                  ? `LLM judge · ${health.judge_model}`
+                  : "Offline detection"}</span>
+              </div>
+            )}
+            <div className="account">
+              <div className="account-org">{auth.tenant?.name || auth.tenant?.slug}</div>
+              <div className="account-email">{auth.user?.email}</div>
             </div>
-          )}
-          <div className="account">
-            <div className="account-org">{auth.tenant?.name || auth.tenant?.slug}</div>
-            <div className="account-email">{auth.user?.email}</div>
+            <button type="button" className="signout" onClick={logout}>
+              <IconLogout /> <span>Sign out</span>
+            </button>
           </div>
-          <button type="button" className="signout" onClick={logout}>
-            <IconLogout /> <span>Sign out</span>
-          </button>
         </div>
       </aside>
 

@@ -212,24 +212,26 @@ export default function Policies({ tenant, onTenant }) {
            captures on that tool, and beats an any-tool override for the same person.</p>
 
         {(cat.overrides || []).length > 0 && (
-          <table className="data-table" style={{ marginBottom: 16 }}>
-            <thead><tr><th>Scope</th><th>Match</th><th>Tool</th><th>Enforcement</th><th>Label</th><th>Disabled checks</th><th></th></tr></thead>
-            <tbody>
-              {cat.overrides.map((o) => (
-                <tr key={o.id}>
-                  <td><span className={`cat ${o.scope === "user" ? "cat-secret_leak" : "cat-unsanctioned_ai"}`}>{o.scope}</span></td>
-                  <td><code>{o.match}</code></td>
-                  <td className="muted">{o.channel ? <code>{o.channel}</code> : "any"}</td>
-                  <td className="muted">{o.enforce === true ? "enforce" : o.enforce === false ? "monitor" : "-"}</td>
-                  <td className="muted">{o.label || "-"}</td>
-                  <td className="muted">{o.disabled_checks.length
-                    ? o.disabled_checks.map(checkLabel).join(", ")
-                    : <span style={{ color: "var(--benign)" }}>all checks on</span>}</td>
-                  <td><button className="link-btn" onClick={() => delOverride(o.id)}>Remove</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="data-table" style={{ marginBottom: 16 }}>
+              <thead><tr><th>Scope</th><th>Match</th><th>Tool</th><th>Enforcement</th><th>Label</th><th>Disabled checks</th><th></th></tr></thead>
+              <tbody>
+                {cat.overrides.map((o) => (
+                  <tr key={o.id}>
+                    <td><span className={`cat ${o.scope === "user" ? "cat-secret_leak" : "cat-unsanctioned_ai"}`}>{o.scope}</span></td>
+                    <td><code>{o.match}</code></td>
+                    <td className="muted">{o.channel ? <code>{o.channel}</code> : "any"}</td>
+                    <td className="muted">{o.enforce === true ? "enforce" : o.enforce === false ? "monitor" : "-"}</td>
+                    <td className="muted">{o.label || "-"}</td>
+                    <td className="muted">{o.disabled_checks.length
+                      ? o.disabled_checks.map(checkLabel).join(", ")
+                      : <span style={{ color: "var(--benign)" }}>all checks on</span>}</td>
+                    <td><button className="link-btn" onClick={() => delOverride(o.id)}>Remove</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
 
         <div className="override-form">
@@ -284,37 +286,39 @@ export default function Policies({ tenant, onTenant }) {
           <p className="muted">{showResolved ? "No exception requests." : "No pending exception requests."}</p>
         ) : (
           <>
-            <table className="data-table">
-              <thead><tr><th>Actor</th><th>Destination</th><th>Categories</th><th>Reason</th><th>Age</th><th>Status</th><th></th></tr></thead>
-              <tbody>
-                {exceptions.map((x) => (
-                  <tr key={x.id}>
-                    <td>{x.actor}</td>
-                    <td className="muted">{x.destination ? <code>{x.destination}</code> : "-"}</td>
-                    <td className="muted">{(x.categories || []).join(", ") || "-"}</td>
-                    <td className="muted">{x.reason || "-"}</td>
-                    <td className="muted">{age(x.created_at)}</td>
-                    <td>
-                      {x.status === "pending"
-                        ? <span className="badge sev-suspicious">pending</span>
-                        : x.status === "approved"
-                          ? <span className="badge sev-benign">approved</span>
-                          : <span className="badge sev-critical">denied</span>}
-                    </td>
-                    <td>
-                      {x.status === "pending" && (
-                        <span style={{ display: "flex", gap: 8 }}>
-                          <button className="link-btn" disabled={saving === `exc:${x.id}`}
-                                  onClick={() => resolveException(x.id, "approve")}>Approve</button>
-                          <button className="link-btn" disabled={saving === `exc:${x.id}`}
-                                  onClick={() => resolveException(x.id, "deny")}>Deny</button>
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead><tr><th>Actor</th><th>Destination</th><th>Categories</th><th>Reason</th><th>Age</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                  {exceptions.map((x) => (
+                    <tr key={x.id}>
+                      <td>{x.actor}</td>
+                      <td className="muted">{x.destination ? <code>{x.destination}</code> : "-"}</td>
+                      <td className="muted">{(x.categories || []).join(", ") || "-"}</td>
+                      <td className="muted">{x.reason || "-"}</td>
+                      <td className="muted">{age(x.created_at)}</td>
+                      <td>
+                        {x.status === "pending"
+                          ? <span className="badge sev-suspicious">pending</span>
+                          : x.status === "approved"
+                            ? <span className="badge sev-benign">approved</span>
+                            : <span className="badge sev-critical">denied</span>}
+                      </td>
+                      <td>
+                        {x.status === "pending" && (
+                          <span style={{ display: "flex", gap: 8 }}>
+                            <button className="link-btn" disabled={saving === `exc:${x.id}`}
+                                    onClick={() => resolveException(x.id, "approve")}>Approve</button>
+                            <button className="link-btn" disabled={saving === `exc:${x.id}`}
+                                    onClick={() => resolveException(x.id, "deny")}>Deny</button>
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             {exceptions.some((x) => x.status === "pending") && (
               <input style={{ marginTop: 10, width: "100%" }} value={note}
                      placeholder="Optional note, attached to the next approve/deny"
@@ -334,22 +338,24 @@ export default function Policies({ tenant, onTenant }) {
         ) : (analytics.checks || []).length === 0 ? (
           <p className="muted">No check activity in the last {analytics.days} days.</p>
         ) : (
-          <table className="data-table">
-            <thead><tr><th>Check</th><th>Findings</th><th>Dismissed</th><th>Dismiss rate</th></tr></thead>
-            <tbody>
-              {analytics.checks.map((c) => (
-                <tr key={c.check}>
-                  <td><code>{c.check}</code></td>
-                  <td>{c.findings}</td>
-                  <td>{c.dismissed}</td>
-                  <td className={c.dismiss_rate >= 0.5 ? "" : "muted"}
-                      style={c.dismiss_rate >= 0.5 ? { color: "var(--susp)" } : undefined}>
-                    {Math.round((c.dismiss_rate || 0) * 100)}%
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead><tr><th>Check</th><th>Findings</th><th>Dismissed</th><th>Dismiss rate</th></tr></thead>
+              <tbody>
+                {analytics.checks.map((c) => (
+                  <tr key={c.check}>
+                    <td><code>{c.check}</code></td>
+                    <td>{c.findings}</td>
+                    <td>{c.dismissed}</td>
+                    <td className={c.dismiss_rate >= 0.5 ? "" : "muted"}
+                        style={c.dismiss_rate >= 0.5 ? { color: "var(--susp)" } : undefined}>
+                      {Math.round((c.dismiss_rate || 0) * 100)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>

@@ -53,7 +53,7 @@ export default function Sessions() {
           <p className="muted">Unified cross-vendor audit, every actor's activity across
             all agent tools in one normalized timeline. Palivane's retention, not any vendor's cap.</p>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
             <option value={1}>Last 24h</option>
             <option value={7}>Last 7 days</option>

@@ -86,7 +86,7 @@ select { cursor: pointer; }
 input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); padding: 0; }
 
 /* ===== App shell: sidebar + content ===== */
-.app-shell { display: grid; grid-template-columns: 248px 1fr; min-height: 100vh; }
+.app-shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; }
 
 .sidebar {
   display: flex; flex-direction: column;
@@ -148,6 +148,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); paddi
 .nav-on svg { color: var(--accent-2); }
 
 .sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 14px; }
+/* The nav and footer sit in a wrapper so a phone can open them as one panel. On a desktop the
+   wrapper takes no part in layout, so the sidebar is the column it always was. */
+.sidebar-panel { display: contents; }
+.nav-toggle { display: none; }
 .judge-status {
   display: flex; align-items: center; gap: 10px;
   font-size: 12px; font-weight: 600; padding: 9px 12px; border-radius: 4px;
@@ -188,7 +192,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); paddi
    of the screen went to dead margin either side. 1760 keeps a readable measure while
    letting the two-column grid actually use the display. Below ~1800px the viewport
    is the constraint, so nothing changes on a laptop. */
-.content { padding: 32px 40px 64px; max-width: 1760px; width: 100%; margin: 0 auto; }
+.content { padding: 32px 40px 64px; max-width: 1760px; width: 100%; margin: 0 auto; min-width: 0; }
 .content-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 26px; gap: 18px; }
 .page-title {
   font-size: 24px; font-weight: 800; margin: 0; letter-spacing: -0.4px;
@@ -478,7 +482,7 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 .signal-src { font-size: 11px; color: var(--muted); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; }
-.detail-actions { display: flex; gap: 10px; margin-top: 20px; align-items: center; }
+.detail-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; align-items: center; }
 .detail-actions-label { font-size: 12.5px; color: var(--muted); margin-right: 2px; }
 .detail-actions button {
   flex: 1; background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
@@ -659,21 +663,54 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
   .right-col { position: static; max-height: none; }
 }
 @media (max-width: 900px) {
-  .app-shell { grid-template-columns: 1fr; }
+  /* minmax(0, 1fr), not 1fr: a bare 1fr is minmax(auto, 1fr), which will not shrink below its
+     content, so one wide child stretched the whole page (every screen was 746px on a 390px
+     phone, and Connect 914px). */
+  .app-shell { grid-template-columns: minmax(0, 1fr); }
+
+  /* The sidebar becomes a slim bar: brand on the left, a menu button on the right. */
   .sidebar {
-    position: static; height: auto; flex-direction: row; align-items: center;
-    flex-wrap: wrap; gap: 10px 18px; padding: 16px 20px;
+    position: sticky; top: 0; z-index: 40; height: 56px; padding: 0 16px;
+    flex-direction: row; align-items: center; justify-content: space-between; gap: 12px;
+    border-right: 0; border-bottom: 1px solid var(--border);
   }
-  .sidebar-brand { padding: 0; }
-  .nav { flex-direction: row; }
-  .sidebar-foot { margin: 0 0 0 auto; flex-direction: row; align-items: center; }
-  .account { display: none; }
-  .content { padding: 24px 20px; }
+  .sidebar-brand { padding: 0; gap: 10px; min-width: 0; }
+  .sidebar-emblem { height: 28px; }
+  .brand-sub { display: none; }
+  .nav-toggle {
+    display: inline-flex; align-items: center; gap: 8px; flex: none; max-width: 60%;
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+    font-family: inherit; font-size: 13px; font-weight: 600; line-height: 1;
+    padding: 9px 12px; border-radius: 4px; cursor: pointer; min-height: 40px;
+  }
+  .nav-toggle span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nav-toggle:hover { border-color: var(--border-bright); }
+  .nav-toggle:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+  /* The nav and footer open as a panel under the bar and scroll as one. */
+  .sidebar-panel { display: none; }
+  .sidebar.open .sidebar-panel {
+    display: flex; flex-direction: column; gap: 18px;
+    position: fixed; top: 56px; left: 0; right: 0; bottom: 0;
+    padding: 16px 16px 28px; overflow-y: auto; overscroll-behavior: contain;
+    background: var(--bg);
+  }
+  .sidebar.open .nav {
+    flex: none; overflow: visible; margin: 0; padding: 0;
+    -webkit-mask-image: none; mask-image: none;
+  }
+  .sidebar.open .nav-item { padding: 12px; font-size: 14.5px; min-height: 44px; }
+  .sidebar.open .sidebar-foot { margin-top: 4px; }
+
+  .content { min-width: 0; padding: 20px 16px 48px; }
   .dashboard { grid-template-columns: repeat(2, 1fr); }
   .main-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
   .dashboard { grid-template-columns: 1fr; }
+  /* Cards nest (a page card holding panels). 26px plus 22px a side left a 390px phone a 258px
+     window to read a table through. */
+  .connect, .panel { padding: 16px; }
 }
 
 /* ===== Users / team page ===== */
@@ -707,6 +744,18 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 .users-table tr:last-child td { border-bottom: none; }
 
 .data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 10px; }
+/* Every console table sits in one of these. Where the content column is narrow it scrolls the
+   table sideways inside its own box instead of widening the whole page. (Only there: the box
+   would otherwise stop the table's margins collapsing and nudge every table page by a few px.) */
+@media (max-width: 1200px) {
+  .table-scroll { overflow-x: auto; max-width: 100%; }
+}
+/* A path or URL in running text (`<prefix>/palivane/events/YYYY/MM/...`) is one unbreakable word and
+   was wider than a phone. Inline code may break anywhere; a code block keeps its own scrolling.
+   Phones only, because breaking inside a word reflows table columns. */
+@media (max-width: 720px) {
+  .content :not(pre) > code { overflow-wrap: anywhere; }
+}
 .data-table th {
   text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.8px;
   color: var(--muted); font-weight: 700; padding: 10px 12px; border-bottom: 1px solid var(--border);
@@ -825,9 +874,11 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
   .settings-results { min-width: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .settings-found { animation: none; box-shadow: 0 0 0 3px var(--accent); } }
-.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; margin-bottom: 16px; }
+.field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; margin-bottom: 16px; }
 .field-grid label { display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; color: var(--muted); font-weight: 600; }
 .field-grid label.field-wide { grid-column: 1 / -1; }
+.field-grid label { min-width: 0; }
+.field-grid input, .field-grid select, .field-grid textarea { min-width: 0; max-width: 100%; box-sizing: border-box; }
 .field-grid input, .field-grid select {
   background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
   border-radius: 4px; padding: 10px 13px; font-family: inherit; font-size: 13.5px;
@@ -849,7 +900,7 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 }
 .trial-banner-expired { border-color: rgba(244, 63, 94, 0.4); background: rgba(244, 63, 94, 0.1); }
 
-.usage-stats { display: flex; gap: 32px; margin-bottom: 10px; }
+.usage-stats { display: flex; flex-wrap: wrap; gap: 14px 32px; margin-bottom: 10px; }
 .usage-stats > div { display: flex; flex-direction: column; }
 .usage-n { font-size: 28px; font-weight: 800; letter-spacing: -0.6px; color: #ffffff; }
 .usage-l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700; margin-top: 3px; }
@@ -858,13 +909,14 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 .usage-daycount { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 
 .upstream-row {
-  display: grid; grid-template-columns: 160px 1fr 1fr auto auto; gap: 10px;
+  display: grid; grid-template-columns: 160px minmax(0, 1fr) minmax(0, 1fr) auto auto; gap: 10px;
   align-items: center; padding: 10px 0; border-top: 1px solid var(--border-soft);
 }
 .upstream-row input {
   background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
   border-radius: 4px; padding: 9px 12px; font-family: inherit; font-size: 13px;
 }
+.upstream-row input { min-width: 0; }
 .upstream-row input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .upstream-name { font-weight: 600; font-size: 13.5px; display: flex; flex-direction: column; gap: 4px; color: #ffffff; }
 
@@ -900,9 +952,11 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 }
 
 @media (max-width: 720px) {
-  .field-grid { grid-template-columns: 1fr; }
-  .upstream-row { grid-template-columns: 1fr 1fr; }
+  .field-grid { grid-template-columns: minmax(0, 1fr); }
+  .upstream-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .upstream-row input { min-width: 0; width: 100%; box-sizing: border-box; }
   .upstream-name { grid-column: 1 / -1; }
+  .findings-filters { flex-wrap: wrap; }
 }
 
 /* ===== Landing page (bright & luminous aurora) ===== */
@@ -1056,11 +1110,11 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 }
 .lp-pagehead h1 { font-size: 46px; font-weight: 800; letter-spacing: -1.2px; margin: 0; color: #ffffff; line-height: 1.1; }
 .lp-pagehead p { font-size: 17px; line-height: 1.6; color: var(--muted); max-width: 60ch; margin: 16px auto 0; }
-.lp-cards-2 { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+.lp-cards-2 { grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); }
 .lp-h2 { font-size: 34px; font-weight: 800; letter-spacing: -0.8px; margin: 0 0 12px; text-transform: none; color: #ffffff; }
 .lp-sub { font-size: 16px; color: var(--muted); margin: 0 0 34px; max-width: 68ch; line-height: 1.65; }
 
-.lp-fronts { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 20px; }
+.lp-fronts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(290px, 100%), 1fr)); gap: 20px; }
 .lp-front {
   background: var(--panel);
   border: 1px solid var(--border); border-radius: 18px;
@@ -1139,10 +1193,10 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 .lp-shot figcaption { font-size: 13.5px; color: var(--muted); margin-top: 13px; text-align: center; }
 .lp-zoom-hint { opacity: 0.7; font-style: italic; }
 .lp-shot-lead { max-width: 980px; margin: 8px auto 36px; }
-.lp-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; }
+.lp-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 24px; }
 
-.lp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
-.lp-cards-5 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.lp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 18px; }
+.lp-cards-5 { grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); }
 .lp-card {
   background: var(--panel);
   border: 1px solid var(--border); border-radius: 6px; padding: 26px;
@@ -1166,6 +1220,16 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
   color: var(--muted); font-size: 12.5px; font-weight: 600;
 }
 .lp-card h3 { font-size: 17.5px; margin: 0 0 8px; color: #ffffff; }
+/* Public pages: a path or URL in running text is one unbreakable word, and the marketing tables
+   (How it works) were wider than a small phone. Code blocks and tables scroll inside their own box. */
+.lp-card { min-width: 0; }
+.lp-card p { overflow-wrap: break-word; }
+@media (max-width: 720px) {
+  .landing :not(pre) > code { overflow-wrap: anywhere; }
+}
+@media (max-width: 560px) {
+  .hiw-table { display: block; max-width: 100%; overflow-x: auto; }
+}
 .lp-card p { font-size: 14px; color: var(--muted); line-height: 1.65; margin: 0; }
 
 .lp-steps { display: flex; flex-direction: column; gap: 16px; }
@@ -1362,7 +1426,7 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 .hiw-pipe span:not(.hiw-pipe-ic) { display: block; font-size: 12px; color: var(--muted); margin-top: 4px; }
 
 /* Surface chips */
-.hiw-surfaces { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 14px; }
+.hiw-surfaces { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(310px, 100%), 1fr)); gap: 14px; }
 .hiw-surface {
   display: flex; gap: 14px; align-items: center;
   background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 15px 18px;
@@ -1541,8 +1605,12 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 .docs-prose hr { border: none; border-top: 1px solid var(--border-soft); margin: 32px 0; }
 .docs-prose img { max-width: 100%; border-radius: 4px; }
 @media (max-width: 860px) {
-  .docs-layout { flex-direction: column; }
+  .docs-layout { flex-direction: column; align-items: stretch; }
   .docs-side { position: static; flex: none; width: 100%; }
+  /* Paths and URLs in the prose are single unbreakable words and were wider than a phone (the
+     Overview page made its column 1149px). Code blocks keep their own horizontal scroll. */
+  .docs-prose, .docs-prose code { overflow-wrap: anywhere; }
+  .docs-prose pre code { overflow-wrap: normal; }
 }
 
 /* Plan entitlements table */

@@ -83,23 +83,25 @@ export default function Audit() {
           <div className="empty">No admin activity recorded yet.</div>
         ) : (
           <div className="audit-scroll">
-          <table className="users-table audit-table">
-            <thead>
-              <tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th></tr>
-            </thead>
-            <tbody>
-              {entries.map((e) => (
-                <tr key={e.id}>
-                  <td className="audit-when">{when(e.created_at)}</td>
-                  <td>{e.actor}</td>
-                  <td><span className={`audit-act audit-act-${actionKind(e.action)}`}
-                            title={e.action}>{actionLabel(e.action)}</span></td>
-                  <td className="ut-email">{e.target || "-"}</td>
-                  <td className="audit-detail">{summarize(e.detail)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="users-table audit-table">
+              <thead>
+                <tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th></tr>
+              </thead>
+              <tbody>
+                {entries.map((e) => (
+                  <tr key={e.id}>
+                    <td className="audit-when">{when(e.created_at)}</td>
+                    <td>{e.actor}</td>
+                    <td><span className={`audit-act audit-act-${actionKind(e.action)}`}
+                              title={e.action}>{actionLabel(e.action)}</span></td>
+                    <td className="ut-email">{e.target || "-"}</td>
+                    <td className="audit-detail">{summarize(e.detail)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           </div>
         )}
       </div>
