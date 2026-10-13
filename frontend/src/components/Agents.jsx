@@ -119,21 +119,23 @@ export default function Agents({ tenant, onTenant }) {
           <p className="page-sub">Where a poisoned instruction or sensitive data crossed an
              agent hop in the last {graph.window_days} days. Only flagged hops appear: this is
              the risk graph, not every call.</p>
-          <table className="data-table">
-            <thead><tr><th>From</th><th></th><th>To</th><th>Messages</th><th>Worst</th><th>What crossed</th></tr></thead>
-            <tbody>
-              {graph.edges.map((e) => (
-                <tr key={`${e.from}->${e.to}`}>
-                  <td><strong>{e.from}</strong></td>
-                  <td aria-hidden="true">→</td>
-                  <td><strong>{e.to}</strong></td>
-                  <td>{e.messages}</td>
-                  <td><span className={`badge sev-${e.worst_severity}`}>{e.worst_severity}</span></td>
-                  <td className="muted" style={{ fontSize: 12 }}>{e.categories.join(", ") || "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead><tr><th>From</th><th></th><th>To</th><th>Messages</th><th>Worst</th><th>What crossed</th></tr></thead>
+              <tbody>
+                {graph.edges.map((e) => (
+                  <tr key={`${e.from}->${e.to}`}>
+                    <td><strong>{e.from}</strong></td>
+                    <td aria-hidden="true">→</td>
+                    <td><strong>{e.to}</strong></td>
+                    <td>{e.messages}</td>
+                    <td><span className={`badge sev-${e.worst_severity}`}>{e.worst_severity}</span></td>
+                    <td className="muted" style={{ fontSize: 12 }}>{e.categories.join(", ") || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -190,60 +192,62 @@ export default function Agents({ tenant, onTenant }) {
       <div className="panel settings-card">
         <h2>Agents</h2>
         {agents && agents.length ? (
-          <table className="data-table">
-            <thead><tr><th>Name</th><th>Kind</th><th>Role</th><th>OIDC subject</th><th>Extra deny</th><th>Req/min</th><th>Block ≥</th><th>Status</th><th></th></tr></thead>
-            <tbody>
-              {agents.map((a) => (
-                <tr key={a.id} style={{ opacity: a.active ? 1 : 0.5 }}>
-                  <td><strong>{a.name}</strong><div className="muted" style={{ fontSize: 11 }}>{a.prefix}...</div></td>
-                  <td className="muted">{a.kind}</td>
-                  <td>
-                    <select value={a.role || ""} onChange={(e) => setAgentRole(a, e.target.value)}>
-                      <option value="">none</option>
-                      {roles.map((r) => <option key={r.id} value={r.name}>{r.name}{r.enforce ? " (enforce)" : ""}</option>)}
-                    </select>
-                  </td>
-                  <td>
-                    <input defaultValue={a.oidc_subject || ""} placeholder="spn / client_id"
-                           style={{ width: 120 }} title="JWT subject that maps a workload token to this agent"
-                           onBlur={(e) => { const v = e.target.value.trim(); if (v !== (a.oidc_subject || "")) setAgentSubject(a, v); }} />
-                  </td>
-                  <td>
-                    <input defaultValue={(a.deny || []).join(", ")} placeholder="*prod*, *delete*"
-                           style={{ width: 130 }} title="Per-agent extra deny globs (tighten the role)"
-                           onBlur={(e) => { const v = e.target.value; if (v !== (a.deny || []).join(", ")) setAgentDeny(a, v); }} />
-                  </td>
-                  <td>
-                    <input type="number" min="0" defaultValue={a.rate_limit || 0}
-                           style={{ width: 60 }} title="Gateway requests/min for this agent (0 = inherit the org limit)"
-                           onBlur={(e) => { const v = parseInt(e.target.value || "0", 10); if (v !== (a.rate_limit || 0)) setAgentPolicy(a, { rate_limit: v }); }} />
-                  </td>
-                  <td>
-                    <select value={a.block_severity || ""}
-                            title="Stricter gateway block threshold for this agent (the stricter of agent vs org wins)"
-                            onChange={(e) => setAgentPolicy(a, { block_severity: e.target.value })}>
-                      <option value="">inherit</option>
-                      <option value="low">low</option>
-                      <option value="suspicious">suspicious</option>
-                      <option value="high">high</option>
-                      <option value="critical">critical</option>
-                    </select>
-                  </td>
-                  <td>{a.active
-                    ? <span className="cat cat-unsanctioned_ai">active</span>
-                    : <span className="cat cat-secret_leak">disabled</span>}</td>
-                  <td>
-                    <button className="link-btn" onClick={() => rotate(a)}>Rotate</button>
-                    {a.active && <button className="link-btn" style={{ marginLeft: 12 }}
-                                         title="Mint a 1-hour session token (JWT), the long-lived ag_ credential stays offline"
-                                         onClick={() => mintToken(a)}>Session token</button>}
-                    {a.active && <button className="link-btn" style={{ marginLeft: 12, color: "var(--crit)" }}
-                                         onClick={() => disable(a)}>Disable</button>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead><tr><th>Name</th><th>Kind</th><th>Role</th><th>OIDC subject</th><th>Extra deny</th><th>Req/min</th><th>Block ≥</th><th>Status</th><th></th></tr></thead>
+              <tbody>
+                {agents.map((a) => (
+                  <tr key={a.id} style={{ opacity: a.active ? 1 : 0.5 }}>
+                    <td><strong>{a.name}</strong><div className="muted" style={{ fontSize: 11 }}>{a.prefix}...</div></td>
+                    <td className="muted">{a.kind}</td>
+                    <td>
+                      <select value={a.role || ""} onChange={(e) => setAgentRole(a, e.target.value)}>
+                        <option value="">none</option>
+                        {roles.map((r) => <option key={r.id} value={r.name}>{r.name}{r.enforce ? " (enforce)" : ""}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      <input defaultValue={a.oidc_subject || ""} placeholder="spn / client_id"
+                             style={{ width: 120 }} title="JWT subject that maps a workload token to this agent"
+                             onBlur={(e) => { const v = e.target.value.trim(); if (v !== (a.oidc_subject || "")) setAgentSubject(a, v); }} />
+                    </td>
+                    <td>
+                      <input defaultValue={(a.deny || []).join(", ")} placeholder="*prod*, *delete*"
+                             style={{ width: 130 }} title="Per-agent extra deny globs (tighten the role)"
+                             onBlur={(e) => { const v = e.target.value; if (v !== (a.deny || []).join(", ")) setAgentDeny(a, v); }} />
+                    </td>
+                    <td>
+                      <input type="number" min="0" defaultValue={a.rate_limit || 0}
+                             style={{ width: 60 }} title="Gateway requests/min for this agent (0 = inherit the org limit)"
+                             onBlur={(e) => { const v = parseInt(e.target.value || "0", 10); if (v !== (a.rate_limit || 0)) setAgentPolicy(a, { rate_limit: v }); }} />
+                    </td>
+                    <td>
+                      <select value={a.block_severity || ""}
+                              title="Stricter gateway block threshold for this agent (the stricter of agent vs org wins)"
+                              onChange={(e) => setAgentPolicy(a, { block_severity: e.target.value })}>
+                        <option value="">inherit</option>
+                        <option value="low">low</option>
+                        <option value="suspicious">suspicious</option>
+                        <option value="high">high</option>
+                        <option value="critical">critical</option>
+                      </select>
+                    </td>
+                    <td>{a.active
+                      ? <span className="cat cat-unsanctioned_ai">active</span>
+                      : <span className="cat cat-secret_leak">disabled</span>}</td>
+                    <td>
+                      <button className="link-btn" onClick={() => rotate(a)}>Rotate</button>
+                      {a.active && <button className="link-btn" style={{ marginLeft: 12 }}
+                                           title="Mint a 1-hour session token (JWT), the long-lived ag_ credential stays offline"
+                                           onClick={() => mintToken(a)}>Session token</button>}
+                      {a.active && <button className="link-btn" style={{ marginLeft: 12, color: "var(--crit)" }}
+                                           onClick={() => disable(a)}>Disable</button>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : <p className="muted">No agents yet. Register one to give an AI agent a verifiable identity.</p>}
       </div>
 
@@ -256,25 +260,27 @@ export default function Agents({ tenant, onTenant }) {
            <strong> enforce</strong> blocks it.</p>
 
         {roles.length > 0 && (
-          <table className="data-table" style={{ marginBottom: 16 }}>
-            <thead><tr><th>Role</th><th>Allow tools</th><th>Allow servers</th><th>Commands</th><th>Data scopes</th><th>Deny</th><th>Mode</th><th></th></tr></thead>
-            <tbody>
-              {roles.map((r) => (
-                <tr key={r.id}>
-                  <td><strong>{r.name}</strong>{r.default_allow && <span className="muted" style={{ fontSize: 11 }}> · default-allow</span>}</td>
-                  <td className="muted">{r.allow_tools.join(", ") || "-"}</td>
-                  <td className="muted">{r.allow_servers.join(", ") || "-"}</td>
-                  <td className="muted">{r.allow_commands.join(", ") || "-"}</td>
-                  <td className="muted">{r.data_scopes.join(", ") || "-"}</td>
-                  <td className="muted">{r.deny.join(", ") || "-"}</td>
-                  <td>{r.enforce
-                    ? <span className="cat cat-secret_leak">enforce</span>
-                    : <span className="cat cat-dangerous_command">monitor</span>}</td>
-                  <td><button className="link-btn" style={{ color: "var(--crit)" }} onClick={() => delRole(r)}>Delete</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="data-table" style={{ marginBottom: 16 }}>
+              <thead><tr><th>Role</th><th>Allow tools</th><th>Allow servers</th><th>Commands</th><th>Data scopes</th><th>Deny</th><th>Mode</th><th></th></tr></thead>
+              <tbody>
+                {roles.map((r) => (
+                  <tr key={r.id}>
+                    <td><strong>{r.name}</strong>{r.default_allow && <span className="muted" style={{ fontSize: 11 }}> · default-allow</span>}</td>
+                    <td className="muted">{r.allow_tools.join(", ") || "-"}</td>
+                    <td className="muted">{r.allow_servers.join(", ") || "-"}</td>
+                    <td className="muted">{r.allow_commands.join(", ") || "-"}</td>
+                    <td className="muted">{r.data_scopes.join(", ") || "-"}</td>
+                    <td className="muted">{r.deny.join(", ") || "-"}</td>
+                    <td>{r.enforce
+                      ? <span className="cat cat-secret_leak">enforce</span>
+                      : <span className="cat cat-dangerous_command">monitor</span>}</td>
+                    <td><button className="link-btn" style={{ color: "var(--crit)" }} onClick={() => delRole(r)}>Delete</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
 
         <div className="override-form">

@@ -273,7 +273,7 @@ export default function CoverageMatrix() {
             {" "}<code>pytest tests/bench_recall.py tests/bench_false_positives.py tests/bench_evasion.py tests/bench_code_discrimination.py -s</code>.
             We publish the weak numbers too; a benchmark that only flatters is a brochure.
           </p>
-          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))" }}>
             <div className="lp-card">
               <div className="bench-stat">100%</div>
               <h3>Recall</h3>
@@ -314,7 +314,7 @@ export default function CoverageMatrix() {
           <h2 className="lp-h2">Governance & enforcement</h2>
           <p className="lp-sub">The tables above are what Palivane <em>sees</em>. This is what it
              <em> does</em> with it, the part that isn't a capture point but is still coverage.</p>
-          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
+          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}>
             {GOVERNANCE.map(([title, body]) => (
               <div className="lp-card" key={title}>
                 <h3>{title}</h3>
@@ -330,7 +330,7 @@ export default function CoverageMatrix() {
           <h2 className="lp-h2">Known gaps</h2>
           <p className="lp-sub">Where the visibility ends. If a vendor tells you their coverage
              has no edges, ask harder questions.</p>
-          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
+          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}>
             {GAPS.map(([title, body]) => (
               <div className="lp-card" key={title}>
                 <h3>{title}</h3>
@@ -352,7 +352,7 @@ export default function CoverageMatrix() {
              the key that's been sitting in a repo since March. It is not an insider-threat
              containment tool, and a vendor who claims endpoint controls can contain a
              malicious insider is describing a product that doesn't exist.</p>
-          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
+          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}>
             {BYPASSES.map(([title, body]) => (
               <div className="lp-card" key={title}>
                 <h3>{title}</h3>

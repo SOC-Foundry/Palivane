@@ -45,24 +45,26 @@ export default function ScanLog() {
       <div className="panel settings-card">
         <h2>Users</h2>
         {users && users.length ? (
-          <table className="data-table">
-            <thead><tr><th>User</th><th>Findings</th><th>High+</th><th>Top categories</th><th>Peak risk</th><th>Last seen</th></tr></thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.actor} className={sel === u.actor ? "row-on" : ""}
-                    style={{ cursor: "pointer" }} onClick={() => openUser(u.actor)}>
-                  <td><strong>{u.actor}</strong></td>
-                  <td>{u.findings}</td>
-                  <td>{u.high
-                    ? <span style={{ color: u.critical ? "var(--crit)" : "var(--high)", fontWeight: 700 }}>{u.high}{u.critical ? ` (${u.critical} crit)` : ""}</span>
-                    : <span className="muted">0</span>}</td>
-                  <td className="muted">{u.categories.map((c) => `${CAT_LABEL[c.category] || c.category} ${c.count}`).join(", ") || "-"}</td>
-                  <td><span className={`sev sev-${RISK_CLASS(u.max_risk)}`}>{u.max_risk}</span></td>
-                  <td className="muted">{u.last_seen ? u.last_seen.slice(0, 10) : "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead><tr><th>User</th><th>Findings</th><th>High+</th><th>Top categories</th><th>Peak risk</th><th>Last seen</th></tr></thead>
+              <tbody>
+                {users.map((u) => (
+                  <tr key={u.actor} className={sel === u.actor ? "row-on" : ""}
+                      style={{ cursor: "pointer" }} onClick={() => openUser(u.actor)}>
+                    <td><strong>{u.actor}</strong></td>
+                    <td>{u.findings}</td>
+                    <td>{u.high
+                      ? <span style={{ color: u.critical ? "var(--crit)" : "var(--high)", fontWeight: 700 }}>{u.high}{u.critical ? ` (${u.critical} crit)` : ""}</span>
+                      : <span className="muted">0</span>}</td>
+                    <td className="muted">{u.categories.map((c) => `${CAT_LABEL[c.category] || c.category} ${c.count}`).join(", ") || "-"}</td>
+                    <td><span className={`sev sev-${RISK_CLASS(u.max_risk)}`}>{u.max_risk}</span></td>
+                    <td className="muted">{u.last_seen ? u.last_seen.slice(0, 10) : "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : <p className="muted">No user activity yet, findings attributed to a user will appear here.</p>}
       </div>
 
@@ -70,20 +72,22 @@ export default function ScanLog() {
         <div className="panel settings-card">
           <h2>{sel}, recent findings</h2>
           {findings.length ? (
-            <table className="data-table">
-              <thead><tr><th>When</th><th>Surface</th><th>Severity</th><th>Risk</th><th>Subject</th></tr></thead>
-              <tbody>
-                {findings.map((f) => (
-                  <tr key={f.id}>
-                    <td className="muted">{(f.created_at || "").slice(0, 16).replace("T", " ")}</td>
-                    <td className="muted">{f.surface}</td>
-                    <td><span className={`sev sev-${f.severity}`}>{f.severity}</span></td>
-                    <td>{f.risk_score}</td>
-                    <td className="muted">{f.subject || "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead><tr><th>When</th><th>Surface</th><th>Severity</th><th>Risk</th><th>Subject</th></tr></thead>
+                <tbody>
+                  {findings.map((f) => (
+                    <tr key={f.id}>
+                      <td className="muted">{(f.created_at || "").slice(0, 16).replace("T", " ")}</td>
+                      <td className="muted">{f.surface}</td>
+                      <td><span className={`sev sev-${f.severity}`}>{f.severity}</span></td>
+                      <td>{f.risk_score}</td>
+                      <td className="muted">{f.subject || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : <p className="muted">No findings for this user.</p>}
         </div>
       )}
