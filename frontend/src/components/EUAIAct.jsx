@@ -59,7 +59,7 @@ export default function EUAIAct() {
       <section className="lp-section">
         <div className="lp-wrap">
           <h2 className="lp-h2">Obligation → control mapping</h2>
-          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))" }}>
+          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(340px, 100%), 1fr))" }}>
             {ROWS.map(([art, name, duty, control], i) => (
               <div key={art} className="lp-card">
                 <span className="lp-card-icon">{ICONS[i]}</span>

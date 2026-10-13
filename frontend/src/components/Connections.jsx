@@ -113,25 +113,27 @@ export default function Connections() {
                 users sign in from the extension / <code>palivane connect</code>.</p>
             : <p className="muted">No active keys. {hiddenKeys} revoked, tick 'Show revoked' to see them.</p>
         ) : (
-          <table className="data-table">
-            <thead><tr><th>Actor / label</th><th>Scope</th><th>Prefix</th><th>Last seen</th><th>Created</th><th></th></tr></thead>
-            <tbody>
-              {visibleKeys.map((k) => (
-                <tr key={k.id} style={{ opacity: k.active ? 1 : 0.5 }}>
-                  <td>{k.actor || k.label || "-"}</td>
-                  <td title={(SCOPES[k.scope] || SCOPES.ingest).hint}>
-                    {(SCOPES[k.scope] || SCOPES.ingest).label}
-                  </td>
-                  <td><code>{k.prefix}</code></td>
-                  <td>{when(k.last_used_at)}</td>
-                  <td>{when(k.created_at)}</td>
-                  <td>{k.active
-                    ? <button className="mini-btn danger" onClick={() => revoke(k)}>revoke</button>
-                    : <span className="muted">revoked</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead><tr><th>Actor / label</th><th>Scope</th><th>Prefix</th><th>Last seen</th><th>Created</th><th></th></tr></thead>
+              <tbody>
+                {visibleKeys.map((k) => (
+                  <tr key={k.id} style={{ opacity: k.active ? 1 : 0.5 }}>
+                    <td>{k.actor || k.label || "-"}</td>
+                    <td title={(SCOPES[k.scope] || SCOPES.ingest).hint}>
+                      {(SCOPES[k.scope] || SCOPES.ingest).label}
+                    </td>
+                    <td><code>{k.prefix}</code></td>
+                    <td>{when(k.last_used_at)}</td>
+                    <td>{when(k.created_at)}</td>
+                    <td>{k.active
+                      ? <button className="mini-btn danger" onClick={() => revoke(k)}>revoke</button>
+                      : <span className="muted">revoked</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -149,21 +151,23 @@ export default function Connections() {
         {grants.length === 0
           ? <p className="muted" style={{ marginTop: 10 }}>No apps have been authorized.</p>
           : (
-            <table className="data-table">
-              <thead><tr><th>App</th><th>Approved by</th><th>Granted</th><th>Expires</th><th /></tr></thead>
-              <tbody>
-                {grants.map((g) => (
-                  <tr key={`${g.client_id}:${g.granted_by}`}>
-                    <td>{g.client_name}</td>
-                    <td>{g.granted_by}</td>
-                    <td>{g.granted_at ? new Date(g.granted_at).toLocaleDateString() : "-"}</td>
-                    <td>{g.expires_at ? new Date(g.expires_at).toLocaleDateString() : "-"}</td>
-                    <td><button type="button" className="link-btn"
-                                onClick={() => revokeGrant(g.client_id, g.client_name)}>revoke</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead><tr><th>App</th><th>Approved by</th><th>Granted</th><th>Expires</th><th /></tr></thead>
+                <tbody>
+                  {grants.map((g) => (
+                    <tr key={`${g.client_id}:${g.granted_by}`}>
+                      <td>{g.client_name}</td>
+                      <td>{g.granted_by}</td>
+                      <td>{g.granted_at ? new Date(g.granted_at).toLocaleDateString() : "-"}</td>
+                      <td>{g.expires_at ? new Date(g.expires_at).toLocaleDateString() : "-"}</td>
+                      <td><button type="button" className="link-btn"
+                                  onClick={() => revokeGrant(g.client_id, g.client_name)}>revoke</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
       </div>
 
@@ -208,22 +212,24 @@ export default function Connections() {
             ? <p className="muted">None. Downloading a device installer (Connect) mints one.</p>
             : <p className="muted">No active tokens. {hiddenTokens} revoked, tick 'Show revoked' to see them.</p>
         ) : (
-          <table className="data-table">
-            <thead><tr><th>Label</th><th>Prefix</th><th>Uses</th><th>Created</th><th>Status</th></tr></thead>
-            <tbody>
-              {visibleTokens.map((t) => (
-                <tr key={t.prefix} style={{ opacity: t.active ? 1 : 0.5 }}>
-                  <td>{t.label || "-"}</td>
-                  <td><code>{t.prefix}</code></td>
-                  <td>{t.uses}{t.max_uses ? ` / ${t.max_uses}` : ""}</td>
-                  <td>{when(t.created_at)}</td>
-                  <td>{t.active
-                    ? <button className="mini-btn danger" onClick={() => revokeToken(t)}>revoke</button>
-                    : <span className="muted">revoked</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead><tr><th>Label</th><th>Prefix</th><th>Uses</th><th>Created</th><th>Status</th></tr></thead>
+              <tbody>
+                {visibleTokens.map((t) => (
+                  <tr key={t.prefix} style={{ opacity: t.active ? 1 : 0.5 }}>
+                    <td>{t.label || "-"}</td>
+                    <td><code>{t.prefix}</code></td>
+                    <td>{t.uses}{t.max_uses ? ` / ${t.max_uses}` : ""}</td>
+                    <td>{when(t.created_at)}</td>
+                    <td>{t.active
+                      ? <button className="mini-btn danger" onClick={() => revokeToken(t)}>revoke</button>
+                      : <span className="muted">revoked</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>

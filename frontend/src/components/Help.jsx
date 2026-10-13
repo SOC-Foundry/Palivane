@@ -80,31 +80,35 @@ export default function Help({ isAdmin = false, onNavigate }) {
       <Card title="Reading a finding"
             sub="Every finding is scored 0-100 and tagged with one or more categories.">
         <h3 className="help-h3">Categories</h3>
-        <table className="data-table">
-          <thead><tr><th>Category</th><th>Meaning</th></tr></thead>
-          <tbody>
-            {CATEGORIES.map(([key, label, desc]) => (
-              <tr key={key}>
-                <td><span className={`cat cat-${key}`}>{label}</span></td>
-                <td className="muted">{desc}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead><tr><th>Category</th><th>Meaning</th></tr></thead>
+            <tbody>
+              {CATEGORIES.map(([key, label, desc]) => (
+                <tr key={key}>
+                  <td><span className={`cat cat-${key}`}>{label}</span></td>
+                  <td className="muted">{desc}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
         <h3 className="help-h3">Severity</h3>
-        <table className="data-table">
-          <thead><tr><th>Severity</th><th>Risk score</th><th>What it means</th></tr></thead>
-          <tbody>
-            {SEVERITIES.map(([sev, range, desc]) => (
-              <tr key={sev}>
-                <td><span className={`sev sev-${sev}`}>{sev}</span></td>
-                <td><code>{range}</code></td>
-                <td className="muted">{desc}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead><tr><th>Severity</th><th>Risk score</th><th>What it means</th></tr></thead>
+            <tbody>
+              {SEVERITIES.map(([sev, range, desc]) => (
+                <tr key={sev}>
+                  <td><span className={`sev sev-${sev}`}>{sev}</span></td>
+                  <td><code>{range}</code></td>
+                  <td className="muted">{desc}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
 
       <Card title="Monitor vs. enforce"

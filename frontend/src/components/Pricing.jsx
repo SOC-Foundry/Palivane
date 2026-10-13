@@ -108,7 +108,7 @@ export default function Pricing() {
 
       <section className="lp-section">
         <div className="lp-wrap">
-          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", alignItems: "start" }}>
+          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", alignItems: "start" }}>
             {TIERS.map((t) => <Tier key={t.name} t={t} />)}
           </div>
           <div style={{ maxWidth: 720, margin: "34px auto 0" }}>

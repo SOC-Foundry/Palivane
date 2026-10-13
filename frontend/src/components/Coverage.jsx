@@ -67,14 +67,16 @@ export default function Coverage() {
           </div>
           <h2 style={{ marginTop: 14 }}>Uncovered actors</h2>
           {res.uncovered?.length ? (
-            <table className="data-table">
-              <thead><tr><th>Actor</th><th>Tools</th></tr></thead>
-              <tbody>
-                {res.uncovered.map((u) => (
-                  <tr key={u.actor}><td>{u.actor}</td><td className="muted">{(u.tools || []).join(", ")}</td></tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead><tr><th>Actor</th><th>Tools</th></tr></thead>
+                <tbody>
+                  {res.uncovered.map((u) => (
+                    <tr key={u.actor}><td>{u.actor}</td><td className="muted">{(u.tools || []).join(", ")}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : <p className="muted">Everyone in the list is covered. 🎉</p>}
         </div>
       )}

@@ -17,12 +17,14 @@ function Breakdown({ title, rows, keyHeader }) {
     <div className="panel settings-card">
       <h2>{title}</h2>
       {entries.length ? (
-        <table className="data-table">
-          <thead><tr><th>{keyHeader}</th><th>Findings</th></tr></thead>
-          <tbody>
-            {entries.map(([k, n]) => <tr key={k}><td>{k}</td><td>{n}</td></tr>)}
-          </tbody>
-        </table>
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead><tr><th>{keyHeader}</th><th>Findings</th></tr></thead>
+            <tbody>
+              {entries.map(([k, n]) => <tr key={k}><td>{k}</td><td>{n}</td></tr>)}
+            </tbody>
+          </table>
+        </div>
       ) : <p className="muted">None in this window.</p>}
     </div>
   );
@@ -139,19 +141,21 @@ export default function Report() {
               <h2>Unsanctioned AI in use</h2>
               <p className="muted">Tools people are using that are not on the allowlist. Not
                  necessarily misuse — but each one is an unmade decision.</p>
-              <table className="data-table">
-                <thead><tr><th>Tool</th><th>Domain</th><th>People</th><th>Events</th></tr></thead>
-                <tbody>
-                  {(shadow.top || []).map((t) => (
-                    <tr key={`${t.tool}-${t.domain}`}>
-                      <td>{t.tool || "—"}</td>
-                      <td className="muted">{t.domain || "—"}</td>
-                      <td>{t.users}</td>
-                      <td>{t.events}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead><tr><th>Tool</th><th>Domain</th><th>People</th><th>Events</th></tr></thead>
+                  <tbody>
+                    {(shadow.top || []).map((t) => (
+                      <tr key={`${t.tool}-${t.domain}`}>
+                        <td>{t.tool || "—"}</td>
+                        <td className="muted">{t.domain || "—"}</td>
+                        <td>{t.users}</td>
+                        <td>{t.events}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 

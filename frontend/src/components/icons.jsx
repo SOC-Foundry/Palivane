@@ -10,6 +10,12 @@ export const IconShield = (p) => (
 export const IconList = (p) => (
   <svg {...base} {...p}><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" /></svg>
 );
+export const IconMenu = (p) => (
+  <svg {...base} {...p}><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+);
+export const IconClose = (p) => (
+  <svg {...base} {...p}><path d="M6 6l12 12M18 6L6 18" /></svg>
+);
 export const IconPlug = (p) => (
   <svg {...base} {...p}><path d="M9 2v6M15 2v6M7 8h10v3a5 5 0 0 1-10 0V8zM12 16v6" /></svg>
 );
