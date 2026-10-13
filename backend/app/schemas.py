@@ -392,6 +392,7 @@ class TenantUpdate(BaseModel):
     client_enforce: Literal["on", "off", "inherit"] | None = None
     redact_mode: Literal["on", "off", "inherit"] | None = None   # coaching mode (tri-state)
     self_justify: Literal["on", "off", "inherit"] | None = None  # justified-proceed (tri-state)
+    ask_on_warn: Literal["on", "off", "inherit"] | None = None   # ASK verdict (tri-state)
     # Tokenize personal data in gateway traffic for this org (tri-state).
     gateway_tokenize: Literal["on", "off", "inherit"] | None = None
     gateway_block_severity: str | None = None  # ""|low|suspicious|high|critical

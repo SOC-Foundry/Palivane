@@ -183,3 +183,75 @@ def test_config_parses_exclude_dirs(monkeypatch):
     monkeypatch.setenv("PALIVANE_HOOK_EXCLUDE_DIRS", "/a/repo,/b/dir")
     ex = hook.read_config()["exclude"]
     assert hook.os.path.realpath("/a/repo") in ex and hook.os.path.realpath("/b/dir") in ex
+
+
+# --- ASK: a shell or MCP call in the warn band is put to the developer ---------------------
+# The server sets `ask` (only for an enforced actor in an org that opted in). Cursor's
+# beforeReadFile takes allow|deny only, and a response outside a hook's schema BLOCKS the
+# action, so an ask there would be a hard block: only shell and MCP calls may carry one.
+
+_ASKED = {"action": "warn", "ask": True, "risk_score": 49, "severity": "suspicious",
+          "signals": [{"category": "secret_leak"}], "remediation": ["Move it to an env var"]}
+
+
+def _run_cursor(monkeypatch, capsys, event, verdict, enforce=True):
+    import io
+    sent = []
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(event)))
+    monkeypatch.setattr(hook, "read_config", lambda: {
+        "url": "https://palivane.example", "token": "ak_test", "enforce": enforce,
+        "timeout": 1.0, "user": "dev@acme.com", "exclude": []})
+    monkeypatch.setattr(hook, "_post", lambda *a, **k: verdict)
+    monkeypatch.setattr(hook, "_send_detached", lambda *a, **k: sent.append(a))
+    rc = hook.main()
+    out = capsys.readouterr().out.strip()
+    return rc, (json.loads(out) if out else None), sent
+
+
+def test_should_ask_only_for_events_that_can_carry_an_ask():
+    for ev in ("beforeShellExecution", "beforeMCPExecution"):
+        assert hook.should_ask(ev, _ASKED) is True
+    for ev in ("beforeReadFile", "beforeSubmitPrompt", "afterFileEdit"):
+        assert hook.should_ask(ev, _ASKED) is False
+    assert hook.should_ask("beforeShellExecution", {"action": "warn"}) is False
+
+
+def test_ask_output_is_cursors_permission_ask():
+    out = hook.ask_output(_ASKED)
+    assert out["permission"] == "ask"
+    assert "secret_leak" in out["user_message"] and "49/suspicious" in out["user_message"]
+    assert "Move it to an env var" in out["user_message"]
+    assert set(out) <= {"permission", "user_message", "agent_message"}   # nothing outside Cursor's schema
+
+
+def test_a_shell_or_mcp_call_in_the_warn_band_asks(monkeypatch, capsys):
+    shell = {"hook_event_name": "beforeShellExecution", "command": "echo hi", "cwd": "/work"}
+    mcp = {"hook_event_name": "beforeMCPExecution", "tool_name": "search",
+           "tool_input": "{}", "url": "https://mcp.acme.com/rpc"}
+    for event in (shell, mcp):
+        rc, out, _ = _run_cursor(monkeypatch, capsys, event, _ASKED)
+        assert rc == 0 and out["permission"] == "ask", event["hook_event_name"]
+
+
+def test_a_file_read_is_allowed_not_asked(monkeypatch, capsys):
+    event = {"hook_event_name": "beforeReadFile", "file_path": "/work/app.py", "content": "x = 1"}
+    _, out, _ = _run_cursor(monkeypatch, capsys, event, _ASKED)
+    assert out == {"permission": "allow"}
+
+
+def test_a_prompt_never_asks(monkeypatch, capsys):
+    event = {"hook_event_name": "beforeSubmitPrompt", "prompt": "please refactor this", "cwd": "/work"}
+    _, out, _ = _run_cursor(monkeypatch, capsys, event, _ASKED)
+    assert out == {"continue": True}
+
+
+def test_a_block_wins_over_an_ask(monkeypatch, capsys):
+    shell = {"hook_event_name": "beforeShellExecution", "command": "echo hi", "cwd": "/work"}
+    _, out, _ = _run_cursor(monkeypatch, capsys, shell, {**_ASKED, "action": "block"})
+    assert out["permission"] == "deny"
+
+
+def test_monitor_mode_allows_and_reports_in_the_background(monkeypatch, capsys):
+    shell = {"hook_event_name": "beforeShellExecution", "command": "echo hi", "cwd": "/work"}
+    _, out, sent = _run_cursor(monkeypatch, capsys, shell, _ASKED, enforce=False)
+    assert out == {"permission": "allow"} and len(sent) == 1

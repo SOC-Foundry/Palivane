@@ -146,6 +146,10 @@ class Settings:
     # Global default for self-service justification (tenants override tri-state): a blocked
     # user records a business justification and proceeds; confirmed leaks stay blocked.
     self_justify: bool = _env("PALIVANE_SELF_JUSTIFY", "").lower() in ("1", "true", "yes")
+    # Global default for the ASK verdict (tenants override tri-state): a tool call scored in the
+    # warn band is put to the developer for approval instead of running silently. Off by
+    # default; only a device that is enforcing, on a client that can ask, ever sees it.
+    ask_on_warn: bool = _env("PALIVANE_ASK_ON_WARN", "").lower() in ("1", "true", "yes")
     # Encrypt stored finding content at rest (decrypted on read for authorized admins).
     # Opt-in: requires a durable PALIVANE_ENCRYPTION_KEY/PALIVANE_SECRET_KEY (key loss = data loss).
     encrypt_findings: bool = _env("PALIVANE_ENCRYPT_FINDINGS", "").lower() in ("1", "true", "yes")
