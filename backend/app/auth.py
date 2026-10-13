@@ -1302,6 +1302,8 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.redact_mode = _JUDGE[body.redact_mode]       # coaching mode (tri-state)
     if body.self_justify is not None:
         tenant.self_justify = _JUDGE[body.self_justify]     # justified-proceed (tri-state)
+    if body.ask_on_warn is not None:
+        tenant.ask_on_warn = _JUDGE[body.ask_on_warn]       # ASK verdict (tri-state)
     if body.gateway_tokenize is not None:
         tenant.gateway_tokenize = _JUDGE[body.gateway_tokenize]
     if body.retention_days is not None:

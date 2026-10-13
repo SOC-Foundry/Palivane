@@ -360,6 +360,7 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `INGEST_TENANT`     | *(unset)*                  | Tenant slug/id the extension & proxy attribute their findings to. |
 | `MCP_ENFORCE`       | `false`                    | MCP inspection: `true` blocks risky agentic tool-use inline (JSON-RPC error); otherwise monitor-only. |
 | `MCP_BLOCK_SEVERITY`| `high`                     | Block an MCP action when its verdict severity is at/above this. |
+| `PALIVANE_ASK_ON_WARN` | `false`                 | The **ask** verdict for Claude Code and Cursor tool calls: a call that scores above allow but below the block severity stops for the developer's approval (the tool's own prompt, with the reason) instead of running silently. Only reaches actors in enforce, and never replaces a block. A tenant's own setting (Settings → Policy) overrides. |
 | `MCP_ALLOWED_SERVERS` | *(empty)*                | Global allowlist of approved MCP server hosts (comma-separated); a tenant's own list (Settings) overrides. Empty = don't flag on server identity. |
 | `DEP_DENYLIST`      | *(empty)*                  | Extra known-bad dependency names to flag in manifests (comma-separated), merged with a small built-in denylist. |
 | `DEP_OSV_ENABLED`   | `false`                    | Opt-in: check pinned dependencies against the OSV.dev advisory feed for known CVEs (outbound call at scan time; fails open). |
@@ -521,7 +522,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/analyze`           | Analyze one item; returns verdict + signals. Set `surface` (`llm_io`/`ai_usage`); pass `destination` for `ai_usage`. |
 | POST   | `/api/analyze/batch`     | Analyze up to 500 items in one call. |
 | POST   | `/api/ingest/ai-usage`   | Score content captured by the browser extension / proxy (`ai_usage`); returns allow/warn/block. Token-gated. |
-| POST   | `/api/ingest/mcp`        | Score an MCP tool call / resource read / tool listing captured by the proxy (`mcp`) — sensitive-resource access, dangerous commands, untrusted servers, tool poisoning. Returns allow/warn/block. Token-gated. |
+| POST   | `/api/ingest/mcp`        | Score an MCP tool call / resource read / tool listing captured by the proxy (`mcp`) — sensitive-resource access, dangerous commands, untrusted servers, tool poisoning. Returns allow/warn/block, plus `ask: true` when the org wants a person to approve a warn (opt-in). Token-gated. |
 | POST   | `/v1/logs`               | OTLP/HTTP logs receiver — a [claude-otel](https://github.com/SOC-Foundry/claude-otel) collector otlphttp-exports Claude Code telemetry here; maps user_prompt→`ai_usage`, tool_result/mcp_server_connection→`mcp`. Monitor-only (post-hoc). Token-gated (`X-Palivane-Token`). |
 | POST   | `/api/scan/mcp-config`   | Vet an MCP config file (`.mcp.json`, Cursor/VS Code) in CI/console — enumerates declared servers (incl. local stdio) and flags unapproved servers, dangerous launch commands, and secrets in config. Token-gated. |
 | POST   | `/api/scan/deps`         | Vet dependency manifests (`package.json`, `requirements.txt`) for supply-chain risk — install-script abuse, non-registry sources, known-bad packages, and (opt-in) known CVEs for pinned deps via OSV. Token-gated. |

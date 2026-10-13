@@ -20,6 +20,17 @@ function clientEnforceValue(t) {
 
 const SEVERITIES = ["low", "suspicious", "high", "critical"];
 
+// What an ask covers depends on where blocking starts: it is the band from suspicious up to
+// the MCP block severity. Tool-call scores are mostly 0 or 60+, so at the default (high) that
+// band is narrow, and blocking only at critical is what makes `high` an ask.
+function askBandNote(blockSeverity) {
+  const s = blockSeverity || "high";
+  const label = blockSeverity || "high (default)";
+  if (s === "critical") return `With MCP block severity at ${label}, it asks on suspicious and high and blocks critical.`;
+  if (s === "high") return `With MCP block severity at ${label}, it asks on suspicious only, which few tool calls score. Set critical to ask on high too.`;
+  return `With MCP block severity at ${label}, everything from suspicious up already blocks, so nothing asks.`;
+}
+
 // Writing a regex is the reason most orgs never define their own identifiers, so this
 // writes it from examples instead. Inference is deterministic and server-side (see
 // app/pattern_infer.py); this is only the form and the review step. Nothing saves until
@@ -240,6 +251,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
     client_enforce: clientEnforceValue(tenant),
     redact_mode: tenant?.redact_mode === true ? "on" : tenant?.redact_mode === false ? "off" : "inherit",
     self_justify: tenant?.self_justify === true ? "on" : tenant?.self_justify === false ? "off" : "inherit",
+    ask_on_warn: tenant?.ask_on_warn === true ? "on" : tenant?.ask_on_warn === false ? "off" : "inherit",
     gateway_tokenize: tenant?.gateway_tokenize === true ? "on"
       : tenant?.gateway_tokenize === false ? "off" : "inherit",
     gateway_block_severity: tenant?.gateway_block_severity || "",
@@ -268,6 +280,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
         client_enforce: org.client_enforce,
         redact_mode: org.redact_mode,
         self_justify: org.self_justify,
+        ask_on_warn: org.ask_on_warn,
         gateway_tokenize: org.gateway_tokenize,
         gateway_block_severity: org.gateway_block_severity,
         mcp_block_severity: org.mcp_block_severity,
@@ -973,6 +986,21 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                       <option value="">Inherit (global)</option>
                       {SEVERITIES.map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>
+                  </label>
+                  <label>Ask before risky tool calls (CLI hooks)
+                    <select value={org.ask_on_warn} onChange={setField("ask_on_warn")}>
+                      <option value="inherit">Inherit (global)</option>
+                      <option value="on">On, the developer approves them first</option>
+                      <option value="off">Off, they run and are recorded</option>
+                    </select>
+                    <span className="muted" style={{ fontSize: 11.5, marginTop: 3 }}>
+                      Claude Code and Cursor, on devices set to Enforce. A tool call that is flagged
+                      (suspicious or higher) but scores below the MCP block severity stops for the
+                      developer's approval, with the reason, instead of running silently. Blocks stay
+                      blocks. Prompts can't ask, and in an unattended run (claude -p) nobody can
+                      answer, so Claude Code denies the call.
+                      {org.ask_on_warn !== "off" && " " + askBandNote(org.mcp_block_severity)}
+                    </span>
                   </label>
                   <label>CI scan block severity
                     <select value={org.ci_block_severity} onChange={setField("ci_block_severity")}>
