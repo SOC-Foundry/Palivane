@@ -45,7 +45,11 @@ It reads the body of a send however the page builds it: a string, `URLSearchPara
 `FormData` text fields, a `Blob`, an `ArrayBuffer` or typed array, or a `Request` object
 (read from a clone, so the page's own send is untouched), over `fetch` and `XMLHttpRequest`.
 A body it cannot read (a stream, or anything over 1 MB) is reported as a parse-miss on the
-device's sensor in the console instead of being skipped in silence.
+device's sensor in the console instead of being skipped in silence. The backend scores at most
+200,000 characters a call, so a longer message is scanned in overlapping 150,000-character
+windows (up to 1.2 million characters; the rest is reported the same way), and a send that is
+not JSON (Gemini's form-encoded one) is scanned whole rather than cut to its first 8,000
+characters.
 
 It **fails open**: if the backend is slow, unreachable, or unconfigured, prompts go
 through, the extension never breaks the user's tool. But a check that did not happen no

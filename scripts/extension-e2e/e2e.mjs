@@ -160,6 +160,17 @@ try {
     check(`a page that sends ${what} is still scanned and blocked`, blocked(r), JSON.stringify(r));
   }
 
+  // ---- 3b. long messages: the backend scores at most 200,000 characters a call ----------------
+  const pad = (n) => "lorem ipsum dolor sit amet ".repeat(Math.ceil(n / 27)).slice(0, n);
+  r = await send("long message", { text: pad(250000) + " " + SSN });
+  check("an SSN at the END of a 250,000-character message is still found and blocked", blocked(r), JSON.stringify({ ...r, title: r.title }));
+  r = await send("gemini, form-encoded, long", { host: "gemini.google.com", text: pad(20000) + " " + SSN });
+  check("an SSN past character 8,000 of a form-encoded (Gemini-style) send is still found and blocked", blocked(r), JSON.stringify(r));
+  r = await send("gemini, form-encoded, short", { host: "gemini.google.com" });
+  check("a short form-encoded send is blocked", blocked(r), JSON.stringify(r));
+  r = await send("long benign message", { text: pad(250000) });
+  check("a long benign message goes through with no UI", wentOut(r) && !r.banner && !r.notice, JSON.stringify(r));
+
   // ---- 4. when the check cannot happen: fail open, but say so --------------------------------
   r = await send("slow backend", { ext: { backendUrl: SLOW }, extraWait: 2500 });
   check("a backend slower than 4s lets the message out (fail open)...", r.arrived && !r.modal, JSON.stringify(r));
