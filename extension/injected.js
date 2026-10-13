@@ -10,6 +10,12 @@
   const SCAN_TIMEOUT_MS = 4000;
   // A prompt is text. Past this size a body is an upload, not something to read into memory.
   const MAX_BODY_BYTES = 1 << 20;
+  // The backend scores at most 200,000 characters a call and answers 422 above that, which used to
+  // read as "Palivane is unavailable" and let the whole message out. A longer message is scanned in
+  // windows (concurrently, so the 4s budget is per message, not per window), overlapping a little
+  // so a value that straddles a boundary is not cut in two. Past MAX_WINDOWS it is scanned up to
+  // there and the rest is reported as unreadable.
+  const WINDOW = 150000, OVERLAP = 500, MAX_WINDOWS = 8;
 
   // URL patterns that look like "the user is submitting a prompt".
   const SEND_PATTERNS = [
@@ -61,7 +67,7 @@
         if (v.length) return v.sort((a, b) => b.length - a.length)[0];
       }
     } catch (_) { /* not JSON, fall through */ }
-    return String(bodyText).slice(0, 8000);
+    return String(bodyText);
   }
 
   function scan(content, destination) {
@@ -80,6 +86,18 @@
         }
       }, SCAN_TIMEOUT_MS);
     });
+  }
+
+  async function scanAll(prompt, destination) {
+    if (prompt.length <= WINDOW) return scan(prompt, destination);
+    if (prompt.length > WINDOW * MAX_WINDOWS) { reportBlind(); prompt = prompt.slice(0, WINDOW * MAX_WINDOWS); }
+    const parts = [];
+    for (let i = 0; ; i += WINDOW - OVERLAP) {
+      parts.push(prompt.slice(i, i + WINDOW));
+      if (i + WINDOW >= prompt.length) break;
+    }
+    const verdicts = await Promise.all(parts.map((p) => scan(p, destination)));
+    return verdicts.find(stop) || verdicts.find((v) => v.action === "warn") || { action: "allow" };
   }
 
   window.addEventListener("message", (e) => {
@@ -134,7 +152,7 @@
             if (prompt) {
               if (DEBUG) console.log("[Palivane] ws user-send captured chars=", prompt.length,
                 "snippet=", prompt.slice(0, 80));
-              scan(prompt, location.origin).then((verdict) => {
+              scanAll(prompt, location.origin).then((verdict) => {
                 if (DEBUG) console.log("[Palivane] ws verdict", verdict.action, verdict.severity, verdict.risk_score);
                 if (stop(verdict)) {
                   // Drop the frame, the prompt never leaves, and show the block UI.
@@ -213,7 +231,7 @@
         if (DEBUG) console.log("[Palivane] captured", url, "promptChars=", (prompt || "").length,
           "snippet=", (prompt || "").slice(0, 80));
         if (prompt && prompt.trim()) {
-          const verdict = await scan(prompt, location.origin);
+          const verdict = await scanAll(prompt, location.origin);
           if (DEBUG) console.log("[Palivane] verdict", verdict.action, verdict.severity, verdict.risk_score);
           if (stop(verdict)) {
             window.postMessage({ __palivane: true, kind: "blocked", verdict }, "*");
@@ -252,7 +270,7 @@
           if (b.unreadable) reportBlind();
           const prompt = b.text ? extractPrompt(b.text) : "";
           if (!(prompt && prompt.trim())) { origSend.apply(xhr, args); return; }
-          const verdict = await scan(prompt, location.origin);
+          const verdict = await scanAll(prompt, location.origin);
           if (DEBUG) console.log("[Palivane] xhr verdict", verdict.action, verdict.severity, verdict.risk_score);
           if (stop(verdict)) {
             window.postMessage({ __palivane: true, kind: "blocked", verdict }, "*");

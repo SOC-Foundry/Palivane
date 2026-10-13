@@ -16,15 +16,20 @@ const host = location.hostname;
 const mode = new URLSearchParams(location.search).get('mode') || 'string';
 document.getElementById('send').onclick = async () => {
   const text = document.getElementById('prompt').value;
-  const h = {'content-type': 'application/json'};
+  let h = {'content-type': 'application/json'};
   let url, body;
-  if (host === 'chatgpt.com') {
+  if (host === 'gemini.google.com') {
+    // Gemini sends a form-encoded body, not JSON: the extension scans the raw text.
+    url = '/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate';
+    body = new URLSearchParams({'f.req': JSON.stringify([null, JSON.stringify([[text]])])});
+  } else if (host === 'chatgpt.com') {
     url = '/backend-api/f/conversation';
     body = JSON.stringify({action: 'next', messages: [{id: 'm1', author: {role: 'user'}, content: {content_type: 'text', parts: [text]}}]});
   } else {
     url = '/api/organizations/o1/chat_conversations/c1/completion';
     body = JSON.stringify({prompt: text, timezone: 'UTC', attachments: [], files: []});
   }
+  if (body instanceof URLSearchParams) h = {};
   const out = (t) => { document.getElementById('out').textContent = t; };
   try {
     let r;
