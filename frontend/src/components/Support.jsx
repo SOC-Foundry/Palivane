@@ -43,7 +43,7 @@ export default function Support() {
       <section className="lp-section">
         <div className="lp-wrap">
           <h2 className="lp-h2">Start here</h2>
-          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))" }}>
             {SELF_SERVE.map(([t, body, href]) => (
               <a key={t} href={href} className="lp-card" style={{ textDecoration: "none" }}>
                 <h3>{t} →</h3>
@@ -61,7 +61,7 @@ export default function Support() {
             Write to <a href="mailto:support@palivane.io">support@palivane.io</a>. To get a
             useful answer on the first reply, include:
           </p>
-          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(260px, 100%), 1fr))" }}>
             <div className="lp-card"><h3>Your organization</h3><p>The org name you signed in with, so we can find your workspace.</p></div>
             <div className="lp-card"><h3>Which surface</h3><p>Gateway, browser, a coding tool, a SaaS connector, or the console.</p></div>
             <div className="lp-card"><h3>What you saw</h3><p>What happened versus what you expected, with a rough timestamp. Never paste secrets or live credentials.</p></div>
@@ -72,7 +72,7 @@ export default function Support() {
       <section className="lp-section">
         <div className="lp-wrap">
           <h2 className="lp-h2">What your plan includes</h2>
-          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
+          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))" }}>
             {BY_PLAN.map(([t, body]) => (
               <div key={t} className="lp-card"><h3>{t}</h3><p>{body}</p></div>
             ))}
@@ -86,7 +86,7 @@ export default function Support() {
       <section className="lp-section alt">
         <div className="lp-wrap">
           <h2 className="lp-h2">Reach the right inbox</h2>
-          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
+          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))" }}>
             {ROUTES.map(([t, addr, href]) => (
               <div key={t} className="lp-card">
                 <h3>{t}</h3>

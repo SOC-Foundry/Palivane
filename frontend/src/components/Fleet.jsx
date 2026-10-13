@@ -78,24 +78,26 @@ export default function Fleet() {
           <div className="panel settings-card">
             <h2>Sensors</h2>
             {sensors.length ? (
-              <table className="data-table">
-                <thead>
-                  <tr><th>Actor</th><th>Plane</th><th>Tool</th><th>Client</th><th>Last seen</th><th>Events</th><th>Health</th></tr>
-                </thead>
-                <tbody>
-                  {sensors.map((row, i) => (
-                    <tr key={`${row.actor}|${row.plane}|${row.tool}|${i}`}>
-                      <td>{row.actor}</td>
-                      <td className="muted">{row.plane}</td>
-                      <td className="muted">{row.tool || "-"}</td>
-                      <td className="muted">{clientCell(row)}</td>
-                      <td className="muted">{fmtWhen(row.last_seen)}</td>
-                      <td>{row.count}</td>
-                      <td><span className={`badge ${HEALTH_CLASS[row.health] || "sev-low"}`}>{row.health}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead>
+                    <tr><th>Actor</th><th>Plane</th><th>Tool</th><th>Client</th><th>Last seen</th><th>Events</th><th>Health</th></tr>
+                  </thead>
+                  <tbody>
+                    {sensors.map((row, i) => (
+                      <tr key={`${row.actor}|${row.plane}|${row.tool}|${i}`}>
+                        <td>{row.actor}</td>
+                        <td className="muted">{row.plane}</td>
+                        <td className="muted">{row.tool || "-"}</td>
+                        <td className="muted">{clientCell(row)}</td>
+                        <td className="muted">{fmtWhen(row.last_seen)}</td>
+                        <td>{row.count}</td>
+                        <td><span className={`badge ${HEALTH_CLASS[row.health] || "sev-low"}`}>{row.health}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             ) : <p className="muted">No sensor activity captured yet.</p>}
           </div>
 
@@ -107,19 +109,21 @@ export default function Fleet() {
                 their traffic is no longer inspected. Re-run <code>palivane-connect</code> on each
                 device to enroll a fresh key.
               </p>
-              <table className="data-table">
-                <thead><tr><th>Label</th><th>Actor</th><th>Key prefix</th><th>Last failed</th></tr></thead>
-                <tbody>
-                  {deadKeys.map((k) => (
-                    <tr key={k.id}>
-                      <td>{k.label || "-"}</td>
-                      <td>{k.actor || "-"}</td>
-                      <td className="muted"><code>{k.prefix}</code></td>
-                      <td className="muted">{fmtWhen(k.last_failed_at)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead><tr><th>Label</th><th>Actor</th><th>Key prefix</th><th>Last failed</th></tr></thead>
+                  <tbody>
+                    {deadKeys.map((k) => (
+                      <tr key={k.id}>
+                        <td>{k.label || "-"}</td>
+                        <td>{k.actor || "-"}</td>
+                        <td className="muted"><code>{k.prefix}</code></td>
+                        <td className="muted">{fmtWhen(k.last_failed_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </>

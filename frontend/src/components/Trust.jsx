@@ -100,7 +100,7 @@ export default function Trust() {
           {SECTIONS.map((s) => (
             <div key={s.title} style={{ marginBottom: 36 }}>
               <h2 className="lp-h2" style={{ display: "flex", alignItems: "center", gap: 10 }}><span className="lp-card-icon" style={{ width: 34, height: 34, marginBottom: 0 }}>{s.icon}</span>{s.title}</h2>
-              <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
+              <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}>
                 {s.items.map(([t, body]) => (
                   <div key={t} className="lp-card">
                     <h3>{t}</h3>
@@ -124,7 +124,7 @@ export default function Trust() {
           </p>
 
           <h2 className="lp-h2" style={{ marginTop: 36 }}>Subprocessors</h2>
-          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
+          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))" }}>
             {SUBPROCESSORS.map(([name, role]) => (
               <div key={name} className="lp-card">
                 <h3>{name}</h3>

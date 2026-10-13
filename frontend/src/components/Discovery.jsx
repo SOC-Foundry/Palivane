@@ -92,40 +92,42 @@ export default function Discovery({ tenant, onTenant }) {
       <div className="panel settings-card">
         <h2>AI tool inventory</h2>
         {inv && inv.tools.length ? (
-          <table className="data-table">
-            <thead><tr>
-              <th>Tool</th><th>Category</th><th>Status</th><th>Users</th><th>Events</th>
-              <th>Exposure</th><th>Risk</th><th></th>
-            </tr></thead>
-            <tbody>
-              {inv.tools.map((t) => (
-                <tr key={t.tool}>
-                  <td><strong>{t.tool}</strong><div className="muted" style={{ fontSize: 11 }}>{t.domain}</div>
-                    {t.personal_user_count > 0 && (
-                      <span className="cat cat-pii_exposure" style={{ fontSize: 10, marginTop: 3, display: "inline-block" }}
-                            title="Users on this tool via a personal (free-mail) account">
-                        {t.personal_user_count} personal
-                      </span>)}
-                  </td>
-                  <td className="muted">{t.category_label}</td>
-                  <td>{t.sanctioned
-                    ? <span className="cat cat-unsanctioned_ai">Sanctioned</span>
-                    : <span className="cat cat-secret_leak">Unsanctioned</span>}</td>
-                  <td>{t.user_count}</td>
-                  <td>{t.events}</td>
-                  <td>{t.sensitive_events
-                    ? <span style={{ color: "var(--high)", fontWeight: 700 }}>{t.sensitive_events} 🔓</span>
-                    : <span className="muted">-</span>}</td>
-                  <td><span className={`sev sev-${RISK_CLASS(t.risk)}`}>{t.risk}</span></td>
-                  <td>
-                    <button className="link-btn" onClick={() => toggleSanction(t, t.sanctioned)}>
-                      {t.sanctioned ? "Unsanction" : "Sanction"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead><tr>
+                <th>Tool</th><th>Category</th><th>Status</th><th>Users</th><th>Events</th>
+                <th>Exposure</th><th>Risk</th><th></th>
+              </tr></thead>
+              <tbody>
+                {inv.tools.map((t) => (
+                  <tr key={t.tool}>
+                    <td><strong>{t.tool}</strong><div className="muted" style={{ fontSize: 11 }}>{t.domain}</div>
+                      {t.personal_user_count > 0 && (
+                        <span className="cat cat-pii_exposure" style={{ fontSize: 10, marginTop: 3, display: "inline-block" }}
+                              title="Users on this tool via a personal (free-mail) account">
+                          {t.personal_user_count} personal
+                        </span>)}
+                    </td>
+                    <td className="muted">{t.category_label}</td>
+                    <td>{t.sanctioned
+                      ? <span className="cat cat-unsanctioned_ai">Sanctioned</span>
+                      : <span className="cat cat-secret_leak">Unsanctioned</span>}</td>
+                    <td>{t.user_count}</td>
+                    <td>{t.events}</td>
+                    <td>{t.sensitive_events
+                      ? <span style={{ color: "var(--high)", fontWeight: 700 }}>{t.sensitive_events} 🔓</span>
+                      : <span className="muted">-</span>}</td>
+                    <td><span className={`sev sev-${RISK_CLASS(t.risk)}`}>{t.risk}</span></td>
+                    <td>
+                      <button className="link-btn" onClick={() => toggleSanction(t, t.sanctioned)}>
+                        {t.sanctioned ? "Unsanction" : "Sanction"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : <p className="muted">No AI usage discovered yet. Ingest logs below, or connect a capture plane.</p>}
       </div>
 
@@ -133,23 +135,25 @@ export default function Discovery({ tenant, onTenant }) {
       {inv && inv.teams.length > 0 && (
         <div className="panel settings-card">
           <h2>By team / department</h2>
-          <table className="data-table">
-            <thead><tr><th>Team</th><th>Users</th><th>AI tools</th><th>Unsanctioned</th><th>Exposure</th><th>Risk</th></tr></thead>
-            <tbody>
-              {inv.teams.map((g) => (
-                <tr key={g.team}>
-                  <td><strong>{g.team}</strong></td>
-                  <td>{g.user_count}</td>
-                  <td>{g.tool_count}</td>
-                  <td>{g.unsanctioned_count
-                    ? <span style={{ color: "var(--crit)", fontWeight: 700 }}>{g.unsanctioned_count}</span>
-                    : <span className="muted">0</span>}</td>
-                  <td>{g.sensitive_events || <span className="muted">-</span>}</td>
-                  <td><span className={`sev sev-${RISK_CLASS(g.max_risk)}`}>{g.max_risk}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead><tr><th>Team</th><th>Users</th><th>AI tools</th><th>Unsanctioned</th><th>Exposure</th><th>Risk</th></tr></thead>
+              <tbody>
+                {inv.teams.map((g) => (
+                  <tr key={g.team}>
+                    <td><strong>{g.team}</strong></td>
+                    <td>{g.user_count}</td>
+                    <td>{g.tool_count}</td>
+                    <td>{g.unsanctioned_count
+                      ? <span style={{ color: "var(--crit)", fontWeight: 700 }}>{g.unsanctioned_count}</span>
+                      : <span className="muted">0</span>}</td>
+                    <td>{g.sensitive_events || <span className="muted">-</span>}</td>
+                    <td><span className={`sev sev-${RISK_CLASS(g.max_risk)}`}>{g.max_risk}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

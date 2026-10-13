@@ -138,33 +138,37 @@ export default function Admin() {
         <Section title={`Plan roster (${plans.tenants.length})`}
                  right={<span className="muted" style={{ fontSize: 13 }}>
                    {Object.entries(plans.totals).map(([p, n]) => `${p}: ${n}`).join(" · ")}</span>}>
-          <table className="data-table"><thead><tr><th>Org</th><th>Plan</th><th>Status</th><th>Activated</th></tr></thead>
-            <tbody>{plans.tenants.map((t) => (
-              <tr key={t.slug}><td><strong>{t.slug}</strong></td><td>{t.plan}</td>
-                <td>{t.status}</td><td>{t.activated ? "✓" : "-"}</td></tr>
-            ))}</tbody></table>
+          <div className="table-scroll">
+            <table className="data-table"><thead><tr><th>Org</th><th>Plan</th><th>Status</th><th>Activated</th></tr></thead>
+              <tbody>{plans.tenants.map((t) => (
+                <tr key={t.slug}><td><strong>{t.slug}</strong></td><td>{t.plan}</td>
+                  <td>{t.status}</td><td>{t.activated ? "✓" : "-"}</td></tr>
+              ))}</tbody></table>
+          </div>
         </Section>
       )}
 
       {upgrades && (
         <Section title={`Upgrade requests (${upgrades.requests.filter((r) => r.status === "pending").length} open)`}>
           {upgrades.requests.length ? (
-            <table className="data-table"><thead><tr>
-              <th>Org</th><th>Wants</th><th>Seats</th><th>Contact</th><th>Note</th><th>When</th><th>Status</th><th></th></tr></thead>
-              <tbody>{upgrades.requests.map((r) => (
-                <tr key={r.id} style={{ opacity: r.status === "closed" ? 0.55 : 1 }}>
-                  <td><strong>{r.slug}</strong> <span className="muted">({r.current_plan})</span></td>
-                  <td>{r.plan}</td><td>{r.seats || "-"}</td>
-                  <td><a href={`mailto:${r.contact}`}>{r.contact}</a></td>
-                  <td style={{ maxWidth: 260, whiteSpace: "pre-wrap" }}>{r.note || "-"}</td>
-                  <td>{r.created_at ? r.created_at.slice(0, 10) : "-"}</td>
-                  <td>{r.status === "pending"
-                    ? <span className="cat cat-secret_leak">pending</span>
-                    : <span className="cat cat-unsanctioned_ai">closed</span>}</td>
-                  <td>{r.status === "pending" &&
-                    <button className="link-btn" onClick={() => closeUpgrade(r.id)}>Close</button>}</td>
-                </tr>
-              ))}</tbody></table>
+            <div className="table-scroll">
+              <table className="data-table"><thead><tr>
+                <th>Org</th><th>Wants</th><th>Seats</th><th>Contact</th><th>Note</th><th>When</th><th>Status</th><th></th></tr></thead>
+                <tbody>{upgrades.requests.map((r) => (
+                  <tr key={r.id} style={{ opacity: r.status === "closed" ? 0.55 : 1 }}>
+                    <td><strong>{r.slug}</strong> <span className="muted">({r.current_plan})</span></td>
+                    <td>{r.plan}</td><td>{r.seats || "-"}</td>
+                    <td><a href={`mailto:${r.contact}`}>{r.contact}</a></td>
+                    <td style={{ maxWidth: 260, whiteSpace: "pre-wrap" }}>{r.note || "-"}</td>
+                    <td>{r.created_at ? r.created_at.slice(0, 10) : "-"}</td>
+                    <td>{r.status === "pending"
+                      ? <span className="cat cat-secret_leak">pending</span>
+                      : <span className="cat cat-unsanctioned_ai">closed</span>}</td>
+                    <td>{r.status === "pending" &&
+                      <button className="link-btn" onClick={() => closeUpgrade(r.id)}>Close</button>}</td>
+                  </tr>
+                ))}</tbody></table>
+            </div>
           ) : <p className="muted">No upgrade requests yet.</p>}
         </Section>
       )}
@@ -197,18 +201,20 @@ export default function Admin() {
           </div>
         )}
         {licenses && (licenses.licenses.length ? (
-          <table className="data-table"><thead><tr><th>ID</th><th>Org</th><th>Plan</th><th>Seats</th><th>Term ends</th><th>Status</th><th></th></tr></thead>
-            <tbody>{licenses.licenses.map((L) => (
-              <tr key={L.id} style={{ opacity: L.status === "revoked" ? 0.55 : 1 }}>
-                <td><code>{L.id}</code></td><td>{L.org}</td><td>{L.plan}</td><td>{L.seats || "-"}</td>
-                <td>{L.expires_at ? L.expires_at.slice(0, 10) : "-"}</td>
-                <td>{L.status === "revoked"
-                  ? <span className="cat cat-secret_leak">revoked</span>
-                  : <span className="cat cat-unsanctioned_ai">active</span>}</td>
-                <td>{L.status !== "revoked" &&
-                  <button className="link-btn" style={{ color: "var(--crit)" }} onClick={() => revoke(L.id)}>Revoke</button>}</td>
-              </tr>
-            ))}</tbody></table>
+          <div className="table-scroll">
+            <table className="data-table"><thead><tr><th>ID</th><th>Org</th><th>Plan</th><th>Seats</th><th>Term ends</th><th>Status</th><th></th></tr></thead>
+              <tbody>{licenses.licenses.map((L) => (
+                <tr key={L.id} style={{ opacity: L.status === "revoked" ? 0.55 : 1 }}>
+                  <td><code>{L.id}</code></td><td>{L.org}</td><td>{L.plan}</td><td>{L.seats || "-"}</td>
+                  <td>{L.expires_at ? L.expires_at.slice(0, 10) : "-"}</td>
+                  <td>{L.status === "revoked"
+                    ? <span className="cat cat-secret_leak">revoked</span>
+                    : <span className="cat cat-unsanctioned_ai">active</span>}</td>
+                  <td>{L.status !== "revoked" &&
+                    <button className="link-btn" style={{ color: "var(--crit)" }} onClick={() => revoke(L.id)}>Revoke</button>}</td>
+                </tr>
+              ))}</tbody></table>
+          </div>
         ) : <p className="muted">No licenses issued yet.</p>)}
       </Section>
     </div>

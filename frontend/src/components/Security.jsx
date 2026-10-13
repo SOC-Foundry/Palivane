@@ -125,7 +125,7 @@ export default function Security() {
             Per capture plane, on a hosted deployment. On a self-hosted one the answer is
             “nothing”, for all of them.
           </p>
-          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
+          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}>
             {FLOWS.map(([t, body]) => (
               <div key={t} className="lp-card"><h3>{t}</h3><p>{body}</p></div>
             ))}
@@ -139,7 +139,7 @@ export default function Security() {
             <span className="lp-card-icon" style={{ width: 34, height: 34, marginBottom: 0 }}><DuoLock /></span>
             What we retain
           </h2>
-          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
+          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}>
             {RETENTION.map(([t, body]) => (
               <div key={t} className="lp-card"><h3>{t}</h3><p>{body}</p></div>
             ))}
