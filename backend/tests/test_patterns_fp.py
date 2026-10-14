@@ -427,3 +427,40 @@ def test_a_secret_glued_to_a_uuid_is_still_flagged_and_the_evidence_is_the_secre
 
 def test_a_bare_uuid_was_never_this_heuristics_business():
     assert find_high_entropy_tokens(f"api_key = {UUID_LC}") == []
+
+
+# --- the page's own request tokens (found triaging production findings, 2026-10-14) ---------
+# The browser extension scans the whole body of a send it cannot parse. Gemini's is form-encoded
+# and carries Google's own XSRF token (`at=`), build label and session id next to the prompt; a
+# multipart upload carries its random boundary. None of it is the user's data, and each was
+# flagged as a "possible secret" and, to an unsanctioned destination, blocked: 31 hits in three
+# minutes of one person trying to use Gemini.
+
+_PAGE_TOKEN = "AFWLbD1y28" + "Yq9ZcTn4Vx7Kp2Qa8Ls3Mb"      # assembled: not a literal secret
+
+
+def test_a_form_bodys_own_protocol_tokens_are_not_secrets():
+    assert find_high_entropy_tokens(f'f.req=[[["hello"]]]&at={_PAGE_TOKEN}:1696000000000&') == []
+    assert find_high_entropy_tokens(f"bl=boq_assistant-bard-web-server_20251001.05_p0&f.sid={_PAGE_TOKEN}") == []
+    assert find_high_entropy_tokens(f"authenticity_token={_PAGE_TOKEN}&utf8=1") == []
+    assert find_high_entropy_tokens(f"x=1&csrf_token={_PAGE_TOKEN}") == []
+
+
+def test_a_multipart_boundary_is_not_a_secret():
+    body = ("------WebKitFormBoundary" + "7MA4YWxkTrZu0gW" + "Qp3Lm\r\n"
+            'Content-Disposition: form-data; name="file"; filename="a.txt"\r\n\r\nhello\r\n'
+            "------WebKitFormBoundary" + "7MA4YWxkTrZu0gW" + "Qp3Lm--\r\n")
+    assert find_high_entropy_tokens(body) == []
+
+
+def test_the_same_token_anywhere_else_still_flags():
+    """Recall: only the page's own protocol fields are exempt. The same token as the user's
+    prompt, in another field, or after a field that merely ends in `at` is a finding."""
+    assert find_high_entropy_tokens(f"my key is {_PAGE_TOKEN}")
+    assert find_high_entropy_tokens(f"f.req=[[[\"hi\"]]]&notes={_PAGE_TOKEN}")
+    assert find_high_entropy_tokens(f"format=1&splat={_PAGE_TOKEN}")
+    assert find_high_entropy_tokens(f"at {_PAGE_TOKEN}")
+    # a protocol field NAME typed into the prompt is not a protocol field: it must be a form field
+    # (start of the body, or after `&` / `?`), not words in a sentence
+    assert find_high_entropy_tokens(f"please use at={_PAGE_TOKEN} for the call")
+    assert find_high_entropy_tokens(f'f.req=[[["use at={_PAGE_TOKEN} please"]]]&hl=en')
