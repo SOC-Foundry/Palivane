@@ -59,6 +59,19 @@ def test_skip_tools_return_none():
     assert hook.build_activity("", {}) is None
 
 
+def test_the_assistants_own_task_tools_are_never_sent():
+    """TaskCreate / TaskUpdate and friends are its to-do list. Their text quoted `.ssh/` and
+    `/etc/passwd` in plans and scored critical/block (3 findings from one afternoon)."""
+    for name in ("EnterPlanMode", "TaskCreate", "TaskUpdate", "TaskGet", "TaskList",
+                 "TaskOutput", "TaskStop"):
+        assert hook.build_activity(name, {"subject": "check ~/.ssh/ and /etc/passwd"}) is None, name
+    # an MCP server's tool that happens to be named like one is not the assistant's own
+    assert hook.build_activity("mcp__tasks__TaskCreate", {"title": "x"}) is not None
+    # and the tools that DO touch the machine are still sent
+    for name in ("Bash", "Read", "Write", "Edit", "WebFetch"):
+        assert hook.build_activity(name, {"command": "ls", "file_path": "/tmp/x"}) is not None, name
+
+
 def test_args_text_capped():
     a = hook.build_activity("Write", {"content": "x" * 50000})
     assert len(a["args_text"]) <= 20000

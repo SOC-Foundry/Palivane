@@ -37,6 +37,21 @@ from .patterns import (
 # isn't a path and a secret must always flag.
 _FILE_SCAN_CHANNELS = {"git", "s3", "github", "repo"}
 
+# File tools of an agent: the target is a path it opened or wrote. It rides in `resource` (the
+# hook) or as the first line of `args_text` (the proxy sends a tool's input first, then its result).
+_AGENT_FILE_TOOLS = frozenset({"Read", "Write", "Edit", "NotebookEdit", "MultiEdit"})
+_TOOL_SURFACES = (Surface.MCP, Surface.AGENT_TOOLS, Surface.A2A)
+
+
+def _agent_file_target(item: AnalysisInput) -> str:
+    """The path an agent's own file tool was pointed at, or "" for anything else."""
+    if item.surface not in (Surface.MCP, Surface.AGENT_TOOLS):
+        return ""
+    meta = item.metadata or {}
+    if meta.get("server") or meta.get("tool") not in _AGENT_FILE_TOOLS:
+        return ""
+    return str(meta.get("resource") or str(meta.get("args_text") or "").split("\n", 1)[0])
+
 # Title of the warn-level heuristic secret signal (distinct from known-format Tier-1
 # secrets) — used to exclude it from confirmed_leak()'s hard-block set.
 HIGH_ENTROPY_TITLE = "Possible secret (high-entropy token)"
@@ -623,8 +638,14 @@ class ShadowAIDetector:
     def analyze(self, item: AnalysisInput) -> list[Signal]:
         text = f"{item.subject}\n{item.content}"
         signals: list[Signal] = []
+        # An agent's file tool pointed at a test/fixture/example/template path: what it carries is
+        # illustrative the same way it is in a file scan (see low_signal below).
+        target = _agent_file_target(item)
+        fixture = bool(target) and is_low_signal_path(target)
+        tool_surface = item.surface in _TOOL_SURFACES
         # PII/PHI are data-loss regardless of where they're going — flag on every surface.
-        signals.extend(self._scan_pii(text, item.metadata))
+        signals.extend(self._scan_pii(text, item.metadata, tool_surface=tool_surface,
+                                      fixture=fixture))
         signals.extend(self._scan_phi(text))
         # Secrets are data-loss on ANY surface — including the gateway (llm_io): an actual
         # credential in a prompt to your own LLM is still a leak (and is force-blocked by
@@ -635,8 +656,8 @@ class ShadowAIDetector:
         # always illustrative, not a leak — demote it the way gitleaks/trufflehog allowlist
         # such paths. Distinctive vendor keys (AWS/GitHub/Stripe/…) are never demoted, and
         # this NEVER applies to prompt/gateway channels (subject there isn't a path).
-        low_signal = (item.channel in _FILE_SCAN_CHANNELS
-                      and is_low_signal_path(item.subject))
+        low_signal = ((item.channel in _FILE_SCAN_CHANNELS and is_low_signal_path(item.subject))
+                      or fixture)
         # Secrets are data-loss on the gateway (llm_io), external-AI (ai_usage), and agent
         # tool-use (mcp) surfaces. The raw Tier-1 secret pass is the single most expensive
         # step and BOTH the secret-leak and the high-entropy detectors need it — _scan_secrets
@@ -674,7 +695,9 @@ class ShadowAIDetector:
         if not decoded:
             return []
         # PII/PHI are data-loss on every surface (mirrors the unconditional plaintext scans).
-        out = self._scan_pii(decoded, item.metadata)
+        target = _agent_file_target(item)
+        out = self._scan_pii(decoded, item.metadata, tool_surface=item.surface in _TOOL_SURFACES,
+                             fixture=bool(target) and is_low_signal_path(target))
         out += self._scan_phi(decoded)
         # Secrets: same surface set as the plaintext secret pass. Compute the raw find_secrets
         # pass on the decoded view ONCE and thread it into both secret detectors.
@@ -745,7 +768,14 @@ class ShadowAIDetector:
             evidence=", ".join(tokens[:4]),
         )]
 
-    def _scan_pii(self, text: str, meta: dict | None = None) -> list[Signal]:
+    def _scan_pii(self, text: str, meta: dict | None = None, *, tool_surface: bool = False,
+                  fixture: bool = False) -> list[Signal]:
+        """`tool_surface`: an agent's tool call (a command line, a URL, JSON), where a bare 9-digit
+        run is almost always an id. `fixture`: the text came from a test/fixture/example/
+        template file an agent opened. Both only drop GUESSES (a bare 9-digit run, a lone contact
+        or date "in a record", a pile of phone numbers or addresses). Structured identifiers (a
+        dashed SSN, a Luhn-valid card, a validated national id) are never dropped: real data
+        gets pasted into fixtures by mistake."""
         # Fold Unicode compatibility forms (fullwidth digits/hyphens, etc.) to their ASCII
         # canon so a fullwidth-obfuscated SSN/card ("０７８－０５－１１２０") still matches the
         # digit patterns. NFKC is lossless for these — benign text is unaffected.
@@ -765,7 +795,7 @@ class ShadowAIDetector:
                 if SSN_CONTEXT_RE.search(text):
                     found.append("SSN (unformatted)")
                     weight = max(weight, 0.8)
-                else:
+                elif not (tool_surface or fixture):
                     found.append("possible SSN (9-digit)")
                     weight = max(weight, 0.55)
 
@@ -780,9 +810,9 @@ class ShadowAIDetector:
 
         emails = EMAIL_RE.findall(text)
         personal = [e for e in emails if _personal_email(e)]
-        bulk_emails = len(personal) >= 3   # emitted as its own warn-tier signal below
+        bulk_emails = len(personal) >= 3 and not fixture   # its own warn-tier signal below
         phones = PHONE_RE.findall(text)
-        if len(phones) >= 3:
+        if len(phones) >= 3 and not fixture:
             found.append(f"{len(phones)} phone numbers")
             weight = max(weight, 0.5)
 
@@ -791,7 +821,7 @@ class ShadowAIDetector:
         # The identifier has to sit next to the record word (not merely be somewhere in the same
         # text), a no-reply/role mailbox is not a person, and a date counts only when cued as a
         # birth date. Each of the three was a way for ordinary prose to become "a record".
-        if not bulk_emails and not any("phone" in f for f in found) \
+        if not fixture and not bulk_emails and not any("phone" in f for f in found) \
                 and _record_nearby(text, _RECORD_CTX_RE, _identity_spans(text)):
             found.append("personal record (contact/DOB in context)")
             weight = max(weight, 0.55)

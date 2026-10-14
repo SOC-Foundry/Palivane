@@ -34,7 +34,11 @@ _SENSITIVE_PATH = re.compile(
     r"(?:^|[/\\\s\"'=:])("
     r"\.env(?:\.[\w.-]+)?"
     r"|\.aws[/\\]credentials|\.aws[/\\]config"
-    r"|\.ssh[/\\]|id_rsa|id_ed25519|id_ecdsa|id_dsa|[\w.-]+\.pem|[\w.-]+\.key"
+    r"|\.ssh[/\\]|id_rsa|id_ed25519|id_ecdsa|id_dsa|[\w.-]+\.pem"
+    # A key FILE: lowercase (or all-caps) extension, ending where the name ends. `.key` used to
+    # match as a prefix and with any case, so `Object.keys(x)`, `d.keys()`, S3's `a.Key` and
+    # `e.key === "Escape"` all read as a private-key file (and scored critical/block).
+    r"|[\w.-]+\.(?-i:key|KEY)(?![\w(\[]|\s*(?:={2,3}|!==?))"
     r"|\.kube[/\\]config|\.docker[/\\]config\.json"
     r"|\.npmrc|\.pypirc|\.netrc|\.git-credentials"
     r"|\.(?:bash|zsh|python|mysql)_history"
@@ -59,12 +63,21 @@ _PUBLIC_CERT_NAME = re.compile(
 )
 
 
+# `.env.example` is the file a README tells you to copy: placeholders by design, committed to the
+# repo on purpose. Only the conventional template suffixes are exempt; `.env`, `.env.local`,
+# `.env.production` and a backup of any of them still flag.
+_TEMPLATE_ENV_NAME = re.compile(
+    r"\.env(?:\.[\w-]+)*\.(?:example|sample|template|tmpl|dist|defaults?)", re.IGNORECASE)
+
+
 def _sensitive_path(haystack: str) -> re.Match | None:
-    """The first sensitive path in `haystack`, skipping public certificates. Walks every
-    match rather than taking the first, so a harmless `ca.pem` named earlier in a command
-    cannot hide the `privkey.pem` named after it."""
+    """The first sensitive path in `haystack`, skipping public certificates and template env
+    files. Walks every match rather than taking the first, so a harmless `ca.pem` or
+    `.env.example` named earlier in a command cannot hide the `privkey.pem` or `.env` named
+    after it."""
     for m in _SENSITIVE_PATH.finditer(haystack):
-        if _PUBLIC_CERT_NAME.fullmatch(m.group(1)):
+        name = m.group(1)
+        if _PUBLIC_CERT_NAME.fullmatch(name) or _TEMPLATE_ENV_NAME.fullmatch(name):
             continue
         return m
     return None
@@ -145,31 +158,90 @@ _INTERPRETERS = {
     "ruby": (re.compile(r"-[nplaw]*e"), {"-r", "-I"}),
     "php": (re.compile(r"-r"), set()),
 }
-# Inline code that EXECUTES its input (as opposed to parsing it).
+# Inline code that EXECUTES its input (as opposed to parsing it). A command substitution counts
+# only when it READS stdin (`$(cat)`, `$(</dev/stdin)`): that hands the download to the shell as
+# the program's text. `$(date)` or `cd $(dirname $0)` read nothing from the pipe.
+_STDIN_SUBST = re.compile(r"(?:\$\(|`)\s*(?:cat\b|tee\b|dd\b|head\b|tail\b|sed\b|awk\b|tr\b|cut\b|<)",
+                         re.IGNORECASE)
 _EXEC_PRIMITIVES = re.compile(
     r"\bexec\w*\s*\(|\beval\b|\bos\.system\b|\bsystem\s*\(|\bsystem\s+[\"'$<]|\bpopen\b"
-    r"|\bsubprocess\b|\bspawn\w*\b|\bchild_process\b|\b__import__\b|\$\(|`",
+    r"|\bsubprocess\b|\bspawn\w*\b|\bchild_process\b|\b__import__\b|" + _STDIN_SUBST.pattern,
     re.IGNORECASE,
 )
+# A redirect that points the interpreter back at the pipe it already has.
+_REDIRECT_IS_STDIN = re.compile(r"<\s*(?:/dev/stdin|/dev/fd/0|/proc/self/fd/0)\b|<&\s*0")
+
+
+def _own_command(tail: str) -> tuple[str, bool]:
+    """The command an interpreter heads, and whether it redirects its stdin.
+
+    The command runs to the first UNQUOTED newline, `;`, `&` or `|` (which also ends `&&` and
+    `||`); a quoted program that spans lines belongs to it. Reading only the first line made a
+    multi-line `python3 -c "` look like an unterminated quote, and the code then judged the next
+    2,000 characters, whatever commands they belonged to. An unquoted `<` (`< file`, `<<EOF`,
+    `<<< "…"`) means the interpreter reads that, not the pipe."""
+    out: list[str] = []
+    quote = ""
+    redirected = False
+    i, n = 0, len(tail)
+    while i < n:
+        ch = tail[i]
+        if quote:
+            out.append(ch)
+            if quote == '"' and ch == "\\" and i + 1 < n:
+                out.append(tail[i + 1])
+                i += 2
+                continue
+            if ch == quote:
+                quote = ""
+            i += 1
+            continue
+        if ch in "'\"":
+            quote = ch
+        elif ch == "\\" and i + 1 < n:
+            out.append(ch)
+            out.append(tail[i + 1])
+            i += 2
+            continue
+        elif ch in "\n;&|":
+            # `<&0`, `2>&1` and `&>file` are redirections that happen to contain `&`
+            if ch == "&" and (tail[i - 1:i] in ("<", ">") or tail[i + 1:i + 2] == ">"):
+                pass
+            else:
+                break
+        elif ch == "<" and tail[i + 1:i + 2] != "(":
+            redirected = True
+        out.append(ch)
+        i += 1
+    return "".join(out), redirected
 
 
 def _executes_stdin(interpreter: str, tail: str) -> bool:
     """Does the interpreter that follows `curl … |` run its stdin as the program?
     `tail` is the text right after the interpreter's name. Errs toward True (flag): it only
     answers False for a flag or a script path that positively gives the interpreter a program
-    of its own."""
+    of its own, or when its stdin is redirected away from the pipe."""
     inline, takes_value = _INTERPRETERS["python" if interpreter.startswith("python") else interpreter]
-    line = tail.split("\n", 1)[0]
+    segment, redirected = _own_command(tail)
+    if redirected:
+        # `python3 - <<EOF` / `< script.py`: the interpreter reads that, not the pipe. Unless the
+        # redirect IS the pipe again (`< /dev/stdin`, `<&0`), or what it is handed reads the pipe
+        # (`<<< "$(cat)"`, an unquoted heredoc body with `$(cat)` in it).
+        reads_pipe = (_REDIRECT_IS_STDIN.search(segment)
+                      or _STDIN_SUBST.search(tail[:len(segment) + 2000]))
+        if not reads_pipe:
+            return False
     fallback = None
     try:
-        toks = shlex.split(line)
-    except ValueError:                 # unbalanced quote: judge the program on the raw text
-        toks, fallback = line.split(), tail[:2000]
+        toks = shlex.split(segment)
+    except ValueError:                 # a quote that never closes: the program runs to the end
+        toks, fallback = segment.split(), segment
     i = 0
     while i < min(len(toks), 8):
         tok = toks[i]
-        if tok in ("|", ";", "&&", "||", "&"):
-            break                       # end of this interpreter's own command line
+        if tok.startswith("<"):
+            i += 2 if tok == "<" else 1   # a redirection (and its file), not an option or a script
+            continue
         if tok == "-":
             return True                 # `python3 -` : stdin is the program, spelt out
         if inline.fullmatch(tok):
@@ -284,7 +356,20 @@ def _match_context(m: re.Match, before: int = 44, after: int = 60) -> str:
 # purpose — it is the one that executes.
 # Built-ins whose arguments are dominated by file CONTENT rather than by what they act on.
 # Read is absent on purpose: the hook sends its path as `resource` and no content at all.
-_CONTENT_BEARING_BUILTINS = frozenset({"Edit", "Write", "NotebookEdit"})
+# Tools whose arguments or result carry TEXT (a file's content, a fetched page) around a short
+# target (a path, a URL). Only the target is a path the agent touched: a file that mentions
+# `.ssh/` or `Object.keys` in its text, or a page about `/etc/passwd`, did not open any of them.
+# Read and the fetch tools belong here because the egress proxy puts a tool's input AND its
+# result in one field; the hook sends Read's path alone, so the hook's shape is unaffected.
+_CONTENT_BEARING_BUILTINS = frozenset({"Edit", "Write", "NotebookEdit", "Read", "WebFetch", "WebSearch"})
+
+# The assistant's own to-do list, questions and plan mode. Nothing here touches the machine;
+# their text quotes paths and commands the way any plan does ("check perms on ~/.ssh/"). The hook
+# never sends them, but older hooks and the proxy path did, and each scored critical/block.
+BOOKKEEPING_BUILTINS = frozenset({
+    "TodoWrite", "TaskCreate", "TaskUpdate", "TaskGet", "TaskList", "TaskOutput", "TaskStop",
+    "AskUserQuestion", "EnterPlanMode", "ExitPlanMode",
+})
 
 _NON_EXECUTING_BUILTINS = frozenset({
     "Read", "Edit", "Write", "NotebookEdit", "Glob", "Grep", "TodoWrite", "WebFetch",
@@ -361,8 +446,14 @@ class MCPGuardDetector:
         # Everything else — Bash, unknown built-ins, every MCP server tool — still gets the
         # full text, because for them a path in the arguments IS the target.
         content_bearing = not server and tool in _CONTENT_BEARING_BUILTINS
-        haystack = _norm_path(resource if content_bearing else f"{resource}\n{args_text}")
-        mres = _sensitive_path(haystack)
+        bookkeeping = not server and tool in BOOKKEEPING_BUILTINS
+        if content_bearing:
+            # `resource` when the client sends one (the hook); otherwise the first line of the
+            # input, which is the path or URL (the proxy sends input first, then the result).
+            haystack = _norm_path(resource or args_text.split("\n", 1)[0])
+        else:
+            haystack = _norm_path(f"{resource}\n{args_text}")
+        mres = None if bookkeeping else _sensitive_path(haystack)
         if mres:
             signals.append(Signal(
                 category=Category.SENSITIVE_RESOURCE_ACCESS,
@@ -383,7 +474,7 @@ class MCPGuardDetector:
         # only built-ins (server == "") on the known non-executing list. An unrecognised tool,
         # and every tool on an MCP server, still gets scanned, because we cannot know what it
         # does and a silent miss there is far worse than a noisy hit.
-        can_execute = bool(server) or tool not in _NON_EXECUTING_BUILTINS
+        can_execute = bool(server) or (tool not in _NON_EXECUTING_BUILTINS and tool not in BOOKKEEPING_BUILTINS)
         mcmd = next((mm for v in _command_views(args_text)
                      if (mm := _first_dangerous_command(v))), None) if can_execute else None
         if mcmd:
