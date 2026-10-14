@@ -241,6 +241,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
   const [org, setOrgState] = useState({
     name: tenant?.name || "", judge: judgeValue(tenant),
     store_content: tenant?.store_content === true ? "on" : tenant?.store_content === false ? "off" : "inherit",
+    evidence_context: tenant?.evidence_context === true ? "on" : tenant?.evidence_context === false ? "off" : "inherit",
     retention_days: tenant?.retention_days ?? 0, rate_limit: tenant?.rate_limit ?? 0,
     ingest_rate_limit: tenant?.ingest_rate_limit ?? 0,
     mcp_allowed_servers: tenant?.mcp_allowed_servers || "",
@@ -270,6 +271,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
     try {
       const t = await api.updateTenant({
         name: org.name, judge: org.judge, store_content: org.store_content,
+        evidence_context: org.evidence_context,
         retention_days: Number(org.retention_days), rate_limit: Number(org.rate_limit),
         ingest_rate_limit: Number(org.ingest_rate_limit),
         mcp_allowed_servers: org.mcp_allowed_servers,
@@ -901,6 +903,23 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                     (<code>PALIVANE_ENCRYPT_FINDINGS</code>, off by default). Confirm with whoever
                     operates your deployment before turning this on, because prompt prose cannot be
                     redacted for concepts or intellectual property the way a credential can.
+                  </p>
+                  <label>Evidence context
+                    <select value={org.evidence_context} onChange={setField("evidence_context")}>
+                      <option value="inherit">Inherit (follows prompt storage)</option>
+                      <option value="off">Off (labels only)</option>
+                      <option value="on">On (masked excerpt)</option>
+                    </select>
+                  </label>
+                  <p className="field-note field-wide">
+                    Lets an analyst see what a finding was about without storing the prompt: about
+                    80 characters either side of each match, or the command or path of a tool call,
+                    with secrets, emails, phone numbers, card and ID numbers replaced by
+                    {" "}<code>«redacted»</code> markers. <strong>Names and free text are not masked</strong>,
+                    so this stays off unless you choose it. Inherit follows <em>Store prompt content</em>.
+                    It applies to new findings, is shown only in a finding's detail (never in alerts,
+                    SIEM or the AI analyst), and is deleted with stored prompt content (after 30 days
+                    unless the operator changed it).
                   </p>
                   <label>Findings retention (days, 0 = forever)
                     <input type="number" min="0" value={org.retention_days} onChange={setField("retention_days")} /></label>

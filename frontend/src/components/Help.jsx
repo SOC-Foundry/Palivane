@@ -109,6 +109,15 @@ export default function Help({ isAdmin = false, onNavigate }) {
             </tbody>
           </table>
         </div>
+
+        <h3 className="help-h3">Evidence</h3>
+        <p className="muted" style={{ margin: 0 }}>
+          Each signal says what matched. With <strong>Evidence context</strong> on (Settings, Organization),
+          it also shows the words around the match, or the command or path of a tool call, so you can tell a
+          real customer record from an example in a README. Secrets, emails, phone numbers, card and ID numbers
+          are replaced by <code>«redacted»</code> markers; names and free text are not. It is off by default,
+          applies to new findings, and is deleted with stored prompt content.
+        </p>
       </Card>
 
       <Card title="Monitor vs. enforce"

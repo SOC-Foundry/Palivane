@@ -24,6 +24,31 @@ const CAT_LABEL = {
   ci_workflow_risk: "CI workflow risk",
 };
 
+// What an evidence excerpt is an excerpt OF. The server says (`context.where`).
+const CONTEXT_LABEL = {
+  prompt: "In the prompt", response: "In the response", message: "In the message",
+  content: "In the content", command: "Command", path: "Path", call: "Tool call",
+};
+
+// Categories an excerpt can exist for (mirrors app/excerpts.py). A finding made only of other
+// signals (an unsanctioned destination, a device-posture gap) has no "words around the match", so
+// it gets no hint about turning excerpts on.
+const EXCERPTABLE = new Set([
+  "secret_leak", "credential_at_rest", "pii_exposure", "phi_exposure", "dangerous_command",
+  "sensitive_resource_access", "prompt_injection", "jailbreak", "data_exfiltration",
+  "confidential_data", "source_code_leak",
+]);
+
+// The excerpt is masked on the server: every secret and identifier is already a «redacted:…»
+// marker by the time it reaches the browser. Marking the markers makes them read as "something
+// was here" instead of as stray text.
+function Marked({ text }) {
+  return String(text).split(/(«[^»]*»)/).map((part, i) =>
+    part.startsWith("«")
+      ? <mark key={i} className="redacted">{part}</mark>
+      : <span key={i}>{part}</span>);
+}
+
 // Concrete "what do I do now" steps, derived from the finding's signals + evidence, mirrors
 // the backend remediation guidance so the security team can close the loop from the console.
 function remediationFor(finding) {
@@ -279,6 +304,15 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
 
       <div className="detail-section">
         <h4>Signals ({(finding.signals || []).length})</h4>
+        {/* Saying why a finding has no excerpt turns a hole into a setting. It is a policy:
+            the excerpt is a few words of the prompt, so it is kept only when the org asks. */}
+        {!finding.context_retained && (finding.signals || []).some((s) => EXCERPTABLE.has(s.category)) && (
+          <p className="context-hint">
+            Palivane recorded what matched, not the words around it. An admin can turn on
+            {" "}<strong>Settings → Organization → Evidence context</strong> to keep a short,
+            masked excerpt around each match on new findings.
+          </p>
+        )}
         <ul className="signal-list">
           {(finding.signals || []).map((s, i) => (
             <li key={i} className="signal">
@@ -289,6 +323,19 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
               </div>
               <div className="signal-detail">{s.detail}</div>
               {s.evidence && <code className="signal-evidence">{s.evidence}</code>}
+              {s.context && (
+                <div className="signal-context">
+                  <div className="signal-context-label">
+                    {CONTEXT_LABEL[s.context.where] || "Context"}
+                    <span className="signal-context-mask"> · secrets and identifiers masked</span>
+                  </div>
+                  <pre className="signal-context-text">
+                    {s.context.cut?.[0] && <span className="cut">…</span>}
+                    <Marked text={s.context.text} />
+                    {s.context.cut?.[1] && <span className="cut">…</span>}
+                  </pre>
+                </div>
+              )}
               <div className="signal-src">via {s.detector}</div>
             </li>
           ))}

@@ -135,6 +135,10 @@ ANTHROPIC_API_KEY=sk-ant-...
 # Keep the prompt text on findings (default: metadata-only, no prose stored):
 PALIVANE_STORE_CONTENT=true
 PALIVANE_ENCRYPT_FINDINGS=true   # encrypt that stored content at rest
+
+# Keep a short MASKED excerpt around each match for the console's evidence view, without storing
+# the prompt (default off; on automatically when content is stored; names are not masked):
+PALIVANE_EVIDENCE_CONTEXT=true
 ```
 
 ---
