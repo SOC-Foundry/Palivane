@@ -213,6 +213,27 @@ def record_hits(db: Session, holder: dict | None) -> None:
             pass
 
 
+def expiring_soon(db: Session, tenant_id: int, now: datetime | None = None, days: int = 7) -> list[AllowEntry]:
+    """Active entries that lapse within `days`, soonest first: what an admin should renew or let go
+    before the alerts it was holding back return."""
+    now = now or _now()
+    return (db.query(AllowEntry)
+              .filter(AllowEntry.tenant_id == tenant_id, AllowEntry.revoked_at.is_(None),
+                      AllowEntry.expires_at > now, AllowEntry.expires_at <= now + timedelta(days=days))
+              .order_by(AllowEntry.expires_at.asc(), AllowEntry.id.asc()).all())
+
+
+def recently_lapsed(db: Session, tenant_id: int, now: datetime | None = None,
+                    days: int = 7) -> list[AllowEntry]:
+    """Entries that lapsed (were not revoked, and not renewed since) in the last `days`, most
+    recent first: their commands and paths are being flagged again."""
+    now = now or _now()
+    return (db.query(AllowEntry)
+              .filter(AllowEntry.tenant_id == tenant_id, AllowEntry.revoked_at.is_(None),
+                      AllowEntry.expires_at <= now, AllowEntry.expires_at > now - timedelta(days=days))
+              .order_by(AllowEntry.expires_at.desc(), AllowEntry.id.desc()).all())
+
+
 def prune(db: Session) -> int:
     """Delete entries that lapsed or were revoked more than KEEP_DAYS ago. Rows younger than that
     stay listed: they are the record of what was allowed, for how long, and by whom."""
