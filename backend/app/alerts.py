@@ -192,9 +192,25 @@ def notify_new_tool(webhook: str, tool: str, category: str, actor: str,
     })
 
 
+def _quality_lines(db, tenant, now) -> list[str]:
+    """The weekly report's detection-quality and allowlist sections (see precision.format_quality):
+    how often the findings the team reviewed were right, what is worth tuning, and which allowlist
+    entries are about to lapse or just did."""
+    from . import allowlist, precision
+
+    def rows(entries):
+        return [{"kind": e.kind, "pattern": e.pattern, "expires_at": e.expires_at,
+                 "hit_count": e.hit_count or 0} for e in entries]
+
+    return precision.format_quality(precision.readout(db, tenant.id, 7, now),
+                                    rows(allowlist.expiring_soon(db, tenant.id, now)),
+                                    rows(allowlist.recently_lapsed(db, tenant.id, now)), now)
+
+
 def run_weekly_reports(db, now=None) -> int:
     """Send due weekly exec summaries by email to each opted-in org's admins: findings by
-    severity, newly discovered AI tools, top actors. Window-claimed like run_digests so
+    severity, newly discovered AI tools, top actors, how often the findings the team reviewed
+    were right, and the allowlist entries about to lapse. Window-claimed like run_digests so
     concurrent workers can't double-send. Returns #tenants mailed."""
     from datetime import datetime, timedelta
     from .models import DiscoveredUsage, Finding, Tenant, User
@@ -239,6 +255,13 @@ def run_weekly_reports(db, now=None) -> int:
         if top:
             lines += ["", "Most-flagged actors:"] + [
                 f"  {a}: {n} finding(s)" for a, n in top]
+        # New sections, best effort: a failure computing them must never cost the report.
+        try:
+            lines += _quality_lines(db, t, now)
+        except Exception:                                         # noqa: BLE001
+            db.rollback()
+            logging.getLogger("palivane.alerts").warning(
+                "weekly report for %s: detection-quality section skipped", t.slug, exc_info=True)
         lines += ["", "Full detail: your Palivane console -> Findings / Discovery."]
         body = "\n".join(lines)
         admins = (db.query(User).filter(User.tenant_id == t.id, User.role == "admin",
