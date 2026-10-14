@@ -1,7 +1,10 @@
 """Feedback loop: turn analyst triage decisions into eval-corpus labels.
 
 When an analyst triages a finding it's a confirmed threat; when they dismiss it, it
-was a false positive. Those are exactly the labels the eval harness needs. This module
+was a false positive. Those are exactly the labels the eval harness needs, with one
+exception: a dismissal that is not a statement about the detector (closed in bulk, or
+dismissed as expected, accepted risk or a duplicate) is left out rather than labeled benign.
+This module
 exports a tenant's triaged/dismissed findings as corpus JSONL so you can measure
 detection quality on *real, human-labeled* traffic and tune the operating point.
 
@@ -24,11 +27,23 @@ from ..models import Finding, Tenant
 # status -> corpus label
 _STATUS_LABEL = {"triaged": "malicious", "dismissed": "benign"}
 
+# A dismissal that is not a statement about the detector. `expected` and `accepted_risk` are real
+# detections of something the org is fine with, and `duplicate` is neither, so labeling them benign
+# would teach the eval that a correct detection was a false one.
+_NOT_A_DETECTOR_ERROR = ("expected", "accepted_risk", "duplicate")
+
 
 def finding_to_example(f: Finding) -> dict | None:
-    """Map a triaged/dismissed finding to a corpus example; None if still open."""
+    """Map a triaged/dismissed finding to a corpus example; None if still open, or if how it was
+    closed says nothing reliable about the detector: closed in bulk (not a judgement of this
+    finding), or dismissed as expected, accepted risk or a duplicate. A finding reviewed before
+    review records existed has neither, and is labeled as it always was."""
     label = _STATUS_LABEL.get(f.status)
     if label is None:
+        return None
+    if getattr(f, "review_via", "") == "bulk":
+        return None
+    if f.status == "dismissed" and getattr(f, "review_reason", "") in _NOT_A_DETECTOR_ERROR:
         return None
     return {
         "id": f"f{f.id}",
@@ -37,7 +52,7 @@ def finding_to_example(f: Finding) -> dict | None:
         "sender": f.sender or "",
         "subject": f.subject or "",
         "content": unseal(f.content) or "",
-        "note": f"analyst {f.status}",
+        "note": f"analyst {f.status}" + (f" ({f.review_reason})" if getattr(f, "review_reason", "") else ""),
     }
 
 

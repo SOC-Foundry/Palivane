@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import Allowlist from "./Allowlist.jsx";
+import Precision from "./Precision.jsx";
 
 // Preset -> the set of checks it DISABLES. "Strict" = everything on. "Balanced" mirrors the
 // common default. "Monitor" keeps every check recording (blocking is governed by mode, not
@@ -34,7 +35,6 @@ export default function Policies({ tenant, onTenant }) {
   const [exceptions, setExceptions] = useState(null);
   const [showResolved, setShowResolved] = useState(false);
   const [note, setNote] = useState("");        // shared approve/deny note
-  const [analytics, setAnalytics] = useState(null);
 
   const load = useCallback(async () => {
     try { setCat(await api.policies()); }
@@ -49,10 +49,6 @@ export default function Policies({ tenant, onTenant }) {
     } catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
   }, [showResolved]);
   useEffect(() => { loadExceptions(); }, [loadExceptions]);
-
-  useEffect(() => {
-    api.policyAnalytics(30).then(setAnalytics).catch(() => setAnalytics(null));
-  }, []);
 
   async function resolveException(id, action) {
     setErr(null); setSaving(`exc:${id}`);
@@ -332,36 +328,9 @@ export default function Policies({ tenant, onTenant }) {
         )}
       </div>
 
-      {/* Check activity, findings vs. dismissals per check over the last 30 days. */}
-      <div className="panel settings-card">
-        <h2>Check activity (30d)</h2>
-        <p className="muted" style={{ marginTop: 6 }}>A high dismiss rate means the check is
-           mostly generating noise for your org, a candidate to tune or disable.</p>
-        {analytics === null ? (
-          <p className="muted">No activity data available.</p>
-        ) : (analytics.checks || []).length === 0 ? (
-          <p className="muted">No check activity in the last {analytics.days} days.</p>
-        ) : (
-          <div className="table-scroll">
-            <table className="data-table">
-              <thead><tr><th>Check</th><th>Findings</th><th>Dismissed</th><th>Dismiss rate</th></tr></thead>
-              <tbody>
-                {analytics.checks.map((c) => (
-                  <tr key={c.check}>
-                    <td><code>{c.check}</code></td>
-                    <td>{c.findings}</td>
-                    <td>{c.dismissed}</td>
-                    <td className={c.dismiss_rate >= 0.5 ? "" : "muted"}
-                        style={c.dismiss_rate >= 0.5 ? { color: "var(--susp)" } : undefined}>
-                      {Math.round((c.dismiss_rate || 0) * 100)}%
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {/* How often the findings the team reviewed were right, per check (replaces the old
+          findings-vs-dismissals table, which counted open findings as if they were reviewed). */}
+      <Precision labelFor={checkLabel} />
     </div>
   );
 }

@@ -21,7 +21,7 @@ from .crypto import seal
 # as the rest of the scan path — a late import would bind a different instance if the
 # config module was ever reloaded.
 from .ml import capture as ml_capture
-from . import excerpts
+from . import excerpts, review
 from .redaction import redact_text
 from .session_correlation import correlate, is_chain_relevant
 
@@ -402,6 +402,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                         and item.surface in _LIVE_ACT_SURFACES)
             if reopened:
                 prior.status = "open"
+                review.record_review(prior, "open")      # it has not been reviewed again yet
             # Evidence context switched on after this finding first fired: a repeat of an event
             # folds into the same row for as long as it recurs (a dismissed one too), so without
             # this the org's existing findings would never get an excerpt. The first repeat

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { cleanError, expiryChoices } from "./Allowlist.jsx";
 
@@ -211,6 +211,17 @@ const STATUSES = [
   { key: "dismissed", label: "Dismissed" },
 ];
 
+// Why a finding was dismissed. Optional, and it is what lets the precision readout tell a false
+// positive (the detector was wrong) from something the org expects (allow it instead).
+const DISMISS_REASONS = [
+  ["", "No reason"],
+  ["false_positive", "False positive: the detector was wrong"],
+  ["expected", "Expected: it happened, and that is fine"],
+  ["accepted_risk", "Accepted risk"],
+  ["duplicate", "Duplicate"],
+];
+const REASON_WORD = { false_positive: "a false positive", expected: "expected", accepted_risk: "an accepted risk", duplicate: "a duplicate" };
+
 // The distinct policy checks this finding's signals belong to, what a suppression targets.
 const NOT_A_CHECK = new Set(["ai_generated"]);  // verdict signals with no policy toggle
 
@@ -230,13 +241,15 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
   const [report, setReport] = useState(finding?.investigation || null);   // persisted or fresh
   const [investigating, setInvestigating] = useState(false);
   const [investigateErr, setInvestigateErr] = useState("");
+  const [reason, setReason] = useState("");                  // why, if the next click is Dismissed
+  useEffect(() => { setReason(""); }, [finding?.id]);
   if (!finding) return null;
   const status = finding.status || "open";
   const steps = remediationFor(finding);
   const checks = isAdmin && finding.sender ? checksOf(finding) : [];
 
   async function setStatus(s) {
-    await api.setStatus(finding.id, s);
+    await api.setStatus(finding.id, s, "", s === "dismissed" ? reason : "");
     onStatusChange();
   }
 
@@ -495,6 +508,21 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
             {s.label}
           </button>
         ))}
+      </div>
+      <div className="review-line">
+        <label className="review-reason">If dismissing, why?
+          <select value={reason} onChange={(e) => setReason(e.target.value)}>
+            {DISMISS_REASONS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+          </select>
+        </label>
+        {finding.review && (
+          <span className="muted">
+            {status === "dismissed" ? "Dismissed" : "Triaged"} by {finding.review.by || "someone"}
+            {finding.review.reason ? ` as ${REASON_WORD[finding.review.reason] || finding.review.reason}` : ""}
+            {finding.review.via === "bulk" ? " (in bulk)" : finding.review.via === "analyst" ? " (the analyst's recommendation)" : ""}
+            , {new Date(finding.review.at + "Z").toLocaleDateString()}.
+          </span>
+        )}
       </div>
     </div>
   );

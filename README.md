@@ -535,9 +535,10 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/scan/code`         | Secrets & PII in repo files. Takes either `findings` (what `palivane-github-scan` detected locally — no source is sent) or `content` (the pre-commit hook, scanning a file on the machine the request came from). Ignores `source_code_leak`. Returns a per-file allow/warn/block. Token-gated. |
 | GET    | `/api/findings`          | List the tenant's findings (filter by `severity`, `status`). |
 | GET    | `/api/findings/{id}`     | Full finding detail with signal breakdown. |
-| PATCH  | `/api/findings/{id}`     | Set status (`open` / `triaged` / `dismissed`). |
+| PATCH  | `/api/findings/{id}`     | Set status (`open` / `triaged` / `dismissed`). A dismissal can say why (`reason`: `false_positive`, `expected`, `accepted_risk`, `duplicate`); who reviewed, how and why is recorded (`review` in the detail) and a reopen clears it. |
+| GET    | `/api/precision`         | How often the findings your team reviewed were right, per check, tool and week, over `days` (1-365), with what is not counted; `format=csv` for the per-check table (admin). |
 | GET    | `/api/stats`             | Dashboard counters for the tenant (incl. `by_surface`). |
-| GET    | `/api/corpus/export`     | Export the tenant's triaged/dismissed findings as eval-corpus JSONL (admin). |
+| GET    | `/api/corpus/export`     | Export the tenant's triaged/dismissed findings as eval-corpus JSONL, leaving out what says nothing about the detector: closed in bulk, or dismissed as expected, accepted risk or duplicate (admin). |
 | POST   | `/api/coverage/reconcile`| Compare an IdP/CASB "who used AI" list to captured findings; returns the uncovered actors (admin). |
 | POST   | `/api/discovery/ingest`  | Classify AI usage from CASB/SWG/proxy/DNS logs into the shadow-AI inventory (admin). |
 | GET    | `/api/discovery/inventory` | The shadow-AI inventory: AI tools by tool and by team, sanctioned/unsanctioned + real exposure (admin). |
@@ -909,6 +910,17 @@ curl -s localhost:8080/api/corpus/export -H "Authorization: Bearer $TOKEN" > tri
 python -m app.eval.export --tenant demo --out app/eval/corpus/from_triage.jsonl
 python -m app.eval --corpus app/eval/corpus      # measure against the real labels
 ```
+
+**Reading the precision numbers.** Policies → Detection precision answers "when a check fires, is it
+right?" from your own reviews, and is careful about what a review means. A dismissal is a *false
+positive* (the detector was wrong), *expected* or an *accepted risk* (a correct detection of
+something you are fine with: allow it rather than tune the detector), or a *duplicate*; a finding
+dismissed without a reason is shown as a range, because it could be either. Only a review by one
+person on one finding is counted. Findings closed in bulk, ones answered only by their owner, and
+ones reviewed before this was recorded are listed under *Not counted* and kept out of every rate: a
+"clear the queue" is not a judgement of each finding. Rates are per finding (one row is one
+distinct event class) with the events behind them alongside, and a check with fewer than 5 reviews
+reads "too few" rather than a percentage you should believe.
 
 That closes the loop: the more a team triages, the better you can measure and tune
 detection to *their* traffic — the core of a design-partner pilot.

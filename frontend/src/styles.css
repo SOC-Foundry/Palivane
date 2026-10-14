@@ -502,6 +502,38 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 }
 .context-hint { margin: 0 0 10px; font-size: 12.5px; line-height: 1.6; color: var(--muted); }
 .context-hint strong { color: var(--text); font-weight: 600; }
+/* Detection precision: the headline, the outcome bars, and the per-check reading. */
+.pr-headline { font-size: 17px; margin: 14px 0 10px; color: var(--text); }
+.pr-headline strong { color: var(--accent-2); }
+.pr-window { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: 6px 10px; font: inherit; font-size: 12.5px; }
+.pr-bar { display: flex; height: 10px; border-radius: 3px; overflow: hidden; background: var(--panel-3); }
+.pr-bar span { display: block; min-width: 2px; }
+.pr-bar-empty { opacity: 0.4; }
+.pr-bar-v { flex-direction: column-reverse; height: 100%; width: 100%; border-radius: 2px; }
+.pr-actionable { background: var(--benign); }
+.pr-expected { background: var(--low); }
+.pr-fp { background: var(--crit); }
+.pr-unspecified { background: var(--muted-2); }
+.pr-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 10px 0 4px; font-size: 12.5px; color: var(--muted); }
+.pr-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: baseline; }
+.pr-legend strong { color: var(--text); font-weight: 600; }
+.pr-notes { margin: 8px 0 0; font-size: 12.5px; line-height: 1.65; }
+.pr-notes strong { color: var(--text); font-weight: 600; }
+.pr-table td { vertical-align: top; }
+.pr-sub { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.5; max-width: 340px; }
+.pr-verdict { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 3px; border: 1px solid var(--border); white-space: nowrap; }
+.pr-v-ok { color: #a7f3d0; border-color: rgba(52, 211, 153, 0.35); background: rgba(52, 211, 153, 0.12); }
+.pr-v-low { color: var(--muted); }
+.pr-v-expected { color: #bae6fd; border-color: rgba(56, 189, 248, 0.35); background: rgba(56, 189, 248, 0.12); }
+.pr-v-fp { color: #fda4af; border-color: rgba(244, 63, 94, 0.35); background: rgba(244, 63, 94, 0.12); }
+.pr-v-mixed { color: #fed7aa; border-color: rgba(251, 146, 60, 0.35); background: rgba(251, 146, 60, 0.12); }
+.pr-trend { display: flex; align-items: flex-end; gap: 10px; height: 96px; margin-top: 6px; overflow-x: auto; padding-bottom: 2px; }
+.pr-week { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; height: 100%; min-width: 34px; font-size: 10.5px; color: var(--muted-2); }
+.pr-week-bar { width: 22px; min-height: 3px; display: flex; }
+.review-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 10px; font-size: 12.5px; }
+.review-reason { display: flex; align-items: center; gap: 8px; color: var(--muted); font-weight: 600; }
+.review-reason select { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: 6px 8px; font: inherit; font-size: 12.5px; font-weight: 400; max-width: 100%; }
+
 /* Allowlist: the "Allow this…" form under a signal, and the management table. */
 .signal-allow { margin-top: 8px; }
 .allow-inline {
