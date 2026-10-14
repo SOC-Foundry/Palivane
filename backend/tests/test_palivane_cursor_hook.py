@@ -255,3 +255,67 @@ def test_monitor_mode_allows_and_reports_in_the_background(monkeypatch, capsys):
     shell = {"hook_event_name": "beforeShellExecution", "command": "echo hi", "cwd": "/work"}
     _, out, sent = _run_cursor(monkeypatch, capsys, shell, _ASKED, enforce=False)
     assert out == {"permission": "allow"} and len(sent) == 1
+
+
+# --- parse-miss: the hook saw a prompt event and could read nothing out of it ----------------
+# The report exists so a fail-open client cannot go blind in silence ("this device has been dark
+# since Cursor 1.2.3"). It read `cfg` two lines before assigning it, so every report raised
+# UnboundLocalError, which the script's fail-open handler swallowed: the hook looked healthy and
+# the counter never moved.
+
+def _drive(monkeypatch, capsys, event, connected=True):
+    """Run main() against a stubbed backend, recording every `_post` it makes."""
+    import io
+    calls, reads = [], []
+    cfg = {"url": "https://palivane.example" if connected else "",
+           "token": "ak_test" if connected else "", "enforce": False, "timeout": 5.0,
+           "user": "dev@acme.com", "exclude": []}
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(event)))
+    monkeypatch.setattr(hook, "read_config", lambda: reads.append(1) or cfg)
+    monkeypatch.setattr(hook, "_post",
+                        lambda endpoint, payload, c, **kw: calls.append((endpoint, payload, c, kw)) or {"action": "allow"})
+    monkeypatch.setattr(hook, "_send_detached", lambda *a, **k: None)
+    rc = hook.main()
+    return rc, capsys.readouterr().out.strip(), calls, reads
+
+
+def test_a_prompt_event_with_no_prompt_field_reports_a_parse_miss(monkeypatch, capsys):
+    rc, out, calls, _ = _drive(monkeypatch, capsys,
+                               {"hook_event_name": "beforeSubmitPrompt", "cwd": "/work", "version": "1.2.3"})
+    assert rc == 0 and out == ""                      # nothing for Cursor to act on, and no crash
+    assert len(calls) == 1
+    endpoint, payload, cfg, kw = calls[0]
+    assert endpoint == "/api/ingest/ai-usage"
+    assert payload["parse_miss"] is True and payload["tool"] == "cursor"
+    assert "(cursor/1.2.3)" in kw["ua"]               # which Cursor build was live: the whole point
+    assert cfg["timeout"] <= 3.0                      # cheap: it must never slow a prompt down
+
+
+def test_the_parse_miss_report_goes_nowhere_when_not_connected(monkeypatch, capsys):
+    rc, out, calls, _ = _drive(monkeypatch, capsys,
+                               {"hook_event_name": "beforeSubmitPrompt", "cwd": "/work"},
+                               connected=False)
+    assert rc == 0 and out == "" and calls == []
+
+
+def test_an_empty_prompt_is_silence_not_drift(monkeypatch, capsys):
+    """A person who submitted nothing is not a contract change: no report."""
+    rc, out, calls, _ = _drive(monkeypatch, capsys,
+                               {"hook_event_name": "beforeSubmitPrompt", "prompt": "", "cwd": "/work"})
+    assert rc == 0 and calls == []
+
+
+def test_a_normal_prompt_is_scanned_not_reported_as_a_parse_miss(monkeypatch, capsys):
+    rc, out, calls, _ = _drive(monkeypatch, capsys,
+                               {"hook_event_name": "beforeSubmitPrompt", "prompt": "refactor this", "cwd": "/work"})
+    assert rc == 0 and len(calls) == 1
+    assert calls[0][0] == "/api/ingest/ai-usage" and "parse_miss" not in calls[0][1]
+    assert json.loads(out) == {"continue": True}
+
+
+def test_the_config_is_read_once_per_event(monkeypatch, capsys):
+    """The exclusion check and the rest of the hook share one read, so the parse-miss branch
+    can never be handed a config that does not exist yet."""
+    _, _, _, reads = _drive(monkeypatch, capsys,
+                            {"hook_event_name": "beforeSubmitPrompt", "prompt": "hi", "cwd": "/work"})
+    assert len(reads) == 1
