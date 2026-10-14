@@ -119,6 +119,15 @@ export default function Help({ isAdmin = false, onNavigate }) {
           applies to new findings, and is deleted with stored prompt content.
         </p>
 
+        <h3 className="help-h3">Telling Palivane when it is wrong</h3>
+        <p className="muted" style={{ margin: 0 }}>
+          When you dismiss a finding, say why: <strong>false positive</strong> (the detector was wrong),
+          <strong> expected</strong> or <strong>accepted risk</strong> (it was right, and you are fine with it),
+          or <strong>duplicate</strong>. Policies, Detection precision then shows how often each check was
+          right for your team, and which dismissed findings keep firing so you can allow or tune them.
+          Findings closed in bulk are not counted as individual judgements.
+        </p>
+
         <h3 className="help-h3">Allowing something expected</h3>
         <p className="muted" style={{ margin: 0 }}>
           A command or file the team uses on purpose (an internal installer, a fixtures folder full of fake

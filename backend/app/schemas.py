@@ -257,11 +257,15 @@ class StatusUpdate(BaseModel):
     # Optional provenance for the audit trail — e.g. "analyst" when a human applies the
     # read-only analyst agent's recommendation with one click (AI recommends, human approves).
     via: str = Field("", max_length=40)
+    # Why it was dismissed (ignored for any other status). Optional, and what lets the precision
+    # readout tell a false positive from behavior the org expects: see app/review.py.
+    reason: Literal["", "false_positive", "expected", "accepted_risk", "duplicate"] = ""
 
 
 class BulkStatusUpdate(BaseModel):
     ids: list[int] = Field(min_length=1, max_length=1000)
     status: Literal["open", "triaged", "dismissed"]
+    reason: Literal["", "false_positive", "expected", "accepted_risk", "duplicate"] = ""
 
 
 class CorpusLabel(BaseModel):
