@@ -21,6 +21,9 @@ These are code paths, not habits:
   (`store_content`), and then encrypted under that org's DEK (`enc:v2`).
 - **Evidence minimization:** signal evidence carries labels or short prefixes, never
   full secret values. API keys are stored as SHA-256 hashes; MFA/SSO secrets encrypted.
+- **Evidence context (opt-in):** an org can have a short excerpt kept around each match,
+  with secrets and identifiers masked (names and free text are not). It is stored apart from
+  the signals, shown only in a finding's detail, and deleted on the same TTL as prompt content.
 - **Isolation:** Postgres RLS keeps every tenant-scoped row invisible outside its org.
 
 ## Movement rules

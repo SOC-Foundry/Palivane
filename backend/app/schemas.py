@@ -352,6 +352,9 @@ class TenantUpdate(BaseModel):
     # Persist raw prompt prose in findings: "on"/"off" force it, "inherit" follows the global
     # default (off). None = leave unchanged. Off = metadata-only (recommended).
     store_content: Literal["on", "off", "inherit"] | None = None
+    # Keep a masked excerpt around each match for the console's evidence view: "on"/"off" force
+    # it, "inherit" follows the global default and Store prompt content. None = leave unchanged.
+    evidence_context: Literal["on", "off", "inherit"] | None = None
     # Consented ML-corpus capture: stage a sample of scanned prompts for analyst labeling
     # (docs/ml-classifier-baseline.md). Plain bool, NOT tri-state — consent to contribute
     # prompt prose must be explicit per tenant, never inherited. None = leave unchanged.

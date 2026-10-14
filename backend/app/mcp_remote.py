@@ -180,7 +180,10 @@ def list_findings(severity: str = "", status: str = "", surface: str = "",
 
 @mcp.tool()
 def get_finding(finding_id: int) -> dict:
-    """Full detail for one finding: signals, evidence, actor, and the owner's response."""
+    """Full detail for one finding: signals, evidence, actor, and the owner's response. When the
+    org keeps evidence context, each signal also carries a short masked excerpt (`context`) of
+    the words, command or path around the match, with secrets and identifiers replaced by
+    «redacted» markers; names and free text in it are not masked."""
     from . import main
     return _read(main.get_finding, admin=False, finding_id=finding_id)
 

@@ -188,6 +188,11 @@ class Tenant(Base):
     # (PALIVANE_STORE_CONTENT, off). Off = metadata-only (verdict + signals + redacted
     # evidence, no natural-language content).
     store_content = Column(Boolean, nullable=True, default=None)
+    # Keep a short MASKED excerpt around each match on this tenant's findings (the evidence
+    # view: app/excerpts.py)? None = inherit: on when the global PALIVANE_EVIDENCE_CONTEXT is on
+    # or when this tenant stores prompt content anyway (the excerpt is then no new data class).
+    # Off = verdict, signals and label-only evidence, nothing quoted from the text.
+    evidence_context = Column(Boolean, nullable=True, default=None)
     # Per-tenant data key (DEK) wrapped by the master KEK — content is enc:v2: sealed under
     # it. Generated lazily on first content store. Dropping this revokes the tenant's content.
     dek_wrapped = Column(Text, default="")
@@ -210,6 +215,7 @@ class Tenant(Base):
                 # Client-side hints for the console (lock badges); the API is the authority.
                 "plan_features": features_of(self),
                 "store_content": self.store_content,
+                "evidence_context": self.evidence_context,
                 "ml_capture": bool(self.ml_capture),
                 "judge_enabled": self.judge_enabled, "retention_days": self.retention_days,
                 "rate_limit": self.rate_limit, "ingest_rate_limit": self.ingest_rate_limit or 0,
@@ -603,6 +609,12 @@ class Finding(Base):
     # survives a reload and is part of the record; overwritten on re-investigation. Advisory —
     # it never changes status on its own (a human applies the recommendation).
     investigation = Column(JSON, default=None)
+    # The evidence view: a masked excerpt around each match, as JSON text ("" = none stored),
+    # sealed like `content` when encryption is on. A column of its own, not a key inside
+    # `signals`, so it cannot ride into a list row, an alert, a SIEM or S3-lake payload or the
+    # analyst's prompt by construction (all of which read `signals`), and so the content TTL can
+    # clear it with one UPDATE. Written only when the tenant opted in (service._stored_context).
+    evidence_context = Column(Text, default="")
 
     def to_summary(self) -> dict:
         return {
@@ -638,11 +650,16 @@ class Finding(Base):
         """`dek` is the tenant's unwrapped data key, needed to open enc:v2: content;
         legacy enc:v1: content decrypts without it. content_retained reflects whether any
         prose was stored (false under the metadata-only policy)."""
+        from . import excerpts
         from .crypto import unseal_with
         d = self.to_summary()
         d["content"] = unseal_with(self.content, dek) if self.content else ""
         d["content_retained"] = bool(self.content)
-        d["signals"] = self.signals or []
+        # The evidence view: each signal carries its masked excerpt as `context` when one was
+        # stored. Detail only; a summary (list row, owner view, analyst, sinks) never has it.
+        entries = excerpts.loads(unseal_with(self.evidence_context, dek)) if self.evidence_context else []
+        d["context_retained"] = bool(entries)
+        d["signals"] = excerpts.merge(self.signals or [], entries)
         d["investigation"] = self.investigation or None
         return d
 

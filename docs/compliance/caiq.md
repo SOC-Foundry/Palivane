@@ -62,7 +62,7 @@ headcount-based separation of duties. Our SOC 2 Type II program is underway.
 
 | Q | Answer |
 |---|---|
-| Data classification policy? | Yes (Policy 07), with product-enforced handling: secrets redacted and PII masked **before** storage; metadata-only by default; full content storage is per-org opt-in and per-tenant encrypted. |
+| Data classification policy? | Yes (Policy 07), with product-enforced handling: secrets redacted and PII masked **before** storage; metadata-only by default; a masked excerpt around each match and full content storage are each per-org opt-in (the excerpt expires with the content TTL), and stored content is per-tenant encrypted. |
 | Tenant isolation? | Application-level scoping **plus** Postgres Row-Level Security enforced in the database on every tenant-scoped table. |
 | Data residency? | us-central1 (US). Self-hosted deployments keep all data in customer infrastructure. |
 | Customer data deletion/export? | Self-serve full JSON export and self-serve complete org deletion; backups age out ≤ 14 days. DPA presented in-product with versioned acceptance. |

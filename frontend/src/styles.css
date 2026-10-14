@@ -481,6 +481,27 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
   padding: 6px 10px; border-radius: 3px; word-break: break-all;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+/* The evidence view: the few words around a match, already masked server-side. Reads as a
+   quotation from the event, so it is set apart from the detector's own words above it. */
+.signal-context { margin-top: 10px; }
+.signal-context-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 4px;
+}
+.signal-context-mask { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--muted-2); }
+.signal-context-text {
+  margin: 0; padding: 9px 12px; background: rgba(0, 0, 0, 0.45); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent); border-radius: 3px; color: #e2e8f0;
+  font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow: auto;
+}
+.signal-context-text .cut { color: var(--muted-2); }
+.signal-context-text mark.redacted {
+  background: rgba(232, 134, 60, 0.16); color: #fed7aa; border: 1px solid rgba(232, 134, 60, 0.4);
+  border-radius: 3px; padding: 0 4px; font-size: 11.5px;
+}
+.context-hint { margin: 0 0 10px; font-size: 12.5px; line-height: 1.6; color: var(--muted); }
+.context-hint strong { color: var(--text); font-weight: 600; }
 .signal-src { font-size: 11px; color: var(--muted); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; }
 .detail-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; align-items: center; }
 .detail-actions-label { font-size: 12.5px; color: var(--muted); margin-right: 2px; }
