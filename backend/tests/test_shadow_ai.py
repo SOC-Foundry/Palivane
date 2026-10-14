@@ -568,3 +568,97 @@ def test_a_date_is_not_a_birth_date_without_a_cue():
     assert Category.PII_EXPOSURE in _cats("customer record: DOB 1985-04-12")
     assert Category.PII_EXPOSURE in _cats("patient date of birth: 04/12/1987")
     assert Category.PII_EXPOSURE in _cats("member born on 1985-04-12")
+
+
+# --- tool-call false positives found triaging production findings (2026-10-14) ---------------
+# A developer working on a repo with tests and seed data had fake credentials and fake personal
+# records flagged critical every time an agent read or wrote a fixture, and any 9-digit id in a
+# command read as an SSN. The "still flags" tests pin what must not be lost.
+
+def _tool(tool, *, resource="", args_text="", server="", surface=Surface.AGENT_TOOLS):
+    meta = {"method": "tools/call", "tool": tool, "server": server, "resource": resource,
+            "args_text": args_text}
+    item = AnalysisInput(content="\n".join(p for p in (args_text, resource) if p) or "x",
+                         surface=surface, channel=tool, subject=f"Agent tool: {tool}", metadata=meta)
+    return det.analyze(item)
+
+
+def _tool_cats(*a, **kw):
+    return {s.category.value for s in _tool(*a, **kw)}
+
+
+_FAKE_CRED = 'DATABASE_PASSWORD = "p4ssw0rd-for-local-dev"'
+_FAKE_RECORD = "name: Jane Doe, DOB: 01/02/1980, email: jane.doe@example.com, phone: (415) 555-0132"
+_VENDOR_KEY = "ghp_" + "Ab1Cd2Ef3Gh4Ij5" + "Kl6Mn7Op8Qr9St0Uv1Wx2"     # assembled: not a literal secret
+
+
+def test_credentials_and_records_in_a_fixture_an_agent_touches_are_illustrative():
+    """The target decides: a path under tests/, fixtures/, docs/, examples/ or a template file
+    makes generic credential assignments and context-only 'personal record' guesses
+    illustrative, the way the file-scan surfaces already treat them."""
+    body = f"{_FAKE_CRED}\n{_FAKE_RECORD}"
+    for path in ("/repo/backend/tests/test_x.py", "/repo/tests/fixtures/customers.json",
+                 "/repo/docs/setup.md", "/repo/.env.example", "/repo/frontend/src/mocks/users.js"):
+        # the hook's shape: the path as `resource`, and the content in args_text (Write/Edit)
+        assert _tool_cats("Write", resource=path, args_text=f"{path}\n{body}") == set(), path
+        # the proxy's shape: no resource, the input first and then the result in one field (Read)
+        assert _tool_cats("Read", args_text=f"{path}\n{body}") == set(), path
+
+
+def test_the_same_text_in_real_code_still_flags():
+    """Recall: only an illustrative TARGET demotes. The same assignment and record in a real
+    source file, or from a tool that is not a file tool, are still findings."""
+    body = f"{_FAKE_CRED}\n{_FAKE_RECORD}"
+    for tool, kw in (("Write", {"resource": "/repo/backend/app/config.py"}),
+                     ("Read", {}),
+                     ("Bash", {})):
+        path = "/repo/backend/app/config.py"
+        cats = _tool_cats(tool, args_text=f"{path}\n{body}", **kw)
+        assert "secret_leak" in cats and "pii_exposure" in cats, (tool, cats)
+    # Bash on a test path is a command, not a file the agent opened: no demotion for a tool whose
+    # first line is not a path
+    assert "secret_leak" in _tool_cats("Bash", args_text=f"echo '{_FAKE_CRED}' > tests/x.txt")
+
+
+def test_distinctive_credentials_and_structured_pii_are_never_demoted_by_path():
+    """A real vendor key, a private key, a dashed SSN or a Luhn-valid card stays a finding in a
+    test directory: that is where real data gets pasted by mistake."""
+    path = "/repo/backend/tests/fixtures/data.json"
+    for text, cat in ((_VENDOR_KEY, "secret_leak"),
+                      ("-----BEGIN RSA " + "PRIVATE KEY-----\nMIIEowIBAAKCAQEA0Z3VS5JJcds3xfn\n-----END RSA "
+                       + "PRIVATE KEY-----", "secret_leak"),
+                      ("ssn 078-05-1120", "pii_exposure"),
+                      ("card 4012 8888 8888 1881", "pii_exposure")):
+        assert cat in _tool_cats("Write", resource=path, args_text=f"{path}\n{text}"), text[:30]
+
+
+def test_a_template_env_file_read_is_not_a_leak():
+    """The two signals each `.env.example` read produced: a credential-shaped placeholder."""
+    body = "SECRET_KEY=local-dev-only-change-me-please\nPOSTGRES_PASSWORD=palivane_dev_password"
+    assert _tool_cats("Read", args_text=f"/repo/.env.docker.example\n{body}") == set()
+    # a real env file's contents are the real thing
+    assert "secret_leak" in _tool_cats("Read", args_text=f"/repo/.env\n{body}")
+
+
+def test_bare_nine_digit_numbers_in_tool_calls_are_not_ssns():
+    """An id in a URL or a command line is not a social security number. Without an SSN cue the
+    9-digit rule is a guess, and in a tool call the guess is almost always an id."""
+    # (the URL uses a query string: a long unbroken run of letters, digits and slashes is what
+    # secret scanners read as an AWS secret key, and push protection rejected this file for it)
+    for cmd in ('curl -s -H "Authorization: Bearer $TOK" "$BASE/agents?id=234567890&run=345678901"',
+                "kill -9 234567890", "git log --since=345678901 -n 5"):
+        assert "pii_exposure" not in _tool_cats("Bash", args_text=cmd), cmd
+        assert "pii_exposure" not in _tool_cats("Bash", args_text=cmd, surface=Surface.MCP), cmd
+
+
+def test_nine_digits_with_an_ssn_cue_still_count_in_a_tool_call():
+    assert "pii_exposure" in _tool_cats("Bash", args_text="echo 'ssn 234567890' >> /tmp/x")
+    assert "pii_exposure" in _tool_cats("Bash", args_text="echo 078-05-1120 >> /tmp/x")
+
+
+def test_a_bare_nine_digit_number_in_a_prompt_is_still_the_warn_level_guess():
+    """Unchanged for prompts: there the number was typed by a person, at warn level."""
+    item = AnalysisInput(content="the number is 234567890", surface=Surface.AI_USAGE,
+                         channel="ai_tool")
+    ev = [s.evidence for s in det.analyze(item) if s.category == Category.PII_EXPOSURE]
+    assert "possible SSN (9-digit)" in ev

@@ -677,6 +677,18 @@ def _after_uuid_tail(text: str, start: int, tok: str) -> str:
     return tok
 
 
+# What a page sends alongside the user's text, none of it the user's data: a multipart boundary
+# (random by design) and the request tokens of a form-encoded body (Google's XSRF `at`, `f.sid`,
+# `_reqid`; a framework's csrf/authenticity token). The browser extension scans the whole body of
+# a send it cannot parse, and Gemini's is form-encoded, so every Gemini message carried a
+# "possible secret" and, to an unsanctioned destination, was blocked. The field must be a form
+# field (the start of the body, or after `&` / `?`): the same words inside a sentence are not.
+_FORM_BOUNDARY_RE = re.compile(r"WebKitFormBoundary[A-Za-z0-9]+")
+_PAGE_PROTOCOL_FIELD_TAIL_RE = re.compile(
+    r"(?:^|[&?])(?:at|bl|f\.sid|_reqid|rt|hl|xsrf[_-]?token|csrf[_-]?token|authenticity_token"
+    r"|__requestverificationtoken)=$", re.IGNORECASE)
+
+
 def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
     """Return truncated evidence for token-like substrings that look like secrets:
     24–80 chars of [A-Za-z0-9_], mixed character classes, high Shannon entropy, and not
@@ -685,6 +697,7 @@ def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
     seen: set[str] = set()
     masked = [(m.start(), m.end()) for m in _NONSECRET_BLOB_RE.finditer(text)]
     masked += _media_blob_spans(text)      # base64 attachments carried as a bare JSON field
+    masked += [(m.start(), m.end()) for m in _FORM_BOUNDARY_RE.finditer(text)]
     for m in _TOKEN_CANDIDATE_RE.finditer(text):
         tok = _after_uuid_tail(text, m.start(), m.group(0))
         if len(tok) < 24:
@@ -694,7 +707,9 @@ def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
         if _DOTTED_SUFFIX_RE.match(text, m.end()):
             continue   # a filename/hostname/dotted-id stem (foo.py, id.apps.googleusercontent.com)
         if any(s <= m.start() < e for s, e in masked):
-            continue   # inside a data URI / integrity hash / ssh public key
+            continue   # inside a data URI / integrity hash / ssh public key / multipart boundary
+        if _PAGE_PROTOCOL_FIELD_TAIL_RE.search(text[max(0, m.start() - 32):m.start()]):
+            continue   # the page's own request token (`at=`, `f.sid=`, csrf), not the user's data
         classes = (any(c.islower() for c in tok) + any(c.isupper() for c in tok)
                    + any(c.isdigit() for c in tok))
         if classes < 2 or _shannon_entropy(tok) < min_entropy:

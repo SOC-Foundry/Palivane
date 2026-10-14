@@ -775,9 +775,13 @@ traffic on the **`mcp`** surface, **agentlessly**, and blocks on a block verdict
 a JSON-RPC error so the agent surfaces it cleanly):
 
 - **sensitive resource access** — a tool/resource call touching `.env`, private keys,
-  cloud/kube/npm credentials, `/etc/shadow`, etc.
+  cloud/kube/npm credentials, `/etc/shadow`, etc. It judges the path the agent was pointed at,
+  not the text of the file it got back, and template files (`.env.example`, `.env.sample`)
+  are not secrets;
 - **dangerous command** — a run-command tool executing `curl … | sh`, `rm -rf /`, a
-  reverse shell, disabling security tooling, and similar;
+  reverse shell, disabling security tooling, and similar. `curl … | python3 -c "…"` that
+  parses the response is not flagged; `| python3`, `| python3 -`, or a program that reads its
+  own stdin into `exec`/`eval`/`$(cat)` still is;
 - **tool poisoning** — injected instructions hidden in an MCP server's advertised tool
   *descriptions* (caught in the `tools/list` response, and in the tool defs the agent
   sends to the model);
