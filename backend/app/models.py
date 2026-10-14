@@ -126,6 +126,10 @@ class Tenant(Base):
     # enforcement teaches instead of ticket-queueing. Confirmed secret/PII leaks
     # (force_block) are NEVER self-overridable.
     self_justify = Column(Boolean, nullable=True, default=None)
+    # ASK verdict (tri-state, None = inherit global PALIVANE_ASK_ON_WARN). On = a tool call
+    # that lands in the warn band is put to the developer for approval rather than running
+    # silently. Never softens a block, and only reaches an actor who is in enforce.
+    ask_on_warn = Column(Boolean, nullable=True, default=None)
     # SCIM 2.0 provisioning: SHA-256 of the org's bearer token (plaintext shown once at
     # mint; minting again rotates). Empty = SCIM is off for the org.
     scim_token_hash = Column(String(64), default="")
@@ -247,6 +251,7 @@ class Tenant(Base):
                 "client_enforce": self.client_enforce,
                 "redact_mode": self.redact_mode,
                 "self_justify": self.self_justify,
+                "ask_on_warn": self.ask_on_warn,
                 "scim_enabled": bool(self.scim_token_hash),
                 "gateway_tokenize": self.gateway_tokenize,
                 "gateway_block_severity": self.gateway_block_severity or "",

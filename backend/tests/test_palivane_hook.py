@@ -438,3 +438,82 @@ def test_a_tool_without_a_path_still_reports_no_resource():
     act = hook.build_activity("WebFetch", {"url": "https://example.com", "prompt": "hi"})
     assert act["resource"] == ""
     assert "example.com" in act["args_text"]
+
+
+# --- ASK: a tool call in the warn band is put to the developer ---------------------------
+# The server sets `ask` (only for an enforced actor in an org that opted in); the hook just
+# honors it, on PreToolUse only. UserPromptSubmit has no ask in Claude Code, only a block.
+
+_PRE = {"hook_event_name": "PreToolUse", "tool_name": "Bash",
+        "tool_input": {"command": "echo hi"}, "cwd": "/work"}
+_ASKED = {"action": "warn", "ask": True, "risk_score": 49, "severity": "suspicious",
+          "signals": [{"category": "secret_leak"}], "remediation": ["Move it to an env var"]}
+
+
+def _run_hook(monkeypatch, capsys, event, verdict, enforce=True):
+    """Drive main() with a stubbed backend: the event in, what the hook prints out."""
+    import io
+    calls = {"scan": 0, "sent": 0}
+
+    def scan(*a, **k):
+        calls["scan"] += 1
+        return verdict
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(event)))
+    monkeypatch.setattr(hook, "read_config", lambda: {
+        "url": "https://palivane.example", "token": "ak_test", "enforce": enforce,
+        "timeout": 1.0, "user": "dev@acme.com", "exclude": []})
+    monkeypatch.setattr(hook, "scan_mcp", scan)
+    monkeypatch.setattr(hook, "scan", scan)
+    monkeypatch.setattr(hook, "_send_detached", lambda *a, **k: calls.__setitem__("sent", calls["sent"] + 1))
+    rc = hook.main()
+    out = capsys.readouterr().out.strip()
+    return rc, (json.loads(out) if out else None), calls
+
+
+def test_should_ask_follows_the_servers_flag():
+    assert hook.should_ask({"action": "warn", "ask": True}) is True
+    assert hook.should_ask({"action": "warn", "ask": False}) is False
+    assert hook.should_ask({"action": "warn"}) is False                       # an older server says nothing
+    assert hook.should_ask({"action": "allow", "reason": "scan-failed"}) is False   # fail open stays open
+
+
+def test_ask_output_shape_and_reason():
+    out = hook.ask_output({"risk_score": 49, "severity": "suspicious",
+                           "signals": [{"category": "secret_leak"}, {"category": "secret_leak"}],
+                           "remediation": ["Move it to an env var"]})
+    ho = out["hookSpecificOutput"]
+    assert ho["hookEventName"] == "PreToolUse" and ho["permissionDecision"] == "ask"
+    reason = ho["permissionDecisionReason"]
+    assert reason.count("secret_leak") == 1 and "49/suspicious" in reason
+    assert "Move it to an env var" in reason          # the reader is the user, so the fix is here
+    assert "Blocked" not in reason                    # it is a question, not a verdict
+
+
+def test_an_enforced_tool_call_in_the_warn_band_asks(monkeypatch, capsys):
+    rc, out, _ = _run_hook(monkeypatch, capsys, _PRE, _ASKED)
+    assert rc == 0
+    assert out["hookSpecificOutput"]["permissionDecision"] == "ask"
+
+
+def test_a_block_wins_over_an_ask(monkeypatch, capsys):
+    _, out, _ = _run_hook(monkeypatch, capsys, _PRE, {**_ASKED, "action": "block"})
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_no_flag_means_the_call_runs_without_a_word(monkeypatch, capsys):
+    rc, out, _ = _run_hook(monkeypatch, capsys, _PRE, {**_ASKED, "ask": False})
+    assert rc == 0 and out is None
+
+
+def test_monitor_mode_reports_in_the_background_and_never_asks(monkeypatch, capsys):
+    rc, out, calls = _run_hook(monkeypatch, capsys, _PRE, _ASKED, enforce=False)
+    assert rc == 0 and out is None
+    assert calls == {"scan": 0, "sent": 1}            # no inline scan, so nothing to ask about
+
+
+def test_a_prompt_never_asks(monkeypatch, capsys):
+    # Claude Code's UserPromptSubmit can only block; an ask there is not a thing it understands.
+    event = {"hook_event_name": "UserPromptSubmit", "prompt": "please refactor this", "cwd": "/work"}
+    rc, out, _ = _run_hook(monkeypatch, capsys, event, _ASKED)
+    assert rc == 0 and out is None
