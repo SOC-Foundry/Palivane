@@ -403,7 +403,9 @@ Other admin pages in the console: **Connections** (active capture keys + enrollm
 with one-click revoke), **Coverage** (paste an IdP/CASB `actor,tool` list → the unmanaged
 shadow set), and **Settings** — per-tenant **policy** (monitor/enforce, block severity,
 sanctioned tools, per-tool suppression), supply-chain allow/deny lists, **alerts** (Slack
-webhook, real-time or hourly/daily digest), **SIEM** (JSONL export + real-time push —
+webhook, real-time or hourly/daily digest, plus an opt-in weekly email to admins: findings by
+severity, new AI tools, the most-flagged actors, how often the findings the team reviewed were right
+and which checks to tune, and the allowlist entries about to lapse), **SIEM** (JSONL export + real-time push —
 Splunk HEC / JSON / CEF — plus S3 data-lake delivery for Panther/Athena/Snowflake), and
 **compliance** (DPA, full data export, delete-my-org). The **Team** page manages users
 (email invites included), claimed signup domains, and pending join requests.

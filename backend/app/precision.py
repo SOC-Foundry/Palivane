@@ -277,6 +277,80 @@ def readout(db: Session, tenant_id: int, days: int, now: datetime | None = None)
     return compute(reviews, legacy, backlog, now, days, truncated)
 
 
+def _n(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def _clip(text: str, width: int = 80) -> str:
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= width else text[:width - 3] + "..."
+
+
+def format_quality(r: dict, expiring: list[dict], lapsed: list[dict], now: datetime) -> list[str]:
+    """The weekly report's "Detection quality" and "Allowlist" sections, as plain-text lines (a blank
+    line leads each section), or [] when there is nothing worth a reader's time: nothing reviewed,
+    nothing open, nothing about to lapse. `expiring` and `lapsed` are `{kind, pattern, expires_at,
+    hit_count}` rows. What is said is only what the readout supports, and only counts and check
+    names: no finding content, no reviewer, no reason an entry was written."""
+    rv, bulk, nc, bl = r["reviewed"], r["bulk"], r["not_counted"], r["backlog"]
+    out: list[str] = []
+
+    q: list[str] = []
+    if rv["judged"]:
+        parts = [f"{rv['actionable']} needed action ({round(rv['actionable_rate'] * 100)}%)"]
+        if rv["expected"]:
+            parts.append(f"{rv['expected']} expected")
+        if rv["false_positive"]:
+            parts.append(_n(rv["false_positive"], "false positive"))
+        if rv["unspecified"]:
+            parts.append(f"{rv['unspecified']} with no reason")
+        q.append(f"  Reviewed: {_n(rv['judged'], 'finding')}. " + ", ".join(parts) + ".")
+    else:
+        q.append("  Reviewed: nothing in this period.")
+    skipped = []
+    if bulk["findings"]:
+        skipped.append(f"{bulk['findings']} closed in bulk")
+    if nc["answered_by_owner"]:
+        skipped.append(f"{nc['answered_by_owner']} answered by their owner but not reviewed")
+    if skipped:
+        q.append("  Not counted: " + "; ".join(skipped) + ".")
+    tune = [c for c in r["checks"] if c["verdict"] not in ("ok", "low_sample")][:3]
+    if tune:
+        q.append("  Worth tuning:")
+        for c in tune:
+            q.append(f"    {c['title'] or c['check']}: {c['actionable']} of {c['judged']} reviewed "
+                     f"needed action. {c['hint']}")
+    if bl["open"]:
+        line = f"  Open now: {bl['open']}"
+        if bl["open_high"]:
+            line += f" ({bl['open_high']} high or critical)"
+        age = bl.get("oldest_open_days")
+        if age is not None:
+            line += ", the oldest raised today" if age < 1 else f", the oldest raised {_n(age, 'day')} ago"
+        q.append(line + ".")
+    if rv["judged"] or bl["open"] or skipped:
+        out += ["", f"Detection quality (last {r['days']} days)"] + q
+
+    def row(e: dict, verb: str) -> str:
+        used = "never used" if not e.get("hit_count") else f"used {_n(e['hit_count'], 'time')}"
+        return f"    {e['kind']:<8} {_clip(e['pattern'])}  {verb} {e['expires_at']:%Y-%m-%d}, {used}"
+
+    a: list[str] = []
+    if expiring:
+        a.append(f"  Expiring within 7 days ({len(expiring)}):")
+        a += [row(e, "expires") for e in expiring[:5]]
+        if len(expiring) > 5:
+            a.append(f"    ... and {len(expiring) - 5} more")
+    if lapsed:
+        a.append(f"  Lapsed in the last 7 days ({len(lapsed)}), so these are being flagged again:")
+        a += [row(e, "expired") for e in lapsed[:5]]
+        if len(lapsed) > 5:
+            a.append(f"    ... and {len(lapsed) - 5} more")
+    if a:
+        out += ["", "Allowlist"] + a + ["  Renew or revoke: console -> Policies -> Allowlist."]
+    return out
+
+
 def _pct(v) -> str:
     return "" if v is None else f"{v * 100:.1f}"
 

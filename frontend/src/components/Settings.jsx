@@ -1116,8 +1116,10 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
               </div>
               <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>In digest mode, alertable
                  findings are batched into a rollup on the chosen cadence, <strong>critical findings
-                 still fire in real time</strong>. Findings export is for SIEM ingest. Alerts fail open
-                , a down webhook never blocks capture.</p>
+                 still fire in real time</strong>. The weekly report covers findings by severity, new AI
+                 tools, the most-flagged actors, how often the findings your team reviewed were right
+                 (and which checks to tune), and allowlist entries about to lapse. Findings export is
+                 for SIEM ingest. Alerts fail open, a down webhook never blocks capture.</p>
             </div>
 
             {/* SIEM forwarding */}
