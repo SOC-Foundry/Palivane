@@ -859,6 +859,58 @@ class PolicyOverride(Base):
                 "disabled_checks": [c for c in (self.disabled_checks or "").split(",") if c]}
 
 
+class AllowEntry(Base):
+    """A command or a path an org has decided is fine, for a limited time.
+
+    The point of the expiry is that a suppression nobody revisits is how a detector rots: every
+    entry needs one, it is capped, and a lapsed entry simply stops applying (the row stays, for the
+    record, until the hourly prune). `kind='command'` is compared with one whole shell statement and
+    `kind='path'` with a glob over a flagged path (see detectors/allow.py for exactly what each can
+    and cannot say). `actor` and `tool` narrow it ('' = anyone / any tool). `hit_count` and
+    `last_hit_at` say whether it is still doing anything: they move only when the entry silenced
+    something a rule would have flagged."""
+
+    __tablename__ = "allow_entries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=True)
+    kind = Column(String(8), default="command")            # command | path
+    pattern = Column(String(512), default="")
+    actor = Column(String(320), default="")                # "" = anyone
+    tool = Column(String(64), default="")                  # "" = any tool
+    reason = Column(String(512), default="")
+    created_by = Column(String(320), default="")
+    created_at = Column(DateTime, default=_utcnow)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    revoked_at = Column(DateTime, nullable=True)
+    revoked_by = Column(String(320), default="")
+    finding_id = Column(Integer, nullable=True)            # the finding it was created from, if any
+    hit_count = Column(Integer, default=0)
+    last_hit_at = Column(DateTime, nullable=True)
+
+    def status(self, now: datetime | None = None) -> str:
+        now = now or _utcnow()
+        if self.revoked_at is not None:
+            return "revoked"
+        return "expired" if self.expires_at <= now else "active"
+
+    def to_dict(self, now: datetime | None = None) -> dict:
+        now = now or _utcnow()
+        left = (self.expires_at - now).total_seconds() if self.expires_at else 0
+        return {"id": self.id, "kind": self.kind, "pattern": self.pattern,
+                "actor": self.actor or "", "tool": self.tool or "", "reason": self.reason or "",
+                "created_by": self.created_by or "",
+                "created_at": self.created_at.isoformat() if self.created_at else None,
+                "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+                "expires_in_days": round(left / 86400, 1),
+                "status": self.status(now),
+                "revoked_at": self.revoked_at.isoformat() if self.revoked_at else None,
+                "revoked_by": self.revoked_by or "",
+                "finding_id": self.finding_id,
+                "hit_count": self.hit_count or 0,
+                "last_hit_at": self.last_hit_at.isoformat() if self.last_hit_at else None}
+
+
 class SaasConnector(Base):
     """A stored credential for pulling OAuth-grant inventories live from a SaaS platform's
     admin API (Google Workspace, M365, Slack, …) — the recurring version of the one-shot

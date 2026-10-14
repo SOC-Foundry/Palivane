@@ -134,6 +134,11 @@ export const api = {
     req("/policies/overrides", { method: "POST", body: JSON.stringify(payload) }),
   policyOverrideDelete: (id) =>
     req(`/policies/overrides/${id}`, { method: "DELETE" }),
+  allowlist: (status = "all") => req(`/allowlist?${new URLSearchParams({ status })}`),
+  allowlistAdd: (payload) => req("/allowlist", { method: "POST", body: JSON.stringify(payload) }),
+  allowlistRenew: (id, days) =>
+    req(`/allowlist/${id}/renew`, { method: "POST", body: JSON.stringify({ expires_in_days: days }) }),
+  allowlistRevoke: (id) => req(`/allowlist/${id}/revoke`, { method: "POST" }),
   fleet: () => req("/fleet"),
   simulate: (payload) =>
     req("/simulate", { method: "POST", body: JSON.stringify(payload) }),

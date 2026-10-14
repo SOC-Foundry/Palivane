@@ -28,6 +28,7 @@ from .webhooks_graph import router as graph_webhook_router
 from .oauth_routes import router as oauth_router
 from .google_login import router as google_login_router
 from .domains import router as domains_router
+from .allowlist import router as allowlist_router
 from .config import settings, _env
 from .gateway import gemini_router, router as gateway_router
 from .database import Base, engine as db_engine, get_db
@@ -180,6 +181,10 @@ async def lifespan(_app: FastAPI):
                     if ticks % 12 == 0:
                         from .service import scrub_expired_content
                         await asyncio.to_thread(scrub_expired_content, db)
+                        # Allowlist entries that lapsed or were revoked long ago (the recent ones
+                        # stay listed as the record of what was allowed).
+                        from .allowlist import prune as _prune_allowlist
+                        await asyncio.to_thread(_prune_allowlist, db)
                     # Spent OAuth codes and dead tokens. Registration is open and every
                     # refresh writes a new pair, so these tables only grow otherwise. ~hourly.
                     if ticks % 12 == 0:
@@ -371,6 +376,7 @@ app.include_router(graph_webhook_router)
 app.include_router(oauth_router)
 app.include_router(google_login_router)
 app.include_router(domains_router)
+app.include_router(allowlist_router)
 app.include_router(distribution_router)
 app.include_router(gateway_router)
 app.include_router(gemini_router)
@@ -1807,6 +1813,10 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
             **({"ema_token": {k: v for k, v in ema.items() if v}} if ema else {}),
         },
     )
+    # The org's allowlist: commands and paths it has decided are fine, for the detectors to
+    # consult (detectors/allow.py). None when it has none that apply to this actor and tool.
+    from . import allowlist
+    allow_holder = allowlist.attach(db, tenant_id, actor, body.tool, item.metadata)
     # Least-privilege: fold agent role authz (action + shell command + data-scope) into the
     # MCP scan. The finding records it (monitor + enforce); an enforce-deny then hard-blocks
     # below — independent of severity and of the disabled-checks/override filter, so authz is
@@ -1822,6 +1832,7 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
                           signal_filter=authz_filter, agent=agent, extra_signals=attest_extra,
                           persist_benign=settings.mcp_persist_benign or is_ema_auth_event)
+    allowlist.record_hits(db, allow_holder)
     action = _action_for(result["severity"], block_severity)
     if authz["enforce"] and authz["denied"]:
         action = "block"

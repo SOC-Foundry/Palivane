@@ -3,6 +3,7 @@
 // disabled checks on the next scan. Changes apply immediately.
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
+import Allowlist from "./Allowlist.jsx";
 
 // Preset -> the set of checks it DISABLES. "Strict" = everything on. "Balanced" mirrors the
 // common default. "Monitor" keeps every check recording (blocking is governed by mode, not
@@ -266,6 +267,9 @@ export default function Policies({ tenant, onTenant }) {
           </button>
         </div>
       </div>
+
+      {/* Commands and paths the org has decided are fine, each with an expiry. */}
+      <Allowlist />
 
       {/* Exception requests, users asking to allow a blocked destination/category. */}
       <div className="panel settings-card">

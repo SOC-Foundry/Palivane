@@ -165,6 +165,10 @@ class Settings:
     # (evidence_context); left alone it follows this value, and is on for any tenant that stores
     # prompt content anyway. Expires with content_ttl_days.
     evidence_context: bool = _env("PALIVANE_EVIDENCE_CONTEXT", "").lower() in ("1", "true", "yes")
+    # The longest an allowlist entry (a command or path an org has decided is fine) may last. Every
+    # entry expires; this caps how far out an admin can push it, so "allowed" cannot quietly become
+    # "allowed forever".
+    allowlist_max_days: int = int(_env("PALIVANE_ALLOWLIST_MAX_DAYS", "365"))
     # For tenants that DO store content, scrub it (keep metadata) after this many days.
     # Bounds the exposure window instead of keeping prose forever. 0 = never scrub.
     # UNLABELED ml-corpus samples (consented capture, see ml/capture.py) are deleted on

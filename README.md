@@ -548,6 +548,8 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | GET    | `/api/activity/users`    | Per-registered-user scan log — findings count, severity mix, top categories, last-seen (admin). |
 | GET    | `/api/policies`          | Detection-policy catalog: every check grouped, enabled state, presets, and per-user/group overrides (admin). |
 | POST/DELETE | `/api/policies/overrides[/{id}]` | Per-user (email) / per-group (glob) policy overrides that replace the tenant default (admin). |
+| GET/POST | `/api/allowlist` | Commands and paths the org has decided are fine, each with a reason and an expiry (capped, `PALIVANE_ALLOWLIST_MAX_DAYS`, default 365): list with status and hit counts, add (admin). |
+| POST   | `/api/allowlist/{id}/renew`, `/api/allowlist/{id}/revoke` | New expiry from now / stop applying now; both audited (admin). |
 | POST   | `/v1/chat/completions`   | OpenAI-compatible LLM gateway — scans/records every prompt (`llm_io`), blocks in enforce mode. |
 | POST   | `/v1/responses`          | OpenAI **Responses API** (Codex CLI / newer SDKs) — same capture + enforce, incl. streaming + tool-call inspection. |
 | POST   | `/v1/messages`           | Anthropic-compatible gateway (Claude Code / Anthropic SDK) — same capture + enforce. |
@@ -787,6 +789,17 @@ a JSON-RPC error so the agent surfaces it cleanly):
   sends to the model);
 - **untrusted server** — a call to an MCP server not on `MCP_ALLOWED_SERVERS`;
 - plus **secrets/PII** in tool-call arguments (via the shadow-AI detector).
+
+**Allowing something expected.** Policies → Allowlist (or **Allow this…** on a finding) lets an
+admin allow one command or one path, with a reason and an expiry (up to a year; there is no
+"never"). A *command* entry is one shell statement as written: that statement is allowed, a second
+command chained after it (`;`, `&&`, `||`, a new line) is still judged, and a variation of it (a
+lookalike character in the host, a URL-encoded pipe, upper case) is not the same command. A *path*
+entry is a glob over the path the agent named, with `.` and `..` resolved; it does not follow
+symlinks, so do not allow a directory that links somewhere sensitive. Secrets and PII in the same
+call are still flagged. An entry that could never match, or is broader than anyone could have
+reviewed (`.env` everywhere, `/home/**`), is refused. Every change is audited, each entry shows how
+often it was actually used, and a lapsed entry stops applying on its own.
 
 **Agentic behavior over the LLM traffic (agentless, covers local stdio MCP).** An AI
 coding agent's tool calls, their arguments, and their results all round-trip the model — so
