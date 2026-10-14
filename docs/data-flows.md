@@ -53,11 +53,13 @@ that is already redacted upstream: a label (`"AWS access key id"`), a ≤10-char
 | --- | --- | --- |
 | store the natural-language content | **off** | By default the backend stores **metadata only**, the verdict, the signals, and the redacted evidence. The prompt/code prose itself is **not written to the database**. |
 | `PALIVANE_STORE_CONTENT` (or per-tenant opt-in) | off | Turn it on and the content *is* stored, but first **redacted** (secrets → `«redacted:label»`, SSNs and Luhn-valid cards masked) and then **encrypted at rest** under the tenant's own key (Fernet, `enc:v2:`). |
-| `PALIVANE_REDACT_FINDINGS` | **on** | Redaction applied before any content or evidence is persisted. |
+| Evidence context (`evidence_context`, `PALIVANE_EVIDENCE_CONTEXT`) | **off** | Opt-in per org. Keeps about 80 characters either side of each match, or the command or path of a tool call, **masked** (secrets, emails, phone numbers, birth dates, card and ID numbers become `«redacted:label»`; credential variable names stay), so an analyst can tell a real record from an example. Names and free text are **not** masked. It lives in its own column, is shown only in a finding's detail (never in a list row, alert, SIEM or S3-lake payload, or the AI analyst's prompt), is sealed like stored content when encryption is on, and is deleted on the content TTL (`PALIVANE_CONTENT_TTL_DAYS`, 30 by default). Left alone it follows the global default and is on for an org that stores content anyway. |
+| `PALIVANE_REDACT_FINDINGS` | **on** | Redaction applied before any content or evidence is persisted. Includes the stored `detail`/`evidence` of each signal, which a detector may have filled with a quoted command. |
 | `PALIVANE_ENCRYPT_FINDINGS` | **on in the managed service** | Stored content and evidence are ciphertext at rest; the raw DB column holds no plaintext secret. |
 
 So the honest matrix of what the database holds: **by default, no prose at all**, just the
-risk metadata. With content storage opted in: redacted-then-encrypted prose. The managed
+risk metadata. With evidence context opted in: a few masked words around each match, expiring
+with the content TTL. With content storage opted in: redacted-then-encrypted prose. The managed
 service runs redact-on + encrypt-on.
 
 ### Hop 3, what the backend forwards to third parties

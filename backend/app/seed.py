@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import os
 
+from . import excerpts
 from .database import Base, SessionLocal, engine as db_engine
 from .detectors import AnalysisInput, Surface
 from .engine import engine
 from .models import Finding, Tenant, User
+from .redaction import redact_text
 from .security import hash_password
 
 DEMO_SLUG = "demo"
@@ -368,6 +370,11 @@ def run() -> None:
             db.add(tenant)
             db.commit()
             db.refresh(tenant)
+        # The demo is a tour of what an analyst sees, and it holds invented data only, so it
+        # shows the evidence view that a real org has to switch on.
+        if tenant.evidence_context is None:
+            tenant.evidence_context = True
+            db.commit()
         admin = (
             db.query(User)
             .filter(User.tenant_id == tenant.id, User.email == DEMO_ADMIN_EMAIL)
@@ -391,10 +398,14 @@ def run() -> None:
             r = v.to_dict()
             db.add(Finding(
                 tenant_id=tenant.id, channel=s["channel"], surface=surface.value,
-                sender=s["sender"], subject=s["subject"], content=s["content"],
+                sender=s["sender"], subject=s["subject"],
+                # Stored the way a real org that keeps content stores it: redacted first. The demo
+                # used to show a raw SSN in the Content block directly above a masked excerpt.
+                content=redact_text(s["content"]),
                 risk_score=v.risk_score, severity=v.severity,
                 recommended_action=v.recommended_action, ai_generated=v.ai_generated,
                 attack_intent=v.attack_intent, signals=r["signals"],
+                evidence_context=excerpts.dumps(excerpts.build(item, r["signals"])),
                 judge_used=engine.judge_enabled,
             ))
         db.commit()

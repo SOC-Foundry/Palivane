@@ -1293,6 +1293,8 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.judge_enabled = _JUDGE[body.judge]
     if body.store_content is not None:
         tenant.store_content = _JUDGE[body.store_content]   # reuse on/off/inherit -> True/False/None
+    if body.evidence_context is not None:
+        tenant.evidence_context = _JUDGE[body.evidence_context]
     if body.ml_capture is not None:
         # Explicit consent flag for ML-corpus capture (no inherit; audit-logged below).
         tenant.ml_capture = body.ml_capture

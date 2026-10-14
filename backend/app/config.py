@@ -158,6 +158,13 @@ class Settings:
     # which can't be redacted for concepts/IP and would make the store a honeypot. A tenant
     # can opt in (store_content column) for richer triage of its own data.
     store_content: bool = _env("PALIVANE_STORE_CONTENT", "").lower() in ("1", "true", "yes")
+    # Keep a short MASKED excerpt around each match on a finding (the console's evidence view:
+    # the words around an SSN, the command that tripped a rule, with secrets and identifiers
+    # replaced by markers). Default OFF, because an excerpt is still a few words of the prompt
+    # and "metadata-only" is a documented promise. A tenant can set it either way
+    # (evidence_context); left alone it follows this value, and is on for any tenant that stores
+    # prompt content anyway. Expires with content_ttl_days.
+    evidence_context: bool = _env("PALIVANE_EVIDENCE_CONTEXT", "").lower() in ("1", "true", "yes")
     # For tenants that DO store content, scrub it (keep metadata) after this many days.
     # Bounds the exposure window instead of keeping prose forever. 0 = never scrub.
     # UNLABELED ml-corpus samples (consented capture, see ml/capture.py) are deleted on
