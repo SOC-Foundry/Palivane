@@ -562,7 +562,9 @@ class LoginAttempt(Base):
 class Finding(Base):
     __tablename__ = "findings"
     # The console queue's hot path: newest activity first within a tenant.
-    __table_args__ = (Index("ix_findings_tenant_last_seen", "tenant_id", "last_seen"),)
+    __table_args__ = (Index("ix_findings_tenant_last_seen", "tenant_id", "last_seen"),
+                      # the precision readout reads "reviewed in the last N days" per tenant
+                      Index("ix_findings_tenant_reviewed", "tenant_id", "reviewed_at"))
 
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=True)
@@ -615,6 +617,15 @@ class Finding(Base):
     # analyst's prompt by construction (all of which read `signals`), and so the content TTL can
     # clear it with one UPDATE. Written only when the tenant opted in (service._stored_context).
     evidence_context = Column(Text, default="")
+    # Who reviewed this finding, how, and why (app/review.py): what the precision readout is built
+    # on, because `status` alone cannot say whether a dismissal was a false positive, expected
+    # behavior or a cleared queue. Written only by a person acting on the finding; a reopen clears
+    # them. NULL on a finding reviewed before they existed, which the readout reports as not
+    # counted rather than guessing.
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(String(320), default="")
+    review_via = Column(String(16), default="")          # manual | analyst | bulk
+    review_reason = Column(String(24), default="")       # dismissed only
 
     def to_summary(self) -> dict:
         return {
@@ -659,6 +670,11 @@ class Finding(Base):
         # stored. Detail only; a summary (list row, owner view, analyst, sinks) never has it.
         entries = excerpts.loads(unseal_with(self.evidence_context, dek)) if self.evidence_context else []
         d["context_retained"] = bool(entries)
+        # Who decided and why: detail only, never the summary the analyst's prompt is built from
+        # (it would hand a reviewer's address to the LLM provider).
+        d["review"] = ({"at": self.reviewed_at.isoformat(), "by": self.reviewed_by or "",
+                        "via": self.review_via or "", "reason": self.review_reason or ""}
+                       if self.reviewed_at else None)
         d["signals"] = excerpts.merge(self.signals or [], entries)
         d["investigation"] = self.investigation or None
         return d

@@ -134,6 +134,14 @@ export const api = {
     req("/policies/overrides", { method: "POST", body: JSON.stringify(payload) }),
   policyOverrideDelete: (id) =>
     req(`/policies/overrides/${id}`, { method: "DELETE" }),
+  precision: (days = 30) => req(`/precision?${new URLSearchParams({ days })}`),
+  precisionCsv: async (days = 30) => {
+    const token = getToken();
+    const res = await fetch(BASE + `/precision?${new URLSearchParams({ days, format: "csv" })}`,
+      { headers: token ? { authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) throw new Error(`${res.status}`);
+    return res.text();
+  },
   allowlist: (status = "all") => req(`/allowlist?${new URLSearchParams({ status })}`),
   allowlistAdd: (payload) => req("/allowlist", { method: "POST", body: JSON.stringify(payload) }),
   allowlistRenew: (id, days) =>
@@ -164,10 +172,10 @@ export const api = {
     return req("/findings" + (q ? `?${q}` : ""));
   },
   finding: (id) => req(`/findings/${id}`),
-  setStatus: (id, status, via = "") =>
-    req(`/findings/${id}`, { method: "PATCH", body: JSON.stringify({ status, via }) }),
-  bulkStatus: (ids, status) =>
-    req("/findings/bulk-status", { method: "POST", body: JSON.stringify({ ids, status }) }),
+  setStatus: (id, status, via = "", reason = "") =>
+    req(`/findings/${id}`, { method: "PATCH", body: JSON.stringify({ status, via, reason }) }),
+  bulkStatus: (ids, status, reason = "") =>
+    req("/findings/bulk-status", { method: "POST", body: JSON.stringify({ ids, status, reason }) }),
 
   // --- admin settings ---
   updateTenant: (payload) =>
