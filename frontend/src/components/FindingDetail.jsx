@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../api.js";
+import { cleanError, expiryChoices } from "./Allowlist.jsx";
 
 const CAT_LABEL = {
   ai_generated: "AI-generated",
@@ -23,6 +24,115 @@ const CAT_LABEL = {
   agent_authz: "Agent least-privilege",
   ci_workflow_risk: "CI workflow risk",
 };
+
+// What a finding can offer to put on the allowlist. A command rule quotes the statement it matched
+// in `detail`; a path rule only recorded the FILE NAME fragment unless evidence context kept the
+// whole path (a file tool's `where: "path"` excerpt), so a partial suggestion says so.
+function allowSuggestion(s) {
+  if (s.category === "dangerous_command") {
+    const m = /pattern: ([\s\S]+)$/.exec(s.detail || "");
+    return { kind: "command", pattern: m ? m[1].trim() : "", partial: false };
+  }
+  if (s.category === "sensitive_resource_access") {
+    if (s.context && s.context.where === "path") return { kind: "path", pattern: s.context.text, partial: false };
+    const m = /path=(\S+)/.exec(s.evidence || "");
+    return { kind: "path", pattern: m ? m[1] : "", partial: true };
+  }
+  return null;
+}
+
+// Inline "allow this" form under a signal. Prefilled, editable, and explicit about what it does:
+// future calls like this stop flagging; THIS finding stays open until someone dismisses it.
+function AllowThis({ finding, signal }) {
+  const sug = allowSuggestion(signal);
+  const [open, setOpen] = useState(false);
+  const [pattern, setPattern] = useState(sug?.pattern || "");
+  const [reason, setReason] = useState("");
+  const [days, setDays] = useState(30);
+  const [scope, setScope] = useState("person");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [done, setDone] = useState(null);
+  if (!sug) return null;
+  const who = finding.sender || "";
+
+  async function save() {
+    setBusy(true); setErr("");
+    try {
+      const e = await api.allowlistAdd({
+        kind: sug.kind, pattern, reason, expires_in_days: Number(days), finding_id: finding.id,
+        actor: scope === "everyone" ? "" : who,
+        tool: scope === "person_tool" ? (finding.channel || "") : "",
+      });
+      setDone(e);
+    } catch (e) { setErr(cleanError(e)); }
+    finally { setBusy(false); }
+  }
+
+  if (done) {
+    return (
+      <p className="tune-done">
+        ✓ Allowed until {new Date(done.expires_at + "Z").toLocaleDateString()}. Calls like this stop
+        flagging; this finding stays open until you dismiss it. Manage it under Policies → Allowlist.
+      </p>
+    );
+  }
+  if (!open) {
+    return (
+      <button className="link-btn signal-allow" onClick={() => setOpen(true)}>
+        Allow this {sug.kind}…
+      </button>
+    );
+  }
+  return (
+    <div className="allow-inline">
+      <label className="allow-field">
+        {sug.kind === "command" ? "The command, exactly as written" : "The path or pattern"}
+        <input value={pattern} onChange={(e) => setPattern(e.target.value)} />
+      </label>
+      {sug.partial && (
+        <p className="field-note" style={{ margin: "0 0 6px" }}>
+          The finding only recorded the file name. Enter the full path, or a pattern such as
+          {" "}<code>/srv/app/fixtures/**</code>. (Turning on Evidence context in Settings keeps the
+          whole path for new findings.)
+        </p>
+      )}
+      {sug.kind === "command" && /«redacted/.test(pattern) && (
+        <p className="field-note" style={{ margin: "0 0 6px" }}>
+          Part of this was masked in the finding. Replace it with <code>*</code>.
+        </p>
+      )}
+      <label className="allow-field">
+        Why (required)
+        <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. our own installer" />
+      </label>
+      <div className="allow-two">
+        <label className="allow-field">
+          Applies to
+          <select value={scope} onChange={(e) => setScope(e.target.value)}>
+            <option value="person">Only {who || "this person"}</option>
+            {finding.channel && <option value="person_tool">Only {who || "this person"} on {finding.channel}</option>}
+            <option value="everyone">Everyone</option>
+          </select>
+        </label>
+        <label className="allow-field">
+          Expires
+          <select value={days} onChange={(e) => setDays(e.target.value)}>
+            {expiryChoices(365).map(([d, label]) => <option key={d} value={d}>in {label}</option>)}
+          </select>
+        </label>
+      </div>
+      {err && <div className="error" style={{ margin: "6px 0" }}>{err}</div>}
+      <div className="tune-actions">
+        <button className="ghost-btn slim" onClick={save}
+                disabled={busy || !pattern.trim() || reason.trim().length < 3}>
+          {busy ? "…" : "Allow for a limited time"}
+        </button>
+        <button className="link-btn" onClick={() => setOpen(false)}>Cancel</button>
+      </div>
+    </div>
+  );
+}
 
 // What an evidence excerpt is an excerpt OF. The server says (`context.where`).
 const CONTEXT_LABEL = {
@@ -335,6 +445,9 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
                     {s.context.cut?.[1] && <span className="cut">…</span>}
                   </pre>
                 </div>
+              )}
+              {isAdmin && finding.sender && (
+                <AllowThis key={`${finding.id}:${i}`} finding={finding} signal={s} />
               )}
               <div className="signal-src">via {s.detector}</div>
             </li>

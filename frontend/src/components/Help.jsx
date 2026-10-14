@@ -118,6 +118,15 @@ export default function Help({ isAdmin = false, onNavigate }) {
           are replaced by <code>«redacted»</code> markers; names and free text are not. It is off by default,
           applies to new findings, and is deleted with stored prompt content.
         </p>
+
+        <h3 className="help-h3">Allowing something expected</h3>
+        <p className="muted" style={{ margin: 0 }}>
+          A command or file the team uses on purpose (an internal installer, a fixtures folder full of fake
+          keys) can be allowed by an admin: <strong>Allow this…</strong> on the finding, or Policies, Allowlist.
+          Each entry names one statement or one path pattern, says why, and expires, so nothing stays allowed
+          by accident. A second command chained after an allowed one is still flagged, and so is anything
+          else in the same call.
+        </p>
       </Card>
 
       <Card title="Monitor vs. enforce"
