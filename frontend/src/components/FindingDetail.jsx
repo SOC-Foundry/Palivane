@@ -30,6 +30,15 @@ const CONTEXT_LABEL = {
   content: "In the content", command: "Command", path: "Path", call: "Tool call",
 };
 
+// Categories an excerpt can exist for (mirrors app/excerpts.py). A finding made only of other
+// signals (an unsanctioned destination, a device-posture gap) has no "words around the match", so
+// it gets no hint about turning excerpts on.
+const EXCERPTABLE = new Set([
+  "secret_leak", "credential_at_rest", "pii_exposure", "phi_exposure", "dangerous_command",
+  "sensitive_resource_access", "prompt_injection", "jailbreak", "data_exfiltration",
+  "confidential_data", "source_code_leak",
+]);
+
 // The excerpt is masked on the server: every secret and identifier is already a «redacted:…»
 // marker by the time it reaches the browser. Marking the markers makes them read as "something
 // was here" instead of as stray text.
@@ -297,7 +306,7 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
         <h4>Signals ({(finding.signals || []).length})</h4>
         {/* Saying why a finding has no excerpt turns a hole into a setting. It is a policy:
             the excerpt is a few words of the prompt, so it is kept only when the org asks. */}
-        {!finding.context_retained && (finding.signals || []).length > 0 && (
+        {!finding.context_retained && (finding.signals || []).some((s) => EXCERPTABLE.has(s.category)) && (
           <p className="context-hint">
             Palivane recorded what matched, not the words around it. An admin can turn on
             {" "}<strong>Settings → Organization → Evidence context</strong> to keep a short,
