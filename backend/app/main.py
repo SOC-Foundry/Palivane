@@ -29,6 +29,8 @@ from .oauth_routes import router as oauth_router
 from .google_login import router as google_login_router
 from .domains import router as domains_router
 from .allowlist import router as allowlist_router
+from .precision import router as precision_router
+from . import review
 from .config import settings, _env
 from .gateway import gemini_router, router as gateway_router
 from .database import Base, engine as db_engine, get_db
@@ -377,6 +379,7 @@ app.include_router(oauth_router)
 app.include_router(google_login_router)
 app.include_router(domains_router)
 app.include_router(allowlist_router)
+app.include_router(precision_router)
 app.include_router(distribution_router)
 app.include_router(gateway_router)
 app.include_router(gemini_router)
@@ -2773,11 +2776,16 @@ def update_status(finding_id: int, body: StatusUpdate,
     if body.status == "dismissed" and current.role != "admin":
         raise HTTPException(status_code=403, detail="only an admin can dismiss a finding")
     row.status = body.status
+    # Record the review itself (who, how, why), not only the new status: see app/review.py.
+    review.record_review(row, body.status, current.email,
+                         "analyst" if body.via == "analyst" else "manual", body.reason)
     db.commit()
     from . import audit_log
     detail = {"status": row.status}
     if body.via:
         detail["via"] = body.via[:40]     # e.g. "analyst" — a human approving the AI's rec
+    if row.review_reason:
+        detail["reason"] = row.review_reason
     audit_log.record(db, current.tenant_id, current.email, "finding.status",
                      target=str(finding_id), detail=detail)
     return {"id": finding_id, "status": row.status}
@@ -2790,13 +2798,18 @@ def bulk_update_status(body: BulkStatusUpdate, current: User = Depends(get_curre
     in the caller's tenant are touched; unknown/foreign ids are silently skipped."""
     if body.status == "dismissed" and current.role != "admin":
         raise HTTPException(status_code=403, detail="only an admin can dismiss findings")
+    # One finding is one person's judgement of it; several at once are not a judgement of each,
+    # so the precision readout counts them apart (app/review.py).
+    via = "manual" if len(set(body.ids)) == 1 else "bulk"
     n = (db.query(Finding)
          .filter(Finding.tenant_id == current.tenant_id, Finding.id.in_(body.ids))
-         .update({Finding.status: body.status}, synchronize_session=False))
+         .update(review.review_update(Finding, body.status, current.email, via, body.reason),
+                 synchronize_session=False))
     db.commit()
     from . import audit_log
     audit_log.record(db, current.tenant_id, current.email, "finding.bulk_status",
-                     detail={"status": body.status, "count": n, "ids": body.ids[:50]})
+                     detail={"status": body.status, "count": n, "ids": body.ids[:50],
+                             **({"reason": body.reason} if body.status == "dismissed" and body.reason else {})})
     return {"updated": n, "status": body.status}
 
 
@@ -2911,7 +2924,8 @@ def dismiss_benign_findings(current: User = Depends(require_admin),
     n = (db.query(Finding)
          .filter(Finding.tenant_id == current.tenant_id, Finding.status == "open",
                  Finding.severity.in_(["benign", "low"]))
-         .update({Finding.status: "dismissed"}, synchronize_session=False))
+         .update(review.review_update(Finding, "dismissed", current.email, "bulk"),
+                 synchronize_session=False))
     db.commit()
     from . import audit_log
     audit_log.record(db, current.tenant_id, current.email, "findings.dismiss_benign",
