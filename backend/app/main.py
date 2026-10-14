@@ -1605,6 +1605,15 @@ def _tenant_self_justify(tenant_id: int | None, db: Session) -> bool:
     return settings.self_justify
 
 
+def _tenant_ask_on_warn(tenant_id: int | None, db: Session) -> bool:
+    """Whether the ASK verdict is on for this tenant (tri-state override, else global)."""
+    if tenant_id is not None:
+        t = db.get(Tenant, tenant_id)
+        if t is not None and t.ask_on_warn is not None:
+            return bool(t.ask_on_warn)
+    return settings.ask_on_warn
+
+
 def _justifiable(signals) -> bool:
     """Whether a finding is one a user may talk their way past. Everything except a
     confirmed CREDENTIAL: PII/PHI has legitimate business-need sends (a support rep
@@ -1825,6 +1834,9 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
     from .discovery import record_capture_client
     record_capture_client(db, tenant_id, actor, classify_client(client_ua),
                           result["signals"], result["risk_score"])
+    # Org enforce stance for local capture planes — same field as ai-usage verdicts,
+    # staged per actor/tool via policy overrides.
+    enforce = _client_enforce_for(tenant_id, actor, body.tool or "mcp", db)
     return {
         "action": action,
         "risk_score": result["risk_score"],
@@ -1832,9 +1844,11 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
         "signals": result["signals"],
         "finding_id": result["finding_id"],
         "remediation": remediation_for(result["signals"]),
-        # Org enforce stance for local capture planes — same field as ai-usage verdicts,
-        # staged per actor/tool via policy overrides.
-        "enforce": _client_enforce_for(tenant_id, actor, body.tool or "mcp", db),
+        "enforce": enforce,
+        # ASK: the warn band, put to the developer instead of running silently. Only for an
+        # actor who is enforced (monitor never interrupts), only when the org opted in, and
+        # never in place of a block — `action` is already "block" for those.
+        "ask": bool(enforce and action == "warn" and _tenant_ask_on_warn(tenant_id, db)),
     }
 
 

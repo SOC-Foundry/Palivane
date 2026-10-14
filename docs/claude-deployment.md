@@ -199,6 +199,11 @@ fuzzy", same rule as the proxy); `PALIVANE_ENFORCE=true` also denies ordinary hi
 verdicts, with the reason shown to the model (tool calls) or the user (prompts). The org
 sets that stance centrally in the console (Settings → *Device enforcement*):
 `palivane-connect` provisions it at connect time and every verdict carries it live.
+Between allow and block there is an opt-in **ask** (Settings → *Policy* → *Ask before risky
+tool calls*): a tool call in the warn band stops at Claude Code's own permission prompt,
+with Palivane's reason, instead of running silently. It needs *MCP block severity* above
+the calls you want asked about (set it to `critical` to ask on `high`), prompts can't ask,
+and an unattended run (`claude -p`) has no one to answer, so Claude Code denies the call.
 Installed by `palivane-connect`, or fleet-wide in the same `managed-settings.json` as
 Route A:
 
