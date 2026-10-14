@@ -6,6 +6,8 @@ email pulled from a mailbox is stored identically to one submitted via the API.
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -19,13 +21,16 @@ from .crypto import seal
 # as the rest of the scan path — a late import would bind a different instance if the
 # config module was ever reloaded.
 from .ml import capture as ml_capture
+from . import excerpts
 from .redaction import redact_text
 from .session_correlation import correlate, is_chain_relevant
 
+_log = logging.getLogger(__name__)
+
 
 def scrub_expired_content(db) -> int:
-    """Blank the stored prompt content on findings older than the content TTL, keeping the
-    finding and its metadata. Bounds how long prose lingers for opt-in-content tenants.
+    """Blank the stored prompt content, and the evidence-view excerpts, on findings older than
+    the content TTL, keeping the finding and its metadata. Bounds how long prose lingers.
     Global (all tenants); best-effort. Returns rows scrubbed. 0 TTL = disabled."""
     days = settings.content_ttl_days
     if not days:
@@ -35,6 +40,12 @@ def scrub_expired_content(db) -> int:
     n = (db.query(Finding)
          .filter(Finding.created_at < cutoff, Finding.content != "")
          .update({Finding.content: ""}, synchronize_session=False))
+    # The evidence view's excerpts are a few words of the same prompt, so they age out on the
+    # same clock (a finding that never stored content can still hold an excerpt).
+    n += (db.query(Finding)
+          .filter(Finding.created_at < cutoff, Finding.evidence_context.isnot(None),
+                  Finding.evidence_context != "")
+          .update({Finding.evidence_context: None}, synchronize_session=False))
     # UNLABELED corpus samples age out on the same clock — raw prose nobody triaged is
     # exposure, not data. Labeled rows ARE the corpus and are kept (deleting a tenant's
     # samples wholesale still works via normal tenant data deletion).
@@ -72,6 +83,69 @@ def _stored_content(content: str, tenant, db) -> str:
     from . import crypto
     dek = _tenant_dek(tenant, db)
     return crypto.seal_with(dek, out) if dek else seal(out)
+
+
+def evidence_context_enabled(tenant) -> bool:
+    """Does this tenant keep a masked excerpt around each match? Its own setting wins; left
+    alone it follows the global default, and a tenant that stores prompt content anyway keeps
+    excerpts too, since an excerpt is then no new kind of data."""
+    if tenant is not None and tenant.evidence_context is not None:
+        return bool(tenant.evidence_context)
+    if settings.evidence_context:
+        return True
+    keep = tenant.store_content if (tenant is not None and tenant.store_content is not None) \
+        else settings.store_content
+    return bool(keep)
+
+
+def _stored_context(item: AnalysisInput, signals: list[dict], tenant, db) -> str:
+    """The evidence view's excerpts for a new finding, as the text to store ("" = none).
+
+    Best-effort, and fail-closed: anything wrong means nothing is stored, never an unmasked
+    fragment (app/excerpts.py only ever returns masked text). Sealed under the tenant's key when
+    content encryption is on, exactly as `content` is."""
+    if not evidence_context_enabled(tenant):
+        return ""
+    try:
+        blob = excerpts.dumps(excerpts.build(
+            item, signals, custom_pii=(getattr(tenant, "custom_pii_patterns", "") or "")))
+    except Exception:
+        _log.warning("evidence context skipped for one finding", exc_info=True)
+        return ""
+    if not blob or not settings.encrypt_findings:
+        return blob
+    dek = _tenant_dek(tenant, db)
+    return crypto.seal_with(dek, blob) if dek else seal(blob)
+
+
+def _aligned(stored: list, fresh: list[dict]) -> list[dict]:
+    """`fresh` reordered to line up index for index with the signals a finding stored when it
+    first fired, matched on what the fingerprint matches on (category + evidence). A repeat of
+    an event has the same signals, not necessarily in the same order, and the excerpts index into
+    the stored list. A stored signal with no counterpart gets an empty placeholder."""
+    masked = excerpts.clean_signals(fresh)
+    raw = list(fresh)
+    out: list[dict] = []
+    for sig in stored or []:
+        key = (sig.get("category"), (sig.get("evidence") or "")[:80]) if isinstance(sig, dict) else None
+        hit = next((n for n, c in enumerate(masked)
+                    if (c.get("category"), (c.get("evidence") or "")[:80]) == key), None)
+        if hit is None:
+            out.append({})
+        else:
+            masked.pop(hit)
+            out.append(raw.pop(hit))
+    return out
+
+
+def _within_content_ttl(created_at) -> bool:
+    """False for a finding already past the content TTL: an excerpt written onto it now would be
+    swept at the next hourly scrub, so it is not written."""
+    days = settings.content_ttl_days
+    if not days or created_at is None:
+        return True
+    from datetime import datetime, timedelta, timezone
+    return created_at >= datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
 
 
 _ALLOW_LEVEL = {"benign", "low"}  # verdicts below the warn threshold
@@ -328,6 +402,15 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                         and item.surface in _LIVE_ACT_SURFACES)
             if reopened:
                 prior.status = "open"
+            # Evidence context switched on after this finding first fired: a repeat of an event
+            # folds into the same row for as long as it recurs (a dismissed one too), so without
+            # this the org's existing findings would never get an excerpt. The first repeat
+            # after the switch fills it in, lined up with the signals the row already holds.
+            if (not prior.evidence_context and evidence_context_enabled(tenant)
+                    and _within_content_ttl(prior.created_at)):
+                backfill = _stored_context(item, _aligned(prior.signals, result["signals"]), tenant, db)
+                if backfill:
+                    prior.evidence_context = backfill
             # Backfill a source discovered since this finding first fired (the at-rest scan
             # that fingerprinted it may have run after the first leak) — and lift its
             # severity to the origin-boosted score (same fingerprint = same base risk).
@@ -369,7 +452,13 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             recommended_action=verdict.recommended_action,
             ai_generated=verdict.ai_generated,
             attack_intent=verdict.attack_intent,
-            signals=result["signals"],
+            # Detectors quote what they matched (the dangerous-command rule puts up to 80
+            # characters of the command in `detail`), so a credential inside it would be stored.
+            # Mask the stored copy; `result` keeps the original for the verdict and the sinks.
+            signals=(excerpts.clean_signals(result["signals"],
+                                            getattr(tenant, "custom_pii_patterns", "") or "")
+                     if settings.redact_findings else result["signals"]),
+            evidence_context=_stored_context(item, result["signals"], tenant, db),
             judge_used=judge_ran,
             origin=origin,
         )
