@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 
+from .allow import Matcher, blank_allowed
 from .base import AnalysisInput, Category, Signal, Surface
 from .normalize import command_leet_fold, normalize_for_match
 
@@ -55,6 +56,13 @@ _DANGEROUS_CMD = re.compile(
 _CODING_TOOLS = ("cursor", "claude-code", "claude code", "copilot", "codeium",
                  "windsurf", "aider", "cline", "continue", "gemini-cli",
                  "grok", "antigravity")
+
+
+def _flags(text: str) -> bool:
+    """Would the chat rule flag `text`, in any de-obfuscated view of it?"""
+    return bool(_DANGEROUS_CMD.search(text)
+                or _DANGEROUS_CMD.search(normalize_for_match(text))
+                or _DANGEROUS_CMD.search(command_leet_fold(text)))
 
 
 def _is_config(item: AnalysisInput) -> bool:
@@ -97,9 +105,13 @@ class AgentSafetyDetector:
         if _is_coding_tool(item) and not _is_config(item):
             # Scan de-obfuscated views too (homoglyph/zero-width normalized + command-leet
             # folded), so `cur1 … | 5h` in a generated code block is still caught.
-            dm = (_DANGEROUS_CMD.search(text)
-                  or _DANGEROUS_CMD.search(normalize_for_match(text))
-                  or _DANGEROUS_CMD.search(command_leet_fold(text)))
+            # A statement the org allowed (detectors/allow.py) is taken out first, so allowing a
+            # command silences every rule that flags it, this one included.
+            tenant_allow = Matcher((item.metadata or {}).get("allow"))
+            scanned = blank_allowed(text, tenant_allow, _flags) if tenant_allow else text
+            dm = (_DANGEROUS_CMD.search(scanned)
+                  or _DANGEROUS_CMD.search(normalize_for_match(scanned))
+                  or _DANGEROUS_CMD.search(command_leet_fold(scanned)))
             if dm:
                 signals.append(Signal(
                     category=Category.DANGEROUS_COMMAND,

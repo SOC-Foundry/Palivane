@@ -24,6 +24,7 @@ import shlex
 import urllib.parse
 
 from ..config import settings
+from .allow import Matcher, blank_allowed, collapse_ws, statement_at
 from .base import AnalysisInput, Category, Signal, Surface
 from .normalize import command_leet_fold, normalize_for_match
 
@@ -70,14 +71,34 @@ _TEMPLATE_ENV_NAME = re.compile(
     r"\.env(?:\.[\w-]+)*\.(?:example|sample|template|tmpl|dist|defaults?)", re.IGNORECASE)
 
 
-def _sensitive_path(haystack: str) -> re.Match | None:
-    """The first sensitive path in `haystack`, skipping public certificates and template env
-    files. Walks every match rather than taking the first, so a harmless `ca.pem` or
-    `.env.example` named earlier in a command cannot hide the `privkey.pem` or `.env` named
-    after it."""
+# Where the path a match belongs to starts and ends: the characters that separate one word of a
+# command from the next. `:` and `=` are here because the sensitive-path rule itself treats them
+# as delimiters (`file:/etc/shadow`, `--env-file=.env`).
+_PATH_BREAK = " \t\r\n\"'=:;|&<>(),"
+
+
+def _path_token_at(haystack: str, m: re.Match) -> str:
+    """The whole path word a sensitive-path match sits in (`/srv/app/config/server.pem` for the
+    match `server.pem`): what an allow entry is compared with."""
+    lo, hi = m.start(1), m.end(1)
+    while lo > 0 and haystack[lo - 1] not in _PATH_BREAK:
+        lo -= 1
+    while hi < len(haystack) and haystack[hi] not in _PATH_BREAK:
+        hi += 1
+    return haystack[lo:hi]
+
+
+def _sensitive_path(haystack: str, allowed=None) -> re.Match | None:
+    """The first sensitive path in `haystack`, skipping public certificates, template env files
+    and any path the tenant has allowed (`allowed(token) -> bool`, see detectors/allow.py). Walks
+    every match rather than taking the first, so a harmless `ca.pem` or `.env.example` named
+    earlier in a command cannot hide the `privkey.pem` or `.env` named after it, and neither can
+    an allowed path."""
     for m in _SENSITIVE_PATH.finditer(haystack):
         name = m.group(1)
         if _PUBLIC_CERT_NAME.fullmatch(name) or _TEMPLATE_ENV_NAME.fullmatch(name):
+            continue
+        if allowed is not None and allowed(_path_token_at(haystack, m)):
             continue
         return m
     return None
@@ -257,16 +278,33 @@ def _executes_stdin(interpreter: str, tail: str) -> bool:
     return True                         # bare interpreter: stdin IS the program
 
 
-def _first_dangerous_command(view: str) -> re.Match | None:
-    """The first dangerous-command match in one de-obfuscated view of a command line, passing
-    over `curl … | <interpreter>` that is not executing the download. Walks every match, so a
-    benign pipe earlier in the command cannot mask a dangerous one after it."""
+def _dangerous_matches(view: str):
+    """Every dangerous-command match in one de-obfuscated view of a command line, passing over
+    `curl … | <interpreter>` that is not executing the download."""
     for m in _DANGEROUS_CMD.finditer(view):
         pipe = _PIPED_INTERPRETER.search(m.group(0))
         if pipe and not _executes_stdin(pipe.group(1).lower(), view[m.end():]):
             continue
-        return m
-    return None
+        yield m
+
+
+def _first_dangerous_command(view: str) -> re.Match | None:
+    """The first dangerous-command match in one view. Walks every match, so a benign pipe earlier
+    in the command cannot mask a dangerous one after it."""
+    return next(_dangerous_matches(view), None)
+
+
+def _would_flag(text: str) -> bool:
+    return any(next(_dangerous_matches(v), None) is not None for v in _command_views(text))
+
+
+def _dangerous_command(args_text: str, allow: Matcher | None = None) -> re.Match | None:
+    """The first dangerous command in any de-obfuscated view of `args_text`, leaving out the
+    statements the tenant has allowed. Without an allowlist this is the plain search across views
+    it always was."""
+    text = blank_allowed(args_text, allow, _would_flag) if allow else args_text
+    return next((mm for v in _command_views(text) if (mm := _first_dangerous_command(v))), None)
+
 
 # Injection phrasing hidden in a tool's description (MCP "tool poisoning").
 _TOOL_POISON = re.compile(
@@ -397,6 +435,10 @@ class MCPGuardDetector:
         tool = m.get("tool", "")
         args_text = m.get("args_text", "") or ""
         resource = m.get("resource", "") or ""
+        # The tenant's allowlist: commands and paths it has decided are fine. Only entries that
+        # have not lapsed are ever put here (app/allowlist.py builds it). Empty for most calls;
+        # see detectors/allow.py for what an entry can and cannot say.
+        tenant_allow = Matcher(m.get("allow"))
         descriptions = m.get("tool_descriptions") or []
         transport = m.get("transport", "http")
         signals: list[Signal] = []
@@ -453,7 +495,8 @@ class MCPGuardDetector:
             haystack = _norm_path(resource or args_text.split("\n", 1)[0])
         else:
             haystack = _norm_path(f"{resource}\n{args_text}")
-        mres = None if bookkeeping else _sensitive_path(haystack)
+        allowed_path = tenant_allow.path_ok if tenant_allow else None
+        mres = None if bookkeeping else _sensitive_path(haystack, allowed_path)
         if mres:
             signals.append(Signal(
                 category=Category.SENSITIVE_RESOURCE_ACCESS,
@@ -475,13 +518,16 @@ class MCPGuardDetector:
         # and every tool on an MCP server, still gets scanned, because we cannot know what it
         # does and a silent miss there is far worse than a noisy hit.
         can_execute = bool(server) or (tool not in _NON_EXECUTING_BUILTINS and tool not in BOOKKEEPING_BUILTINS)
-        mcmd = next((mm for v in _command_views(args_text)
-                     if (mm := _first_dangerous_command(v))), None) if can_execute else None
+        mcmd = _dangerous_command(args_text, tenant_allow) if can_execute else None
         if mcmd:
             signals.append(Signal(
                 category=Category.DANGEROUS_COMMAND,
                 title="High-risk command in a tool call",
-                detail=f"An MCP tool call contains a dangerous shell pattern: {mcmd.group(0)[:80]}",
+                # The whole statement the rule matched in, not just the matched span: for `rm -rf
+                # ~/.ssh` the span is `rm -rf ~`, which reads like a different command. It is also
+                # the text an allow entry is written against (detectors/allow.py).
+                detail=("An MCP tool call contains a dangerous shell pattern: "
+                        f"{collapse_ws(statement_at(mcmd.string, mcmd.start()))[:200]}"),
                 weight=0.95, confidence=0.9, detector=self.name,
                 evidence=f"tool={tool}",
             ))

@@ -492,9 +492,12 @@ def _capture_activity_dict(act: dict | None, tool: str, principal: Principal, db
                   "args_text": act["args_text"], "tool_descriptions": act["tool_descriptions"]},
     )
     filt, dec = _gw_authz(principal, "", act["tool"], act["args_text"], db)
+    from . import allowlist
+    allow_holder = allowlist.attach(db, principal.tenant_id, principal.actor, act["tool"], item.metadata)
     result = run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
                           signal_filter=filt, agent=principal.agent,
                           persist_benign=settings.mcp_persist_benign)
+    allowlist.record_hits(db, allow_holder)
     if dec["enforce"] and dec["denied"]:
         result["authz_block"] = True
     return result
@@ -606,9 +609,12 @@ def _capture_tool_activity(tool_name: str, args_text: str, tool: str,
         channel=tool or "agent", surface=Surface.MCP,
         metadata={"method": "tools/call", "tool": tool_name, "args_text": args_text})
     filt, dec = _gw_authz(principal, "", tool_name, args_text, db)
+    from . import allowlist
+    allow_holder = allowlist.attach(db, principal.tenant_id, principal.actor, tool_name, item.metadata)
     result = run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
                           signal_filter=filt, agent=principal.agent,
                           persist_benign=settings.mcp_persist_benign)
+    allowlist.record_hits(db, allow_holder)
     if (dec["enforce"] and dec["denied"]) or _gw_extra_tools_denied(principal, tools or [], db):
         result["authz_block"] = True
     return result
