@@ -1,20 +1,21 @@
 """Seed the findings store with realistic sample submissions.
 
 Run:  python -m app.seed
-Gives you a populated dashboard to demo against immediately. Safe to re-run; it
-clears existing findings first.
+Gives you a populated dashboard to demo against immediately: the open queue below, plus a month of
+triage behind it (app/seed_history.py) so the review trail, the detection-precision readout and the
+allowlist have something to show. Safe to re-run; it clears the demo org's findings and allowlist
+first.
 """
 
 from __future__ import annotations
 
 import os
 
-from . import excerpts
+from . import seed_history
 from .database import Base, SessionLocal, engine as db_engine
-from .detectors import AnalysisInput, Surface
+from .detectors import Surface
 from .engine import engine
 from .models import Finding, Tenant, User
-from .redaction import redact_text
 from .security import hash_password
 
 DEMO_SLUG = "demo"
@@ -359,59 +360,52 @@ SAMPLES = [
     },
 ]
 
+def populate(db, now=None) -> dict:
+    """Create the demo tenant and admin if they are missing, then (re)write the demo org's open queue,
+    its month of triage and its allowlist. Takes the session so a test can run it on a throwaway
+    database; `run` is the command-line wrapper."""
+    # Demo tenant + admin user (idempotent).
+    tenant = db.query(Tenant).filter(Tenant.slug == DEMO_SLUG).first()
+    if tenant is None:
+        tenant = Tenant(slug=DEMO_SLUG, name="Demo Org", plan="enterprise")
+        db.add(tenant)
+        db.commit()
+        db.refresh(tenant)
+    # The demo is a tour of what an analyst sees, and it holds invented data only, so it
+    # shows the evidence view that a real org has to switch on.
+    if tenant.evidence_context is None:
+        tenant.evidence_context = True
+        db.commit()
+    admin = (
+        db.query(User)
+        .filter(User.tenant_id == tenant.id, User.email == DEMO_ADMIN_EMAIL)
+        .first()
+    )
+    if admin is None:
+        db.add(User(tenant_id=tenant.id, email=DEMO_ADMIN_EMAIL,
+                    password_hash=hash_password(DEMO_ADMIN_PASSWORD), role="admin"))
+        db.commit()
+
+    now = now or seed_history.utcnow()
+    db.query(Finding).filter(Finding.tenant_id == tenant.id).delete()
+    db.commit()
+    for s in SAMPLES:
+        db.add(seed_history.score(tenant, s, created_at=now, last_seen=now))
+    db.commit()
+    made = seed_history.apply(db, tenant, DEMO_ADMIN_EMAIL, now)
+    total = db.query(Finding).filter(Finding.tenant_id == tenant.id).count()
+    return {"open": len(SAMPLES), "total": total, **made}
+
+
 def run() -> None:
     Base.metadata.create_all(bind=db_engine)
     db = SessionLocal()
     try:
-        # Demo tenant + admin user (idempotent).
-        tenant = db.query(Tenant).filter(Tenant.slug == DEMO_SLUG).first()
-        if tenant is None:
-            tenant = Tenant(slug=DEMO_SLUG, name="Demo Org", plan="enterprise")
-            db.add(tenant)
-            db.commit()
-            db.refresh(tenant)
-        # The demo is a tour of what an analyst sees, and it holds invented data only, so it
-        # shows the evidence view that a real org has to switch on.
-        if tenant.evidence_context is None:
-            tenant.evidence_context = True
-            db.commit()
-        admin = (
-            db.query(User)
-            .filter(User.tenant_id == tenant.id, User.email == DEMO_ADMIN_EMAIL)
-            .first()
-        )
-        if admin is None:
-            db.add(User(tenant_id=tenant.id, email=DEMO_ADMIN_EMAIL,
-                        password_hash=hash_password(DEMO_ADMIN_PASSWORD), role="admin"))
-            db.commit()
-
-        db.query(Finding).filter(Finding.tenant_id == tenant.id).delete()
-        db.commit()
-        for s in SAMPLES:
-            surface = s.get("surface", Surface.LLM_IO)
-            item = AnalysisInput(
-                content=s["content"], subject=s["subject"],
-                sender=s["sender"], channel=s["channel"],
-                surface=surface, metadata=s.get("metadata", {}),
-            )
-            v = engine.analyze(item)
-            r = v.to_dict()
-            db.add(Finding(
-                tenant_id=tenant.id, channel=s["channel"], surface=surface.value,
-                sender=s["sender"], subject=s["subject"],
-                # Stored the way a real org that keeps content stores it: redacted first. The demo
-                # used to show a raw SSN in the Content block directly above a masked excerpt.
-                content=redact_text(s["content"]),
-                risk_score=v.risk_score, severity=v.severity,
-                recommended_action=v.recommended_action, ai_generated=v.ai_generated,
-                attack_intent=v.attack_intent, signals=r["signals"],
-                evidence_context=excerpts.dumps(excerpts.build(item, r["signals"])),
-                judge_used=engine.judge_enabled,
-            ))
-        db.commit()
-        n = db.query(Finding).filter(Finding.tenant_id == tenant.id).count()
-        print(f"Seeded {n} findings for tenant '{DEMO_SLUG}' "
-              f"(login: {DEMO_ADMIN_EMAIL} / {DEMO_ADMIN_PASSWORD}; judge_enabled={engine.judge_enabled}).")
+        made = populate(db)
+        print(f"Seeded {made['total']} findings for tenant '{DEMO_SLUG}' "
+              f"({made['open']} open samples + {made['findings']} from a month of triage, "
+              f"{made['allow_entries']} allowlist entries; "
+              f"login: {DEMO_ADMIN_EMAIL} / {DEMO_ADMIN_PASSWORD}; judge_enabled={engine.judge_enabled}).")
     finally:
         db.close()
 
