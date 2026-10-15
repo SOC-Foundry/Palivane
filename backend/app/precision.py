@@ -169,7 +169,7 @@ def _week(ts: datetime) -> str:
 def compute(reviews: list[dict], legacy: list[dict], backlog: dict, now: datetime, days: int,
             truncated: bool = False) -> dict:
     """The readout from plain rows. `reviews` are the findings reviewed in the window
-    (`status, reason, via, reviewed_at, events, signals, channel, sender, id`), `legacy` the
+    (`status, reason, via, reviewed_at, last_seen, events, signals, channel, sender, id`), `legacy` the
     triaged/dismissed ones with no review record (`status, answered`), `backlog` what is still open."""
     since = now - timedelta(days=days)
     overall, bulk = _tally(), {"findings": 0, "events": 0}
@@ -207,11 +207,15 @@ def compute(reviews: list[dict], legacy: list[dict], backlog: dict, now: datetim
             t["events"] += events
             t[b] += 1
             t[f"{b}_events"] += events
-        if r["status"] == "dismissed" and b != "duplicate" and events >= 2:
+        # "keeps firing" means it fired AFTER the dismissal; a finding that piled up its events
+        # before someone closed it is not noise the dismissal failed to stop.
+        seen = r.get("last_seen")
+        if (r["status"] == "dismissed" and b != "duplicate" and events >= 2
+                and wk is not None and seen is not None and seen > wk):
             noisy.append({"id": r.get("id"), "check": check, "title": title, "evidence": evidence,
                           "channel": r.get("channel") or "", "sender": r.get("sender") or "",
                           "events": events, "reason": r.get("reason") or "",
-                          "reviewed_at": wk.isoformat() if wk else None})
+                          "reviewed_at": wk.isoformat(), "last_seen": seen.isoformat()})
 
     checks = []
     for key, t in by_check.items():
@@ -253,7 +257,8 @@ def readout(db: Session, tenant_id: int, days: int, now: datetime | None = None)
     days = max(1, min(int(days), 365))
     since = now - timedelta(days=days)
     cols = (Finding.id, Finding.status, Finding.review_reason, Finding.review_via,
-            Finding.reviewed_at, Finding.seen_count, Finding.signals, Finding.channel, Finding.sender)
+            Finding.reviewed_at, Finding.seen_count, Finding.signals, Finding.channel, Finding.sender,
+            Finding.last_seen)
     rows = (db.query(*cols)
               .filter(Finding.tenant_id == tenant_id, Finding.reviewed_at >= since,
                       Finding.status.in_(("triaged", "dismissed")))
@@ -261,7 +266,7 @@ def readout(db: Session, tenant_id: int, days: int, now: datetime | None = None)
     truncated = len(rows) > MAX_ROWS
     reviews = [{"id": r[0], "status": r[1], "reason": r[2] or "", "via": r[3] or "",
                 "reviewed_at": r[4], "events": r[5] or 1, "signals": r[6], "channel": r[7],
-                "sender": r[8]} for r in rows[:MAX_ROWS]]
+                "sender": r[8], "last_seen": r[9]} for r in rows[:MAX_ROWS]]
     old = (db.query(Finding.status, Finding.owner_response)
              .filter(Finding.tenant_id == tenant_id, Finding.reviewed_at.is_(None),
                      Finding.status.in_(("triaged", "dismissed")))
