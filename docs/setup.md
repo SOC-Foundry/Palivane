@@ -158,7 +158,7 @@ first boot.
 | --- | --- |
 | `PALIVANE_SECRET_KEY` | **Required for real use.** Signs auth tokens. Generate: `openssl rand -hex 32`. Left at the default, the API boots with an insecure dev key and logs a warning. |
 | `WEB_PORT` | Host port for the console (default `8080`). |
-| `SEED_ON_START` | Seed a demo tenant + admin + sample findings on first boot. Set `false` once you've created your real org. |
+| `SEED_ON_START` | Seed a demo tenant + admin + sample findings (with a month of triage and an allowlist) on first boot. Set `false` once you've created your real org. |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` | Optional, turns on the LLM judge (Claude / GPT / Gemini; `JUDGE_PROVIDER=auto` selects). |
 
 Everything else (`POSTGRES_*`, `CORS_ORIGINS`, gateway/ingest settings) has a working
@@ -181,7 +181,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env          # optional, set ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY for the judge
-python -m app.seed            # optional, demo tenant + admin + sample findings
+python -m app.seed            # optional, demo tenant + admin + sample findings and a month of triage
 uvicorn app.main:app --reload --port 8088
 ```
 
