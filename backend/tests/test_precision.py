@@ -224,10 +224,12 @@ def test_the_signal_a_review_is_credited_to():
 
 
 def _rv(status="dismissed", reason="", via="manual", events=1, signals=None, channel="Bash", rid=1,
-        reviewed_at=None, sender="dev@acme.com"):
+        reviewed_at=None, sender="dev@acme.com", last_seen=None):
+    reviewed_at = reviewed_at or _now()
     return {"id": rid, "status": status, "reason": reason, "via": via, "events": events,
             "signals": signals if signals is not None else [_sig()], "channel": channel,
-            "reviewed_at": reviewed_at or _now(), "sender": sender}
+            "reviewed_at": reviewed_at, "sender": sender,
+            "last_seen": last_seen or reviewed_at + timedelta(hours=1)}
 
 
 def _compute(reviews, legacy=(), backlog=None, days=30, **kw):
@@ -340,6 +342,15 @@ def test_the_findings_worth_an_allowlist_entry_are_the_dismissed_ones_that_keep_
     assert not ids & {3, 4, 5, 6}                                         # not a duplicate, a triage, a one-off, or bulk
     assert len(noisy) == precision.NOISY_ROWS
     assert {"check", "title", "evidence", "channel", "sender", "events", "reason", "reviewed_at"} <= set(noisy[0])
+
+
+def test_a_finding_that_stopped_firing_before_its_dismissal_is_not_noise():
+    now = _now()
+    stopped = _rv(reason="expected", events=40, rid=1, last_seen=now - timedelta(hours=2))
+    at_review = _rv(reason="expected", events=40, rid=2, last_seen=now)
+    again = _rv(reason="expected", events=40, rid=3, last_seen=now + timedelta(days=2))
+    noisy = _compute([stopped, at_review, again])["recurring_noise"]
+    assert [n["id"] for n in noisy] == [3] and noisy[0]["last_seen"] > noisy[0]["reviewed_at"]
 
 
 def test_the_tools_are_ranked_by_how_much_was_reviewed():

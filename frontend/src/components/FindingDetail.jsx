@@ -53,7 +53,32 @@ function AllowThis({ finding, signal }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState(null);
-  if (!sug) return null;
+  const [covered, setCovered] = useState(null);
+  const [looked, setLooked] = useState(!sug);
+  // An active entry for this very command or path (or made from this finding) already covers it.
+  // Only an exact match is recognised; a wider pattern that also covers it is not looked for.
+  useEffect(() => {
+    if (!sug) return undefined;
+    let live = true;
+    api.allowlist("active")
+      .then((r) => {
+        if (!live) return;
+        setCovered((r.entries || []).find((e) => e.kind === sug.kind
+          && ((sug.pattern && e.pattern === sug.pattern) || e.finding_id === finding.id)) || null);
+      })
+      .catch(() => {})
+      .finally(() => { if (live) setLooked(true); });
+    return () => { live = false; };
+  }, [finding.id, sug?.kind, sug?.pattern]);
+  if (!sug || !looked) return null;
+  if (covered && !done) {
+    return (
+      <p className="tune-done">
+        Already allowed until {new Date(covered.expires_at + "Z").toLocaleDateString()}. Manage it
+        under Policies → Allowlist.
+      </p>
+    );
+  }
   const who = finding.sender || "";
 
   async function save() {
