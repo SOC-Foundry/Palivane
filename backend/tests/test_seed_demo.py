@@ -16,7 +16,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import app.alerts as alerts
-from app import allowlist, precision, seed, seed_history, service
+from app import allowlist, precision, seed, seed_history, seed_org, service
 from app.database import Base
 from app.detectors import AnalysisInput
 from app.engine import engine
@@ -67,7 +67,8 @@ def test_running_the_seed_again_starts_from_the_same_place(demo):
     before = (len(_rows(db, tenant)), db.query(AllowEntry).filter(AllowEntry.tenant_id == tenant.id).count())
     seed.populate(db, now=now)
     after = (len(_rows(db, tenant)), db.query(AllowEntry).filter(AllowEntry.tenant_id == tenant.id).count())
-    assert before == after == (len(seed.SAMPLES) + len(seed_history.HISTORY), len(seed_history.ALLOW))
+    findings = (len(seed.SAMPLES) + len(seed_history.HISTORY) + len(seed_org.LEAKS) + len(seed_org.A2A))
+    assert before == after == (findings, len(seed_history.ALLOW))
 
 
 # --- every row is a state the product can produce --------------------------------------------------

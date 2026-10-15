@@ -1,17 +1,18 @@
 """Seed the findings store with realistic sample submissions.
 
 Run:  python -m app.seed
-Gives you a populated dashboard to demo against immediately: the open queue below, plus a month of
-triage behind it (app/seed_history.py) so the review trail, the detection-precision readout and the
-allowlist have something to show. Safe to re-run; it clears the demo org's findings and allowlist
-first.
+Gives you a populated console to demo against immediately: the open queue below, a month of triage
+behind it (app/seed_history.py) so the review trail, the detection-precision readout and the allowlist
+have something to show, and the org around the findings (app/seed_org.py: people, devices, agents,
+credentials, documents and an audit trail) so the other pages are not empty. Safe to re-run; it replaces
+the demo org's findings, allowlist and everything seed_org wrote.
 """
 
 from __future__ import annotations
 
 import os
 
-from . import seed_history
+from . import seed_history, seed_org
 from .database import Base, SessionLocal, engine as db_engine
 from .detectors import Surface
 from .engine import engine
@@ -387,14 +388,22 @@ def populate(db, now=None) -> dict:
         db.commit()
 
     now = now or seed_history.utcnow()
+    seed_org.clear(db, tenant)
     db.query(Finding).filter(Finding.tenant_id == tenant.id).delete()
     db.commit()
+    # The documents the org has scanned at rest come first, so a leak can be traced to its source as the
+    # capture path does it; `captures` notes what each plane saw, for the Discovery inventory afterwards.
+    seed_org.documents(db, tenant, now)
+    captures = seed_org.Captures()
     for s in SAMPLES:
-        db.add(seed_history.score(tenant, s, created_at=now, last_seen=now))
+        row = seed_history.score(tenant, s, db=db, created_at=now, last_seen=now)
+        db.add(row)
+        captures.add(s, row)
     db.commit()
-    made = seed_history.apply(db, tenant, DEMO_ADMIN_EMAIL, now)
+    made = seed_history.apply(db, tenant, DEMO_ADMIN_EMAIL, now, on_row=captures.add)
+    org = seed_org.apply(db, tenant, DEMO_ADMIN_EMAIL, now, captures)
     total = db.query(Finding).filter(Finding.tenant_id == tenant.id).count()
-    return {"open": len(SAMPLES), "total": total, **made}
+    return {"open": len(SAMPLES), "total": total, **made, "org": org}
 
 
 def run() -> None:
@@ -402,9 +411,12 @@ def run() -> None:
     db = SessionLocal()
     try:
         made = populate(db)
+        org = made["org"]
         print(f"Seeded {made['total']} findings for tenant '{DEMO_SLUG}' "
-              f"({made['open']} open samples + {made['findings']} from a month of triage, "
-              f"{made['allow_entries']} allowlist entries; "
+              f"({made['open']} open samples + {made['findings']} from a month of triage + "
+              f"{org['leaks'] + org['a2a']} document leaks and agent messages, "
+              f"{made['allow_entries']} allowlist entries, {org['agents']} agents, {org['sensors']} sensors, "
+              f"{org['documents']} documents scanned; "
               f"login: {DEMO_ADMIN_EMAIL} / {DEMO_ADMIN_PASSWORD}; judge_enabled={engine.judge_enabled}).")
     finally:
         db.close()
