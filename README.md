@@ -267,6 +267,13 @@ API docs at http://localhost:8088/docs
 (`admin@demo.local` / `changeme123` — override via `SEED_ADMIN_EMAIL` /
 `SEED_ADMIN_PASSWORD`). That's the account you sign in with on the frontend.
 
+It also writes a month of triage behind the open queue (`app/seed_history.py`): findings that
+were reviewed, with reasons, and an allowlist in every state (active, about to lapse, lapsed,
+revoked). So **Policies** shows the detection-precision readout and the allowlist working rather
+than empty, and a finding's detail shows who decided and why. Every verdict is still scored by the
+engine; only the decisions are written down. Each run replaces the demo org's findings and
+allowlist, so it is safe to re-run.
+
 Run the test suite (no API key needed — exercises the offline detectors and scoring):
 
 ```bash
@@ -951,7 +958,7 @@ backend/
     scoring.py        # fuses signals → risk verdict
     models.py         # Tenant / User / ApiKey / EnrollmentToken / Finding ORM
     main.py           # FastAPI routes (ingest/mcp, scan/{code,deps,mcp-config,ide-extensions,secrets}, policy-pack, …)
-    seed.py           # demo tenant + sample data
+    seed.py           # demo tenant + sample data (seed_history.py: its month of triage and allowlist)
   migrations/         # Alembic schema migrations (api_keys, enrollment_tokens, tenant mcp allowlist)
   Dockerfile          # backend image (+ docker-entrypoint.sh: wait-db, migrate, seed)
   tests/              # pytest: detectors, scoring, engine, gateway (+ agentic/stream), mcp-guard,
