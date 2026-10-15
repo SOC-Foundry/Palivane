@@ -172,11 +172,11 @@ export default function Precision({ labelFor = (k) => k }) {
         <>
           <h3 className="help-h3">Dismissed, and keep firing</h3>
           <p className="muted" style={{ margin: "0 0 8px" }}>
-            The best candidates to allow (<strong>Allow this…</strong> on the finding) or to tune.
+            Fired again after they were dismissed: the best candidates to allow (<strong>Allow this…</strong> on the finding) or to tune.
           </p>
           <div className="table-scroll">
             <table className="data-table pr-table">
-              <thead><tr><th>Finding</th><th>Who, where</th><th>Events</th><th>Dismissed as</th><th></th></tr></thead>
+              <thead><tr><th>Finding</th><th>Who, where</th><th>Events</th><th>Last fired</th><th>Dismissed as</th><th></th></tr></thead>
               <tbody>
                 {data.recurring_noise.map((n) => (
                   <tr key={n.id}>
@@ -186,6 +186,9 @@ export default function Precision({ labelFor = (k) => k }) {
                     </td>
                     <td className="muted">{n.sender || "-"}{n.channel ? ` · ${n.channel}` : ""}</td>
                     <td>{n.events}</td>
+                    <td className="muted" title="It fired again after it was dismissed">
+                      {n.last_seen ? new Date(n.last_seen + "Z").toLocaleDateString() : "-"}
+                    </td>
                     <td className="muted">{REASON_LABEL[n.reason || ""] || "no reason"}</td>
                     <td><a className="link-btn" href={`/app/findings/${n.id}`}>Open</a></td>
                   </tr>
