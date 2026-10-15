@@ -160,6 +160,47 @@ _LIVE_ACT_SURFACES = {Surface.AI_USAGE, Surface.LLM_IO, Surface.MCP,
                       Surface.AGENT_TOOLS, Surface.A2A}
 
 
+def apply_origin(verdict, origin: dict) -> None:
+    """Origin-aware severity: a leak whose content matches a document scanned at rest is confirmed
+    org data, so it scores higher, and a match to a KNOWN-SENSITIVE source higher still. Changes
+    `verdict` in place (score, severity, action, and a leading signal that names the source)."""
+    from .detectors.base import Category, Signal
+    from .scoring import severity_for
+    sensitive = bool(origin.get("sensitive"))
+    boosted = min(100, verdict.risk_score + (25 if sensitive else 15))
+    if sensitive:
+        boosted = max(boosted, 60)   # a known-sensitive source is at least "high"
+    verdict.risk_score = boosted
+    verdict.severity, verdict.recommended_action = severity_for(boosted)
+    where = origin.get("title") or origin.get("ref") or "a scanned document"
+    verdict.signals = [Signal(
+        category=Category.CONFIDENTIAL_DATA if sensitive else Category.DATA_EXFILTRATION,
+        title=("Leaked content matches a known sensitive document" if sensitive
+               else "Leaked content matches a known document"),
+        detail=(f"This content overlaps “{where}” ({int(origin.get('containment', 0) * 100)}% "
+                f"match) from your {origin.get('source', 'at-rest')} scan"
+                + (" — a source that itself holds sensitive data." if sensitive
+                   else ", confirming it is real organizational data.")),
+        weight=0.0, confidence=1.0,   # evidence/severity already applied via the boost
+        detector="content_origin", evidence=where)] + list(verdict.signals)
+
+
+def trace_origin(db: Session, tenant_id, item: AnalysisInput, verdict) -> dict | None:
+    """The scanned-at-rest document a data-loss finding was lifted from, if any, with the verdict
+    boosted for it (apply_origin). Read-only match, gated to data-loss findings on egress surfaces
+    (an injection has no source document)."""
+    if item.surface.value not in ("ai_usage", "llm_io"):
+        return None
+    _DLP = {"secret_leak", "pii_exposure", "phi_exposure", "source_code_leak", "confidential_data"}
+    if not any(s.category.value in _DLP for s in verdict.signals):
+        return None
+    from . import content_origin
+    origin = content_origin.match_origin(db, tenant_id, item.content)
+    if origin:
+        apply_origin(verdict, origin)
+    return origin
+
+
 def _fingerprint(tenant_id, item: AnalysisInput, signals: list[dict]) -> str:
     """Stable signature of an event class: same actor + tool + surface + signal set
     (category + evidence snippet). Repeats fold into the first finding instead of
@@ -315,33 +356,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     # higher still. Applied to the verdict BEFORE result/persist so the boost flows into
     # the gateway's block decision too, not just the stored finding. Read-only match,
     # gated to data-loss findings on egress surfaces (an injection has no source doc).
-    origin = None
-    if item.surface.value in ("ai_usage", "llm_io"):
-        _DLP = {"secret_leak", "pii_exposure", "phi_exposure",
-                "source_code_leak", "confidential_data"}
-        if any(s.category.value in _DLP for s in verdict.signals):
-            from . import content_origin
-            origin = content_origin.match_origin(db, tenant_id, item.content)
-    if origin:
-        from .detectors.base import Category, Signal
-        from .scoring import severity_for
-        sensitive = bool(origin.get("sensitive"))
-        boosted = min(100, verdict.risk_score + (25 if sensitive else 15))
-        if sensitive:
-            boosted = max(boosted, 60)   # a known-sensitive source is at least "high"
-        verdict.risk_score = boosted
-        verdict.severity, verdict.recommended_action = severity_for(boosted)
-        where = origin.get("title") or origin.get("ref") or "a scanned document"
-        verdict.signals = [Signal(
-            category=Category.CONFIDENTIAL_DATA if sensitive else Category.DATA_EXFILTRATION,
-            title=("Leaked content matches a known sensitive document" if sensitive
-                   else "Leaked content matches a known document"),
-            detail=(f"This content overlaps “{where}” ({int(origin.get('containment', 0) * 100)}% "
-                    f"match) from your {origin.get('source', 'at-rest')} scan"
-                    + (" — a source that itself holds sensitive data." if sensitive
-                       else ", confirming it is real organizational data.")),
-            weight=0.0, confidence=1.0,   # evidence/severity already applied via the boost
-            detector="content_origin", evidence=where)] + list(verdict.signals)
+    origin = trace_origin(db, tenant_id, item, verdict)
 
     result = verdict.to_dict()
     # A confirmed leak in the raw detector output stays confirmed even if a check filter

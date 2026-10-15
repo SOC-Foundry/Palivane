@@ -271,8 +271,17 @@ It also writes a month of triage behind the open queue (`app/seed_history.py`): 
 were reviewed, with reasons, and an allowlist in every state (active, about to lapse, lapsed,
 revoked). So **Policies** shows the detection-precision readout and the allowlist working rather
 than empty, and a finding's detail shows who decided and why. Every verdict is still scored by the
-engine; only the decisions are written down. Each run replaces the demo org's findings and
-allowlist, so it is safe to re-run.
+engine; only the decisions are written down.
+
+It writes the org around the findings too (`app/seed_org.py`), so the other console pages are not
+empty: console users and a claimed domain, a fleet of sensors in every health state, agents with
+roles and the hops where risk crossed, API keys and authorized apps, the documents the org has
+scanned (so a leak traces back to its source), the Discovery inventory built from log lines and
+from what the findings captured, and an audit trail that matches what the rest of the seed did.
+Nothing in it is a working credential: secrets come from the product's own generators and only the
+hash is kept. Each run replaces the demo org's findings, allowlist, discovery, fleet, document index
+and audit trail, and the users, keys, agents and apps it created (by name), so it is safe to
+re-run; something made by hand in the demo org is left alone.
 
 Run the test suite (no API key needed — exercises the offline detectors and scoring):
 
@@ -958,7 +967,8 @@ backend/
     scoring.py        # fuses signals → risk verdict
     models.py         # Tenant / User / ApiKey / EnrollmentToken / Finding ORM
     main.py           # FastAPI routes (ingest/mcp, scan/{code,deps,mcp-config,ide-extensions,secrets}, policy-pack, …)
-    seed.py           # demo tenant + sample data (seed_history.py: its month of triage and allowlist)
+    seed.py           # demo tenant + sample data (seed_history.py: a month of triage and an allowlist;
+                      #   seed_org.py: the people, devices, agents, credentials and trail around them)
   migrations/         # Alembic schema migrations (api_keys, enrollment_tokens, tenant mcp allowlist)
   Dockerfile          # backend image (+ docker-entrypoint.sh: wait-db, migrate, seed)
   tests/              # pytest: detectors, scoring, engine, gateway (+ agentic/stream), mcp-guard,

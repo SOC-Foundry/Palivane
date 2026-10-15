@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from . import excerpts
+from . import excerpts, service
 from .detectors import AnalysisInput, Surface
 from .engine import engine
 from .models import AllowEntry, Finding
@@ -219,13 +219,17 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def score(tenant, s: dict, **fields) -> Finding:
+def score(tenant, s: dict, db=None, **fields) -> Finding:
     """One seeded finding: `s` scored by the real engine and stored the way an org that keeps
-    content and has switched the evidence view on stores it (redacted content, masked excerpts)."""
+    content and has switched the evidence view on stores it (redacted content, masked excerpts).
+    With `db`, a data-loss finding is traced to the documents the org scanned at rest exactly as
+    the capture path does (service.trace_origin): the document it was lifted from is attached
+    and the verdict is boosted for it."""
     surface = s.get("surface", Surface.LLM_IO)
     item = AnalysisInput(content=s["content"], subject=s["subject"], sender=s["sender"],
                          channel=s["channel"], surface=surface, metadata=s.get("metadata", {}))
     v = engine.analyze(item)
+    origin = service.trace_origin(db, tenant.id, item, v) if db is not None else None
     r = v.to_dict()
     return Finding(
         tenant_id=tenant.id, channel=s["channel"], surface=surface.value,
@@ -235,14 +239,16 @@ def score(tenant, s: dict, **fields) -> Finding:
         content=redact_text(s["content"]),
         risk_score=v.risk_score, severity=v.severity,
         recommended_action=v.recommended_action, ai_generated=v.ai_generated,
-        attack_intent=v.attack_intent, signals=r["signals"],
+        attack_intent=v.attack_intent, signals=r["signals"], origin=origin,
         evidence_context=excerpts.dumps(excerpts.build(item, r["signals"])),
         judge_used=engine.judge_enabled, **fields)
 
 
-def apply(db, tenant, reviewer: str, now: datetime | None = None) -> dict:
+def apply(db, tenant, reviewer: str, now: datetime | None = None, on_row=None) -> dict:
     """Write the history and the allowlist for `tenant`, replacing the allowlist it had (the seed
-    already replaces the findings, so a re-run starts from the same place). Returns what it wrote."""
+    already replaces the findings, so a re-run starts from the same place). `on_row(event, row)` is
+    called for each finding written, so the rest of the demo org can be built from what happened.
+    Returns what it wrote."""
     now = now or utcnow()
     db.query(AllowEntry).filter(AllowEntry.tenant_id == tenant.id).delete()
     bulk_at = now - timedelta(days=4, hours=2)
@@ -265,8 +271,10 @@ def apply(db, tenant, reviewer: str, now: datetime | None = None) -> dict:
                 "at": (created + timedelta(hours=5)).isoformat()})
         elif outcome in ("old_act", "old_dismiss"):
             fields["status"] = "triaged" if outcome == "old_act" else "dismissed"
-        row = score(tenant, h["event"], **fields)
+        row = score(tenant, h["event"], db=db, **fields)
         db.add(row)
+        if on_row is not None:
+            on_row(h["event"], row)
         if h["key"]:
             rows[h["key"]] = row
     db.flush()
