@@ -5,6 +5,11 @@ PALIVANE_DEMO_ORG (seed it with `python -m app.seed`; the `demo` slug is already
 excluded from funnel analytics). The token carries a `demo` claim that
 get_current_user enforces as read-only, so a shared demo org looks the same for
 every visitor. Dark until PALIVANE_DEMO_ORG is set.
+
+The session is an ADMIN one, so a visitor can open every console page (the precision readout,
+the allowlist, Discovery, Fleet, Audit...) and see the sample org the way a buyer's admin would.
+Nothing about that is writable: get_current_user refuses every non-GET for a demo token, and
+DEMO_BLOCKED_GET below closes the few GETs that would write by another route.
 """
 
 from __future__ import annotations
@@ -24,6 +29,24 @@ from .security import create_token, hash_password
 router = APIRouter(prefix="/api", tags=["demo"])
 
 DEMO_VIEWER = "viewer@demo.local"
+
+# GETs a demo session may not make even though it is an admin and the method is a read:
+#  - /api/slack/install returns a signed "Add to Slack" URL bound to the tenant; finishing that
+#    OAuth in the visitor's own workspace would write a Slack connection into the shared demo org.
+#  - the bulk exports hand a visitor the whole org as files, which is not what a tour needs.
+# Prefixes, matched on the request path. Anything new that mints a token or a link bound to the
+# tenant belongs here (tests/test_demo.py walks every route to keep the write side honest).
+DEMO_BLOCKED_GET = (
+    "/api/slack/install",
+    "/api/export/",
+    "/api/audit/export",
+    "/api/corpus/export",
+    "/api/ml/corpus/export",
+)
+
+
+def blocked_for_demo(path: str) -> bool:
+    return path.startswith(DEMO_BLOCKED_GET)
 
 
 def enabled() -> bool:
@@ -55,14 +78,18 @@ def demo_login(request: Request, db: Session = Depends(get_db)):
     user = (db.query(User)
             .filter(User.tenant_id == tenant.id, User.email == DEMO_VIEWER).first())
     if user is None:
-        # Unguessable password on purpose: this account is only ever entered through
-        # the demo token; the analyst role keeps admin tabs out of the tour.
+        # Unguessable password on purpose: this account is only ever entered through the demo
+        # token, and that token cannot write.
         user = User(tenant_id=tenant.id, email=DEMO_VIEWER,
                     password_hash=hash_password(secrets.token_urlsafe(32)),
-                    role="analyst")
+                    role="admin")
         db.add(user)
         db.commit()
         db.refresh(user)
+    elif user.role != "admin":
+        # The viewer used to be an analyst (Findings only); an existing demo org still has that row.
+        user.role = "admin"
+        db.commit()
     token = create_token({"sub": str(user.id), "tenant_id": user.tenant_id,
                           "role": user.role, "tv": user.token_version, "demo": True},
                          ttl=3600)
