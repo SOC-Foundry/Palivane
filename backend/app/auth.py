@@ -181,6 +181,11 @@ def get_current_user(
     if payload.get("demo") and request.method not in ("GET", "HEAD", "OPTIONS"):
         raise HTTPException(status_code=403,
                             detail="the demo is read-only. Sign up to work with your own data")
+    if payload.get("demo"):
+        from .demo import blocked_for_demo
+        if blocked_for_demo(request.url.path):
+            raise HTTPException(status_code=403,
+                                detail="not part of the demo. Sign up to work with your own data")
     # Hand the claim to the handlers too, so /auth/me can tell the console it is looking at
     # sample data. The browser used to keep its own copy of this and the two could disagree.
     request.state.demo_session = bool(payload.get("demo"))
