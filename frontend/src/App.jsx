@@ -236,6 +236,21 @@ export default function App() {
     api.me().then(setAuth).catch(() => setAuth(null)).finally(() => setBooting(false));
   }, []);
 
+  // Review mode: walk the open findings worst first, one verdict each, so the precision readout fills
+  // from judgements that carry a reason instead of from bulk clears. It reads the open list itself
+  // (the list on screen may be filtered), and moves on after each verdict.
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewLeft, setReviewLeft] = useState(null);
+  const nextToReview = useCallback(async (skipId = null) => {
+    const rank = { critical: 4, high: 3, suspicious: 2, low: 1, benign: 0 };
+    const open = (await api.findings({ status: "open", limit: 500 })).findings
+      .filter((f) => f.id !== skipId)
+      .sort((a, b) => (rank[b.severity] ?? 0) - (rank[a.severity] ?? 0) || a.id - b.id);
+    setReviewLeft(open.length);
+    if (!open.length) { setReviewing(false); return; }
+    selectFinding(open[0].id);
+  }, [selectFinding]);
+
   const refresh = useCallback(async () => {
     if (!auth) return;
     const [s, f] = await Promise.all([
@@ -515,6 +530,13 @@ export default function App() {
                 <span className="live-pill" title="Auto-updates every 15 seconds">
                   <span className="live-dot" /> live
                 </span>
+                {isAdmin && (
+                  <button type="button" className="ghost-btn"
+                          title="Go through the open findings worst first, one verdict each"
+                          onClick={() => { setReviewing(true); nextToReview(); }}>
+                    <span>{reviewing ? `Reviewing${reviewLeft != null ? ` (${reviewLeft} left)` : ""}` : "Review"}</span>
+                  </button>
+                )}
                 <button type="button" className="ghost-btn" onClick={refresh}>
                   <IconRefresh /> <span>Refresh</span>
                 </button>
@@ -547,6 +569,8 @@ export default function App() {
                     isAdmin={isAdmin}
                     analystEnabled={auth.tenant?.analyst_enabled === true}
                     onClose={() => navigate(DEFAULT_VIEW)}
+                    reviewing={reviewing}
+                    onReviewed={(id) => { if (reviewing) nextToReview(id); }}
                     onStatusChange={async () => {
                       await refresh();
                       if (selectedId) api.finding(selectedId).then(setSelected);
