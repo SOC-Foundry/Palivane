@@ -1178,11 +1178,14 @@ def _agent_attestation(x_palivane_token: str, x_palivane_agent: str, tenant_id, 
 
 
 def _score_ai_usage(content: str, actor: str, tool: str, destination: str,
-                    tenant_id: int | None, agent: str, db: Session) -> tuple[dict, dict]:
+                    tenant_id: int | None, agent: str, db: Session,
+                    endpoint: str = "") -> tuple[dict, dict]:
     """Score one ai-usage capture on the AI_USAGE surface + feed discovery. Shared by the
     ai-usage ingest endpoint and the OTLP receiver so their behavior can't drift. Returns
     (verdict, metadata)."""
     meta: dict = {"destination": destination} if destination else {}
+    if endpoint:
+        meta["endpoint"] = endpoint
     meta["sanctioned_tools"] = _tenant_or_global(
         tenant_id, db, "sanctioned_ai_tools", settings.sanctioned_ai_tools)
     meta["custom_pii"] = _tenant_or_global(tenant_id, db, "custom_pii_patterns", "")
@@ -1232,7 +1235,7 @@ def ingest_ai_usage(
                 "finding_id": None, "parse_miss": True}
     _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool, user_agent)
     result, meta = _score_ai_usage(body.content, actor, body.tool, body.destination,
-                                   tenant_id, agent, db)
+                                   tenant_id, agent, db, endpoint=body.endpoint)
     action = _action_for(result["severity"])
     # confirmed_leak is computed pre-filter in run_analysis, so a disabled check (tenant
     # default or a per-user/group override) can't silently defeat the hard block on a

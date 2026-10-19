@@ -4,13 +4,13 @@
 //   node scripts/extension-e2e/telemetry-skip.js
 const fs = require("fs"), path = require("path"), vm = require("vm"), assert = require("assert");
 
-const scans = [];
+const scans = [], endpoints = [];
 const win = {
   location: { origin: "https://claude.ai", href: "https://claude.ai/chat/x" },
   addEventListener: (_t, f) => { (win.__l = win.__l || []).push(f); },
   postMessage: (m) => {
     if (m.kind !== "scan") return;
-    scans.push(m.content);
+    scans.push(m.content); endpoints.push(m.endpoint);
     setTimeout(() => win.__l.forEach((f) => f({ source: win,
       data: { __palivane: true, kind: "verdict", id: m.id, verdict: { action: "allow" } } })), 0);
   },
@@ -35,5 +35,10 @@ const beacon = JSON.stringify({ type: "action", _dd: { format_version: 2, drift:
   await post("https://claude.ai/api/organizations/1/chat_conversations/2/completion", chat);
   await post("/backend-api/conversation", JSON.stringify({ messages: [{ role: "user", content: "hi" }] }));
   assert.deepStrictEqual(scans, ["hello", "hi"], "chat sends must still be scanned");
+  // The scan says which request it came from: host and path, never the query string.
+  await post("https://claude.ai/api/chat/completion?token=abc123&x=1", chat);
+  assert.strictEqual(endpoints[endpoints.length - 1], "claude.ai/api/chat/completion");
+  assert.deepStrictEqual(endpoints.slice(0, 2),
+    ["claude.ai/api/organizations/1/chat_conversations/2/completion", "claude.ai/backend-api/conversation"]);
   console.log("ok");
 })();
