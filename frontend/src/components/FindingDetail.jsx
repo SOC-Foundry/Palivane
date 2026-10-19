@@ -245,6 +245,15 @@ const DISMISS_REASONS = [
   ["accepted_risk", "Accepted risk"],
   ["duplicate", "Duplicate"],
 ];
+// One click, one judgement: what the review queue offers. Each records who decided and why, which is
+// what the precision readout is built from; "Real" is a triage (the detection was right), the rest
+// are dismissals with their reason, so none of them lands in "No reason given".
+const QUICK_VERDICTS = [
+  ["Real, handle it", "triaged", "", "The detection was right and someone should act on it."],
+  ["Expected", "dismissed", "expected", "It happened and that is fine. Allow it instead of tuning the check."],
+  ["False positive", "dismissed", "false_positive", "The detector was wrong."],
+  ["Accepted risk", "dismissed", "accepted_risk", "Known, and the org accepts it."],
+];
 const REASON_WORD = { false_positive: "a false positive", expected: "expected", accepted_risk: "an accepted risk", duplicate: "a duplicate" };
 
 // The distinct policy checks this finding's signals belong to, what a suppression targets.
@@ -261,7 +270,7 @@ function checksOf(finding) {
   return [...seen.entries()];
 }
 
-export default function FindingDetail({ finding, isAdmin, analystEnabled, onClose, onStatusChange }) {
+export default function FindingDetail({ finding, isAdmin, analystEnabled, onClose, onStatusChange, onReviewed, reviewing }) {
   const [suppressed, setSuppressed] = useState(null);
   const [report, setReport] = useState(finding?.investigation || null);   // persisted or fresh
   const [investigating, setInvestigating] = useState(false);
@@ -276,6 +285,12 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
   async function setStatus(s) {
     await api.setStatus(finding.id, s, "", s === "dismissed" ? reason : "");
     onStatusChange();
+  }
+
+  async function quickVerdict(s, why) {
+    await api.setStatus(finding.id, s, "", why);
+    onStatusChange();
+    if (onReviewed) onReviewed(finding.id);
   }
 
   // Read-only AI analyst: it investigates and RECOMMENDS an action; a human still applies it
@@ -525,6 +540,14 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
         </div>
       )}
 
+      {isAdmin && status === "open" && (
+        <div className={`detail-actions quick-review${reviewing ? " pinned" : ""}`}>
+          <span className="detail-actions-label">{reviewing ? "Review: is this right?" : "Is this right?"}</span>
+          {QUICK_VERDICTS.map(([label, s, why, tip]) => (
+            <button key={label} title={tip} onClick={() => quickVerdict(s, why)}>{label}</button>
+          ))}
+        </div>
+      )}
       <div className="detail-actions">
         <span className="detail-actions-label">Set status:</span>
         {STATUSES.map((s) => (
