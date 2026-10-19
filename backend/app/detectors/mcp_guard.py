@@ -19,6 +19,7 @@ on the `mcp` surface), so this detector focuses on the agentic-action risks abov
 from __future__ import annotations
 
 import binascii
+import hashlib
 import re
 import shlex
 import urllib.parse
@@ -424,6 +425,17 @@ def _server_allowed(server: str, allow: set[str]) -> bool:
     return any(host == a or host.endswith("." + a) or host.endswith(a) for a in allow)
 
 
+_VARYING = re.compile(r"0x[0-9a-f]+|[0-9a-f]{8,}|\d+")
+
+
+def _command_fold_key(statement: str) -> str:
+    """A short digest that is the same for the same command run again. Numbers and long hex runs are
+    folded away so `rm -rf /tmp/build-1041` and `rm -rf /tmp/build-1042` are one command, not a new
+    finding per run; everything else (the verb, the flags, the path) keeps commands apart."""
+    shape = _VARYING.sub("#", collapse_ws(statement).lower())
+    return hashlib.sha256(shape.encode("utf-8", "replace")).hexdigest()[:12]
+
+
 class MCPGuardDetector:
     name = "mcp_guard"
     surfaces: set[Surface] = {Surface.MCP, Surface.AGENT_TOOLS}
@@ -520,6 +532,7 @@ class MCPGuardDetector:
         can_execute = bool(server) or (tool not in _NON_EXECUTING_BUILTINS and tool not in BOOKKEEPING_BUILTINS)
         mcmd = _dangerous_command(args_text, tenant_allow) if can_execute else None
         if mcmd:
+            statement = collapse_ws(statement_at(mcmd.string, mcmd.start()))
             signals.append(Signal(
                 category=Category.DANGEROUS_COMMAND,
                 title="High-risk command in a tool call",
@@ -527,9 +540,13 @@ class MCPGuardDetector:
                 # ~/.ssh` the span is `rm -rf ~`, which reads like a different command. It is also
                 # the text an allow entry is written against (detectors/allow.py).
                 detail=("An MCP tool call contains a dangerous shell pattern: "
-                        f"{collapse_ws(statement_at(mcmd.string, mcmd.start()))[:200]}"),
+                        f"{statement[:200]}"),
                 weight=0.95, confidence=0.9, detector=self.name,
                 evidence=f"tool={tool}",
+                # One finding per command, not per person: `evidence` is only the tool name, so
+                # without this every flagged Bash call by one person folded into one row whose
+                # detail showed the first command alone.
+                fold_key=_command_fold_key(statement),
             ))
 
         # 4) Tool poisoning — injection hidden in a tool description (scan a normalized view
