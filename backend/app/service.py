@@ -208,7 +208,10 @@ def _fingerprint(tenant_id, item: AnalysisInput, signals: list[dict]) -> str:
     from the same actor as distinct findings."""
     import hashlib
     parts = [str(tenant_id or 0), item.sender, item.channel, item.surface.value, item.subject]
-    parts += sorted(f"{s.get('category','')}|{(s.get('evidence') or '')[:80]}" for s in signals)
+    # `fold` is only present on a signal whose evidence cannot tell events apart; leaving it out
+    # otherwise keeps every existing finding's fingerprint, so nothing already recorded stops folding.
+    parts += sorted(f"{s.get('category','')}|{(s.get('evidence') or '')[:80]}"
+                    + (f"|{s['fold']}" if s.get("fold") else "") for s in signals)
     return hashlib.sha256("\n".join(parts).encode("utf-8", "replace")).hexdigest()
 
 

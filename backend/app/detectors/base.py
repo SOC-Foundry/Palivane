@@ -95,6 +95,10 @@ class Signal:
     detector: str
     evidence: str = ""
     check: str = ""   # optional finer-grained policy key; defaults to the category
+    # What tells one event of this class from another when `evidence` cannot say (it is kept to
+    # `tool=Bash` so a command never rides in the field alerts and SIEM show). Only a digest, never
+    # the text. Repeats of the same fold_key fold into one finding; a different one is its own.
+    fold_key: str = ""
 
     @property
     def contribution(self) -> float:

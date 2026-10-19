@@ -41,6 +41,7 @@ class Verdict:
                     "detector": s.detector,
                     "evidence": s.evidence,
                     "check": s.effective_check,
+                    **({"fold": s.fold_key} if s.fold_key else {}),
                 }
                 for s in self.signals
             ],
