@@ -51,6 +51,9 @@ class AIUsageIngest(BaseModel):
     destination: str = ""   # AI tool URL/domain
     user: str = ""          # end-user identity (from SSO/extension)
     tool: str = ""          # capturing tool id (e.g. "claude-code") for per-tool policy
+    # Host and path of the request the content was captured from (no query string), so a finding
+    # can say where it came from. Metadata only; the extension sends it, a proxy may.
+    endpoint: str = Field(default="", max_length=200)
     # Short-lived grant from POST /api/ingest/justify: resubmitting the same content with
     # it downgrades that block to a proceed (never a confirmed force_block leak).
     override_token: str = ""
