@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from app.models import Finding
 
 
@@ -150,3 +152,50 @@ def test_a_signal_without_a_fold_key_keeps_its_old_fingerprint():
                                     "pii_exposure|possible SSN (9-digit)"]).encode()).hexdigest()
     assert _fingerprint(7, item, [sig]) == old
     assert _fingerprint(7, item, [{**sig, "fold": "abc"}]) != old
+
+
+# --- where a capture came from -----------------------------------------------------------------
+
+def test_a_finding_says_which_request_it_was_captured_from(client, raw_client, db_factory):
+    """A check that fires on something odd (a telemetry beacon read as an SSN) cannot be told from a
+    message the person sent unless the finding records the request. Host and path only, never the
+    query string, and the extension is what supplies it."""
+    key = _key(client)
+    r = raw_client.post(
+        "/api/ingest/ai-usage",
+        json={"content": "customer record: SSN 123-45-6789", "destination": "https://claude.ai",
+              "user": "dev@acme.com", "endpoint": "claude.ai/api/organizations/1/completion"},
+        headers={"X-Palivane-Token": key})
+    assert r.status_code == 200
+    detail = client.get(f"/api/findings/{r.json()['finding_id']}").json()
+    assert detail["signals"] and all(s.get("via") == "claude.ai/api/organizations/1/completion"
+                                     for s in detail["signals"])
+
+
+def test_no_endpoint_adds_nothing(client, raw_client):
+    key = _key(client)
+    first = _ingest(raw_client, key, PII_B)
+    detail = client.get(f"/api/findings/{first['finding_id']}").json()
+    assert all("via" not in s for s in detail["signals"])
+
+
+def test_an_endpoint_does_not_change_what_folds(client, raw_client):
+    """It is stored, not fingerprinted: the same event from two request paths is still one finding."""
+    key = _key(client)
+    body = {"content": PII_B, "destination": "https://claude.ai", "user": "dev@acme.com"}
+    a = raw_client.post("/api/ingest/ai-usage", json={**body, "endpoint": "claude.ai/a"},
+                        headers={"X-Palivane-Token": key}).json()
+    b = raw_client.post("/api/ingest/ai-usage", json={**body, "endpoint": "claude.ai/b"},
+                        headers={"X-Palivane-Token": key}).json()
+    assert a["finding_id"] == b["finding_id"]
+
+
+def test_an_endpoint_is_masked_like_everything_else_stored(client, raw_client):
+    key = _key(client)
+    r = raw_client.post(
+        "/api/ingest/ai-usage",
+        json={"content": PII_B, "destination": "https://claude.ai", "user": "dev@acme.com",
+              "endpoint": "claude.ai/api/AKIA" + "ABCDEFGHIJKLMNOP" + "/completion"},
+        headers={"X-Palivane-Token": key})
+    detail = client.get(f"/api/findings/{r.json()['finding_id']}").json()
+    assert "ABCDEFGHIJKLMNOP" not in json.dumps(detail)

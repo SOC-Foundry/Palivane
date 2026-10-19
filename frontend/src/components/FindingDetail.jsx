@@ -487,7 +487,7 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
               {isAdmin && finding.sender && (
                 <AllowThis key={`${finding.id}:${i}`} finding={finding} signal={s} />
               )}
-              <div className="signal-src">via {s.detector}</div>
+              <div className="signal-src">via {s.detector}{s.via ? ` · captured from the request to ${s.via}` : ""}</div>
             </li>
           ))}
         </ul>

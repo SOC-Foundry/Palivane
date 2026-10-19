@@ -118,6 +118,19 @@ def _stored_context(item: AnalysisInput, signals: list[dict], tenant, db) -> str
     return crypto.seal_with(dek, blob) if dek else seal(blob)
 
 
+def _with_via(signals: list[dict], endpoint) -> list[dict]:
+    """The stored signals, each noting the request the capture came from (host and path, as the
+    extension sent it). When a check fires on something odd, this is what says whether it was a
+    message the person sent or the page's own traffic. Masked like the rest of what is stored."""
+    if not isinstance(endpoint, str) or not endpoint.strip():
+        return signals
+    try:
+        via = excerpts.mask_text(endpoint.strip()[:200])
+    except Exception:
+        return signals
+    return [{**s, "via": via} for s in signals]
+
+
 def _aligned(stored: list, fresh: list[dict]) -> list[dict]:
     """`fresh` reordered to line up index for index with the signals a finding stored when it
     first fired, matched on what the fingerprint matches on (category + evidence). A repeat of
@@ -474,9 +487,11 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             # Detectors quote what they matched (the dangerous-command rule puts up to 80
             # characters of the command in `detail`), so a credential inside it would be stored.
             # Mask the stored copy; `result` keeps the original for the verdict and the sinks.
-            signals=(excerpts.clean_signals(result["signals"],
-                                            getattr(tenant, "custom_pii_patterns", "") or "")
-                     if settings.redact_findings else result["signals"]),
+            signals=_with_via(
+                (excerpts.clean_signals(result["signals"],
+                                        getattr(tenant, "custom_pii_patterns", "") or "")
+                 if settings.redact_findings else result["signals"]),
+                item.metadata.get("endpoint")),
             evidence_context=_stored_context(item, result["signals"], tenant, db),
             judge_used=judge_ran,
             origin=origin,
