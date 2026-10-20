@@ -18,6 +18,7 @@ the request comes from, so there is nothing to withhold.
 | --- | --- | --- |
 | [`palivane-secrets`](../cli/README.md) | Credentials at rest on a **device** (SSH keys, `.env`, cloud creds) | on-demand / MDM-scheduled |
 | **`palivane-s3-scan`** | **S3 bucket** objects + public-exposure | on-demand / systemd timer |
+| **`palivane-dbscan`** | **A database's text columns** (Postgres, SQLite): credentials stored in a table, and credential-named columns kept in clear. Samples rows under a read-only role; only column names, types and masked previews leave | on-demand / CI / scheduled job |
 | **`palivane-github-scan`** | **Whole repos / an entire GitHub org** (via the API) | on-demand / scheduled Action |
 | **`palivane-ci-scan`** | **GitHub Actions workflows / CI runners** (posture, not content): pwn-request triggers, unpinned actions, write-all permissions, self-hosted runners on PRs, AI agents in CI | on-demand / PR gate / scheduled Action |
 | `palivane_git_scan.py --all` | Every tracked file in a **local checkout** | on-demand / CI |
@@ -33,6 +34,37 @@ a security box, not on every developer machine. Download them from the console:
 by default; add `--fail-closed` in a pipeline so a broken sweep is visible.
 
 ---
+
+## Database scanning
+
+```bash
+export PALIVANE_URL=https://palivane.corp.example.com PALIVANE_TOKEN=ak_…
+export PALIVANE_DB_DSN='host=db.internal dbname=app user=scanner'      # a read-only role
+palivane-dbscan --dry-run                      # print the findings; send nothing
+palivane-dbscan --record --exclude-table 'alembic*'
+palivane-dbscan --sqlite ./app.db              # a SQLite file
+```
+
+A service that keeps its customers' provider keys, GitHub tokens or webhook URLs in a table is one
+database compromise away from a rotation event for all of them. `palivane-dbscan` reads a sample of
+each text and JSON column under a read-only, time-limited session and looks for two things:
+
+- **Credentials stored in a table**: a provider key, token or private key in any column, including
+  inside JSON, found with the same detection as the other scanners.
+- **Credential columns kept in clear**: a column named like a credential (`api_key`, `secret`,
+  `token`, `password`, `webhook_url`) whose values are neither a recognizable ciphertext (`enc:`
+  envelopes, Fernet, KMS blobs, Vault transit, jasypt) nor a password hash (bcrypt, argon2, pbkdf2,
+  scrypt, a bare digest). Columns that are *about* a credential (`token_expires_at`, `api_key_id`,
+  `password_hash`) are left alone.
+
+Only metadata leaves the database host: the table and column, the credential type, a masked preview
+and how many sampled values matched. Rows and secrets are never sent. The connection string comes from
+the environment, never a flag, so a password does not reach shell history or the process list.
+
+It **samples** (2,000 rows per table by default, spread across the table on big Postgres tables), so a
+single bad row in a large log table can be missed; raise `--sample` for a thorough pass. Postgres
+needs `psycopg` or `psycopg2`; SQLite needs nothing. It finds credentials *in* the database: it cannot
+tell you where the key that encrypts them is kept.
 
 ## S3 bucket scanning
 

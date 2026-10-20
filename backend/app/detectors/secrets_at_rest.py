@@ -20,7 +20,7 @@ from .base import AnalysisInput, Category, Signal, Surface
 # a stealer wants; everything recognized but lower-impact defaults to medium.
 _CRITICAL_TYPES = {"Private key block"}
 _HIGH_TYPES = {
-    "AWS access key id", "GitHub token", "GitHub fine-grained PAT", "GitLab PAT",
+    "Plaintext credential column", "AWS access key id", "GitHub token", "GitHub fine-grained PAT", "GitLab PAT",
     "Google OAuth token", "Stripe secret key", "Google API key",
 }
 
@@ -39,6 +39,29 @@ def _base_weight(secret_type: str) -> float:
 class SecretsAtRestDetector:
     name = "secrets_at_rest"
     surfaces: set[Surface] = {Surface.SECRETS}
+
+    def _db_signal(self, m: dict, types: list[str], kinds: str, path: str,
+                   weight: float, confidence: float) -> Signal:
+        """A credential palivane-dbscan found in a database, or a credential-named column that keeps its
+        values in clear. The device wording ("stored on the device", file permissions) does not fit."""
+        ref = path[len("db://"):] if path.startswith("db://") else path
+        count = int(m.get("count") or 0)
+        n = f" ({count} sampled value{'s' if count != 1 else ''})" if count else ""
+        if "Plaintext credential column" in types:
+            title = "Credentials stored in clear in a database column"
+            detail = (f"The column {ref} is named like a credential and holds values that are neither "
+                      f"encrypted nor hashed{n}. Anyone who can read the database, a backup of it or a "
+                      "replica can use them. Keep them encrypted under a key that is not stored in the "
+                      "database, or as a hash if the service only has to check them, and rotate the ones "
+                      "that were exposed.")
+        else:
+            title = f"Credential in a database: {kinds}"
+            detail = (f"A {kinds} is stored in {ref}{n}. Anyone who can read the database, a backup of it "
+                      "or a replica can use it. Rotate it, then keep credentials encrypted under a key "
+                      "that is not stored in the database.")
+        return Signal(category=Category.CREDENTIAL_AT_REST, title=title, detail=detail,
+                      weight=weight, confidence=confidence, detector=self.name,
+                      evidence=str(m.get("evidence") or path)[:200])
 
     def _repo_signal(self, m: dict, types: list[str], kinds: str, path: str,
                      weight: float, confidence: float) -> Signal:
@@ -95,6 +118,8 @@ class SecretsAtRestDetector:
         kinds = ", ".join(dict.fromkeys(types))
         if source == "github":
             return [self._repo_signal(m, types, kinds, path, weight, confidence)]
+        if source == "dbscan":
+            return [self._db_signal(m, types, kinds, path, weight, confidence)]
         perm = (" (world/group-readable)" if world_readable is True
                 else " (file permissions unknown)" if world_readable is None else "")
         vtag = " — VERIFIED LIVE" if verified else ""
