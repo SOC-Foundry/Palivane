@@ -65,6 +65,64 @@ _SKIP_PATH = re.compile(
     r"composer\.lock)$|\.min\.(js|css)$", re.IGNORECASE)
 
 
+# Source files, where a generic "token = ..." match is nearly always a variable or a struct field, not a
+# value. (A distinctive vendor key still fires in them; config files keep the generic rule too.)
+_CODE_FILE = re.compile(
+    r"\.(py|js|jsx|mjs|cjs|ts|tsx|go|dart|rb|java|kt|kts|swift|rs|c|h|cc|cpp|hpp|cs|php|scala|lua|m|mm|ex|exs|"
+    r"clj|pl|r|jl|sh|bash|zsh|ps1)$", re.IGNORECASE)
+
+# A connection string to your own machine, or with the password everyone types in an example, is a
+# development default, not a leak.
+_CONN = re.compile(r"[a-z][a-z0-9+.-]*://([^\s:/@]+):([^\s@/]+)@([^\s/:?#]+)", re.IGNORECASE)
+_DEV_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "host.docker.internal", "db", "postgres", "mysql",
+              "redis", "mongo", "database"}
+_DEV_PASSWORDS = {"password", "pass", "passwd", "postgres", "changeme", "secret", "example", "test", "root",
+                  "admin", "user", "username", "123456", "12345", "1234", "hunter2", "mypassword", "yourpassword",
+                  "your-password", "your_password", "password123", "dev", "devpassword"}
+
+
+def _dev_default_conn(line: str) -> bool:
+    m = _CONN.search(line)
+    return bool(m and (m.group(3).lower() in _DEV_HOSTS or m.group(2).lower() in _DEV_PASSWORDS))
+
+
+def _path_rx(glob: str):
+    """One path glob as a regex, in the way a .gitignore reads it: `*` stays inside a directory, `**`
+    crosses them, a pattern with no slash (or only a trailing one) matches at any depth, and one with a
+    slash in the middle is anchored at the repository root."""
+    g = glob.strip().lstrip("./")
+    if not g:
+        return None
+    anchored = "/" in g.rstrip("/")
+    if g.endswith("/"):
+        g += "**"
+    out, i = [], 0
+    while i < len(g):
+        if g.startswith("**/", i):
+            out.append("(?:.*/)?")
+            i += 3
+        elif g.startswith("**", i):
+            out.append(".*")
+            i += 2
+        elif g[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif g[i] == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(g[i]))
+            i += 1
+    return re.compile(("^" if anchored else "^(?:.*/)?") + "".join(out) + "$", re.IGNORECASE)
+
+
+def _path_globs(value) -> list:
+    if isinstance(value, (list, tuple)):
+        value = "\n".join(str(v) for v in value)
+    parts = [g for g in re.split(r"[,\n]", str(value or "")) if g.strip()][:100]
+    return [rx for rx in (_path_rx(g) for g in parts) if rx]
+
+
 def _clamp(value, lo: int, hi: int, default: int) -> int:
     try:
         return max(lo, min(hi, int(value)))
@@ -102,12 +160,14 @@ def locate_secrets(text: str, path: str, first_line: int = 1, line_numbers: list
     """[(label, line_no, masked)] for the credentials in `text`, at most _HITS_PER_FILE.
 
     Generic matches (a `password = "…"` assignment, a bare JWT) are dropped in a test/fixture/docs/
-    vendored path, where they are overwhelmingly illustrative; a distinctive vendor key fires
-    anywhere. `line_numbers` maps each line of `text` to its number in the file (a diff's added
+    vendored path and in source files, where they are overwhelmingly illustrative or just a variable
+    name; a distinctive vendor key fires anywhere. A connection string to localhost, or with a
+    placeholder password, is a development default and is dropped too. `line_numbers` maps each line of `text` to its number in the file (a diff's added
     lines are not consecutive)."""
     if not text or not find_secrets(text):         # one cheap pass says whether any line is worth reading
         return []
     low = is_low_signal_path(path)
+    code = bool(_CODE_FILE.search(path))
     out, seen = [], set()
     for i, line in enumerate(text.splitlines()):
         if len(line) > _MAX_LINE:
@@ -117,7 +177,9 @@ def locate_secrets(text: str, path: str, first_line: int = 1, line_numbers: list
             continue
         no = line_numbers[i] if line_numbers and i < len(line_numbers) else first_line + i
         for label in dict.fromkeys(labels):
-            if low and only_generic_secrets([label]):
+            if (low or code) and only_generic_secrets([label]):
+                continue
+            if label == "Connection string credential" and _dev_default_conn(line):
                 continue
             masked = next((_mask(m.group(0)) for lb, rx in SECRET_PATTERNS if lb == label
                            for m in [rx.search(line)] if m), f"{label} (line {no})")
@@ -170,6 +232,7 @@ class _Run:
         self.include, self.exclude = _globs(creds.get("include")), _globs(creds.get("exclude"))
         self.history = _clamp(creds.get("history_days"), 0, 365, 90)
         self.max_repos = _clamp(creds.get("max_repos"), 1, 1000, 200)
+        self.exclude_paths = _path_globs(creds.get("exclude_paths"))
         self.all_branches = str(creds.get("branches") or "default").strip().lower() == "all"
         self.max_branches = _clamp(creds.get("max_branches"), 1, _BRANCHES_MAX, _BRANCHES_DEFAULT)
         self.db, self.connector = db, connector
@@ -182,6 +245,10 @@ class _Run:
 
     def get(self, path: str):
         return sc._http_json(self.api + path, headers=self.hdrs)
+
+    def skip_path(self, path: str) -> bool:
+        """Files not worth reading: the built-in list (binaries, lockfiles) and the admin's exclude_paths."""
+        return bool(_SKIP_PATH.search(path)) or any(rx.match(path) for rx in self.exclude_paths)
 
     def out_of_time(self) -> bool:
         if time.monotonic() >= self.deadline:
@@ -296,7 +363,7 @@ class _Run:
         if tree.get("truncated"):
             self.errors.append(f"{full}: tree too large for one listing, scanned what GitHub returned")
         blobs = sorted((t for t in tree.get("tree", []) if t.get("type") == "blob"
-                        and not _SKIP_PATH.search(t.get("path", ""))
+                        and not self.skip_path(t.get("path", ""))
                         and int(t.get("size") or 0) <= _MAX_BLOB_BYTES), key=lambda t: t["path"])
         i = int(state.get("tree_cursor") or 0)
         while i < len(blobs):
@@ -350,7 +417,7 @@ class _Run:
                 author = ((detail.get("commit") or {}).get("author") or {}).get("email", "")
                 for f in detail.get("files") or []:
                     path = f.get("filename", "")
-                    if f.get("status") == "removed" or not f.get("patch") or _SKIP_PATH.search(path):
+                    if f.get("status") == "removed" or not f.get("patch") or self.skip_path(path):
                         continue
                     text, numbers = _added_lines(f["patch"])
                     for label, line, masked in locate_secrets(text, path, line_numbers=numbers):

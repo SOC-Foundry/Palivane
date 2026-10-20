@@ -455,7 +455,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
   }
   // --- GitHub secret scanning (a read-only token, one connector per organization) ---
   const [ghConns, setGhConns] = useState([]);
-  const [ghDraft, setGhDraft] = useState({ token: "", org: "", exclude: "", history_days: "90", scan_every_minutes: "60", branches: "default" });
+  const [ghDraft, setGhDraft] = useState({ token: "", org: "", exclude: "", exclude_paths: "", history_days: "90", scan_every_minutes: "60", branches: "default" });
   const [ghBusy, setGhBusy] = useState("");
   const loadGithub = useCallback(async () => {
     try {
@@ -468,12 +468,12 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
     if (!ghDraft.token.trim()) return;
     setGhBusy("save");
     try {
-      const { token, org, exclude, history_days, scan_every_minutes, branches } = ghDraft;
+      const { token, org, exclude, exclude_paths, history_days, scan_every_minutes, branches } = ghDraft;
       await api.createConnector("github_secrets", org.trim() || "github", {
-        token: token.trim(), org: org.trim(), exclude: exclude.trim(),
+        token: token.trim(), org: org.trim(), exclude: exclude.trim(), exclude_paths: exclude_paths.trim(),
         history_days: Number(history_days) || 90,
         scan_every_minutes: Math.max(5, Number(scan_every_minutes) || 60), branches });
-      setGhDraft({ token: "", org: "", exclude: "", history_days: "90", scan_every_minutes: "60", branches: "default" });   // the token never lingers in the form
+      setGhDraft({ token: "", org: "", exclude: "", exclude_paths: "", history_days: "90", scan_every_minutes: "60", branches: "default" });   // the token never lingers in the form
       flash("GitHub connected. Hit Scan now to read the repositories; it keeps scanning on its own after that.");
       loadGithub();
     } catch (e2) { err(e2); } finally { setGhBusy(""); }
@@ -1412,6 +1412,12 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                          onChange={(e) => setGhDraft((d) => ({ ...d, history_days: e.target.value }))} />
                   <span className="muted" style={{ fontSize: 12, alignSelf: "center" }}>days of history</span>
                 </div>
+                <div className="form-row" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+                  <input placeholder="Skip paths in every repository (e.g. fixtures/, **/testdata/**, docs/**, *.md)"
+                         value={ghDraft.exclude_paths} style={{ flex: "1 1 100%", minWidth: 0 }}
+                         title="Read like a .gitignore. Skipped files are not fetched, so this also saves GitHub calls."
+                         onChange={(e) => setGhDraft((d) => ({ ...d, exclude_paths: e.target.value }))} />
+                </div>
                 <div className="form-row" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
                   <span className="muted" style={{ fontSize: 12 }}>Scan every</span>
                   <input type="number" min="5" max="1440" value={ghDraft.scan_every_minutes} style={{ width: 100 }}
@@ -1431,7 +1437,9 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
               <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Create a fine-grained personal
                 access token (or GitHub App installation token) with <code>Contents: Read</code> and
                 <code> Metadata: Read</code> on the repositories to cover. Palivane only ever makes GET
-                requests. It spends most of GitHub's hourly quota on a scan and never runs it out; by default only the
+                requests. Generic matches in source files (a variable called token) and development connection
+                strings (localhost, a placeholder password) are ignored; a vendor-format key is reported
+                wherever it is. Use "Skip paths" for fixtures and corpora you keep on purpose. It spends most of GitHub's hourly quota on a scan and never runs it out; by default only the
                 default branch is read, and "all branches" also reads the commits on every other branch that
                 are not on it yet. Pattern matches in test, fixture, docs and
                 vendored paths are ignored unless they are a distinctive vendor key. Findings land under

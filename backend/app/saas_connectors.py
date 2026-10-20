@@ -2004,13 +2004,15 @@ PLATFORMS: dict[str, dict] = {
         "scan": _scan_github,
         "schedule_secs": 3600,       # syncs on its own every hour (app/connector_schedule.py) ...
         "interval_for": _github_interval,   # ... unless the connector sets scan_every_minutes
-        "credential_fields": ["token", "org", "include", "exclude", "history_days", "max_repos",
-                              "scan_every_minutes", "branches", "max_branches", "api_url"],
+        "credential_fields": ["token", "org", "include", "exclude", "exclude_paths", "history_days",
+                              "max_repos", "scan_every_minutes", "branches", "max_branches", "api_url"],
         "setup": "A READ-ONLY fine-grained personal access token (or GitHub App installation token) "
                  "with Contents: Read and Metadata: Read on the repositories to cover; it only "
                  "ever calls GET endpoints. `org` is the organization (or user) whose repositories "
                  "to scan; leave it empty to scan everything the token can see. `include` and "
-                 "`exclude` are comma-separated repository names or globs; `history_days` (default "
+                 "`exclude` are comma-separated repository names or globs; `exclude_paths` is a list of "
+                 "path globs inside a repository to leave unread (read like a .gitignore: `fixtures/`, "
+                 "`**/testdata/**`, `*.md`, `docs/**`), which also saves the API calls; `history_days` (default "
                  "90) is how far back commits are read for secrets that were committed and removed; "
                  "`max_repos` (default 200); `scan_every_minutes` (5 to 1440, default 60) is how often it "
                  "scans on its own; `branches` is `default` (default) or `all`, which also reads the "
