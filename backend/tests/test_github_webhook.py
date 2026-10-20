@@ -217,3 +217,11 @@ def test_a_failing_scan_does_not_break_the_response(hook, raw_client, monkeypatc
         raise sc.ConnectorError("HTTP 500 from api.github.com")
     monkeypatch.setattr(sc, "_http_json", boom)
     assert _push(hook, raw_client).status_code == 200
+
+
+def test_a_push_respects_the_excluded_paths(client, hook, raw_client, db_factory):
+    client.post("/api/discovery/connectors", json={"platform": "github_secrets", "label": "acme",
+                                                   "credentials": {"token": TOKEN, "org": "acme",
+                                                                   "exclude_paths": "deploy.sh"}})
+    _push(hook, raw_client)
+    assert _findings(db_factory) == []
