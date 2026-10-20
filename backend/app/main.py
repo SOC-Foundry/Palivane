@@ -199,7 +199,26 @@ async def lifespan(_app: FastAPI):
             except Exception as e:
                 log.warning("digest loop error: %s", e)
 
+    async def _connector_loop():
+        # Scheduled connector scans (GitHub secret scanning). Its own task: a scan makes hundreds
+        # of API calls, and it must not hold up the digests in the loop above.
+        from .connector_schedule import run_scheduled_scans
+        from .database import SessionLocal
+        while True:
+            try:
+                await asyncio.sleep(300)
+                db = SessionLocal()
+                try:
+                    await asyncio.to_thread(run_scheduled_scans, db)
+                finally:
+                    db.close()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.warning("connector loop error: %s", e)
+
     task = asyncio.create_task(_digest_loop())
+    connector_task = asyncio.create_task(_connector_loop())
     # The remote MCP transport keeps its own session manager, and Starlette does NOT run a
     # mounted sub-app's lifespan — mounting it without this yields an app that accepts a
     # request and then hangs. So the parent lifespan owns it.
@@ -209,6 +228,7 @@ async def lifespan(_app: FastAPI):
             yield
         finally:
             task.cancel()
+            connector_task.cancel()
         # Ship any buffered archive events before the instance goes away (Cloud Run
         # SIGTERM grace period) — the in-memory batch must not die with the process.
         from . import archive_s3
