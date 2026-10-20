@@ -252,6 +252,9 @@ class Settings:
     # base; see gateway._openai_upstream): the api-version used for the classic
     # deployments URL layout. The 2025+ /openai/v1 unified endpoint ignores it.
     gateway_azure_api_version: str = _env("GATEWAY_AZURE_API_VERSION", "2024-10-21")
+    # Scheduled connector scans (app/connector_schedule.py): a platform that sets `schedule_secs`
+    # (GitHub secret scanning) syncs on its own at that interval. Off = admin-triggered only.
+    connector_schedule: bool = _env("PALIVANE_CONNECTOR_SCHEDULE", "true").lower() in ("1", "true", "yes")
     # Public read-only demo (see app/demo.py): slug of the tenant the demo button signs
     # into (seed it with `python -m app.seed`). Empty = no demo. Demo sessions carry a
     # `demo` claim that get_current_user enforces as read-only.
