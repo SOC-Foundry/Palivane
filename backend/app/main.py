@@ -2580,7 +2580,7 @@ def _record_secret(it: SecretAtRest, host: str, actor: str, tenant_id, record: b
         content=f"{it.path}\n{it.masked}", subject=it.path,
         sender=actor, channel=host or "endpoint", surface=Surface.SECRETS,
         metadata={"secret_types": it.secret_types, "path": it.path,
-                  "world_readable": it.world_readable, "verified": it.verified,
+                  "world_readable": it.world_readable, "verified": it.verified, "count": it.count,
                   "source": it.source, "evidence": it.masked or it.path},
     )
     r = run_analysis(item, persist=record and tenant_id is not None, db=db, tenant_id=tenant_id)
@@ -2630,6 +2630,16 @@ def _secret_remediation(it: SecretAtRest) -> list[str]:
     """A concrete rotate/lock-down plan for one at-rest credential."""
     steps: list[str] = []
     types = " ".join(it.secret_types).lower()
+    if it.source == "dbscan":
+        return [
+            "Rotate every credential in this column that anyone able to read the database could have seen: "
+            "revoke it at the provider, then issue a new one.",
+            "Stop keeping it in clear. Encrypt the column under a key that is not stored in the database or "
+            "its backups (a cloud KMS envelope key is the usual answer), or keep only a hash if the service "
+            "only ever has to check the value.",
+            "Look for the other copies: backups and snapshots, read replicas, analytics exports, and log or "
+            "audit tables that record request bodies.",
+        ]
     if "private key" in types:
         steps.append("Rotate the key pair and remove the private key from disk; use an SSH "
                      "agent or the OS keychain instead of a plaintext key file.")

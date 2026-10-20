@@ -47,6 +47,7 @@ _ALLOW = {
     "palivane-posture": "cli/palivane-posture",
     "palivane-secrets": "cli/palivane-secrets",
     "palivane-s3-scan": "cli/palivane-s3-scan",
+    "palivane-dbscan": "cli/palivane-dbscan",
     "palivane-github-scan": "cli/palivane-github-scan",
     "palivane-ci-scan": "cli/palivane-ci-scan",
     "palivane-otel": "cli/palivane-otel",
@@ -64,7 +65,7 @@ _ALLOW = {
 # ops/admin scanners run on demand (CI / a security box), not planes installed on every
 # developer machine, so they're downloadable but not auto-installed.
 _INSTALLER_SKIP = {"palivane_addon.py", "palivane-reenroll.ps1", "palivane-desktop.ps1",
-                   "palivane-s3-scan", "palivane-github-scan", "palivane-ci-scan"}
+                   "palivane-s3-scan", "palivane-dbscan", "palivane-github-scan", "palivane-ci-scan"}
 _CLI_TOOLS = [n for n in _ALLOW if n not in _INSTALLER_SKIP]
 
 # Candidate roots: /app in the container (backend copied to /app, cli/ to /app/cli), and
