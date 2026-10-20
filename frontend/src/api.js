@@ -192,6 +192,9 @@ export const api = {
   syncConnector: (id) => req(`/discovery/connectors/${id}/sync`, { method: "POST" }),
   updateConnector: (id, options) => req(`/discovery/connectors/${id}`,
                                         { method: "PATCH", body: JSON.stringify(options) }),
+  createConnector: (platform, label, credentials) =>
+    req("/discovery/connectors", { method: "POST", body: JSON.stringify({ platform, label, credentials }) }),
+  deleteConnector: (id) => req(`/discovery/connectors/${id}`, { method: "DELETE" }),
   slackInstallUrl: () => req("/slack/install"),
   exportFindings: async () => {
     const token = getToken();

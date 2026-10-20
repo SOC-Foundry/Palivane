@@ -453,6 +453,43 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
       loadSlack();
     } catch (e) { err(e); }
   }
+  // --- GitHub secret scanning (a read-only token, one connector per organization) ---
+  const [ghConns, setGhConns] = useState([]);
+  const [ghDraft, setGhDraft] = useState({ token: "", org: "", exclude: "", history_days: "90" });
+  const [ghBusy, setGhBusy] = useState("");
+  const loadGithub = useCallback(async () => {
+    try {
+      const r = await api.connectors();
+      setGhConns((r.connectors || []).filter((c) => c.platform === "github_secrets"));
+    } catch { /* older API or non-admin */ }
+  }, []);
+  async function addGithub(e) {
+    e.preventDefault();
+    if (!ghDraft.token.trim()) return;
+    setGhBusy("save");
+    try {
+      const { token, org, exclude, history_days } = ghDraft;
+      await api.createConnector("github_secrets", org.trim() || "github", {
+        token: token.trim(), org: org.trim(), exclude: exclude.trim(),
+        history_days: Number(history_days) || 90 });
+      setGhDraft({ token: "", org: "", exclude: "", history_days: "90" });   // the token never lingers in the form
+      flash("GitHub connected. Hit Scan now to read the repositories; it keeps scanning on its own after that.");
+      loadGithub();
+    } catch (e2) { err(e2); } finally { setGhBusy(""); }
+  }
+  async function scanGithub(id) {
+    setGhBusy(`scan-${id}`);
+    try {
+      const s = await api.syncConnector(id);
+      flash(`Read ${s.repos} repo(s), ${s.blobs} file(s) and ${s.commits} commit(s): ${s.findings} finding(s).`
+            + (s.truncated ? " More to read; it carries on at the next scan." : ""));
+      loadGithub();
+    } catch (e2) { err(e2); loadGithub(); } finally { setGhBusy(""); }
+  }
+  async function removeGithub(id) {
+    if (!window.confirm("Stop scanning this GitHub organization? Findings already recorded stay.")) return;
+    try { await api.deleteConnector(id); loadGithub(); } catch (e2) { err(e2); }
+  }
   useEffect(() => {   // OAuth callback lands back here with ?slack=<result>
     const p = new URLSearchParams(window.location.search).get("slack");
     if (p) {
@@ -667,7 +704,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
     } catch (e) { err(e); }
   }
 
-  useEffect(() => { loadUsage(); loadUps(); loadJudgeKey(); loadOidc(); loadSaml(); loadDpa(); loadCatalog(); loadUpgrade(); loadBilling(); loadSinkHealth(); loadSlack(); },
+  useEffect(() => { loadUsage(); loadUps(); loadJudgeKey(); loadOidc(); loadSaml(); loadDpa(); loadCatalog(); loadUpgrade(); loadBilling(); loadSinkHealth(); loadSlack(); loadGithub(); },
     [loadUsage, loadUps, loadJudgeKey, loadOidc, loadSaml, loadDpa, loadCatalog, loadUpgrade, loadBilling, loadSinkHealth, loadSlack]);
 
   async function logoutEverywhere() {
@@ -1290,6 +1327,58 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                  block, and no edit of another person's message, outside Enterprise Grid's
                  Discovery API.
                  <a href="/docs/slack-scanning" target="_blank" rel="noreferrer"> Full setup →</a></p>
+            </div>
+
+            {/* GitHub secret scanning */}
+            <div className="panel settings-card">
+              <h2>GitHub secret scanning
+                {ghConns.length > 0 && <span className="chip chip-on">{ghConns.length} connected</span>}</h2>
+              <p className="muted">Palivane reads your repositories with a read-only token and reports
+                credentials committed to them: in the code as it is now, and in the added lines of every
+                commit from the last 90 days, so a key that was committed and then deleted still shows
+                up (it is in git history until it is rotated). Only the repository, path, line, commit
+                and a masked preview are stored, never the secret or the surrounding code.</p>
+              {ghConns.map((c) => (
+                <div key={c.id} className="form-row" style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 6 }}>
+                  <strong>{c.label}</strong>
+                  <span className="muted" style={{ fontSize: 12, flex: 1 }}>
+                    {c.last_sync_at
+                      ? `${c.last_sync_status === "ok" ? "last scan" : "last scan failed"} ${new Date(c.last_sync_at + "Z").toLocaleString()}`
+                      : "not scanned yet"}
+                    {c.last_sync_status === "error" && c.last_sync_detail ? `: ${c.last_sync_detail}` : ""}
+                  </span>
+                  <button type="button" className="mini-btn" disabled={ghBusy === `scan-${c.id}`}
+                          onClick={() => scanGithub(c.id)}>{ghBusy === `scan-${c.id}` ? "Scanning…" : "Scan now"}</button>
+                  <button type="button" className="mini-btn" onClick={() => removeGithub(c.id)}>Remove</button>
+                </div>
+              ))}
+              <form onSubmit={addGithub} style={{ marginTop: ghConns.length ? 14 : 8 }}>
+                <div className="form-row" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <input type="password" autoComplete="off" placeholder="Fine-grained token (read-only)"
+                         value={ghDraft.token} style={{ flex: "2 1 260px", minWidth: 0 }}
+                         onChange={(e) => setGhDraft((d) => ({ ...d, token: e.target.value }))} />
+                  <input placeholder="Organization (empty = everything the token sees)" value={ghDraft.org}
+                         style={{ flex: "2 1 260px", minWidth: 0 }}
+                         onChange={(e) => setGhDraft((d) => ({ ...d, org: e.target.value }))} />
+                </div>
+                <div className="form-row" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
+                  <input placeholder="Skip repositories (comma-separated names or globs)" value={ghDraft.exclude}
+                         style={{ flex: "2 1 260px", minWidth: 0 }}
+                         onChange={(e) => setGhDraft((d) => ({ ...d, exclude: e.target.value }))} />
+                  <input type="number" min="0" max="365" value={ghDraft.history_days} style={{ width: 130 }}
+                         title="How many days of commit history to read for secrets that were committed and removed"
+                         onChange={(e) => setGhDraft((d) => ({ ...d, history_days: e.target.value }))} />
+                  <span className="muted" style={{ fontSize: 12, alignSelf: "center" }}>days of history</span>
+                  <button type="submit" className="primary-btn slim" disabled={!ghDraft.token.trim() || ghBusy === "save"}>
+                    {ghConns.length ? "Add organization" : "Connect GitHub"}</button>
+                </div>
+              </form>
+              <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Create a fine-grained personal
+                access token (or GitHub App installation token) with <code>Contents: Read</code> and
+                <code> Metadata: Read</code> on the repositories to cover. Palivane only ever makes GET
+                requests. Only the default branch is read. Pattern matches in test, fixture, docs and
+                vendored paths are ignored unless they are a distinctive vendor key. Findings land under
+                the <code>secrets</code> surface with alerts and SIEM export as usual.</p>
             </div>
 
           </Section>
