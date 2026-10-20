@@ -179,6 +179,10 @@ class SecretAtRest(BaseModel):
     world_readable: bool | None = False
     verified: bool = False       # a scanner confirmed the credential is live (TruffleHog)
     source: str = ""             # detection engine: "palivane" | "trufflehog" | "gitleaks" | …
+    # How many values matched, for a scanner that samples many of them (palivane-dbscan reports the
+    # column once, not once per row). Not part of what a finding says, so a changing count never
+    # opens a new finding.
+    count: int = Field(default=0, ge=0, le=100_000_000)
 
 
 class SecretScan(BaseModel):
