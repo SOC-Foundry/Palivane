@@ -345,3 +345,67 @@ def test_switching_to_all_branches_rereads_a_repository_that_had_nothing_new(cli
     first = len(github.calls)
     _sync(client, github)
     assert any("/compare/" in c for c in github.calls[first:])
+
+
+# --- less noise ----------------------------------------------------------------------------------
+
+def test_a_generic_match_in_source_code_is_dropped_but_not_in_config():
+    line = 'token = "abcdefghij1234567890"\nclient_secret: "Zx9Qm2Lp7Rt4Vk8Nw3Bs"\n'
+    assert gh.locate_secrets(line, "src/app/auth.py") == []
+    assert gh.locate_secrets(line, "internal/collect/main.go") == []
+    assert gh.locate_secrets(line, "config/settings.yaml")                    # a config file keeps the rule
+    assert gh.locate_secrets(line, ".env.production")
+
+
+def test_a_vendor_key_still_fires_in_source_code():
+    hits = gh.locate_secrets(f'KEY = "{AWS}"\n', "src/app/billing.py")
+    assert [h[0] for h in hits] == ["AWS access key id"]
+
+
+def test_a_development_connection_string_is_not_a_leak_but_a_real_one_is():
+    local = "DATABASE_URL=postgres://app:s3cr3tValue99@localhost:5432/app"
+    placeholder = "DATABASE_URL=postgres://app:password@db.internal.acme.io:5432/app"
+    real = "DATABASE_URL=postgres://app:Zx9Qm2Lp7Rt4Vk8Nw3Bs@db.prod.acme.io:5432/app"
+    assert gh.locate_secrets(local, "config/db.env") == []
+    assert gh.locate_secrets(placeholder, "config/db.env") == []
+    assert [h[0] for h in gh.locate_secrets(real, "config/db.env")] == ["Connection string credential"]
+
+
+@pytest.mark.parametrize("glob,path,hit", [
+    ("fixtures/", "a/b/fixtures/key.txt", True),               # a directory, at any depth
+    ("fixtures/", "fixtures.py", False),
+    ("**/testdata/**", "pkg/x/testdata/y/z.json", True),
+    ("**/testdata/**", "pkg/testdata.json", False),
+    ("*.md", "docs/guide.md", True),                           # no slash: any depth
+    ("*.md", "README.md", True),
+    ("docs/**", "docs/a/b.txt", True),
+    ("docs/**", "src/docs/a.txt", False),                      # a slash in the middle anchors it at the root
+    ("src/*.py", "src/a.py", True),
+    ("src/*.py", "src/sub/a.py", False),                       # `*` does not cross a directory
+    ("backend/tools/fp_benchmark/**", "backend/tools/fp_benchmark/corpus/secrets/a.py", True),
+    ("TESTS/", "tests/a.py", True),                            # case-insensitive
+    ("", "a.py", False),
+])
+def test_path_globs_read_like_a_gitignore(glob, path, hit):
+    assert any(rx.match(path) for rx in gh._path_globs(glob)) is hit
+
+
+def test_excluded_paths_are_never_fetched_and_never_flagged(client, github, db_factory):
+    _creds(client, github, exclude_paths="src/\n*.md")
+    _sync(client, github)
+    subjects = {s for s, *_ in _findings(db_factory)}
+    assert "acme/app/src/config.py" not in subjects                   # excluded
+    assert not any(c.endswith("/git/blobs/b-config") or c.endswith("/git/blobs/b-docs") or
+                   c.endswith("/git/blobs/b-clean") for c in github.calls)    # and not even read
+    assert "acme/app/deploy.sh" in subjects                           # everything else still is
+
+
+def test_excluded_paths_are_skipped_in_commit_diffs_too(client, github, db_factory):
+    _creds(client, github, exclude_paths="deploy.sh")
+    _sync(client, github)
+    assert "acme/app/deploy.sh" not in {s for s, *_ in _findings(db_factory)}
+
+
+def test_exclude_paths_is_a_listed_option(client):
+    p = client.get("/api/discovery/connectors").json()["platforms"]["github_secrets"]
+    assert "exclude_paths" in p["credential_fields"] and ".gitignore" in p["setup"]
