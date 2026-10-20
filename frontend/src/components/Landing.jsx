@@ -2,7 +2,7 @@ import { useState } from "react";
 import { BrandClaude, BrandCursor, BrandCopilot, BrandGemini, BrandPerplexity, BrandOpenAI,
          BrandDrive, BrandSlack, BrandGit, BrandGitHub, BrandNpm, BrandActions,
          BrandSharePoint, BrandSalesforce, BrandTeams, BrandGmail,
-         BrandSnowflake, BrandDatabricks } from "./brandicons.jsx";
+         BrandSnowflake, BrandDatabricks, GenericDatabase } from "./brandicons.jsx";
 import { SiteNav, SiteFooter, Shot, Clip, Lightbox } from "./SiteChrome.jsx";
 // Derived from the detector source at build time (frontend/scripts/gen-stats.mjs, CI
 // fails when stale) — the band can never claim different numbers than the engine ships.
@@ -44,6 +44,8 @@ const CAPTURE = [
   { logos: [[BrandOpenAI, C.openai], [BrandClaude, C.claude], [BrandGemini, C.gemini], [BrandPerplexity, C.perplexity]], more: stats.browser_sites - 4, title: "In the browser", body: `What people paste into ${stats.browser_sites} AI sites, from ChatGPT and Claude to the app builders.` },
   { logos: [[BrandSlack, C.slack], [BrandTeams, C.teams], [BrandGmail, C.gmail], [BrandDrive, C.drive], [BrandSharePoint, C.sharepoint], [BrandSalesforce, C.salesforce]], title: "In the places it already sits", body: "Slack, Teams, Gmail, Drive, SharePoint, and Salesforce, scanned where the data lives. Read-only, nothing installed." },
   { logos: [[BrandGit, C.git], [BrandGitHub, C.github], [BrandNpm, C.npm]], title: "In code and laptops", body: "Commits and dependencies before they land, and credentials already at rest." },
+  { logos: [[BrandGitHub, C.github]], title: "In your repositories", body: "Keys committed to GitHub, including ones since deleted. Checked on a schedule, or within seconds of a push." },
+  { logos: [[GenericDatabase, "#9AA7A0"]], title: "In your databases", body: "Provider keys kept in clear in a table. A read-only scan that runs inside your network." },
   { logos: [[BrandSnowflake, C.snowflake], [BrandDatabricks, C.databricks]], title: "In the data warehouse", body: "Snowflake Cortex and Databricks Model Serving, read from the warehouse's own query history. It reports rather than blocks." },
   { logos: [[BrandActions, C.actions]], title: "In CI pipelines", body: "Agents on CI runners with production credentials. GitHub Actions, GitLab CI, CircleCI, Azure Pipelines." },
   { logos: [[BrandClaude, C.claude], [BrandOpenAI, C.openai]], title: "In desktop apps", body: "Claude and ChatGPT desktop. Needs a system proxy and a trusted CA, so it is usually phase two." },
@@ -72,7 +74,7 @@ const MCP_ASKS = [
 ];
 
 const LOOKS_FOR = [
-  { title: "Passwords, keys, and tokens", body: "Nearly sixty credential formats, in prompts and in what an assistant sends back." },
+  { title: "Passwords, keys, and tokens", body: "Nearly sixty credential formats, in prompts, in repositories, and in what an assistant sends back." },
   { title: "Personal and customer data", body: "Social security numbers, payment cards, and customer records." },
   { title: "Whatever the file happens to be", body: "Spreadsheets, PDFs, and screenshots. What it cannot open is reported as unread, never as clean." },
   { title: "Code and confidential documents", body: "Proprietary source, financials, contracts, and labelled material." },
@@ -276,6 +278,21 @@ export default function Landing({ onSignIn }) {
           </div>
           <div className="lp-split-media">
             <Shot src="/shots/agents.png?v=7" alt="AI assistant identity and limits"
+                  onZoom={(s, a) => setZoom({ src: s, alt: a })} />
+          </div>
+        </div>
+      </section>
+
+      <section className="lp-section alt">
+        <div className="lp-wrap lp-split lp-split-rev">
+          <div className="lp-split-text">
+            <span className="lp-eyebrow">Trust</span>
+            <h2 className="lp-h2">Know how often each check is right</h2>
+            <p className="lp-sub">One-click reviews become a readout per check, and the noisy ones
+              become a time-limited allowlist.</p>
+          </div>
+          <div className="lp-split-media">
+            <Shot src="/shots/precision.png?v=1" alt="Detection precision: how often each check was right"
                   onZoom={(s, a) => setZoom({ src: s, alt: a })} />
           </div>
         </div>
