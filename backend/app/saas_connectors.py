@@ -1997,6 +1997,7 @@ PLATFORMS: dict[str, dict] = {
     "github_secrets": {
         "label": "GitHub secret scanning",
         "scan": _scan_github,
+        "schedule_secs": 3600,       # syncs on its own every hour (app/connector_schedule.py)
         "credential_fields": ["token", "org", "include", "exclude", "history_days", "max_repos",
                               "api_url"],
         "setup": "A READ-ONLY fine-grained personal access token (or GitHub App installation token) "
