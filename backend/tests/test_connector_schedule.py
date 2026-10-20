@@ -147,3 +147,45 @@ def test_the_switch_turns_it_off(stub, db_factory, monkeypatch):
 def test_github_secret_scanning_is_scheduled_hourly():
     assert sc.PLATFORMS["github_secrets"]["schedule_secs"] == 3600
     assert not any(v.get("schedule_secs") for k, v in sc.PLATFORMS.items() if k != "github_secrets")
+
+
+def test_a_connector_can_ask_for_its_own_interval(stub, client, db_factory, monkeypatch):
+    monkeypatch.setitem(sc.PLATFORMS, "stubfast", {
+        "label": "Fast", "scan": sc.PLATFORMS["stubscan"]["scan"], "schedule_secs": 3600,
+        "interval_for": lambda creds, default: int(creds.get("every", 0)) * 60 or default,
+        "credential_fields": []})
+    r = client.post("/api/discovery/connectors", json={"platform": "stubfast", "label": "f",
+                                                      "credentials": {"every": 10}})
+    assert r.status_code == 200
+    now = datetime.utcnow()
+    assert _run(db_factory, now) == 1
+    assert _run(db_factory, now + timedelta(minutes=5)) == 0
+    assert _run(db_factory, now + timedelta(minutes=11)) == 1       # ten minutes, not an hour
+
+
+def test_an_unreadable_interval_falls_back_to_the_platforms(stub, client, db_factory, monkeypatch):
+    def broken(creds, default):
+        raise ValueError("bad option")
+    monkeypatch.setitem(sc.PLATFORMS, "stubbad", {
+        "label": "Bad", "scan": sc.PLATFORMS["stubscan"]["scan"], "schedule_secs": 3600,
+        "interval_for": broken, "credential_fields": []})
+    client.post("/api/discovery/connectors", json={"platform": "stubbad", "label": "b", "credentials": {}})
+    now = datetime.utcnow()
+    assert _run(db_factory, now) == 1
+    assert _run(db_factory, now + timedelta(minutes=30)) == 0
+    assert _run(db_factory, now + timedelta(minutes=61)) == 1
+
+
+def test_a_scheduled_scan_gets_the_long_clock_and_gives_it_back(stub, db_factory):
+    from app import github_secrets as gh
+    seen = []
+    original = sc.PLATFORMS["stubscan"]["scan"]
+
+    def scan(db, connector, creds):
+        seen.append(gh.max_seconds.get())
+        return original(db, connector, creds)
+
+    sc.PLATFORMS["stubscan"]["scan"] = scan
+    stub["make"]("a")
+    _run(db_factory)
+    assert seen == [cs.SCAN_MAX_SECS] and gh.max_seconds.get() == 100.0
