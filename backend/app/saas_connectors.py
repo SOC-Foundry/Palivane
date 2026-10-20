@@ -1988,7 +1988,29 @@ def _scan_databricks(db, connector, creds):
     return scan_databricks(db, connector, creds)
 
 
+def _scan_github(db, connector, creds):
+    from .github_secrets import scan_github_secrets
+    return scan_github_secrets(db, connector, creds)
+
+
 PLATFORMS: dict[str, dict] = {
+    "github_secrets": {
+        "label": "GitHub secret scanning",
+        "scan": _scan_github,
+        "credential_fields": ["token", "org", "include", "exclude", "history_days", "max_repos",
+                              "api_url"],
+        "setup": "A READ-ONLY fine-grained personal access token (or GitHub App installation token) "
+                 "with Contents: Read and Metadata: Read on the repositories to cover; it only "
+                 "ever calls GET endpoints. `org` is the organization (or user) whose repositories "
+                 "to scan; leave it empty to scan everything the token can see. `include` and "
+                 "`exclude` are comma-separated repository names or globs; `history_days` (default "
+                 "90) is how far back commits are read for secrets that were committed and removed; "
+                 "`max_repos` (default 200); `api_url` only for GitHub Enterprise Server. Each sync "
+                 "scans the default branch's files once, then the added lines of every new commit. "
+                 "Findings name the repository, path, line and commit with a MASKED preview; the "
+                 "secret and the surrounding code are never stored. A secret removed from the code "
+                 "is still a finding, because it stays in git history until it is rotated.",
+    },
     "snowflake": {
         "label": "Snowflake Cortex",
         "scan": _scan_snowflake,
