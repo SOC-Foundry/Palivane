@@ -487,6 +487,21 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
       loadGithub();
     } catch (e2) { err(e2); loadGithub(); } finally { setGhBusy(""); }
   }
+  // Real-time pushes: the secret comes back once, here, and is gone from the page when it is dismissed.
+  const [ghHook, setGhHook] = useState(null);       // { id, url, secret }
+  async function enableGithubHook(id) {
+    if (ghConns.find((c) => c.id === id)?.options?.webhook_secret
+        && !window.confirm("Make a new secret? The webhook in GitHub stops working until you paste it in.")) return;
+    try {
+      const h = await api.enableGithubWebhook(id);
+      setGhHook({ id, url: h.url, secret: h.secret });
+      loadGithub();
+    } catch (e2) { err(e2); }
+  }
+  async function disableGithubHook(id) {
+    try { await api.disableGithubWebhook(id); setGhHook(null); loadGithub();
+          flash("Real-time pushes off. Scheduled scans carry on."); } catch (e2) { err(e2); }
+  }
   async function removeGithub(id) {
     if (!window.confirm("Stop scanning this GitHub organization? Findings already recorded stay.")) return;
     try { await api.deleteConnector(id); loadGithub(); } catch (e2) { err(e2); }
@@ -1351,9 +1366,34 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                   </span>
                   <button type="button" className="mini-btn" disabled={ghBusy === `scan-${c.id}`}
                           onClick={() => scanGithub(c.id)}>{ghBusy === `scan-${c.id}` ? "Scanning…" : "Scan now"}</button>
+                  <button type="button" className="mini-btn" onClick={() => enableGithubHook(c.id)}>
+                    {c.options?.webhook_secret ? "New webhook secret" : "Real-time pushes"}</button>
+                  {c.options?.webhook_secret && (
+                    <button type="button" className="mini-btn" onClick={() => disableGithubHook(c.id)}>Turn off</button>)}
                   <button type="button" className="mini-btn" onClick={() => removeGithub(c.id)}>Remove</button>
                 </div>
               ))}
+              {ghConns.filter((c) => c.options?.webhook_secret).map((c) => (
+                <p key={`rt-${c.id}`} className="muted" style={{ fontSize: 12, margin: "2px 0 0" }}>
+                  <span className="chip chip-on">real-time on</span> {c.label}: pushes are scanned within seconds;
+                  the scheduled scan stays as the safety net.</p>
+              ))}
+              {ghHook && (
+                <div className="panel" style={{ marginTop: 10, padding: 14 }}>
+                  <strong>Add this webhook in GitHub</strong>
+                  <p className="muted" style={{ fontSize: 12, margin: "6px 0" }}>Organization (or repository) settings,
+                    Webhooks, Add webhook. Content type <code>application/json</code>, and under events choose
+                    <em> Just the push event</em>. The secret is shown only now: copy it before closing this.</p>
+                  <div style={{ display: "grid", gap: 6, fontSize: 12 }}>
+                    <label>Payload URL <input readOnly value={ghHook.url} style={{ width: "100%" }}
+                                              onFocus={(e) => e.target.select()} /></label>
+                    <label>Secret <input readOnly value={ghHook.secret} style={{ width: "100%" }}
+                                         onFocus={(e) => e.target.select()} /></label>
+                  </div>
+                  <button type="button" className="mini-btn" style={{ marginTop: 8 }}
+                          onClick={() => setGhHook(null)}>I have added it</button>
+                </div>
+              )}
               <form onSubmit={addGithub} style={{ marginTop: ghConns.length ? 14 : 8 }}>
                 <div className="form-row" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <input type="password" autoComplete="off" placeholder="Fine-grained token (read-only)"

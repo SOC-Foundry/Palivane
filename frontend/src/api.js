@@ -194,6 +194,8 @@ export const api = {
                                         { method: "PATCH", body: JSON.stringify(options) }),
   createConnector: (platform, label, credentials) =>
     req("/discovery/connectors", { method: "POST", body: JSON.stringify({ platform, label, credentials }) }),
+  enableGithubWebhook: (id) => req(`/discovery/connectors/${id}/github-webhook`, { method: "POST" }),
+  disableGithubWebhook: (id) => req(`/discovery/connectors/${id}/github-webhook`, { method: "DELETE" }),
   deleteConnector: (id) => req(`/discovery/connectors/${id}`, { method: "DELETE" }),
   slackInstallUrl: () => req("/slack/install"),
   exportFindings: async () => {
