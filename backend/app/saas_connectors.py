@@ -2252,7 +2252,10 @@ def connector_options(connector, db=None) -> dict:
         creds = read_credentials(connector, db)
     except Exception:                                             # noqa: BLE001
         return {}
-    return {k: bool(creds.get(k)) for k in PUBLIC_OPTIONS}
+    out = {k: bool(creds.get(k)) for k in PUBLIC_OPTIONS}
+    if connector.platform == "github_secrets":
+        out["webhook_secret"] = bool(creds.get("webhook_secret"))    # only whether it is set, never the secret
+    return out
 
 
 def merge_options(connector, options: dict, db=None) -> None:
