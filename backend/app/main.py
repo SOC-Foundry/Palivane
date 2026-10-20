@@ -25,6 +25,7 @@ from .demo import router as demo_router
 from .slack_events import router as slack_events_router
 from .scim import router as scim_router
 from .webhooks_graph import router as graph_webhook_router
+from .github_webhook import router as github_webhook_router
 from .oauth_routes import router as oauth_router
 from .google_login import router as google_login_router
 from .domains import router as domains_router
@@ -395,6 +396,7 @@ app.include_router(demo_router)
 app.include_router(slack_events_router)
 app.include_router(scim_router)
 app.include_router(graph_webhook_router)
+app.include_router(github_webhook_router)
 app.include_router(oauth_router)
 app.include_router(google_login_router)
 app.include_router(domains_router)
@@ -3283,7 +3285,18 @@ def connectors_create(body: ConnectorCreate, current: User = Depends(require_adm
     if not row:
         row = SaasConnector(tenant_id=current.tenant_id, platform=body.platform, label=body.label)
         db.add(row)
-    store_credentials(row, body.credentials, db)
+    creds = dict(body.credentials)
+    if "webhook_secret" not in creds and row.credentials_enc:
+        # Saving the form again must not silently turn off real-time pushes: the secret is not in the
+        # form (it is shown once), so carry it over from what is stored.
+        try:
+            from .saas_connectors import read_credentials
+            old = read_credentials(row, db).get("webhook_secret")
+            if old:
+                creds["webhook_secret"] = old
+        except Exception:                                         # noqa: BLE001
+            pass
+    store_credentials(row, creds, db)
     row.active = True
     db.commit()
     db.refresh(row)

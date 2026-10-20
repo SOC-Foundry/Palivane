@@ -442,3 +442,54 @@ def scan_github_secrets(db, connector, creds: dict) -> dict:
     if run.truncated:
         summary["truncated"] = True
     return summary
+
+
+_SHA = re.compile(r"^[0-9a-f]{7,64}$")
+_FULL_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$")
+_ZERO = re.compile(r"^0+$")
+_PUSH_LISTS_AT = 20                # a push event lists at most 20 commits; at 20 or more, ask GitHub for the rest
+
+
+def scan_push(db, connector, creds: dict, payload: dict) -> dict:
+    """Scan one GitHub `push` event now, instead of at the next scheduled pass.
+
+    The payload is signed by the connector's webhook secret, but it is still only used to NAME things to
+    read: the repository must match the connector's organization and include/exclude, and every commit
+    id and repository name is checked against a strict pattern before it goes into a GitHub URL. The
+    commits themselves are read from GitHub with the connector's token, exactly as a scheduled scan
+    reads them, so what is stored is the same masked finding and a repeat folds into the same row.
+    The scheduled scan stays as the safety net for anything an event misses."""
+    ref = str(payload.get("ref") or "")
+    repo_in = payload.get("repository") or {}
+    full = str(repo_in.get("full_name") or "")
+    after, before = str(payload.get("after") or ""), str(payload.get("before") or "")
+    if not ref.startswith("refs/heads/") or payload.get("deleted") or not _SHA.match(after) or _ZERO.match(after):
+        return {"ignored": "not a branch update"}
+    if not _FULL_NAME.match(full):
+        return {"ignored": "bad repository name"}
+    run = _Run(db, connector, creds)
+    owner = full.split("/", 1)[0].lower()
+    if (run.org and owner != run.org.lower()) or not _wanted(full, run.include, run.exclude) or repo_in.get("fork"):
+        return {"ignored": "repository not covered by this connector"}
+    default = str(repo_in.get("default_branch") or "main")
+    branch = ref[len("refs/heads/"):]
+    on_default = branch == default
+    if not on_default and not run.all_branches:
+        return {"ignored": "branch not covered (this connector reads the default branch only)"}
+    repo = {"full_name": full, "private": bool(repo_in.get("private", True)), "default_branch": default}
+
+    commits = payload.get("commits") or []
+    shas = [str(c.get("id")) for c in commits if c.get("distinct", True) and _SHA.match(str(c.get("id") or ""))]
+    if len(commits) >= _PUSH_LISTS_AT or _ZERO.match(before) or not _SHA.match(before or "x"):
+        # a long push, or a new branch: the event does not list everything, so ask GitHub what is on
+        # this branch that is not already on the other side
+        base = default if (_ZERO.match(before) or not _SHA.match(before or "x")) else before
+        try:
+            listed = run.get(f"/repos/{full}/compare/{urllib.parse.quote(base, safe='')}...{after}")
+            shas = [c["sha"] for c in (listed.get("commits") or [])[:_COMPARE_MAX]
+                    if _SHA.match(str(c.get("sha") or "")) and len(c.get("parents") or []) <= 1] or shas
+        except sc.ConnectorError:
+            shas = shas or [after]                    # a force-push can orphan `before`: read what we were told
+    read = run._scan_commits(repo, shas, branch="" if on_default else branch)
+    return {"repo": full, "branch": branch, "commits": len(read), "findings": run.tally["findings"],
+            **({"truncated": True} if run.truncated else {})}
