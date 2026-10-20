@@ -455,7 +455,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
   }
   // --- GitHub secret scanning (a read-only token, one connector per organization) ---
   const [ghConns, setGhConns] = useState([]);
-  const [ghDraft, setGhDraft] = useState({ token: "", org: "", exclude: "", history_days: "90" });
+  const [ghDraft, setGhDraft] = useState({ token: "", org: "", exclude: "", history_days: "90", scan_every_minutes: "60", branches: "default" });
   const [ghBusy, setGhBusy] = useState("");
   const loadGithub = useCallback(async () => {
     try {
@@ -468,11 +468,12 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
     if (!ghDraft.token.trim()) return;
     setGhBusy("save");
     try {
-      const { token, org, exclude, history_days } = ghDraft;
+      const { token, org, exclude, history_days, scan_every_minutes, branches } = ghDraft;
       await api.createConnector("github_secrets", org.trim() || "github", {
         token: token.trim(), org: org.trim(), exclude: exclude.trim(),
-        history_days: Number(history_days) || 90 });
-      setGhDraft({ token: "", org: "", exclude: "", history_days: "90" });   // the token never lingers in the form
+        history_days: Number(history_days) || 90,
+        scan_every_minutes: Math.max(5, Number(scan_every_minutes) || 60), branches });
+      setGhDraft({ token: "", org: "", exclude: "", history_days: "90", scan_every_minutes: "60", branches: "default" });   // the token never lingers in the form
       flash("GitHub connected. Hit Scan now to read the repositories; it keeps scanning on its own after that.");
       loadGithub();
     } catch (e2) { err(e2); } finally { setGhBusy(""); }
@@ -1335,7 +1336,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                 {ghConns.length > 0 && <span className="chip chip-on">{ghConns.length} connected</span>}</h2>
               <p className="muted">Palivane reads your repositories with a read-only token and reports
                 credentials committed to them: in the code as it is now, and in the added lines of every
-                commit from the last 90 days, so a key that was committed and then deleted still shows
+                commit from the last 90 days (it re-scans on the interval you set, and a repository with
+                no new push costs nothing), so a key that was committed and then deleted still shows
                 up (it is in git history until it is rotated). Only the repository, path, line, commit
                 and a masked preview are stored, never the secret or the surrounding code.</p>
               {ghConns.map((c) => (
@@ -1369,6 +1371,19 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                          title="How many days of commit history to read for secrets that were committed and removed"
                          onChange={(e) => setGhDraft((d) => ({ ...d, history_days: e.target.value }))} />
                   <span className="muted" style={{ fontSize: 12, alignSelf: "center" }}>days of history</span>
+                </div>
+                <div className="form-row" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
+                  <span className="muted" style={{ fontSize: 12 }}>Scan every</span>
+                  <input type="number" min="5" max="1440" value={ghDraft.scan_every_minutes} style={{ width: 100 }}
+                         title="Minutes between scans (5 to 1440). A repository with no new push costs no GitHub calls."
+                         onChange={(e) => setGhDraft((d) => ({ ...d, scan_every_minutes: e.target.value }))} />
+                  <span className="muted" style={{ fontSize: 12 }}>minutes</span>
+                  <select value={ghDraft.branches} style={{ flex: "1 1 220px" }}
+                          title="Most leaks start on a feature branch, before anything merges"
+                          onChange={(e) => setGhDraft((d) => ({ ...d, branches: e.target.value }))}>
+                    <option value="default">Default branch only</option>
+                    <option value="all">All branches (finds keys pushed before they merge)</option>
+                  </select>
                   <button type="submit" className="primary-btn slim" disabled={!ghDraft.token.trim() || ghBusy === "save"}>
                     {ghConns.length ? "Add organization" : "Connect GitHub"}</button>
                 </div>
@@ -1376,7 +1391,9 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
               <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Create a fine-grained personal
                 access token (or GitHub App installation token) with <code>Contents: Read</code> and
                 <code> Metadata: Read</code> on the repositories to cover. Palivane only ever makes GET
-                requests. Only the default branch is read. Pattern matches in test, fixture, docs and
+                requests. It spends most of GitHub's hourly quota on a scan and never runs it out; by default only the
+                default branch is read, and "all branches" also reads the commits on every other branch that
+                are not on it yet. Pattern matches in test, fixture, docs and
                 vendored paths are ignored unless they are a distinctive vendor key. Findings land under
                 the <code>secrets</code> surface with alerts and SIEM export as usual.</p>
             </div>
