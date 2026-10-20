@@ -13,6 +13,7 @@ from app.models import Finding
 
 AWS = "AK" + "IA" + "4YTGH2NBQF7XZP3K"
 GHP = "gh" + "p_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
+OAI = "sk-" + "proj-" + "abcDEF123456ghiJKL789012mnoPQR"
 TOKEN = "github_pat_" + "11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789abcdefghijklmnopqrstuv"
 
 
@@ -25,6 +26,7 @@ class FakeGitHub:
 
     def __init__(self):
         self.calls: list[str] = []
+        self.remaining = 5000                           # what /rate_limit says is left of the hour
         self.fail: dict[str, str] = {}                  # path prefix -> ConnectorError text
         self.pushed = "2026-10-01T00:00:00Z"
         self.repos = [
@@ -51,7 +53,13 @@ class FakeGitHub:
         self.commit_files = {
             "c1": [{"filename": "deploy.sh", "status": "modified", "patch": removed_then_added}],
             "c2": [{"filename": "gone.env", "status": "removed", "patch": f"@@ -1 +0,0 @@\n-K={AWS}\n"}],
+            "fc1": [{"filename": "feature.py", "status": "added", "patch": f'@@ -0,0 +1,2 @@\n+x = 1\n+KEY = "{OAI}"\n'}],
+            "fc2": [{"filename": "feature2.py", "status": "added", "patch": f'@@ -0,0 +1 @@\n+T = "{GHP}"\n'}],
+            "fc3": [{"filename": "feature3.py", "status": "added", "patch": "@@ -0,0 +1 @@\n+nothing = 1\n"}],
+            "fc4": [{"filename": "feature4.py", "status": "added", "patch": f'@@ -0,0 +1 @@\n+K = "{AWS}"\n'}],
         }
+        self.feature_head = "feat-head"
+        self.feature_commits = ["fc1", "fc2", "fc3"]
 
     def __call__(self, url, **kw):
         path = url.replace("https://api.github.com", "")
@@ -60,9 +68,17 @@ class FakeGitHub:
             if path.startswith(prefix):
                 raise sc.ConnectorError(text)
         base = path.split("?")[0]
+        if base == "/rate_limit":
+            return {"resources": {"core": {"remaining": self.remaining}}}
         if base == "/orgs/acme/repos":
             return self.repos if path.endswith("page=1") else []
         repo = "acme/app" if "/acme/app" in base else "acme/site"
+        if base.endswith("/branches"):
+            return [{"name": "main", "commit": {"sha": "head-" + repo}},
+                    {"name": "feature/x", "commit": {"sha": self.feature_head}}] if repo == "acme/app" else \
+                   [{"name": "main", "commit": {"sha": "head-" + repo}}]
+        if "/compare/" in base:
+            return {"commits": [{"sha": c, "parents": [{}]} for c in self.feature_commits]}
         if base.endswith("/branches/main"):
             return {"commit": {"sha": "head-" + repo, "commit": {"tree": {"sha": "tree-" + repo}}}}
         if "/git/trees/" in base:
@@ -162,8 +178,8 @@ def test_nothing_pushed_means_nothing_read(client, github):
     _sync(client, github)
     first = len(github.calls)
     _sync(client, github)
-    # the repository list is one call; each repository is skipped without touching it
-    assert len(github.calls) - first == 1
+    # the (free) quota check and the repository list; each repository is skipped without touching it
+    assert [c.split("?")[0] for c in github.calls[first:]] == ["/rate_limit", "/orgs/acme/repos"]
 
 
 def test_a_repeat_of_the_same_secret_folds_into_one_finding(client, github, db_factory):
@@ -224,3 +240,108 @@ def test_the_locator_numbers_diff_lines_in_the_new_file():
 def test_the_connector_is_listed_with_setup_text(client):
     p = client.get("/api/discovery/connectors").json()["platforms"]["github_secrets"]
     assert "token" in p["credential_fields"] and "READ-ONLY" in p["setup"]
+
+
+# --- how much it reads, and how often ------------------------------------------------------------
+
+def _creds(client, fake, **extra):
+    """Replace the connector's credential (same platform + label updates the row, keeping its state)."""
+    r = client.post("/api/discovery/connectors", json={
+        "platform": "github_secrets", "label": "acme",
+        "credentials": {"token": TOKEN, "org": "acme", "history_days": 365, **extra}})
+    assert r.status_code == 200 and r.json()["id"] == fake.connector_id
+
+
+def test_a_nearly_spent_quota_reads_nothing_and_says_why(client, github):
+    github.remaining = 100                              # below the reserve
+    summary = _sync(client, github)
+    assert summary["truncated"] is True and "rate limit" in " ".join(summary["errors"]).lower()
+    assert not any("/git/blobs/" in c or "/commits/" in c for c in github.calls)
+
+
+def test_the_quota_sets_how_much_one_sync_reads(client, github, monkeypatch):
+    monkeypatch.setattr(gh, "_BLOBS_PER_SYNC", 1000)
+    github.remaining = 155                              # 5 usable: 3 files, 1 commit
+    summary = _sync(client, github)
+    assert summary["truncated"] is True
+    assert sum("/git/blobs/" in c for c in github.calls) <= 3
+
+
+def test_an_unreadable_quota_leaves_the_ceilings_alone(client, github):
+    github.fail["/rate_limit"] = "HTTP 404 from api.github.com: not found"
+    summary = _sync(client, github)
+    assert summary["blobs"] > 0 and not summary.get("truncated")
+
+
+def test_a_sync_stops_at_its_wall_clock(client, github, monkeypatch):
+    import contextvars
+    monkeypatch.setattr(gh, "max_seconds", contextvars.ContextVar("t", default=0.0))
+    summary = _sync(client, github)
+    assert summary["truncated"] is True
+    assert not any("/git/blobs/" in c or "/commits/" in c for c in github.calls)
+
+
+def test_scan_every_minutes_is_clamped():
+    assert gh.scan_interval_secs({}, 3600) == 3600
+    assert gh.scan_interval_secs({"scan_every_minutes": 15}, 3600) == 900
+    assert gh.scan_interval_secs({"scan_every_minutes": 1}, 3600) == 300       # the loop ticks every 5 minutes
+    assert gh.scan_interval_secs({"scan_every_minutes": 99999}, 3600) == 86400
+    assert gh.scan_interval_secs({"scan_every_minutes": "soon"}, 3600) == 3600
+
+
+# --- other branches -------------------------------------------------------------------------------
+
+def test_by_default_only_the_default_branch_is_read(client, github, db_factory):
+    _sync(client, github)
+    assert not any("/compare/" in c for c in github.calls)
+    assert "acme/app/feature.py" not in {s for s, *_ in _findings(db_factory)}
+
+
+def test_all_branches_finds_a_secret_that_was_never_merged(client, github, db_factory):
+    _creds(client, github, branches="all")
+    _sync(client, github)
+    rows = {r[0]: r for r in _findings(db_factory)}
+    assert "acme/app/feature.py" in rows and "acme/app/feature2.py" in rows
+    detail = json.loads(rows["acme/app/feature.py"][3])[0]["detail"]
+    assert "on branch feature/x" in detail and "not merged" in detail
+
+
+def test_an_unchanged_branch_costs_nothing_the_next_time(client, github):
+    _creds(client, github, branches="all")
+    _sync(client, github)
+    github.repos[0]["pushed_at"] = "2026-10-05T00:00:00Z"           # pushed to main, not to the branch
+    first = len(github.calls)
+    _sync(client, github)
+    assert not any("/compare/" in c for c in github.calls[first:])
+
+
+def test_a_new_commit_on_a_branch_reads_only_what_is_new(client, github, db_factory):
+    _creds(client, github, branches="all")
+    _sync(client, github)
+    github.feature_head, github.feature_commits = "feat-head-2", ["fc1", "fc2", "fc3", "fc4"]
+    github.repos[0]["pushed_at"] = "2026-10-06T00:00:00Z"
+    _sync(client, github)
+    reads = [c.rsplit("/", 1)[1] for c in github.calls if "/commits/fc" in c]
+    assert sorted(reads) == ["fc1", "fc2", "fc3", "fc4"]             # fc1-3 once, fc4 once: nothing read twice
+    assert "acme/app/feature4.py" in {s for s, *_ in _findings(db_factory)}
+    assert len([r for r in _findings(db_factory) if r[0] == "acme/app/feature.py"]) == 1
+
+
+def test_a_branch_that_ran_out_of_budget_resumes_without_rereading(client, github, monkeypatch):
+    _creds(client, github, branches="all", history_days=0)
+    monkeypatch.setattr(gh, "_COMMITS_PER_SYNC", 1)
+    for _ in range(6):
+        if not _sync(client, github).get("truncated"):
+            break
+    reads = [c for c in github.calls if "/commits/fc" in c]
+    assert sorted(set(reads)) == ["/repos/acme/app/commits/fc1", "/repos/acme/app/commits/fc2",
+                                  "/repos/acme/app/commits/fc3"]
+    assert len(reads) == 3                                           # each one once
+
+
+def test_switching_to_all_branches_rereads_a_repository_that_had_nothing_new(client, github):
+    _sync(client, github)                                            # default only: complete
+    _creds(client, github, branches="all")
+    first = len(github.calls)
+    _sync(client, github)
+    assert any("/compare/" in c for c in github.calls[first:])

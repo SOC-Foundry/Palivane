@@ -1993,21 +1993,32 @@ def _scan_github(db, connector, creds):
     return scan_github_secrets(db, connector, creds)
 
 
+def _github_interval(creds, default):
+    from .github_secrets import scan_interval_secs
+    return scan_interval_secs(creds, default)
+
+
 PLATFORMS: dict[str, dict] = {
     "github_secrets": {
         "label": "GitHub secret scanning",
         "scan": _scan_github,
-        "schedule_secs": 3600,       # syncs on its own every hour (app/connector_schedule.py)
+        "schedule_secs": 3600,       # syncs on its own every hour (app/connector_schedule.py) ...
+        "interval_for": _github_interval,   # ... unless the connector sets scan_every_minutes
         "credential_fields": ["token", "org", "include", "exclude", "history_days", "max_repos",
-                              "api_url"],
+                              "scan_every_minutes", "branches", "max_branches", "api_url"],
         "setup": "A READ-ONLY fine-grained personal access token (or GitHub App installation token) "
                  "with Contents: Read and Metadata: Read on the repositories to cover; it only "
                  "ever calls GET endpoints. `org` is the organization (or user) whose repositories "
                  "to scan; leave it empty to scan everything the token can see. `include` and "
                  "`exclude` are comma-separated repository names or globs; `history_days` (default "
                  "90) is how far back commits are read for secrets that were committed and removed; "
-                 "`max_repos` (default 200); `api_url` only for GitHub Enterprise Server. Each sync "
-                 "scans the default branch's files once, then the added lines of every new commit. "
+                 "`max_repos` (default 200); `scan_every_minutes` (5 to 1440, default 60) is how often it "
+                 "scans on its own; `branches` is `default` (default) or `all`, which also reads the "
+                 "commits on every other branch that are not on the default branch, up to "
+                 "`max_branches` (default 50) per repository; `api_url` only for GitHub Enterprise "
+                 "Server. Each sync scans the default branch's files once, then the added lines of "
+                 "every new commit, and spends as much of GitHub's hourly quota as it can without "
+                 "running it out. "
                  "Findings name the repository, path, line and commit with a MASKED preview; the "
                  "secret and the surrounding code are never stored. A secret removed from the code "
                  "is still a finding, because it stays in git history until it is rotated.",

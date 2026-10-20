@@ -17,12 +17,27 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import or_
 
+from . import github_secrets
 from .config import settings
 
 log = logging.getLogger("palivane.connector_schedule")
 
 CATCH_UP_SECS = 300      # a scan that stopped at its budget resumes this soon
 MAX_PER_TICK = 3         # connectors scanned per loop tick, so one tick stays short
+SCAN_MAX_SECS = 480.0    # one scheduled scan stops here (an admin's Scan now gets far less: it is a request)
+
+
+def _interval(db, row, spec: dict) -> int:
+    """How often this connector scans: the platform's default, or what the connector itself asks for."""
+    default = int(spec["schedule_secs"])
+    pick = spec.get("interval_for")
+    if not pick:
+        return default
+    try:
+        from .saas_connectors import read_credentials
+        return int(pick(read_credentials(row, db), default))
+    except Exception:                                 # noqa: BLE001  an unreadable credential keeps the default
+        return default
 
 
 def _claim(db, connector_id: int, now: datetime, cutoff: datetime) -> bool:
@@ -44,7 +59,7 @@ def run_scheduled_scans(db, now: datetime | None = None, limit: int = MAX_PER_TI
     from .models import SaasConnector
     from .saas_connectors import PLATFORMS, ConnectorError, sync_connector
     now = now or datetime.utcnow()
-    scheduled = {k: v["schedule_secs"] for k, v in PLATFORMS.items() if v.get("schedule_secs")}
+    scheduled = {k: v for k, v in PLATFORMS.items() if v.get("schedule_secs")}
     if not scheduled:
         return 0
     rows = (db.query(SaasConnector)
@@ -54,7 +69,7 @@ def run_scheduled_scans(db, now: datetime | None = None, limit: int = MAX_PER_TI
     for row in rows:
         if ran >= limit:
             break
-        interval = scheduled[row.platform]
+        interval = _interval(db, row, scheduled[row.platform])
         cutoff = now - timedelta(seconds=interval)
         if row.last_sync_at is not None and row.last_sync_at > cutoff:
             continue
@@ -62,6 +77,7 @@ def run_scheduled_scans(db, now: datetime | None = None, limit: int = MAX_PER_TI
         if not _claim(db, cid, now, cutoff):
             continue                                  # another instance took it
         ran += 1
+        limit_token = github_secrets.max_seconds.set(SCAN_MAX_SECS)
         try:
             bind_tenant(db, tenant_id)                # the same isolation an admin-triggered sync has
             db.expire_all()
@@ -77,5 +93,6 @@ def run_scheduled_scans(db, now: datetime | None = None, limit: int = MAX_PER_TI
             db.rollback()
             log.warning("scheduled scan of connector %s failed", cid, exc_info=True)
         finally:
+            github_secrets.max_seconds.reset(limit_token)
             clear_tenant()
     return ran
