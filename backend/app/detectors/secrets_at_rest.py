@@ -51,7 +51,10 @@ class SecretsAtRestDetector:
         where = f"{in_repo}" + (f" on line {line}" if line else "")
         public = m.get("world_readable") is True
         ref, author = str(m.get("ref") or ""), str(m.get("author") or "")
+        branch = str(m.get("branch") or "")
         commit = (f" (commit {ref}" + (f" by {author}" if author else "") + ")") if ref else ""
+        if branch:
+            commit += f" on branch {branch}, which is not merged into the default branch yet"
         return Signal(
             category=Category.CREDENTIAL_AT_REST,
             title=f"Credential in a repository: {kinds}" + (" (public repo)" if public else ""),
