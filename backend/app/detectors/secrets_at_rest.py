@@ -40,6 +40,30 @@ class SecretsAtRestDetector:
     name = "secrets_at_rest"
     surfaces: set[Surface] = {Surface.SECRETS}
 
+    def _repo_signal(self, m: dict, types: list[str], kinds: str, path: str,
+                     weight: float, confidence: float) -> Signal:
+        """A credential the GitHub connector found committed to a repository. The wording matters:
+        the device text says "stored on the device", and the first thing to tell someone about a
+        committed secret is that deleting it from the code does not remove it from history."""
+        repo = str(m.get("repo") or "a repository")
+        in_repo = path[len(repo) + 1:] if path.startswith(repo + "/") else path
+        line = int(m.get("line") or 0)
+        where = f"{in_repo}" + (f" on line {line}" if line else "")
+        public = m.get("world_readable") is True
+        ref, author = str(m.get("ref") or ""), str(m.get("author") or "")
+        commit = (f" (commit {ref}" + (f" by {author}" if author else "") + ")") if ref else ""
+        return Signal(
+            category=Category.CREDENTIAL_AT_REST,
+            title=f"Credential in a repository: {kinds}" + (" (public repo)" if public else ""),
+            detail=(f"A {kinds} is committed to {repo} at {where}{commit}"
+                    + (", and the repository is PUBLIC, so anyone can read it" if public else "")
+                    + ". Rotate it first: removing it from the code does not remove it from git "
+                      "history. Then move it to a secret manager and rewrite or purge the history "
+                      "if the repository is shared."),
+            weight=weight, confidence=confidence, detector=self.name,
+            evidence=str(m.get("evidence") or path)[:200],
+        )
+
     def analyze(self, item: AnalysisInput) -> list[Signal]:
         m = item.metadata or {}
         # The scanner reports one file per submission: its detected secret types + posture.
@@ -66,6 +90,8 @@ class SecretsAtRestDetector:
             confidence = 0.97
 
         kinds = ", ".join(dict.fromkeys(types))
+        if source == "github":
+            return [self._repo_signal(m, types, kinds, path, weight, confidence)]
         perm = (" (world/group-readable)" if world_readable is True
                 else " (file permissions unknown)" if world_readable is None else "")
         vtag = " — VERIFIED LIVE" if verified else ""
