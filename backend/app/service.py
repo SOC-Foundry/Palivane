@@ -236,6 +236,23 @@ def _fold_recurrence(db: Session, tenant_id, fp: str) -> Finding | None:
     return q.order_by(Finding.id.desc()).first()
 
 
+def _lock_fingerprint(db: Session, tenant, fp: str) -> None:
+    """Serialize the fold's check-then-insert per fingerprint on Postgres, so concurrent
+    identical events fold into one finding instead of each inserting its own (there is no
+    unique index on fingerprint). A transaction-scoped advisory lock: released by the
+    commit that inserts or bumps the row. No-op elsewhere (sqlite serializes writers)."""
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    # Minting the tenant's data key commits, which would drop the lock before the insert;
+    # mint it now if the new-finding path below is going to need it.
+    if (tenant is not None and not tenant.dek_wrapped and settings.encrypt_findings
+            and evidence_context_enabled(tenant)):
+        crypto.tenant_dek(tenant, db)
+    from sqlalchemy import text  # noqa: PLC0415
+    key = int.from_bytes(bytes.fromhex(fp[:16]), "big", signed=True)   # fp already scopes tenant
+    db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": key})
+
+
 def resolve_judge_backends(tenant):
     """Which LLM backends a tenant may use for the LLM judge. Mirrors run_analysis's
     resolution so both paths honor the same opt-out, BYOK, and plan gate. The analyst agent
@@ -410,6 +427,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         # (a source fingerprinted after the first occurrence must still fold + backfill).
         fp = _fingerprint(tenant_id, item,
                           [s for s in result["signals"] if s.get("detector") != "content_origin"])
+        _lock_fingerprint(db, tenant, fp)
         prior = _fold_recurrence(db, tenant_id, fp)
         if prior is not None:
             from datetime import datetime, timezone
@@ -486,7 +504,8 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             attack_intent=verdict.attack_intent,
             # Detectors quote what they matched (the dangerous-command rule puts up to 80
             # characters of the command in `detail`), so a credential inside it would be stored.
-            # Mask the stored copy; `result` keeps the original for the verdict and the sinks.
+            # Mask the stored copy; `result` keeps the original for the verdict (the sinks mask
+            # their own copy in _dispatch_sinks).
             signals=_with_via(
                 (excerpts.clean_signals(result["signals"],
                                         getattr(tenant, "custom_pii_patterns", "") or "")
@@ -522,6 +541,12 @@ def _dispatch_sinks(tenant, payload: dict, subject: str, actor: str, surface: st
     best-effort; a sink being unset or failing never affects the caller."""
     if tenant is None:
         return
+    # Mask evidence the same way the stored finding is masked: the alert/SIEM/S3 formatters
+    # quote signal evidence verbatim and assume it is already redacted. The caller keeps the
+    # raw result for its verdict; only what leaves the process is cleaned.
+    if settings.redact_findings and payload.get("signals"):
+        payload = {**payload, "signals": excerpts.clean_signals(
+            payload["signals"], getattr(tenant, "custom_pii_patterns", "") or "")}
     if (tenant.alert_webhook or "").strip():
         from . import alerts
         alerts.notify(tenant.alert_webhook.strip(), tenant.alert_min_severity, payload,

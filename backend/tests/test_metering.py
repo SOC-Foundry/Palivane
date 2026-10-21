@@ -127,3 +127,39 @@ def test_usage_reports_gateway_and_ingest_separately(client, raw_client, monkeyp
     assert u["current_window"] >= 1            # gateway
     assert u["ingest_current_window"] >= 1     # ingest, counted separately
     assert u["ingest_limit_per_min"] == 100
+
+
+def test_record_and_check_is_atomic_under_concurrency(db_factory, frozen_window):
+    """Concurrent first-requests-of-the-minute used to read-then-insert (IntegrityError on
+    the unique window row) and lose increments to `row.count += 1`. The upsert can't."""
+    import threading
+
+    from app import users as users_cli
+    from app.models import GatewayUsage
+    db = db_factory()
+    tid = users_cli.create_tenant(db, "race", "Race").id
+    db.close()
+
+    n, errors, counts = 12, [], []
+    barrier = threading.Barrier(n)
+
+    def hit():
+        s = db_factory()
+        try:
+            barrier.wait()
+            counts.append(metering.record_and_check(s, tid, limit=5)[1])
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+        finally:
+            s.close()
+
+    threads = [threading.Thread(target=hit) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    assert sorted(counts) == list(range(1, n + 1))   # every increment seen exactly once
+    db = db_factory()
+    assert db.query(GatewayUsage).filter(GatewayUsage.tenant_id == tid).one().count == n
+    db.close()

@@ -114,17 +114,28 @@ def record_and_check(db: Session, tenant_id: int | None, kind: str = "gateway",
     if limit is None:
         limit = effective_ingest_limit(tenant) if kind == "ingest" else effective_limit(tenant)
     window = _minute(_now())
-    row = (db.query(GatewayUsage)
-           .filter(GatewayUsage.tenant_id == tenant_id, GatewayUsage.window_start == window,
-                   GatewayUsage.kind == kind)
-           .first())
-    if row is None:
-        row = GatewayUsage(tenant_id=tenant_id, window_start=window, kind=kind, count=0)
-        db.add(row)
-    row.count += 1
+    count = _increment(db, tenant_id, window, kind)
     db.commit()
-    allowed = (limit == 0) or (row.count <= limit)
-    return allowed, row.count, limit
+    allowed = (limit == 0) or (count <= limit)
+    return allowed, count, limit
+
+
+def _increment(db: Session, tenant_id: int, window: datetime, kind: str) -> int:
+    """Atomically bump this (tenant, minute, kind) counter and return the new count.
+    One upsert statement, so concurrent first-requests-of-the-minute can't collide on the
+    unique constraint and same-minute increments can't be lost to a read-modify-write."""
+    dialect = db.get_bind().dialect.name
+    if dialect == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert  # noqa: PLC0415
+    else:
+        from sqlalchemy.dialects.sqlite import insert  # noqa: PLC0415
+    stmt = (insert(GatewayUsage)
+            .values(tenant_id=tenant_id, window_start=window, kind=kind, count=1)
+            .on_conflict_do_update(
+                index_elements=["tenant_id", "window_start", "kind"],
+                set_={"count": GatewayUsage.count + 1})
+            .returning(GatewayUsage.count))
+    return int(db.execute(stmt).scalar_one())
 
 
 def usage_summary(db: Session, tenant_id: int, days: int = 7) -> dict:

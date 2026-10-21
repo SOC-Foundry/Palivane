@@ -89,6 +89,40 @@ def test_watermark_advances_and_second_sync_incremental(client, monkeypatch):
     assert len(client.get("/api/findings?surface=collab").json()["findings"]) == 1
 
 
+def test_full_history_page_is_read_on_instead_of_skipped(client, monkeypatch):
+    """Discovery history came back one page (newest first) and the watermark jumped to its
+    newest message, so anything past the first page was never scanned. A full page
+    (has_more) is now read on by `latest` until the window is exhausted."""
+    import time as _t
+    import urllib.parse as up
+
+    import app.service as service
+    now = _t.time()
+    msgs = [{"user": "U1", "ts": f"{now - 100 + i:.6f}", "text": f"m{i}"} for i in range(7)]
+    seen = []
+
+    def fake_http(url, headers=None, data=None, timeout=20):
+        q = {k: v[0] for k, v in up.parse_qs(up.urlsplit(url).query).items()}
+        if "discovery.conversations.list" in url:
+            return {"ok": True, "channels": [{"id": "C1", "name": "big", "team_id": "T1"}]}
+        if "discovery.conversations.history" in url:
+            lo, hi = float(q["oldest"]), float(q.get("latest", 1e18))
+            win = sorted((m for m in msgs if lo < float(m["ts"]) < hi),
+                         key=lambda m: -float(m["ts"]))
+            return {"ok": True, "messages": win[:3], "has_more": len(win) > 3}
+        if "users.info" in url:
+            return {"ok": True, "user": {"profile": {"email": "dev@acme.com"}}}
+        raise AssertionError(url)
+
+    monkeypatch.setattr(sc, "_http_json", fake_http)
+    monkeypatch.setattr(service, "run_analysis",
+                        lambda item, **kw: seen.append(item.content) or {"finding_id": None})
+    cid = _mk(client)
+    s = client.post(f"/api/discovery/connectors/{cid}/sync").json()
+    assert sorted(seen) == [f"m{i}" for i in range(7)] and not s.get("truncated")
+    assert client.post(f"/api/discovery/connectors/{cid}/sync").json()["messages"] == 0
+
+
 def test_missing_token_errors(client):
     r = client.post("/api/discovery/connectors",
                     json={"platform": "slack_discovery", "label": "bad", "credentials": {}})

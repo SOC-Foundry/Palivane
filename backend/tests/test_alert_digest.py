@@ -63,6 +63,49 @@ def test_run_digests_batches_and_claims(client, db_factory, monkeypatch):
     db.close()
 
 
+def test_failed_digest_post_releases_the_window(client, db_factory, monkeypatch):
+    """A failed POST used to consume the claimed window, so those findings were never
+    sent. Now the claim is handed back and the next run retries; a success then keeps it."""
+    outcomes = iter([False, True])
+    sent = []
+    monkeypatch.setattr(alerts, "send_sync",
+                        lambda url, payload, **k: sent.append(payload) or next(outcomes))
+    db = db_factory()
+    t = _tenant(db)
+    t.alert_webhook, t.alert_min_severity = "https://hooks.example.com/x", "high"
+    t.alert_digest, t.alert_digest_last = "daily", None
+    _mk_finding(db, t.id, "high", 30)
+    db.commit()
+    assert alerts.run_digests(db) == 0 and len(sent) == 1        # failed
+    db.expire_all()
+    assert _tenant(db).alert_digest_last is None                 # window not consumed
+    assert alerts.run_digests(db) == 1 and len(sent) == 2        # retried, delivered
+    assert alerts.run_digests(db) == 0 and len(sent) == 2        # and not re-sent
+    db.close()
+
+
+def test_digest_counts_whole_window_but_lists_a_bounded_top(client, db_factory, monkeypatch):
+    sent = []
+    monkeypatch.setattr(alerts, "send_sync", lambda url, payload, **k: sent.append(payload) or True)
+    db = db_factory()
+    t = _tenant(db)
+    t.alert_webhook, t.alert_min_severity = "https://hooks.example.com/x", "high"
+    t.alert_digest, t.alert_digest_last = "daily", None
+    for i in range(alerts._DIGEST_TOP + 3):
+        _mk_finding(db, t.id, "high", 30 + i)
+    _mk_finding(db, t.id, "critical", 5)
+    _mk_finding(db, t.id, "low", 5)
+    db.commit()
+    assert alerts.run_digests(db) == 1
+    p = sent[0]
+    assert p["palivane"]["count"] == alerts._DIGEST_TOP + 4
+    assert p["palivane"]["by_severity"] == {"high": alerts._DIGEST_TOP + 3, "critical": 1}
+    assert p["text"].count("• *") == alerts._DIGEST_TOP
+    assert p["text"].index("• *critical*") < p["text"].index("• *high*")   # ranked
+    assert "…and 4 more" in p["text"]
+    db.close()
+
+
 def test_run_digests_skips_when_off_or_no_webhook(client, db_factory, monkeypatch):
     sent = []
     monkeypatch.setattr(alerts, "send_sync", lambda url, payload, **k: sent.append(payload) or True)

@@ -474,6 +474,84 @@ def _remediation_enabled(db, connector, creds: dict) -> str:
     return token if (tenant is not None and has_feature(tenant, "remediation")) else ""
 
 
+def _ts(m: dict) -> float:
+    try:
+        return float(m.get("ts") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _slack_user_msg(m: dict) -> bool:
+    """A human-authored message with text (not a bot, join, or edit-without-text)."""
+    return not m.get("subtype") and bool(m.get("user")) and bool((m.get("text") or "").strip())
+
+
+def _slack_window(fetch, oldest: str, latest: str | None, budget: int) -> tuple[list, str | None]:
+    """One history window (oldest, latest) — both exclusive, as Slack treats them — cut to
+    `budget` user messages. History arrives newest-first, so a cut keeps the NEWEST ones.
+    Returns (messages oldest-first, cut): `cut` is the exclusive upper bound of the older,
+    unscanned remainder, or None when the window was read to its end."""
+    msgs, more = fetch(oldest, latest)
+    window: list[dict] = []
+    last = None
+    for m in msgs:
+        if len(window) >= budget and _slack_user_msg(m):
+            return sorted(window, key=_ts), min(window, key=_ts)["ts"]
+        last = m.get("ts") or last
+        if _slack_user_msg(m):
+            window.append(m)
+    return sorted(window, key=_ts), (last if more and last else None)
+
+
+def _slack_scan_conversation(cid: str, marks: dict, gaps: dict, default_oldest: str,
+                             budget: int, fetch, scan) -> tuple[int, bool]:
+    """Scan one conversation within `budget` messages; returns (scanned, work_left).
+
+    New messages first: the watermark advances to the newest one scanned. When a window
+    does not fit, the older, unscanned part is remembered as a backfill gap
+    [oldest, latest) in `gaps[cid]` rather than holding the watermark back — holding it
+    back meant a busy channel rescanned the same newest page forever and never reached its
+    older messages. Leftover budget then drains gaps, newest first, page by page.
+    `fetch(oldest, latest)` -> (newest-first messages, more_pages_beyond_these)."""
+    pending = [list(g) for g in gaps.get(cid) or []]
+    lo = marks.get(cid, default_oldest)
+    window, cut = _slack_window(fetch, lo, None, budget)
+    for m in window:
+        scan(m)
+    used = len(window)
+    if window:
+        marks[cid] = window[-1]["ts"]
+    if cut:
+        pending.append([lo, cut])
+    while pending and used < budget:
+        gap = pending[-1]
+        try:
+            window, cut = _slack_window(fetch, gap[0], gap[1], budget - used)
+        except ConnectorError:
+            break                 # keep the gap; the next sync retries it
+        for m in window:
+            scan(m)
+        used += len(window)
+        if cut and float(cut) < float(gap[1]):
+            gap[1] = cut
+        else:
+            pending.pop()         # gap read to its end (or made no progress)
+    if pending:
+        gaps[cid] = pending
+    else:
+        gaps.pop(cid, None)
+    return used, bool(pending)
+
+
+def _rotate(convs: list[dict], resume_at: str) -> list[dict]:
+    """Start where the last budget-truncated sync stopped, so conversations after a busy
+    one are not starved by it on every sync."""
+    for k, c in enumerate(convs):
+        if resume_at and c.get("id") == resume_at:
+            return convs[k:] + convs[:k]
+    return convs
+
+
 def scan_slack_messages(db, connector, creds: dict) -> dict:
     """Scan new Slack messages and their text attachments for PII/PHI/secrets, persisting
     findings on the collab surface.
@@ -502,110 +580,105 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
     default_oldest = f"{time.time() - _SCAN_LOOKBACK_SECS:.6f}"
 
     channels, joined = _slack_channels(hdrs, bool(creds.get("auto_join")))
+    channels = _rotate(channels, state.get("resume_at", ""))
+    gaps: dict[str, list] = {k: v for k, v in (state.get("backfill") or {}).items()}
     admin_token = _remediation_enabled(db, connector, creds)
 
     users: dict[str, str] = {}
     scanned = findings = deleted = delete_failed = 0
     files_scanned = files_skipped = file_bytes = 0
     truncated = False
+    resume_at = ""
+    cid = where = ""
+
+    def scan(m: dict) -> None:
+        nonlocal scanned, findings, deleted, delete_failed, files_scanned, files_skipped, file_bytes
+        actor = _slack_actor(users, m["user"], hdrs)
+        result = run_analysis(
+            AnalysisInput(content=m["text"], sender=actor, channel="slack",
+                          subject=where, surface=Surface.COLLAB,
+                          metadata={"custom_pii": custom_pii}),
+            persist=True, db=db, tenant_id=connector.tenant_id,
+            persist_benign=False, use_judge=False)
+        # Attachments are scanned as their own findings, so a clean message carrying a
+        # customer export is not reported as clean. Subject names the file, so triage
+        # points at the thing to delete rather than at the sentence beside it.
+        for fo in (m.get("files") or []):
+            if file_bytes >= _MAX_FILE_BYTES_PER_SYNC:
+                files_skipped += 1
+                continue
+            if not _slack_readable_file(fo) or int(fo.get("size") or 0) > _MAX_FILE_BYTES:
+                files_skipped += 1        # binary/oversize: counted, never guessed at
+                continue
+            body, how = _slack_file_text(fo, hdrs)
+            if not body.strip():
+                files_skipped += 1
+                continue
+            file_bytes += len(body)
+            files_scanned += 1
+            fname = _slack_file_name(fo)
+            if run_analysis(
+                    AnalysisInput(content=body, sender=actor, channel="slack",
+                                  subject=f"{where}: {fname}", surface=Surface.COLLAB,
+                                  metadata={"custom_pii": custom_pii, "slack_file": fname,
+                                            # how the text was recovered, so a finding
+                                            # off a screenshot is distinguishable from
+                                            # one off a message during triage
+                                            "extracted_via": how}),
+                    persist=True, db=db, tenant_id=connector.tenant_id,
+                    persist_benign=False, use_judge=False).get("finding_id") is not None:
+                findings += 1
+        # Fingerprint substantial messages so a later leak can be traced to the
+        # thread it was lifted from. store_fingerprint no-ops on short text, so
+        # one-liners ("lunch?") never create rows — only real content does.
+        from . import content_origin
+        content_origin.store_fingerprint(
+            db, connector.tenant_id, "slack", f"{cid}:{m['ts']}",
+            where, actor, m["text"],
+            sensitive=result.get("finding_id") is not None)
+        scanned += 1
+        if result.get("finding_id") is not None:
+            findings += 1
+            # Remediation. Only ever a message this scan just flagged, only at the
+            # confirmed-leak tier, and every deletion is written to the audit log
+            # BEFORE it is reported — a message removed with no record of what it was
+            # or why is worse than the leak it was removing.
+            if admin_token and _SEV_RANK.get(result.get("severity", ""), 0) >= _REMEDIATE_MIN_RANK:
+                ok, why = _slack_delete(cid, m["ts"], admin_token)
+                from . import audit_log
+                audit_log.record(
+                    db, connector.tenant_id, actor,
+                    "slack.message_deleted" if ok else "slack.message_delete_failed",
+                    f"{where}:{m['ts']}",
+                    {"finding_id": result.get("finding_id"),
+                     "severity": result.get("severity"),
+                     "channel": where, "connector": connector.label or connector.id,
+                     **({} if ok else {"error": why})})
+                if ok:
+                    deleted += 1
+                else:
+                    delete_failed += 1
+
     for ch in channels:
         cid, cname = ch.get("id", ""), ch.get("name", "")
         if not cid:
             continue
         remaining = _MAX_MESSAGES_PER_SYNC - scanned
         if remaining <= 0:
-            truncated = True
+            truncated, resume_at = True, cid
             break
-        # Slack returns history newest-first, so a partially-scanned window CANNOT
-        # advance the watermark — the unfetched messages are the OLDER ones, and moving
-        # the cursor past them would skip them forever. Over-budget channels scan what
-        # fits and keep their cursor; the rescan next sync folds as recurrences.
-        window, over = [], False
-        for m in _slack_pages(f"{_SLACK_API_BASE}/conversations.history",
-                              {"channel": cid, "limit": "200",
-                               "oldest": marks.get(cid, default_oldest)},
-                              hdrs, "messages"):
-            if m.get("subtype") or not m.get("user") or not (m.get("text") or "").strip():
-                continue          # bots, joins, edits-without-text — not user content
-            window.append(m)
-            if len(window) > remaining:
-                over = True
-                window.pop()      # keep exactly the budget's worth (the newest ones)
-                break
-        # Oldest-first so the watermark only ever moves past messages actually scanned.
-        for m in sorted(window, key=lambda x: float(x.get("ts", "0"))):
-            actor = _slack_actor(users, m["user"], hdrs)
-            where = f"#{cname}" if cname else cid
-            result = run_analysis(
-                AnalysisInput(content=m["text"], sender=actor, channel="slack",
-                              subject=where, surface=Surface.COLLAB,
-                              metadata={"custom_pii": custom_pii}),
-                persist=True, db=db, tenant_id=connector.tenant_id,
-                persist_benign=False, use_judge=False)
-            # Attachments are scanned as their own findings, so a clean message carrying a
-            # customer export is not reported as clean. Subject names the file, so triage
-            # points at the thing to delete rather than at the sentence beside it.
-            for fo in (m.get("files") or []):
-                if file_bytes >= _MAX_FILE_BYTES_PER_SYNC:
-                    files_skipped += 1
-                    continue
-                if not _slack_readable_file(fo) or int(fo.get("size") or 0) > _MAX_FILE_BYTES:
-                    files_skipped += 1        # binary/oversize: counted, never guessed at
-                    continue
-                body, how = _slack_file_text(fo, hdrs)
-                if not body.strip():
-                    files_skipped += 1
-                    continue
-                file_bytes += len(body)
-                files_scanned += 1
-                fname = _slack_file_name(fo)
-                if run_analysis(
-                        AnalysisInput(content=body, sender=actor, channel="slack",
-                                      subject=f"{where}: {fname}", surface=Surface.COLLAB,
-                                      metadata={"custom_pii": custom_pii, "slack_file": fname,
-                                                # how the text was recovered, so a finding
-                                                # off a screenshot is distinguishable from
-                                                # one off a message during triage
-                                                "extracted_via": how}),
-                        persist=True, db=db, tenant_id=connector.tenant_id,
-                        persist_benign=False, use_judge=False).get("finding_id") is not None:
-                    findings += 1
-            # Fingerprint substantial messages so a later leak can be traced to the
-            # thread it was lifted from. store_fingerprint no-ops on short text, so
-            # one-liners ("lunch?") never create rows — only real content does.
-            from . import content_origin
-            content_origin.store_fingerprint(
-                db, connector.tenant_id, "slack", f"{cid}:{m['ts']}",
-                where, actor, m["text"],
-                sensitive=result.get("finding_id") is not None)
-            scanned += 1
-            if not over:
-                marks[cid] = m["ts"]
-            if result.get("finding_id") is not None:
-                findings += 1
-                # Remediation. Only ever a message this scan just flagged, only at the
-                # confirmed-leak tier, and every deletion is written to the audit log
-                # BEFORE it is reported — a message removed with no record of what it was
-                # or why is worse than the leak it was removing.
-                if admin_token and _SEV_RANK.get(result.get("severity", ""), 0) >= _REMEDIATE_MIN_RANK:
-                    ok, why = _slack_delete(cid, m["ts"], admin_token)
-                    from . import audit_log
-                    audit_log.record(
-                        db, connector.tenant_id, actor,
-                        "slack.message_deleted" if ok else "slack.message_delete_failed",
-                        f"{where}:{m['ts']}",
-                        {"finding_id": result.get("finding_id"),
-                         "severity": result.get("severity"),
-                         "channel": where, "connector": connector.label or connector.id,
-                         **({} if ok else {"error": why})})
-                    if ok:
-                        deleted += 1
-                    else:
-                        delete_failed += 1
-        if over:
+        where = f"#{cname}" if cname else cid
+        _, left = _slack_scan_conversation(
+            cid, marks, gaps, default_oldest, remaining,
+            lambda lo, hi: (_slack_pages(f"{_SLACK_API_BASE}/conversations.history",
+                                         {"channel": cid, "limit": "200", "oldest": lo,
+                                          **({"latest": hi} if hi else {})},
+                                         hdrs, "messages"), False),
+            scan)
+        if left:
             truncated = True
 
-    connector.state = {**state, "channels": marks}
+    connector.state = {**state, "channels": marks, "backfill": gaps, "resume_at": resume_at}
     summary = {"channels": len(channels), "messages": scanned, "findings": findings}
     if joined:
         summary["joined"] = joined
@@ -692,59 +765,63 @@ def scan_slack_discovery(db, connector, creds: dict) -> dict:
     users: dict[str, str] = {}
     scanned = findings = skipped = 0
     truncated = False
-    for ch in convs:
+    resume_at = ""
+    gaps: dict[str, list] = {k: v for k, v in (state.get("backfill") or {}).items()}
+    cid = where = ""
+
+    def scan(m: dict) -> None:
+        nonlocal scanned, findings
+        actor = _slack_actor(users, m["user"], hdrs)
+        result = run_analysis(
+            AnalysisInput(content=m["text"], sender=actor, channel="slack",
+                          subject=where, surface=Surface.COLLAB,
+                          metadata={"custom_pii": custom_pii, "via": "discovery"}),
+            persist=True, db=db, tenant_id=connector.tenant_id,
+            persist_benign=False, use_judge=False)
+        content_origin.store_fingerprint(
+            db, connector.tenant_id, "slack", f"{cid}:{m['ts']}", where, actor,
+            m["text"], sensitive=result.get("finding_id") is not None)
+        scanned += 1
+        if result.get("finding_id") is not None:
+            findings += 1
+
+    for ch in _rotate(convs, state.get("resume_at", "")):
         cid = ch.get("id", "")
         if not cid:
             continue
         remaining = _MAX_MESSAGES_PER_SYNC - scanned
         if remaining <= 0:
-            truncated = True
+            truncated, resume_at = True, cid
             break
         team = ch.get("team_id") or ch.get("team") or ""
         where = _where(ch)
-        hq = {"channel": cid, "limit": "200", "oldest": marks.get(cid, default_oldest)}
-        if team:
-            hq["team"] = team
-        try:
+
+        def fetch(lo, hi, cid=cid, team=team):
+            # One page per call. A full page (has_more) is reported back and the remainder
+            # becomes a backfill gap read on by `latest`, so the watermark never jumps past
+            # older messages that were never fetched.
+            hq = {"channel": cid, "limit": "200", "oldest": lo}
+            if hi:
+                hq["latest"] = hi
+            if team:
+                hq["team"] = team
             data = _http_json(f"{_SLACK_API_BASE}/discovery.conversations.history?"
                               + urllib.parse.urlencode(hq), headers=hdrs)
+            if not data.get("ok"):
+                raise ConnectorError(data.get("error", "unknown_error"))
+            return data.get("messages", []), bool(data.get("has_more"))
+
+        try:
+            _, left = _slack_scan_conversation(cid, marks, gaps, default_oldest, remaining,
+                                               fetch, scan)
         except ConnectorError:
-            skipped += 1
-            continue
-        if not data.get("ok"):
             skipped += 1                  # a conversation this token can't open — not fatal
             continue
-        # History is newest-first; a partial window must not advance the watermark past the
-        # older, unfetched messages, same discipline as the bot-token scanner.
-        window, over = [], False
-        for m in data.get("messages", []):
-            if m.get("subtype") or not m.get("user") or not (m.get("text") or "").strip():
-                continue
-            window.append(m)
-            if len(window) > remaining:
-                over = True
-                window.pop()
-                break
-        for m in sorted(window, key=lambda x: float(x.get("ts", "0"))):
-            actor = _slack_actor(users, m["user"], hdrs)
-            result = run_analysis(
-                AnalysisInput(content=m["text"], sender=actor, channel="slack",
-                              subject=where, surface=Surface.COLLAB,
-                              metadata={"custom_pii": custom_pii, "via": "discovery"}),
-                persist=True, db=db, tenant_id=connector.tenant_id,
-                persist_benign=False, use_judge=False)
-            content_origin.store_fingerprint(
-                db, connector.tenant_id, "slack", f"{cid}:{m['ts']}", where, actor,
-                m["text"], sensitive=result.get("finding_id") is not None)
-            scanned += 1
-            if not over:
-                marks[cid] = m["ts"]
-            if result.get("finding_id") is not None:
-                findings += 1
-        if over:
+        if left:
             truncated = True
 
-    connector.state = {**state, "conversations": marks}
+    connector.state = {**state, "conversations": marks, "backfill": gaps,
+                       "resume_at": resume_at}
     summary = {"conversations": len(convs), "messages": scanned, "findings": findings}
     if skipped:
         summary["skipped"] = skipped

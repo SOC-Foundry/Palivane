@@ -26,6 +26,7 @@ import urllib.request
 from hashlib import sha256
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -221,6 +222,18 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     if not _verify_signature(payload, request.headers.get("Stripe-Signature", "")):
         raise HTTPException(status_code=400, detail="bad signature")
     event = json.loads(payload)
+    # The handler does a blocking Stripe GET and sync DB work — keep it off the event loop
+    # (one uvicorn process serves every request).
+    return await run_in_threadpool(_handle_event, db, event)
+
+
+_LIVE = ("active", "trialing", "past_due")
+
+
+def _handle_event(db: Session, event: dict) -> dict:
+    """Apply one verified Stripe event. Subscription events only move plan state when they
+    are about the tenant's CURRENT subscription (tenant.stripe_subscription_id): a late
+    event for an old or duplicate subscription must not cancel or re-seat the live one."""
     kind = event.get("type", "")
     obj = (event.get("data") or {}).get("object") or {}
 
@@ -229,8 +242,20 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         if tenant is None:
             log.warning("stripe webhook: no tenant for checkout session %s", obj.get("id"))
             return {"ok": True}
+        new_sub = obj.get("subscription") or ""
+        old_sub = tenant.stripe_subscription_id or ""
+        if new_sub and old_sub and new_sub != old_sub and _sub_is_live(old_sub):
+            # A second concurrent checkout produced a second live subscription. Keep the
+            # existing one authoritative and flag the duplicate for ops to cancel/refund —
+            # auto-cancelling a paid subscription from a webhook is not a call to make here.
+            log.warning("stripe webhook: tenant %s completed checkout for subscription %s "
+                        "while %s is still live; keeping the existing one",
+                        tenant.id, new_sub, old_sub)
+            audit_log.record(db, tenant.id, "stripe", "billing.duplicate_subscription",
+                             target=new_sub, detail={"kept": old_sub})
+            return {"ok": True}
         tenant.stripe_customer_id = obj.get("customer") or tenant.stripe_customer_id
-        tenant.stripe_subscription_id = obj.get("subscription") or tenant.stripe_subscription_id
+        tenant.stripe_subscription_id = new_sub or old_sub
         seats = 0
         if tenant.stripe_subscription_id:
             try:
@@ -251,25 +276,41 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         if tenant is not None:
             status = obj.get("status", "")
             seats = _sub_quantity(obj)
-            if status in ("active", "trialing"):
-                tenant.stripe_subscription_id = obj.get("id")
+            current = tenant.stripe_subscription_id or ""
+            if current and obj.get("id") != current:
+                log.info("stripe webhook: ignoring %s for non-current subscription %s "
+                         "(tenant %s)", kind, obj.get("id"), tenant.id)
+            elif status in ("active", "trialing"):
+                tenant.stripe_subscription_id = obj.get("id")   # adopts only when none
                 if (tenant.plan or "").lower() not in ("team", "enterprise"):
                     tenant.plan = "team"
                 if seats and seats != (tenant.quota_users or 0):
                     tenant.quota_users = seats
                     audit_log.record(db, tenant.id, "stripe", "billing.seats",
                                      detail={"seats": seats})
-            elif status in ("canceled", "unpaid", "incomplete_expired"):
+            elif status in ("canceled", "unpaid", "incomplete_expired") and current:
                 _downgrade(db, tenant, status)
             db.commit()
 
     elif kind == "customer.subscription.deleted":
         tenant = _tenant_for(db, obj)
-        if tenant is not None:
+        if (tenant is not None and tenant.stripe_subscription_id
+                and obj.get("id") == tenant.stripe_subscription_id):
             _downgrade(db, tenant, "deleted")
             db.commit()
 
     return {"ok": True}
+
+
+def _sub_is_live(sub_id: str) -> bool:
+    """Whether Stripe still considers this subscription live. A Stripe outage raises 503
+    so Stripe re-delivers the event rather than us guessing which subscription wins."""
+    try:
+        return _stripe("GET", f"/subscriptions/{sub_id}").get("status") in _LIVE
+    except HTTPException as e:
+        if e.status_code == 404 or "No such subscription" in str(e.detail):
+            return False
+        raise HTTPException(status_code=503, detail="stripe unavailable, retry") from e
 
 
 def _downgrade(db: Session, tenant: Tenant, reason: str) -> None:
