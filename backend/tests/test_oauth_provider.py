@@ -103,6 +103,41 @@ def test_code_is_single_use(provider):
         _run(p.exchange_authorization_code(_client(), loaded))
 
 
+def test_replaying_a_spent_code_revokes_what_it_was_exchanged_for(provider):
+    """RFC 6749 §4.1.2: a code used twice has leaked — the pair it already minted dies too,
+    whichever party redeemed it first."""
+    p, Session = provider
+    uid, tid = _seed_user(Session)
+    _register(p)
+    _register(p, "c2")
+    _mint_code(Session, "code-r", "c1", uid, tid)
+    _mint_code(Session, "code-other", "c2", uid, tid)
+    tok = _run(p.exchange_authorization_code(
+        _client(), _run(p.load_authorization_code(_client(), "code-r"))))
+    other = _run(p.exchange_authorization_code(
+        _client("c2"), _run(p.load_authorization_code(_client("c2"), "code-other"))))
+    assert _run(p.load_access_token(tok.access_token)) is not None
+
+    assert _run(p.load_authorization_code(_client(), "code-r")) is None     # the replay
+    assert _run(p.load_access_token(tok.access_token)) is None
+    assert _run(p.load_refresh_token(_client(), tok.refresh_token)) is None
+    # Another client's grant for the same user is not this code's to revoke.
+    assert _run(p.load_access_token(other.access_token)) is not None
+
+
+def test_replay_by_another_client_revokes_nothing(provider):
+    """Presenting someone else's spent code proves nothing about that grant: refused, quietly."""
+    p, Session = provider
+    uid, tid = _seed_user(Session)
+    _register(p, "c1")
+    _register(p, "c2")
+    _mint_code(Session, "code-x", "c1", uid, tid)
+    tok = _run(p.exchange_authorization_code(
+        _client(), _run(p.load_authorization_code(_client(), "code-x"))))
+    assert _run(p.load_authorization_code(_client("c2"), "code-x")) is None
+    assert _run(p.load_access_token(tok.access_token)) is not None
+
+
 def test_expired_code_is_refused(provider):
     p, Session = provider
     uid, tid = _seed_user(Session)
@@ -192,12 +227,14 @@ def test_concurrent_code_exchange_mints_once(provider):
     a = _run(p.load_authorization_code(_client(), "code-race"))
     b = _run(p.load_authorization_code(_client(), "code-race"))
     assert a is not None and b is not None
-    _run(p.exchange_authorization_code(_client(), a))
+    won = _run(p.exchange_authorization_code(_client(), a))
     with pytest.raises(ValueError):
         _run(p.exchange_authorization_code(_client(), b))
     db = Session()
     assert db.query(OAuthTokenRow).filter(OAuthTokenRow.kind == "access").count() == 1
     db.close()
+    # The losing exchange is a second use of the code, so the winner's pair is revoked.
+    assert _run(p.load_access_token(won.access_token)) is None
 
 
 def test_concurrent_refresh_rotates_once(provider):
