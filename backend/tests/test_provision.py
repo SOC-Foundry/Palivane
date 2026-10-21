@@ -38,6 +38,15 @@ def test_linux_script_self_enrolls():
     assert "3rdparty" in s                                  # Chromium managed-storage schema
 
 
+@pytest.mark.parametrize("platform", ["macos", "linux"])
+def test_reenroll_helper_staged_in_private_dir(platform):
+    # A fixed /tmp path lets another local user swap the file before `sudo install` runs it.
+    s = provision.render(platform, "https://palivane.corp", "et_x", extension_id="e")
+    assert "/tmp/" not in s
+    assert 'STAGE="$(mktemp -d)"' in s and "trap 'rm -rf \"$STAGE\"' EXIT" in s
+    assert 'sudo install -m 0755 "$STAGE/palivane-reenroll" /usr/local/bin/palivane-reenroll' in s
+
+
 def test_default_keeps_claude_codes_own_auth():
     # Default (no route_gateway): Claude Code keeps its own sign-in (Pro/Max subscription).
     # The settings block must not touch ANTHROPIC_*, and forceLoginMethod locks login to
