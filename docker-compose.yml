@@ -51,10 +51,22 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       JUDGE_PROVIDER: ${JUDGE_PROVIDER:-auto}
+      JUDGE_MODEL: ${JUDGE_MODEL:-}
       # Optional: gateway upstreams, capture token, tenant.
+      # Compose passes ONLY the variables listed here, so every knob .env.docker.example
+      # documents must appear below or setting it in .env silently does nothing.
       GATEWAY_ENFORCE: ${GATEWAY_ENFORCE:-false}
+      GATEWAY_BLOCK_SEVERITY: ${GATEWAY_BLOCK_SEVERITY:-high}
+      GATEWAY_UPSTREAM_BASE: ${GATEWAY_UPSTREAM_BASE:-}
+      GATEWAY_UPSTREAM_KEY: ${GATEWAY_UPSTREAM_KEY:-}
       GATEWAY_ANTHROPIC_BASE: ${GATEWAY_ANTHROPIC_BASE:-https://api.anthropic.com}
       GATEWAY_ANTHROPIC_KEY: ${GATEWAY_ANTHROPIC_KEY:-}
+      GATEWAY_GEMINI_BASE: ${GATEWAY_GEMINI_BASE:-https://generativelanguage.googleapis.com}
+      GATEWAY_GEMINI_KEY: ${GATEWAY_GEMINI_KEY:-}
+      # Optional: MCP inspection via the egress proxy.
+      MCP_ENFORCE: ${MCP_ENFORCE:-false}
+      MCP_BLOCK_SEVERITY: ${MCP_BLOCK_SEVERITY:-high}
+      MCP_ALLOWED_SERVERS: ${MCP_ALLOWED_SERVERS:-}
       EXTENSION_INGEST_TOKEN: ${EXTENSION_INGEST_TOKEN:-}
       INGEST_TENANT: ${INGEST_TENANT:-demo}
       PALIVANE_EXTENSION_ID: ${PALIVANE_EXTENSION_ID:-}
