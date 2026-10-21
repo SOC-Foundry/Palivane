@@ -39,6 +39,13 @@ function redirectKind(uri) {
   }
 }
 
+// Name the client asking for a key, so the consent button says what is being connected.
+function clientName(kind, device) {
+  if (device.startsWith("vscode-")) return "Palivane for VS Code";
+  if (kind === "fragment") return "the Palivane browser extension";
+  return "the Palivane CLI (palivane connect)";
+}
+
 export default function ExtensionConnect() {
   const params = new URLSearchParams(window.location.search);
   const redirectUri = params.get("redirect_uri") || "";
@@ -47,7 +54,7 @@ export default function ExtensionConnect() {
   // token endpoint so re-connecting the same device rotates its key instead of piling up rows.
   const device = params.get("device") || "";
   const [authed, setAuthed] = useState(sessionFresh());
-  const [status, setStatus] = useState("init");   // init | connecting | done | error
+  const [status, setStatus] = useState("init");   // init | confirm | connecting | done | error
   const [detail, setDetail] = useState("");
 
   useEffect(() => {
@@ -62,13 +69,20 @@ export default function ExtensionConnect() {
     }
   }, []);
 
+  const kind = redirectKind(redirectUri);
+
+  // Signed in: ask before minting. Never mint on page load, a link to this page with someone
+  // else's loopback/extension redirect_uri must not hand a key out without a click.
   useEffect(() => {
     if (!authed) return;
-    const kind = redirectKind(redirectUri);
     if (!kind) {
       setStatus("error"); setDetail("Invalid or missing redirect URL.");
       return;
     }
+    setStatus("confirm");
+  }, [authed]);
+
+  function connect() {
     setStatus("connecting");
     api.extensionToken(device)
       .then((r) => {
@@ -94,7 +108,7 @@ export default function ExtensionConnect() {
         if (!getToken()) { setToken(null); setAuthed(false); setStatus("init"); return; }
         setStatus("error"); setDetail(String(e.message || e));
       });
-  }, [authed]);
+  }
 
   if (!authed) {
     return <Login onAuthed={() => setAuthed(true)} />;
@@ -104,7 +118,23 @@ export default function ExtensionConnect() {
     <div className="login-screen">
       <div className="login-card" style={{ textAlign: "center" }}>
         <img className="login-logo" src="/palivane-emblem.svg" alt="Palivane" width="120" height="120" />
-        {status === "connecting" && <p className="login-sub">Connecting your browser extension...</p>}
+        {status === "confirm" && (
+          <>
+            <p className="login-sub">
+              Connect <strong>{clientName(kind, device)}</strong> to your Palivane account?
+            </p>
+            <p className="muted" style={{ wordBreak: "break-all" }}>
+              A capture key will be sent to <code>{(() => {
+                try { const u = new URL(redirectUri); return u.origin + u.pathname; }
+                catch { return redirectUri; }
+              })()}</code>. Only continue if you started this sign-in yourself.
+            </p>
+            <button type="button" className="primary-btn slim" onClick={connect}>
+              Connect {clientName(kind, device)}
+            </button>
+          </>
+        )}
+        {status === "connecting" && <p className="login-sub">Connecting {clientName(kind, device)}...</p>}
         {status === "done" && (
           <p className="login-sub">Connected as <strong>{detail}</strong>. You can close this tab.</p>
         )}

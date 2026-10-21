@@ -53,7 +53,10 @@ export default function Admin() {
     }
   }, []);
 
-  useEffect(() => { if (token) load(token); }, [token, load]);
+  // Resume a stored operator token once on mount. Keyed on mount only: load() itself sets the
+  // token state, so depending on `token` re-ran every fetch a second time on each sign-in.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (token) load(token); }, []);
 
   async function refreshLicenses() {
     try { setLicenses(await call("/admin/licenses", token)); } catch (e) { setErr(String(e.message || e)); }
