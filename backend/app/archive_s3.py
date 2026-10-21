@@ -161,9 +161,14 @@ def archive(tenant, item, result: dict, agent: str = "") -> None:
             return
         raw = bool(getattr(tenant, "archive_s3_raw_content", False))
         content = item.content or ""
-        if content and not raw:
-            from .redaction import redact_text
-            content = redact_text(content)
+        signals = result.get("signals", [])
+        if not raw:
+            if content:
+                from .redaction import redact_text
+                content = redact_text(content)
+            # Detector evidence quotes the matched text; mask it like the stored finding.
+            from .excerpts import clean_signals
+            signals = clean_signals(signals, getattr(tenant, "custom_pii_patterns", "") or "")
         line = json.dumps({
             "schema": 1,
             "ts": _iso_now(),
@@ -176,7 +181,7 @@ def archive(tenant, item, result: dict, agent: str = "") -> None:
             "subject": item.subject or "",
             "severity": result.get("severity", ""),
             "risk_score": result.get("risk_score", 0),
-            "signals": result.get("signals", []),
+            "signals": signals,
             "content": content,
             "content_redacted": not raw,
         }, separators=(",", ":")).encode()

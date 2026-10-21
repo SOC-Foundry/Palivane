@@ -75,3 +75,22 @@ def test_proxy_force_block_overrides_monitor():
     assert addon.should_block({"action": "block", "force_block": True}, enforce=False) is True
     assert addon.should_block({"action": "block"}, enforce=False) is False   # fuzzy, monitor
     assert addon.should_block({"action": "block"}, enforce=True) is True
+
+
+def test_sinks_receive_masked_signal_evidence(monkeypatch):
+    """Alert/SIEM formatters quote signal evidence verbatim and assume it is redacted, so
+    _dispatch_sinks must mask it like the stored finding — without touching the caller's
+    raw result (the verdict still uses it)."""
+    from app import service
+    from app.models import Tenant
+    sent = []
+    monkeypatch.setattr(alerts, "notify", lambda url, sev, payload, **kw: sent.append(payload))
+    monkeypatch.setattr(service.settings, "redact_findings", True)
+    t = Tenant(id=1, slug="acme", alert_webhook="https://hooks.example/x")
+    raw = {"severity": "high", "signals": [{"category": "secret_leak",
+                                            "evidence": "key AKIAABCDEFGHIJKLMNOP",
+                                            "detail": "AKIAABCDEFGHIJKLMNOP"}]}
+    service._dispatch_sinks(t, raw, "s", "a@acme.com", "llm_io")
+    assert len(sent) == 1
+    assert "AKIAABCDEFGHIJKLMNOP" not in str(sent[0]["signals"])
+    assert raw["signals"][0]["evidence"] == "key AKIAABCDEFGHIJKLMNOP"
