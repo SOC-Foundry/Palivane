@@ -298,6 +298,19 @@ def build_corpus() -> list[Sample]:
         content = meta.get("args_text") or "MCP tools/advertised"
         samples.append(S("live_traffic_shapes", content, surface=M, metadata=meta))
 
+    # --- 10) A bare 9-digit id blocked as an SSN (2026-10-20) ---------------
+    # The gateway blocked a developer's own request (pii_exposure, risk 41) because it carried
+    # their numeric GitHub user id in a WIF attribute condition: a bare 9-digit run reads as
+    # "possible SSN (9-digit)". Numeric ids of this width are everywhere in dev traffic
+    # (GitHub user/repo ids, AWS account ids are 12, GCP project numbers, Discord/Slack ids).
+    samples += [S("pii_lookalike", t) for t in (
+        "--attribute-condition \"assertion.repository=='acme/app' && assertion.actor_id=='482130957'\"",
+        "It uses your numeric GitHub user ID (482130957, for octocat) rather than the login, since logins can be renamed.",
+        "Add an optional ALLOWED_ACTOR_ID env var (the user's numeric GitHub id is 482130957).",
+        "gh api repos/acme/app -q .id  # prints 617042385",
+        "GCP project number 209371846 owns the github-pool workload identity pool.",
+    )]
+
     return samples
 
 
