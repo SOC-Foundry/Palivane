@@ -196,7 +196,13 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
             # code", answered identically so a caller learns nothing from which it was.
             if row is None or row.client_id != client.client_id:
                 return None
-            if row.used_at is not None or (row.expires_at and row.expires_at < _now()):
+            if row.used_at is not None:
+                # A spent code presented again: whoever holds it, the code leaked. RFC 6749
+                # §4.1.2 — revoke what it was exchanged for, so the copy the thief already
+                # redeemed (if the victim's was the second use) stops working too.
+                self._revoke_grant(db, row.client_id, row.user_id, row.tenant_id)
+                return None
+            if row.expires_at and row.expires_at < _now():
                 return None
             return AuthorizationCode(
                 code=authorization_code,
@@ -219,7 +225,10 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
             row = (db.query(OAuthCode)
                      .filter(OAuthCode.code_hash == hash_token(authorization_code.code))
                      .one_or_none())
-            if row is None or row.used_at is not None:
+            if row is None:
+                raise ValueError("authorization code already used")
+            if row.used_at is not None:
+                self._revoke_grant(db, row.client_id, row.user_id, row.tenant_id)
                 raise ValueError("authorization code already used")
             # Single use, before anything is issued — as a conditional UPDATE, so of two
             # concurrent exchanges of the same code exactly one flips used_at and the other
@@ -229,6 +238,10 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
                        .update({OAuthCode.used_at: _now()}, synchronize_session=False))
             if spent != 1:
                 db.rollback()
+                # Lost the race to another exchange of the same code — also a second use. The
+                # winner's pair is revoked here only if it has committed by now; this is the
+                # best effort the spec asks for, not a guarantee.
+                self._revoke_grant(db, row.client_id, row.user_id, row.tenant_id)
                 raise ValueError("authorization code already used")
             access, refresh = self._issue_pair(db, row.client_id, row.user_id,
                                                row.tenant_id, row.scopes or READ_SCOPE)
@@ -340,13 +353,20 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
                  .one_or_none())
         if row is None or row.revoked_at is None or row.client_id != client.client_id:
             return                             # unknown/expired, not a replay of a rotated one
-        now = _now()
+        self._revoke_grant(db, row.client_id, row.user_id, row.tenant_id)
+
+    def _revoke_grant(self, db, client_id: str, user_id, tenant_id) -> None:
+        """Revoke every live token this client holds for this user in this tenant.
+
+        A token isn't linked to the code or the refresh token it came from, so a replay can't
+        be traced to the exact pair it minted. The grant is the narrowest unit we can name,
+        and the user re-consents either way."""
         (db.query(OAuthTokenRow)
-           .filter(OAuthTokenRow.client_id == row.client_id,
-                   OAuthTokenRow.user_id == row.user_id,
-                   OAuthTokenRow.tenant_id == row.tenant_id,
+           .filter(OAuthTokenRow.client_id == client_id,
+                   OAuthTokenRow.user_id == user_id,
+                   OAuthTokenRow.tenant_id == tenant_id,
                    OAuthTokenRow.revoked_at.is_(None))
-           .update({OAuthTokenRow.revoked_at: now}, synchronize_session=False))
+           .update({OAuthTokenRow.revoked_at: _now()}, synchronize_session=False))
         db.commit()
 
     async def revoke_token(self, token) -> None:
@@ -372,13 +392,17 @@ def prune(db, keep_revoked: timedelta = timedelta(days=7)) -> int:
     Revoked tokens linger briefly rather than vanishing, because "this token was revoked"
     is a more useful answer than "this token never existed" while someone is working out
     why their client stopped — and after a week nobody is.
+
+    Spent and expired codes are kept for the same window: a spent code is what recognises a
+    replay (and revokes the grant it was exchanged for). Dropped at the next hourly run, a
+    code replayed minutes after use would look merely unknown.
     """
     from .models import OAuthCode, OAuthToken as Row
     now = _now()
     gone = 0
     try:
         gone += (db.query(OAuthCode)
-                   .filter((OAuthCode.expires_at < now) | (OAuthCode.used_at.isnot(None)))
+                   .filter(OAuthCode.expires_at < now - keep_revoked)
                    .delete(synchronize_session=False))
         gone += (db.query(Row)
                    .filter(Row.expires_at < now - keep_revoked)

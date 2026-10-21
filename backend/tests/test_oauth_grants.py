@@ -110,5 +110,11 @@ def test_prune_clears_spent_codes_and_dead_tokens_but_not_live_ones(client, raw_
     assert db.query(Row).filter(Row.id == old_id).count() == 0
     assert db.query(Row).filter(Row.revoked_at.is_(None)).count() == live_before - 1
     from app.models import OAuthCode
-    assert db.query(OAuthCode).count() == 0      # the code was spent at exchange
+    # The code was spent at exchange but is kept: a replay of it must still be recognised.
+    assert db.query(OAuthCode).count() == 1
+    code = db.query(OAuthCode).one()
+    code.expires_at = _now() - timedelta(days=30)
+    db.commit()
+    prune(db)
+    assert db.query(OAuthCode).count() == 0      # ...until it is old enough to be inert
     db.close()
