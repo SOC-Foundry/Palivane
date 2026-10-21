@@ -77,8 +77,11 @@ echo "  device key issued."
 # re-enrolls if the device key is revoked. Reads config from /etc/palivane/enroll.json (and
 # inherits PALIVANE_* from managed-settings). Prime its cache with the key we just minted.
 echo "Installing palivane-reenroll (apiKeyHelper) ..."
-curl -fsSL "$PALIVANE_URL/cli/palivane-reenroll" -o /tmp/palivane-reenroll
-sudo install -m 0755 /tmp/palivane-reenroll /usr/local/bin/palivane-reenroll
+# Staged in a private mktemp dir, not a fixed path in the shared temp dir: another local user
+# could plant or swap that file between the download and `sudo install`, and get it run as root.
+STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
+curl -fsSL "$PALIVANE_URL/cli/palivane-reenroll" -o "$STAGE/palivane-reenroll"
+sudo install -m 0755 "$STAGE/palivane-reenroll" /usr/local/bin/palivane-reenroll
 sudo mkdir -p /etc/palivane
 sudo tee /etc/palivane/enroll.json >/dev/null <<JSON
 {{ "url": "$PALIVANE_URL", "enroll_token": "$ENROLL_TOKEN", "device": "$DEVICE" }}
@@ -201,8 +204,11 @@ echo "  device key issued."
 # re-enrolls if the device key is revoked. Reads config from /etc/palivane/enroll.json (and
 # inherits PALIVANE_* from managed-settings). Prime its cache with the key we just minted.
 echo "Installing palivane-reenroll (apiKeyHelper) ..."
-curl -fsSL "$PALIVANE_URL/cli/palivane-reenroll" -o /tmp/palivane-reenroll
-sudo install -m 0755 /tmp/palivane-reenroll /usr/local/bin/palivane-reenroll
+# Staged in a private mktemp dir, not a fixed path in the shared temp dir: another local user
+# could plant or swap that file between the download and `sudo install`, and get it run as root.
+STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
+curl -fsSL "$PALIVANE_URL/cli/palivane-reenroll" -o "$STAGE/palivane-reenroll"
+sudo install -m 0755 "$STAGE/palivane-reenroll" /usr/local/bin/palivane-reenroll
 sudo mkdir -p /etc/palivane
 printf '%s\\n' "{{ \\"url\\": \\"$PALIVANE_URL\\", \\"enroll_token\\": \\"$ENROLL_TOKEN\\", \\"device\\": \\"$DEVICE\\" }}" | sudo tee /etc/palivane/enroll.json >/dev/null
 mkdir -p "$HOME/.palivane"; printf '%s' "$KEY" > "$HOME/.palivane/device-key"; chmod 600 "$HOME/.palivane/device-key"
