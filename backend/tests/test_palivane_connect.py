@@ -144,6 +144,29 @@ def test_write_cursor_installs_hooks_and_creds(monkeypatch, tmp_path):
     assert len(hooks["hooks"]["beforeSubmitPrompt"]) == 1
 
 
+def test_credential_files_are_created_private(monkeypatch, tmp_path):
+    """Token-bearing files are created 0600 (never briefly 0644), a pre-existing 0644 file
+    is tightened, and ~/.claude is created 0700."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/palivane/{name}")
+    (tmp_path / ".cursor").mkdir()
+    loose = tmp_path / ".cursor" / "palivane.json"
+    loose.write_text("{}")
+    os.chmod(loose, 0o644)
+    old = os.umask(0o022)
+    try:
+        path, _ = wc._write_claude_code("ak_tok", "https://w.io", "dev@a.com")
+        wc._write_cursor("ak_tok", "https://w.io", "dev@a.com")
+    finally:
+        os.umask(old)
+    assert os.stat(path).st_mode & 0o777 == 0o600
+    assert os.stat(os.path.dirname(path)).st_mode & 0o777 == 0o700
+    assert os.stat(loose).st_mode & 0o777 == 0o600
+    assert json.load(open(loose))["token"] == "ak_tok"
+    src = _path.read_text()
+    assert 'open(path, "w")' not in src and 'open(wj, "w")' not in src
+
+
 def test_write_cursor_skipped_when_cursor_absent(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))            # no ~/.cursor dir
     monkeypatch.setattr(wc, "_resolve_script", lambda name: f"/opt/palivane/{name}")
@@ -351,21 +374,38 @@ def test_no_upstream_skips_gateway_routing_keeps_local_planes(monkeypatch, tmp_p
 
 
 # --- plane self-update: `palivane connect` refreshes installed plane scripts -----------
-def test_refresh_planes_updates_and_is_atomic(tmp_path, monkeypatch):
-    """A re-connect fetches current plane scripts into ~/.palivane/bin (atomic, executable),
-    so new plane code (e.g. the auth circuit breaker) lands without a full reinstall."""
+class _R:
+    status = 200
+    def __init__(self, body): self.body = body
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def read(self): return self.body
+
+
+def _serve(signed_release, bodies: dict, served: dict | None = None, sig=b"<valid>"):
+    """fake urlopen for a signed release of `bodies`; `served` overrides what a URL returns
+    (to simulate a tampered file)."""
+    manifest, good = signed_release(bodies)
     fetched = []
 
-    class _R:
-        def __init__(self, body): self.body = body
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
-        def read(self): return self.body
-
     def fake_urlopen(req, timeout=None):
+        name = req.full_url.rsplit("/", 1)[-1]
+        if name == "manifest.json":
+            return _R(manifest)
+        if name == "manifest.sig":
+            if sig is None:
+                raise OSError("404")
+            return _R(good if sig == b"<valid>" else sig)
         fetched.append(req.full_url)
-        return _R(b"#!/usr/bin/env python3\n# v2\n")
+        return _R((served or {}).get(name, bodies.get(name, b"")))
+    return fake_urlopen, fetched
 
+
+def test_refresh_planes_updates_and_is_atomic(tmp_path, monkeypatch, signed_release):
+    """A re-connect fetches current plane scripts into ~/.palivane/bin (atomic, executable),
+    so new plane code (e.g. the auth circuit breaker) lands without a full reinstall."""
+    body = b"#!/usr/bin/env python3\n# v2\n"
+    fake_urlopen, fetched = _serve(signed_release, {n: body for n in wc._PLANE_SCRIPTS})
     monkeypatch.setattr(wc.urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr(wc, "_MANAGED_BIN", str(tmp_path / "bin"))
     monkeypatch.setattr(wc, "_in_repo_checkout", lambda: False)
@@ -380,6 +420,32 @@ def test_refresh_planes_updates_and_is_atomic(tmp_path, monkeypatch):
         assert not (tmp_path / "bin" / (name + ".tmp")).exists()   # atomic: no temp left
     assert {u.rsplit("/", 1)[-1] for u in fetched} == set(wc._PLANE_SCRIPTS)
     assert any("updated" in m for m in msgs)
+
+
+def test_refresh_planes_refuses_tampered_or_unsigned(tmp_path, monkeypatch, signed_release):
+    """A file whose bytes don't match the signed manifest is not installed, and without a
+    valid signature nothing is fetched at all."""
+    body = b"#!/usr/bin/env python3\n# v2\n"
+    bodies = {n: body for n in wc._PLANE_SCRIPTS}
+    monkeypatch.setattr(wc, "_MANAGED_BIN", str(tmp_path / "bin"))
+    monkeypatch.setattr(wc, "_in_repo_checkout", lambda: False)
+    monkeypatch.setattr(wc.sys, "argv", ["palivane-connect"])
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+    fake, _ = _serve(signed_release, bodies, served={"palivane-hook": b"evil\n"})
+    monkeypatch.setattr(wc.urllib.request, "urlopen", fake)
+    msgs = wc._refresh_planes("https://palivane.example")
+    assert not (tmp_path / "bin" / "palivane-hook").exists()
+    assert (tmp_path / "bin" / "palivane-posture").read_bytes() == body
+    assert any("palivane-hook" in m and "kept existing" in m for m in msgs)
+
+    for sig in (None, b"AAAA"):
+        (tmp_path / "bin" / "palivane-posture").unlink(missing_ok=True)
+        fake, fetched = _serve(signed_release, bodies, sig=sig)
+        monkeypatch.setattr(wc.urllib.request, "urlopen", fake)
+        msgs = wc._refresh_planes("https://palivane.example")
+        assert fetched == [] and not (tmp_path / "bin" / "palivane-posture").exists()
+        assert any("did not verify" in m for m in msgs)
 
 
 def test_refresh_planes_skips_checkout_and_flag(tmp_path, monkeypatch):

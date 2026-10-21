@@ -129,3 +129,52 @@ def test_recovery_clears_breaker(monkeypatch):
     # A healthy 200 clears the accrued failure state.
     hook.scan("/api/ingest/mcp", {}, "http://x", "tok-r")
     assert hook._breaker_load() == {}
+
+
+# --- a tampered breaker file cannot stand the sensor down indefinitely ----------------
+
+def _write_breaker(raw: str) -> None:
+    import os
+    path = hook._breaker_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as fh:
+        fh.write(raw)
+
+
+def test_breaker_deadlines_are_capped(monkeypatch):
+    """cooldown_until/deauth_until come from a user-writable file: a value further out than
+    the breaker ever writes (now + max backoff) is tampering and is ignored, while a
+    genuine deadline still stands the hook down."""
+    import json
+    import time as _time
+    now = _time.time()
+    fp = hook._token_fp("ak_x")
+    _write_breaker(json.dumps({"cooldown_until": 9e18, "deauth_fp": fp, "deauth_until": 9e18}))
+    assert hook._breaker_skip("ak_x") == ""
+    _write_breaker(json.dumps({"deauth_fp": fp, "deauth_until": now + hook._DEAUTH_SECS - 5}))
+    assert hook._breaker_skip("ak_x") == "deauthorized"
+    _write_breaker(json.dumps({"cooldown_until": now + hook._COOLDOWN_SECS - 5}))
+    assert hook._breaker_skip("ak_x") == "backoff"
+
+
+@pytest.mark.parametrize("raw", [
+    '{"cooldown_until": "9e18"}', '{"cooldown_until": NaN}', '{"cooldown_until": Infinity}',
+    '{"cooldown_until": true}', '{"cooldown_until": -5}', '["not", "a", "dict"]', "garbage",
+])
+def test_breaker_rejects_malformed_state(raw):
+    _write_breaker(raw)
+    assert hook._breaker_skip("ak_x") == ""
+    hook._breaker_record("ak_x", None)          # must not crash on any of these
+
+
+def test_breaker_garbage_fail_counter_restarts():
+    _write_breaker('{"fails": "lots"}')
+    hook._breaker_record("ak_x", None)
+    assert hook._breaker_load().get("fails") == 1
+
+
+def test_breaker_save_leaves_no_temp_files():
+    import os
+    hook._breaker_record("ak_x", None)
+    d = os.path.dirname(hook._breaker_path())
+    assert [f for f in os.listdir(d) if f.endswith(".tmp")] == []

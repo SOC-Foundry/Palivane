@@ -140,10 +140,54 @@ def test_upstream_plist_ca_applies_without_an_upstream_proxy():
 
 def test_upstream_chaining_still_emits_every_flag():
     out = _run('UPSTREAM_PROXY=http://corp:8080; UPSTREAM_AUTH=u:p; '
-               'UPSTREAM_CA=/tmp/corp.pem; mitm_upstream_flags')
+               'UPSTREAM_CA=/tmp/corp.pem; mitm_upstream_flags; mitm_upstream_plist')
     assert "--mode upstream:http://corp:8080" in out
-    assert "--upstream-auth u:p" in out
     assert "--set ssl_verify_upstream_trusted_ca=/tmp/corp.pem" in out
+    # Credentials never ride argv (ps / the unit file); they go to a 0600 config.yaml.
+    assert "u:p" not in out and "upstream-auth" not in out
+
+
+def test_upstream_credentials_go_to_a_private_mitmproxy_config(tmp_path):
+    """An ambient https_proxy with userinfo is split: host on --mode, password in
+    ~/.mitmproxy/config.yaml (0600, percent-decoded, YAML-quoted)."""
+    out = _run(
+        "UPSTREAM_PROXY=\"http://bob:p%40ss'x@corp:8080\"; UPSTREAM_AUTH=''\n"
+        'split_upstream_userinfo; write_mitm_conf\n'
+        'echo "PROXY=$UPSTREAM_PROXY"; mitm_upstream_flags; echo\n'
+        'stat -c %a "$MITM_CONF" 2>/dev/null || stat -f %Lp "$MITM_CONF"\n'
+        'cat "$MITM_CONF"\n'
+        'UPSTREAM_AUTH=""; write_mitm_conf; [ -f "$MITM_CONF" ] || echo REMOVED\n',
+        env={"HOME": str(tmp_path)})
+    assert "PROXY=http://corp:8080" in out
+    assert "bob" not in out.split("PROXY=")[1].split("\n")[1]       # not in the flags
+    assert "\n600\n" in out
+    assert "upstream_auth: 'bob:p@ss''x'" in out
+    assert "REMOVED" in out
+
+
+def test_unit_files_carrying_the_token_are_private(tmp_path):
+    f = tmp_path / "unit"
+    f.write_text("old")
+    os.chmod(f, 0o644)
+    _run(f'echo "Environment=PALIVANE_TOKEN=ak_x" | write_private "{f}"')
+    assert f.read_text().strip() == "Environment=PALIVANE_TOKEN=ak_x"
+    assert (os.stat(f).st_mode & 0o777) == 0o600
+    src = open(SCRIPT).read()
+    assert 'write_private "$unit" <<UNIT' in src and 'write_private "$plist" <<PLIST' in src
+
+
+def test_mitmproxy_download_is_pinned_and_hash_checked():
+    out = _run('mitm_version; echo; for p in linux-x86_64 linux-aarch64 macos-x86_64 '
+               'macos-arm64; do mitm_expected_sha256 $p; echo; done',
+               env={"PALIVANE_MITM_VERSION": ""})
+    lines = out.split()
+    assert lines[0] == "12.2.3" and len(lines) == 5
+    assert all(len(h) == 64 for h in lines[1:])
+    # an operator-chosen version without a hash has no expected sha → never downloaded
+    out = _run('mitm_expected_sha256 linux-x86_64; echo END',
+               env={"PALIVANE_MITM_VERSION": "99.0.0", "PALIVANE_MITM_SHA256": ""})
+    assert out.strip() == "END"
+    assert "releases/latest" not in open(SCRIPT).read()
 
 
 def test_no_upstream_config_emits_nothing():
