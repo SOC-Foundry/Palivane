@@ -72,3 +72,33 @@ def client(db_factory):
     c = TestClient(app)
     c.headers.update({"Authorization": f"Bearer {_token(c, 'admin@acme.com', 'password123')}"})
     return c
+
+
+@pytest.fixture
+def signed_release(monkeypatch):
+    """A release signed with a throwaway ECDSA P-256 key that the client scripts pin (via
+    PALIVANE_RELEASE_PUBKEY), with signatures required. Returns `make(files)` ->
+    (manifest_json_bytes, manifest_sig_bytes) for a {name: body_bytes} map, exactly as
+    /cli/manifest.json and /cli/manifest.sig would serve them."""
+    import hashlib
+    import json as _json
+
+    from cryptography.hazmat.primitives import serialization as s
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    from app import release_signing
+
+    priv = ec.generate_private_key(ec.SECP256R1())
+    monkeypatch.setenv("PALIVANE_RELEASE_SIGNING_KEY", priv.private_bytes(
+        s.Encoding.PEM, s.PrivateFormat.PKCS8, s.NoEncryption()).decode())
+    monkeypatch.setenv("PALIVANE_RELEASE_PUBKEY", priv.public_key().public_bytes(
+        s.Encoding.PEM, s.PublicFormat.SubjectPublicKeyInfo).decode())
+    monkeypatch.setenv("PALIVANE_RELEASE_REQUIRE_SIG", "1")
+
+    def make(files: dict, **extra):
+        meta = {n: {"sha256": hashlib.sha256(b).hexdigest(), "size": len(b)}
+                for n, b in files.items()}
+        manifest = {"version": "9.9.9", "self_update": True, "files": meta, **extra}
+        return (_json.dumps(manifest).encode(),
+                release_signing.sign_files(meta).encode())
+    return make

@@ -130,6 +130,33 @@ def test_windows_scripts_not_in_bash_installer(raw_client):
     assert "palivane-desktop.ps1" in body  # Windows one-liner note in the header comment
 
 
+def test_install_sh_runs_nothing_until_fully_downloaded(raw_client):
+    """`curl | bash` executes as the script streams in; a truncated download must run
+    nothing. So the body is one function, invoked on the last line."""
+    body = raw_client.get("/install.sh").text
+    lines = [ln for ln in body.splitlines() if ln.strip()]
+    assert lines[-1] == 'main "$@"'
+    top = body.split("main() {", 1)[0]
+    assert all(ln.startswith("#") or not ln.strip() for ln in top.splitlines()), \
+        "commands before main() would run on a partial download"
+    r = subprocess.run(["bash", "-n"], input=body, text=True, capture_output=True)
+    assert r.returncode == 0, r.stderr
+    # A prefix cut anywhere inside main() is a syntax error, i.e. runs nothing.
+    cut = body[: body.index("echo \"Installing Palivane CLI")]
+    r = subprocess.run(["bash"], input=cut, text=True, capture_output=True, timeout=30)
+    assert r.returncode != 0 and "Verifying" not in r.stdout
+
+
+def test_install_sh_persists_the_release_trust_anchor(raw_client):
+    """Post-install updaters verify against the key the installer pinned, and fail closed
+    unless the install recorded an unsigned deployment."""
+    body = raw_client.get("/install.sh").text
+    assert '"$PALIVANE_RELEASE_PUBKEY" > "$HOME/.palivane/release-pubkey.pem"' in body
+    assert '"$REQUIRE_SIG" > "$HOME/.palivane/release-require-sig"' in body
+    # written only after every file passed its check
+    assert body.index("release-pubkey.pem") > body.index("failed its SHA-256 check")
+
+
 def test_unknown_and_traversal_rejected(raw_client):
     assert raw_client.get("/cli/palivane-nope").status_code == 404
     assert raw_client.get("/cli/secrets.py").status_code == 404
