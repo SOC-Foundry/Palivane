@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from .detectors.patterns import SECRET_PATTERNS
+from .detectors.patterns import PRIVATE_KEY_BLOCK_RE, SECRET_PATTERNS
 from .detectors.shadow_ai import CC_CANDIDATE_RE, SSN_RE, _PHI_STRONG, _PHI_VALIDATED, _luhn_ok
 
 MAX_STORED = 20_000   # also cap stored content so a huge paste can't bloat the row
@@ -25,6 +25,9 @@ def redact_text(text: str) -> str:
     no known pattern — so a novel/obfuscated key doesn't survive verbatim into the store."""
     if not text:
         return text
+    # Whole key block first: the "Private key block" rule below masks only the header line,
+    # and once that is gone this can no longer find the block to swallow its body.
+    text = PRIVATE_KEY_BLOCK_RE.sub("«redacted:Private key block»", text)
     for label, rx in SECRET_PATTERNS:
         text = rx.sub(f"«redacted:{label}»", text)
     text = SSN_RE.sub("«redacted:SSN»", text)

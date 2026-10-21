@@ -34,8 +34,8 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from .detectors.normalize import _HOMOGLYPH_TABLE, _ZERO_WIDTH
-from .detectors.patterns import (EVASION_PATTERNS, SECRET_PATTERNS, custom_patterns,
-                                 custom_pii_patterns, find_high_entropy_tokens)
+from .detectors.patterns import (EVASION_PATTERNS, PRIVATE_KEY_BLOCK_RE, SECRET_PATTERNS,
+                                 custom_patterns, custom_pii_patterns, find_high_entropy_tokens)
 from .detectors.shadow_ai import (CC_CANDIDATE_RE, EMAIL_RE, PHONE_RE, SSN_RE, _DOB_CUED_RE,
                                   _PHI_CONTEXT, _PHI_STRONG, _PHI_VALIDATED, _PII_CONTEXT,
                                   _PII_STRONG, _PII_STRUCT, _PII_VALIDATED, _luhn_ok)
@@ -63,12 +63,6 @@ _VARIABLE_REF_RE = re.compile(r"^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?[\"')]*$")
 # `Authorization: Bearer <token>` / `Basic <b64>`: the scheme word stays, the token goes.
 _BEARER_RE = re.compile(
     r"(?i)\b(bearer|basic)(\s+)((?=[A-Za-z0-9._~+/=-]*\d)[A-Za-z0-9._~+/=-]{8,}|[A-Za-z0-9._~+/=-]{16,})")
-# A private key is masked from its header to its footer, or to the end of the text when the
-# footer is missing (a truncated paste). The detector's own rule names only the header line; the
-# base64 body would otherwise be left to the entropy heuristic, which cannot see a line that
-# contains `+` or `/`.
-_PEM_RE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY[A-Z0-9 ]*-----[\s\S]*?"
-                     r"(?:-----END [A-Z0-9 ]*PRIVATE KEY[A-Z0-9 ]*-----|\Z)")
 _DIGIT_RUN_RE = re.compile(r"(?<!\d)\d{9,}(?!\d)")
 _HEX_RE = re.compile(r"(?<![0-9A-Za-z])[0-9a-fA-F]{32,}(?![0-9A-Za-z])")
 
@@ -136,7 +130,7 @@ def _spans(shown: str, custom_pii: str = "", fuzzy: bool = True) -> list[_Span]:
     for label, rx in SECRET_PATTERNS:
         if label != "Credential assignment":
             add(rx, label, "secret")
-    add(_PEM_RE, "Private key block", "secret")
+    add(PRIVATE_KEY_BLOCK_RE, "Private key block", "secret")
     for label, rx in EVASION_PATTERNS:
         add(rx, label, "secret")
     for label, rx in custom_patterns():
