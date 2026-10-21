@@ -153,12 +153,16 @@ def _realtime_ok(severity: str, min_severity: str, digest: str) -> bool:
 _DIGEST_INTERVAL = {"hourly": 3600, "daily": 86400}
 
 
-def _digest_payload(tenant, findings: list, since, now) -> dict:
-    from collections import Counter
-    c = Counter(f.severity for f in findings)
-    by_sev = " · ".join(f"{c[s]} {s}" for s in ("critical", "high", "suspicious", "low") if c.get(s))
+_DIGEST_TOP = 10   # finding lines listed in a digest; the rest is "…and N more"
+
+
+def _digest_payload(tenant, counts: dict, top: list, since, now) -> dict:
+    """`counts` is {severity: n} over the whole window; `top` the (already ranked and
+    bounded) rows to list — both computed in SQL by run_digests."""
+    total = sum(counts.values())
+    by_sev = " · ".join(f"{counts[s]} {s}" for s in ("critical", "high", "suspicious", "low")
+                        if counts.get(s))
     from .signal_summary import top_signals
-    top = sorted(findings, key=lambda f: _RANK.get(f.severity, 0), reverse=True)[:10]
 
     def _what(f):   # the single strongest signal, so a digest line still names the cause
         t = top_signals(f.signals, 1)
@@ -169,11 +173,25 @@ def _digest_payload(tenant, findings: list, since, now) -> dict:
     lines = "\n".join(
         f"• *{f.severity}* · {f.surface} · {(f.subject or 'finding')[:70]} ({f.sender or '—'}){_what(f)}"
         for f in top)
-    more = f"\n…and {len(findings) - len(top)} more" if len(findings) > len(top) else ""
-    text = (f":shield: *Palivane {tenant.alert_digest} digest* — {len(findings)} finding(s) "
+    more = f"\n…and {total - len(top)} more" if total > len(top) else ""
+    text = (f":shield: *Palivane {tenant.alert_digest} digest* — {total} finding(s) "
             f"since {since:%Y-%m-%d %H:%M} UTC\n{by_sev}\n{lines}{more}")
-    return {"text": text, **_envelope({"digest": tenant.alert_digest, "count": len(findings),
-                                       "by_severity": dict(c), "org": tenant.slug})}
+    return {"text": text, **_envelope({"digest": tenant.alert_digest, "count": total,
+                                       "by_severity": dict(counts), "org": tenant.slug})}
+
+
+def _severity_at_least(min_rank: int):
+    """SQL filter: Finding.severity ranks >= min_rank (None = no filter needed)."""
+    from .models import Finding
+    if min_rank <= 0:
+        return None
+    return Finding.severity.in_([s for s, r in _RANK.items() if r >= min_rank])
+
+
+def _severity_rank_expr():
+    from sqlalchemy import case
+    from .models import Finding
+    return case(_RANK, value=Finding.severity, else_=0)
 
 
 def notify_new_tool(webhook: str, tool: str, category: str, actor: str,
@@ -213,6 +231,7 @@ def run_weekly_reports(db, now=None) -> int:
     were right, and the allowlist entries about to lapse. Window-claimed like run_digests so
     concurrent workers can't double-send. Returns #tenants mailed."""
     from datetime import datetime, timedelta
+    from sqlalchemy import func
     from .models import DiscoveredUsage, Finding, Tenant, User
     from . import email as email_mod
     now = now or datetime.utcnow()
@@ -229,28 +248,30 @@ def run_weekly_reports(db, now=None) -> int:
         db.commit()
         if not claimed:
             continue
-        findings = (db.query(Finding)
-                    .filter(Finding.tenant_id == t.id, _active_in_window(since)).all())
-        by_sev: dict[str, int] = {}
-        actors: dict[str, int] = {}
-        for f in findings:
-            by_sev[f.severity] = by_sev.get(f.severity, 0) + 1
-            if f.sender:
-                actors[f.sender] = actors.get(f.sender, 0) + 1
-        new_tools = (db.query(DiscoveredUsage)
-                     .filter(DiscoveredUsage.tenant_id == t.id,
-                             DiscoveredUsage.first_seen > since).all())
-        tool_names = sorted({u.tool for u in new_tools})
-        top = sorted(actors.items(), key=lambda kv: -kv[1])[:5]
+        # Aggregated in SQL: a busy org's week can be a lot of rows, and the report only
+        # ever shows counts and the top five actors.
+        in_window = (Finding.tenant_id == t.id, _active_in_window(since))
+        by_sev = {sev: n for sev, n in (db.query(Finding.severity, func.count(Finding.id))
+                                        .filter(*in_window).group_by(Finding.severity))}
+        cnt = func.count(Finding.id)
+        top = [(a, n) for a, n in (db.query(Finding.sender, cnt)
+                                   .filter(*in_window, Finding.sender.isnot(None),
+                                           Finding.sender != "")
+                                   .group_by(Finding.sender)
+                                   .order_by(cnt.desc(), Finding.sender).limit(5))]
+        tool_names = [r[0] for r in (db.query(DiscoveredUsage.tool)
+                                     .filter(DiscoveredUsage.tenant_id == t.id,
+                                             DiscoveredUsage.first_seen > since)
+                                     .distinct().order_by(DiscoveredUsage.tool).limit(15))]
         lines = [
             f"Palivane weekly report for {t.name or t.slug}",
             f"Window: {since:%Y-%m-%d} to {now:%Y-%m-%d}",
             "",
-            f"Findings: {len(findings)} total — " + (", ".join(
+            f"Findings: {sum(by_sev.values())} total — " + (", ".join(
                 f"{by_sev[s]} {s}" for s in ("critical", "high", "suspicious", "low")
                 if by_sev.get(s)) or "none"),
             "",
-            "New AI tools first seen this week: " + (", ".join(tool_names[:15]) or "none"),
+            "New AI tools first seen this week: " + (", ".join(tool_names) or "none"),
         ]
         if top:
             lines += ["", "Most-flagged actors:"] + [
@@ -276,7 +297,21 @@ def run_weekly_reports(db, now=None) -> int:
                     "weekly report to %s failed", a.email)
         if mailed:
             sent += 1
+        elif admins:
+            # Every send failed: hand the window back (only if it is still ours) so the
+            # next run retries it instead of the week silently going unreported.
+            _release_claim(db, t.id, Tenant.weekly_report_last, now, last)
     return sent
+
+
+def _release_claim(db, tenant_id: int, column, claimed_at, previous) -> None:
+    """Undo a window claim after a failed send. Conditional on the claim still being ours,
+    so a later worker's claim is never clobbered; success never reaches here, so a
+    delivered window is never re-sent."""
+    from .models import Tenant
+    (db.query(Tenant).filter(Tenant.id == tenant_id, column == claimed_at)
+     .update({column: previous}, synchronize_session=False))
+    db.commit()
 
 
 def run_digests(db, now=None) -> int:
@@ -284,6 +319,7 @@ def run_digests(db, now=None) -> int:
     window has elapsed, atomically claim it (a conditional timestamp update — safe across
     workers), roll up alertable findings since the last window, and POST. Returns #sent."""
     from datetime import datetime, timedelta
+    from sqlalchemy import func
     from .models import Tenant, Finding
     now = now or datetime.utcnow()
     tenants = (db.query(Tenant)
@@ -304,13 +340,24 @@ def run_digests(db, now=None) -> int:
         if not claimed:
             continue
         min_rank = _RANK.get(t.alert_min_severity or "high", 3)
-        findings = [f for f in db.query(Finding)
-                    .filter(Finding.tenant_id == t.id, _active_in_window(since)).all()
-                    if _RANK.get(f.severity, 0) >= min_rank]
-        if not findings:
+        # Severity filter, counts and the top-N in SQL — never load the window's rows.
+        conds = [Finding.tenant_id == t.id, _active_in_window(since)]
+        sev = _severity_at_least(min_rank)
+        if sev is not None:
+            conds.append(sev)
+        counts = {s: n for s, n in (db.query(Finding.severity, func.count(Finding.id))
+                                    .filter(*conds).group_by(Finding.severity))}
+        if not counts:
             continue
-        if send_sync(t.alert_webhook.strip(), _digest_payload(t, findings, since, now)):
+        top = (db.query(Finding.severity, Finding.surface, Finding.subject, Finding.sender,
+                        Finding.signals)
+               .filter(*conds).order_by(_severity_rank_expr().desc(), Finding.id)
+               .limit(_DIGEST_TOP).all())
+        if send_sync(t.alert_webhook.strip(), _digest_payload(t, counts, top, since, now)):
             sent += 1
+        else:
+            # A failed POST must not eat the window: release it so the next run retries.
+            _release_claim(db, t.id, Tenant.alert_digest_last, now, last)
     return sent
 
 

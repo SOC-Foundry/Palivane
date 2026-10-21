@@ -264,6 +264,41 @@ def test_a_failure_in_the_new_sections_never_costs_the_report(client, db_factory
     db.close()
 
 
+def test_weekly_counts_and_top_actors_come_from_sql_aggregates(client, db_factory, mailbox):
+    db = db_factory()
+    tid = _enable(db)
+    for i in range(7):
+        for _ in range(i + 1):
+            _finding(db, tid, sender=f"a{i}@acme.com", severity="critical" if i == 6 else "high")
+    _finding(db, tid, sender="")
+    db.commit()
+    assert alerts.run_weekly_reports(db, _now()) == 1
+    body = mailbox[0][2]
+    assert "Findings: 29 total — 7 critical, 22 high" in body
+    actors = body.split("Most-flagged actors:")[1].split("\n\n")[0]
+    assert [ln.split(":")[0].strip() for ln in actors.strip().splitlines()] == \
+        ["a6@acme.com", "a5@acme.com", "a4@acme.com", "a3@acme.com", "a2@acme.com"]
+    db.close()
+
+
+def test_a_week_whose_mail_all_failed_is_retried(client, db_factory, monkeypatch):
+    db = db_factory()
+    _enable(db)
+
+    def down(*a, **k):
+        raise RuntimeError("smtp down")
+
+    monkeypatch.setattr(email_mod, "send", down)
+    assert alerts.run_weekly_reports(db, _now()) == 0
+    db.expire_all()
+    assert _tenant(db).weekly_report_last is None                 # window handed back
+    sent = []
+    monkeypatch.setattr(email_mod, "send", lambda to, s, b: sent.append(to))
+    assert alerts.run_weekly_reports(db, _now()) == 1 and sent == ["admin@acme.com"]
+    assert alerts.run_weekly_reports(db, _now()) == 0 and len(sent) == 1
+    db.close()
+
+
 def test_the_window_is_claimed_so_the_new_sections_do_not_double_send(client, db_factory, mailbox):
     db = db_factory()
     tid = _enable(db)

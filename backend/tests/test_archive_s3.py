@@ -107,6 +107,17 @@ def test_content_redacted_by_default_raw_on_optin(cap):
     assert ev["content_redacted"] is False and "AKIAABCDEFGHIJKLMNOP" in ev["content"]
 
 
+def test_signal_evidence_masked_unless_raw(cap):
+    """Detector evidence quotes the matched text — a key in it must not reach the lake
+    while content is redacted."""
+    res = {**_RESULT, "signals": [{"category": "secret_leak",
+                                   "evidence": "AKIAABCDEFGHIJKLMNOP"}]}
+    a.archive(_tenant(), _item(), res)
+    a.flush_all()
+    assert "AKIAABCDEFGHIJKLMNOP" not in json.dumps(_lines(cap)[0]["signals"])
+    assert res["signals"][0]["evidence"] == "AKIAABCDEFGHIJKLMNOP"   # caller's copy intact
+
+
 def test_daily_budget_read_modify_write_holds_the_lock(cap, monkeypatch):
     """archive() runs on many threads; the shared `_daily` counter must only be touched
     under `_lock` (an unlocked check-then-set double-spends the budget)."""
