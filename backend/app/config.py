@@ -192,8 +192,9 @@ class Settings:
     # Where the real client IP comes from (login/signup throttles, webhook and demo limits).
     # X-Forwarded-For's LEFT end is whatever the client typed, so it is never trusted:
     #   PALIVANE_CLIENT_IP_HEADER  a header a trusted edge overwrites on every request, e.g.
-    #                              "cf-connecting-ip" when ONLY Cloudflare can reach the
-    #                              origin (hosted Palivane: the Worker + IAM-gated Cloud Run).
+    #                              "x-palivane-client-ip" when ONLY the Cloudflare Worker can
+    #                              reach the origin (hosted Palivane: the Worker sets it from
+    #                              CF-Connecting-IP; Cloud Run is IAM-gated).
     #                              Never set it when clients can reach the app directly.
     #   PALIVANE_TRUSTED_PROXY_HOPS  how many proxies in front of the app append to XFF
     #                              (Cloud Run / one LB = 1, the default). The client IP is the

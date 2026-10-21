@@ -73,10 +73,11 @@ jobs:
           # an origin the console cannot read. Keep this in step with worker.js APP_HOST.
           PALIVANE_APP_ORIGIN: https://app.palivane.io
           PALIVANE_ALLOWED_HOSTS: ${{ vars.PALIVANE_ALLOWED_HOSTS }}
-          # Only the Cloudflare Worker can reach this (IAM-gated) service, and Cloudflare
-          # overwrites CF-Connecting-IP at the edge — so it is the real client IP. Without it
-          # every visitor shares the Worker's egress IP in the per-IP login throttle.
-          PALIVANE_CLIENT_IP_HEADER: cf-connecting-ip
+          # Only the Cloudflare Worker can reach this (IAM-gated) service, and the Worker sets
+          # X-Palivane-Client-IP from the edge's CF-Connecting-IP on every request — so it is
+          # the real client IP. Without it every visitor shares the Worker's egress IP in the
+          # per-IP login throttle. The Worker must be deployed (wrangler) before this lands.
+          PALIVANE_CLIENT_IP_HEADER: x-palivane-client-ip
           PALIVANE_EXTENSION_ID: ${{ vars.PALIVANE_EXTENSION_ID }}
           SMTP_HOST: ${{ vars.SMTP_HOST }}
           SMTP_USER: ${{ vars.SMTP_USER }}
