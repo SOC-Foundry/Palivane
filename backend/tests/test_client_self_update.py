@@ -10,6 +10,8 @@ import os
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
+import pytest
+
 import app.main as main
 from app.distribution import _ALLOW, client_versions
 
@@ -102,15 +104,28 @@ def test_verdict_tells_the_client_its_target_version(client, raw_client):
 
 # --- palivane-posture self_update ----------------------------------------------------------
 
-def _fake_server(files: dict[str, bytes], version="9.9.9", self_update=True, fail=()):
-    """A stand-in for _fetch: serves a manifest + file bodies, optionally failing some."""
-    manifest = {"version": version, "self_update": self_update,
-                "files": {n: {"sha256": hashlib.sha256(b).hexdigest(), "size": len(b)}
-                          for n, b in files.items()}}
+@pytest.fixture(autouse=True)
+def _signed(signed_release):
+    global _SIGN
+    _SIGN = signed_release
+
+
+_SIGN = None
+
+
+def _fake_server(files: dict[str, bytes], version="9.9.9", self_update=True, fail=(),
+                 sig: bytes | None = b"<valid>"):
+    """A stand-in for _fetch: serves a SIGNED manifest + file bodies, optionally failing
+    some. `sig=None` serves no signature; any other bytes replace the valid one."""
+    manifest, good_sig = _SIGN(files, version=version, self_update=self_update)
+    if sig == b"<valid>":
+        sig = good_sig
 
     def _fetch(url, token, timeout=20.0):
         if url.endswith("/cli/manifest.json"):
-            return json.dumps(manifest).encode()
+            return manifest
+        if url.endswith("/cli/manifest.sig"):
+            return sig
         name = url.rsplit("/cli/", 1)[-1]
         if name in fail:
             return None
@@ -221,6 +236,43 @@ def test_self_update_skips_unwritable_copies(tmp_path, monkeypatch):
         assert b"old" in p.read_bytes()
     finally:
         os.chmod(p, 0o755)
+
+
+def test_self_update_rejects_a_forged_manifest_signature(tmp_path, monkeypatch):
+    """The manifest is unsigned JSON over the network; a MITM that rewrites it AND the file
+    (so the hashes agree) must still be refused, because the signature is not theirs."""
+    p = _installed(tmp_path, "palivane-hook")
+    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".palivane" / "bin"),))
+    import base64
+    monkeypatch.setattr(wp, "_fetch", _fake_server(
+        {"palivane-hook": b"evil\n"}, sig=base64.b64encode(b"\x30\x06\x02\x01\x01\x02\x01\x01")))
+    assert wp.self_update({"url": "https://w", "token": "t"}, {}, say=lambda *a: None) == 0
+    assert b"old" in p.read_bytes()
+
+
+def test_self_update_fails_closed_without_a_signature(tmp_path, monkeypatch):
+    p = _installed(tmp_path, "palivane-hook")
+    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".palivane" / "bin"),))
+    monkeypatch.setattr(wp, "_fetch", _fake_server({"palivane-hook": b"new\n"}, sig=None))
+    assert wp.self_update({"url": "https://w", "token": "t"}, {}, say=lambda *a: None) == 0
+    assert b"old" in p.read_bytes()
+    # …unless the install recorded an unsigned deployment (install.sh REQUIRE_SIG=0).
+    monkeypatch.setenv("PALIVANE_RELEASE_REQUIRE_SIG", "0")
+    assert wp.self_update({"url": "https://w", "token": "t"}, {}, say=lambda *a: None) == 1
+
+
+def test_self_update_rejects_a_signature_from_another_key(tmp_path, monkeypatch):
+    p = _installed(tmp_path, "palivane-hook")
+    monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(tmp_path / ".palivane" / "bin"),))
+    monkeypatch.setattr(wp, "_fetch", _fake_server({"palivane-hook": b"new\n"}))
+    # Pin a different key than the one that signed.
+    from cryptography.hazmat.primitives import serialization as s
+    from cryptography.hazmat.primitives.asymmetric import ec
+    other = ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(
+        s.Encoding.PEM, s.PublicFormat.SubjectPublicKeyInfo).decode()
+    monkeypatch.setenv("PALIVANE_RELEASE_PUBKEY", other)
+    assert wp.self_update({"url": "https://w", "token": "t"}, {}, say=lambda *a: None) == 0
+    assert b"old" in p.read_bytes()
 
 
 def test_posture_ua_and_version_are_consistent():
