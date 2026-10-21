@@ -39,6 +39,12 @@ export default function Login({ onAuthed, onBack }) {
       setMode("reset");
       window.history.replaceState(null, "", window.location.pathname);
     }
+    // SSO / Google sign-in for an account with MFA on hands back a challenge, not a session.
+    const c = window.location.hash.match(/^#mfa_challenge=(.+)$/);
+    if (c) {
+      setMfaChallenge(decodeURIComponent(c[1]));
+      window.history.replaceState(null, "", window.location.pathname);
+    }
     // Join-confirm links bounce back as /#join=approved|verified|invalid.
     const j = window.location.hash.match(/^#join=(\w+)$/);
     if (j) {

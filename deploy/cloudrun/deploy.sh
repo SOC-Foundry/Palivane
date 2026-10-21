@@ -44,6 +44,10 @@ ENV_VARS+="|JUDGE_PROVIDER=${JUDGE_PROVIDER:-auto}"
 # PALIVANE_ALLOW_SIGNUP=true explicitly for an open multi-tenant deployment.
 ENV_VARS+="|PALIVANE_ALLOW_SIGNUP=${PALIVANE_ALLOW_SIGNUP:-false}"
 ENV_VARS+="|SEED_ON_START=${SEED_ON_START:-false}"
+# Client-IP source for the per-IP throttles. Only set when nothing but a trusted edge can
+# reach the service (hosted: Cloudflare Worker in front of IAM-gated Cloud Run ->
+# cf-connecting-ip). Unset = right-most X-Forwarded-For entry (what Cloud Run appends).
+[ -n "${PALIVANE_CLIENT_IP_HEADER:-}" ] && ENV_VARS+="|PALIVANE_CLIENT_IP_HEADER=${PALIVANE_CLIENT_IP_HEADER}"
 # PALIVANE_ALLOWED_HOSTS may need more than DOMAIN (e.g. the *.run.app hostname when a
 # fronting proxy/Worker reaches the service by its run.app origin) — allow an override.
 [ -n "$DOMAIN" ] && ENV_VARS+="|CORS_ORIGINS=https://${DOMAIN}|PALIVANE_PUBLIC_URL=https://${DOMAIN}|PALIVANE_ALLOWED_HOSTS=${PALIVANE_ALLOWED_HOSTS:-$DOMAIN}"

@@ -8,7 +8,9 @@ default — enabled() is false until GOOGLE_OAUTH_CLIENT_ID + GOOGLE_OAUTH_CLIEN
 are set, and the sign-in screen hides the button.
 
 Resolution for the verified email, in order:
-  1. exactly one active account with that email  -> sign in (several orgs -> use password)
+  1. exactly one active account with that email  -> sign in (several orgs -> use password),
+                                                    only if its org may claim the address
+                                                    (see _may_link); MFA accounts get a challenge
   2. domain claimed + verified by a tenant       -> join it (auto-approve, or join request)
   3. self-serve signup enabled                   -> new org + first admin (trial),
                                                     mirroring /api/auth/signup
@@ -24,7 +26,8 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from . import oidc
-from .auth import _naive_utc, _safe_return_to, _slugify, _unique_slug
+from .auth import (_naive_utc, _safe_return_to, _slugify, _unique_slug, sso_bind_check,
+                   sso_bind_new, sso_bind_set, sso_session_redirect)
 from .config import settings
 from .database import get_db
 from .models import Tenant, User
@@ -60,12 +63,16 @@ def google_login(request: Request, return_to: str = ""):
     nonce = secrets.token_urlsafe(16)
     # Signed, self-expiring state — no server-side session store needed (multi-worker safe).
     # return_to carries the connect landing through Google (signed, so it can't be tampered).
-    state = create_token({"typ": "google_state", "nonce": nonce,
+    # `bind` ties the callback to this browser (login-CSRF guard, see auth.sso_bind_new).
+    bind_nonce, bind = sso_bind_new()
+    state = create_token({"typ": "google_state", "nonce": nonce, "bind": bind,
                           "return_to": _safe_return_to(return_to)}, ttl=600)
-    return RedirectResponse(
+    resp = RedirectResponse(
         oidc.authorize_url(meta, settings.google_oauth_client_id,
                            _redirect_uri(request), state, nonce),
         status_code=307)
+    sso_bind_set(resp, request, bind_nonce)
+    return resp
 
 
 @router.get("/auth/google/callback")
@@ -79,6 +86,7 @@ def google_callback(request: Request, code: str = "", state: str = "",
         raise HTTPException(status_code=400, detail="invalid or expired sign-in state")
     if payload.get("typ") != "google_state":
         raise HTTPException(status_code=400, detail="sign-in state mismatch")
+    sso_bind_check(request, payload)
 
     try:
         meta = oidc.discover(ISSUER)
@@ -103,6 +111,12 @@ def google_callback(request: Request, code: str = "", state: str = "",
     # ambiguous with no org context, so those keep using password/SSO.
     users = db.query(User).filter(User.email == email, User.active.is_(True)).all()
     if len(users) == 1:
+        if not _may_link(db, users[0], email):
+            raise HTTPException(
+                status_code=403,
+                detail="this account was set up by your organization's admin. Sign in with "
+                       "your password (or the invite link); Google sign-in needs the org to "
+                       "verify its email domain first")
         return _signin(db, users[0], origin, return_to)
     if len(users) > 1:
         raise HTTPException(status_code=409,
@@ -162,12 +176,32 @@ def google_callback(request: Request, code: str = "", state: str = "",
     return _signin(db, user, origin, return_to)
 
 
+def _may_link(db: Session, user: User, email: str) -> bool:
+    """May a Google-verified `email` sign in as this existing account?
+
+    Google proves the person owns the mailbox; it says nothing about who created the Palivane
+    account carrying that address. Any org admin can create a user with any email, so linking
+    on email alone let an attacker pre-create ceo@bigcorp.com in their own org and capture
+    the real CEO's first "Continue with Google" — everything the CEO then sends is the
+    attacker's to read. Link only where the account's org is entitled to that address:
+      - the org has claimed AND verified the email's domain (DNS proof), or
+      - the account is the org's founding user — a self-serve signup (mailbox-verified when
+        email is on) or an org created by this very Google sign-in.
+    Everyone else (admin-created/invited users in an org without a verified domain) keeps
+    password / invite-link sign-in. Telling "invited and accepted" apart would need a
+    per-user sign-in-method record, which the schema doesn't carry today.
+    """
+    from . import domains as domains_mod
+    claim = domains_mod.match_verified(db, email)
+    if claim is not None and claim.tenant_id == user.tenant_id:
+        return True
+    first = (db.query(User.id).filter(User.tenant_id == user.tenant_id)
+             .order_by(User.id).limit(1).scalar())
+    return first == user.id and bool(user.email_verified)
+
+
 def _signin(db: Session, user: User, origin: str, return_to: str = "") -> RedirectResponse:
     from .lifecycle import ensure_active
     ensure_active(db, user.tenant_id)
-    token = create_token({"sub": str(user.id), "tenant_id": user.tenant_id,
-                          "role": user.role, "tv": user.token_version})
-    # Fragment, not query: the token stays out of server/proxy logs (same as tenant SSO). When a
-    # connect flow asked for it, land on /extension-connect so the token handback completes.
-    return RedirectResponse(f"{origin}{_safe_return_to(return_to) or '/'}#sso_token={token}",
-                            status_code=303)
+    # Same tail as tenant SSO: MFA challenge when the account has MFA on, else a session.
+    return sso_session_redirect(user, origin, return_to)
