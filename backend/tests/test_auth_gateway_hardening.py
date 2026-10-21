@@ -208,9 +208,9 @@ def test_client_ip_hops_and_peer(monkeypatch):
 
 def test_client_ip_trusted_edge_header(monkeypatch):
     from app.auth import _client_ip, settings
-    monkeypatch.setattr(settings, "client_ip_header", "cf-connecting-ip")
+    monkeypatch.setattr(settings, "client_ip_header", "x-palivane-client-ip")
     monkeypatch.setattr(settings, "trusted_proxy_hops", 1)
-    r = _req({"CF-Connecting-IP": "198.51.100.4", "X-Forwarded-For": "1.1.1.1, 172.64.0.1"})
+    r = _req({"X-Palivane-Client-IP": "198.51.100.4", "X-Forwarded-For": "1.1.1.1, 172.64.0.1"})
     assert _client_ip(r) == "198.51.100.4"
     # Header configured but absent: fall back to the XFF rule, not to the forged left entry.
     assert _client_ip(_req({"X-Forwarded-For": "1.1.1.1, 172.64.0.1"})) == "172.64.0.1"
