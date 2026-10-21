@@ -157,6 +157,75 @@ def test_subscription_deleted_downgrades_team_not_enterprise(client, raw_client,
         db.close()
 
 
+def _post_event(raw_client, kind, obj):
+    body, sig = _signed({"type": kind, "data": {"object": obj}})
+    return raw_client.post("/api/billing/webhook", content=body,
+                           headers={"Stripe-Signature": sig})
+
+
+def _set_team(db_factory, tid, sub):
+    db = db_factory()
+    t = db.get(Tenant, tid)
+    t.plan, t.stripe_subscription_id, t.quota_users = "team", sub, 12
+    db.commit(); db.close()
+
+
+def test_events_for_a_non_current_subscription_are_ignored(client, raw_client, db_factory,
+                                                           monkeypatch):
+    """A late cancel/update for an old or duplicate subscription must not downgrade or
+    re-seat the tenant's live one (tenant resolution is by metadata, not sub id)."""
+    _enable(monkeypatch)
+    tid = _tenant(db_factory)
+    _set_team(db_factory, tid, "sub_live")
+    meta = {"metadata": {"tenant_id": str(tid)}, "object": "subscription"}
+    assert _post_event(raw_client, "customer.subscription.deleted",
+                       {"id": "sub_old", "status": "canceled", **meta}).status_code == 200
+    assert _post_event(raw_client, "customer.subscription.updated",
+                       {"id": "sub_old", "status": "unpaid", **meta}).status_code == 200
+    assert _post_event(raw_client, "customer.subscription.updated",
+                       {"id": "sub_old", "status": "active",
+                        "items": {"data": [{"quantity": 99}]}, **meta}).status_code == 200
+    db = db_factory()
+    t = db.get(Tenant, tid)
+    assert (t.plan, t.stripe_subscription_id, t.quota_users) == ("team", "sub_live", 12)
+    db.close()
+
+
+def test_second_checkout_keeps_the_live_subscription(client, raw_client, db_factory,
+                                                     monkeypatch):
+    """Two concurrent checkouts -> two subscriptions. The existing live one stays
+    authoritative; the duplicate is flagged in the audit log for ops, not adopted."""
+    _enable(monkeypatch)
+    tid = _tenant(db_factory)
+    _set_team(db_factory, tid, "sub_live")
+    monkeypatch.setattr(billing, "_stripe", lambda m, p, params=None: {
+        "status": "active", "items": {"data": [{"quantity": 40}]}})
+    r = _post_event(raw_client, "checkout.session.completed", {
+        "id": "cs_2", "object": "checkout.session", "customer": "cus_1",
+        "subscription": "sub_dup", "metadata": {"tenant_id": str(tid)}})
+    assert r.status_code == 200
+    db = db_factory()
+    t = db.get(Tenant, tid)
+    assert t.stripe_subscription_id == "sub_live" and t.quota_users == 12
+    from app.models import AuditLog
+    assert db.query(AuditLog).filter(
+        AuditLog.action == "billing.duplicate_subscription").count() == 1
+    db.close()
+    # ...but a checkout after the old subscription died (missed deleted event) is adopted
+    def dead_old(m, p, params=None):
+        if p.endswith("/sub_live"):
+            raise billing.HTTPException(400, "Stripe: No such subscription: 'sub_live'")
+        return {"status": "active", "items": {"data": [{"quantity": 40}]}}
+    monkeypatch.setattr(billing, "_stripe", dead_old)
+    assert _post_event(raw_client, "checkout.session.completed", {
+        "id": "cs_3", "object": "checkout.session", "customer": "cus_1",
+        "subscription": "sub_new", "metadata": {"tenant_id": str(tid)}}).status_code == 200
+    db = db_factory()
+    t = db.get(Tenant, tid)
+    assert t.stripe_subscription_id == "sub_new" and t.quota_users == 40
+    db.close()
+
+
 def test_checkout_blocked_for_enterprise_and_double_subscribe(client, db_factory, monkeypatch):
     _enable(monkeypatch)
     tid = _tenant(db_factory)

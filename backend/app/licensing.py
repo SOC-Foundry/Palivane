@@ -138,8 +138,10 @@ def _license_blob() -> str:
     return raw
 
 
-# Verified once per process (license and env don't change while running); a failed
-# verification is remembered too, so a bad license logs once instead of per-request.
+# Signature verified once per process (license and env don't change while running); a
+# failed verification is remembered too, so a bad license logs once instead of per-request.
+# Expiry is NOT a once-per-process fact — a long-running instance outlives the date — so
+# the cached payload's expiry is re-checked on every call (a date compare, cheap).
 _cached: dict | None = None
 _checked = False
 
@@ -148,6 +150,11 @@ def current() -> dict | None:
     """The instance's active license payload, or None. Invalid/expired = None (logged)."""
     global _cached, _checked
     if _checked:
+        if _cached is not None and _cached_expired(_cached):
+            import logging
+            logging.getLogger("uvicorn.error").warning(
+                "PALIVANE_LICENSE ignored: license expired %s", _cached.get("expires"))
+            _cached = None
         return _cached
     _checked = True
     blob = _license_blob()
@@ -160,6 +167,14 @@ def current() -> dict | None:
         logging.getLogger("uvicorn.error").warning("PALIVANE_LICENSE ignored: %s", exc)
         _cached = None
     return _cached
+
+
+def _cached_expired(payload: dict) -> bool:
+    try:
+        exp = datetime.strptime(str(payload.get("expires") or ""), "%Y-%m-%d").date()
+    except ValueError:
+        return True
+    return exp < datetime.now(timezone.utc).date()
 
 
 def licensed_plan() -> str:

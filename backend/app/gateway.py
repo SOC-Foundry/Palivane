@@ -955,13 +955,21 @@ def _note_residual(n: int, tool: str) -> None:
         TOKENIZE_RESIDUAL.labels(tool=tool or "unknown").inc(n)
 
 
+async def _json_body(request: Request):
+    """The request's JSON body, read on the event loop. The gateway endpoints themselves
+    are plain `def` so FastAPI runs them in the threadpool: they make blocking upstream
+    calls (up to 60-120s), run the LLM judge and use sync SQLAlchemy, and on a single
+    uvicorn process an `async def` doing that would stall every other request."""
+    return await request.json()
+
+
 @router.post("/chat/completions")
-async def chat_completions(request: Request, principal: Principal = Depends(get_gateway_principal),
-                           db: Session = Depends(get_db)):
+def chat_completions(request: Request, principal: Principal = Depends(get_gateway_principal),
+                     db: Session = Depends(get_db), body=Depends(_json_body)):
     limited = _rate_limited(db, principal, "openai")
     if limited:
         return limited
-    payload = _clamp_output_tokens(await request.json())
+    payload = _clamp_output_tokens(body)
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
     prompt = _with_image_text(_scan_messages(payload.get("messages", [])), payload)
@@ -1123,12 +1131,12 @@ def _responses_stub(model: str, verdict: dict) -> dict:
 
 
 @router.post("/responses")
-async def responses(request: Request, principal: Principal = Depends(get_gateway_principal),
-                    db: Session = Depends(get_db)):
+def responses(request: Request, principal: Principal = Depends(get_gateway_principal),
+              db: Session = Depends(get_db), body=Depends(_json_body)):
     limited = _rate_limited(db, principal, "openai")
     if limited:
         return limited
-    payload = _clamp_output_tokens(await request.json())
+    payload = _clamp_output_tokens(body)
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
     verdict = _capture(_responses_user_text(payload.get("input")), model, tool, principal, db)
@@ -1210,12 +1218,12 @@ def _anthropic_stub(model: str, verdict: dict) -> dict:
 
 
 @router.post("/messages")
-async def messages(request: Request, principal: Principal = Depends(get_gateway_principal),
-                   db: Session = Depends(get_db)):
+def messages(request: Request, principal: Principal = Depends(get_gateway_principal),
+             db: Session = Depends(get_db), body=Depends(_json_body)):
     limited = _rate_limited(db, principal, "anthropic")
     if limited:
         return limited
-    payload = _clamp_output_tokens(await request.json())
+    payload = _clamp_output_tokens(body)
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
     prompt = _with_image_text(_scan_messages(payload.get("messages", []), payload.get("system")), payload)
@@ -1413,12 +1421,12 @@ def _forward_anthropic(path: str, payload: dict, request: Request, base: str, ke
 
 
 @router.post("/messages/count_tokens")
-async def count_tokens(request: Request, principal: Principal = Depends(get_gateway_principal),
-                       db: Session = Depends(get_db)):
+def count_tokens(request: Request, principal: Principal = Depends(get_gateway_principal),
+                 db: Session = Depends(get_db), body=Depends(_json_body)):
     """Token-counting pre-flight Claude Code issues before a turn. Authenticated
     passthrough to Anthropic (or a stub offline); no finding — the paired /v1/messages
     call is where capture and enforcement happen."""
-    payload = await request.json()
+    payload = body
     base, key = resolve_upstream("anthropic", principal.tenant_id, db)
     if key:
         return _forward_anthropic("/v1/messages/count_tokens", payload, request, base, key)
@@ -1487,12 +1495,12 @@ def _forward_gemini(model: str, method: str, payload: dict, request: Request,
                     media_type=r.headers.get("content-type", "application/json"))
 
 
-async def _gemini_entry(model: str, method: str, request: Request,
-                        principal: Principal, db: Session) -> Response:
+def _gemini_entry(model: str, method: str, request: Request,
+                  principal: Principal, db: Session, body) -> Response:
     limited = _rate_limited(db, principal, "gemini")
     if limited:
         return limited
-    payload = _clamp_output_tokens(await request.json())
+    payload = _clamp_output_tokens(body)
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
     prompt = _with_image_text(
         _scan_gemini(payload.get("contents", []), payload.get("systemInstruction") or payload.get("system_instruction")),
@@ -1538,14 +1546,14 @@ async def _gemini_entry(model: str, method: str, request: Request,
 
 
 @gemini_router.post("/models/{model}:generateContent")
-async def gemini_generate(model: str, request: Request,
-                          principal: Principal = Depends(get_gateway_principal),
-                          db: Session = Depends(get_db)):
-    return await _gemini_entry(model, "generateContent", request, principal, db)
+def gemini_generate(model: str, request: Request,
+                    principal: Principal = Depends(get_gateway_principal),
+                    db: Session = Depends(get_db), body=Depends(_json_body)):
+    return _gemini_entry(model, "generateContent", request, principal, db, body)
 
 
 @gemini_router.post("/models/{model}:streamGenerateContent")
-async def gemini_stream_generate(model: str, request: Request,
-                                 principal: Principal = Depends(get_gateway_principal),
-                                 db: Session = Depends(get_db)):
-    return await _gemini_entry(model, "streamGenerateContent", request, principal, db)
+def gemini_stream_generate(model: str, request: Request,
+                           principal: Principal = Depends(get_gateway_principal),
+                           db: Session = Depends(get_db), body=Depends(_json_body)):
+    return _gemini_entry(model, "streamGenerateContent", request, principal, db, body)
