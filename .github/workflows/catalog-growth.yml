@@ -31,14 +31,25 @@ jobs:
   propose:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
       - name: Fetch + classify candidates
+        # The dispatch input goes through env and is validated, never interpolated into the
+        # script: an inputs expression inside run: is pasted in before bash parses it, so a
+        # crafted value would run as shell.
+        env:
+          LIMIT: ${{ inputs.limit || '40' }}
         run: |
-          python scripts/fetch_candidates.py --limit "${{ inputs.limit || 40 }}" > /tmp/candidates.txt
+          case "$LIMIT" in
+            ''|*[!0-9]*|?????*) echo "::error::limit must be a positive integer, got: $LIMIT"; exit 1 ;;
+          esac
+          if [ "$LIMIT" -lt 1 ] || [ "$LIMIT" -gt 1000 ]; then
+            echo "::error::limit must be between 1 and 1000, got: $LIMIT"; exit 1
+          fi
+          python scripts/fetch_candidates.py --limit "$LIMIT" > /tmp/candidates.txt
           python scripts/merge_catalog_rows.py /tmp/candidates.txt | tee /tmp/summary.md
 
       - name: Open / refresh the proposal PR
