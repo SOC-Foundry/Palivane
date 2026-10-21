@@ -70,6 +70,13 @@ CONTACT_LIST_TITLE = "Personal contact list (bulk emails)"
 SSN_RE = re.compile(r"\b\d{3}[-\s]\d{2}[-\s]\d{4}\b")          # dashed or spaced
 SSN_NODASH_RE = re.compile(r"\b\d{9}\b")                        # unformatted 9-digit run
 SSN_CONTEXT_RE = re.compile(r"\b(ssn|social\s+security)\b", re.I)
+# A label just before a bare 9-digit run that names it as some other identifier: `actor_id=='…'`,
+# "user ID (…", "project number …", "order #…". Only consulted for the no-cue guess, so an
+# "SSN" cue still wins. Deliberately absent: a bare "number" ("here is the number …") and words
+# for a person ("customer", "employee", "patient"), whose records are where a real SSN sits.
+_ID_LABEL_RE = re.compile(
+    r"(?i)(?:\b|_)(?:ids?|uid|gid|pid|account|acct|project|repo|org|order|invoice|ticket|issue|"
+    r"ref|build|job|tracking|device|serial)\b[^\n]{0,16}$")
 
 
 def _valid_ssn9(d: str) -> bool:
@@ -790,12 +797,13 @@ class ShadowAIDetector:
             # Unformatted SSN (a bare 9-digit run passing SSA structure). Warn-level on its
             # own — a raw 9-digit number is ambiguous — but block-level when SSN context
             # words ("SSN", "social security") are present.
-            nodash = [m.group(0) for m in SSN_NODASH_RE.finditer(text) if _valid_ssn9(m.group(0))]
+            nodash = [m for m in SSN_NODASH_RE.finditer(text) if _valid_ssn9(m.group(0))]
             if nodash:
                 if SSN_CONTEXT_RE.search(text):
                     found.append("SSN (unformatted)")
                     weight = max(weight, 0.8)
-                elif not (tool_surface or fixture):
+                elif not (tool_surface or fixture) and not all(
+                        _ID_LABEL_RE.search(text, max(0, m.start() - 40), m.start()) for m in nodash):
                     found.append("possible SSN (9-digit)")
                     weight = max(weight, 0.55)
 

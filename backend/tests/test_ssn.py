@@ -49,3 +49,21 @@ def test_ingest_warns_on_unformatted_ssn(client, raw_client):
                         headers={"X-Palivane-Token": key}).json()
     assert r["action"] == "warn"
     assert "pii_exposure" in {s["category"] for s in r["signals"]}
+
+
+def test_nine_digits_labeled_as_another_id_are_not_guessed_ssns():
+    # A numeric GitHub user id in a WIF condition was blocked as "possible SSN (9-digit)".
+    for text in ("assertion.actor_id=='234567890'",
+                 "your numeric GitHub user ID (234567890, for octocat)",
+                 "GCP project number 234567890 owns the pool",
+                 "order #234567890 shipped", "gh api repos/acme/app -q .id  # prints 234567890"):
+        assert _pii_weight(text) is None, text
+
+
+def test_unlabeled_or_ssn_cued_nine_digits_still_count():
+    assert _pii_weight("the number is 234567890") == 0.55
+    assert _pii_weight("customer record: Jane Doe, 234567890") == 0.55   # a person, not an id
+    assert _pii_weight("account holder Jane Doe, 234567890") == 0.55     # label too far back
+    assert _pii_weight("user id 345678901, ssn 234567890") == 0.8         # the SSN cue wins
+    # one labeled id doesn't excuse a second, unlabeled run
+    assert _pii_weight("order 345678901\n\nJane Doe 234567890") == 0.55
