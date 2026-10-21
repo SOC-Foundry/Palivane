@@ -640,3 +640,100 @@ def test_deference_keys_on_the_agent_not_the_host():
     assert addon.detect_tool("claude-cli/2.1.4") == "claude-code"
     assert addon.detect_tool("Mozilla/5.0 (X11; Linux x86_64) Chrome/141") not in (
         "claude-code", "cursor", "copilot")
+
+
+def test_hooked_tools_single_flight(monkeypatch):
+    """A refresh already in flight: other callers get the cache, not a second lookup."""
+    addon._HOOKED.update({"tools": frozenset({"cursor"}), "at": 0.0})
+    monkeypatch.setenv("PALIVANE_URL", "http://x")
+    monkeypatch.setenv("PALIVANE_TOKEN", "ak_x")
+
+    def boom(*a, **k):
+        raise AssertionError("duplicate refresh")
+
+    monkeypatch.setattr(addon.urllib.request, "urlopen", boom)
+    assert addon._HOOKED_LOCK.acquire(blocking=False)
+    try:
+        assert addon.hooked_tools() == frozenset({"cursor"})
+    finally:
+        addon._HOOKED_LOCK.release()
+
+
+def test_hooked_tools_async_refreshes_off_the_event_loop(monkeypatch):
+    """The refresh is a blocking urlopen: from the async request() hook it must run in a
+    worker thread, or one slow backend freezes every proxied connection."""
+    import asyncio
+    import threading
+    addon._HOOKED.update({"tools": frozenset(), "at": 0.0})
+    monkeypatch.setenv("PALIVANE_URL", "http://x")
+    monkeypatch.setenv("PALIVANE_TOKEN", "ak_x")
+    seen = {}
+
+    class _R:
+        def read(self): return b'{"tools": ["claude-code"]}'
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    def fake(req, timeout=None):
+        seen["thread"] = threading.get_ident()
+        return _R()
+
+    monkeypatch.setattr(addon.urllib.request, "urlopen", fake)
+
+    async def go():
+        seen["loop"] = threading.get_ident()
+        first = await addon.hooked_tools_async()
+        assert seen.pop("thread") != seen["loop"]
+        second = await addon.hooked_tools_async()   # cached: no lookup at all
+        return first, second
+
+    first, second = asyncio.run(go())
+    assert first == second == frozenset({"claude-code"})
+    assert "thread" not in seen
+    addon._HOOKED.update({"tools": frozenset(), "at": 0.0})
+
+
+# --- breaker state file: tamper-capped, concurrency-safe ------------------------------
+
+def test_breaker_cooldown_capped(tmp_path, monkeypatch):
+    """A hand-written cooldown_until=9e18 must not disable the proxy's capture forever."""
+    import time as _time
+    monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path))
+    (tmp_path / "proxy-breaker.json").write_text(json.dumps({"cooldown_until": 9e18}))
+    assert addon._breaker_skip("tok") == ""
+    (tmp_path / "proxy-breaker.json").write_text(
+        json.dumps({"cooldown_until": _time.time() + addon._COOLDOWN_SECS - 5}))
+    assert addon._breaker_skip("tok") == "backoff"
+
+
+def test_breaker_malformed_state_is_closed(tmp_path, monkeypatch):
+    monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path))
+    for raw in ('{"cooldown_until": "x"}', '{"cooldown_until": NaN}', "[1]",
+                '{"fails": {"a": 1}}'):
+        (tmp_path / "proxy-breaker.json").write_text(raw)
+        assert addon._breaker_skip("tok") == ""
+        addon._breaker_record("tok", None)       # must not raise
+
+
+def test_breaker_concurrent_records(tmp_path, monkeypatch):
+    """Concurrent flows record from worker threads: the state file stays valid JSON and
+    no shared fixed temp file is left behind or clobbered."""
+    import threading
+    monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path))
+    errors = []
+
+    def worker(i):
+        try:
+            for _ in range(50):
+                addon._breaker_record(f"tok{i}", None if i % 2 else 200)
+        except Exception as e:                   # pragma: no cover — the assertion
+            errors.append(e)
+
+    ts = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert not errors
+    json.loads((tmp_path / "proxy-breaker.json").read_text())
+    assert [p.name for p in tmp_path.iterdir() if p.name.endswith(".tmp")] == []

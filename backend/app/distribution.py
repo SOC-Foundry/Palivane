@@ -159,7 +159,8 @@ def cli_manifest():
 
 @router.get("/cli/manifest.sig")
 def cli_manifest_sig():
-    """Ed25519 signature over the manifest's canonical {name: sha256} digest, base64 in a
+    """ECDSA P-256 / SHA-256 signature (DER) over the manifest's canonical {name: sha256}
+    digest, base64 in a
     text/plain body. 404 when this deployment has no signing key set — the installer then
     treats the release as unsigned (warns, proceeds). See release_signing.py."""
     from . import release_signing
@@ -213,6 +214,11 @@ def install_sh():
 # Windows (PowerShell, no admin needed):
 #   iwr {base}/cli/palivane-desktop.ps1 -OutFile palivane-desktop.ps1
 #   powershell -ExecutionPolicy Bypass -File palivane-desktop.ps1 install
+
+# Everything runs inside main(), called on the very last line. Under `curl | bash`, bash
+# executes the script while it is still streaming in, so a connection that drops mid-download
+# would otherwise run whatever prefix arrived; this way nothing runs until the whole file has.
+main() {{
 set -euo pipefail
 
 PALIVANE_URL="{base}"
@@ -315,6 +321,12 @@ done
 mkdir -p "$BIN"
 for t in $TOOLS; do install -m 0755 "$TMP/$t" "$BIN/$t"; done
 echo "  installed: $TOOLS"
+# Persist the trust anchor for everything installed tools download later (palivane-posture's
+# self-update, palivane-connect's plane refresh, palivane-desktop's addon fetch): they verify
+# manifest.sig against THIS key, and accept an unsigned release only if this deployment did
+# not sign at install time (REQUIRE_SIG 0/skip). Without the record they fail closed.
+printf '%s\\n' "$PALIVANE_RELEASE_PUBKEY" > "$HOME/.palivane/release-pubkey.pem"
+printf '%s\\n' "$REQUIRE_SIG" > "$HOME/.palivane/release-require-sig"
 
 # Put ~/.palivane/bin on PATH for future shells (bash, zsh, fish), and this one.
 add_path() {{
@@ -375,5 +387,9 @@ echo "Done. Open a new terminal (or 'source ~/.zshrc') so 'palivane-connect' is 
 [ "$PROXY_MODE" = "desktop" ] && echo "Covered: AI CLIs + desktop apps (Claude/ChatGPT) + browsers, system-wide."
 [ "$PROXY_MODE" = "cli-only" ] && echo "Covered: AI CLIs. NOT covered: native desktop apps (Claude/ChatGPT) + browsers — add them with:  palivane-desktop install --desktop"
 [ "$PROXY_MODE" = "none" ] && echo "To also govern AI CLIs:  palivane-desktop install --cli-only   (or --desktop for system-wide)"
+return 0
+}}
+
+main "$@"
 """
     return PlainTextResponse(script, media_type="text/x-shellscript")

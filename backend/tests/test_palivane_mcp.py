@@ -283,3 +283,99 @@ def test_pin_store_follows_state_dir(tmp_path, monkeypatch):
     exe.write_bytes(b"v1")
     assert wm.check_pin(wm.server_fingerprint([str(exe)])) == "new"
     assert (tmp_path / "mcp-pins.json").exists()
+
+
+# --- the org's enforce stance (verdict `enforce` field) is honoured, like palivane-hook ---
+
+def test_should_block_mirrors_hook():
+    assert wm.should_block({"action": "block", "enforce": True}, False)
+    assert wm.should_block({"action": "block"}, True)
+    assert not wm.should_block({"action": "block"}, False)
+    assert not wm.should_block({"action": "warn", "enforce": True}, False)
+    assert wm.should_block({"action": "allow", "force_block": True}, False)
+
+
+def test_org_stance_latest_verdict_wins():
+    state, cfg = {}, {"enforce": False}
+    assert not wm.enforcing(cfg, state)
+    wm.note_org_stance(state, {"action": "allow", "enforce": True})
+    assert wm.enforcing(cfg, state)
+    wm.note_org_stance(state, {"action": "allow"})        # no stance: unchanged
+    assert wm.enforcing(cfg, state)
+    wm.note_org_stance(state, {"action": "allow", "enforce": False})
+    assert not wm.enforcing(cfg, state)
+    assert wm.enforcing({"enforce": True}, state)
+
+
+def _fake_backend(verdict: dict):
+    """A local HTTP server answering every POST with `verdict`."""
+    import http.server
+    import threading
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("content-length", 0)))
+            body = json.dumps(verdict).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def test_console_enforce_blocks_without_local_flag(tmp_path):
+    """No PALIVANE_MCP_ENFORCE, but the org turned enforcement on in the console: the
+    verdict's `enforce` field must make the wrapper block, as palivane-hook does."""
+    srv = _fake_backend({"action": "block", "enforce": True, "risk_score": 90,
+                         "severity": "critical", "signals": [{"category": "dangerous_command"}]})
+    try:
+        frames = b'{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"x"}}\n'
+        p = subprocess.run(
+            [sys.executable, str(_path), "--", sys.executable, "-c", _ECHO_CHILD],
+            input=frames, stdout=subprocess.PIPE, timeout=30,
+            env={"PALIVANE_URL": f"http://127.0.0.1:{srv.server_address[1]}",
+                 "PALIVANE_TOKEN": "ak_x", "PALIVANE_MCP_TIMEOUT": "5",
+                 "PATH": "/usr/bin:/bin", "PALIVANE_STATE_DIR": str(tmp_path)},
+        )
+    finally:
+        srv.shutdown()
+    assert p.returncode == 0
+    reply = json.loads(p.stdout)
+    assert reply["id"] == 7 and reply["error"]["code"] == -32001   # never reached the child
+
+
+# --- client disconnect: no hang -----------------------------------------------------------
+
+def test_client_disconnect_does_not_hang(tmp_path):
+    """The client stops reading (exits) while a chatty server keeps writing. The pump used
+    to die on BrokenPipe, nobody drained the child, it blocked on a full pipe and
+    child.wait() hung forever. Now the wrapper drains, closes the child's stdin, waits a
+    bounded grace and terminates it."""
+    import time as _time
+    chatty = ("import sys, time\n"
+              "while True:\n"
+              "    sys.stdout.buffer.write(b'{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\\n')\n"
+              "    sys.stdout.buffer.flush()\n")
+    p = subprocess.Popen(
+        [sys.executable, str(_path), "--", sys.executable, "-c", chatty],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        env={"PALIVANE_URL": "", "PALIVANE_TOKEN": "", "PATH": "/usr/bin:/bin",
+             "PALIVANE_MCP_EXIT_GRACE": "1", "PALIVANE_STATE_DIR": str(tmp_path)})
+    try:
+        p.stdout.read(4096)          # the pipe is live
+        p.stdout.close()             # client gone: the wrapper's next write hits EPIPE
+        _time.sleep(0.5)
+        p.stdin.close()              # and its stdin hits EOF
+        p.wait(timeout=20)
+    finally:
+        if p.poll() is None:
+            p.kill()
+            p.wait()
+            raise AssertionError("palivane-mcp hung after the client disconnected")
