@@ -79,6 +79,13 @@ def _safe_custom_regex(rx: str) -> _TimedPattern | None:
 # (label, compiled regex) — label is human-facing evidence.
 # Tier 1: high-confidence, distinctive-prefix formats in their CANONICAL form (separator
 # present). A match is a near-certain secret, so these carry full weight and hard-block.
+# A private key from its header to its footer, or to the end of the text when the footer is
+# missing (a truncated paste). The "Private key block" rule below names only the header line, which
+# is enough to detect; anything that masks must use this instead, or the base64 body survives — the
+# entropy backstop cannot see a body line that contains `+` or `/`.
+PRIVATE_KEY_BLOCK_RE = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY[A-Z0-9 ]*-----[\s\S]*?"
+                                  r"(?:-----END [A-Z0-9 ]*PRIVATE KEY[A-Z0-9 ]*-----|\Z)")
+
 SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("OpenAI API key", re.compile(r"sk-[a-zA-Z0-9]{16,}")),
     # Modern OpenAI keys carry a dashed sub-marker (sk-proj-/sk-svcacct-/sk-admin-); the
