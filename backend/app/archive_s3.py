@@ -127,13 +127,14 @@ def _over_daily_cap(tenant, tid: int, nbytes: int) -> bool:
     if cap_mb <= 0:                                  # 0/negative global = uncapped
         return False
     today = time.strftime("%Y-%m-%d", time.gmtime())
-    for k in [k for k in _daily if k[1] != today]:   # new day: drop stale counters
-        _daily.pop(k, None)
-    spent = _daily.get((tid, today), 0)
-    if spent + nbytes > cap_mb * 1024 * 1024:
-        return True
-    _daily[(tid, today)] = spent + nbytes
-    return False
+    with _lock:                                      # archive() runs on many threads
+        for k in [k for k in list(_daily) if k[1] != today]:   # new day: drop stale counters
+            _daily.pop(k, None)
+        spent = _daily.get((tid, today), 0)
+        if spent + nbytes > cap_mb * 1024 * 1024:
+            return True
+        _daily[(tid, today)] = spent + nbytes
+        return False
 
 
 def archive(tenant, item, result: dict, agent: str = "") -> None:

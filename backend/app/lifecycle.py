@@ -14,9 +14,11 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from .models import (
-    Agent, AgentRole, ApiKey, AuditLog, DiscoveredUsage, EnrollmentToken, Finding,
-    GatewayUsage, JoinRequest, PolicyOverride, Tenant, TenantDomain, TenantOIDC,
-    TenantSAML, TenantUpstream, User,
+    Agent, AgentRole, AllowEntry, ApiKey, AuditLog, ContentFingerprint, CorpusSample,
+    DiscoveredUsage, EnrollmentToken, ExceptionRecord, Finding, GatewayUsage, JoinRequest,
+    OAuthCode, OAuthToken, PolicyOverride, SaasConnector, SensorHeartbeat, Tenant,
+    TenantDomain, TenantOIDC, TenantSAML, TenantUpstream, UpgradeRequest, User,
+    UsedSamlAssertion,
 )
 
 SUSPENDED_DETAIL = "this organization is suspended — contact your Palivane operator"
@@ -33,29 +35,47 @@ def ensure_active(db: Session, tenant_id: int | None) -> None:
         raise HTTPException(status_code=403, detail=SUSPENDED_DETAIL)
 
 
+# Every model with a tenant_id column, children before parents: api_keys and the OAuth
+# code/token rows FK users.id, so they go before users (Postgres enforces it). The
+# coverage test asserts this list matches the models, so a new tenant table can't be
+# forgotten here.
+TENANT_TABLES = (
+    ("findings", Finding),
+    ("api_keys", ApiKey),
+    ("oauth_codes", OAuthCode),
+    ("oauth_tokens", OAuthToken),
+    ("users", User),
+    ("enrollment_tokens", EnrollmentToken),
+    ("upstreams", TenantUpstream),
+    ("audit_log", AuditLog),
+    ("usage", GatewayUsage),
+    ("oidc", TenantOIDC),
+    ("saml", TenantSAML),
+    ("used_saml_assertions", UsedSamlAssertion),
+    ("discovered_usage", DiscoveredUsage),
+    ("agents", Agent),
+    ("agent_roles", AgentRole),
+    ("policy_overrides", PolicyOverride),
+    ("allow_entries", AllowEntry),
+    ("exceptions", ExceptionRecord),
+    ("saas_connectors", SaasConnector),
+    ("content_fingerprints", ContentFingerprint),
+    ("corpus_samples", CorpusSample),
+    ("sensor_heartbeats", SensorHeartbeat),
+    ("upgrade_requests", UpgradeRequest),
+    # Domain capture: freeing the claim matters — a verified domain held by a dead
+    # tenant would otherwise block that company from ever signing up again.
+    ("domains", TenantDomain),
+    ("join_requests", JoinRequest),
+)
+
+
 def purge_tenant(db: Session, tenant: Tenant) -> dict:
     """Delete the tenant and ALL its rows. Returns per-table delete counts.
     Commits. Irreversible — callers own the confirmation UX."""
     tid = tenant.id
-    counts = {
-        "findings": db.query(Finding).filter(Finding.tenant_id == tid).delete(),
-        "users": db.query(User).filter(User.tenant_id == tid).delete(),
-        "api_keys": db.query(ApiKey).filter(ApiKey.tenant_id == tid).delete(),
-        "enrollment_tokens": db.query(EnrollmentToken).filter(EnrollmentToken.tenant_id == tid).delete(),
-        "upstreams": db.query(TenantUpstream).filter(TenantUpstream.tenant_id == tid).delete(),
-        "audit_log": db.query(AuditLog).filter(AuditLog.tenant_id == tid).delete(),
-        "usage": db.query(GatewayUsage).filter(GatewayUsage.tenant_id == tid).delete(),
-        "oidc": db.query(TenantOIDC).filter(TenantOIDC.tenant_id == tid).delete(),
-        "saml": db.query(TenantSAML).filter(TenantSAML.tenant_id == tid).delete(),
-        "discovered_usage": db.query(DiscoveredUsage).filter(DiscoveredUsage.tenant_id == tid).delete(),
-        "agents": db.query(Agent).filter(Agent.tenant_id == tid).delete(),
-        "agent_roles": db.query(AgentRole).filter(AgentRole.tenant_id == tid).delete(),
-        "policy_overrides": db.query(PolicyOverride).filter(PolicyOverride.tenant_id == tid).delete(),
-        # Domain capture: freeing the claim matters — a verified domain held by a dead
-        # tenant would otherwise block that company from ever signing up again.
-        "domains": db.query(TenantDomain).filter(TenantDomain.tenant_id == tid).delete(),
-        "join_requests": db.query(JoinRequest).filter(JoinRequest.tenant_id == tid).delete(),
-    }
+    counts = {key: db.query(model).filter(model.tenant_id == tid).delete()
+              for key, model in TENANT_TABLES}
     db.delete(tenant)
     db.commit()
     return counts
