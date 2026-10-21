@@ -25,17 +25,20 @@ on:
       - ".github/**"
   workflow_dispatch:
 
+# Read-only by default. Every job here runs code from the PR branch — including this file as
+# the PR has edited it — so nothing workflow-wide may request a cloud credential. The one job
+# that tries to authenticate (terraform) asks for id-token itself. (pull-requests: write used
+# to be here "to post the plan summary"; the summary goes to $GITHUB_STEP_SUMMARY, which needs
+# no permission.)
 permissions:
   contents: read
-  id-token: write        # for Workload Identity Federation (the plan job)
-  pull-requests: write   # to post the plan summary
 
 jobs:
   backend-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       # No apt step. python3-saml pulls xmlsec as a manylinux wheel whose extension is
@@ -59,8 +62,8 @@ jobs:
   frontend-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
       - name: Stats band matches the engine
@@ -91,7 +94,7 @@ jobs:
   selfhost-compose:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Detect image-affecting changes
         id: changes
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -139,7 +142,7 @@ jobs:
           CHECK
           # the /install.sh distribution endpoint must be present in the self-host image too
           curl -sf http://localhost:8080/install.sh | head -1 | grep -q '#!/usr/bin/env bash'
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: steps.changes.outputs.img == 'true'
         with:
           node-version: "24"
@@ -181,7 +184,7 @@ jobs:
           --health-cmd "pg_isready -U palivane" --health-interval 5s
           --health-timeout 3s --health-retries 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Detect changes that affect the server install
         id: changes
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -195,11 +198,11 @@ jobs:
               - 'proxy/**'
               - 'deploy/native/**'
               - 'deploy/palivane.env.example'
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         if: steps.changes.outputs.native == 'true'
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: steps.changes.outputs.native == 'true'
         with:
           node-version: "24"
@@ -312,7 +315,7 @@ jobs:
       matrix:
         image: ["debian:stable", "fedora:latest", "rockylinux:9"]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Detect installer changes
         id: changes
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -321,11 +324,11 @@ jobs:
             installer:
               - '.github/workflows/ci.yml'
               - 'deploy/native/**'
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         if: steps.changes.outputs.installer == 'true'
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: steps.changes.outputs.installer == 'true'
         with:
           node-version: "24"
@@ -412,8 +415,8 @@ jobs:
           --health-cmd "pg_isready -U palivane" --health-interval 5s
           --health-timeout 3s --health-retries 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Install
@@ -443,7 +446,7 @@ jobs:
         # mistaken for green a second time.
         run: |
           python -m pytest tests/test_rls.py -q -rs | tee /tmp/rls.txt
-          grep -q "1 passed" /tmp/rls.txt || { echo "RLS test did not RUN — see skip reason above"; exit 1; }
+          grep -q "3 passed" /tmp/rls.txt || { echo "RLS tests did not all RUN — see skip reason above"; exit 1; }
 
   # The S3 at-rest scanner against a real S3 API. Eight tests that have never run: every
   # other test for this scanner injects a FakeS3, so the parts that actually talk to the
@@ -457,7 +460,7 @@ jobs:
   s3-at-rest:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Detect changes that affect the S3 scanner
         id: changes
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -467,7 +470,7 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'backend/app/**'
               - 'cli/palivane-s3-scan'
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         if: steps.changes.outputs.s3 == 'true'
         with:
           python-version: "3.12"
@@ -488,7 +491,9 @@ jobs:
         # which is also what a customer following the test file's own instructions would hit.
         # Chainguard still builds MinIO from source (RELEASE.2026-09-22 when this was
         # written), serves it without a login, and all eight tests pass against it unchanged.
-        # Their free tier serves only `latest`, so there is no tag to pin.
+        # Their free tier serves only `latest`, so there is no versioned tag to pin; the image
+        # is pinned by the digest `latest` resolved to on 2026-10-20 instead (refresh it
+        # deliberately when a newer MinIO build is wanted).
         #
         # The image runs as uid 65532, so /data has to be writable by it. A tmpfs does that
         # without a chown step.
@@ -496,7 +501,7 @@ jobs:
           docker run -d --name pv-minio -p 9100:9000 \
             -e MINIO_ROOT_USER=palivanetest -e MINIO_ROOT_PASSWORD=palivanetest123 \
             --tmpfs /data:rw,mode=1777 \
-            cgr.dev/chainguard/minio:latest server /data
+            cgr.dev/chainguard/minio:latest@sha256:32c504bea4574d8f29d719b37bc0dad920ecf3e22b81dc5cea0bb105af2ce10f server /data
           for i in $(seq 1 40); do
             curl -sf http://localhost:9100/minio/health/live >/dev/null && break
             sleep 2
@@ -517,11 +522,15 @@ jobs:
 
   terraform:
     runs-on: ubuntu-latest
+    # The only job that requests an OIDC token (the plan step below; see why it is refused).
+    permissions:
+      contents: read
+      id-token: write
     defaults:
       run:
         working-directory: deploy/terraform
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
       # fmt + validate run on every PR (cheap, no cloud auth) so the config can't go invalid.
       - name: Format check
@@ -543,12 +552,18 @@ jobs:
       # Real plan against remote state — only when TF changed, on same-repo PRs (forks don't
       # get creds), and only when the GCP/WIF variables are configured. The head-repo check
       # is null on a push, so push-to-main runs stop at fmt+validate and never touch cloud
-      # credentials — a post-merge plan has no diff left to review anyway. continue-on-error:
-      # the WIF trust policy deliberately scopes impersonation to the deploy workflow's
-      # refs, so PR-branch runs may be REFUSED a token — that refusal is the trust policy
-      # working, not a broken plan. fmt+validate above stay the hard PR gate; the
-      # authenticated plan runs wherever the trust policy allows it and is skipped
-      # (visibly, as a skipped step) where it doesn't.
+      # credentials — a post-merge plan has no diff left to review anyway.
+      #
+      # EXPECTED TO BE REFUSED a token today. The deploy WIF provider's attribute condition
+      # (deploy/gcp/setup-wif.sh) admits only this repo on refs/heads/main AND a job running in
+      # the `production` / `production-infra` environment. A PR run has neither — its ref is
+      # refs/pull/N/merge and this job declares no environment — so the token exchange fails.
+      # That is the policy working, not a broken plan: this job runs the PR branch's own
+      # (possibly edited) copy of this file and must never reach the deploy SA's
+      # project-admin-level roles. continue-on-error turns the refusal into a skipped plan,
+      # and fmt+validate above remain the hard PR gate. (Before that condition was applied
+      # the provider was scoped to the repository only, and an earlier version of this
+      # comment wrongly claimed it was already ref-scoped.)
       - name: Authenticate to GCP
         id: auth
         continue-on-error: true
@@ -561,7 +576,7 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
           # Mint a real token NOW (default mode only writes a credential config, so a
-          # ref the trust policy excludes "succeeds" here and explodes inside plan).
+          # refused exchange "succeeds" here and explodes inside plan).
           token_format: access_token
       - name: Terraform plan
         if: steps.auth.outcome == 'success'

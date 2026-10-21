@@ -4,7 +4,9 @@
 # syntax=docker/dockerfile:1
 
 # --- Stage 1: build the SPA ---
-FROM node:24-alpine AS web
+# Base images pinned by digest (tag kept for humans/Dependabot): a tag is mutable, so the
+# same commit could otherwise build a different image tomorrow. Refresh deliberately.
+FROM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS web
 WORKDIR /web
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -33,7 +35,7 @@ ENV VITE_PALIVANE_APP_ORIGIN=$VITE_PALIVANE_APP_ORIGIN
 RUN npm run build          # -> /web/dist
 
 # --- Stage 2: backend + static SPA ---
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
 
@@ -52,8 +54,15 @@ COPY cli/ ./cli
 COPY proxy/ ./proxy
 ENV PALIVANE_STATIC_DIR=/app/static
 
-# Run as a non-root user — smaller blast radius if the app is compromised.
-RUN useradd --system --uid 10001 palivane && chown -R palivane /app
+# Run as a non-root user — smaller blast radius if the app is compromised. The code stays
+# ROOT-owned (and so read-only to the runtime user): a compromised process must not be able
+# to rewrite app/*.py, the SPA it serves, or the CLI binaries /install.sh hands to every
+# endpoint. The only thing the app writes on its own disk is the SQLite fallback used when
+# DATABASE_URL is unset (demo / smoke runs); that goes to /app/data, the one writable dir.
+# Every real deployment sets DATABASE_URL, which overrides this ENV.
+RUN useradd --system --uid 10001 --create-home palivane \
+    && mkdir -p /app/data && chown palivane /app/data
+ENV DATABASE_URL=sqlite:////app/data/palivane.db
 USER palivane
 
 # Cloud Run injects $PORT (default 8080). The entrypoint waits for the DB, runs
