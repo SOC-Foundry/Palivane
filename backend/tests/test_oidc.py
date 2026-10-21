@@ -56,7 +56,7 @@ def test_callback_provisions_user_and_issues_working_session(client, monkeypatch
     monkeypatch.setattr(oidc_mod, "discover", lambda i: META)
     monkeypatch.setattr(oidc_mod, "exchange_code", lambda *a, **k: {"id_token": "idtok"})
     monkeypatch.setattr(oidc_mod, "validate_id_token", lambda *a, **k: {"email": "sso@acme.com"})
-    state = create_token({"typ": "oidc_state", "org": "acme", "nonce": "N"}, ttl=600)
+    state = _bound_state(client, {"typ": "oidc_state", "org": "acme", "nonce": "N"})
 
     r = client.get(f"/api/auth/oidc/acme/callback?code=xyz&state={state}", follow_redirects=False)
     assert r.status_code == 303
@@ -81,7 +81,7 @@ def test_callback_without_autoprovision_rejects_unknown_email(client, monkeypatc
     monkeypatch.setattr(oidc_mod, "discover", lambda i: META)
     monkeypatch.setattr(oidc_mod, "exchange_code", lambda *a, **k: {"id_token": "x"})
     monkeypatch.setattr(oidc_mod, "validate_id_token", lambda *a, **k: {"email": "stranger@acme.com"})
-    state = create_token({"typ": "oidc_state", "org": "acme", "nonce": "N"}, ttl=600)
+    state = _bound_state(client, {"typ": "oidc_state", "org": "acme", "nonce": "N"})
     r = client.get(f"/api/auth/oidc/acme/callback?code=x&state={state}", follow_redirects=False)
     assert r.status_code == 403
 
@@ -91,7 +91,7 @@ def test_callback_enforces_allowed_domain(client, monkeypatch):
     monkeypatch.setattr(oidc_mod, "discover", lambda i: META)
     monkeypatch.setattr(oidc_mod, "exchange_code", lambda *a, **k: {"id_token": "x"})
     monkeypatch.setattr(oidc_mod, "validate_id_token", lambda *a, **k: {"email": "user@evil.com"})
-    state = create_token({"typ": "oidc_state", "org": "acme", "nonce": "N"}, ttl=600)
+    state = _bound_state(client, {"typ": "oidc_state", "org": "acme", "nonce": "N"})
     r = client.get(f"/api/auth/oidc/acme/callback?code=x&state={state}", follow_redirects=False)
     assert r.status_code == 403
 
@@ -99,3 +99,48 @@ def test_oidc_auto_provision_defaults_off(client):
     # Safe default: a new SSO config does NOT auto-create accounts unless opted in.
     b = _configure(client).json()
     assert b["auto_provision"] is False
+
+
+def _bound_state(c, payload: dict) -> str:
+    """A signed state bound to client `c`'s browser, as the login endpoint mints it: the
+    bind nonce in the cookie, its hash in the state (login-CSRF guard)."""
+    from app.auth import SSO_BIND_COOKIE, sso_bind_new
+    from app.security import create_token
+    nonce, bind = sso_bind_new()
+    c.cookies.set(SSO_BIND_COOKIE, nonce)
+    return create_token({**payload, "bind": bind}, ttl=600)
+
+
+def test_callback_respects_mfa(client, db_factory, monkeypatch):
+    """An IdP sign-in proves the first factor; a user with MFA on still owes the second."""
+    from app.models import User
+    _configure(client, auto_provision=True)
+    monkeypatch.setattr(oidc_mod, "discover", lambda i: META)
+    monkeypatch.setattr(oidc_mod, "exchange_code", lambda *a, **k: {"id_token": "idtok"})
+    monkeypatch.setattr(oidc_mod, "validate_id_token", lambda *a, **k: {"email": "admin@acme.com"})
+    db = db_factory()
+    u = db.query(User).filter(User.email == "admin@acme.com").first()
+    u.mfa_enabled = True
+    db.commit(); db.close()
+    state = _bound_state(client, {"typ": "oidc_state", "org": "acme", "nonce": "N"})
+    r = client.get(f"/api/auth/oidc/acme/callback?code=x&state={state}", follow_redirects=False)
+    loc = r.headers["location"]
+    assert r.status_code == 303 and "#mfa_challenge=" in loc and "sso_token" not in loc
+
+
+def test_callback_requires_the_browser_binding(client, monkeypatch):
+    _configure(client, auto_provision=True)
+    monkeypatch.setattr(oidc_mod, "discover", lambda i: META)
+    monkeypatch.setattr(oidc_mod, "exchange_code", lambda *a, **k: {"id_token": "idtok"})
+    monkeypatch.setattr(oidc_mod, "validate_id_token", lambda *a, **k: {"email": "sso@acme.com"})
+    unbound = create_token({"typ": "oidc_state", "org": "acme", "nonce": "N"}, ttl=600)
+    r = client.get(f"/api/auth/oidc/acme/callback?code=x&state={unbound}", follow_redirects=False)
+    assert r.status_code == 400
+
+
+def test_login_sets_the_binding_cookie(client, monkeypatch):
+    from app.auth import SSO_BIND_COOKIE
+    _configure(client)
+    monkeypatch.setattr(oidc_mod, "discover", lambda issuer: META)
+    r = client.get("/api/auth/oidc/acme/login", follow_redirects=False)
+    assert r.cookies.get(SSO_BIND_COOKIE)

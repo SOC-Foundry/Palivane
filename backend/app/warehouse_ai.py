@@ -132,6 +132,18 @@ def snowflake_jwt(account: str, user: str, private_key_pem: str, passphrase: str
     return signing_input.decode() + "." + _b64url(sig)
 
 
+def _fetch_json(req: urllib.request.Request, timeout: float):
+    """POST through the SSRF-guarded, IP-pinned client. `host` is tenant-admin free text, so
+    a raw urlopen let it point at metadata/internal addresses — and urllib follows redirects
+    WITH the Authorization header, so a 3xx could hand the bearer/JWT to another host. The
+    netguard client refuses internal targets and never follows redirects."""
+    from . import netguard
+    r = netguard.safe_urlopen(req, timeout=timeout)
+    if r.is_redirect:
+        raise ValueError(f"refusing redirect from {req.host}")
+    return json.loads(r.content)
+
+
 def snowflake_query(host: str, jwt_token: str, sql: str, timeout: float = 30.0) -> list[dict]:
     """Run one statement via POST /api/v2/statements and return rows as list[dict]."""
     url = f"https://{host}/api/v2/statements"
@@ -143,8 +155,7 @@ def snowflake_query(host: str, jwt_token: str, sql: str, timeout: float = 30.0) 
         "X-Snowflake-Authorization-Token-Type": "KEYPAIR_JWT",
         "User-Agent": "palivane-warehouse/1.0",
     })
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        payload = json.loads(r.read())
+    payload = _fetch_json(req, timeout)
     cols = [c["name"] for c in payload.get("resultSetMetaData", {}).get("rowType", [])]
     return [dict(zip(cols, row)) for row in payload.get("data", [])]
 
@@ -302,8 +313,7 @@ def databricks_token(host: str, client_id: str, client_secret: str, timeout: flo
         "Authorization": f"Basic {basic}",
         "User-Agent": "palivane-warehouse/1.0",
     })
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read())["access_token"]
+    return _fetch_json(req, timeout)["access_token"]
 
 
 def databricks_query(host: str, token: str, warehouse_id: str, sql: str,
@@ -315,8 +325,7 @@ def databricks_query(host: str, token: str, warehouse_id: str, sql: str,
     req = urllib.request.Request(url, data=body, method="POST", headers={
         "Content-Type": "application/json", "Authorization": f"Bearer {token}",
         "User-Agent": "palivane-warehouse/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        payload = json.loads(r.read())
+    payload = _fetch_json(req, timeout)
     cols = [c["name"] for c in
             payload.get("manifest", {}).get("schema", {}).get("columns", [])]
     rows = (payload.get("result") or {}).get("data_array") or []

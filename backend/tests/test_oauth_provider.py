@@ -161,8 +161,57 @@ def test_refresh_rotates_and_kills_the_old_token(provider):
     second = _run(p.exchange_refresh_token(_client(), rt, [READ_SCOPE]))
 
     assert second.refresh_token != first.refresh_token
-    assert _run(p.load_refresh_token(_client(), first.refresh_token)) is None
     assert _run(p.load_access_token(second.access_token)) is not None
+    assert _run(p.load_refresh_token(_client(), first.refresh_token)) is None
+
+
+def test_replaying_a_rotated_refresh_token_revokes_the_family(provider):
+    """Rotation alone only exposes theft if the victim refreshes second. Re-presenting a
+    rotated-away refresh token is the replay signal: kill every live token of that grant."""
+    p, Session = provider
+    uid, tid = _seed_user(Session)
+    _register(p)
+    _mint_code(Session, "code-f", "c1", uid, tid)
+    loaded = _run(p.load_authorization_code(_client(), "code-f"))
+    first = _run(p.exchange_authorization_code(_client(), loaded))
+    rt = _run(p.load_refresh_token(_client(), first.refresh_token))
+    second = _run(p.exchange_refresh_token(_client(), rt, [READ_SCOPE]))
+    assert _run(p.load_access_token(second.access_token)) is not None
+
+    assert _run(p.load_refresh_token(_client(), first.refresh_token)) is None   # the replay
+    assert _run(p.load_access_token(second.access_token)) is None
+    assert _run(p.load_refresh_token(_client(), second.refresh_token)) is None
+
+
+def test_concurrent_code_exchange_mints_once(provider):
+    """Both exchanges load the code before either spends it (the race): only one may mint."""
+    p, Session = provider
+    uid, tid = _seed_user(Session)
+    _register(p)
+    _mint_code(Session, "code-race", "c1", uid, tid)
+    a = _run(p.load_authorization_code(_client(), "code-race"))
+    b = _run(p.load_authorization_code(_client(), "code-race"))
+    assert a is not None and b is not None
+    _run(p.exchange_authorization_code(_client(), a))
+    with pytest.raises(ValueError):
+        _run(p.exchange_authorization_code(_client(), b))
+    db = Session()
+    assert db.query(OAuthTokenRow).filter(OAuthTokenRow.kind == "access").count() == 1
+    db.close()
+
+
+def test_concurrent_refresh_rotates_once(provider):
+    p, Session = provider
+    uid, tid = _seed_user(Session)
+    _register(p)
+    _mint_code(Session, "code-rr", "c1", uid, tid)
+    loaded = _run(p.load_authorization_code(_client(), "code-rr"))
+    first = _run(p.exchange_authorization_code(_client(), loaded))
+    r1 = _run(p.load_refresh_token(_client(), first.refresh_token))
+    r2 = _run(p.load_refresh_token(_client(), first.refresh_token))
+    _run(p.exchange_refresh_token(_client(), r1, [READ_SCOPE]))
+    with pytest.raises(ValueError):
+        _run(p.exchange_refresh_token(_client(), r2, [READ_SCOPE]))
 
 
 def test_refresh_cannot_widen_scope(provider):

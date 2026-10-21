@@ -41,13 +41,14 @@ from datetime import datetime, timezone
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .alerts import _envelope as _brand_envelope
 from .config import settings
 from .database import bind_tenant, get_db
 from .detectors import AnalysisInput, Surface
-from .models import Agent, ApiKey, Tenant, User
+from .models import API_KEY_SCOPES, Agent, ApiKey, Tenant, User
 from .policy import detect_tool, signal_filter_for
 from .security import (TokenError, decode_token, hash_token, looks_like_agent_token,
                        looks_like_api_key)
@@ -98,12 +99,37 @@ def _resolve_api_key(token: str, db: Session) -> Principal:
     if key.expires_at and key.expires_at < datetime.now(timezone.utc).replace(tzinfo=None):
         _stamp_dead_key(token, db, key=key)
         raise HTTPException(status_code=401, detail="API key expired")
+    if (key.scope or "ingest") not in API_KEY_SCOPES:
+        raise HTTPException(status_code=401, detail="invalid API key")
+    if not _key_user_live(key, db):
+        # The person this key belongs to was deactivated (or moved org). Offboarding revokes
+        # their keys, but a key minted before that existed — or a bare `active: false` from
+        # an older build — must not outlive its user on the capture planes either.
+        raise HTTPException(status_code=401,
+                            detail="the user this API key acts as is no longer active")
     try:  # best-effort last-used stamp
         key.last_used_at = datetime.now(timezone.utc).replace(tzinfo=None)
         db.commit()
     except Exception:
         db.rollback()
     return Principal(tenant_id=key.tenant_id, actor=_key_identity(key, db))
+
+
+def _key_user_live(key: ApiKey, db: Session) -> bool:
+    """False when the key is bound to a user who is no longer an active member of the key's
+    tenant: a console key by `user_id`, a capture key (extension, palivane-connect) by its
+    `actor` email. A key whose actor matches no user (fleet/service keys) is unaffected."""
+    if key.user_id:
+        user = db.get(User, key.user_id)
+        return user is not None and bool(user.active) and user.tenant_id == key.tenant_id
+    actor = (key.actor or "").strip().lower()
+    if actor:
+        rows = (db.query(User.active)
+                .filter(User.tenant_id == key.tenant_id, func.lower(User.email) == actor)
+                .all())
+        if rows and not any(active for (active,) in rows):
+            return False
+    return True
 
 
 def _key_identity(key: ApiKey, db: Session) -> str:
@@ -161,9 +187,14 @@ def get_gateway_principal(request: Request, db: Session = Depends(get_db)) -> Pr
                 raise HTTPException(status_code=401, detail="agent not found or disabled")
             bind_tenant(db, ag.tenant_id)
             return Principal(tenant_id=ag.tenant_id, actor=ag.name, agent=ag.name, agent_id=ag.id)
-        user = db.get(User, int(payload.get("sub", 0)))
-        if user is None or not user.active:
-            raise HTTPException(status_code=401, detail="user not found or inactive")
+        if payload.get("demo"):
+            # Public-demo sessions are read-only; every gateway call records findings and
+            # spends upstream quota, so a demo token is not a gateway credential at all.
+            raise HTTPException(status_code=403,
+                                detail="the demo is read-only. Sign up to work with your own data")
+        # Same checks as the console API (typ, token version, tenant lifecycle), not a copy.
+        from .auth import user_for_session_payload
+        user = user_for_session_payload(payload, db)
         p = Principal(tenant_id=user.tenant_id, actor=user.email)
     bind_tenant(db, p.tenant_id)
     p.agent, p.agent_id = _resolve_gateway_agent(request, token, p.tenant_id, db)

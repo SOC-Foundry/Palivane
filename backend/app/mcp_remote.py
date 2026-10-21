@@ -125,6 +125,10 @@ def _oauth_user_id(token: str, db) -> int | None:
     # stop working, exactly as a console key does.
     if user is None or not user.active:
         return None
+    # The grant is for the org it was approved in. A user who has since moved org (or a row
+    # whose tenant doesn't match) must not carry the old grant into the new tenant.
+    if row.tenant_id is None or row.tenant_id != user.tenant_id:
+        return None
     return user.id
 
 
@@ -144,6 +148,16 @@ def _caller_and_db():
         if user is None or not user.active:
             _close(db, gen)
             raise HTTPException(status_code=401, detail="invalid or expired access token")
+        # Same tail as user_for_console_key: a suspended org is refused, and the session is
+        # scoped to the tenant so Postgres RLS enforces isolation (unbound, it fails open).
+        try:
+            from .database import bind_tenant
+            from .lifecycle import ensure_active
+            ensure_active(db, user.tenant_id)
+            bind_tenant(db, user.tenant_id)
+        except Exception:
+            _close(db, gen)
+            raise
         return user, db, gen
     if key_id is None:                       # middleware always sets one of the two
         raise HTTPException(status_code=401, detail="unauthenticated")
@@ -265,6 +279,9 @@ def build_asgi_app():
                 user_id = _oauth_user_id(token, db)
                 if user_id is None:
                     return await _unauthorized("invalid or expired access token")(scope, receive, send)
+                from .lifecycle import ensure_active
+                from .models import User
+                ensure_active(db, db.get(User, user_id).tenant_id)   # suspended org: refused
                 key_id, oauth_user = None, user_id
             else:
                 key = authenticate_console_key(token, db)

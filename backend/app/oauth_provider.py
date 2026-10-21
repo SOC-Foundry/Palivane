@@ -221,7 +221,15 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
                      .one_or_none())
             if row is None or row.used_at is not None:
                 raise ValueError("authorization code already used")
-            row.used_at = _now()               # single use, before anything is issued
+            # Single use, before anything is issued — as a conditional UPDATE, so of two
+            # concurrent exchanges of the same code exactly one flips used_at and the other
+            # sees rowcount 0 (a read-then-write let both pass the check and both mint).
+            spent = (db.query(OAuthCode)
+                       .filter(OAuthCode.id == row.id, OAuthCode.used_at.is_(None))
+                       .update({OAuthCode.used_at: _now()}, synchronize_session=False))
+            if spent != 1:
+                db.rollback()
+                raise ValueError("authorization code already used")
             access, refresh = self._issue_pair(db, row.client_id, row.user_id,
                                                row.tenant_id, row.scopes or READ_SCOPE)
             db.commit()
@@ -274,7 +282,10 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
         db, close = self._session()
         try:
             row = self._load(db, refresh_token, "refresh")
-            if row is None or row.client_id != client.client_id:
+            if row is None:
+                self._revoke_family_on_replay(db, client, refresh_token)
+                return None
+            if row.client_id != client.client_id:
                 return None
             return RefreshToken(token=refresh_token, client_id=row.client_id,
                                 scopes=(row.scopes or READ_SCOPE).split(),
@@ -298,7 +309,15 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
                 raise ValueError("invalid refresh token")
             # Never widen on refresh: a token cannot acquire scopes it was not granted.
             granted = row.scopes or READ_SCOPE
-            row.revoked_at = _now()
+            # Rotate atomically: only the request that actually flips revoked_at may mint the
+            # next pair. A concurrent second use of the same refresh token loses here.
+            rotated = (db.query(OAuthTokenRow)
+                         .filter(OAuthTokenRow.id == row.id, OAuthTokenRow.revoked_at.is_(None))
+                         .update({OAuthTokenRow.revoked_at: _now()},
+                                 synchronize_session=False))
+            if rotated != 1:
+                db.rollback()
+                raise ValueError("invalid refresh token")
             access, refresh = self._issue_pair(db, row.client_id, row.user_id,
                                                row.tenant_id, granted)
             db.commit()
@@ -307,6 +326,28 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
                               refresh_token=refresh, scope=granted)
         finally:
             close()
+
+    def _revoke_family_on_replay(self, db, client, refresh_token: str) -> None:
+        """A refresh token that was already rotated away is being presented again: either
+        the client or a thief is replaying it, and we can't tell which. Per the OAuth
+        security BCP, kill the whole grant — every live token this client holds for this
+        user in this tenant — so the thief's copy (whichever it is) dies too and the user
+        re-consents. Without this, rotation only surfaced theft if the VICTIM refreshed
+        second; the thief kept a working pair either way."""
+        row = (db.query(OAuthTokenRow)
+                 .filter(OAuthTokenRow.token_hash == hash_token(refresh_token),
+                         OAuthTokenRow.kind == "refresh")
+                 .one_or_none())
+        if row is None or row.revoked_at is None or row.client_id != client.client_id:
+            return                             # unknown/expired, not a replay of a rotated one
+        now = _now()
+        (db.query(OAuthTokenRow)
+           .filter(OAuthTokenRow.client_id == row.client_id,
+                   OAuthTokenRow.user_id == row.user_id,
+                   OAuthTokenRow.tenant_id == row.tenant_id,
+                   OAuthTokenRow.revoked_at.is_(None))
+           .update({OAuthTokenRow.revoked_at: now}, synchronize_session=False))
+        db.commit()
 
     async def revoke_token(self, token) -> None:
         db, close = self._session()
