@@ -256,6 +256,10 @@ export default {
 
     const headers = new Headers(request.headers);
     headers.set('X-Serverless-Authorization', 'Bearer ' + (await idToken(env)));
+    // The edge-observed client IP, under a header of our own that this line always overwrites
+    // (a client-sent copy never survives). The app's per-IP throttles read it via
+    // PALIVANE_CLIENT_IP_HEADER; CF-Connecting-IP itself is not relied on past this hop.
+    headers.set('X-Palivane-Client-IP', ip);
     // redirect: 'manual' so the app's own redirects (login flows) reach the browser
     // instead of being followed inside the Worker.
     return fetch(requireOrigin(env) + path + url.search, {

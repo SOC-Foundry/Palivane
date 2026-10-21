@@ -104,10 +104,10 @@ export default function App() {
   // read those fragments, so without this a reset link silently renders the marketing page
   // and the token is never consumed (Login.jsx parses the hash on mount).
   const [showLogin, setShowLogin] = useState(
-    () => /^#(signin|demo|reset=.+|join=\w+)$/.test(window.location.hash));
+    () => /^#(signin|demo|reset=.+|join=\w+|mfa_challenge=.+)$/.test(window.location.hash));
   useEffect(() => {   // same-page hash navigation (e.g. the landing "See the live demo" link)
     const onHash = () => {
-      if (/^#(signin|demo|reset=.+|join=\w+)$/.test(window.location.hash)) setShowLogin(true);
+      if (/^#(signin|demo|reset=.+|join=\w+|mfa_challenge=.+)$/.test(window.location.hash)) setShowLogin(true);
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -193,7 +193,7 @@ export default function App() {
     if (!isOffConsoleOrigin()) return;
     const { pathname, search, hash } = window.location;
     const wantsConsole = parseRoute(pathname, VIEWS) !== null;
-    const wantsAuth = /^#(signin|demo|reset=.+|join=\w+)$/.test(hash) || hash.includes("sso_token=");
+    const wantsAuth = /^#(signin|demo|reset=.+|join=\w+|mfa_challenge=.+)$/.test(hash) || hash.includes("sso_token=");
     if (!wantsConsole && !wantsAuth && !getToken()) return;
     if (getToken()) setToken(null);
     window.location.replace(APP_ORIGIN + pathname + search + hash);

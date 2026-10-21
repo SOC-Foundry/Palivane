@@ -15,14 +15,14 @@ from __future__ import annotations
 
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from . import audit_log
 from .auth import require_admin
-from .database import get_db
+from .database import bind_tenant, get_db
 from .models import JoinRequest, TenantDomain, User
 
 router = APIRouter(prefix="/api", tags=["domains"])
@@ -82,6 +82,21 @@ def list_domains(current: User = Depends(require_admin), db: Session = Depends(g
     return {"domains": [d.to_dict() | {"txt": txt_record_for(d)} for d in rows]}
 
 
+# How long an unverified claim holds a domain before another tenant may take it over.
+UNVERIFIED_CLAIM_TTL = timedelta(days=7)
+
+
+def _naive_utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _supersedable(d: TenantDomain, tenant_id: int) -> bool:
+    """Another tenant may replace this claim: never verified, and stale."""
+    if d.verified or d.tenant_id == tenant_id:
+        return False
+    return d.created_at is None or d.created_at < _naive_utcnow() - UNVERIFIED_CLAIM_TTL
+
+
 @router.post("/domains")
 def claim_domain(body: dict, current: User = Depends(require_admin),
                  db: Session = Depends(get_db)):
@@ -91,16 +106,37 @@ def claim_domain(body: dict, current: User = Depends(require_admin),
     if dom in FREE_MAIL:
         raise HTTPException(status_code=422,
                             detail="consumer mail providers cannot be claimed")
-    if db.query(TenantDomain).filter(TenantDomain.domain == dom).first():
-        # Deliberately identical whether it's ours or another tenant's — don't leak who.
-        raise HTTPException(status_code=409, detail="that domain is already claimed")
-    d = TenantDomain(tenant_id=current.tenant_id, domain=dom,
-                     token=secrets.token_urlsafe(24))
-    db.add(d)
-    db.commit()
+    # Domains are globally unique, so the lookup must see every tenant's claims. Under
+    # Postgres RLS a tenant-bound session sees only its own rows: another org's claim was
+    # invisible here and the insert died on the unique constraint (a 500), and a stale claim
+    # could never be superseded. Unbind for this one global step, rebind right after.
+    bind_tenant(db, None)
+    try:
+        d = _claim_or_supersede(db, dom, current.tenant_id)
+        db.commit()
+    finally:
+        bind_tenant(db, current.tenant_id)
     db.refresh(d)
     audit_log.record(db, current.tenant_id, current.email, "domain.claim", target=dom)
     return d.to_dict() | {"txt": txt_record_for(d)}
+
+
+def _claim_or_supersede(db: Session, dom: str, tenant_id: int) -> TenantDomain:
+    d = db.query(TenantDomain).filter(TenantDomain.domain == dom).first()
+    if d is not None and _supersedable(d, tenant_id):
+        # An unverified claim is a reservation, not ownership: anyone can type any domain, so
+        # letting one sit forever let a squatter lock the real owner out of domain capture.
+        # Past the grace period, hand the row (one per domain, by constraint) to the new
+        # claimant with a fresh token — the old TXT value no longer verifies anything.
+        d.tenant_id, d.token, d.auto_approve = tenant_id, secrets.token_urlsafe(24), False
+        d.created_at, d.verified_at = _naive_utcnow(), None
+    elif d is not None:
+        # Deliberately identical whether it's ours or another tenant's — don't leak who.
+        raise HTTPException(status_code=409, detail="that domain is already claimed")
+    else:
+        d = TenantDomain(tenant_id=tenant_id, domain=dom, token=secrets.token_urlsafe(24))
+        db.add(d)
+    return d
 
 
 @router.post("/domains/{domain_id}/verify")

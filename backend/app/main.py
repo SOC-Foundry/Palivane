@@ -739,7 +739,7 @@ def metrics_endpoint(request: Request):
     if tok:
         scheme, _, bearer = request.headers.get("authorization", "").partition(" ")
         provided = bearer if scheme.lower() == "bearer" else request.query_params.get("token", "")
-        if not hmac.compare_digest(provided, tok):
+        if not _token_matches(provided, tok):
             raise HTTPException(status_code=401, detail="metrics token required")
     body, content_type = metrics.exposition()
     return _Resp(content=body, media_type=content_type)
@@ -749,7 +749,7 @@ def metrics_endpoint(request: Request):
 def admin_funnel(request: Request, days: int | None = None,
                  include_internal: bool = False, db: Session = Depends(get_db)):
     """Vendor product-analytics funnel (signup → activation). Operator-only: gated by the
-    same PALIVANE_METRICS_TOKEN as /metrics (Bearer or ?token=), NOT a tenant session — it
+    operator token (PALIVANE_ADMIN_TOKEN, else PALIVANE_METRICS_TOKEN; Bearer only), NOT a tenant session — it
     aggregates across all tenants. Returns 404 when no metrics token is configured, so it
     can't be left open by accident on a deployment that never set one up."""
     from . import funnel
@@ -1078,17 +1078,26 @@ def _naive_now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _token_matches(provided: str, expected: str) -> bool:
+    """Constant-time compare as bytes: compare_digest raises TypeError on non-ASCII str,
+    which turned a junk header into a 500 instead of a 401."""
+    return hmac.compare_digest(provided.encode("utf-8", "surrogateescape"),
+                               expected.encode("utf-8", "surrogateescape"))
+
+
 def _require_operator(request: Request) -> None:
-    """Gate the vendor /api/admin/* surface on PALIVANE_METRICS_TOKEN (Bearer or ?token=) —
-    a cross-tenant operator credential, NOT a tenant session. 404 when no token is
-    configured so the surface can't be left open by accident on a deployment that never
-    set one up (and isn't even discoverable there)."""
-    tok = settings.metrics_token
+    """Gate the vendor /api/admin/* surface on PALIVANE_ADMIN_TOKEN (falling back to
+    PALIVANE_METRICS_TOKEN) — a cross-tenant operator credential, NOT a tenant session.
+    Bearer header only: a query-string token lands in access logs, browser history and
+    Referer headers, which is fine-ish for a scrape credential and not for one that issues
+    licenses. 404 when no token is configured so the surface can't be left open by accident
+    on a deployment that never set one up (and isn't even discoverable there)."""
+    tok = settings.admin_token or settings.metrics_token
     if not tok:
         raise HTTPException(status_code=404, detail="not found")
     scheme, _, bearer = request.headers.get("authorization", "").partition(" ")
-    provided = bearer if scheme.lower() == "bearer" else request.query_params.get("token", "")
-    if not hmac.compare_digest(provided, tok):
+    provided = bearer if scheme.lower() == "bearer" else ""
+    if not provided or not _token_matches(provided, tok):
         raise HTTPException(status_code=401, detail="operator token required")
 
 
