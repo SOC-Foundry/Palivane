@@ -27,10 +27,14 @@ concurrency:
 
 jobs:
   deploy:
+    # Prod-affecting: only from main. The WIF provider refuses any other ref anyway
+    # (deploy/gcp/setup-wif.sh); this makes a dispatch from a branch skip visibly instead
+    # of failing at the token exchange.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production   # add required reviewers here for a manual gate
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Authenticate to GCP
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:

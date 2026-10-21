@@ -56,6 +56,9 @@ MIGCHECK
 if [ "$skip_migrations" = "1" ]; then
   echo "[entrypoint] database already at head, skipping alembic"
 else
+  # Several containers can reach this line at once (Cloud Run starts >= 2 instances).
+  # migrations/env.py takes a Postgres advisory lock around the run, so the others wait
+  # and then find the schema already at head instead of racing the same DDL.
   echo "[entrypoint] alembic upgrade head"
   alembic upgrade head
 fi

@@ -7,8 +7,25 @@
 #   PROJECT_ID=palivane REPO=SOC-Foundry/Palivane ./deploy/gcp/setup-wif.sh
 #
 # HIGH PRIVILEGE: the deploy SA gets project-admin-level roles so Terraform can manage the
-# stack. The WIF provider is restricted to `attribute.repository == <REPO>`, so only Actions
-# runs from this exact repository can impersonate it. Review the role list before running.
+# stack. Review the role list before running. The WIF provider's attribute condition only
+# accepts GitHub OIDC tokens that are ALL of:
+#   * from THIS repository           assertion.repository == '<REPO>'
+#   * for the main branch            assertion.ref == 'refs/heads/main'
+#   * from a job in a prod env       assertion.environment in ['production', 'production-infra']
+#   * (optional) from ONE account    assertion.actor_id == '<ALLOWED_ACTOR_ID>'
+# so a pull-request run (ref refs/pull/N/merge — and it executes the PR branch's own copy of
+# every workflow file, edits included), a dispatch from any other branch, or a job outside
+# the two deploy environments is refused at the token exchange.
+#
+# ALLOWED_ACTOR_ID (optional): the NUMERIC GitHub user id (`gh api user -q .id`), not the
+# login — ids are never reassigned, logins can be. When set, only workflow runs triggered by
+# that account can mint a prod token (useful for a solo maintainer). Leave unset to admit
+# any actor who can dispatch the workflows on main.
+#
+# By design this also refuses the "Authenticate to GCP" step of the `terraform` job in
+# .github/workflows/ci.yml: it runs on pull requests, outside any environment, so it is
+# never issued a deploy token. That step is continue-on-error and its plan is reported as
+# skipped; fmt + validate stay the PR gate.
 set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:?set PROJECT_ID}"
@@ -17,6 +34,7 @@ REGION="${REGION:-us-central1}"
 POOL="${POOL:-github-pool}"
 PROVIDER="${PROVIDER:-github-provider}"
 SA_NAME="${SA_NAME:-palivane-deploy}"
+ALLOWED_ACTOR_ID="${ALLOWED_ACTOR_ID:-}"
 STATE_BUCKET="${STATE_BUCKET:-${PROJECT_ID}-tfstate}"
 
 SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
@@ -71,7 +89,15 @@ gcloud storage buckets create "gs://${STATE_BUCKET}" --project "$PROJECT_ID" \
   --location "$REGION" --uniform-bucket-level-access 2>/dev/null || echo "  (already exists)"
 gcloud storage buckets update "gs://${STATE_BUCKET}" --versioning >/dev/null
 
-echo "==> Workload Identity pool + GitHub OIDC provider"
+DEPLOY_CONDITION="assertion.repository=='${REPO}' && assertion.ref=='refs/heads/main' && assertion.environment in ['production', 'production-infra']"
+if [ -n "$ALLOWED_ACTOR_ID" ]; then
+  case "$ALLOWED_ACTOR_ID" in
+    *[!0-9]*) echo "ALLOWED_ACTOR_ID must be the numeric GitHub user id (gh api user -q .id)" >&2; exit 1 ;;
+  esac
+  DEPLOY_CONDITION="${DEPLOY_CONDITION} && assertion.actor_id=='${ALLOWED_ACTOR_ID}'"
+fi
+
+echo "==> Workload Identity pool + GitHub OIDC provider (condition: ${DEPLOY_CONDITION})"
 gcloud iam workload-identity-pools create "$POOL" --project "$PROJECT_ID" \
   --location global --display-name "GitHub Actions" 2>/dev/null || echo "  (pool exists)"
 gcloud iam workload-identity-pools providers create-oidc "$PROVIDER" \
@@ -79,9 +105,18 @@ gcloud iam workload-identity-pools providers create-oidc "$PROVIDER" \
   --display-name "GitHub" \
   --issuer-uri "https://token.actions.githubusercontent.com" \
   --attribute-mapping "google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
-  --attribute-condition "assertion.repository=='${REPO}'" 2>/dev/null || echo "  (provider exists)"
+  --attribute-condition "${DEPLOY_CONDITION}" 2>/dev/null || {
+    # Already exists: still enforce the CURRENT condition, so re-running this script also
+    # tightens a provider created by an older, repository-only version of it.
+    echo "  (provider exists — updating its attribute condition)"
+    gcloud iam workload-identity-pools providers update-oidc "$PROVIDER" \
+      --project "$PROJECT_ID" --location global --workload-identity-pool "$POOL" \
+      --attribute-condition "${DEPLOY_CONDITION}" >/dev/null
+  }
 
-echo "==> Letting Actions runs from ${REPO} impersonate the deploy SA"
+echo "==> Letting Actions runs from ${REPO} (main, prod environments) impersonate the deploy SA"
+# The provider condition above is what limits this to main + the prod environments; the
+# binding names the repo.
 gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" --project "$PROJECT_ID" \
   --role roles/iam.workloadIdentityUser \
   --member "principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/attribute.repository/${REPO}" >/dev/null
@@ -109,9 +144,11 @@ Done. Set these in GitHub (Settings -> Secrets and variables -> Actions):
   Repository SECRETS:
     TF_DB_PASSWORD                 = (the palivane Postgres user password)
 
-  Environments: create 'production' and 'production-infra' with required reviewers.
+  Environments: create 'production' and 'production-infra' with required reviewers
+  (and deployment branches limited to main) where the GitHub plan allows it.
 
-To restrict deploys to the main branch only, tighten the SA binding to
-  .../attribute.repository_ref/${REPO}:refs/heads/main   (see docs).
+The deploy provider only admits ${REPO} on refs/heads/main, from jobs in the 'production'
+or 'production-infra' environment: deploy.yml, ops.yml and terraform-apply.yml must be
+dispatched from main (their jobs also check github.ref).
 ==============================================================================
 DONE

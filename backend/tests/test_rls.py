@@ -64,3 +64,70 @@ def test_rls_read_and_write_isolation():
     finally:
         conn.rollback()
         conn.close()
+
+
+def test_every_tenant_table_has_forced_rls_and_policy():
+    """Catalog check against the REAL migrated schema: every table with a tenant_id column
+    has RLS enabled AND forced (the app connects as the owner) and a tenant_isolation
+    policy. test_rls_coverage.py checks the same against the migration sources without a
+    database; this one catches a migration that ran differently than its source suggests."""
+    conn = psycopg2.connect(URL)
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity,
+                   EXISTS (SELECT 1 FROM pg_policies p
+                           WHERE p.schemaname = 'public' AND p.tablename = c.relname
+                             AND p.policyname = 'tenant_isolation')
+            FROM information_schema.columns col
+            JOIN pg_class c ON c.relname = col.table_name
+            JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
+            WHERE col.table_schema = 'public' AND col.column_name = 'tenant_id'
+              AND c.relkind = 'r'""")
+        rows = cur.fetchall()
+        assert rows, "no tenant_id tables found — migrations not applied?"
+        bad = sorted(r[0] for r in rows if not (r[1] and r[2] and r[3]))
+        assert not bad, f"tenant tables without enabled+forced RLS and a policy: {bad}"
+        # The seven f758200a1b4b covers must be among them (guards against a vacuous pass).
+        names = {r[0] for r in rows}
+        assert {"saas_connectors", "oauth_tokens", "oauth_codes", "content_fingerprints",
+                "corpus_samples", "upgrade_requests", "used_saml_assertions"} <= names
+    finally:
+        conn.close()
+
+
+def test_rls_isolation_on_tables_added_by_f758200a1b4b():
+    """Behavioural check on two of the newly covered tables: one with a NOT NULL tenant_id
+    (upgrade_requests) and one nullable (used_saml_assertions — the SAML replay ledger,
+    written pre-auth with no tenant bound, which must keep working)."""
+    conn = psycopg2.connect(URL)
+    try:
+        cur = conn.cursor()
+        cur.execute("INSERT INTO tenants (slug, name) VALUES ('rls-c', 'C') RETURNING id")
+        a = cur.fetchone()[0]
+        cur.execute("INSERT INTO tenants (slug, name) VALUES ('rls-d', 'D') RETURNING id")
+        b = cur.fetchone()[0]
+        for t in (a, b):
+            cur.execute("INSERT INTO upgrade_requests (tenant_id, plan, status) "
+                        "VALUES (%s, 'team', 'pending')", (t,))
+        # Unbound, as on the SAML ACS path: the insert works for any tenant.
+        cur.execute("INSERT INTO used_saml_assertions (tenant_id, assertion_id) "
+                    "VALUES (%s, 'rls-x')", (b,))
+
+        _scope(cur, str(a))
+        cur.execute("SELECT count(*) FROM upgrade_requests WHERE tenant_id IN (%s, %s)", (a, b))
+        assert cur.fetchone()[0] == 1
+        cur.execute("SELECT count(*) FROM used_saml_assertions WHERE assertion_id = 'rls-x'")
+        assert cur.fetchone()[0] == 0
+        cur.execute("SAVEPOINT sp")
+        with pytest.raises(psycopg2.Error):
+            cur.execute("INSERT INTO upgrade_requests (tenant_id, plan, status) "
+                        "VALUES (%s, 'team', 'pending')", (b,))
+        cur.execute("ROLLBACK TO SAVEPOINT sp")
+
+        _scope(cur, "")
+        cur.execute("SELECT count(*) FROM upgrade_requests WHERE tenant_id IN (%s, %s)", (a, b))
+        assert cur.fetchone()[0] == 2
+    finally:
+        conn.rollback()
+        conn.close()

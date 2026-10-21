@@ -31,8 +31,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table('tenants', schema=None) as batch_op:
-        batch_op.alter_column('siem_token', existing_type=sa.String(length=2048),
-                              type_=sa.String(length=1024), existing_nullable=True)
-        batch_op.alter_column('siem_s3_secret', existing_type=sa.String(length=512),
-                              type_=sa.String(length=256), existing_nullable=True)
+    # Deliberately a no-op: the columns stay wide. Shrinking them back fails on Postgres
+    # ("value too long for type character varying(1024)") as soon as any tenant has saved a
+    # credential since the upgrade, because the sealed form is ~1.5x the raw value plus
+    # overhead — and it would wedge the whole downgrade halfway. Truncating to fit is worse:
+    # a truncated ciphertext can never be unsealed, so it silently destroys the credential.
+    # A wider VARCHAR is harmless to the older code, which never checked the length.
+    pass
