@@ -189,6 +189,18 @@ class Settings:
     # its token-bearing redirect from THIS, not the client Host header — closing a
     # host-header open-redirect / session-token exfil. Also seeds the trusted-host allowlist.
     public_base_url: str = _env("PALIVANE_PUBLIC_URL", "").rstrip("/")
+    # Where the real client IP comes from (login/signup throttles, webhook and demo limits).
+    # X-Forwarded-For's LEFT end is whatever the client typed, so it is never trusted:
+    #   PALIVANE_CLIENT_IP_HEADER  a header a trusted edge overwrites on every request, e.g.
+    #                              "x-palivane-client-ip" when ONLY the Cloudflare Worker can
+    #                              reach the origin (hosted Palivane: the Worker sets it from
+    #                              CF-Connecting-IP; Cloud Run is IAM-gated).
+    #                              Never set it when clients can reach the app directly.
+    #   PALIVANE_TRUSTED_PROXY_HOPS  how many proxies in front of the app append to XFF
+    #                              (Cloud Run / one LB = 1, the default). The client IP is the
+    #                              entry that many from the right; 0 = use the socket peer.
+    client_ip_header: str = _env("PALIVANE_CLIENT_IP_HEADER", "").strip().lower()
+    trusted_proxy_hops: int = int(_env("PALIVANE_TRUSTED_PROXY_HOPS", "1"))
     # Issuer bound into session JWTs (`iss`). Defaults to the public URL so tokens minted by
     # one deployment don't verify on another that happens to share the signing key. Enforced
     # only when a token actually carries `iss`, so pre-existing tokens keep working until they
@@ -295,6 +307,11 @@ class Settings:
     # Do NOT strip PALIVANE_SECRET_KEY — its exact bytes are baked into every session
     # signature and the encryption-key derivation.
     metrics_token: str = _env("PALIVANE_METRICS_TOKEN", "").strip()
+    # Operator credential for the vendor /api/admin/* surface (license issue/revoke,
+    # cross-tenant funnel). Empty = fall back to PALIVANE_METRICS_TOKEN, so existing
+    # deployments keep working; set it so a leaked scrape credential isn't also the keys to
+    # the licensing desk. Header-only (Bearer) — never accepted in a query string.
+    admin_token: str = _env("PALIVANE_ADMIN_TOKEN", "").strip()
     # Operator (instance-level) alert webhook — Slack-compatible. Currently used to page when
     # the LLM judge goes down (all providers erroring, e.g. exhausted API credits). Distinct
     # from per-tenant alert_webhook; empty = log/health only.

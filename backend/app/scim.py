@@ -196,6 +196,8 @@ def _apply_active(db, tenant, u: User, active: bool) -> JSONResponse | None:
             return _err(409, "cannot deactivate the last active admin", "mutability")
         u.active = False
         u.token_version = (u.token_version or 0) + 1     # log out everywhere, now
+        from .auth import revoke_user_keys                # and their API keys / OAuth grants
+        revoke_user_keys(db, u)
         _audit(db, tenant, "scim.user_deactivated", u.email)
     elif not u.active and active:
         u.active = True

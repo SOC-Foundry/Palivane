@@ -2,7 +2,8 @@
 
 In a shared/multi-tenant deployment a tenant admin can set URLs the *server* then fetches.
 `is_safe_url` rejects non-http(s) schemes and any host that resolves to a private,
-loopback, link-local, reserved, or metadata address — so those URLs can't be turned into
+loopback, link-local, reserved, shared (CGNAT), or metadata address — anything not
+globally routable, including IPv4 wrapped in IPv6 (mapped, 6to4, Teredo, NAT64) — so those URLs can't be turned into
 an SSRF into your cloud metadata or internal network.
 
 `is_safe_url` alone leaves a DNS-rebinding window: it resolves+checks, but the HTTP client
@@ -23,13 +24,27 @@ from urllib.parse import urlparse
 import httpx
 
 
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")   # well-known NAT64 prefix (RFC 6052)
+
+
 def _blocked_ip(ip: str) -> bool:
     try:
-        a = ipaddress.ip_address(ip)
+        a = ipaddress.ip_address(ip.split("%", 1)[0])   # drop an IPv6 zone id
     except ValueError:
         return True  # unparseable -> treat as unsafe
-    return (a.is_private or a.is_loopback or a.is_link_local or a.is_reserved
-            or a.is_multicast or a.is_unspecified)
+    # An IPv6 address that merely wraps an IPv4 one reaches that IPv4 host: judge the
+    # embedded address (::ffff:169.254.169.254 is the metadata server, not "global v6").
+    if isinstance(a, ipaddress.IPv6Address):
+        inner = a.ipv4_mapped or a.sixtofour or (a.teredo[1] if a.teredo else None)
+        if inner is None and a in _NAT64:
+            inner = ipaddress.IPv4Address(int(a) & 0xFFFFFFFF)
+        if inner is not None:
+            return _blocked_ip(str(inner))
+    # Allowlist by `is_global`, not a denylist of named ranges: is_private/is_reserved miss
+    # shared address space (CGNAT 100.64.0.0/10 — internal on many clouds), benchmarking
+    # and other special-purpose blocks. The explicit checks stay as belt-and-braces.
+    return (not a.is_global or a.is_private or a.is_loopback or a.is_link_local
+            or a.is_reserved or a.is_multicast or a.is_unspecified)
 
 
 def is_safe_url_static(url: str) -> bool:

@@ -189,13 +189,25 @@ def get_current_user(
     # Hand the claim to the handlers too, so /auth/me can tell the console it is looking at
     # sample data. The browser used to keep its own copy of this and the two could disagree.
     request.state.demo_session = bool(payload.get("demo"))
+    return user_for_session_payload(payload, db)
+
+
+def user_for_session_payload(payload: dict, db: Session) -> User:
+    """The session half of JWT auth: a decoded token payload → its live, active user.
+
+    Shared with the LLM gateway (app/gateway.py), which takes user JWTs too — a second copy
+    of these checks is how one surface kept accepting MFA challenges and revoked sessions.
+    """
     # Only a *session* token authenticates. Special-purpose tokens carry a `typ`
     # (MFA challenge, OIDC state) — they must NOT be accepted here, or a caller who
     # only passed the first factor could use the MFA challenge as a full session.
     if payload.get("typ"):
         raise HTTPException(status_code=401, detail="not a session token",
                             headers={"WWW-Authenticate": "Bearer"})
-    user = db.get(User, int(payload.get("sub", 0)))
+    try:
+        user = db.get(User, int(payload.get("sub", 0)))
+    except (TypeError, ValueError):
+        user = None
     if user is None or not user.active:
         raise HTTPException(status_code=401, detail="user not found or inactive")
     if int(payload.get("tv", 0)) != user.token_version:
@@ -317,11 +329,26 @@ def signup(body: SignupRequest, request: Request, db: Session = Depends(get_db))
 
 
 def _client_ip(request: Request) -> str:
-    """Best-effort client IP. Honors X-Forwarded-For (first hop) behind a load balancer."""
-    xff = request.headers.get("x-forwarded-for", "")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.client.host if request.client else ""
+    """Best-effort client IP from a source the client can't forge (see config: the
+    PALIVANE_CLIENT_IP_HEADER / PALIVANE_TRUSTED_PROXY_HOPS notes).
+
+    The FIRST X-Forwarded-For entry is client-controlled — trusting it let anyone rotate a
+    fake IP per request and walk straight past the per-IP login/signup throttles. Each
+    trusted proxy appends the address it saw, so the client is the Nth entry from the RIGHT.
+    """
+    if settings.client_ip_header:
+        ip = request.headers.get(settings.client_ip_header, "").strip()
+        if ip:
+            return ip
+    peer = request.client.host if request.client else ""
+    hops = settings.trusted_proxy_hops
+    if hops <= 0:
+        return peer
+    hops_seen = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",")
+                 if h.strip()]
+    if len(hops_seen) >= hops:
+        return hops_seen[-hops]
+    return peer
 
 
 def _throttled(db: Session, email: str, ip: str) -> bool:
@@ -451,6 +478,7 @@ def reset_password(body: ResetRequest, db: Session = Depends(get_db)):
     ensure_active(db, user.tenant_id)
     user.password_hash = hash_password(body.password)
     user.token_version += 1
+    revoke_oauth_grants(db, user)
     db.query(LoginAttempt).filter(LoginAttempt.email == user.email).delete()
     db.commit()
     audit_log.record(db, user.tenant_id, user.email, "user.password_reset", target=user.email)
@@ -491,6 +519,9 @@ def mfa_verify(body: MFAVerify, request: Request, db: Session = Depends(get_db))
         raise HTTPException(status_code=400, detail="invalid MFA challenge")
     user = db.get(User, int(payload.get("sub", 0)))
     if user is None or not user.active or not user.mfa_enabled:
+        raise HTTPException(status_code=401, detail="invalid credentials")
+    if int(payload.get("tv", -1)) != user.token_version:
+        # Issued before a logout-all / password reset: that first factor no longer counts.
         raise HTTPException(status_code=401, detail="invalid credentials")
 
     ip = _client_ip(request)
@@ -535,6 +566,7 @@ def logout_all(current: User = Depends(get_current_user), db: Session = Depends(
     """Revoke every existing session token for the current user (e.g. after a suspected
     compromise). Bumps token_version so all previously issued JWTs stop validating."""
     current.token_version = (current.token_version or 0) + 1
+    revoke_oauth_grants(db, current)
     db.commit()
     audit_log.record(db, current.tenant_id, current.email, "session.revoke_all")
     return {"revoked": True, "token_version": current.token_version}
@@ -682,6 +714,11 @@ def update_user(user_id: int, body: UserUpdate, current: User = Depends(require_
         user.role = body.role
     if body.active is not None:
         user.active = body.active
+    if deactivating:
+        # Deactivation closes every way in, not just fresh sign-ins: end live sessions and
+        # revoke the person's API keys (what /offboard does, minus the audit framing).
+        user.token_version = (user.token_version or 0) + 1
+        revoke_user_keys(db, user)
     db.commit()
     db.refresh(user)
     audit_log.record(db, current.tenant_id, current.email, "user.update",
@@ -689,15 +726,43 @@ def update_user(user_id: int, body: UserUpdate, current: User = Depends(require_
     return user.to_dict()
 
 
+def revoke_user_keys(db: Session, user: User) -> list[ApiKey]:
+    """Deactivate every API key that acts as `user`, and their OAuth grants (caller commits).
+    Both kinds of key they could hold: console keys bound by user_id, and capture keys
+    (browser extension, palivane-connect) bound only by the actor they attribute to. Shared
+    by offboarding, the admin `active: false` toggle and SCIM deactivation — a deactivated
+    person's keys must not keep working on any of those paths."""
+    email = (user.email or "").strip().lower()
+    keys = db.query(ApiKey).filter(
+        ApiKey.tenant_id == user.tenant_id,
+        ApiKey.active.is_(True),
+        or_(ApiKey.user_id == user.id,
+            func.lower(ApiKey.actor) == email),
+    ).all()
+    for k in keys:
+        k.active = False
+    revoke_oauth_grants(db, user)
+    return keys
+
+
+def revoke_oauth_grants(db: Session, user: User) -> int:
+    """Revoke every live OAuth access/refresh token the user approved (remote MCP clients).
+    OAuth tokens carry no `tv`, so wherever token_version is bumped to end sessions
+    (logout-all, password reset, deactivation) this is what makes those grants end too."""
+    from .models import OAuthToken
+    return (db.query(OAuthToken)
+              .filter(OAuthToken.user_id == user.id, OAuthToken.revoked_at.is_(None))
+              .update({OAuthToken.revoked_at: _naive_utc()}, synchronize_session=False))
+
+
 @router.post("/users/{user_id}/offboard")
 def offboard_user(user_id: int, current: User = Depends(require_admin),
                   db: Session = Depends(get_db)):
     """Someone left: close every way in, in one action.
 
-    `active: false` alone does not do this. It stops a fresh sign-in and nothing else — an
-    already-issued JWT stays valid until it expires, and the person's API keys keep working
-    indefinitely, including the capture key their browser extension uses. An admin who
-    toggles a leaver to inactive and moves on has revoked the least important credential.
+    `active: false` (PATCH /users/{id}, or SCIM) now also ends sessions and revokes the
+    person's API keys, including the capture key their browser extension uses; this endpoint
+    is the explicit, audited version of the same thing, with a guard for your own account.
 
     This is deliberately NOT a delete. Findings attribute by EMAIL STRING, not by user id, so
     removing the row would orphan nothing and erase nothing — the person's address stays in
@@ -722,17 +787,7 @@ def offboard_user(user_id: int, current: User = Depends(require_admin),
     # than waiting for expiry.
     user.token_version += 1
 
-    # Both kinds of key they could hold: console keys bound by user_id, and capture keys
-    # (browser extension, palivane-connect) bound only by the actor they attribute to.
-    email = (user.email or "").strip().lower()
-    keys = db.query(ApiKey).filter(
-        ApiKey.tenant_id == user.tenant_id,
-        ApiKey.active.is_(True),
-        or_(ApiKey.user_id == user.id,
-            func.lower(ApiKey.actor) == email),
-    ).all()
-    for k in keys:
-        k.active = False
+    keys = revoke_user_keys(db, user)
     db.commit()
 
     audit_log.record(db, current.tenant_id, current.email, "user.offboard",
@@ -756,17 +811,21 @@ def extension_token(device: str = "", current: User = Depends(get_current_user),
 
     Dedup: re-connecting the same device rotates that device's existing key in place instead
     of piling up a new row on every sign-in. `device` (browser deviceId / palivane-connect
-    hostname) scopes the key so separate machines keep separate, independently-revocable keys;
-    when it's absent we fall back to a single per-user "browser-extension" key."""
+    hostname) scopes the key so separate machines keep separate, independently-revocable keys.
+    When it's absent there is nothing to tell machines apart, so a fresh key is minted rather
+    than rotating a shared per-user one — rotating it silently killed every other machine's
+    key the moment a second one connected."""
     dev = (device or "").strip()[:64]
     label = f"capture:{dev}" if dev else "browser-extension"
     token, prefix, token_hash = generate_api_key()
-    existing = (db.query(ApiKey)
-                .filter(ApiKey.tenant_id == current.tenant_id,
-                        ApiKey.actor == current.email,
-                        ApiKey.label == label,
-                        ApiKey.active.is_(True))
-                .order_by(ApiKey.id.desc()).first())
+    existing = None
+    if dev:
+        existing = (db.query(ApiKey)
+                    .filter(ApiKey.tenant_id == current.tenant_id,
+                            ApiKey.actor == current.email,
+                            ApiKey.label == label,
+                            ApiKey.active.is_(True))
+                    .order_by(ApiKey.id.desc()).first())
     if existing is not None:
         # Rotate the same row: the old token stops working, the fresh one is handed back,
         # and the device keeps one key instead of accumulating.
@@ -1615,6 +1674,63 @@ def _safe_return_to(rt: str) -> str:
     return rt
 
 
+# --- SSO browser binding + session handoff (shared by tenant OIDC and Google sign-in) --------
+
+# The signed `state` proves we issued it, not that THIS browser started the flow: without a
+# binding, an attacker can start a login with their own IdP account and hand the victim the
+# callback URL, signing the victim into the attacker's account (login CSRF). A random nonce
+# in a short-lived cookie, with only its hash in the state, ties the callback to the browser
+# that began it.
+SSO_BIND_COOKIE = "palivane_sso_bind"
+_SSO_BIND_TTL = 600
+
+
+def _sso_bind_hash(nonce: str) -> str:
+    from hashlib import sha256
+    return sha256(nonce.encode()).hexdigest()
+
+
+def sso_bind_new() -> tuple[str, str]:
+    """(cookie nonce, hash to embed in the signed state)."""
+    nonce = secrets.token_urlsafe(24)
+    return nonce, _sso_bind_hash(nonce)
+
+
+def sso_bind_set(resp, request: Request, nonce: str) -> None:
+    secure = (settings.public_base_url or str(request.base_url)).startswith("https")
+    resp.set_cookie(SSO_BIND_COOKIE, nonce, max_age=_SSO_BIND_TTL, httponly=True,
+                    samesite="lax", secure=secure, path="/api/auth")
+
+
+def sso_bind_check(request: Request, payload: dict) -> None:
+    """400 unless this browser holds the cookie whose hash the state carries."""
+    nonce = request.cookies.get(SSO_BIND_COOKIE, "")
+    want = str(payload.get("bind") or "")
+    if not nonce or not want or not hmac.compare_digest(_sso_bind_hash(nonce), want):
+        raise HTTPException(status_code=400,
+                            detail="sign-in was not started from this browser, try again")
+
+
+def sso_session_redirect(user: User, origin: str, return_to: str = "") -> RedirectResponse:
+    """Finish an SSO/social sign-in: a session in the URL fragment — or, when the account
+    has MFA on, an MFA challenge instead, exactly as password login does. An IdP proves the
+    first factor only; skipping the second here made SSO a way around a user's MFA."""
+    if user.mfa_enabled:
+        challenge = create_token({"typ": "mfa", "sub": str(user.id), "tv": user.token_version},
+                                 ttl=300)
+        resp = RedirectResponse(f"{origin}/#mfa_challenge={challenge}", status_code=303)
+    else:
+        token = create_token({"sub": str(user.id), "tenant_id": user.tenant_id,
+                              "role": user.role, "tv": user.token_version})
+        # Fragment, not query: keeps the token out of server/proxy logs. When a connect flow
+        # asked for it, land back on /extension-connect so the token handback to the
+        # extension/CLI completes instead of dead-ending on the console.
+        resp = RedirectResponse(f"{origin}{_safe_return_to(return_to) or '/'}#sso_token={token}",
+                                status_code=303)
+    resp.delete_cookie(SSO_BIND_COOKIE, path="/api/auth")
+    return resp
+
+
 @router.get("/auth/oidc/{org}/login")
 def oidc_login(org: str, request: Request, return_to: str = "", db: Session = Depends(get_db)):
     """Begin the SSO auth-code flow: redirect the browser to the tenant's IdP."""
@@ -1623,12 +1739,15 @@ def oidc_login(org: str, request: Request, return_to: str = "", db: Session = De
     nonce = secrets.token_urlsafe(16)
     # Signed, self-expiring state — no server-side session store needed (multi-worker safe).
     # return_to carries the connect landing through the IdP round-trip (signed, so tamper-proof).
+    bind_nonce, bind = sso_bind_new()
     state = create_token({"typ": "oidc_state", "org": tenant.slug, "nonce": nonce,
-                          "return_to": _safe_return_to(return_to)}, ttl=600)
+                          "bind": bind, "return_to": _safe_return_to(return_to)}, ttl=600)
     base = str(request.base_url).rstrip("/")
     redirect_uri = f"{base}/api/auth/oidc/{tenant.slug}/callback"
-    return RedirectResponse(oidc.authorize_url(meta, row.client_id, redirect_uri, state, nonce),
+    resp = RedirectResponse(oidc.authorize_url(meta, row.client_id, redirect_uri, state, nonce),
                             status_code=307)
+    sso_bind_set(resp, request, bind_nonce)
+    return resp
 
 
 @router.get("/auth/oidc/{org}/callback")
@@ -1642,6 +1761,7 @@ def oidc_callback(org: str, request: Request, code: str = "", state: str = "",
         raise HTTPException(status_code=400, detail="invalid or expired SSO state")
     if payload.get("typ") != "oidc_state" or payload.get("org") != org.strip().lower():
         raise HTTPException(status_code=400, detail="SSO state mismatch")
+    sso_bind_check(request, payload)
 
     tenant, row = _enabled_oidc(org, db)
     base = str(request.base_url).rstrip("/")
@@ -1682,17 +1802,11 @@ def _sso_complete(db: Session, tenant: Tenant, email: str, auto_provision: bool,
     elif not user.active:
         raise HTTPException(status_code=403, detail="account is disabled")
 
-    token = create_token({"sub": str(user.id), "tenant_id": user.tenant_id,
-                          "role": user.role, "tv": user.token_version})
     # Build the token-bearing redirect from the CONFIGURED public origin when set, not the
     # client Host header — otherwise a spoofed Host would redirect the session token to an
     # attacker domain (open-redirect / token exfil). Fall back to request-derived base.
     origin = settings.public_base_url or base
-    # Hand the session to the SPA via URL fragment (not query — keeps it out of logs). When a
-    # connect flow asked for it, land back on /extension-connect so the token handback to the
-    # extension/CLI completes instead of dead-ending on the console.
-    return RedirectResponse(f"{origin}{_safe_return_to(return_to) or '/'}#sso_token={token}",
-                            status_code=303)
+    return sso_session_redirect(user, origin, return_to)
 
 
 # --- per-tenant SAML SSO -------------------------------------------------------------
