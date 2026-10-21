@@ -276,19 +276,26 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
   const [investigating, setInvestigating] = useState(false);
   const [investigateErr, setInvestigateErr] = useState("");
   const [reason, setReason] = useState("");                  // why, if the next click is Dismissed
-  useEffect(() => { setReason(""); }, [finding?.id]);
+  const [statusErr, setStatusErr] = useState("");            // a status change the server refused
+  useEffect(() => { setReason(""); setStatusErr(""); }, [finding?.id]);
   if (!finding) return null;
   const status = finding.status || "open";
   const steps = remediationFor(finding);
   const checks = isAdmin && finding.sender ? checksOf(finding) : [];
 
   async function setStatus(s) {
-    await api.setStatus(finding.id, s, "", s === "dismissed" ? reason : "");
+    setStatusErr("");
+    try {
+      await api.setStatus(finding.id, s, "", s === "dismissed" ? reason : "");
+    } catch (e) { setStatusErr(cleanError(e)); return; }
     onStatusChange();
   }
 
   async function quickVerdict(s, why) {
-    await api.setStatus(finding.id, s, "", why);
+    setStatusErr("");
+    try {
+      await api.setStatus(finding.id, s, "", why);
+    } catch (e) { setStatusErr(cleanError(e)); return; }
     onStatusChange();
     if (onReviewed) onReviewed(finding.id);
   }
@@ -550,19 +557,23 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
       )}
       <div className="detail-actions">
         <span className="detail-actions-label">Set status:</span>
-        {STATUSES.map((s) => (
+        {/* Dismissing is admin-only server-side (403 otherwise), so only admins get the button. */}
+        {STATUSES.filter((s) => isAdmin || s.key !== "dismissed").map((s) => (
           <button key={s.key} onClick={() => setStatus(s.key)}
                   className={status === s.key ? "active" : ""} disabled={status === s.key}>
             {s.label}
           </button>
         ))}
       </div>
+      {statusErr && <div className="error" style={{ margin: "6px 0" }}>{statusErr}</div>}
       <div className="review-line">
-        <label className="review-reason">If dismissing, why?
-          <select value={reason} onChange={(e) => setReason(e.target.value)}>
-            {DISMISS_REASONS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-          </select>
-        </label>
+        {isAdmin && (
+          <label className="review-reason">If dismissing, why?
+            <select value={reason} onChange={(e) => setReason(e.target.value)}>
+              {DISMISS_REASONS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+            </select>
+          </label>
+        )}
         {finding.review && (
           <span className="muted">
             {status === "dismissed" ? "Dismissed" : "Triaged"} by {finding.review.by || "someone"}
