@@ -29,12 +29,18 @@ SETUP = """
 () => {
   window.__events = [];
   window.fetch = async () => new Response('{"ok":true}', {status: 200});
-  window.addEventListener('message', async (e) => {
-    const d = e.data;
-    if (!d || !d.__palivane) return;
+  // Stand-in for content.js: answer injected.js's handshake with a channel secret, then
+  // relay scans over the secret-named events (see content.js).
+  const secret = 'test-' + Math.random().toString(36).slice(2);
+  const ch = 'palivane:' + secret;
+  document.addEventListener('palivane:hello', () =>
+    document.dispatchEvent(new CustomEvent('palivane:key', {detail: secret})), {once: true});
+  document.addEventListener(ch + ':up', async (e) => {
+    const d = JSON.parse(e.detail);
     if (d.kind === 'scan') {
       const verdict = await window.palivaneScan(d.content, d.destination);
-      window.postMessage({__palivane:true, kind:'verdict', id:d.id, verdict}, '*');
+      document.dispatchEvent(new CustomEvent(ch + ':down',
+        {detail: JSON.stringify({kind:'verdict', id:d.id, verdict})}));
     } else if (d.kind === 'blocked' || d.kind === 'warn') {
       window.__events.push({kind:d.kind, verdict:d.verdict});
     }

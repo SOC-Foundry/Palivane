@@ -46,6 +46,19 @@ async function req(path, opts = {}) {
   throw new Error(detail || `${res.status}: ${body}`);
 }
 
+// Raw (non-JSON) downloads: same bearer header and the same dead-session handling as req(),
+// so an expired token on a CSV/export click logs the user out instead of failing silently.
+async function rawFetch(path) {
+  const token = getToken();
+  const res = await fetch(BASE + path, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+  if (res.status === 401 && token) {
+    setToken(null);
+    onUnauthorized();
+    throw new Error("session expired, please sign in again");
+  }
+  return res;
+}
+
 export const api = {
   health: () => req("/health"),
   investigateFinding: (id) => req(`/findings/${id}/investigate`, { method: "POST" }),
@@ -124,9 +137,7 @@ export const api = {
   complianceReport: () => req("/compliance/report"),
   redteamSelftest: () => req("/redteam/selftest", { method: "POST" }),
   complianceCsv: async () => {
-    const token = getToken();
-    const res = await fetch(BASE + "/compliance/report?format=csv",
-      { headers: token ? { authorization: `Bearer ${token}` } : {} });
+    const res = await rawFetch("/compliance/report?format=csv");
     if (!res.ok) throw new Error(`${res.status}`);
     return res.text();
   },
@@ -136,9 +147,7 @@ export const api = {
     req(`/policies/overrides/${id}`, { method: "DELETE" }),
   precision: (days = 30) => req(`/precision?${new URLSearchParams({ days })}`),
   precisionCsv: async (days = 30) => {
-    const token = getToken();
-    const res = await fetch(BASE + `/precision?${new URLSearchParams({ days, format: "csv" })}`,
-      { headers: token ? { authorization: `Bearer ${token}` } : {} });
+    const res = await rawFetch(`/precision?${new URLSearchParams({ days, format: "csv" })}`);
     if (!res.ok) throw new Error(`${res.status}`);
     return res.text();
   },
@@ -199,16 +208,12 @@ export const api = {
   deleteConnector: (id) => req(`/discovery/connectors/${id}`, { method: "DELETE" }),
   slackInstallUrl: () => req("/slack/install"),
   exportFindings: async () => {
-    const token = getToken();
-    const res = await fetch(BASE + "/export/findings",
-      { headers: token ? { authorization: `Bearer ${token}` } : {} });
+    const res = await rawFetch("/export/findings");
     if (!res.ok) throw new Error(`${res.status}`);
     return res.text();
   },
   exportTenant: async (includeContent = false) => {
-    const token = getToken();
-    const res = await fetch(BASE + `/export/tenant?include_content=${includeContent ? "true" : "false"}`,
-      { headers: token ? { authorization: `Bearer ${token}` } : {} });
+    const res = await rawFetch(`/export/tenant?include_content=${includeContent ? "true" : "false"}`);
     if (!res.ok) throw new Error(`${res.status}`);
     return res.text();
   },
@@ -238,10 +243,7 @@ export const api = {
     req(`/audit/timeline?actor=${encodeURIComponent(actor)}&days=${days}`),
   // Downloads the normalized cross-vendor audit as a file (jsonl | cef), raw text, not JSON.
   downloadAudit: async (days = 7, format = "jsonl") => {
-    const headers = {};
-    const token = getToken();
-    if (token) headers.authorization = `Bearer ${token}`;
-    const res = await fetch(`${BASE}/audit/export?days=${days}&format=${format}`, { headers });
+    const res = await rawFetch(`/audit/export?days=${days}&format=${format}`);
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);

@@ -288,7 +288,13 @@ export default function App() {
       setSelected(null);
       return;
     }
-    api.finding(selectedId).then(setSelected).catch(() => setSelected(null));
+    // Ignore a response that lands after the selection moved on, or the pane shows A while B
+    // is selected.
+    let live = true;
+    api.finding(selectedId)
+      .then((f) => { if (live) setSelected(f); })
+      .catch(() => { if (live) setSelected(null); });
+    return () => { live = false; };
   }, [selectedId]);
 
   // Selecting a finding far down the list: bring the detail pane into view (the pane is
