@@ -199,3 +199,48 @@ def test_an_endpoint_is_masked_like_everything_else_stored(client, raw_client):
         headers={"X-Palivane-Token": key})
     detail = client.get(f"/api/findings/{r.json()['finding_id']}").json()
     assert "ABCDEFGHIJKLMNOP" not in json.dumps(detail)
+
+
+class _FakePgSession:
+    """Just enough Session for _lock_fingerprint: reports a postgres bind, records SQL."""
+    def __init__(self):
+        self.sql = []
+        self.commits = 0
+
+    def get_bind(self):
+        class _B:
+            class dialect:
+                name = "postgresql"
+        return _B()
+
+    def execute(self, stmt, params=None):
+        self.sql.append((str(stmt), params))
+
+    def commit(self):
+        self.commits += 1
+
+
+def test_fold_takes_a_per_fingerprint_advisory_lock_on_postgres(monkeypatch):
+    """Concurrent identical events must not each insert a finding: on Postgres the fold's
+    check-then-insert is serialized by a transaction-scoped advisory lock on the
+    fingerprint, and a first-use DEK mint (which commits) happens before the lock."""
+    from app import service
+    from app.models import Tenant
+    monkeypatch.setattr(service.settings, "encrypt_findings", True)
+    fp = "ab" * 32
+    t = Tenant(id=1, slug="acme", store_content=True, dek_wrapped="")
+    db = _FakePgSession()
+    service._lock_fingerprint(db, t, fp)
+    assert db.commits == 1 and t.dek_wrapped                    # minted before locking
+    assert db.sql == [("SELECT pg_advisory_xact_lock(:k)",
+                       {"k": int.from_bytes(bytes.fromhex(fp[:16]), "big", signed=True)})]
+    db2 = _FakePgSession()
+    service._lock_fingerprint(db2, t, fp)
+    assert db2.commits == 0 and db2.sql == db.sql                # same key, no re-mint
+
+
+def test_fold_lock_is_a_noop_on_sqlite(db_factory):
+    from app import service
+    db = db_factory()
+    service._lock_fingerprint(db, None, "cd" * 32)   # must not emit postgres-only SQL
+    db.close()

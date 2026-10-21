@@ -770,3 +770,45 @@ def test_openai_upstream_shapes_azure_and_compatible():
         "https://api.groq.com/openai/v1", "gk", "/chat/completions", "llama-3.3-70b")
     assert url == "https://api.groq.com/openai/v1/chat/completions"
     assert "api-key" not in h and h["Authorization"] == "Bearer gk"
+
+
+def test_gateway_endpoints_run_off_the_event_loop():
+    """Every gateway endpoint does blocking work (sync httpx upstream calls, the LLM
+    judge, sync SQLAlchemy). As `async def` it would stall the single uvicorn process's
+    event loop; plain `def` makes FastAPI run it in the threadpool."""
+    import inspect
+
+    from app import gateway
+    for router in (gateway.router, gateway.gemini_router):
+        for route in router.routes:
+            assert not inspect.iscoroutinefunction(route.endpoint), route.path
+
+
+def test_slow_gateway_requests_are_served_concurrently(client, monkeypatch):
+    """Two requests whose capture blocks for 0.4s finish in well under 0.8s total."""
+    import asyncio
+    import time
+
+    import httpx
+
+    from app import gateway
+    from app.main import app
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
+    real_capture = gateway._capture
+
+    def slow_capture(*a, **kw):
+        time.sleep(0.4)
+        return real_capture(*a, **kw)
+    monkeypatch.setattr(gateway, "_capture", slow_capture)
+
+    async def run():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver",
+                                     headers=dict(client.headers)) as ac:
+            t0 = time.monotonic()
+            rs = await asyncio.gather(*(ac.post("/v1/chat/completions", json=BENIGN)
+                                        for _ in range(2)))
+            return time.monotonic() - t0, rs
+    elapsed, rs = asyncio.run(run())
+    assert all(r.status_code == 200 for r in rs), [r.text for r in rs]
+    assert elapsed < 0.75, elapsed

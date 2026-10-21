@@ -79,6 +79,25 @@ def test_license_lifts_instance_plan_and_seats(keypair, monkeypatch):
     assert effective_quota(t, "users") == 10   # operator override still wins
 
 
+def test_cached_license_expires_while_process_runs(keypair, monkeypatch):
+    """The signature is verified once per process, but expiry must be re-checked: a
+    long-running instance otherwise keeps a lapsed license's plan forever."""
+    from datetime import datetime, timezone
+    priv, pub = keypair
+    blob = licensing.issue(priv, "Acme", "enterprise", 10,
+                           (date.today() + timedelta(days=1)).isoformat())
+    _fresh(monkeypatch, blob, pub)
+    assert licensing.licensed_plan() == "enterprise"
+
+    class _Later(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.now(timezone.utc) + timedelta(days=3)
+    monkeypatch.setattr(licensing, "datetime", _Later)
+    assert licensing.current() is None
+    assert licensing.licensed_plan() == "free"
+
+
 def test_invalid_license_falls_back_to_free(keypair, monkeypatch):
     _, pub = keypair
     _fresh(monkeypatch, "WDN1.garbage.garbage", pub)

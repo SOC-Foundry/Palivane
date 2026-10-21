@@ -123,9 +123,56 @@ def test_scan_budget_truncates_and_reports(client, monkeypatch):
     cid = _mk(client)
     summary = client.post(f"/api/discovery/connectors/{cid}/sync").json()
     assert summary["messages"] == 2 and summary["truncated"] is True
-    # watermark only advanced past what was actually scanned (oldest two)
+    # the newest two were scanned; the older three are a backfill gap for the next sync
     row = client.get("/api/discovery/connectors").json()["connectors"][0]
     assert json.loads(row["last_sync_detail"])["truncated"] is True
+
+
+def _windowed_slack(monkeypatch, history, page=200):
+    """A Slack that honors oldest/latest (both exclusive) and returns newest-first pages of
+    `page` messages with a cursor. Records every message text handed to run_analysis."""
+    import urllib.parse as up
+    seen = []
+
+    def fake_http(url, headers=None, data=None, timeout=20):
+        q = {k: v[0] for k, v in up.parse_qs(up.urlsplit(url).query).items()}
+        if "users.conversations" in url:
+            return {"ok": True, "channels": [{"id": c, "name": c.lower()} for c in history]}
+        if "conversations.history" in url:
+            lo, hi = float(q.get("oldest", 0)), float(q.get("latest", 1e18))
+            msgs = sorted((m for m in history[q["channel"]] if lo < float(m["ts"]) < hi),
+                          key=lambda m: -float(m["ts"]))
+            start = int(q.get("cursor", 0))
+            nxt = start + page if start + page < len(msgs) else ""
+            return {"ok": True, "messages": msgs[start:start + page],
+                    "response_metadata": {"next_cursor": str(nxt)}}
+        if "users.info" in url:
+            return {"ok": True, "user": {"profile": {"email": "u@acme.com"}}}
+        raise AssertionError(url)
+
+    monkeypatch.setattr(sc, "_http_json", fake_http)
+    import app.service as service
+    monkeypatch.setattr(service, "run_analysis",
+                        lambda item, **kw: seen.append(item.content) or {"finding_id": None})
+    return seen
+
+
+def test_busy_channel_backfills_older_messages_and_later_channels_get_scanned(
+        client, monkeypatch):
+    """A channel over budget used to keep its cursor and rescan the same newest page every
+    sync (older messages never reached), and the break starved every channel after it."""
+    import time as _t
+    monkeypatch.setattr(sc, "_MAX_MESSAGES_PER_SYNC", 2)
+    now = _t.time()
+    busy = [{"user": "U1", "ts": f"{now - 100 + i:.6f}", "text": f"busy {i}"} for i in range(5)]
+    quiet = [{"user": "U1", "ts": f"{now - 50:.6f}", "text": "quiet 0"}]
+    seen = _windowed_slack(monkeypatch, {"CBUSY": busy, "CQUIET": quiet}, page=2)
+    cid = _mk(client)
+    for _ in range(4):
+        client.post(f"/api/discovery/connectors/{cid}/sync")
+    assert sorted(seen) == sorted([m["text"] for m in busy] + ["quiet 0"])   # each exactly once
+    s = client.post(f"/api/discovery/connectors/{cid}/sync").json()
+    assert s["messages"] == 0 and not s.get("truncated")                      # caught up
 
 
 def test_missing_token_and_api_error_surface(client, monkeypatch):

@@ -71,3 +71,43 @@ def test_purge_empty_selects_only_abandoned(client, db_factory):
     assert db.query(Tenant).filter(Tenant.slug == "dead").count() == 0
     assert db.query(Tenant).filter(Tenant.slug.in_(["live", "fresh", "acme"])).count() == 3
     db.close()
+
+
+def test_purge_covers_every_tenant_keyed_model():
+    """A new table with tenant_id must be added to the purge cascade — a partial delete
+    isn't a delete."""
+    from app.database import Base
+    from app.lifecycle import TENANT_TABLES
+    keyed = {m.class_ for m in Base.registry.mappers
+             if "tenant_id" in m.columns and m.class_ is not Tenant}
+    assert keyed == {model for _, model in TENANT_TABLES}
+
+
+def test_purge_deletes_fk_children_before_users(tmp_path):
+    """With FK enforcement on (as on Postgres), rows referencing users.id must go first."""
+    from sqlalchemy import create_engine, event
+    from sqlalchemy.orm import sessionmaker
+
+    from app.database import Base
+    from app.lifecycle import purge_tenant
+    from app.models import OAuthCode, OAuthToken, SaasConnector
+
+    eng = create_engine(f"sqlite:///{tmp_path/'fk.db'}")
+    event.listen(eng, "connect", lambda c, _: c.execute("PRAGMA foreign_keys=ON"))
+    Base.metadata.create_all(bind=eng)
+    db = sessionmaker(bind=eng)()
+    t = Tenant(slug="gone", name="Gone")
+    db.add(t); db.commit()
+    u = User(tenant_id=t.id, email="a@gone.com", password_hash="x")
+    db.add(u); db.commit()
+    db.add_all([
+        ApiKey(tenant_id=t.id, user_id=u.id, prefix="ak_gone0000", token_hash="h"),
+        OAuthCode(tenant_id=t.id, user_id=u.id, code_hash="c", client_id="x"),
+        OAuthToken(tenant_id=t.id, user_id=u.id, token_hash="t", client_id="x"),
+        SaasConnector(tenant_id=t.id, platform="slack", label="ws"),
+    ])
+    db.commit()
+    counts = purge_tenant(db, t)
+    assert counts["oauth_tokens"] == 1 and counts["saas_connectors"] == 1
+    assert db.query(Tenant).count() == 0 and db.query(SaasConnector).count() == 0
+    db.close()
