@@ -209,6 +209,7 @@ export default function Landing({ onSignIn }) {
       <SiteNav onSignIn={onSignIn} />
 
       <section className="lp-hero-wrap">
+        <div className="lp-rings" aria-hidden="true"><i /><i /><i /></div>
         <div className="lp-hero">
           <div className="lp-tagline">AI SECURITY FOR THE TOOLS YOUR TEAM ALREADY USES</div>
           <h1>Your secrets shouldn't leave with the <span className="lp-hl">prompt.</span></h1>
