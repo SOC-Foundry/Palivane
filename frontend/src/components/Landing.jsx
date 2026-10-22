@@ -170,6 +170,114 @@ function CountUp({ value }) {
   return <span ref={ref}>{n ?? value}</span>;
 }
 
+// Example findings for the card under the hero. Every value is illustrative: the companies
+// are invented, the only key is the documented test payload from docs/pilot-smoke-test.md,
+// and the other secrets are made-up strings that match no vendor format (push protection
+// reads a lookalike as a leaked key). Each example has four prompt lines and three facts so
+// the card does not change height as it cycles. Keep the claims in the meta rows true to what
+// the named plane really does.
+const EXAMPLES = [
+  { tag: "BLOCKED", actor: "d.okafor@harbourline.io", to: "chatgpt.com", ref: "before send · finding #4471",
+    lines: [
+      [["clean up this customer list and fix the deploy script", ""]],
+      [["name,email,plan,mrr", "dim"]],
+      [["j.reyes@northwind.io,enterprise,4200", "hit"]],
+      [["export AWS_ACCESS_KEY_ID=", "dim"], ["AKIA4YTGH2NBQF7XZP3K", "hit"]],
+    ],
+    facts: [["What was in it", "An AWS access key, and 1,848 customer records"],
+            ["Where it came from", "Q3_accounts.csv, in Google Drive"],
+            ["Caught by", "The browser extension, before the prompt sent"]],
+    foot: <>A CASB logs one line: <code>user visited chatgpt.com</code>. Everything above is the part that matters.</> },
+  { tag: "BLOCKED", actor: "m.lindqvist@northwind.io", to: "Claude Code", ref: "before the file was read · finding #4502",
+    lines: [
+      [["cat .env and tell me why the migration keeps failing", ""]],
+      [["APP_ENV=production", "dim"]],
+      [["DATABASE_URL=", "dim"], ["postgres://app:Pr0d-Hunter42@db.northwind.io/billing", "hit"]],
+      [["LOG_LEVEL=info", "dim"]],
+    ],
+    facts: [["What was in it", "A production database password"],
+            ["Where it came from", "A .env file in the billing repo, on a laptop"],
+            ["Caught by", "The coding-tool hook, before the contents were sent"]],
+    foot: <>No website was visited. The secret went out through a coding tool, where a browser-only control never looks.</> },
+  { tag: "FOUND", actor: "Slack", to: "#support-escalations", ref: "found at rest · finding #4519",
+    lines: [
+      [["customer called about the refund, they read out the", ""]],
+      [["social to verify the account:", ""]],
+      [["219-09-9999", "hit"]],
+      [["name on file, Jordan Reyes", "dim"]],
+    ],
+    facts: [["What was in it", "A social security number, in a 14-month-old message"],
+            ["Where it came from", "A support reply in a busy channel"],
+            ["Caught by", "The Slack scanner, before an AI rollout reads it"]],
+    foot: <>Nothing was sent anywhere, so no outbound control sees this. It was just sitting where an assistant can read it.</> },
+  { tag: "BLOCKED", actor: "billing-reconciler", to: "invoices MCP server", ref: "before the call ran · finding #4533",
+    lines: [
+      [["tool call: invoices.export", ""]],
+      [["agent: billing-reconciler (ag_ bearer)", "dim"]],
+      [["attestation: none", "hit"]],
+      [["role allows: invoices.read, one customer", "dim"]],
+    ],
+    facts: [["What was in it", "A bulk export outside the agent's role"],
+            ["Where it came from", "An autonomous agent with no workload identity"],
+            ["Caught by", "Agent attestation and role limits, before the call ran"]],
+    foot: <>The text of that call is clean. A prompt scanner finds nothing wrong; the caller just was not entitled.</> },
+];
+const EXAMPLE_MS = 7000;
+
+function EvidenceCycle() {
+  const [i, setI] = useState(0);
+  const [hold, setHold] = useState(false);       // pointer or focus is on the card
+  const [auto, setAuto] = useState(true);        // false under reduced motion: manual only
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) setAuto(false);
+  }, []);
+  useEffect(() => {
+    if (!auto || hold) return undefined;
+    const t = setTimeout(() => setI((n) => (n + 1) % EXAMPLES.length), EXAMPLE_MS);
+    return () => clearTimeout(t);
+  }, [i, auto, hold]);
+  const ex = EXAMPLES[i];
+  return (
+    <>
+      <div className="lp-evidence rv" onMouseEnter={() => setHold(true)} onMouseLeave={() => setHold(false)}
+           onFocus={() => setHold(true)} onBlur={() => setHold(false)}>
+        <div className="lp-evidence-swap" key={i}>
+          <div className="lp-evidence-head">
+            <span className="who">
+              <span className={`lp-evidence-tag ${ex.tag === "FOUND" ? "found" : ""}`}>{ex.tag}</span>
+              <code>{ex.actor}</code>
+              <span aria-hidden="true" style={{ color: "var(--muted-2)" }}>→</span>
+              <code>{ex.to}</code>
+            </span>
+            <code style={{ color: "var(--muted-2)", fontSize: 12 }}>{ex.ref}</code>
+          </div>
+          <div className="lp-evidence-body">
+            <div className="lp-evidence-prompt">
+              {ex.lines.map((segs, n) => (
+                <div key={n}>
+                  {segs.map(([text, kind], k) => <span key={k} className={kind}>{text}</span>)}
+                </div>
+              ))}
+            </div>
+            <dl className="lp-evidence-meta">
+              {ex.facts.map(([t, d]) => <div key={t}><dt>{t}</dt><dd>{d}</dd></div>)}
+            </dl>
+          </div>
+        </div>
+        <div className="lp-evidence-dots" role="tablist" aria-label="Example findings">
+          {EXAMPLES.map((e, n) => (
+            <button key={e.ref} type="button" role="tab" aria-selected={n === i}
+                    aria-label={`Example ${n + 1} of ${EXAMPLES.length}: ${e.to}`}
+                    className={`lp-evidence-dot ${n === i ? "is-on" : ""} ${auto && !hold ? "is-running" : ""}`}
+                    onClick={() => setI(n)}><i /></button>
+          ))}
+        </div>
+      </div>
+      <p className="lp-evidence-foot rv" style={{ "--i": 1 }}>{ex.foot}</p>
+    </>
+  );
+}
+
 export default function Landing({ onSignIn }) {
   const [zoom, setZoom] = useState(null);   // {src, alt} when a screenshot is enlarged
   const [copied, setCopied] = useState(false);
@@ -260,33 +368,7 @@ export default function Landing({ onSignIn }) {
           argument. */}
       <section className="lp-section" style={{ paddingTop: 0, paddingBottom: 0 }}>
         <div className="lp-wrap">
-          <div className="lp-evidence rv">
-            <div className="lp-evidence-head">
-              <span className="who">
-                <span className="lp-evidence-tag">BLOCKED</span>
-                <code>d.okafor@harbourline.io</code>
-                <span aria-hidden="true" style={{ color: "var(--muted-2)" }}>→</span>
-                <code>chatgpt.com</code>
-              </span>
-              <code style={{ color: "var(--muted-2)", fontSize: 12 }}>before send · finding #4471</code>
-            </div>
-            <div className="lp-evidence-body">
-              <div className="lp-evidence-prompt">
-                clean up this customer list and fix the deploy script<br />
-                <span className="dim">name,email,plan,mrr</span><br />
-                <span className="hit">j.reyes@northwind.io,enterprise,4200</span><br />
-                <span className="dim">export AWS_ACCESS_KEY_ID=</span><span className="hit">AKIA4YTGH2NBQF7XZP3K</span>
-              </div>
-              <dl className="lp-evidence-meta">
-                <div><dt>What was in it</dt><dd>An AWS access key, and 1,848 customer records</dd></div>
-                <div><dt>Where it came from</dt><dd>Q3_accounts.csv, in Google Drive</dd></div>
-                <div><dt>Caught by</dt><dd>The browser extension, before the prompt sent</dd></div>
-              </dl>
-            </div>
-          </div>
-          <p className="lp-evidence-foot rv" style={{ "--i": 1 }}>
-            A CASB logs one line: <code>user visited chatgpt.com</code>. Everything above is the part that matters.
-          </p>
+          <EvidenceCycle />
         </div>
       </section>
 
