@@ -98,11 +98,18 @@ try {
   const version = await sw.evaluate(() => chrome.runtime.getManifest().version);
   console.log(`extension ${version} loaded from ${path.relative(root, EXT)}`);
 
+  // Config goes where the extension reads it: the capture key in local storage (since 0.7.6 it
+  // is moved out of sync storage and any copy left there is ignored), the rest in sync storage.
+  const setConfig = async (c) => {
+    const { token, ...rest } = c;
+    await sw.evaluate((x) => chrome.storage.sync.set(x), rest);
+    if ("token" in c) await sw.evaluate((t) => chrome.storage.local.set({ token: t }), token);
+  };
   // One message through the extension. Returns what the person saw and whether it got out.
   async function send(label, { host = "claude.ai", text = SSN, mode = "string", ext = {}, patch = null, extraWait = 0 } = {}) {
     if (patch) await tenant(patch);
     await fetch(CTL + "/__log", { method: "DELETE" });
-    await sw.evaluate((c) => chrome.storage.sync.set(c), { backendUrl: PALI, token: key, user: "dev@demo.local", enforce: true, ...ext });
+    await setConfig({ backendUrl: PALI, token: key, user: "dev@demo.local", enforce: true, ...ext });
     await sw.evaluate(() => chrome.storage.local.set({ lastVerdict: null, lastSkip: null, blockCount: 0 }));
     const page = await ctx.newPage();
     await page.goto(`https://${host}/?mode=${mode}`);
@@ -168,6 +175,20 @@ try {
   check("an SSN past character 8,000 of a form-encoded (Gemini-style) send is still found and blocked", blocked(r), JSON.stringify(r));
   r = await send("gemini, form-encoded, short", { host: "gemini.google.com" });
   check("a short form-encoded send is blocked", blocked(r), JSON.stringify(r));
+  // A real Gemini send carries opaque ids around the typed text: an upload id, a session uuid,
+  // page state and an `at` token. Only the text is a prompt; scanning the rest read every
+  // random-looking id as a possible secret and filled the console with findings nobody caused.
+  const noisy = async () => {
+    const f = await api("GET", "/api/findings?actor=dev%40demo.local&limit=200", null, admin);
+    return (Array.isArray(f) ? f : f.findings || []).filter((x) => x.severity !== "benign").length;
+  };
+  const findingsBefore = await noisy();
+  r = await send("gemini, real shape, benign", { host: "gemini.google.com", mode: "real", text: "what_is_the_capital_of_France_today" });
+  check("a real-shaped Gemini send with a benign prompt goes out untouched", wentOut(r) && !r.banner, JSON.stringify(r));
+  const findingsAfter = await noisy();
+  check("...and its upload id, session uuid and page tokens raise no finding", findingsAfter === findingsBefore, `${findingsBefore} -> ${findingsAfter}`);
+  r = await send("gemini, real shape, ssn", { host: "gemini.google.com", mode: "real", text: SSN });
+  check("an SSN typed into a real-shaped Gemini send is still blocked", blocked(r), JSON.stringify(r));
   r = await send("long benign message", { text: pad(250000) });
   check("a long benign message goes through with no UI", wentOut(r) && !r.banner && !r.notice, JSON.stringify(r));
 
@@ -182,7 +203,7 @@ try {
 
   // an unreadable body is reported to the console as a parse-miss on this device's sensor
   const streamer = await newKey("streamer@demo.local");
-  await sw.evaluate((c) => chrome.storage.sync.set(c), { backendUrl: PALI, token: streamer, user: "streamer@demo.local", enforce: true });
+  await setConfig({ backendUrl: PALI, token: streamer, user: "streamer@demo.local", enforce: true });
   await sw.evaluate(() => chrome.storage.local.set({ lastVerdict: null, lastSkip: null, blockCount: 0 }));
   const sp = await ctx.newPage();
   await sp.goto("https://claude.ai/?mode=stream");
@@ -207,7 +228,7 @@ try {
   await ok.close(); await sp.close();
 
   // ---- 5. last: the extension is updated under an open tab ----------------------------------
-  await sw.evaluate((c) => chrome.storage.sync.set(c), { backendUrl: PALI, token: key, user: "dev@demo.local", enforce: true });
+  await setConfig({ backendUrl: PALI, token: key, user: "dev@demo.local", enforce: true });
   const tab = await ctx.newPage();
   await tab.goto("https://claude.ai/?mode=string");
   await tab.fill("#prompt", SSN);

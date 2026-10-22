@@ -21,7 +21,18 @@ document.getElementById('send').onclick = async () => {
   if (host === 'gemini.google.com') {
     // Gemini sends a form-encoded body, not JSON: the extension scans the raw text.
     url = '/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate';
-    body = new URLSearchParams({'f.req': JSON.stringify([null, JSON.stringify([[text]])])});
+    if (mode === 'real') {
+      // What gemini.google.com really sends: the typed text is only the first string of the inner
+      // array. Around it ride an image upload id, a session uuid, page state ids and an `at` token,
+      // all random-looking and none of it typed. Generated here, not written out, so the test file
+      // holds no long opaque strings.
+      const rnd = (n) => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(n)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const inner = [[text, 0, null, [[['/gg/upload_gg/' + rnd(40)], 1, null, 'image/jpeg']], null, null, 0], ['en'],
+                     ['!' + rnd(60), rnd(9), null, [1], 1, null], crypto.randomUUID(), rnd(48)];
+      body = new URLSearchParams({'f.req': JSON.stringify([null, JSON.stringify(inner)]), 'at': rnd(40) + ':' + Date.now()});
+    } else {
+      body = new URLSearchParams({'f.req': JSON.stringify([null, JSON.stringify([[text]])])});
+    }
   } else if (host === 'chatgpt.com') {
     url = '/backend-api/f/conversation';
     body = JSON.stringify({action: 'next', messages: [{id: 'm1', author: {role: 'user'}, content: {content_type: 'text', parts: [text]}}]});
