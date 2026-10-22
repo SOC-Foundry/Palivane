@@ -2083,3 +2083,23 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
   .lp-evidence-prompt .hit { animation: lp-hit 3.2s ease-in-out 2s infinite; border-radius: 3px; }
 }
 @media (max-width: 900px) { .lp-rings i { width: 520px; } }
+
+/* Cycling example findings: a row of dots under the card, the active one filling as the
+   timer runs. */
+.lp-evidence-dots { display: flex; justify-content: center; gap: 8px; padding: 14px 22px 16px;
+  border-top: 1px solid var(--border-soft); }
+.lp-evidence-dot { background: none; border: 0; padding: 8px 2px; cursor: pointer; }
+.lp-evidence-dot i { display: block; width: 34px; height: 3px; border-radius: 2px; background: var(--border);
+  position: relative; overflow: hidden; }
+.lp-evidence-dot:hover i { background: var(--muted-2); }
+.lp-evidence-dot.is-on i { background: rgba(47, 191, 143, 0.3); }
+.lp-evidence-dot.is-on i::after { content: ""; position: absolute; inset: 0; background: var(--accent-2);
+  transform-origin: left; transform: scaleX(1); }
+.lp-evidence-dot.is-on.is-running i::after { animation: lp-dot-fill 7s linear both; }
+@keyframes lp-dot-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.lp-evidence-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+@media (prefers-reduced-motion: no-preference) {
+  .lp-evidence-swap { animation: lp-evid-in .5s cubic-bezier(.2, .7, .2, 1) both; }
+}
+@keyframes lp-evid-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.lp-evidence-tag.found { color: #E3B04A; border-color: rgba(217, 166, 46, 0.45); background: rgba(217, 166, 46, 0.10); }
