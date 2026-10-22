@@ -189,6 +189,19 @@ try {
   check("...and its upload id, session uuid and page tokens raise no finding", findingsAfter === findingsBefore, `${findingsBefore} -> ${findingsAfter}`);
   r = await send("gemini, real shape, ssn", { host: "gemini.google.com", mode: "real", text: SSN });
   check("an SSN typed into a real-shaped Gemini send is still blocked", blocked(r), JSON.stringify(r));
+
+  // claude.ai's send is a Connect RPC with a protobuf body (PerformAction), not a JSON POST to
+  // /completion. The extension did not recognize the path, so it never looked at a message sent
+  // from the web app: no scan, no finding, no notice.
+  r = await send("claude rpc, ssn", { mode: "rpc", text: SSN });
+  check("an SSN sent as claude.ai's protobuf PerformAction is blocked and does not arrive", blocked(r), JSON.stringify(r));
+  r = await send("claude rpc, aws key", { mode: "rpc", text: AWS });
+  check("an AWS key sent the same way is blocked", blocked(r), JSON.stringify(r));
+  const rpcBefore = await noisy();
+  r = await send("claude rpc, benign", { mode: "rpc", text: "what_is_the_capital_of_France_today" });
+  check("a benign message sent the same way goes out untouched", wentOut(r) && !r.banner, JSON.stringify(r));
+  const rpcAfter = await noisy();
+  check("...and its conversation uuids, session id, locale and timezone raise no finding", rpcAfter === rpcBefore, `${rpcBefore} -> ${rpcAfter}`);
   r = await send("long benign message", { text: pad(250000) });
   check("a long benign message goes through with no UI", wentOut(r) && !r.banner && !r.notice, JSON.stringify(r));
 

@@ -40,6 +40,29 @@ document.getElementById('send').onclick = async () => {
     url = '/api/organizations/o1/chat_conversations/c1/completion';
     body = JSON.stringify({prompt: text, timezone: 'UTC', attachments: [], files: []});
   }
+  if (host === 'claude.ai' && mode === 'rpc') {
+    // What claude.ai really sends now: Connect RPCs with protobuf bodies. The message is one
+    // PerformAction; the others (state, no text) ride the same path. The typed text is one string
+    // field among uuids, a session id, a locale and a timezone.
+    const enc = new TextEncoder();
+    const vi = (n) => { const o = []; while (n > 127) { o.push((n & 127) | 128); n >>>= 7; } o.push(n); return o; };
+    const str = (f, v) => { const b = enc.encode(v); return [...vi((f << 3) | 2), ...vi(b.length), ...b]; };
+    const msg = (f, bytes) => [...vi((f << 3) | 2), ...vi(bytes.length), ...bytes];
+    const path = '/claudeai-rpc/anthropic.bard.api.v1alpha.ConversationService/PerformAction';
+    const head = msg(1, [...msg(1, str(1, 'sess_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16))),
+                         ...str(2, crypto.randomUUID()), ...str(14, 'en-US')]);
+    const state = new Uint8Array([...head, ...msg(15, [])]);
+    const send = new Uint8Array([...head, ...msg(2, [...str(1, crypto.randomUUID()), ...str(2, crypto.randomUUID()),
+                                 ...str(3, text), ...str(12, 'America/Chicago'), ...str(13, 'en-US')])]);
+    const rh = {'content-type': 'application/proto', 'connect-protocol-version': '1'};
+    let r;
+    try {
+      await fetch(path, {method: 'POST', headers: rh, body: state});
+      r = await fetch(path, {method: 'POST', headers: rh, body: send});
+      document.getElementById('out').textContent = 'status ' + r.status;
+    } catch (e) { document.getElementById('out').textContent = 'network error ' + e; }
+    return;
+  }
   if (body instanceof URLSearchParams) h = {};
   const out = (t) => { document.getElementById('out').textContent = t; };
   try {
