@@ -40,6 +40,8 @@ A competitor does not out-feature this; they have to rebuild every plane:
 | MCP wrapper (`cli/palivane-mcp`) | Local stdio MCP servers | Nobody else is inspecting this surface inline |
 | MCP server (`mcp-server/`) | Palivane itself, from the assistant | Product surface, not just capture |
 | Warehouse AI (`warehouse_ai`) | Snowflake Cortex, Databricks Model Serving | The prompt never leaves the warehouse — no browser, no laptop, no egress path to sit in front of |
+| At-rest scanners ([`at-rest-scanning.md`](at-rest-scanning.md)) | S3 buckets, whole GitHub orgs (on a schedule and within seconds of a push), database text columns (`palivane-dbscan`), device credentials, CI posture, plus Slack, Teams, Drive and mailbox content | Each is its own read-only integration and credential model, and detection runs where the data sits, so only masked previews reach Palivane |
+| Document lineage (`content_origin`) | A leaked prompt is matched by content overlap (sampled word-shingles, containment) to the Drive, SharePoint, Salesforce or Slack document it likely came from; a probabilistic match, not an exact source | Needs the at-rest fingerprints and the live capture planes in one place; a prompt-only tool has no source to name |
 
 The MCP planes are the sharpest wedge: local stdio MCP servers never touch the network, so
 an egress-based competitor structurally cannot see them.
@@ -83,6 +85,19 @@ workload-identity OIDC (real config burden), the analyst's quality rides the opt
 judge tier, and none of it has run against real agent traffic yet — the same one-pilot
 constraint as the rest of the doc. Claim the *architecture* (inline, identity-aware, on
 surfaces a scanner isn't in); do not yet claim a measured outcome.
+
+### The fourth claim: detection quality you can read per check
+
+Not a benchmark, a readout. Every dismissal and keep-firing review a team makes is counted
+per detection check (`app/precision.py`, `/api/precision`), so a prospect sees how often
+each check was right *on their own traffic*, and a noisy check becomes a time-limited
+allowlist (`app/allowlist.py`) instead of a muted detector. The weekly report carries the
+same numbers. This answers "how many false positives will my team triage?" with data the
+buyer generates, which no vendor's published number can.
+
+**The honest counterweight:** it is only as good as the reviews behind it, and a young
+tenant has few. It is a readout, not a measured recall or a held-out benchmark, so do not
+quote it as either.
 
 ### What is NOT the moat, and must not be claimed as one
 
@@ -213,6 +228,30 @@ fails the build when the marketing pages drift off it.
 Use that as a **trust asset**, not a liability. Very few vendors in this category can show a
 prospect a page listing what they do not cover. Showing it early converts the "what are you
 hiding" reflex into "these people are honest."
+
+### What Palivane is not (say this before the prospect assumes it)
+
+Palivane secures **the workforce's use of AI**: employees pasting into AI tools, the AI
+agents and coding assistants the company itself runs, shadow AI, and sensitive data at rest.
+Its agent identity, roles and attestation govern agents **inside a tenant**, authenticated
+through the tenant's own IdP (see `design/agent-identity-least-privilege.md`, whose
+non-goals include "becoming a general IdP").
+
+It does **not** govern **customer-side or third-party agents**: a bank customer delegating
+an agent to act on their accounts, or an outside agent calling the bank's APIs. There is no
+inbound-agent path, delegated customer consent, know-your-agent registration or
+agentic-commerce flow in the code. That is an authorization and fraud problem at the
+customer's front door, and it is a different product and buyer.
+
+What can be said truthfully to a bank that asks:
+
+- Palivane covers the bank's **own people and the bank's own agents**, and it can sit in
+  front of an AI app the bank builds for customers (prompts and tool calls, via the gateway).
+- It does **not** authenticate or limit a customer's own agent coming in from outside.
+- A thin observe-only version (show which external agents touch the bank, from its own
+  gateway or access logs) would reuse the agent-identity and findings machinery. Enforcement
+  at the bank's API edge would be a new inline product with a much higher reliability bar.
+  Neither exists today, and neither should be implied in marketing until one ships.
 
 ---
 
