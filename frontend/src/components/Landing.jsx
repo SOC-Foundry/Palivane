@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BrandClaude, BrandCursor, BrandCopilot, BrandGemini, BrandPerplexity, BrandOpenAI,
          BrandDrive, BrandSlack, BrandGit, BrandGitHub, BrandNpm, BrandActions,
          BrandSharePoint, BrandSalesforce, BrandTeams, BrandGmail,
@@ -62,6 +62,20 @@ const LINEAGE = [
     body: "The source rides along into webhooks, the SIEM export, and the report." },
 ];
 
+const FEATURES = [
+  { tab: "Visibility", title: <>You finally know which AI tools are <span className="lp-hl">in use</span></>,
+    sub: (st) => `Which AI tools your company uses, who uses them, and what data each one received, including the ones nobody approved. Checked against a catalog of ${st.catalog_tools} tools. Devices that report nothing are named, never counted as clean.`,
+    href: "/coverage", link: "What each surface requires",
+    src: "/shots/discovery.png?v=7", alt: "Inventory of AI tools in use" },
+  { tab: "Agents", title: <>AI coding assistants stay <span className="lp-hl">inside the lines</span></>,
+    sub: () => "Each assistant gets its own identity and limits, and every action is checked before it runs, not logged afterwards.",
+    href: "/use-cases#engineering", link: "How engineering teams use it",
+    src: "/shots/agents.png?v=7", alt: "AI assistant identity and limits" },
+  { tab: "Trust", title: <>Know how often each check is <span className="lp-hl">right</span></>,
+    sub: () => "One-click reviews become a readout per check, and the noisy ones become a time-limited allowlist.",
+    src: "/shots/precision.png?v=1", alt: "Detection precision: how often each check was right" },
+];
+
 const INSTALL_CMD = "curl -fsSL https://app.palivane.io/install.sh | bash";
 
 const MCP_ASKS = [
@@ -109,6 +123,53 @@ function ConsoleCta({ onSignIn }) {
 }
 
 
+// Scroll-driven reveal. The hiding class is only added once this runs, so a visitor without
+// JavaScript (or with reduced motion) gets the whole page, never a blank one.
+function useReveal(rootRef) {
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return undefined;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || !("IntersectionObserver" in window)) return undefined;
+    root.classList.add("js-rv");
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting) { e.target.classList.add("rv-in"); io.unobserve(e.target); }
+      }
+    }, { threshold: 0.12, rootMargin: "0px 0px -6% 0px" });
+    root.querySelectorAll(".rv").forEach((el) => io.observe(el));
+    return () => { io.disconnect(); root.classList.remove("js-rv"); };
+  }, [rootRef]);
+}
+
+// Counts a whole number up the first time it scrolls into view. Anything else renders as is.
+function CountUp({ value }) {
+  const ref = useRef(null);
+  const target = /^\d+$/.test(String(value)) ? Number(value) : null;
+  const [n, setN] = useState(target);
+  useEffect(() => {
+    const el = ref.current;
+    if (target === null || target < 3 || !el || !("IntersectionObserver" in window)
+        || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return undefined;
+    let raf = 0;
+    const io = new IntersectionObserver(([e]) => {
+      if (!e.isIntersecting) return;
+      io.disconnect();
+      const t0 = performance.now();
+      const tick = (t) => {
+        const k = Math.min(1, (t - t0) / 900);
+        setN(Math.round(target * (1 - Math.pow(1 - k, 3))));
+        if (k < 1) raf = requestAnimationFrame(tick);
+      };
+      setN(0);
+      raf = requestAnimationFrame(tick);
+    }, { threshold: 0.6 });
+    io.observe(el);
+    return () => { io.disconnect(); cancelAnimationFrame(raf); };
+  }, [target]);
+  return <span ref={ref}>{n ?? value}</span>;
+}
+
 export default function Landing({ onSignIn }) {
   const [zoom, setZoom] = useState(null);   // {src, alt} when a screenshot is enlarged
   const [copied, setCopied] = useState(false);
@@ -139,8 +200,11 @@ export default function Landing({ onSignIn }) {
   const [openQ, setOpenQ] = useState(0);
   const [surf, setSurf] = useState(0);
   const [step, setStep] = useState(0);
+  const [feat, setFeat] = useState(0);
+  const rootRef = useRef(null);
+  useReveal(rootRef);
   return (
-    <div className="landing lp-atmos">
+    <div className="landing lp-atmos" ref={rootRef}>
       <Lightbox src={zoom?.src} alt={zoom?.alt} onClose={() => setZoom(null)} />
       <SiteNav onSignIn={onSignIn} />
 
@@ -195,7 +259,7 @@ export default function Landing({ onSignIn }) {
           argument. */}
       <section className="lp-section" style={{ paddingTop: 0, paddingBottom: 0 }}>
         <div className="lp-wrap">
-          <div className="lp-evidence">
+          <div className="lp-evidence rv">
             <div className="lp-evidence-head">
               <span className="who">
                 <span className="lp-evidence-tag">BLOCKED</span>
@@ -219,7 +283,7 @@ export default function Landing({ onSignIn }) {
               </dl>
             </div>
           </div>
-          <p className="lp-evidence-foot">
+          <p className="lp-evidence-foot rv" style={{ "--i": 1 }}>
             A CASB logs one line: <code>user visited chatgpt.com</code>. Everything above is the part that matters.
           </p>
         </div>
@@ -228,8 +292,8 @@ export default function Landing({ onSignIn }) {
       <section className="lp-stats-band">
         <div className="lp-wrap lp-stats">
           {STATS.map((s) => (
-            <div key={s.l} className="lp-stat">
-              <span className="lp-stat-n">{s.n}</span>
+            <div key={s.l} className="lp-stat rv" style={{ "--i": STATS.indexOf(s) }}>
+              <span className="lp-stat-n"><CountUp value={s.n} /></span>
               <span className="lp-stat-l">{s.l}</span>
             </div>
           ))}
@@ -238,71 +302,56 @@ export default function Landing({ onSignIn }) {
 
       <section className="lp-section">
         <div className="lp-wrap lp-split">
-          <div className="lp-split-text">
+          <div className="lp-split-text rv">
             <span className="lp-eyebrow">See it work</span>
             <h2 className="lp-h2">The same secret, stopped <span className="lp-hl">eight times</span></h2>
             <p className="lp-sub">A hundred-second tour: the browser, coding tools, S3, and CI,
               then every screen it lands in.</p>
             <a className="lp-textlink" href="/how-it-works">How the detection works →</a>
           </div>
-          <div className="lp-split-media">
+          <div className="lp-split-media rv" style={{ "--i": 1 }}>
             <Clip src="/shots/demo18.mp4" poster="/shots/demo-poster18.png" />
           </div>
         </div>
       </section>
 
+      {/* Visibility, agents and trust were three full-height splits in a row. One section
+          with a choice of three keeps every screenshot and every claim and saves two screens. */}
       <section className="lp-section alt">
-        <div className="lp-wrap lp-split lp-split-rev">
-          <div className="lp-split-text">
-            <span className="lp-eyebrow">Visibility</span>
-            <h2 className="lp-h2">You finally know which AI tools are <span className="lp-hl">in use</span></h2>
-            <p className="lp-sub">Which AI tools your company uses, who uses them, and what data
-              each one received, including the ones nobody approved. Checked against a catalog of{" "}
-              {stats.catalog_tools} tools. Devices that report nothing are named, never counted as
-              clean.</p>
-            <a className="lp-textlink" href="/coverage">What each surface requires →</a>
+        <div className="lp-wrap">
+          <div className="lp-band-head rv">
+            <span className="lp-eyebrow">The console</span>
+            <h2 className="lp-h2">What you get once it is <span className="lp-hl">running</span></h2>
           </div>
-          <div className="lp-split-media">
-            <Shot src="/shots/discovery.png?v=7" alt="Inventory of AI tools in use"
-                  onZoom={(s, a) => setZoom({ src: s, alt: a })} />
+          <div className="lp-steptabs lp-feattabs rv" role="tablist" style={{ "--i": 1 }}>
+            {FEATURES.map((f, i) => (
+              <button key={f.tab} type="button" role="tab" id={`feat-tab-${i}`}
+                      aria-selected={feat === i} aria-controls="feat-panel"
+                      className={`lp-steptab ${feat === i ? "is-on" : ""}`}
+                      onClick={() => setFeat(i)}>
+                <span className="lp-tab-n">{String(i + 1).padStart(2, "0")}</span>{f.tab}
+              </button>
+            ))}
+          </div>
+          <div className="lp-split lp-feat-panel" role="tabpanel" id="feat-panel" key={feat}
+               aria-labelledby={`feat-tab-${feat}`}>
+            <div className="lp-split-text">
+              <h3 className="lp-h2 lp-h3">{FEATURES[feat].title}</h3>
+              <p className="lp-sub">{FEATURES[feat].sub(stats)}</p>
+              {FEATURES[feat].href
+                ? <a className="lp-textlink" href={FEATURES[feat].href}>{FEATURES[feat].link} →</a> : null}
+            </div>
+            <div className="lp-split-media">
+              <Shot src={FEATURES[feat].src} alt={FEATURES[feat].alt}
+                    onZoom={(s, a) => setZoom({ src: s, alt: a })} />
+            </div>
           </div>
         </div>
       </section>
 
       <section className="lp-section">
         <div className="lp-wrap lp-split">
-          <div className="lp-split-text">
-            <span className="lp-eyebrow">Agents</span>
-            <h2 className="lp-h2">AI coding assistants stay <span className="lp-hl">inside the lines</span></h2>
-            <p className="lp-sub">Each assistant gets its own identity and limits, and every action
-              is checked before it runs, not logged afterwards.</p>
-            <a className="lp-textlink" href="/use-cases#engineering">How engineering teams use it →</a>
-          </div>
-          <div className="lp-split-media">
-            <Shot src="/shots/agents.png?v=7" alt="AI assistant identity and limits"
-                  onZoom={(s, a) => setZoom({ src: s, alt: a })} />
-          </div>
-        </div>
-      </section>
-
-      <section className="lp-section alt">
-        <div className="lp-wrap lp-split lp-split-rev">
-          <div className="lp-split-text">
-            <span className="lp-eyebrow">Trust</span>
-            <h2 className="lp-h2">Know how often each check is <span className="lp-hl">right</span></h2>
-            <p className="lp-sub">One-click reviews become a readout per check, and the noisy ones
-              become a time-limited allowlist.</p>
-          </div>
-          <div className="lp-split-media">
-            <Shot src="/shots/precision.png?v=1" alt="Detection precision: how often each check was right"
-                  onZoom={(s, a) => setZoom({ src: s, alt: a })} />
-          </div>
-        </div>
-      </section>
-
-      <section className="lp-section">
-        <div className="lp-wrap lp-split">
-          <div className="lp-split-text">
+          <div className="lp-split-text rv">
             <span className="lp-eyebrow">Headless</span>
             <h2 className="lp-h2">Run it from your <span className="lp-hl">own AI assistant</span></h2>
             <p className="lp-sub">Nobody wants another dashboard. Palivane ships an MCP server,
@@ -315,7 +364,7 @@ export default function Landing({ onSignIn }) {
             </ul>
             <a className="lp-textlink" href="https://github.com/SOC-Foundry/palivane-clients/tree/main/mcp-server">Wire it into Claude Code or Desktop →</a>
           </div>
-          <div className="lp-split-media">
+          <div className="lp-split-media rv" style={{ "--i": 1 }}>
             <Clip src="/shots/mcp-demo.mp4?v=2" poster="/shots/mcp-demo-poster.png"
                   caption="Working the triage queue from Claude, without opening the console." />
           </div>
@@ -324,12 +373,12 @@ export default function Landing({ onSignIn }) {
 
       <section className="lp-section alt">
         <div className="lp-wrap">
-          <div className="lp-band-head">
+          <div className="lp-band-head rv">
             <h2 className="lp-h2">It works wherever your team <span className="lp-hl">uses AI</span></h2>
             <p className="lp-sub">Everything lands in one console. Only desktop apps need a system
               proxy and a certificate, so start without them.</p>
           </div>
-          <div className="lp-tabs">
+          <div className="lp-tabs rv" style={{ "--i": 1 }}>
             <div className="lp-tablist" role="tablist" aria-orientation="vertical">
               {CAPTURE.map((c, i) => (
                 <button key={c.title} type="button" role="tab" id={`surf-tab-${i}`}
@@ -340,7 +389,7 @@ export default function Landing({ onSignIn }) {
                 </button>
               ))}
             </div>
-            <div className="lp-tabpanel" role="tabpanel" id="surf-panel"
+            <div className="lp-tabpanel" role="tabpanel" id="surf-panel" key={surf}
                  aria-labelledby={`surf-tab-${surf}`}>
               <span className="lp-card-logos">
                 {CAPTURE[surf].logos.map(([Logo, color], i) => <Logo key={i} style={{ color }} />)}
@@ -358,14 +407,14 @@ export default function Landing({ onSignIn }) {
           alone could not fix. */}
       <section className="lp-section">
         <div className="lp-wrap">
-          <div className="lp-band-head">
+          <div className="lp-band-head rv">
             <span className="lp-eyebrow">Lineage</span>
             <h2 className="lp-h2">Not just what leaked. Which document it came out of.</h2>
             <p className="lp-sub">Palivane fingerprints every document it scans in Drive,
               SharePoint, Salesforce, Slack, and Teams. When that text turns up in a prompt later,
               the finding names the source.</p>
           </div>
-          <div className="lp-steps-tabs">
+          <div className="lp-steps-tabs rv" style={{ "--i": 1 }}>
             <div className="lp-steptabs" role="tablist">
               {LINEAGE.map((l, i) => (
                 <button key={l.title} type="button" role="tab" id={`lin-tab-${i}`}
@@ -376,12 +425,12 @@ export default function Landing({ onSignIn }) {
                 </button>
               ))}
             </div>
-            <div className="lp-tabpanel lp-steppanel" role="tabpanel" id="lin-panel"
+            <div className="lp-tabpanel lp-steppanel" role="tabpanel" id="lin-panel" key={step}
                  aria-labelledby={`lin-tab-${step}`}>
               <p>{LINEAGE[step].body}</p>
             </div>
           </div>
-          <div style={{ marginTop: 40 }}>
+          <div className="rv" style={{ marginTop: 40 }}>
             <Shot src="/shots/dashboard.png?v=8" alt="Exposure view: one document, everywhere it surfaced"
                   caption="Start from a document instead of a finding."
                   onZoom={(s, a) => setZoom({ src: s, alt: a })} />
@@ -391,16 +440,15 @@ export default function Landing({ onSignIn }) {
       </section>
 
       <section className="lp-section alt">
-        <div className="lp-wrap lp-split lp-split-narrow">
-          <div className="lp-split-text sticky">
+        <div className="lp-wrap">
+          <div className="lp-band-head rv">
             <span className="lp-eyebrow">Detection</span>
             <h2 className="lp-h2">What Palivane looks for</h2>
             <p className="lp-sub">Deterministic rules, run {SELF_HOSTED ? "inside your own deployment"
               : "on your Palivane backend"} in milliseconds. One risk score decides: allow,
-              warn, or block.</p>
-            <a className="lp-textlink" href="/how-it-works">The scoring model →</a>
+              warn, or block. <a className="lp-textlink" href="/how-it-works">The scoring model →</a></p>
           </div>
-          <ul className="lp-checklist">
+          <ul className="lp-checklist lp-checklist-grid rv" style={{ "--i": 1 }}>
             {LOOKS_FOR.map((s) => (
               <li key={s.title}>
                 <h3>{s.title}</h3>
@@ -413,10 +461,10 @@ export default function Landing({ onSignIn }) {
 
       <section className="lp-section alt">
         <div className="lp-wrap lp-faq-wrap">
-          <div className="lp-band-head">
+          <div className="lp-band-head rv">
             <h2 className="lp-h2">Questions people ask first</h2>
           </div>
-          <div className="lp-faq">
+          <div className="lp-faq rv" style={{ "--i": 1 }}>
             {FAQ.map((f, i) => (
               <div key={f.q} className={`lp-faq-item ${openQ === i ? "is-open" : ""}`}>
                 <button type="button" className="lp-faq-q" aria-expanded={openQ === i}
@@ -433,7 +481,7 @@ export default function Landing({ onSignIn }) {
 
       <section className="lp-cta-band">
         <div className="lp-wrap">
-          <div className="lp-closing">
+          <div className="lp-closing rv">
             <h2>Start by <span className="lp-hl">watching.</span></h2>
             <p>Run it in monitor mode, then switch on blocking when you have seen enough.</p>
             {/* The one place on the landing page with a route to a human. The hero stays

@@ -1171,7 +1171,7 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 .lp-cta .primary-btn.slim { padding: 14px 28px; font-size: 15px; }
 .lp-cta-note { font-size: 13px; color: var(--muted-2); margin-top: 18px; font-weight: 500; }
 
-.lp-section { padding: 120px 0; }
+.lp-section { padding: 96px 0; }
 .lp-section { position: relative; }
 .lp-section.alt {
   background: transparent;
@@ -1977,4 +1977,58 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
   .lp-tabs { grid-template-columns: 1fr; }
   .lp-steptabs { grid-template-columns: 1fr 1fr; }
   .lp-tabpanel { padding: 26px 24px; }
+}
+
+/* Detection checks as a grid rather than one long column. */
+.lp-checklist-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.lp-checklist-grid li:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.lp-feattabs { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 28px; }
+.lp-feat-panel { animation: lp-tab-in .45s cubic-bezier(.2, .7, .2, 1) both; }
+.lp-h3 { font-size: 34px; }
+@media (max-width: 900px) {
+  .lp-checklist-grid { grid-template-columns: 1fr; }
+  .lp-feattabs { grid-template-columns: 1fr; }
+  .lp-h3 { font-size: 28px; }
+}
+
+/* ---- Motion. Everything below is switched off under prefers-reduced-motion. ---- */
+@keyframes lp-rise { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+@keyframes lp-tab-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes lp-bloom {
+  0%   { transform: translateX(-50%) scale(1);    opacity: 0.85; }
+  50%  { transform: translateX(-46%) scale(1.08); opacity: 1; }
+  100% { transform: translateX(-54%) scale(1.03); opacity: 0.8; }
+}
+@keyframes lp-grid-drift { from { background-position: 0 0, 0 0; } to { background-position: 56px 56px, 56px 56px; } }
+@keyframes lp-glint { 0%, 70% { background-position: 160% 0; } 100% { background-position: -60% 0; } }
+
+@media (prefers-reduced-motion: no-preference) {
+  .lp-hero > * { animation: lp-rise .8s cubic-bezier(.2, .7, .2, 1) both; }
+  .lp-hero > :nth-child(1) { animation-delay: .05s; }
+  .lp-hero > :nth-child(2) { animation-delay: .15s; }
+  .lp-hero > :nth-child(3) { animation-delay: .27s; }
+  .lp-hero > :nth-child(4) { animation-delay: .38s; }
+  .lp-hero > :nth-child(5) { animation-delay: .5s; }
+  .lp-hero-wrap::before { animation: lp-bloom 16s ease-in-out infinite alternate; }
+  .lp-hero-wrap::after { animation: lp-grid-drift 40s linear infinite; }
+  .lp-hero h1 .lp-hl {
+    background: linear-gradient(100deg, var(--accent-2) 30%, #c9ffe9 48%, var(--accent-2) 66%);
+    background-size: 220% 100%; -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; animation: lp-glint 6s ease-in-out 1.2s infinite;
+  }
+
+  .js-rv .rv {
+    opacity: 0; transform: translateY(30px);
+    transition: opacity .8s cubic-bezier(.2, .7, .2, 1), transform .8s cubic-bezier(.2, .7, .2, 1);
+    transition-delay: calc(var(--i, 0) * 110ms);
+  }
+  .js-rv .rv.rv-in { opacity: 1; transform: none; }
+
+  .lp-tabpanel > * { animation: lp-tab-in .4s cubic-bezier(.2, .7, .2, 1) both; }
+  .lp-tabpanel > :nth-child(2) { animation-delay: .05s; }
+  .lp-tabpanel > :nth-child(3) { animation-delay: .1s; }
+  .lp-tab, .lp-steptab { transition: border-color .2s, background .2s, color .2s, transform .2s; }
+  .lp-tab:hover, .lp-steptab:hover { transform: translateX(3px); }
+  .lp-checklist li { transition: background .2s; }
+  .lp-checklist li:hover { background: var(--panel-2); }
 }
