@@ -13,6 +13,9 @@ PAGE = """<!doctype html><meta charset=utf-8><title>%(host)s</title>
 <textarea id=prompt rows=3 cols=60></textarea><button id=send>Send</button><pre id=out></pre>
 <script>
 const host = location.hostname;
+window.__modals = 0;   // how many times the extension put its block popup on the page
+new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.id === 'palivane-modal') window.__modals++; })))
+  .observe(document.documentElement, {childList: true, subtree: true});
 const mode = new URLSearchParams(location.search).get('mode') || 'string';
 document.getElementById('send').onclick = async () => {
   const text = document.getElementById('prompt').value;
@@ -40,7 +43,7 @@ document.getElementById('send').onclick = async () => {
     url = '/api/organizations/o1/chat_conversations/c1/completion';
     body = JSON.stringify({prompt: text, timezone: 'UTC', attachments: [], files: []});
   }
-  if (host === 'claude.ai' && mode === 'rpc') {
+  if (host === 'claude.ai' && (mode === 'rpc' || mode === 'rpc-retry')) {
     // What claude.ai really sends now: Connect RPCs with protobuf bodies. The message is one
     // PerformAction; the others (state, no text) ride the same path. The typed text is one string
     // field among uuids, a session id, a locale and a timezone.
@@ -59,7 +62,16 @@ document.getElementById('send').onclick = async () => {
     try {
       await fetch(path, {method: 'POST', headers: rh, body: state});
       r = await fetch(path, {method: 'POST', headers: rh, body: send});
-      document.getElementById('out').textContent = 'status ' + r.status;
+      if (mode === 'rpc-retry') {
+        // claude.ai treats a failed send as transient and retries it on a growing backoff.
+        let attempts = 1, code = '';
+        while (!r.ok && attempts < 8) {
+          try { code = (await r.clone().json()).code || ''; } catch (e) {}
+          await new Promise((res) => setTimeout(res, 120 * attempts));
+          r = await fetch(path, {method: 'POST', headers: rh, body: send}); attempts++;
+        }
+        document.getElementById('out').textContent = 'status ' + r.status + ' attempts ' + attempts + ' code ' + code;
+      } else document.getElementById('out').textContent = 'status ' + r.status;
     } catch (e) { document.getElementById('out').textContent = 'network error ' + e; }
     return;
   }

@@ -197,6 +197,31 @@ try {
   check("an SSN sent as claude.ai's protobuf PerformAction is blocked and does not arrive", blocked(r), JSON.stringify(r));
   r = await send("claude rpc, aws key", { mode: "rpc", text: AWS });
   check("an AWS key sent the same way is blocked", blocked(r), JSON.stringify(r));
+  // claude.ai retries a send it was told failed, on a backoff. One blocked message used to put up a
+  // popup per retry, and re-scanned each one, so the popup would not stop.
+  {
+    await setConfig({ backendUrl: PALI, token: key, user: "dev@demo.local", enforce: true });
+    const page = await ctx.newPage();
+    const piiScans = async () => {
+      const f = await api("GET", "/api/findings?actor=dev%40demo.local&limit=100", null, admin);
+      return (Array.isArray(f) ? f : f.findings || [])
+        .filter((x) => /personal|pii/i.test(JSON.stringify(x.categories || []) + JSON.stringify(x.top_signals || [])))
+        .reduce((n, x) => n + (x.seen_count || 1), 0);
+    };
+    const scansBefore = await piiScans();
+    await page.goto("https://claude.ai/?mode=rpc-retry");
+    await page.fill("#prompt", "retry storm 123-12-1234");
+    await page.click("#send");
+    await page.waitForFunction(() => /attempts/.test(document.getElementById("out").textContent), null, { timeout: 30000 });
+    await page.waitForTimeout(600);
+    const out = await page.locator("#out").innerText();
+    const popups = await page.evaluate(() => window.__modals);
+    const scans = (await piiScans()) - scansBefore;
+    await page.close();
+    check("a blocked send the page retries 8 times puts up one popup, not one per retry", popups === 1, `popups=${popups} ${out}`);
+    check("...every retry is answered as a final Connect error (403, permission_denied)", /status 403 .*code permission_denied/.test(out), out);
+    check("...and the retries are not each scanned again (8 sends, at most 2 scans)", scans >= 1 && scans <= 2, `scans for the storm: ${scans}`);
+  }
   const rpcBefore = await noisy();
   r = await send("claude rpc, benign", { mode: "rpc", text: "what_is_the_capital_of_France_today" });
   check("a benign message sent the same way goes out untouched", wentOut(r) && !r.banner, JSON.stringify(r));
@@ -252,7 +277,7 @@ try {
   await sw.evaluate(() => setTimeout(() => chrome.runtime.reload(), 50)).catch(() => {});
   await sleep(2500);
   await fetch(CTL + "/__log", { method: "DELETE" });
-  await tab.fill("#prompt", SSN);
+  await tab.fill("#prompt", SSN + " again, in new words");   // not the same send as the one just stopped
   await tab.click("#send");
   await tab.waitForTimeout(1500);
   const after = await tab.evaluate(() => document.getElementById("palivane-notice")?.innerText?.replace(/\s+/g, " ") || "");
