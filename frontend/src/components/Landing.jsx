@@ -137,6 +137,8 @@ export default function Landing({ onSignIn }) {
     }
   };
   const [openQ, setOpenQ] = useState(0);
+  const [surf, setSurf] = useState(0);
+  const [step, setStep] = useState(0);
   return (
     <div className="landing lp-atmos">
       <Lightbox src={zoom?.src} alt={zoom?.alt} onClose={() => setZoom(null)} />
@@ -145,7 +147,7 @@ export default function Landing({ onSignIn }) {
       <section className="lp-hero-wrap">
         <div className="lp-hero">
           <div className="lp-tagline">AI SECURITY FOR THE TOOLS YOUR TEAM ALREADY USES</div>
-          <h1>Your secrets shouldn't leave with the prompt.</h1>
+          <h1>Your secrets shouldn't leave with the <span className="lp-hl">prompt.</span></h1>
           <p className="lp-lead">
             Palivane stops the <strong>passwords, customer data, and source code</strong> your
             team pastes into ChatGPT, Claude, Copilot, and AI coding assistants.
@@ -238,7 +240,7 @@ export default function Landing({ onSignIn }) {
         <div className="lp-wrap lp-split">
           <div className="lp-split-text">
             <span className="lp-eyebrow">See it work</span>
-            <h2 className="lp-h2">The same secret, stopped eight times</h2>
+            <h2 className="lp-h2">The same secret, stopped <span className="lp-hl">eight times</span></h2>
             <p className="lp-sub">A hundred-second tour: the browser, coding tools, S3, and CI,
               then every screen it lands in.</p>
             <a className="lp-textlink" href="/how-it-works">How the detection works →</a>
@@ -253,7 +255,7 @@ export default function Landing({ onSignIn }) {
         <div className="lp-wrap lp-split lp-split-rev">
           <div className="lp-split-text">
             <span className="lp-eyebrow">Visibility</span>
-            <h2 className="lp-h2">You finally know which AI tools are in use</h2>
+            <h2 className="lp-h2">You finally know which AI tools are <span className="lp-hl">in use</span></h2>
             <p className="lp-sub">Which AI tools your company uses, who uses them, and what data
               each one received, including the ones nobody approved. Checked against a catalog of{" "}
               {stats.catalog_tools} tools. Devices that report nothing are named, never counted as
@@ -271,7 +273,7 @@ export default function Landing({ onSignIn }) {
         <div className="lp-wrap lp-split">
           <div className="lp-split-text">
             <span className="lp-eyebrow">Agents</span>
-            <h2 className="lp-h2">AI coding assistants stay inside the lines</h2>
+            <h2 className="lp-h2">AI coding assistants stay <span className="lp-hl">inside the lines</span></h2>
             <p className="lp-sub">Each assistant gets its own identity and limits, and every action
               is checked before it runs, not logged afterwards.</p>
             <a className="lp-textlink" href="/use-cases#engineering">How engineering teams use it →</a>
@@ -287,7 +289,7 @@ export default function Landing({ onSignIn }) {
         <div className="lp-wrap lp-split lp-split-rev">
           <div className="lp-split-text">
             <span className="lp-eyebrow">Trust</span>
-            <h2 className="lp-h2">Know how often each check is right</h2>
+            <h2 className="lp-h2">Know how often each check is <span className="lp-hl">right</span></h2>
             <p className="lp-sub">One-click reviews become a readout per check, and the noisy ones
               become a time-limited allowlist.</p>
           </div>
@@ -302,7 +304,7 @@ export default function Landing({ onSignIn }) {
         <div className="lp-wrap lp-split">
           <div className="lp-split-text">
             <span className="lp-eyebrow">Headless</span>
-            <h2 className="lp-h2">Run it from your own AI assistant</h2>
+            <h2 className="lp-h2">Run it from your <span className="lp-hl">own AI assistant</span></h2>
             <p className="lp-sub">Nobody wants another dashboard. Palivane ships an MCP server,
               so you can ask Claude what leaked today, triage a finding, or pull a report, without
               opening the console.</p>
@@ -323,21 +325,30 @@ export default function Landing({ onSignIn }) {
       <section className="lp-section alt">
         <div className="lp-wrap">
           <div className="lp-band-head">
-            <h2 className="lp-h2">It works wherever your team uses AI</h2>
+            <h2 className="lp-h2">It works wherever your team <span className="lp-hl">uses AI</span></h2>
             <p className="lp-sub">Everything lands in one console. Only desktop apps need a system
               proxy and a certificate, so start without them.</p>
           </div>
-          <div className="lp-cards lp-cards-5">
-            {CAPTURE.map((c) => (
-              <div key={c.title} className="lp-card">
-                <span className="lp-card-logos">
-                  {c.logos.map(([Logo, color], i) => <Logo key={i} style={{ color }} />)}
-                  {c.more ? <span className="lp-more" title={`+${c.more} more`}>+{c.more}</span> : null}
-                </span>
-                <h3>{c.title}</h3>
-                <p>{c.body}</p>
-              </div>
-            ))}
+          <div className="lp-tabs">
+            <div className="lp-tablist" role="tablist" aria-orientation="vertical">
+              {CAPTURE.map((c, i) => (
+                <button key={c.title} type="button" role="tab" id={`surf-tab-${i}`}
+                        aria-selected={surf === i} aria-controls="surf-panel"
+                        className={`lp-tab ${surf === i ? "is-on" : ""}`}
+                        onClick={() => setSurf(i)}>
+                  <span className="lp-tab-n">{String(i + 1).padStart(2, "0")}</span>{c.title}
+                </button>
+              ))}
+            </div>
+            <div className="lp-tabpanel" role="tabpanel" id="surf-panel"
+                 aria-labelledby={`surf-tab-${surf}`}>
+              <span className="lp-card-logos">
+                {CAPTURE[surf].logos.map(([Logo, color], i) => <Logo key={i} style={{ color }} />)}
+                {CAPTURE[surf].more ? <span className="lp-more">+{CAPTURE[surf].more}</span> : null}
+              </span>
+              <h3>{CAPTURE[surf].title}</h3>
+              <p>{CAPTURE[surf].body}</p>
+            </div>
           </div>
         </div>
       </section>
@@ -354,14 +365,21 @@ export default function Landing({ onSignIn }) {
               SharePoint, Salesforce, Slack, and Teams. When that text turns up in a prompt later,
               the finding names the source.</p>
           </div>
-          <div className="lp-trace">
-            {LINEAGE.map((s, i) => (
-              <div key={s.title}>
-                <div className="n">{String(i + 1).padStart(2, "0")}</div>
-                <h3>{s.title}</h3>
-                <p>{s.body}</p>
-              </div>
-            ))}
+          <div className="lp-steps-tabs">
+            <div className="lp-steptabs" role="tablist">
+              {LINEAGE.map((l, i) => (
+                <button key={l.title} type="button" role="tab" id={`lin-tab-${i}`}
+                        aria-selected={step === i} aria-controls="lin-panel"
+                        className={`lp-steptab ${step === i ? "is-on" : ""}`}
+                        onClick={() => setStep(i)}>
+                  <span className="lp-tab-n">{String(i + 1).padStart(2, "0")}</span>{l.title}
+                </button>
+              ))}
+            </div>
+            <div className="lp-tabpanel lp-steppanel" role="tabpanel" id="lin-panel"
+                 aria-labelledby={`lin-tab-${step}`}>
+              <p>{LINEAGE[step].body}</p>
+            </div>
           </div>
           <div style={{ marginTop: 40 }}>
             <Shot src="/shots/dashboard.png?v=8" alt="Exposure view: one document, everywhere it surfaced"
@@ -416,7 +434,7 @@ export default function Landing({ onSignIn }) {
       <section className="lp-cta-band">
         <div className="lp-wrap">
           <div className="lp-closing">
-            <h2>Start by watching.</h2>
+            <h2>Start by <span className="lp-hl">watching.</span></h2>
             <p>Run it in monitor mode, then switch on blocking when you have seen enough.</p>
             {/* The one place on the landing page with a route to a human. The hero stays
                 two self-serve CTAs on purpose; someone who has read to the bottom and
