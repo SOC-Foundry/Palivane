@@ -101,6 +101,8 @@ def _too_many_failures(ip: str) -> bool:
 
 
 def _note_failure(ip: str) -> None:
+    from .metrics import WEBHOOK_VERIFY_FAILURES
+    WEBHOOK_VERIFY_FAILURES.labels("github").inc()
     with _SEEN_LOCK:
         _FAILS.setdefault(ip, []).append(time.time())
 
