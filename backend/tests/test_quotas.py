@@ -52,6 +52,9 @@ def test_api_key_quota_blocks_create_and_enroll(client, raw_client, monkeypatch)
 
 def test_daily_ingest_quota(client, raw_client, monkeypatch):
     _set_quota(monkeypatch, ingest_per_day=2)
+    # Pinned clock: three requests either side of midnight UTC would count against two days.
+    from datetime import datetime
+    monkeypatch.setattr(metering, "_now", lambda: datetime(2026, 1, 1, 12, 0, 30))
     key = client.post("/api/apikeys", json={"label": "ext", "actor": "e@acme.com"}).json()["token"]
     payload = {"content": "hello", "destination": "https://chatgpt.com/"}
     hdrs = {"X-Palivane-Token": key}
