@@ -56,6 +56,12 @@ variable "gateway_enforce" {
   default = false # monitor by default; confirmed secret/PII leaks still hard-block
 }
 
+variable "client_enforce" {
+  type    = bool
+  default = null # unset: not written, so hooks stay on the app default (monitor). Setting it
+  # flips every tenant's devices that have no local flag or Settings override.
+}
+
 variable "allow_signup" {
   type    = bool
   default = false # OFF unless you intend an open multi-tenant deployment

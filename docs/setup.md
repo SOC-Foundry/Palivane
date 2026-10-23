@@ -182,7 +182,7 @@ pip install -r requirements.txt
 
 cp .env.example .env          # optional, set ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY for the judge
 python -m app.seed            # optional, demo tenant + admin + sample findings, a month of triage and the org around them
-uvicorn app.main:app --reload --port 8088
+PALIVANE_ALLOW_DEV_KEY=1 uvicorn app.main:app --reload --port 8088   # local dev only: allows the dev key on SQLite
 ```
 
 - API docs: **http://localhost:8088/docs**

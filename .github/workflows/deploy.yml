@@ -57,6 +57,10 @@ jobs:
           NO_UNAUTH: "1"
           # Posture + fronting — set as repo/environment variables (not secrets; non-sensitive).
           GATEWAY_ENFORCE: ${{ vars.GATEWAY_ENFORCE }}
+          # Hook/proxy default for devices with no local flag. Unset repo variable = not
+          # passed to the service (stays monitor). Setting it flips every tenant's
+          # unflagged devices that have no Settings override: a product decision.
+          CLIENT_ENFORCE: ${{ vars.CLIENT_ENFORCE }}
           JUDGE_PROVIDER: ${{ vars.JUDGE_PROVIDER }}
           JUDGE_MODEL: ${{ vars.JUDGE_MODEL }}
           PALIVANE_JUDGE_PLAN_GATED: ${{ vars.PALIVANE_JUDGE_PLAN_GATED }}

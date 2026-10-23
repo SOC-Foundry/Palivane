@@ -30,6 +30,13 @@ gcloud builds submit --project "$PROJECT_ID" \
 # "|"-separated (passed as ^|^...) so values may contain commas (PALIVANE_ALLOWED_HOSTS) AND
 # "@" (SMTP_USER/MAIL_FROM email addresses). "|" appears in none of the values.
 ENV_VARS="GATEWAY_ENFORCE=${GATEWAY_ENFORCE:-true}"
+# Default stance for the local capture planes (CLI hooks, desktop proxy) on a device with
+# no local flag, where the tenant has not chosen one in Settings. Deliberately NOT given a
+# default here, unlike GATEWAY_ENFORCE: the app default is monitor, and a value written by
+# this script would flip every such device of every tenant at once. Threaded only when set
+# (and --update-env-vars merges, so an unset value leaves whatever the service already
+# has). Turning hosted hooks to enforce is a product decision, not a deploy default.
+[ -n "${CLIENT_ENFORCE:-}" ] && ENV_VARS+="|CLIENT_ENFORCE=${CLIENT_ENFORCE}"
 # Build identity (the image tag = git short sha). Served at /cli/manifest.json so devices
 # can tell whether their installed hooks/addon are current, and shown in the Fleet view.
 ENV_VARS+="|PALIVANE_VERSION=${TAG}"
