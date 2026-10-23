@@ -1767,10 +1767,12 @@ def _parse_agent_ua(ua: str) -> tuple[str, str]:
 
 
 # The reasons a capture client may give for a scan that failed open (SEC-01). Mirrors
-# _FAILOPEN_REASONS in the hooks and the proxy; anything else is dropped.
+# _FAILOPEN_REASONS in the hooks and the proxy; anything else is dropped. "update-failed" is
+# not a scan: palivane-desktop's addon updater writes it into the proxy's ledger when a
+# verified new addon would not load and it put the previous one back.
 _SCAN_FAIL_REASONS = frozenset({"timeout", "network", "server-error", "auth-rejected",
                                 "rate-limited", "http-error", "bad-response", "breaker-open",
-                                "error"})
+                                "error", "update-failed"})
 _SCAN_FAIL_MAX = 1_000_000
 _SCAN_FAIL_HORIZON = timedelta(days=30)
 
