@@ -20,8 +20,8 @@ account-bound and must be done from your own developer account.
 > deployment as `PALIVANE_EXTENSION_ID`.
 >
 > **Latest upload: 0.7.9** (`palivane-shadow-ai-guard-0.7.9-prod.zip`, built with
-> `PALIVANE_SAAS_URL=https://app.palivane.io ./build.sh`), submitted 2026-10-22 and pending
-> store review. It carries 0.7.7 and 0.7.8 (claude.ai's protobuf send, one popup per
+> `PALIVANE_SAAS_URL=https://app.palivane.io ./build.sh`), submitted 2026-10-22 and **live**
+> on the listing (it shows 0.7.9, updated 2026-10-22). It carries 0.7.7 and 0.7.8 (claude.ai's protobuf send, one popup per
 > stopped send) and 0.7.9 (a partly checked or compressed send keeps the "sent unchecked"
 > notice). Update this line with each upload.
 
