@@ -12,6 +12,7 @@ image = "us-central1-docker.pkg.dev/your-project-id/palivane/palivane:latest"
 # Public posture
 allow_signup     = false
 gateway_enforce  = false
+# client_enforce = false  # hooks/proxy default for unflagged devices; unset = monitor
 store_content    = false
 encrypt_findings = true
 

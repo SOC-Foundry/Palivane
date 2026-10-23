@@ -27,6 +27,16 @@ The installer creates a `palivane` system user, a venv at `/opt/palivane`, `/etc
 - **Use Postgres**, not the default SQLite: edit `DATABASE_URL` in `/etc/palivane/palivane.env`
   (e.g. `postgresql+psycopg2://palivane:PASS@localhost/palivane`) and `systemctl restart palivane-api`.
   The app enforces a strong `PALIVANE_SECRET_KEY` on non-SQLite (JWTs would be forgeable otherwise).
+  SQLite has **no row-level security**: tenant isolation rests on the application's filters
+  alone, so anything holding more than one org belongs on Postgres.
+- **Signup is off.** This is a single-org install, so the generated env file sets
+  `PALIVANE_ALLOW_SIGNUP=false` and only users an admin adds can sign in. With signup on, anyone
+  who reaches the console can create an org on the same database and become its admin; on
+  SQLite that combination with a weak `PALIVANE_SECRET_KEY` refuses to boot. An env file kept
+  from an earlier install is not edited; the installer prints a note if it lacks the setting.
+- **Enforcement** starts in monitor: `GATEWAY_ENFORCE=false` (LLM gateway) and
+  `CLIENT_ENFORCE=false` (CLI hooks and desktop proxy on devices with no local flag). Set both to
+  `true` together; confirmed secret/PII leaks block in either mode.
 - **TLS**: the service listens on `:8088` (see `palivane-api.service`). Front it with nginx/Caddy
   for HTTPS, or the same Cloudflare Worker pattern as the SaaS.
 - **Config** lives in `/etc/palivane/palivane.env` (mode 600) — judge keys, gateway upstreams,

@@ -346,7 +346,7 @@ docker compose up --build
 # backend
 cd backend && python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+PALIVANE_ALLOW_DEV_KEY=1 uvicorn app.main:app --reload   # local dev only: allows the dev key on SQLite
 
 # frontend
 cd frontend && npm install && npm run dev

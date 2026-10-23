@@ -182,6 +182,12 @@ class Settings:
     # Self-serve signup: anyone can create a new org (tenant). Set false on a
     # single-org self-hosted deployment to lock it down after bootstrapping.
     allow_signup: bool = _env("PALIVANE_ALLOW_SIGNUP", "true").lower() in ("1", "true", "yes")
+    # Explicit local-dev opt-in for running on SQLite with signup on and the dev/weak
+    # PALIVANE_SECRET_KEY. Without it that combination refuses to boot (main.lifespan): it
+    # is also exactly what a self-host left on the SQLite defaults looks like, where a
+    # public POST /api/auth/signup makes the caller an admin and sessions are forgeable.
+    # Ignored off SQLite, where a weak key always refuses.
+    allow_dev_key: bool = _env("PALIVANE_ALLOW_DEV_KEY", "").lower() in ("1", "true", "yes")
     # Current data-processing-agreement version an org accepts (compliance record). Bump
     # when the DPA text changes to prompt re-acceptance.
     dpa_version: str = _env("PALIVANE_DPA_VERSION", "1.0")

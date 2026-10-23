@@ -27,6 +27,10 @@ def _isolate_palivane_state(tmp_path, monkeypatch):
     # explicitly with their own monkeypatch.
     from app.config import settings as _settings
     monkeypatch.setattr(_settings, "session_correlation", False)
+    # The suite runs on SQLite with signup on and no PALIVANE_SECRET_KEY: the local-dev
+    # shape that main.lifespan refuses unless it is opted into. Tests that enter the
+    # lifespan (`with TestClient(app)`) need the opt-in; the boot-gate tests clear it.
+    monkeypatch.setattr(_settings, "allow_dev_key", True)
 
 
 @pytest.fixture

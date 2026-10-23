@@ -10,6 +10,9 @@ locals {
     PALIVANE_PUBLIC_URL = "https://${var.public_domain}"
     CORS_ORIGINS        = "https://${var.public_domain}"
   } : {}
+  # Only when chosen: see variables.tf client_enforce.
+  client_env = var.client_enforce == null ? {} : { CLIENT_ENFORCE = var.client_enforce ? "true" : "false" }
+
   hosts_env = var.allowed_hosts != "" ? { PALIVANE_ALLOWED_HOSTS = var.allowed_hosts } : {}
   ext_env   = var.extension_id != "" ? { PALIVANE_EXTENSION_ID = var.extension_id } : {}
   smtp_env = var.smtp_host != "" ? {
@@ -17,7 +20,7 @@ locals {
     SMTP_USER = var.smtp_user
     MAIL_FROM = var.mail_from
   } : {}
-  plain_env = merge(local.base_env, local.domain_env, local.hosts_env, local.ext_env, local.smtp_env)
+  plain_env = merge(local.base_env, local.client_env, local.domain_env, local.hosts_env, local.ext_env, local.smtp_env)
 }
 
 resource "google_cloud_run_v2_service" "palivane" {

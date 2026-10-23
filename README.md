@@ -258,7 +258,7 @@ cp .env.example .env          # then set ANTHROPIC_API_KEY / OPENAI_API_KEY / GE
 # (the app works without it — heuristics only)
 
 python -m app.seed            # demo tenant + admin user + sample findings (optional)
-uvicorn app.main:app --reload --port 8088
+PALIVANE_ALLOW_DEV_KEY=1 uvicorn app.main:app --reload --port 8088   # local dev only: allows the dev key on SQLite
 ```
 
 API docs at http://localhost:8088/docs
@@ -343,6 +343,7 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `CORS_ORIGINS`      | `http://localhost:5173`    | Comma-separated.                                   |
 | `SANCTIONED_AI_TOOLS` | *(empty)*                | Allowlist — comma-separated AI tools/domains the org approves (e.g. `claude.ai,copilot.microsoft.com`). |
 | `GATEWAY_ENFORCE`   | `false`                    | LLM gateway: `true` blocks risky prompts inline; otherwise monitor-only. |
+| `CLIENT_ENFORCE`    | `false`                    | Default stance told to CLI hooks / the desktop proxy on devices with no local flag (`true` = enforce). Tenants override it in Settings. Confirmed secret/PII leaks block either way. |
 | `GATEWAY_ENFORCE_SECRETS` | `true`               | Even in monitor mode, hard-block a **confirmed** secret/PII/PHI leak (known-format credential, PII, or health identifier) to an AI tool — "block the certain, monitor the fuzzy". Applies to the gateway, extension, and proxy (via `force_block`). |
 | `GATEWAY_BLOCK_SEVERITY` | `high`                | Block when a prompt's verdict severity is at/above this. |
 | `GATEWAY_SCAN_RESPONSES` | `true`                | Response-side DLP: scan the model's output for secrets/PII (records; blocks in enforce). |
@@ -365,14 +366,15 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `CUSTOM_SECRET_PATTERNS` | *(empty)*             | Org-specific secret formats — one `label=regex` per line; merged into detection. |
 | `CUSTOM_PII_PATTERNS` | *(empty)*             | Org-specific PII/confidential formats (customer IDs, MRNs, codenames) — one `label=regex` per line. Per-tenant override in Settings. |
 | `EXTENSION_INGEST_TOKEN` | *(unset)*             | Shared token the browser extension presents to `/api/ingest/ai-usage` (empty = endpoint disabled). |
-| `PALIVANE_SECRET_KEY` | *(dev fallback)*         | **Required in production.** Signs JWT session tokens; on a non-SQLite deployment the app **refuses to boot** if unset (a public dev key would let anyone forge admin tokens). Well-known weak values warn. |
+| `PALIVANE_SECRET_KEY` | *(dev fallback)*         | **Required in production.** Signs JWT session tokens; the app **refuses to boot** with an unset or weak key on a non-SQLite deployment, and on SQLite while `PALIVANE_ALLOW_SIGNUP` is on (a public dev key would let anyone forge admin tokens). SQLite with signup off only warns. |
 | `PALIVANE_ENCRYPTION_KEY` | *(derives from `PALIVANE_SECRET_KEY`)* | Encrypts per-tenant upstream provider keys at rest. Set to rotate independently of the JWT secret. |
 | `GATEWAY_*` keys (global) | *(unset)*             | Fallback upstream keys used when a tenant hasn't set its **own** via `/api/upstreams` (per-tenant keys take precedence). |
 | `AUTH_TOKEN_TTL`    | `43200`                    | Session-token lifetime in seconds (12h).           |
 | `PALIVANE_LOGIN_MAX_FAILS` / `PALIVANE_LOGIN_IP_MAX_FAILS` / `PALIVANE_LOGIN_WINDOW` | `5` / `20` / `300` | Brute-force throttle (DB-backed, holds across workers): refuse logins (HTTP 429) after N failures for an email — or M for an IP — within the window (seconds). |
 | `PALIVANE_REDACT_FINDINGS` | `true`                | Mask secrets/PII in **stored** finding content (detection still runs on raw). Set `false` to keep raw content for full forensics. |
 | `PALIVANE_ENCRYPT_FINDINGS` | `false`               | Encrypt stored finding content at rest (decrypted on read). Needs a durable `PALIVANE_ENCRYPTION_KEY` — key loss = unreadable content. |
-| `PALIVANE_ALLOW_SIGNUP` | `true`                   | Self-serve org signup. Set `false` to lock down a single-org deployment. |
+| `PALIVANE_ALLOW_SIGNUP` | `true`                   | Self-serve org signup. Set `false` to lock down a single-org deployment (the native installer writes `false`). |
+| `PALIVANE_ALLOW_DEV_KEY` | `false`                 | Local development only: lets SQLite boot with signup on and the insecure dev `PALIVANE_SECRET_KEY`. Ignored on Postgres. |
 | `INGEST_TENANT`     | *(unset)*                  | Tenant slug/id the extension & proxy attribute their findings to. |
 | `MCP_ENFORCE`       | `false`                    | MCP inspection: `true` blocks risky agentic tool-use inline (JSON-RPC error); otherwise monitor-only. |
 | `MCP_BLOCK_SEVERITY`| `high`                     | Block an MCP action when its verdict severity is at/above this. |
