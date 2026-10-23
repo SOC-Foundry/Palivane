@@ -155,6 +155,65 @@ def test_bad_clientstate_is_dropped_quietly(client, monkeypatch, db_factory):
     assert client.get("/api/findings?surface=collab").json()["findings"] == []
 
 
+def _verify_failures(receiver):
+    from app.metrics import WEBHOOK_VERIFY_FAILURES
+    return WEBHOOK_VERIFY_FAILURES.labels(receiver)._value.get()
+
+
+def test_bad_clientstate_is_counted_and_a_flood_is_dropped_unread(client, monkeypatch, caplog):
+    """SEC-05: a forgery gets the same 202 as a real notification, so it is counted per source
+    IP (and in the metric). Past the limit the IP is logged once and its deliveries are dropped
+    before any token is decoded; the answer stays 202."""
+    import app.security as sec
+    wg._FAILS.clear()
+    wg._WARNED.clear()
+    before = _verify_failures("graph")
+    forged = {"value": [{"subscriptionId": "s", "clientState": "forged"}] * 3}
+    for _ in range(wg._FAIL_LIMIT // 3):
+        assert client.post("/api/webhooks/graph", json=forged).status_code == 202
+    assert _verify_failures("graph") - before == (wg._FAIL_LIMIT // 3) * 3
+    assert sum("failed verification" in r.getMessage() for r in caplog.records) == 1
+    assert "forged" not in caplog.text                       # never logs the token
+
+    decoded = []
+    real = sec.decode_token
+    monkeypatch.setattr(sec, "decode_token", lambda t: decoded.append(t) or real(t))
+    for _ in range(5):
+        assert client.post("/api/webhooks/graph", json=forged).status_code == 202
+    assert decoded == []                                      # dropped before decoding
+    assert sum("failed verification" in r.getMessage() for r in caplog.records) == 1
+    wg._FAILS.clear()
+    wg._WARNED.clear()
+
+
+def test_graph_body_that_is_not_a_notification_list_is_counted(client):
+    wg._FAILS.clear()
+    before = _verify_failures("graph")
+    assert client.post("/api/webhooks/graph", content=b"not json",
+                       headers={"content-type": "application/json"}).status_code == 202
+    assert client.post("/api/webhooks/graph", json=["x"]).status_code == 202
+    assert client.post("/api/webhooks/graph", json={"value": ["x", 1]}).status_code == 202
+    assert _verify_failures("graph") - before == 4
+    wg._FAILS.clear()
+
+
+def test_gdrive_bad_channel_token_is_counted_and_sync_handshake_is_not(client, monkeypatch):
+    from app.security import create_token
+    monkeypatch.setattr(wg, "_submit", lambda fn, *a: None)
+    wg._FAILS.clear()
+    before = _verify_failures("gdrive")
+    r = client.post("/api/webhooks/gdrive", headers={"X-Goog-Channel-Token": "forged",
+                                                     "X-Goog-Resource-State": "change"})
+    assert r.status_code == 200
+    assert _verify_failures("gdrive") - before == 1
+    ok = create_token({"typ": "gdrive_watch", "connector_id": 7})
+    r = client.post("/api/webhooks/gdrive", headers={"X-Goog-Channel-Token": ok,
+                                                     "X-Goog-Resource-State": "sync"})
+    assert r.status_code == 200
+    assert _verify_failures("gdrive") - before == 1          # a real handshake is not a failure
+    wg._FAILS.clear()
+
+
 def test_notification_burst_is_debounced(client, monkeypatch, db_factory):
     monkeypatch.setattr(sc.settings, "public_base_url", PUBLIC)
     monkeypatch.setattr(wg, "_submit", lambda fn, *a: fn(*a))

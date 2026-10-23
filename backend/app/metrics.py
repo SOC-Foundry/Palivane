@@ -41,6 +41,14 @@ DETECTOR_ERRORS = Counter(
     "palivane_detector_errors_total", "Detector exceptions during analysis", ["detector"],
 )
 
+# Webhook deliveries that failed authentication (bad GitHub signature, Graph clientState or
+# Drive channel token that does not verify). Graph and Drive still answer 2xx to those, so
+# without this a stream of forgeries is invisible. Label is the receiver: github/graph/gdrive.
+WEBHOOK_VERIFY_FAILURES = Counter(
+    "palivane_webhook_verify_failures_total", "Webhook deliveries that failed verification",
+    ["receiver"],
+)
+
 
 def route_template(request) -> str:
     """The matched route's path template, or 'unmatched' (avoids high-cardinality labels)."""
