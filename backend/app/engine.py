@@ -9,6 +9,10 @@ it here, not forking the backbone.
 
 from __future__ import annotations
 
+import logging
+import traceback
+
+from . import metrics
 from .detectors import (
     AgentRulesDetector,
     AgentSafetyDetector,
@@ -26,7 +30,22 @@ from .detectors import (
     ShadowAIDetector,
     Surface,
 )
-from .scoring import Verdict, score
+from .detectors.base import Category, Signal
+from .scoring import UNSCANNED_CHECK, Verdict, score
+
+_log = logging.getLogger("palivane.engine")
+
+
+def _unscanned(name: str) -> Signal:
+    """The marker a crashed detector leaves in the verdict: weight 0, so it never moves the
+    score, but it rides the signal list everywhere a verdict goes (the API payload, the stored
+    finding, alerts, SIEM), so "this check did not run" cannot read as "this check found
+    nothing". Names the detector only; nothing from the content."""
+    return Signal(category=Category.POSTURE_GAP, check=UNSCANNED_CHECK,
+                  title="A check did not complete",
+                  detail=(f"The {name} check failed on this item, so it was only partly "
+                          "scanned. The verdict reflects the checks that did run."),
+                  weight=0.0, confidence=1.0, detector="engine", evidence=f"detector={name}")
 
 
 class Engine:
@@ -103,9 +122,16 @@ class Engine:
                     signals.extend(detector.analyze(item, backends=judge_backends))
                 else:
                     signals.extend(detector.analyze(item))
-            except Exception:
-                # A misbehaving detector must never sink the whole analysis.
-                continue
+            except Exception as exc:
+                # A misbehaving detector must never sink the whole analysis, and must never
+                # pass for a clean result either. Logged by type and code location only: the
+                # exception's message can quote the content, which may be the secret itself.
+                name = getattr(detector, "name", type(detector).__name__)
+                frame = traceback.extract_tb(exc.__traceback__)[-1]
+                _log.error("detector %s raised %s at %s:%s; item only partly scanned",
+                           name, type(exc).__name__, frame.filename, frame.lineno)
+                metrics.DETECTOR_ERRORS.labels(name).inc()
+                signals.append(_unscanned(name))
         return score(signals)
 
 
