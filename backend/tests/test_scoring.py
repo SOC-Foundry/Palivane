@@ -171,7 +171,9 @@ def test_engine_records_a_lone_high_probability_injection_hint_as_low(client, mo
     # probability is pinned: the point is what the scorer does with a confident hint, not
     # what this particular classifier makes of a sentence.
     from app.detectors.ml_classifier import MLClassifierDetector
-    monkeypatch.setattr(MLClassifierDetector, "p_injection", lambda self, text: 0.93)
+    # _scores is (p_injection, p_code) in one pass; analyze() reads both from it.
+    monkeypatch.setattr(MLClassifierDetector, "_scores",
+                        lambda self, text, injection=True, code=True: (0.93, 0.0))
     r = client.post("/api/analyze", json={"content": "Please summarize the notes from today's design review meeting.",
                                           "surface": "ai_usage"})
     assert r.status_code == 200, r.text
