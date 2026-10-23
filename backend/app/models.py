@@ -1123,6 +1123,16 @@ class SensorHeartbeat(Base):
     # because dark pages someone.
     parse_miss_count = Column(Integer, default=0)
     last_parse_miss = Column(DateTime, nullable=True)
+    # Scans that FAILED OPEN (SEC-01). Every capture client lets the user through when a
+    # scan cannot complete (timeout, network, 5xx, rejected key, breaker open) — that is
+    # deliberate — but each such pass is a moment the sensor was not a sensor. Clients
+    # count them locally and report the tally on their next successful request; this is
+    # the running total for the sensor, since `first_scan_fail`, latest `last_scan_fail`,
+    # and a JSON {reason: count} breakdown. Never any content.
+    scan_fail_count = Column(Integer, default=0)
+    first_scan_fail = Column(DateTime, nullable=True)
+    last_scan_fail = Column(DateTime, nullable=True)
+    scan_fail_reasons = Column(JSON, default=dict)
     # Fleet alerting (alerts.run_fleet_alerts): when this sensor's gone-dark alert went
     # out. NULL = not alerted; cleared when a heartbeat resumes so a NEW dark episode
     # pages again (edge-triggered, not every sweep).
@@ -1133,6 +1143,10 @@ class SensorHeartbeat(Base):
                 "agent": self.agent or "", "agent_version": self.agent_version or "",
                 "parse_miss_count": self.parse_miss_count or 0,
                 "last_parse_miss": self.last_parse_miss.isoformat() if self.last_parse_miss else None,
+                "scan_fail_count": self.scan_fail_count or 0,
+                "first_scan_fail": self.first_scan_fail.isoformat() if self.first_scan_fail else None,
+                "last_scan_fail": self.last_scan_fail.isoformat() if self.last_scan_fail else None,
+                "scan_fail_reasons": dict(self.scan_fail_reasons or {}),
                 "first_seen": self.first_seen.isoformat() if self.first_seen else None,
                 "last_seen": self.last_seen.isoformat() if self.last_seen else None,
                 "count": self.count, "client": self.client or "",

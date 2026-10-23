@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -63,6 +63,13 @@ class AIUsageIngest(BaseModel):
     # heartbeat so silent coverage loss becomes visible.
     parse_miss: bool = False
 
+    # SEC-01: the client's tally of scans that FAILED OPEN since it last reached us
+    # (timeout, network, 5xx, rejected key, breaker open), riding on this request:
+    # {"count", "reasons": {reason: n}, "first", "last"}. Counts only, never content.
+    # Typed Any and sanitized server-side (main._clean_scan_failed): a malformed report
+    # must never turn into a 422, which the client would count as one more failure.
+    scan_failed: Any = None
+
 
 class JustifyRequest(BaseModel):
     """A blocked user's business justification — recorded on the finding, exchanged for a
@@ -112,6 +119,13 @@ class MCPIngest(BaseModel):
     # it (vendor shape drift). No content to score — it is recorded on the sensor
     # heartbeat so silent coverage loss becomes visible.
     parse_miss: bool = False
+
+    # SEC-01: the client's tally of scans that FAILED OPEN since it last reached us
+    # (timeout, network, 5xx, rejected key, breaker open), riding on this request:
+    # {"count", "reasons": {reason: n}, "first", "last"}. Counts only, never content.
+    # Typed Any and sanitized server-side (main._clean_scan_failed): a malformed report
+    # must never turn into a 422, which the client would count as one more failure.
+    scan_failed: Any = None
 
 
 class MCPBatchIngest(BaseModel):
