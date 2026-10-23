@@ -318,6 +318,48 @@ def test_whole_reads_are_not_partial():
         assert extract_detail(name, data).partial is False, name
 
 
+def test_pdf_words_do_not_run_together():
+    """Words joined into one long token read as a high-entropy secret. A wide TJ gap is a
+    space, a new line is a line break, and two shows with nothing between stay one word."""
+    content = (b"BT /F1 10 Tf 72 720 Td [(Quarterly)-333(export)-12(ed)] TJ\n"
+               b"0 -12 Td (second) Tj (line) Tj T* (third line) Tj\n"
+               b"1 0 0 1 72 600 Tm (moved) Tj 40 0 Td (along) Tj ET\n"
+               b"BT (block) Tj ET BT (two) Tj ET")
+    text, _, _ = extract_detail("w.pdf", _pdf_streams((b"/Filter/FlateDecode",
+                                                       zlib.compress(content))))
+    assert text.split("\n")[:2] == ["Quarterly exported", "secondline"]
+    assert "third line moved along block two" in text
+
+
+def test_pdf_cid_glyph_ids_are_not_emitted_as_text():
+    content = b"BT [<00360037>-250<00380039>] TJ (plain words) Tj ET"
+    text, _, partial = extract_detail("cid.pdf", _pdf_streams((b"", content)))
+    assert text.strip() == "plain words" and partial is True
+
+
+def test_pdf_decompression_bomb_stops_at_the_cap():
+    """A few KB of deflate that inflates past the per-stream cap is read up to the cap and
+    reported partial, like an OOXML member past its cap — never inflated whole."""
+    bomb = zlib.compress(f"BT (key {AWS}) Tj ET ".encode() + b" " * (3 * d._MAX_PDF_STREAM_BYTES))
+    assert len(bomb) < 20_000
+    text, _, partial = extract_detail("bomb.pdf", _pdf_streams((b"/Filter/FlateDecode", bomb)))
+    assert AWS in text and partial is True
+    cap = d._MAX_PDF_STREAM_BYTES
+    for head, raw in ((b"/Filter/FlateDecode", bomb), (b"", bomb),
+                      (b"/Filter/ASCII85Decode", b"z" * (cap + 10) + b"~>"),
+                      (b"/Filter/ASCIIHexDecode", b"41" * (cap + 10) + b">"),
+                      (b"/Filter[/ASCIIHexDecode/FlateDecode]", bomb.hex().encode() + b">")):
+        body, skipped = d._pdf_stream(head, raw, cap)
+        assert len(body) <= cap and skipped is True, head
+
+
+def test_pdf_document_total_cap_is_partial(monkeypatch):
+    monkeypatch.setattr(d, "_MAX_PDF_TOTAL_BYTES", 40)
+    s = zlib.compress(f"BT (customer {SSN}) Tj ET".encode())
+    text, partial = d.extract_text_detail("t.pdf", _pdf_streams(*[(b"/Filter/FlateDecode", s)] * 3))
+    assert SSN in text and partial is True
+
+
 def test_a_capped_zip_member_is_partial(monkeypatch):
     monkeypatch.setattr(d, "_MAX_ZIP_MEMBER_BYTES", 64)
     assert d.extract_text_detail("big.docx", _docx("x" * 200))[1] is True
