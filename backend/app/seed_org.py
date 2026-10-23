@@ -190,6 +190,14 @@ SENSORS = [
     ("billing-bot", "a2a", "planner-bot", "", "", "", "", 20, 1, 77, 0),
 ]
 
+# Scans that failed open and were reported on the sensor's next good contact (SEC-01):
+# (actor, plane, tool) -> (reasons, first failure hours ago, last failure hours ago). Sam's
+# laptop spent an afternoon on a captive-portal Wi-Fi: the hook let 37 prompts and tool
+# calls through unscanned, which is the row the Fleet view should make someone look at.
+SCAN_FAILS = {
+    ("sam@demo.local", "ai-usage", "cursor"): ({"timeout": 31, "network": 6}, 30, 4),
+}
+
 # --- Agents --------------------------------------------------------------------------------------------
 
 ROLES = [   # name, tools, servers, commands, deny, data scopes, enforce
@@ -386,7 +394,16 @@ def _sensors(db, tenant: Tenant, now: datetime) -> None:
         db.add(SensorHeartbeat(
             tenant_id=tenant.id, actor=actor, plane=plane, tool=tool, first_seen=_ago(now, first), last_seen=_ago(now, 0, last_h), count=count,
             client=client, client_version=version, agent=agent, agent_version=agent_v,
-            parse_miss_count=misses, last_parse_miss=_ago(now, 0, last_h) if misses else None))
+            parse_miss_count=misses, last_parse_miss=_ago(now, 0, last_h) if misses else None,
+            **_scan_fails(now, (actor, plane, tool))))
+
+
+def _scan_fails(now: datetime, scope: tuple) -> dict:
+    if scope not in SCAN_FAILS:
+        return {}
+    reasons, first_h, last_h = SCAN_FAILS[scope]
+    return {"scan_fail_count": sum(reasons.values()), "scan_fail_reasons": dict(reasons),
+            "first_scan_fail": _ago(now, 0, first_h), "last_scan_fail": _ago(now, 0, last_h)}
 
 
 def _credentials(db, tenant: Tenant, now: datetime, users: dict, admin: str):
