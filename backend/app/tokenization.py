@@ -24,6 +24,7 @@ form, tokenized or otherwise; the gateway blocks those instead.
 """
 from __future__ import annotations
 
+import json
 import re
 import secrets as _secrets
 
@@ -254,12 +255,37 @@ def detokenize_obj(obj, mapping: dict[str, str]):
     if not mapping:
         return obj
     if isinstance(obj, str):
-        return detokenize(obj, mapping)
+        return _detokenize_str(obj, mapping)
     if isinstance(obj, list):
         return [detokenize_obj(x, mapping) for x in obj]
     if isinstance(obj, dict):
         return {k: detokenize_obj(v, mapping) for k, v in obj.items()}
     return obj
+
+
+def _detokenize_str(text: str, mapping: dict[str, str]) -> str:
+    """detokenize one string leaf, keeping a JSON-encoded string valid JSON.
+
+    Tool-call `arguments` arrive as JSON text inside the reply (OpenAI chat and Responses
+    both do this). A plain substitution drops the original value in raw, and a value with a
+    quote, a backslash or a line break (a custom pattern, or an Aadhaar number grouped
+    across lines) would then break the JSON the client is about to parse. When the
+    substitution does that to text that was valid JSON, the text is reversed structurally
+    instead: parsed, reversed leaf by leaf, and serialized again, which escapes the values.
+    """
+    out = detokenize(text, mapping)
+    if out == text or text.lstrip()[:1] not in ("{", "["):
+        return out
+    try:
+        json.loads(out)
+        return out                      # still valid: keep the model's own formatting
+    except ValueError:
+        pass
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return out                      # was never JSON; plain-text reversal is right
+    return json.dumps(detokenize_obj(parsed, mapping), ensure_ascii=False)
 
 
 # Where prompt text actually lives in each provider's request body. In a body of a known
@@ -272,6 +298,15 @@ def tokenize_payload(payload: dict, extra_patterns: str = "") -> tuple[dict, dic
     Responses API (`instructions` and `input`), and Gemini (`contents[].parts` and
     `systemInstruction` / `system_instruction`). Only string text fields are rewritten.
 
+    Tool traffic is prompt text too and is covered in each shape, because tool inputs and
+    outputs carry whatever the tools read (a customer record, a file) and whatever the
+    model asked for with them: Anthropic `tool_result` content (a string or nested blocks),
+    `tool_use` `input` and plain-text `document` sources; OpenAI chat
+    `tool_calls[].function.arguments` (and the legacy `function_call`) beside `role: "tool"`
+    content; Responses `function_call` / `custom_tool_call` / `local_shell_call` items and
+    every `*_call_output` item; Gemini `functionCall.args` and `functionResponse.response`.
+    Only values are rewritten, never tool names, ids or the `tools[]` schemas.
+
     A body with none of those fields falls back to _tokenize_any_shape, which rewrites
     every string in it. Returning it unchanged would look safe (no tokens out, nothing to
     reverse) but it is the opposite: the values go to the provider in the clear.
@@ -280,19 +315,122 @@ def tokenize_payload(payload: dict, extra_patterns: str = "") -> tuple[dict, dic
         return _tokenize_any_shape(payload, extra_patterns)
     mapping: dict[str, str] = {}
 
+    def tok(text: str) -> str:
+        return tokenize(text, extra_patterns, mapping)[0]
+
+    def walk(node):
+        """Every string value under a structured tool input or output, keys untouched."""
+        if isinstance(node, str):
+            return tok(node)
+        if isinstance(node, list):
+            return [walk(x) for x in node]
+        if isinstance(node, dict):
+            return {k: walk(v) for k, v in node.items()}
+        return node
+
+    def do_json_text(text):
+        r"""Tool-call `arguments`: a JSON document carried as a string.
+
+        Parsed, walked and serialized again rather than tokenized as raw text. The raw text
+        is the ESCAPED form, so detection would run on `\n`, `\"` and `é` instead of
+        the values (an Aadhaar number grouped across lines, or anything next to a non-ASCII
+        character under ensure_ascii, is missed), and a custom pattern free to match a
+        quote or a backslash could cut an escape in half and hand the provider broken JSON.
+        On the parsed form detection sees the real values and the serializer escapes
+        whatever replaces them, whatever the pattern. A token alone could not break JSON
+        (it is PLV_, upper-case letters, digits and underscores), but the raw-text route
+        cannot promise the same about the span it replaces. If nothing matched, the
+        original text goes out byte for byte. Text that is not valid JSON has no
+        structure to break, so it is tokenized as it stands.
+        """
+        if not isinstance(text, str) or not text:
+            return text
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            return tok(text)
+        if not isinstance(parsed, (dict, list, str)):
+            # A bare number is valid JSON too, and a tool output of just a card number is
+            # one. Walking it would skip the number, so it is tokenized as text instead.
+            return tok(text)
+        new = walk(parsed)
+        return text if new == parsed else json.dumps(new, ensure_ascii=False)
+
+    def do_block(b):
+        if not isinstance(b, dict):
+            return b
+        b = dict(b)
+        if isinstance(b.get("text"), str):
+            b["text"] = tok(b["text"])
+        kind = b.get("type")
+        if not isinstance(kind, str):
+            return b
+        # Anthropic tool_result / mcp_tool_result: a string or a list of nested blocks.
+        if kind.endswith("tool_result") and "content" in b:
+            b["content"] = do_content(b["content"])
+        # Anthropic tool_use / server_tool_use / mcp_tool_use: the model's own call,
+        # replayed in history. `input` is a parsed object here, not a string.
+        if kind.endswith("tool_use") and "input" in b:
+            b["input"] = walk(b["input"])
+        # A plain-text document is the user's text by another name.
+        src = b.get("source")
+        if kind == "document" and isinstance(src, dict):
+            if src.get("type") == "text" and isinstance(src.get("data"), str):
+                b["source"] = {**src, "data": tok(src["data"])}
+            elif src.get("type") == "content" and "content" in src:
+                b["source"] = {**src, "content": do_content(src["content"])}
+        return b
+
     def do_content(c):
         if isinstance(c, str):
-            out, _ = tokenize(c, extra_patterns, mapping)
-            return out
+            return tok(c)
         if isinstance(c, list):
-            blocks = []
-            for b in c:
-                if isinstance(b, dict) and isinstance(b.get("text"), str):
-                    b = dict(b)
-                    b["text"], _ = tokenize(b["text"], extra_patterns, mapping)
-                blocks.append(b)
-            return blocks
+            return [do_block(b) for b in c]
         return c
+
+    def do_message(m):
+        """An OpenAI chat or Anthropic message: its content, plus OpenAI's tool calls."""
+        if not isinstance(m, dict):
+            return m
+        m = dict(m)
+        if "content" in m:
+            m["content"] = do_content(m["content"])
+        calls = m.get("tool_calls")
+        if isinstance(calls, list):
+            m["tool_calls"] = [
+                ({**tc, "function": {**tc["function"],
+                                     "arguments": do_json_text(tc["function"].get("arguments"))}}
+                 if isinstance(tc, dict) and isinstance(tc.get("function"), dict)
+                 and "arguments" in tc["function"] else tc)
+                for tc in calls]
+        fc = m.get("function_call")                     # pre-`tools` OpenAI chat
+        if isinstance(fc, dict) and "arguments" in fc:
+            m["function_call"] = {**fc, "arguments": do_json_text(fc["arguments"])}
+        return m
+
+    def do_item(it):
+        """A Responses API input item: a message, a tool call, or a tool's output."""
+        if not isinstance(it, dict):
+            return it
+        it = do_message(it)
+        kind = it.get("type")
+        if not isinstance(kind, str):
+            return it
+        if kind.endswith("_call"):
+            if isinstance(it.get("arguments"), str):        # function_call
+                it["arguments"] = do_json_text(it["arguments"])
+            if isinstance(it.get("input"), str):            # custom_tool_call
+                it["input"] = tok(it["input"])
+            act = it.get("action")
+            if kind == "local_shell_call" and isinstance(act, dict):
+                it["action"] = {**act, **{k: walk(act[k]) for k in ("command", "env")
+                                          if k in act}}
+        if kind.endswith("_call_output") and "output" in it:
+            # Usually a string, and often JSON text a tool returned: that is walked as JSON
+            # so the output stays valid. A list is content items, like a message's.
+            o = it["output"]
+            it["output"] = do_json_text(o) if isinstance(o, str) else do_content(o)
+        return it
 
     out = dict(payload)
     if isinstance(out.get("system"), str):
@@ -301,9 +439,7 @@ def tokenize_payload(payload: dict, extra_patterns: str = "") -> tuple[dict, dic
         out["system"] = do_content(out["system"])
     msgs = out.get("messages")
     if isinstance(msgs, list):
-        out["messages"] = [({**m, "content": do_content(m["content"])}
-                            if isinstance(m, dict) and "content" in m else m)
-                           for m in msgs]
+        out["messages"] = [do_message(m) for m in msgs]
 
     # OpenAI Responses API (Codex CLI's default): `input` replaces `messages` and is a bare
     # string or a list of typed items; `instructions` is its system prompt.
@@ -313,9 +449,7 @@ def tokenize_payload(payload: dict, extra_patterns: str = "") -> tuple[dict, dic
     if isinstance(inp, str):
         out["input"], _ = tokenize(inp, extra_patterns, mapping)
     elif isinstance(inp, list):
-        out["input"] = [({**it, "content": do_content(it["content"])}
-                         if isinstance(it, dict) and "content" in it else it)
-                        for it in inp]
+        out["input"] = [do_item(it) for it in inp]
 
     # Gemini: text lives in parts[].text, under contents[] and the system instruction.
     def do_parts(node):
@@ -323,9 +457,18 @@ def tokenize_payload(payload: dict, extra_patterns: str = "") -> tuple[dict, dic
             return node
         parts = []
         for part in node["parts"]:
-            if isinstance(part, dict) and isinstance(part.get("text"), str):
+            if isinstance(part, dict):
                 part = dict(part)
-                part["text"], _ = tokenize(part["text"], extra_patterns, mapping)
+                if isinstance(part.get("text"), str):
+                    part["text"] = tok(part["text"])
+                # The model's call and the tool's answer, as parsed objects; the REST API
+                # takes both spellings. `name` and `id` are left as they are.
+                for key, field in (("functionCall", "args"), ("function_call", "args"),
+                                   ("functionResponse", "response"),
+                                   ("function_response", "response")):
+                    fn = part.get(key)
+                    if isinstance(fn, dict) and field in fn:
+                        part[key] = {**fn, field: walk(fn[field])}
             parts.append(part)
         return {**node, "parts": parts}
 
