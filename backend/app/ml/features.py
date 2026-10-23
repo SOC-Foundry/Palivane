@@ -8,13 +8,19 @@ identically in the gateway.
 from __future__ import annotations
 
 import hashlib
+import math
 import re
+from collections import Counter
+from functools import lru_cache
 
 _DIM = 2 ** 18            # 262144 buckets — plenty for this token space, ~0 collision cost
 _WORD_RE = re.compile(r"[a-z0-9_]+|[^\sa-z0-9_]", re.I)
 
 
+@lru_cache(maxsize=1 << 16)
 def _bucket(token: str) -> int:
+    # Memoized: the hash is ~90% of vectorize()'s cost, and overlapping scan windows (and
+    # ordinary text) repeat the same tokens. Bounded: about 10 MB when full.
     h = hashlib.blake2b(token.encode("utf-8", "ignore"), digest_size=8).digest()
     return int.from_bytes(h, "big") % _DIM
 
@@ -35,12 +41,7 @@ def tokens(text: str) -> list[str]:
 def vectorize(text: str) -> dict[int, float]:
     """Text -> sparse {bucket: weight}. Log-scaled term counts (diminishing returns on
     repetition), L2-normalized so long and short inputs are comparable."""
-    import math
-
-    counts: dict[int, float] = {}
-    for t in tokens(text):
-        b = _bucket(t)
-        counts[b] = counts.get(b, 0.0) + 1.0
+    counts = Counter(map(_bucket, tokens(text)))     # same counts, same order, C-level
     vec = {b: 1.0 + math.log(c) for b, c in counts.items()}
     norm = math.sqrt(sum(v * v for v in vec.values())) or 1.0
     return {b: v / norm for b, v in vec.items()}

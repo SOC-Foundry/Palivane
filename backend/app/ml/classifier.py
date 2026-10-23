@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import json
 import math
+from itertools import repeat
+from operator import mul
 
 from .features import vectorize
 
@@ -31,11 +33,16 @@ class LogisticClassifier:
         self.meta = meta or {}
 
     def _score(self, vec: dict[int, float]) -> float:
-        z = self.bias + sum(self.w.get(b, 0.0) * v for b, v in vec.items())
+        # C-level map/sum, same terms in the same order as the plain generator: identical z.
+        z = self.bias + sum(map(mul, map(self.w.get, vec, repeat(0.0)), vec.values()))
         return 1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, z))))
 
     def proba(self, text: str) -> float:
         return self._score(vectorize(text))
+
+    def proba_vec(self, vec: dict[int, float]) -> float:
+        """proba() of an already-vectorized text, so two models can share one vectorize."""
+        return self._score(vec)
 
     def predict(self, text: str) -> bool:
         return self.proba(text) >= self.threshold
