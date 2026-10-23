@@ -1372,6 +1372,8 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.ask_on_warn = _JUDGE[body.ask_on_warn]       # ASK verdict (tri-state)
     if body.gateway_tokenize is not None:
         tenant.gateway_tokenize = _JUDGE[body.gateway_tokenize]
+    if body.redact_on_block is not None:
+        tenant.redact_on_block = None if body.redact_on_block == "inherit" else body.redact_on_block
     if body.retention_days is not None:
         if body.retention_days < 0:
             raise HTTPException(status_code=400, detail="retention_days must be >= 0")

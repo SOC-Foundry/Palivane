@@ -57,6 +57,10 @@ class AIUsageIngest(BaseModel):
     # Short-lived grant from POST /api/ingest/justify: resubmitting the same content with
     # it downgrades that block to a proceed (never a confirmed force_block leak).
     override_token: str = ""
+    # The finding id of a block this submission is the redacted version of: the person chose
+    # "send with these removed". Scanned like any other submission; when it goes through, the
+    # original finding is marked (redacted_resend_at) and the audit log records it.
+    redacted_from: int | None = None
 
     # Set by a client whose extractor recognised the event but got nothing out of
     # it (vendor shape drift). No content to score — it is recorded on the sensor
@@ -423,6 +427,8 @@ class TenantUpdate(BaseModel):
     ask_on_warn: Literal["on", "off", "inherit"] | None = None   # ASK verdict (tri-state)
     # Tokenize personal data in gateway traffic for this org (tri-state).
     gateway_tokenize: Literal["on", "off", "inherit"] | None = None
+    # Redact-on-block: what a client may do with a block it can clear by removing values.
+    redact_on_block: Literal["off", "offer", "auto", "inherit"] | None = None
     gateway_block_severity: str | None = None  # ""|low|suspicious|high|critical
     mcp_block_severity: str | None = None      # block threshold for capture-plane verdicts
     ci_block_severity: str | None = None       # block threshold for CI-runner scans

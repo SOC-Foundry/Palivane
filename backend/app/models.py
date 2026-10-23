@@ -137,6 +137,14 @@ class Tenant(Base):
     # from the global because turning it on changes what a provider receives, so it has to
     # be possible to pilot on one org rather than all of them at once.
     gateway_tokenize = Column(Boolean, nullable=True, default=None)
+    # Redact-on-block (NULL inherits PALIVANE_REDACT_ON_BLOCK, default "offer"): what a client
+    # may do when a message is blocked ONLY for values it can remove (secrets, personal data).
+    #   off   - no redaction spans are returned; the block stands as it is
+    #   offer - spans are returned and the client offers "send with these removed"
+    #   auto  - as offer, and a client that cannot ask the person may remove them itself
+    # Distinct from coaching (redact_mode above), which turns such a block into a warning that
+    # shows a cleaned copy; the two compose (see main._redaction_plan).
+    redact_on_block = Column(String(8), nullable=True, default=None)
     # Block threshold for capture-plane verdicts (/api/ingest/mcp action). Empty = global.
     mcp_block_severity = Column(String(16), default="")
     # Block threshold for CI-runner scans (/api/scan/ci action -> palivane-ci-scan exit code).
@@ -260,6 +268,7 @@ class Tenant(Base):
                 "ask_on_warn": self.ask_on_warn,
                 "scim_enabled": bool(self.scim_token_hash),
                 "gateway_tokenize": self.gateway_tokenize,
+                "redact_on_block": self.redact_on_block,
                 "gateway_block_severity": self.gateway_block_severity or "",
                 "mcp_block_severity": self.mcp_block_severity or "",
                 "ci_block_severity": self.ci_block_severity or "",
@@ -627,6 +636,9 @@ class Finding(Base):
     reviewed_by = Column(String(320), default="")
     review_via = Column(String(16), default="")          # manual | analyst | bulk
     review_reason = Column(String(24), default="")       # dismissed only
+    # The person chose "send with these removed" on this block, and the edited message went
+    # out (app/main.py ingest_ai_usage, `redacted_from`). When it last happened; never content.
+    redacted_resend_at = Column(DateTime, nullable=True)
 
     def to_summary(self) -> dict:
         return {
@@ -656,6 +668,9 @@ class Finding(Base):
             # detail so an admin sees "already answered" while triaging the queue, rather
             # than opening each row to find out.
             "owner_response": self.owner_response or None,
+            # The person sent a version of this message with the flagged values removed.
+            "redacted_resend_at": (self.redacted_resend_at.isoformat()
+                                   if self.redacted_resend_at else None),
         }
 
     def to_detail(self, dek: str | None = None) -> dict:

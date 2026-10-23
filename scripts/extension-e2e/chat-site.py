@@ -10,15 +10,24 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 LOG = []
 PAGE = """<!doctype html><meta charset=utf-8><title>%(host)s</title>
-<textarea id=prompt rows=3 cols=60></textarea><button id=send>Send</button><pre id=out></pre>
+<div><textarea id=prompt rows=3 cols=60></textarea>
+<div id=ce contenteditable=true role=textbox style="display:none;min-height:3em;width:30em;border:1px solid #888"></div>
+<button id=send>Send</button></div><pre id=out></pre>
 <script>
 const host = location.hostname;
 window.__modals = 0;   // how many times the extension put its block popup on the page
 new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.id === 'palivane-modal') window.__modals++; })))
   .observe(document.documentElement, {childList: true, subtree: true});
 const mode = new URLSearchParams(location.search).get('mode') || 'string';
+// composer=ce: a rich-editor message box (contenteditable, like ProseMirror or Quill) that the
+// page empties as soon as it sends, the way chatgpt.com and claude.ai do. Default: a textarea
+// that keeps its text.
+const ce = new URLSearchParams(location.search).get('composer') === 'ce';
+if (ce) { document.getElementById('prompt').style.display = 'none'; document.getElementById('ce').style.display = 'block'; }
 document.getElementById('send').onclick = async () => {
-  const text = document.getElementById('prompt').value;
+  const box = document.getElementById(ce ? 'ce' : 'prompt');
+  const text = ce ? box.innerText : box.value;
+  if (ce) box.innerText = '';
   let h = {'content-type': 'application/json'};
   let url, body;
   if (host === 'gemini.google.com') {

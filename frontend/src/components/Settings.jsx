@@ -277,6 +277,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
     ask_on_warn: tenant?.ask_on_warn === true ? "on" : tenant?.ask_on_warn === false ? "off" : "inherit",
     gateway_tokenize: tenant?.gateway_tokenize === true ? "on"
       : tenant?.gateway_tokenize === false ? "off" : "inherit",
+    redact_on_block: tenant?.redact_on_block || "inherit",
     gateway_block_severity: tenant?.gateway_block_severity || "",
     mcp_block_severity: tenant?.mcp_block_severity || "",
     ci_block_severity: tenant?.ci_block_severity || "",
@@ -306,6 +307,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
         self_justify: org.self_justify,
         ask_on_warn: org.ask_on_warn,
         gateway_tokenize: org.gateway_tokenize,
+        redact_on_block: org.redact_on_block,
         gateway_block_severity: org.gateway_block_severity,
         mcp_block_severity: org.mcp_block_severity,
         ci_block_severity: org.ci_block_severity,
@@ -1055,6 +1057,23 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                       When on, a prompt blocked <em>only</em> for a secret or PII becomes a warning that
                       shows the redacted version and points to a sanctioned tool, the user chooses.
                       Injection, source-code, and unsanctioned-destination blocks are unaffected.
+                    </span>
+                  </label>
+                  <label>Redact on block (secrets / PII)
+                    <select value={org.redact_on_block} onChange={setField("redact_on_block")}>
+                      <option value="inherit">Inherit (global, default Offer)</option>
+                      <option value="offer">Offer, the user can send it with those values removed</option>
+                      <option value="auto">Auto, clients that cannot ask may remove them</option>
+                      <option value="off">Off, the block stands</option>
+                    </select>
+                    <span className="muted" style={{ fontSize: 11.5, marginTop: 3 }}>
+                      When a message is blocked <em>only</em> for values that can be cut out (a key, an
+                      SSN, a card number), and Palivane has checked that the message would pass without
+                      them, the browser extension offers "Send with these removed": the values are
+                      replaced by markers in the message box, the user sees the edited text, and that is
+                      what is sent. Auto also lets clients that cannot ask (the desktop proxy, coding-agent
+                      hooks) remove them on their own. The block is still recorded, marked as resent
+                      redacted. Injection, risky-action and policy blocks are never offered this.
                     </span>
                   </label>
                   <label>Justified proceed (Human Firewall)

@@ -234,7 +234,10 @@ _PLACEHOLDER_VALUE_RE = re.compile(
     r"(?:my|your|our|the)(?:password|passwd|pass|secret|key|token|apikey)|"
     r"(?:user|owner|admin|root|test|demo|example|sample)(?:password|passwd|pass)|"
     r"placeholder|example|examplekey|sample|todo|tbd|fixme|none|null|nil|test|testing|"
-    r"dummy|fake|redacted|secret|password|passwd|<[^>]+>|\$?\{[^}]+\}|\$[a-z_]+|env\.[a-z_.]+)$")
+    r"dummy|fake|redacted|secret|password|passwd|<[^>]+>|\$?\{[^}]+\}|\$[a-z_]+|env\.[a-z_.]+|"
+    # The marker a redacted value is replaced by (app/redaction.py, app/redact_spans.py):
+    # `DB_PASSWORD=«redacted:password or secret»` is a message with the secret already gone.
+    r"«redacted\b.*)$")
 
 
 # A value that reads from env/config at runtime (or is any code expression) is not a
