@@ -601,10 +601,11 @@ class Finding(Base):
     # document Palivane scanned at rest, the source is attached here —
     # {source, ref, title, owner, containment}. Empty when no origin matched.
     origin = Column(JSON, default=None)
-    # What the person this finding belongs to said about it: {action, note, by, at}.
-    # Written only through /api/my/findings/{id}/respond, which requires the caller to BE
-    # that person. An answer, not a verdict: responding never dismisses a finding, so a
-    # real leak cannot be closed by the one person with a reason to want it closed.
+    # What the person this finding belongs to said about it: {action, note, by, as, at}, where
+    # `as` is "sender" (they caused it) or "owner" (it is about a document they own, per
+    # origin.owner). Written only through /api/my/findings/{id}/respond, which requires the
+    # caller to BE that person. An answer, not a verdict: responding never dismisses a
+    # finding, so a real leak cannot be closed by the one person with a reason to want it closed.
     owner_response = Column(JSON, default=None)
     # The read-only analyst agent's last investigation of this finding: {summary, assessment,
     # related_activity, recommended_action, rationale, confidence, by, at}. Persisted so it

@@ -2963,17 +2963,44 @@ _MY_ACTIONS = {
 }
 
 
+def _my_email(current: User) -> str:
+    return (current.email or "").strip().lower()
+
+
+def _sender_match(email: str):
+    """The caller caused it: the capture attribution (`sender`, how at-rest scans record a
+    Slack actor or a Salesforce OwnerId) or the `agent` field."""
+    return or_(func.lower(Finding.sender) == email, func.lower(Finding.agent) == email)
+
+
+def _owner_match(email: str):
+    """The caller owns the source document: `origin.owner`, which content_origin attaches
+    when leaked content overlaps a document Palivane scanned at rest (Drive, SharePoint,
+    Slack, Salesforce...). Exact address, case-insensitive. `origin` is a plain JSON column,
+    so this compiles to json_extract on SQLite and `->>` on Postgres. No index, and none is
+    needed: like `sender`, it is only ever evaluated inside one tenant's rows."""
+    return func.lower(Finding.origin["owner"].as_string()) == email
+
+
 def _mine(q, db, current: User):
-    """Restrict a Finding query to rows belonging to the caller, matched case-insensitively
-    on their email: the capture attribution (`sender`, how at-rest scans record a Slack
-    actor or a Salesforce OwnerId) or the `agent` field. The owner of a source document
-    (origin.owner, set by content_origin) is NOT matched: a document owner who is not the
-    sender does not see the row here. `db` is unused; it stays in the signature for callers."""
-    email = (current.email or "").strip().lower()
+    """Restrict a Finding query to rows that belong to the caller, matched case-insensitively
+    on their email, for either of two reasons:
+
+    - they CAUSED it: `sender` or `agent` (_sender_match), or
+    - they OWN the document it is about: `origin.owner` (_owner_match). A colleague pasting
+      your Drive file into an AI tool is a finding you should hear about, and you are the
+      accountable person for that document.
+
+    This only narrows `q`, never widens it. Every caller passes a query already filtered to
+    the caller's tenant (and Postgres RLS scopes the session to it too), so an owner address
+    that also exists in another tenant matches nothing there. Being matched grants exactly
+    one thing beyond viewing: answering through /api/my/findings/{id}/respond, which records
+    an answer and never dismisses, allowlists or deletes anything. Triage powers come from
+    the caller's role, never from ownership. `db` is unused; it stays in the signature."""
+    email = _my_email(current)
     if not email:
         return q.filter(Finding.id == -1)          # no identity, no rows
-    return q.filter(or_(func.lower(Finding.sender) == email,
-                        func.lower(Finding.agent) == email))
+    return q.filter(or_(_sender_match(email), _owner_match(email)))
 
 
 @app.get("/api/my/findings")
@@ -2999,8 +3026,19 @@ def my_findings(status: str = "open", limit: int = 100,
 def my_finding_respond(finding_id: int, body: dict,
                        current: User = Depends(get_current_user),
                        db: Session = Depends(get_db)):
-    """Answer for a finding that is yours. 404 (not 403) when it is not: whether a finding
-    exists for someone else is not something an arbitrary user should be able to probe."""
+    """Answer for a finding that is yours: you caused it (sender/agent) or it is about a
+    document you own (origin.owner), the same rows /api/my/findings shows you. A document
+    owner answers the same way a sender does, because they are the accountable person for
+    that document, and gets nothing more: this records an answer and at most moves `open` to
+    `triaged`. It never dismisses, allowlists or deletes; those stay behind the caller's role
+    (PATCH /api/findings, /api/allowlist, purge), which ownership does not touch.
+
+    The answer records which basis it was given on (`as`: sender | owner). A finding can
+    belong to two people (the colleague who pasted it, the owner of the document), so one
+    person cannot replace the other's answer: 409, and the first answer stands for the admin.
+    The same person may revise their own. 404 (not 403) when the finding is not yours:
+    whether a finding exists for someone else is not something an arbitrary user should be
+    able to probe."""
     action = str(body.get("action", "")).strip()
     note = str(body.get("note", "")).strip()[:1000]
     if action not in _MY_ACTIONS:
@@ -3014,8 +3052,16 @@ def my_finding_respond(finding_id: int, body: dict,
     row = _mine(q, db, current).first()
     if row is None:
         raise HTTPException(status_code=404, detail="finding not found")
+    email = _my_email(current)
+    prior = row.owner_response or {}
+    if prior.get("by") and str(prior["by"]).strip().lower() != email:
+        raise HTTPException(status_code=409,
+                            detail="someone else has already answered this finding; "
+                                   "an admin has their answer and can follow up with you")
+    basis = ("sender" if email in {(row.sender or "").strip().lower(),
+                                   (row.agent or "").strip().lower()} else "owner")
     from datetime import datetime as _now, timezone as _tz
-    row.owner_response = {"action": action, "note": note, "by": current.email,
+    row.owner_response = {"action": action, "note": note, "by": current.email, "as": basis,
                           "at": _now.now(_tz.utc).isoformat()}
     # Answered, not closed. `triaged` moves it out of the untouched queue while leaving it
     # open to an admin; `dismissed` stays a decision only the security team makes.
@@ -3024,7 +3070,7 @@ def my_finding_respond(finding_id: int, body: dict,
     db.commit()
     from . import audit_log
     audit_log.record(db, current.tenant_id, current.email, "finding.owner_response",
-                     target=str(finding_id), detail={"action": action, "note": note[:200]})
+                     target=str(finding_id), detail={"action": action, "as": basis, "note": note[:200]})
     return {"id": finding_id, "status": row.status, "owner_response": row.owner_response}
 
 
