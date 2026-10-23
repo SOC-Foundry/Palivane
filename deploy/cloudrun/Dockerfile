@@ -39,8 +39,18 @@ FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
 
+# tesseract-ocr (+ English data) for image DLP: screenshots sent through the gateway, and
+# images found by the Slack/Drive/S3 connectors, are OCR'd locally (app/ocr.py) — never by
+# a cloud vision API. Installed in every image, used only when PALIVANE_OCR=true, so a
+# self-hosted operator turns it on with an env var rather than a rebuild. About +86 MB
+# installed (~28 MB of .debs; most of it libicu and the osd data tesseract-ocr depends on).
 RUN apt-get update && apt-get install -y --no-install-recommends libpq5 curl \
+        tesseract-ocr tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
+# One thread per tesseract process. OpenMP's default (a thread per core) makes a single
+# OCR ~2x slower measured, and on a shared 2-vCPU instance it would also starve the
+# concurrent requests the event loop is serving.
+ENV OMP_THREAD_LIMIT=1
 
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

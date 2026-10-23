@@ -171,6 +171,17 @@ def test_client_enforce_is_not_written_unless_asked_for(tmp_path):
     assert "CLIENT_ENFORCE" not in env
 
 
+def test_hosted_deploy_turns_image_ocr_on_by_default(tmp_path):
+    """The image ships tesseract and the hosted service reads screenshots; an operator can
+    still switch it off from the deploy environment without a rebuild."""
+    assert "|PALIVANE_OCR=true" in _deployed_env(tmp_path, PALIVANE_OCR="")
+
+
+def test_image_ocr_can_be_switched_off_at_deploy(tmp_path):
+    env = _deployed_env(tmp_path, PALIVANE_OCR="false")
+    assert "|PALIVANE_OCR=false" in env and "PALIVANE_OCR=true" not in env
+
+
 @pytest.mark.parametrize("value", ["true", "false"])
 def test_client_enforce_is_threaded_when_set(tmp_path, value):
     env = _deployed_env(tmp_path, CLIENT_ENFORCE=value)

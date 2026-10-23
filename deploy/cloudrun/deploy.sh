@@ -25,6 +25,11 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # "|"-separated (passed as ^|^...) so values may contain commas (PALIVANE_ALLOWED_HOSTS) AND
 # "@" (SMTP_USER/MAIL_FROM email addresses). "|" appears in none of the values.
 ENV_VARS="GATEWAY_ENFORCE=${GATEWAY_ENFORCE:-true}"
+# Image DLP: OCR screenshots sent through the gateway (and images the connectors find), so a
+# key pasted as a picture is caught rather than the verdict saying "partly scanned". The
+# image ships tesseract; the app default is off (self-host opts in), hosted is on.
+# PALIVANE_OCR=false here turns it off without a rebuild.
+ENV_VARS+="|PALIVANE_OCR=${PALIVANE_OCR:-true}"
 # Default stance for the local capture planes (CLI hooks, desktop proxy) on a device with
 # no local flag, where the tenant has not chosen one in Settings. Deliberately NOT given a
 # default here, unlike GATEWAY_ENFORCE: the app default is monitor, and a value written by
