@@ -3345,6 +3345,14 @@ def connectors_create(body: ConnectorCreate, current: User = Depends(require_adm
                 creds["webhook_secret"] = old
         except Exception:                                         # noqa: BLE001
             pass
+    validate = PLATFORMS[body.platform].get("validate")
+    if validate:
+        from .saas_connectors import ConnectorError
+        try:
+            validate(creds)
+        except ConnectorError as e:
+            db.rollback()
+            raise HTTPException(400, str(e))
     store_credentials(row, creds, db)
     row.active = True
     db.commit()
@@ -3413,7 +3421,7 @@ def connectors_sync(connector_id: int, current: User = Depends(require_admin),
                     db: Session = Depends(get_db)):
     """Pull the platform's current OAuth grants and ingest them — identical outcome to
     uploading a manual export. Trigger from the console or an operator cron."""
-    from .saas_connectors import ConnectorError, sync_connector
+    from .saas_connectors import ConnectorError, ScanInProgress, sync_connector
     row = (db.query(SaasConnector)
              .filter(SaasConnector.tenant_id == current.tenant_id,
                      SaasConnector.id == connector_id, SaasConnector.active.is_(True)).first())
@@ -3421,6 +3429,8 @@ def connectors_sync(connector_id: int, current: User = Depends(require_admin),
         raise HTTPException(404, "connector not found")
     try:
         return sync_connector(db, row)
+    except ScanInProgress as e:                  # a scheduled scan has it: nothing was read
+        raise HTTPException(409, str(e))
     except ConnectorError as e:
         raise HTTPException(502, str(e))
 

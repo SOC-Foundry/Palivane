@@ -52,6 +52,8 @@ _BRANCHES_DEFAULT, _BRANCHES_MAX = 50, 200
 _SEEN_SHAS = 100                   # commits remembered per branch, so a new push reads only what is new
 _COMPARE_MAX = 250                 # GitHub's compare lists at most this many
 _COMMIT_TRIES = 3                  # syncs a commit that will not load is tried in before it is skipped
+_COMMIT_FILES_PAGE = 300           # GitHub lists a commit's files 300 to a page ...
+_COMMIT_FILES_PAGES = 10           # ... and no more than 3000 of them in all
 
 # How long one sync may run. An admin's Scan now is a web request, so it gets less than the scheduled
 # loop, which sets this for its own thread (connector_schedule.py).
@@ -90,9 +92,15 @@ def _dev_default_conn(line: str) -> bool:
 def _path_rx(glob: str):
     """One path glob as a regex, in the way a .gitignore reads it: `*` stays inside a directory, `**`
     crosses them, a pattern with no slash (or only a trailing one) matches at any depth, and one with a
-    slash in the middle is anchored at the repository root."""
+    slash in the middle is anchored at the repository root.
+
+    A pattern made only of wildcards (`*`, `**`, `*/`, `?`) is dropped. A lone `*` is unanchored and
+    would become `^(?:.*/)?[^/]*$`, which matches every path, so one character in the settings box
+    would turn the scan off for the whole repository and it would still report a clean pass. Saving
+    such a pattern is refused (validate_options); one stored before that is ignored, so the
+    repository is read rather than silently skipped. #300"""
     g = glob.strip().lstrip("./")
-    if not g:
+    if not g or _only_wildcards(g):
         return None
     anchored = "/" in g.rstrip("/")
     if g.endswith("/"):
@@ -117,11 +125,30 @@ def _path_rx(glob: str):
     return re.compile(("^" if anchored else "^(?:.*/)?") + "".join(out) + "$", re.IGNORECASE)
 
 
-def _path_globs(value) -> list:
+def _only_wildcards(glob: str) -> bool:
+    return not glob.strip().strip("*?/.")
+
+
+def _path_glob_parts(value) -> list[str]:
     if isinstance(value, (list, tuple)):
         value = "\n".join(str(v) for v in value)
-    parts = [g for g in re.split(r"[,\n]", str(value or "")) if g.strip()][:100]
-    return [rx for rx in (_path_rx(g) for g in parts) if rx]
+    return [g for g in re.split(r"[,\n]", str(value or "")) if g.strip()][:100]
+
+
+def _path_globs(value) -> list:
+    return [rx for rx in (_path_rx(g) for g in _path_glob_parts(value)) if rx]
+
+
+def validate_options(creds: dict) -> None:
+    """Refuse settings that would quietly scan nothing, with what to change (ConnectorError).
+
+    An exclude_paths pattern made only of wildcards excludes every file (see _path_rx). #300"""
+    bad = [g.strip() for g in _path_glob_parts(creds.get("exclude_paths")) if _only_wildcards(g)]
+    if bad:
+        raise sc.ConnectorError(
+            f"exclude_paths: {', '.join(repr(b) for b in bad[:5])} is only wildcards and would exclude "
+            "every file, so nothing would be scanned. Name what to leave out, such as *.md, "
+            "fixtures/ or docs/**.")
 
 
 def _clamp(value, lo: int, hi: int, default: int) -> int:
@@ -216,6 +243,25 @@ def _is_rate_limit(err) -> bool:
     return "rate limit" in text.lower() or "HTTP 429" in text
 
 
+def _iso(epoch: float) -> str:
+    return datetime.fromtimestamp(epoch, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _commit_date(c: dict) -> str:
+    """The date a commit's cursor is kept at: the later of its committer and author dates.
+
+    GitHub's `since` filters on the committer date (when the commit was last written), not the
+    author date. A rebase, cherry-pick or squash-merge keeps the old author date and stamps a new
+    committer date, so a cursor kept at the author date moved backwards on every such commit, and
+    the next sync listed (and spent its 500-commit budget re-reading) history it had already
+    scanned. The later of the two is the committer date in every ordinary case, and still moves
+    forward on a commit with a skewed committer clock. A cursor stored by an older version (an
+    author date) loads as is: it is only ever earlier, so the first sync after it reads a little
+    more, once. #298"""
+    meta = c.get("commit") or {}
+    return max(str((meta.get(k) or {}).get("date") or "") for k in ("committer", "author"))
+
+
 class _Run:
     """One sync: the credential, the options, the budgets and the tally."""
 
@@ -242,6 +288,8 @@ class _Run:
         self.tally = {"repos": 0, "blobs": 0, "commits": 0, "findings": 0, "skipped": 0}
         self.errors: list[str] = []
         self.truncated = False
+        self.refused = 0                       # repositories whose contents this token was denied (403)
+        self.resume_at: float | None = None    # when GitHub said a rate-limited scan may go on (epoch)
         self.listed: set[str] = set()          # every commit this sync set out to read (sha[:10])
         self._fit_quota()
 
@@ -255,6 +303,16 @@ class _Run:
     def count(self, key: str) -> None:
         """A tally that only shows in the summary once it happens (the summary is capped at 512 chars)."""
         self.tally[key] = self.tally.get(key, 0) + 1
+
+    def rate_limited(self, err=None) -> None:
+        """Stop the sync at a rate limit, and keep when GitHub said it may go on (Retry-After or
+        X-RateLimit-Reset, carried on the error by saas_connectors._http_json). It does not sleep:
+        this runs inside a request or a scan with a wall-clock budget, so it records the time and
+        the next sync starts from there. #298"""
+        self.truncated = True
+        at = getattr(err, "retry_at", None)
+        if at:
+            self.resume_at = max(self.resume_at or 0.0, float(at))
 
     def out_of_time(self) -> bool:
         if time.monotonic() >= self.deadline:
@@ -274,6 +332,12 @@ class _Run:
         self.commits_left = min(self.commits_left, int(usable * 0.3))
         if usable == 0:
             self.truncated = True
+            try:
+                reset = float(core.get("reset") or 0)
+            except (TypeError, ValueError):
+                reset = 0.0
+            if reset > time.time():
+                self.resume_at = reset              # /rate_limit says when the hour resets
             self.errors.append("GitHub rate limit nearly spent; scanning resumes when it resets")
 
     def fetch_many(self, paths: list[str]) -> list:
@@ -369,9 +433,15 @@ class _Run:
         except sc.ConnectorError as e:
             text = str(e)
             if _is_rate_limit(e):
-                self.truncated = True               # stop the sync; every cursor stays where it is
+                self.rate_limited(e)                # stop the sync; every cursor stays where it is
             elif any(f"HTTP {c}" in text for c in (403, 404, 409)):
-                self.tally["skipped"] += 1          # an empty repository, or one this token may not read
+                # An empty repository (409), a default branch that is gone (404), or one this token
+                # may not read (403). One of those is not worth failing the sync over. A token
+                # refused on EVERY repository is: it used to finish ok with zero findings, which
+                # reads as a clean scan, so scan_github_secrets fails it (#296).
+                self.tally["skipped"] += 1
+                if "HTTP 403" in text:
+                    self.refused += 1
             else:
                 self.errors.append(f"{full}: {text[:120]}")
 
@@ -397,7 +467,7 @@ class _Run:
                     [f"/repos/{full}/git/blobs/{e['sha']}" for e in batch]))):
                 if isinstance(blob, Exception):
                     if _is_rate_limit(blob):
-                        self.truncated = True
+                        self.rate_limited(blob)
                         state["tree_cursor"] = start + n      # this file and the rest of the batch again
                         return
                     self.tally["skipped"] += 1
@@ -441,7 +511,7 @@ class _Run:
                         return done                # out of file budget: this commit and the rest next time
                 except sc.ConnectorError as e:
                     if _is_rate_limit(e):
-                        self.truncated = True
+                        self.rate_limited(e)
                         return done
                     if self._give_up(full, sha, e, fails):
                         done.append(sha)
@@ -470,9 +540,42 @@ class _Run:
     def _read_commit(self, repo: dict, sha: str, detail: dict, branch: str) -> bool:
         """Scan what one commit added. False when the file budget ran out part way: the commit is not
         read, the next sync reads it again, and what was already recorded folds into the same
-        findings. A file that fails to load raises, and the commit counts as failed."""
+        findings. A file that fails to load raises, and the commit counts as failed.
+
+        GitHub lists at most 300 of a commit's files per response, and the rest only on further
+        pages (up to 3000 files in all). Only the first page used to be read, so a key in file 301
+        of a big commit was never seen and the commit still counted as read. The further pages are
+        read now, each one costing one from the commit budget; when the budget or the clock runs out
+        part way the commit is not read (False), the same as running out of file budget. Past
+        GitHub's 3000 the files cannot be listed at all, which is counted in `files_skipped` and
+        named in the errors."""
+        full = repo["full_name"]
         author = ((detail.get("commit") or {}).get("author") or {}).get("email", "")
-        for f in detail.get("files") or []:
+        files, page = list(detail.get("files") or []), 1
+        while True:
+            if not self._read_files(repo, sha, files, author, branch):
+                return False
+            if len(files) < _COMMIT_FILES_PAGE:
+                break                               # a short page is the last one
+            if page >= _COMMIT_FILES_PAGES:
+                self.count("files_skipped")
+                self.errors.append(f"{full}: commit {sha[:10]} changes more than "
+                                   f"{_COMMIT_FILES_PAGE * _COMMIT_FILES_PAGES} files; GitHub lists no "
+                                   "more, the rest were not read")
+                break
+            if self.commits_left <= 0 or self.out_of_time():
+                self.truncated = True
+                return False
+            self.commits_left -= 1
+            page += 1
+            more = self.get(f"/repos/{full}/commits/{urllib.parse.quote(sha, safe='')}?page={page}")
+            files = list(more.get("files") or []) if isinstance(more, dict) else []
+        self.tally["commits"] += 1
+        return True
+
+    def _read_files(self, repo: dict, sha: str, files: list, author: str, branch: str) -> bool:
+        """Scan what one page of a commit's files added. False when the file budget ran out."""
+        for f in files:
             path = f.get("filename", "")
             if f.get("status") == "removed" or self.skip_path(path):
                 continue                            # a removed file added nothing
@@ -494,7 +597,6 @@ class _Run:
             for label, line, masked in locate_secrets(text, path, line_numbers=numbers):
                 if self.record(repo, path, label, line, masked, sha, author, "commit", branch):
                     self.tally["findings"] += 1
-        self.tally["commits"] += 1
         return True
 
     def _file_at(self, full: str, f: dict, sha: str) -> str | None:
@@ -537,8 +639,9 @@ class _Run:
             page += 1
             if len(batch) < 100:
                 break
-        # oldest first, so the watermark only ever moves past commits that were actually read
-        found.sort(key=lambda c: ((c.get("commit") or {}).get("author") or {}).get("date", ""))
+        # Oldest first by the date `since` filters on (_commit_date), so the watermark only ever
+        # moves forward, and only past commits that were actually read.
+        found.sort(key=_commit_date)
         # a merge is left out: its parents hold the diffs
         todo = [c for c in found if c.get("sha") != state.get("last_sha") and len(c.get("parents") or []) <= 1]
         read =set(self._scan_commits(repo, [c["sha"] for c in todo], fails=state.setdefault("commit_fails", {})))
@@ -546,7 +649,7 @@ class _Run:
             if c["sha"] not in read:
                 break                               # one left for a retry holds the watermark behind it
             state["last_sha"] = c["sha"]
-            state["since"] = ((c.get("commit") or {}).get("author") or {}).get("date") or state["since"]
+            state["since"] = max(_commit_date(c), state["since"])
 
     def _other_branches(self, repo: dict, state: dict, default: str) -> None:
         """Commits on the other branches that are not on the default branch. A branch remembers the head
@@ -582,12 +685,31 @@ class _Run:
 
 
 def scan_github_secrets(db, connector, creds: dict) -> dict:
-    """One sync: scan what changed since the last one, within the budgets."""
-    run = _Run(db, connector, creds)
+    """One sync: scan what changed since the last one, within the budgets.
+
+    A sync that stopped at a rate limit whose reset GitHub named records it (`resume_after`, in the
+    state and the summary). Until then a sync asks GitHub nothing (it would only be refused) and
+    says so, and the scheduler sets the next scan for that time (connector_schedule._stamp_for)
+    instead of guessing. A sync in which GitHub refused the token on every repository it listed
+    fails with a ConnectorError, so the console shows it as an error, not a clean scan (#296)."""
     state = dict(connector.state)
+    resume = str(state.get("resume_after") or "")
+    if resume and resume > _iso(time.time()):
+        return {"repos": 0, "blobs": 0, "commits": 0, "findings": 0, "skipped": 0, "truncated": True,
+                "resume_after": resume,
+                "errors": [f"GitHub rate limit: scanning resumes after {resume}"]}
+    run = _Run(db, connector, creds)
     repos_state = dict(state.get("repos") or {})
+    listed: list[dict] = []
     try:
-        for repo in ([] if run.truncated else run.repos()):
+        if not run.truncated:
+            try:
+                listed = run.repos()
+            except sc.ConnectorError as e:
+                if not _is_rate_limit(e):
+                    raise
+                run.rate_limited(e)
+        for repo in listed:
             if run.out_of_time():
                 break
             rs = dict(repos_state.get(repo["full_name"]) or {})
@@ -598,12 +720,26 @@ def scan_github_secrets(db, connector, creds: dict) -> dict:
             if run.truncated:
                 break
     finally:
-        connector.state = {**state, "repos": repos_state}
+        # The cursor is written back by sync_connector only while this scan still holds its claim
+        # on the connector, so an overlapping scan cannot put an older cursor over a newer one (#298).
+        new_state = {**state, "repos": repos_state}
+        new_state.pop("resume_after", None)
+        if run.resume_at:
+            new_state["resume_after"] = _iso(run.resume_at)
+        connector.state = new_state
+    if listed and not run.truncated and run.refused == len(listed):
+        raise sc.ConnectorError(
+            f"GitHub refused this token on every repository it listed ({len(listed)}, HTTP 403), so "
+            "nothing was scanned. Give the token Contents: Read and Metadata: Read on these "
+            "repositories (a fine-grained token on an organization also needs the organization to "
+            "approve it).")
     summary = dict(run.tally)
     if run.errors:
         summary["errors"] = run.errors[:5]
     if run.truncated:
         summary["truncated"] = True
+    if run.resume_at:
+        summary["resume_after"] = _iso(run.resume_at)
     return summary
 
 
@@ -654,5 +790,8 @@ def scan_push(db, connector, creds: dict, payload: dict) -> dict:
         except sc.ConnectorError:
             shas = shas or [after]                    # a force-push can orphan `before`: read what we were told
     read = run._scan_commits(repo, shas, branch="" if on_default else branch)
+    # `unread`: commits this push named that failed to load. The webhook forgets the delivery when
+    # any were left (github_webhook._settle), so a redelivery of it is scanned, not dropped.
     return {"repo": full, "branch": branch, "commits": len(read), "findings": run.tally["findings"],
+            **({"unread": len(shas) - len(read)} if len(read) < len(shas) else {}),
             **({"truncated": True} if run.truncated else {})}

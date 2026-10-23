@@ -27,7 +27,10 @@ class FakeGitHub:
     def __init__(self):
         self.calls: list[str] = []
         self.remaining = 5000                           # what /rate_limit says is left of the hour
-        self.fail: dict[str, str] = {}                  # path prefix -> ConnectorError text
+        self.reset = 0                                  # and when the hour resets (epoch; 0: not said)
+        self.fail: dict = {}                            # path prefix -> ConnectorError text (or the error)
+        self.committed: dict[str, str] = {}             # sha -> committer date, when it is not the author's
+        self.file_pages: dict[str, list] = {}           # sha -> its files after the first page (?page=2, ...)
         self.pushed = "2026-10-01T00:00:00Z"
         self.repos = [
             {"full_name": "acme/app", "default_branch": "main", "private": True, "fork": False,
@@ -66,10 +69,10 @@ class FakeGitHub:
         self.calls.append(path)
         for prefix, text in self.fail.items():
             if path.startswith(prefix):
-                raise sc.ConnectorError(text)
+                raise text if isinstance(text, Exception) else sc.ConnectorError(text)
         base = path.split("?")[0]
         if base == "/rate_limit":
-            return {"resources": {"core": {"remaining": self.remaining}}}
+            return {"resources": {"core": {"remaining": self.remaining, "reset": self.reset}}}
         if base == "/orgs/acme/repos":
             return self.repos if path.endswith("page=1") else []
         repo = "acme/app" if "/acme/app" in base else "acme/site"
@@ -88,11 +91,15 @@ class FakeGitHub:
         if base.endswith("/commits"):
             if repo != "acme/app" or not path.endswith("page=1"):
                 return []
-            return [{"sha": s, "parents": [{}], "commit": {"author": {"date": d, "email": "dev@acme.com"}}}
+            return [{"sha": s, "parents": [{}], "commit": {"author": {"date": d, "email": "dev@acme.com"},
+                                                            "committer": {"date": self.committed.get(s, d)}}}
                     for s, d in (("c2", "2026-10-02T00:00:00Z"), ("c1", "2026-10-01T00:00:00Z"))]
         if "/commits/" in base:
             sha = base.rsplit("/", 1)[1]
-            return {"commit": {"author": {"email": "dev@acme.com"}}, "files": self.commit_files[sha]}
+            page = int(path.split("?page=", 1)[1]) if "?page=" in path else 1
+            more = self.file_pages.get(sha) or []
+            files = self.commit_files[sha] if page == 1 else (more[page - 2] if page - 2 < len(more) else [])
+            return {"commit": {"author": {"email": "dev@acme.com"}}, "files": files}
         raise AssertionError("unexpected GitHub call: " + path)
 
 
@@ -491,3 +498,156 @@ def test_a_branch_commit_that_fails_is_read_on_the_next_sync(client, github, db_
     assert "acme/app/feature2.py" in {s for s, *_ in _findings(db_factory)}
     reads = [c for c in github.calls if "/commits/fc" in c]
     assert reads.count("/repos/acme/app/commits/fc1") == 1            # only the failed one was read again
+
+
+# --- review follow-ups (#296, #298, #300) -----------------------------------------------------------
+
+def _set_state(db_factory, fake, **values):
+    from app.models import SaasConnector
+    db = db_factory()
+    try:
+        row = db.get(SaasConnector, fake.connector_id)
+        row.state = {**row.state, **values}
+        db.commit()
+    finally:
+        db.close()
+
+
+def _row(db_factory, fake):
+    from app.models import SaasConnector
+    db = db_factory()
+    try:
+        r = db.get(SaasConnector, fake.connector_id)
+        return r.last_sync_status, r.last_sync_detail, r.state
+    finally:
+        db.close()
+
+
+def test_the_commit_cursor_is_the_committer_date_so_a_rebase_does_not_rewind_it(client, github, db_factory):
+    # c1 was rebased: authored on the 1st, written on the 5th. GitHub's `since` filters on the 5th.
+    github.committed["c1"] = "2026-10-05T00:00:00Z"
+    _sync(client, github)
+    state = _repo_state(db_factory, github)
+    assert state["since"] == "2026-10-05T00:00:00Z"                   # not the author date of the 1st
+    assert state["last_sha"] == "c1"                                  # read in committer order: c2, then c1
+
+
+def test_a_cursor_stored_as_an_author_date_still_loads(client, github, db_factory):
+    _set_state(db_factory, github, repos={"acme/app": {"since": "2026-09-30T00:00:00Z", "last_sha": "c0"}})
+    _sync(client, github)
+    state = _repo_state(db_factory, github)
+    assert state["since"] == "2026-10-02T00:00:00Z" and state["last_sha"] == "c2"
+
+
+def test_a_rate_limit_records_when_github_says_to_come_back(client, github, db_factory):
+    import time
+    at = time.time() + 1800
+    github.fail["/repos/acme/app/branches"] = sc.ConnectorError(
+        "HTTP 429 from api.github.com: secondary rate limit", retry_at=at)
+    summary = _sync(client, github)
+    assert summary["truncated"] is True and summary["resume_after"] == gh._iso(at)
+    assert _row(db_factory, github)[2]["resume_after"] == gh._iso(at)
+
+    before = len(github.calls)
+    waiting = _sync(client, github)                                   # before the reset: GitHub is not asked
+    assert github.calls[before:] == []
+    assert waiting["truncated"] is True and "resumes after" in waiting["errors"][0]
+
+    del github.fail["/repos/acme/app/branches"]
+    _set_state(db_factory, github, resume_after=gh._iso(time.time() - 1))   # the reset has passed
+    summary = _sync(client, github)
+    assert not summary.get("truncated") and "resume_after" not in summary
+    assert "resume_after" not in _row(db_factory, github)[2]
+
+
+def test_a_spent_quota_records_its_reset(client, github):
+    import time
+    github.remaining, github.reset = 100, int(time.time()) + 900
+    summary = _sync(client, github)
+    assert summary["resume_after"] == gh._iso(github.reset)
+
+
+def test_the_http_client_carries_retry_after_and_the_reset(monkeypatch):
+    import time
+
+    import httpx
+
+    from app import netguard
+
+    def answer(status, headers):
+        def urlopen(req, timeout=20):
+            resp = httpx.Response(status, headers=headers, text="rate limited",
+                                  request=httpx.Request("GET", req.full_url))
+            raise httpx.HTTPStatusError("x", request=resp.request, response=resp)
+        monkeypatch.setattr(netguard, "safe_urlopen", urlopen)
+        with pytest.raises(sc.ConnectorError) as e:
+            sc._http_json("https://api.github.com/x")
+        return e.value.retry_at
+
+    now = time.time()
+    assert abs(answer(429, {"Retry-After": "120"}) - (now + 120)) < 5
+    reset = int(now) + 600
+    assert answer(403, {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(reset)}) == reset
+    assert answer(403, {"X-RateLimit-Remaining": "12", "X-RateLimit-Reset": str(reset)}) is None   # a real 403
+    assert answer(503, {"Retry-After": "120"}) is None                # an outage, not a rate limit
+    assert answer(429, {}) is None                                    # nothing said: nothing invented
+
+
+def test_a_token_refused_on_every_repository_fails_the_sync(client, github, db_factory):
+    for repo in ("app", "site"):
+        github.fail[f"/repos/acme/{repo}/branches"] = "HTTP 403 from api.github.com: Resource not accessible"
+    r = client.post(f"/api/discovery/connectors/{github.connector_id}/sync")
+    assert r.status_code == 502 and "every repository" in r.text
+    status, detail, _ = _row(db_factory, github)
+    assert status == "error" and "Contents: Read" in detail
+
+
+def test_a_wildcard_only_exclude_path_is_refused(client, github):
+    for bad in ("*", "**", "src/\n*", "*/", "**/*", "./*"):
+        r = client.post("/api/discovery/connectors", json={
+            "platform": "github_secrets", "label": "acme",
+            "credentials": {"token": TOKEN, "org": "acme", "exclude_paths": bad}})
+        assert r.status_code == 400 and "only wildcards" in r.text, bad
+    _creds(client, github, exclude_paths="*.md\nsrc/")                 # an ordinary pattern still saves
+
+
+def test_a_stored_wildcard_only_pattern_excludes_nothing():
+    assert gh._path_globs("*") == [] and gh._path_globs("**/*") == []
+    assert len(gh._path_globs("*, *.md")) == 1
+
+
+def _many_files(n):
+    return [{"filename": f"f{i}.py", "status": "added", "patch": "@@ -0,0 +1 @@\n+x = 1\n"} for i in range(n)]
+
+
+_LATE = [{"filename": "late.sh", "status": "added", "patch": f'@@ -0,0 +1 @@\n+K="{AWS}"\n'}]
+
+
+def test_a_commit_with_more_than_300_files_is_read_to_the_last_page(client, github, db_factory):
+    github.commit_files["c1"] = _many_files(gh._COMMIT_FILES_PAGE)
+    github.file_pages["c1"] = [_LATE]
+    summary = _sync(client, github)
+    assert "/repos/acme/app/commits/c1?page=2" in github.calls
+    assert "acme/app/late.sh" in {s for s, *_ in _findings(db_factory)}
+    assert not summary.get("files_skipped")
+
+
+def test_a_commit_whose_next_page_is_over_budget_is_not_counted_as_read(client, github, db_factory, monkeypatch):
+    monkeypatch.setattr(gh, "_COMMITS_PER_SYNC", 1)                   # c1 itself, and no page to spare
+    github.commit_files["c1"] = _many_files(gh._COMMIT_FILES_PAGE)
+    github.file_pages["c1"] = [_LATE]
+    summary = _sync(client, github)
+    assert summary["truncated"] is True and summary["commits"] == 0
+    assert "last_sha" not in _repo_state(db_factory, github)          # c1 is owed a read, not passed over
+    monkeypatch.setattr(gh, "_COMMITS_PER_SYNC", 500)
+    _sync(client, github)
+    assert "acme/app/late.sh" in {s for s, *_ in _findings(db_factory)}
+    assert _repo_state(db_factory, github)["last_sha"] == "c2"
+
+
+def test_files_past_what_github_will_list_are_counted_as_skipped(client, github, monkeypatch):
+    monkeypatch.setattr(gh, "_COMMIT_FILES_PAGES", 1)                 # stand-in for GitHub's 3000
+    github.commit_files["c1"] = _many_files(gh._COMMIT_FILES_PAGE)
+    summary = _sync(client, github)
+    assert summary["files_skipped"] == 1
+    assert any("commit c1" in e and "not read" in e for e in summary["errors"])

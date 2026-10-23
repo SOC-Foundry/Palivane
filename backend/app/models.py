@@ -947,6 +947,11 @@ class SaasConnector(Base):
     last_sync_at = Column(DateTime, nullable=True)
     last_sync_status = Column(String(16), default="")    # ok | error | ""
     last_sync_detail = Column(String(512), default="")   # summary counts or the error
+    # When the scan that holds this connector started (NULL: none does). The lock is kept apart
+    # from last_sync_at, which is written only when a scan finishes, so a second instance cannot
+    # claim a connector mid-scan and an older scan cannot write its time and cursor over a newer
+    # one's (saas_connectors.claim_sync and sync_connector, #298).
+    sync_claimed_at = Column(DateTime, nullable=True)
     # Incremental-scan watermark for content-scanning connectors (JSON; e.g. Slack keeps
     # a per-channel last-message-ts map so each sync pulls only new messages). Empty for
     # grant-inventory connectors, which are stateless snapshots.

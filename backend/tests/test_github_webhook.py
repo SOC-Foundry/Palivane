@@ -225,3 +225,52 @@ def test_a_push_respects_the_excluded_paths(client, hook, raw_client, db_factory
                                                                    "exclude_paths": "deploy.sh"}})
     _push(hook, raw_client)
     assert _findings(db_factory) == []
+
+
+# --- a failed scan is not "seen" (SEC-05, #299) ------------------------------------------------------
+
+def _failing_once(hook, monkeypatch, error):
+    box = {"failed": False}
+
+    def flaky(url, **kw):
+        if "/commits/" in url and not box["failed"]:
+            box["failed"] = True
+            hook.calls.append(url)
+            raise error
+        return hook(url, **kw)
+    monkeypatch.setattr(sc, "_http_json", flaky)
+
+
+def test_a_redelivery_of_a_failed_scan_is_scanned(hook, raw_client, db_factory, monkeypatch):
+    _failing_once(hook, monkeypatch, sc.ConnectorError("HTTP 502 from api.github.com: bad gateway"))
+    assert _push(hook, raw_client, delivery="retry-me").json() == {"ok": True}
+    assert _findings(db_factory) == []                                # the commit did not load
+    second = _push(hook, raw_client, delivery="retry-me").json()
+    assert not second.get("duplicate")                                # not "seen": it runs
+    assert [s for s, _ in _findings(db_factory)] == ["acme/app/deploy.sh"]
+    assert _push(hook, raw_client, delivery="retry-me").json().get("duplicate") is True   # now it is
+
+
+def test_a_redelivery_of_a_rate_limited_scan_is_scanned(hook, raw_client, db_factory, monkeypatch):
+    _failing_once(hook, monkeypatch, sc.ConnectorError("HTTP 429 from api.github.com: rate limit"))
+    _push(hook, raw_client, delivery="limited")
+    assert not _push(hook, raw_client, delivery="limited").json().get("duplicate")
+    assert [s for s, _ in _findings(db_factory)] == ["acme/app/deploy.sh"]
+
+
+def test_a_scan_that_crashed_is_forgotten(hook, raw_client, monkeypatch):
+    from app import github_secrets
+
+    def boom(*a, **k):
+        raise RuntimeError("worker died")
+    monkeypatch.setattr(github_secrets, "scan_push", boom)
+    _push(hook, raw_client, delivery="crash")
+    assert "crash" not in gw._SEEN
+
+
+def test_a_delivery_still_being_scanned_is_not_scanned_twice(hook, raw_client, monkeypatch):
+    queued = []
+    monkeypatch.setattr(gw, "_submit", lambda fn, *a: queued.append(a))    # the worker has not run yet
+    _push(hook, raw_client, delivery="slow")
+    assert _push(hook, raw_client, delivery="slow").json().get("duplicate") is True
+    assert len(queued) == 1
