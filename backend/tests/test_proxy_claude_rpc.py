@@ -74,9 +74,9 @@ class _Headers(dict):
         return super().get(k.lower(), d)
 
 
-def _flow(path: str, body: bytes, host: str = "claude.ai"):
+def _flow(path: str, body: bytes, host: str = "claude.ai", headers: dict | None = None):
     req = types.SimpleNamespace(method="POST", pretty_host=host, path=path, content=body,
-                                raw_content=body, headers=_Headers({"user-agent": "Mozilla/5.0 Chrome/140"}))
+                                raw_content=body, headers=_Headers({"user-agent": "Mozilla/5.0 Chrome/140", **(headers or {})}))
     return types.SimpleNamespace(request=req, response=None)
 
 
@@ -97,7 +97,7 @@ def run(monkeypatch):
 
     scans: list[str] = []
 
-    def _run(path, body, block=False, host="claude.ai", guard=None):
+    def _run(path, body, block=False, host="claude.ai", guard=None, headers=None):
         seen: list[str] = []
 
         def fake_scan(prompt, destination, tool="", **kw):
@@ -108,7 +108,7 @@ def run(monkeypatch):
         monkeypatch.setattr(addon, "scan", fake_scan)
         guard = guard or addon.PalivaneGuard()
         guard.enforce = True
-        flow = _flow(path, body, host)
+        flow = _flow(path, body, host, headers)
         flow.guard = guard
         asyncio.run(guard.request(flow))
         return seen, flow
@@ -219,3 +219,101 @@ def test_new_words_are_scanned_and_the_quiet_window_expires(run, monkeypatch):
     monkeypatch.setattr(addon.time, "time", lambda: real() + 3600)
     seen, flow = run(RPC + "PerformAction", perform_action("my ssn is 078-05-1120"), block=True, guard=first.guard)
     assert len(seen) == 1                                  # an hour later it is checked again
+
+
+def test_an_openai_responses_list_input_is_scanned_and_blocked(run):
+    import json
+    body = json.dumps({"model": "gpt-5-codex", "input": [
+        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "earlier 078-05-1120"}]},
+        {"type": "reasoning", "encrypted_content": "gAAAAABopaque"},
+        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "key AKIA4YTGH2NBQF7XZP3K"}]},
+    ]}).encode()
+    seen, flow = run("/v1/responses", body, block=True, host="api.openai.com")
+    assert seen == ["key AKIA4YTGH2NBQF7XZP3K"]          # latest turn only, no history, no reasoning
+    assert flow.response[1] == 400
+
+
+def test_a_coached_secret_verdict_blocks_the_send(run, monkeypatch):
+    """With coaching on, the backend answers a confirmed secret with warn + redacted_content. The
+    proxy cannot coach, so the original must not go upstream."""
+    seen = []
+
+    def coached_scan(prompt, destination, tool="", **kw):
+        seen.append(prompt)
+        return {"action": "warn", "force_block": False, "coached": True, "enforce": False,
+                "redacted_content": "key [REDACTED]", "risk_score": 90, "severity": "critical",
+                "signals": [{"category": "secret_leak", "title": "AWS access key"}]}
+    guard = addon.PalivaneGuard()
+    run("/v1/messages", b"{}", host="api.anthropic.com", guard=guard)    # installs the mitmproxy stub
+    monkeypatch.setattr(addon, "scan", coached_scan)
+    guard.enforce = False
+    flow = _flow("/v1/messages", b'{"messages":[{"role":"user","content":"key AKIA4YTGH2NBQF7XZP3K"}]}',
+                 "api.anthropic.com")
+    asyncio.run(guard.request(flow))
+    assert seen and flow.response is not None and flow.response[1] == 400
+
+
+# -- compressed Connect envelopes (flag byte 1, codec in connect-content-encoding) ----------------
+def compressed_frame(payload: bytes) -> bytes:
+    return b"\x01" + len(payload).to_bytes(4, "big") + payload
+
+
+def _ledger(tmp_path) -> dict:
+    import json
+    p = tmp_path / "scan-failed-proxy.json"
+    return json.loads(p.read_text()) if p.exists() else {}
+
+
+def test_a_gzip_compressed_send_is_decoded_and_blocked(run, monkeypatch, tmp_path):
+    import gzip
+    monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path))
+    body = compressed_frame(gzip.compress(perform_action("my key AKIA4YTGH2NBQF7XZP3K")))
+    seen, flow = run(RPC + "PerformAction", body, block=True,
+                     headers={"connect-content-encoding": "gzip"})
+    assert seen == ["my key AKIA4YTGH2NBQF7XZP3K"]       # the typed text, not the gzip bytes
+    assert flow.response[1] == 403
+    assert _ledger(tmp_path) == {}                       # read fine: not a scan failure
+
+
+def test_a_gzip_envelope_without_the_header_is_recognised_by_its_magic():
+    import gzip
+    body = compressed_frame(gzip.compress(perform_action("my ssn is 078-05-1120")))
+    assert addon.claude_rpc_text(body) == "my ssn is 078-05-1120"
+
+
+def test_a_zstd_compressed_send_is_decoded():
+    zstd = pytest.importorskip("compression.zstd")
+    body = compressed_frame(zstd.compress(perform_action("my ssn is 078-05-1120")))
+    assert addon.claude_rpc_text(body, "zstd") == "my ssn is 078-05-1120"
+
+
+def test_a_brotli_compressed_send_is_decoded():
+    brotli = pytest.importorskip("brotli")
+    body = compressed_frame(brotli.compress(perform_action("my ssn is 078-05-1120")))
+    assert addon.claude_rpc_text(body, "br") == "my ssn is 078-05-1120"
+
+
+def test_an_oversize_decompressed_send_is_unreadable(run, monkeypatch, tmp_path):
+    import gzip
+    monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path))
+    huge = perform_action("x" * (addon._CONNECT_DECOMPRESSED_CAP + 10))
+    body = compressed_frame(gzip.compress(huge))
+    assert len(body) < 100_000                           # small on the wire, huge inflated
+    assert addon.claude_rpc_text(body, "gzip") is None
+    seen, flow = run(RPC + "PerformAction", body, block=True,
+                     headers={"connect-content-encoding": "gzip"})
+    assert seen == [] and flow.response is None          # not scanned as garbage; fails open…
+    assert _ledger(tmp_path)["reasons"] == {"error": 1}  # …and is counted, not silent
+
+
+def test_an_unknown_codec_or_corrupt_data_is_unreadable(run, monkeypatch, tmp_path):
+    import gzip
+    monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path))
+    good = gzip.compress(perform_action("my ssn is 078-05-1120"))
+    assert addon.claude_rpc_text(compressed_frame(good), "snappy") is None
+    assert addon.claude_rpc_text(compressed_frame(good[:-6]), "gzip") is None    # truncated
+    assert addon.claude_rpc_text(compressed_frame(b"not gzip at all"), "gzip") is None
+    seen, flow = run(RPC + "PerformAction", compressed_frame(good), block=True,
+                     headers={"connect-content-encoding": "snappy"})
+    assert seen == [] and flow.response is None
+    assert _ledger(tmp_path)["reasons"] == {"error": 1}

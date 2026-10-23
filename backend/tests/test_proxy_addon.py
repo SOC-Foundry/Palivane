@@ -159,6 +159,90 @@ def test_should_block():
     assert not addon.should_block({"action": "allow"}, enforce=True)
 
 
+# A coached verdict, exactly as /api/ingest/ai-usage shapes it: coaching turned a block into a
+# warn and cleared force_block, and handed back a redacted prompt the proxy cannot use.
+def _coached(signals, **kw):
+    return {"action": "warn", "force_block": False, "coached": True, "severity": "high",
+            "risk_score": 80, "redacted_content": "my key is [REDACTED]", "signals": signals, **kw}
+
+
+_AWS = {"category": "secret_leak", "title": "AWS access key"}
+_ENTROPY = {"category": "secret_leak", "title": "Possible secret (high-entropy token)"}
+
+
+def test_a_coached_confirmed_secret_is_blocked_even_in_monitor_mode():
+    # Before coaching this was force_block (a confirmed credential): the proxy must not let the
+    # original through just because the browser path would have shown a redacted version.
+    assert addon.should_block(_coached([_AWS]), enforce=False)
+    assert addon.should_block(_coached([_AWS], enforce=False), enforce=False)
+    assert addon.should_block(_coached([{"category": "pii_exposure", "title": "US SSN"}]), enforce=False)
+
+
+def test_a_coached_heuristic_only_verdict_follows_enforce():
+    # High-entropy alone was never force_block: it was an ordinary block, so it blocks only
+    # under enforce (local flag or the org's stance on the verdict), like any other block.
+    assert not addon.should_block(_coached([_ENTROPY]), enforce=False)
+    assert addon.should_block(_coached([_ENTROPY]), enforce=True)
+    assert addon.should_block(_coached([_ENTROPY], enforce=True), enforce=False)
+
+
+def test_an_uncoached_warn_is_still_not_blocked():
+    for coached in (None, False):
+        v = {"action": "warn", "force_block": False, "coached": coached, "signals": [_AWS]}
+        assert not addon.should_block(v, enforce=True)
+        assert not addon.should_block(v, enforce=False)
+
+
+# --- OpenAI Responses API -------------------------------------------------------------------
+
+def _responses_body():
+    return {
+        "model": "gpt-5-codex",
+        "instructions": "You are Codex, a coding agent.",
+        "input": [
+            {"type": "message", "role": "user",
+             "content": [{"type": "input_text", "text": "old turn: AKIAOLDOLDOLDOLDOLD1"}]},
+            {"type": "message", "role": "assistant",
+             "content": [{"type": "output_text", "text": "assistant reply"}]},
+            {"type": "reasoning", "summary": [], "encrypted_content": "gAAAAABopaque-model-state"},
+            {"type": "function_call", "name": "shell", "arguments": "{\"cmd\":\"ls\"}", "call_id": "c1"},
+            {"type": "function_call_output", "call_id": "c1", "output": "README.md"},
+            {"type": "message", "role": "user",
+             "content": [{"type": "input_text", "text": "deploy with AKIA4YTGH2NBQF7XZP3K"}]},
+        ],
+    }
+
+
+def test_responses_list_input_scans_the_latest_user_turn_and_instructions():
+    text = addon.extract_prompt(json.dumps(_responses_body()))
+    assert "deploy with AKIA4YTGH2NBQF7XZP3K" in text
+    assert "You are Codex" in text                       # instructions, as the gateway scans them
+    assert "AKIAOLDOLDOLDOLDOLD1" not in text            # history is not rescanned
+    assert "assistant reply" not in text
+    assert "gAAAAAB" not in text                         # reasoning state is never read
+    assert "README.md" not in text
+
+
+def test_responses_role_less_parts_are_one_user_turn():
+    body = {"input": [{"type": "input_text", "text": "first part 078-05-1120"},
+                      {"type": "input_image", "image_url": "data:image/png;base64,AAAA"}]}
+    assert addon.extract_prompt(json.dumps(body)) == "first part 078-05-1120"
+    assert addon.extract_prompt(json.dumps({"input": "plain string 078-05-1120"})) == "plain string 078-05-1120"
+
+
+def test_responses_matches_the_gateway():
+    from app.gateway import _responses_user_text as gw
+    body = _responses_body()
+    assert addon._responses_user_text(body["input"], body["instructions"]) == gw(body["input"], body["instructions"])
+
+
+def test_drift_warning_paths_cover_responses_and_gemini_verbs():
+    assert addon._carries_a_prompt("/v1/responses")
+    assert addon._carries_a_prompt("/backend-api/codex/responses")
+    assert addon._carries_a_prompt("/v1beta/models/gemini-2.5-pro:generateContent")
+    assert addon._carries_a_prompt("/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse")
+
+
 # --- MCP inspection ---------------------------------------------------------------
 
 def test_is_mcp():
