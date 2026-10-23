@@ -220,7 +220,7 @@ def test_reporter_batches_then_flushes(monkeypatch):
     batches = []
     ev = threading.Event()
     monkeypatch.setattr(wm, "scan_mcp_batch",
-                        lambda items, cfg: (batches.append(list(items)), ev.set()))
+                        lambda items, cfg: (batches.append(list(items)), ev.set()) and [])
     cfg = {"url": "https://w.io", "token": "ak_x", "user": "", "timeout": 1}
     monkeypatch.setenv("PALIVANE_MCP_BATCH", "3")
     monkeypatch.setenv("PALIVANE_MCP_FLUSH_MS", "5000")
@@ -235,13 +235,45 @@ def test_reporter_batches_then_flushes(monkeypatch):
 
 def test_reporter_flushes_remainder_on_close(monkeypatch):
     batches = []
-    monkeypatch.setattr(wm, "scan_mcp_batch", lambda items, cfg: batches.append(list(items)))
+    monkeypatch.setattr(wm, "scan_mcp_batch", lambda items, cfg: batches.append(list(items)) or [])
     monkeypatch.setenv("PALIVANE_MCP_BATCH", "100")     # never size-triggers
     monkeypatch.setenv("PALIVANE_MCP_FLUSH_MS", "60000")
     r = wm._Reporter({"url": "https://w.io", "token": "ak_x", "user": "", "timeout": 1})
     r.enqueue({"method": "tools/call", "tool": "t"}, "srv")
     r.close()                                # close must flush the partial batch
     assert batches and len(batches[-1]) == 1
+
+
+def test_reporter_survives_a_batch_that_raises(monkeypatch):
+    """A batch that raises (a closed stderr on a rejected key, a malformed verdict) used to
+    end the reporter thread: telemetry and org-stance updates stopped for the session and
+    the queue grew with nobody draining it. The batch is dropped; the next one still goes."""
+    import threading
+    batches, calls = [], []
+    ev = threading.Event()
+
+    def flaky(items, cfg):
+        calls.append(1)
+        if len(calls) == 1:
+            raise BrokenPipeError("stderr closed")
+        batches.append(list(items))
+        ev.set()
+        return [{"enforce": True}]
+
+    monkeypatch.setattr(wm, "scan_mcp_batch", flaky)
+    monkeypatch.setenv("PALIVANE_MCP_BATCH", "1")
+    monkeypatch.setenv("PALIVANE_MCP_FLUSH_MS", "60000")
+    state = {}
+    r = wm._Reporter({"url": "https://w.io", "token": "ak_x", "user": "", "timeout": 1}, state)
+    r.enqueue({"method": "tools/call", "tool": "a"}, "srv")
+    while len(calls) < 1:
+        threading.Event().wait(0.01)
+    r.enqueue({"method": "tools/call", "tool": "b"}, "srv")
+    assert ev.wait(2), "reporter thread died after the first batch raised"
+    assert r.thread.is_alive()
+    assert [it["tool"] for it in batches[0]] == ["b"]
+    assert state.get("org_enforce") is True
+    r.close()
 
 
 # --- supply-chain fingerprint + TOFU pin ------------------------------------------------
