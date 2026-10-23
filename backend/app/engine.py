@@ -30,8 +30,8 @@ from .detectors import (
     ShadowAIDetector,
     Surface,
 )
-from .detectors.base import Category, Signal
-from .scoring import UNSCANNED_CHECK, Verdict, score
+from .detectors.base import Signal
+from .scoring import Verdict, score, unscanned_marker
 
 _log = logging.getLogger("palivane.engine")
 
@@ -41,11 +41,10 @@ def _unscanned(name: str) -> Signal:
     score, but it rides the signal list everywhere a verdict goes (the API payload, the stored
     finding, alerts, SIEM), so "this check did not run" cannot read as "this check found
     nothing". Names the detector only; nothing from the content."""
-    return Signal(category=Category.POSTURE_GAP, check=UNSCANNED_CHECK,
-                  title="A check did not complete",
-                  detail=(f"The {name} check failed on this item, so it was only partly "
-                          "scanned. The verdict reflects the checks that did run."),
-                  weight=0.0, confidence=1.0, detector="engine", evidence=f"detector={name}")
+    return unscanned_marker(f"detector={name}", "A check did not complete",
+                            (f"The {name} check failed on this item, so it was only partly "
+                             "scanned. The verdict reflects the checks that did run."),
+                            detector="engine")
 
 
 class Engine:

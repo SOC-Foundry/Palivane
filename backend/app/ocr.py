@@ -7,13 +7,15 @@ Gemini `inline_data`), OCRs them, and appends the recovered text to the scanned 
 
 Soft dependency: requires Pillow + pytesseract (and the tesseract binary) at runtime.
 Everything here is best-effort and fail-open — if OCR is unavailable or an image is
-malformed, the gateway behaves exactly as if the feature were off. OCR text is only fed
+malformed, the gateway behaves exactly as if the feature were off: the request goes through
+and its verdict is marked partly scanned (images unread), never blocked. OCR text is only fed
 to the detector pipeline; it is never stored beyond normal finding evidence.
 """
 
 from __future__ import annotations
 
 import base64
+from typing import NamedTuple
 
 _MAX_IMAGE_BYTES = 5_000_000   # skip anything bigger (~5MB) — OCR cost, DoS guard
 _MAX_COLLECTED = 8             # cap images harvested from one request body
@@ -34,20 +36,32 @@ def ocr_available() -> bool:
     return _available
 
 
-def extract_image_text(images: list[bytes], max_images: int = 4, max_chars: int = 8000) -> str:
-    """OCR each image and join the non-empty text. Never raises — any failure (missing
-    deps, undecodable image, tesseract error) contributes nothing; oversized images are
-    skipped. Output is capped at max_chars."""
-    if not images or not ocr_available():
-        return ""
+class ImageText(NamedTuple):
+    """What OCR got out of a set of images: the text, and how many images it came from.
+    `read < present` means some images went unread (too big, past `max_images`, an OCR
+    error, blank OCR, OCR unavailable), which the caller must surface rather than call clean."""
+    text: str
+    present: int   # images handed in
+    read: int      # images whose text made it into `text`
+
+
+def read_images(images: list[bytes], max_images: int = 4, max_chars: int = 8000) -> ImageText:
+    """OCR each image and join the non-empty text, counting the images it read. Never
+    raises — any failure (missing deps, undecodable image, tesseract error) contributes
+    nothing; oversized images are skipped. Output is capped at max_chars, and an image whose
+    text the cap cut short does not count as read."""
+    present = len(images or [])
+    if not present or not ocr_available():
+        return ImageText("", present, 0)
     try:
         import io
 
         import PIL.Image
         import pytesseract
     except Exception:
-        return ""
+        return ImageText("", present, 0)
     parts: list[str] = []
+    read = used = 0
     for raw in images[:max_images]:
         if not isinstance(raw, (bytes, bytearray)) or len(raw) > _MAX_IMAGE_BYTES:
             continue
@@ -59,7 +73,14 @@ def extract_image_text(images: list[bytes], max_images: int = 4, max_chars: int 
         text = (text or "").strip()
         if text:
             parts.append(text)
-    return "\n".join(parts)[:max_chars]
+            used += len(text) + (len(parts) > 1)   # + the joining newline
+            read += used <= max_chars
+    return ImageText("\n".join(parts)[:max_chars], present, read)
+
+
+def extract_image_text(images: list[bytes], max_images: int = 4, max_chars: int = 8000) -> str:
+    """read_images' text alone, for callers that judge "unread" by the text being empty."""
+    return read_images(images, max_images=max_images, max_chars=max_chars).text
 
 
 def _b64(data: str) -> bytes | None:
