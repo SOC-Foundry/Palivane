@@ -88,6 +88,58 @@ jobs:
         working-directory: frontend
         run: npm ci && npm run build
 
+  # The browser extension, end to end, in a real Chromium: scripts/extension-e2e/e2e.mjs starts a
+  # throwaway backend (temp SQLite, seeded demo org), a fake claude.ai / chatgpt.com /
+  # gemini.google.com on localhost (host-resolver rules, throwaway cert; every other hostname
+  # resolves to nothing, so no real network), loads the UNMODIFIED extension/ and checks both
+  # what the person sees and whether the message arrived. The extension has no unit tests and
+  # fails open by design, so a regression in it looks exactly like a clean check — 0.7.7 to
+  # 0.7.9 each fixed one that only a hand-run of this harness noticed.
+  #
+  # Chromium: the build the pinned playwright-core (frontend/package-lock.json) was released
+  # against, installed by that same playwright-core, so the browser moves only when the lockfile
+  # does. NOT the runner's preinstalled Chrome (what render-smoke uses): branded Chrome 137+
+  # ignores --load-extension, and its version drifts with the runner image. --no-shell skips the
+  # headless-shell build, which cannot load extensions anyway; the harness runs the full binary
+  # with headless: true, i.e. the new headless mode, which runs MV3 service workers. No xvfb.
+  extension-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install the backend
+        working-directory: backend
+        run: pip install -r requirements.txt
+      - name: Install playwright-core and its Chromium
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright-core install --with-deps --no-shell chromium
+      - name: Extension end to end
+        env:
+          # python3 on PATH is setup-python's, with the backend installed into it
+          PALIVANE_PYTHON: python3
+          PALIVANE_E2E_TMPDIR: ${{ runner.temp }}/extension-e2e
+        run: node scripts/extension-e2e/e2e.mjs
+      - name: Keep the run's logs and screenshots
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: extension-e2e
+          path: ${{ runner.temp }}/extension-e2e
+          if-no-files-found: ignore
+          retention-days: 14
+
   # Prove the self-host path: build the single-origin image via docker compose (the same
   # image CI deploys to Cloud Run) and confirm the stack boots + serves /api/health. This
   # is what keeps self-host from silently drifting out of sync with the app.
