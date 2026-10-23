@@ -10,13 +10,16 @@
 //   node scripts/extension-e2e/e2e.mjs
 //
 // Needs: the backend's Python environment (PALIVANE_PYTHON, default <repo>/.venv/bin/python), openssl,
-// and a Chromium that can load an unpacked extension. Playwright's own works (`npx playwright install
-// chromium` in frontend/); branded Chrome 137+ ignores --load-extension. Point PALIVANE_CHROMIUM at a
-// specific binary if Playwright's default revision is not the one you have.
+// and a Chromium that can load an unpacked extension. The one the pinned playwright-core expects works
+// (`npx playwright-core install --no-shell chromium` in frontend/, a Chrome for Testing build);
+// branded Chrome 137+ ignores --load-extension. Point PALIVANE_CHROMIUM at a specific binary if
+// Playwright's default revision is not the one you have. It runs headless: `headless: true` on a full
+// Chromium is the new headless mode, which loads extensions and runs their service worker.
 //
 // Set PALIVANE_EXTENSION to a different extension folder to run the same checks against another build.
-// Not wired into CI: it needs a browser download. Run it before shipping an extension change.
+// CI runs it on every PR (the extension-e2e job in .github/workflows/ci.yml).
 import { spawn, execFileSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -40,7 +43,12 @@ const CTL = `http://127.0.0.1:${PORT.ctl}`;
 const SSN = "My SSN is 078-05-1120";           // the SSA's published example, not a real person
 const AWS = "use AKIAIOSFODNN7EXAMPLE to deploy"; // AWS's documented example key
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "palivane-ext-e2e-"));
+// PALIVANE_E2E_TMPDIR: where the run's scratch folder goes (CI points it at a directory it uploads
+// when the run fails: the children's log, the browser console and a screenshot of each open tab).
+const tmpParent = process.env.PALIVANE_E2E_TMPDIR || os.tmpdir();
+fs.mkdirSync(tmpParent, { recursive: true });
+const tmp = fs.mkdtempSync(path.join(tmpParent, "palivane-ext-e2e-"));
+const consoleLog = fs.createWriteStream(path.join(tmp, "console.log"));
 const children = [];
 const results = [];
 const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok, extra }); };
@@ -48,12 +56,20 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function start(cmd, args, opts = {}) {
   const p = spawn(cmd, args, { stdio: ["ignore", "ignore", fs.openSync(path.join(tmp, "children.log"), "a")], ...opts });
+  p.what = `${path.basename(cmd)} ${args.slice(0, 2).join(" ")}`;
   children.push(p);
   return p;
 }
 async function until(fn, what, ms = 30000) {
   const t0 = Date.now();
-  while (Date.now() - t0 < ms) { try { if (await fn()) return; } catch (_) { /* not yet */ } await sleep(250); }
+  while (Date.now() - t0 < ms) {
+    try { if (await fn()) return; } catch (_) { /* not yet */ }
+    // a child that already exited will not come up: say so now, with its log, not after the timeout
+    const dead = children.find((c) => c.exitCode !== null || c.signalCode !== null);
+    if (dead) throw new Error(`${dead.what} exited (${dead.exitCode ?? dead.signalCode}) while waiting for ${what}:\n` +
+      fs.readFileSync(path.join(tmp, "children.log"), "utf8").split("\n").slice(-15).join("\n"));
+    await sleep(250);
+  }
   throw new Error(`timed out waiting for ${what} (see ${path.join(tmp, "children.log")})`);
 }
 async function api(method, url, body, token) {
@@ -67,7 +83,9 @@ try {
   // ---- the world: a backend, two fake sites, a slow proxy -----------------------------------
   execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", path.join(tmp, "key.pem"), "-out", path.join(tmp, "cert.pem"),
     "-days", "2", "-subj", "/CN=claude.ai", "-addext", "subjectAltName=DNS:claude.ai,DNS:chatgpt.com,DNS:gemini.google.com"], { stdio: "ignore" });
-  const benv = { ...process.env, DATABASE_URL: `sqlite:///${tmp}/e2e.db`, PALIVANE_STATE_DIR: path.join(tmp, "state"), PALIVANE_STATIC_DIR: "" };
+  const benv = { ...process.env,
+    // a throwaway key: the backend refuses to boot on a weak or missing one while signup is on
+    PALIVANE_SECRET_KEY: crypto.randomBytes(32).toString("hex"), DATABASE_URL: `sqlite:///${tmp}/e2e.db`, PALIVANE_STATE_DIR: path.join(tmp, "state"), PALIVANE_STATIC_DIR: "" };
   const backend = path.join(root, "backend");
   execFileSync(PY, ["-m", "alembic", "upgrade", "head"], { cwd: backend, env: benv, stdio: "ignore" });
   execFileSync(PY, ["-m", "app.seed"], { cwd: backend, env: benv, stdio: "ignore" });
@@ -90,13 +108,42 @@ try {
   ctx = await chromium.launchPersistentContext(path.join(tmp, "profile"), {
     executablePath: CHROMIUM, headless: true,
     args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, "--ignore-certificate-errors", "--no-proxy-server",   // a system proxy would resolve the mapped hostnames itself
-      `--host-resolver-rules=MAP claude.ai 127.0.0.1:${PORT.https}, MAP chatgpt.com 127.0.0.1:${PORT.https}, MAP gemini.google.com 127.0.0.1:${PORT.https}`],
+      // the three AI sites go to the fake one; every other hostname fails to resolve, so nothing in
+      // the run (the browser's own background requests included) can reach the real network
+      `--host-resolver-rules=MAP claude.ai 127.0.0.1:${PORT.https}, MAP chatgpt.com 127.0.0.1:${PORT.https}, MAP gemini.google.com 127.0.0.1:${PORT.https}, MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1`],
   });
+  // Everything the pages and the extension's service worker print, for a failed run's artifact.
+  const stamp = () => new Date().toISOString();
+  ctx.on("console", (m) => consoleLog.write(`[${stamp()}] ${m.page()?.url() || "worker"} ${m.type()}: ${m.text()}\n`));
+  ctx.on("weberror", (e) => consoleLog.write(`[${stamp()}] ${e.page()?.url() || "?"} uncaught: ${e.error()}\n`));
   let [sw] = ctx.serviceWorkers();
   if (!sw) sw = await ctx.waitForEvent("serviceworker", { timeout: 20000 });
   const extId = sw.url().split("/")[2];
   const version = await sw.evaluate(() => chrome.runtime.getManifest().version);
   console.log(`extension ${version} loaded from ${path.relative(root, EXT)}`);
+  // Count the service worker's calls to the backend still in flight. A scan can outlive the send
+  // it was for (the page gives up at 4s and sends; the answer is still recorded when it comes),
+  // so a check that reads the popup after a slow scan has to wait for those, not for a fixed time.
+  await sw.evaluate((pali) => {
+    const f = self.fetch; self.__pvInflight = 0;
+    self.fetch = (...a) => {
+      if (!String(a[0]?.url || a[0]).startsWith(pali)) return f(...a);
+      self.__pvInflight++;
+      return f(...a).finally(() => { self.__pvInflight--; });
+    };
+  }, PALI);
+  // Every scan answered and its verdict/skip written: nothing in flight, and the popup's state
+  // unchanged across two reads.
+  async function scansSettled() {
+    let last = "";
+    await until(async () => {
+      const now = JSON.stringify(await sw.evaluate(async () => [self.__pvInflight || 0,
+        await chrome.storage.local.get({ lastVerdict: null, lastSkip: null })]));
+      const done = now.startsWith("[0,") && now === last;
+      last = now;
+      return done;
+    }, "the extension's scans to finish", 60000);
+  }
 
   // Config goes where the extension reads it: the capture key in local storage (since 0.7.6 it
   // is moved out of sync storage and any copy left there is ignored), the rest in sync storage.
@@ -242,6 +289,9 @@ try {
   // as a clean check, which hid the "sent unchecked" line although the tail was never looked at.
   // (the SSN sits in the unscored tail; the trailing padding is what the arrival check looks for)
   r = await send("over the scan cap, clean prefix", { text: pad(1250000) + " " + SSN + " " + pad(40), extraWait: 1500 });
+  // eight 150,000-character scans: on a slow machine some answer after the message went out, and
+  // one landing after the next send would put the "unchecked" line back over its clean verdict
+  await scansSettled();
   check("a message over 1.2M characters still goes out (fail open)", r.arrived && !r.modal, JSON.stringify({ ...r, title: r.title }));
   let skipLine = await popupSkip();
   check("...and the popup keeps saying it went out unchecked, though its prefix was clean", /sent unchecked: message too long, only the first part was checked/.test(skipLine), skipLine);
@@ -320,6 +370,10 @@ try {
 } catch (e) {
   check("the harness ran to the end", false, String(e && e.stack || e));
 } finally {
+  if (results.some((x) => !x.ok)) {   // whatever is still open when something failed
+    let i = 0;
+    for (const p of ctx?.pages() || []) { try { await p.screenshot({ path: path.join(tmp, `open-tab-${i++}.png`) }); } catch (_) { /* closed */ } }
+  }
   try { await ctx?.close(); } catch (_) { /* already gone */ }
   for (const c of children) { try { c.kill("SIGTERM"); } catch (_) { /* gone */ } }
 }
