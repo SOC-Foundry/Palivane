@@ -102,8 +102,13 @@ def test_malformed_body_is_fail_open(client, raw_client):
     assert r.status_code == 200 and "partialSuccess" in r.json()
 
 
-def test_counts_as_one_ingest_request(client, raw_client):
+def test_counts_as_one_ingest_request(client, raw_client, monkeypatch):
     # A whole export = one ingest-quota hit, even with many records.
+    # Clock pinned mid-minute: two requests a moment apart at :59.9 / :00.1 land in two
+    # windows and the second is allowed (the ~1-in-60 flake test_metering documents).
+    import app.metering as metering
+    from datetime import datetime
+    monkeypatch.setattr(metering, "_now", lambda: datetime(2026, 1, 1, 12, 0, 30))
     client.patch("/api/tenant", json={"ingest_rate_limit": 1})
     key = _key(client)
     doc = _otlp([{"event": "user_prompt", "attrs": {"prompt": f"note {i}"}} for i in range(5)])
