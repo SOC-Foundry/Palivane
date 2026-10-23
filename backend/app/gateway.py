@@ -53,6 +53,7 @@ from .policy import detect_tool, signal_filter_for
 from .security import (TokenError, decode_token, hash_token, looks_like_agent_token,
                        looks_like_api_key)
 from .metering import check_daily_gateway, record_and_check
+from .scoring import unscanned_marker
 from .service import run_analysis
 from .netguard import safe_client
 from .upstreams import resolve as resolve_upstream
@@ -380,20 +381,37 @@ def _scan_messages(messages: list, system=None) -> str:
     return "\n".join(p for p in parts if p)
 
 
-def _with_image_text(prompt: str, body: dict) -> str:
+def _with_image_text(prompt: str, body: dict) -> tuple[str, list]:
     """Opt-in image DLP (PALIVANE_OCR): OCR base64 images in the request body (Anthropic
     `source.data`, OpenAI `image_url` data: URIs — chat's object form and Responses'
     `input_image` string form — Gemini `inline_data`) and append the
     recovered text to the scannable prompt so screenshots can't smuggle secrets/PII past
-    the text-only scan. No-op unless enabled AND pytesseract/Pillow are installed; OCR is
-    fail-open, so a bad image never breaks the request."""
-    from .ocr import collect_images, extract_image_text, ocr_available
-    if not (settings.gateway_ocr and ocr_available()):
-        return prompt
-    text = extract_image_text(collect_images(body))
-    if not text:
-        return prompt
-    return f"{prompt}\n[image text]\n{text}"
+    the text-only scan. OCR is fail-open, so a bad image never breaks the request.
+
+    Returns (prompt, extra_signals): when the body carries images whose text was not
+    recovered — OCR off or not installed, too big, past the ones OCR'd, an OCR error, blank
+    OCR — one partial-scan marker for the request, so the verdict reads "partly scanned"
+    rather than clean. Record only: weight 0, it never moves the score or the block."""
+    from .ocr import _MAX_COLLECTED, collect_images, ocr_available, read_images
+    images = collect_images(body)
+    if not images:
+        return prompt, []
+    ocr_on = settings.gateway_ocr and ocr_available()
+    got = read_images(images) if ocr_on else None
+    if got and got.text:
+        prompt = f"{prompt}\n[image text]\n{got.text}"
+    read = got.read if got else 0
+    if read >= len(images):
+        return prompt, []
+    # collect_images stops at its cap, so a full haul may be the start of a longer list.
+    present = f"{len(images)}+" if len(images) >= _MAX_COLLECTED else str(len(images))
+    why = ("some of their text was not recovered (too large, past the images read, or "
+           "unreadable)") if ocr_on else "image text reading (OCR) is off"
+    return prompt, [unscanned_marker(
+        f"image={len(images) - read} of {present} unread", "Images not fully scanned",
+        (f"This request carried {present} image(s) and {why}, so it was only partly "
+         "scanned. The verdict reflects the text that was scanned."),
+        detector="gateway")]
 
 
 def _tenant_suppress(tenant_id: int | None, db: Session) -> str:
@@ -403,12 +421,13 @@ def _tenant_suppress(tenant_id: int | None, db: Session) -> str:
         else settings.gateway_tool_suppress
 
 
-def _capture(prompt: str, model: str, tool: str, principal: Principal, db: Session) -> dict:
+def _capture(prompt: str, model: str, tool: str, principal: Principal, db: Session,
+             extra_signals=None) -> dict:
     item = AnalysisInput(content=prompt or "(empty)", subject=model, sender=principal.actor,
                          channel=tool, surface=Surface.LLM_IO)
     return run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
                         signal_filter=signal_filter_for(tool, _tenant_suppress(principal.tenant_id, db)),
-                        persist_benign=settings.usage_persist_benign)
+                        persist_benign=settings.usage_persist_benign, extra_signals=extra_signals)
 
 
 # --- Agentic tool-use inspection (agentless MCP over the LLM API) ----------------------
@@ -1004,8 +1023,8 @@ def chat_completions(request: Request, principal: Principal = Depends(get_gatewa
     payload = _clamp_output_tokens(body)
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
-    prompt = _with_image_text(_scan_messages(payload.get("messages", [])), payload)
-    verdict = _capture(prompt, model, tool, principal, db)
+    prompt, unread = _with_image_text(_scan_messages(payload.get("messages", [])), payload)
+    verdict = _capture(prompt, model, tool, principal, db, extra_signals=unread)
     pol = _effective_policy(principal, db)
 
     if _should_block(verdict, pol):
@@ -1195,9 +1214,9 @@ def responses(request: Request, principal: Principal = Depends(get_gateway_princ
     payload = _clamp_output_tokens(body)
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
-    prompt = _with_image_text(
+    prompt, unread = _with_image_text(
         _responses_user_text(payload.get("input"), payload.get("instructions")), payload)
-    verdict = _capture(prompt, model, tool, principal, db)
+    verdict = _capture(prompt, model, tool, principal, db, extra_signals=unread)
     pol = _effective_policy(principal, db)
 
     if _should_block(verdict, pol):
@@ -1284,8 +1303,8 @@ def messages(request: Request, principal: Principal = Depends(get_gateway_princi
     payload = _clamp_output_tokens(body)
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
-    prompt = _with_image_text(_scan_messages(payload.get("messages", []), payload.get("system")), payload)
-    verdict = _capture(prompt, model, tool, principal, db)
+    prompt, unread = _with_image_text(_scan_messages(payload.get("messages", []), payload.get("system")), payload)
+    verdict = _capture(prompt, model, tool, principal, db, extra_signals=unread)
     pol = _effective_policy(principal, db)
 
     if _should_block(verdict, pol):
@@ -1560,10 +1579,10 @@ def _gemini_entry(model: str, method: str, request: Request,
         return limited
     payload = _clamp_output_tokens(body)
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
-    prompt = _with_image_text(
+    prompt, unread = _with_image_text(
         _scan_gemini(payload.get("contents", []), payload.get("systemInstruction") or payload.get("system_instruction")),
         payload)
-    verdict = _capture(prompt, model, tool, principal, db)
+    verdict = _capture(prompt, model, tool, principal, db, extra_signals=unread)
     pol = _effective_policy(principal, db)
 
     if _should_block(verdict, pol):
