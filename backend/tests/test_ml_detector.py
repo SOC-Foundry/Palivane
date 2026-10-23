@@ -30,9 +30,11 @@ PROSE = ("Our quarterly review covers the revenue outlook, the hiring plan for t
 
 
 def _code() -> str:
-    # real source, past the module docstring (which is honest prose)
+    # real source, from a code-dense spot (not the file's midpoint: that moved with every
+    # edit and could land in a docstring, which is honest prose)
     text = open("app/service.py").read()
-    return text[len(text) // 2:len(text) // 2 + 1200]
+    start = text.index("    tenant = db.get(Tenant, tenant_id)")
+    return text[start:start + 1200]
 
 
 def test_shipped_weights_load_with_eval_metadata():
