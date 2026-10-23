@@ -825,8 +825,18 @@ def test_gateway_endpoints_run_off_the_event_loop():
 
 
 def test_slow_gateway_requests_are_served_concurrently(client, monkeypatch):
-    """Two requests whose capture blocks for 0.4s finish in well under 0.8s total."""
+    """Two requests whose capture blocks for 0.4s are blocked AT THE SAME TIME.
+
+    This used to assert the two finished in under 0.75s of wall clock. That bound also
+    counted everything around the blocking step (first-use initialisation in a fresh xdist
+    worker, a slow or loaded CI runner) and failed on CI now and then at 0.75-0.83s while it
+    ran at ~0.43s locally under every setup tried. The property is that one request's
+    blocking step does not wait for the other's, so that is what is measured: the two
+    0.4s windows must overlap. If the gateway ever serialises requests (an `async def`
+    endpoint, a lock held across the call, a write transaction that blocks the other
+    request), the windows cannot overlap and this fails every time, not now and then."""
     import asyncio
+    import threading
     import time
 
     import httpx
@@ -835,9 +845,14 @@ def test_slow_gateway_requests_are_served_concurrently(client, monkeypatch):
     from app.main import app
     monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
     real_capture = gateway._capture
+    windows: list[tuple[float, float, int]] = []
+    lock = threading.Lock()
 
     def slow_capture(*a, **kw):
+        start = time.monotonic()
         time.sleep(0.4)
+        with lock:
+            windows.append((start, time.monotonic(), threading.get_ident()))
         return real_capture(*a, **kw)
     monkeypatch.setattr(gateway, "_capture", slow_capture)
 
@@ -851,4 +866,9 @@ def test_slow_gateway_requests_are_served_concurrently(client, monkeypatch):
             return time.monotonic() - t0, rs
     elapsed, rs = asyncio.run(run())
     assert all(r.status_code == 200 for r in rs), [r.text for r in rs]
-    assert elapsed < 0.75, elapsed
+    assert len(windows) == 2, windows
+    (s1, e1, t1), (s2, e2, t2) = sorted(windows)
+    detail = (f"capture windows {s1 - s1:.3f}-{e1 - s1:.3f}s on thread {t1} and "
+              f"{s2 - s1:.3f}-{e2 - s1:.3f}s on thread {t2}; total {elapsed:.3f}s")
+    assert t1 != t2, "both captures ran on one thread: " + detail
+    assert s2 < e1, "the second capture started only after the first finished: " + detail
