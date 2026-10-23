@@ -11,6 +11,7 @@ Each test pins one fix so it can't silently regress:
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import pytest
 from pydantic import ValidationError
@@ -187,3 +188,101 @@ def test_prod_refuses_to_boot_with_a_weak_secret_key(monkeypatch, bad_key):
 
     with pytest.raises(RuntimeError, match="PALIVANE_SECRET_KEY"):
         asyncio.run(_boot())
+
+
+# --- SEC-07: SQLite + public signup + weak key -----------------------------------------
+#
+# SQLite used to mean "local dev" and a weak key only warned. It is also what a single-org
+# self-host left on the defaults looks like, and there PALIVANE_ALLOW_SIGNUP (default on)
+# lets anyone POST /api/auth/signup and become admin of a new tenant on the same database,
+# with sessions signed by a guessable key and no Postgres RLS behind them. That shape now
+# refuses to boot unless local dev opts in with PALIVANE_ALLOW_DEV_KEY.
+
+_SQLITE = "sqlite:////tmp/palivane-sec07.db"
+
+
+@pytest.mark.parametrize("bad_key", ["", "changeme", "dev-insecure-key-change-me", "short",
+                                     "replace-me-with-a-long-random-secret"])
+def test_sqlite_with_signup_on_refuses_a_weak_secret_key(monkeypatch, bad_key):
+    from app import main
+
+    monkeypatch.setattr(main.settings, "database_url", _SQLITE)
+    monkeypatch.setattr(main.settings, "auth_secret_key", bad_key)
+    monkeypatch.setattr(main.settings, "allow_signup", True)
+    monkeypatch.setattr(main.settings, "allow_dev_key", False)
+
+    with pytest.raises(RuntimeError, match="PALIVANE_ALLOW_SIGNUP"):
+        main._enforce_secret_key(prod=False, log=logging.getLogger("test.sec07"))
+
+
+def test_lifespan_wires_the_sqlite_signup_refusal(monkeypatch):
+    """The gate has to be in the startup path, not just callable. Like the Postgres test
+    above it can only assert the refusal (it raises before the MCP session manager)."""
+    from app import main
+
+    monkeypatch.setattr(main.settings, "database_url", _SQLITE)
+    monkeypatch.setattr(main.settings, "auth_secret_key", "")
+    monkeypatch.setattr(main.settings, "allow_signup", True)
+    monkeypatch.setattr(main.settings, "allow_dev_key", False)
+
+    async def _boot():
+        async with main.lifespan(main.app):
+            pass
+
+    with pytest.raises(RuntimeError, match="PALIVANE_ALLOW_SIGNUP"):
+        asyncio.run(_boot())
+
+
+def test_sqlite_with_signup_off_keeps_the_weak_key_warning(monkeypatch, caplog):
+    """A single-org install that turned signup off keeps the old behaviour: it boots and
+    says the key is weak."""
+    from app import main
+
+    monkeypatch.setattr(main.settings, "database_url", _SQLITE)
+    monkeypatch.setattr(main.settings, "auth_secret_key", "")
+    monkeypatch.setattr(main.settings, "allow_signup", False)
+    monkeypatch.setattr(main.settings, "allow_dev_key", False)
+
+    with caplog.at_level(logging.WARNING, logger="test.sec07"):
+        main._enforce_secret_key(prod=False, log=logging.getLogger("test.sec07"))
+    assert "insecure dev key" in caplog.text
+
+
+def test_local_dev_opt_in_boots_on_sqlite_with_signup_on(monkeypatch, caplog):
+    from app import main
+
+    monkeypatch.setattr(main.settings, "database_url", _SQLITE)
+    monkeypatch.setattr(main.settings, "auth_secret_key", "")
+    monkeypatch.setattr(main.settings, "allow_signup", True)
+    monkeypatch.setattr(main.settings, "allow_dev_key", True)
+
+    with caplog.at_level(logging.WARNING, logger="test.sec07"):
+        main._enforce_secret_key(prod=False, log=logging.getLogger("test.sec07"))
+    assert "insecure dev key" in caplog.text
+
+
+def test_a_strong_key_boots_on_sqlite_with_signup_on(monkeypatch, caplog):
+    """What run-local.sh and the native installer produce: a generated key, signup on or
+    off. Nothing to refuse and nothing to warn about."""
+    from app import main
+
+    monkeypatch.setattr(main.settings, "database_url", _SQLITE)
+    monkeypatch.setattr(main.settings, "auth_secret_key", "a" * 16 + "0123456789abcdef")
+    monkeypatch.setattr(main.settings, "allow_signup", True)
+    monkeypatch.setattr(main.settings, "allow_dev_key", False)
+
+    with caplog.at_level(logging.WARNING, logger="test.sec07"):
+        main._enforce_secret_key(prod=False, log=logging.getLogger("test.sec07"))
+    assert "insecure dev key" not in caplog.text
+
+
+def test_dev_opt_in_does_not_relax_postgres(monkeypatch):
+    from app import main
+
+    monkeypatch.setattr(main.settings, "database_url", "postgresql://u:p@db/palivane")
+    monkeypatch.setattr(main.settings, "auth_secret_key", "")
+    monkeypatch.setattr(main.settings, "allow_signup", False)
+    monkeypatch.setattr(main.settings, "allow_dev_key", True)
+
+    with pytest.raises(RuntimeError, match="PALIVANE_SECRET_KEY"):
+        main._enforce_secret_key(prod=True, log=logging.getLogger("test.sec07"))

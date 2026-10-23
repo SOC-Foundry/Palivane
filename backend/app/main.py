@@ -99,23 +99,45 @@ def _is_placeholder_key(key: str) -> bool:
     return any(m in k for m in _PLACEHOLDER_MARKERS)
 
 
-@asynccontextmanager
-async def lifespan(_app: FastAPI):
-    import logging
-    log = logging.getLogger("uvicorn.error")
-    prod = not settings.database_url.startswith("sqlite")   # Postgres => a real deployment
+def _enforce_secret_key(prod: bool, log) -> None:
+    """Startup gate on PALIVANE_SECRET_KEY, called from lifespan. Separate so the SQLite
+    cases that boot can be tested without entering the lifespan (the MCP session manager
+    inside it runs once per process)."""
     weak = using_insecure_key() or settings.auth_secret_key in _WEAK_SECRET_KEYS \
         or len(settings.auth_secret_key) < 16 or _is_placeholder_key(settings.auth_secret_key)
     if weak:
         if prod:
             # Refuse to boot with a forgeable JWT key on a production-shaped deployment — an
             # unset OR well-known/short key both let anyone forge an admin session for any
-            # tenant. (SQLite = local dev, where the dev key is allowed with a warning.)
+            # tenant. (On SQLite the dev key only warns, and only when signup is off or
+            # local dev opted in below.)
             raise RuntimeError(
                 "PALIVANE_SECRET_KEY is unset or weak. On a non-SQLite (production) deployment "
                 "JWTs would be forgeable and anyone could mint an admin session. Set "
                 "PALIVANE_SECRET_KEY to a strong random value (openssl rand -hex 32) and restart.")
+        if settings.allow_signup and not settings.allow_dev_key:
+            # SQLite is also what a single-org self-host looks like when nobody changed the
+            # defaults, and there public signup turns a weak key from "dev convenience" into
+            # an open door: anyone can POST /api/auth/signup, becomes admin of a new tenant
+            # on the same database (no Postgres RLS behind it), and every session is signed
+            # with a key they can guess. Local dev opts in explicitly; nothing else
+            # should be running this combination.
+            raise RuntimeError(
+                "PALIVANE_SECRET_KEY is unset or weak and public signup is on "
+                "(PALIVANE_ALLOW_SIGNUP defaults to true). Anyone could create an org on "
+                "this database and session tokens would be forgeable. Set PALIVANE_SECRET_KEY "
+                "to a strong random value (openssl rand -hex 32), or set "
+                "PALIVANE_ALLOW_SIGNUP=false for a single-org install. For local development "
+                "only, PALIVANE_ALLOW_DEV_KEY=1 keeps the insecure dev key.")
         log.warning("PALIVANE_SECRET_KEY is unset/weak — using an insecure dev key (SQLite dev only).")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    import logging
+    log = logging.getLogger("uvicorn.error")
+    prod = not settings.database_url.startswith("sqlite")   # Postgres => a real deployment
+    _enforce_secret_key(prod, log)
 
     # A signing key the installer does not pin makes every `curl | bash` install abort, and
     # nothing else notices. On Cloud Run a revision that refuses to boot never gets traffic,
@@ -132,8 +154,10 @@ async def lifespan(_app: FastAPI):
         log.warning(
             "Running on SQLite: Postgres row-level security is NOT active, so tenant "
             "isolation rests on application scoping alone, and a weak PALIVANE_SECRET_KEY "
-            "warns instead of refusing to boot. Fine for evaluation and single-tenant use; "
-            "point DATABASE_URL at Postgres before this carries another org's data.")
+            "warns instead of refusing to boot (only with signup off or "
+            "PALIVANE_ALLOW_DEV_KEY set). Fine for evaluation and single-tenant use with "
+            "PALIVANE_ALLOW_SIGNUP=false; point DATABASE_URL at Postgres before this carries "
+            "another org's data.")
 
     # Periodic alert digests: tick every few minutes and send any tenant digests that are due.
     # Each send is claimed via a conditional DB update, so multiple workers won't duplicate.

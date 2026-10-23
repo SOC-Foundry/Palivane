@@ -6,7 +6,7 @@ card, the LIVE Connect page, the one-command install terminal, the LIVE Settings
 second title card, the MDM push terminal, the LIVE Findings page, and a closing brand card.
 
     # local stack (frontend built; backend serving it):
-    #   PALIVANE_STATIC_DIR=frontend/dist DATABASE_URL=sqlite:///<db> \
+    #   PALIVANE_STATIC_DIR=frontend/dist DATABASE_URL=sqlite:///<db> PALIVANE_ALLOW_DEV_KEY=1 \
     #     backend/.venv/bin/uvicorn app.main:app --port 8088
     #   (seed first: backend/.venv/bin/python -m app.seed)
     backend/.venv/bin/python scripts/demo_capture.py     # optional: populates findings

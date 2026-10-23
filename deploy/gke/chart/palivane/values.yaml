@@ -34,6 +34,9 @@ secret:
 # Non-secret app config (single-tenant instance: signup off, content encrypted at rest).
 config:
   gatewayEnforce: "false"
+  # Hooks/desktop proxy default for devices with no local flag. Keep in step with
+  # gatewayEnforce; confirmed secret/PII leaks block either way.
+  clientEnforce: "false"
   allowSignup: "false"
   encryptFindings: "true"
   storeContent: "false"

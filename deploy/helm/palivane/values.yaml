@@ -19,6 +19,9 @@ env:
   PALIVANE_PUBLIC_URL: ""       # e.g. https://palivane.internal.example
   CORS_ORIGINS: ""              # defaults to PALIVANE_PUBLIC_URL when empty
   GATEWAY_ENFORCE: "true"
+  # CLIENT_ENFORCE (hooks/desktop proxy on devices with no local flag) is not set here, so
+  # it stays monitor. Add CLIENT_ENFORCE: "true" to match the gateway when you want both
+  # capture planes enforcing.
   PALIVANE_ALLOW_SIGNUP: "false"
   SEED_ON_START: "false"
 extraEnv: {}                    # any additional PALIVANE_*/GATEWAY_* settings
