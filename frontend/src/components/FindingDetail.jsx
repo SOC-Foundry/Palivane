@@ -257,7 +257,8 @@ const QUICK_VERDICTS = [
 const REASON_WORD = { false_positive: "a false positive", expected: "expected", accepted_risk: "an accepted risk", duplicate: "a duplicate" };
 
 // The distinct policy checks this finding's signals belong to, what a suppression targets.
-const NOT_A_CHECK = new Set(["ai_generated"]);  // verdict signals with no policy toggle
+// verdict signals with no policy toggle; detector_error marks a partial scan (a check crashed)
+const NOT_A_CHECK = new Set(["ai_generated", "detector_error"]);
 
 function checksOf(finding) {
   const seen = new Map();
