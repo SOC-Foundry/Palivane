@@ -121,7 +121,7 @@ jobs:
       - name: If the new revision did not start
         if: failure() && steps.deploy.outcome == 'failure'
         run: |
-          echo "::error::The deploy failed and the previous revision is still serving. If Cloud Run says the new revision is not ready, the reason is in that revision's logs (Cloud Run, Logs, severity ERROR), not in this job. A release signing key that is not the one the installer pins is refused at startup: 'PALIVANE_RELEASE_SIGNING_KEY signs with a key (...) that is not the one the installer pins (...)'. See docs/verifying-downloads.md, Operator."
+          echo "::error::The deploy failed and the previous revision is still serving. If the log above ends in 'Not deploying.', deploy.sh refused before building anything (e.g. the release signing key does not match the key the installer pins) and the reason is right there. If Cloud Run says the new revision is not ready, the reason is in that revision's logs (Cloud Run, Logs, severity ERROR), not in this job. A release signing key that is not the one the installer pins is refused at startup: 'PALIVANE_RELEASE_SIGNING_KEY signs with a key (...) that is not the one the installer pins (...)'. See docs/verifying-downloads.md, Operator."
 
       # Release signing is configuration, not code: the sign/verify logic has been covered
       # by unit tests all along, yet production served an unsigned manifest for months
