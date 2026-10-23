@@ -224,7 +224,13 @@ _MAX_EXTRACT_CHARS = 500_000
 
 def _xml_text(blob: bytes) -> str:
     """Strip XML tags to their text. Paragraph and row ends become newlines first, so a
-    spreadsheet column does not run into the next one and defeat the line-based scanners."""
+    spreadsheet column does not run into the next one and defeat the line-based scanners.
+
+    Six entities are decoded, and the hex newline is matched in lowercase only
+    (`&#xa;`). `&#65;`, `&#x41;` and `&#xA;` stay in the string as the characters
+    of the reference. OOXML writes values that way. The detectors then run on the
+    reference, not on the character it stands for. Decode numeric and hex
+    references before the text is returned."""
     try:
         x = blob.decode("utf-8", errors="replace")
     except Exception:                                             # noqa: BLE001
@@ -325,6 +331,9 @@ def _extract_rtf(data: bytes) -> str:
         if "rtf1" not in s[:40]:
             return ""
     # Drop destination groups that carry no body text (fonts, colors, embedded objects).
+    # `\{\\\*.*?\}` stops at the first closing brace. A nested destination
+    # (`{\*\datastore { ... }}`) is cut in the middle, and whatever follows that
+    # brace is then scanned as body text. Walk the groups by depth.
     s = re.sub(r"\{\\\*.*?\}", " ", s, flags=re.DOTALL)
     # Paragraph / line / tab breaks -> real whitespace before the control words go.
     s = re.sub(r"\\pard?\b", "\n", s)
@@ -354,7 +363,14 @@ def _extract_pdf(data: bytes) -> str:
     enough to reconstruct the document, which is the right trade for a scanner.
 
     Encrypted PDFs and ones whose text is CID/Type0-encoded come back empty rather than as
-    mojibake — garbage here would mean garbage findings."""
+    mojibake — garbage here would mean garbage findings.
+
+    Only parenthesized literals are taken (`(text)` next to Tj / TJ). A hex
+    literal (`<48656C6C6F> Tj`) and the `'` / `"` show operators are skipped. A
+    stream that fails to inflate is left as the compressed bytes and then dropped
+    unless those bytes happen to contain Tj, and that stream is not reported.
+    extract() treats any non-empty result as the file having been read, so one
+    stream of parenthesized text makes the rest of the document look scanned."""
     import zlib
     chunks: list[str] = []
     for raw in _PDF_STREAM_RE.findall(data):

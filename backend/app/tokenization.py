@@ -33,7 +33,7 @@ from .detectors.shadow_ai import (CC_CANDIDATE_RE, SSN_CONTEXT_RE, SSN_NODASH_RE
                                   _TEST_CARDS, _luhn_ok, _valid_ssn9)
 
 TOKEN_RE = re.compile(r"PLV_[A-Z0-9]{2,12}_[0-9A-F]{6}")
-MAX_CHARS = 200_000          # a prompt larger than this is not worth the regex sweep
+MAX_CHARS = 200_000          # above this, tokenize() returns the original text unchanged
 
 
 def _slug(label: str) -> str:
@@ -105,6 +105,11 @@ def tokenize(text: str, extra_patterns: str = "",
     fragment of the longer one behind.
     """
     mapping = mapping if mapping is not None else {}
+    # Over the cap the original string is what the provider receives. The scan
+    # has already run; this step is the one that keeps the values out of the
+    # upstream body. Returning them untouched leaves nothing to reverse, and it
+    # sends the personal data through. Sweep the text in chunks, or refuse to
+    # forward a body this function did not tokenize.
     if not text or len(text) > MAX_CHARS:
         return text, mapping
     seen = {v: t for t, v in mapping.items()}
@@ -230,9 +235,15 @@ def detokenize_obj(obj, mapping: dict[str, str]):
 def tokenize_payload(payload: dict, extra_patterns: str = "") -> tuple[dict, dict[str, str]]:
     """A copy of `payload` with prompt text tokenized, plus the map to reverse it.
 
-    Covers the OpenAI chat shape (`messages[].content`, string or typed blocks) and the
-    Anthropic shape (the same plus a top-level `system`). Anything else is returned
-    unchanged with an empty map, which fails safe: no tokens out means nothing to reverse.
+    Covers OpenAI chat (`messages[].content`), Anthropic (`system` plus messages),
+    the Responses API (`instructions` and `input`), and Gemini (`contents[].parts`
+    and `systemInstruction` / `system_instruction`). Only string text fields are
+    rewritten.
+
+    A shape this does not recognize comes back unchanged, with an empty map. That
+    leaves nothing to put back on the way in. It also leaves the values in the
+    body the provider receives. A single string over MAX_CHARS does the same
+    thing inside tokenize().
     """
     mapping: dict[str, str] = {}
 

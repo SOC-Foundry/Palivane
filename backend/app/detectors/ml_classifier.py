@@ -34,8 +34,8 @@ _log = logging.getLogger("palivane.ml")
 _MIN_LEN = 120          # under this, n-gram statistics are noise
 _THRESHOLD = 0.85       # p(code) to speak at all; confidence tracks p above it
 _WINDOW = 240           # must match the training chunk size (scripts/train_code_classifier)
-_STRIDE = 400           # sparse stride: enough windows to find an embedded block, bounded
-_SCAN_CAP = 2800        # score at most ~7 windows — keeps worst-case inference ~2ms
+_STRIDE = 400           # 160 characters fall between windows and are never scored
+_SCAN_CAP = 2800        # last window starts at 2400 and ends at 2640; the rest is unscored
 
 _DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 _INJ_THRESHOLD = 0.70   # held-out precision is 1.0 at 0.5; this adds margin, recall is
@@ -62,9 +62,14 @@ class MLClassifierDetector:
     def p_code(self, text: str) -> float:
         """P(the text contains source code). Scored in training-shaped windows (the model
         was fit on ~240-char chunks; a whole document dilutes the L2-normalized features
-        toward indifference) and aggregated by max — a code block pasted INSIDE prose is
-        exactly the leak this tier exists to catch. 0.0 when the model is unavailable or
-        the input is too short to carry n-gram signal."""
+        toward indifference) and aggregated by max. 0.0 when the model is unavailable or
+        the input is too short to carry n-gram signal.
+
+        The windows do not cover the text. A 240-character window stepped by 400
+        leaves 160 characters between each pair unscored, and the last start index
+        is 2400, so nothing past index 2640 is scored. A block in one of those gaps,
+        or past that point, does not move this probability. A short block pasted
+        inside prose is the case this tier is for, and this sampling misses it."""
         if self._model is None or len(text) < _MIN_LEN:
             return 0.0
         windows = [text[i:i + _WINDOW] for i in range(0, min(len(text), _SCAN_CAP), _STRIDE)]
@@ -78,9 +83,11 @@ class MLClassifierDetector:
             return 0.0
         if len(text) <= 400:
             return self._inj.proba(text)
-        # Dense, overlapping windows (unlike the code task's sparse sampling): an
-        # injection is a SHORT payload that must not fall between windows — and the tail
-        # is always scanned, because appended-after-a-long-paste is the classic smuggle.
+        # The first 1200 characters are covered (window 240, step 120) and so is
+        # the last 240. Once the text is longer than 1440 characters, the span
+        # between index 1200 and the final 240 is never scored. An injection in
+        # that middle does not move this probability. The tail covers an appended
+        # paste. It leaves the rest of a long prompt unread.
         head = text[:1200]
         windows = [head[i:i + _WINDOW] for i in range(0, len(head), 120)]
         windows.append(text[-_WINDOW:])

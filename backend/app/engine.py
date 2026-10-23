@@ -104,7 +104,11 @@ class Engine:
                 else:
                     signals.extend(detector.analyze(item))
             except Exception:
-                # A misbehaving detector must never sink the whole analysis.
+                # A detector that raises is dropped with no log and no signal, and
+                # score() still returns a verdict. A crashed check and a check that
+                # ran and found nothing look the same, so a broken detector reads as
+                # a clean prompt. The rest of the analysis should keep running. Log
+                # the detector name and record that this item was only partly scanned.
                 continue
         return score(signals)
 

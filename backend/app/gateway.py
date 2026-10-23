@@ -385,7 +385,14 @@ def _with_image_text(prompt: str, body: dict) -> str:
     `source.data`, OpenAI `image_url` data: URIs, Gemini `inline_data`) and append the
     recovered text to the scannable prompt so screenshots can't smuggle secrets/PII past
     the text-only scan. No-op unless enabled AND pytesseract/Pillow are installed; OCR is
-    fail-open, so a bad image never breaks the request."""
+    fail-open, so a bad image never breaks the request.
+
+    An empty result takes the same path as a body with no image: the prompt is
+    returned unchanged and scored as text. extract_image_text also returns "" when
+    images were present and dropped — over 5MB, past the four it keeps of the eight
+    collect_images gathered, a tesseract error, or blank OCR. The connector path
+    counts that file as unread and does not call it clean. This one does. Record
+    that an image was present and not read."""
     from .ocr import collect_images, extract_image_text, ocr_available
     if not (settings.gateway_ocr and ocr_available()):
         return prompt
@@ -1068,8 +1075,16 @@ def _responses_text(c) -> str:
 
 
 def _responses_user_text(inp) -> str:
-    """The current outbound user turn — mirrors _scan_messages (only the latest user item,
-    so resent history doesn't cascade). `input` may be a bare string or an item list."""
+    """The latest item with role "user", as text. A bare string is returned whole.
+
+    Narrower than _scan_messages, which also reads the system prompt because that
+    field used to be accepted and never scanned. Responses puts the same text in
+    `instructions`, and this function never sees it. An item list whose entries
+    have type and text but no role, or whose only content is an input_image, comes
+    back "". The /responses handler scans only this string. It does not call
+    _with_image_text, which chat, Anthropic and Gemini all do, while
+    tokenize_payload does rewrite `instructions`. A secret or an injection in the
+    system prompt, and any image on this route, is forwarded unscored."""
     if isinstance(inp, str):
         return inp.strip()
     if isinstance(inp, list):
@@ -1170,6 +1185,8 @@ def responses(request: Request, principal: Principal = Depends(get_gateway_princ
     payload = _clamp_output_tokens(body)
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
+    # Latest user item only. `instructions` and images are not in this string;
+    # see _responses_user_text. Chat and Anthropic pass the system prompt and OCR.
     verdict = _capture(_responses_user_text(payload.get("input")), model, tool, principal, db)
     pol = _effective_policy(principal, db)
 
