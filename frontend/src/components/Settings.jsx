@@ -1066,11 +1066,12 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                       <option value="off">Off, they run and are recorded</option>
                     </select>
                     <span className="muted" style={{ fontSize: 11.5, marginTop: 3 }}>
-                      Claude Code and Cursor, on devices set to Enforce. A tool call that is flagged
+                      Claude Code, Cursor, Gemini CLI (0.36+) and Copilot CLI, for developers in
+                      Enforce (the org stance or a per-user override). A tool call that is flagged
                       (suspicious or higher) but scores below the MCP block severity stops for the
                       developer's approval, with the reason, instead of running silently. Blocks stay
-                      blocks. Prompts can't ask, and in an unattended run (claude -p) nobody can
-                      answer, so Claude Code denies the call.
+                      blocks. Codex has no ask, so there it runs. Prompts can't ask, and in an
+                      unattended run (claude -p) nobody can answer, so the call is denied.
                       {org.ask_on_warn !== "off" && " " + askBandNote(org.mcp_block_severity)}
                     </span>
                   </label>
