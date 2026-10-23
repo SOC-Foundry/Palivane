@@ -46,6 +46,9 @@ services:
       # Findings-at-rest posture (self-host can choose to keep content).
       PALIVANE_ENCRYPT_FINDINGS: ${PALIVANE_ENCRYPT_FINDINGS:-true}
       PALIVANE_STORE_CONTENT: ${PALIVANE_STORE_CONTENT:-false}
+      # Optional: Prometheus scrape token. /metrics answers 404 until it is set; scrape
+      # with `Authorization: Bearer <token>` (or ?token=).
+      PALIVANE_METRICS_TOKEN: ${PALIVANE_METRICS_TOKEN:-}
       # Optional: LLM judge (bring your own key).
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

@@ -74,8 +74,8 @@ orgs, versus a single-org self-host. Done items are shipped; the rest are sequen
   a tagged wrapper lets a column hold mixed plaintext/ciphertext rows.
 - **Observability.** `/livez` (liveness), `/readyz` (DB-reachability, 503 if down), and a
   Prometheus `/metrics` endpoint, HTTP request counts + latency histogram labelled by
-  route template (bounded cardinality), via middleware. `/metrics` is optionally gated by
-  `PALIVANE_METRICS_TOKEN`.
+  route template (bounded cardinality), via middleware. `/metrics` requires
+  `PALIVANE_METRICS_TOKEN` and answers 404 when it is unset.
 - **Alerting & SIEM (per tenant).** A Slack-compatible webhook (real-time, or hourly/daily
   **digest**, criticals always real-time), a pull-based JSONL **findings export**, and a
   real-time **SIEM push forwarder** (generic JSON / Splunk HEC / CEF). The webhook and SIEM
