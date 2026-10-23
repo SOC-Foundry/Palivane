@@ -6,10 +6,11 @@ plaintext, the upstream must receive tokens, and the caller must get their data 
 
 from __future__ import annotations
 
+import json
 import re
 
-from app.tokenization import (TOKEN_RE, detokenize, detokenize_obj, tokenize,
-                              tokenize_payload)
+from app.tokenization import (MAX_CHARS, OVERLAP, TOKEN_RE, detokenize, detokenize_obj,
+                              tokenize, tokenize_payload)
 
 SSN = "123-45-6789"
 CARD = "4539578763621486"          # Luhn-valid and not one of the known test cards
@@ -88,11 +89,71 @@ def test_a_token_the_model_invented_is_left_alone():
     assert detokenize("see PLV_USSN_ABCDEF", m) == "see PLV_USSN_ABCDEF"
 
 
-def test_unknown_payload_shapes_fail_safe():
-    """No tokens out means nothing to reverse, which is the safe direction to fail."""
-    payload = {"prompt": f"SSN {SSN}"}          # neither messages nor system
+def test_an_unknown_payload_shape_is_tokenized_anyway():
+    """Returning an unrecognized body unchanged sends its values to the provider. Every
+    string in it is tokenized instead, and the reply still reverses."""
+    payload = {"model": "ft:gpt-4o:acme:4539578763621486", "max_tokens": 16,
+               "prompt": f"SSN {SSN}",          # neither messages nor system
+               "metadata": {"notes": [f"card {CARD}", "plain"]}}
     out, m = tokenize_payload(payload)
-    assert m == {} and out == payload
+    assert SSN not in json.dumps(out) and CARD not in json.dumps(out["metadata"])
+    # Keys, non-string values and the model id are left as they were.
+    assert out["model"] == payload["model"] and out["max_tokens"] == 16
+    assert out["metadata"]["notes"][1] == "plain"
+    assert detokenize_obj(out, m) == payload
+    assert payload["prompt"] == f"SSN {SSN}"     # the original is not mutated
+
+
+# --- prompts over MAX_CHARS ---------------------------------------------------------------
+# One detector sweep covers MAX_CHARS. A longer prompt used to come back untouched, which
+# sent every value in it to the provider; it is now swept in overlapping windows.
+
+def _filler(n: int) -> str:
+    return ("lorem ipsum dolor sit amet " * (n // 27 + 1))[:n]
+
+
+def test_a_prompt_over_the_cap_is_tokenized_and_reverses():
+    text = _filler(MAX_CHARS + 50_000) + f" SSN {SSN} at the very end."
+    out, m = tokenize(text)
+    assert SSN not in out and TOKEN_RE.search(out)
+    assert detokenize(out, m) == text
+
+
+def test_a_value_straddling_a_window_boundary_is_one_token():
+    """A value cut by a window edge must be found whole (by the next window, thanks to the
+    overlap), not missed and not split into two tokens. The first window ends at
+    MAX_CHARS; the second starts OVERLAP before it."""
+    text = _filler(MAX_CHARS - 8) + " " + f"{CARD} then SSN {SSN} " + _filler(MAX_CHARS) + f" again {CARD}"
+    # CARD spans MAX_CHARS - 7 .. MAX_CHARS + 9: across the end of the first window.
+    assert text.index(CARD) < MAX_CHARS < text.index(CARD) + len(CARD)
+    out, m = tokenize(text)
+    assert CARD not in out and SSN not in out
+    card_tokens = [t for t, v in m.items() if v == CARD]
+    assert len(card_tokens) == 1 and out.count(card_tokens[0]) == 2
+    # No fragment of the card was minted as a value of its own and left half the digits.
+    assert not any(v != CARD and v in CARD for v in m.values())
+    assert not re.search(r"\d{4}", re.sub(TOKEN_RE.pattern, "", out))
+    assert detokenize(out, m) == text
+
+
+def test_a_value_straddling_the_overlap_start_is_one_token():
+    """The other edge: a value across the start of the second window sits wholly inside
+    the first, and the second sees only its tail."""
+    start2 = MAX_CHARS - OVERLAP
+    text = _filler(start2 - 5) + " " + CARD + " " + _filler(MAX_CHARS)
+    assert text.index(CARD) < start2 < text.index(CARD) + len(CARD)
+    out, m = tokenize(text)
+    assert CARD not in out and list(m.values()) == [CARD]
+    assert detokenize(out, m) == text
+
+
+def test_a_long_prompt_shares_tokens_with_the_rest_of_the_payload():
+    payload = {"system": f"Customer SSN {SSN}",
+               "messages": [{"role": "user",
+                             "content": _filler(MAX_CHARS * 2) + f" SSN {SSN}"}]}
+    out, m = tokenize_payload(payload)
+    tok = TOKEN_RE.search(out["system"]).group(0)
+    assert out["messages"][0]["content"].endswith(f" SSN {tok}") and len(m) == 1
 
 
 def test_off_by_default():
@@ -137,6 +198,33 @@ def test_provider_gets_tokens_and_the_caller_gets_plaintext(client, monkeypatch)
     # 2. the caller got it back
     out = r.json()["content"][0]["text"]
     assert SSN in out and not TOKEN_RE.search(out)
+
+
+def test_an_unrecognized_shape_does_not_reach_the_provider_in_the_clear(client, monkeypatch):
+    """The legacy Anthropic text-completion body (`prompt`, no `messages`) is a shape
+    tokenize_payload has no case for. It is still forwarded, so it must still be tokenized,
+    and the caller must still get the value back."""
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_tokenize", True)
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
+    monkeypatch.setattr(gateway.settings, "gateway_enforce_secrets", False)
+    monkeypatch.setattr(gateway, "resolve_upstream", lambda *a, **k: ("https://up", "key"))
+    seen = {}
+
+    def fake_post(path, payload, request, base, key):
+        seen["payload"] = payload
+        return 200, {"completion": f"Understood: {payload['prompt']}", "model": "claude-2"}
+
+    monkeypatch.setattr(gateway, "_post_upstream_anthropic", fake_post)
+    r = client.post("/v1/messages", json={
+        "model": "claude-2", "max_tokens_to_sample": 16,
+        "prompt": f"\n\nHuman: Reformat SSN {SSN} and card {CARD}\n\nAssistant:"})
+    assert r.status_code == 200
+    sent = json.dumps(seen["payload"])
+    assert SSN not in sent and CARD not in sent and TOKEN_RE.search(sent)
+    assert seen["payload"]["model"] == "claude-2"
+    out = r.json()["completion"]
+    assert SSN in out and CARD in out and not TOKEN_RE.search(out)
 
 
 def test_scoring_runs_on_the_plaintext_not_the_tokens(client, monkeypatch):
