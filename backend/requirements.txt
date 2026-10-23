@@ -25,7 +25,11 @@ python-multipart==0.0.32  # SAML ACS form parsing (>=0.0.18: CVE-2024-53981 mult
 regex==2026.9.3           # tenant/admin custom patterns only — backtracking-resistant engine
                           # + per-match timeout= (stdlib `re` has neither) to bound ReDoS
 boto3==1.43.46            # optional SIEM/data-lake delivery to S3 (per-tenant, lazy-imported)
-# Optional OCR for image DLP (PALIVANE_OCR=true): pillow, pytesseract (+ tesseract binary)
+# Image DLP via OCR (app/ocr.py). Installed everywhere, used only when PALIVANE_OCR=true AND
+# the tesseract binary is on PATH (the Cloud Run/compose image installs it; native installs
+# add it with the OS package manager). Local only — never a cloud vision API.
+pillow==13.0.0            # image decode + header-only pixel-count check before OCR
+pytesseract==0.3.13       # tesseract wrapper; per-call timeout= bounds request latency
 
 # --- dev / test ---
 pytest==9.1.1

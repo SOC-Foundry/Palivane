@@ -4,7 +4,11 @@ graceful degradation without pytesseract, and the gateway hook end-to-end."""
 from __future__ import annotations
 
 import base64
+import io
+import shutil
 import sys
+
+import pytest
 
 from app import ocr
 
@@ -172,6 +176,8 @@ def test_messages_image_noop_when_ocr_off(client, monkeypatch):
 # The real read_images over a fake Pillow + tesseract: an image's bytes say what it OCRs to.
 
 class _FakeImg:
+    size = (800, 600)
+
     def __init__(self, raw):
         self.raw = raw
 
@@ -186,9 +192,11 @@ def _fake_tesseract(monkeypatch):
     """b"ERR..." raises in tesseract, b"BLANK..." OCRs to nothing, anything else to its bytes."""
     import types
 
-    def image_to_string(img):
+    def image_to_string(img, timeout=0):
         if img.raw.startswith(b"ERR"):
             raise RuntimeError("tesseract failed")
+        if img.raw.startswith(b"SLOW"):
+            raise RuntimeError("Tesseract process timeout")   # what pytesseract raises
         return "" if img.raw.startswith(b"BLANK") else img.raw.decode()
 
     image_mod = types.SimpleNamespace(open=lambda buf: _FakeImg(buf.getvalue()))
@@ -358,3 +366,136 @@ def test_marker_does_not_split_the_recurrence_fingerprint(client, monkeypatch):
     findings = [f for f in client.get("/api/findings").json()["findings"]
                 if "pii_exposure" in f["categories"]]
     assert len(findings) == 1
+
+
+# --- Bounded cost: OCR runs in the request path ----------------------------------------
+
+def test_a_tesseract_timeout_is_an_unread_image(monkeypatch):
+    _fake_tesseract(monkeypatch)
+    assert ocr.read_images([b"one", b"SLOW"]) == ("one", 2, 1)
+
+
+def test_every_tesseract_call_is_timed_and_the_request_has_a_budget(monkeypatch):
+    _fake_tesseract(monkeypatch)
+    timeouts: list[float] = []
+    clock = [1000.0]
+
+    def image_to_string(img, timeout=0):
+        timeouts.append(timeout)
+        clock[0] += 4.0                       # every image takes 4 s of the budget
+        return img.raw.decode()
+
+    monkeypatch.setattr(sys.modules["pytesseract"], "image_to_string", image_to_string)
+    monkeypatch.setattr(ocr.time, "monotonic", lambda: clock[0])
+    got = ocr.read_images([b"a", b"b", b"c", b"d"])
+    # 10 s budget: 5 (per-image cap), 5, then the 2 s left; the fourth is never attempted.
+    assert timeouts == [ocr._OCR_TIMEOUT_S, ocr._OCR_TIMEOUT_S, 2.0]
+    assert all(t > 0 for t in timeouts)       # timeout=0 means "none" to pytesseract
+    assert got == ("a\nb\nc", 4, 3)
+
+
+def test_an_image_over_the_pixel_cap_is_never_decoded(monkeypatch):
+    _fake_tesseract(monkeypatch)
+    called = []
+    monkeypatch.setattr(sys.modules["pytesseract"], "image_to_string",
+                        lambda img, timeout=0: called.append(1) or "text")
+    monkeypatch.setattr(_FakeImg, "size", (8000, 8000))      # 64 MP, a few KB of PNG
+    assert ocr.read_images([b"huge"]) == ("", 1, 0)
+    assert not called
+
+
+def test_a_tesseract_timeout_marks_partial_scan_and_never_blocks(client, monkeypatch):
+    from app import gateway
+    _ocr_on(monkeypatch)
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", True)
+    seen = _verdicts(monkeypatch)
+    r = _post_messages(client, _anthropic_images(b"hello there", b"SLOW"))
+    assert r.status_code == 200
+    assert seen[0]["unscanned"] == ["image"]
+    assert _markers(seen[0])[0]["evidence"] == "image=1 of 2 unread"
+
+
+# --- PALIVANE_OCR gates every reader, not just the gateway ------------------------------
+
+def test_installed_but_switched_off_reads_nothing(monkeypatch):
+    """The packages ship in every install; the setting is what turns OCR on."""
+    from app.config import settings
+    from app.doc_extract import extract
+    monkeypatch.setattr(ocr, "ocr_available", lambda: True)
+    monkeypatch.setattr(ocr, "extract_image_text", lambda *a, **k: "key AKIA4YTGH2NBQF7XZP3K")
+    monkeypatch.setattr(settings, "gateway_ocr", False)
+    assert not ocr.ocr_enabled()
+    assert extract("shot.png", b"\x89PNG\r\n\x1a\n") == ("", "")
+    monkeypatch.setattr(settings, "gateway_ocr", True)
+    assert ocr.ocr_enabled()
+
+
+def test_no_tesseract_binary_means_unavailable(monkeypatch):
+    pytest.importorskip("pytesseract")
+    pytest.importorskip("PIL.Image")
+    monkeypatch.setattr(ocr, "_available", None)
+    monkeypatch.setattr(ocr.shutil, "which", lambda cmd: None)
+    assert ocr.ocr_available() is False
+
+
+# --- The real thing: Pillow + pytesseract + tesseract with English data -----------------
+# Runs where tesseract is installed (the production image has it); skipped elsewhere.
+
+def _real_tesseract() -> bool:
+    try:
+        import PIL.Image  # noqa: F401
+        import pytesseract
+        return bool(shutil.which(pytesseract.pytesseract.tesseract_cmd)) \
+            and "eng" in pytesseract.get_languages(config="")
+    except Exception:
+        return False
+
+
+needs_tesseract = pytest.mark.skipif(
+    not _real_tesseract(), reason="needs Pillow + pytesseract + tesseract with English data")
+
+AWS_KEY = "AKIA4YTGH2NBWF7XZP3K"   # no O/0/Q/I/1 lookalikes for OCR to trip on
+
+
+def _screenshot(text: str) -> bytes:
+    from PIL import Image, ImageDraw, ImageFont
+    img = Image.new("RGB", (900, 120), "white")
+    ImageDraw.Draw(img).text((20, 40), text, fill="black", font=ImageFont.load_default(size=32))
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    return buf.getvalue()
+
+
+@needs_tesseract
+def test_real_ocr_reads_an_aws_key_out_of_a_png(monkeypatch):
+    monkeypatch.setattr(ocr, "_available", None)
+    got = ocr.read_images([_screenshot(f"aws_access_key_id = {AWS_KEY}")])
+    assert got.read == 1 and AWS_KEY in got.text.replace(" ", "")
+
+
+@needs_tesseract
+def test_real_ocr_catches_the_key_through_the_gateway(client, monkeypatch):
+    from app import gateway
+    monkeypatch.setattr(ocr, "_available", None)
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", False)     # monitor mode
+    monkeypatch.setattr(gateway.settings, "gateway_ocr", True)
+    seen = _verdicts(monkeypatch)
+    r = _post_messages(client, _anthropic_images(_screenshot(f"export AWS_ACCESS_KEY_ID={AWS_KEY}")))
+    # A confirmed credential hard-blocks even in monitor mode — only reachable through OCR.
+    assert r.status_code == 400
+    assert "secret_leak" in {s["category"] for s in seen[0]["signals"]}
+    assert "unscanned" not in seen[0]
+
+
+@needs_tesseract
+def test_real_tesseract_timeout_is_unread_not_blocked(client, monkeypatch):
+    from app import gateway
+    monkeypatch.setattr(ocr, "_available", None)
+    monkeypatch.setattr(ocr, "_OCR_TIMEOUT_S", 0.001)        # tesseract cannot start in 1 ms
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", True)
+    monkeypatch.setattr(gateway.settings, "gateway_ocr", True)
+    seen = _verdicts(monkeypatch)
+    r = _post_messages(client, _anthropic_images(_screenshot(f"key {AWS_KEY}")))
+    assert r.status_code == 200
+    assert seen[0]["unscanned"] == ["image"]
+    assert _markers(seen[0])[0]["evidence"] == "image=1 of 1 unread"

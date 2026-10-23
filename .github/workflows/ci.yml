@@ -44,8 +44,10 @@ jobs:
       # No apt step. python3-saml pulls xmlsec as a manylinux wheel whose extension is
       # statically linked (12 MB, no external libxmlsec1/libxml2 references), so the dev
       # headers were only ever needed to COMPILE it — and nothing compiles. The proof this
-      # is safe is the production image: deploy/cloudrun/Dockerfile installs libpq5 and curl
-      # and nothing else, so SAML has been running on the bundled wheel in prod all along.
+      # is safe is the production image: deploy/cloudrun/Dockerfile installs no xmlsec/libxml2
+      # dev packages (libpq5, curl, tesseract), so SAML has been running on the bundled
+      # wheel in prod all along. (tesseract is not installed here either: the real-OCR
+      # tests skip, and selfhost-compose checks OCR in the built image instead.)
       # Removing it also removes the #171 failure mode entirely — no apt, no third-party
       # repo that can take the suite down for an afternoon.
       - name: Install
@@ -194,6 +196,26 @@ jobs:
           CHECK
           # the /install.sh distribution endpoint must be present in the self-host image too
           curl -sf http://localhost:8080/install.sh | head -1 | grep -q '#!/usr/bin/env bash'
+      - name: Image OCR works in the image
+        if: steps.changes.outputs.img == 'true'
+        # Hosted prod runs PALIVANE_OCR=true on this image. The unit suite has no tesseract
+        # (its real-OCR tests skip), so this is where a missing binary, missing English
+        # data or a Pillow that cannot draw is caught: render a key into a PNG and read it
+        # back through app.ocr, the gateway's own code path. About a second.
+        run: |
+          docker compose exec -T app python - <<'OCR'
+          import io
+          from PIL import Image, ImageDraw, ImageFont
+          from app import ocr
+          assert ocr.ocr_available(), "Pillow/pytesseract/tesseract missing from the image"
+          img = Image.new("RGB", (900, 120), "white")
+          ImageDraw.Draw(img).text((20, 40), "key AKIA4YTGH2NBWF7XZP3K",
+                                   fill="black", font=ImageFont.load_default(size=32))
+          buf = io.BytesIO(); img.save(buf, "PNG")
+          got = ocr.read_images([buf.getvalue()])
+          assert got.read == 1 and "AKIA4YTGH2NBWF7XZP3K" in got.text.replace(" ", ""), got
+          print("ocr ok:", got.text)
+          OCR
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: steps.changes.outputs.img == 'true'
         with:

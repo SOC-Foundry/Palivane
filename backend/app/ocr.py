@@ -15,25 +15,49 @@ to the detector pipeline; it is never stored beyond normal finding evidence.
 from __future__ import annotations
 
 import base64
+import shutil
+import time
 from typing import NamedTuple
 
 _MAX_IMAGE_BYTES = 5_000_000   # skip anything bigger (~5MB) — OCR cost, DoS guard
 _MAX_COLLECTED = 8             # cap images harvested from one request body
+# OCR runs in the request path, so its cost is bounded three ways (an image any of them
+# stops is unread: a partial-scan marker, never a block):
+#   _MAX_PIXELS     checked from the header before decoding. pytesseract decodes and
+#                   re-encodes the image in-process before tesseract starts, which the
+#                   timeout below does not cover; 16 MP still admits a 5K/retina screenshot.
+#   _OCR_TIMEOUT_S  per tesseract call; pytesseract kills the process when it runs over.
+#                   A full-screen 1080p screenshot of dense text takes ~2 s on one core.
+#   _OCR_BUDGET_S   per call to read_images (one request): later images get what is left,
+#                   and none once it is spent. 4 images x 5 s could otherwise be 20 s.
+_MAX_PIXELS = 16_000_000
+_OCR_TIMEOUT_S = 5.0
+_OCR_BUDGET_S = 10.0
 
 _available: bool | None = None  # cached probe result
 
 
 def ocr_available() -> bool:
-    """True when Pillow + pytesseract are importable (lazily probed once per process)."""
+    """True when Pillow + pytesseract are importable AND the tesseract binary is on PATH
+    (lazily probed once per process). The Python packages ship in every install; the binary
+    only where it was installed (the Cloud Run/compose image does), so without this check a
+    native install would try, and fail, every image and call it unreadable rather than off."""
     global _available
     if _available is None:
         try:
             import PIL.Image  # noqa: F401
-            import pytesseract  # noqa: F401
-            _available = True
+            import pytesseract
+            _available = shutil.which(pytesseract.pytesseract.tesseract_cmd) is not None
         except Exception:
             _available = False
     return _available
+
+
+def ocr_enabled() -> bool:
+    """OCR switched on for this deployment (PALIVANE_OCR) and able to run. Every caller that
+    reads images goes through this, so installing the packages never turns OCR on by itself."""
+    from .config import settings
+    return bool(settings.gateway_ocr) and ocr_available()
 
 
 class ImageText(NamedTuple):
@@ -47,8 +71,9 @@ class ImageText(NamedTuple):
 
 def read_images(images: list[bytes], max_images: int = 4, max_chars: int = 8000) -> ImageText:
     """OCR each image and join the non-empty text, counting the images it read. Never
-    raises — any failure (missing deps, undecodable image, tesseract error) contributes
-    nothing; oversized images are skipped. Output is capped at max_chars, and an image whose
+    raises — any failure (missing deps, undecodable image, tesseract error or timeout)
+    contributes nothing; oversized images (bytes or pixels) are skipped, and so is every
+    image after the time budget is spent. Output is capped at max_chars, and an image whose
     text the cap cut short does not count as read."""
     present = len(images or [])
     if not present or not ocr_available():
@@ -62,13 +87,21 @@ def read_images(images: list[bytes], max_images: int = 4, max_chars: int = 8000)
         return ImageText("", present, 0)
     parts: list[str] = []
     read = used = 0
+    deadline = time.monotonic() + _OCR_BUDGET_S
     for raw in images[:max_images]:
         if not isinstance(raw, (bytes, bytearray)) or len(raw) > _MAX_IMAGE_BYTES:
             continue
+        left = deadline - time.monotonic()
+        if left <= 0:
+            break                       # budget spent: the rest stay unread
         try:
             with PIL.Image.open(io.BytesIO(raw)) as img:
-                text = pytesseract.image_to_string(img)
-        except Exception:
+                width, height = img.size     # from the header; nothing decoded yet
+                if width * height > _MAX_PIXELS:
+                    continue
+                # timeout=0 would mean "no timeout" to pytesseract; `left` is > 0 here.
+                text = pytesseract.image_to_string(img, timeout=min(_OCR_TIMEOUT_S, left))
+        except Exception:               # includes RuntimeError("Tesseract process timeout")
             continue
         text = (text or "").strip()
         if text:

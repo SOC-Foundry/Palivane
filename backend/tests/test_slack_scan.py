@@ -306,6 +306,7 @@ def test_an_image_is_readable_only_when_ocr_is_available(monkeypatch):
     monkeypatch.setattr(ocr, "ocr_available", lambda: False)
     assert not sc._slack_readable_file(img)
     monkeypatch.setattr(ocr, "ocr_available", lambda: True)
+    monkeypatch.setattr("app.config.settings.gateway_ocr", True)   # PALIVANE_OCR=true
     assert sc._slack_readable_file(img)
 
 

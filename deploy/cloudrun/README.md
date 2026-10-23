@@ -71,6 +71,11 @@ service keeps whatever it has, and the app default is monitor. Setting it on the
 service changes every tenant's unflagged devices at once, so treat it as a product decision
 rather than a deploy default.
 
+`PALIVANE_OCR` defaults to `true` here (the image ships tesseract): images in gateway requests
+are OCR'd and scanned instead of being reported unread. Set `PALIVANE_OCR=false` to switch it
+off without a rebuild. Cost is bounded per request (4 images, 5 s each, 10 s in all, on the
+request's worker thread); see `backend/app/ocr.py`.
+
 ## Custom domain + TLS (Cloud Run domain mapping)
 
 Single-origin, streaming-safe, free — no load balancer, no Firebase (Firebase Hosting's CDN
