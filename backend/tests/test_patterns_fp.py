@@ -371,16 +371,34 @@ def test_random_tokens_are_still_flagged_after_the_name_guard():
 
 def test_a_document_id_named_by_its_url_or_field_is_not_a_secret():
     """A Drive/Docs id is 33-44 random-looking characters by design. Inside a /d/<id>/ URL, an
-    ?id= parameter, or next to the words folder / file id, it is an address, not a credential."""
+    ?id= parameter, or after a field that names it (fileId, folder id, doc=), it is an address,
+    not a credential."""
     doc_id = "1AT5mzfNxAqW3eRtYuIoP9sDfGhJkLzXcVbNm_12345a"
     for text in (f"https://docs.google.com/document/d/{doc_id}/edit",
                  f"https://drive.google.com/drive/folders/{doc_id}",
+                 f"https://drive.google.com/file/d/{doc_id}/view",
                  f"https://drive.google.com/open?id={doc_id}",
+                 f"https://www.googleapis.com/drive/v3/files?fileId={doc_id}",
                  f"fileId: {doc_id}",
                  f'{{"folderId": "{doc_id}"}}',
                  f"Drive folder {doc_id}",
+                 f"Drive folder id {doc_id}",
+                 f"--drive-root-folder-id {doc_id}",
+                 f"doc_id={doc_id}",
+                 f"doc={doc_id}",
+                 f"sheet: {doc_id}",
                  f"file_id={doc_id}"):
         assert find_high_entropy_tokens(text) == [], text
+
+
+def test_a_bare_file_or_doc_word_in_a_sentence_does_not_exempt_the_next_token():
+    """Recall: file, doc and folder are prose words. Without an id cue (the word `id`, or a
+    `:` / `=` separator) the token after them is judged like any other - `the file <key>` on
+    an unsanctioned chat must stay a high-entropy hit."""
+    for tok in ("Zq8Xv3LpR7mT2kN9bW5cY1hJ4gF6dS0a", "1AT5mzfNxAqW3eRtYuIoP9sDfGhJkLzXcVbNm_12345a"):
+        for text in (f"the file {tok}", f"see doc {tok}", f"folder {tok}",
+                     f"the sheet {tok}", f"in the shared drive {tok} is the key"):
+            assert find_high_entropy_tokens(text), text
 
 
 def test_the_same_token_beside_a_credential_word_or_bare_still_flags():

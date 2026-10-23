@@ -650,14 +650,20 @@ def _is_name_like(tok: str) -> bool:
 
 # A document id is 33-44 random-looking characters BY DESIGN (Drive, Docs, Sheets, Slides), and
 # nothing about its shape separates it from a key. What does is where it stands: in a /d/<id>/
-# path or an ?id= parameter, or directly after the word that names it (`folder`, `fileId:`,
-# `--drive-root-folder-id `). Context only, never shape: `api_key = <same token>`, `password
-# <same token>` and `file key <same token>` still flag, and so does the bare token.
+# path or an ?id= parameter, or directly after a field that names it (`fileId:`, `folder id`,
+# `doc=`, `--drive-root-folder-id `). Context only, never shape: `api_key = <same token>`,
+# `password <same token>` and `file key <same token>` still flag, and so does the bare token.
+# The field needs an id cue - the word `id`, or a real `:` / `=` separator - not the noun alone:
+# file, doc and folder are prose words. With both optional, `the file <any 32-char key>` was
+# exempt, which on an unsanctioned chat took the verdict from high to low. A sentence that only
+# mentions a file before a token earns nothing. The one prose form kept is the noun qualified
+# by Drive (`Drive folder <id>`, `Drive file <id>`): that names a Drive object, not any file.
 _DOC_ID_CONTEXT_RE = re.compile(
     r"(?:/(?:d|folders|file/d)/"
     r"|[?&](?:id|file_?id|folder_?id)="
+    r"|\bdrive[\s_-]+(?:folders?|files?|docs?)\s*"
     r"|\b(?:drive|folders?|files?|docs?|documents?|sheets?|spreadsheets?|slides?|presentations?)"
-    r"[\s_-]*(?:id)?[\"']?\s*[:=]?\s*[\"'\[(]?)$", re.I)
+    r"(?:[\s_-]*id\b[\"']?\s*[:=]?|[\"']?\s*[:=])\s*[\"'\[(]?)$", re.I)
 
 
 # A UUID is an address, not a credential, and the candidate pattern cannot see one whole:
