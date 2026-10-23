@@ -85,7 +85,7 @@ def run(monkeypatch):
     """run(path, body) -> (prompts sent to the scanner, flow). The scanner records and allows,
     unless block=True."""
     http = types.ModuleType("mitmproxy.http")
-    http.Response = types.SimpleNamespace(make=lambda status, body, headers: ("blocked", status))
+    http.Response = types.SimpleNamespace(make=lambda status, body, headers: ("blocked", status, body))
     pkg = types.ModuleType("mitmproxy")
     pkg.http = http
     monkeypatch.setitem(sys.modules, "mitmproxy", pkg)
@@ -95,18 +95,24 @@ def run(monkeypatch):
         return frozenset()
     monkeypatch.setattr(addon, "hooked_tools_async", no_hooks)
 
-    def _run(path, body, block=False, host="claude.ai"):
+    scans: list[str] = []
+
+    def _run(path, body, block=False, host="claude.ai", guard=None):
         seen: list[str] = []
 
         def fake_scan(prompt, destination, tool="", **kw):
             seen.append(prompt)
-            return {"action": "block" if block else "allow"}
+            scans.append(prompt)
+            return {"action": "block" if block else "allow", "risk_score": 60, "severity": "high",
+                    "signals": [{"category": "pii_exposure"}]}
         monkeypatch.setattr(addon, "scan", fake_scan)
-        guard = addon.PalivaneGuard()
+        guard = guard or addon.PalivaneGuard()
         guard.enforce = True
         flow = _flow(path, body, host)
+        flow.guard = guard
         asyncio.run(guard.request(flow))
         return seen, flow
+    _run.scans = scans
     return _run
 
 
@@ -118,7 +124,7 @@ def test_message_is_scanned_as_its_typed_text_only(run):
 def test_a_secret_in_the_message_is_blocked(run):
     seen, flow = run(RPC + "PerformAction", perform_action("AKIA4YTGH2NBQF7XZP3K"), block=True)
     assert seen and "AKIA4YTGH2NBQF7XZP3K" in seen[0]
-    assert flow.response == ("blocked", 400)
+    assert flow.response[1] == 403            # a Connect error, not the API-shaped 400
 
 
 def test_a_benign_message_scans_only_the_words(run):
@@ -175,3 +181,41 @@ def test_other_hosts_are_not_treated_as_claude_rpc():
     assert addon.is_claude_rpc("claude.ai", RPC + "PerformAction")
     assert addon.is_claude_rpc_send(RPC + "PerformAction")
     assert not addon.is_claude_rpc_send(RPC + "StreamTimeline")
+
+
+def test_a_block_is_a_connect_error_the_client_reads_as_final(run):
+    import json
+    _, flow = run(RPC + "PerformAction", perform_action("my ssn is 078-05-1120"), block=True)
+    status, body = flow.response[1], json.loads(flow.response[2])
+    assert status == 403 and body["code"] == "permission_denied"
+    assert "Blocked by Palivane" in body["message"]
+
+
+def test_other_hosts_keep_the_api_shaped_refusal(run):
+    import json
+    _, flow = run("/v1/messages", b'{"messages":[{"role":"user","content":"my ssn is 078-05-1120"}]}',
+                  block=True, host="api.anthropic.com")
+    assert flow.response[1] == 400 and json.loads(flow.response[2])["type"] == "error"
+
+
+def test_a_retry_of_a_stopped_send_is_answered_without_scanning_again(run):
+    """claude.ai retries a send it was told failed, on a backoff; each retry used to be scanned
+    again and counted as another sighting for as long as the app kept trying."""
+    body = lambda: perform_action("my ssn is 078-05-1120")            # new message ids every time
+    seen, first = run(RPC + "PerformAction", body(), block=True)
+    assert len(seen) == 1 and first.response[1] == 403
+    for _ in range(7):
+        again, flow = run(RPC + "PerformAction", body(), block=True, guard=first.guard)
+        assert again == [], "a retry of the same text was scanned again"
+        assert flow.response[1] == 403 and flow.response[2] == first.response[2]
+    assert len(run.scans) == 1
+
+
+def test_new_words_are_scanned_and_the_quiet_window_expires(run, monkeypatch):
+    seen, first = run(RPC + "PerformAction", perform_action("my ssn is 078-05-1120"), block=True)
+    seen, flow = run(RPC + "PerformAction", perform_action("my other ssn is 219-09-9999"), block=True, guard=first.guard)
+    assert len(seen) == 1                                  # different text: a new send, scanned
+    real = addon.time.time
+    monkeypatch.setattr(addon.time, "time", lambda: real() + 3600)
+    seen, flow = run(RPC + "PerformAction", perform_action("my ssn is 078-05-1120"), block=True, guard=first.guard)
+    assert len(seen) == 1                                  # an hour later it is checked again
