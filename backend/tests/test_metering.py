@@ -92,7 +92,7 @@ def test_scan_code_is_rate_limited(client, raw_client, frozen_window):
     assert raw_client.post("/api/scan/code", json=body, headers=h).status_code == 429
 
 
-def test_gateway_limit_does_not_throttle_ingest(client, raw_client):
+def test_gateway_limit_does_not_throttle_ingest(client, raw_client, frozen_window):
     # The whole point of the split: a tiny gateway budget must not 429 sensor ingest.
     key = client.post("/api/apikeys", json={"label": "s", "actor": "agent"}).json()["token"]
     client.patch("/api/tenant", json={"rate_limit": 1})   # gateway budget only
@@ -103,7 +103,7 @@ def test_gateway_limit_does_not_throttle_ingest(client, raw_client):
         assert raw_client.post("/api/ingest/mcp", json=danger, headers=h).status_code == 200
 
 
-def test_batch_counts_as_one_ingest_request(client, raw_client):
+def test_batch_counts_as_one_ingest_request(client, raw_client, frozen_window):
     key = client.post("/api/apikeys", json={"label": "b", "actor": "agent"}).json()["token"]
     client.patch("/api/tenant", json={"ingest_rate_limit": 1})
     item = {"method": "tools/call", "tool": "run", "args_text": "path=./src", "transport": "stdio"}
