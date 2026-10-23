@@ -467,3 +467,298 @@ def test_the_stream_reports_residuals_once_at_the_end():
     got = []
     list(detokenize_stream(iter([b"a PLV-USSN-DEAD01 b", b" PLV-PCN-BEEF02"]), m, got.append))
     assert got == [2]
+
+
+# --- tool traffic inside the recognized shapes -------------------------------------------
+# Tool inputs and outputs are prompt text the provider reads like any other: a tool result
+# is whatever the tool fetched (a customer record), and the arguments are what the model
+# asked for with it. Each shape keeps them in its own field, and each must be tokenized.
+
+RECORD = f"customer SSN {SSN}, card {CARD}"
+TOOLS = [{"name": "lookup", "description": f"looks up an SSN such as {SSN}",
+          "input_schema": {"type": "object", "properties": {"ssn": {"type": "string"}}}}]
+
+
+def _no_pii(obj) -> bool:
+    s = json.dumps(obj)
+    return SSN not in s and CARD not in s
+
+
+def test_anthropic_tool_result_string_and_nested_blocks():
+    payload = {"model": "claude-3", "tools": TOOLS, "messages": [
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "toolu_1", "name": "lookup", "input": {"ssn": SSN}}]},
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_1", "content": RECORD},
+            {"type": "tool_result", "tool_use_id": "toolu_2", "content": [
+                {"type": "text", "text": f"record: {CARD}"},
+                {"type": "image", "source": {"type": "base64", "data": "AAAA"}}]}]}]}
+    out, m = tokenize_payload(payload)
+    assert _no_pii(out["messages"]) and len(m) == 2
+    # one person, one token, across the call, the string result and the nested result
+    tok_ssn = next(t for t, v in m.items() if v == SSN)
+    assert out["messages"][0]["content"][0]["input"] == {"ssn": tok_ssn}
+    assert tok_ssn in out["messages"][1]["content"][0]["content"]
+    # ids, names and the tool definitions are not prompt text
+    assert out["tools"] == TOOLS
+    assert out["messages"][0]["content"][0]["id"] == "toolu_1"
+    assert out["messages"][0]["content"][0]["name"] == "lookup"
+    assert out["messages"][1]["content"][1]["tool_use_id"] == "toolu_2"
+    assert out["messages"][1]["content"][1]["content"][1] == \
+        {"type": "image", "source": {"type": "base64", "data": "AAAA"}}
+    assert detokenize_obj(out["messages"], m) == payload["messages"]
+    assert payload["messages"][1]["content"][0]["content"] == RECORD    # not mutated
+
+
+def test_anthropic_text_document_is_tokenized():
+    payload = {"messages": [{"role": "user", "content": [
+        {"type": "document", "source": {"type": "text", "media_type": "text/plain",
+                                        "data": RECORD}},
+        {"type": "document", "source": {"type": "content",
+                                        "content": [{"type": "text", "text": RECORD}]}}]}]}
+    out, m = tokenize_payload(payload)
+    assert _no_pii(out) and len(m) == 2
+    assert detokenize_obj(out, m) == payload
+
+
+def test_openai_tool_call_arguments_and_tool_message():
+    args = json.dumps({"ssn": SSN, "note": f"card\n{CARD}", "n": 3})
+    payload = {"model": "gpt-4o",
+               "tools": [{"type": "function", "function": {
+                   "name": "lookup", "description": f"e.g. {SSN}",
+                   "parameters": {"type": "object"}}}],
+               "messages": [
+                   {"role": "user", "content": "look them up"},
+                   {"role": "assistant", "content": None, "tool_calls": [
+                       {"id": "call_1", "type": "function",
+                        "function": {"name": "lookup", "arguments": args}}]},
+                   {"role": "tool", "tool_call_id": "call_1", "content": RECORD},
+                   {"role": "assistant", "function_call": {"name": "lookup",
+                                                           "arguments": args}}]}
+    out, m = tokenize_payload(payload)
+    assert _no_pii(out["messages"]) and len(m) == 2
+    call = out["messages"][1]["tool_calls"][0]
+    assert call["id"] == "call_1" and call["function"]["name"] == "lookup"
+    parsed = json.loads(call["function"]["arguments"])            # still valid JSON
+    assert parsed["n"] == 3 and TOKEN_RE.fullmatch(parsed["ssn"])
+    assert parsed["note"].startswith("card\n")
+    assert json.loads(out["messages"][3]["function_call"]["arguments"]) == parsed
+    assert out["tools"] == payload["tools"]
+    assert out["messages"][2]["tool_call_id"] == "call_1"
+    back = detokenize_obj(out, m)
+    assert json.loads(back["messages"][1]["tool_calls"][0]["function"]["arguments"]) == \
+        json.loads(args)
+    assert back["messages"][2]["content"] == RECORD
+
+
+def test_arguments_without_personal_data_go_out_byte_for_byte():
+    args = '{ "city" :"Paris",  "days": 3 }'
+    payload = {"messages": [{"role": "assistant", "tool_calls": [
+        {"id": "c", "type": "function", "function": {"name": "f", "arguments": args}}]}]}
+    out, m = tokenize_payload(payload)
+    assert out["messages"][0]["tool_calls"][0]["function"]["arguments"] == args and not m
+
+
+def test_arguments_that_are_not_json_are_still_tokenized():
+    payload = {"messages": [{"role": "assistant", "tool_calls": [
+        {"id": "c", "type": "function",
+         "function": {"name": "f", "arguments": f'{{"ssn": "{SSN}"'}}]}]}  # truncated
+    out, m = tokenize_payload(payload)
+    assert _no_pii(out) and len(m) == 1
+
+
+def test_responses_function_call_and_output_items():
+    tools = [{"type": "function", "name": "lookup", "description": f"e.g. {SSN}",
+              "parameters": {}}]
+    payload = {"model": "gpt-5", "instructions": "be brief", "tools": tools, "input": [
+        {"role": "user", "content": [{"type": "input_text", "text": "go"}]},
+        {"type": "function_call", "call_id": "call_1", "name": "lookup",
+         "arguments": json.dumps({"ssn": SSN})},
+        {"type": "function_call_output", "call_id": "call_1",
+         "output": json.dumps({"record": RECORD})},
+        {"type": "function_call_output", "call_id": "call_2", "output": RECORD},
+        {"type": "function_call_output", "call_id": "call_3",
+         "output": [{"type": "input_text", "text": RECORD}]},
+        {"type": "custom_tool_call", "call_id": "call_4", "name": "patch",
+         "input": f"set ssn {SSN}"},
+        {"type": "custom_tool_call_output", "call_id": "call_4", "output": RECORD},
+        {"type": "local_shell_call", "call_id": "call_5", "id": "ls_1",
+         "action": {"type": "exec", "command": ["grep", SSN, "db.csv"]}},
+        {"type": "local_shell_call_output", "call_id": "call_5", "output": CARD}]}
+    out, m = tokenize_payload(payload)
+    assert _no_pii(out["input"]) and len(m) == 2
+    items = out["input"]
+    assert json.loads(items[1]["arguments"])["ssn"] in m
+    assert TOKEN_RE.search(json.loads(items[2]["output"])["record"])
+    assert [it.get("call_id") for it in items[1:]] == [
+        "call_1", "call_1", "call_2", "call_3", "call_4", "call_4", "call_5", "call_5"]
+    assert items[1]["name"] == "lookup" and items[7]["action"]["command"][0] == "grep"
+    assert out["tools"] == tools
+    assert detokenize_obj(out, m) == payload
+
+
+def test_gemini_function_call_and_response_parts():
+    tools = [{"functionDeclarations": [{"name": "lookup", "description": f"e.g. {SSN}"}]}]
+    payload = {"tools": tools, "contents": [
+        {"role": "model", "parts": [{"functionCall": {"name": "lookup", "id": "fc1",
+                                                      "args": {"ssn": SSN}}}]},
+        {"role": "user", "parts": [{"functionResponse": {"name": "lookup", "id": "fc1",
+                                                         "response": {"record": RECORD}}}]},
+        {"role": "user", "parts": [{"function_response": {"name": "lookup",
+                                                          "response": {"r": [CARD]}}}]}]}
+    out, m = tokenize_payload(payload)
+    assert _no_pii(out["contents"]) and len(m) == 2
+    fc = out["contents"][0]["parts"][0]["functionCall"]
+    assert fc["name"] == "lookup" and fc["id"] == "fc1" and fc["args"]["ssn"] in m
+    assert out["tools"] == tools
+    assert detokenize_obj(out, m) == payload
+
+
+def test_a_token_in_generated_arguments_reverses_to_valid_json():
+    """The model writes a token into a tool call's JSON-string arguments. Reversing must
+    leave valid JSON even when the real value needs escaping there (a quote, a newline)."""
+    m = {"PLV_XY_ABCDEF": 'say "hi"\nnow', "PLV_USSN_123456": SSN}
+    reply = {"choices": [{"message": {"tool_calls": [{"function": {
+        "name": "f", "arguments": '{"a": "PLV_XY_ABCDEF", "b": "PLV_USSN_123456"}'}}]}}],
+        "output": [{"type": "function_call", "arguments": '{"b":"PLV_USSN_123456"}'}]}
+    back = detokenize_obj(reply, m)
+    args = json.loads(back["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"])
+    assert args == {"a": 'say "hi"\nnow', "b": SSN}
+    # nothing needed escaping here, so the model's own formatting is kept
+    assert back["output"][0]["arguments"] == '{"b":"' + SSN + '"}'
+
+
+def test_tokens_cannot_break_json():
+    """Tokens are spliced into JSON text both ways; nothing in one needs escaping."""
+    for _ in range(50):
+        _, m = tokenize(f"SSN {SSN} card {CARD} IBAN GB82WEST12345698765432")
+        assert len(m) == 3
+        for t in m:
+            assert re.fullmatch(r"PLV_[A-Z0-9]+_[0-9A-F]{6}", t)
+            assert json.dumps(t) == f'"{t}"'
+
+
+def _tokenizing(monkeypatch):
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_tokenize", True)
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
+    monkeypatch.setattr(gateway.settings, "gateway_enforce_secrets", False)
+    monkeypatch.setattr(gateway.settings, "gateway_scan_responses", False)
+    monkeypatch.setattr(gateway, "resolve_upstream", lambda *a, **k: ("https://up", "key"))
+    return gateway
+
+
+def _openai_stub(monkeypatch, gateway, seen, reply):
+    """Stand in for the OpenAI-shape upstream: record the body, answer with reply(body)."""
+    class _R:
+        status_code = 200
+
+        def json(self):
+            return reply(seen["payload"])
+
+    class _C:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, json=None, headers=None):
+            seen["payload"] = json
+            return _R()
+
+    monkeypatch.setattr(gateway, "safe_client", lambda **k: _C())
+
+
+def test_anthropic_tool_result_end_to_end(client, monkeypatch):
+    gateway = _tokenizing(monkeypatch)
+    seen = {}
+
+    def fake_post(path, payload, request, base, key):
+        seen["payload"] = payload
+        # The model calls the next tool with the value it read from the result.
+        tok = TOKEN_RE.search(payload["messages"][2]["content"][0]["content"][0]["text"])
+        return 200, {"role": "assistant", "model": "claude-3", "content": [
+            {"type": "tool_use", "id": "toolu_2", "name": "lookup",
+             "input": {"ssn": tok.group(0)}}]}
+
+    monkeypatch.setattr(gateway, "_post_upstream_anthropic", fake_post)
+    r = client.post("/v1/messages", json={
+        "model": "claude-3", "max_tokens": 16, "tools": TOOLS, "messages": [
+            {"role": "user", "content": "find the customer"},
+            {"role": "assistant", "content": [
+                {"type": "tool_use", "id": "toolu_1", "name": "lookup", "input": {"q": "x"}}]},
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_1", "content": [
+                    {"type": "text", "text": RECORD}]}]}]})
+    assert r.status_code == 200
+    assert _no_pii(seen["payload"]["messages"])
+    assert seen["payload"]["tools"] == TOOLS            # the schema keeps its example SSN
+    assert r.json()["content"][0]["input"] == {"ssn": SSN}
+
+
+def test_openai_tool_calls_end_to_end(client, monkeypatch):
+    gateway = _tokenizing(monkeypatch)
+    seen = {}
+
+    def reply(sent):
+        tok = TOKEN_RE.search(sent["messages"][2]["content"]).group(0)
+        return {"choices": [{"index": 0, "message": {"role": "assistant", "tool_calls": [
+            {"id": "call_2", "type": "function",
+             "function": {"name": "charge", "arguments": json.dumps({"card": tok})}}]}}]}
+
+    _openai_stub(monkeypatch, gateway, seen, reply)
+    r = client.post("/v1/chat/completions", json={"model": "gpt-4o", "messages": [
+        {"role": "user", "content": "charge them"},
+        {"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {
+            "name": "lookup", "arguments": json.dumps({"ssn": SSN})}}]},
+        {"role": "tool", "tool_call_id": "call_1", "content": f"card {CARD}"}]})
+    assert r.status_code == 200
+    assert _no_pii(seen["payload"])
+    json.loads(seen["payload"]["messages"][1]["tool_calls"][0]["function"]["arguments"])
+    args = r.json()["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+    assert json.loads(args) == {"card": CARD}
+
+
+def test_responses_function_call_output_end_to_end(client, monkeypatch):
+    gateway = _tokenizing(monkeypatch)
+    seen = {}
+
+    def reply(sent):
+        tok = TOKEN_RE.search(sent["input"][2]["output"]).group(0)
+        return {"output": [{"type": "function_call", "call_id": "call_2", "name": "charge",
+                            "arguments": json.dumps({"card": tok})}]}
+
+    _openai_stub(monkeypatch, gateway, seen, reply)
+    r = client.post("/v1/responses", json={"model": "gpt-5", "input": [
+        {"role": "user", "content": "charge them"},
+        {"type": "function_call", "call_id": "call_1", "name": "lookup",
+         "arguments": json.dumps({"ssn": SSN})},
+        {"type": "function_call_output", "call_id": "call_1", "output": f"card {CARD}"}]})
+    assert r.status_code == 200
+    assert _no_pii(seen["payload"])
+    assert json.loads(r.json()["output"][0]["arguments"]) == {"card": CARD}
+
+
+def test_gemini_function_response_end_to_end(client, monkeypatch):
+    gateway = _tokenizing(monkeypatch)
+    seen = {}
+
+    def fake_forward(model, method, payload, request, base, key):
+        from fastapi.responses import Response as R
+        seen["payload"] = payload
+        tok = payload["contents"][1]["parts"][0]["functionResponse"]["response"]["card"]
+        body = {"candidates": [{"content": {"parts": [
+            {"functionCall": {"name": "charge", "args": {"card": tok}}}]}}]}
+        return R(content=json.dumps(body).encode(), status_code=200,
+                 media_type="application/json")
+
+    monkeypatch.setattr(gateway, "_forward_gemini", fake_forward)
+    r = client.post("/v1beta/models/gemini-2.5-pro:generateContent", json={"contents": [
+        {"role": "model", "parts": [{"functionCall": {"name": "lookup", "args": {"ssn": SSN}}}]},
+        {"role": "user", "parts": [{"functionResponse": {"name": "lookup",
+                                                         "response": {"card": CARD}}}]}]})
+    assert r.status_code == 200
+    assert _no_pii(seen["payload"])
+    assert r.json()["candidates"][0]["content"]["parts"][0]["functionCall"]["args"] == \
+        {"card": CARD}
