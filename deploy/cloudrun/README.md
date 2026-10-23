@@ -65,6 +65,12 @@ The script builds the image (`deploy/cloudrun/Dockerfile`), pushes it, and deplo
 service with the Cloud SQL socket, secrets, and env. On start the container waits for the DB
 and runs `alembic upgrade head` (migrations), then serves. It prints the service URL.
 
+`CLIENT_ENFORCE` (the stance CLI hooks and the desktop proxy get on a device with no local
+flag, where the org has not chosen one in Settings) is passed only when you set it. Unset, the
+service keeps whatever it has, and the app default is monitor. Setting it on the hosted
+service changes every tenant's unflagged devices at once, so treat it as a product decision
+rather than a deploy default.
+
 ## Custom domain + TLS (Cloud Run domain mapping)
 
 Single-origin, streaming-safe, free — no load balancer, no Firebase (Firebase Hosting's CDN

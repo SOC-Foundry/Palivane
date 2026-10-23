@@ -108,3 +108,25 @@ def test_a_failing_sorted_query_can_cost_the_pin_but_never_drop_the_secret(tmp_p
     would turn release signing off on the next deploy."""
     bound = _deploy(tmp_path, "palivane-release-signing-key=7,8,9", FAKE_SORT_FAILS="1")
     assert "PALIVANE_RELEASE_SIGNING_KEY=palivane-release-signing-key:latest" in bound
+
+
+def _deployed_env(tmp_path, **extra_env) -> str:
+    """Run the real deploy.sh; return the value it passed to `--update-env-vars`."""
+    _deploy(tmp_path, "", **extra_env)
+    args = (tmp_path / "deploy-args.txt").read_text().splitlines()
+    return args[args.index("--update-env-vars") + 1]
+
+
+def test_client_enforce_is_not_written_unless_asked_for(tmp_path):
+    """SEC-07 kept the hosted default on purpose. CLIENT_ENFORCE is the stance every
+    tenant's unflagged devices get, so a default written by the deploy would flip all of
+    them at once; and with --update-env-vars an absent var leaves the service's value alone."""
+    env = _deployed_env(tmp_path, CLIENT_ENFORCE="")
+    assert "GATEWAY_ENFORCE=true" in env
+    assert "CLIENT_ENFORCE" not in env
+
+
+@pytest.mark.parametrize("value", ["true", "false"])
+def test_client_enforce_is_threaded_when_set(tmp_path, value):
+    env = _deployed_env(tmp_path, CLIENT_ENFORCE=value)
+    assert f"|CLIENT_ENFORCE={value}" in env

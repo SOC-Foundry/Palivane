@@ -99,4 +99,23 @@ Create the first org + admin:
   sudo palivane-admin create-user   --tenant acme --email admin@acme.local --role admin
 
 Manage: systemctl {status,restart} palivane-api  ·  logs: journalctl -u palivane-api -f
+
+Security defaults (in $ENVFILE):
+  - This is a single-org install: PALIVANE_ALLOW_SIGNUP=false, so only users an admin
+    adds can sign in. With signup on, anyone who reaches the console can create an org
+    on this database and become its admin, and a weak PALIVANE_SECRET_KEY refuses to boot.
+  - The default database is SQLite, which has NO row-level security: tenant isolation
+    rests on application filters alone. Use Postgres (DATABASE_URL) for production and
+    for anything that will hold more than one org.
+  - GATEWAY_ENFORCE and CLIENT_ENFORCE both start false (monitor). Confirmed secret/PII
+    leaks still block; set both to true together when you are ready to enforce.
 EOF
+# An env file kept from an earlier install predates these defaults; say what it is missing
+# rather than editing an operator's file behind their back.
+if ! grep -q '^PALIVANE_ALLOW_SIGNUP=' "$ENVFILE"; then
+  echo
+  echo "NOTE: $ENVFILE does not set PALIVANE_ALLOW_SIGNUP, so public org signup is ON."
+  echo "      For a single-org install add PALIVANE_ALLOW_SIGNUP=false and restart palivane-api."
+fi
+grep -q '^CLIENT_ENFORCE=' "$ENVFILE" || \
+  echo "NOTE: $ENVFILE does not set CLIENT_ENFORCE; hooks default to monitor. Keep it in step with GATEWAY_ENFORCE."

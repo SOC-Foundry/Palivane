@@ -54,6 +54,8 @@ spec:
               value: {{ .Values.host | quote }}
             - name: GATEWAY_ENFORCE
               value: {{ .Values.config.gatewayEnforce | quote }}
+            - name: CLIENT_ENFORCE
+              value: {{ .Values.config.clientEnforce | default "false" | quote }}
             - name: PALIVANE_ALLOW_SIGNUP
               value: {{ .Values.config.allowSignup | quote }}
             - name: PALIVANE_ENCRYPT_FINDINGS
