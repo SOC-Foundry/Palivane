@@ -31,6 +31,28 @@ function askBandNote(blockSeverity) {
   return `With MCP block severity at ${label}, everything from suspicious up already blocks, so nothing asks.`;
 }
 
+// What an ok GitHub scan left unread, from its summary. last_sync_detail is the scan's summary as
+// JSON (github_secrets.scan_github_secrets), cut at 512 characters by sync_connector, so a long
+// one is not valid JSON and the counts are read out of the text instead. `skipped` counts
+// repositories, commits and files GitHub would not give (a 403, an empty repository, a commit that
+// never loaded); `files_skipped` counts files changed in a commit that could not be read. Without
+// this the row said "last scan" and a token that could read almost nothing looked clean (#296).
+function githubScanNotes(detail) {
+  let s = null;
+  try { s = JSON.parse(detail || ""); } catch { s = null; }
+  const count = (k) => {
+    if (s && typeof s === "object") return Number(s[k]) || 0;
+    const m = new RegExp(`"${k}": (\\d+)`).exec(detail || "");
+    return m ? Number(m[1]) : 0;
+  };
+  const resume = s && typeof s === "object" ? s.resume_after : (/"resume_after": "([^"]+)"/.exec(detail || "") || [])[1];
+  const notes = [];
+  if (count("skipped")) notes.push(`${count("skipped")} skipped (not readable)`);
+  if (count("files_skipped")) notes.push(`${count("files_skipped")} file(s) not read`);
+  if (resume) notes.push(`rate limited, resumes ${new Date(resume).toLocaleTimeString()}`);
+  return notes.length ? ` · ${notes.join(" · ")}` : "";
+}
+
 // Writing a regex is the reason most orgs never define their own identifiers, so this
 // writes it from examples instead. Inference is deterministic and server-side (see
 // app/pattern_infer.py); this is only the form and the review step. Nothing saves until
@@ -483,6 +505,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
     try {
       const s = await api.syncConnector(id);
       flash(`Read ${s.repos} repo(s), ${s.blobs} file(s) and ${s.commits} commit(s): ${s.findings} finding(s).`
+            + (s.skipped ? ` ${s.skipped} skipped (not readable).` : "")
             + (s.truncated ? " More to read; it carries on at the next scan." : ""));
       loadGithub();
     } catch (e2) { err(e2); loadGithub(); } finally { setGhBusy(""); }
@@ -1364,6 +1387,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                       ? `${c.last_sync_status === "ok" ? "last scan" : "last scan failed"} ${new Date(c.last_sync_at + "Z").toLocaleString()}`
                       : "not scanned yet"}
                     {c.last_sync_status === "error" && c.last_sync_detail ? `: ${c.last_sync_detail}` : ""}
+                    {c.last_sync_status === "ok" ? githubScanNotes(c.last_sync_detail) : ""}
                   </span>
                   <button type="button" className="mini-btn" disabled={ghBusy === `scan-${c.id}`}
                           onClick={() => scanGithub(c.id)}>{ghBusy === `scan-${c.id}` ? "Scanning…" : "Scan now"}</button>
