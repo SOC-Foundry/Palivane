@@ -24,9 +24,19 @@ What it covers:
   extension updated under an open tab): fails open, and says so
 
 Needs the backend's Python environment (`PALIVANE_PYTHON`, default `.venv/bin/python`), `openssl`,
-and a Chromium that can load an unpacked extension: Playwright's (`npx playwright install
-chromium` in `frontend/`), because branded Chrome 137 and later ignores `--load-extension`. Set
-`PALIVANE_CHROMIUM` to a specific binary if Playwright's default revision is not the one installed.
+and a Chromium that can load an unpacked extension: the one the pinned `playwright-core` expects
+(`npm ci && npx playwright-core install --no-shell chromium` in `frontend/`, a Chrome for Testing
+build), because branded Chrome 137 and later ignores `--load-extension`. Set `PALIVANE_CHROMIUM` to
+a specific binary if Playwright's default revision is not the one installed.
 `PALIVANE_EXTENSION` runs the same checks against another build of the extension.
+`PALIVANE_E2E_TMPDIR` sets where the run's scratch folder goes; a failed run leaves it there with
+the backend/site log (`children.log`), the browser and service-worker console (`console.log`) and
+a screenshot of each tab still open.
 
-Not in CI (it needs a browser download). Run it before shipping an extension change.
+It runs headless (Chromium's new headless mode, which loads extensions) and maps every hostname
+other than the three fake AI sites to "not found", so it never touches the real network once
+installed.
+
+CI runs it on every PR and push to main: the `extension-e2e` job in `.github/workflows/ci.yml`,
+which uploads the scratch folder as an artifact when it fails. Still worth running locally before
+shipping an extension change.
