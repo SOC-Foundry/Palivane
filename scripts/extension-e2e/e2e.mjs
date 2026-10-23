@@ -89,7 +89,7 @@ try {
   // ---- the browser ---------------------------------------------------------------------------
   ctx = await chromium.launchPersistentContext(path.join(tmp, "profile"), {
     executablePath: CHROMIUM, headless: true,
-    args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, "--ignore-certificate-errors",
+    args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, "--ignore-certificate-errors", "--no-proxy-server",   // a system proxy would resolve the mapped hostnames itself
       `--host-resolver-rules=MAP claude.ai 127.0.0.1:${PORT.https}, MAP chatgpt.com 127.0.0.1:${PORT.https}, MAP gemini.google.com 127.0.0.1:${PORT.https}`],
   });
   let [sw] = ctx.serviceWorkers();
@@ -106,11 +106,11 @@ try {
     if ("token" in c) await sw.evaluate((t) => chrome.storage.local.set({ token: t }), token);
   };
   // One message through the extension. Returns what the person saw and whether it got out.
-  async function send(label, { host = "claude.ai", text = SSN, mode = "string", ext = {}, patch = null, extraWait = 0 } = {}) {
+  async function send(label, { host = "claude.ai", text = SSN, mode = "string", ext = {}, patch = null, extraWait = 0, keepState = false } = {}) {
     if (patch) await tenant(patch);
     await fetch(CTL + "/__log", { method: "DELETE" });
     await setConfig({ backendUrl: PALI, token: key, user: "dev@demo.local", enforce: true, ...ext });
-    await sw.evaluate(() => chrome.storage.local.set({ lastVerdict: null, lastSkip: null, blockCount: 0 }));
+    if (!keepState) await sw.evaluate(() => chrome.storage.local.set({ lastVerdict: null, lastSkip: null, blockCount: 0 }));
     const page = await ctx.newPage();
     await page.goto(`https://${host}/?mode=${mode}`);
     await page.fill("#prompt", text);
@@ -127,6 +127,15 @@ try {
     const arrived = (await (await fetch(CTL + "/__log")).json()).some((x) => x.body.includes(text.slice(-10)));
     await page.close();
     return { label, ...ui, arrived };
+  }
+  // What the toolbar popup says about the last message: its "sent unchecked" line, if shown.
+  async function popupSkip() {
+    const pop = await ctx.newPage();
+    await pop.goto(`chrome-extension://${extId}/popup.html`);
+    await pop.waitForTimeout(400);
+    const s = await pop.evaluate(() => { const e = document.getElementById("skip"); return e.hidden ? "" : e.innerText; });
+    await pop.close();
+    return s;
   }
   const blocked = (r) => r.modal && !r.clean && /blocked/.test(r.title) && !r.arrived;
   const held = (r) => r.modal && /held/.test(r.title) && /redacted/.test(r.clean) && !r.clean.includes("078-05-1120") && !r.arrived;
@@ -229,6 +238,17 @@ try {
   check("...and its conversation uuids, session id, locale and timezone raise no finding", rpcAfter === rpcBefore, `${rpcBefore} -> ${rpcAfter}`);
   r = await send("long benign message", { text: pad(250000) });
   check("a long benign message goes through with no UI", wentOut(r) && !r.banner && !r.notice, JSON.stringify(r));
+  // Past 1.2M characters only the first 1.2M are scored. An allow on that prefix used to be recorded
+  // as a clean check, which hid the "sent unchecked" line although the tail was never looked at.
+  // (the SSN sits in the unscored tail; the trailing padding is what the arrival check looks for)
+  r = await send("over the scan cap, clean prefix", { text: pad(1250000) + " " + SSN + " " + pad(40), extraWait: 1500 });
+  check("a message over 1.2M characters still goes out (fail open)", r.arrived && !r.modal, JSON.stringify({ ...r, title: r.title }));
+  let skipLine = await popupSkip();
+  check("...and the popup keeps saying it went out unchecked, though its prefix was clean", /sent unchecked: message too long, only the first part was checked/.test(skipLine), skipLine);
+  check("...and the toolbar badge shows '!'", (await sw.evaluate(() => chrome.action.getBadgeText({}))) === "!");
+  r = await send("whole message after a skip", { text: "please summarise this paragraph for me", keepState: true });
+  skipLine = await popupSkip();
+  check("a normal whole-message allow after it clears the unchecked line", wentOut(r) && skipLine === "", skipLine);
 
   // ---- 4. when the check cannot happen: fail open, but say so --------------------------------
   r = await send("slow backend", { ext: { backendUrl: SLOW }, extraWait: 2500 });
@@ -243,6 +263,8 @@ try {
   const streamer = await newKey("streamer@demo.local");
   await setConfig({ backendUrl: PALI, token: streamer, user: "streamer@demo.local", enforce: true });
   await sw.evaluate(() => chrome.storage.local.set({ lastVerdict: null, lastSkip: null, blockCount: 0 }));
+  // the over-the-cap send above already told the console about claude.ai, which it hears once per ten minutes
+  await sw.evaluate(() => chrome.storage.session.remove("blindAt:https://claude.ai"));
   const sp = await ctx.newPage();
   await sp.goto("https://claude.ai/?mode=stream");
   await sp.fill("#prompt", SSN);
@@ -264,6 +286,18 @@ try {
   await ok.waitForTimeout(1500);
   check("the next good check clears the '!'", (await sw.evaluate(() => chrome.action.getBadgeText({}))) === "");
   await ok.close(); await sp.close();
+  // A compressed claude.ai RPC body cannot be read at all. Right after a good check (and within the
+  // ten minutes in which the console hears of one blind send per site) it must still say so.
+  const gz = await ctx.newPage();
+  await gz.goto("https://claude.ai/?mode=rpc-gzip");
+  await gz.fill("#prompt", SSN);
+  await gz.click("#send");
+  await gz.waitForFunction(() => document.getElementById("out").textContent !== "", null, { timeout: 20000 }).catch(() => {});
+  await gz.waitForTimeout(1000);
+  await gz.close();
+  const gzSkip = await popupSkip();
+  check("a compressed claude.ai RPC send right after a good check shows as unchecked in the popup", /sent unchecked: could not read a message on claude\.ai/.test(gzSkip), gzSkip);
+  check("...and the toolbar badge shows '!' again", (await sw.evaluate(() => chrome.action.getBadgeText({}))) === "!");
 
   // ---- 5. last: the extension is updated under an open tab ----------------------------------
   await setConfig({ backendUrl: PALI, token: key, user: "dev@demo.local", enforce: true });

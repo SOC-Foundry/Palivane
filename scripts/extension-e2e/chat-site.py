@@ -43,6 +43,17 @@ document.getElementById('send').onclick = async () => {
     url = '/api/organizations/o1/chat_conversations/c1/completion';
     body = JSON.stringify({prompt: text, timezone: 'UTC', attachments: [], files: []});
   }
+  if (host === 'claude.ai' && mode === 'rpc-gzip') {
+    // A Connect body the client compressed (envelope flag 1): the extension cannot read it at all.
+    const raw = new TextEncoder().encode(text);
+    const gz = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+    const n = gz.length;
+    const body = new Uint8Array([1, (n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255, ...gz]);
+    const r = await fetch('/claudeai-rpc/anthropic.bard.api.v1alpha.ConversationService/PerformAction',
+      {method: 'POST', headers: {'content-type': 'application/proto', 'connect-protocol-version': '1', 'connect-content-encoding': 'gzip'}, body});
+    document.getElementById('out').textContent = 'status ' + r.status;
+    return;
+  }
   if (host === 'claude.ai' && (mode === 'rpc' || mode === 'rpc-retry')) {
     // What claude.ai really sends now: Connect RPCs with protobuf bodies. The message is one
     // PerformAction; the others (state, no text) ride the same path. The typed text is one string
