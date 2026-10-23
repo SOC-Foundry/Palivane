@@ -165,7 +165,7 @@ def _process_event(team_id: str, event: dict) -> None:
         for fo in (event.get("files") or []):
             if not sc._slack_readable_file(fo) or int(fo.get("size") or 0) > sc._MAX_FILE_BYTES:
                 continue
-            body, how = sc._slack_file_text(fo, hdrs)
+            body, how, partial = sc._slack_file_text(fo, hdrs)
             if not body.strip():
                 continue
             fname = sc._slack_file_name(fo)
@@ -173,7 +173,8 @@ def _process_event(team_id: str, event: dict) -> None:
                 AnalysisInput(content=body, sender=actor, channel="slack",
                               subject=f"{where}: {fname}", surface=Surface.COLLAB,
                               metadata={"custom_pii": custom_pii, "slack_file": fname,
-                                        "extracted_via": how, "realtime": "events"}),
+                                        "extracted_via": how, "realtime": "events",
+                                        **({"extraction": "partial"} if partial else {})}),
                 persist=True, db=db, tenant_id=connector.tenant_id,
                 persist_benign=False, use_judge=False)
             if result.get("finding_id") is not None:

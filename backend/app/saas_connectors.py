@@ -320,7 +320,8 @@ _SCAN_LOOKBACK_SECS = 7 * 86400   # first sync reaches back a week, then cursor-
 # screenshot as a typed message. doc_extract turns all three into text — plain text
 # directly, OOXML and PDF by container, images through the opt-in local OCR — and returns
 # "" for what it genuinely cannot open, which is counted and reported rather than passed
-# over in silence.
+# over in silence. A file it only partly read (a PDF stream that would not inflate) is
+# scanned for what it did read and counted as partial, so it is not reported clean either.
 _MAX_FILE_BYTES = 5_000_000       # per file; larger ones are counted as skipped
 _MAX_FILE_BYTES_PER_SYNC = 50_000_000
 
@@ -377,18 +378,18 @@ def _slack_readable_file(f: dict) -> bool:
     return ocr_available()            # an image is only readable when OCR is available
 
 
-def _slack_file_text(f: dict, hdrs: dict) -> tuple[str, str]:
-    """(text, how) for an attachment. Best-effort by design: one unreadable or expired
-    file must not sink a whole workspace scan."""
+def _slack_file_text(f: dict, hdrs: dict) -> tuple[str, str, bool]:
+    """(text, how, partial) for an attachment. Best-effort by design: one unreadable or
+    expired file must not sink a whole workspace scan."""
     url = f.get("url_private_download") or f.get("url_private") or ""
     if not url:
-        return "", ""
+        return "", "", False
     try:
         raw = _http_fetch_capped(url, hdrs, _MAX_FILE_BYTES)   # SSRF-guarded, capped
     except ConnectorError:
-        return "", ""
-    from .doc_extract import extract
-    return extract(_slack_file_name(f), raw, f.get("mimetype") or "")
+        return "", "", False
+    from .doc_extract import extract_detail
+    return tuple(extract_detail(_slack_file_name(f), raw, f.get("mimetype") or ""))
 
 
 def _slack_channels(hdrs: dict, auto_join: bool) -> tuple[list[dict], int]:
@@ -560,8 +561,8 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
     scans every public channel in the workspace. Private channels and DMs remain
     invite-only on any plan below Enterprise Grid.
 
-    Returns {channels, messages, findings, joined?, files?, files_skipped?, truncated?}
-    for last_sync_detail."""
+    Returns {channels, messages, findings, joined?, files?, files_skipped?, files_partial?,
+    truncated?} for last_sync_detail."""
     token = (creds.get("bot_token") or "").strip()
     if not token:
         raise ConnectorError("slack_messages needs bot_token (xoxb-… with channels:read, "
@@ -586,13 +587,14 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
 
     users: dict[str, str] = {}
     scanned = findings = deleted = delete_failed = 0
-    files_scanned = files_skipped = file_bytes = 0
+    files_scanned = files_skipped = files_partial = file_bytes = 0
     truncated = False
     resume_at = ""
     cid = where = ""
 
     def scan(m: dict) -> None:
-        nonlocal scanned, findings, deleted, delete_failed, files_scanned, files_skipped, file_bytes
+        nonlocal scanned, findings, deleted, delete_failed, files_scanned, files_skipped, \
+            files_partial, file_bytes
         actor = _slack_actor(users, m["user"], hdrs)
         result = run_analysis(
             AnalysisInput(content=m["text"], sender=actor, channel="slack",
@@ -610,12 +612,13 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
             if not _slack_readable_file(fo) or int(fo.get("size") or 0) > _MAX_FILE_BYTES:
                 files_skipped += 1        # binary/oversize: counted, never guessed at
                 continue
-            body, how = _slack_file_text(fo, hdrs)
+            body, how, partial = _slack_file_text(fo, hdrs)
             if not body.strip():
                 files_skipped += 1
                 continue
             file_bytes += len(body)
             files_scanned += 1
+            files_partial += partial
             fname = _slack_file_name(fo)
             if run_analysis(
                     AnalysisInput(content=body, sender=actor, channel="slack",
@@ -624,7 +627,8 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
                                             # how the text was recovered, so a finding
                                             # off a screenshot is distinguishable from
                                             # one off a message during triage
-                                            "extracted_via": how}),
+                                            "extracted_via": how,
+                                            **({"extraction": "partial"} if partial else {})}),
                     persist=True, db=db, tenant_id=connector.tenant_id,
                     persist_benign=False, use_judge=False).get("finding_id") is not None:
                 findings += 1
@@ -694,6 +698,9 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
         # Surfaced, not swallowed: "12 attachments unreadable" is the honest way to say
         # that PDFs, Office documents and images are not covered.
         summary["files_skipped"] = files_skipped
+    if files_partial:
+        # Scanned, but only in part: a clean result on these is not a clean file.
+        summary["files_partial"] = files_partial
     if truncated:
         summary["truncated"] = True   # budget hit; the cursor resumes next sync
     return summary
@@ -984,9 +991,10 @@ def scan_salesforce_records(db, connector, creds: dict) -> dict:
     # never were, and a support case's attachment is where the customer's actual export
     # ends up. ContentVersion is the modern file object; IsLatest keeps it to current
     # versions rather than rescanning every revision.
-    files_scanned, files_skipped, file_findings, files_mark = _scan_salesforce_files(
+    files_scanned, files_skipped, files_partial, file_findings, files_mark = (
+        _scan_salesforce_files(
         db, connector, custom_pii, instance, hdrs,
-        marks.get("__files__") or default_since, _MAX_RECORDS_PER_SYNC - scanned)
+        marks.get("__files__") or default_since, _MAX_RECORDS_PER_SYNC - scanned))
     marks["__files__"] = files_mark
     findings += file_findings
 
@@ -996,31 +1004,33 @@ def scan_salesforce_records(db, connector, creds: dict) -> dict:
         summary["files"] = files_scanned
     if files_skipped:
         summary["files_skipped"] = files_skipped
+    if files_partial:
+        summary["files_partial"] = files_partial
     if truncated:
         summary["truncated"] = True
     return summary
 
 
 def _scan_salesforce_files(db, connector, custom_pii, instance: str, hdrs: dict,
-                           since: str, budget: int) -> tuple[int, int, int, str]:
+                           since: str, budget: int) -> tuple[int, int, int, int, str]:
     """Scan ContentVersion file bodies changed since `since`.
 
-    Returns (scanned, skipped, findings, new watermark). Best-effort: an org whose profile
-    cannot read ContentVersion should keep getting its record scan, not lose the whole
-    sync to a permissions error."""
+    Returns (scanned, skipped, partial, findings, new watermark). Best-effort: an org whose
+    profile cannot read ContentVersion should keep getting its record scan, not lose the
+    whole sync to a permissions error."""
     if budget <= 0:
-        return 0, 0, 0, since
+        return 0, 0, 0, 0, since
     soql = ("SELECT Id, Title, FileExtension, ContentSize, LastModifiedDate, FileType, "
             "OwnerId FROM ContentVersion WHERE IsLatest = true "
             f"AND LastModifiedDate > {since} ORDER BY LastModifiedDate ASC")
     url = (f"{instance}/services/data/{_SF_API_VERSION}/query?"
            + urllib.parse.urlencode({"q": soql}))
-    scanned = skipped = findings = 0
+    scanned = skipped = partial = findings = 0
     mark = since
     try:
         data = _http_json(url, headers=hdrs)
     except ConnectorError:
-        return 0, 0, 0, since            # no ContentVersion access — records still scanned
+        return 0, 0, 0, 0, since         # no ContentVersion access — records still scanned
     for rec in data.get("records", [])[:budget]:
         cid, title = rec.get("Id", ""), rec.get("Title") or "file"
         ext = (rec.get("FileExtension") or "").lower()
@@ -1032,7 +1042,7 @@ def _scan_salesforce_files(db, connector, custom_pii, instance: str, hdrs: dict,
             mark = rec.get("LastModifiedDate") or mark
             continue
         try:
-            text = _fetch_doc_text(
+            text, part = _fetch_doc_text(
                 f"{instance}/services/data/{_SF_API_VERSION}/sobjects/ContentVersion/"
                 f"{cid}/VersionData", hdrs, name, "")
         except ConnectorError:
@@ -1045,7 +1055,9 @@ def _scan_salesforce_files(db, connector, custom_pii, instance: str, hdrs: dict,
             continue
         hit = _scan_blob(db, connector, custom_pii, content=text,
                          sender=rec.get("OwnerId") or "",
-                         subject=f"Salesforce file: {name}"[:200], channel="salesforce")
+                         subject=f"Salesforce file: {name}"[:200], channel="salesforce",
+                         partial=part)
+        partial += part
         if hit:
             findings += 1
         from . import content_origin
@@ -1054,7 +1066,7 @@ def _scan_salesforce_files(db, connector, custom_pii, instance: str, hdrs: dict,
                                          rec.get("OwnerId") or "", text, sensitive=hit)
         scanned += 1
         mark = rec.get("LastModifiedDate") or mark
-    return scanned, skipped, findings, mark
+    return scanned, skipped, partial, findings, mark
 
 
 # --- Notion (manual export only) ---------------------------------------------------------
@@ -1149,26 +1161,30 @@ def _readable_doc(name: str, mime: str) -> bool:
     return ocr_available()
 
 
-def _fetch_doc_text(url: str, headers: dict, name: str, mime: str) -> str:
-    """Download a document library file and return its readable text.
+def _fetch_doc_text(url: str, headers: dict, name: str, mime: str) -> tuple[str, bool]:
+    """Download a document library file and return (readable text, partial).
 
     Drive and SharePoint both hand back bytes: a Word file, a PDF, a screenshot. Fetch
     undecoded and let doc_extract decide the tier, rather than the old behaviour of
     decoding everything as utf-8 — which turned a .docx into replacement characters and a
-    scan of it into a confident "clean"."""
-    from .doc_extract import extract
-    text, _how = extract(name, _http_bytes(url, headers), mime)
-    return text
+    scan of it into a confident "clean". `partial` is the extractor admitting it read only
+    some of the file; the caller counts it beside the unreadable ones."""
+    from .doc_extract import extract_detail
+    text, _how, partial = extract_detail(name, _http_bytes(url, headers), mime)
+    return text, partial
 
 
 def _scan_blob(db, connector, custom_pii: str, *, content: str, sender: str,
-               subject: str, channel: str) -> bool:
-    """One document through the engine on the collab surface. True when it made a finding."""
+               subject: str, channel: str, partial: bool = False) -> bool:
+    """One document through the engine on the collab surface. True when it made a finding.
+    `partial` marks a finding made on a file the extractor read only in part."""
     from .detectors import AnalysisInput, Surface
     from .service import run_analysis
     result = run_analysis(
         AnalysisInput(content=content, sender=sender, channel=channel, subject=subject,
-                      surface=Surface.COLLAB, metadata={"custom_pii": custom_pii}),
+                      surface=Surface.COLLAB,
+                      metadata={"custom_pii": custom_pii,
+                                **({"extraction": "partial"} if partial else {})}),
         persist=True, db=db, tenant_id=connector.tenant_id,
         persist_benign=False, use_judge=False)
     return result.get("finding_id") is not None
@@ -1240,7 +1256,7 @@ def scan_gdrive_files(db, connector, creds: dict) -> dict:
         time.time() - _SCAN_LOOKBACK_SECS, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     custom_pii = _tenant_custom_pii(db, connector)
 
-    scanned = findings = skipped = 0
+    scanned = findings = skipped = partial = 0
     truncated = False
     page = ""
     mark = watermark
@@ -1271,12 +1287,13 @@ def scan_gdrive_files(db, connector, creds: dict) -> dict:
                 skipped += 1
                 mark = f.get("modifiedTime") or mark   # skipped files still pass the cursor
                 continue
+            part = False
             try:
                 if export:
                     text = _http_text(f"{_GDRIVE_BASE}/files/{fid}/export"
                                       f"?mimeType={urllib.parse.quote(export)}", hdrs)
                 else:
-                    text = _fetch_doc_text(
+                    text, part = _fetch_doc_text(
                         f"{_GDRIVE_BASE}/files/{fid}?alt=media&supportsAllDrives=true",
                         hdrs, name, mime)
             except ConnectorError:
@@ -1290,7 +1307,8 @@ def scan_gdrive_files(db, connector, creds: dict) -> dict:
             sender = ((f.get("lastModifyingUser") or {}).get("emailAddress")
                       or ((f.get("owners") or [{}])[0]).get("emailAddress") or "")
             hit = _scan_blob(db, connector, custom_pii, content=text, sender=sender,
-                             subject=name, channel="gdrive")
+                             subject=name, channel="gdrive", partial=part)
+            partial += part
             if hit:
                 findings += 1
             # Fingerprint every scanned doc (benign ones are valid origins too) so a later
@@ -1310,6 +1328,8 @@ def scan_gdrive_files(db, connector, creds: dict) -> dict:
     connector.state = {**state, "modified_after": mark}
     summary = {"files": scanned, "skipped": skipped, "findings": findings,
                **_ensure_gdrive_channel(db, connector, hdrs)}
+    if partial:
+        summary["partial"] = partial    # scanned in part: not the same as clean
     if truncated:
         summary["truncated"] = True
     return summary
@@ -1320,11 +1340,12 @@ _MAX_SITES_PER_SYNC = 50
 
 
 def _scan_drive(db, connector, hdrs: dict, custom_pii: str, did: str, dname: str,
-                deltas: dict, *, scanned: int = 0) -> tuple[int, int, int, bool]:
+                deltas: dict, *, scanned: int = 0) -> tuple[int, int, int, int, bool]:
     """One drive's delta pass (shared by the full sync and the change-notification
     webhook). Mutates `deltas` in place; keeps the OLD delta link on budget overrun so
-    the unscanned changes rescan next pass. Returns (scanned, findings, skipped, over)."""
-    findings = skipped = 0
+    the unscanned changes rescan next pass. Returns (scanned, findings, skipped, partial,
+    over)."""
+    findings = skipped = partial = 0
     url = deltas.get(did) or f"{_GRAPH_BASE}/drives/{did}/root/delta"
     new_link, over = "", False
     while url:
@@ -1343,7 +1364,7 @@ def _scan_drive(db, connector, hdrs: dict, custom_pii: str, did: str, dname: str
                 skipped += 1
                 continue
             try:
-                text = _fetch_doc_text(f"{_GRAPH_BASE}/drives/{did}/items/"
+                text, part = _fetch_doc_text(f"{_GRAPH_BASE}/drives/{did}/items/"
                                        f"{item.get('id')}/content", hdrs, name, mime)
             except ConnectorError:
                 skipped += 1
@@ -1355,7 +1376,8 @@ def _scan_drive(db, connector, hdrs: dict, custom_pii: str, did: str, dname: str
                       .get("email") or "")
             subject = f"{dname or 'library'}/{name}"
             hit = _scan_blob(db, connector, custom_pii, content=text, sender=sender,
-                             subject=subject, channel="sharepoint")
+                             subject=subject, channel="sharepoint", partial=part)
+            partial += part
             if hit:
                 findings += 1
             from . import content_origin
@@ -1369,7 +1391,7 @@ def _scan_drive(db, connector, hdrs: dict, custom_pii: str, did: str, dname: str
         url = data.get("@odata.nextLink", "")
     if not over and new_link:
         deltas[did] = new_link
-    return scanned, findings, skipped, over
+    return scanned, findings, skipped, partial, over
 
 
 # Graph change-notification subscriptions: max lifetime for driveItem resources is ~30
@@ -1471,7 +1493,7 @@ def scan_sharepoint_files(db, connector, creds: dict) -> dict:
             continue                              # site without accessible libraries
         drives += dd.get("value", [])
 
-    scanned = findings = skipped = 0
+    scanned = findings = skipped = partial = 0
     truncated = False
     for drive in drives:
         did = drive.get("id", "")
@@ -1480,11 +1502,12 @@ def scan_sharepoint_files(db, connector, creds: dict) -> dict:
         if scanned >= _MAX_FILES_PER_SYNC:
             truncated = True
             break
-        scanned, f2, s2, over = _scan_drive(db, connector, hdrs, custom_pii, did,
-                                            drive.get("name", "library"), deltas,
-                                            scanned=scanned)
+        scanned, f2, s2, p2, over = _scan_drive(db, connector, hdrs, custom_pii, did,
+                                                drive.get("name", "library"), deltas,
+                                                scanned=scanned)
         findings += f2
         skipped += s2
+        partial += p2
         if over:
             truncated = True
 
@@ -1492,6 +1515,8 @@ def scan_sharepoint_files(db, connector, creds: dict) -> dict:
     connector.state = {**connector.state, "deltas": deltas}
     summary = {"sites": len(sites), "drives": len(drives), "files": scanned,
                "skipped": skipped, "findings": findings, **sub_stats}
+    if partial:
+        summary["partial"] = partial
     if truncated:
         summary["truncated"] = True
     return summary

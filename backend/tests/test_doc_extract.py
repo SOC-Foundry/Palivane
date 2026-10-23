@@ -11,10 +11,11 @@ from __future__ import annotations
 import importlib.util
 import io
 import pathlib
+import random
 import zipfile
 import zlib
 
-from app.doc_extract import extract, kind_of
+from app.doc_extract import extract, extract_detail, kind_of
 
 _MODULE = pathlib.Path(__file__).resolve().parents[2] / "cli" / "palivane_detect.py"
 _spec = importlib.util.spec_from_file_location("palivane_detect", _MODULE)
@@ -214,3 +215,111 @@ def test_legacy_binary_office_still_unreadable():
     # .doc/.xls/.ppt (OLE2 binary) and iWork stay unread — honest, they need real deps.
     for ext in ("doc", "xls", "ppt", "pages", "numbers"):
         assert kind_of(f"x.{ext}") == "", ext
+
+
+# --- SEC-03: what a read skipped -----------------------------------------------------------
+
+def _refs(s: str) -> str:
+    """Every character as a numeric reference, alternating decimal, lower and upper hex."""
+    forms = (lambda c: f"&#{c};", lambda c: f"&#x{c:x};", lambda c: f"&#X{c:X};")
+    return "".join(forms[i % 3](ord(ch)) for i, ch in enumerate(s))
+
+
+def test_ooxml_numeric_and_hex_references_are_decoded():
+    """OOXML writes characters as `&#65;` / `&#x41;`. A detector run on the reference
+    instead of the character finds nothing, so the secret must come out as characters."""
+    text, how = extract("refs.docx", _docx(f"deploy key {_refs(AWS)}", "a&#xA;b&#xa;c"))
+    assert how == "document" and AWS in text
+    assert any(c == "secret_leak" for c, _, _, _ in d.scan_all(text))
+    assert "a\nb\nc" in text
+    text, _ = extract("refs.xlsx", _xlsx("ssn", _refs(SSN)))
+    assert any(c == "pii_exposure" for c, _, _, _ in d.scan_all(text))
+
+
+def test_xml_references_decode_once_and_leave_other_ampersands():
+    """One pass: `&amp;lt;` is the text `&lt;`, not `<`. HTML-only names are not XML."""
+    assert d._xml_text(b"<t>&amp;lt; AT&amp;T &copy &bogus; &#0; &#xD800;</t>").split() == \
+        ["&lt;", "AT&T", "&copy", "&bogus;", "�", "�"]
+
+
+def test_nested_rtf_destination_does_not_leak_into_the_body():
+    """`{\\*\\dest {nested} tail}` is one group. The old lazy regex stopped at the nested
+    brace and scanned `tail` as body text."""
+    rtf = (r"{\rtf1\ansi{\fonttbl{\f0 Arial;}}"
+           r"{\*\datastore {\*\inner 0105} AKIAQWERTYUIOPASDFGH {\x more}}"
+           r"\f0 body text \{kept\}\par visible line}").encode("latin-1")
+    text, how = extract("nested.rtf", rtf)
+    assert how == "document"
+    assert "AKIAQWERTYUIOPASDFGH" not in text and "0105" not in text and "more" not in text
+    assert "body text kept" in text and "visible line" in text
+
+
+def _pdf_streams(*streams: tuple[bytes, bytes]) -> bytes:
+    """A PDF whose content streams are (dictionary entries, raw body) pairs."""
+    out = b"%PDF-1.4\n"
+    for i, (dict_extra, body) in enumerate(streams, 1):
+        out += (f"{i} 0 obj<</Length {len(body)}".encode() + dict_extra + b">>stream\n"
+                + body + b"\nendstream\nendobj\n")
+    return out + b"trailer<<>>\n%%EOF"
+
+
+def test_pdf_hex_strings_and_quote_operators_are_read():
+    hex_aws = AWS.encode().hex().upper()
+    content = (f"BT /F1 12 Tf 72 720 Td <{hex_aws}> Tj ET\n"
+               f"BT 14 TL (next line {SSN}) ' 1 0 (spaced line) \" ET\n"
+               "BT [(arr) -20 <61 72 72 6179>] TJ ET").encode()
+    for extra, body in ((b"", content),
+                        (b"/Filter/FlateDecode", zlib.compress(content))):
+        text, how, partial = extract_detail("hex.pdf", _pdf_streams((extra, body)))
+        assert how == "document" and not partial
+        assert AWS in text and SSN in text and "spaced line" in text and "arrarray" in text
+
+
+def test_a_stream_that_only_uses_the_quote_operator_is_read():
+    """No Tj / TJ anywhere: the old gate skipped the whole stream."""
+    body = f"BT 14 TL (key {AWS}) ' ET".encode()
+    text, _, _ = extract_detail("q.pdf", _pdf_streams((b"/Filter/FlateDecode",
+                                                       zlib.compress(body))))
+    assert AWS in text
+
+
+def test_pdf_with_one_corrupt_stream_is_partial_not_whole():
+    """One stream inflates, one declared Flate does not. The text that was read is
+    returned and scanned, and the read is reported as partial, not as the whole file."""
+    good = zlib.compress(f"BT (customer {SSN}) Tj ET".encode())
+    bad = b"\x78\x9c" + bytes(range(7, 200))
+    pdf = _pdf_streams((b"/Filter/FlateDecode", good), (b"/Filter/FlateDecode", bad))
+    text, how, partial = extract_detail("mixed.pdf", pdf)
+    assert how == "document" and SSN in text and partial is True
+    assert extract("mixed.pdf", pdf) == (text, how)       # extract() keeps its shape
+    # Each failure the extractor can name is partial too: an unimplemented filter, a
+    # deflate stream cut short, and hex glyph ids it cannot map to text.
+    for extra, body in ((b"/Filter/LZWDecode", b"\x80\x0b\x60\x50"),
+                        (b"/Filter/FlateDecode",
+                         zlib.compress(b"BT (x) Tj ET " + random.Random(1).randbytes(2000))[:200]),
+                        (b"", b"BT <00410042> Tj ET")):
+        _, _, p = extract_detail("m.pdf", _pdf_streams((b"/Filter/FlateDecode", good),
+                                                       (extra, body)))
+        assert p is True, extra
+
+
+def test_pdf_images_and_fonts_do_not_make_a_read_partial():
+    good = zlib.compress(f"BT (customer {SSN}) Tj ET".encode())
+    pdf = _pdf_streams((b"/Filter/FlateDecode", good),
+                       (b"/Subtype/Image/Filter/DCTDecode", b"\xff\xd8\xff\xe0 jpeg"),
+                       (b"/Length1 999/Filter/FlateDecode", b"not deflate at all"))
+    text, _, partial = extract_detail("clean.pdf", pdf)
+    assert SSN in text and partial is False
+
+
+def test_whole_reads_are_not_partial():
+    for name, data in (("a.docx", _docx("x")), ("a.pdf", _pdf("hello")),
+                       ("a.rtf", _rtf("hi")), ("a.odt", _odf("hi")), ("a.txt", b"hi")):
+        assert extract_detail(name, data).partial is False, name
+
+
+def test_a_capped_zip_member_is_partial(monkeypatch):
+    monkeypatch.setattr(d, "_MAX_ZIP_MEMBER_BYTES", 64)
+    assert d.extract_text_detail("big.docx", _docx("x" * 200))[1] is True
+    monkeypatch.undo()
+    assert d.extract_text_detail("small.docx", _docx("x"))[1] is False

@@ -319,7 +319,7 @@ def test_attachment_is_scanned_as_its_own_finding(client, monkeypatch):
                               "files": [{"id": "F1", "name": "export.csv", "filetype": "csv",
                                          "size": 120, "url_private_download": "https://x/f"}]}])
     monkeypatch.setattr(sc, "_slack_file_text",
-                        lambda f, h: ("name,ssn\nJane Roe,412-88-7390\n", "text"))
+                        lambda f, h: ("name,ssn\nJane Roe,412-88-7390\n", "text", False))
     r = client.post(f"/api/discovery/connectors/{cid}/sync")
     assert r.status_code == 200, r.text
     detail = r.json()
