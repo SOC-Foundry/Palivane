@@ -732,15 +732,21 @@ def readyz(db: Session = Depends(get_db)):
 
 @app.get("/metrics")
 def metrics_endpoint(request: Request):
-    """Prometheus exposition. If PALIVANE_METRICS_TOKEN is set, require it (Bearer or ?token=)."""
+    """Prometheus exposition, gated by PALIVANE_METRICS_TOKEN (Bearer or ?token= — scrapers
+    can't always set headers). 404 when no token is configured, like the /api/admin/*
+    operator routes: an unset token used to mean "open", which left an unauthenticated
+    operational readout on any self-host that forgot it. Not a loopback carve-out either —
+    behind a same-host nginx/Caddy that doesn't add X-Forwarded-For every caller looks
+    like 127.0.0.1, so "loopback only" quietly becomes "everyone"."""
     from fastapi.responses import Response as _Resp
     from . import metrics
     tok = settings.metrics_token
-    if tok:
-        scheme, _, bearer = request.headers.get("authorization", "").partition(" ")
-        provided = bearer if scheme.lower() == "bearer" else request.query_params.get("token", "")
-        if not _token_matches(provided, tok):
-            raise HTTPException(status_code=401, detail="metrics token required")
+    if not tok:
+        raise HTTPException(status_code=404, detail="not found")
+    scheme, _, bearer = request.headers.get("authorization", "").partition(" ")
+    provided = bearer if scheme.lower() == "bearer" else request.query_params.get("token", "")
+    if not _token_matches(provided, tok):
+        raise HTTPException(status_code=401, detail="metrics token required")
     body, content_type = metrics.exposition()
     return _Resp(content=body, media_type=content_type)
 
