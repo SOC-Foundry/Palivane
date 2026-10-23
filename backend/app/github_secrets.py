@@ -51,6 +51,7 @@ _WORKERS = 6                       # files/commits fetched at once; GitHub asks 
 _BRANCHES_DEFAULT, _BRANCHES_MAX = 50, 200
 _SEEN_SHAS = 100                   # commits remembered per branch, so a new push reads only what is new
 _COMPARE_MAX = 250                 # GitHub's compare lists at most this many
+_COMMIT_TRIES = 3                  # syncs a commit that will not load is tried in before it is skipped
 
 # How long one sync may run. An admin's Scan now is a web request, so it gets less than the scheduled
 # loop, which sets this for its own thread (connector_schedule.py).
@@ -241,6 +242,7 @@ class _Run:
         self.tally = {"repos": 0, "blobs": 0, "commits": 0, "findings": 0, "skipped": 0}
         self.errors: list[str] = []
         self.truncated = False
+        self.listed: set[str] = set()          # every commit this sync set out to read (sha[:10])
         self._fit_quota()
 
     def get(self, path: str):
@@ -249,6 +251,10 @@ class _Run:
     def skip_path(self, path: str) -> bool:
         """Files not worth reading: the built-in list (binaries, lockfiles) and the admin's exclude_paths."""
         return bool(_SKIP_PATH.search(path)) or any(rx.match(path) for rx in self.exclude_paths)
+
+    def count(self, key: str) -> None:
+        """A tally that only shows in the summary once it happens (the summary is capped at 512 chars)."""
+        self.tally[key] = self.tally.get(key, 0) + 1
 
     def out_of_time(self) -> bool:
         if time.monotonic() >= self.deadline:
@@ -346,7 +352,19 @@ class _Run:
             self._commits(repo, state, branch)
             if self.all_branches:
                 self._other_branches(repo, state, branch)
-            if state.get("tree_done") and not self.truncated:
+            fails = state.get("commit_fails") or {}
+            if not self.truncated:
+                # A commit that is no longer listed anywhere (its branch was deleted, or it was
+                # rewritten away) is not owed a retry. A truncated sync did not list everything, so
+                # it cannot tell, and keeps them all.
+                fails = {k: v for k, v in fails.items() if k in self.listed}
+            if fails:
+                state["commit_fails"] = fails
+            else:
+                state.pop("commit_fails", None)
+            # A commit owed a retry keeps the repository from counting as done: with nothing pushed
+            # it would be skipped above, and the retry would wait for the next push.
+            if state.get("tree_done") and not self.truncated and not fails:
                 state["pushed"], state["branches_mode"] = pushed, self.all_branches
         except sc.ConnectorError as e:
             text = str(e)
@@ -393,11 +411,21 @@ class _Run:
                         self.tally["findings"] += 1
         state["tree_done"], state["tree_cursor"] = True, 0
 
-    def _scan_commits(self, repo: dict, shas: list[str], branch: str = "") -> list[str]:
+    def _scan_commits(self, repo: dict, shas: list[str], branch: str = "",
+                      fails: dict | None = None) -> list[str]:
         """Read these commits' diffs (a few at a time, in order) and record what they added. Returns
-        the shas that were read, in order; it stops early at the budget, the clock or a rate limit."""
+        the shas that were read, in order; it stops early at the budget, the clock or a rate limit.
+
+        A commit that fails to load (a 500, a timeout) is left out, so the caller's watermark does not
+        move past it and the next sync reads it again. `fails` is the repository's count of those
+        failures, kept in its sync state: once a commit has failed _COMMIT_TRIES times it is given up
+        on and returned as read, so one broken commit cannot hold back everything after it forever,
+        and it is counted in `skipped` and named in the errors, so the admin sees which commit was
+        never read. Without `fails` (a push event) a failure is just left out; the scheduled scan
+        reads it later."""
         full = repo["full_name"]
         done: list[str] = []
+        self.listed |= {s[:10] for s in shas}
         i = 0
         while i < len(shas):
             if self.commits_left <= 0 or self.out_of_time():
@@ -406,26 +434,91 @@ class _Run:
             batch = shas[i:i + min(_WORKERS, self.commits_left)]
             self.commits_left -= len(batch)
             for sha, detail in zip(batch, self.fetch_many([f"/repos/{full}/commits/{s}" for s in batch])):
-                if isinstance(detail, Exception):
-                    if _is_rate_limit(detail):
+                try:
+                    if isinstance(detail, Exception):
+                        raise detail
+                    if not self._read_commit(repo, sha, detail, branch):
+                        return done                # out of file budget: this commit and the rest next time
+                except sc.ConnectorError as e:
+                    if _is_rate_limit(e):
                         self.truncated = True
                         return done
-                    self.tally["skipped"] += 1
-                    done.append(sha)               # an unreadable commit is not worth blocking the rest
+                    if self._give_up(full, sha, e, fails):
+                        done.append(sha)
                     continue
-                self.tally["commits"] += 1
-                author = ((detail.get("commit") or {}).get("author") or {}).get("email", "")
-                for f in detail.get("files") or []:
-                    path = f.get("filename", "")
-                    if f.get("status") == "removed" or not f.get("patch") or self.skip_path(path):
-                        continue
-                    text, numbers = _added_lines(f["patch"])
-                    for label, line, masked in locate_secrets(text, path, line_numbers=numbers):
-                        if self.record(repo, path, label, line, masked, sha, author, "commit", branch):
-                            self.tally["findings"] += 1
+                if fails:
+                    fails.pop(sha[:10], None)
                 done.append(sha)
             i += len(batch)
         return done
+
+    def _give_up(self, full: str, sha: str, err, fails: dict | None) -> bool:
+        """A commit failed to load. True when it has now failed often enough to stop retrying it."""
+        if fails is None:
+            return False
+        key = sha[:10]
+        tries = int(fails.get(key) or 0) + 1
+        if tries < _COMMIT_TRIES:
+            fails[key] = tries
+            self.count("commits_retry")
+            return False
+        fails.pop(key, None)
+        self.tally["skipped"] += 1
+        self.errors.append(f"{full}: commit {key} unreadable after {tries} tries, skipped: {str(err)[:80]}")
+        return True
+
+    def _read_commit(self, repo: dict, sha: str, detail: dict, branch: str) -> bool:
+        """Scan what one commit added. False when the file budget ran out part way: the commit is not
+        read, the next sync reads it again, and what was already recorded folds into the same
+        findings. A file that fails to load raises, and the commit counts as failed."""
+        author = ((detail.get("commit") or {}).get("author") or {}).get("email", "")
+        for f in detail.get("files") or []:
+            path = f.get("filename", "")
+            if f.get("status") == "removed" or self.skip_path(path):
+                continue                            # a removed file added nothing
+            if f.get("patch"):
+                text, numbers = _added_lines(f["patch"])
+            elif f.get("changes") == 0:
+                continue                            # a pure rename or a mode change: nothing added
+            else:
+                # GitHub leaves `patch` out when the diff is too large to show (and for some
+                # binaries). The file was still changed, and a key pasted into a big file is exactly
+                # what this is for, so read the whole file at this commit instead. Line numbers are
+                # the file's own, and a secret that was already there folds into its earlier finding.
+                if self.blobs_left <= 0 or self.out_of_time():
+                    self.truncated = True
+                    return False
+                text, numbers = self._file_at(repo["full_name"], f, sha), None
+                if text is None:
+                    continue
+            for label, line, masked in locate_secrets(text, path, line_numbers=numbers):
+                if self.record(repo, path, label, line, masked, sha, author, "commit", branch):
+                    self.tally["findings"] += 1
+        self.tally["commits"] += 1
+        return True
+
+    def _file_at(self, full: str, f: dict, sha: str) -> str | None:
+        """The text of a changed file at this commit, from its blob. None when it is binary, or when it
+        cannot be read within the size ceiling: that is counted in `files_skipped` and named in the
+        errors, so it is not mistaken for a file that was read and was clean. A fetch error raises."""
+        path, blob_sha = f.get("filename", ""), str(f.get("sha") or "")
+        blob: dict = {}
+        if blob_sha:
+            self.blobs_left -= 1
+            blob = self.get(f"/repos/{full}/git/blobs/{urllib.parse.quote(blob_sha, safe='')}")
+        size = int(blob.get("size") or 0)
+        if size > _MAX_BLOB_BYTES or blob.get("encoding") != "base64":
+            # The blob API has no size-only call, so a file over the ceiling has been downloaded by
+            # now; it is still not scanned, the same as an oversized file in the tree.
+            self.count("files_skipped")
+            why = f"{size} bytes, over the {_MAX_BLOB_BYTES} ceiling" if size > _MAX_BLOB_BYTES else "no content"
+            self.errors.append(f"{full}: {path} at {sha[:10]} not read ({why})")
+            return None
+        self.tally["blobs"] += 1
+        raw = base64.b64decode(blob.get("content") or "")
+        if b"\x00" in raw[:8000]:
+            return None                             # binary
+        return raw.decode("utf-8", "replace")
 
     def _commits(self, repo: dict, state: dict, branch: str) -> None:
         full = repo["full_name"]
@@ -446,11 +539,14 @@ class _Run:
                 break
         # oldest first, so the watermark only ever moves past commits that were actually read
         found.sort(key=lambda c: ((c.get("commit") or {}).get("author") or {}).get("date", ""))
+        # a merge is left out: its parents hold the diffs
         todo = [c for c in found if c.get("sha") != state.get("last_sha") and len(c.get("parents") or []) <= 1]
-        by_sha = {c["sha"]: c for c in todo}        # a merge is left out: its parents hold the diffs
-        for sha in self._scan_commits(repo, [c["sha"] for c in todo]):
-            state["last_sha"] = sha
-            state["since"] = ((by_sha[sha].get("commit") or {}).get("author") or {}).get("date") or state["since"]
+        read =set(self._scan_commits(repo, [c["sha"] for c in todo], fails=state.setdefault("commit_fails", {})))
+        for c in todo:
+            if c["sha"] not in read:
+                break                               # one left for a retry holds the watermark behind it
+            state["last_sha"] = c["sha"]
+            state["since"] = ((c.get("commit") or {}).get("author") or {}).get("date") or state["since"]
 
     def _other_branches(self, repo: dict, state: dict, default: str) -> None:
         """Commits on the other branches that are not on the default branch. A branch remembers the head
@@ -476,7 +572,7 @@ class _Run:
                       if c.get("sha") and len(c.get("parents") or []) <= 1]     # a merge: its parents hold the diffs
             seen = set(seen_by.get(name) or [])
             todo = [c["sha"] for c in listed if c["sha"][:10] not in seen]
-            read = self._scan_commits(repo, todo, branch=name)
+            read = self._scan_commits(repo, todo, branch=name, fails=state.setdefault("commit_fails", {}))
             seen |= {s[:10] for s in read}
             if len(read) == len(todo):
                 heads[name] = head
