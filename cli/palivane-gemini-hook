@@ -242,7 +242,11 @@ def should_block(verdict: dict, enforce: bool) -> bool:
     """Mirror of the proxy's rule: a confirmed secret/PII leak (force_block) is blocked
     even in monitor mode — block the certain, monitor the fuzzy. Everything else blocks
     under enforce — local, or the org's stance from the console (Settings → Enforcement),
-    which the server returns on every verdict."""
+    which the server returns on every verdict.
+
+    Copied from the other hooks. Claude Code and Cursor honor verdict['ask']; this one
+    does not, so a warn runs with no prompt. Settings names only those two. One shared
+    helper would keep the copies from drifting further. #278"""
     if verdict.get("force_block"):
         return True
     return (enforce or bool(verdict.get("enforce"))) and verdict.get("action") == "block"

@@ -239,6 +239,8 @@ export default function App() {
   // Review mode: walk the open findings worst first, one verdict each, so the precision readout fills
   // from judgements that carry a reason instead of from bulk clears. It reads the open list itself
   // (the list on screen may be filtered), and moves on after each verdict.
+  // The list is one page of 500, most recently seen. A queue longer than that walks only
+  // that page, and each step re-fetches it. Page the walk when the queue can pass 500. #294
   const [reviewing, setReviewing] = useState(false);
   const [reviewLeft, setReviewLeft] = useState(null);
   const nextToReview = useCallback(async (skipId = null) => {
@@ -578,6 +580,12 @@ export default function App() {
                     reviewing={reviewing}
                     onReviewed={(id) => { if (reviewing) nextToReview(id); }}
                     onStatusChange={async () => {
+                      // Closes over selectedId and refetches it with no cancellation. The
+                      // effect on selectedId above already drops a response that lands after
+                      // the selection moves. Review advances the route first, then this
+                      // finding() can resolve last and paint the finding just closed while
+                      // the URL is the next one. A failed save does not advance. Drop the
+                      // refetch and let that effect load the row the route names. #294
                       await refresh();
                       if (selectedId) api.finding(selectedId).then(setSelected);
                     }}

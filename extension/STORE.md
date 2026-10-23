@@ -19,6 +19,13 @@ account-bound and must be done from your own developer account.
 > (chromewebstore.google.com/detail/fnejondlaacijahdjkhcgiijlnjoapho), wired into the
 > deployment as `PALIVANE_EXTENSION_ID`.
 
+> **Upload 0.7.6, the production build.** The manifest on main is `0.7.6`. There is no
+> `0.7.5` zip in the tree. `0.7.5` only bumped `0.7.4` and carries the request-endpoint
+> capture. `0.7.6` keeps that capture and adds the private page channel, iframe checks,
+> and token storage out of `chrome.storage.sync` into local. The upload command is
+> `PALIVANE_SAAS_URL=https://app.palivane.io ./build.sh` (`build.sh` refuses a store
+> build until that URL is set, or `PALIVANE_DEV=1` for a localhost zip). #295
+
 > **This is a fresh listing under SOC Foundry, not a transfer.** A Chrome Web Store item id
 > is issued to the developer account that published it, so the previous item cannot come
 > along; publishing here mints a **new id**. Once you have it, set `PALIVANE_EXTENSION_ID`

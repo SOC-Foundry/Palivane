@@ -1,5 +1,10 @@
 // "Your findings": the one console view aimed at the person a finding belongs to rather
 // than at the security team.
+// The query matches the signed-in email to Finding.sender or Finding.agent
+// (main._mine). The demo seed's senders are other people, so admin@demo.local and
+// viewer@demo.local both land on the empty state below. The placeholder reads as "you
+// have nothing", which is true and easy to misread as the page being unwired. Say that
+// the sample events belong to other people, or seed one as the viewer. #287
 //
 // Everything a scan turns up otherwise lands in one admin queue, so closing an incident
 // needs a security person to work out whose file it is, ask them, and wait. The answer is

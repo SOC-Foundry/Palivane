@@ -170,6 +170,13 @@
 
   async function scanAll(prompt, destination, endpoint) {
     if (prompt.length <= WINDOW) return scan(prompt, destination, endpoint);
+    // WINDOW * MAX_WINDOWS is 1.2e6 characters. Past that, reportBlind() marks the send
+    // unchecked and the tail is dropped. The return is the first blocking window, else
+    // the first warn, else allow. An allow on the scanned prefix is a successful verdict,
+    // and popup.js hides lastSkip when that verdict is newer than the skip, so the
+    // unchecked notice disappears even though the tail was never scored. Keep the blind
+    // mark until a verdict covers the whole message, or return a truncated result that
+    // recordVerdict does not treat as a clean check. #279
     if (prompt.length > WINDOW * MAX_WINDOWS) { reportBlind(); prompt = prompt.slice(0, WINDOW * MAX_WINDOWS); }
     const parts = [];
     for (let i = 0; ; i += WINDOW - OVERLAP) {

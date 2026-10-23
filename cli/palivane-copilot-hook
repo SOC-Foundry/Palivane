@@ -101,6 +101,10 @@ def prompt_parse_miss(event: dict) -> bool:
     the hook still fires and still returns 0, so the heartbeat stays green while every
     prompt goes unscanned. Fail-open cannot tell you about that; this can."""
     return not isinstance(event.get("prompt"), str)
+
+
+# Stranded between functions because this file was copied from the cursor hook. Move it
+# up with the other constants when the two stop being maintained as twins.
 _MAX_ARGS_TEXT = 20000
 
 
@@ -265,7 +269,12 @@ def should_block(verdict: dict, enforce: bool) -> bool:
     """Mirror of the proxy's rule: a confirmed secret/PII leak (force_block) is blocked
     even in monitor mode — block the certain, monitor the fuzzy. Everything else blocks
     under enforce — local, or the org's stance from the console (Settings → Enforcement),
-    which the server returns on every verdict."""
+    which the server returns on every verdict.
+
+    This function is copied in the other hooks and has already drifted. Claude Code and
+    Cursor honor verdict['ask']; Codex, Gemini and Copilot do not, so a warn runs with
+    no prompt. Settings names only the first two. One shared helper would keep the next
+    change from landing in two of the five copies (#278)."""
     if verdict.get("force_block"):
         return True
     return (enforce or bool(verdict.get("enforce"))) and verdict.get("action") == "block"
@@ -342,7 +351,14 @@ def main() -> int:
     if _is_excluded(_event_cwd(event), cfg["exclude"]):
         return 0
 
-    # No event-name field on Copilot's stdin — dispatch on shape.
+    # Copilot has no event-name field, so dispatch is on shape (#281). A prompt whose
+    # value is not a string hits the else and returns 0, and report_parse_miss below
+    # never runs: this arm only assigns the ai-usage endpoint when `prompt` is already
+    # a string, which is exactly when prompt_parse_miss is false. Cursor, Codex and
+    # Gemini report that case. A missing `prompt` key really is some other event. A
+    # present key whose value is not a string is not: call report_parse_miss on that
+    # key before returning, and delete the check below, which cannot fire. Invalid JSON
+    # is a silent exit 0 in every hook, including Claude. That is a separate fail-open.
     if isinstance(event.get("toolName"), str) and event.get("toolName"):
         endpoint, payload, blockable = "/api/ingest/mcp", build_activity(event), True
     elif isinstance(event.get("prompt"), str):
@@ -350,6 +366,8 @@ def main() -> int:
     else:
         return 0
     if payload is None:
+        # Unreachable for a non-string prompt. See the dispatch comment above. An empty
+        # string is a user who sent nothing and correctly stays silent.
         if endpoint.endswith("/ai-usage") and prompt_parse_miss(event):
             report_parse_miss(event, cfg)
         return 0

@@ -89,7 +89,11 @@ def _dev_default_conn(line: str) -> bool:
 def _path_rx(glob: str):
     """One path glob as a regex, in the way a .gitignore reads it: `*` stays inside a directory, `**`
     crosses them, a pattern with no slash (or only a trailing one) matches at any depth, and one with a
-    slash in the middle is anchored at the repository root."""
+    slash in the middle is anchored at the repository root.
+
+    A lone `*` is unanchored and becomes `^(?:.*/)?[^/]*$`, which matches every path, so one
+    character in the settings box excludes the whole repository. It is not the default. Reject
+    a pattern that is only wildcards. #300"""
     g = glob.strip().lstrip("./")
     if not g:
         return None
@@ -148,7 +152,10 @@ def _mask(match: str) -> str:
 
 
 def scan_interval_secs(creds: dict, default: int) -> int:
-    """How often this connector scans: its `scan_every_minutes` option (5 to 1440), else the platform's."""
+    """How often this connector scans: its `scan_every_minutes` option (5 to 1440), else the platform's.
+
+    Five minutes is under SCAN_MAX_SECS in connector_schedule.py (480s), so two workers can
+    claim one connector. Six minutes is the shortest floor that cannot overlap that cap. #298"""
     try:
         minutes = int(creds.get("scan_every_minutes"))
     except (TypeError, ValueError):
@@ -353,7 +360,13 @@ class _Run:
             if _is_rate_limit(e):
                 self.truncated = True               # stop the sync; every cursor stays where it is
             elif any(f"HTTP {c}" in text for c in (403, 404, 409)):
-                self.tally["skipped"] += 1          # an empty repository, or one this token may not read
+                # An empty repository, or one this token may not read. The count is kept and
+                # the sync still finishes last_sync_status=ok: sync_connector marks error
+                # only on ConnectorError. A token that 403s on every repo looks like a clean
+                # scan with zero findings, and the console prints last_sync_detail only when
+                # status is error, so the skip count never shows. Fail the sync when every
+                # repo was refused, or show the skip count on an ok row. #296
+                self.tally["skipped"] += 1
             else:
                 self.errors.append(f"{full}: {text[:120]}")
 
@@ -444,7 +457,13 @@ class _Run:
             page += 1
             if len(batch) < 100:
                 break
-        # oldest first, so the watermark only ever moves past commits that were actually read
+        # Oldest first, so the watermark only moves past commits that were actually read.
+        # GitHub's `since` is the commit's last-updated time (the committer date). This
+        # stores the author date. On a rebase or cherry-pick the author date is older than
+        # the cursor, the next sync rewinds, and it can spend the 500-commit budget
+        # re-reading history it already scanned. Linear history, where the two dates
+        # match, advances normally. Store the committer date, or the later of the two.
+        # This is the scanner caveat that matters most. #301 did not change this matcher. #298
         found.sort(key=lambda c: ((c.get("commit") or {}).get("author") or {}).get("date", ""))
         todo = [c for c in found if c.get("sha") != state.get("last_sha") and len(c.get("parents") or []) <= 1]
         by_sha = {c["sha"]: c for c in todo}        # a merge is left out: its parents hold the diffs
@@ -502,6 +521,8 @@ def scan_github_secrets(db, connector, creds: dict) -> dict:
             if run.truncated:
                 break
     finally:
+        # The last commit of this dict wins. An overlapping scheduled scan (see
+        # connector_schedule) can replace a newer cursor with this one. #298
         connector.state = {**state, "repos": repos_state}
     summary = dict(run.tally)
     if run.errors:

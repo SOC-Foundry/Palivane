@@ -658,6 +658,10 @@ def main() -> int:
     if not cfg["url"] or not cfg["token"]:
         return 0  # not connected to Palivane — nothing to report to
 
+    # Ask sits inside this branch, so it runs only when PALIVANE_ENFORCE is already on.
+    # A per-user enforce override sets verdict.ask on the server, and this process never
+    # sees it: the report goes out detached below. Scan inline when the server says this
+    # actor is enforced, then honor ask. Codex, Gemini and Copilot have no ask path. #278
     if cfg["enforce"]:
         verdict = scan_mcp(activity, cfg["url"], cfg["token"], cfg["user"], cfg["timeout"])
         if should_block(verdict, True):

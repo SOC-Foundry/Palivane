@@ -124,6 +124,10 @@ jobs:
       # because the Secret Manager entry did not exist. Nothing in CI could see that. This
       # step can: it proves the LIVE service signs, and that the signature verifies against
       # the very key its own generated installer pins.
+      # It runs after `gcloud run deploy` has succeeded and does not roll traffic back.
+      # A key mismatch never gets this far: enforce_key_pair refuses to boot, the new
+      # revision fails its startup probe, and the previous revision keeps traffic.
+      # deploy.sh still does not compare the keys before it creates that revision. #264 #268
       - name: Verify the deployed release signature
         env:
           ORIGIN: https://app.palivane.io

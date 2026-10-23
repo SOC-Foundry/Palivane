@@ -10,6 +10,11 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 ver=$(grep -o '"version": *"[^"]*"' manifest.json | head -1 | sed 's/.*"\([0-9.]*\)"/\1/')
+# The manifest version is the zip to upload. There is no 0.7.5 zip in the tree. 0.7.5
+# only bumped the version and carried request-endpoint capture; 0.7.6 keeps that and
+# adds the private page channel, iframe checks, and token storage in chrome.storage.local.
+# Store upload: PALIVANE_SAAS_URL=https://app.palivane.io ./build.sh
+# The listing id is in STORE.md. #295
 saas="${PALIVANE_SAAS_URL:-}"
 
 # Guard against shipping a dev (localhost) build to a store. The published Chrome Web Store

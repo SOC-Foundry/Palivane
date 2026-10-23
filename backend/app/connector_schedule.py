@@ -24,7 +24,15 @@ log = logging.getLogger("palivane.connector_schedule")
 
 CATCH_UP_SECS = 300      # a scan that stopped at its budget resumes this soon
 MAX_PER_TICK = 3         # connectors scanned per loop tick, so one tick stays short
-SCAN_MAX_SECS = 480.0    # one scheduled scan stops here (an admin's Scan now gets far less: it is a request)
+# One scheduled scan stops here. An admin's Scan now gets far less: it is a request.
+# scan_interval_secs allows 5 minutes, which is under this cap, so a second process can
+# claim the same connector while the first scan is still running. Six minutes is the
+# shortest interval that cannot overlap it. The claim and the completion share
+# last_sync_at, and sync_connector stamps that column at entry and commits the row
+# (including connector.state) at the end, so the slower commit writes the older
+# timestamp back and overwrites the cursor. Split the lock from the completion time
+# and commit last_sync_at only when the scan finishes. #298
+SCAN_MAX_SECS = 480.0
 
 
 def _interval(db, row, spec: dict) -> int:

@@ -296,7 +296,12 @@ _OWN_KEY_RE = re.compile(r'("(?:PALIVANE_TOKEN|ANTHROPIC_AUTH_TOKEN)"\s*:\s*")(a
 
 def _without_own_credential(content: str) -> str:
     """`content` with our own key's value blanked in place. Same length, same lines, so a
-    finding elsewhere in the file keeps the line number someone will need to find it by."""
+    finding elsewhere in the file keeps the line number someone will need to find it by.
+
+    Applied only to collect_agent_configs payloads, the settings files in _AGENT_CONFIGS.
+    A repo rules file (CLAUDE.md, .cursorrules) is still scanned whole, and this check
+    does not read ~/.bashrc. The regex is a JSON assignment of PALIVANE_TOKEN or
+    ANTHROPIC_AUTH_TOKEN whose value starts with ak_. #274"""
     return _OWN_KEY_RE.sub(lambda m: m.group(1) + "x" * len(m.group(2)) + m.group(3), content)
 
 

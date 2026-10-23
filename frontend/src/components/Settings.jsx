@@ -1358,6 +1358,10 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
               {ghConns.map((c) => (
                 <div key={c.id} className="form-row" style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 6 }}>
                   <strong>{c.label}</strong>
+                  {/* last_sync_detail is printed only when status is error. A contents 403 on
+                      every repo still finishes ok with zero findings (github_secrets.scan
+                      counts those as skipped), so this line reads "last scan" and the
+                      skip count never shows. Parse the summary and show skipped. #296 */}
                   <span className="muted" style={{ fontSize: 12, flex: 1 }}>
                     {c.last_sync_at
                       ? `${c.last_sync_status === "ok" ? "last scan" : "last scan failed"} ${new Date(c.last_sync_at + "Z").toLocaleString()}`

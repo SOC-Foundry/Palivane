@@ -11,7 +11,10 @@ function render(state) {
   const v = state.lastVerdict;
   const el = $("verdict");
   // A message that went out unchecked is newer news than the last verdict: say so, because a
-  // failed check otherwise looks exactly like a clean one.
+  // failed check otherwise looks exactly like a clean one. A newer lastVerdict hides the
+  // skip. That is right for a check of the whole message. scanAll in injected.js reports
+  // a blind tail and can still return allow for the scanned prefix, which records a newer
+  // verdict and clears this notice. #279
   const sk = state.lastSkip;
   const skipEl = $("skip");
   if (sk && (!v || sk.at > (v.at || 0))) {
