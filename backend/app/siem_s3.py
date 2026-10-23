@@ -35,6 +35,25 @@ _STS_REFRESH_SLACK = 300     # rebuild when < 5 min of the session remains
 _STS_SESSION_SECS = 3600
 
 
+def external_id(tenant) -> str:
+    """The external ID a tenant's trust policy pins for role delivery (a confused-deputy
+    guard, not a secret). Once stored it never changes. Before it is stored, it is derived
+    from the tenant id under this deployment's secret key, so the role-setup GET can show
+    the customer a stable value without writing anything, and the settings save that turns
+    role delivery on stores exactly the value they already pasted into their policy.
+    (Rotating PALIVANE_SECRET_KEY between those two steps changes the preview; the stored
+    value is what counts after the save.) Security review SEC-04, #291."""
+    import hashlib
+    import hmac
+
+    from .security import _secret
+    stored = (getattr(tenant, "siem_s3_external_id", "") or "").strip()
+    if stored:
+        return stored
+    mac = hmac.new(_secret(), f"palivane-s3-external-id:{tenant.id}".encode(), hashlib.sha256)
+    return "plv-" + mac.hexdigest()[:32]
+
+
 def _sts_client(region: str):
     """The STS client that assumes customer roles. Its identity is, in order: the
     GCP→AWS federated session (aws_wif, when PALIVANE_AWS_WIF_ROLE_ARN is set — no
