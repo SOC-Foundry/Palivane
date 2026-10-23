@@ -79,7 +79,12 @@ def kind_of(name: str, mimetype: str = "") -> str:
 
 def extract(name: str, data: bytes, mimetype: str = "") -> tuple[str, str]:
     """(text, how) for a file's bytes. `how` is the tier that produced it, or "" when
-    nothing could read it — which the caller must surface rather than treat as clean."""
+    nothing could read it — which the caller must surface rather than treat as clean.
+
+    Any non-empty string is a successful read of that tier. The parser can return
+    a fragment — parenthesized PDF literals only, XML with most character
+    references still encoded — and that fragment is enough for the caller to treat
+    the file as scanned. Empty stays unread. Partial does not."""
     if not data:
         return "", ""
     kind = kind_of(name, mimetype)

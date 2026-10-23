@@ -407,8 +407,21 @@ class _Run:
         state["tree_done"], state["tree_cursor"] = True, 0
 
     def _scan_commits(self, repo: dict, shas: list[str], branch: str = "") -> list[str]:
-        """Read these commits' diffs (a few at a time, in order) and record what they added. Returns
-        the shas that were read, in order; it stops early at the budget, the clock or a rate limit."""
+        """Read these commits' diffs a few at a time, in order, and record what they added.
+
+        Returns the shas the caller may treat as done. A rate limit stops and leaves
+        the current sha out, so it is retried. Any other fetch error increments
+        `skipped` and still appends the sha. `_commits` then advances `last_sha`
+        and `since` from this list, and `_other_branches` marks the sha seen and
+        can move the branch head once every sha came back. A transient 500 is not
+        read again.
+
+        A file with no `patch` is skipped on the same line as a removed file.
+        GitHub omits `patch` when the diff is too large, and for some binaries.
+        The commit is still appended, so the watermark moves past a file that was
+        not read. Leave a failed sha out of the result. A missing patch is a
+        skipped file. Do not treat the commit as read while one of its files had
+        no diff."""
         full = repo["full_name"]
         done: list[str] = []
         i = 0
@@ -424,12 +437,13 @@ class _Run:
                         self.truncated = True
                         return done
                     self.tally["skipped"] += 1
-                    done.append(sha)               # an unreadable commit is not worth blocking the rest
+                    done.append(sha)               # failed fetch still advances the watermark
                     continue
                 self.tally["commits"] += 1
                 author = ((detail.get("commit") or {}).get("author") or {}).get("email", "")
                 for f in detail.get("files") or []:
                     path = f.get("filename", "")
+                    # No patch includes a diff GitHub dropped for size, not only a deletion.
                     if f.get("status") == "removed" or not f.get("patch") or self.skip_path(path):
                         continue
                     text, numbers = _added_lines(f["patch"])
