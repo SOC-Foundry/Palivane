@@ -121,6 +121,29 @@ try {
   const extId = sw.url().split("/")[2];
   const version = await sw.evaluate(() => chrome.runtime.getManifest().version);
   console.log(`extension ${version} loaded from ${path.relative(root, EXT)}`);
+  // Count the service worker's calls to the backend still in flight. A scan can outlive the send
+  // it was for (the page gives up at 4s and sends; the answer is still recorded when it comes),
+  // so a check that reads the popup after a slow scan has to wait for those, not for a fixed time.
+  await sw.evaluate((pali) => {
+    const f = self.fetch; self.__pvInflight = 0;
+    self.fetch = (...a) => {
+      if (!String(a[0]?.url || a[0]).startsWith(pali)) return f(...a);
+      self.__pvInflight++;
+      return f(...a).finally(() => { self.__pvInflight--; });
+    };
+  }, PALI);
+  // Every scan answered and its verdict/skip written: nothing in flight, and the popup's state
+  // unchanged across two reads.
+  async function scansSettled() {
+    let last = "";
+    await until(async () => {
+      const now = JSON.stringify(await sw.evaluate(async () => [self.__pvInflight || 0,
+        await chrome.storage.local.get({ lastVerdict: null, lastSkip: null })]));
+      const done = now.startsWith("[0,") && now === last;
+      last = now;
+      return done;
+    }, "the extension's scans to finish", 60000);
+  }
 
   // Config goes where the extension reads it: the capture key in local storage (since 0.7.6 it
   // is moved out of sync storage and any copy left there is ignored), the rest in sync storage.
@@ -266,6 +289,9 @@ try {
   // as a clean check, which hid the "sent unchecked" line although the tail was never looked at.
   // (the SSN sits in the unscored tail; the trailing padding is what the arrival check looks for)
   r = await send("over the scan cap, clean prefix", { text: pad(1250000) + " " + SSN + " " + pad(40), extraWait: 1500 });
+  // eight 150,000-character scans: on a slow machine some answer after the message went out, and
+  // one landing after the next send would put the "unchecked" line back over its clean verdict
+  await scansSettled();
   check("a message over 1.2M characters still goes out (fail open)", r.arrived && !r.modal, JSON.stringify({ ...r, title: r.title }));
   let skipLine = await popupSkip();
   check("...and the popup keeps saying it went out unchecked, though its prefix was clean", /sent unchecked: message too long, only the first part was checked/.test(skipLine), skipLine);
