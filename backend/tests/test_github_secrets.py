@@ -18,7 +18,7 @@ TOKEN = "github_pat_" + "11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789abcdefgh
 
 
 def _b64(text: str) -> dict:
-    return {"encoding": "base64", "content": base64.b64encode(text.encode()).decode()}
+    return {"encoding": "base64", "content": base64.b64encode(text.encode()).decode(), "size": len(text.encode())}
 
 
 class FakeGitHub:
@@ -409,3 +409,85 @@ def test_excluded_paths_are_skipped_in_commit_diffs_too(client, github, db_facto
 def test_exclude_paths_is_a_listed_option(client):
     p = client.get("/api/discovery/connectors").json()["platforms"]["github_secrets"]
     assert "exclude_paths" in p["credential_fields"] and ".gitignore" in p["setup"]
+
+
+# --- nothing counts as read that was not ---------------------------------------------------------
+
+def _repo_state(db_factory, fake, repo="acme/app") -> dict:
+    from app.models import SaasConnector
+    db = db_factory()
+    try:
+        return (db.get(SaasConnector, fake.connector_id).state.get("repos") or {}).get(repo) or {}
+    finally:
+        db.close()
+
+
+def test_a_commit_that_fails_to_load_holds_the_watermark_and_is_read_next_time(client, github, db_factory):
+    github.fail["/repos/acme/app/commits/c1"] = "HTTP 500 from api.github.com: server error"
+    first = _sync(client, github)
+    assert first["commits_retry"] == 1
+    state = _repo_state(db_factory, github)
+    assert "last_sha" not in state                                    # c1 is oldest: nothing passes it
+    assert state["commit_fails"] == {"c1": 1}
+    assert "acme/app/deploy.sh" not in {s for s, *_ in _findings(db_factory)}
+
+    del github.fail["/repos/acme/app/commits/c1"]                     # GitHub recovers; nothing new pushed
+    _sync(client, github)
+    assert "acme/app/deploy.sh" in {s for s, *_ in _findings(db_factory)}
+    state = _repo_state(db_factory, github)
+    assert state["last_sha"] == "c2" and "commit_fails" not in state
+
+
+def test_a_commit_that_always_fails_is_skipped_after_a_few_tries_and_says_so(client, github, db_factory):
+    github.fail["/repos/acme/app/commits/c1"] = "HTTP 500 from api.github.com: server error"
+    summaries = [_sync(client, github) for _ in range(gh._COMMIT_TRIES)]
+    assert all(s.get("commits_retry") == 1 for s in summaries[:-1])
+    last = summaries[-1]
+    assert last["skipped"] >= 1 and any("commit c1" in e and "skipped" in e for e in last["errors"])
+    state = _repo_state(db_factory, github)
+    assert state["last_sha"] == "c2" and "commit_fails" not in state
+    before = len(github.calls)
+    _sync(client, github)                                              # given up on: not tried again
+    assert not any("/commits/c1" in c for c in github.calls[before:])
+
+
+def test_a_diff_too_large_to_show_is_read_from_the_file_itself(client, github, db_factory):
+    github.blobs["b-deploy"] = f'echo hi\nexport GH="{GHP}"\n'
+    github.commit_files["c1"] = [{"filename": "deploy.sh", "status": "modified", "sha": "b-deploy",
+                                  "changes": 4000}]                   # GitHub left the patch out
+    summary = _sync(client, github)
+    assert any(c.endswith("/git/blobs/b-deploy") for c in github.calls)
+    assert "acme/app/deploy.sh" in {s for s, *_ in _findings(db_factory)}
+    assert not summary.get("files_skipped")
+
+
+def test_a_file_over_the_ceiling_is_counted_as_skipped_not_as_read(client, github):
+    github.blobs["b-huge"] = "x" * (gh._MAX_BLOB_BYTES + 1)
+    github.commit_files["c1"] = [{"filename": "data.sql", "status": "modified", "sha": "b-huge", "changes": 9}]
+    summary = _sync(client, github)
+    assert summary["files_skipped"] == 1
+    assert any("data.sql" in e and "ceiling" in e for e in summary["errors"])
+
+
+def test_a_removed_file_or_a_pure_rename_is_still_not_read(client, github, db_factory):
+    github.blobs["b-gone"] = f"K={AWS}\n"
+    github.commit_files["c2"] = [
+        {"filename": "gone.env", "status": "removed", "sha": "b-gone", "changes": 1},
+        {"filename": "moved.env", "status": "renamed", "sha": "b-gone", "changes": 0}]
+    summary = _sync(client, github)
+    assert not any(c.endswith("/git/blobs/b-gone") for c in github.calls)
+    subjects = {s for s, *_ in _findings(db_factory)}
+    assert "acme/app/gone.env" not in subjects and "acme/app/moved.env" not in subjects
+    assert not summary.get("files_skipped")
+
+
+def test_a_branch_commit_that_fails_is_read_on_the_next_sync(client, github, db_factory):
+    _creds(client, github, branches="all")
+    github.fail["/repos/acme/app/commits/fc2"] = "HTTP 502 from api.github.com: bad gateway"
+    _sync(client, github)
+    assert "acme/app/feature2.py" not in {s for s, *_ in _findings(db_factory)}
+    del github.fail["/repos/acme/app/commits/fc2"]
+    _sync(client, github)                                              # same branch head, nothing pushed
+    assert "acme/app/feature2.py" in {s for s, *_ in _findings(db_factory)}
+    reads = [c for c in github.calls if "/commits/fc" in c]
+    assert reads.count("/repos/acme/app/commits/fc1") == 1            # only the failed one was read again
