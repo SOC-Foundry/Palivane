@@ -515,12 +515,17 @@ jobs:
         working-directory: backend
         env:
           PALIVANE_RLS_TEST_URL: postgresql://palivane_rls:rls@127.0.0.1:5432/palivane
-        # -rs and the grep: a skip here is a FAILURE. The whole reason this job exists is
+        # -rs and the check: a skip here is a FAILURE. The whole reason this job exists is
         # that the test skipped silently for months, so "0 passed, 1 skipped" must not be
-        # mistaken for green a second time.
+        # mistaken for green a second time. The summary must show passes and no skip, failure
+        # or error. (It used to grep for an exact "3 passed", which failed the job the moment
+        # a fourth RLS test was added in #350.)
         run: |
           python -m pytest tests/test_rls.py -q -rs | tee /tmp/rls.txt
-          grep -q "3 passed" /tmp/rls.txt || { echo "RLS tests did not all RUN — see skip reason above"; exit 1; }
+          summary="$(tail -n 1 /tmp/rls.txt)"
+          if ! echo "$summary" | grep -qE '^[0-9]+ passed' || echo "$summary" | grep -qE 'skipped|failed|error'; then
+            echo "RLS tests did not all RUN and pass ($summary) — see skip reason above"; exit 1
+          fi
 
   # The S3 at-rest scanner against a real S3 API. Eight tests that have never run: every
   # other test for this scanner injects a FakeS3, so the parts that actually talk to the
