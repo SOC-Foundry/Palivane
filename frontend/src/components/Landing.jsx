@@ -4,6 +4,7 @@ import { BrandClaude, BrandCursor, BrandCopilot, BrandGemini, BrandPerplexity, B
          BrandSharePoint, BrandSalesforce, BrandTeams, BrandGmail,
          BrandSnowflake, BrandDatabricks, GenericDatabase } from "./brandicons.jsx";
 import { SiteNav, SiteFooter, Shot, Clip, Lightbox } from "./SiteChrome.jsx";
+import { FAQ, FAQ_FIRST, Faq } from "./Faq.jsx";
 // Derived from the detector source at build time (frontend/scripts/gen-stats.mjs, CI
 // fails when stale) — the band can never claim different numbers than the engine ships.
 import stats from "../stats.gen.json";
@@ -15,7 +16,7 @@ import { SELF_HOSTED, SIGN_IN_IS_CROSS_ORIGIN, demoUrl, signInUrl } from "../dep
 // made every section feel equally weighted.
 
 // Number and label only. Each tile used to carry a second line of small print; the surfaces
-// are listed one section down and the data handling is the second FAQ answer.
+// are listed one section down and the data handling is the first FAQ answer.
 const STATS = [
   { n: "8", l: "surfaces covered" },
   SELF_HOSTED
@@ -49,6 +50,11 @@ const CAPTURE = [
   { logos: [[BrandSnowflake, C.snowflake], [BrandDatabricks, C.databricks]], title: "In the data warehouse", body: "Snowflake Cortex and Databricks Model Serving, read from the warehouse's own query history. It reports rather than blocks." },
   { logos: [[BrandActions, C.actions]], title: "In CI pipelines", body: "Agents on CI runners with production credentials. GitHub Actions, GitLab CI, CircleCI, Azure Pipelines." },
   { logos: [[BrandClaude, C.claude], [BrandOpenAI, C.openai]], title: "In desktop apps", body: "Claude and ChatGPT desktop. Needs a system proxy and a trusted CA, so it is usually phase two." },
+  // Was its own "Headless" section. The MCP server is one more place Palivane runs, so it is
+  // one more tab: the link and the clip stay reachable from here.
+  { logos: [[BrandClaude, C.claude]], title: "From your own AI assistant", body: "Palivane ships an MCP server, so you can ask Claude what leaked today, triage a finding, or pull a report without opening the console.",
+    links: [["https://github.com/SOC-Foundry/palivane-clients/tree/main/mcp-server", "Wire it into Claude Code or Desktop"],
+            ["/shots/mcp-demo.mp4?v=2", "Watch it work the triage queue"]] },
 ];
 
 const LINEAGE = [
@@ -64,7 +70,7 @@ const LINEAGE = [
 
 const FEATURES = [
   { tab: "Visibility", title: <>You finally know which AI tools are <span className="lp-hl">in use</span></>,
-    sub: (st) => `Which AI tools your company uses, who uses them, and what data each one received, including the ones nobody approved. Checked against a catalog of ${st.catalog_tools} tools. Devices that report nothing are named, never counted as clean.`,
+    sub: (st) => `Which AI tools are in use, by whom, and what each received, including the unapproved ones. Checked against a catalog of ${st.catalog_tools} tools; devices that report nothing are named, never counted as clean.`,
     href: "/coverage", link: "What each surface requires",
     src: "/shots/discovery.png?v=7", alt: "Inventory of AI tools in use" },
   { tab: "Agents", title: <>AI coding assistants stay <span className="lp-hl">inside the lines</span></>,
@@ -77,42 +83,6 @@ const FEATURES = [
 ];
 
 const INSTALL_CMD = "curl -fsSL https://app.palivane.io/install.sh | bash";
-
-const MCP_ASKS = [
-  { title: "“What high-severity findings landed today, and who triggered them?”",
-    body: "Listed by actor and surface, in the chat, no login." },
-  { title: "“Mark finding 4821 triaged.”",
-    body: "Work the queue from the assistant. Dismissing stays admin-only, enforced by the API." },
-  { title: "“Are we covered for the OWASP LLM Top 10?”",
-    body: "Framework coverage, control by control." },
-];
-
-const LOOKS_FOR = [
-  { title: "Passwords, keys, and tokens", body: "Nearly sixty credential formats, in prompts, in repositories, and in what an assistant sends back." },
-  { title: "Personal and customer data", body: "Social security numbers, payment cards, and customer records." },
-  { title: "Whatever the file happens to be", body: "Spreadsheets, PDFs, and screenshots. What it cannot open is reported as unread, never as clean." },
-  { title: "Code and confidential documents", body: "Proprietary source, financials, contracts, and labelled material." },
-  { title: "Risky AI behaviour", body: "Hijacked instructions, jailbreaks, and payloads hidden in invisible characters." },
-  { title: "Dangerous agent actions", body: "File reads and shell commands, checked before they run." },
-  { title: "A second opinion, optionally", body: "An LLM judge can review the ambiguous cases if you want one." },
-];
-
-const FAQ = [
-  { q: "Does anyone have to touch every laptop?",
-    a: "No. A browser extension and a small CLI do go on each machine, pushed by browser policy and your MDM (or one command a person runs once), so nothing needs a per-machine visit. The gateway and the SaaS connectors put nothing on a machine." },
-  { q: "Where does our prompt text actually go?",
-    a: SELF_HOSTED
-      ? "To the Palivane backend you deploy, and nowhere beyond it, so no vendor holds your prompts. Scoring is deterministic (rules and heuristics, no AI service in the loop) unless you switch on the optional LLM judge, which sends the content it reviews to the model provider you choose."
-      : "To Palivane, and nowhere beyond it. By default we keep the verdict and its metadata and discard the text itself: what we hold is that a prompt to ChatGPT carried an AWS key, not the prompt. Scoring is deterministic (rules and heuristics, no AI service in the loop) unless you switch on the optional LLM judge, which sends the content it reviews to a model provider (your own account if you supply a key, otherwise ours). Prefer that none of it reaches us? Self-hosting runs the same detection inside your own infrastructure, as a supported Enterprise deployment." },
-  { q: "Will it break the AI tools people already pay for?",
-    a: "No. The hooks score a prompt alongside the request instead of sitting in its path, so personal Claude and ChatGPT sign-ins keep working. Gateway routing is available, and optional." },
-  { q: "What happens the moment we turn it on?",
-    a: "Nothing is blocked. Palivane starts in monitor mode and gives you an inventory of the AI tools in use and what has been going to them. Enforcement is a switch you flip later." },
-  { q: "What if the backend is unreachable?",
-    a: "Capture fails open. A down collector never blocks a prompt or breaks a developer's tool. Confirmed secret and PII leaks are the exception and still hard-block." },
-  { q: "How much of a team does this need to run?",
-    a: "One person, part time. Set it up once, then work from digests rather than a queue." },
-];
 
 // "Open the console" is sign-in for anyone not already signed in, so it crosses hosts on
 // the same rule as the nav's Sign in — see SiteChrome and deployment.js APP_ORIGIN.
@@ -305,7 +275,6 @@ export default function Landing({ onSignIn }) {
       /* Clipboard denied by policy: the command stays selectable, so say nothing. */
     }
   };
-  const [openQ, setOpenQ] = useState(0);
   const [surf, setSurf] = useState(0);
   const [step, setStep] = useState(0);
   const [feat, setFeat] = useState(0);
@@ -388,8 +357,8 @@ export default function Landing({ onSignIn }) {
           <div className="lp-split-text rv">
             <span className="lp-eyebrow">See it work</span>
             <h2 className="lp-h2">The same secret, stopped <span className="lp-hl">eight times</span></h2>
-            <p className="lp-sub">A hundred-second tour: the browser, coding tools, S3, and CI,
-              then every screen it lands in.</p>
+            <p className="lp-sub">A hundred-second tour: browser, coding tools, S3, and CI, then
+              every screen it lands in.</p>
             <a className="lp-textlink" href="/how-it-works">How the detection works →</a>
           </div>
           <div className="lp-split-media rv" style={{ "--i": 1 }}>
@@ -432,34 +401,12 @@ export default function Landing({ onSignIn }) {
         </div>
       </section>
 
-      <section className="lp-section">
-        <div className="lp-wrap lp-split">
-          <div className="lp-split-text rv">
-            <span className="lp-eyebrow">Headless</span>
-            <h2 className="lp-h2">Run it from your <span className="lp-hl">own AI assistant</span></h2>
-            <p className="lp-sub">Nobody wants another dashboard. Palivane ships an MCP server,
-              so you can ask Claude what leaked today, triage a finding, or pull a report, without
-              opening the console.</p>
-            <ul className="lp-checklist lp-checklist-tight">
-              {MCP_ASKS.map((s) => (
-                <li key={s.title}><h3>{s.title}</h3></li>
-              ))}
-            </ul>
-            <a className="lp-textlink" href="https://github.com/SOC-Foundry/palivane-clients/tree/main/mcp-server">Wire it into Claude Code or Desktop →</a>
-          </div>
-          <div className="lp-split-media rv" style={{ "--i": 1 }}>
-            <Clip src="/shots/mcp-demo.mp4?v=2" poster="/shots/mcp-demo-poster.png"
-                  caption="Working the triage queue from Claude, without opening the console." />
-          </div>
-        </div>
-      </section>
-
-      <section className="lp-section alt">
+      <section className="lp-section alt lp-surfaces">
         <div className="lp-wrap">
           <div className="lp-band-head rv">
             <h2 className="lp-h2">It works wherever your team <span className="lp-hl">uses AI</span></h2>
-            <p className="lp-sub">Everything lands in one console. Only desktop apps need a system
-              proxy and a certificate, so start without them.</p>
+            <p className="lp-sub">One console for all of it. Only desktop apps need a proxy and a
+              certificate, so start without them.</p>
           </div>
           <div className="lp-tabs rv" style={{ "--i": 1 }}>
             <div className="lp-tablist" role="tablist" aria-orientation="vertical">
@@ -480,8 +427,22 @@ export default function Landing({ onSignIn }) {
               </span>
               <h3>{CAPTURE[surf].title}</h3>
               <p>{CAPTURE[surf].body}</p>
+              {CAPTURE[surf].links ? (
+                <span className="lp-tab-links">
+                  {CAPTURE[surf].links.map(([href, label]) =>
+                    <a key={href} className="lp-textlink" href={href}>{label} →</a>)}
+                </span>
+              ) : null}
             </div>
           </div>
+          {/* Replaces the seven-card "What Palivane looks for" section; /coverage is the
+              page that goes into detection surface by surface. */}
+          <p className="lp-sub lp-detect-line rv">
+            Every surface runs the same deterministic checks ({stats.secret_formats} credential
+            formats, personal and customer data, source code and confidential documents,
+            hijacked instructions, risky agent actions) and one risk score decides: allow, warn,
+            or block. <a className="lp-textlink" href="/coverage">What it covers, surface by surface →</a>
+          </p>
         </div>
       </section>
 
@@ -494,8 +455,7 @@ export default function Landing({ onSignIn }) {
             <span className="lp-eyebrow">Lineage</span>
             <h2 className="lp-h2">Not just what leaked. Which document it came out of.</h2>
             <p className="lp-sub">Palivane fingerprints every document it scans in Drive,
-              SharePoint, Salesforce, Slack, and Teams. When that text turns up in a prompt later,
-              the finding names the source.</p>
+              SharePoint, Salesforce, Slack, and Teams, so a finding names the source.</p>
           </div>
           <div className="lp-steps-tabs rv" style={{ "--i": 1 }}>
             <div className="lp-steptabs" role="tablist">
@@ -522,47 +482,18 @@ export default function Landing({ onSignIn }) {
         </div>
       </section>
 
-      <section className="lp-section alt">
-        <div className="lp-wrap">
-          <div className="lp-band-head rv">
-            <span className="lp-eyebrow">Detection</span>
-            <h2 className="lp-h2">What Palivane looks for</h2>
-            <p className="lp-sub">Deterministic rules, run {SELF_HOSTED ? "inside your own deployment"
-              : "on your Palivane backend"} in milliseconds. One risk score decides: allow,
-              warn, or block. <a className="lp-textlink" href="/how-it-works">The scoring model →</a></p>
-          </div>
-          <ul className="lp-checklist lp-checklist-grid rv" style={{ "--i": 1 }}>
-            {LOOKS_FOR.map((s) => (
-              <li key={s.title}>
-                <h3>{s.title}</h3>
-                <p>{s.body}</p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
-      <section className="lp-section alt">
+      {/* The FAQ and the closing call to action share one band: the three questions a buyer
+          asks first, then the ask. The other answers live on /pricing#faq (one list, in
+          Faq.jsx), so nothing was dropped to make the page shorter. */}
+      <section className="lp-cta-band lp-faq-band">
         <div className="lp-wrap lp-faq-wrap">
           <div className="lp-band-head rv">
             <h2 className="lp-h2">Questions people ask first</h2>
           </div>
-          <div className="lp-faq rv" style={{ "--i": 1 }}>
-            {FAQ.map((f, i) => (
-              <div key={f.q} className={`lp-faq-item ${openQ === i ? "is-open" : ""}`}>
-                <button type="button" className="lp-faq-q" aria-expanded={openQ === i}
-                        onClick={() => setOpenQ(openQ === i ? -1 : i)}>
-                  <span>{f.q}</span>
-                  <span className="lp-faq-sign" aria-hidden="true" />
-                </button>
-                {openQ === i && <p className="lp-faq-a">{f.a}</p>}
-              </div>
-            ))}
-          </div>
+          <Faq items={FAQ.slice(0, FAQ_FIRST)} className="rv" />
+          <a className="lp-textlink lp-faq-more" href="/pricing#faq">
+            More answers: compatibility, outages, and who runs it →</a>
         </div>
-      </section>
-
-      <section className="lp-cta-band">
         <div className="lp-wrap">
           <div className="lp-closing rv">
             <h2>Start by <span className="lp-hl">watching.</span></h2>
