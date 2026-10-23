@@ -393,11 +393,6 @@ def _extract_rtf(data: bytes) -> str:
 
 
 _PDF_STREAM_RE = re.compile(rb"stream\r?\n(.*?)endstream", re.DOTALL)
-# A string operand: a (literal) with its escapes, or a <hex> string. `<<` opens a
-# dictionary, and the hex alternative cannot match one.
-_PDF_STR_RE = re.compile(rb"\((?:\\.|[^\\()])*\)|<[0-9A-Fa-f\s]*>", re.DOTALL)
-# A text-showing operator right after its operand: Tj, ' and " take a string, TJ an array.
-_PDF_SHOW_RE = re.compile(rb"[)>\]]\s*(?:Tj|TJ|'|\")")
 _PDF_FILTER_RE = re.compile(rb"/Filter\s*(\[[^\]]*\]|/[A-Za-z0-9]+)")
 # Image codecs: a stream under one of these holds pixels, so skipping it misses no text.
 _PDF_IMAGE_FILTERS = (b"DCTDecode", b"DCT", b"JPXDecode", b"CCITTFaxDecode", b"CCF",
@@ -407,25 +402,34 @@ _PDF_IMAGE_FILTERS = (b"DCTDecode", b"DCT", b"JPXDecode", b"CCITTFaxDecode", b"C
 # cannot pass for a show operator and a corrupt image is not reported as unread text.
 _PDF_NOT_TEXT_RE = re.compile(rb"/Length[123]\b|/Subtype\s*/(?:Image|Type1C|CIDFontType0C|"
                               rb"OpenType)\b|/Type\s*/(?:XRef|Metadata)\b")
+# A stream is a decompression bomb the same way a ZIP member is: a few KB of deflate can
+# inflate to gigabytes. Every filter decodes into at most this many bytes per stream (the
+# same bound as one OOXML member), and the document as a whole into at most the total.
+# Hitting either is a partial read, not a silent truncation.
+_MAX_PDF_STREAM_BYTES = _MAX_ZIP_MEMBER_BYTES
+_MAX_PDF_TOTAL_BYTES = 10 * _MAX_PDF_STREAM_BYTES
 
 
-def _inflate(raw: bytes) -> tuple[bytes, bool]:
-    """(inflated, whole). decompressobj, not decompress: a PDF stream is followed by an EOL
-    before "endstream", and the deflate payload itself may END in 0x0a or 0x0d. Stripping
-    those to remove the delimiter truncates one stream in roughly every few, and the failure
-    is silent — the file just extracts to nothing. decompressobj stops at the end of the
-    deflate data and ignores whatever trails it; `eof` says whether it got there."""
+def _inflate(raw: bytes, cap: int) -> tuple[bytes, bool]:
+    """(inflated, whole), never more than `cap` bytes. decompressobj, not decompress: a PDF
+    stream is followed by an EOL before "endstream", and the deflate payload itself may END
+    in 0x0a or 0x0d. Stripping those to remove the delimiter truncates one stream in roughly
+    every few, and the failure is silent — the file just extracts to nothing. decompressobj
+    stops at the end of the deflate data and ignores whatever trails it; `eof` says whether
+    it got there. max_length bounds the output, so a bomb stops at the cap."""
     import zlib
     d = zlib.decompressobj()
-    out = d.decompress(raw)
+    out = d.decompress(raw, cap + 1)
+    if len(out) > cap:
+        return out[:cap], False
     return out, d.eof
 
 
-def _pdf_stream(head: bytes, raw: bytes) -> tuple[bytes | None, bool]:
-    """(content, skipped) for one stream, given the dictionary in front of it. `content` is
-    None when there is nothing to read; `skipped` is True when the stream might have held
-    text and was not read — a filter this does not implement, or data that does not decode
-    under the filter it declares."""
+def _pdf_stream(head: bytes, raw: bytes, cap: int) -> tuple[bytes | None, bool]:
+    """(content, skipped) for one stream, given the dictionary in front of it, decoded into
+    at most `cap` bytes. `content` is None when there is nothing to read; `skipped` is True
+    when the stream might have held text and was not (wholly) read — a filter this does not
+    implement, data that does not decode under the filter it declares, or the cap."""
     import base64
     if _PDF_NOT_TEXT_RE.search(head):
         return None, False
@@ -433,29 +437,86 @@ def _pdf_stream(head: bytes, raw: bytes) -> tuple[bytes | None, bool]:
     filters = re.findall(rb"/([A-Za-z0-9]+)", m.group(1)) if m else []
     if not filters:
         try:                          # undeclared, but some producers deflate anyway
-            body, whole = _inflate(raw)
+            body, whole = _inflate(raw, cap)
             return body, not whole
         except Exception:                                         # noqa: BLE001
-            return raw, False         # an uncompressed stream
-    body = raw
+            return raw[:cap], len(raw) > cap      # an uncompressed stream
+    body, skipped = raw, False
     for f in filters:
         if f in _PDF_IMAGE_FILTERS:
             return None, False
         try:
             if f in (b"FlateDecode", b"Fl"):
-                body, whole = _inflate(body)
-                if not whole:
-                    return body, True        # truncated: read what inflated, say so
+                body, whole = _inflate(body, cap)
+                skipped = skipped or not whole   # truncated or capped: read what came out
             elif f in (b"ASCIIHexDecode", b"AHx"):
                 h = re.sub(rb"\s", b"", body.split(b">", 1)[0])
+                skipped = skipped or len(h) > 2 * cap
+                h = h[:2 * cap]                          # two digits a byte: output <= cap
                 body = bytes.fromhex((h + b"0" * (len(h) % 2)).decode("ascii"))
             elif f in (b"ASCII85Decode", b"A85"):
-                body = base64.a85decode(body.strip().split(b"~>", 1)[0] + b"~>", adobe=True)
+                a = body.strip().split(b"~>", 1)[0]
+                # 5 chars -> 4 bytes, but `z` alone -> 4 bytes: bound the input so the output
+                # cannot pass 4 * cap, then cut to the cap.
+                skipped = skipped or len(a) > cap
+                body = base64.a85decode(a[:cap] + b"~>", adobe=True)
+                skipped = skipped or len(body) > cap
+                body = body[:cap]
             else:
                 return None, True            # LZW, RunLength, Crypt: not implemented
         except Exception:                                         # noqa: BLE001
             return None, True                # declared Flate that does not inflate: corrupt
-    return body, False
+    return body, skipped
+
+
+# Content-stream tokens. Strings are scanned by hand (balanced parentheses and escapes);
+# everything else is one of these. `<<` / `>>` are dictionary delimiters, never strings.
+_PDF_TOKEN_RE = re.compile(rb"\s+|%[^\r\n]*|<<|>>|<[0-9A-Fa-f\s]*>|\[|\]|"
+                           rb"[+-]?(?:\d+\.?\d*|\.\d+)|/[^\s()<>\[\]{}/%]*|"
+                           rb"[^\s()<>\[\]{}/%]+|.", re.DOTALL)
+# A TJ adjustment is in thousandths of a text-space unit, subtracted from the advance. A
+# word gap is typically 200-330 (a space glyph's width); kerning stays well under 100. A
+# gap this wide is a space between words, and without it the words run together into one
+# long token that the entropy detector reads as a secret.
+_PDF_TJ_WORD_GAP = 150
+_PDF_STR_ESC = {b"n": b"\n", b"r": b"\r", b"t": b"\t", b"b": b"\b", b"f": b"\f"}
+
+
+def _pdf_literal(body: bytes, i: int) -> tuple[bytes, int]:
+    """The (literal) string starting at body[i] == "(": its bytes and the index past it.
+    Balanced inner parentheses are part of the string; backslash escapes are decoded."""
+    out = bytearray()
+    depth, i, n = 1, i + 1, len(body)
+    while i < n:
+        c = body[i:i + 1]
+        if c == b"\\":
+            nx = body[i + 1:i + 2]
+            if nx in _PDF_STR_ESC:
+                out += _PDF_STR_ESC[nx]
+                i += 2
+            elif nx.isdigit():
+                m = re.match(rb"[0-7]{1,3}", body[i + 1:i + 4])
+                if m:
+                    out.append(int(m.group(), 8) & 0xFF)
+                    i += 1 + len(m.group())
+                else:
+                    out += nx
+                    i += 2
+            elif nx in (b"\r", b"\n"):          # line continuation
+                i += 2 + (nx == b"\r" and body[i + 2:i + 3] == b"\n")
+            else:
+                out += nx
+                i += 2
+            continue
+        if c == b"(":
+            depth += 1
+        elif c == b")":
+            depth -= 1
+            if not depth:
+                return bytes(out), i + 1
+        out += c
+        i += 1
+    return bytes(out), n
 
 
 def _pdf_hex_text(lit: bytes) -> str | None:
@@ -465,48 +526,134 @@ def _pdf_hex_text(lit: bytes) -> str | None:
     raw = bytes.fromhex((h + b"0" * (len(h) % 2)).decode("ascii"))   # odd: final digit 0
     if raw[:2] == b"\xfe\xff":
         t = raw[2:].decode("utf-16-be", errors="replace")
+    elif b"\x00" in raw:
+        return None                   # two-byte glyph ids: no text without the CMap
     else:
         t = raw.decode("utf-8", errors="replace")
     printable = sum(1 for c in t if c.isprintable() or c in "\n\t")
     return t if not t or printable / len(t) > 0.8 else None
 
 
+def _pdf_show_text(body: bytes) -> tuple[str, bool]:
+    """(text, partial) shown by one content stream's Tj / TJ / ' / " operators.
+
+    Words are kept apart the way a viewer would place them: a wide TJ adjustment is a
+    space, and a move to a new line (T*, ', ", Td / TD with a vertical offset) is a line
+    break; a horizontal Td, a new Tm or a new BT block is a space. Two shows with nothing
+    between them stay joined, since that is how a word changes font halfway through."""
+    out: list[str] = []
+    operands: list = []                 # str (shown text) | float | list (a TJ array)
+    stack: list[list] = []              # open arrays
+    sep = ""                            # separator owed before the next shown text
+    partial = False
+
+    def show(t: str) -> None:
+        nonlocal sep
+        if not t:
+            return
+        if sep and out and not out[-1][-1:].isspace():
+            out.append(sep)
+        sep = ""
+        out.append(t)
+
+    def owe(s: str) -> None:
+        nonlocal sep
+        if s == "\n" or not sep:
+            sep = s
+
+    i, n = 0, len(body)
+    while i < n:
+        if body[i:i + 1] == b"(":
+            raw, i = _pdf_literal(body, i)
+            (stack[-1] if stack else operands).append(raw.decode("utf-8", errors="replace"))
+            continue
+        m = _PDF_TOKEN_RE.match(body, i)
+        tok, i = m.group(), m.end()
+        c = tok[:1]
+        if c.isspace() or c == b"%" or tok in (b"<<", b">>"):
+            continue
+        if c == b"<":
+            t = _pdf_hex_text(tok)
+            if t is None:
+                partial, t = True, ""
+            (stack[-1] if stack else operands).append(t)
+        elif tok == b"[":
+            stack.append([])
+        elif tok == b"]":
+            arr = stack.pop() if stack else []
+            (stack[-1] if stack else operands).append(arr)
+        elif c in b"+-.0123456789" and c:
+            try:
+                (stack[-1] if stack else operands).append(float(tok))
+            except ValueError:
+                pass
+        elif c == b"/":
+            (stack[-1] if stack else operands).append(None)
+        else:                                   # an operator
+            op = tok
+            if op in (b"'", b'"'):
+                owe("\n")
+            if op in (b"Tj", b"'", b'"'):
+                strs = [o for o in operands if isinstance(o, str)]
+                if strs:
+                    show(strs[-1])
+            elif op == b"TJ":
+                arr = next((o for o in reversed(operands) if isinstance(o, list)), [])
+                for el in arr:
+                    if isinstance(el, str):
+                        show(el)
+                    elif isinstance(el, float) and el < -_PDF_TJ_WORD_GAP:
+                        owe(" ")
+            elif op in (b"Td", b"TD"):
+                nums = [o for o in operands if isinstance(o, float)]
+                owe("\n" if len(nums) >= 2 and nums[-1] != 0 else " ")
+            elif op == b"T*":
+                owe("\n")
+            elif op in (b"Tm", b"BT"):
+                owe(" ")
+            elif op == b"ID":                   # inline image: binary until EI
+                e = re.compile(rb"\sEI(?=\s|$)").search(body, i)
+                i = e.end() if e else n
+            operands = []
+            stack = []
+    return "".join(out), partial
+
+
 def _extract_pdf(data: bytes) -> tuple[str, bool]:
     """(text, partial) from an unencrypted PDF's content streams.
 
     PDF stores text as show-string operators (Tj, TJ, ', ") inside (usually
-    Flate-compressed) streams. Pulling the string operands, (literal) and <hex>, gets the
-    words without a font/layout engine: order is right, spacing is approximate. That is
-    exactly enough for pattern detection and not enough to reconstruct the document, which
-    is the right trade for a scanner.
+    Flate-compressed) streams. Walking those operators, with their (literal) and <hex>
+    operands, gets the words without a font/layout engine: order is right, spacing is
+    approximate. That is exactly enough for pattern detection and not enough to
+    reconstruct the document, which is the right trade for a scanner.
 
     Encrypted PDFs and ones whose text is CID/Type0-encoded come back empty rather than as
     mojibake — garbage here would mean garbage findings. `partial` is True when a stream
     that could hold text was not read (a corrupt or unimplemented filter, an undecodable
-    hex string, the size cap), so one good stream does not make the whole file look read."""
+    hex string, a size cap), so one good stream does not make the whole file look read."""
     chunks: list[str] = []
     partial = False
+    budget = _MAX_PDF_TOTAL_BYTES
     for m in _PDF_STREAM_RE.finditer(data):
+        if budget <= 0:
+            partial = True               # streams left undecoded past the document cap
+            break
         # The stream's dictionary: back from "stream" to its "N 0 obj" header.
         head = data[max(0, m.start() - 2048):m.start()]
         head = head[head.rfind(b"obj") + 3:] if b"obj" in head else head
-        body, skipped = _pdf_stream(head, m.group(1))
+        body, skipped = _pdf_stream(head, m.group(1), min(_MAX_PDF_STREAM_BYTES, budget))
         partial = partial or skipped
-        if body is None or not _PDF_SHOW_RE.search(body):
+        if body is None:
             continue
-        for lit in _PDF_STR_RE.findall(body):
-            if lit[:1] == b"<":
-                t = _pdf_hex_text(lit)
-                if t is None:
-                    partial = True
-                    continue
-                chunks.append(t)
-                continue
-            t = lit[1:-1]
-            t = (t.replace(b"\\(", b"(").replace(b"\\)", b")")
-                  .replace(b"\\\\", b"\\").replace(b"\\n", b"\n").replace(b"\\t", b"\t"))
-            chunks.append(t.decode("utf-8", errors="replace"))
-        chunks.append("\n")
+        budget -= len(body)
+        if not re.search(rb"(?:Tj|TJ|'|\")", body):
+            continue
+        text, undecoded = _pdf_show_text(body)
+        partial = partial or undecoded
+        if text.strip():
+            chunks.append(text)
+            chunks.append("\n")
         if sum(len(c) for c in chunks) > _MAX_EXTRACT_CHARS:
             partial = partial or _PDF_STREAM_RE.search(data, m.end()) is not None
             break
