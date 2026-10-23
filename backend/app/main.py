@@ -1265,6 +1265,8 @@ def _score_ai_usage(content: str, actor: str, tool: str, destination: str,
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
                           signal_filter=sig_filter, agent=agent,
                           persist_benign=settings.usage_persist_benign, use_judge=use_judge)
+    # Kept for a re-scan of the same capture under the same policy (_redaction_plan).
+    meta["_rescan"] = (tool, sig_filter)
     # Feed the shadow-AI discovery inventory (best-effort — never breaks the verdict).
     from .discovery import record_capture
     record_capture(db, tenant_id, actor, destination, tool,
@@ -1368,6 +1370,18 @@ def ingest_ai_usage(
                                  detail={"destination": body.destination})
         except TokenError:
             pass
+    # Redact-on-block: where the values that stopped this message are, when removing them is
+    # all it would take to send it. Asked only of a message the client will hold.
+    redaction_mode = _tenant_redact_on_block(tenant_id, db)
+    redactions: list[dict] = []
+    if redaction_mode != "off" and (action == "block" or force_block or coached):
+        redactions = _redaction_plan(body.content, result, meta, actor, tenant_id, agent, db)
+    # The person chose "send with these removed" on an earlier block, and this is that
+    # message. It was scanned like any other; if it is going through, mark the original.
+    redacted_resend = False
+    if body.redacted_from and action != "block" and not force_block:
+        redacted_resend = _mark_redacted_resend(db, tenant_id, actor, body.redacted_from,
+                                                body.destination)
     return {
         "action": action,
         "risk_score": result["risk_score"],
@@ -1377,6 +1391,18 @@ def ingest_ai_usage(
         # >1 when this event folded into an already-recorded finding (its seen_count).
         "recurrence": result.get("recurrence"),
         "remediation": remediation_for(result["signals"]),
+        # Redact-on-block (contract in app/redact_spans.py). `redactions`: [{start, end,
+        # start16, end16, label}] into `content` exactly as submitted (start/end in code
+        # points, start16/end16 in UTF-16 units), every occurrence, sorted, non-overlapping;
+        # never the values. Non-empty only when `redactable`: the text with each span replaced
+        # by "«redacted:<label>»" was re-scanned and would no longer block. `redaction_mode`
+        # is the org's setting: off | offer (ask the person) | auto (a client that cannot ask
+        # may remove them itself). The resubmission carries `redacted_from: <finding_id>`.
+        "redactions": redactions,
+        "redactable": bool(redactions),
+        "redaction_mode": redaction_mode,
+        # This submission was a redacted resend and the original finding was marked.
+        "redacted_resend": redacted_resend,
         # Coaching: when set, an enforcing client (or any client, with force_block) holds the
         # prompt rather than sending it, shows `redacted_content` as the safe-to-send version,
         # and offers the sanctioned tools below.
@@ -1850,6 +1876,63 @@ def _tenant_redact_mode(tenant_id: int | None, db: Session) -> bool:
         if t is not None and t.redact_mode is not None:
             return bool(t.redact_mode)
     return settings.redact_mode
+
+
+def _tenant_redact_on_block(tenant_id: int | None, db: Session) -> str:
+    """off | offer | auto for this tenant (its own setting, else PALIVANE_REDACT_ON_BLOCK)."""
+    if tenant_id is not None:
+        t = db.get(Tenant, tenant_id)
+        if t is not None and t.redact_on_block in ("off", "offer", "auto"):
+            return t.redact_on_block
+    return settings.redact_on_block
+
+
+def _redaction_plan(content: str, result: dict, meta: dict, actor: str,
+                    tenant_id: int | None, agent: str, db: Session) -> list[dict]:
+    """The spans to remove from `content` so it would no longer block, or [] when removing
+    values cannot clear this block (it also rests on an injection, a risky action, a policy
+    rule, a data-loss signal with no span) or a value could not be located exactly.
+
+    Proven, not assumed: the text with every span replaced by its marker is scored again under
+    the same tenant policy and per-tool filter (rules only, nothing stored), and spans are
+    returned only if that copy neither blocks nor still carries a confirmed leak. So a value a
+    detector found only through a normalized or decoded view, which has no exact offset in the
+    original, empties the plan instead of offering a removal that would be blocked again. The
+    LLM judge is not re-run (cost, latency); a data-loss signal of its own already rules
+    redaction out in precheck, so it cannot be what the re-scan misses."""
+    from . import redact_spans
+    signals = result.get("signals") or []
+    if not redact_spans.precheck(signals):
+        return []
+    tool, sig_filter = meta.get("_rescan") or ("", None)
+    spans = redact_spans.find_spans(content, signals, meta.get("custom_pii", ""))
+    if not spans:
+        return []
+    rescan_meta = {k: v for k, v in meta.items() if k != "_rescan"}
+    item = AnalysisInput(content=redact_spans.apply(content, spans), sender=actor,
+                         channel=tool or "ai_tool", surface=Surface.AI_USAGE,
+                         metadata=rescan_meta)
+    again = run_analysis(item, persist=False, db=db, tenant_id=tenant_id,
+                         signal_filter=sig_filter, agent=agent, use_judge=False, dry_run=True)
+    if _action_for(again["severity"]) == "block" or again.get("confirmed_leak"):
+        return []
+    return redact_spans.with_utf16(content, spans)
+
+
+def _mark_redacted_resend(db: Session, tenant_id: int | None, actor: str, finding_id: int,
+                          destination: str) -> bool:
+    """Record on the original finding that its sender sent a redacted version. Only the
+    tenant's own ai-usage finding from the same person; nothing about the content."""
+    f = db.get(Finding, finding_id)
+    if (f is None or tenant_id is None or f.tenant_id != tenant_id or f.surface != "ai_usage"
+            or (f.sender or "") != (actor or "")):
+        return False
+    f.redacted_resend_at = _naive_now()
+    db.commit()
+    from . import audit_log
+    audit_log.record(db, tenant_id, actor, "finding.redacted_resend", target=str(finding_id),
+                     detail={"destination": destination})
+    return True
 
 
 def _tenant_self_justify(tenant_id: int | None, db: Session) -> bool:

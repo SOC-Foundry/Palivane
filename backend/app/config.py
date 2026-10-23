@@ -348,6 +348,10 @@ class Settings:
     # than a default. The map lives in the request handler and is never stored. Scoring runs
     # on the ORIGINAL text, before substitution, so detection is unaffected either way.
     gateway_tokenize: bool = _env("GATEWAY_TOKENIZE", "").lower() in ("1", "true", "yes")
+    # Deployment default for redact-on-block (tenants override; see Tenant.redact_on_block):
+    # off | offer | auto. Anything else reads as the default, offer.
+    redact_on_block: str = next((v for v in (_env("PALIVANE_REDACT_ON_BLOCK", "offer").strip().lower(),)
+                                 if v in ("off", "offer", "auto")), "offer")
     # Opt-in OCR of images sent to LLMs (screenshots carry secrets/PII the text scan never
     # sees). Requires pytesseract + Pillow AND the tesseract binary; default off. When
     # enabled, OCR text is appended to the scanned content for detection only — it is
