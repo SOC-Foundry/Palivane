@@ -321,7 +321,8 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     `extra_signals` are evidence the CALLER already has that this engine cannot rederive —
     findings a client-side scanner made on data that never left its own machine. They join
     the detectors' own signals before scoring, so the verdict that is returned is the same
-    one that gets stored, alerted on, and forwarded."""
+    one that gets stored, alerted on, and forwarded. The gateway passes its partial-scan
+    marker for unread images here too (weight 0: recorded, never scored)."""
     # A tenant can opt out of the LLM judge (it ships content to the judge provider).
     tenant = db.get(Tenant, tenant_id) if tenant_id is not None else None
     include_judge = use_judge and not (tenant is not None and tenant.judge_enabled is False)

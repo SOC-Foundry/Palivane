@@ -14,10 +14,26 @@ from dataclasses import dataclass
 
 from .detectors.base import Category, Signal
 
-# The check of the marker engine.py leaves when a detector raises: the item was only partly
-# scanned. Weight 0, so it never changes the score; score() keeps it anyway (it would drop a
-# zero-contribution signal) so every re-score downstream still carries it.
+# The check of the marker left when part of an item was not scanned: engine.py's when a
+# detector raises (evidence "detector=<name>"), the gateway's when a request carried images
+# whose text it did not recover (evidence "image=<n> of <m> unread"). Weight 0, so it never
+# changes the score; score() keeps it anyway (it would drop a zero-contribution signal) so
+# every re-score downstream still carries it.
 UNSCANNED_CHECK = "detector_error"
+
+
+def unscanned_marker(evidence: str, title: str, detail: str, detector: str) -> Signal:
+    """A partial-scan marker. `evidence` is "<what>=<which>": Verdict.unscanned reads it, so
+    it names what was skipped and never quotes the content."""
+    return Signal(category=Category.POSTURE_GAP, check=UNSCANNED_CHECK, title=title,
+                  detail=detail, weight=0.0, confidence=1.0, detector=detector,
+                  evidence=evidence)
+
+
+def _unscanned_name(evidence: str) -> str:
+    # "detector=boom" -> "boom" (a crashed detector, by name); "image=2 of 3 unread" -> "image".
+    what, _, which = evidence.partition("=")
+    return which if what == "detector" else what
 
 
 @dataclass
@@ -31,9 +47,10 @@ class Verdict:
 
     @property
     def unscanned(self) -> list[str]:
-        """The detectors that raised on this item, so did not run to completion. Empty is a
-        full scan. Derived from the markers, so it cannot disagree with the signal list."""
-        return [s.evidence.removeprefix("detector=") for s in self.signals
+        """What on this item was not scanned: the name of each detector that raised, and
+        "image" when images in it went unread. Empty is a full scan. Derived from the
+        markers, so it cannot disagree with the signal list."""
+        return [_unscanned_name(s.evidence) for s in self.signals
                 if s.effective_check == UNSCANNED_CHECK]
 
     def to_dict(self) -> dict:
