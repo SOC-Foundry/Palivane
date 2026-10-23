@@ -128,6 +128,29 @@ def test_messages_image_ssn_flagged_when_ocr_on(client, monkeypatch):
                for f in findings)
 
 
+def test_collect_images_responses_input_image():
+    body = {"model": "gpt-5-codex", "input": [{"role": "user", "content": [
+        {"type": "input_text", "text": "read this"},
+        {"type": "input_image", "image_url": f"data:image/png;base64,{_b64()}"}]}]}
+    assert ocr.collect_images(body) == [PNG_FAKE]
+
+
+def test_responses_image_ssn_flagged_when_ocr_on(client, monkeypatch):
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", False)  # monitor mode
+    monkeypatch.setattr(gateway.settings, "gateway_ocr", True)
+    _fake_ocr(monkeypatch)
+    body = {"model": "gpt-5-codex", "input": [
+        {"type": "input_image", "image_url": f"data:image/png;base64,{_b64()}"}]}
+    r = client.post("/v1/responses", json=body)
+    # Confirmed PII hard-blocks even under monitor — the OCR text reached the scanner.
+    assert r.status_code == 403
+    assert r.json()["error"]["type"] == "palivane_blocked"
+    findings = client.get("/api/findings").json()["findings"]
+    assert any(f["surface"] == "llm_io" and "pii_exposure" in f["categories"]
+               for f in findings)
+
+
 def test_messages_image_noop_when_ocr_off(client, monkeypatch):
     from app import gateway
     monkeypatch.setattr(gateway.settings, "gateway_enforce", False)

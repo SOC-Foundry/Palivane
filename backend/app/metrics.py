@@ -35,6 +35,12 @@ TOKENIZE_RESIDUAL = Counter(
     "Palivane tokens still present in a reply after reversal", ["tool"],
 )
 
+# Detectors that raised mid-analysis (engine.py). The item still gets a verdict from the
+# checks that ran, marked partly scanned; this is the ops view. Label is the detector name.
+DETECTOR_ERRORS = Counter(
+    "palivane_detector_errors_total", "Detector exceptions during analysis", ["detector"],
+)
+
 
 def route_template(request) -> str:
     """The matched route's path template, or 'unmatched' (avoids high-cardinality labels)."""

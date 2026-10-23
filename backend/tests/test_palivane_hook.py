@@ -485,10 +485,10 @@ def _run_hook(monkeypatch, capsys, event, verdict, enforce=True):
 
 
 def test_should_ask_follows_the_servers_flag():
-    assert hook.should_ask({"action": "warn", "ask": True}) is True
-    assert hook.should_ask({"action": "warn", "ask": False}) is False
-    assert hook.should_ask({"action": "warn"}) is False                       # an older server says nothing
-    assert hook.should_ask({"action": "allow", "reason": "scan-failed"}) is False   # fail open stays open
+    assert hook.should_ask("PreToolUse", {"action": "warn", "ask": True}) is True
+    assert hook.should_ask("PreToolUse", {"action": "warn", "ask": False}) is False
+    assert hook.should_ask("PreToolUse", {"action": "warn"}) is False                       # an older server says nothing
+    assert hook.should_ask("PreToolUse", {"action": "allow", "reason": "scan-failed"}) is False   # fail open stays open
 
 
 def test_ask_output_shape_and_reason():

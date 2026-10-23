@@ -33,7 +33,8 @@ from .detectors.shadow_ai import (CC_CANDIDATE_RE, SSN_CONTEXT_RE, SSN_NODASH_RE
                                   _TEST_CARDS, _luhn_ok, _valid_ssn9)
 
 TOKEN_RE = re.compile(r"PLV_[A-Z0-9]{2,12}_[0-9A-F]{6}")
-MAX_CHARS = 200_000          # a prompt larger than this is not worth the regex sweep
+MAX_CHARS = 200_000          # one detector sweep covers at most this much text
+OVERLAP = 2_000              # consecutive sweeps share this much, see _matches_windowed
 
 
 def _slug(label: str) -> str:
@@ -93,6 +94,37 @@ def _matches(text: str, extra_patterns: str = "") -> dict[str, str]:
     return found
 
 
+def _matches_windowed(text: str, extra_patterns: str = "") -> dict[str, str]:
+    """_matches over text of any length, as overlapping windows of at most MAX_CHARS.
+
+    A long prompt cannot be skipped: the scan has already run, and this is the step that
+    keeps the values out of the body the provider receives. Consecutive windows overlap by
+    OVERLAP characters, so any value up to that long lies wholly inside at least one window
+    and is found intact even when it straddles a boundary. Every personal-data format the
+    detector knows is far shorter. A window edge can also cut a value and leave a fragment
+    that still matches (a card's first thirteen digits can pass Luhn). That is harmless:
+    substitution happens once over the whole text and prefers the longest value at each
+    position, so the full value wins and the fragment is only replaced where it stands on
+    its own. One difference from a single sweep: a context word (the "SSN" that lets a bare
+    nine-digit run count) only qualifies values in the same window as it.
+
+    The cost is bounded. Each window is one ordinary sweep of at most MAX_CHARS, and the
+    windows advance by MAX_CHARS - OVERLAP, so the text is swept about 1.01 times over.
+    The request body cap (settings.max_body_bytes, 12 MB by default) bounds the text, so
+    the worst case is some sixty sweeps, not something that grows with the input.
+    """
+    if len(text) <= MAX_CHARS:
+        return _matches(text, extra_patterns)
+    found: dict[str, str] = {}
+    step = MAX_CHARS - OVERLAP
+    for start in range(0, len(text), step):
+        for val, label in _matches(text[start:start + MAX_CHARS], extra_patterns).items():
+            found.setdefault(val, label)
+        if start + MAX_CHARS >= len(text):
+            break
+    return found
+
+
 def tokenize(text: str, extra_patterns: str = "",
              mapping: dict[str, str] | None = None) -> tuple[str, dict[str, str]]:
     """`text` with personal data replaced by tokens, plus the {token: original} map.
@@ -102,23 +134,28 @@ def tokenize(text: str, extra_patterns: str = "",
     or the model cannot tell it is the same person.
 
     Longest values first, so a short value sitting inside a longer one cannot leave a
-    fragment of the longer one behind.
+    fragment of the longer one behind. Substitution is one regex pass with the values as
+    alternatives in that order, not one str.replace per value: a large prompt can hold
+    thousands of values, and the pass stays linear in the text however many there are.
     """
     mapping = mapping if mapping is not None else {}
-    if not text or len(text) > MAX_CHARS:
+    if not text:
+        return text, mapping
+    found = _matches_windowed(text, extra_patterns)
+    if not found:
         return text, mapping
     seen = {v: t for t, v in mapping.items()}
-    for val, label in sorted(_matches(text, extra_patterns).items(),
-                             key=lambda kv: len(kv[0]), reverse=True):
-        token = seen.get(val)
-        if token is None:
-            token = f"PLV_{_slug(label)}_{_secrets.token_hex(3).upper()}"
-            while token in mapping:
-                token = f"PLV_{_slug(label)}_{_secrets.token_hex(3).upper()}"
-            mapping[token] = val
-            seen[val] = token
-        text = text.replace(val, token)
-    return text, mapping
+    vals = sorted(found, key=len, reverse=True)
+    for val in vals:
+        if val in seen:
+            continue
+        token = f"PLV_{_slug(found[val])}_{_secrets.token_hex(3).upper()}"
+        while token in mapping:
+            token = f"PLV_{_slug(found[val])}_{_secrets.token_hex(3).upper()}"
+        mapping[token] = val
+        seen[val] = token
+    rx = re.compile("|".join(map(re.escape, vals)))
+    return rx.sub(lambda m: seen[m.group(0)], text), mapping
 
 
 def detokenize(text: str, mapping: dict[str, str]) -> str:
@@ -225,15 +262,22 @@ def detokenize_obj(obj, mapping: dict[str, str]):
     return obj
 
 
-# Where prompt text actually lives in each provider's request body. Only these are
-# rewritten: walking every string would also hit model names, tool schemas and ids.
+# Where prompt text actually lives in each provider's request body. In a body of a known
+# shape only these are rewritten: walking every string would also hit model names, tool
+# schemas and ids. A body of no known shape is walked anyway; see _tokenize_any_shape.
 def tokenize_payload(payload: dict, extra_patterns: str = "") -> tuple[dict, dict[str, str]]:
     """A copy of `payload` with prompt text tokenized, plus the map to reverse it.
 
-    Covers the OpenAI chat shape (`messages[].content`, string or typed blocks) and the
-    Anthropic shape (the same plus a top-level `system`). Anything else is returned
-    unchanged with an empty map, which fails safe: no tokens out means nothing to reverse.
+    Covers OpenAI chat (`messages[].content`), Anthropic (`system` plus messages), the
+    Responses API (`instructions` and `input`), and Gemini (`contents[].parts` and
+    `systemInstruction` / `system_instruction`). Only string text fields are rewritten.
+
+    A body with none of those fields falls back to _tokenize_any_shape, which rewrites
+    every string in it. Returning it unchanged would look safe (no tokens out, nothing to
+    reverse) but it is the opposite: the values go to the provider in the clear.
     """
+    if not isinstance(payload, dict) or not any(k in payload for k in _PROMPT_KEYS):
+        return _tokenize_any_shape(payload, extra_patterns)
     mapping: dict[str, str] = {}
 
     def do_content(c):
@@ -291,3 +335,37 @@ def tokenize_payload(payload: dict, extra_patterns: str = "") -> tuple[dict, dic
         if isinstance(out.get(key), dict):
             out[key] = do_parts(out[key])
     return out, mapping
+
+
+_PROMPT_KEYS = ("system", "messages", "instructions", "input", "contents",
+                "systemInstruction", "system_instruction")
+
+
+def _tokenize_any_shape(payload, extra_patterns: str = "") -> tuple[object, dict[str, str]]:
+    """Every string value in a body tokenize_payload does not recognize, keys untouched.
+
+    The gateway forwards whatever body it was given, so a shape this module has not been
+    taught (a legacy `prompt` completion, a provider field added next month) would
+    otherwise reach the provider with its personal data intact. Refusing the request
+    instead would break a client that did nothing wrong. Walking every string is what the
+    recognized shapes avoid, because it also reaches model names, ids and tool schemas,
+    but only a value that matches a personal-data pattern is ever changed, so ordinary
+    fields pass through as they were. The top-level `model` is skipped all the same: a
+    fine-tuned model id can carry a long digit run that passes Luhn, and rewriting it would
+    send the request to a model that does not exist. The reply is reversed whatever its
+    shape (detokenize_obj), so the caller still gets the real values back.
+    """
+    mapping: dict[str, str] = {}
+
+    def walk(node):
+        if isinstance(node, str):
+            return tokenize(node, extra_patterns, mapping)[0]
+        if isinstance(node, list):
+            return [walk(x) for x in node]
+        if isinstance(node, dict):
+            return {k: walk(v) for k, v in node.items()}
+        return node
+
+    if isinstance(payload, dict):
+        return {k: (v if k == "model" else walk(v)) for k, v in payload.items()}, mapping
+    return walk(payload), mapping
