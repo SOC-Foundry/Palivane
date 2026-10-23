@@ -76,7 +76,8 @@ def collect_images(body: dict) -> list[bytes]:
       Anthropic:  {"type": "image", "source": {"type": "base64", "media_type": "image/png",
                    "data": "..."}}
       OpenAI:     {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}
-                  (the url may also be a bare string)
+                  (the url may also be a bare string, as in Responses
+                  {"type": "input_image", "image_url": "data:image/png;base64,..."})
       Gemini:     {"inline_data": {"mime_type": "image/png", "data": "..."}}  (or inlineData)
 
     Capped at 8 images; anything undecodable is skipped."""
