@@ -189,3 +189,100 @@ def test_a_scheduled_scan_gets_the_long_clock_and_gives_it_back(stub, db_factory
     stub["make"]("a")
     _run(db_factory)
     assert seen == [cs.SCAN_MAX_SECS] and gh.max_seconds.get() == 100.0
+
+
+# --- overlapping scans (#298) ----------------------------------------------------------------------
+
+def _claimed(db_factory, cid):
+    db = db_factory()
+    try:
+        r = db.get(SaasConnector, cid)
+        return r.sync_claimed_at, r.state
+    finally:
+        db.close()
+
+
+def test_a_scan_still_running_cannot_be_claimed_by_another_instance(stub, db_factory):
+    cid = stub["make"]("a")
+    t0 = datetime.utcnow() - timedelta(hours=2)
+    db1, db2 = db_factory(), db_factory()
+    try:
+        assert cs._claim(db1, cid, t0, t0) is True                    # scan A starts
+        # Six minutes on: past a five-minute interval, still inside a 480s scan. Before #298 the claim
+        # was last_sync_at, so this second claim succeeded and both scans wrote the same row.
+        later = t0 + timedelta(minutes=6)
+        assert cs._claim(db2, cid, later, later) is False
+        stale = t0 + timedelta(seconds=sc.SYNC_CLAIM_SECS + 1)        # A died mid-scan: its claim lapses
+        assert cs._claim(db2, cid, stale, stale) is True
+    finally:
+        db1.close()
+        db2.close()
+
+
+def test_last_sync_at_is_when_the_scan_finished_and_the_claim_is_let_go(stub, db_factory):
+    cid = stub["make"]("a")
+    claimed = datetime.utcnow() - timedelta(hours=2)
+    assert _run(db_factory, claimed) == 1
+    last, status = _row(db_factory, cid)
+    assert status == "ok" and last > claimed + timedelta(hours=1)     # the finish, not the claim
+    assert _claimed(db_factory, cid)[0] is None
+
+
+def test_an_older_scan_cannot_write_its_time_and_cursor_over_a_newer_one(stub, client, db_factory):
+    """Scan A outlives its claim; scan B claims the connector and finishes. A's late finish must
+    not put its older cursor (or its time) back over B's."""
+    cid = stub["make"]("a")
+    t0 = datetime.utcnow() - timedelta(hours=3)
+    finished = {}
+
+    def scan(db, connector, creds):
+        if connector.state.get("who") is None and "B" not in finished:
+            # while A runs, its claim lapses and B (another instance) scans the connector start to end
+            other = db_factory()
+            try:
+                b_at = t0 + timedelta(seconds=sc.SYNC_CLAIM_SECS + 60)
+                assert sc.claim_sync(other, cid, b_at) is True
+                row = other.get(SaasConnector, cid)
+                finished["B"] = True
+                sc.sync_connector(other, row, claimed_at=b_at)
+                finished["B_at"] = other.get(SaasConnector, cid).last_sync_at
+            finally:
+                other.close()
+            connector.state = {"who": "A", "cursor": 1}               # A's older cursor
+            return {"files": 1}
+        connector.state = {"who": "B", "cursor": 2}
+        return {"files": 2}
+
+    sc.PLATFORMS["stubscan"]["scan"] = scan
+    db = db_factory()
+    try:
+        assert sc.claim_sync(db, cid, t0) is True
+        row = db.get(SaasConnector, cid)
+        sc.sync_connector(db, row, claimed_at=t0)
+    finally:
+        db.close()
+    claim, state = _claimed(db_factory, cid)
+    assert state == {"who": "B", "cursor": 2}                         # B's cursor stands
+    assert _row(db_factory, cid)[0] == finished["B_at"] and claim is None
+
+
+def test_scan_now_while_a_scheduled_scan_runs_is_refused_and_reads_nothing(stub, client, db_factory):
+    cid = stub["make"]("a")
+    db = db_factory()
+    try:
+        assert sc.claim_sync(db, cid, datetime.utcnow()) is True      # the scheduled scan holds it
+    finally:
+        db.close()
+    r = client.post(f"/api/discovery/connectors/{cid}/sync")
+    assert r.status_code == 409 and "already running" in r.text
+    assert stub["calls"] == [] and _row(db_factory, cid) == (None, "")
+
+
+def test_a_rate_limited_scan_is_due_again_when_github_said(stub, db_factory):
+    stub["make"]("limited")
+    now = datetime.utcnow()
+    resume = now + timedelta(minutes=40)
+    stub["answer"] = {"truncated": True, "resume_after": resume.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    assert _run(db_factory, now) == 1
+    assert _run(db_factory, now + timedelta(seconds=cs.CATCH_UP_SECS + 5)) == 0   # not before the reset
+    assert _run(db_factory, now + timedelta(minutes=41)) == 1

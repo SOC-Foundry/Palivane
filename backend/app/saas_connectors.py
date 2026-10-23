@@ -44,7 +44,53 @@ _MAX_USERS_PER_SYNC = 2000   # bounds sync runtime on huge tenants; truncation i
 
 
 class ConnectorError(Exception):
-    """A sync failed in a way the admin needs to see (bad credential, API denial)."""
+    """A sync failed in a way the admin needs to see (bad credential, API denial).
+
+    `retry_at` is set when the platform said when it may be asked again (a rate limit's
+    Retry-After or X-RateLimit-Reset), as epoch seconds; None when it did not say."""
+
+    def __init__(self, message: str = "", *, retry_at: float | None = None):
+        super().__init__(message)
+        self.retry_at = retry_at
+
+
+class ScanInProgress(ConnectorError):
+    """Another scan holds this connector (claim_sync). Nothing was read and the row is untouched."""
+
+
+_RETRY_AT_MAX = 6 * 3600     # a header further out than this is wrong, not a plan
+
+
+def _retry_at(status: int, headers) -> float | None:
+    """When a rate-limited request may be made again, from the response's own headers.
+
+    GitHub (and most APIs) send one of two: a secondary or abuse limit answers with Retry-After
+    (seconds, or an HTTP date), and the hourly limit answers 403/429 with X-RateLimit-Remaining: 0
+    and X-RateLimit-Reset (epoch seconds). Without either the caller has to guess, so None says
+    exactly that. Only a 403 or 429 is a rate limit: a 503's Retry-After is an outage hint."""
+    if status not in (403, 429):
+        return None
+    now = time.time()
+    when = None
+    ra = (headers.get("retry-after") or "").strip()
+    if ra:
+        try:
+            when = now + max(0.0, float(ra))
+        except ValueError:
+            try:
+                from email.utils import parsedate_to_datetime
+                when = parsedate_to_datetime(ra).timestamp()
+            except (TypeError, ValueError, IndexError):
+                when = None
+    reset = (headers.get("x-ratelimit-reset") or "").strip()
+    if when is None and reset and (status == 429 or (headers.get("x-ratelimit-remaining") or "").strip() == "0"):
+        try:
+            when = float(reset)
+        except ValueError:
+            when = None
+    if when is None:
+        return None
+    return min(max(when, now), now + _RETRY_AT_MAX)
 
 
 def _http_json(url: str, *, headers: dict | None = None, data: bytes | None = None,
@@ -52,6 +98,9 @@ def _http_json(url: str, *, headers: dict | None = None, data: bytes | None = No
     # Route through the SSRF-guarded, IP-pinned client (same guard the gateway uses): admin-
     # supplied bases (e.g. a Salesforce instance URL) can't reach internal/metadata hosts, and
     # redirects aren't followed — so a 3xx can't smuggle the bearer token to another host.
+    # A rate-limited answer carries when to come back (Retry-After / X-RateLimit-Reset) in the
+    # error's retry_at, so a scan can record when it may resume instead of guessing. Nothing here
+    # sleeps: this runs inside a request or a scheduled scan with a wall-clock budget. #298
     import httpx
 
     from . import netguard
@@ -61,8 +110,10 @@ def _http_json(url: str, *, headers: dict | None = None, data: bytes | None = No
         return json.loads(r.content.decode("utf-8"))
     except httpx.HTTPStatusError as e:
         detail = e.response.text[:200]
+        status = e.response.status_code
         raise ConnectorError(
-            f"HTTP {e.response.status_code} from {urllib.parse.urlparse(url).netloc}: {detail}")
+            f"HTTP {status} from {urllib.parse.urlparse(url).netloc}: {detail}",
+            retry_at=_retry_at(status, e.response.headers))
     except (httpx.HTTPError, OSError, ValueError) as e:
         raise ConnectorError(f"request failed: {e}")
 
@@ -2075,12 +2126,18 @@ def _github_interval(creds, default):
     return scan_interval_secs(creds, default)
 
 
+def _github_validate(creds):
+    from .github_secrets import validate_options
+    validate_options(creds)
+
+
 PLATFORMS: dict[str, dict] = {
     "github_secrets": {
         "label": "GitHub secret scanning",
         "scan": _scan_github,
         "schedule_secs": 3600,       # syncs on its own every hour (app/connector_schedule.py) ...
         "interval_for": _github_interval,   # ... unless the connector sets scan_every_minutes
+        "validate": _github_validate,       # refuses settings that would scan nothing (connectors_create)
         "credential_fields": ["token", "org", "include", "exclude", "exclude_paths", "history_days",
                               "max_repos", "scan_every_minutes", "branches", "max_branches", "api_url"],
         "setup": "A READ-ONLY fine-grained personal access token (or GitHub App installation token) "
@@ -2346,35 +2403,121 @@ def merge_options(connector, options: dict, db=None) -> None:
     store_credentials(connector, creds, db)
 
 
-def sync_connector(db, connector) -> dict:
+# How long a claim holds a connector. Longer than the longest scan (connector_schedule's
+# SCAN_MAX_SECS, 480s, plus a batch of requests that started just before it): a scan stops at
+# its own clock, so a claim older than this belongs to a process that died mid-scan.
+SYNC_CLAIM_SECS = 600
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def claim_sync(db, connector_id: int, now: datetime, due_before: datetime | None = None) -> bool:
+    """Take the connector for one scan. True for exactly one caller: the one whose conditional
+    update of sync_claimed_at matches (none held, or the holder's claim is stale). With
+    `due_before` it must also be due: last finished at or before that time.
+
+    The claim used to be last_sync_at itself, which is also when the last scan finished, so a
+    scan that outlived the interval could be claimed again mid-scan (#298). The two are apart
+    now: the claim is sync_claimed_at, and last_sync_at is written when a scan completes."""
+    from sqlalchemy import or_
+
+    from .models import SaasConnector
+    q = (db.query(SaasConnector)
+         .filter(SaasConnector.id == connector_id, SaasConnector.active.is_(True),
+                 or_(SaasConnector.sync_claimed_at.is_(None),
+                     SaasConnector.sync_claimed_at <= now - timedelta(seconds=SYNC_CLAIM_SECS))))
+    if due_before is not None:
+        q = q.filter(or_(SaasConnector.last_sync_at.is_(None), SaasConnector.last_sync_at <= due_before))
+    n = q.update({SaasConnector.sync_claimed_at: now}, synchronize_session=False)
+    db.commit()
+    return n == 1
+
+
+def _finish_sync(db, connector, claimed_at: datetime, finished_at: datetime,
+                 status: str | None, detail: str | None) -> bool:
+    """Write a scan's outcome (when it finished, its status, its cursor) and let the claim go, but
+    only while this scan still holds the claim. False when it does not: its claim went stale and a
+    newer scan took the connector, and that scan's time and cursor are newer than anything this
+    one could write, so this one's are dropped (findings it recorded are kept; a repeat folds
+    into the same finding).
+
+    The write is one conditional UPDATE, and the in-memory row is expired rather than committed:
+    committing the row is how a slow scan used to put an older last_sync_at and an older cursor
+    back over a newer one (#298)."""
+    from .models import SaasConnector
+    values = {SaasConnector.last_sync_at: finished_at, SaasConnector.sync_claimed_at: None,
+              SaasConnector.sync_state: connector.sync_state}
+    if status is not None:
+        values[SaasConnector.last_sync_status] = status
+        values[SaasConnector.last_sync_detail] = (detail or "")[:512]
+    cid = connector.id
+    with db.no_autoflush:
+        n = (db.query(SaasConnector)
+             .filter(SaasConnector.id == cid, SaasConnector.sync_claimed_at == claimed_at)
+             .update(values, synchronize_session=False))
+    db.expire(connector)                          # discard the in-memory copy; it reloads what was written
+    db.commit()
+    if n != 1:
+        _log.warning("connector %s: its scan outlived its claim and a newer scan took over; "
+                     "this scan's cursor was not saved", cid)
+    return n == 1
+
+
+def sync_connector(db, connector, *, claimed_at: datetime | None = None,
+                   stamp=None) -> dict:
     """Run one connector sync: grant-inventory pull (`fetch` platforms) or content scan
-    (`scan` platforms, e.g. Slack message scanning). Updates the connector's
-    last_sync_* fields (committed by the caller alongside the ingest)."""
-    connector.last_sync_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    (`scan` platforms, e.g. Slack message scanning), and record it on the row: last_sync_at
+    (when it FINISHED), status, detail and the scan's cursor.
+
+    The scan holds a claim on the connector for its whole run. The scheduler claims before it
+    calls this and passes `claimed_at`; any other caller (an admin's Scan now, a Drive
+    notification) is claimed here, and a connector another scan holds raises ScanInProgress
+    without touching the row. The outcome is written only if the claim is still this scan's
+    (_finish_sync). `stamp(summary, finished_at)` lets the scheduler record a different
+    last_sync_at for a scan that stopped at its budget, so it comes due again soon."""
+    if connector.id is None:
+        db.flush()
+    if claimed_at is None:
+        claimed_at = _utcnow()
+        if not claim_sync(db, connector.id, claimed_at):
+            raise ScanInProgress("a scan of this connector is already running; try again when it finishes")
+        db.refresh(connector)                     # the newest cursor, written by whichever scan finished last
     try:
-        from . import crypto
-        creds = json.loads(
-            crypto.unseal_secret(connector.credentials_enc,
-                                 crypto.dek_for(db, connector.tenant_id)) or "{}")
-        spec = PLATFORMS[connector.platform]
-        if "scan" in spec:
-            # Content scanner: persists findings itself (and advances its own cursor).
-            summary = spec["scan"](db, connector, creds)
-        else:
-            fetched = spec["fetch"](creds)
-            # the sentinel row reports truncation without polluting discovery
-            truncated = any(g["app_name"].startswith("__truncated_") for g in fetched)
-            grants = [OAuthGrant(**g) for g in fetched
-                      if not g["app_name"].startswith("__truncated_")]
-            summary = ingest_oauth_grants(db, connector.tenant_id, grants)
-            if truncated:
-                summary["truncated"] = True
-        connector.last_sync_status = "ok"
-        connector.last_sync_detail = json.dumps(summary)[:512]
-        db.commit()
-        return summary
+        summary = _run_sync(db, connector)
     except ConnectorError as e:
-        connector.last_sync_status = "error"
-        connector.last_sync_detail = str(e)[:512]
-        db.commit()
+        _finish_sync(db, connector, claimed_at, _utcnow(), "error", str(e))
         raise
+    except Exception:
+        # Not the admin's problem to read (status and detail stay as they were), but the claim is
+        # let go and the time recorded, so the scheduler waits an interval rather than retrying
+        # a crash every tick.
+        db.rollback()
+        _finish_sync(db, connector, claimed_at, _utcnow(), None, None)
+        raise
+    finished = _utcnow()
+    _finish_sync(db, connector, claimed_at, stamp(summary, finished) if stamp else finished,
+                 "ok", json.dumps(summary))
+    return summary
+
+
+def _run_sync(db, connector) -> dict:
+    """The sync itself; sync_connector records the outcome and commits."""
+    from . import crypto
+    creds = json.loads(
+        crypto.unseal_secret(connector.credentials_enc,
+                             crypto.dek_for(db, connector.tenant_id)) or "{}")
+    spec = PLATFORMS[connector.platform]
+    if "scan" in spec:
+        # Content scanner: persists findings itself (and advances its own cursor).
+        return spec["scan"](db, connector, creds)
+    fetched = spec["fetch"](creds)
+    # the sentinel row reports truncation without polluting discovery
+    truncated = any(g["app_name"].startswith("__truncated_") for g in fetched)
+    grants = [OAuthGrant(**g) for g in fetched
+              if not g["app_name"].startswith("__truncated_")]
+    summary = ingest_oauth_grants(db, connector.tenant_id, grants)
+    if truncated:
+        summary["truncated"] = True
+    return summary

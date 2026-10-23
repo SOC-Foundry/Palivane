@@ -8,7 +8,8 @@ Trust model: the endpoint is public (GitHub posts to it), so trust comes from th
 connector has its own webhook secret, generated here and shown to the admin once; GitHub signs the raw
 body with it (X-Hub-Signature-256, HMAC-SHA256) and nothing is parsed before that verifies. Every
 failure, including an unknown connector or one with no secret set, answers the same 401. Repeated
-failures from one address are cut off. A delivery GitHub retries is processed once.
+failures from one address are cut off. A delivery that was scanned in full is not scanned again
+when GitHub redelivers it; one whose scan failed is, so a redelivery is how a failed one is retried.
 """
 
 from __future__ import annotations
@@ -39,9 +40,10 @@ _submit = _EXECUTOR.submit          # tests monkeypatch this to run inline
 _MAX_BODY = 5_000_000               # GitHub caps a payload at 25 MB; a push event is far smaller
 _SCAN_SECS = 60.0                   # a push scan stops here
 
-_SEEN: dict[str, float] = {}        # X-GitHub-Delivery -> expiry; GitHub retries a delivery it thinks failed
+_SEEN: dict[str, float] = {}        # X-GitHub-Delivery -> expiry; GitHub redelivers a delivery it thinks failed
 _SEEN_LOCK = threading.Lock()
-_SEEN_TTL = 3600
+_SEEN_TTL = 3600                    # a delivery that was scanned in full is ignored this long
+_INFLIGHT_TTL = 300                 # one that is queued or scanning (_SCAN_SECS plus a wait for a worker)
 _FAILS: dict[str, list[float]] = {}  # ip -> recent bad-signature times
 _FAIL_LIMIT, _FAIL_WINDOW = 30, 60
 
@@ -52,6 +54,16 @@ def sign(secret: str, body: bytes) -> str:
 
 
 def _already_seen(delivery: str) -> bool:
+    """True for a delivery that was scanned in full in the last hour, or is being scanned now.
+    Otherwise it is marked in flight (a short hold, so a redelivery that lands while the first is
+    still queued does not scan twice) and _settle decides what it becomes.
+
+    Security review SEC-05 (#299): the delivery used to be recorded for the full hour before the
+    scan was submitted, so a scan that failed was still "seen" and a redelivery of it (GitHub's
+    Redeliver, or its own retry of a delivery it saw fail) was ignored, leaving the commit to the
+    scheduled scan, up to an interval later. Known limit: this map is per process, so with more
+    than one instance a redelivery that lands on another instance is scanned again there. That
+    costs a few API calls and folds into the same findings; it is not shared on purpose."""
     if not delivery:
         return False
     now = time.time()
@@ -61,8 +73,20 @@ def _already_seen(delivery: str) -> bool:
                 _SEEN.pop(k, None)
         if _SEEN.get(delivery, 0) > now:
             return True
-        _SEEN[delivery] = now + _SEEN_TTL
+        _SEEN[delivery] = now + _INFLIGHT_TTL
         return False
+
+
+def _settle(delivery: str, ok: bool) -> None:
+    """After the scan: a delivery read in full is remembered for the hour; one that failed (an error,
+    a rate limit, a commit that would not load) is forgotten, so a redelivery of it runs."""
+    if not delivery:
+        return
+    with _SEEN_LOCK:
+        if ok:
+            _SEEN[delivery] = time.time() + _SEEN_TTL
+        else:
+            _SEEN.pop(delivery, None)
 
 
 def _too_many_failures(ip: str) -> bool:
@@ -98,24 +122,28 @@ def _secret_for(connector_id: int) -> str:
         db.close()
 
 
-def _process_push(connector_id: int, payload: dict) -> None:
+def _process_push(connector_id: int, payload: dict, delivery: str = "") -> None:
     """Scan a push in its own session. Never raises: a failed push scan is caught up by the next
-    scheduled one."""
+    scheduled one, or sooner by a redelivery (_settle forgets a failed delivery)."""
     from . import github_secrets, saas_connectors as sc
     from .database import SessionLocal, bind_tenant, clear_tenant
     db = SessionLocal()
     token = github_secrets.max_seconds.set(_SCAN_SECS)
+    ok = False
     try:
         row = db.get(SaasConnector, connector_id)
         if row is None or not row.active or row.platform != "github_secrets":
+            ok = True                                             # nothing to scan, now or on a redelivery
             return
         bind_tenant(db, row.tenant_id)
         result = github_secrets.scan_push(db, row, sc.read_credentials(row, db), payload)
+        ok = not result.get("truncated") and not result.get("unread")
         if result.get("findings"):
             _log.info("github push: %s", result)
     except Exception:                                             # noqa: BLE001
         _log.exception("github push scan failed (connector %s)", connector_id)
     finally:
+        _settle(delivery, ok)
         github_secrets.max_seconds.reset(token)
         clear_tenant()
         db.close()
@@ -145,9 +173,14 @@ async def github_push(connector_id: int, request: Request):
         payload = json.loads(body)
     except ValueError:
         raise HTTPException(status_code=400, detail="not json")
-    if _already_seen(request.headers.get("X-GitHub-Delivery", "")):
+    delivery = request.headers.get("X-GitHub-Delivery", "")
+    if _already_seen(delivery):
         return {"ok": True, "duplicate": True}
-    _submit(_process_push, connector_id, payload)
+    try:
+        _submit(_process_push, connector_id, payload, delivery)
+    except RuntimeError:                                          # the executor is shutting down
+        _settle(delivery, False)
+        raise
     return {"ok": True}
 
 
