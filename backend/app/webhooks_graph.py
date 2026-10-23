@@ -73,7 +73,7 @@ def _scan_notified_drive(connector_id: int, sub_id: str) -> None:
         token = sc._microsoft_access_token(creds)
         hdrs = {"Authorization": f"Bearer {token}"}
         deltas = dict(row.state.get("deltas") or {})
-        scanned, findings, skipped, _ = sc._scan_drive(
+        scanned, findings, skipped, _partial, _ = sc._scan_drive(
             db, row, hdrs, sc._tenant_custom_pii(db, row), did,
             meta.get("name", "library"), deltas)
         row.state = {**row.state, "deltas": deltas}

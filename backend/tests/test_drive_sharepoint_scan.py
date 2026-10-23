@@ -368,3 +368,23 @@ def test_no_contentversion_access_still_scans_records(client, monkeypatch):
     summary = client.post(f"/api/discovery/connectors/{cid}/sync").json()
     assert summary["records"] == 1 and summary["findings"] == 1
     assert "files" not in summary
+
+
+def test_partly_read_file_is_counted_partial_not_clean(client, monkeypatch):
+    """SEC-03: a PDF with one stream that would not inflate is scanned for what was read
+    and counted as partial, the way an unreadable file is counted as skipped."""
+    import zlib
+    good = zlib.compress(b"BT (quarterly notes) Tj ET")
+    bad = b"\x78\x9c" + bytes(range(7, 200))
+    pdf = b"%PDF-1.4\n"
+    for i, body in enumerate((good, bad), 1):
+        pdf += (f"{i} 0 obj<</Length {len(body)}/Filter/FlateDecode>>stream\n".encode()
+                + body + b"\nendstream\nendobj\n")
+    _fake_graph(monkeypatch, [
+        {"id": "i1", "name": "report.pdf", "size": 100,
+         "file": {"mimeType": "application/pdf"}},
+        {"id": "i2", "name": "notes.txt", "size": 100, "file": {"mimeType": "text/plain"}},
+    ], {"i1": pdf + b"%%EOF", "i2": "nothing here"})
+    cid = _mk(client, "sharepoint_files", SP_CREDS)
+    summary = client.post(f"/api/discovery/connectors/{cid}/sync").json()
+    assert summary["files"] == 2 and summary["partial"] == 1 and summary["skipped"] == 0

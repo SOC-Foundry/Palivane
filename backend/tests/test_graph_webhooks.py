@@ -133,7 +133,8 @@ def test_notification_triggers_targeted_scan(client, monkeypatch, db_factory):
         raise AssertionError(f"unexpected: {url}")
     monkeypatch.setattr(sc, "_http_json", fake_http)
     monkeypatch.setattr(sc, "_fetch_doc_text",
-                        lambda url, hdrs, name, mime: "SSN 078-05-1120, card 4242 4242 4242 4242")
+                        lambda url, hdrs, name, mime: ("SSN 078-05-1120, card 4242 4242 4242 4242",
+                                                       False))
 
     r = client.post("/api/webhooks/graph", json={"value": [
         {"subscriptionId": "sub-1", "clientState": client_state}]})
