@@ -13,6 +13,12 @@ a signed token minted at subscription time binding the connector id. Anything th
 verify is dropped (and still 202'd: Graph retries on non-2xx, and retrying garbage is
 just more garbage). Graph's endpoint-validation handshake (POST ?validationToken=…) is
 answered with the token in plain text, as the contract requires.
+
+Because a forgery gets the same 2xx as a real notification, the failures are counted the way
+the GitHub receiver counts bad signatures: per source IP over a short window, plus the
+palivane_webhook_verify_failures_total metric. An IP over the limit is logged once per window
+and its notifications are dropped before any token is decoded; the answer stays 2xx.
+Security review SEC-05.
 """
 
 from __future__ import annotations
@@ -37,6 +43,45 @@ _submit = _EXECUTOR.submit          # tests monkeypatch this to run inline
 _RECENT: dict[tuple[int, str], float] = {}
 _RECENT_LOCK = threading.Lock()
 _DEBOUNCE_SECS = 20
+
+
+_FAILS: dict[str, list[float]] = {}  # ip -> recent verification-failure times
+_FAILS_LOCK = threading.Lock()
+_FAIL_LIMIT, _FAIL_WINDOW = 30, 60   # same as the GitHub receiver
+_WARNED: dict[str, float] = {}       # ip -> when it was last logged as flooding
+
+
+def _flooding(ip: str) -> bool:
+    """True when `ip` sent _FAIL_LIMIT or more unverifiable deliveries in the last window."""
+    now = time.time()
+    with _FAILS_LOCK:
+        recent = [t for t in _FAILS.get(ip, []) if t > now - _FAIL_WINDOW]
+        _FAILS[ip] = recent
+        if len(_FAILS) > 4096:
+            for k in [k for k, v in _FAILS.items() if not v or v[-1] < now - _FAIL_WINDOW]:
+                _FAILS.pop(k, None)
+                _WARNED.pop(k, None)
+        return len(recent) >= _FAIL_LIMIT
+
+
+def _note_failures(receiver: str, ip: str, n: int = 1) -> None:
+    """Count `n` deliveries from `ip` that failed verification, and log once per window when
+    the IP crosses the limit. Never logs a token or the body."""
+    if n <= 0:
+        return
+    from .metrics import WEBHOOK_VERIFY_FAILURES
+    WEBHOOK_VERIFY_FAILURES.labels(receiver).inc(n)
+    now = time.time()
+    with _FAILS_LOCK:
+        times = _FAILS.setdefault(ip, [])
+        times.extend([now] * n)
+        count = len([t for t in times if t > now - _FAIL_WINDOW])
+        warn = count >= _FAIL_LIMIT and _WARNED.get(ip, 0) < now - _FAIL_WINDOW
+        if warn:
+            _WARNED[ip] = now
+    if warn:
+        _log.warning("%s webhook: %d deliveries from %s failed verification in %ds; dropping "
+                     "its deliveries unread for now", receiver, count, ip, _FAIL_WINDOW)
 
 
 def _debounced(connector_id: int, drive_id: str) -> bool:
@@ -115,13 +160,21 @@ async def gdrive_notifications(request: Request):
     """Google Drive changes.watch receiver. Drive sends headers, not a body: the channel
     token (our signed connector binding) authenticates; resource-state 'sync' is the
     channel handshake and is just acked. Always 200 fast — Drive retries non-2xx."""
+    from .auth import _client_ip
     from .security import TokenError, decode_token
+    ip = _client_ip(request)
+    if _flooding(ip):
+        return JSONResponse(status_code=200, content={"ok": True})
     state = request.headers.get("X-Goog-Resource-State", "")
     try:
         claims = decode_token(request.headers.get("X-Goog-Channel-Token", ""))
     except TokenError:
+        _note_failures("gdrive", ip)
         return JSONResponse(status_code=200, content={"ok": True})   # unauthenticated noise
-    if claims.get("typ") == "gdrive_watch" and state and state != "sync":
+    if claims.get("typ") != "gdrive_watch":
+        _note_failures("gdrive", ip)                                 # signed, but not a channel
+        return JSONResponse(status_code=200, content={"ok": True})
+    if state and state != "sync":
         connector_id = int(claims.get("connector_id") or 0)
         if connector_id:
             _submit(_sync_notified_connector, connector_id)
@@ -136,20 +189,36 @@ async def graph_notifications(request: Request):
     if token is not None:
         return PlainTextResponse(content=token)   # handshake: echo, text/plain, 200
 
+    from .auth import _client_ip
+    ip = _client_ip(request)
+    if _flooding(ip):
+        return JSONResponse(status_code=202, content={"ok": True})
     try:
         payload = await request.json()
     except ValueError:
+        _note_failures("graph", ip)
+        return JSONResponse(status_code=202, content={"ok": True})
+    notes = payload.get("value") if isinstance(payload, dict) else None
+    if not isinstance(notes, list):
+        _note_failures("graph", ip)
         return JSONResponse(status_code=202, content={"ok": True})
     from .security import TokenError, decode_token
-    for note in (payload.get("value") or [])[:50]:
+    bad = 0
+    for note in notes[:50]:
+        if not isinstance(note, dict):
+            bad += 1
+            continue
         try:
             claims = decode_token(str(note.get("clientState") or ""))
         except TokenError:
-            continue                     # unauthenticated noise — drop, don't 4xx
+            bad += 1                     # unauthenticated noise — drop, don't 4xx
+            continue
         if claims.get("typ") != "graph_sub":
+            bad += 1                     # a signed token, but not a subscription's
             continue
         connector_id = int(claims.get("connector_id") or 0)
         sub_id = str(note.get("subscriptionId") or "")
         if connector_id and sub_id:
             _submit(_scan_notified_drive, connector_id, sub_id)
+    _note_failures("graph", ip, bad)
     return JSONResponse(status_code=202, content={"ok": True})
