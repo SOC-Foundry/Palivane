@@ -192,6 +192,34 @@ def test_prompt_block_output_erases_prompt_with_reason():
     assert "pii_exposure" in out["reason"] and "90/high" in out["reason"]
     # The reader is the user (the prompt is erased) — the fix is surfaced inline.
     assert "Remove the SSN" in out["reason"]
+    # Claude Code otherwise ends the block message with "Original prompt: <text>" and writes
+    # it to the transcript: the secret just stopped would be shown again and put on disk.
+    assert out["hookSpecificOutput"] == {"hookEventName": "UserPromptSubmit",
+                                         "suppressOriginalPrompt": True}
+
+
+def test_a_blocked_prompt_exits_2_with_the_reason_on_stderr(monkeypatch, capsys):
+    """Exit 2 alongside the JSON: a Claude Code that rejects suppressOriginalPrompt as an
+    unknown field would treat the JSON as invalid, and invalid JSON on exit 0 is a
+    non-blocking error. Exit 2 blocks either way."""
+    import io
+    monkeypatch.setattr(hook, "read_config", lambda: {
+        "url": "https://pal.example", "token": "ak_x", "user": "dev@acme.com",
+        "timeout": 5, "enforce": False, "exclude": []})
+    monkeypatch.setattr(hook, "scan", lambda *a, **k: {
+        "action": "block", "force_block": True, "risk_score": 95, "severity": "critical",
+        "signals": [{"category": "secret_leak"}], "remediation": []})
+    monkeypatch.setattr(hook, "remember_enforce", lambda *a, **k: None)
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({
+        "hook_event_name": "UserPromptSubmit", "prompt": "key AKIAQ3EGRZ7XKP4M2WNV",
+        "cwd": "/tmp"})))
+    assert hook.main() == 2
+    out, err = capsys.readouterr()
+    doc = json.loads(out)
+    assert doc["decision"] == "block"
+    assert doc["hookSpecificOutput"]["suppressOriginalPrompt"] is True
+    assert "Blocked by Palivane" in err
+    assert "AKIA" not in out and "AKIA" not in err
 
 
 # --- integration: mapped activities through the real ingest endpoint -------------------
