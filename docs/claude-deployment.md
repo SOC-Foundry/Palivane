@@ -198,7 +198,9 @@ secret/PII leak hard-blocks even in monitor mode**, "block the certain, monitor 
 fuzzy", same rule as the proxy); `PALIVANE_ENFORCE=true` also denies ordinary high-risk
 verdicts, with the reason shown to the model (tool calls) or the user (prompts). The org
 sets that stance centrally in the console (Settings → *Device enforcement*):
-`palivane-connect` provisions it at connect time and every verdict carries it live.
+`palivane-connect` provisions it at connect time and every verdict carries it live. The
+hook remembers the last prompt verdict's stance for an hour, so a console change or a
+per-user override also reaches tool calls from the developer's next prompt.
 Between allow and block there is an opt-in **ask** (Settings → *Policy* → *Ask before risky
 tool calls*): a tool call in the warn band stops at Claude Code's own permission prompt,
 with Palivane's reason, instead of running silently. It needs *MCP block severity* above

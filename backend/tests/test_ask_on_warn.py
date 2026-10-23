@@ -3,7 +3,8 @@ silently.
 
 The server decides. `ask` is set on a tool-call verdict only when the org opted in, the actor
 is enforced, and the verdict is a warn: a block is never softened into one, and monitor mode
-never interrupts anyone. The hooks (Claude Code, Cursor) only honor the flag."""
+never interrupts anyone. The hooks only honor the flag: Claude Code, Cursor, Gemini and
+Copilot. Codex has no working ask, so there a warn runs."""
 
 from __future__ import annotations
 
@@ -158,7 +159,7 @@ def test_the_hooks_honor_what_the_server_says(client, raw_client):
     key = _key(client)
     asked = _verdict(raw_client, key, FUZZY_WRITE)
     assert claude_hook.should_block(asked, True) is False
-    assert claude_hook.should_ask(asked) is True
+    assert claude_hook.should_ask("PreToolUse", asked) is True
     ho = claude_hook.ask_output(asked)["hookSpecificOutput"]
     assert ho["permissionDecision"] == "ask" and "secret_leak" in ho["permissionDecisionReason"]
     assert cursor_hook.should_ask("beforeShellExecution", asked) is True
@@ -166,4 +167,4 @@ def test_the_hooks_honor_what_the_server_says(client, raw_client):
 
     blocked = _verdict(raw_client, key, DANGEROUS)
     assert claude_hook.should_block(blocked, True) is True
-    assert claude_hook.should_ask(blocked) is False
+    assert claude_hook.should_ask("PreToolUse", blocked) is False
