@@ -568,29 +568,32 @@ def siem_s3_role_setup(current: User = Depends(require_admin), db: Session = Dep
     """Everything a customer needs to create the cross-account S3 delivery role: this
     deployment's AWS principal (a static PALIVANE_AWS_DELIVERY_PRINCIPAL, or the federated
     role from PALIVANE_AWS_WIF_ROLE_ARN — 501 if it has neither), the org's external ID
-    (minted here on first call, then stable — their trust policy pins it), and a
-    ready-to-paste trust policy. The external ID is a confused-deputy guard, not a
-    secret; the role needs only s3:PutObject on the delivery bucket."""
-    import secrets as _secrets
+    (siem_s3.external_id: stable before and after the save that stores it — their trust
+    policy pins it), and a ready-to-paste trust policy. The external ID is a
+    confused-deputy guard, not a secret; the role needs only s3:PutObject on the
+    delivery bucket.
+
+    A pure read: nothing is written here. The PATCH /api/tenant that sets the role ARN
+    stores the id. A GET that commits is a write the read-only demo session can reach
+    (security review SEC-04, #291)."""
+    from . import siem_s3
     if not settings.role_delivery_principal:
         raise HTTPException(status_code=501,
                             detail="Role-based S3 delivery is not available on this "
                                    "deployment. Use an access key pair instead.")
     t = db.get(Tenant, current.tenant_id)
-    if not (t.siem_s3_external_id or "").strip():
-        t.siem_s3_external_id = "plv-" + _secrets.token_hex(16)
-        db.commit()
+    ext = siem_s3.external_id(t)
     principal = settings.role_delivery_principal
     return {
         "principal": principal,
-        "external_id": t.siem_s3_external_id,
+        "external_id": ext,
         "trust_policy": {
             "Version": "2012-10-17",
             "Statement": [{
                 "Effect": "Allow",
                 "Principal": {"AWS": principal},
                 "Action": "sts:AssumeRole",
-                "Condition": {"StringEquals": {"sts:ExternalId": t.siem_s3_external_id}},
+                "Condition": {"StringEquals": {"sts:ExternalId": ext}},
             }],
         },
     }
@@ -2907,9 +2910,11 @@ _MY_ACTIONS = {
 
 
 def _mine(q, db, current: User):
-    """Restrict a Finding query to rows belonging to the caller: their capture attribution
-    (`sender`, how at-rest scans record a Slack actor or a Salesforce OwnerId) or their
-    ownership of the source document (origin.owner, set by content_origin)."""
+    """Restrict a Finding query to rows belonging to the caller, matched case-insensitively
+    on their email: the capture attribution (`sender`, how at-rest scans record a Slack
+    actor or a Salesforce OwnerId) or the `agent` field. The owner of a source document
+    (origin.owner, set by content_origin) is NOT matched: a document owner who is not the
+    sender does not see the row here. `db` is unused; it stays in the signature for callers."""
     email = (current.email or "").strip().lower()
     if not email:
         return q.filter(Finding.id == -1)          # no identity, no rows

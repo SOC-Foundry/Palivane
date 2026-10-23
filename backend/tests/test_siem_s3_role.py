@@ -113,6 +113,26 @@ def test_role_setup_endpoint(client, raw_client, delivery_principal):
     assert raw_client.get("/api/siem/s3/role-setup").status_code == 401
 
 
+def test_role_setup_is_a_read_and_the_save_stores_what_it_showed(client, db_factory, delivery_principal):
+    """SEC-04 / #291: the GET used to mint and commit the external id, which made it a write
+    a read-only demo session could reach. It now stores nothing; the PATCH that sets the role
+    ARN stores the id, and it is the same value the customer already pasted into their policy."""
+    from app.models import Tenant
+
+    def stored():
+        db = db_factory()
+        try:
+            return db.query(Tenant).filter(Tenant.slug == "acme").one().siem_s3_external_id or ""
+        finally:
+            db.close()
+
+    shown = client.get("/api/siem/s3/role-setup").json()["external_id"]
+    assert shown.startswith("plv-") and stored() == ""
+    t = client.patch("/api/tenant", json={"siem_s3_bucket": "b", "siem_s3_role_arn": ROLE}).json()
+    assert t["siem_s3_external_id"] == shown == stored()
+    assert client.get("/api/siem/s3/role-setup").json()["external_id"] == shown
+
+
 # --- STS client behavior -----------------------------------------------------------------
 
 def test_role_client_assumes_with_external_id_and_caches(fake_boto3, delivery_principal):
