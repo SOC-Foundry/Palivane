@@ -1459,10 +1459,11 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
                                 detail="Role-based S3 delivery is not available on this "
                                        "deployment. Use an access key pair instead.")
         if arn and not (tenant.siem_s3_external_id or "").strip():
-            # First role config: mint the external ID the customer's trust policy pins
-            # (confused-deputy guard). Never regenerated on later saves — the trust
-            # policy references it.
-            tenant.siem_s3_external_id = "plv-" + secrets.token_hex(16)
+            # First role config: store the external ID the customer's trust policy pins
+            # (confused-deputy guard) — the same value GET /api/siem/s3/role-setup has been
+            # showing them. Never regenerated on later saves — the trust policy references it.
+            from . import siem_s3
+            tenant.siem_s3_external_id = siem_s3.external_id(tenant)
         tenant.siem_s3_role_arn = arn    # "" clears -> static keys (if set) take over
     # Raw event archival (rides the S3 delivery config above; enabling is plan-gated).
     if body.archive_s3_enabled is not None:

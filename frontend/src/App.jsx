@@ -95,6 +95,7 @@ const NAV = [
 const VIEW_ADMIN = new Map(
   NAV.flatMap((g) => g.items.map((it) => [it.v, it.admin !== false])));
 const VIEWS = new Set(VIEW_ADMIN.keys());
+const REVIEW_PAGE = 500;   // the most GET /api/findings returns in one call
 
 
 export default function App() {
@@ -125,6 +126,10 @@ export default function App() {
   const [filter, setFilter] = useState("actionable");   // severity (client-side; "actionable" = warn+)
   const [statusFilter, setStatusFilter] = useState("open");
   const [selected, setSelected] = useState(null);
+  // Bumped after a status change so the effect on selectedId reloads the open finding. The
+  // effect, not the handler, does the fetch: it knows which row the route names now and drops
+  // a response that lands after the route moved on (Review advances right after a verdict). #294
+  const [detailTick, setDetailTick] = useState(0);
   // The current screen and the selected finding live in the URL, not in state (route.js).
   // null means "not a console URL" — the public site is rendering instead.
   const [route, setRoute] = useState(() => parseRoute(window.location.pathname, VIEWS));
@@ -241,12 +246,16 @@ export default function App() {
   // (the list on screen may be filtered), and moves on after each verdict.
   const [reviewing, setReviewing] = useState(false);
   const [reviewLeft, setReviewLeft] = useState(null);
+  // The list API returns at most REVIEW_PAGE rows, most recently seen first. Past that, the walk
+  // is worst first within the most recent REVIEW_PAGE; older open findings move into the page
+  // as these close. The button says "500+" rather than a count it does not have. #294
   const nextToReview = useCallback(async (skipId = null) => {
     const rank = { critical: 4, high: 3, suspicious: 2, low: 1, benign: 0 };
-    const open = (await api.findings({ status: "open", limit: 500 })).findings
+    const page = (await api.findings({ status: "open", limit: REVIEW_PAGE })).findings;
+    const open = page
       .filter((f) => f.id !== skipId)
       .sort((a, b) => (rank[b.severity] ?? 0) - (rank[a.severity] ?? 0) || a.id - b.id);
-    setReviewLeft(open.length);
+    setReviewLeft(page.length >= REVIEW_PAGE ? `${REVIEW_PAGE}+` : open.length);
     if (!open.length) { setReviewing(false); return; }
     selectFinding(open[0].id);
   }, [selectFinding]);
@@ -295,7 +304,7 @@ export default function App() {
       .then((f) => { if (live) setSelected(f); })
       .catch(() => { if (live) setSelected(null); });
     return () => { live = false; };
-  }, [selectedId]);
+  }, [selectedId, detailTick]);
 
   // Selecting a finding far down the list: bring the detail pane into view (the pane is
   // sticky on wide layouts, so this mostly matters on single-column/mobile).
@@ -538,7 +547,7 @@ export default function App() {
                 </span>
                 {isAdmin && (
                   <button type="button" className="ghost-btn"
-                          title="Go through the open findings worst first, one verdict each"
+                          title={`Go through the open findings worst first, one verdict each (worst first among the ${REVIEW_PAGE} most recently seen)`}
                           onClick={() => { setReviewing(true); nextToReview(); }}>
                     <span>{reviewing ? `Reviewing${reviewLeft != null ? ` (${reviewLeft} left)` : ""}` : "Review"}</span>
                   </button>
@@ -579,7 +588,7 @@ export default function App() {
                     onReviewed={(id) => { if (reviewing) nextToReview(id); }}
                     onStatusChange={async () => {
                       await refresh();
-                      if (selectedId) api.finding(selectedId).then(setSelected);
+                      setDetailTick((n) => n + 1);
                     }}
                   />
                 ) : (

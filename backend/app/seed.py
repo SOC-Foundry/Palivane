@@ -22,6 +22,7 @@ from .security import hash_password
 DEMO_SLUG = "demo"
 DEMO_ADMIN_EMAIL = os.getenv("SEED_ADMIN_EMAIL", "admin@demo.local")
 DEMO_ADMIN_PASSWORD = os.getenv("SEED_ADMIN_PASSWORD", "changeme123")
+DEMO_VIEWER = "viewer@demo.local"   # the public demo session's user (app.demo.DEMO_VIEWER)
 
 # A demo org has one job: look like a real week of traffic. Two samples did not, and the
 # live demo at /#demo is where an evaluator forms their first opinion — an inventory with
@@ -358,6 +359,32 @@ SAMPLES = [
         "subject": "pasted into Copilot",
         "content": "Why does this pytest fixture run twice when I parametrise the test?",
         "metadata": {"destination": "https://copilot.microsoft.com/"},
+    },
+    # Two events from the people who sign in to the demo, so "Your findings" (/app/mine) has
+    # rows: it lists what the signed-in person sent, and every sample above is somebody else's.
+    # DEMO_VIEWER is the public demo session; DEMO_ADMIN_EMAIL is who signs in to a locally
+    # seeded console. #287
+    {
+        "channel": "llm",
+        "surface": Surface.AI_USAGE,
+        "sender": DEMO_VIEWER,
+        "subject": "pasted into ChatGPT",
+        "content": (
+            "Can you tidy this follow-up for the renewal call? Customer Jane Doe, "
+            "jane.doe@acme.com, SSN 078-05-1120, card 4111 1111 1111 1111 on file."
+        ),
+        "metadata": {"destination": "https://chat.openai.com/"},
+    },
+    {
+        "channel": "llm",
+        "surface": Surface.AI_USAGE,
+        "sender": DEMO_ADMIN_EMAIL,
+        "subject": "pasted into Claude",
+        "content": (
+            "Why does the nightly export fail? It connects with "
+            "postgres://svc_export:Wint3r!Export2024@db.internal:5432/core and times out."
+        ),
+        "metadata": {"destination": "https://claude.ai/"},
     },
 ]
 

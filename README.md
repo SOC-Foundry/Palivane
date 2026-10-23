@@ -523,7 +523,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | POST   | `/api/alerts/digest/run` | Send this tenant's alert digest now if one is due (also runs automatically every few minutes) (admin). |
 | POST   | `/api/siem/test`         | Send a sample event to the tenant's SIEM collector in its configured format (admin). |
 | POST   | `/api/siem/s3/test`      | Write a sample finding object to the tenant's S3 data-lake sink to validate the config (admin). |
-| GET    | `/api/siem/s3/role-setup` | Cross-account S3 delivery helper: this deployment's AWS principal, the org's external ID (minted once), and a ready-to-paste IAM trust policy (admin). `501` unless the operator set `PALIVANE_AWS_DELIVERY_PRINCIPAL` or `PALIVANE_AWS_WIF_ROLE_ARN` — without an AWS identity of its own the deployment can assume nothing, so role delivery is off and key-pair delivery is the only path. |
+| GET    | `/api/siem/s3/role-setup` | Cross-account S3 delivery helper: this deployment's AWS principal, the org's external ID (stable; stored by the settings save that sets the role ARN, never by this read), and a ready-to-paste IAM trust policy (admin). `501` unless the operator set `PALIVANE_AWS_DELIVERY_PRINCIPAL` or `PALIVANE_AWS_WIF_ROLE_ARN` — without an AWS identity of its own the deployment can assume nothing, so role delivery is off and key-pair delivery is the only path. |
 | POST   | `/api/siem/s3/archive/test` | Write a sample NDJSON object under the raw event archive's `events/` path (admin). |
 | *      | `/api/domains…`          | Claim, DNS-TXT-verify, and manage the org's signup-capture email domains (admin). |
 | *      | `/api/join-requests…`    | List and approve/deny signups captured by a claimed domain (admin). |
