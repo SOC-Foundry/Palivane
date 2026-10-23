@@ -392,11 +392,11 @@ def _with_image_text(prompt: str, body: dict) -> tuple[str, list]:
     recovered — OCR off or not installed, too big, past the ones OCR'd, an OCR error, blank
     OCR — one partial-scan marker for the request, so the verdict reads "partly scanned"
     rather than clean. Record only: weight 0, it never moves the score or the block."""
-    from .ocr import _MAX_COLLECTED, collect_images, ocr_available, read_images
+    from .ocr import _MAX_COLLECTED, collect_images, ocr_enabled, read_images
     images = collect_images(body)
     if not images:
         return prompt, []
-    ocr_on = settings.gateway_ocr and ocr_available()
+    ocr_on = ocr_enabled()
     got = read_images(images) if ocr_on else None
     if got and got.text:
         prompt = f"{prompt}\n[image text]\n{got.text}"

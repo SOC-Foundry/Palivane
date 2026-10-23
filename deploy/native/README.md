@@ -37,6 +37,9 @@ The installer creates a `palivane` system user, a venv at `/opt/palivane`, `/etc
 - **Enforcement** starts in monitor: `GATEWAY_ENFORCE=false` (LLM gateway) and
   `CLIENT_ENFORCE=false` (CLI hooks and desktop proxy on devices with no local flag). Set both to
   `true` together; confirmed secret/PII leaks block in either mode.
+- **Image OCR** is off: `PALIVANE_OCR=false`. To read screenshots in gateway requests and
+  connector files, install tesseract (`apt install tesseract-ocr` / `dnf install tesseract`)
+  and set it to `true`. Without the binary the setting does nothing and images stay unread.
 - **TLS**: the service listens on `:8088` (see `palivane-api.service`). Front it with nginx/Caddy
   for HTTPS, or the same Cloudflare Worker pattern as the SaaS.
 - **Config** lives in `/etc/palivane/palivane.env` (mode 600) — judge keys, gateway upstreams,

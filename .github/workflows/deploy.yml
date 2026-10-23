@@ -57,6 +57,9 @@ jobs:
           NO_UNAUTH: "1"
           # Posture + fronting — set as repo/environment variables (not secrets; non-sensitive).
           GATEWAY_ENFORCE: ${{ vars.GATEWAY_ENFORCE }}
+          # Image OCR in the request path. Unset repo variable = deploy.sh's default (on);
+          # set it to "false" to switch OCR off without a code change.
+          PALIVANE_OCR: ${{ vars.PALIVANE_OCR }}
           # Hook/proxy default for devices with no local flag. Unset repo variable = not
           # passed to the service (stays monitor). Setting it flips every tenant's
           # unflagged devices that have no Settings override: a product decision.

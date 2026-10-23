@@ -98,8 +98,8 @@ def extract_detail(name: str, data: bytes, mimetype: str = "") -> Extracted:
         return Extracted("", "", False)
     kind = kind_of(name, mimetype)
     if kind == "image":
-        from .ocr import extract_image_text, ocr_available
-        if not ocr_available():
+        from .ocr import extract_image_text, ocr_enabled
+        if not ocr_enabled():
             return Extracted("", "", False)   # OCR off or not installed: unread, not clean
         text = extract_image_text([bytes(data)], max_images=1)
         return Extracted(text, "ocr", False) if text.strip() else Extracted("", "", False)

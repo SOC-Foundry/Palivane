@@ -62,6 +62,8 @@ services:
       # Hook/proxy default for devices with no local flag; same monitor default as the
       # gateway. Set both to true together to enforce everywhere.
       CLIENT_ENFORCE: ${CLIENT_ENFORCE:-false}
+      # Image OCR (tesseract is in the image); off unless set.
+      PALIVANE_OCR: ${PALIVANE_OCR:-false}
       GATEWAY_BLOCK_SEVERITY: ${GATEWAY_BLOCK_SEVERITY:-high}
       GATEWAY_UPSTREAM_BASE: ${GATEWAY_UPSTREAM_BASE:-}
       GATEWAY_UPSTREAM_KEY: ${GATEWAY_UPSTREAM_KEY:-}

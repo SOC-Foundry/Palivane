@@ -281,6 +281,7 @@ def test_an_image_is_skipped_while_ocr_is_off(client, monkeypatch):
 def test_an_image_is_read_when_ocr_is_on(client, monkeypatch):
     import app.ocr as ocr
     monkeypatch.setattr(ocr, "ocr_available", lambda: True)
+    monkeypatch.setattr("app.config.settings.gateway_ocr", True)   # PALIVANE_OCR=true
     monkeypatch.setattr(ocr, "extract_image_text",
                         lambda imgs, max_images=4, **k: "aws key AKIAIOSFODNN7EXAMPLE")
     _fake_gdrive(monkeypatch, [

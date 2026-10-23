@@ -425,8 +425,8 @@ def _slack_readable_file(f: dict) -> bool:
     kind = kind_of(_slack_file_name(f), f.get("mimetype") or "")
     if kind != "image":
         return bool(kind)
-    from .ocr import ocr_available
-    return ocr_available()            # an image is only readable when OCR is available
+    from .ocr import ocr_enabled
+    return ocr_enabled()              # an image is only readable when OCR is on and installed
 
 
 def _slack_file_text(f: dict, hdrs: dict) -> tuple[str, str, bool]:
@@ -1208,8 +1208,8 @@ def _readable_doc(name: str, mime: str) -> bool:
     kind = kind_of(name, mime)
     if kind != "image":
         return bool(kind)
-    from .ocr import ocr_available
-    return ocr_available()
+    from .ocr import ocr_enabled
+    return ocr_enabled()
 
 
 def _fetch_doc_text(url: str, headers: dict, name: str, mime: str) -> tuple[str, bool]:
