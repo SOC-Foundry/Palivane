@@ -7,9 +7,11 @@
 // gates in backend app/plans.py — keep those in sync. What changed is the price model and
 // the entry offer: the first thing sold is an AI Exposure Assessment, not a subscription,
 // because a two-week scoped look is a decision a security owner can actually make.
+import { useEffect } from "react";
 import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
 import { signInUrl } from "../deployment.js";
 import { DuoUsers, DuoBadgeCheck, DuoBeaker } from "./duoicons.jsx";
+import { FAQ, Faq } from "./Faq.jsx";
 
 // Bands, by protected users. Published deliberately: the field routes every price to a
 // demo, and a number on the page is how a buyer decides whether to spend the meeting.
@@ -91,6 +93,12 @@ function Tier({ t }) {
 }
 
 export default function Pricing() {
+  // The landing links to /pricing#faq. The page is rendered by script after the browser has
+  // already tried (and failed) to find the fragment, so scroll to it once it exists.
+  useEffect(() => {
+    if (window.location.hash !== "#faq") return;
+    document.getElementById("faq")?.scrollIntoView();
+  }, []);
   return (
     <div className="landing">
       <SiteNav />
@@ -137,6 +145,15 @@ export default function Pricing() {
               <a href="mailto:sales@palivane.io">sales@palivane.io</a>.
             </p>
           </div>
+        </div>
+      </section>
+
+      {/* The full buyer FAQ. The landing page shows the first FAQ_FIRST and links here for
+          the rest; the list itself is shared (Faq.jsx) so the two cannot drift. */}
+      <section className="lp-section alt" id="faq" style={{ scrollMarginTop: 80 }}>
+        <div className="lp-wrap lp-faq-wrap">
+          <h2 className="lp-h2">Questions before you buy</h2>
+          <Faq items={FAQ} />
         </div>
       </section>
 

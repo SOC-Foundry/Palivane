@@ -19,6 +19,7 @@
 // these are the ways people use it, these are the reference docs" before anything is
 // clicked.
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { SIGN_IN_IS_CROSS_ORIGIN, demoUrl, signInUrl } from "../deployment.js";
 
 const MENU = [
@@ -45,6 +46,89 @@ const MENU = [
   ]},
 ];
 
+// A soft brand-green glow that trails the mouse on the public pages. SiteNav renders it,
+// so it exists exactly where the marketing chrome does and never in the console, which has
+// its own shell: signing in unmounts SiteNav and the cleanup below removes every listener.
+//
+// Guards, all checked before a listener is attached: a fine pointer that can hover (no
+// touch, no pen-only tablets), and no prefers-reduced-motion. Both are re-checked live, so
+// switching reduced motion on mid-visit turns it off. The native cursor is untouched.
+//
+// Cost: one fixed element portalled to <body>, moved with style.transform from a single
+// rAF loop that eases toward the pointer and STOPS once it has caught up. mousemove only
+// stores coordinates (passive listener, no React state, so no re-render per move).
+// Visibility is a class toggle and a CSS opacity transition: it fades in on movement and
+// out after IDLE_MS of stillness, on leaving the window, or on blur.
+const GLOW_IDLE_MS = 1600;
+const GLOW_EASE = 0.16;          // fraction of the remaining distance covered per frame
+
+export function PointerGlow() {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !window.matchMedia) return undefined;
+    const fine = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const calm = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let raf = 0, idle = 0, x = 0, y = 0, tx = 0, ty = 0, s = 1, ts = 1, placed = false, live = false;
+
+    const frame = () => {
+      x += (tx - x) * GLOW_EASE;
+      y += (ty - y) * GLOW_EASE;
+      s += (ts - s) * 0.2;
+      el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) scale(${s.toFixed(3)})`;
+      const done = Math.abs(tx - x) < 0.4 && Math.abs(ty - y) < 0.4 && Math.abs(ts - s) < 0.003;
+      raf = done ? 0 : requestAnimationFrame(frame);
+    };
+    const kick = () => { if (!raf) raf = requestAnimationFrame(frame); };
+    const hide = () => { el.classList.remove("is-on"); };
+    const move = (e) => {
+      if (e.pointerType && e.pointerType !== "mouse") return;
+      tx = e.clientX; ty = e.clientY;
+      if (!placed) { x = tx; y = ty; placed = true; }   // first sighting: appear in place
+      el.classList.add("is-on");
+      clearTimeout(idle);
+      idle = setTimeout(hide, GLOW_IDLE_MS);
+      kick();
+    };
+    const down = (e) => { if (e.pointerType === "mouse") { ts = 1.18; kick(); } };
+    const up = () => { ts = 1; kick(); };
+    const out = (e) => { if (!e.relatedTarget) { hide(); placed = false; } };   // left the window
+
+    const on = () => {
+      if (live) return;
+      live = true;
+      const opt = { passive: true };
+      window.addEventListener("pointermove", move, opt);
+      window.addEventListener("pointerdown", down, opt);
+      window.addEventListener("pointerup", up, opt);
+      window.addEventListener("blur", hide);
+      document.addEventListener("mouseout", out, opt);
+    };
+    const off = () => {
+      if (!live) return;
+      live = false;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("blur", hide);
+      document.removeEventListener("mouseout", out);
+      cancelAnimationFrame(raf); raf = 0;
+      clearTimeout(idle);
+      hide(); placed = false;
+    };
+    const sync = () => (fine.matches && !calm.matches ? on() : off());
+    sync();
+    fine.addEventListener?.("change", sync);
+    calm.addEventListener?.("change", sync);
+    return () => {
+      fine.removeEventListener?.("change", sync);
+      calm.removeEventListener?.("change", sync);
+      off();
+    };
+  }, []);
+  return createPortal(<div ref={ref} className="pv-glow" aria-hidden="true" />, document.body);
+}
+
 export function SiteNav({ onSignIn }) {
   const [open, setOpen] = useState(null);      // label of the open dropdown
   const [mobile, setMobile] = useState(false);
@@ -66,6 +150,7 @@ export function SiteNav({ onSignIn }) {
 
   return (
     <header className="lp-nav" ref={navRef}>
+      <PointerGlow />
       <a className="lp-brand" href="/">
         <img src="/palivane-emblem.svg" alt="" className="lp-brand-emblem" />
         <span>Palivane</span>
