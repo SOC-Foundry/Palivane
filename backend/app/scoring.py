@@ -14,6 +14,11 @@ from dataclasses import dataclass
 
 from .detectors.base import Category, Signal
 
+# The check of the marker engine.py leaves when a detector raises: the item was only partly
+# scanned. Weight 0, so it never changes the score; score() keeps it anyway (it would drop a
+# zero-contribution signal) so every re-score downstream still carries it.
+UNSCANNED_CHECK = "detector_error"
+
 
 @dataclass
 class Verdict:
@@ -24,8 +29,18 @@ class Verdict:
     attack_intent: bool
     signals: list[Signal]
 
+    @property
+    def unscanned(self) -> list[str]:
+        """The detectors that raised on this item, so did not run to completion. Empty is a
+        full scan. Derived from the markers, so it cannot disagree with the signal list."""
+        return [s.evidence.removeprefix("detector=") for s in self.signals
+                if s.effective_check == UNSCANNED_CHECK]
+
     def to_dict(self) -> dict:
+        unscanned = self.unscanned
         return {
+            # Present only on a partial scan, like a connector's `files_skipped`.
+            **({"unscanned": unscanned} if unscanned else {}),
             "risk_score": self.risk_score,
             "severity": self.severity,
             "recommended_action": self.recommended_action,
@@ -219,8 +234,9 @@ def score(signals: list[Signal]) -> Verdict:
 
     severity, action = severity_for(risk)
 
-    # Strongest evidence first.
+    # Strongest evidence first, then any partial-scan markers (zero weight, kept on purpose).
     ordered = sorted(real, key=lambda s: s.contribution, reverse=True)
+    ordered += [s for s in signals if s.effective_check == UNSCANNED_CHECK]
 
     return Verdict(
         risk_score=risk,

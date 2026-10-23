@@ -358,7 +358,7 @@ Backend reads these from the environment (see `backend/.env.example`):
 | `INGEST_RATE_LIMIT` | `0` (unlimited)            | Default **sensor/ingest** (`/api/ingest/*`, `/api/scan/*`) requests/min per tenant — counted separately from the gateway so agentic capture can't starve LLM traffic; a tenant's own `ingest_rate_limit` overrides. |
 | `PALIVANE_MCP_PERSIST_BENIGN` | `false`           | Store benign MCP tool-call findings (palivane-hook/palivane-mcp)? Default off — only warn+ verdicts persist (most tool calls are benign noise). |
 | `PALIVANE_USAGE_PERSIST_BENIGN` | `false`         | Store benign usage-capture findings (proxy/extension ai-usage ingest, OTLP prompts, gateway prompt capture + response DLP)? Default off — benign traffic still feeds discovery and usage metering, but only warn+ verdicts become findings. Turn on for a full per-event egress audit trail. |
-| `PALIVANE_METRICS_TOKEN` | *(empty = open)*         | If set, `/metrics` requires it (Bearer or `?token=`); scrape it privately otherwise. |
+| `PALIVANE_METRICS_TOKEN` | *(empty = `/metrics` off)* | Required to scrape `/metrics` (Bearer or `?token=`). Unset, `/metrics` answers 404 — it is never served unauthenticated. Also the fallback operator token for `/api/admin/*`. |
 | `PALIVANE_AWS_DELIVERY_PRINCIPAL` | *(empty)*      | This deployment's AWS identity ARN — what customer S3-delivery trust policies name. Embedded in the console's role-setup helper. |
 | `PALIVANE_AWS_WIF_ROLE_ARN` / `PALIVANE_AWS_WIF_AUDIENCE` | *(empty)* / `palivane-aws-delivery` | GCP→AWS web-identity federation: the AWS role this runtime assumes with its GCP identity token (no stored AWS secret), then chains into customer delivery roles. Empty = boto3 default chain (instance/task role, or static env keys). Audience must match the role's `accounts.google.com:oaud` trust condition. |
 | `PALIVANE_SLACK_CLIENT_ID` / `PALIVANE_SLACK_CLIENT_SECRET` | *(empty)* | The published Palivane Slack app, driving the per-tenant "Add to Slack" install for message scanning. Empty = the button is off; tenants can still register a hand-built app's bot token as a `slack_messages` connector. `PALIVANE_SLACK_REDIRECT_URL` overrides the derived OAuth callback when a proxy rewrites scheme/host. |
@@ -496,7 +496,7 @@ All paths except `/api/health` and `/api/auth/login` require `Authorization: Bea
 | ------ | ------------------------ | ---------------------------------------- |
 | GET    | `/api/health`            | Status + whether the LLM judge is on, and its provider/model (public). |
 | GET    | `/livez` · `/readyz`     | Liveness / readiness (DB check → 503 if down) probes (public). |
-| GET    | `/metrics`               | Prometheus HTTP metrics; optionally gated by `PALIVANE_METRICS_TOKEN`. |
+| GET    | `/metrics`               | Prometheus HTTP metrics; requires `PALIVANE_METRICS_TOKEN` (404 when unset). |
 | POST   | `/api/auth/signup`       | Self-serve onboarding: create an org + first admin, returns a token (public; `PALIVANE_ALLOW_SIGNUP`). |
 | POST   | `/api/auth/login`        | Email + password → access token (public). |
 | GET    | `/api/auth/me`           | Current user + tenant.                   |

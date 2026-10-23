@@ -307,8 +307,8 @@ class Settings:
     # discovery inventory and usage counters are fed independently of persistence. Turn on
     # for a full per-event egress audit trail.
     usage_persist_benign: bool = _env("PALIVANE_USAGE_PERSIST_BENIGN", "").lower() in ("1", "true", "yes")
-    # If set, /metrics requires this token (Bearer or ?token=); empty = open (bind it to
-    # an internal network / scrape it privately). Stripped: secret-manager values often
+    # /metrics requires this token (Bearer or ?token=); empty = /metrics answers 404 (it is
+    # never served unauthenticated). Stripped: secret-manager values often
     # carry a trailing newline (echo | secrets create), which no pasted token can match.
     # Do NOT strip PALIVANE_SECRET_KEY — its exact bytes are baked into every session
     # signature and the encryption-key derivation.

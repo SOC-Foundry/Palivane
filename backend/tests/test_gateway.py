@@ -486,6 +486,46 @@ def test_responses_user_text_latest_turn_only():
     assert gateway._responses_user_text(inp) == "latest turn only"
 
 
+def test_responses_user_text_instructions_and_roleless_items():
+    from app import gateway
+    # `instructions` is the Responses system prompt and is scanned with the turn.
+    assert gateway._responses_user_text("hi", "be terse") == "be terse\nhi"
+    # A role-less item is user input; a run of role-less parts is one turn.
+    inp = [
+        {"role": "user", "content": [{"type": "input_text", "text": "old turn"}]},
+        {"type": "function_call_output", "call_id": "c1", "output": "tool says hi"},
+        {"type": "input_text", "text": "bare text part"},
+        {"type": "input_image", "image_url": "data:image/png;base64,AAAA"},
+    ]
+    assert gateway._responses_user_text(inp) == "bare text part"
+    assert gateway._responses_user_text(
+        [{"type": "message", "content": "role-less message"}]) == "role-less message"
+    # System/developer items are read like chat's role:"system" messages.
+    assert gateway._responses_user_text([
+        {"role": "developer", "content": "dev prompt"},
+        {"role": "user", "content": "hello"}]) == "dev prompt\nhello"
+
+
+def test_responses_secret_in_instructions_blocks(client, monkeypatch):
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", True)
+    r = client.post("/v1/responses", json={
+        "model": "gpt-5-codex", "instructions": "Deploy with AWS_KEY=AKIAABCDEFGHIJKLMNOP",
+        "input": [{"role": "user", "content": [{"type": "input_text", "text": "hello"}]}]})
+    assert r.status_code == 403
+    assert r.json()["error"]["type"] == "palivane_blocked"
+    assert "secrets" in r.json()["error"]["message"]
+
+
+def test_responses_roleless_item_is_scanned(client, monkeypatch):
+    from app import gateway
+    monkeypatch.setattr(gateway.settings, "gateway_enforce", True)
+    r = client.post("/v1/responses", json={"model": "gpt-5-codex", "input": [
+        {"type": "input_text", "text": "AWS_KEY=AKIAABCDEFGHIJKLMNOP"}]})
+    assert r.status_code == 403
+    assert r.json()["error"]["type"] == "palivane_blocked"
+
+
 def test_responses_agentic_and_response_activity():
     from app import gateway
     a = gateway._responses_agentic({"input": [

@@ -23,6 +23,7 @@ from .crypto import seal
 from .ml import capture as ml_capture
 from . import excerpts, review
 from .redaction import redact_text
+from .scoring import UNSCANNED_CHECK
 from .session_correlation import correlate, is_chain_relevant
 
 _log = logging.getLogger(__name__)
@@ -425,8 +426,10 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         # Fingerprint on the REAL detection signals only — the synthetic content_origin
         # signal is excluded so the same leak folds whether or not a source was matched
         # (a source fingerprinted after the first occurrence must still fold + backfill).
+        # A partial-scan marker likewise: a detector failing once must not split the event.
         fp = _fingerprint(tenant_id, item,
-                          [s for s in result["signals"] if s.get("detector") != "content_origin"])
+                          [s for s in result["signals"] if s.get("detector") != "content_origin"
+                           and s.get("check") != UNSCANNED_CHECK])
         _lock_fingerprint(db, tenant, fp)
         prior = _fold_recurrence(db, tenant_id, fp)
         if prior is not None:
