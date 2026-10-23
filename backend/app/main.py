@@ -553,6 +553,10 @@ def siem_s3_role_setup(current: User = Depends(require_admin), db: Session = Dep
                             detail="Role-based S3 delivery is not available on this "
                                    "deployment. Use an access key pair instead.")
     t = db.get(Tenant, current.tenant_id)
+    # This GET commits. A demo session is refused on writes and on DEMO_BLOCKED_GET, and
+    # this path is on neither list, so a demo token mints siem_s3_external_id when role
+    # delivery is configured. The console does not call it. Mint the id on the settings
+    # write that turns role delivery on, and keep this route a read. #291
     if not (t.siem_s3_external_id or "").strip():
         t.siem_s3_external_id = "plv-" + _secrets.token_hex(16)
         db.commit()
@@ -1896,6 +1900,10 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
         # ASK: the warn band, put to the developer instead of running silently. Only for an
         # actor who is enforced (monitor never interrupts), only when the org opted in, and
         # never in place of a block — `action` is already "block" for those.
+        # A per-user enforce override sets this bit. The Claude and Cursor hooks only read
+        # the verdict when PALIVANE_ENFORCE is already on (otherwise they detach the
+        # report), so the override does not prompt. Codex, Gemini and Copilot have no ask
+        # path: a warn runs. The default is off. #278
         "ask": bool(enforce and action == "warn" and _tenant_ask_on_warn(tenant_id, db)),
     }
 
@@ -2879,7 +2887,16 @@ _MY_ACTIONS = {
 def _mine(q, db, current: User):
     """Restrict a Finding query to rows belonging to the caller: their capture attribution
     (`sender`, how at-rest scans record a Slack actor or a Salesforce OwnerId) or their
-    ownership of the source document (origin.owner, set by content_origin)."""
+    ownership of the source document (origin.owner, set by content_origin).
+
+    The demo seed attributes events to other people (alice, bob, dana, priya, sam), so
+    admin@demo.local and the public demo session (viewer@demo.local) both get an empty
+    Your findings page. Seed one event as the viewer, or say on the empty state that the
+    sample senders are other people. #287
+
+    The origin.owner half of the sentence above is not what this query does. It matches
+    sender and agent only, and `db` is unused. A document owner who is not the sender
+    never sees the row. Filter origin.owner, or delete that sentence."""
     email = (current.email or "").strip().lower()
     if not email:
         return q.filter(Finding.id == -1)          # no identity, no rows

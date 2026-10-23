@@ -1,6 +1,9 @@
 // Coverage, find unmanaged/shadow AI use by comparing an IdP/CASB "who used AI" list to
 // the actors Palivane actually captured. The gap = the shadow set. (Agentless: you can't
 // monitor a device you don't manage, so you find it by what's missing.)
+// The demo seed fills the data pages and leaves this one empty: it is a paste-and-
+// reconcile tool, and the textarea starts blank with sample placeholder text. A buyer
+// walking the seeded console sees no coverage result until they paste a list. #287
 import { useState } from "react";
 import { api } from "../api.js";
 

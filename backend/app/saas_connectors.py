@@ -52,6 +52,10 @@ def _http_json(url: str, *, headers: dict | None = None, data: bytes | None = No
     # Route through the SSRF-guarded, IP-pinned client (same guard the gateway uses): admin-
     # supplied bases (e.g. a Salesforce instance URL) can't reach internal/metadata hosts, and
     # redirects aren't followed — so a 3xx can't smuggle the bearer token to another host.
+    # The status code is kept and the response headers are thrown away. GitHub secret
+    # scanning stops on HTTP 429 and resumes next interval; it cannot read Retry-After
+    # from here. Raise a ConnectorError that carries the header so a scan can sleep until
+    # the reset instead of guessing. #298
     import httpx
 
     from . import netguard
@@ -2350,6 +2354,11 @@ def sync_connector(db, connector) -> dict:
     """Run one connector sync: grant-inventory pull (`fetch` platforms) or content scan
     (`scan` platforms, e.g. Slack message scanning). Updates the connector's
     last_sync_* fields (committed by the caller alongside the ingest)."""
+    # Stamped at entry and committed at the end, together with whatever state the scan
+    # mutated. connector_schedule claims the same column before calling this. A scan that
+    # runs up to SCAN_MAX_SECS (480s) overlaps the 5-minute interval floor, and the slower
+    # commit puts an older last_sync_at and an older sync_state back. Stamp this when the
+    # scan finishes, and do not let an in-memory row overwrite a newer claim. #298
     connector.last_sync_at = datetime.now(timezone.utc).replace(tzinfo=None)
     try:
         from . import crypto

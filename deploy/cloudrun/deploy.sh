@@ -180,6 +180,12 @@ AUTH_ARGS=(--allow-unauthenticated)
 # (once for migrations/env.py, once for uvicorn) on top of a 40-60s wait for Cloud SQL. On
 # a single CPU that came to 2-4 minutes and a rollout failed the probe by three seconds
 # with the container otherwise healthy. Halving the CPU-bound half buys the margin back.
+# The signing key is not compared with the public key the installer pins before this
+# creates a revision. A mismatch fails in release_signing.enforce_key_pair at startup:
+# the new revision fails its probe and the previous one keeps traffic. The deploy
+# workflow then verifies the live signature and fails the job. It does not roll traffic
+# back itself, because traffic never moved. Compare the pair here, before `gcloud run
+# deploy`, so a bad key never creates a revision. #264 #268
 echo "==> Deploying Cloud Run service '$SERVICE'"
 # --update-env-vars (merge), NOT --set-env-vars (replace): a deploy that omits a var must
 # not silently drop it. Out-of-band config (e.g. SMTP set via `services update`) persists.

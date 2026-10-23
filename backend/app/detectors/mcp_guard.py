@@ -543,9 +543,12 @@ class MCPGuardDetector:
                         f"{statement[:200]}"),
                 weight=0.95, confidence=0.9, detector=self.name,
                 evidence=f"tool={tool}",
-                # One finding per command, not per person: `evidence` is only the tool name, so
-                # without this every flagged Bash call by one person folded into one row whose
-                # detail showed the first command alone.
+                # One finding per command for this person. `evidence` is only the tool name,
+                # so without this every flagged Bash call by one person folded into one row
+                # whose detail showed the first command alone. The fingerprint in
+                # service._fingerprint still includes sender, so the same command run by
+                # two people stays two findings. Digits are folded out of the statement,
+                # so `build-1041` and `build-1042` share a row, which the tests lock in. #292
                 fold_key=_command_fold_key(statement),
             ))
 

@@ -96,10 +96,13 @@ def test_the_config_is_read_once_per_event(which, monkeypatch, capsys):
     assert len(reads) == 1
 
 
-# --- Copilot dispatches on the SHAPE of the event (it has no event-name field), so a prompt event
-# whose `prompt` field has gone missing is indistinguishable from any other event: its parse-miss
-# branch cannot be reached through main(). The function is still correct, and main() must not
-# crash on the events that do reach it.
+# --- Copilot dispatches on the shape of the event (it has no event-name field). main()
+# returns 0 before report_parse_miss whenever `prompt` is not a string, so the branch
+# inside main() cannot be reached (#281). A missing key really is indistinguishable from
+# some other event. A present key whose value is not a string is not, and that is the
+# case Cursor, Codex and Gemini report. These tests call report_parse_miss directly and
+# only check that main() survives an empty prompt and a normal one. Add a main() case
+# for a non-string `prompt` once the dispatch reports it, and drop the dead check.
 
 def test_copilots_report_carries_its_tool_and_the_host_build():
     posts = []

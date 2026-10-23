@@ -648,11 +648,20 @@ def _is_name_like(tok: str) -> bool:
     return words >= 2
 
 
-# A document id is 33-44 random-looking characters BY DESIGN (Drive, Docs, Sheets, Slides), and
-# nothing about its shape separates it from a key. What does is where it stands: in a /d/<id>/
-# path or an ?id= parameter, or directly after the word that names it (`folder`, `fileId:`,
-# `--drive-root-folder-id `). Context only, never shape: `api_key = <same token>`, `password
-# <same token>` and `file key <same token>` still flag, and so does the bare token.
+# A document id is 33-44 random-looking characters by design (Drive, Docs, Sheets, Slides),
+# and nothing about its shape separates it from a key. The reliable cue is a URL: a
+# /d/<id>/, /folders/<id>/ or /file/d/<id>/ path, or an ?id= / fileId= / folderId= parameter.
+# `api_key = <token>`, `password <token>` and `file key <token>` still flag, and a
+# known-format secret (ghp_…) still matches in any position, because it never reaches here.
+#
+# The third alternative is wider than a document id (#265). `id` and `[:=]` are both
+# optional, so a high-entropy token immediately after the prose words file, doc or folder
+# — and the same words with `=` — is dropped. On an unsanctioned chat destination that
+# takes the verdict from high to low. `the file <32-char mixed token>` produces no
+# high-entropy hit. The other false-positive classes from that change still hold, and the
+# bench stays 0/123. Require an id cue on this alternative (the word `id`, as in fileId /
+# `folder id`, or a real separator such as `file=` / `doc:`) so a bare file, doc or folder
+# in a sentence does not exempt the next token.
 _DOC_ID_CONTEXT_RE = re.compile(
     r"(?:/(?:d|folders|file/d)/"
     r"|[?&](?:id|file_?id|folder_?id)="

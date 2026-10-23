@@ -412,6 +412,9 @@ def main() -> int:
     # Prompts are always scanned inline (even in monitor mode): a confirmed secret/PII
     # leak (force_block) must be stopped before it leaves the device. Other events scan
     # inline only under enforce; afterFileEdit can't be enforced (no output channel).
+    # should_ask is inside the inline branch, so a per-user enforce override does not
+    # prompt unless PALIVANE_ENFORCE is already on. The server still sets verdict.ask
+    # for that override. Treat the server's enforce bit as a reason to scan inline. #278
     inline = name == "beforeSubmitPrompt" or (cfg["enforce"] and name != "afterFileEdit")
     if inline:
         verdict = _post(endpoint, payload, cfg)

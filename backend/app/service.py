@@ -218,7 +218,15 @@ def _fingerprint(tenant_id, item: AnalysisInput, signals: list[dict]) -> str:
     """Stable signature of an event class: same actor + tool + surface + signal set
     (category + evidence snippet). Repeats fold into the first finding instead of
     piling up new rows — the evidence snippet keeps *different* secrets/commands
-    from the same actor as distinct findings."""
+    from the same actor as distinct findings.
+
+    `sender` stays in the hash. Alice and Bob running the same command are two findings.
+    #292 fixed a different collapse: a dangerous-command signal used to carry only
+    `tool=Bash`, so one person's Bash calls shared a row. fold_key splits those by
+    statement. It does not collapse across people, and commands that differ only by
+    digits share a fold (the tests lock that in). Dropping `sender` would be the
+    org-wide collapse, which did not ship. `via` (the request host and path) is not
+    part of this hash either, so two requests fold and the first endpoint sticks."""
     import hashlib
     parts = [str(tenant_id or 0), item.sender, item.channel, item.surface.value, item.subject]
     # `fold` is only present on a signal whose evidence cannot tell events apart; leaving it out
@@ -431,6 +439,10 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         prior = _fold_recurrence(db, tenant_id, fp)
         if prior is not None:
             from datetime import datetime, timezone
+            # The first `via` sticks. _with_via runs only when the row is created, and a
+            # repeat does not backfill a later endpoint. The endpoint is host plus path,
+            # masked, and it is not part of the fingerprint, so the same actor and signal
+            # fold even when the two captures went to different hosts. #293
             prior.seen_count = (prior.seen_count or 1) + 1
             prior.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
             # A dismissal silences the BACKLOG, not the future. Folding used to carry the
