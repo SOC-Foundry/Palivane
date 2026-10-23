@@ -96,10 +96,33 @@ def test_the_config_is_read_once_per_event(which, monkeypatch, capsys):
     assert len(reads) == 1
 
 
-# --- Copilot dispatches on the SHAPE of the event (it has no event-name field), so a prompt event
-# whose `prompt` field has gone missing is indistinguishable from any other event: its parse-miss
-# branch cannot be reached through main(). The function is still correct, and main() must not
-# crash on the events that do reach it.
+# --- Copilot dispatches on the SHAPE of the event (it has no event-name field). A missing
+# `prompt` key is some other event and stays silent; a `prompt` key that is present but not a
+# string is a prompt event whose shape moved, and is reported. main() used to return before the
+# report for that case, so the counter could never move for Copilot (#281).
+
+@pytest.mark.parametrize("prompt", [None, 42, ["refactor this"], {"text": "refactor this"}])
+def test_copilot_reports_a_present_non_string_prompt_through_main(prompt, monkeypatch, capsys):
+    rc, out, calls, reads = _drive(copilot, monkeypatch, capsys,
+                                   {"prompt": prompt, "cwd": "/work", "version": "9.8.7"})
+    assert rc == 0 and out == "" and len(reads) == 1            # never a deny: exit 0, silent
+    assert len(calls) == 1
+    endpoint, payload, cfg, kw = calls[0]
+    assert endpoint == "/api/ingest/ai-usage" and payload["parse_miss"] is True
+    assert payload["tool"] == "copilot" and "(copilot/9.8.7)" in kw["ua"]
+    assert cfg["timeout"] <= 3.0
+
+
+def test_copilot_event_without_a_prompt_key_is_not_a_parse_miss(monkeypatch, capsys):
+    rc, out, calls, _ = _drive(copilot, monkeypatch, capsys, {"cwd": "/work", "sessionId": "s"})
+    assert rc == 0 and out == "" and calls == []
+
+
+def test_copilot_parse_miss_is_not_reported_when_not_connected(monkeypatch, capsys):
+    rc, out, calls, _ = _drive(copilot, monkeypatch, capsys, {"prompt": 7, "cwd": "/work"},
+                               connected=False)
+    assert rc == 0 and out == "" and calls == []
+
 
 def test_copilots_report_carries_its_tool_and_the_host_build():
     posts = []

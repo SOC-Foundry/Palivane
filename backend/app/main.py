@@ -1294,10 +1294,11 @@ def ingest_ai_usage(
         # without it a fail-open client keeps checking in and the heartbeat stays green
         # while coverage is gone. Answer with the allow shape a fail-open client expects.
         _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool, user_agent,
-                          parse_miss=True)
+                          parse_miss=True, scan_failed=body.scan_failed)
         return {"action": "allow", "risk_score": 0, "severity": "none", "signals": [],
                 "finding_id": None, "parse_miss": True}
-    _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool, user_agent)
+    _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool, user_agent,
+                      scan_failed=body.scan_failed)
     result, meta = _score_ai_usage(body.content, actor, body.tool, body.destination,
                                    tenant_id, agent, db, endpoint=body.endpoint)
     action = _action_for(result["severity"])
@@ -1765,10 +1766,50 @@ def _parse_agent_ua(ua: str) -> tuple[str, str]:
     return (m.group(1), m.group(2)) if m else ("", "")
 
 
+# The reasons a capture client may give for a scan that failed open (SEC-01). Mirrors
+# _FAILOPEN_REASONS in the hooks and the proxy; anything else is dropped.
+_SCAN_FAIL_REASONS = frozenset({"timeout", "network", "server-error", "auth-rejected",
+                                "rate-limited", "http-error", "bad-response", "breaker-open",
+                                "error"})
+_SCAN_FAIL_MAX = 1_000_000
+_SCAN_FAIL_HORIZON = timedelta(days=30)
+
+
+def _clean_scan_failed(raw, now: datetime) -> dict | None:
+    """A client's fail-open tally, reduced to what we store: per-reason counts from the
+    fixed vocabulary (the total is their sum, never the client's own `count`), and first/
+    last times clamped into [now - 30 days, now] so a skewed or forged clock cannot write
+    the future or the distant past. None when nothing usable is left. Never raises."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("reasons"), dict):
+        return None
+    reasons: dict[str, int] = {}
+    for k, v in list(raw["reasons"].items())[:32]:
+        if k in _SCAN_FAIL_REASONS and isinstance(v, int) and not isinstance(v, bool) and v > 0:
+            reasons[k] = min(v, _SCAN_FAIL_MAX)
+    if not reasons:
+        return None
+
+    def _when(v):
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            return None
+        try:
+            t = datetime.fromtimestamp(v, timezone.utc).replace(tzinfo=None)
+        except (OverflowError, OSError, ValueError):
+            return None
+        return min(max(t, now - _SCAN_FAIL_HORIZON), now)
+
+    first, last = _when(raw.get("first")), _when(raw.get("last"))
+    return {"count": min(sum(reasons.values()), _SCAN_FAIL_MAX), "reasons": reasons,
+            "first": first or last or now, "last": last or first or now}
+
+
 def _record_heartbeat(db: Session, tenant_id: int | None, actor: str,
                       plane: str, tool: str = "", client_ua: str = "",
-                      parse_miss: bool = False) -> None:
-    """Best-effort fleet-health upsert — never breaks the capture path it rides on."""
+                      parse_miss: bool = False, scan_failed=None) -> None:
+    """Best-effort fleet-health upsert — never breaks the capture path it rides on.
+
+    `scan_failed` is the client's tally of scans that failed open since it last reached
+    us (SEC-01); it is added to this sensor's running fail-open total."""
     try:
         from datetime import datetime, timezone
 
@@ -1796,6 +1837,17 @@ def _record_heartbeat(db: Session, tenant_id: int | None, actor: str,
         if parse_miss:
             row.parse_miss_count = (row.parse_miss_count or 0) + 1
             row.last_parse_miss = now
+        failed = _clean_scan_failed(scan_failed, now)
+        if failed:
+            row.scan_fail_count = min((row.scan_fail_count or 0) + failed["count"], 2**31 - 1)
+            if row.first_scan_fail is None or failed["first"] < row.first_scan_fail:
+                row.first_scan_fail = failed["first"]
+            if row.last_scan_fail is None or failed["last"] > row.last_scan_fail:
+                row.last_scan_fail = failed["last"]
+            merged = dict(row.scan_fail_reasons or {})
+            for k, v in failed["reasons"].items():
+                merged[k] = min(int(merged.get(k) or 0) + v, 2**31 - 1)
+            row.scan_fail_reasons = merged          # a new dict, so the JSON column saves
         db.commit()
     except Exception:
         db.rollback()
@@ -1950,11 +2002,11 @@ def ingest_mcp(
     if body.parse_miss:
         _record_heartbeat(db, tenant_id, _attributed_actor(body.user, default_actor),
                           "mcp", body.tool,
-                          user_agent, parse_miss=True)
+                          user_agent, parse_miss=True, scan_failed=body.scan_failed)
         return {"action": "allow", "risk_score": 0, "severity": "none", "signals": [],
                 "finding_id": None, "parse_miss": True}
     _record_heartbeat(db, tenant_id, _attributed_actor(body.user, default_actor),
-                      "mcp", body.tool, user_agent)
+                      "mcp", body.tool, user_agent, scan_failed=body.scan_failed)
     attested = _agent_attestation(x_palivane_token, x_palivane_agent, tenant_id, db)
     return _score_mcp(body, tenant_id, default_actor, _tenant_mcp_allow(tenant_id, db),
                       _tenant_mcp_block_severity(tenant_id, db), db, agent=agent,
@@ -3734,6 +3786,11 @@ def fleet_health(current: User = Depends(require_admin), db: Session = Depends(g
                "dark": sum(1 for s in sensors if s["health"] == "dark"),
                "dead_keys": len(dead),
                "stale_clients": sum(1 for s in sensors if not s["client_current"]),
+               # Sensors that let traffic through UNSCANNED in the last 7 days because a
+               # scan failed (SEC-01) — reported by the client on its next good contact.
+               # A client that never gets a good contact again shows up as stale/dark.
+               "failed_open": sum(1 for r in rows if r.last_scan_fail is not None
+                                  and r.last_scan_fail >= now - timedelta(days=7)),
                "retired_clients": sum(1 for s in sensors if s["client_retired"])}
     return {"summary": summary, "sensors": sensors,
             "server_version": settings.version, "latest_client_versions": latest,
