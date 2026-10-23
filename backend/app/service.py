@@ -305,6 +305,15 @@ def resolve_analyst_backends(tenant):
                          tenant.judge_byok_model or "")
 
 
+def _keep_unscanned(before: list, after: list) -> list:
+    """A filter's output with any partial-scan marker it dropped put back: suppressing
+    posture_gap (or a keep-list) must not make a partly scanned item read clean. Weight 0,
+    so this never adds a finding or alert; real posture_gap signals still drop."""
+    kept = {id(s) for s in after}
+    return list(after) + [s for s in before
+                          if s.effective_check == UNSCANNED_CHECK and id(s) not in kept]
+
+
 def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                  tenant_id: int | None = None, signal_filter=None,
                  persist_benign: bool = True, agent: str = "",
@@ -382,7 +391,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         # off should not have it come back just because the detection ran on the client.
         sigs = list(verdict.signals) + list(extra_signals or [])
         for f in filters:
-            sigs = f(sigs)
+            sigs = _keep_unscanned(sigs, f(sigs))
         verdict = score(sigs)
 
     # Origin-aware severity: a leak whose content matches a document we scanned at rest
