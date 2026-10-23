@@ -446,6 +446,20 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
         </div>
       )}
 
+      {finding.redacted_resend_at && (
+        <div className="detail-section">
+          <h4>Sent with the sensitive values removed</h4>
+          <p style={{ margin: "4px 0" }}>
+            After this block, the person chose "Send with these removed": the flagged values were
+            replaced by markers, the edited message was checked again and sent. The values themselves
+            did not leave.
+          </p>
+          <p className="muted" style={{ fontSize: 12 }}>
+            {new Date(finding.redacted_resend_at + "Z").toLocaleString()}
+          </p>
+        </div>
+      )}
+
       {steps.length > 0 && (
         <div className="detail-section remediation">
           <h4>How to fix</h4>

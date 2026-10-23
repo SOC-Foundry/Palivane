@@ -317,7 +317,7 @@ def _keep_unscanned(before: list, after: list) -> list:
 def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                  tenant_id: int | None = None, signal_filter=None,
                  persist_benign: bool = True, agent: str = "",
-                 use_judge: bool = True, extra_signals=None) -> dict:
+                 use_judge: bool = True, extra_signals=None, dry_run: bool = False) -> dict:
     """Analyze one item, optionally persist a Finding, return the API payload.
 
     `tenant_id` attributes the stored finding to an organization (data isolation).
@@ -331,7 +331,11 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     findings a client-side scanner made on data that never left its own machine. They join
     the detectors' own signals before scoring, so the verdict that is returned is the same
     one that gets stored, alerted on, and forwarded. The gateway passes its partial-scan
-    marker for unread images here too (weight 0: recorded, never scored)."""
+    marker for unread images here too (weight 0: recorded, never scored).
+    `dry_run=True` scores and nothing else: no finding, no archival, no corpus capture, no
+    sinks. For a hypothetical ("would this edited text still block?"), never for real traffic."""
+    if dry_run:
+        persist = False
     # A tenant can opt out of the LLM judge (it ships content to the judge provider).
     tenant = db.get(Tenant, tenant_id) if tenant_id is not None else None
     include_judge = use_judge and not (tenant is not None and tenant.judge_enabled is False)
@@ -412,14 +416,14 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     # Raw event archival: EVERY analyzed event (benign included, findings or not) streams
     # to the tenant's S3 lake when enabled — the complete capture record, independent of
     # the severity-gated findings sinks below. Buffered + fire-and-forget inside archive().
-    if tenant is not None and getattr(tenant, "archive_s3_enabled", False):
+    if not dry_run and tenant is not None and getattr(tenant, "archive_s3_enabled", False):
         from . import archive_s3
         archive_s3.archive(tenant, item, result, agent)
     # Consented ML-corpus capture: tenants that explicitly opted in (ml_capture, off by
     # default) stage a sample of scanned prompts for analyst labeling — the data path to
     # the classifier go/no-go gate (docs/ml-classifier-baseline.md). Additive and
     # best-effort like archival; nothing here scores traffic with the model.
-    if tenant is not None and getattr(tenant, "ml_capture", False):
+    if not dry_run and tenant is not None and getattr(tenant, "ml_capture", False):
         try:
             ml_capture.maybe_capture(db, tenant, item, result)
         except Exception:
