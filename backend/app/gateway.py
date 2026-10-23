@@ -382,7 +382,8 @@ def _scan_messages(messages: list, system=None) -> str:
 
 def _with_image_text(prompt: str, body: dict) -> str:
     """Opt-in image DLP (PALIVANE_OCR): OCR base64 images in the request body (Anthropic
-    `source.data`, OpenAI `image_url` data: URIs, Gemini `inline_data`) and append the
+    `source.data`, OpenAI `image_url` data: URIs — chat's object form and Responses'
+    `input_image` string form — Gemini `inline_data`) and append the
     recovered text to the scannable prompt so screenshots can't smuggle secrets/PII past
     the text-only scan. No-op unless enabled AND pytesseract/Pillow are installed; OCR is
     fail-open, so a bad image never breaks the request."""
@@ -1067,19 +1068,43 @@ def _responses_text(c) -> str:
     return ""
 
 
-def _responses_user_text(inp) -> str:
-    """The current outbound user turn — mirrors _scan_messages (only the latest user item,
-    so resent history doesn't cascade). `input` may be a bare string or an item list."""
+# Item types that, with no role, are the user's own input: a role-less message or a bare
+# content part placed straight in `input`. Other role-less items (function_call,
+# function_call_output, reasoning, ...) are not a user turn.
+_RESPONSES_USER_PARTS = {None, "message", "input_text", "input_image", "input_file"}
+
+
+def _responses_item_text(item: dict) -> str:
+    if isinstance(item.get("text"), str):                 # bare input_text part
+        return item["text"]
+    return _responses_text(item.get("content"))
+
+
+def _responses_user_text(inp, instructions=None) -> str:
+    """The current outbound turn — mirrors _scan_messages: the system prompt (`instructions`
+    plus any system/developer items) and only the latest user turn, so resent history
+    doesn't cascade. `input` may be a bare string or an item list. A role-less item is user
+    input, and a run of role-less parts (text, then an image) is one turn. Images are not
+    read here; the handler passes the body through _with_image_text."""
+    parts = [instructions.strip()] if isinstance(instructions, str) and instructions.strip() else []
     if isinstance(inp, str):
-        return inp.strip()
-    if isinstance(inp, list):
+        parts.append(inp.strip())
+    elif isinstance(inp, list):
+        turn, turn_open = [], True
         for item in reversed(inp):
             if not isinstance(item, dict):
                 continue
             role = (item.get("author") or {}).get("role") if isinstance(item.get("author"), dict) else item.get("role")
-            if role == "user":
-                return _responses_text(item.get("content")).strip()
-    return ""
+            bare = role is None and item.get("type") in _RESPONSES_USER_PARTS
+            if role in ("system", "developer"):
+                parts.append(_responses_item_text(item).strip())
+            elif turn_open and (bare or (role == "user" and not turn)):
+                turn.append(_responses_item_text(item).strip())
+                turn_open = bare                          # only role-less parts run backwards
+            elif turn:
+                turn_open = False                         # the latest turn has ended
+        parts.extend(reversed(turn))
+    return "\n".join(p for p in parts if p)
 
 
 def _responses_agentic(payload: dict) -> dict | None:
@@ -1170,7 +1195,9 @@ def responses(request: Request, principal: Principal = Depends(get_gateway_princ
     payload = _clamp_output_tokens(body)
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
-    verdict = _capture(_responses_user_text(payload.get("input")), model, tool, principal, db)
+    prompt = _with_image_text(
+        _responses_user_text(payload.get("input"), payload.get("instructions")), payload)
+    verdict = _capture(prompt, model, tool, principal, db)
     pol = _effective_policy(principal, db)
 
     if _should_block(verdict, pol):
