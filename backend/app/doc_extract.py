@@ -18,15 +18,17 @@ Three tiers, in order of how much they need:
             screenshot to a third party to find out whether it holds their secrets is the
             exfil path this product exists to remove.
 
-Anything else returns ("", "") and the caller reports it as unread. A scanner that
-silently skipped a file is indistinguishable from one that found nothing in it, and only
-one of those is safe to act on.
+Anything else returns ("", "") and the caller reports it as unread. A read that recovered
+some text but skipped part of the file comes back from extract_detail as partial, and the
+caller reports that too. A scanner that silently skipped a file (or half of one) is
+indistinguishable from one that found nothing in it, and only one of those is safe to act on.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import os
+from typing import NamedTuple
 
 _IMAGE_EXTS = ("png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "tif")
 _DOC_EXTS = ("pdf", "docx", "docm", "xlsx", "xlsm", "pptx", "pptm",
@@ -77,22 +79,42 @@ def kind_of(name: str, mimetype: str = "") -> str:
     return "text" if not mime and not ext else ("text" if ext else "")
 
 
-def extract(name: str, data: bytes, mimetype: str = "") -> tuple[str, str]:
-    """(text, how) for a file's bytes. `how` is the tier that produced it, or "" when
-    nothing could read it — which the caller must surface rather than treat as clean."""
+class Extracted(NamedTuple):
+    text: str
+    how: str          # the tier that produced the text, or "" when nothing could read it
+    partial: bool     # text came back, but part of the file was not read
+
+
+def extract_detail(name: str, data: bytes, mimetype: str = "") -> Extracted:
+    """extract(), plus whether the read was whole.
+
+    A non-empty string is not proof the file was read: one PDF stream that inflated, beside
+    one that did not, still yields text. `partial` is set when the document tier skipped
+    something it could not decode (a corrupt or unimplemented stream filter, a string
+    encoding it cannot map, a ZIP member past its cap, the overall character cap). The
+    caller scans the text it got and reports the file as partly read, beside the files it
+    could not read at all, never as clean."""
     if not data:
-        return "", ""
+        return Extracted("", "", False)
     kind = kind_of(name, mimetype)
     if kind == "image":
         from .ocr import extract_image_text, ocr_available
         if not ocr_available():
-            return "", ""             # OCR off or not installed: unread, not clean
+            return Extracted("", "", False)   # OCR off or not installed: unread, not clean
         text = extract_image_text([bytes(data)], max_images=1)
-        return (text, "ocr") if text.strip() else ("", "")
+        return Extracted(text, "ocr", False) if text.strip() else Extracted("", "", False)
     if kind in ("document", "text"):
         det = _detector()
         if det is None:
-            return "", ""
-        text = det.extract_text(name, bytes(data))
-        return (text, kind) if text.strip() else ("", "")
-    return "", ""
+            return Extracted("", "", False)
+        text, partial = det.extract_text_detail(name, bytes(data))
+        return Extracted(text, kind, partial) if text.strip() else Extracted("", "", False)
+    return Extracted("", "", False)
+
+
+def extract(name: str, data: bytes, mimetype: str = "") -> tuple[str, str]:
+    """(text, how) for a file's bytes. `how` is the tier that produced it, or "" when
+    nothing could read it — which the caller must surface rather than treat as clean.
+    extract_detail also says whether the read was partial."""
+    text, how, _partial = extract_detail(name, data, mimetype)
+    return text, how
