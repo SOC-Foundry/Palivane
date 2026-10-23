@@ -401,7 +401,7 @@ export default function Landing({ onSignIn }) {
         </div>
       </section>
 
-      <section className="lp-section alt">
+      <section className="lp-section alt lp-surfaces">
         <div className="lp-wrap">
           <div className="lp-band-head rv">
             <h2 className="lp-h2">It works wherever your team <span className="lp-hl">uses AI</span></h2>
