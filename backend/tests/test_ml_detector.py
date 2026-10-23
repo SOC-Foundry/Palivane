@@ -96,12 +96,12 @@ def test_lone_generic_code_stays_benign(client):
 
 
 def test_inference_latency_budget():
-    body = _code() * 4                           # ~5KB — worst case hits the scan cap
+    body = _code() * 4                           # ~5KB, every window scored
     t0 = time.perf_counter()
     for _ in range(30):
         det.p_code(body)
     per_call_ms = (time.perf_counter() - t0) * 1000 / 30
-    assert per_call_ms < 10, f"{per_call_ms:.2f}ms per call — budget is single-digit ms"
+    assert per_call_ms < 25, f"{per_call_ms:.2f}ms per call — budget is ~5ms per 1k chars"
 
 
 # --- the injection task ------------------------------------------------------------------
@@ -135,3 +135,81 @@ def test_injection_probabilities_and_signal():
 def test_injection_appended_to_long_paste_found():
     smuggle = PROSE[:600] + "\n" + INJECTION
     assert det.p_injection(smuggle) > 0.7            # window max finds the tail
+
+
+# --- coverage: every character up to the scan cap is scored (security review SEC-02) -----
+# The old windows were sampled: code was scored in 240-char windows stepped by 400 (160
+# characters between each pair, nothing past 2640) and injection over the first 1200 and
+# last 240 characters only. A payload in a gap did not move the probability.
+
+FILLER = PROSE * 30                                  # ~35k of benign prose
+SNIPPET = CONFIG.strip()[:150]                       # a short config block
+
+
+def test_filler_alone_reads_as_neither():
+    assert det.p_code(FILLER) < 0.5 and det.p_injection(FILLER) < 0.5
+
+
+def test_code_in_the_old_gap_between_windows_is_found():
+    text = FILLER[:244] + "\n" + SNIPPET + "\n" + FILLER[:600]
+    start = text.index(SNIPPET)
+    assert 240 <= start and start + len(SNIPPET) <= 400    # wholly inside the old gap
+    assert det.p_code(text) > 0.85
+
+
+def test_code_past_the_old_scan_cap_is_found():
+    text = FILLER[:5000] + "\n" + SNIPPET + "\n" + FILLER[:600]
+    assert text.index(SNIPPET) > 2640
+    assert det.p_code(text) > 0.85
+
+
+def test_injection_in_the_middle_of_a_long_prompt_is_found():
+    text = FILLER[:3000] + " " + INJECTION + " " + FILLER[:3000]
+    start = text.index(INJECTION)
+    assert start > 1200 and start + len(INJECTION) < len(text) - 240   # the old blind span
+    assert det.p_injection(text) > 0.7
+    sigs = det.analyze(AnalysisInput(content=text, surface=Surface.LLM_IO))
+    assert any(s.effective_check == "prompt_injection_ml" for s in sigs)
+
+
+def test_windows_cover_every_character_with_overlap():
+    from app.detectors import ml_classifier as m
+    for n in (121, 240, 241, 400, 401, 5_017):
+        text = "".join(chr(0x4e00 + i) for i in range(n))      # every character distinct
+        starts = [text.index(w) for w in m._windows(text)]
+        assert starts[0] == 0 and starts[-1] + len(m._windows(text)[-1]) == n
+        assert all(b - a <= m._STEP for a, b in zip(starts, starts[1:]))   # overlap by half
+
+
+def test_past_the_scan_cap_the_verdict_says_partly_scanned():
+    from app.detectors.ml_classifier import _SCAN_CAP
+    from app.engine import Engine
+    long_text = (FILLER * 4)[:_SCAN_CAP + 5_000] + "\n" + INJECTION   # the tail is still read
+    sigs = det.analyze(AnalysisInput(content=long_text, surface=Surface.LLM_IO))
+    assert any(s.effective_check == "prompt_injection_ml" for s in sigs)
+    v = Engine().analyze(AnalysisInput(content=long_text, surface=Surface.LLM_IO),
+                         include_judge=False)
+    assert "ml_classifier" in v.unscanned
+    assert v.to_dict()["unscanned"] == v.unscanned
+    marker = next(s for s in v.signals if s.effective_check == "detector_error")
+    assert marker.weight == 0 and INJECTION not in marker.detail
+    # Up to the cap the classifier read everything: no marker.
+    v = Engine().analyze(AnalysisInput(content=long_text[:_SCAN_CAP], surface=Surface.LLM_IO),
+                         include_judge=False)
+    assert "ml_classifier" not in v.unscanned
+
+
+def test_full_coverage_cost_is_bounded():
+    # Linear in the text up to the cap, flat past it. Measured on a dev box: ~2 ms per 1k
+    # characters, ~150 ms at the 100k cap and beyond. The bounds leave CI headroom.
+    from app.detectors.ml_classifier import _SCAN_CAP, _STEP, _windows
+    huge = (FILLER * 30)[:1_000_000]
+    assert len(_windows(huge)) <= _SCAN_CAP // _STEP + 2
+    item = AnalysisInput(content=huge[:10_000], surface=Surface.LLM_IO)
+    t0 = time.perf_counter()
+    for _ in range(5):
+        det.analyze(item)
+    assert (time.perf_counter() - t0) * 1000 / 5 < 100, "10k chars: budget 100ms"
+    t0 = time.perf_counter()
+    det.analyze(AnalysisInput(content=huge, surface=Surface.LLM_IO))
+    assert time.perf_counter() - t0 < 2.0, "1M chars: budget 2s, bounded by the scan cap"
