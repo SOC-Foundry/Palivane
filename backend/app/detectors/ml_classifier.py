@@ -27,6 +27,8 @@ import logging
 from pathlib import Path
 
 from ..ml.classifier import LogisticClassifier
+from ..ml.features import vectorize
+from ..scoring import unscanned_marker
 from .base import AnalysisInput, Category, Signal, Surface
 
 _log = logging.getLogger("palivane.ml")
@@ -34,8 +36,9 @@ _log = logging.getLogger("palivane.ml")
 _MIN_LEN = 120          # under this, n-gram statistics are noise
 _THRESHOLD = 0.85       # p(code) to speak at all; confidence tracks p above it
 _WINDOW = 240           # must match the training chunk size (scripts/train_code_classifier)
-_STRIDE = 400           # sparse stride: enough windows to find an embedded block, bounded
-_SCAN_CAP = 2800        # score at most ~7 windows — keeps worst-case inference ~2ms
+_STEP = 120             # half a window: any span of up to 120 characters lies whole in one
+_SCAN_CAP = 100_000     # every character up to here is scored (excerpts.MAX_SCAN); past
+                        # it only the tail is, and the verdict says so (_truncated)
 
 _DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 _INJ_THRESHOLD = 0.70   # held-out precision is 1.0 at 0.5; this adds margin, recall is
@@ -65,47 +68,71 @@ class MLClassifierDetector:
         toward indifference) and aggregated by max — a code block pasted INSIDE prose is
         exactly the leak this tier exists to catch. 0.0 when the model is unavailable or
         the input is too short to carry n-gram signal."""
-        if self._model is None or len(text) < _MIN_LEN:
-            return 0.0
-        windows = [text[i:i + _WINDOW] for i in range(0, min(len(text), _SCAN_CAP), _STRIDE)]
-        return max((self._model.proba(w) for w in windows if len(w) >= _MIN_LEN),
-                   default=0.0)
+        return self._scores(text, injection=False)[1]
 
     def p_injection(self, text: str) -> float:
         """P(the text carries a prompt injection). Same window-max treatment — an
         injection appended to a long benign paste is the classic smuggle."""
-        if self._inj is None or len(text) < 25:
-            return 0.0
-        if len(text) <= 400:
-            return self._inj.proba(text)
-        # Dense, overlapping windows (unlike the code task's sparse sampling): an
-        # injection is a SHORT payload that must not fall between windows — and the tail
-        # is always scanned, because appended-after-a-long-paste is the classic smuggle.
-        head = text[:1200]
-        windows = [head[i:i + _WINDOW] for i in range(0, len(head), 120)]
-        windows.append(text[-_WINDOW:])
-        return max((self._inj.proba(w) for w in windows if len(w) >= 25), default=0.0)
+        return self._scores(text, code=False)[0]
+
+    def _scores(self, text: str, *, injection: bool = True,
+                code: bool = True) -> tuple[float, float]:
+        """(p_injection, p_code) over the same windows, each window vectorized once.
+
+        The windows overlap by half (_windows): nothing up to _SCAN_CAP falls between them,
+        and any span of up to _STEP characters lies whole inside at least one, so a short
+        payload is not lost by being cut in two. Max-aggregated: one window that reads as
+        code or injection is the finding."""
+        inj = self._inj if injection and len(text) >= 25 else None
+        model = self._model if code and len(text) >= _MIN_LEN else None
+        if inj is None and model is None:
+            return 0.0, 0.0
+        pi = pc = 0.0
+        if inj is not None and len(text) <= 400:
+            pi, inj = inj.proba(text), None      # short: scored whole, as trained
+        if inj is None and model is None:
+            return pi, pc
+        for w in _windows(text):
+            vec = vectorize(w)
+            if inj is not None:
+                pi = max(pi, inj.proba_vec(vec))
+            if model is not None and len(w) >= _MIN_LEN:
+                pc = max(pc, model.proba_vec(vec))
+        return pi, pc
+
+    def _truncated(self, text: str) -> Signal:
+        """The partial-scan marker (scoring.unscanned_marker, the same one engine.py leaves
+        for a detector that raised): weight 0, so it never moves the score, but the verdict
+        carries `unscanned: ["ml_classifier"]` so "the classifier read part of this" cannot
+        read as "the classifier read all of it and found nothing"."""
+        return unscanned_marker(
+            f"detector={self.name}", "Classifier read only part of the text",
+            f"The on-box classifiers scored the first {_SCAN_CAP:,} and the last {_WINDOW} "
+            f"characters of {len(text):,}; the rest was not scored. The verdict reflects "
+            "the part that was read.", detector=self.name)
 
     def analyze(self, item: AnalysisInput) -> list[Signal]:
         out: list[Signal] = []
-        if item.surface in (Surface.LLM_IO, Surface.AI_USAGE):
-            pi = self.p_injection(item.content)
-            if pi >= _INJ_THRESHOLD:
-                iev = (self._inj.meta.get("eval") or {}) if self._inj else {}
-                out.append(Signal(
-                    category=Category.PROMPT_INJECTION,
-                    title="Prompt injection (ML classifier)",
-                    detail=f"The on-box classifier reads this as injection phrasing "
-                           f"(p={pi:.2f}; held-out precision "
-                           f"{iev.get('precision', '?')}, zero false positives on a "
-                           "benign-prose check). Catches the paraphrases the pattern "
-                           "rules miss. A hint: on its own it is recorded as low "
-                           "severity, and it escalates only when a rule-based check "
-                           "also flags the text.",
-                    weight=0.4, confidence=round(min(pi, 0.95), 2),
-                    detector=self.name, evidence=f"p(injection)={pi:.2f}",
-                    check="prompt_injection_ml"))
-        p = self.p_code(item.content)
+        text = item.content
+        # Injection is read on the AI surfaces only; collab gets the code task alone.
+        pi, p = self._scores(text, injection=item.surface in (Surface.LLM_IO, Surface.AI_USAGE))
+        if len(text) > _SCAN_CAP and (self._model is not None or self._inj is not None):
+            out.append(self._truncated(text))
+        if pi >= _INJ_THRESHOLD:
+            iev = (self._inj.meta.get("eval") or {}) if self._inj else {}
+            out.append(Signal(
+                category=Category.PROMPT_INJECTION,
+                title="Prompt injection (ML classifier)",
+                detail=f"The on-box classifier reads this as injection phrasing "
+                       f"(p={pi:.2f}; held-out precision "
+                       f"{iev.get('precision', '?')}, zero false positives on a "
+                       "benign-prose check). Catches the paraphrases the pattern "
+                       "rules miss. A hint: on its own it is recorded as low "
+                       "severity, and it escalates only when a rule-based check "
+                       "also flags the text.",
+                weight=0.4, confidence=round(min(pi, 0.95), 2),
+                detector=self.name, evidence=f"p(injection)={pi:.2f}",
+                check="prompt_injection_ml"))
         if p < _THRESHOLD:
             return out
         ev = (self._model.meta.get("eval") or {}) if self._model else {}
@@ -121,3 +148,18 @@ class MLClassifierDetector:
             weight=0.35, confidence=round(min(p, 0.97), 2),
             detector=self.name, evidence=f"p(code)={p:.2f}",
             check="source_code_ml")]
+
+
+def _windows(text: str) -> list[str]:
+    """_WINDOW-character windows stepped by _STEP over text[:_SCAN_CAP], the last one flush
+    with that span's end, so every character up to the cap is scored. Past the cap the tail
+    window is added: appended-after-a-long-paste is the classic smuggle. Cost is linear in
+    the text, bounded by the cap: ~830 windows at most."""
+    end = min(len(text), _SCAN_CAP)
+    if end <= _WINDOW:
+        return [text[:end]]
+    starts = [*range(0, end - _WINDOW, _STEP), end - _WINDOW]
+    windows = [text[i:i + _WINDOW] for i in starts]
+    if len(text) > _SCAN_CAP:
+        windows.append(text[-_WINDOW:])
+    return windows
