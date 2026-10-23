@@ -181,6 +181,7 @@ class Settings:
     ml_capture_max_per_day: int = int(_env("PALIVANE_ML_CAPTURE_MAX_PER_DAY", "200"))
     # Self-serve signup: anyone can create a new org (tenant). Set false on a
     # single-org self-hosted deployment to lock it down after bootstrapping.
+    # Security review SEC-07: docs/palivane-security-review.md#sec-07
     allow_signup: bool = _env("PALIVANE_ALLOW_SIGNUP", "true").lower() in ("1", "true", "yes")
     # Current data-processing-agreement version an org accepts (compliance record). Bump
     # when the DPA text changes to prompt re-acceptance.
@@ -322,7 +323,9 @@ class Settings:
 
     # --- LLM gateway (protect our AI) ---
     # enforce=block risky prompts; otherwise monitor (observe + record only). Block when
-    # verdict severity >= block_severity.
+    # verdict severity >= block_severity. The code default is off. The Cloud Run
+    # deploy script sets GATEWAY_ENFORCE=true. Security review SEC-07:
+    # docs/palivane-security-review.md#sec-07
     gateway_enforce: bool = os.getenv("GATEWAY_ENFORCE", "").lower() in ("1", "true", "yes")
     # Even in monitor mode, hard-block a CONFIRMED secret/PII leak (known-format credential
     # or PII) heading to an AI tool — near-zero false positives, high cost of a miss. This is

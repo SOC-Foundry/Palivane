@@ -180,6 +180,7 @@ AUTH_ARGS=(--allow-unauthenticated)
 # (once for migrations/env.py, once for uvicorn) on top of a 40-60s wait for Cloud SQL. On
 # a single CPU that came to 2-4 minutes and a rollout failed the probe by three seconds
 # with the container otherwise healthy. Halving the CPU-bound half buys the margin back.
+# Security review SEC-06: docs/palivane-security-review.md#sec-06
 # The signing key is not compared with the public key the installer pins before this
 # creates a revision. A mismatch fails in release_signing.enforce_key_pair at startup:
 # the new revision fails its probe and the previous one keeps traffic. The deploy

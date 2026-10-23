@@ -105,6 +105,7 @@ def tokenize(text: str, extra_patterns: str = "",
     fragment of the longer one behind.
     """
     mapping = mapping if mapping is not None else {}
+    # Security review SEC-02: docs/palivane-security-review.md#sec-02
     # Over the cap the original string is what the provider receives. The scan
     # has already run; this step is the one that keeps the values out of the
     # upstream body. Returning them untouched leaves nothing to reverse, and it

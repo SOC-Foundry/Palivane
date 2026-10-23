@@ -660,8 +660,9 @@ def _breaker_record_locked(token: str, status) -> None:
 
 def scan(content: str, destination: str, tool: str = "",
          url: str | None = None, token: str | None = None, timeout: float = 8.0) -> dict:
-    """Call the Palivane ai-usage endpoint; fail open (action=allow) on any error. A revoked
-    key trips the circuit breaker so we stop hammering the backend on every request."""
+    """Call the Palivane ai-usage endpoint; fail open (action=allow) on any error.
+    Security review SEC-01: docs/palivane-security-review.md#sec-01
+    A revoked key trips the circuit breaker so we stop hammering the backend on every request."""
     base = (url or os.getenv("PALIVANE_URL", "http://localhost:8090")).rstrip("/")
     tok = token if token is not None else os.getenv("PALIVANE_TOKEN", "")
     skip = _breaker_skip(tok)

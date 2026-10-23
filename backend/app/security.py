@@ -1,5 +1,7 @@
 """Auth crypto primitives — password hashing and signed tokens.
 
+Security review, controls that hold: docs/palivane-security-review.md#controls-that-hold
+
 Passwords use **argon2id** (argon2-cffi); legacy PBKDF2-HMAC-SHA256 hashes are still
 verified and transparently upgraded on next login. Session tokens are a minimal, hardened
 HS256 JWT (a vetted lib like PyJWT is a drop-in if preferred — the call sites are isolated).

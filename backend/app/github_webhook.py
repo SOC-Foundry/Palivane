@@ -52,6 +52,7 @@ def sign(secret: str, body: bytes) -> str:
 
 
 def _already_seen(delivery: str) -> bool:
+    # Security review SEC-05: docs/palivane-security-review.md#sec-05
     # The caller records the delivery and then submits the scan. A scan that fails is
     # therefore seen, and GitHub's retry inside the hour does not redo it. The schedule
     # is the backstop, as far out as the connector's interval. Mark the delivery after a

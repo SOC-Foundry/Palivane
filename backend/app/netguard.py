@@ -1,5 +1,7 @@
 """SSRF guard for user-supplied URLs (alert webhooks, per-tenant gateway upstreams).
 
+Security review, controls that hold: docs/palivane-security-review.md#controls-that-hold
+
 In a shared/multi-tenant deployment a tenant admin can set URLs the *server* then fetches.
 `is_safe_url` rejects non-http(s) schemes and any host that resolves to a private,
 loopback, link-local, reserved, shared (CGNAT), or metadata address — anything not

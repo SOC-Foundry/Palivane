@@ -680,4 +680,4 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception:
-        sys.exit(0)  # fail open — never break the developer's session
+        sys.exit(0)  # fail open — never break the developer's session. SEC-01: docs/palivane-security-review.md#sec-01

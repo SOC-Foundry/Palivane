@@ -226,6 +226,7 @@ def _xml_text(blob: bytes) -> str:
     """Strip XML tags to their text. Paragraph and row ends become newlines first, so a
     spreadsheet column does not run into the next one and defeat the line-based scanners.
 
+    Security review SEC-03: docs/palivane-security-review.md#sec-03
     Six entities are decoded, and the hex newline is matched in lowercase only
     (`&#xa;`). `&#65;`, `&#x41;` and `&#xA;` stay in the string as the characters
     of the reference. OOXML writes values that way. The detectors then run on the
@@ -365,6 +366,7 @@ def _extract_pdf(data: bytes) -> str:
     Encrypted PDFs and ones whose text is CID/Type0-encoded come back empty rather than as
     mojibake — garbage here would mean garbage findings.
 
+    Security review SEC-03: docs/palivane-security-review.md#sec-03
     Only parenthesized literals are taken (`(text)` next to Tj / TJ). A hex
     literal (`<48656C6C6F> Tj`) and the `'` / `"` show operators are skipped. A
     stream that fails to inflate is left as the compressed bytes and then dropped
