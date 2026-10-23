@@ -130,6 +130,7 @@ def test_image_without_ocr_is_unreadable_not_clean(monkeypatch):
 def test_image_goes_through_ocr_when_available(monkeypatch):
     import app.ocr as ocr
     monkeypatch.setattr(ocr, "ocr_available", lambda: True)
+    monkeypatch.setattr("app.config.settings.gateway_ocr", True)   # PALIVANE_OCR=true
     monkeypatch.setattr(ocr, "extract_image_text", lambda imgs, max_images=4, **k: f"key {AWS}")
     text, how = extract("shot.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)
     assert how == "ocr" and AWS in text
