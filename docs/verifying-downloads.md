@@ -173,6 +173,17 @@ On Cloud Run that fails the deploy and leaves the previous revision serving, ins
 shipping an installer that rejects every release (SQLite dev only warns). The deploy
 workflow then verifies the live signature against the key the live installer pins.
 
+`deploy.sh` checks the same pairing **before** it builds or deploys anything: it reads the
+secret version it is about to bind (piped straight into `openssl pkey`, never written to
+disk or printed), derives the public half and compares it with `VENDOR_RELEASE_PUBKEY_PEM`
+in the code being deployed (or `PALIVANE_RELEASE_PUBKEY` when that is set in the deploy's
+environment; a fork that sets it on the service must set it there too). A mismatch, or a
+secret that is not a P-256 private key, stops the deploy with both fingerprints and nothing
+built. If the deployer cannot read the secret, the deploy also stops; set
+`PALIVANE_SKIP_RELEASE_KEY_CHECK=1` to deploy unchecked in that one case (the service's
+startup check above still applies). The override never lets a readable, mismatched key
+through.
+
 Rotating the key = new secret version + `VENDOR_RELEASE_PUBKEY_PEM` set to the new public
 half in the same release (installers already in the wild pin the old key, so announce
 rotations).
