@@ -81,7 +81,9 @@ def extract(name: str, data: bytes, mimetype: str = "") -> tuple[str, str]:
     """(text, how) for a file's bytes. `how` is the tier that produced it, or "" when
     nothing could read it — which the caller must surface rather than treat as clean.
 
-    Any non-empty string is a successful read of that tier. The parser can return
+    Any non-empty string is a successful read of that tier. Security review
+    SEC-03: docs/palivane-security-review.md#sec-03
+    The parser can return
     a fragment — parenthesized PDF literals only, XML with most character
     references still encoded — and that fragment is enough for the caller to treat
     the file as scanned. Empty stays unread. Partial does not."""

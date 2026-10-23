@@ -123,6 +123,7 @@ async def lifespan(_app: FastAPI):
     from . import release_signing
     release_signing.enforce_key_pair(prod, log)
 
+    # Security review SEC-07: docs/palivane-security-review.md#sec-07
     # SQLite is the first-boot default for a native install (install.sh writes it, then tells
     # the operator to point at Postgres). Plenty of them will not, so say what that costs
     # rather than letting /trust's "RLS on every tenant-scoped table" quietly become untrue:
@@ -736,7 +737,11 @@ def readyz(db: Session = Depends(get_db)):
 
 @app.get("/metrics")
 def metrics_endpoint(request: Request):
-    """Prometheus exposition. If PALIVANE_METRICS_TOKEN is set, require it (Bearer or ?token=)."""
+    """Prometheus exposition. If PALIVANE_METRICS_TOKEN is set, require it (Bearer or ?token=).
+
+    Security review SEC-04: docs/palivane-security-review.md#sec-04
+    With the token unset this route is open. The operator routes beside it answer 404
+    in that same case."""
     from fastapi.responses import Response as _Resp
     from . import metrics
     tok = settings.metrics_token

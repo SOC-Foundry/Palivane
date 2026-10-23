@@ -36,6 +36,7 @@ DEMO_VIEWER = "viewer@demo.local"
 #  - the bulk exports hand a visitor the whole org as files, which is not what a tour needs.
 # Prefixes, matched on the request path. Anything new that mints a token or a link bound to the
 # tenant belongs here (tests/test_demo.py walks every route to keep the write side honest).
+# Security review SEC-04: docs/palivane-security-review.md#sec-04
 # GET /api/siem/s3/role-setup also writes: it mints siem_s3_external_id on first call when
 # role delivery is configured. It predates the demo session and the console does not call
 # it. Until that route stops committing, it belongs in this tuple, and the route walk

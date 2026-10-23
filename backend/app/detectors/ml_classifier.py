@@ -65,6 +65,7 @@ class MLClassifierDetector:
         toward indifference) and aggregated by max. 0.0 when the model is unavailable or
         the input is too short to carry n-gram signal.
 
+        Security review SEC-02: docs/palivane-security-review.md#sec-02
         The windows do not cover the text. A 240-character window stepped by 400
         leaves 160 characters between each pair unscored, and the last start index
         is 2400, so nothing past index 2640 is scored. A block in one of those gaps,

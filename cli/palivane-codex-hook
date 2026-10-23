@@ -237,7 +237,8 @@ def should_block(verdict: dict, enforce: bool) -> bool:
     under enforce — local, or the org's stance from the console (Settings → Enforcement),
     which the server returns on every verdict.
 
-    Copied from the other hooks. Claude Code and Cursor honor verdict['ask']; this one
+    Copied from the other hooks. Security review SEC-01: docs/palivane-security-review.md#sec-01
+    Claude Code and Cursor honor verdict['ask']; this one
     does not, so a warn runs with no prompt. Settings names only those two. One shared
     helper would keep the copies from drifting further. #278"""
     if verdict.get("force_block"):

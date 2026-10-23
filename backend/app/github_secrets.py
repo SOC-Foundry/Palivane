@@ -409,7 +409,9 @@ class _Run:
     def _scan_commits(self, repo: dict, shas: list[str], branch: str = "") -> list[str]:
         """Read these commits' diffs a few at a time, in order, and record what they added.
 
-        Returns the shas the caller may treat as done. A rate limit stops and leaves
+        Returns the shas the caller may treat as done. Security review SEC-03:
+        docs/palivane-security-review.md#sec-03
+        A rate limit stops and leaves
         the current sha out, so it is retried. Any other fetch error increments
         `skipped` and still appends the sha. `_commits` then advances `last_sha`
         and `since` from this list, and `_other_branches` marks the sha seen and

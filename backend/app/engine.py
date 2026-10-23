@@ -104,6 +104,7 @@ class Engine:
                 else:
                     signals.extend(detector.analyze(item))
             except Exception:
+                # Security review SEC-01: docs/palivane-security-review.md#sec-01
                 # A detector that raises is dropped with no log and no signal, and
                 # score() still returns a verdict. A crashed check and a check that
                 # ran and found nothing look the same, so a broken detector reads as

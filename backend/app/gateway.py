@@ -386,6 +386,7 @@ def _with_image_text(prompt: str, body: dict) -> str:
     recovered text to the scannable prompt so screenshots can't smuggle secrets/PII past
     the text-only scan. No-op unless enabled AND pytesseract/Pillow are installed; OCR is
     fail-open, so a bad image never breaks the request.
+    Security review SEC-02: docs/palivane-security-review.md#sec-02
 
     An empty result takes the same path as a body with no image: the prompt is
     returned unchanged and scored as text. extract_image_text also returns "" when
@@ -1076,6 +1077,7 @@ def _responses_text(c) -> str:
 
 def _responses_user_text(inp) -> str:
     """The latest item with role "user", as text. A bare string is returned whole.
+    Security review SEC-02: docs/palivane-security-review.md#sec-02
 
     Narrower than _scan_messages, which also reads the system prompt because that
     field used to be accepted and never scanned. Responses puts the same text in

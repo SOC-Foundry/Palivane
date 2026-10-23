@@ -145,7 +145,9 @@ async def graph_notifications(request: Request):
         try:
             claims = decode_token(str(note.get("clientState") or ""))
         except TokenError:
-            continue                     # unauthenticated noise — drop, don't 4xx
+            # Unsigned noise is dropped and the handler still returns 202. SEC-05:
+            # docs/palivane-security-review.md#sec-05
+            continue
         if claims.get("typ") != "graph_sub":
             continue
         connector_id = int(claims.get("connector_id") or 0)

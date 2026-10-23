@@ -39,7 +39,9 @@ def extract_image_text(images: list[bytes], max_images: int = 4, max_chars: int 
     deps, undecodable image, tesseract error) contributes nothing; oversized images are
     skipped. Output is capped at max_chars.
 
-    The empty string is also what a skipped image produces. collect_images keeps
+    The empty string is also what a skipped image produces. Security review
+    SEC-02: docs/palivane-security-review.md#sec-02
+    collect_images keeps
     eight payloads and this function OCRs the first four; an image over 5MB is
     passed over inside the loop. A caller that treats "" as "there was no image"
     will score the body as text. doc_extract turns that "" into unread. The
