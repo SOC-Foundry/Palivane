@@ -134,3 +134,85 @@ def test_every_write_route_refuses_a_demo_session(client, raw_client, monkeypatc
         url = re.sub(r"\{[^}]+\}", "1", path)
         r = raw_client.request(method, url, headers=tok, json={})
         assert r.status_code == 403 and "read-only" in r.json().get("detail", ""), (method, url, r.status_code)
+
+
+def test_no_get_route_writes_under_a_demo_session(client, raw_client, monkeypatch, db_factory):
+    """The method check stops a demo token from writing through a POST. A GET that commits gets
+    past it, so walk every authenticated GET against the seeded demo org and fail if any of them
+    sends an INSERT, UPDATE or DELETE. Role delivery is configured, so the S3 role-setup branch
+    (which used to mint an external id on first read, SEC-04 / #291) is reachable. Routes on
+    DEMO_BLOCKED_GET are refused before they run, and are covered above."""
+    import re
+
+    from sqlalchemy import event
+
+    import app.archive_s3 as arch
+    import app.auth as auth_mod
+    import app.config as cfg
+    import app.main as main_mod
+    from app import seed
+    from app.main import app
+
+    for obj in {id(o): o for o in (cfg.settings, auth_mod.settings,
+                                   main_mod.settings, arch.settings)}.values():
+        monkeypatch.setattr(obj, "aws_delivery_principal", "arn:aws:iam::999999999999:role/d")
+    db = db_factory()
+    seed.populate(db)
+    db.close()
+    monkeypatch.setattr(demo.settings, "demo_org", seed.DEMO_SLUG)
+
+    writes: list[str] = []
+
+    def _record(conn, cursor, statement, params, context, executemany):
+        if statement.lstrip().split(None, 1)[0].upper() in ("INSERT", "UPDATE", "DELETE"):
+            writes.append(statement.split("\n", 1)[0][:120])
+
+    eng = db_factory.kw["bind"]
+    gets = sorted({p for m, p in _authenticated_routes(app) if m == "GET"})
+    assert len(gets) > 40, "the route walk found too few routes to mean anything"
+    assert "/api/siem/s3/role-setup" in gets
+    offenders = []
+    event.listen(eng, "before_cursor_execute", _record)
+    try:
+        # Positive control: the demo sign-in writes (the per-IP throttle row), so the listener
+        # is on the engine the routes use. Without this a wrong engine would pass the walk.
+        r = raw_client.post("/api/auth/demo")
+        assert r.status_code == 200
+        assert writes, "the write listener saw nothing; it is not on the app's engine"
+        tok = {"Authorization": f"Bearer {r.json()['access_token']}"}
+        for path in gets:
+            url = re.sub(r"\{[^}]+\}", "1", path)
+            if demo.blocked_for_demo(url):
+                continue
+            writes.clear()
+            resp = raw_client.get(url, headers=tok)
+            assert resp.status_code < 500, (url, resp.status_code)
+            if writes:
+                offenders.append((url, list(writes)))
+    finally:
+        event.remove(eng, "before_cursor_execute", _record)
+    assert not offenders, f"GET routes that write under a demo session: {offenders}"
+    # and the role-setup read still answers with a usable external id
+    body = raw_client.get("/api/siem/s3/role-setup", headers=tok).json()
+    assert body["external_id"].startswith("plv-")
+
+
+def test_your_findings_is_not_empty_for_the_people_who_sign_in_to_the_demo(raw_client, monkeypatch, db_factory):
+    """#287: "Your findings" lists what the signed-in person sent. Every seeded sender used to be
+    somebody else, so the public demo session and the seeded admin both saw an empty page."""
+    from app import seed
+    assert seed.DEMO_VIEWER == demo.DEMO_VIEWER
+    db = db_factory()
+    seed.populate(db)
+    db.close()
+    monkeypatch.setattr(demo.settings, "demo_org", seed.DEMO_SLUG)
+    tok = {"Authorization": f"Bearer {raw_client.post('/api/auth/demo').json()['access_token']}"}
+    mine = raw_client.get("/api/my/findings", headers=tok).json()["findings"]
+    assert mine and all(f["sender"] == demo.DEMO_VIEWER for f in mine)
+    assert any(f["severity"] in ("medium", "high", "critical") for f in mine)
+
+    r = raw_client.post("/api/auth/login", json={"email": seed.DEMO_ADMIN_EMAIL,
+                                                 "password": seed.DEMO_ADMIN_PASSWORD})
+    admin = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    mine = raw_client.get("/api/my/findings", headers=admin).json()["findings"]
+    assert mine and all(f["sender"] == seed.DEMO_ADMIN_EMAIL for f in mine)
