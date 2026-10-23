@@ -33,6 +33,7 @@ const REASON_LABEL = {
   timeout: "timeout", network: "network error", "server-error": "server error (5xx)",
   "auth-rejected": "key rejected", "rate-limited": "rate limited", "http-error": "HTTP error",
   "bad-response": "unreadable response", "breaker-open": "circuit breaker open", error: "error",
+  "update-failed": "proxy update rolled back",
 };
 
 function reasonsText(reasons) {
