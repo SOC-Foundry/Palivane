@@ -66,6 +66,42 @@ def test_rls_read_and_write_isolation():
         conn.close()
 
 
+def test_owner_match_on_postgres_stays_in_tenant():
+    """The /api/my/findings document-owner match (`origin ->> 'owner'` on a json column) runs
+    on real Postgres, and RLS alone keeps it inside the scoped tenant: the same owner address
+    on a finding in another tenant is invisible even without the app's tenant_id filter."""
+    from sqlalchemy import select
+    from sqlalchemy.dialects import postgresql
+
+    from app.main import _owner_match
+    from app.models import Finding
+    sql = str(select(Finding.id).where(_owner_match("owner@rls.test"))
+              .compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    conn = psycopg2.connect(URL)
+    try:
+        cur = conn.cursor()
+        cur.execute("INSERT INTO tenants (slug, name) VALUES ('rls-e', 'E') RETURNING id")
+        a = cur.fetchone()[0]
+        cur.execute("INSERT INTO tenants (slug, name) VALUES ('rls-f', 'F') RETURNING id")
+        b = cur.fetchone()[0]
+        ids = {}
+        for t in (a, b):
+            cur.execute("INSERT INTO findings (tenant_id, origin) VALUES (%s, %s::json) "
+                        "RETURNING id", (t, '{"owner": "Owner@RLS.test", "title": "doc"}'))
+            ids[t] = cur.fetchone()[0]
+        cur.execute("INSERT INTO findings (tenant_id, origin) VALUES (%s, NULL)", (a,))
+
+        _scope(cur, str(a))
+        cur.execute(sql)
+        assert [r[0] for r in cur.fetchall()] == [ids[a]]
+        _scope(cur, str(b))
+        cur.execute(sql)
+        assert [r[0] for r in cur.fetchall()] == [ids[b]]
+    finally:
+        conn.rollback()
+        conn.close()
+
+
 def test_every_tenant_table_has_forced_rls_and_policy():
     """Catalog check against the REAL migrated schema: every table with a tenant_id column
     has RLS enabled AND forced (the app connects as the owner) and a tenant_isolation

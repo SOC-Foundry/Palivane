@@ -1,5 +1,8 @@
 // "Your findings": the one console view aimed at the person a finding belongs to rather
-// than at the security team.
+// than at the security team. A finding belongs to you when you caused it (it is attributed
+// to your address) or when it is about a document you own (content traced back to a file
+// of yours scanned at rest, e.g. a colleague pasting your Drive doc into an AI tool). Either
+// way you answer it the same way; owning a document gives no triage powers beyond that.
 //
 // Everything a scan turns up otherwise lands in one admin queue, so closing an incident
 // needs a security person to work out whose file it is, ask them, and wait. The answer is
@@ -57,8 +60,9 @@ export default function MyFindings() {
       <div className="content-head">
         <div>
           <h1 className="page-title">Your findings</h1>
-          <p className="page-sub">Things attributed to you. Answering one tells the security
-             team what they would otherwise have to come and ask.</p>
+          <p className="page-sub">Things attributed to you, and leaks of documents you own.
+             Answering one tells the security team what they would otherwise have to come
+             and ask.</p>
         </div>
         <div className="head-actions">
           <select value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -73,9 +77,10 @@ export default function MyFindings() {
       {rows?.length === 0 && (
         <div className="placeholder">
           <IconShield width={28} height={28} />
-          <h3>Nothing attributed to you</h3>
-          <p>When a scan finds something in your files or your AI usage, it appears here
-             with what to do about it.</p>
+          <h3>Nothing for you to answer</h3>
+          <p>When a scan finds something in your files or your AI usage, or someone else's
+             AI usage turns out to contain a document you own, it appears here with what to
+             do about it.</p>
         </div>
       )}
 
@@ -99,7 +104,9 @@ export default function MyFindings() {
             )}
             {f.owner_response
               ? <p className="muted" style={{ marginTop: 8 }}>
-                  You said: {LABEL[f.owner_response.action]}
+                  {/* A finding can belong to two people (whoever pasted it, and the
+                      document's owner); the first answer stands, so name who gave it. */}
+                  Answered by {f.owner_response.by}: {LABEL[f.owner_response.action]}
                   {f.owner_response.note ? `: ${f.owner_response.note}` : ""}</p>
               : openId === f.id
                 ? (
