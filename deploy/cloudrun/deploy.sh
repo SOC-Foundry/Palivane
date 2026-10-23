@@ -18,12 +18,7 @@ IMAGE_NAME="${IMAGE_NAME:-palivane}"
 DOMAIN="${DOMAIN:-}"
 TAG="$(git rev-parse --short HEAD 2>/dev/null || echo latest)"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${IMAGE_NAME}:${TAG}"
-
-echo "==> Building & pushing $IMAGE"
-gcloud builds submit --project "$PROJECT_ID" \
-  --config deploy/cloudrun/cloudbuild.yaml \
-  --suppress-logs \
-  --substitutions "_REGION=${REGION},_REPO=${REPO},_IMAGE=${IMAGE_NAME},_TAG=${TAG},_SELF_HOSTED=${PALIVANE_SELF_HOSTED:-},_APP_ORIGIN=${PALIVANE_APP_ORIGIN:-}" .
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # Non-secret runtime config. Secrets (DATABASE_URL, PALIVANE_SECRET_KEY, provider keys) come
 # from Secret Manager via --set-secrets below.
@@ -109,6 +104,7 @@ ENV_VARS+="|SEED_ON_START=${SEED_ON_START:-false}"
 
 # Secrets — must exist in Secret Manager (see README). Optional ones are added if present.
 SECRETS="PALIVANE_SECRET_KEY=palivane-secret-key:latest,DATABASE_URL=palivane-database-url:latest"
+SIGNING_KEY_VERSION=""   # the palivane-release-signing-key version bound below, if any
 for pair in \
   "GATEWAY_ANTHROPIC_KEY=gateway-anthropic-key" \
   "GATEWAY_XAI_KEY=gateway-xai-key" \
@@ -166,9 +162,106 @@ for pair in \
         *) version="$number"; echo "==> $name pinned to version $number" ;;
       esac
     fi
+    if [ "$name" = "palivane-release-signing-key" ]; then SIGNING_KEY_VERSION="$version"; fi
     SECRETS+=",${pair}:${version}"
   fi
 done
+
+# Release signing key vs. the key the installer pins, checked BEFORE anything is built or
+# deployed (SEC-06). The service refuses to boot on a mismatch (release_signing.py,
+# enforce_key_pair), so a bad pair never serves, but finding out that way costs a build, a
+# failed revision and a failed workflow, with the reason buried in the revision's logs.
+# Everything needed is known here: the secret version this deploy is about to bind, and the
+# public key in the code being built (VENDOR_RELEASE_PUBKEY_PEM, or PALIVANE_RELEASE_PUBKEY
+# when it is set in this script's environment, for a fork that pins its own key; a fork that
+# sets it on the service out of band must set it here as well). The keys are compared as
+# DER, so PEM wrapping and whitespace do not count as a difference, and are named by the
+# same fingerprint the service's own message uses.
+#
+# The private key goes straight from `gcloud secrets versions access` into `openssl pkey`
+# through a pipe: it never reaches argv, never lands on disk and is never printed. Only
+# public halves are written, into a 0700 mktemp dir removed on exit. The function body is a
+# subshell, so the EXIT trap is its own.
+#
+# A secret this deployer cannot read fails the deploy. (The Actions deploy SA holds
+# roles/secretmanager.admin, which includes versions.access, so there this means something
+# is genuinely wrong.) PALIVANE_SKIP_RELEASE_KEY_CHECK=1 lets that one case through with a
+# warning, for a deployer allowed to bind a secret it may not read; the service's startup
+# check still stands behind it. A key that is readable and does not match always aborts:
+# that revision could never start.
+check_release_signing_key() (
+  set -euo pipefail
+  local version="$1" name=palivane-release-signing-key work pinned_src fp_signing fp_pinned
+  local -a status
+  work="$(umask 077 && mktemp -d)"
+  trap 'rm -rf "$work"' EXIT
+  fingerprint() { echo "sha256:$(openssl dgst -sha256 -r "$1" | cut -c1-16)"; }
+  fail() { echo "ERROR: $*" >&2; exit 1; }
+
+  if [ -n "${PALIVANE_RELEASE_PUBKEY:-}" ]; then
+    pinned_src="PALIVANE_RELEASE_PUBKEY"
+    printf '%s\n' "$PALIVANE_RELEASE_PUBKEY" > "$work/pinned.pem"
+  else
+    pinned_src="VENDOR_RELEASE_PUBKEY_PEM in backend/app/release_signing.py"
+    sed -n '/^VENDOR_RELEASE_PUBKEY_PEM = """/,/-----END PUBLIC KEY-----/p' \
+        "$REPO_ROOT/backend/app/release_signing.py" \
+      | sed 's/^VENDOR_RELEASE_PUBKEY_PEM = """//' > "$work/pinned.pem"
+  fi
+  openssl pkey -pubin -in "$work/pinned.pem" -outform DER -out "$work/pinned.der" 2>/dev/null \
+    || fail "cannot read the pinned release public key ($pinned_src) as a PEM public key," \
+            "so installers could verify nothing this deploy signs. Not deploying."
+
+  set +e
+  gcloud secrets versions access "$version" --secret "$name" --project "$PROJECT_ID" \
+      2>"$work/access.err" \
+    | openssl pkey -pubout -outform DER -out "$work/signing.der" 2>/dev/null
+  status=("${PIPESTATUS[@]}")
+  set -e
+  if [ "${status[0]}" != 0 ]; then
+    if [ "${PALIVANE_SKIP_RELEASE_KEY_CHECK:-}" = 1 ]; then
+      echo "WARNING: could not read $name version $version to check it against the pinned" \
+           "key. PALIVANE_SKIP_RELEASE_KEY_CHECK=1, so deploying unchecked (the service's" \
+           "startup check still refuses a mismatched key)." >&2
+      exit 0
+    fi
+    sed 's/^/    gcloud: /' "$work/access.err" >&2
+    fail "this deployer cannot read $name version $version, so it cannot check that the key" \
+         "it is about to bind matches the key the installer pins. Grant it" \
+         "roles/secretmanager.secretAccessor on the secret, or set" \
+         "PALIVANE_SKIP_RELEASE_KEY_CHECK=1 to deploy unchecked. Not deploying."
+  fi
+  if [ "${status[1]}" != 0 ] || [ ! -s "$work/signing.der" ]; then
+    fail "$name version $version is not a readable, unencrypted PEM private key, so the" \
+         "service would refuse to start with it. Not deploying."
+  fi
+  openssl pkey -pubin -inform DER -in "$work/signing.der" -noout -text 2>/dev/null \
+      | grep -qE 'prime256v1|P-256' \
+    || fail "$name version $version is not an ECDSA P-256 key; installers verify P-256 only," \
+            "so the service would refuse to start with it. Not deploying."
+
+  fp_signing="$(fingerprint "$work/signing.der")"
+  fp_pinned="$(fingerprint "$work/pinned.der")"
+  if ! cmp -s "$work/signing.der" "$work/pinned.der"; then
+    fail "$name version $version signs with a key ($fp_signing) that is not the one the" \
+         "installer pins ($fp_pinned, from $pinned_src). The service refuses to boot on this" \
+         "pair, so the deploy could only produce a failed revision. Make them the same key:" \
+         "ship the signing key's public half as the pinned key, or disable that secret" \
+         "version. See docs/verifying-downloads.md, Operator. Not deploying."
+  fi
+  echo "==> $name version $version matches the pinned release key ($fp_pinned)"
+)
+
+if [ -n "$SIGNING_KEY_VERSION" ]; then
+  check_release_signing_key "$SIGNING_KEY_VERSION"
+fi
+
+# Built only after the checks above pass, so a deploy that is going to be refused does not
+# build and push an image first.
+echo "==> Building & pushing $IMAGE"
+gcloud builds submit --project "$PROJECT_ID" \
+  --config deploy/cloudrun/cloudbuild.yaml \
+  --suppress-logs \
+  --substitutions "_REGION=${REGION},_REPO=${REPO},_IMAGE=${IMAGE_NAME},_TAG=${TAG},_SELF_HOSTED=${PALIVANE_SELF_HOSTED:-},_APP_ORIGIN=${PALIVANE_APP_ORIGIN:-}" .
 
 # Direct VPC egress — required when Cloud SQL has a PRIVATE IP only (org policy
 # constraints/sql.restrictPublicIp). Set VPC_NETWORK + VPC_SUBNET to route the Cloud SQL
