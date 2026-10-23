@@ -18,6 +18,12 @@ account-bound and must be done from your own developer account.
 > **Published**: the public listing is live — id `fnejondlaacijahdjkhcgiijlnjoapho`
 > (chromewebstore.google.com/detail/fnejondlaacijahdjkhcgiijlnjoapho), wired into the
 > deployment as `PALIVANE_EXTENSION_ID`.
+>
+> **Latest upload: 0.7.9** (`palivane-shadow-ai-guard-0.7.9-prod.zip`, built with
+> `PALIVANE_SAAS_URL=https://app.palivane.io ./build.sh`), submitted 2026-10-22 and pending
+> store review. It carries 0.7.7 and 0.7.8 (claude.ai's protobuf send, one popup per
+> stopped send) and 0.7.9 (a partly checked or compressed send keeps the "sent unchecked"
+> notice). Update this line with each upload.
 
 > **This is a fresh listing under SOC Foundry, not a transfer.** A Chrome Web Store item id
 > is issued to the developer account that published it, so the previous item cannot come
@@ -146,7 +152,8 @@ Managed-policy deployments still override these defaults per tenant.
 2. Fill **Store listing** (copy above), **Privacy practices** (answers above + policy
    URL), and add screenshots + the 128px icon (auto-read from the zip).
 3. Choose visibility (Public / Unlisted / Private) → **Submit for review**.
-4. On later updates: bump `"version"` in `manifest.json`, re-run `./build.sh`, upload.
+4. On later updates: bump `"version"` in `manifest.json`, re-run `./build.sh`, upload,
+   and update the **Latest upload** note at the top of this file.
 
 ### Optional, automated upload (CI)
 
