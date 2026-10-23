@@ -4,18 +4,30 @@ name: Deploy (Cloud Run)
 # existing deploy script. Infra changes are handled separately by terraform-apply.yml.
 # Requires Workload Identity Federation + a deploy service account.
 #
-# MANUAL ONLY. The push-to-main trigger is deliberately absent: it shipped straight to
-# production with nothing in between, and the usual brake for that, required reviewers on
-# the production environment, needs a paid plan (the org is on free, and the repo is
-# private, so the API refuses the protection rule). Dispatching by hand is the gate
-# instead, the same arrangement terraform-apply.yml already uses.
+# DEPLOY ON GREEN, with a kill switch.
 #
-# To restore automatic rollout once required reviewers are available, put back:
-#   push:
-#     branches: [main]
-#     paths-ignore: ["deploy/terraform/**", "deploy/gcp/**", ".github/**", "**/*.md", "docs/**"]
+# There used to be a push-to-main trigger, removed because it shipped straight to production
+# with nothing in between; the usual brake, required reviewers on the production
+# environment, needs a paid plan (the org is on free, the repo private). Rollout is now
+# gated on CI instead: a commit on main deploys only after the CI workflow has run on that
+# exact commit and every job passed, which includes all six required checks (backend-tests,
+# frontend-build, selfhost-compose, terraform, extension-e2e, rls). Decided 2026-10-23.
+#
+# - Kill switch: set the repository variable AUTO_DEPLOY=false and nothing deploys on its
+#   own; delete it or set anything else to resume. Manual dispatch keeps working either way.
+# - Only CI runs for a push to main or a dispatch on main, from this repository, count: a
+#   workflow_run from a fork's pull_request can report head_branch "main" too.
+# - The commit CI tested is the commit deployed (checkout of workflow_run.head_sha), and
+#   only while it is still main's head: if main moved on, the newer commit's own CI run
+#   deploys it, so a slow older run can never roll production back.
+# - Commits CI skips (paths-ignore: docs, *.md, .github/**) don't deploy: they can't change
+#   the app. Dispatch by hand if one should.
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
@@ -30,19 +42,49 @@ jobs:
     # Prod-affecting: only from main. The WIF provider refuses any other ref anyway
     # (deploy/gcp/setup-wif.sh); this makes a dispatch from a branch skip visibly instead
     # of failing at the token exchange.
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' && (
+        github.event_name == 'workflow_dispatch' || (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.head_repository.full_name == github.repository &&
+          (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch') &&
+          vars.AUTO_DEPLOY != 'false'))
     runs-on: ubuntu-latest
     environment: production   # add required reviewers here for a manual gate
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The commit CI passed on (a workflow_run event's own github.sha is just main's
+          # latest); a manual dispatch deploys main as it stands.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+      - name: Only deploy main's current head
+        if: github.event_name == 'workflow_run'
+        id: head
+        env:
+          TESTED: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          git fetch --quiet origin main
+          now="$(git rev-parse origin/main)"
+          if [ "$now" != "$TESTED" ]; then
+            echo "main has moved on to $now since CI passed on $TESTED; its own CI run deploys it."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Deploying $TESTED, which CI passed and is main's head."
+          fi
       - name: Authenticate to GCP
+        if: steps.head.outputs.skip != 'true'
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        if: steps.head.outputs.skip != 'true'
 
       - name: Build + deploy
+        if: steps.head.outputs.skip != 'true'
         id: deploy
         env:
           PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
@@ -132,6 +174,7 @@ jobs:
       # step can: it proves the LIVE service signs, and that the signature verifies against
       # the very key its own generated installer pins.
       - name: Verify the deployed release signature
+        if: steps.head.outputs.skip != 'true'
         env:
           ORIGIN: https://app.palivane.io
         run: |
