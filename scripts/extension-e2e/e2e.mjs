@@ -210,7 +210,9 @@ try {
   r = await send("coaching, secret", { text: AWS });
   check("COACHING: a secret is held with a cleaned copy too", held(r), JSON.stringify(r));
   r = await send("coaching, extension in monitor", { ext: { enforce: false } });
-  check("COACHING with the extension in monitor mode falls back to the plain amber warning", r.arrived && /warning/i.test(r.banner), JSON.stringify(r));
+  // An SSN is a confirmed leak (force_block): monitor mode would let a merely risky coached
+  // message out with the amber warning, but not this one.
+  check("COACHING with the extension in monitor mode still holds a confirmed leak, with the cleaned copy", held(r), JSON.stringify(r));
   r = await send("coaching, benign", { text: "please summarise this paragraph for me" });
   check("COACHING leaves benign messages alone", wentOut(r) && !r.banner && !r.notice, JSON.stringify(r));
   r = await send("coaching off again", { patch: { redact_mode: "off" } });

@@ -36,7 +36,9 @@ def test_coaching_downgrades_redactable_block_to_warn_with_cleaned_text(client, 
                                              "sanctioned_ai_tools": "chatgpt.com"}).status_code == 200
     r = _scan(raw_client, _key(client), SECRET_PROMPT)
     assert r["action"] == "warn" and r["coached"] is True
-    assert r["force_block"] is False
+    # Coaching changes how the prompt is stopped, not whether a confirmed leak goes out: a
+    # client that can't show the cleaned copy (proxy, CLI hooks) still has to block it.
+    assert r["force_block"] is True
     red = r["redacted_content"]
     assert red and AWS not in red and "123-45-6789" not in red
     assert "«redacted" in red
@@ -67,3 +69,42 @@ def test_redact_mode_tristate_persists(client):
     for val, exp in (("on", True), ("off", False), ("inherit", None)):
         assert client.patch("/api/tenant", json={"redact_mode": val}).status_code == 200
         assert client.get("/api/auth/me").json()["tenant"]["redact_mode"] is exp
+
+
+# --- every client that scans prompts: a coached verdict is not a pass ------------------
+
+import importlib.util  # noqa: E402
+import sys  # noqa: E402
+from importlib.machinery import SourceFileLoader  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+import pytest  # noqa: E402
+
+_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _load(name: str, path: Path):
+    spec = importlib.util.spec_from_loader(name, SourceFileLoader(name, str(path)))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_CLIENTS = {name: _ROOT / "cli" / name for name in (
+    "palivane-hook", "palivane-cursor-hook", "palivane-codex-hook", "palivane-gemini-hook",
+    "palivane-copilot-hook")}
+_CLIENTS["palivane_addon"] = _ROOT / "proxy" / "palivane_addon.py"
+
+
+@pytest.mark.parametrize("name", list(_CLIENTS))
+def test_every_prompt_client_holds_a_coached_verdict(name):
+    # Only the extension can show the cleaned copy; any other client that let a coached
+    # verdict through would send the original prompt with the secret in it.
+    if name == "palivane_addon":
+        sys.path.insert(0, str(_ROOT / "proxy"))
+    mod = _load(f"coach_{name.replace('-', '_')}", _CLIENTS[name])
+    coached = {"action": "warn", "coached": True, "force_block": False}
+    assert mod.should_block(coached, enforce=True) is True
+    assert mod.should_block({**coached, "enforce": True}, enforce=False) is True
+    assert mod.should_block(coached, enforce=False) is False
+    assert mod.should_block({**coached, "force_block": True}, enforce=False) is True
