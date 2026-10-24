@@ -152,6 +152,43 @@ def test_structured_api_telemetry_not_harvested():
     assert addon.needs_harvest("api2.cursor.sh") is True
 
 
+def test_ai_sidebar_extension_hosts_scan_only_their_prompt_endpoints():
+    # Paths as each extension's shipped code builds them (base URL + route).
+    prompts = [("api.monica.im", "/api/custom_bot/chat"),
+               ("api.monica.im", "/agent_v1/task"),
+               ("api2.sider.ai", "/api/chat/v1/completions"),
+               ("sider.ai", "/api/chat/v1/completions/async_data"),
+               ("www.getmerlin.in", "/arcane/api/v2/extension/chat"),
+               ("api.harpa.ai", "/api/v1/ai/ask"),
+               ("api.maxai.me", "/gpt/cwc/make?x=1")]
+    for host, path in prompts:
+        assert addon.is_ai_host(host), host
+        assert addon.needs_harvest(host), host          # proprietary bodies: harvested
+        assert not addon.sidebar_skip(host, path), (host, path)
+    # Their analytics, sync, logging and the marketing site are decrypted but not scanned.
+    for host, path in [("event.sider.ai", "/v1/track"), ("www.getmerlin.in", "/pricing"),
+                       ("www.getmerlin.in", "/arcane/api/v1/public/extensionLogger"),
+                       ("api.harpa.ai", "/api/v1/chats"), ("api.monica.im", "/api/user/info")]:
+        assert addon.sidebar_skip(host, path), (host, path)
+    # Every other AI host is untouched by the filter.
+    assert not addon.sidebar_skip("chatgpt.com", "/anything")
+    assert not addon.sidebar_skip("api.anthropic.com", "/v1/messages")
+
+
+def test_a_sidebar_prompt_body_is_harvested_for_its_text():
+    body = json.dumps({"task_uid": "8f0c2a9e-4b1d-4c3e-9a77-2d5e6f1a0b3c",
+                       "data": {"items": [{"content": "my SSN is 078-05-1120"}]}})
+    assert "078-05-1120" in addon.harvest_prompt(body)
+
+
+def test_claude_in_chrome_host_is_inspected_but_never_harvested():
+    # platform.claude.com carries Claude in Chrome chat traffic: decrypt and parse it, but
+    # an unrecognized body there is the platform's own state, not a prompt to harvest.
+    assert addon.is_ai_host("platform.claude.com")
+    assert addon.needs_harvest("platform.claude.com") is False
+    assert not addon.is_ai_host("claude.com")
+
+
 def test_should_block():
     assert addon.should_block({"action": "block"}, enforce=True)
     assert not addon.should_block({"action": "block"}, enforce=False)
