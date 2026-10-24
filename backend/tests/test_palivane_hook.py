@@ -171,6 +171,16 @@ def test_org_enforce_stance_in_verdict_blocks_without_local_flag():
     assert hook.should_block({"action": "warn", "enforce": True}, enforce=False) is False
 
 
+def test_a_coached_verdict_is_held_under_enforce():
+    # Coaching softens a block to a warn on the assumption that the client shows the cleaned
+    # copy instead; a hook can't send that copy, so under enforce it must still stop the prompt.
+    coached = {"action": "warn", "coached": True, "force_block": False}
+    assert hook.should_block(coached, enforce=True) is True
+    assert hook.should_block({**coached, "enforce": True}, enforce=False) is True
+    assert hook.should_block(coached, enforce=False) is False          # monitor the fuzzy
+    assert hook.should_block({**coached, "force_block": True}, enforce=False) is True
+
+
 # --- deny_output ------------------------------------------------------------------------
 
 def test_deny_output_shape_and_reason():
@@ -227,6 +237,34 @@ def test_prompt_block_output_falls_back_to_title_then_nothing():
                                                  "title": "Blocked destination"}]})
     assert "  • Blocked destination" in out["reason"]
     assert "Found:" not in hook.prompt_block_output({"signals": [{"category": "x"}]})["reason"]
+
+
+def test_prompt_block_output_offers_the_coached_cleaned_copy():
+    out = hook.prompt_block_output({"action": "warn", "coached": True, "signals": [],
+                                    "redacted_content": "deploy with «redacted:AWS access key id»"})
+    assert out["reason"].endswith("Cleaned copy to send instead:\n"
+                                  "deploy with «redacted:AWS access key id»")
+    assert "Cleaned copy" not in hook.prompt_block_output(
+        {"action": "block", "signals": [], "redacted_content": None})["reason"]
+
+
+def test_coaching_on_still_stops_a_confirmed_secret_in_monitor_mode_end_to_end(client, raw_client):
+    # The gap this closes: coaching turned a confirmed secret into a warn with force_block off,
+    # so a hook in monitor mode let the original prompt out. Now it stops, with the clean copy.
+    assert client.patch("/api/tenant", json={"redact_mode": "on", "sanctioned_ai_tools": "claude.ai"}
+                        ).status_code == 200
+    key = _key(client)
+    secret = "AKIAQ3EGRZ7XKP4M2WNV"
+    p = hook.build_prompt_usage({"hook_event_name": "UserPromptSubmit",
+                                 "prompt": f"deploy with {secret} please"})
+    p["destination"] = "https://claude.ai/"
+    body = raw_client.post("/api/ingest/ai-usage", json=p,
+                           headers={"X-Palivane-Token": key}).json()
+    assert body["coached"] is True and body["action"] == "warn"
+    assert hook.should_block(body, enforce=False) is True
+    reason = hook.prompt_block_output(body)["reason"]
+    assert "Cleaned copy to send instead" in reason and "«redacted" in reason
+    assert secret[4:] not in reason
 
 
 def test_block_message_names_the_secret_without_showing_it_end_to_end(client, raw_client):

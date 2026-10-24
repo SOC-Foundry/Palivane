@@ -1316,10 +1316,12 @@ def ingest_ai_usage(
         # Only coach when EVERY flagged category is redactable. If an injection, an
         # unsanctioned-AI destination, source code, or confidential prose is also present,
         # redaction can't make it safe — keep the hard block.
+        # force_block stays as it was: coaching changes how a stopped prompt is presented,
+        # not whether a confirmed leak goes out. Only the extension can show the cleaned
+        # copy; the proxy and the CLI hooks have nowhere to put it, so they must still stop.
         if cats and cats <= _REDACTABLE:
             from .redaction import redact_text
             action = "warn"
-            force_block = False
             coached = True
             redacted_content = redact_text(body.content)
     # Justified proceed: an override token minted by /api/ingest/justify lets the SAME
@@ -1365,8 +1367,9 @@ def ingest_ai_usage(
         # >1 when this event folded into an already-recorded finding (its seen_count).
         "recurrence": result.get("recurrence"),
         "remediation": remediation_for(result["signals"]),
-        # Coaching: when set, the client should warn (not block), show `redacted_content` as
-        # the safe-to-send version, and offer the sanctioned tools below.
+        # Coaching: when set, an enforcing client (or any client, with force_block) holds the
+        # prompt rather than sending it, shows `redacted_content` as the safe-to-send version,
+        # and offers the sanctioned tools below.
         "coached": coached,
         "redacted_content": redacted_content,
         # Justified proceed: when true the block UI offers "send anyway with a
@@ -1375,7 +1378,8 @@ def ingest_ai_usage(
         # This submission carried a valid override token and went through as a warn.
         "overridden": overridden,
         # A confirmed secret/PII leak: the client should block regardless of its local
-        # enforce flag ("block the certain" — monitor everything else). Off under coaching.
+        # enforce flag ("block the certain" — monitor everything else). Kept under coaching:
+        # a client that can show the cleaned copy holds the prompt with it, any other blocks.
         "force_block": force_block,
         # The org's enforce stance for local capture planes (Settings → Enforcement),
         # staged per actor/tool via policy overrides: clients honor "block" verdicts
