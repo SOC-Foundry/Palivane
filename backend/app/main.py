@@ -1243,7 +1243,7 @@ def _agent_attestation(x_palivane_token: str, x_palivane_agent: str, tenant_id, 
 
 def _score_ai_usage(content: str, actor: str, tool: str, destination: str,
                     tenant_id: int | None, agent: str, db: Session,
-                    endpoint: str = "") -> tuple[dict, dict]:
+                    endpoint: str = "", use_judge: bool = True) -> tuple[dict, dict]:
     """Score one ai-usage capture on the AI_USAGE surface + feed discovery. Shared by the
     ai-usage ingest endpoint and the OTLP receiver so their behavior can't drift. Returns
     (verdict, metadata)."""
@@ -1263,12 +1263,42 @@ def _score_ai_usage(content: str, actor: str, tool: str, destination: str,
                                    destination=destination)
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
                           signal_filter=sig_filter, agent=agent,
-                          persist_benign=settings.usage_persist_benign)
+                          persist_benign=settings.usage_persist_benign, use_judge=use_judge)
     # Feed the shadow-AI discovery inventory (best-effort — never breaks the verdict).
     from .discovery import record_capture
     record_capture(db, tenant_id, actor, destination, tool,
                    result["signals"], result["risk_score"])
     return result, meta
+
+
+def _prompt_verdict(result: dict, content: str, tenant_id: int | None,
+                    db: Session) -> tuple[str, bool, bool | None, str | None]:
+    """(action, force_block, coached, redacted_content) for a scored prompt. Shared by the
+    ai-usage ingest endpoint and the Inference hooks endpoint so their rule can't drift."""
+    action = _action_for(result["severity"])
+    # confirmed_leak is computed pre-filter in run_analysis, so a disabled check (tenant
+    # default or a per-user/group override) can't silently defeat the hard block on a
+    # confirmed live credential — the documented "certain leaks always block" guarantee.
+    force_block = settings.gateway_enforce_secrets and bool(result.get("confirmed_leak"))
+    coached = redacted_content = None
+    # Coaching mode: if this would block ONLY because of redactable data loss (secrets/PII),
+    # downgrade to a warn and hand back the cleaned prompt + the sanctioned-tool redirect.
+    # The user stays in the loop — they see what was flagged and send the clean version or
+    # switch tools — rather than being hard-stopped or silently trusting the redactor.
+    if action == "block" and _tenant_redact_mode(tenant_id, db):
+        cats = {s.get("category") for s in result["signals"] if s.get("category")}
+        # Only coach when EVERY flagged category is redactable. If an injection, an
+        # unsanctioned-AI destination, source code, or confidential prose is also present,
+        # redaction can't make it safe — keep the hard block.
+        # force_block stays as it was: coaching changes how a stopped prompt is presented,
+        # not whether a confirmed leak goes out. Only the extension can show the cleaned
+        # copy; the proxy and the CLI hooks have nowhere to put it, so they must still stop.
+        if cats and cats <= _REDACTABLE:
+            from .redaction import redact_text
+            action = "warn"
+            coached = True
+            redacted_content = redact_text(content)
+    return action, force_block, coached, redacted_content
 
 
 @app.post("/api/ingest/ai-usage")
@@ -1301,29 +1331,8 @@ def ingest_ai_usage(
                       scan_failed=body.scan_failed)
     result, meta = _score_ai_usage(body.content, actor, body.tool, body.destination,
                                    tenant_id, agent, db, endpoint=body.endpoint)
-    action = _action_for(result["severity"])
-    # confirmed_leak is computed pre-filter in run_analysis, so a disabled check (tenant
-    # default or a per-user/group override) can't silently defeat the hard block on a
-    # confirmed live credential — the documented "certain leaks always block" guarantee.
-    force_block = settings.gateway_enforce_secrets and bool(result.get("confirmed_leak"))
-    coached = redacted_content = None
-    # Coaching mode: if this would block ONLY because of redactable data loss (secrets/PII),
-    # downgrade to a warn and hand back the cleaned prompt + the sanctioned-tool redirect.
-    # The user stays in the loop — they see what was flagged and send the clean version or
-    # switch tools — rather than being hard-stopped or silently trusting the redactor.
-    if action == "block" and _tenant_redact_mode(tenant_id, db):
-        cats = {s.get("category") for s in result["signals"] if s.get("category")}
-        # Only coach when EVERY flagged category is redactable. If an injection, an
-        # unsanctioned-AI destination, source code, or confidential prose is also present,
-        # redaction can't make it safe — keep the hard block.
-        # force_block stays as it was: coaching changes how a stopped prompt is presented,
-        # not whether a confirmed leak goes out. Only the extension can show the cleaned
-        # copy; the proxy and the CLI hooks have nowhere to put it, so they must still stop.
-        if cats and cats <= _REDACTABLE:
-            from .redaction import redact_text
-            action = "warn"
-            coached = True
-            redacted_content = redact_text(body.content)
+    action, force_block, coached, redacted_content = _prompt_verdict(
+        result, body.content, tenant_id, db)
     # Justified proceed: an override token minted by /api/ingest/justify lets the SAME
     # content (recurrence-folds into the same finding), from the SAME actor, through as a
     # warn — recorded, never silent. Confirmed PII/PHI is justifiable (business-need sends
@@ -1577,6 +1586,169 @@ async def otlp_logs(
         except Exception:
             continue  # one bad record never fails the whole export
     return {"partialSuccess": {}}
+
+
+@app.post("/api/inference-hooks")
+async def inference_hooks_endpoint(request: Request, db: Session = Depends(get_db)):
+    """Anthropic Inference hooks: Palivane as a Claude Enterprise org's AI security server
+    (app/inference_hooks.py; docs/design/inference-hooks.md). Anthropic POSTs each governed
+    prompt, and each set of tool calls, and waits for {"action": "allow"|"deny"}.
+
+    The tenant comes from the `X-Palivane-Token: ak_…` custom header the org's admin adds
+    in Anthropic's console; the request must also carry that tenant's Standard Webhooks
+    signature. Errors are real errors (401, 500): any non-200 is a webhook failure, and the
+    org's own failure handling (block or allow) decides, as the protocol intends. Scoring is
+    rules-only: the LLM judge can take far longer than Anthropic's verdict budget."""
+    from starlette.concurrency import run_in_threadpool
+    headers = dict(request.headers)
+    # The key is checked before the body is read: a transcript can be tens of megabytes,
+    # and nothing without a valid key should get Palivane to read one.
+    tenant_id, default_actor = await run_in_threadpool(
+        _ingest_auth, headers.get("x-palivane-token", ""), db)
+    raw = await request.body()
+    return await run_in_threadpool(_inference_hook_verdict, raw, headers, tenant_id,
+                                   default_actor, db)
+
+
+def _inference_hook_verdict(raw: bytes, headers: dict, tenant_id: int | None,
+                            default_actor: str, db: Session) -> dict:
+    import json as _json
+
+    from . import inference_hooks as ih
+    from .lifecycle import ensure_active
+    from .metering import record_and_check
+    tenant = db.get(Tenant, tenant_id) if tenant_id is not None else None
+    if tenant is None:
+        raise HTTPException(status_code=401, detail="no tenant for this key")
+    dek = crypto.tenant_dek_readonly(tenant)
+    secrets = [crypto.unseal_secret(v, dek) for v in
+               (tenant.inference_hook_secret, tenant.inference_hook_secret_prev) if v]
+    if not ih.verify_signature([s for s in secrets if s], headers, raw):
+        tenant.inference_hook_sig_failures = (tenant.inference_hook_sig_failures or 0) + 1
+        tenant.inference_hook_last_sig_failure = datetime.utcnow()
+        db.commit()
+        raise HTTPException(status_code=401, detail="missing or invalid webhook signature")
+    ensure_active(db, tenant_id)
+    # Counted for usage, never limited: a 429 is a webhook failure, and under the org's
+    # fail-closed setting an exhausted quota would block every prompt in the org.
+    record_and_check(db, tenant_id, kind="inference_hook", limit=0)
+    try:
+        frame = _json.loads(raw)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="body is not JSON")
+    if not isinstance(frame, dict):
+        raise HTTPException(status_code=400, detail="body is not a JSON object")
+    kind, app_name = frame.get("type"), ih.application_of(frame)
+    # Connection tests and breaker-recovery probes carry no user content. An event type
+    # this server doesn't know still needs a verdict, and an error would count toward
+    # Anthropic's circuit breaker, so both get allow (spec: Forward compatibility).
+    if app_name == "config-test" or kind not in ("prompt", "tool_call"):
+        return {"action": "allow"}
+    actor = ih.actor_of(frame) or default_actor
+    tool = app_name or "claude"
+    _record_heartbeat(db, tenant_id, actor, "inference-hooks", tool,
+                      headers.get("user-agent", ""))
+    enforce = _client_enforce_for(tenant_id, actor, tool, db)
+    if kind == "prompt":
+        return _inference_hook_prompt(frame, tenant_id, actor, tool, enforce, db)
+    return _inference_hook_tool_call(frame, tenant_id, actor, enforce, db)
+
+
+def _inference_hook_prompt(frame: dict, tenant_id: int, actor: str, tool: str,
+                           enforce: bool, db: Session) -> dict:
+    from datetime import timedelta
+
+    from . import inference_hooks as ih
+    from .models import InferenceHookDenial
+    messages = frame.get("messages") if isinstance(frame.get("messages"), list) else []
+    session = str(frame.get("session_id") or "")[:128]
+    cutoff = datetime.utcnow() - timedelta(seconds=ih.DENIAL_TTL_S)
+    # A denied message stays in the transcript and comes back with every later request,
+    # behind newer turns this endpoint would otherwise be the only thing scanning.
+    prior = ih.prior_block_hashes(messages)[-1000:]
+    if session and prior:
+        hit = (db.query(InferenceHookDenial)
+                 .filter(InferenceHookDenial.tenant_id == tenant_id,
+                         InferenceHookDenial.session_id == session,
+                         InferenceHookDenial.block_hash.in_(prior),
+                         InferenceHookDenial.created_at >= cutoff)
+                 .first())
+        if hit:
+            return {"action": "deny",
+                    "deny_reason": f"Palivane blocked this message. {ih.RESENT_FIX}"[:ih.DENY_REASON_MAX],
+                    "reference_id": ih.reference_id(hit.finding_id)}
+    from .schemas import MAX_CONTENT
+    content = ih.latest_user_turn(messages)[:MAX_CONTENT]
+    if not content.strip():
+        return {"action": "allow"}
+    # No destination: the org governs Claude through Anthropic itself, so this is never a
+    # shadow-AI destination; content signals fire as on any other plane.
+    result, _meta = _score_ai_usage(content, actor, tool, "", tenant_id, "", db,
+                                    endpoint="inference-hooks", use_judge=False)
+    action, force_block, coached, _cleaned = _prompt_verdict(result, content, tenant_id, db)
+    # The client planes' rule (should_block): a confirmed leak always stops; an ordinary
+    # block, or a coached one, stops under the org's enforcement stance.
+    if not (force_block or (enforce and (action == "block" or coached))):
+        return {"action": "allow"}
+    if coached:
+        fix = ("Your organization allows this prompt once the sensitive values are taken "
+               "out: remove them and send it again.")
+    else:
+        fixes = remediation_for(result["signals"])
+        fix = fixes[0] if fixes else "Remove it and send the message again."
+    if session:
+        hashes = ih.turn_block_hashes(messages)
+        if hashes:
+            _remember_denial(db, tenant_id, session, hashes, result["finding_id"], cutoff)
+    return {"action": "deny",
+            "deny_reason": ih.deny_reason("this message", result["signals"], fix),
+            "reference_id": ih.reference_id(result["finding_id"])}
+
+
+def _remember_denial(db: Session, tenant_id: int, session: str, hashes: list[str],
+                     finding_id, cutoff) -> None:
+    """Record a denied turn's block hashes (idempotent), and sweep this tenant's expired
+    ones. Best effort: a failure here must not turn a deny into a webhook failure."""
+    from .models import InferenceHookDenial
+    try:
+        dialect = db.get_bind().dialect.name
+        if dialect == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert
+        else:
+            from sqlalchemy.dialects.sqlite import insert
+        now = datetime.utcnow()
+        rows = [{"tenant_id": tenant_id, "session_id": session, "block_hash": h,
+                 "finding_id": finding_id, "created_at": now} for h in dict.fromkeys(hashes)]
+        db.execute(insert(InferenceHookDenial).values(rows).on_conflict_do_nothing(
+            index_elements=["tenant_id", "session_id", "block_hash"]))
+        (db.query(InferenceHookDenial)
+           .filter(InferenceHookDenial.tenant_id == tenant_id,
+                   InferenceHookDenial.created_at < cutoff)
+           .delete(synchronize_session=False))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+def _inference_hook_tool_call(frame: dict, tenant_id: int, actor: str, enforce: bool,
+                              db: Session) -> dict:
+    """One verdict for every tool call in the frame: any call that should stop stops them
+    all, and the reason names it."""
+    from . import inference_hooks as ih
+    messages = frame.get("messages") if isinstance(frame.get("messages"), list) else []
+    allowed = _tenant_mcp_allow(tenant_id, db)
+    block = _tenant_mcp_block_severity(tenant_id, db)
+    for act in ih.tool_activities(messages, user=actor):
+        v = _score_mcp(MCPIngest(**act), tenant_id, actor, allowed, block, db,
+                       use_judge=False)
+        if v["action"] == "block" and (enforce or v.get("enforce")):
+            fixes = v.get("remediation") or []
+            name = act["tool"] or "a tool"
+            return {"action": "deny",
+                    "deny_reason": ih.deny_reason(f"a call to {name}", v["signals"],
+                                                  fixes[0] if fixes else ""),
+                    "reference_id": ih.reference_id(v["finding_id"])}
+    return {"action": "allow"}
 
 
 # An agent reading code is normal, and MCP has no external AI destination — so on the
@@ -1889,7 +2061,7 @@ def _tenant_sso_issuer(tenant_id: int | None, db: Session) -> str:
 
 def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
                allowed_servers: str, block_severity: str, db: Session, agent: str = "",
-               client_ua: str = "", attested: str = "") -> dict:
+               client_ua: str = "", attested: str = "", use_judge: bool = True) -> dict:
     """Score one MCP activity on the `mcp` surface and return the client verdict.
 
     Benign (allow-level) verdicts aren't persisted unless PALIVANE_MCP_PERSIST_BENIGN is set
@@ -1959,7 +2131,8 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
     is_ema_auth_event = body.method.startswith("auth/")
     result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id,
                           signal_filter=authz_filter, agent=agent, extra_signals=attest_extra,
-                          persist_benign=settings.mcp_persist_benign or is_ema_auth_event)
+                          persist_benign=settings.mcp_persist_benign or is_ema_auth_event,
+                          use_judge=use_judge)
     allowlist.record_hits(db, allow_holder)
     action = _action_for(result["severity"], block_severity)
     if authz["enforce"] and authz["denied"]:

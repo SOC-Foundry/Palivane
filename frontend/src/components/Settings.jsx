@@ -357,6 +357,24 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                                            })); flash("SIEM saved.");
     } catch (e) { err(e); }
   }
+  // --- Anthropic Inference hooks (Claude Enterprise) ---
+  const [ihSecret, setIhSecret] = useState("");
+  const [ihKey, setIhKey] = useState("");
+  const ihEndpoint = `${window.location.origin}/api/inference-hooks`;
+  async function saveIhSecret(value) {
+    try {
+      const t = await api.updateTenant({ inference_hook_secret: value });
+      onTenant?.(t); setIhSecret("");
+      flash(value ? "Signing secret saved. The previous one keeps working through the switch."
+                  : "Inference hooks secrets cleared.");
+    } catch (e) { err(e); }
+  }
+  async function createIhKey() {
+    try {
+      const k = await api.createApiKey({ label: "Anthropic Inference hooks" });
+      setIhKey(k.token);
+    } catch (e) { err(e); }
+  }
   async function testSiem() {
     try {
       const r = await api.testSiem();
@@ -1237,6 +1255,47 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                  blocks capture). Internal/private endpoints are blocked, use a reachable collector.
                  Events arrive with the Splunk sourcetype <code>palivane:finding</code>, which also
                  sets the S3 object path below.</p>
+            </div>
+
+            {/* Anthropic Inference hooks */}
+            <div className="panel settings-card">
+              <h2>Anthropic Inference hooks</h2>
+              <p className="muted" style={{ fontSize: 12 }}>For Claude Enterprise. Anthropic sends
+                 each prompt, and each set of tool calls, to Palivane before Claude runs it, across
+                 claude.ai, Cowork (local and cloud), Claude Code, Claude in Chrome and Claude for
+                 Microsoft 365. Nothing to install on devices. Set it up in claude.ai under
+                 Organization settings → Inference hooks.</p>
+              <div className="field-grid">
+                <label className="field-wide">1. Endpoint URL (paste into Anthropic)
+                  <input readOnly value={ihEndpoint} onFocus={(e) => e.target.select()} /></label>
+                <label className="field-wide">2. Custom request header (add in Anthropic)
+                  {ihKey
+                    ? <input readOnly value={`X-Palivane-Token: ${ihKey}`} onFocus={(e) => e.target.select()} />
+                    : <span><button type="button" className="mini-btn" onClick={createIhKey}>Create header key</button>
+                        <span className="muted" style={{ fontSize: 12 }}> shown once; copy it now</span></span>}
+                </label>
+                <label className="field-wide">3. Signing secret {tenant?.inference_hook_secret_set
+                    && <span className="muted">(set{tenant?.inference_hook_prev_secret_set ? ", previous kept for rotation" : ""}, paste a new one to rotate)</span>}
+                  <input type="password" placeholder={tenant?.inference_hook_secret_set ? "••••••••" : "whsec_…"}
+                         value={ihSecret} onChange={(e) => setIhSecret(e.target.value)} /></label>
+              </div>
+              <div className="form-row" style={{ gap: 10 }}>
+                <button type="button" className="primary-btn slim" disabled={!ihSecret.trim()}
+                        onClick={() => saveIhSecret(ihSecret.trim())}>Save secret</button>
+                {tenant?.inference_hook_secret_set
+                  && <button type="button" className="mini-btn" onClick={() => saveIhSecret("")}>Clear secrets</button>}
+              </div>
+              {(tenant?.inference_hook_sig_failures || 0) > 0 && (
+                <p className="error" style={{ marginTop: 8, fontSize: 12 }}>
+                  {tenant.inference_hook_sig_failures} request(s) failed the signature check, most
+                  recently {new Date(tenant.inference_hook_last_sig_failure).toLocaleString()}. Check
+                  that the secret here matches the one Anthropic shows.</p>
+              )}
+              <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>A confirmed secret or
+                 personal-data leak is denied in any mode. Other blocks are denied only when
+                 Enforcement is on, the same rule as the CLI hooks and proxy. Run Anthropic's
+                 shadow mode first: denials show in Findings without stopping anyone. Activity
+                 shows in Fleet as the <code>inference-hooks</code> sensor.</p>
             </div>
 
             {/* SIEM S3 / data-lake delivery */}
