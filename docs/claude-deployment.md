@@ -1,14 +1,15 @@
-# Deploying Palivane for Claude (browser, Claude Code, desktop)
+# Deploying Palivane for Claude (browser, Claude Code, desktop, Cowork)
 
-This guide covers governing the three ways your org uses Claude:
+This guide covers governing the ways your org uses Claude:
 
 | Surface | How it reaches Claude | Capture plane | Section |
 | --- | --- | --- | --- |
 | **claude.ai in a browser** | Chrome/Edge tab | Browser extension | [1](#1-claudeai-in-the-browser) |
 | **Claude Code (CLI/IDE)** | `api.anthropic.com` via the CLI | LLM gateway (or proxy) | [2](#2-claude-code) |
 | **Claude desktop app** | its own HTTPS to Anthropic | Egress proxy | [3](#3-claude-desktop-app) |
+| **Everything, Claude Enterprise only** (incl. Cowork local and cloud) | Anthropic's servers | Inference hooks | [4](#4-claude-enterprise-inference-hooks) |
 
-All three feed the same Palivane engine, tenant, and dashboard. Each call is scored for
+All of them feed the same Palivane engine, tenant, and dashboard. Each call is scored for
 **prompt injection / jailbreak / exfiltration** (attacks on the model) and **PII /
 secrets** (data leaving), and either recorded (monitor) or blocked inline (enforce).
 
@@ -317,6 +318,77 @@ proxy, so no per-app config.
 - **Hard-deny posture:** the proxy scans the full transcript, so a secret can't slip
   through on a later replayed turn; the user starts a new chat to clear it (blocks return
   `400` with a "start a new chat" message).
+
+---
+
+## 4. Claude Enterprise: Inference hooks
+
+For **Claude Enterprise** orgs, Anthropic's [Inference hooks](https://platform.claude.com/docs/en/manage-claude/inference-hooks)
+send every prompt, and every set of tool calls, to Palivane before Claude runs it, and wait
+for allow or deny. It runs between Anthropic's servers and Palivane's, so **nothing is
+installed on devices** and one setup covers claude.ai (web, desktop, mobile), Cowork,
+Claude Code, Claude in Chrome and Claude for Microsoft 365, on managed and unmanaged
+devices alike.
+
+It is the only plane that sees **Cowork cloud sessions**, which run entirely on Anthropic's
+servers. Local Cowork also doesn't read `~/.claude/settings.json`, so Route C's hooks don't
+run there either.
+
+Not available on Bedrock, Vertex or the Claude Platform API; keep sections 1–3 for those
+and for non-Enterprise plans. Running both is fine: the same content folds into the same
+finding.
+
+### Set it up (once per org)
+
+Needs a Palivane admin and a claude.ai **Owner** (or Primary owner).
+
+1. **Palivane:** Settings → Integrations → **Anthropic Inference hooks**.
+   - Copy the **endpoint URL** (`https://app.palivane.io/api/inference-hooks`, or your
+     self-hosted origin).
+   - Click **Create header key** and copy the `X-Palivane-Token: ak_…` line. It is shown once.
+2. **claude.ai:** Organization settings → **Inference hooks**.
+   - Paste the endpoint URL.
+   - Add a custom request header: name `X-Palivane-Token`, value the `ak_…` key.
+   - Generate the **signing secret** (`whsec_…`) and copy it.
+   - Turn on **Validate tool calls** to have tool calls checked too.
+3. **Palivane:** paste the signing secret into the same card and **Save secret**.
+4. **claude.ai:** **Test connection**. It should report an allow verdict. If it fails, the
+   Palivane card shows a count of requests that failed the signature check (wrong or
+   missing secret); a `401` with no count means the header key is wrong.
+5. **Start in shadow mode** in claude.ai. Palivane records findings for every prompt, and
+   nothing is blocked. Review them in Findings, then switch to enforce (or use Anthropic's
+   rollout percentage).
+
+Self-hosted Palivane must be reachable from the internet over HTTPS on port 443 with a
+publicly trusted certificate. Anthropic calls from `160.79.106.0/24` and refuses private
+addresses and tunnel services such as ngrok.
+
+### What gets blocked
+
+The same rule as the CLI hooks and proxy:
+
+- a **confirmed** secret or personal-data leak is denied in any mode;
+- other blocks (risky content, a dangerous tool call such as `curl … | sh`, a coached
+  prompt) are denied only when **Settings → Enforcement** is on for that user.
+
+The user sees what was found, without the secret itself, and what to do. The deny's
+`reference_id` in Anthropic's Activity Feed is the Palivane finding id. A denied message
+stays in the conversation, so Palivane keeps denying it until the user edits it out
+(Claude Code: `/rewind`; Cowork: edit it or start a new task; claude.ai: edit the message
+or start a new chat).
+
+### Things to know
+
+- **Failure handling is set in claude.ai**, not Palivane: if Palivane is unreachable or
+  errors, Anthropic either blocks or allows the request, as the org chose there.
+- **Allow or deny only.** The protocol can't redact, so coaching mode is shown as a deny
+  that says what to remove.
+- **Scope in v1:** the newest user message and its attachment text are scanned; tool
+  output (file contents, command output) is not. Anthropic never sends image bytes, so
+  screenshots aren't inspected.
+- **Rotating the secret:** generate a new one in claude.ai and paste it into Palivane. The
+  previous secret keeps working through the switch.
+- Activity shows in **Fleet** as the `inference-hooks` sensor.
 
 ---
 
