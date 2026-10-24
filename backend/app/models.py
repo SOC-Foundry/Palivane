@@ -101,6 +101,15 @@ class Tenant(Base):
     # the key pair when both are set.
     siem_s3_role_arn = Column(String(512), default="")
     siem_s3_external_id = Column(String(64), default="")
+    # Anthropic Inference hooks (app/inference_hooks.py): the org's Standard Webhooks signing
+    # secret (whsec_…), sealed at rest and write-only. `prev` keeps the one it replaced so
+    # requests Anthropic signed just before a rotation still verify.
+    inference_hook_secret = Column(String(512), default="")
+    inference_hook_secret_prev = Column(String(512), default="")
+    # Rejected-signature tally, so a wrong secret shows in Settings before blocking is on.
+    # Written only on a failure, never on the hot path.
+    inference_hook_sig_failures = Column(Integer, default=0)
+    inference_hook_last_sig_failure = Column(DateTime, nullable=True)
     # Raw event archival to the same S3 sink (archive_s3.py): EVERY analyzed event (benign
     # included) as NDJSON micro-batches under <prefix>/<naming>/events/… — the audit-trail
     # complement to the findings feed above. Content ships redacted unless the org opts
@@ -253,6 +262,12 @@ class Tenant(Base):
                 "archive_s3_raw_content": bool(self.archive_s3_raw_content),
                 "archive_s3_daily_mb": self.archive_s3_daily_mb or 0,
                 "siem_token_set": bool((self.siem_token or "").strip()),
+                # Inference hooks secrets are write-only: only whether each slot is set.
+                "inference_hook_secret_set": bool((self.inference_hook_secret or "").strip()),
+                "inference_hook_prev_secret_set": bool((self.inference_hook_secret_prev or "").strip()),
+                "inference_hook_sig_failures": self.inference_hook_sig_failures or 0,
+                "inference_hook_last_sig_failure": (self.inference_hook_last_sig_failure.isoformat()
+                                                    if self.inference_hook_last_sig_failure else None),
                 "gateway_enforce": self.gateway_enforce,
                 "client_enforce": self.client_enforce,
                 "redact_mode": self.redact_mode,
@@ -1079,6 +1094,25 @@ class OAuthToken(Base):
     scopes = Column(String(200), default="")
     expires_at = Column(DateTime, index=True)
     revoked_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow, index=True)
+
+
+class InferenceHookDenial(Base):
+    """A user message an Inference hooks prompt frame was denied for. Anthropic resends the
+    whole transcript on every request and a denied message stays in it until the user
+    edits it out, but Palivane scans only the latest user turn, so without this the next
+    message would carry the denied content to the model unscanned. Keyed on a hash of the
+    block, never the content; rows expire (inference_hooks.DENIAL_TTL)."""
+
+    __tablename__ = "inference_hook_denials"
+    __table_args__ = (UniqueConstraint("tenant_id", "session_id", "block_hash",
+                                       name="uq_inference_hook_denial"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    session_id = Column(String(128), default="", index=True)
+    block_hash = Column(String(64), default="")
+    finding_id = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=_utcnow, index=True)
 
 
