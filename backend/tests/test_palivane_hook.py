@@ -198,6 +198,49 @@ def test_prompt_block_output_erases_prompt_with_reason():
                                          "suppressOriginalPrompt": True}
 
 
+def test_prompt_block_output_says_what_matched():
+    # The category alone ("secret_leak") doesn't tell the user what to take out of a long
+    # prompt; the strongest signals' evidence does.
+    out = hook.prompt_block_output({"risk_score": 95, "severity": "critical", "signals": [
+        {"category": "pii_exposure", "title": "Personal data in outbound content",
+         "evidence": "SSN", "weight": 0.8, "confidence": 0.75},
+        {"category": "secret_leak", "title": "Credentials/secrets in outbound content",
+         "evidence": "AWS access key id", "weight": 0.9, "confidence": 0.85},
+        {"category": "secret_leak", "title": "Credentials/secrets in outbound content",
+         "evidence": "AWS access key id", "weight": 0.9, "confidence": 0.85}],
+        "remediation": ["Rotate it"]})
+    reason = out["reason"]
+    assert "Found:\n  • AWS access key id\n  • SSN\nHow to fix:" in reason   # ranked, deduped
+
+
+def test_prompt_block_output_cuts_a_token_prefix_to_four_characters():
+    # A format-less token's evidence is its first 10 characters; the transcript gets 4.
+    out = hook.prompt_block_output({"risk_score": 60, "severity": "high", "signals": [
+        {"category": "secret_leak", "title": "High-entropy token",
+         "evidence": "x7Kq9PzLm2…, Ab3dE5gH7j…"}]})
+    assert "  • x7Kq…, Ab3d…" in out["reason"]
+    assert "x7Kq9" not in out["reason"] and "Ab3dE" not in out["reason"]
+
+
+def test_prompt_block_output_falls_back_to_title_then_nothing():
+    out = hook.prompt_block_output({"signals": [{"category": "policy_violation",
+                                                 "title": "Blocked destination"}]})
+    assert "  • Blocked destination" in out["reason"]
+    assert "Found:" not in hook.prompt_block_output({"signals": [{"category": "x"}]})["reason"]
+
+
+def test_block_message_names_the_secret_without_showing_it_end_to_end(client, raw_client):
+    key = _key(client)
+    secret = "AKIAQ3EGRZ7XKP4M2WNV"
+    p = hook.build_prompt_usage({"hook_event_name": "UserPromptSubmit",
+                                 "prompt": f"deploy with {secret} please"})
+    body = raw_client.post("/api/ingest/ai-usage", json=p,
+                           headers={"X-Palivane-Token": key}).json()
+    reason = hook.prompt_block_output(body)["reason"]
+    assert "AWS access key id" in reason
+    assert secret[4:] not in reason
+
+
 def test_a_blocked_prompt_exits_2_with_the_reason_on_stderr(monkeypatch, capsys):
     """Exit 2 alongside the JSON: a Claude Code that rejects suppressOriginalPrompt as an
     unknown field would treat the JSON as invalid, and invalid JSON on exit 0 is a
