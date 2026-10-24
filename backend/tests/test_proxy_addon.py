@@ -774,3 +774,62 @@ def test_breaker_concurrent_records(tmp_path, monkeypatch):
     assert not errors
     json.loads((tmp_path / "proxy-breaker.json").read_text())
     assert [p.name for p in tmp_path.iterdir() if p.name.endswith(".tmp")] == []
+
+
+# Claude in Chrome's side panel (a cloud agent session) sends the typed message as a
+# session event. Shape as observed from Chrome, 2026-10-23.
+_SESSION_EVENTS = {"events": [
+    {"payload": {"type": "control_request", "uuid": "u1", "request_id": "r1",
+                 "request": {"subtype": "set_max_thinking_tokens", "max_thinking_tokens": 1024}}},
+    {"payload": {"type": "control_request", "request_id": "r2",
+                 "request": {"subtype": "initialize", "sdkMcpServers": ["claude-in-chrome"]}, "uuid": "u2"}},
+    {"payload": {"type": "user", "uuid": "u3", "session_id": "s1", "parent_tool_use_id": None,
+                 "message": {"role": "user", "content": "summarise this: my SSN is 078-05-1120"}}},
+]}
+
+
+def test_claude_session_events_are_recognized_by_path():
+    assert addon.is_code_session_events("claude.ai", "/v1/code/sessions/cse_014DeKvbp/events")
+    assert addon.is_code_session_events("claude.ai", "/v1/code/sessions/cse_1/events?x=1")
+    assert not addon.is_code_session_events("claude.ai", "/v1/code/sessions/cse_1/events/stream")
+    assert not addon.is_code_session_events("claude.ai", "/v1/code/sessions/watch")
+    assert not addon.is_code_session_events("api.anthropic.com", "/v1/code/sessions/cse_1/events")
+
+
+def test_claude_session_events_yield_only_the_typed_text():
+    text = addon.code_session_user_text(json.dumps(_SESSION_EVENTS).encode())
+    assert text == "summarise this: my SSN is 078-05-1120"
+    blocks = {"events": [{"payload": {"type": "user", "message": {"role": "user", "content": [
+        {"type": "text", "text": "key AKIAQ3EGRZ7XKP4M2WNV"},
+        {"type": "tool_result", "tool_use_id": "t", "content": "page text 4111 1111 1111 1111"}]}}}]}
+    out = addon.code_session_user_text(json.dumps(blocks))
+    assert "AKIAQ3EGRZ7XKP4M2WNV" in out and "4111" not in out     # tool results skipped in v1
+    only_control = {"events": _SESSION_EVENTS["events"][:2]}
+    assert addon.code_session_user_text(json.dumps(only_control)) == ""
+    assert addon.code_session_user_text(b"not json") is None
+    assert addon.code_session_user_text(json.dumps({"other": 1})) is None
+
+
+def test_a_blocked_session_message_is_replaced_and_the_setup_events_kept():
+    verdict = {"signals": [{"category": "pii_exposure", "title": "Personal data", "evidence": "SSN"}],
+               "risk_score": 95, "severity": "critical"}
+    notice = addon.session_block_notice(verdict)
+    assert notice.startswith("[Palivane blocked this message before it left your device")
+    assert "sensitive data: SSN." in notice and "078-05-1120" not in notice
+    assert "Tell the user" not in notice                  # written to the person, not the model
+    tokens = {"signals": [{"evidence": "x7Kq9PzLm2…", "weight": 0.7, "confidence": 0.7}]}
+    assert "x7Kq…" in addon.session_block_notice(tokens) and "x7Kq9" not in addon.session_block_notice(tokens)
+    out = json.loads(addon.replace_user_event_text(json.dumps(_SESSION_EVENTS).encode(), notice))
+    events = out["events"]
+    assert [e["payload"]["type"] for e in events] == ["control_request", "control_request", "user"]
+    assert events[1]["payload"]["request"]["subtype"] == "initialize"       # setup goes through
+    assert events[2]["payload"]["message"]["content"] == notice
+    assert "078-05-1120" not in json.dumps(out)
+    # Block content: text replaced, a tool result kept for the session's bookkeeping.
+    blocks = {"events": [{"payload": {"type": "user", "message": {"role": "user", "content": [
+        {"type": "text", "text": "SSN 078-05-1120"},
+        {"type": "tool_result", "tool_use_id": "t", "content": "ok"}]}}}]}
+    content = json.loads(addon.replace_user_event_text(json.dumps(blocks), notice))["events"][0]["payload"]["message"]["content"]
+    assert content == [{"type": "text", "text": notice}, {"type": "tool_result", "tool_use_id": "t", "content": "ok"}]
+    # Nothing to replace: the caller refuses instead.
+    assert addon.replace_user_event_text(json.dumps({"events": _SESSION_EVENTS["events"][:2]}), notice) is None
