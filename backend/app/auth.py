@@ -1442,6 +1442,20 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
     if body.siem_s3_secret:
         tenant.siem_s3_secret = crypto.seal_secret(crypto.tenant_dek(tenant, db),
                                                    body.siem_s3_secret.strip())  # sealed at rest
+    if body.inference_hook_secret is not None:
+        from .inference_hooks import secret_looks_valid
+        new = body.inference_hook_secret.strip()
+        if not new:
+            tenant.inference_hook_secret = tenant.inference_hook_secret_prev = ""
+        elif not secret_looks_valid(new):
+            raise HTTPException(status_code=400, detail="An Inference hooks signing secret "
+                                "starts with whsec_ followed by base64, as Anthropic shows it.")
+        else:
+            # Rotation keeps the old secret: Anthropic can still send requests signed with it
+            # for about a minute after the switch, plus whatever was in flight.
+            tenant.inference_hook_secret_prev = tenant.inference_hook_secret or ""
+            tenant.inference_hook_secret = crypto.seal_secret(crypto.tenant_dek(tenant, db), new)
+            tenant.inference_hook_sig_failures = 0
     if body.siem_s3_role_arn is not None:
         arn = body.siem_s3_role_arn.strip()
         # Any AWS partition (aws / aws-us-gov / aws-cn), but it must be an IAM *role* —
