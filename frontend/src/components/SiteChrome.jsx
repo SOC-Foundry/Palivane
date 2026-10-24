@@ -90,7 +90,7 @@ export function PointerGlow() {
       idle = setTimeout(hide, GLOW_IDLE_MS);
       kick();
     };
-    const down = (e) => { if (e.pointerType === "mouse") { ts = 1.18; kick(); } };
+    const down = (e) => { if (e.pointerType === "mouse") { ts = 1.08; kick(); } };
     const up = () => { ts = 1; kick(); };
     const out = (e) => { if (!e.relatedTarget) { hide(); placed = false; } };   // left the window
 
