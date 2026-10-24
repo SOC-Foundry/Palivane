@@ -405,6 +405,9 @@ class TenantUpdate(BaseModel):
     siem_s3_region: str | None = Field(None, max_length=32)
     siem_s3_key_id: str | None = Field(None, max_length=128)   # AWS access key id (write-only)
     siem_s3_secret: str | None = Field(None, max_length=256)   # AWS secret (write-only)
+    # Anthropic Inference hooks signing secret (whsec_…), write-only. A new value moves the
+    # current one to `previous` (rotation); "" clears both.
+    inference_hook_secret: str | None = Field(None, max_length=256)
     # IAM role for cross-account delivery (preferred over the static key pair; takes
     # precedence when both are set). "" clears it. The external ID is server-generated —
     # there is deliberately no field to set it.
