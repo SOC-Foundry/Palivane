@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import sys
 import types
 import uuid
@@ -260,3 +261,48 @@ def test_new_words_are_scanned_and_the_quiet_window_expires(run, monkeypatch):
     monkeypatch.setattr(addon.time, "time", lambda: real() + 3600)
     seen, flow = run(RPC + "PerformAction", perform_action("my ssn is 078-05-1120"), block=True, guard=first.guard)
     assert len(seen) == 1                                  # an hour later it is checked again
+
+
+
+_SSN_BODY = json.dumps({"task_uid": "8f0c2a9e-4b1d-4c3e-9a77-2d5e6f1a0b3c",
+                        "data": {"items": [{"content": "my SSN is 078-05-1120"}]}}).encode()
+
+
+def test_a_blocked_monica_chat_gets_an_error_monica_shows(run):
+    # Monica's chat stream shows a JSON reply as "(code) msg" only when it has a top-level
+    # `code`; the Anthropic-shaped body has none and showed as "INVALID_MESSAGE_CONTENT".
+    seen, flow = run("/api/custom_bot/chat", _SSN_BODY, block=True, host="api.monica.im")
+    assert seen and "078-05-1120" in seen[0]
+    _, status, resp = flow.response
+    j = json.loads(resp)
+    assert status == 403 and j["code"] == "permission_denied"
+    assert j["msg"].startswith("Blocked by Palivane") and j["message"] == j["msg"]
+
+
+def test_a_blocked_merlin_chat_is_an_error_event(run):
+    # Merlin's axios call shows any non-2xx as "Request failed with status code 400".
+    _, flow = run("/arcane/api/v2/extension/chat", _SSN_BODY, block=True, host="www.getmerlin.in")
+    _, status, resp = flow.response
+    event, data, end = resp.decode().split("\n", 2)
+    assert status == 200 and event == "event: error" and end == "\n"
+    j = json.loads(data.removeprefix("data: "))
+    assert j["message"].startswith("Blocked by Palivane") and "078-05-1120" not in j["message"]
+
+
+def test_a_blocked_harpa_ask_is_the_message_as_a_json_string(run):
+    # HARPA prints a failed reply's JSON under "ERROR:"; a string prints as itself.
+    _, flow = run("/api/v1/ai/ask", _SSN_BODY, block=True, host="api.harpa.ai")
+    assert flow.response[1] == 400 and json.loads(flow.response[2]).startswith("Blocked by Palivane")
+
+
+def test_the_api_shaped_block_also_carries_a_top_level_message(run):
+    # Sider and MaxAI show only a top-level `message`; the SDKs keep reading error.message.
+    for host, path in [("api2.sider.ai", "/api/chat/v1/completions"), ("api.maxai.me", "/gpt/cwc/make")]:
+        _, flow = run(path, _SSN_BODY, block=True, host=host)
+        j = json.loads(flow.response[2])
+        assert flow.response[1] == 400 and j["message"].startswith("Blocked by Palivane"), host
+        assert "msg" not in j and "code" not in j      # Sider reads `msg` first; its codes mean logout/upsell
+    _, flow = run("/v1/messages", json.dumps({"messages": [{"role": "user", "content": "x"}]}).encode(),
+                  block=True, host="api.anthropic.com")
+    j = json.loads(flow.response[2])
+    assert flow.response[1] == 400 and j["type"] == "error" and j["error"]["message"] == j["message"]
