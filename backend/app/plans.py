@@ -45,7 +45,7 @@ from .models import Tenant
 #                  a regex should not be a paid feature. What is paid is the accuracy of a
 #                  149M-parameter encoder and the cost of running one.
 _ALL_FEATURES = frozenset({"alerts", "mdm", "sso", "siem", "s3_delivery", "judge",
-                           "device_setup", "remediation", "ml_encoder"})
+                           "device_setup", "remediation", "ml_encoder", "inference_hooks"})
 
 PLANS: dict[str, dict] = {
     "trial": {
@@ -71,13 +71,15 @@ PLANS: dict[str, dict] = {
     },
     "team": {
         "label": "Team",
-        "features": frozenset({"alerts", "mdm", "device_setup"}),
+        # inference_hooks: Anthropic's server-side hook exists only for Claude Enterprise
+        # orgs, but those are not always on Palivane's top tier.
+        "features": frozenset({"alerts", "mdm", "device_setup", "inference_hooks"}),
         "quotas": {},   # inherit the globals
     },
     "enterprise": {
         "label": "Enterprise",
         "features": frozenset({"alerts", "mdm", "sso", "siem", "s3_delivery", "judge",
-                               "device_setup", "remediation", "ml_encoder"}),
+                               "device_setup", "remediation", "ml_encoder", "inference_hooks"}),
         "quotas": {},
     },
 }
@@ -171,13 +173,15 @@ FEATURE_LABELS: dict[str, str] = {
     "device_setup": "Self-serve device installers (per-OS)",
     "alerts": "Webhook alerts + digests",
     "mdm": "MDM policy pack (Jamf · Intune · GPO)",
+    "inference_hooks": "Anthropic Inference hooks (Claude Enterprise)",
     "sso": "SSO — OIDC & SAML",
     "siem": "SIEM forwarding (Splunk HEC · CEF · JSON)",
     "s3_delivery": "S3 / data-lake delivery",
     "judge": "Managed LLM judge (semantic detection)",
 }
 # Order features present-to-absent across tiers for a stable comparison table.
-_FEATURE_ORDER = ("device_setup", "alerts", "mdm", "sso", "siem", "s3_delivery", "judge")
+_FEATURE_ORDER = ("device_setup", "alerts", "mdm", "inference_hooks", "sso", "siem", "s3_delivery",
+                  "judge")
 
 
 def catalog(tenant: Tenant | None = None) -> dict:

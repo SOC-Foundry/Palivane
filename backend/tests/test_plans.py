@@ -46,6 +46,14 @@ def test_free_plan_gates_sso_siem_s3_alerts_mdm(free_client):
     assert free_client.get("/api/policy-pack").status_code == 402
 
 
+def test_inference_hooks_need_team_or_enterprise(free_client, team_client):
+    secret = "whsec_" + "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo="
+    r = free_client.patch("/api/tenant", json={"inference_hook_secret": secret})
+    assert r.status_code == 402 and "team" in r.json()["detail"].lower()
+    assert free_client.patch("/api/tenant", json={"inference_hook_secret": ""}).status_code == 200
+    assert team_client.patch("/api/tenant", json={"inference_hook_secret": secret}).status_code == 200
+
+
 def test_free_plan_can_provision_device_installers(free_client):
     # Self-serve device installers (device_setup) are free so any org can seamlessly
     # onboard its whole fleet — only the MDM policy pack above is paid.
@@ -108,7 +116,7 @@ def test_plan_helpers():
     assert plan_of(Tenant(slug="x", plan="weird")) == "free"
     assert has_feature(Tenant(slug="x", plan="enterprise"), "sso")
     assert not has_feature(Tenant(slug="x", plan="team"), "sso")
-    assert features_of(Tenant(slug="x", plan="team")) == ["alerts", "device_setup", "mdm"]
+    assert features_of(Tenant(slug="x", plan="team")) == ["alerts", "device_setup", "inference_hooks", "mdm"]
 
 
 def test_cli_set_plan(db_factory, monkeypatch):

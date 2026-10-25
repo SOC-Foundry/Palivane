@@ -1351,6 +1351,11 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         require_feature(tenant, "s3_delivery")
     if body.archive_s3_enabled:
         require_feature(tenant, "s3_delivery")
+    # Only setting the secret is gated. An org whose plan lapses keeps being scanned (capture
+    # never stops, as on every plane): refusing Anthropic's requests instead would block every
+    # prompt in an org whose hooks fail closed.
+    if (body.inference_hook_secret or "").strip():
+        require_feature(tenant, "inference_hooks")
     if body.name is not None:
         tenant.name = body.name.strip() or tenant.name
     if body.judge is not None:
