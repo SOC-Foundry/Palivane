@@ -158,8 +158,74 @@ def test_new_addon_is_reloaded_in_place_without_a_restart(tmp_path, signed_relea
     assert not any("restart" in c for c in _calls(log))  # and no restart
     assert "reloaded it in place" in out.stdout
     assert not (home / ".palivane" / "palivane_addon.py.prev").exists()
-    assert not list((home / ".palivane").glob("*.palivane-new"))
+    assert not list((home / ".palivane").glob("*.palivane-new*"))
+    assert not (home / ".palivane" / "update-addon.lock").exists()     # released
     assert _ledger(home) == {}
+
+
+def _hold_lock(home: Path, pid: int, age_s: float = 0) -> Path:
+    lock = home / ".palivane" / "update-addon.lock"
+    lock.mkdir()
+    (lock / "pid").write_text(f"{pid}\n")
+    if age_s:
+        t = time.time() - age_s
+        os.utime(lock, (t, t))
+    return lock
+
+
+def test_a_second_update_leaves_it_to_the_one_running(tmp_path, signed_release, listener):
+    # Two writers sharing one temp name was the "could not write" failure; two runs also
+    # interleaved the backup, the marker wait, the restart and the rollback.
+    home, addon, log, env = _setup(tmp_path, signed_release)
+    lock = _hold_lock(home, os.getpid())                 # a live owner
+    out = _run(env, listener)
+    assert out.returncode == 0, out.stdout + out.stderr  # not a failure: the other run has it
+    assert "already running" in out.stdout
+    assert addon.read_bytes() == OLD and _calls(log) == [] and lock.exists()
+
+
+@pytest.mark.parametrize("why", ["dead owner", "too old"])
+def test_a_stale_lock_is_taken_over(tmp_path, signed_release, listener, why):
+    home, addon, log, env = _setup(tmp_path, signed_release)
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    if why == "dead owner":
+        _hold_lock(home, dead.pid)
+    else:
+        _hold_lock(home, os.getpid(), age_s=3600)
+    with Reloader(home):
+        out = _run(env, listener)
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert addon.read_bytes() == NEW
+    assert not (home / ".palivane" / "update-addon.lock").exists()
+
+
+def test_two_updates_at_once_end_with_one_clean_update(tmp_path, signed_release, listener):
+    home, addon, log, env = _setup(tmp_path, signed_release)
+    # A slow download, so both runs are mid-update at once (the timer firing while a session
+    # start hands posture's update over). Without it they simply run one after the other.
+    slow = tmp_path / "slow"
+    slow.mkdir()
+    (slow / "curl").write_text(f'#!/bin/sh\nsleep 1\nexec "{shutil.which("curl")}" "$@"\n')
+    os.chmod(slow / "curl", 0o755)
+    env["PATH"] = f"{slow}{os.pathsep}{env['PATH']}"
+    script = f'set -euo pipefail\nsource "{_DESKTOP}"\ncmd_update_addon\n'
+    full = {**os.environ, **env, "PALIVANE_PROXY_PORT": str(listener)}
+    with Reloader(home) as r:
+        procs = [subprocess.Popen(["bash", "-c", script], env=full, text=True,
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT) for _ in range(2)]
+        outs = [p.communicate(timeout=120)[0] for p in procs]
+    assert [p.returncode for p in procs] == [0, 0], outs
+    # Exactly one run does the update; without the lock both did all of it (seen with the
+    # old script under this same overlap): two swaps, two marker waits, two chances to restart.
+    assert sum("addon updated" in o for o in outs) == 1, outs
+    assert sum("already running" in o for o in outs) == 1, outs
+    assert addon.read_bytes() == NEW
+    assert r.loads == 1                                  # swapped in once
+    assert not any("restart" in c for c in _calls(log))  # nobody restarted the proxy
+    assert _ledger(home) == {}                            # and nobody rolled back
+    assert not list((home / ".palivane").glob("*.palivane-new*"))
+    assert not (home / ".palivane" / "palivane_addon.py.prev").exists()
 
 
 def test_a_proxy_that_does_not_reload_is_restarted_exactly_once(tmp_path, signed_release, listener):
@@ -407,7 +473,7 @@ def test_connect_hands_the_addon_to_palivane_desktop(tmp_path, monkeypatch, sign
 def test_windows_port_has_the_same_update_path():
     ps = (_ROOT / "cli" / "palivane-desktop.ps1").read_text()
     assert '"update-addon")]' in ps and '"update-addon" { exit (Invoke-UpdateAddon) }' in ps
-    body = ps.split("function Invoke-UpdateAddon", 1)[1].split("\nfunction ", 1)[0]
+    body = ps.split("function Invoke-UpdateAddonLocked", 1)[1].split("\nfunction ", 1)[0]
     # Verified first, unchanged hash is a no-op, then reload -> one restart -> rollback.
     order = ["Get-VerifiedManifest", "-eq $want", "Save-VerifiedFile", "Wait-Loaded $want",
              "Restart-Proxy", "Set-FileInPlace $prev $Addon", "Add-UpdateFailure"]
@@ -416,3 +482,9 @@ def test_windows_port_has_the_same_update_path():
     assert "Start-ScheduledTask -TaskName $TaskName" in ps.split("function Restart-Proxy", 1)[1]
     assert "Install-UpdateTask $palivaneUrl" in ps and "Remove-UpdateTask" in ps
     assert '"update-failed"' in ps
+    # One update at a time, and no shared temp name.
+    wrapper = ps.split("function Invoke-UpdateAddon {", 1)[1].split("\nfunction ", 1)[0]
+    assert "System.Threading.Mutex" in wrapper and "WaitOne(0)" in wrapper
+    assert "AbandonedMutexException" in wrapper and "ReleaseMutex()" in wrapper
+    assert "Invoke-UpdateAddonLocked" in wrapper and "already running" in wrapper
+    assert '.palivane-new"' not in ps                    # every temp name is per-run
