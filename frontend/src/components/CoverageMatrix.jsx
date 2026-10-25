@@ -21,6 +21,12 @@ const GROUPS = [
         mode: "block",
       },
       {
+        surface: "Every Claude product, for Claude Enterprise: claude.ai, Cowork (cloud sessions too), Claude Code, Claude in Chrome, Claude for Microsoft 365",
+        how: "Anthropic Inference hooks: Anthropic sends each prompt, and each set of tool calls, to Palivane before the model runs, and waits for allow or deny",
+        needs: "Claude Enterprise. An Owner points Organization settings → Inference hooks at Palivane (endpoint URL, header key, signing secret). Nothing on any device. Palivane Team or Enterprise plan.",
+        mode: "block",
+      },
+      {
         surface: "Collaboration messaging: Slack, Microsoft Teams",
         how: "Slack scanned in real time (Events API push) and on a cursor; Teams channels + thread replies via Graph delta, with opted-in 1:1/group chats via the export API",
         note: "PII/PHI/secret detection on the collab surface. Bot token covers channels the bot is in; on Enterprise Grid a customer-generated Discovery token covers every private channel and DM org-wide. Enterprise can additionally delete a confirmed Slack leak (audit-logged). Real-time needs a public webhook URL; the scheduled pull is the safety net.",
@@ -66,8 +72,8 @@ const GROUPS = [
         mode: "block",
       },
       {
-        surface: "Desktop AI apps, IDE assistants, third-party CLIs (Claude/ChatGPT desktop, GitHub Copilot, ...)",
-        how: "Local TLS egress proxy (mitmproxy), inspects outbound calls to known AI hosts",
+        surface: "Desktop AI apps, AI browser extensions, IDE assistants, third-party CLIs (Claude/ChatGPT desktop, Claude in Chrome, Monica, Sider, Merlin, HARPA, MaxAI, GitHub Copilot, ...)",
+        how: "Local TLS egress proxy (mitmproxy), inspects outbound calls to known AI hosts. Extensions use the browser's own network, so the proxy sees them where the browser extension can't. In Claude Desktop, claude.ai and Claude in Chrome a blocked message is replaced by a notice, so the reason shows in the conversation",
         needs: "palivane-desktop: a local proxy + a trusted CA certificate, MDM-pushable.",
         mode: "block",
       },
@@ -169,6 +175,8 @@ const GAPS = [
   ["SaaS scanning is detect-after, not pre-delivery", "Slack (Events API), SharePoint/OneDrive and Drive (change notifications) now scan within seconds of a message or file landing when a public webhook URL is set; Teams, email and Salesforce run on a cursor. Either way a leak is found AFTER it lands, not before, these platforms expose no pre-delivery inspection point below Enterprise Grid, so this plane is observe-only by construction."],
   ["Teams chats are opt-in and metered", "Channel messages (and thread replies) scan by default, but 1:1 and group chats need each mailbox named and a licensed Teams export model, and ChannelMessage.Read.All is a Microsoft protected API that takes one-time approval. A reply to a thread whose root has already left the sync window is only re-seen when that root next changes."],
   ["Email scanning is outbound only", "Gmail and Outlook are scanned on the SENT side, outbound is where data actually leaves the org. Inbound mail isn't scanned, and both run on a per-mailbox cursor with no pre-send inspection point, so a leak is found after the message is sent, not before."],
+  ["Inference hooks are allow or deny", "Anthropic's hook can't redact or rewrite, so coaching mode shows as a block that says what to remove. It is Claude Enterprise only (not Bedrock, Vertex or the API platform), and Anthropic never sends image bytes, so a screenshot isn't inspected on this plane."],
+  ["AI sidebar extensions are covered by host", "Monica, Sider, Merlin, HARPA and MaxAI are inspected at the API hosts read from each extension's own code, and only on their chat endpoints. A vendor that moves to a new host drops out until the list is updated; the proxy counts prompt-like requests it can't read, so that shows in Fleet rather than going quiet."],
   ["Mobile apps", "Native mobile AI apps are not covered. The browser extension covers mobile web only where the browser supports extensions."],
   ["Agentic browsers", "Where the agent IS the browser (Perplexity Comet, Dia, the ChatGPT desktop app that absorbed Atlas), the model call originates from the browser itself, not a page fetch the extension wraps. The egress proxy now parses Comet's assistant SSE and flags its agent WebSocket, and the ChatGPT desktop app rides the proxy's existing chatgpt.com handling (but none of it has been verified against a real build yet (no Linux builds exist; the macOS/Windows pass is docs/agentic-browser-verification.md). Until that pass lands, treat these as discover-only: we see the usage, inline interception is built but unproven. Dia stays discovery-only by design) its real API hosts are unverified (catalog row flagged provisional)."],
 ];
