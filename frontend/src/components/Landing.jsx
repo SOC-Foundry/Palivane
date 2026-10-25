@@ -15,17 +15,6 @@ import { SELF_HOSTED, SIGN_IN_IS_CROSS_ORIGIN, demoUrl, signInUrl } from "../dep
 // centred heading + subhead + grid blocks, which gave a reader no sense of progress and
 // made every section feel equally weighted.
 
-// Number and label only. Each tile used to carry a second line of small print; the surfaces
-// are listed one section down and the data handling is the first FAQ answer.
-const STATS = [
-  { n: "8", l: "surfaces covered" },
-  SELF_HOSTED
-    ? { n: "0", l: "content leaves your infrastructure" }
-    : { n: "0", l: "prompt text kept by default" },
-  { n: `${stats.detection_checks}`, l: "detection checks" },
-  { n: "1", l: "afternoon to set up" },
-];
-
 // Ordered by what a buyer can turn on soonest, not by how the planes are built. Coding
 // tools first: it is a one-line install, it is where the expensive leaks are (source code,
 // production credentials), and it is the surface a CASB and a browser-only tool cannot see
@@ -55,9 +44,22 @@ const CAPTURE = [
   { logos: [[BrandClaude, C.claude], [BrandOpenAI, C.openai]], title: "In desktop apps and AI extensions", body: "Claude and ChatGPT desktop, Claude in Chrome, and AI sidebar extensions like Monica and Sider. A blocked message is explained right in the conversation. Needs a system proxy and a trusted CA, so it is usually phase two." },
   // Was its own "Headless" section. The MCP server is one more place Palivane runs, so it is
   // one more tab: the link and the clip stay reachable from here.
-  { logos: [[BrandClaude, C.claude]], title: "From your own AI assistant", body: "Palivane ships an MCP server, so you can ask Claude what leaked today, triage a finding, or pull a report without opening the console.",
+  { logos: [[BrandClaude, C.claude]], title: "From your own AI assistant", notSurface: true, body: "Palivane ships an MCP server, so you can ask Claude what leaked today, triage a finding, or pull a report without opening the console.",
     links: [["https://github.com/SOC-Foundry/palivane-clients/tree/main/mcp-server", "Wire it into Claude Code or Desktop"],
             ["/shots/mcp-demo.mp4?v=2", "Watch it work the triage queue"]] },
+];
+
+// Number and label only. Each tile used to carry a second line of small print; the surfaces
+// are listed one section down and the data handling is the first FAQ answer. The surface
+// count is the tabs above, less the one that is Palivane's own MCP server rather than a place
+// it captures: a hand-written number here said 8 while the page listed 9, then 10.
+const STATS = [
+  { n: `${CAPTURE.filter((c) => !c.notSurface).length}`, l: "surfaces covered" },
+  SELF_HOSTED
+    ? { n: "0", l: "content leaves your infrastructure" }
+    : { n: "0", l: "prompt text kept by default" },
+  { n: `${stats.detection_checks}`, l: "detection checks" },
+  { n: "1", l: "afternoon to set up" },
 ];
 
 const LINEAGE = [
