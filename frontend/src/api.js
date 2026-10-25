@@ -168,6 +168,7 @@ export const api = {
   reportSummary: (days = 30) =>
     req(`/reports/summary?${new URLSearchParams({ days })}`),
   discoveryInventory: () => req("/discovery/inventory"),
+  discoveryBrowserExtensions: () => req("/discovery/browser-extensions"),
   discoveryIngest: (events) =>
     req("/discovery/ingest", { method: "POST", body: JSON.stringify({ events }) }),
   stats: (window = "24h") => req(`/stats?window=${encodeURIComponent(window)}`),

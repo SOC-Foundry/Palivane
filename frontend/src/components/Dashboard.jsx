@@ -139,6 +139,7 @@ const SURFACES = [
   ["collab", "Collaboration content", "Slack and other AI-readable messages"],
   ["deps", "Dependencies", "supply-chain risk in package manifests"],
   ["ide", "IDE extensions", "unapproved or known-bad editor plugins"],
+  ["browser_ext", "Browser extensions", "AI extensions installed in Chrome / Edge"],
   ["ci", "CI runners", "workflow posture and AI agents in CI"],
   ["secrets", "Credentials at rest", "secrets on the device itself"],
   ["device", "Device health", "capture-plane collisions and coverage gaps"],

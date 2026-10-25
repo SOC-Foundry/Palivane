@@ -16,8 +16,8 @@ from sqlalchemy.orm import Session
 from . import audit_log
 from .config import settings
 from .models import (
-    Agent, AgentRole, ApiKey, DiscoveredUsage, EnrollmentToken, Finding, PolicyOverride,
-    TenantOIDC, TenantSAML, TenantUpstream, User,
+    Agent, AgentRole, ApiKey, BrowserExtension, DiscoveredUsage, EnrollmentToken, Finding,
+    PolicyOverride, TenantOIDC, TenantSAML, TenantUpstream, User,
 )
 
 _FINDINGS_CAP = 50000
@@ -55,6 +55,15 @@ def _discovered(d) -> dict:
             "last_seen": d.last_seen.isoformat() if d.last_seen else None}
 
 
+def _browser_ext(b) -> dict:
+    """BrowserExtension has no to_dict(); all its columns are non-secret inventory."""
+    return {"device": b.device, "actor": b.actor, "ext_id": b.ext_id, "name": b.name,
+            "version": b.version, "enabled": bool(b.enabled), "install_type": b.install_type,
+            "host_access": b.host_access,
+            "first_seen": b.first_seen.isoformat() if b.first_seen else None,
+            "last_seen": b.last_seen.isoformat() if b.last_seen else None}
+
+
 def build_tenant_export(db: Session, tenant, include_content: bool = False,
                         limit: int = _FINDINGS_CAP) -> dict:
     """Assemble the complete export document for `tenant` (a Tenant instance)."""
@@ -69,6 +78,7 @@ def build_tenant_export(db: Session, tenant, include_content: bool = False,
     roles = db.query(AgentRole).filter(AgentRole.tenant_id == tid).all()
     overrides = db.query(PolicyOverride).filter(PolicyOverride.tenant_id == tid).all()
     discovered = db.query(DiscoveredUsage).filter(DiscoveredUsage.tenant_id == tid).all()
+    browser_exts = db.query(BrowserExtension).filter(BrowserExtension.tenant_id == tid).all()
     from .crypto import unwrap_dek
     dek = unwrap_dek(tenant.dek_wrapped) if tenant.dek_wrapped else None
 
@@ -84,6 +94,7 @@ def build_tenant_export(db: Session, tenant, include_content: bool = False,
         "agent_roles": [r.to_dict() for r in roles],
         "policy_overrides": [o.to_dict() for o in overrides],
         "discovered_usage": [_discovered(d) for d in discovered],
+        "browser_extensions": [_browser_ext(b) for b in browser_exts],
         "upstreams": _upstreams(db, tid),
         "sso": _sso(db, tid),
         "audit_log": audit_log.recent(db, tid, limit=_AUDIT_CAP),
@@ -91,5 +102,6 @@ def build_tenant_export(db: Session, tenant, include_content: bool = False,
         "counts": {"users": len(users), "api_keys": len(keys),
                    "enrollment_tokens": len(tokens), "findings": len(findings),
                    "agents": len(agents), "agent_roles": len(roles),
-                   "policy_overrides": len(overrides), "discovered_usage": len(discovered)},
+                   "policy_overrides": len(overrides), "discovered_usage": len(discovered),
+                   "browser_extensions": len(browser_exts)},
     }
