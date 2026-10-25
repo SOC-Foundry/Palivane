@@ -408,8 +408,8 @@ export default function Landing({ onSignIn }) {
         <div className="lp-wrap">
           <div className="lp-band-head rv">
             <h2 className="lp-h2">It works wherever your team <span className="lp-hl">uses AI</span></h2>
-            <p className="lp-sub">One console for all of it. Only desktop apps need a proxy and a
-              certificate, so start without them.</p>
+            <p className="lp-sub">One console for all of it. Only desktop apps and AI extensions need a
+              proxy and a certificate, so start without them.</p>
           </div>
           <div className="lp-tabs rv" style={{ "--i": 1 }}>
             <div className="lp-tablist" role="tablist" aria-orientation="vertical">
