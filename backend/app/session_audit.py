@@ -46,6 +46,7 @@ _SURFACE_VENDOR = {
     "deps": "Dependencies",
     "ci": "CI / GitHub Actions",
     "ide": "IDE extensions",
+    "browser_ext": "Browser extensions",
     "secrets": "Endpoint",
     "agent_rules": "Agent rules file",
     "oversharing": "Enterprise LLM",

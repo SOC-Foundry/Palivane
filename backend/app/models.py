@@ -779,6 +779,31 @@ class DiscoveredUsage(Base):
     account_type = Column(String(16), default="")         # corporate | personal | unknown
 
 
+class BrowserExtension(Base):
+    """One extension installed in one browser, as Palivane's extension last reported it
+    (chrome.management, only after the user or org granted the optional permission). Each
+    report replaces that device's rows, so an uninstalled extension drops out. Which ones
+    are AI, and whether the org sanctioned them, is derived at query time like
+    DiscoveredUsage's sanctioned flag. Inventory only: no URLs, no page content."""
+
+    __tablename__ = "browser_extensions"
+    __table_args__ = (UniqueConstraint("tenant_id", "device", "ext_id",
+                                       name="uq_browser_ext_device"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=True)
+    device = Column(String(128), default="", index=True)  # the extension's per-install id
+    actor = Column(String(320), default="", index=True)
+    ext_id = Column(String(64), default="", index=True)   # Chrome Web Store id
+    name = Column(String(255), default="")
+    version = Column(String(64), default="")
+    enabled = Column(Boolean, default=True)
+    install_type = Column(String(32), default="")         # normal | admin | development | sideload | other
+    host_access = Column(String(32), default="")          # "all sites" | "N hosts" | "none"
+    first_seen = Column(DateTime, default=_utcnow)
+    last_seen = Column(DateTime, default=_utcnow, index=True)
+
+
 class Agent(Base):
     """A verifiable AI-agent identity within a tenant (Phase 0: identity + attribution; role
     is carried for the future least-privilege phase). Authenticates with an `ag_…` token

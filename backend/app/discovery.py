@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 
 from .ai_catalog import CATEGORY_LABEL, classify, classify_name
 from .detectors.shadow_ai import _PERSONAL_EMAIL_DOMAINS
-from .models import DiscoveredUsage, TenantDomain
+from .models import BrowserExtension, DiscoveredUsage, TenantDomain
 
 
 def _account_type(db, tenant_id, actor: str) -> str:
@@ -303,4 +303,100 @@ def build_inventory(db, tenant_id, sanctioned_raw: str) -> dict:
         },
         "tools": tool_list,
         "teams": team_list,
+    }
+
+
+# --- browser extensions -------------------------------------------------------------------
+# A second inventory beside the AI-tool one: what's installed in each browser running
+# Palivane's extension (reported only once someone granted it the optional `management`
+# permission). AI products are recognised by Web Store id in detectors/ext_guard.py.
+
+def _tenant_filter(q, model, tenant_id):
+    return q.filter(model.tenant_id == tenant_id) if tenant_id is not None \
+        else q.filter(model.tenant_id.is_(None))
+
+
+def record_browser_extensions(db, tenant_id, device: str, actor: str, extensions: list[dict]) -> int:
+    """Replace `device`'s inventory with this report: upsert what's installed now and drop
+    what isn't, so an uninstalled extension leaves the console too. Returns the row count."""
+    now = _now()
+    current = {}
+    for e in extensions:
+        eid = (e.get("id") or "").strip().lower()
+        if eid:
+            current[eid] = e
+    rows = {r.ext_id: r for r in _tenant_filter(db.query(BrowserExtension), BrowserExtension,
+                                                 tenant_id).filter(BrowserExtension.device == device)}
+    for eid, row in rows.items():
+        if eid not in current:
+            db.delete(row)
+    for eid, e in current.items():
+        row = rows.get(eid)
+        if row is None:
+            row = BrowserExtension(tenant_id=tenant_id, device=device, ext_id=eid, first_seen=now)
+            db.add(row)
+        row.actor = _norm(actor)
+        row.name = (e.get("name") or "")[:255]
+        row.version = (e.get("version") or "")[:64]
+        row.enabled = bool(e.get("enabled", True))
+        row.install_type = (e.get("install_type") or "")[:32]
+        row.host_access = (e.get("host_access") or "")[:32]
+        row.last_seen = now
+    db.commit()
+    return len(current)
+
+
+def build_browser_extension_inventory(db, tenant_id, sanctioned_raw: str) -> dict:
+    """Roll the per-device rows up by extension id: how many browsers and people have it,
+    whether it's an AI product and sanctioned, and the id the policy pack needs to block it."""
+    from .detectors.ext_guard import classify_browser_extension
+    rows = _tenant_filter(db.query(BrowserExtension), BrowserExtension, tenant_id).all()
+    sanctioned = _sanctioned_set(sanctioned_raw)
+    exts: dict[str, dict] = {}
+    for r in rows:
+        product = classify_browser_extension(r.ext_id)
+        x = exts.setdefault(r.ext_id, {
+            "id": r.ext_id, "name": r.name, "ai_product": product,
+            "sanctioned": (r.ext_id in sanctioned or product.lower() in sanctioned) if product else None,
+            "devices": set(), "enabled_devices": set(), "users": set(), "versions": set(),
+            "install_types": set(), "all_sites": False, "last_seen": "",
+        })
+        x["devices"].add(r.device)
+        if r.enabled:
+            x["enabled_devices"].add(r.device)
+        if r.actor:
+            x["users"].add(r.actor)
+        if r.version:
+            x["versions"].add(r.version)
+        if r.install_type:
+            x["install_types"].add(r.install_type)
+        x["all_sites"] = x["all_sites"] or r.host_access == "all sites"
+        ls = r.last_seen.isoformat() if r.last_seen else ""
+        if ls > x["last_seen"]:
+            x["last_seen"], x["name"] = ls, r.name or x["name"]
+
+    out = []
+    for x in exts.values():
+        users = sorted(x["users"])
+        out.append({
+            "id": x["id"], "name": x["name"], "ai_product": x["ai_product"],
+            "sanctioned": x["sanctioned"], "device_count": len(x["devices"]),
+            "enabled_count": len(x["enabled_devices"]), "user_count": len(users),
+            "users": users[:50], "versions": sorted(x["versions"]),
+            "install_types": sorted(x["install_types"]), "all_sites": x["all_sites"],
+            "last_seen": x["last_seen"],
+        })
+    # Unsanctioned AI first, then sanctioned AI, then everything else; widest spread first.
+    out.sort(key=lambda x: (bool(x["ai_product"]) and not x["sanctioned"], bool(x["ai_product"]),
+                            x["device_count"]), reverse=True)
+    ai = [x for x in out if x["ai_product"]]
+    return {
+        "summary": {
+            "devices": len({r.device for r in rows}),
+            "extensions": len(out),
+            "ai_extensions": len(ai),
+            "unsanctioned_ai": len([x for x in ai if not x["sanctioned"]]),
+            "ai_users": len({r.actor for r in rows if r.actor and classify_browser_extension(r.ext_id)}),
+        },
+        "extensions": out,
     }

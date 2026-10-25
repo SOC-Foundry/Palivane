@@ -172,6 +172,26 @@ class IDEExtScan(BaseModel):
     record: bool = False
 
 
+class BrowserExtItem(BaseModel):
+    """One installed browser extension, as chrome.management describes it. Inventory
+    fields only: the extension never sends URLs visited or page content."""
+    id: str = Field(min_length=1, max_length=64)
+    name: str = Field(default="", max_length=255)
+    version: str = Field(default="", max_length=64)
+    enabled: bool = True
+    install_type: str = Field(default="", max_length=32)   # normal | admin | development | …
+    host_access: str = Field(default="", max_length=32)    # "all sites" | "N hosts" | "none"
+
+
+class BrowserExtScan(BaseModel):
+    """The browser extensions installed alongside Palivane's extension. `device` is the
+    extension's per-install id; each report replaces that device's inventory."""
+    extensions: list[BrowserExtItem] = Field(default_factory=list, max_length=1000)
+    device: str = Field(default="", max_length=128)
+    user: str = ""
+    record: bool = False
+
+
 class DevicePostureScan(BaseModel):
     """A device-health report from palivane-posture: capture-plane state (proxy port/
     listener, scan-breaker fail-open) and coverage gaps (WSL/containers). JSON in

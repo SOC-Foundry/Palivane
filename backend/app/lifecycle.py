@@ -14,8 +14,8 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from .models import (
-    Agent, AgentRole, AllowEntry, ApiKey, AuditLog, ContentFingerprint, CorpusSample,
-    DiscoveredUsage, EnrollmentToken, ExceptionRecord, Finding, GatewayUsage,
+    Agent, AgentRole, AllowEntry, ApiKey, AuditLog, BrowserExtension, ContentFingerprint,
+    CorpusSample, DiscoveredUsage, EnrollmentToken, ExceptionRecord, Finding, GatewayUsage,
     InferenceHookDenial, JoinRequest,
     OAuthCode, OAuthToken, PolicyOverride, SaasConnector, SensorHeartbeat, Tenant,
     TenantDomain, TenantOIDC, TenantSAML, TenantUpstream, UpgradeRequest, User,
@@ -54,6 +54,7 @@ TENANT_TABLES = (
     ("saml", TenantSAML),
     ("used_saml_assertions", UsedSamlAssertion),
     ("discovered_usage", DiscoveredUsage),
+    ("browser_extensions", BrowserExtension),
     ("agents", Agent),
     ("agent_roles", AgentRole),
     ("policy_overrides", PolicyOverride),
