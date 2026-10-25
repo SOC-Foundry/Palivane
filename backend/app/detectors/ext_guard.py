@@ -43,6 +43,27 @@ _AGENTIC_AI_EXTENSIONS = {
     "google.geminicodeassist":           "Gemini Code Assist",
 }
 
+# AI browser extensions, by Chrome Web Store id (each verified against its store listing
+# 2026-10-23). Same reasoning as the agentic IDE list: Chrome isolates extensions from each
+# other, so Palivane's own extension can't see what these send, only that they are
+# installed (chrome.management, behind an opt-in permission). The inventory is the
+# coverage, and the policy pack's ExtensionSettings blocks or allows them by these ids.
+# Classified here, not in the extension, so the list grows without a store release.
+_AI_BROWSER_EXTENSIONS = {
+    "ofpnmcalabcbjgholdjcjblkibolbppb": "Monica",
+    "difoiogjjojoaoomphldepapgpbgkhkb": "Sider",
+    "camppjleccjaphfdbohjdohecfnoikec": "Merlin",
+    "eanggfilgoajaocelnaflolkadkeghjp": "HARPA AI",
+    "mhnlakgilnojmhinhkckjpncpbhabphi": "MaxAI",
+    "fcoeoabgfenejglbffodgkkbkcdhcgfn": "Claude in Chrome",
+    "ejcfepkfckglbgocfkanmcdngdijcgld": "ChatGPT search",
+}
+
+
+def classify_browser_extension(ext_id: str) -> str:
+    """The AI product a Chrome extension id belongs to, or "" when it isn't a known one."""
+    return _AI_BROWSER_EXTENSIONS.get((ext_id or "").strip().lower(), "")
+
 
 def _parse_ext_ids(content: str) -> list[str]:
     """Extract extension ids from a `.vscode/extensions.json`, a JSON list, or a plain
@@ -101,4 +122,35 @@ class ExtGuardDetector:
                             "coding surface with no capture hooks — sanction it via the "
                             "extension allowlist, or block it via the MDM policy pack."),
                     weight=0.5, confidence=0.9, detector=self.name, evidence=eid))
+        return signals
+
+
+class BrowserExtGuardDetector:
+    """AI browser extensions from the Palivane extension's installed-extension report
+    (surface=browser_ext). Reads the list from metadata["extensions"]: id and enabled are
+    the evidence, the rest of each entry is inventory."""
+
+    name = "browser_ext_guard"
+    surfaces: set[Surface] = {Surface.BROWSER_EXT}
+
+    def analyze(self, item: AnalysisInput) -> list[Signal]:
+        m = item.metadata or {}
+        # An org sanctions one through the allowlist the Discovery page already edits
+        # (sanctioned_ai_tools), by extension id or by product name.
+        sanctioned = _csv(str(m.get("sanctioned") or "").replace("\n", ","))
+        signals: list[Signal] = []
+        for ext in m.get("extensions") or []:
+            eid = str(ext.get("id") or "").lower()
+            product = classify_browser_extension(eid)
+            # A disabled extension can't read a page: inventory, not a finding.
+            if not product or not ext.get("enabled", True):
+                continue
+            if eid in sanctioned or product.lower() in sanctioned:
+                continue
+            signals.append(Signal(
+                category=Category.UNSANCTIONED_AI, title="AI browser extension",
+                detail=(f"{product} ('{eid}') is installed and enabled. Palivane can't inspect "
+                        "what another extension sends: sanction it on the Discovery page, "
+                        "or block it by id with the policy pack's ExtensionSettings."),
+                weight=0.5, confidence=0.9, detector=self.name, evidence=eid))
         return signals

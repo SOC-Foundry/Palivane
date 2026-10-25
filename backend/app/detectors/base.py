@@ -29,6 +29,7 @@ class Surface(str, Enum):
                           # drilling into "MCP activity" find shell commands.
     DEPS = "deps"         # Dependency manifests — supply-chain risk in package files
     IDE = "ide"           # IDE extensions — known-bad / unapproved editor plugins
+    BROWSER_EXT = "browser_ext"  # Browser extensions — AI extensions installed in Chrome/Edge
     SECRETS = "secrets"   # Endpoint credential hygiene — secrets at rest on a device
     OVERSHARING = "oversharing"  # Need-to-know: an LLM response returning restricted data
     CI = "ci"             # CI runners — GitHub Actions workflow posture & AI agents in CI

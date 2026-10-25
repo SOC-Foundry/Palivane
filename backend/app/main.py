@@ -48,6 +48,7 @@ from .schemas import (
     BatchAnalyzeRequest,
     AgentConfigScan,
     AgentRulesScan,
+    BrowserExtScan,
     CIScan,
     CodeScanRequest,
     CorpusLabel,
@@ -1447,7 +1448,9 @@ def _sanctioned_list(raw: str) -> list[dict]:
     out = []
     for entry in (raw or "").split(","):
         e = entry.strip()
-        if not e:
+        # A browser-extension id sanctioned on the Discovery page isn't somewhere to go
+        # instead (Chrome ids are 32 letters a-p).
+        if not e or re.fullmatch(r"[a-p]{32}", e):
             continue
         host = e.replace("https://", "").replace("http://", "").rstrip("/")
         url = f"https://{host}" if ("." in host and " " not in host) else ""
@@ -2623,6 +2626,48 @@ def scan_ide_extensions(
                          })
     result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
                           db=db, tenant_id=tenant_id)
+    return {
+        "action": _action_for(result["severity"]),
+        "severity": result["severity"],
+        "risk_score": result["risk_score"],
+        "extensions": result["signals"],
+    }
+
+
+@app.post("/api/scan/browser-extensions")
+def scan_browser_extensions(
+    body: BrowserExtScan,
+    x_palivane_token: str = Header(default=""),
+    x_palivane_agent: str = Header(default=""),
+    user_agent: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Inventory the browser extensions installed beside Palivane's own (chrome.management,
+    sent only once the user or org granted that optional permission). AI products are
+    flagged as unsanctioned-AI findings unless the org sanctioned them; with `record`, the
+    full list also replaces this device's rows in the Discovery inventory. Token-gated
+    like the posture scans; carries ids, names and versions, never URLs or page content."""
+    from .discovery import record_browser_extensions
+    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
+    _enforce_rate(db, tenant_id)
+    actor = _attributed_actor(body.user, default_actor)
+    agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
+    _record_heartbeat(db, tenant_id, actor, "posture", "browser-extensions", user_agent)
+    exts = [e.model_dump() for e in body.extensions]
+    item = AnalysisInput(content="\n".join(sorted(e["id"] for e in exts)), sender=actor,
+                         subject="browser-extensions", channel="browser-extensions",
+                         surface=Surface.BROWSER_EXT,
+                         metadata={"kind": "browser_extensions", "extensions": exts,
+                                   "sanctioned": _tenant_or_global(
+                                       tenant_id, db, "sanctioned_ai_tools",
+                                       settings.sanctioned_ai_tools)})
+    # An inventory, not content: the judge has nothing to add, and a clean report (sent
+    # daily) is not a finding.
+    result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
+                          db=db, tenant_id=tenant_id, agent=agent, use_judge=False,
+                          persist_benign=False)
+    if body.record:
+        record_browser_extensions(db, tenant_id, body.device or actor or "unknown", actor, exts)
     return {
         "action": _action_for(result["severity"]),
         "severity": result["severity"],
@@ -4301,6 +4346,18 @@ def discovery_inventory(current: User = Depends(require_admin), db: Session = De
     sanctioned = _tenant_or_global(current.tenant_id, db, "sanctioned_ai_tools",
                                    settings.sanctioned_ai_tools)
     return build_inventory(db, current.tenant_id, sanctioned)
+
+
+@app.get("/api/discovery/browser-extensions")
+def discovery_browser_extensions(current: User = Depends(require_admin),
+                                 db: Session = Depends(get_db)):
+    """Browser extensions installed across the fleet, by extension id: AI products first,
+    each marked sanctioned/unsanctioned against the same allowlist as the AI-tool inventory.
+    The ids are what the policy pack's ExtensionSettings blocks or allows."""
+    from .discovery import build_browser_extension_inventory
+    sanctioned = _tenant_or_global(current.tenant_id, db, "sanctioned_ai_tools",
+                                   settings.sanctioned_ai_tools)
+    return build_browser_extension_inventory(db, current.tenant_id, sanctioned)
 
 
 @app.get("/api/usage")
