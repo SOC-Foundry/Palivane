@@ -34,6 +34,7 @@ const REASON_LABEL = {
   "auth-rejected": "key rejected", "rate-limited": "rate limited", "http-error": "HTTP error",
   "bad-response": "unreadable response", "breaker-open": "circuit breaker open", error: "error",
   "update-failed": "proxy update rolled back",
+  "unparsed-prompt": "prompt-like request it could not read",
 };
 
 function reasonsText(reasons) {

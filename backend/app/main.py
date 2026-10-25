@@ -1948,7 +1948,7 @@ def _parse_agent_ua(ua: str) -> tuple[str, str]:
 # verified new addon would not load and it put the previous one back.
 _SCAN_FAIL_REASONS = frozenset({"timeout", "network", "server-error", "auth-rejected",
                                 "rate-limited", "http-error", "bad-response", "breaker-open",
-                                "error", "update-failed"})
+                                "error", "update-failed", "unparsed-prompt"})
 _SCAN_FAIL_MAX = 1_000_000
 _SCAN_FAIL_HORIZON = timedelta(days=30)
 
