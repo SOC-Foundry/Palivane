@@ -833,3 +833,30 @@ def test_a_blocked_session_message_is_replaced_and_the_setup_events_kept():
     assert content == [{"type": "text", "text": notice}, {"type": "tool_result", "tool_use_id": "t", "content": "ok"}]
     # Nothing to replace: the caller refuses instead.
     assert addon.replace_user_event_text(json.dumps({"events": _SESSION_EVENTS["events"][:2]}), notice) is None
+
+
+def test_a_typed_sentence_in_an_unparsed_body_is_recognised():
+    # The 1.4.3 Claude in Chrome shape, which nothing parsed then: a sentence under message.content.
+    assert addon.looks_like_typed_text(json.dumps(_SESSION_EVENTS), "/v1/code/sessions/cse_1/events")
+    assert addon.looks_like_typed_text(json.dumps({"q": {"query": "what is our Q3 churn rate"}}), "/api/x")
+    # Not typed text: ids, single words, short labels, non-JSON.
+    assert not addon.looks_like_typed_text(json.dumps({"content": "ok", "text": "a-b_c"}), "/api/x")
+    assert not addon.looks_like_typed_text(json.dumps({"id": "this is a sentence but not a prompt key"}), "/api/x")
+    assert not addon.looks_like_typed_text(b"\x08\x01binary", "/api/x")
+    # Known telemetry paths never count, whatever they carry.
+    for path in ("/api/event_logging/v2/batch", "/api/claude_code/metrics", "/api/v2/rum",
+                 "/api/organizations/x/cowork/safety_flags/batch", "/v1/code/sessions/x/ping"):
+        assert not addon.looks_like_typed_text(json.dumps({"message": "user clicked the send button now"}), path), path
+
+
+def test_an_unparsed_prompt_is_counted_for_fleet_and_logged_once(monkeypatch, caplog):
+    counted = []
+    monkeypatch.setattr(addon, "record_scan_failure", lambda reason, claim="": counted.append(reason))
+    monkeypatch.setattr(addon, "_UNPARSED_WARNED", {})
+    with caplog.at_level("WARNING"):
+        for sid in ("cse_014DeKvbpTcQjhno5ufXbYMg", "cse_01ZZZZvbpTcQjhno5ufXbYMg"):
+            addon.note_unparsed_prompt("claude.ai", f"/v1/code/sessions/{sid}/events")
+    assert counted == ["unparsed-prompt", "unparsed-prompt"]
+    warned = [r.getMessage() for r in caplog.records if "NOT scanned" in r.getMessage()]
+    assert len(warned) == 1 and "/v1/code/sessions/<id>/events" in warned[0]   # ids collapsed
+    assert "cse_014" not in warned[0]
