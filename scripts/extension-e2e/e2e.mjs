@@ -351,6 +351,38 @@ try {
   check("a compressed claude.ai RPC send right after a good check shows as unchecked in the popup", /sent unchecked: could not read a message on claude\.ai/.test(gzSkip), gzSkip);
   check("...and the toolbar badge shows '!' again", (await sw.evaluate(() => chrome.action.getBadgeText({}))) === "!");
 
+  // ---- 4b. installed-extension inventory: only with the optional permission ------------------
+  // Chrome grants `management` only from a click on its own permission prompt, which a test can't
+  // press, so the grant (and chrome.management's answer) is stood in for inside the worker. What
+  // this proves: nothing is listed or sent without it, and with it a report reaches the console.
+  await setConfig({ backendUrl: PALI, token: key, user: "dev@demo.local", enforce: true });
+  const mf = await sw.evaluate(() => chrome.runtime.getManifest());
+  check("management is optional, not required (required, Chrome would disable every store install)",
+    !(mf.permissions || []).includes("management") && (mf.optional_permissions || []).includes("management"), JSON.stringify(mf.permissions));
+  await sw.evaluate(() => chrome.storage.local.remove("inventory"));
+  await sw.evaluate(() => reportInventory(true));
+  let inv = await api("GET", "/api/discovery/browser-extensions", null, admin);
+  check("without the permission, no extension list is sent", inv.extensions.length === 0, JSON.stringify(inv.summary));
+  const opt = await ctx.newPage();
+  await opt.goto(`chrome-extension://${extId}/options.html`);
+  await opt.waitForTimeout(400);
+  check("the options page offers to share installed AI extensions", await opt.locator("#invShare").isVisible());
+  await opt.close();
+  const claudeExt = "fcoeoabgfenejglbffodgkkbkcdhcgfn";
+  await sw.evaluate((id) => {
+    self.hasManagement = async () => true;
+    self.installedExtensions = async () => [{ id, name: "Claude", version: "1.0.0", enabled: true,
+                                              install_type: "normal", host_access: "all sites" }];
+  }, claudeExt);
+  await sw.evaluate(() => reportInventory());
+  inv = await api("GET", "/api/discovery/browser-extensions", null, admin);
+  check("with it, the list reaches the console and the AI extension is recognised by id",
+    inv.extensions[0]?.id === claudeExt && inv.extensions[0]?.ai_product === "Claude in Chrome", JSON.stringify(inv.extensions));
+  const sentAt = await sw.evaluate(async () => (await chrome.storage.local.get({ inventory: {} })).inventory.at || 0);
+  await sw.evaluate(() => reportInventory());
+  const againAt = await sw.evaluate(async () => (await chrome.storage.local.get({ inventory: {} })).inventory.at || 0);
+  check("...and an unchanged list is not sent again within the day", sentAt > 0 && againAt === sentAt, `${sentAt} -> ${againAt}`);
+
   // ---- 5. last: the extension is updated under an open tab ----------------------------------
   await setConfig({ backendUrl: PALI, token: key, user: "dev@demo.local", enforce: true });
   const tab = await ctx.newPage();

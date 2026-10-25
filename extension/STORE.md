@@ -94,6 +94,7 @@ AI tools, scans prompts and warns or blocks before they're sent.
 | `storage` | Store the admin's configuration (backend URL, ingest token, enforce flag) and read enterprise **managed** policy. |
 | `identity` | Self-serve sign-in: `chrome.identity.launchWebAuthFlow` opens the organization's Palivane console so the user authenticates (login/SSO) and the extension receives a per-user, tenant-scoped token. No Google account data is read; it's only the OAuth-style redirect back to the extension. |
 | `host_permissions`, `claude.ai`, `chatgpt.com`, `chat.openai.com`, `gemini.google.com`, `copilot.microsoft.com`, `m365.cloud.microsoft`, `www.bing.com`, `perplexity.ai`, `chat.mistral.ai`, `chat.deepseek.com`, `grok.com`, `aistudio.google.com`, `poe.com` | Run the content/injected script on these AI tools to read the prompt text before submission so it can be scanned. The extension acts **only** on these AI hosts. |
+| `management` (**optional**, not requested at install) | Only if the user clicks "Share installed AI extensions with your security team" in Options: `chrome.management.getAll` lists the installed extensions so the organization can see which AI extensions (e.g. AI sidebars) are present, since the extension cannot inspect what other extensions send. Sent to the organization's own backend: each extension's id, name, version, enabled flag, install type and a host-access count. No browsing history, URLs or page content. The extension never enables, disables or removes other extensions. |
 | `host_permissions`, `localhost` / `127.0.0.1` | Allow talking to a Palivane backend running locally during evaluation. Remove these two from `manifest.json` before a public listing if you only use a hosted backend. |
 
 **Remote code:** No. The extension executes no remotely-hosted code, all logic ships in
@@ -118,6 +119,17 @@ verdict; no code is fetched or evaluated.
 
 Update this each release; adding `host_permissions` in an update re-triggers review and may
 require users to re-accept permissions, so call the host change out explicitly.
+
+**0.7.11:**
+> Version 0.7.11 adds `management` as an **optional** permission (`optional_permissions`, not
+> `permissions`), so nothing changes at install or update and no existing user is asked to
+> re-accept anything. It is requested only when the user clicks "Share installed AI
+> extensions with your security team" on the Options page. With it, the extension lists the
+> installed extensions (id, name, version, enabled, install type, a host-access count) and
+> sends that list to the organization's own Palivane backend, so the security team can see
+> which AI extensions are in use; it is consistent with the single purpose (governing
+> what reaches AI tools from the browser). No URLs, browsing history or page content are
+> read, and other extensions are never modified. No remotely-hosted code.
 
 **0.6.0:**
 > Version 0.6.0 adds coverage for six additional AI tools: Perplexity, Mistral (Le Chat),
