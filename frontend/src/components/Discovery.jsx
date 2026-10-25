@@ -20,6 +20,125 @@ function parseEvents(text) {
 
 const RISK_CLASS = (r) => (r >= 80 ? "critical" : r >= 60 ? "high" : r >= 35 ? "suspicious" : r >= 15 ? "low" : "benign");
 
+const errText = (e) => String(e.message || e).replace(/^\d+:\s*/, "");
+
+function download(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = name; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Browser extensions installed beside Palivane's own, from browsers whose user shared the list
+// (the extension's optional `management` permission). AI ones first; the id is what Chrome's
+// ExtensionSettings policy blocks or allows, so the table ends in that action.
+function BrowserExtensions({ tenant, onTenant }) {
+  const [inv, setInv] = useState(null);
+  const [showAll, setShowAll] = useState(false);
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const hasMdm = (tenant?.plan_features || []).includes("mdm");
+
+  const load = useCallback(async () => {
+    try { setInv(await api.discoveryBrowserExtensions()); }
+    catch (e) { setErr(errText(e)); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  // Same allowlist the AI-tool table edits; an extension is sanctioned by its id.
+  async function toggleSanction(x) {
+    const cur = (tenant?.sanctioned_ai_tools || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const drop = new Set([x.id, x.ai_product.toLowerCase()]);
+    const next = x.sanctioned ? cur.filter((s) => !drop.has(s.toLowerCase())) : [...cur, x.id];
+    try {
+      onTenant?.(await api.updateTenant({ sanctioned_ai_tools: next.join(", ") }));
+      await load();
+    } catch (e) { setErr(errText(e)); }
+  }
+
+  const unsanctioned = (inv?.extensions || []).filter((x) => x.ai_product && !x.sanctioned);
+  async function downloadBlockPolicy() {
+    setBusy(true); setErr(null);
+    try {
+      const res = await api.policyPack({ base_url: window.location.origin,
+                                         browser_ext_blocklist: unsanctioned.map((x) => x.id).join(",") });
+      download("chrome-extension-settings.json", res.artifacts["chrome-extension-settings.json"]);
+    } catch (e) { setErr(errText(e)); }
+    finally { setBusy(false); }
+  }
+
+  const s = inv?.summary;
+  const rows = (inv?.extensions || []).filter((x) => showAll || x.ai_product);
+  return (
+    <div className="panel settings-card">
+      <h2>AI browser extensions</h2>
+      <p className="muted" style={{ marginTop: 0 }}>Chrome won't let Palivane read what another
+         extension sends, but it can list what's installed once the person shares it (a click in
+         the Palivane extension's Options). The ID is what Chrome's <code>ExtensionSettings</code>
+         policy blocks or allows.</p>
+      {s && s.devices > 0 && (
+        <div className="usage-stats">
+          <div><span className="usage-n">{s.devices}</span><span className="usage-l">browsers reporting</span></div>
+          <div><span className="usage-n">{s.ai_extensions}</span><span className="usage-l">AI extensions</span></div>
+          <div><span className="usage-n" style={{ color: "var(--crit)" }}>{s.unsanctioned_ai}</span><span className="usage-l">unsanctioned</span></div>
+          <div><span className="usage-n">{s.ai_users}</span><span className="usage-l">users with one</span></div>
+        </div>
+      )}
+      {rows.length ? (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead><tr>
+              <th>Extension</th><th>ID</th><th>Status</th><th>Browsers</th><th>Users</th>
+              <th>Site access</th><th>Installed</th><th></th>
+            </tr></thead>
+            <tbody>
+              {rows.map((x) => (
+                <tr key={x.id}>
+                  <td><strong>{x.ai_product || x.name || x.id}</strong>
+                    {x.ai_product && x.name && x.name !== x.ai_product &&
+                      <div className="muted" style={{ fontSize: 11 }}>{x.name}</div>}
+                    {x.versions.length > 0 &&
+                      <div className="muted" style={{ fontSize: 11 }}>v{x.versions.join(", v")}</div>}
+                  </td>
+                  <td><code style={{ fontSize: 11, userSelect: "all" }}>{x.id}</code></td>
+                  <td>{!x.ai_product ? <span className="muted">-</span>
+                    : x.sanctioned ? <span className="cat cat-unsanctioned_ai">Sanctioned</span>
+                    : <span className="cat cat-secret_leak">Unsanctioned</span>}</td>
+                  <td title={`${x.enabled_count} of ${x.device_count} have it turned on`}>
+                    {x.enabled_count}/{x.device_count}</td>
+                  <td title={x.users.join(", ")}>{x.user_count}</td>
+                  <td>{x.all_sites ? <span style={{ color: "var(--high)", fontWeight: 700 }}>all sites</span>
+                                   : <span className="muted">limited</span>}</td>
+                  <td className="muted">{x.install_types.join(", ") || "-"}</td>
+                  <td>{x.ai_product && (
+                    <button className="link-btn" onClick={() => toggleSanction(x)}>
+                      {x.sanctioned ? "Unsanction" : "Sanction"}
+                    </button>)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : <p className="muted">{s && s.devices > 0
+            ? "No AI extensions in the browsers that report."
+            : "No browser has shared its extension list yet."}</p>}
+      {err && <div className="error">{err}</div>}
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
+        {s && s.extensions > s.ai_extensions && (
+          <button className="link-btn" onClick={() => setShowAll(!showAll)}>
+            {showAll ? "Show AI extensions only" : `Show all ${s.extensions} extensions`}
+          </button>)}
+        {unsanctioned.length > 0 && (hasMdm
+          ? <button className="primary-btn slim" onClick={downloadBlockPolicy} disabled={busy}>
+              {busy ? "..." : `Download ExtensionSettings blocking ${unsanctioned.length}`}
+            </button>
+          : <span className="muted" style={{ fontSize: 12 }}>To block them, list these IDs in
+              Chrome's <code>ExtensionSettings</code> policy as <code>"installation_mode": "blocked"</code>.</span>)}
+      </div>
+    </div>
+  );
+}
+
 export default function Discovery({ tenant, onTenant }) {
   const [inv, setInv] = useState(null);
   const [text, setText] = useState("");
@@ -156,6 +275,8 @@ export default function Discovery({ tenant, onTenant }) {
           </div>
         </div>
       )}
+
+      <BrowserExtensions tenant={tenant} onTenant={onTenant} />
 
       {/* Ingest logs */}
       <div className="panel settings-card">
