@@ -41,7 +41,7 @@ const CAPTURE = [
   { logos: [[GenericDatabase, "#9AA7A0"]], title: "In your databases", body: "Provider keys kept in clear in a table. A read-only scan that runs inside your network." },
   { logos: [[BrandSnowflake, C.snowflake], [BrandDatabricks, C.databricks]], title: "In the data warehouse", body: "Snowflake Cortex and Databricks Model Serving, read from the warehouse's own query history. It reports rather than blocks." },
   { logos: [[BrandActions, C.actions]], title: "In CI pipelines", body: "Agents on CI runners with production credentials. GitHub Actions, GitLab CI, CircleCI, Azure Pipelines." },
-  { logos: [[BrandClaude, C.claude], [BrandOpenAI, C.openai]], title: "In desktop apps and AI extensions", body: "Claude and ChatGPT desktop, Claude in Chrome, and AI sidebar extensions like Monica and Sider. A blocked message is explained right in the conversation. Needs a system proxy and a trusted CA, so it is usually phase two." },
+  { logos: [[BrandClaude, C.claude], [BrandOpenAI, C.openai]], title: "In desktop apps and AI extensions", body: "Claude and ChatGPT desktop, Claude in Chrome, and AI sidebar extensions like Monica and Sider. A blocked message says why: Claude explains it in the conversation, and sidebar extensions show it as an error. Needs a system proxy and a trusted CA, so it is usually phase two." },
   // Was its own "Headless" section. The MCP server is one more place Palivane runs, so it is
   // one more tab: the link and the clip stay reachable from here.
   { logos: [[BrandClaude, C.claude]], title: "From your own AI assistant", notSurface: true, body: "Palivane ships an MCP server, so you can ask Claude what leaked today, triage a finding, or pull a report without opening the console.",
