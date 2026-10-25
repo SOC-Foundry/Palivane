@@ -4,7 +4,7 @@ from .agent_safety import AgentSafetyDetector
 from .ci_guard import CIGuardDetector
 from .dep_guard import DepGuardDetector
 from .device_posture import DevicePostureDetector
-from .ext_guard import ExtGuardDetector
+from .ext_guard import BrowserExtGuardDetector, ExtGuardDetector
 from .llm_judge import LLMJudgeDetector
 from .mcp_guard import MCPGuardDetector
 from .ml_classifier import MLClassifierDetector
@@ -30,6 +30,7 @@ __all__ = [
     "DepGuardDetector",
     "DevicePostureDetector",
     "ExtGuardDetector",
+    "BrowserExtGuardDetector",
     "SecretsAtRestDetector",
     "LLMJudgeDetector",
 ]
