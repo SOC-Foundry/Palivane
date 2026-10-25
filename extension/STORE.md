@@ -19,11 +19,13 @@ account-bound and must be done from your own developer account.
 > (chromewebstore.google.com/detail/fnejondlaacijahdjkhcgiijlnjoapho), wired into the
 > deployment as `PALIVANE_EXTENSION_ID`.
 >
-> **Latest upload: 0.7.9** (`palivane-shadow-ai-guard-0.7.9-prod.zip`, built with
-> `PALIVANE_SAAS_URL=https://app.palivane.io ./build.sh`), submitted 2026-10-22 and **live**
-> on the listing (it shows 0.7.9, updated 2026-10-22). It carries 0.7.7 and 0.7.8 (claude.ai's protobuf send, one popup per
-> stopped send) and 0.7.9 (a partly checked or compressed send keeps the "sent unchecked"
-> notice). Update this line with each upload.
+> **Latest upload: 0.7.11** (`palivane-shadow-ai-guard-0.7.11-prod.zip`, built with
+> `PALIVANE_SAAS_URL=https://app.palivane.io ./build.sh`), submitted 2026-10-24, **in review**.
+> The listing still serves 0.7.9 (live 2026-10-22) until it is approved. 0.7.11 carries 0.7.10
+> (coaching mode: a confirmed leak stays held with the cleaned copy in monitor mode, instead
+> of going out with the amber warning) and 0.7.11 (the opt-in installed-extensions report
+> behind the optional `management` permission, which review may take longer over). 0.7.10
+> was never uploaded on its own. Update this line with each upload.
 
 > **This is a fresh listing under SOC Foundry, not a transfer.** A Chrome Web Store item id
 > is issued to the developer account that published it, so the previous item cannot come
