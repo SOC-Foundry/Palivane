@@ -1260,6 +1260,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
             {/* Anthropic Inference hooks */}
             <div className="panel settings-card">
               <h2>Anthropic Inference hooks</h2>
+              <PlanLock need="inference_hooks" />
               <p className="muted" style={{ fontSize: 12 }}>For Claude Enterprise. Anthropic sends
                  each prompt, and each set of tool calls, to Palivane before Claude runs it, across
                  claude.ai, Cowork (local and cloud), Claude Code, Claude in Chrome and Claude for
