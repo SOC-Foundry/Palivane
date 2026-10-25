@@ -122,9 +122,47 @@ def test_message_is_scanned_as_its_typed_text_only(run):
 
 
 def test_a_secret_in_the_message_is_blocked(run):
-    seen, flow = run(RPC + "PerformAction", perform_action("AKIA4YTGH2NBQF7XZP3K"), block=True)
+    body = perform_action("AKIA4YTGH2NBQF7XZP3K")
+    seen, flow = run(RPC + "PerformAction", body, block=True)
     assert seen and "AKIA4YTGH2NBQF7XZP3K" in seen[0]
+    # Not refused: the send goes on with the notice in place of the text, so the app shows
+    # Claude explaining the block instead of a bare "failed to send" (Claude Desktop).
+    assert flow.response is None
+    new = flow.request.content
+    assert b"AKIA4YTGH2NBQF7XZP3K" not in new
+    assert addon.claude_rpc_text(new).startswith("[Palivane blocked this message")
+    # Everything else in the body is exactly as it was: ids, locale, timezone.
+    others = [t for t in addon._pb_strings(body) if t != "AKIA4YTGH2NBQF7XZP3K"]
+    assert [t for t in addon._pb_strings(new) if not t.startswith("[Palivane")] == others
+
+
+def test_a_framed_send_keeps_a_valid_frame(run):
+    body = connect_frame(perform_action("my SSN is 078-05-1120 please"))
+    _, flow = run(RPC + "PerformAction", body, block=True)
+    new = flow.request.content
+    assert flow.response is None and new[0] == 0
+    assert int.from_bytes(new[1:5], "big") == len(new) - 5
+    assert "078-05-1120" not in addon.claude_rpc_text(new)
+
+
+def test_a_send_that_cannot_be_rewritten_is_refused(run):
+    payload = perform_action("my SSN is 078-05-1120")
+    compressed = b"\x01" + len(payload).to_bytes(4, "big") + payload   # flag 1: compressed envelope
+    _, flow = run(RPC + "PerformAction", compressed, block=True)
     assert flow.response[1] == 403            # a Connect error, not the API-shaped 400
+
+
+def test_only_the_typed_text_is_replaced():
+    notice = "[Palivane blocked this message]"
+    body = _head() + _m(2, _s(3, "first part with an SSN 078-05-1120") + _s(4, "claude-sonnet-4-5")
+                        + _s(5, "second typed part here") + _s(12, "America/Chicago"))
+    new = addon.replace_rpc_text(body, notice)
+    leaves = addon._pb_strings(new)
+    assert notice in leaves and "[removed by Palivane]" in leaves
+    assert "claude-sonnet-4-5" in leaves and "America/Chicago" in leaves   # not typed text
+    assert not any("078-05-1120" in t for t in leaves)
+    assert addon.replace_rpc_text(state_action(), notice) is None          # nothing typed
+    assert addon.replace_rpc_text(b"plain text, not protobuf", notice) is None
 
 
 def test_a_benign_message_scans_only_the_words(run):
@@ -184,8 +222,11 @@ def test_other_hosts_are_not_treated_as_claude_rpc():
 
 
 def test_a_block_is_a_connect_error_the_client_reads_as_final(run):
+    # When the text can't be swapped out (here a compressed envelope) the send is refused.
     import json
-    _, flow = run(RPC + "PerformAction", perform_action("my ssn is 078-05-1120"), block=True)
+    payload = perform_action("my ssn is 078-05-1120")
+    _, flow = run(RPC + "PerformAction", b"\x01" + len(payload).to_bytes(4, "big") + payload,
+                  block=True)
     status, body = flow.response[1], json.loads(flow.response[2])
     assert status == 403 and body["code"] == "permission_denied"
     assert "Blocked by Palivane" in body["message"]
@@ -203,11 +244,11 @@ def test_a_retry_of_a_stopped_send_is_answered_without_scanning_again(run):
     again and counted as another sighting for as long as the app kept trying."""
     body = lambda: perform_action("my ssn is 078-05-1120")            # new message ids every time
     seen, first = run(RPC + "PerformAction", body(), block=True)
-    assert len(seen) == 1 and first.response[1] == 403
+    assert len(seen) == 1 and first.response is None                 # rewritten, not refused
     for _ in range(7):
         again, flow = run(RPC + "PerformAction", body(), block=True, guard=first.guard)
         assert again == [], "a retry of the same text was scanned again"
-        assert flow.response[1] == 403 and flow.response[2] == first.response[2]
+        assert flow.response is None and b"078-05-1120" not in flow.request.content
     assert len(run.scans) == 1
 
 
