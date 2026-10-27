@@ -218,6 +218,76 @@ try {
   r = await send("coaching off again", { patch: { redact_mode: "off" } });
   check("turning coaching off restores the hard block", blocked(r), JSON.stringify(r));
 
+  // ---- 2b. "send with these removed" (redact on block, the default: offer) -------------------
+  // Block -> the person clicks "Send with these removed" -> the values are replaced by markers IN
+  // THE PAGE'S OWN MESSAGE BOX -> the page's own send goes out with the markers, scanned again and
+  // allowed, and the original finding records that a redacted version was sent.
+  const FAMILY = "\u{1F468}‍\u{1F469}‍\u{1F467}";        // a ZWJ emoji sequence, 5 UTF-16 units each side
+  async function redactFlow(label, { host = "claude.ai", mode = "string", composer = "", text, retype = null } = {}) {
+    await fetch(CTL + "/__log", { method: "DELETE" });
+    await setConfig({ backendUrl: PALI, token: key, user: "dev@demo.local", enforce: true });
+    const page = await ctx.newPage();
+    await page.goto(`https://${host}/?mode=${mode}${composer ? "&composer=" + composer : ""}`);
+    const box = composer === "ce" ? "#ce" : "#prompt";
+    await page.fill(box, text);
+    await page.click("#send");
+    let offered = false;
+    try { await page.waitForSelector("#palivane-modal", { timeout: 15000 }); } catch (_) { /* no modal at all */ }
+    offered = await page.evaluate(() => !!document.getElementById("palivane-redact-go"));
+    // what reached the site before the click (the blocked send must not have)
+    const out = { label, offered, before: (await (await fetch(CTL + "/__log")).json()).map((x) => x.body) };
+    if (!offered) { out.modal = await page.evaluate(() => !!document.getElementById("palivane-modal")); await page.close(); return out; }
+    // The verdict that put the button up, for the finding id (the popup's last verdict).
+    out.findingId = (await sw.evaluate(async () => (await chrome.storage.local.get({ lastVerdict: null })).lastVerdict))?.finding_id;
+    if (retype !== null) await page.evaluate(([b, t]) => { const el = document.querySelector(b); if (el.tagName === "TEXTAREA") el.value = t; else el.innerText = t; }, [box, retype]);
+    // What the box holds as it goes: watched from the page, so a silent body rewrite would show.
+    await page.evaluate((b) => {
+      const el = document.querySelector(b); window.__seen = [];
+      const s = document.getElementById("send");
+      s.addEventListener("click", () => window.__seen.push(el.tagName === "TEXTAREA" ? el.value : el.innerText), true);
+    }, box);
+    await page.click("#palivane-redact-go");
+    // a form-encoded (Gemini) body is percent-encoded: compare it decoded
+    // (the site log keeps 400 characters, which can end inside a %-escape)
+    const dec = (b) => { try { return decodeURIComponent(b.replace(/\+/g, " ").replace(/%[0-9A-Fa-f]?$/, "")); } catch (_) { return b; } };
+    await until(async () => (await (await fetch(CTL + "/__log")).json()).some((x) => dec(x.body).includes("redacted:")), "the redacted send to arrive", 15000).catch(() => {});
+    await page.waitForTimeout(400);
+    const log = await (await fetch(CTL + "/__log")).json();
+    out.bodies = log.map((x) => dec(x.body));
+    out.seen = await page.evaluate(() => window.__seen);
+    out.toast = await page.evaluate(() => document.getElementById("palivane-toast")?.innerText || "");
+    out.modalAfter = await page.evaluate(() => !!document.getElementById("palivane-modal"));
+    out.status = await page.locator("#out").innerText();
+    await page.close();
+    if (out.findingId) out.finding = await api("GET", `/api/findings/${out.findingId}`, null, admin);
+    return out;
+  }
+  const sentRedacted = (r, secret, marker) => r.offered
+    && r.bodies.some((b) => b.includes(marker)) && !r.bodies.some((b) => b.includes(secret))
+    && r.seen.length === 1 && r.seen[0].includes(marker) && !r.seen[0].includes(secret)
+    && /status 200/.test(r.status) && !r.modalAfter && /Removed/.test(r.toast);
+  const AWSKEY = "AKIAIOSFODNN7EXAMPLE";
+  r = await redactFlow("redact, claude.ai, emoji before the key", { text: `${FAMILY} \u{1F511} use ${AWSKEY} to deploy, ${FAMILY}` });
+  check("REDACT: a blocked key is offered 'Send with these removed'; the page's own send carries «redacted:AWS access key» and not the key (emoji and a ZWJ sequence before it)",
+        sentRedacted(r, AWSKEY, "«redacted:AWS access key»") && r.seen[0] === `${FAMILY} \u{1F511} use «redacted:AWS access key» to deploy, ${FAMILY}`, JSON.stringify(r));
+  check("...the resend was allowed and the original finding records that a redacted version was sent", !!r.finding?.redacted_resend_at, JSON.stringify(r.finding?.redacted_resend_at));
+  r = await redactFlow("redact, chatgpt.com, rich editor emptied on send", { host: "chatgpt.com", composer: "ce", text: "My SSN is 078-05-1120, and again 078-05-1120" });
+  check("REDACT on chatgpt.com with a rich-editor box the page empties on send: both SSNs go, the marker arrives",
+        sentRedacted(r, "078-05-1120", "«redacted:SSN»") && r.seen[0] === "My SSN is «redacted:SSN», and again «redacted:SSN»", JSON.stringify(r));
+  r = await redactFlow("redact, claude.ai protobuf RPC", { mode: "rpc", text: `deploy key ${AWSKEY} now` });
+  check("REDACT on claude.ai's protobuf PerformAction send: the site's own RPC carries the marker, not the key",
+        sentRedacted(r, AWSKEY, "«redacted:AWS access key»"), JSON.stringify(r));
+  r = await redactFlow("redact, gemini form-encoded", { host: "gemini.google.com", mode: "real", text: "SSN 078-05-1120 please" });
+  check("REDACT on a real-shaped Gemini send", sentRedacted(r, "078-05-1120", "«redacted:SSN»"), JSON.stringify(r));
+  r = await redactFlow("redact, text changed before the click", { text: `use ${AWSKEY} please`, retype: "now it is SSN 078-05-1120, thanks" });
+  check("REDACT after the text changed: the box is re-checked and the NEW values are removed (no stale offsets)",
+        r.offered && r.seen.length === 1 && r.seen[0] === "now it is SSN «redacted:SSN», thanks"
+        && r.bodies.some((b) => b.includes("«redacted:SSN»")) && !r.bodies.some((b) => b.includes("078-05-1120") || b.includes(AWSKEY)), JSON.stringify(r));
+  await tenant({ redact_on_block: "off" });
+  r = await redactFlow("redact off", { text: `use ${AWSKEY} please` });
+  check("REDACT set to Off: the block modal has no 'Send with these removed'", !r.offered && r.modal && !r.before.some((b) => b.includes(AWSKEY)), JSON.stringify(r));
+  await tenant({ redact_on_block: "inherit" });
+
   // ---- 3. however the page builds its request ------------------------------------------------
   for (const [mode, what] of [["request", "a Request object"], ["blob", "a Blob body"], ["bytes", "a Uint8Array body"],
                               ["xhr", "an XMLHttpRequest string body"], ["xhrblob", "an XMLHttpRequest Blob body"]]) {
