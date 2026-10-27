@@ -5,10 +5,13 @@ name: Catalog growth (auto-PR)
 # and open a PR proposing new ai_catalog.py rows. The PR review is the human gate — names
 # and categories in the diff are heuristics to correct, not decisions already made.
 #
-# Note: PRs opened with the default GITHUB_TOKEN do not trigger CI (GitHub prevents
-# workflow recursion). Set a CATALOG_GROWTH_TOKEN repo secret (fine-grained PAT with
-# contents+PR write) to get CI on these PRs automatically; without it, close/reopen the
-# PR or push any tweak to run the required checks before merging.
+# Needs a CATALOG_GROWTH_TOKEN repo secret: a fine-grained PAT (or GitHub App token) for
+# this repo only, with Contents and Pull requests read/write. The repo keeps "Allow GitHub
+# Actions to create and approve pull requests" off, because turning it on would also let any
+# workflow's GITHUB_TOKEN approve PRs and satisfy main's required review. So GITHUB_TOKEN
+# cannot open this PR. Without the secret the push still happens and the PR step fails
+# visibly. The token is used for the push too, so the PR's CI runs; pushes and PRs made
+# with GITHUB_TOKEN never trigger workflows.
 
 on:
   schedule:
@@ -32,6 +35,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ secrets.CATALOG_GROWTH_TOKEN || github.token }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
@@ -51,6 +56,9 @@ jobs:
           fi
           python scripts/fetch_candidates.py --limit "$LIMIT" > /tmp/candidates.txt
           python scripts/merge_catalog_rows.py /tmp/candidates.txt | tee /tmp/summary.md
+          # The site's tool count is generated from the catalog; CI's frontend-build fails
+          # if it is stale. Node builtins only, so the runner's preinstalled node is enough.
+          node frontend/scripts/gen-stats.mjs >/dev/null
 
       - name: Open / refresh the proposal PR
         env:
@@ -64,10 +72,16 @@ jobs:
           git config user.email "catalog-bot@users.noreply.github.com"
           BRANCH="catalog-growth-auto"
           git checkout -B "$BRANCH"
-          git add backend/app/ai_catalog.py README.md
+          git add backend/app/ai_catalog.py README.md frontend/src/stats.gen.json
           git commit -m "catalog: weekly growth proposals (auto)"
           git push -f origin "$BRANCH"
-          gh pr create --head "$BRANCH" \
-            --title "catalog: weekly growth proposals (auto)" \
-            --body-file /tmp/summary.md \
-            || gh pr edit "$BRANCH" --body-file /tmp/summary.md
+          # Refresh the open proposal PR if there is one. `gh pr edit <branch>` alone picks the
+          # branch's newest PR even when it is long merged, and rewrote #67's description.
+          OPEN=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')
+          if [ -n "$OPEN" ]; then
+            gh pr edit "$OPEN" --body-file /tmp/summary.md
+          else
+            gh pr create --head "$BRANCH" \
+              --title "catalog: weekly growth proposals (auto)" \
+              --body-file /tmp/summary.md
+          fi
