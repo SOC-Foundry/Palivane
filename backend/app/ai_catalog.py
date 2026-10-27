@@ -140,6 +140,30 @@ CATALOG: dict[str, tuple[str, str]] = {
     "selfies-with-sama.vost.ai": ("Vost", "assistant"),
     "tiledesk.com": ("Tiledesk", "assistant"),
     "galichat.com": ("Galichat", "assistant"),
+    "dmwithme.com": ("Dmwithme", "assistant"),
+    "metaphor.systems": ("Metaphor", "assistant"),
+    "telborg.com": ("Telborg", "assistant"),
+    "refinder.ai": ("Refinder", "assistant"),
+    "mynexusai.com": ("Mynexusai", "assistant"),
+    "contenda.co": ("Contenda", "assistant"),
+    "app.rapidtextai.com": ("Rapidtextai", "assistant"),
+    "yomu.ai": ("Yomu", "assistant"),
+    "listomatic.app": ("Listomatic", "assistant"),
+    "quickcreator.io": ("Quickcreator", "assistant"),
+    "trolly.ai": ("Trolly", "assistant"),
+    "dittto.ai": ("Dittto", "assistant"),
+    "pulsepost.io": ("Pulsepost", "assistant"),
+    "shyeditor.com": ("Shyeditor", "assistant"),
+    "headlinesai.pro": ("Headlinesai", "assistant"),
+    "gptlocalhost.com": ("Gptlocalhost", "assistant"),
+    "gistai.tech": ("Gistai", "assistant"),
+    "merlin.foyer.work": ("Foyer", "assistant"),
+    "elephas.app": ("Elephas", "assistant"),
+    "createeasily.com": ("Createeasily", "assistant"),
+    "aipdf.ai": ("Aipdf", "assistant"),
+    "summarywithai.com": ("Summarywithai", "assistant"),
+    "getemil.io": ("Getemil", "assistant"),
+    "getrecall.ai": ("Getrecall", "assistant"),
 
     # --- Search / answer engines ---
     "perplexity.ai": ("Perplexity", "search"), "you.com": ("You.com", "search"),
@@ -351,6 +375,8 @@ CATALOG: dict[str, tuple[str, str]] = {
     "editgpt.app": ("editGPT", "writing"),
     "emailtriager.com": ("EmailTriager", "writing"),
     "aipoemgenerator.org": ("AI Poem Generator", "writing"),
+    "writewithlaika.com": ("Writewithlaika", "writing"),
+    "chatgptwriter.ai": ("Chatgptwriter", "writing"),
 
     # --- Image / video / audio ---
     "midjourney.com": ("Midjourney", "image_video"), "labs.openai.com": ("DALL·E", "image_video"),
@@ -469,6 +495,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "sybill.ai": ("Sybill", "meeting"),
     "loopinhq.com": ("Loopin", "meeting"),
     "get.meetgeek.ai": ("Meetgeek", "meeting"),
+    "meetcosmos.com": ("Meetcosmos", "meeting"),
 
     # --- ML platforms / model hubs / API providers ---
     "huggingface.co": ("Hugging Face", "ml_platform"), "replicate.com": ("Replicate", "ml_platform"),

@@ -40,6 +40,8 @@ HOST_DENYLIST: frozenset[str] = frozenset({
     "aicamp.so", "gpt3demo.com", "gpt4demo.com", "altern.ai", "aifordevelopers.org",
     "deepmind.com", "harmonai.org", "haveibeentrained.com", "thisimagedoesnotexist.com",
     "pharmapsychotic.com", "try.sanebox.com",
+    # cut from #380: a lookalike of Microsoft Copilot's name, and sites that aren't AI tools
+    "copilot.us", "lemmy.co", "huntr.co", "bettersheets.co",
 })
 
 _URL_RE = re.compile(r"https?://([a-z0-9][a-z0-9.-]*\.[a-z]{2,})", re.I)
