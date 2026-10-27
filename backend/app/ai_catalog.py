@@ -132,27 +132,13 @@ CATALOG: dict[str, tuple[str, str]] = {
     "affogato.ai": ("Affogato", "assistant"),
     "asta.allen.ai": ("Allen", "assistant"),
     "wellsaid.io": ("Wellsaid", "assistant"),
-    "harmonai.org": ("Harmonai", "assistant"),
     "aidungeon.io": ("Aidungeon", "assistant"),
     "clickable.so": ("Clickable", "assistant"),
     "scenario.com": ("Scenario", "assistant"),
     "finchat.io": ("Finchat", "assistant"),
-    "morpher.com": ("Morpher", "assistant"),
     "whimsical.com": ("Whimsical", "assistant"),
     "selfies-with-sama.vost.ai": ("Vost", "assistant"),
-    "learnprompting.org": ("Learnprompting", "assistant"),
-    "deeplearning.ai": ("Deeplearning", "assistant"),
-    "manning.com": ("Manning", "assistant"),
-    "pharmapsychotic.com": ("Pharmapsychotic", "assistant"),
-    "scalevp.com": ("Scalevp", "assistant"),
-    "gpt3demo.com": ("Gpt3Demo", "assistant"),
-    "gpt4demo.com": ("Gpt4Demo", "assistant"),
-    "altern.ai": ("Altern", "assistant"),
-    "newsletter.altern.ai": ("Altern", "assistant"),
-    "try.sanebox.com": ("Sanebox", "assistant"),
-    "deepmind.com": ("Deepmind", "assistant"),
     "tiledesk.com": ("Tiledesk", "assistant"),
-    "aicamp.so": ("Aicamp", "assistant"),
     "galichat.com": ("Galichat", "assistant"),
 
     # --- Search / answer engines ---
@@ -240,7 +226,6 @@ CATALOG: dict[str, tuple[str, str]] = {
     "gitingest.com": ("Gitingest", "coding"),
     "repomix.com": ("Repomix", "coding"),
     "stenography.dev": ("Stenography", "coding"),
-    "aifordevelopers.org": ("Aifordevelopers", "coding"),
 
     # --- Agents / automation ---
     "manus.im": ("Manus", "agent"), "devin.ai": ("Devin", "agent"),
@@ -451,7 +436,6 @@ CATALOG: dict[str, tuple[str, str]] = {
     "hailuoai.video": ("Hailuoai", "image_video"),
     "maxvideoai.com": ("Maxvideoai", "image_video"),
     "audiocraft.metademolab.com": ("Metademolab", "image_video"),
-    "thisimagedoesnotexist.com": ("Thisimagedoesnotexist", "image_video"),
 
     # --- Meeting / transcription notetakers (high data-exposure risk) ---
     "otter.ai": ("Otter.ai", "meeting"), "fireflies.ai": ("Fireflies.ai", "meeting"),
@@ -577,7 +561,6 @@ CATALOG: dict[str, tuple[str, str]] = {
     "cleanlab.ai": ("Cleanlab", "ml_platform"),
     "haystack.deepset.ai": ("deepset Haystack", "ml_platform"),
     "portkey.ai": ("Portkey", "api"),
-    "haveibeentrained.com": ("Haveibeentrained", "ml_platform"),
 }
 
 # Rows recorded from vendor marketing/site rather than a verified traffic capture: the
