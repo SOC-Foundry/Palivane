@@ -34,6 +34,12 @@ HOST_DENYLIST: frozenset[str] = frozenset({
     "venturebeat.com", "arstechnica.com", "zdnet.com", "engadget.com", "axios.com",
     "semafor.com", "github.blog", "blogs.microsoft.com", "blog.google",
     "sequoiacap.com", "a16z.com", "ycombinator.com",
+    # cut from the 2026-10-26 proposals (#377): publishers, investors, trading, courses,
+    # directories and newsletters, research/org sites, lookups and novelty pages
+    "manning.com", "scalevp.com", "morpher.com", "learnprompting.org", "deeplearning.ai",
+    "aicamp.so", "gpt3demo.com", "gpt4demo.com", "altern.ai", "aifordevelopers.org",
+    "deepmind.com", "harmonai.org", "haveibeentrained.com", "thisimagedoesnotexist.com",
+    "pharmapsychotic.com", "try.sanebox.com",
 })
 
 _URL_RE = re.compile(r"https?://([a-z0-9][a-z0-9.-]*\.[a-z]{2,})", re.I)
