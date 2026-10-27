@@ -19,6 +19,11 @@ is only a block if it did not.
 What it covers:
 
 - the org's settings: default, sanctioned destination, extension in monitor mode, coaching mode
+- "send with these removed": the values are replaced in the page's own message box (a textarea, and a
+  rich-editor box the page empties on send) and the page's own send carries the markers, not the
+  values, on claude.ai (JSON and protobuf RPC), chatgpt.com and Gemini; emoji and a ZWJ sequence
+  before the value; text changed before the click (re-checked); the original finding marked;
+  the org setting off (no offer)
 - every way a page can build its request: string, `Request`, `Blob`, bytes, `XMLHttpRequest`
 - a check that cannot happen (slow backend, not signed in, key rejected, unreadable body,
   extension updated under an open tab): fails open, and says so
