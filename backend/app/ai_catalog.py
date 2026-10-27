@@ -159,13 +159,10 @@ CATALOG: dict[str, tuple[str, str]] = {
     "gistai.tech": ("Gistai", "assistant"),
     "merlin.foyer.work": ("Foyer", "assistant"),
     "elephas.app": ("Elephas", "assistant"),
-    "lemmy.co": ("Lemmy", "assistant"),
-    "bettersheets.co": ("Bettersheets", "assistant"),
     "createeasily.com": ("Createeasily", "assistant"),
     "aipdf.ai": ("Aipdf", "assistant"),
     "summarywithai.com": ("Summarywithai", "assistant"),
     "getemil.io": ("Getemil", "assistant"),
-    "huntr.co": ("Huntr", "assistant"),
     "getrecall.ai": ("Getrecall", "assistant"),
 
     # --- Search / answer engines ---
@@ -253,7 +250,6 @@ CATALOG: dict[str, tuple[str, str]] = {
     "gitingest.com": ("Gitingest", "coding"),
     "repomix.com": ("Repomix", "coding"),
     "stenography.dev": ("Stenography", "coding"),
-    "copilot.us": ("Copilot", "coding"),
 
     # --- Agents / automation ---
     "manus.im": ("Manus", "agent"), "devin.ai": ("Devin", "agent"),
