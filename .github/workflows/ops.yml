@@ -137,9 +137,15 @@ jobs:
             exit 0
           fi
           sleep 15   # Cloud Logging is eventually consistent
-          gcloud logging read \
-            'resource.type="cloud_run_job" AND resource.labels.job_name="palivane-ops"' \
-            --project "$PROJECT_ID" --freshness 30m --limit 100 --order asc \
+          # Only this run's execution, and only entries with text: the job's Cloud Audit
+          # entries (system_event/activity) have no textPayload and, read oldest-first, used to
+          # fill the whole --limit with blank lines before the script's output was reached.
+          EXEC=$(gcloud run jobs executions list --job palivane-ops --project "$PROJECT_ID" \
+            --region "$REGION" --limit 1 --format 'value(metadata.name)' 2>/dev/null || true)
+          FILTER='resource.type="cloud_run_job" AND resource.labels.job_name="palivane-ops" AND textPayload:*'
+          [ -n "$EXEC" ] && FILTER="$FILTER AND labels.\"run.googleapis.com/execution_name\"=\"$EXEC\""
+          gcloud logging read "$FILTER" \
+            --project "$PROJECT_ID" --freshness 30m --limit 300 --order asc \
             --format 'value(textPayload)' \
             || echo "(could not read logs — grant the deploy SA roles/logging.viewer to see job output here)"
 
