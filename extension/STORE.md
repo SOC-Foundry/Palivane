@@ -19,13 +19,12 @@ account-bound and must be done from your own developer account.
 > (chromewebstore.google.com/detail/fnejondlaacijahdjkhcgiijlnjoapho), wired into the
 > deployment as `PALIVANE_EXTENSION_ID`.
 >
-> **Latest upload: 0.7.11** (`palivane-shadow-ai-guard-0.7.11-prod.zip`, built with
-> `PALIVANE_SAAS_URL=https://app.palivane.io ./build.sh`), submitted 2026-10-24, **in review**.
-> The listing still serves 0.7.9 (live 2026-10-22) until it is approved. 0.7.11 carries 0.7.10
-> (coaching mode: a confirmed leak stays held with the cleaned copy in monitor mode, instead
-> of going out with the amber warning) and 0.7.11 (the opt-in installed-extensions report
-> behind the optional `management` permission, which review may take longer over). 0.7.10
-> was never uploaded on its own. Update this line with each upload.
+> **Latest upload: 0.8.0** (`palivane-shadow-ai-guard-0.8.0-prod.zip`, built with
+> `PALIVANE_SAAS_URL=https://app.palivane.io ./build.sh`), submitted 2026-10-26, **in review**.
+> The listing serves 0.7.11 (confirmed live on 2026-10-26 via Chrome's update server) until it
+> is approved. 0.8.0 adds "Send with these removed" on a block (redact on block, #374). Its
+> manifest differs from 0.7.11 only in the version: no new permissions or hosts. Update this
+> line with each upload.
 
 > **This is a fresh listing under SOC Foundry, not a transfer.** A Chrome Web Store item id
 > is issued to the developer account that published it, so the previous item cannot come
@@ -121,6 +120,17 @@ verdict; no code is fetched or evaluated.
 
 Update this each release; adding `host_permissions` in an update re-triggers review and may
 require users to re-accept permissions, so call the host change out explicitly.
+
+**0.8.0:**
+> Version 0.8.0 adds no permissions, host permissions or content-script matches; the manifest
+> changes only its version. When a message the user typed into an AI tool is blocked only
+> because it contains values that can be cut out (an access key, a national ID number, a card
+> number), the block dialog now offers "Send with these removed". If the user clicks it, the
+> extension replaces those values in the page's own message box with a visible marker, shows
+> the edited text and asks for confirmation, and the page's own send button sends it. The
+> values to remove are located by the organization's own Palivane backend, which already
+> receives the prompt for scanning; nothing new is sent and nothing goes to the developer.
+> No remotely-hosted code.
 
 **0.7.11:**
 > Version 0.7.11 adds `management` as an **optional** permission (`optional_permissions`, not
