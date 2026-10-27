@@ -130,6 +130,16 @@ CATALOG: dict[str, tuple[str, str]] = {
     "airtable.com": ("Airtable", "assistant"),
     "seed.bytedance.com": ("Bytedance", "assistant"),
     "affogato.ai": ("Affogato", "assistant"),
+    "asta.allen.ai": ("Allen", "assistant"),
+    "wellsaid.io": ("Wellsaid", "assistant"),
+    "aidungeon.io": ("Aidungeon", "assistant"),
+    "clickable.so": ("Clickable", "assistant"),
+    "scenario.com": ("Scenario", "assistant"),
+    "finchat.io": ("Finchat", "assistant"),
+    "whimsical.com": ("Whimsical", "assistant"),
+    "selfies-with-sama.vost.ai": ("Vost", "assistant"),
+    "tiledesk.com": ("Tiledesk", "assistant"),
+    "galichat.com": ("Galichat", "assistant"),
 
     # --- Search / answer engines ---
     "perplexity.ai": ("Perplexity", "search"), "you.com": ("You.com", "search"),
@@ -267,6 +277,8 @@ CATALOG: dict[str, tuple[str, str]] = {
     "agentmail.to": ("Agentmail", "agent"),
     "agentskills.io": ("Agentskills", "agent"),
     "autodesk.com": ("Autodesk", "agent"),
+    "paper2agent.ai": ("Paper2Agent", "agent"),
+    "wisprflow.ai": ("Wisprflow", "agent"),
 
     # --- Writing / productivity ---
     "jasper.ai": ("Jasper", "writing"), "copy.ai": ("Copy.ai", "writing"),
@@ -423,6 +435,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "publicprompts.art": ("Publicprompts", "image_video"),
     "hailuoai.video": ("Hailuoai", "image_video"),
     "maxvideoai.com": ("Maxvideoai", "image_video"),
+    "audiocraft.metademolab.com": ("Metademolab", "image_video"),
 
     # --- Meeting / transcription notetakers (high data-exposure risk) ---
     "otter.ai": ("Otter.ai", "meeting"), "fireflies.ai": ("Fireflies.ai", "meeting"),
@@ -455,6 +468,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "cogram.com": ("Cogram", "meeting"),
     "sybill.ai": ("Sybill", "meeting"),
     "loopinhq.com": ("Loopin", "meeting"),
+    "get.meetgeek.ai": ("Meetgeek", "meeting"),
 
     # --- ML platforms / model hubs / API providers ---
     "huggingface.co": ("Hugging Face", "ml_platform"), "replicate.com": ("Replicate", "ml_platform"),
