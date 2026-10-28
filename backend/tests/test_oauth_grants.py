@@ -118,3 +118,22 @@ def test_prune_clears_spent_codes_and_dead_tokens_but_not_live_ones(client, raw_
     prune(db)
     assert db.query(OAuthCode).count() == 0      # ...until it is old enough to be inert
     db.close()
+
+
+def test_prune_drops_idle_clients_and_keeps_used_ones(client, raw_client, db_factory):
+    # Registration is open, so unused registrations would only accumulate. A client that
+    # still holds a code or token is never removed, however old its registration.
+    from app.models import OAuthClient
+    used, _tok = _grant(client, raw_client)
+    idle = raw_client.post("/register", json={"redirect_uris": [REDIRECT],
+                                              "client_name": "never approved"}).json()["client_id"]
+    fresh = raw_client.post("/register", json={"redirect_uris": [REDIRECT],
+                                               "client_name": "just now"}).json()["client_id"]
+    db = db_factory()
+    for row in db.query(OAuthClient).filter(OAuthClient.client_id.in_([used, idle])).all():
+        row.created_at = _now() - timedelta(days=120)
+    db.commit()
+    prune(db)
+    left = {c.client_id for c in db.query(OAuthClient).all()}
+    assert used in left and fresh in left and idle not in left
+    db.close()

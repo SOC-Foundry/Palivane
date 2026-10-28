@@ -71,7 +71,9 @@ def test_disable_returns_to_password_only(client):
     secret, _ = _enroll(client)
     r = client.post("/api/auth/mfa/disable", json={"code": _code(secret)})
     assert r.status_code == 200 and r.json()["mfa_enabled"] is False
-    assert client.get("/api/auth/me").json()["user"]["mfa_enabled"] is False
+    # Disabling ends every session; this one carries on with the token it was handed.
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {r.json()['access_token']}"})
+    assert me.json()["user"]["mfa_enabled"] is False
     raw = TestClient(app)
     lr = raw.post("/api/auth/login", json={"email": "admin@acme.com", "password": "password123"})
     assert "access_token" in lr.json() and not lr.json().get("mfa_required")
@@ -96,3 +98,45 @@ def test_totp_code_cannot_be_replayed(client):
     # Same code (same time-step) presented again -> replay, rejected.
     ch2 = raw.post("/api/auth/login", json={"email": "admin@acme.com", "password": "password123"}).json()["challenge"]
     assert raw.post("/api/auth/mfa/verify", json={"challenge": ch2, "code": code}).status_code == 401
+
+
+# --- step-up: changing a second factor needs a recent sign-in, not just a live session -----
+
+def test_stale_session_cannot_set_up_or_disable_mfa(client, monkeypatch):
+    # A stolen session could otherwise enrol its own authenticator (locking the owner out at
+    # their next sign-in) or switch MFA off.
+    secret, _ = _enroll(client)
+    import app.auth as auth_mod
+    monkeypatch.setattr(auth_mod, "_STEP_UP_SECONDS", -1)    # every session is now "old"
+    r = client.post("/api/auth/mfa/disable", json={"code": _code(secret)})
+    assert r.status_code == 403 and "sign back in" in r.json()["detail"]
+    assert client.get("/api/auth/me").json()["user"]["mfa_enabled"] is True
+
+
+def test_stale_session_cannot_start_enrolment(client, monkeypatch):
+    import app.auth as auth_mod
+    monkeypatch.setattr(auth_mod, "_STEP_UP_SECONDS", -1)
+    assert client.post("/api/auth/mfa/setup").status_code == 403
+
+
+def test_disable_code_cannot_be_guessed(client, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "login_max_fails", 2)
+    secret, _ = _enroll(client)
+    wrong = "999999" if _code(secret) != "999999" else "111111"
+    for _ in range(2):
+        assert client.post("/api/auth/mfa/disable", json={"code": wrong}).status_code == 400
+    # Throttled now, even with the right code.
+    assert client.post("/api/auth/mfa/disable", json={"code": _code(secret)}).status_code == 429
+
+
+def test_disable_ends_other_sessions(client):
+    secret, _ = _enroll(client)
+    raw = TestClient(app)
+    ch = raw.post("/api/auth/login", json={"email": "admin@acme.com",
+                                           "password": "password123"}).json()["challenge"]
+    other = raw.post("/api/auth/mfa/verify",
+                     json={"challenge": ch, "code": _code(secret)}).json()["access_token"]
+    r = client.post("/api/auth/mfa/disable", json={"code": _code(secret)})
+    assert r.status_code == 200
+    assert raw.get("/api/auth/me", headers={"Authorization": f"Bearer {other}"}).status_code == 401
