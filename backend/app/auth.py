@@ -382,18 +382,22 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         # Tenant-scoped login (multi-tenant): resolve the org and pin the user to it.
         tenant = db.query(Tenant).filter(Tenant.slug == body.org.strip().lower()).first()
         q = q.filter(User.tenant_id == tenant.id) if tenant else q.filter(User.id == -1)
-    matches = q.limit(2).all()
-    # Email alone is unique only within a tenant; if it matches more than one org, the
-    # caller must specify `org` (never auto-pick — that would be a cross-tenant hazard).
-    user = matches[0] if len(matches) == 1 else None
-    ambiguous = len(matches) > 1
-
-    # Verify even on miss to keep timing uniform; never reveal which factor failed.
-    ok = verify_password(body.password, user.password_hash if user else DUMMY_PASSWORD_HASH)
-    if ambiguous:
+    # Email alone is unique only within a tenant. Which org to sign into is decided by the
+    # password, never by the email: answering "ambiguous" for an email in several orgs told
+    # anyone (no password needed) that the address existed elsewhere, and a throwaway signup
+    # with someone's email turned their plain login into a 409. So the password is checked
+    # against each candidate, padded to two so the time taken doesn't count them, and only a
+    # caller whose password opens more than one account is asked to name the org. Verified
+    # accounts sort first so unverified signups can't crowd out the real one.
+    matches = q.order_by(User.email_verified.desc(), User.id).limit(2).all()
+    hashes = [u.password_hash for u in matches] + [DUMMY_PASSWORD_HASH] * (2 - len(matches))
+    opened = [verify_password(body.password, h) for h in hashes]
+    unlocked = [u for u, ok in zip(matches, opened) if ok]
+    if len(unlocked) > 1:
         raise HTTPException(status_code=409,
                             detail="multiple organizations use this email, specify your org")
-    if not user or not ok:
+    user = unlocked[0] if unlocked else None
+    if not user:
         db.add(LoginAttempt(email=email, ip=ip))
         db.commit()
         raise HTTPException(status_code=401, detail="invalid credentials")

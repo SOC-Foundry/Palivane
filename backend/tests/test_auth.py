@@ -243,12 +243,66 @@ def _seed_shared_email(db_factory):
     db.close()
 
 
-def test_ambiguous_email_across_tenants_requires_org(db_factory):
+def test_shared_email_signs_into_the_org_the_password_opens(db_factory):
     _seed_shared_email(db_factory)
     c = TestClient(app)
-    # Same email in two orgs, no org given -> refuse (never auto-pick a tenant).
-    r = c.post("/api/auth/login", json={"email": "shared@corp.com", "password": "acme-pass-123"})
-    assert r.status_code == 409
+    # Same email in two orgs, no org given: the password, not the email, picks the account —
+    # each password opens exactly one, so there is nothing ambiguous to report.
+    for pw, slug in (("acme-pass-123", "acme"), ("globex-pass-456", "globex")):
+        r = c.post("/api/auth/login", json={"email": "shared@corp.com", "password": pw})
+        assert r.status_code == 200, r.text
+        me = c.get("/api/auth/me", headers=_auth(r.json()["access_token"])).json()
+        assert me["tenant"]["slug"] == slug
+
+
+def test_ambiguous_only_when_the_password_opens_several_orgs(db_factory):
+    db = db_factory()
+    users_cli.create_tenant(db, "acme", "Acme")
+    users_cli.create_tenant(db, "globex", "Globex")
+    users_cli.create_user(db, "acme", "shared@corp.com", "same-pass-789", "admin")
+    users_cli.create_user(db, "globex", "shared@corp.com", "same-pass-789", "admin")
+    db.close()
+    c = TestClient(app)
+    r = c.post("/api/auth/login", json={"email": "shared@corp.com", "password": "same-pass-789"})
+    assert r.status_code == 409   # proven for both: never auto-pick between them
+    r = c.post("/api/auth/login", json={"email": "shared@corp.com", "password": "same-pass-789",
+                                        "org": "globex"})
+    assert r.status_code == 200
+
+
+def test_wrong_password_does_not_reveal_other_orgs(db_factory):
+    # Enumeration: an email in two orgs and an email in one must answer a wrong password
+    # identically. The old 409 fired on the email alone.
+    _seed_shared_email(db_factory)
+    db = db_factory()
+    users_cli.create_user(db, "acme", "solo@corp.com", "solo-pass-123", "analyst")
+    db.close()
+    c = TestClient(app)
+    shared = c.post("/api/auth/login", json={"email": "shared@corp.com", "password": "guess-1"})
+    solo = c.post("/api/auth/login", json={"email": "solo@corp.com", "password": "guess-1"})
+    nobody = c.post("/api/auth/login", json={"email": "none@corp.com", "password": "guess-1"})
+    assert shared.status_code == solo.status_code == nobody.status_code == 401
+    assert shared.json() == solo.json() == nobody.json()
+
+
+def test_unverified_signup_with_your_email_cannot_lock_you_out(db_factory):
+    # An attacker signs up twice elsewhere with the victim's address (never verifying). The
+    # victim's plain login must still work: verified accounts are checked first.
+    db = db_factory()
+    for slug in ("victim", "squat1", "squat2"):
+        users_cli.create_tenant(db, slug, slug)
+    users_cli.create_user(db, "squat1", "v@corp.com", "attacker-pw-1", "admin")
+    users_cli.create_user(db, "squat2", "v@corp.com", "attacker-pw-1", "admin")
+    users_cli.create_user(db, "victim", "v@corp.com", "victim-pw-123", "admin")
+    from app.models import Tenant, User
+    victim = db.query(Tenant).filter(Tenant.slug == "victim").one()
+    for u in db.query(User).filter(User.email == "v@corp.com").all():
+        u.email_verified = u.tenant_id == victim.id
+    db.commit()
+    db.close()
+    c = TestClient(app)
+    r = c.post("/api/auth/login", json={"email": "v@corp.com", "password": "victim-pw-123"})
+    assert r.status_code == 200, r.text
 
 
 def test_org_scoped_login_selects_the_right_tenant(db_factory):
