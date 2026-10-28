@@ -363,6 +363,14 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
   const [ihSecret, setIhSecret] = useState("");
   const [ihKey, setIhKey] = useState("");
   const ihEndpoint = `${window.location.origin}/api/inference-hooks`;
+  async function saveSsoRequired(on) {
+    try {
+      const t = await api.updateTenant({ sso_required: on });
+      onTenant?.(t);
+      flash(on ? "SSO is now required. Non-admins sign in through your identity provider."
+               : "Password and Google sign-in are allowed again.");
+    } catch (e) { err(e); }
+  }
   async function saveIhSecret(value) {
     try {
       const t = await api.updateTenant({ inference_hook_secret: value });
@@ -1684,6 +1692,29 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                 <button type="button" className="mini-btn" onClick={() => saveSaml({ enabled: false })}>Save (disabled)</button>
                 <button type="button" className="mini-btn danger" onClick={disableSaml}>Remove SAML</button>
               </div>
+            </div>
+
+            {/* Require SSO */}
+            <div className="panel settings-card">
+              <div className="settings-head"><h2>Require SSO</h2>
+                {tenant?.sso_required && ((oidc?.enabled || saml?.enabled)
+                  ? <span className="chip chip-on">on</span>
+                  : <span className="chip">paused</span>)}</div>
+              <PlanLock need="sso" />
+              <p className="muted">Make your identity provider the only way in. Members can't sign in
+                with a password or Google, or reset a password, so removing someone at the IdP
+                removes their access here. Admins keep their password as a break-glass route in
+                case the IdP is down.</p>
+              <label className="check">
+                <input type="checkbox" checked={!!tenant?.sso_required}
+                       disabled={!tenant?.sso_required && !(oidc?.enabled || saml?.enabled)}
+                       onChange={(e) => saveSsoRequired(e.target.checked)} />
+                Require SSO for everyone except admins
+              </label>
+              {!(oidc?.enabled || saml?.enabled) && (
+                <p className="muted">Turn on OIDC or SAML above first.
+                  {tenant?.sso_required && " Until then the requirement is paused and passwords still work."}</p>
+              )}
             </div>
 
             {/* SCIM provisioning */}

@@ -445,6 +445,7 @@ class TenantUpdate(BaseModel):
     # Local capture planes (CLI hooks + desktop proxy): "on"/"off" force it, "inherit"
     # follows the global CLIENT_ENFORCE (default monitor).
     client_enforce: Literal["on", "off", "inherit"] | None = None
+    sso_required: bool | None = None
     redact_mode: Literal["on", "off", "inherit"] | None = None   # coaching mode (tri-state)
     self_justify: Literal["on", "off", "inherit"] | None = None  # justified-proceed (tri-state)
     ask_on_warn: Literal["on", "off", "inherit"] | None = None   # ASK verdict (tri-state)
