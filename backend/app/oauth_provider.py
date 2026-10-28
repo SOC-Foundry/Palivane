@@ -243,28 +243,35 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
                 # best effort the spec asks for, not a guarantee.
                 self._revoke_grant(db, row.client_id, row.user_id, row.tenant_id)
                 raise ValueError("authorization code already used")
-            access, refresh = self._issue_pair(db, row.client_id, row.user_id,
-                                               row.tenant_id, row.scopes or READ_SCOPE)
+            access, refresh, expires_in = self._issue_pair(db, row.client_id, row.user_id,
+                                                           row.tenant_id, row.scopes or READ_SCOPE)
             db.commit()
-            return OAuthToken(access_token=access, token_type="Bearer",
-                              expires_in=int(ACCESS_TTL.total_seconds()),
+            return OAuthToken(access_token=access, token_type="Bearer", expires_in=expires_in,
                               refresh_token=refresh, scope=row.scopes or READ_SCOPE)
         finally:
             close()
 
     # --- tokens -------------------------------------------------------------------------
 
-    def _issue_pair(self, db, client_id: str, user_id, tenant_id, scopes: str):
+    def _issue_pair(self, db, client_id: str, user_id, tenant_id, scopes: str,
+                    grant_ends=None):
+        """(access, refresh, access expires_in seconds). `grant_ends` is when the grant itself
+        lapses: REFRESH_TTL after consent, and carried unchanged through every rotation, so a
+        client that keeps refreshing still has to come back for consent — which is what the
+        consent screen promises ("lapses on its own within 30 days"). Rotating to a fresh
+        30 days each time made a grant in regular use last forever."""
         access = "pat_" + secrets.token_urlsafe(32)
         refresh = "prt_" + secrets.token_urlsafe(32)
         now = _now()
+        grant_ends = grant_ends or now + REFRESH_TTL
+        access_ends = min(now + ACCESS_TTL, grant_ends)
         db.add(OAuthTokenRow(token_hash=hash_token(access), kind="access", client_id=client_id,
                              user_id=user_id, tenant_id=tenant_id, scopes=scopes,
-                             expires_at=now + ACCESS_TTL))
+                             expires_at=access_ends))
         db.add(OAuthTokenRow(token_hash=hash_token(refresh), kind="refresh", client_id=client_id,
                              user_id=user_id, tenant_id=tenant_id, scopes=scopes,
-                             expires_at=now + REFRESH_TTL))
-        return access, refresh
+                             expires_at=grant_ends))
+        return access, refresh, max(int((access_ends - now).total_seconds()), 0)
 
     def _load(self, db, token: str, kind: str):
         row = (db.query(OAuthTokenRow)
@@ -320,8 +327,10 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
             row = self._load(db, refresh_token.token, "refresh")
             if row is None or row.client_id != client.client_id:
                 raise ValueError("invalid refresh token")
-            # Never widen on refresh: a token cannot acquire scopes it was not granted.
+            # Never widen on refresh: a token cannot acquire scopes it was not granted. Nor
+            # extend it: the grant ends when the consent it came from does.
             granted = row.scopes or READ_SCOPE
+            grant_ends = row.expires_at
             # Rotate atomically: only the request that actually flips revoked_at may mint the
             # next pair. A concurrent second use of the same refresh token loses here.
             rotated = (db.query(OAuthTokenRow)
@@ -331,11 +340,11 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
             if rotated != 1:
                 db.rollback()
                 raise ValueError("invalid refresh token")
-            access, refresh = self._issue_pair(db, row.client_id, row.user_id,
-                                               row.tenant_id, granted)
+            access, refresh, expires_in = self._issue_pair(db, row.client_id, row.user_id,
+                                                           row.tenant_id, granted,
+                                                           grant_ends=grant_ends)
             db.commit()
-            return OAuthToken(access_token=access, token_type="Bearer",
-                              expires_in=int(ACCESS_TTL.total_seconds()),
+            return OAuthToken(access_token=access, token_type="Bearer", expires_in=expires_in,
                               refresh_token=refresh, scope=granted)
         finally:
             close()
