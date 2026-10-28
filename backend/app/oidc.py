@@ -15,7 +15,14 @@ from .netguard import safe_client
 
 with warnings.catch_warnings():   # authlib.jose is "deprecated" but supported pre-2.0
     warnings.simplefilter("ignore")
-    from authlib.jose import JsonWebKey, jwt
+    from authlib.jose import JsonWebKey, JsonWebToken
+
+# Only the asymmetric algorithms an IdP signs with. authlib's default decoder accepts every
+# algorithm it knows, so what rejected HS256 signed with the JWKS public key (the classic
+# alg-confusion forgery) was a key-type mismatch deep in authlib, not a decision of ours.
+# Naming the list makes it one, and keeps holding if authlib's internals change.
+_jwt = JsonWebToken(["RS256", "RS384", "RS512", "PS256", "PS384", "PS512",
+                     "ES256", "ES384", "ES512", "EdDSA"])
 
 
 class OIDCError(Exception):
@@ -128,7 +135,7 @@ def validate_agent_jwt(issuer: str, audience: str, token: str, jwks_uri: str = "
     if audience:
         opts["aud"] = {"essential": True, "value": audience}
     try:
-        claims = jwt.decode(token, _key_set(uri), claims_options=opts)
+        claims = _jwt.decode(token, _key_set(uri), claims_options=opts)
         claims.validate()
     except OIDCError:
         raise
@@ -224,7 +231,7 @@ def inspect_ema_token(token: str, trusted_issuer: str = "", jwks_uri: str = "") 
             try:
                 uri = jwks_uri or _discover_cached(trusted_issuer).get("jwks_uri", "")
                 if uri:
-                    verified = jwt.decode(t, _key_set(uri), claims_options={
+                    verified = _jwt.decode(t, _key_set(uri), claims_options={
                         "iss": {"essential": True, "value": out["iss"]},
                         "exp": {"essential": True},
                     })
@@ -247,7 +254,7 @@ def validate_id_token(meta: dict, issuer: str, client_id: str, id_token: str,
         with safe_client(timeout=10) as c:
             jwks = c.get(_safe(meta["jwks_uri"]), timeout=10).json()
         key_set = JsonWebKey.import_key_set(jwks)
-        claims = jwt.decode(id_token, key_set, claims_options={
+        claims = _jwt.decode(id_token, key_set, claims_options={
             "iss": {"essential": True, "value": issuer},
             "aud": {"essential": True, "value": client_id},
             "exp": {"essential": True},
