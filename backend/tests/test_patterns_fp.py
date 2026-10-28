@@ -55,6 +55,17 @@ def test_identifier_and_template_values_not_flagged():
         assert "Credential assignment" not in find_secrets(code), code
 
 
+def test_operand_backtick_and_comment_prose_not_flagged():
+    # Real lines from backend/app/security.py / excerpts.py / models.py / scim.py.
+    for code in ("    token = API_KEY_PREFIX + secrets.token_urlsafe(32)",
+                 "    token = ENROLL_TOKEN_PREFIX + secrets.token_urlsafe(32)",
+                 "# A value that is only a reference to a variable names no secret: `$API_TOKEN`, `${TOKEN}`.",
+                 "    # Bearer / HEC token: write-only via the API and sealed at rest (crypto.seal, enc:v1:",
+                 "        # Random unusable password: SCIM-provisioned users sign in via SSO (or set",
+                 "// session token: refreshed whenever the tab regains focus"):
+        assert "Credential assignment" not in find_secrets(code), code
+
+
 def test_hardcoded_literal_assignment_still_flagged():
     # A literal value IS a hardcoded secret — must still fire (recall guard).
     assert "Credential assignment" in find_secrets('password = "hunter2hunter2xyz"')
@@ -62,6 +73,14 @@ def test_hardcoded_literal_assignment_still_flagged():
     assert "Credential assignment" in find_secrets("user=bob,password=hunter22,role=admin")
     assert "Credential assignment" in find_secrets('token = "{abc}9f8e7d6c5b4a"')
     assert "Credential assignment" in find_secrets("PASSWORD=Tr0ub4dor&3")
+    # Context-only exemptions don't reach a value that stands alone, sits in a code span,
+    # or is in a comment but isn't followed by prose.
+    assert "Credential assignment" in find_secrets("password: SuperSecretPassphrase")
+    assert "Credential assignment" in find_secrets("# admin password: Wintersunset")
+    assert "Credential assignment" in find_secrets("# admin password: Wintersunset1 for staging")
+    assert "Credential assignment" in find_secrets("the db password: Wintersunset is in the doc")
+    assert "Credential assignment" in find_secrets("use secret: `hunter2hunter2` for now")
+    assert "Credential assignment" in find_secrets("token = ab12cd34ef56")
 
 
 # --- known-format secrets are untouched by any of the above -----------------------------

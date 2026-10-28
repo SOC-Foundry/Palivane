@@ -266,19 +266,43 @@ _IDENT_REF_VALUE_RE = re.compile(r"^[A-Za-z_]+[,;)\]}]+$")
 # and every emailed-link builder in a pasted auth module read as a hardcoded token.
 _TEMPLATE_PREFIX_RE = re.compile(r"^\$?\{[A-Za-z_][\w.]*\}")
 
+# What follows an unquoted identifier value when it is the left operand of an expression —
+# `token = API_KEY_PREFIX + secrets.token_urlsafe(32)`, `pw = DEFAULT_PW or ask()`. A literal
+# credential doesn't continue into an operator.
+_EXPR_CONTINUES_RE = re.compile(r"^[ \t]*(?:\+|\|\||\?\?|or\b|if\b)")
 
-def _is_placeholder_assignment(match_text: str) -> bool:
+# A comment line, and the prose word a `label: value` inside one is followed by. Together they
+# separate `# Bearer / HEC token: write-only via the API` and `# Random unusable password:
+# SCIM-provisioned users sign in via SSO` (a sentence) from `# password: Hunter2x` (a value).
+_COMMENT_LINE_RE = re.compile(r"^[ \t]*(?:#|//|/\*|\*|--)")
+_PROSE_WORD_VALUE_RE = re.compile(r"^[A-Za-z]+(?:-[A-Za-z]+)*$")
+_PROSE_CONTINUES_RE = re.compile(r"^[ \t]+[a-z]{2,}\b")
+
+
+def _is_placeholder_assignment(match_text: str, line_before: str = "", after: str = "") -> bool:
     """The matched 'KEY = value' isn't a real hardcoded secret: a placeholder/template value
     (`your-api-key-here`, `changeme`), a code expression that reads it from env/config, or
-    any other code expression (attribute access / index / call) rather than a literal."""
-    mm = re.search(r"[:=]\s*([\"']?)([^\s\"']+)", match_text)
+    any other code expression (attribute access / index / call) rather than a literal.
+    `line_before` / `after` are the text on the match's line before it and the text after it,
+    for the shapes only context can tell apart: an operand (`= PREFIX + …`) or a sentence."""
+    # A backtick opens a markdown code span the same way a quote opens a literal:
+    # `` secret: `$API_TOKEN` `` names the env var, not its value.
+    mm = re.search(r"([:=])\s*([\"'`]?)([^\s\"'`]+)", match_text)
     if not mm:
         return False
-    quoted, val = mm.group(1), mm.group(2)
+    sep, quoted, val = mm.groups()
     if _PLACEHOLDER_VALUE_RE.match(val) or _ENV_EXPR_RE.match(val) or _EXPR_VALUE_RE.search(val):
         return True
-    # Variable references and template holes are code shapes only when unquoted.
-    return not quoted and bool(_IDENT_REF_VALUE_RE.match(val) or _TEMPLATE_PREFIX_RE.match(val))
+    if quoted:
+        return False
+    # Variable references, template holes and expression operands are code shapes only when
+    # unquoted.
+    if _IDENT_REF_VALUE_RE.match(val) or _TEMPLATE_PREFIX_RE.match(val):
+        return True
+    if re.match(r"^[A-Za-z_]\w*$", val) and _EXPR_CONTINUES_RE.match(after):
+        return True
+    return (sep == ":" and bool(_COMMENT_LINE_RE.match(line_before))
+            and bool(_PROSE_WORD_VALUE_RE.match(val)) and bool(_PROSE_CONTINUES_RE.match(after)))
 
 
 def _is_placeholder_conn(match_text: str) -> bool:
@@ -338,7 +362,9 @@ def find_secrets(text: str) -> list[str]:
             for m in rx.finditer(text):
                 if _DUMMY_RUN_RE.search(m.group(0)):
                     continue   # masked/placeholder stand-in (sk_test_xxxx…), not a real key
-                if label == "Credential assignment" and _is_placeholder_assignment(m.group(0)):
+                if label == "Credential assignment" and _is_placeholder_assignment(
+                        m.group(0), text[text.rfind("\n", 0, m.start()) + 1:m.start()],
+                        text[m.end():m.end() + 40]):
                     continue
                 if label == "Connection string credential" and _is_placeholder_conn(m.group(0)):
                     continue
