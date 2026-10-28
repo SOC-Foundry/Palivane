@@ -57,6 +57,10 @@ from .security import (
 _KEY_WRITE_ALLOWLIST = (
     ("PATCH", re.compile(r"^/api/findings/\d+$")),
     ("POST", re.compile(r"^/api/discovery/connectors/\d+/sync$")),
+    # The AI analyst only RECOMMENDS (it never applies an action), is off until an admin
+    # enables it, and runs on the org's own LLM key. The MCP server's investigate_finding
+    # calls this with a console_write key, which got a 403 while it was missing here.
+    ("POST", re.compile(r"^/api/findings/\d+/investigate$")),
 )
 
 
