@@ -23,11 +23,29 @@ if (!existsSync(detectors) || !existsSync(manifest)) {
 }
 
 // Distinct human-facing signal titles across every detector (template titles with {}
-// placeholders excluded — they parameterize an already-counted check).
+// placeholders excluded — they parameterize an already-counted check). Health and status
+// markers raise signals too but detect nothing in anyone's data, so they are not "checks":
+// counting them put 51 on the page against 46 real ones.
+const STATUS_TITLES = new Set([
+  "Capture key rejected — scans suspended",   // device_posture: sensor health
+  "Egress proxy down but still routed",
+  "Proxy port owned by another process",
+  "Scan backend unreachable — failing open",
+  "LLM judge unavailable",                     // llm_judge: backend health
+]);
 const titles = new Set();
 for (const f of readdirSync(detectors).filter((f) => f.endsWith(".py"))) {
   const src = readFileSync(join(detectors, f), "utf8");
-  for (const m of src.matchAll(/title="([^"{}]+)"/g)) titles.add(m[1]);
+  for (const m of src.matchAll(/title="([^"{}]+)"/g)) {
+    if (!STATUS_TITLES.has(m[1])) titles.add(m[1]);
+  }
+}
+const stale = [...STATUS_TITLES].filter((t) => ![...readdirSync(detectors)].some(
+  (f) => f.endsWith(".py") && readFileSync(join(detectors, f), "utf8").includes(`title="${t}"`)));
+if (stale.length) {
+  // A renamed status title would silently start counting as a check again.
+  console.error(`gen-stats: STATUS_TITLES no longer in the detectors: ${stale.join("; ")}`);
+  process.exit(1);
 }
 
 // Distinct credential formats in the tier-1 secret library (labels, deduped — some

@@ -30,21 +30,21 @@ const C = {
 };
 
 const CAPTURE = [
-  { logos: [[BrandClaude, C.claude], [BrandCursor, C.cursor], [BrandOpenAI, C.openai], [BrandCopilot, C.copilot], [BrandGemini, C.gemini]], title: "In coding tools", body: "Claude Code, Cursor, Codex, Copilot, and Gemini CLI report every prompt and tool call. One line to install." },
+  { logos: [[BrandClaude, C.claude], [BrandCursor, C.cursor], [BrandOpenAI, C.openai], [BrandCopilot, C.copilot], [BrandGemini, C.gemini]], title: "In coding tools", body: "Claude Code, Cursor, Codex, Copilot CLI, and Gemini CLI report prompts and tool calls. One line to install." },
   // Second: for a Claude Enterprise org it is the fastest thing to turn on (a URL and a key in
   // claude.ai, nothing on any device), and the only plane that sees Cowork cloud sessions.
   { logos: [[BrandClaude, C.claude]], title: "Across every Claude product", body: "For Claude Enterprise: Anthropic checks each prompt and tool call with Palivane before Claude runs it, across claude.ai, Cowork (cloud sessions too), Claude Code, and Claude in Chrome. Nobody has to touch a laptop." },
   { logos: [[BrandOpenAI, C.openai], [BrandClaude, C.claude], [BrandGemini, C.gemini], [BrandPerplexity, C.perplexity]], more: stats.browser_sites - 4, title: "In the browser", body: `What people paste into ${stats.browser_sites} AI sites, from ChatGPT and Claude to the app builders.` },
-  { logos: [[BrandSlack, C.slack], [BrandTeams, C.teams], [BrandGmail, C.gmail], [BrandDrive, C.drive], [BrandSharePoint, C.sharepoint], [BrandSalesforce, C.salesforce]], title: "In the places it already sits", body: "Slack, Teams, Gmail, Drive, SharePoint, and Salesforce, scanned where the data lives. Read-only, nothing installed." },
-  { logos: [[BrandGit, C.git], [BrandGitHub, C.github], [BrandNpm, C.npm]], title: "In code and laptops", body: "Commits and dependencies before they land, and credentials already at rest." },
-  { logos: [[BrandGitHub, C.github]], title: "In your repositories", body: "Keys committed to GitHub, including ones since deleted. Checked on a schedule, or within seconds of a push." },
-  { logos: [[GenericDatabase, "#9AA7A0"]], title: "In your databases", body: "Provider keys kept in clear in a table. A read-only scan that runs inside your network." },
-  { logos: [[BrandSnowflake, C.snowflake], [BrandDatabricks, C.databricks]], title: "In the data warehouse", body: "Snowflake Cortex and Databricks Model Serving, read from the warehouse's own query history. It reports rather than blocks." },
-  { logos: [[BrandActions, C.actions]], title: "In CI pipelines", body: "Agents on CI runners with production credentials. GitHub Actions, GitLab CI, CircleCI, Azure Pipelines." },
+  { logos: [[BrandSlack, C.slack], [BrandTeams, C.teams], [BrandGmail, C.gmail], [BrandDrive, C.drive], [BrandSharePoint, C.sharepoint], [BrandSalesforce, C.salesforce]], title: "In the places it already sits", body: "Slack, Teams, Gmail (sent mail), Drive, SharePoint, and Salesforce, scanned where the data lives. Read-only by default, nothing installed." },
+  { logos: [[BrandGit, C.git], [BrandGitHub, C.github], [BrandNpm, C.npm]], title: "In code and laptops", body: "Commits before they land, and credentials already at rest." },
+  { logos: [[BrandGitHub, C.github]], title: "In your repositories", body: "Keys committed to GitHub, including ones deleted in the last 90 days (up to a year). Checked on a schedule, or within seconds of a push." },
+  { logos: [[GenericDatabase, "#9AA7A0"]], title: "In your databases", body: "Provider keys kept in clear in a Postgres or SQLite table. A read-only, sampled scan that runs inside your network." },
+  { logos: [[BrandSnowflake, C.snowflake], [BrandDatabricks, C.databricks]], title: "In the data warehouse", body: "Snowflake Cortex, read from the warehouse's own query history, and Databricks Model Serving, read from its AI Gateway inference tables once you enable them. It reports rather than blocks." },
+  { logos: [[BrandActions, C.actions]], title: "In CI pipelines", body: "Agents on CI runners with production credentials. GitHub Actions across the org; GitLab CI, CircleCI, and Azure Pipelines configs scanned in the repo." },
   { logos: [[BrandClaude, C.claude], [BrandOpenAI, C.openai]], title: "In desktop apps and AI extensions", body: "Claude and ChatGPT desktop, Claude in Chrome, and AI sidebar extensions like Monica and Sider. A blocked message says why: Claude explains it in the conversation, and sidebar extensions show it as an error. Needs a system proxy and a trusted CA, so it is usually phase two." },
   // Was its own "Headless" section. The MCP server is one more place Palivane runs, so it is
   // one more tab: the link and the clip stay reachable from here.
-  { logos: [[BrandClaude, C.claude]], title: "From your own AI assistant", notSurface: true, body: "Palivane ships an MCP server, so you can ask Claude what leaked today, triage a finding, or pull a report without opening the console.",
+  { logos: [[BrandClaude, C.claude]], title: "From your own AI assistant", notSurface: true, body: "Palivane ships an MCP server, so you can ask Claude what leaked recently without opening the console. Connect over OAuth to ask questions, or run it locally with a write key to triage findings and pull a compliance report.",
     links: [["https://github.com/SOC-Foundry/palivane-clients/tree/main/mcp-server", "Wire it into Claude Code or Desktop"],
             ["/shots/mcp-demo.mp4?v=2", "Watch it work the triage queue"]] },
 ];
@@ -57,7 +57,7 @@ const STATS = [
   { n: `${CAPTURE.filter((c) => !c.notSurface).length}`, l: "surfaces covered" },
   SELF_HOSTED
     ? { n: "0", l: "content leaves your infrastructure" }
-    : { n: "0", l: "prompt text kept by default" },
+    : { n: "0", l: "full prompts kept by default" },
   { n: `${stats.detection_checks}`, l: "detection checks" },
   { n: "1", l: "afternoon to set up" },
 ];
@@ -68,9 +68,9 @@ const LINEAGE = [
   { title: "Known org data scores higher",
     body: "Text Palivane has already seen in your own systems scores higher than the same text from nowhere." },
   { title: "Blast radius, per document",
-    body: "Pick a document and see which prompts carried it, to which AI tools, from whom." },
+    body: "Pick a document and see which AI tools it reached, from whom, and how often." },
   { title: "It travels with the alert",
-    body: "The source rides along into webhooks, the SIEM export, and the report." },
+    body: "The source rides along into webhooks and the SIEM export." },
 ];
 
 const FEATURES = [
@@ -83,7 +83,7 @@ const FEATURES = [
     href: "/use-cases#engineering", link: "How engineering teams use it",
     src: "/shots/agents.png?v=7", alt: "AI assistant identity and limits" },
   { tab: "Trust", title: <>Know how often each check is <span className="lp-hl">right</span></>,
-    sub: () => "One-click reviews become a readout per check, and the noisy ones become a time-limited allowlist.",
+    sub: () => "One-click reviews become a readout per check, and noisy commands and paths become a time-limited allowlist.",
     src: "/shots/precision.png?v=1", alt: "Detection precision: how often each check was right" },
 ];
 
@@ -166,14 +166,14 @@ const EXAMPLES = [
   { tag: "BLOCKED", actor: "m.lindqvist@northwind.io", to: "Claude Code", ref: "before the file was read · finding #4502",
     lines: [
       [["cat .env and tell me why the migration keeps failing", ""]],
-      [["APP_ENV=production", "dim"]],
-      [["DATABASE_URL=", "dim"], ["postgres://app:Pr0d-Hunter42@db.northwind.io/billing", "hit"]],
-      [["LOG_LEVEL=info", "dim"]],
+      [["tool call: Bash", "dim"]],
+      [["command: ", "dim"], ["cat billing/.env", "hit"]],
+      [["sensitive resource: production credentials file", "dim"]],
     ],
-    facts: [["What was in it", "A production database password"],
-            ["Where it came from", "A .env file in the billing repo, on a laptop"],
-            ["Caught by", "The coding-tool hook, before the contents were sent"]],
-    foot: <>No website was visited. The secret went out through a coding tool, where a browser-only control never looks.</> },
+    facts: [["What it was", "An assistant about to read a production .env file"],
+            ["Where it came from", "The billing repo, on a laptop"],
+            ["Caught by", "The coding-tool hook in enforce mode, before the command ran"]],
+    foot: <>No website was visited. The file would have gone out through a coding tool, where a browser-only control never looks.</> },
   { tag: "FOUND", actor: "Slack", to: "#support-escalations", ref: "found at rest · finding #4519",
     lines: [
       [["customer called about the refund, they read out the", ""]],
@@ -194,7 +194,7 @@ const EXAMPLES = [
     ],
     facts: [["What was in it", "A bulk export outside the agent's role"],
             ["Where it came from", "An autonomous agent with no workload identity"],
-            ["Caught by", "Agent attestation and role limits, before the call ran"]],
+            ["Caught by", "Enforced agent attestation and role limits, before the call ran"]],
     foot: <>The text of that call is clean. A prompt scanner finds nothing wrong; the caller just was not entitled.</> },
 ];
 const EXAMPLE_MS = 7000;
@@ -322,7 +322,7 @@ export default function Landing({ onSignIn }) {
                 )}
               </button>
             </div>
-            <span>one command, monitor mode, nothing blocked yet</span>
+            <span>one command, monitor mode, only confirmed secrets blocked</span>
           </div>
         </div>
       </section>
@@ -443,7 +443,7 @@ export default function Landing({ onSignIn }) {
           {/* Replaces the seven-card "What Palivane looks for" section; /coverage is the
               page that goes into detection surface by surface. */}
           <p className="lp-sub lp-detect-line rv">
-            Every surface runs the same deterministic checks ({stats.secret_formats} credential
+            Every surface runs the deterministic checks that apply to it ({stats.secret_formats} credential
             formats, personal and customer data, source code and confidential documents,
             hijacked instructions, risky agent actions) and one risk score decides: allow, warn,
             or block. <a className="lp-textlink" href="/coverage">What it covers, surface by surface →</a>
