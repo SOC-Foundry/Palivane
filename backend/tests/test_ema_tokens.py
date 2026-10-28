@@ -67,15 +67,17 @@ def test_opaque_tokens_degrade_gracefully():
 
 def test_verified_only_against_configured_issuer(monkeypatch):
     from authlib.jose import JsonWebKey, jwt as jose_jwt
-    key = JsonWebKey.import_key({"kty": "oct", "kid": "k1",
-                                 "k": base64.urlsafe_b64encode(b"0" * 32).rstrip(b"=").decode()})
+    # An IdP signs with a private key and publishes only the public half (verification is
+    # asymmetric-only: a shared-secret HS256 token is refused even from a trusted issuer).
+    key = JsonWebKey.generate_key("RSA", 2048, is_private=True, options={"kid": "k1"})
     claims = {"iss": "https://idp.test", "sub": "u-1", "email": "dev@acme.com",
               "aud": "https://mcp.acme.dev", "exp": int(time.time()) + 300}
-    signed = jose_jwt.encode({"alg": "HS256", "typ": "oauth-id-jag+jwt", "kid": "k1"},
+    signed = jose_jwt.encode({"alg": "RS256", "typ": "oauth-id-jag+jwt", "kid": "k1"},
                              claims, key)
     signed = signed.decode() if isinstance(signed, bytes) else signed
+    published = JsonWebKey.import_key_set({"keys": [key.as_dict(is_private=False)]})
     monkeypatch.setattr(oidc, "_discover_cached", lambda iss: {"jwks_uri": "https://idp.test/jwks"})
-    monkeypatch.setattr(oidc, "_key_set", lambda uri: key)
+    monkeypatch.setattr(oidc, "_key_set", lambda uri: published)
 
     out = oidc.inspect_ema_token(signed, trusted_issuer="https://idp.test")
     assert out["verified"] is True and out["email"] == "dev@acme.com"
