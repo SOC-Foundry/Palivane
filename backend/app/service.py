@@ -272,6 +272,8 @@ def resolve_judge_backends(tenant):
                              tenant.judge_byok_model or "")
         if byok:
             return byok           # BYOK is exempt from the plan gate — they pay for it
+    if settings.judge_opt_in and (tenant is None or tenant.judge_enabled is not True):
+        return []                 # opt-in deployments: the operator's judge needs an explicit On
     if settings.judge_plan_gated:
         from .plans import has_feature
         if not has_feature(tenant, "judge"):
@@ -349,6 +351,11 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                              crypto.unseal_secret(tenant.judge_byok_key_encrypted,
                                                   crypto.tenant_dek_readonly(tenant)),
                              tenant.judge_byok_model or "")
+    # Opt-in deployments (PALIVANE_JUDGE_OPT_IN): the operator's judge runs only for an org
+    # that switched it On. Its own key (byok, above) already is that choice.
+    if (include_judge and not byok and settings.judge_opt_in
+            and (tenant is None or tenant.judge_enabled is not True)):
+        include_judge = False
     # On the managed SaaS the operator-funded judge is a paid entitlement: when
     # plan-gating is on, a tenant whose plan lacks the "judge" feature runs offline-only
     # (self-hosted leaves gating off and runs the operator's own key for everyone).

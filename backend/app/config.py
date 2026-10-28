@@ -56,6 +56,13 @@ class Settings:
     # feature (see app/plans.py). Self-hosted leaves this off (default): the operator sets
     # their own provider key and the judge runs for everyone whenever a key is configured.
     judge_plan_gated: bool = _env("PALIVANE_JUDGE_PLAN_GATED", "").lower() in ("1", "true", "yes")
+    # Whether an org must switch the operator-funded judge ON before its content goes to the
+    # judge provider. Off (default): an org runs it unless it opts out, which is right for a
+    # self-host where configuring the key IS the operator switching it on. On (the hosted
+    # SaaS sets it): only orgs that chose "On", or brought their own key, run it, so the FAQ's
+    # "only if you switch on the optional LLM judge" holds for every org, whatever key the
+    # operator configures.
+    judge_opt_in: bool = _env("PALIVANE_JUDGE_OPT_IN", "").lower() in ("1", "true", "yes")
     # Raw event archival to the tenant's S3 sink (archive_s3.py): NDJSON micro-batch flush
     # thresholds, and the default per-tenant daily byte budget (MB; a tenant column > 0
     # overrides). Events go to AWS from GCP — internet egress — so the cap is a cost guard.
