@@ -1064,24 +1064,32 @@ def _ingest_auth(x_palivane_token: str, db: Session) -> tuple[int | None, str]:
     """Resolve (tenant_id, default_actor) from a per-tenant API key (`ak_…`) or the
     shared EXTENSION_INGEST_TOKEN. Used by the token-gated ingest & scan endpoints, which
     are deployed via policy/CI and so authenticate with a capture token, not a user JWT."""
+    tenant_id, actor, _ = _ingest_caller(x_palivane_token, db)
+    return tenant_id, actor
+
+
+def _ingest_caller(x_palivane_token: str, db: Session) -> tuple[int | None, str, bool]:
+    """_ingest_auth, plus whether the default actor is itself only a claim: a device-enrolled
+    key's identity was declared by the device (see gateway.key_actor_claimed). Endpoints whose
+    actor reaches per-user policy use this, so overrides can only tighten for claims."""
     from .security import looks_like_agent_token, looks_like_api_key, looks_like_jwt
 
     if looks_like_api_key(x_palivane_token):
         from .gateway import _resolve_api_key
         principal = _resolve_api_key(x_palivane_token, db)   # 401s on bad/expired key
-        return principal.tenant_id, principal.actor
+        return principal.tenant_id, principal.actor, principal.actor_claimed
     if looks_like_agent_token(x_palivane_token):
         ag = _resolve_agent_token(x_palivane_token, db)      # 401s on bad/disabled agent
-        return ag.tenant_id, ag.name
+        return ag.tenant_id, ag.name, False
     if looks_like_jwt(x_palivane_token):                     # OIDC/workload agent identity
         ag = _resolve_agent_jwt(x_palivane_token, db)
         if ag is None:
             raise HTTPException(status_code=401, detail="unrecognized or invalid agent JWT")
-        return ag.tenant_id, ag.name
+        return ag.tenant_id, ag.name, False
     token = settings.extension_ingest_token
     if not token or not hmac.compare_digest(x_palivane_token, token):
         raise HTTPException(status_code=401, detail="invalid or missing ingest token")
-    return _ingest_tenant_id(db), ""
+    return _ingest_tenant_id(db), "", False
 
 
 
@@ -1105,6 +1113,20 @@ def _attributed_actor(claimed: str, default_actor: str) -> str:
     if "@" not in claimed and "@" in (default_actor or ""):
         return default_actor
     return claimed
+
+
+def _actor_claimed(actor: str, default_actor: str, default_claimed: bool) -> bool:
+    """Whether `actor` is the client's word rather than the identity its credential proves.
+
+    The claim winning above is right for attribution, and wrong for exemptions: anyone holding
+    a fleet key could name a colleague whose override puts them in monitor mode or disables a
+    check. So a claimed actor's overrides and allowlist entries may only tighten
+    (policies.resolve_disabled). Anything other than the credential's own identity is a claim;
+    so is that identity when a device-enrolled key declared it itself."""
+    a = (actor or "").strip().lower()
+    if not a:
+        return False
+    return default_claimed or a != (default_actor or "").strip().lower()
 
 
 def _naive_now():
@@ -1244,7 +1266,8 @@ def _agent_attestation(x_palivane_token: str, x_palivane_agent: str, tenant_id, 
 
 def _score_ai_usage(content: str, actor: str, tool: str, destination: str,
                     tenant_id: int | None, agent: str, db: Session,
-                    endpoint: str = "", use_judge: bool = True) -> tuple[dict, dict]:
+                    endpoint: str = "", use_judge: bool = True,
+                    claimed: bool = False) -> tuple[dict, dict]:
     """Score one ai-usage capture on the AI_USAGE surface + feed discovery. Shared by the
     ai-usage ingest endpoint and the OTLP receiver so their behavior can't drift. Returns
     (verdict, metadata)."""
@@ -1256,7 +1279,7 @@ def _score_ai_usage(content: str, actor: str, tool: str, destination: str,
     meta["custom_pii"] = _tenant_or_global(tenant_id, db, "custom_pii_patterns", "")
     item = AnalysisInput(
         content=content, sender=actor, channel=tool or "ai_tool",
-        surface=Surface.AI_USAGE, metadata=meta,
+        surface=Surface.AI_USAGE, metadata=meta, sender_claimed=claimed,
     )
     from .policy import detect_tool, signal_filter_for
     suppress = _tenant_or_global(tenant_id, db, "tool_suppress", settings.gateway_tool_suppress)
@@ -1317,9 +1340,10 @@ def ingest_ai_usage(
     Authenticated by a per-tenant API key (`ak_…`, minted in the console) or the shared
     static EXTENSION_INGEST_TOKEN — not a user JWT — so it can be deployed via policy.
     Returns an action the client enforces: allow / warn / block."""
-    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
+    tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     actor = _attributed_actor(body.user, default_actor)
+    claimed = _actor_claimed(actor, default_actor, default_claimed)
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     if body.parse_miss:
         # The client recognised the event and got nothing out of it — vendor shape drift.
@@ -1333,7 +1357,8 @@ def ingest_ai_usage(
     _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool, user_agent,
                       scan_failed=body.scan_failed)
     result, meta = _score_ai_usage(body.content, actor, body.tool, body.destination,
-                                   tenant_id, agent, db, endpoint=body.endpoint)
+                                   tenant_id, agent, db, endpoint=body.endpoint,
+                                   claimed=claimed)
     action, force_block, coached, redacted_content = _prompt_verdict(
         result, body.content, tenant_id, db)
     # Justified proceed: an override token minted by /api/ingest/justify lets the SAME
@@ -1375,7 +1400,8 @@ def ingest_ai_usage(
     redaction_mode = _tenant_redact_on_block(tenant_id, db)
     redactions: list[dict] = []
     if redaction_mode != "off" and (action == "block" or force_block or coached):
-        redactions = _redaction_plan(body.content, result, meta, actor, tenant_id, agent, db)
+        redactions = _redaction_plan(body.content, result, meta, actor, tenant_id, agent, db,
+                                     claimed=claimed)
     # The person chose "send with these removed" on an earlier block, and this is that
     # message. It was scanned like any other; if it is going through, mark the original.
     redacted_resend = False
@@ -1420,7 +1446,7 @@ def ingest_ai_usage(
         # The org's enforce stance for local capture planes (Settings → Enforcement),
         # staged per actor/tool via policy overrides: clients honor "block" verdicts
         # when true, without any per-device flag.
-        "enforce": _client_enforce_for(tenant_id, actor, body.tool, db),
+        "enforce": _client_enforce_for(tenant_id, actor, body.tool, db, claimed=claimed),
         # Approved AI tools to offer the user instead of a hard "no" (shown in the block UI).
         "sanctioned_tools": _sanctioned_list(meta["sanctioned_tools"]),
         # What this client SHOULD be running, so a stale install is visible in its own logs
@@ -1444,14 +1470,15 @@ def ingest_a2a(
     Attributed to the RECEIVING agent (to_agent) as the session actor, so it folds into that
     agent's behavioral chain: a poisoned inbound message followed by that agent exfiltrating
     reads as one correlated attack, not two unrelated events. Token-gated like other ingest."""
-    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
+    tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     to_agent = (body.to_agent or "").strip() or default_actor
+    claimed = _actor_claimed(to_agent, default_actor, default_claimed)
     frm = (body.from_agent or "").strip() or "unknown-agent"
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     _record_heartbeat(db, tenant_id, to_agent, "a2a", frm, user_agent)
     item = AnalysisInput(
-        content=body.content, sender=to_agent,
+        content=body.content, sender=to_agent, sender_claimed=claimed,
         subject=f"A2A: {frm} → {to_agent}", channel="a2a", surface=Surface.A2A,
         metadata={"from_agent": frm, "to_agent": to_agent, "protocol": body.protocol or "a2a"},
     )
@@ -1464,7 +1491,7 @@ def ingest_a2a(
         "signals": result["signals"],
         "finding_id": result["finding_id"],
         "remediation": remediation_for(result["signals"]),
-        "enforce": _client_enforce_for(tenant_id, to_agent, "a2a", db),
+        "enforce": _client_enforce_for(tenant_id, to_agent, "a2a", db, claimed=claimed),
     }
 
 
@@ -1583,7 +1610,7 @@ async def otlp_logs(
     post-hoc, so this records but can't block. Always returns OTLP success: a telemetry
     export must never back up because of us (bad records are skipped, not rejected)."""
     from . import otel
-    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)   # 401 on a bad token
+    tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)  # 401s
     _enforce_rate(db, tenant_id)
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     attested = _agent_attestation(x_palivane_token, x_palivane_agent, tenant_id, db)
@@ -1604,13 +1631,15 @@ async def otlp_logs(
                 f = otel.prompt_fields(attrs)
                 if f:
                     _score_ai_usage(f["content"], f["user"] or default_actor, f["tool"],
-                                    f["destination"], tenant_id, agent, db)
+                                    f["destination"], tenant_id, agent, db,
+                                    claimed=_actor_claimed(f["user"] or default_actor,
+                                                           default_actor, default_claimed))
                     processed += 1
             elif name in ("tool_result", "mcp_server_connection"):
                 f = otel.mcp_fields(name, attrs)
                 if f:
                     _score_mcp(MCPIngest(**f), tenant_id, default_actor, allowed, block, db,
-                               agent=agent, attested=attested)
+                               agent=agent, attested=attested, default_claimed=default_claimed)
                     processed += 1
         except Exception:
             continue  # one bad record never fails the whole export
@@ -1632,15 +1661,16 @@ async def inference_hooks_endpoint(request: Request, db: Session = Depends(get_d
     headers = dict(request.headers)
     # The key is checked before the body is read: a transcript can be tens of megabytes,
     # and nothing without a valid key should get Palivane to read one.
-    tenant_id, default_actor = await run_in_threadpool(
-        _ingest_auth, headers.get("x-palivane-token", ""), db)
+    tenant_id, default_actor, default_claimed = await run_in_threadpool(
+        _ingest_caller, headers.get("x-palivane-token", ""), db)
     raw = await request.body()
     return await run_in_threadpool(_inference_hook_verdict, raw, headers, tenant_id,
-                                   default_actor, db)
+                                   default_actor, db, default_claimed)
 
 
 def _inference_hook_verdict(raw: bytes, headers: dict, tenant_id: int | None,
-                            default_actor: str, db: Session) -> dict:
+                            default_actor: str, db: Session,
+                            default_claimed: bool = False) -> dict:
     import json as _json
 
     from . import inference_hooks as ih
@@ -1674,17 +1704,20 @@ def _inference_hook_verdict(raw: bytes, headers: dict, tenant_id: int | None,
     if app_name == "config-test" or kind not in ("prompt", "tool_call"):
         return {"action": "allow"}
     actor = ih.actor_of(frame) or default_actor
+    # The frame's actor is Anthropic's, under the signature verified above — not a claim.
+    claimed = False if ih.actor_of(frame) else default_claimed
     tool = app_name or "claude"
     _record_heartbeat(db, tenant_id, actor, "inference-hooks", tool,
                       headers.get("user-agent", ""))
-    enforce = _client_enforce_for(tenant_id, actor, tool, db)
+    enforce = _client_enforce_for(tenant_id, actor, tool, db, claimed=claimed)
     if kind == "prompt":
-        return _inference_hook_prompt(frame, tenant_id, actor, tool, enforce, db)
-    return _inference_hook_tool_call(frame, tenant_id, actor, enforce, db)
+        return _inference_hook_prompt(frame, tenant_id, actor, tool, enforce, db,
+                                      claimed=claimed)
+    return _inference_hook_tool_call(frame, tenant_id, actor, enforce, db, claimed=claimed)
 
 
 def _inference_hook_prompt(frame: dict, tenant_id: int, actor: str, tool: str,
-                           enforce: bool, db: Session) -> dict:
+                           enforce: bool, db: Session, claimed: bool = False) -> dict:
     from datetime import timedelta
 
     from . import inference_hooks as ih
@@ -1713,7 +1746,8 @@ def _inference_hook_prompt(frame: dict, tenant_id: int, actor: str, tool: str,
     # No destination: the org governs Claude through Anthropic itself, so this is never a
     # shadow-AI destination; content signals fire as on any other plane.
     result, _meta = _score_ai_usage(content, actor, tool, "", tenant_id, "", db,
-                                    endpoint="inference-hooks", use_judge=False)
+                                    endpoint="inference-hooks", use_judge=False,
+                                    claimed=claimed)
     action, force_block, coached, _cleaned = _prompt_verdict(result, content, tenant_id, db)
     # The client planes' rule (should_block): a confirmed leak always stops; an ordinary
     # block, or a coached one, stops under the org's enforcement stance.
@@ -1760,7 +1794,7 @@ def _remember_denial(db: Session, tenant_id: int, session: str, hashes: list[str
 
 
 def _inference_hook_tool_call(frame: dict, tenant_id: int, actor: str, enforce: bool,
-                              db: Session) -> dict:
+                              db: Session, claimed: bool = False) -> dict:
     """One verdict for every tool call in the frame: any call that should stop stops them
     all, and the reason names it."""
     from . import inference_hooks as ih
@@ -1769,7 +1803,7 @@ def _inference_hook_tool_call(frame: dict, tenant_id: int, actor: str, enforce: 
     block = _tenant_mcp_block_severity(tenant_id, db)
     for act in ih.tool_activities(messages, user=actor):
         v = _score_mcp(MCPIngest(**act), tenant_id, actor, allowed, block, db,
-                       use_judge=False)
+                       use_judge=False, default_claimed=claimed)
         if v["action"] == "block" and (enforce or v.get("enforce")):
             fixes = v.get("remediation") or []
             name = act["tool"] or "a tool"
@@ -1888,7 +1922,8 @@ def _tenant_redact_on_block(tenant_id: int | None, db: Session) -> str:
 
 
 def _redaction_plan(content: str, result: dict, meta: dict, actor: str,
-                    tenant_id: int | None, agent: str, db: Session) -> list[dict]:
+                    tenant_id: int | None, agent: str, db: Session,
+                    claimed: bool = False) -> list[dict]:
     """The spans to remove from `content` so it would no longer block, or [] when removing
     values cannot clear this block (it also rests on an injection, a risky action, a policy
     rule, a data-loss signal with no span) or a value could not be located exactly.
@@ -1911,7 +1946,7 @@ def _redaction_plan(content: str, result: dict, meta: dict, actor: str,
     rescan_meta = {k: v for k, v in meta.items() if k != "_rescan"}
     item = AnalysisInput(content=redact_spans.apply(content, spans), sender=actor,
                          channel=tool or "ai_tool", surface=Surface.AI_USAGE,
-                         metadata=rescan_meta)
+                         metadata=rescan_meta, sender_claimed=claimed)
     again = run_analysis(item, persist=False, db=db, tenant_id=tenant_id,
                          signal_filter=sig_filter, agent=agent, use_judge=False, dry_run=True)
     if _action_for(again["severity"]) == "block" or again.get("confirmed_leak"):
@@ -1982,7 +2017,8 @@ def _tenant_client_enforce(tenant_id: int | None, db: Session) -> bool:
     return settings.client_enforce
 
 
-def _client_enforce_for(tenant_id: int | None, actor: str, tool: str, db: Session) -> bool:
+def _client_enforce_for(tenant_id: int | None, actor: str, tool: str, db: Session,
+                        claimed: bool = False) -> bool:
     """Staged enforcement: the tenant/global stance, unless a policy override with an
     explicit enforce matches this actor (+ tool) — so an org can enforce a pilot user,
     a group glob, or one tool while everyone else stays in monitor."""
@@ -1991,7 +2027,7 @@ def _client_enforce_for(tenant_id: int | None, actor: str, tool: str, db: Sessio
         return base
     from .policies import resolve_enforce
     overrides = db.query(PolicyOverride).filter(PolicyOverride.tenant_id == tenant_id).all()
-    effective, _ = resolve_enforce(base, actor, overrides, channel=tool)
+    effective, _ = resolve_enforce(base, actor, overrides, channel=tool, claimed=claimed)
     return effective
 
 
@@ -2147,7 +2183,8 @@ def _tenant_sso_issuer(tenant_id: int | None, db: Session) -> str:
 
 def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
                allowed_servers: str, block_severity: str, db: Session, agent: str = "",
-               client_ua: str = "", attested: str = "", use_judge: bool = True) -> dict:
+               client_ua: str = "", attested: str = "", use_judge: bool = True,
+               default_claimed: bool = False) -> dict:
     """Score one MCP activity on the `mcp` surface and return the client verdict.
 
     Benign (allow-level) verdicts aren't persisted unless PALIVANE_MCP_PERSIST_BENIGN is set
@@ -2167,6 +2204,10 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
                                      trusted_issuer=_tenant_sso_issuer(tenant_id, db))
     actor = (ema.get("email") or ema.get("sub")
              or _attributed_actor(body.user, default_actor))
+    # An EMA identity is read off a token the client hands us; it proves anything only when
+    # its signature checked out against the tenant's own IdP.
+    claimed = (not ema.get("verified") if (ema.get("email") or ema.get("sub"))
+               else _actor_claimed(actor, default_actor, default_claimed))
     # Synthesize the scannable text: the tool's arguments and resource URI, i.e. what this call
     # is about to MOVE, so shadow-AI catches secrets/PII in args and the finding has context.
     # Advertised tool descriptions are deliberately not in it. They are vendor-written metadata,
@@ -2183,7 +2224,7 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
     # inspecting "MCP activity" found Bash and Edit calls.
     is_mcp = bool(body.server)
     item = AnalysisInput(
-        content=content, sender=actor, channel=body.tool or "mcp",
+        content=content, sender=actor, sender_claimed=claimed, channel=body.tool or "mcp",
         subject=(f"MCP {body.method}".strip() if is_mcp
                  else f"Agent tool: {body.tool}".strip().rstrip(":")),
         surface=Surface.MCP if is_mcp else Surface.AGENT_TOOLS,
@@ -2202,7 +2243,8 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
     # The org's allowlist: commands and paths it has decided are fine, for the detectors to
     # consult (detectors/allow.py). None when it has none that apply to this actor and tool.
     from . import allowlist
-    allow_holder = allowlist.attach(db, tenant_id, actor, body.tool, item.metadata)
+    allow_holder = allowlist.attach(db, tenant_id, actor, body.tool, item.metadata,
+                                    claimed=claimed)
     # Least-privilege: fold agent role authz (action + shell command + data-scope) into the
     # MCP scan. The finding records it (monitor + enforce); an enforce-deny then hard-blocks
     # below — independent of severity and of the disabled-checks/override filter, so authz is
@@ -2234,7 +2276,7 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
                           result["signals"], result["risk_score"])
     # Org enforce stance for local capture planes — same field as ai-usage verdicts,
     # staged per actor/tool via policy overrides.
-    enforce = _client_enforce_for(tenant_id, actor, body.tool or "mcp", db)
+    enforce = _client_enforce_for(tenant_id, actor, body.tool or "mcp", db, claimed=claimed)
     return {
         "action": action,
         "risk_score": result["risk_score"],
@@ -2261,7 +2303,7 @@ def ingest_mcp(
     """Score an MCP JSON-RPC activity a capture client (proxy, palivane-hook, palivane-mcp)
     saw (agentic tool-use). Token-gated; returns an action the client enforces on the
     `mcp` surface: allow/warn/block. Benign verdicts aren't persisted by default."""
-    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
+    tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     if body.parse_miss:
@@ -2275,7 +2317,8 @@ def ingest_mcp(
     attested = _agent_attestation(x_palivane_token, x_palivane_agent, tenant_id, db)
     return _score_mcp(body, tenant_id, default_actor, _tenant_mcp_allow(tenant_id, db),
                       _tenant_mcp_block_severity(tenant_id, db), db, agent=agent,
-                      client_ua=user_agent, attested=attested)
+                      client_ua=user_agent, attested=attested,
+                      default_claimed=default_claimed)
 
 
 @app.post("/api/ingest/mcp/batch")
@@ -2289,7 +2332,7 @@ def ingest_mcp_batch(
     """Score many MCP activities in one request — for long-lived capture clients
     (palivane-mcp) that would otherwise post per tool call. Counts as a single ingest
     request against the tenant's sensor quota. Returns per-item verdicts, index-aligned."""
-    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
+    tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     if body.items:
@@ -2299,7 +2342,8 @@ def ingest_mcp_batch(
     block = _tenant_mcp_block_severity(tenant_id, db)
     attested = _agent_attestation(x_palivane_token, x_palivane_agent, tenant_id, db)
     results = [_score_mcp(item, tenant_id, default_actor, allowed, block, db, agent=agent,
-                          client_ua=user_agent, attested=attested)
+                          client_ua=user_agent, attested=attested,
+                          default_claimed=default_claimed)
                for item in body.items]
     return {"results": results}
 
@@ -2731,13 +2775,14 @@ def scan_browser_extensions(
     full list also replaces this device's rows in the Discovery inventory. Token-gated
     like the posture scans; carries ids, names and versions, never URLs or page content."""
     from .discovery import record_browser_extensions
-    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
+    tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     actor = _attributed_actor(body.user, default_actor)
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     _record_heartbeat(db, tenant_id, actor, "posture", "browser-extensions", user_agent)
     exts = [e.model_dump() for e in body.extensions]
     item = AnalysisInput(content="\n".join(sorted(e["id"] for e in exts)), sender=actor,
+                         sender_claimed=_actor_claimed(actor, default_actor, default_claimed),
                          subject="browser-extensions", channel="browser-extensions",
                          surface=Surface.BROWSER_EXT,
                          metadata={"kind": "browser_extensions", "extensions": exts,
@@ -2771,12 +2816,13 @@ def scan_agent_config(
     flags) for unsafe autonomy — YOLO / auto-apply / auto-run / skip-permissions. Attributed
     to the submitting user, so findings show per-registered-user. Token-gated for the posture
     sensor / cursor hook."""
-    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
+    tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     actor = _attributed_actor(body.user, default_actor)
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     _record_heartbeat(db, tenant_id, actor, "posture", body.tool or "agent-config", user_agent)
     item = AnalysisInput(content=body.content, sender=actor,
+                         sender_claimed=_actor_claimed(actor, default_actor, default_claimed),
                          channel=f"{body.tool or 'agent'}-config", surface=Surface.IDE,
                          metadata={"kind": "agent_config", "tool": body.tool})
     result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
@@ -2804,12 +2850,13 @@ def scan_device_posture(
     collision displacing the capture plane, the scan breaker failing open (backend outage
     or revoked capture key = DLP silently suspended), and traffic sources the network
     plane can't see (WSL/containers). Token-gated for the posture sensor."""
-    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
+    tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     actor = _attributed_actor(body.user, default_actor)
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     _record_heartbeat(db, tenant_id, actor, "posture", "device-posture", user_agent)
     item = AnalysisInput(content=body.content, sender=actor, channel="device-posture",
+                         sender_claimed=_actor_claimed(actor, default_actor, default_claimed),
                          surface=Surface.DEVICE, metadata={"kind": "device_posture"})
     result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
                           db=db, tenant_id=tenant_id, agent=agent)
@@ -2835,13 +2882,14 @@ def scan_agent_rules(
     comment), exfiltration or hide-from-user directives, and tool-poisoning preambles.
     These files are authority the agent obeys on every turn but a reviewer skims, so they
     are a distinct attack surface. Token-gated for the posture sensor / git plane."""
-    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
+    tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     actor = _attributed_actor(body.user, default_actor)
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     _record_heartbeat(db, tenant_id, actor, "posture", "agent-rules", user_agent)
     item = AnalysisInput(
         content=body.content, sender=actor,
+        sender_claimed=_actor_claimed(actor, default_actor, default_claimed),
         subject=f"agent-rules: {body.path or 'instructions'}",
         channel=(body.tool or "agent") + "-rules", surface=Surface.AGENT_RULES,
         metadata={"kind": "agent_rules", "path": body.path, "tool": body.tool},
@@ -2875,7 +2923,7 @@ def scan_ci(
     pipeline should fail: it honors the org's ci_block_severity, which defaults to
     `critical` so confirmed exposure fails a build while posture debt warns."""
     from . import discovery
-    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
+    tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     repo = (body.repo or "").strip()
     actor = repo or default_actor
@@ -2890,6 +2938,7 @@ def scan_ci(
         chan = "gitlab-ci" if "gitlab-ci" in (wf.path or "") else "github-actions"
         item = AnalysisInput(content=wf.content, subject=wf.path or "workflow",
                              sender=actor, channel=chan, surface=Surface.CI,
+                             sender_claimed=_actor_claimed(actor, default_actor, default_claimed),
                              metadata={"kind": "ci_workflow", "repo": repo,
                                        "ref": body.ref, "workflow": wf.path})
         result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
@@ -2927,7 +2976,7 @@ def scan_oversharing(
     surfaced restricted data (confidential / PII / keywords) the recipient isn't permitted to
     see — the "LLM oversharing" problem. Rules come from the tenant's need-to-know config.
     For enterprise search / Copilot / RAG integrations to call with each answer."""
-    tenant_id, _default_actor = _ingest_auth(x_palivane_token, db)
+    tenant_id, _default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     # Need-to-know authorization uses ONLY the explicitly-supplied recipient — never the
     # token's own actor. Falling back to default_actor here let the integration's API-key
@@ -2938,6 +2987,7 @@ def scan_oversharing(
     actor = body.user
     rules = _tenant_or_global(tenant_id, db, "oversharing_rules", "")
     item = AnalysisInput(content=body.content, sender=actor,
+                         sender_claimed=_actor_claimed(actor, _default_actor, default_claimed),
                          channel=body.source or "llm-response", surface=Surface.OVERSHARING,
                          subject=f"LLM response to {actor or 'user'}",
                          metadata={"oversharing_rules": rules})
@@ -2963,23 +3013,25 @@ def scan_secrets(
     scanner sends only metadata (type, path, masked preview, world-readability) — never
     the raw secret. Each file is scored as a `credential_at_rest` finding; the response
     carries a per-item remediation plan. Token-gated."""
-    tenant_id, actor = _ingest_auth(x_palivane_token, db)
+    tenant_id, actor, claimed = _ingest_caller(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     host = (body.host or "").strip()
     results = []
     for it in body.items:
-        results.append(_record_secret(it, host, actor, tenant_id, bool(body.record), db))
+        results.append(_record_secret(it, host, actor, tenant_id, bool(body.record), db,
+                                      claimed=claimed))
     flagged = [r for r in results if r["severity"] not in ("benign", "low")]
     return {"scanned": len(results), "flagged": len(flagged), "findings": results}
 
 
 def _record_secret(it: SecretAtRest, host: str, actor: str, tenant_id, record: bool,
-                   db: Session) -> dict:
+                   db: Session, claimed: bool = False) -> dict:
     """Score + (optionally) persist one at-rest credential finding; shared by the
     palivane-secrets scan and the third-party scanner importer."""
     item = AnalysisInput(
         content=f"{it.path}\n{it.masked}", subject=it.path,
-        sender=actor, channel=host or "endpoint", surface=Surface.SECRETS,
+        sender=actor, sender_claimed=claimed, channel=host or "endpoint",
+        surface=Surface.SECRETS,
         metadata={"secret_types": it.secret_types, "path": it.path,
                   "world_readable": it.world_readable, "verified": it.verified, "count": it.count,
                   "source": it.source, "evidence": it.masked or it.path},
@@ -3005,7 +3057,7 @@ def scan_import(
     one alert/SIEM path across every scanner. The raw secret is masked at ingest and never
     persisted; TruffleHog's `Verified` flag escalates a finding to critical. Token-gated."""
     from . import scanner_import
-    tenant_id, actor = _ingest_auth(x_palivane_token, db)
+    tenant_id, actor, claimed = _ingest_caller(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     normalized = scanner_import.normalize(body.tool, body.results)
     if not normalized:
@@ -3018,7 +3070,7 @@ def scan_import(
         _record_secret(
             SecretAtRest(path=f["path"], secret_types=f["secret_types"], masked=f["masked"],
                          line=f["line"], verified=f["verified"], source=f["source"]),
-            host, actor, tenant_id, bool(body.record), db)
+            host, actor, tenant_id, bool(body.record), db, claimed=claimed)
         for f in normalized
     ]
     flagged = [r for r in results if r["severity"] not in ("benign", "low")]

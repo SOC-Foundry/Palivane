@@ -31,18 +31,25 @@ def test_resolution_precedence():
     assert d == base and m is None
 
 
-def _post(raw_client, key, content, user):
+def _post(raw_client, key, content, user=""):
     return raw_client.post("/api/ingest/ai-usage",
                            json={"content": content, "destination": "https://chatgpt.com/", "user": user},
                            headers={"X-Palivane-Token": key}).json()
 
 
+def _key_for(client, actor):
+    """An admin-minted key whose actor IS the identity: overrides that relax apply to it in
+    full. (Naming someone in `user` on another key is only a claim — see
+    test_claimed_identity.py — and there an override can only tighten.)"""
+    return client.post("/api/apikeys", json={"label": "ext", "actor": actor}).json()["token"]
+
+
 def test_group_override_applies_end_to_end(client, raw_client):
-    key = client.post("/api/apikeys", json={"label": "ext", "actor": "e@acme.com"}).json()["token"]
+    bot, human = _key_for(client, "bot@svc.acme.com"), _key_for(client, "human@acme.com")
     payload = "SSN 123-45-6789"
 
     # Baseline: PII fires for everyone.
-    assert "pii_exposure" in {s["category"] for s in _post(raw_client, key, payload, "u@acme.com")["signals"]}
+    assert "pii_exposure" in {s["category"] for s in _post(raw_client, bot, payload)["signals"]}
 
     # Add a group override that disables pii_exposure for *@svc.acme.com (service accounts).
     r = client.post("/api/policies/overrides", json={
@@ -51,15 +58,15 @@ def test_group_override_applies_end_to_end(client, raw_client):
     assert r.status_code == 200
 
     # A svc actor no longer flags PII; a normal actor still does.
-    assert "pii_exposure" not in {s["category"] for s in _post(raw_client, key, payload, "bot@svc.acme.com")["signals"]}
-    assert "pii_exposure" in {s["category"] for s in _post(raw_client, key, payload, "human@acme.com")["signals"]}
+    assert "pii_exposure" not in {s["category"] for s in _post(raw_client, bot, payload)["signals"]}
+    assert "pii_exposure" in {s["category"] for s in _post(raw_client, human, payload)["signals"]}
 
     # It shows up in the catalog response, and delete removes it.
     cat = client.get("/api/policies").json()
     ov = next(o for o in cat["overrides"] if o["match"] == "*@svc.acme.com")
     assert ov["scope"] == "group" and ov["disabled_checks"] == ["pii_exposure"]
     assert client.delete(f"/api/policies/overrides/{ov['id']}").status_code == 200
-    assert "pii_exposure" in {s["category"] for s in _post(raw_client, key, payload, "bot@svc.acme.com")["signals"]}
+    assert "pii_exposure" in {s["category"] for s in _post(raw_client, bot, payload)["signals"]}
 
 
 def test_override_rejects_unknown_check(client):
@@ -102,7 +109,7 @@ def test_channel_scoped_resolution():
 
 
 def test_channel_scoped_override_end_to_end(client, raw_client):
-    key = client.post("/api/apikeys", json={"label": "ext", "actor": "e@acme.com"}).json()["token"]
+    key = _key_for(client, "dave@acme.com")
     payload = "SSN 123-45-6789"
 
     # Suppress PII for dave, but only via claude-code.
