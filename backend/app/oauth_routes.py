@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from .auth import get_current_user
 from .database import get_db
 from .models import OAuthClient, OAuthCode, User
-from .oauth_provider import CODE_TTL, READ_SCOPE, _now, valid_redirect_uri
+from .oauth_provider import _LOOPBACK, CODE_TTL, READ_SCOPE, _now, valid_redirect_uri
 from .schemas import OAuthConsentRequest
 from .security import hash_token
 
@@ -43,8 +43,10 @@ def pending_consent(client_id: str, redirect_uri: str,
     """What the consent screen should say — resolved server-side, not from the URL.
 
     The SPA must not render the client name out of its own query string: that string came
-    from whoever sent the user here, and "Palivane Official" is a trivial thing to put in a
-    URL. The name shown is the one recorded at registration, looked up by client_id.
+    from whoever sent the user here. The name shown is the one recorded at registration — but
+    registration is open, so that name is still the app's own claim ("Palivane Official"
+    registers as easily as anything). `redirect_host` is what the screen should lead with:
+    the code is delivered there, so it is the one fact about the app it cannot misstate.
     """
     client = db.query(OAuthClient).filter(OAuthClient.client_id == client_id).one_or_none()
     if client is None:
@@ -54,10 +56,14 @@ def pending_consent(client_id: str, redirect_uri: str,
         # Same refusal as consent itself: if the redirect does not match, there is nothing
         # safe to show, because approving would send the code somewhere unregistered.
         raise HTTPException(status_code=400, detail="redirect_uri is not registered for this client")
+    from urllib.parse import urlparse
+    host = urlparse(redirect_uri).hostname or ""
     return {
         "client_name": client.client_name or client.client_id,
         "client_id": client.client_id,
         "redirect_uri": redirect_uri,
+        "redirect_host": host,
+        "redirect_local": host in _LOOPBACK,
         "scope": READ_SCOPE,
         "scope_description": "Read your Palivane findings, inventory and reports. "
                              "It cannot change anything, and it can only see what you can see.",
