@@ -189,7 +189,24 @@ def get_current_user(
     # Hand the claim to the handlers too, so /auth/me can tell the console it is looking at
     # sample data. The browser used to keep its own copy of this and the two could disagree.
     request.state.demo_session = bool(payload.get("demo"))
+    # When this session was signed in, for the endpoints that want a recent sign-in.
+    request.state.session_iat = int(payload.get("iat") or 0)
     return user_for_session_payload(payload, db)
+
+
+# Changing a second factor takes a recent sign-in, not just a live session. A stolen session
+# could otherwise enrol its own authenticator (locking the owner out at their next sign-in)
+# or switch MFA off. Asking for the password instead would shut out SSO users, who have none.
+_STEP_UP_SECONDS = 600
+
+
+def _require_recent_sign_in(request: Request) -> None:
+    import time
+    iat = getattr(request.state, "session_iat", 0) or 0
+    if time.time() - iat > _STEP_UP_SECONDS:
+        raise HTTPException(status_code=403,
+                            detail="For your security, sign out and sign back in, then change "
+                                   "two-factor settings within 10 minutes.")
 
 
 def user_for_session_payload(payload: dict, db: Session) -> User:
@@ -577,9 +594,13 @@ def logout_all(current: User = Depends(get_current_user), db: Session = Depends(
 
 
 @router.post("/auth/mfa/setup")
-def mfa_setup(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def mfa_setup(request: Request, current: User = Depends(get_current_user),
+              db: Session = Depends(get_db)):
     """Begin TOTP enrollment: store a fresh secret (not yet active) and return it + the
-    otpauth:// URI to add to an authenticator app. Confirm with a code to activate."""
+    otpauth:// URI to add to an authenticator app. Confirm with a code to activate. Needs a
+    recent sign-in (see _require_recent_sign_in); confirming the code needs nothing more,
+    since only the person holding this setup's secret can produce one."""
+    _require_recent_sign_in(request)
     if current.mfa_enabled:
         raise HTTPException(status_code=400, detail="MFA is already enabled")
     secret = totp.generate_secret()
@@ -606,21 +627,31 @@ def mfa_confirm(body: MFACode, current: User = Depends(get_current_user),
 
 
 @router.post("/auth/mfa/disable")
-def mfa_disable(body: MFACode, current: User = Depends(get_current_user),
+def mfa_disable(body: MFACode, request: Request, current: User = Depends(get_current_user),
                 db: Session = Depends(get_db)):
-    """Turn off MFA — requires a current TOTP or an unused recovery code."""
+    """Turn off MFA — requires a recent sign-in plus a current TOTP or an unused recovery
+    code. Wrong codes count toward the login throttle, so the code can't be guessed. Every
+    other session ends (they may have been opened by whoever MFA was keeping out); this one
+    continues on the fresh session token in the response."""
+    _require_recent_sign_in(request)
     if not current.mfa_enabled:
         raise HTTPException(status_code=400, detail="MFA is not enabled")
+    ip = _client_ip(request)
+    if _throttled(db, current.email, ip):
+        raise HTTPException(status_code=429, detail="too many attempts, try again later")
     ok = totp.verify(decrypt(current.mfa_secret), body.code) or \
         totp.consume_recovery(current.mfa_recovery or [], body.code) is not None
     if not ok:
+        db.add(LoginAttempt(email=current.email, ip=ip))
+        db.commit()
         raise HTTPException(status_code=400, detail="invalid code")
     current.mfa_enabled = False
     current.mfa_secret = ""
     current.mfa_recovery = []
+    current.token_version = (current.token_version or 0) + 1
     db.commit()
     audit_log.record(db, current.tenant_id, current.email, "mfa.disable")
-    return {"mfa_enabled": False}
+    return {"mfa_enabled": False, **_session_response(current)}
 
 
 @router.get("/users")
