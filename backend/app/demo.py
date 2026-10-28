@@ -95,3 +95,56 @@ def demo_login(request: Request, db: Session = Depends(get_db)):
                          ttl=3600)
     return {"access_token": token, "token_type": "bearer",
             "user": user.to_dict(), "tenant": tenant.to_dict(), "demo": True}
+
+
+# --- keeping the shared demo current ------------------------------------------------------
+# The demo org is seeded once (prod runs with SEED_ON_START=false), so its sample data ages:
+# two months on, "See the live demo" opened on a 24h view reading zero everywhere. Rather than
+# re-seed (new ids would break links into the demo), the whole org's clock is moved forward
+# so its newest finding is "now", keeping every record's spacing relative to the others.
+#
+# Never moved: tables that hold credentials or replay state (pushing their timestamps forward
+# would extend a key's or token's life), and lease columns that a worker reads as "claimed".
+_CLOCK_SKIP_TABLES = frozenset({"api_keys", "enrollment_tokens", "oauth_codes", "oauth_tokens",
+                                "used_saml_assertions"})
+_CLOCK_SKIP_COLUMNS = frozenset({"sync_claimed_at"})
+
+
+def refresh_clock(db: Session, stale_after: timedelta = timedelta(hours=1)) -> int:
+    """Move the demo org's timestamps forward so its newest finding is now. Returns the
+    number of rows moved (0 when there's no demo org, no findings, or nothing is stale)."""
+    from sqlalchemy import DateTime, and_, func, select, update
+
+    from .database import Base
+    from .models import Finding
+    if not enabled():
+        return 0
+    tenant = db.query(Tenant).filter(Tenant.slug == settings.demo_org).first()
+    if tenant is None:
+        return 0
+    newest = (db.query(func.max(Finding.created_at))
+                .filter(Finding.tenant_id == tenant.id).scalar())
+    if newest is None:
+        return 0
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    delta = now - newest.replace(tzinfo=None)
+    if delta < stale_after:
+        return 0
+    moved = 0
+    for table in Base.metadata.sorted_tables:
+        if table.name in _CLOCK_SKIP_TABLES or "tenant_id" not in table.c:
+            continue
+        cols = [c for c in table.c
+                if isinstance(c.type, DateTime) and c.name not in _CLOCK_SKIP_COLUMNS]
+        pk = list(table.primary_key.columns)
+        if not cols or not pk:
+            continue
+        rows = db.execute(select(*pk, *cols).where(table.c.tenant_id == tenant.id)).all()
+        for row in rows:
+            m = row._mapping
+            values = {c.name: m[c] + delta for c in cols if m[c] is not None}
+            if values:
+                db.execute(update(table).where(and_(*(k == m[k] for k in pk))).values(**values))
+                moved += 1
+    db.commit()
+    return moved

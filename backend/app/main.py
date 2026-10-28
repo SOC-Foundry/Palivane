@@ -218,6 +218,11 @@ async def lifespan(_app: FastAPI):
                     if ticks % 12 == 0:
                         from .oauth_provider import prune as _oauth_prune
                         await asyncio.to_thread(_oauth_prune, db)
+                    # The public demo's sample data, moved forward to "now" so its dashboard
+                    # isn't empty. First tick after boot, then ~hourly; a no-op without a demo.
+                    if ticks % 12 == 1:
+                        from .demo import refresh_clock
+                        await asyncio.to_thread(refresh_clock, db)
                 finally:
                     db.close()
             except asyncio.CancelledError:
