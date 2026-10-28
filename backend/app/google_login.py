@@ -111,6 +111,9 @@ def google_callback(request: Request, code: str = "", state: str = "",
     # ambiguous with no org context, so those keep using password/SSO.
     users = db.query(User).filter(User.email == email, User.active.is_(True)).all()
     if len(users) == 1:
+        from .auth import SSO_REQUIRED_DETAIL, non_sso_signin_allowed
+        if not non_sso_signin_allowed(db, users[0]):
+            raise HTTPException(status_code=403, detail=SSO_REQUIRED_DETAIL)
         if not _may_link(db, users[0], email):
             raise HTTPException(
                 status_code=403,
@@ -130,6 +133,10 @@ def google_callback(request: Request, code: str = "", state: str = "",
     claim = domains_mod.match_verified(db, email)
     if claim is not None:
         tenant = db.get(Tenant, claim.tenant_id)
+        from .auth import SSO_REQUIRED_DETAIL, sso_required
+        if sso_required(db, tenant.id):
+            # Joining an SSO-only org goes through its IdP, not around it.
+            raise HTTPException(status_code=403, detail=SSO_REQUIRED_DETAIL)
         if claim.auto_approve:
             user = User(tenant_id=tenant.id, email=email,
                         password_hash=hash_password(secrets.token_urlsafe(32)),
