@@ -18,7 +18,14 @@ Plans are operator-set only (no tenant-facing API, upgrades are sales-led). The 
 DB is private-IP, so run it as a one-off Cloud Run job (same pattern as bootstrap):
 
     python -m app.users set-plan --tenant <slug> --plan team|enterprise|free
+    python -m app.users set-plan --tenant <slug> --plan trial [--trial-days N]
     python -m app.users list-tenants          # shows each org's plan
+    python -m app.users plans                 # effective plans, with each trial's end date
+
+A trial set this way gets a clock like a self-serve signup's: `PALIVANE_TRIAL_DAYS` (14) from
+now, or `--trial-days N`. Re-running it on a running trial keeps the clock unless
+`--trial-days` is given; `--trial-days 0` is an open-ended trial. The `plan` column keeps
+saying `trial` after the end date, and `plans` (and the app) read it as expired.
 
 ## SaaS: the trial → paid pipeline
 
