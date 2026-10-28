@@ -379,14 +379,17 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
         db.commit()
 
     async def revoke_token(self, token) -> None:
+        """A client giving up a token gives up the grant: its other half goes too. Revoking
+        only the presented row left the access token minted beside a revoked refresh token
+        working for up to an hour (RFC 7009 §2.1: revoking a refresh token SHOULD revoke the
+        access tokens of the same grant)."""
         db, close = self._session()
         try:
             row = (db.query(OAuthTokenRow)
                      .filter(OAuthTokenRow.token_hash == hash_token(token.token))
                      .one_or_none())
             if row is not None and row.revoked_at is None:
-                row.revoked_at = _now()
-                db.commit()
+                self._revoke_grant(db, row.client_id, row.user_id, row.tenant_id)
         finally:
             close()
 
