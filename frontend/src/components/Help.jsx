@@ -141,7 +141,7 @@ export default function Help({ isAdmin = false, onNavigate }) {
       <Card title="Monitor vs. enforce"
             sub="Each capture point runs in one of two modes.">
         <ul className="help-list">
-          <li><strong>Monitor</strong>: nothing is blocked; requests pass through and findings are recorded. Best for a rollout's first phase, so you see what would trip before you enforce.</li>
+          <li><strong>Monitor</strong>: only confirmed secret and personal-data leaks are blocked; everything else passes through and findings are recorded. Best for a rollout's first phase, so you see what would trip before you enforce.</li>
           <li><strong>Enforce</strong>: high/critical findings are blocked at the source: the extension shows a block modal, the gateway returns an error, the git hook fails the commit.</li>
           <li><strong>Ask</strong> (opt-in, Settings → Policy): in Claude Code, Cursor, Gemini CLI and Copilot CLI, a tool call that scores above allow but below the block line stops for the developer's approval instead of running silently (Codex has no ask, so there it runs).</li>
         </ul>
