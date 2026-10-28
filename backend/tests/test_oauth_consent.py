@@ -91,3 +91,20 @@ def test_pending_refuses_an_unregistered_redirect(client, db_factory):
     _client(db_factory)
     assert client.get("/api/oauth/pending?client_id=c1"
                       "&redirect_uri=https://evil.example/cb").status_code == 400
+
+
+def test_pending_leads_with_the_redirect_host(client, db_factory):
+    """Registration is open, so the name is the registrant's claim: a client can call itself
+    "Palivane Official". The screen leads with where the code goes, which it can't fake."""
+    _client(db_factory, name="Palivane Official", uris="https://evil.example/cb")
+    body = client.get("/api/oauth/pending?client_id=c1"
+                      "&redirect_uri=https://evil.example/cb").json()
+    assert body["client_name"] == "Palivane Official"
+    assert body["redirect_host"] == "evil.example" and body["redirect_local"] is False
+
+
+def test_pending_marks_a_loopback_redirect_as_local(client, db_factory):
+    _client(db_factory, uris="http://127.0.0.1:33418/callback")
+    body = client.get("/api/oauth/pending?client_id=c1"
+                      "&redirect_uri=http://127.0.0.1:33418/callback").json()
+    assert body["redirect_host"] == "127.0.0.1" and body["redirect_local"] is True

@@ -227,7 +227,22 @@ def _apply_rename(db, tenant, u: User, raw_email: str) -> JSONResponse | None:
     if db.query(User).filter(User.tenant_id == tenant.id, User.email == email).first():
         return _err(409, f"user {email} already exists", "uniqueness")
     _audit(db, tenant, "scim.user_renamed", u.email, {"to": email})
+    old = u.email
     u.email = email
+    # The login identity changed, so whatever was signed in under the old one re-authenticates.
+    # And tell the old address: a leaked SCIM token can point an analyst's account at an
+    # address it controls and then take it over with a password reset, and the person who
+    # would notice is the one whose address was just removed. (No-op when email is off.)
+    u.token_version = (u.token_version or 0) + 1
+    from .auth import revoke_oauth_grants
+    revoke_oauth_grants(db, u)
+    from . import email as email_mod
+    email_mod.send(
+        old, "Your Palivane sign-in address was changed",
+        f"Your organization's identity provider changed the sign-in address of your Palivane "
+        f"account (organization \"{tenant.slug}\") from {old} to {email}, and signed you out.\n\n"
+        "If you expected this, there is nothing to do. If not, tell your Palivane admin now: "
+        "the new address can reset the account's password.")
     return None
 
 

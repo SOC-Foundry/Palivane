@@ -243,28 +243,35 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
                 # best effort the spec asks for, not a guarantee.
                 self._revoke_grant(db, row.client_id, row.user_id, row.tenant_id)
                 raise ValueError("authorization code already used")
-            access, refresh = self._issue_pair(db, row.client_id, row.user_id,
-                                               row.tenant_id, row.scopes or READ_SCOPE)
+            access, refresh, expires_in = self._issue_pair(db, row.client_id, row.user_id,
+                                                           row.tenant_id, row.scopes or READ_SCOPE)
             db.commit()
-            return OAuthToken(access_token=access, token_type="Bearer",
-                              expires_in=int(ACCESS_TTL.total_seconds()),
+            return OAuthToken(access_token=access, token_type="Bearer", expires_in=expires_in,
                               refresh_token=refresh, scope=row.scopes or READ_SCOPE)
         finally:
             close()
 
     # --- tokens -------------------------------------------------------------------------
 
-    def _issue_pair(self, db, client_id: str, user_id, tenant_id, scopes: str):
+    def _issue_pair(self, db, client_id: str, user_id, tenant_id, scopes: str,
+                    grant_ends=None):
+        """(access, refresh, access expires_in seconds). `grant_ends` is when the grant itself
+        lapses: REFRESH_TTL after consent, and carried unchanged through every rotation, so a
+        client that keeps refreshing still has to come back for consent — which is what the
+        consent screen promises ("lapses on its own within 30 days"). Rotating to a fresh
+        30 days each time made a grant in regular use last forever."""
         access = "pat_" + secrets.token_urlsafe(32)
         refresh = "prt_" + secrets.token_urlsafe(32)
         now = _now()
+        grant_ends = grant_ends or now + REFRESH_TTL
+        access_ends = min(now + ACCESS_TTL, grant_ends)
         db.add(OAuthTokenRow(token_hash=hash_token(access), kind="access", client_id=client_id,
                              user_id=user_id, tenant_id=tenant_id, scopes=scopes,
-                             expires_at=now + ACCESS_TTL))
+                             expires_at=access_ends))
         db.add(OAuthTokenRow(token_hash=hash_token(refresh), kind="refresh", client_id=client_id,
                              user_id=user_id, tenant_id=tenant_id, scopes=scopes,
-                             expires_at=now + REFRESH_TTL))
-        return access, refresh
+                             expires_at=grant_ends))
+        return access, refresh, max(int((access_ends - now).total_seconds()), 0)
 
     def _load(self, db, token: str, kind: str):
         row = (db.query(OAuthTokenRow)
@@ -320,8 +327,10 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
             row = self._load(db, refresh_token.token, "refresh")
             if row is None or row.client_id != client.client_id:
                 raise ValueError("invalid refresh token")
-            # Never widen on refresh: a token cannot acquire scopes it was not granted.
+            # Never widen on refresh: a token cannot acquire scopes it was not granted. Nor
+            # extend it: the grant ends when the consent it came from does.
             granted = row.scopes or READ_SCOPE
+            grant_ends = row.expires_at
             # Rotate atomically: only the request that actually flips revoked_at may mint the
             # next pair. A concurrent second use of the same refresh token loses here.
             rotated = (db.query(OAuthTokenRow)
@@ -331,11 +340,11 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
             if rotated != 1:
                 db.rollback()
                 raise ValueError("invalid refresh token")
-            access, refresh = self._issue_pair(db, row.client_id, row.user_id,
-                                               row.tenant_id, granted)
+            access, refresh, expires_in = self._issue_pair(db, row.client_id, row.user_id,
+                                                           row.tenant_id, granted,
+                                                           grant_ends=grant_ends)
             db.commit()
-            return OAuthToken(access_token=access, token_type="Bearer",
-                              expires_in=int(ACCESS_TTL.total_seconds()),
+            return OAuthToken(access_token=access, token_type="Bearer", expires_in=expires_in,
                               refresh_token=refresh, scope=granted)
         finally:
             close()
@@ -370,20 +379,25 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
         db.commit()
 
     async def revoke_token(self, token) -> None:
+        """A client giving up a token gives up the grant: its other half goes too. Revoking
+        only the presented row left the access token minted beside a revoked refresh token
+        working for up to an hour (RFC 7009 §2.1: revoking a refresh token SHOULD revoke the
+        access tokens of the same grant)."""
         db, close = self._session()
         try:
             row = (db.query(OAuthTokenRow)
                      .filter(OAuthTokenRow.token_hash == hash_token(token.token))
                      .one_or_none())
             if row is not None and row.revoked_at is None:
-                row.revoked_at = _now()
-                db.commit()
+                self._revoke_grant(db, row.client_id, row.user_id, row.tenant_id)
         finally:
             close()
 
 
-def prune(db, keep_revoked: timedelta = timedelta(days=7)) -> int:
-    """Drop spent codes and dead tokens. Called hourly from the app's periodic loop.
+def prune(db, keep_revoked: timedelta = timedelta(days=7),
+          idle_client: timedelta = timedelta(days=90)) -> int:
+    """Drop spent codes, dead tokens and idle clients. Called hourly from the app's periodic
+    loop.
 
     Without this the three OAuth tables only grow: registration is open by design, every
     approval writes a code that is immediately spent, and every refresh writes a new pair
@@ -396,8 +410,16 @@ def prune(db, keep_revoked: timedelta = timedelta(days=7)) -> int:
     Spent and expired codes are kept for the same window: a spent code is what recognises a
     replay (and revokes the grant it was exchanged for). Dropped at the next hourly run, a
     code replayed minutes after use would look merely unknown.
+
+    Clients go too, once they are `idle_client` old and hold nothing: no code, no token —
+    either nobody ever approved them, or every grant they had ended long enough ago to be
+    pruned above. Registration is open (rate-limited at the edge, but a slow trickle still
+    accumulates), and an unused registration is just a row. A client that comes back after
+    that registers again, as an MCP client does when its client_id is unknown.
     """
-    from .models import OAuthCode, OAuthToken as Row
+    from sqlalchemy import exists
+
+    from .models import OAuthClient, OAuthCode, OAuthToken as Row
     now = _now()
     gone = 0
     try:
@@ -409,6 +431,15 @@ def prune(db, keep_revoked: timedelta = timedelta(days=7)) -> int:
                    .delete(synchronize_session=False))
         gone += (db.query(Row)
                    .filter(Row.revoked_at.isnot(None), Row.revoked_at < now - keep_revoked)
+                   .delete(synchronize_session=False))
+        db.commit()
+    except Exception:
+        db.rollback()
+    try:   # separately, so a failure here can't undo the token pruning above
+        gone += (db.query(OAuthClient)
+                   .filter(OAuthClient.created_at < now - idle_client,
+                           ~exists().where(OAuthCode.client_id == OAuthClient.client_id),
+                           ~exists().where(Row.client_id == OAuthClient.client_id))
                    .delete(synchronize_session=False))
         db.commit()
     except Exception:

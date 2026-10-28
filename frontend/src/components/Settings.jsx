@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../api.js";
+import { api, setToken } from "../api.js";
 import { viewToPath } from "../route.js";
 import StripeCheckout from "./StripeCheckout.jsx";
 
@@ -757,9 +757,11 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
   }
   async function disableMfa() {
     try {
-      await api.mfaDisable(disableCode.trim());
+      const r = await api.mfaDisable(disableCode.trim());
+      // Disabling ends every session, this one included; carry on with the fresh token.
+      if (r.access_token) setToken(r.access_token);
       setMfaOn(false); setRecovery(null); setDisableCode("");
-      flash("Two-factor disabled.");
+      flash("Two-factor disabled. Other devices have been signed out.");
     } catch (e) { err(e); }
   }
 
