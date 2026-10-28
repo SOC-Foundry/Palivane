@@ -255,29 +255,43 @@ def _matched_dict(o) -> dict:
             "channel": (getattr(o, "channel", "") or "").strip().lower()}
 
 
+# A CLAIMED actor is one the client named rather than one its credential proves: a fleet
+# key's per-request `user`, a device-enrolled key's self-declared identity, a CI repo name.
+# Anyone holding such a key can claim anyone, so for a claimed actor an override may only
+# TIGHTEN — re-enable a check the tenant disabled, switch enforcement on — never relax.
+# Otherwise naming a colleague with a monitor-only override or a wider disabled set (or a
+# group glob like '*@contractors…') would inherit their exemption.
+
+
 def resolve_disabled(base_disabled: set[str], actor: str, overrides,
-                     channel: str = "") -> tuple[set[str], dict | None]:
+                     channel: str = "", claimed: bool = False) -> tuple[set[str], dict | None]:
     """Pick the effective disabled-check set for an actor (and optionally the tool/channel
-    the content is flowing through). The matched override REPLACES the tenant default.
+    the content is flowing through). The matched override REPLACES the tenant default —
+    except for a claimed actor, where it can only remove entries from it.
     Returns (disabled_set, matched_override_dict_or_None)."""
     hit = _best_match(actor, overrides, channel)
     if hit is None:
         return base_disabled, None
-    return parse_disabled(hit.disabled_checks), _matched_dict(hit)
+    disabled = parse_disabled(hit.disabled_checks)
+    if claimed:
+        disabled &= base_disabled
+    return disabled, _matched_dict(hit)
 
 
 def resolve_enforce(default: bool, actor: str, overrides,
-                    channel: str = "") -> tuple[bool, dict | None]:
+                    channel: str = "", claimed: bool = False) -> tuple[bool, dict | None]:
     """Effective monitor/enforce stance for an actor (+ optional tool/channel): the
     best-matching override that carries an explicit enforce wins, else the tenant/global
     default. This is what makes STAGED enforcement possible — enforce a pilot user,
     group glob, or single tool while the rest of the org stays in monitor. Only
-    overrides with enforce set participate; check-only overrides are invisible here."""
+    overrides with enforce set participate; check-only overrides are invisible here.
+    A claimed actor's override can switch enforcement on, never off."""
     hit = _best_match(actor, [o for o in (overrides or [])
                               if getattr(o, "enforce", None) is not None], channel)
     if hit is None:
         return default, None
-    return bool(hit.enforce), _matched_dict(hit)
+    return (bool(default) or bool(hit.enforce)) if claimed else bool(hit.enforce), \
+        _matched_dict(hit)
 
 
 def checks_signal_filter(disabled: set[str]):

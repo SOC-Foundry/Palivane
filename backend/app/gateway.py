@@ -69,6 +69,18 @@ class Principal:
     actor: str  # who/what to attribute findings to (user email or API-key label)
     agent: str = ""  # resolved agent name (authenticated ag_ token), for least-privilege authz
     agent_id: int = 0  # resolved Agent row id (0 = not an agent) — per-agent policy lookups
+    # The actor is the client's own claim, not something the credential proves — see
+    # policies.resolve_disabled. Per-user overrides and allowlist entries may only tighten.
+    actor_claimed: bool = False
+
+
+def key_actor_claimed(key: ApiKey) -> bool:
+    """True when a key's actor was self-declared by whoever redeemed an enrollment token.
+
+    POST /api/enroll takes `device` and `user` from the device itself, so anyone holding the
+    (fleet-wide) enrollment token can be anyone. Keys minted by an admin or bound at sign-in
+    (/extension/token) carry an identity the server established."""
+    return (key.label or "").startswith("device:")
 
 
 def _stamp_dead_key(token: str, db: Session, key: "ApiKey | None" = None) -> None:
@@ -113,7 +125,8 @@ def _resolve_api_key(token: str, db: Session) -> Principal:
         db.commit()
     except Exception:
         db.rollback()
-    return Principal(tenant_id=key.tenant_id, actor=_key_identity(key, db))
+    return Principal(tenant_id=key.tenant_id, actor=_key_identity(key, db),
+                     actor_claimed=key_actor_claimed(key))
 
 
 def _key_user_live(key: ApiKey, db: Session) -> bool:
@@ -424,7 +437,8 @@ def _tenant_suppress(tenant_id: int | None, db: Session) -> str:
 def _capture(prompt: str, model: str, tool: str, principal: Principal, db: Session,
              extra_signals=None) -> dict:
     item = AnalysisInput(content=prompt or "(empty)", subject=model, sender=principal.actor,
-                         channel=tool, surface=Surface.LLM_IO)
+                         channel=tool, surface=Surface.LLM_IO,
+                         sender_claimed=principal.actor_claimed)
     return run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
                         signal_filter=signal_filter_for(tool, _tenant_suppress(principal.tenant_id, db)),
                         persist_benign=settings.usage_persist_benign, extra_signals=extra_signals)
@@ -541,10 +555,12 @@ def _capture_activity_dict(act: dict | None, tool: str, principal: Principal, db
         channel=tool or "agent", surface=Surface.MCP,
         metadata={"method": act["method"], "tool": act["tool"],
                   "args_text": act["args_text"], "tool_descriptions": act["tool_descriptions"]},
+        sender_claimed=principal.actor_claimed,
     )
     filt, dec = _gw_authz(principal, "", act["tool"], act["args_text"], db)
     from . import allowlist
-    allow_holder = allowlist.attach(db, principal.tenant_id, principal.actor, act["tool"], item.metadata)
+    allow_holder = allowlist.attach(db, principal.tenant_id, principal.actor, act["tool"],
+                                    item.metadata, claimed=principal.actor_claimed)
     result = run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
                           signal_filter=filt, agent=principal.agent,
                           persist_benign=settings.mcp_persist_benign)
@@ -658,10 +674,12 @@ def _capture_tool_activity(tool_name: str, args_text: str, tool: str,
     item = AnalysisInput(
         content=args_text, subject=f"agent {tool_name}".strip(), sender=principal.actor,
         channel=tool or "agent", surface=Surface.MCP,
-        metadata={"method": "tools/call", "tool": tool_name, "args_text": args_text})
+        metadata={"method": "tools/call", "tool": tool_name, "args_text": args_text},
+        sender_claimed=principal.actor_claimed)
     filt, dec = _gw_authz(principal, "", tool_name, args_text, db)
     from . import allowlist
-    allow_holder = allowlist.attach(db, principal.tenant_id, principal.actor, tool_name, item.metadata)
+    allow_holder = allowlist.attach(db, principal.tenant_id, principal.actor, tool_name,
+                                    item.metadata, claimed=principal.actor_claimed)
     result = run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
                           signal_filter=filt, agent=principal.agent,
                           persist_benign=settings.mcp_persist_benign)
@@ -743,7 +761,8 @@ def _capture_response_dlp(text: str, model: str, tool: str, principal: Principal
         return None
     item = AnalysisInput(content=text, subject=f"LLM response ({model})", sender=principal.actor,
                          channel=tool or "gateway", surface=Surface.AI_USAGE,
-                         metadata={"direction": "response"})
+                         metadata={"direction": "response"},
+                         sender_claimed=principal.actor_claimed)
     return run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
                         signal_filter=_response_dlp_filter,
                         persist_benign=settings.usage_persist_benign)
