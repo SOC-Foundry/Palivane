@@ -326,3 +326,34 @@ def test_unknown_client_and_token_are_simply_absent(provider):
     p, _ = provider
     assert _run(p.get_client("nope")) is None
     assert _run(p.load_access_token("pat_nothing")) is None
+
+
+def test_revoking_the_refresh_token_ends_its_access_token_too(provider):
+    """A client giving up its refresh token must not leave the access token beside it
+    working for the rest of its hour."""
+    p, Session = provider
+    uid, tid = _seed_user(Session)
+    _register(p)
+    _mint_code(Session, "code-rv", "c1", uid, tid)
+    loaded = _run(p.load_authorization_code(_client(), "code-rv"))
+    tok = _run(p.exchange_authorization_code(_client(), loaded))
+    rt = _run(p.load_refresh_token(_client(), tok.refresh_token))
+    _run(p.revoke_token(rt))
+    assert _run(p.load_access_token(tok.access_token)) is None
+    assert _run(p.load_refresh_token(_client(), tok.refresh_token)) is None
+
+
+def test_revoking_one_clients_grant_leaves_another_clients_alone(provider):
+    p, Session = provider
+    uid, tid = _seed_user(Session)
+    _register(p, cid="c1")
+    _register(p, cid="c2")
+    _mint_code(Session, "code-a", "c1", uid, tid)
+    _mint_code(Session, "code-b", "c2", uid, tid)
+    a = _run(p.exchange_authorization_code(
+        _client("c1"), _run(p.load_authorization_code(_client("c1"), "code-a"))))
+    b = _run(p.exchange_authorization_code(
+        _client("c2"), _run(p.load_authorization_code(_client("c2"), "code-b"))))
+    _run(p.revoke_token(_run(p.load_access_token(a.access_token))))
+    assert _run(p.load_access_token(a.access_token)) is None
+    assert _run(p.load_access_token(b.access_token)) is not None
