@@ -391,8 +391,10 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
             close()
 
 
-def prune(db, keep_revoked: timedelta = timedelta(days=7)) -> int:
-    """Drop spent codes and dead tokens. Called hourly from the app's periodic loop.
+def prune(db, keep_revoked: timedelta = timedelta(days=7),
+          idle_client: timedelta = timedelta(days=90)) -> int:
+    """Drop spent codes, dead tokens and idle clients. Called hourly from the app's periodic
+    loop.
 
     Without this the three OAuth tables only grow: registration is open by design, every
     approval writes a code that is immediately spent, and every refresh writes a new pair
@@ -405,8 +407,16 @@ def prune(db, keep_revoked: timedelta = timedelta(days=7)) -> int:
     Spent and expired codes are kept for the same window: a spent code is what recognises a
     replay (and revokes the grant it was exchanged for). Dropped at the next hourly run, a
     code replayed minutes after use would look merely unknown.
+
+    Clients go too, once they are `idle_client` old and hold nothing: no code, no token —
+    either nobody ever approved them, or every grant they had ended long enough ago to be
+    pruned above. Registration is open (rate-limited at the edge, but a slow trickle still
+    accumulates), and an unused registration is just a row. A client that comes back after
+    that registers again, as an MCP client does when its client_id is unknown.
     """
-    from .models import OAuthCode, OAuthToken as Row
+    from sqlalchemy import exists
+
+    from .models import OAuthClient, OAuthCode, OAuthToken as Row
     now = _now()
     gone = 0
     try:
@@ -418,6 +428,15 @@ def prune(db, keep_revoked: timedelta = timedelta(days=7)) -> int:
                    .delete(synchronize_session=False))
         gone += (db.query(Row)
                    .filter(Row.revoked_at.isnot(None), Row.revoked_at < now - keep_revoked)
+                   .delete(synchronize_session=False))
+        db.commit()
+    except Exception:
+        db.rollback()
+    try:   # separately, so a failure here can't undo the token pruning above
+        gone += (db.query(OAuthClient)
+                   .filter(OAuthClient.created_at < now - idle_client,
+                           ~exists().where(OAuthCode.client_id == OAuthClient.client_id),
+                           ~exists().where(Row.client_id == OAuthClient.client_id))
                    .delete(synchronize_session=False))
         db.commit()
     except Exception:
