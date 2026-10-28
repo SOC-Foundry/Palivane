@@ -256,17 +256,29 @@ _ENV_EXPR_RE = re.compile(
 # `password = <expr>` in ordinary code was a large false-positive source.
 _EXPR_VALUE_RE = re.compile(r"^[A-Za-z_][\w]*\s*[.\[(]|[.\[(]")
 
+# An unquoted bare identifier closed by code punctuation is a variable passed along, not a
+# literal — `RefreshToken(refresh_token=refresh, scope=…)`, `{token: original}`. Letters and
+# underscores only: a digit-bearing value (`pwd=hunter22,` in a CSV) still reads as a literal.
+_IDENT_REF_VALUE_RE = re.compile(r"^[A-Za-z_]+[,;)\]}]+$")
+
+# A format/template placeholder with text after it — `f"…/verify?token={token}\n\n"`. The
+# `\{…\}` arm of _PLACEHOLDER_VALUE_RE is anchored at the end, so trailing text defeated it
+# and every emailed-link builder in a pasted auth module read as a hardcoded token.
+_TEMPLATE_PREFIX_RE = re.compile(r"^\$?\{[A-Za-z_][\w.]*\}")
+
 
 def _is_placeholder_assignment(match_text: str) -> bool:
     """The matched 'KEY = value' isn't a real hardcoded secret: a placeholder/template value
     (`your-api-key-here`, `changeme`), a code expression that reads it from env/config, or
     any other code expression (attribute access / index / call) rather than a literal."""
-    mm = re.search(r"[:=]\s*[\"']?([^\s\"']+)", match_text)
+    mm = re.search(r"[:=]\s*([\"']?)([^\s\"']+)", match_text)
     if not mm:
         return False
-    val = mm.group(1)
-    return bool(_PLACEHOLDER_VALUE_RE.match(val) or _ENV_EXPR_RE.match(val)
-                or _EXPR_VALUE_RE.search(val))
+    quoted, val = mm.group(1), mm.group(2)
+    if _PLACEHOLDER_VALUE_RE.match(val) or _ENV_EXPR_RE.match(val) or _EXPR_VALUE_RE.search(val):
+        return True
+    # Variable references and template holes are code shapes only when unquoted.
+    return not quoted and bool(_IDENT_REF_VALUE_RE.match(val) or _TEMPLATE_PREFIX_RE.match(val))
 
 
 def _is_placeholder_conn(match_text: str) -> bool:
