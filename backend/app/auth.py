@@ -1912,6 +1912,37 @@ def _saml_sp(base: str, slug: str) -> tuple[str, str]:
     return f"{base}/api/auth/saml/{slug}/metadata", f"{base}/api/auth/saml/{slug}/acs"
 
 
+# The AuthnRequest ID this browser is waiting on, in a signed cookie. Unlike the OIDC bind
+# cookie this one must be SameSite=None: the IdP returns the user with a cross-site POST, and
+# Lax cookies are not sent on those. (Plain-http dev can't set None without Secure, so it
+# falls back to Lax, which still works against an IdP on the same site, e.g. localhost.)
+SAML_STATE_COOKIE = "palivane_saml_state"
+
+
+def _saml_state_path(slug: str) -> str:
+    return f"/api/auth/saml/{slug}"
+
+
+def _saml_state_set(resp, request: Request, slug: str, request_id: str) -> None:
+    secure = (settings.public_base_url or str(request.base_url)).startswith("https")
+    state = create_token({"typ": "saml_state", "org": slug, "rid": request_id},
+                         ttl=_SSO_BIND_TTL)
+    resp.set_cookie(SAML_STATE_COOKIE, state, max_age=_SSO_BIND_TTL, httponly=True,
+                    samesite="none" if secure else "lax", secure=secure,
+                    path=_saml_state_path(slug))
+
+
+def _saml_state_check(request: Request, slug: str) -> str:
+    """The AuthnRequest ID this browser started for `slug`, or "" if it started none."""
+    try:
+        payload = decode_token(request.cookies.get(SAML_STATE_COOKIE, ""))
+    except TokenError:
+        return ""
+    if payload.get("typ") != "saml_state" or payload.get("org") != slug:
+        return ""
+    return str(payload.get("rid") or "")
+
+
 @router.get("/auth/saml/{org}/login")
 def saml_login(org: str, request: Request, return_to: str = "", db: Session = Depends(get_db)):
     tenant, cfg = _enabled_saml(org, db)
@@ -1920,10 +1951,13 @@ def saml_login(org: str, request: Request, return_to: str = "", db: Session = De
     # RelayState carries the connect landing back through the IdP; the ACS re-validates it.
     relay = _safe_return_to(return_to) or base
     try:
-        url = saml.login_url(_saml_req(request), cfg, sp_entity, acs, relay_state=relay)
+        url, request_id = saml.login_request(_saml_req(request), cfg, sp_entity, acs,
+                                             relay_state=relay)
     except saml.SAMLError as e:
         raise HTTPException(status_code=500, detail=str(e))
-    return RedirectResponse(url, status_code=302)
+    resp = RedirectResponse(url, status_code=302)
+    _saml_state_set(resp, request, tenant.slug, request_id)
+    return resp
 
 
 @router.post("/auth/saml/{org}/acs")
@@ -1934,8 +1968,25 @@ async def saml_acs(org: str, request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     req = _saml_req(request, post_data={k: v for k, v in form.items()})
     return_to = _safe_return_to(str(form.get("RelayState") or ""))
+    # Browser binding (the SAML twin of sso_bind_check): the response must answer the
+    # AuthnRequest THIS browser started. A validly signed response is not enough on its own —
+    # an attacker can fetch one for their own IdP account and auto-POST it from any page,
+    # signing the victim into the attacker's session (login CSRF).
+    request_id = _saml_state_check(request, tenant.slug)
+    answered = saml.in_response_to(str(form.get("SAMLResponse") or ""))
+    if not request_id or answered != request_id:
+        if request_id or answered:
+            raise HTTPException(status_code=400,
+                                detail="sign-in was not started from this browser, try again")
+        # Unsolicited (IdP-initiated, e.g. an Okta/Entra tile) and nothing started here: don't
+        # trust it, restart as SP-initiated. The IdP session makes this a silent round-trip,
+        # and that response carries InResponseTo, so a browser that drops the cookie gets the
+        # 400 above instead of looping.
+        from urllib.parse import quote
+        q = f"?return_to={quote(return_to, safe='')}" if return_to else ""
+        return RedirectResponse(f"{base}/api/auth/saml/{tenant.slug}/login{q}", status_code=303)
     try:
-        result = saml.process_acs(req, cfg, sp_entity, acs)
+        result = saml.process_acs(req, cfg, sp_entity, acs, request_id=request_id)
     except saml.SAMLError as e:
         raise HTTPException(status_code=401, detail=str(e))
     # Replay protection: an assertion is single-use. The SDK verified signature/conditions but
@@ -1960,8 +2011,10 @@ async def saml_acs(org: str, request: Request, db: Session = Depends(get_db)):
             db.rollback()
             raise HTTPException(status_code=401,
                                 detail="SAML assertion already used (replay rejected)")
-    return _sso_complete(db, tenant, result["email"], cfg.auto_provision, cfg.allowed_domain,
+    resp = _sso_complete(db, tenant, result["email"], cfg.auto_provision, cfg.allowed_domain,
                          base, return_to)
+    resp.delete_cookie(SAML_STATE_COOKIE, path=_saml_state_path(tenant.slug))
+    return resp
 
 
 @router.get("/auth/saml/{org}/metadata")
