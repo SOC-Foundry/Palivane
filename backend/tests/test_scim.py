@@ -148,3 +148,28 @@ def test_scim_created_user_has_no_usable_password_and_is_analyst(client, db_fact
     u = db.query(User).filter(User.email == "sso-only@acme.com").first()
     assert u.role == "analyst" and u.password_hash
     db.close()
+
+
+def test_offboarded_admin_cannot_be_reactivated_over_scim(client):
+    # Same rule as renames: restoring a privileged login is a console decision. An admin the
+    # console offboarded must not come back on a provisioning push — via PUT or PATCH.
+    r = client.post("/api/users", json={"email": "admin2@acme.com", "password": "password123",
+                                        "role": "admin"})
+    assert r.status_code == 200, r.text
+    assert client.post(f"/api/users/{r.json()['id']}/offboard").status_code == 200
+    tok = _mint(client)
+    admin2 = client.get('/scim/v2/Users?filter=userName eq "admin2@acme.com"',
+                        headers=_h(tok)).json()["Resources"][0]
+    assert admin2["active"] is False
+
+    r = client.patch(f"/scim/v2/Users/{admin2['id']}", headers=_h(tok),
+                     json={"Operations": [{"op": "replace", "path": "active", "value": True}]})
+    assert r.status_code == 403 and r.json()["scimType"] == "mutability"
+    r = client.put(f"/scim/v2/Users/{admin2['id']}", headers=_h(tok),
+                   json={"userName": "admin2@acme.com", "active": True})
+    assert r.status_code == 403 and r.json()["scimType"] == "mutability"
+
+    assert client.get(f"/scim/v2/Users/{admin2['id']}", headers=_h(tok)).json()["active"] is False
+    # and the console can still bring them back
+    r = client.patch(f"/api/users/{admin2['id']}", json={"active": True})
+    assert r.status_code == 200 and r.json()["active"] is True
