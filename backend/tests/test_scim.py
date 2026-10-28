@@ -173,3 +173,60 @@ def test_offboarded_admin_cannot_be_reactivated_over_scim(client):
     # and the console can still bring them back
     r = client.patch(f"/api/users/{admin2['id']}", json={"active": True})
     assert r.status_code == 200 and r.json()["active"] is True
+
+
+def test_rename_signs_out_and_tells_the_old_address(client, raw_client, db_factory, monkeypatch):
+    # A leaked SCIM token can re-point an analyst's account at an address it controls, then
+    # take it over with a password reset. The rename ends what was signed in under the old
+    # identity, and the person losing the address is told.
+    from datetime import timedelta
+
+    import app.email as email_mod
+    from app.models import OAuthToken, User
+    from app.oauth_provider import _now
+    sent = []
+    monkeypatch.setattr(email_mod, "send", lambda to, subject, body: sent.append((to, body)))
+
+    r = client.post("/api/users", json={"email": "mover@acme.com", "password": "password123",
+                                        "role": "analyst"})
+    uid = r.json()["id"]
+    token = raw_client.post("/api/auth/login", json={"email": "mover@acme.com",
+                                                     "password": "password123"}).json()[
+        "access_token"]
+    db = db_factory()
+    tid = db.get(User, uid).tenant_id
+    db.add(OAuthToken(token_hash="h-mover", kind="refresh", client_id="c1", user_id=uid,
+                      tenant_id=tid, scopes="palivane:read", expires_at=_now() + timedelta(days=1)))
+    db.commit(); db.close()
+
+    tok = _mint(client)
+    r = client.patch(f"/scim/v2/Users/{uid}", headers=_h(tok),
+                     json={"Operations": [{"op": "replace", "path": "userName",
+                                           "value": "elsewhere@acme.com"}]})
+    assert r.status_code == 200 and r.json()["userName"] == "elsewhere@acme.com"
+
+    assert raw_client.get("/api/auth/me",
+                          headers={"Authorization": f"Bearer {token}"}).status_code == 401
+    db = db_factory()
+    assert db.query(OAuthToken).filter(OAuthToken.token_hash == "h-mover").one().revoked_at
+    db.close()
+    assert [to for to, _ in sent] == ["mover@acme.com"]
+    assert "elsewhere@acme.com" in sent[0][1]
+
+
+def test_noop_rename_changes_nothing(client, raw_client, monkeypatch):
+    # IdPs resend the current userName on every sync; that must not sign anyone out.
+    import app.email as email_mod
+    sent = []
+    monkeypatch.setattr(email_mod, "send", lambda *a: sent.append(a))
+    uid = client.post("/api/users", json={"email": "stay@acme.com", "password": "password123",
+                                          "role": "analyst"}).json()["id"]
+    token = raw_client.post("/api/auth/login", json={"email": "stay@acme.com",
+                                                     "password": "password123"}).json()[
+        "access_token"]
+    tok = _mint(client)
+    assert client.put(f"/scim/v2/Users/{uid}", headers=_h(tok),
+                      json={"userName": "Stay@Acme.com", "active": True}).status_code == 200
+    assert raw_client.get("/api/auth/me",
+                          headers={"Authorization": f"Bearer {token}"}).status_code == 200
+    assert sent == []
