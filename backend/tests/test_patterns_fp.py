@@ -515,3 +515,33 @@ def test_the_same_token_anywhere_else_still_flags():
     # (start of the body, or after `&` / `?`), not words in a sentence
     assert find_high_entropy_tokens(f"please use at={_PAGE_TOKEN} for the call")
     assert find_high_entropy_tokens(f'f.req=[[["use at={_PAGE_TOKEN} please"]]]&hl=en')
+
+
+def test_comment_prose_not_flagged_by_full_analysis():
+    # find_secrets alone was clean, but _scan_secrets' upper() fallback view upper-cased the
+    # prose and re-matched it. Run the real detector on the real lines.
+    from app.detectors.base import AnalysisInput, Surface
+    from app.detectors.shadow_ai import ShadowAIDetector
+    for line in ("    # Bearer / HEC token: write-only via the API and sealed at rest (crypto.seal, enc:v1:",
+                 "        # Random unusable password: SCIM-provisioned users sign in via SSO (or set"):
+        sigs = ShadowAIDetector()._scan_secrets(line)
+        assert not sigs, line
+    assert ShadowAIDetector()._scan_secrets("# admin password: Wintersunset")
+
+
+def test_comment_prose_survives_newline_folding():
+    # normalize_for_match folds newlines, so the comment starts mid-"line" in that view.
+    from app.detectors.normalize import normalize_for_match
+    text = 'hec_token = Column(String, default="")\n    # Bearer / HEC token: write-only via the API'
+    assert "Credential assignment" not in find_secrets(normalize_for_match(text))
+    assert "Credential assignment" not in find_secrets("x = 1  # session token: refreshed on focus")
+    # A marker with no space after it isn't a comment (`#123`, `a*b`).
+    assert "Credential assignment" in find_secrets("ticket #123 password: Wintersunset is in the doc")
+
+
+def test_keyword_value_after_newline_folding_not_flagged():
+    # backend/app/slack_events.py: `if not token:\n    continue` folds to `token: continue`.
+    from app.detectors.normalize import normalize_for_match
+    code = 'token = (bot.get("bot_token") or "").strip()\n        if not token:\n            continue\n'
+    assert "Credential assignment" not in find_secrets(normalize_for_match(code))
+    assert "Credential assignment" in find_secrets('password = "continue"')

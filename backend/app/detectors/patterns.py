@@ -274,7 +274,15 @@ _EXPR_CONTINUES_RE = re.compile(r"^[ \t]*(?:\+|\|\||\?\?|or\b|if\b)")
 # A comment line, and the prose word a `label: value` inside one is followed by. Together they
 # separate `# Bearer / HEC token: write-only via the API` and `# Random unusable password:
 # SCIM-provisioned users sign in via SSO` (a sentence) from `# password: Hunter2x` (a value).
-_COMMENT_LINE_RE = re.compile(r"^[ \t]*(?:#|//|/\*|\*|--)")
+# A language keyword as the "value" — `if not token:\n    continue` once normalize_for_match
+# folds the newline reads `token: continue`. Only keywords of 8+ chars can reach the rule.
+_CODE_KEYWORD_VALUE_RE = re.compile(r"^(?:continue|undefined|function|nonlocal|override|"
+                                    r"abstract|readonly|unsigned|volatile)[,;)\]}]*$")
+
+# A comment marker anywhere earlier on the line, not just at its start: a trailing comment
+# counts, and normalize_for_match folds newlines into spaces, so in that view the comment's
+# own line begins somewhere inside the previous code line.
+_COMMENT_LINE_RE = re.compile(r"^[ \t]*\*|(?:^|\s)(?:#|//|/\*|--)\s")
 _PROSE_WORD_VALUE_RE = re.compile(r"^[A-Za-z]+(?:-[A-Za-z]+)*$")
 _PROSE_CONTINUES_RE = re.compile(r"^[ \t]+[a-z]{2,}\b")
 
@@ -297,11 +305,12 @@ def _is_placeholder_assignment(match_text: str, line_before: str = "", after: st
         return False
     # Variable references, template holes and expression operands are code shapes only when
     # unquoted.
-    if _IDENT_REF_VALUE_RE.match(val) or _TEMPLATE_PREFIX_RE.match(val):
+    if (_IDENT_REF_VALUE_RE.match(val) or _TEMPLATE_PREFIX_RE.match(val)
+            or _CODE_KEYWORD_VALUE_RE.match(val)):
         return True
     if re.match(r"^[A-Za-z_]\w*$", val) and _EXPR_CONTINUES_RE.match(after):
         return True
-    return (sep == ":" and bool(_COMMENT_LINE_RE.match(line_before))
+    return (sep == ":" and bool(_COMMENT_LINE_RE.search(line_before))
             and bool(_PROSE_WORD_VALUE_RE.match(val)) and bool(_PROSE_CONTINUES_RE.match(after)))
 
 
@@ -363,7 +372,8 @@ def find_secrets(text: str) -> list[str]:
                 if _DUMMY_RUN_RE.search(m.group(0)):
                     continue   # masked/placeholder stand-in (sk_test_xxxx…), not a real key
                 if label == "Credential assignment" and _is_placeholder_assignment(
-                        m.group(0), text[text.rfind("\n", 0, m.start()) + 1:m.start()],
+                        m.group(0),
+                        text[max(text.rfind("\n", 0, m.start()) + 1, m.start() - 200):m.start()],
                         text[m.end():m.end() + 40]):
                     continue
                 if label == "Connection string credential" and _is_placeholder_conn(m.group(0)):
