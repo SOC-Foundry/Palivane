@@ -725,12 +725,14 @@ class ShadowAIDetector:
         secrets = (raw_secrets if raw_secrets is not None else find_secrets(text)) \
             or find_secrets(norm) \
             or find_secrets(_deglue_secret_spacing(norm)) \
-            or find_secrets(norm.upper())
+            or [lbl for lbl in find_secrets(norm.upper()) if lbl != "Credential assignment"]
         # ^ the `.upper()` view recovers case-SENSITIVE vendor prefixes (AKIA…) that a
         # homoglyph or case-mangle transform lower-cased ("акіа…"/"AkIa…" → normalize folds
         # to lowercase latin, then upper() restores "AKIA…"). Safe as a last-resort fallback:
         # case-insensitive patterns (credential-assignment/connection-string) already matched
-        # earlier if present, so upper() can only add uppercase-shaped known keys.
+        # earlier if present, so upper() can only add uppercase-shaped known keys. Credential
+        # assignment is dropped from this view outright: its comment-prose exemption reads
+        # lowercase words, so upper-casing `# token: write-only via the API` defeated it.
         if not secrets:
             return []
         # In a low-signal path, suppress when the ONLY matches are generic (bare
