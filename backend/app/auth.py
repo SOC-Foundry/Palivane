@@ -1731,6 +1731,16 @@ def _safe_return_to(rt: str) -> str:
     return rt
 
 
+def _public_origin(request: Request) -> str:
+    """This deployment's own origin, for every URL an IdP is told or checks: the OIDC
+    redirect_uri, the SAML SP entity ID, ACS and metadata. The configured public URL wins
+    over the request, as in google_login._origin. Behind the edge Worker the request
+    carries the Cloud Run origin (and http, since TLS ends upstream), which is neither the
+    address the console tells admins to register nor one a Host header should get to pick.
+    Falls back to the request only where no public URL is configured (local dev)."""
+    return (settings.public_base_url or str(request.base_url)).rstrip("/")
+
+
 # --- SSO browser binding + session handoff (shared by tenant OIDC and Google sign-in) --------
 
 # The signed `state` proves we issued it, not that THIS browser started the flow: without a
@@ -1799,7 +1809,7 @@ def oidc_login(org: str, request: Request, return_to: str = "", db: Session = De
     bind_nonce, bind = sso_bind_new()
     state = create_token({"typ": "oidc_state", "org": tenant.slug, "nonce": nonce,
                           "bind": bind, "return_to": _safe_return_to(return_to)}, ttl=600)
-    base = str(request.base_url).rstrip("/")
+    base = _public_origin(request)
     redirect_uri = f"{base}/api/auth/oidc/{tenant.slug}/callback"
     resp = RedirectResponse(oidc.authorize_url(meta, row.client_id, redirect_uri, state, nonce),
                             status_code=307)
@@ -1821,7 +1831,7 @@ def oidc_callback(org: str, request: Request, code: str = "", state: str = "",
     sso_bind_check(request, payload)
 
     tenant, row = _enabled_oidc(org, db)
-    base = str(request.base_url).rstrip("/")
+    base = _public_origin(request)
     redirect_uri = f"{base}/api/auth/oidc/{tenant.slug}/callback"
     secret = crypto.unseal_secret(row.client_secret_encrypted, crypto.tenant_dek(tenant, db))
     try:
@@ -1930,14 +1940,15 @@ def _enabled_saml(org: str, db: Session):
 
 
 def _saml_req(request: Request, post_data: dict | None = None) -> dict:
-    url = request.url
-    host = url.hostname or ""
-    if url.port and url.port not in (80, 443):
-        host = f"{host}:{url.port}"
+    """The request as python3-saml sees it. Scheme and host come from _public_origin, not the
+    request: the SDK checks a response's Destination against this URL, and the IdP sends the
+    address it was given in our metadata, which is built from that same origin."""
+    from urllib.parse import urlparse
+    origin = urlparse(_public_origin(request))
     return {
-        "https": "on" if url.scheme == "https" else "off",
-        "http_host": host,
-        "script_name": url.path,
+        "https": "on" if origin.scheme == "https" else "off",
+        "http_host": origin.netloc,
+        "script_name": request.url.path,
         "get_data": dict(request.query_params),
         "post_data": post_data or {},
     }
@@ -1981,7 +1992,7 @@ def _saml_state_check(request: Request, slug: str) -> str:
 @router.get("/auth/saml/{org}/login")
 def saml_login(org: str, request: Request, return_to: str = "", db: Session = Depends(get_db)):
     tenant, cfg = _enabled_saml(org, db)
-    base = str(request.base_url).rstrip("/")
+    base = _public_origin(request)
     sp_entity, acs = _saml_sp(base, tenant.slug)
     # RelayState carries the connect landing back through the IdP; the ACS re-validates it.
     relay = _safe_return_to(return_to) or base
@@ -1998,7 +2009,7 @@ def saml_login(org: str, request: Request, return_to: str = "", db: Session = De
 @router.post("/auth/saml/{org}/acs")
 async def saml_acs(org: str, request: Request, db: Session = Depends(get_db)):
     tenant, cfg = _enabled_saml(org, db)
-    base = str(request.base_url).rstrip("/")
+    base = _public_origin(request)
     sp_entity, acs = _saml_sp(base, tenant.slug)
     form = await request.form()
     req = _saml_req(request, post_data={k: v for k, v in form.items()})
@@ -2056,7 +2067,7 @@ async def saml_acs(org: str, request: Request, db: Session = Depends(get_db)):
 def saml_metadata(org: str, request: Request, db: Session = Depends(get_db)):
     from fastapi.responses import Response as _Resp
     tenant, cfg = _enabled_saml(org, db)
-    base = str(request.base_url).rstrip("/")
+    base = _public_origin(request)
     sp_entity, acs = _saml_sp(base, tenant.slug)
     try:
         xml = saml.sp_metadata(cfg, sp_entity, acs)
@@ -2068,7 +2079,7 @@ def saml_metadata(org: str, request: Request, db: Session = Depends(get_db)):
 @router.get("/auth/sso/{org}/login")
 def sso_login(org: str, request: Request, return_to: str = "", db: Session = Depends(get_db)):
     """Unified SSO entry: redirect to whichever protocol the org has enabled."""
-    base = str(request.base_url).rstrip("/")
+    base = _public_origin(request)
     from urllib.parse import quote
     rt = _safe_return_to(return_to)
     q = f"?return_to={quote(rt, safe='')}" if rt else ""
