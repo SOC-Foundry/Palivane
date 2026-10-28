@@ -144,3 +144,40 @@ def test_claim_can_switch_enforcement_on(client, raw_client):
     fleet = _key(client, "fleet@acme.com")
     assert _post(raw_client, fleet, user="pilot@acme.com")["enforce"] is True
     assert _post(raw_client, fleet, user="other@acme.com")["enforce"] is False
+
+
+# --- EMA: an identity read off a token the client hands us ----------------------------------
+
+def _unsigned_jwt(claims: dict) -> str:
+    import base64
+    import json
+    seg = lambda d: base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=").decode()
+    return f"{seg({'alg': 'RS256', 'typ': 'JWT'})}.{seg(claims)}.c2ln"
+
+
+def _mcp(raw_client, key, authorization):
+    r = raw_client.post("/api/ingest/mcp", headers={"X-Palivane-Token": key},
+                        json={"method": "tools/call", "server": "files.example", "tool": "read",
+                              "args_text": "notes.txt", "authorization": authorization})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_unverified_ema_identity_is_a_claim(client, raw_client):
+    # Anyone can put a JWT with any email in the Authorization header the capture plane
+    # forwards. Unverified, it names who to attribute to, never whose exemption applies.
+    assert client.patch("/api/tenant", json={"client_enforce": "on"}).status_code == 200
+    _override(client, scope="user", match="pilot@acme.com", enforce="off")
+    fleet = _key(client, "fleet@acme.com")
+    forged = _unsigned_jwt({"iss": "https://idp.example", "email": "pilot@acme.com"})
+    assert _mcp(raw_client, fleet, forged)["enforce"] is True
+
+
+def test_verified_ema_identity_gets_its_override(client, raw_client, monkeypatch):
+    import app.oidc as oidc_mod
+    assert client.patch("/api/tenant", json={"client_enforce": "on"}).status_code == 200
+    _override(client, scope="user", match="pilot@acme.com", enforce="off")
+    monkeypatch.setattr(oidc_mod, "inspect_ema_token", lambda token, **k: {
+        "kind": "jwt", "verified": True, "email": "pilot@acme.com", "sub": "pilot"})
+    fleet = _key(client, "fleet@acme.com")
+    assert _mcp(raw_client, fleet, "opaque-but-verified")["enforce"] is False
