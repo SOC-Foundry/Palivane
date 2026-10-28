@@ -155,9 +155,11 @@ def validate(kind: str, raw: str) -> str:
 # --- what the detectors are given -----------------------------------------------------------------
 
 def active_entries(db: Session, tenant_id: int | None, actor: str, tool: str,
-                   now: datetime | None = None) -> list[AllowEntry]:
+                   now: datetime | None = None, claimed: bool = False) -> list[AllowEntry]:
     """The entries that apply to this actor and tool right now: not revoked, not lapsed, and
-    whose own narrowing (actor, tool) fits."""
+    whose own narrowing (actor, tool) fits. An entry narrowed to an actor is that person's
+    exemption, so a claimed actor (see policies.resolve_disabled) doesn't get it — only
+    entries that apply to everyone."""
     if tenant_id is None:
         return []
     now = now or _now()
@@ -167,16 +169,18 @@ def active_entries(db: Session, tenant_id: int | None, actor: str, tool: str,
               .all())
     who, what = (actor or "").strip().lower(), (tool or "").strip().lower()
     return [r for r in rows
-            if (not r.actor or r.actor.lower() == who) and (not r.tool or r.tool.lower() == what)]
+            if (not r.actor or (not claimed and r.actor.lower() == who))
+            and (not r.tool or r.tool.lower() == what)]
 
 
-def attach(db: Session, tenant_id: int | None, actor: str, tool: str, metadata: dict) -> dict | None:
+def attach(db: Session, tenant_id: int | None, actor: str, tool: str, metadata: dict,
+           claimed: bool = False) -> dict | None:
     """Put the tenant's applicable entries into `metadata["allow"]` as plain data for the
     detectors, and return that holder so the caller can `record_hits` once the analysis is done.
     None (and nothing attached) when there are none. A failure here means NO allowlist, which can
     only cost an alert: every call is judged exactly as it would be without one."""
     try:
-        rows = active_entries(db, tenant_id, actor, tool)
+        rows = active_entries(db, tenant_id, actor, tool, claimed=claimed)
     except Exception:
         _log.warning("allowlist lookup failed; judging this call without it", exc_info=True)
         try:

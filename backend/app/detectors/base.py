@@ -123,6 +123,9 @@ class AnalysisInput:
     channel: str = "email"  # email | chat | sms | document
     surface: Surface = Surface.LLM_IO
     metadata: dict = field(default_factory=dict)
+    # True when `sender` is the client's own claim rather than an identity its credential
+    # proves (policies.resolve_disabled): per-user overrides may then only tighten.
+    sender_claimed: bool = False
     # Request-scoped cache for the raw Tier-1 secret pass. find_secrets over the full text is
     # the most expensive detector step, and multiple detectors (shadow_ai, prompt_threats)
     # need the same result on the same surface — compute it once per analysis. Lives on the

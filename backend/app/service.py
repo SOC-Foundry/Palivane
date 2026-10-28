@@ -376,7 +376,8 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         from .models import PolicyOverride
         overrides = db.query(PolicyOverride).filter(PolicyOverride.tenant_id == tenant.id).all()
         effective_disabled, _ = resolve_disabled(base_disabled, item.sender, overrides,
-                                                 channel=item.channel)
+                                                 channel=item.channel,
+                                                 claimed=item.sender_claimed)
     else:
         effective_disabled = base_disabled
     # The confirmed secret/PII hard block must survive a disabled check: a policy override
