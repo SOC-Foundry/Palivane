@@ -8,7 +8,7 @@ stopped holding, would be a way to read another tenant's findings.
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import timedelta, timezone
 
 import pytest
 from mcp.shared.auth import OAuthClientInformationFull
@@ -216,6 +216,49 @@ def test_replaying_a_rotated_refresh_token_revokes_the_family(provider):
     assert _run(p.load_refresh_token(_client(), first.refresh_token)) is None   # the replay
     assert _run(p.load_access_token(second.access_token)) is None
     assert _run(p.load_refresh_token(_client(), second.refresh_token)) is None
+
+
+def test_refresh_never_extends_the_grant(provider):
+    """The consent screen says a grant lapses within 30 days. Rotating to a fresh 30 days on
+    every refresh made a grant in regular use last forever; the end date must carry over."""
+    p, Session = provider
+    uid, tid = _seed_user(Session)
+    _register(p)
+    _mint_code(Session, "code-life", "c1", uid, tid)
+    loaded = _run(p.load_authorization_code(_client(), "code-life"))
+    first = _run(p.exchange_authorization_code(_client(), loaded))
+
+    def refresh_row(tok):
+        db = Session()
+        row = db.query(OAuthTokenRow).filter(OAuthTokenRow.token_hash == hash_token(tok)).one()
+        db.close()
+        return row
+
+    granted_until = refresh_row(first.refresh_token).expires_at
+    rt = _run(p.load_refresh_token(_client(), first.refresh_token))
+    second = _run(p.exchange_refresh_token(_client(), rt, [READ_SCOPE]))
+    assert refresh_row(second.refresh_token).expires_at == granted_until
+
+
+def test_access_token_never_outlives_the_grant(provider):
+    p, Session = provider
+    uid, tid = _seed_user(Session)
+    _register(p)
+    _mint_code(Session, "code-end", "c1", uid, tid)
+    loaded = _run(p.load_authorization_code(_client(), "code-end"))
+    first = _run(p.exchange_authorization_code(_client(), loaded))
+    # Ten minutes left on the grant: the next access token gets ten minutes, not an hour.
+    db = Session()
+    row = db.query(OAuthTokenRow).filter(
+        OAuthTokenRow.token_hash == hash_token(first.refresh_token)).one()
+    row.expires_at = _now() + timedelta(minutes=10)
+    db.commit(); db.close()
+    rt = _run(p.load_refresh_token(_client(), first.refresh_token))
+    second = _run(p.exchange_refresh_token(_client(), rt, [READ_SCOPE]))
+    assert 0 < second.expires_in <= 600
+    at = _run(p.load_access_token(second.access_token))
+    limit = (_now() + timedelta(minutes=10)).replace(tzinfo=timezone.utc).timestamp()
+    assert at.expires_at <= int(limit) + 5
 
 
 def test_concurrent_code_exchange_mints_once(provider):
