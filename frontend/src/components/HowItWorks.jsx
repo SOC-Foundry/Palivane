@@ -203,7 +203,7 @@ export default function HowItWorks() {
           <div className="hiw-modes">
             <div className="hiw-mode">
               <h3><span className="hiw-dot dot-monitor" /> Monitor</h3>
-              <p>Nothing is blocked, content passes through and findings are recorded. Ideal for a
+              <p>Only confirmed secret and personal-data leaks are blocked; everything else passes through and findings are recorded. Ideal for a
                  rollout's first phase, so you see exactly what would trip before enforcing.</p>
             </div>
             <div className="hiw-mode hiw-mode-enforce">
