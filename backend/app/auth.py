@@ -1458,7 +1458,7 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
             raise HTTPException(status_code=400, detail="An Inference hooks signing secret "
                                 "starts with whsec_ followed by base64, as Anthropic shows it.")
         else:
-            # Rotation keeps the old secret: Anthropic can still send requests signed with it
+            # Rotation keeps the old secret, because Anthropic can still send requests signed with it
             # for about a minute after the switch, plus whatever was in flight.
             tenant.inference_hook_secret_prev = tenant.inference_hook_secret or ""
             tenant.inference_hook_secret = crypto.seal_secret(crypto.tenant_dek(tenant, db), new)
