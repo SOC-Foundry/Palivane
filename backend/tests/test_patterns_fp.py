@@ -44,10 +44,24 @@ def test_expression_valued_assignments_not_flagged():
         assert "Credential assignment" not in find_secrets(code), code
 
 
+def test_identifier_and_template_values_not_flagged():
+    # Real lines from backend/app/auth.py / oauth_provider.py / tokenization.py — an agent
+    # auditing our own auth code got its session hard-blocked by the proxy on these.
+    for code in ("        refresh_token=refresh, scope=granted)",
+                 "refresh_token=refresh, scope=row.scopes or READ_SCOPES)",
+                 '"""`text` with personal data replaced by tokens, plus the {token: original} map.',
+                 '            f"{settings.base_url()}/api/auth/verify?token={token}\\n\\n"',
+                 "url = f'/join/confirm?token={token}&next=/'"):
+        assert "Credential assignment" not in find_secrets(code), code
+
+
 def test_hardcoded_literal_assignment_still_flagged():
     # A literal value IS a hardcoded secret — must still fire (recall guard).
     assert "Credential assignment" in find_secrets('password = "hunter2hunter2xyz"')
     assert "Credential assignment" in find_secrets("api_key = 's3cr3t-l1teral-value-9x'")
+    assert "Credential assignment" in find_secrets("user=bob,password=hunter22,role=admin")
+    assert "Credential assignment" in find_secrets('token = "{abc}9f8e7d6c5b4a"')
+    assert "Credential assignment" in find_secrets("PASSWORD=Tr0ub4dor&3")
 
 
 # --- known-format secrets are untouched by any of the above -----------------------------
