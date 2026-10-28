@@ -238,6 +238,31 @@ def user_for_session_payload(payload: dict, db: Session) -> User:
     return user
 
 
+def sso_required(db: Session, tenant_id: int) -> bool:
+    """The org has asked for SSO-only sign-in AND has an SSO protocol switched on to sign in
+    with. Without the second half, deleting or disabling the IdP config would leave nobody
+    able to sign in; with it, the setting simply lapses until SSO is back."""
+    tenant = db.get(Tenant, tenant_id)
+    if tenant is None or not tenant.sso_required:
+        return False
+    return bool(
+        db.query(TenantOIDC).filter(TenantOIDC.tenant_id == tenant_id,
+                                    TenantOIDC.enabled.is_(True)).first()
+        or db.query(TenantSAML).filter(TenantSAML.tenant_id == tenant_id,
+                                       TenantSAML.enabled.is_(True)).first())
+
+
+def non_sso_signin_allowed(db: Session, user: User) -> bool:
+    """Password sign-in, password reset and Google sign-in, for this user. Admins always: a
+    break-glass route for when the IdP itself is down or misconfigured, and admins are
+    offboarded in the console rather than at the IdP."""
+    return user.role == "admin" or not sso_required(db, user.tenant_id)
+
+
+SSO_REQUIRED_DETAIL = ("Your organization signs in with SSO. Choose \"Sign in with SSO\" and "
+                       "enter your organization.")
+
+
 def require_admin(current: User = Depends(get_current_user)) -> User:
     if current.role != "admin":
         raise HTTPException(status_code=403, detail="admin role required")
@@ -418,6 +443,9 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         db.add(LoginAttempt(email=email, ip=ip))
         db.commit()
         raise HTTPException(status_code=401, detail="invalid credentials")
+    # After the password check, so only someone holding the password learns the org is SSO-only.
+    if not non_sso_signin_allowed(db, user):
+        raise HTTPException(status_code=403, detail=SSO_REQUIRED_DETAIL)
 
     from .lifecycle import ensure_active
     ensure_active(db, user.tenant_id)
@@ -469,6 +497,8 @@ def forgot_password(body: ForgotRequest, request: Request, db: Session = Depends
         tenant = db.get(Tenant, user.tenant_id)
         if tenant is None or tenant.status == "suspended":
             continue
+        if not non_sso_signin_allowed(db, user):
+            continue   # SSO-only org: there is no password to reset (same 200 either way)
         token = create_token({"typ": "pwreset", "sub": str(user.id),
                               "tv": user.token_version}, ttl=1800)
         email_mod.send(
@@ -495,6 +525,10 @@ def reset_password(body: ResetRequest, db: Session = Depends(get_db)):
     user = db.get(User, int(payload.get("sub", 0)))
     if user is None or not user.active or int(payload.get("tv", -1)) != user.token_version:
         raise HTTPException(status_code=400, detail="invalid or expired reset link")
+    if not non_sso_signin_allowed(db, user):
+        # A link issued before the org went SSO-only, or an invite: it must not set a password
+        # nobody can use, and must not end the person's SSO sessions either.
+        raise HTTPException(status_code=403, detail=SSO_REQUIRED_DETAIL)
     from .lifecycle import ensure_active
     ensure_active(db, user.tenant_id)
     user.password_hash = hash_password(body.password)
@@ -698,7 +732,17 @@ def create_user(body: UserCreate, current: User = Depends(require_admin), db: Se
     db.add(user)
     db.commit()
     db.refresh(user)
-    if invite:
+    if invite and not non_sso_signin_allowed(db, user):
+        # SSO-only org: nothing to set, the IdP is how they get in.
+        tenant = db.get(Tenant, current.tenant_id)
+        email_mod.send(
+            email, f"You've been invited to {tenant.name or tenant.slug} on Palivane",
+            f"{current.email} invited you to the \"{tenant.name or tenant.slug}\" "
+            f"organization on Palivane as {body.role}.\n\n"
+            f"Your organization signs in with SSO. Go to {email_mod.base_url()}, choose "
+            f"\"Sign in with SSO\" and enter the organization \"{tenant.slug}\".\n\n"
+            "If you weren't expecting this, you can ignore it.")
+    elif invite:
         tenant = db.get(Tenant, current.tenant_id)
         token = create_token({"typ": "pwreset", "sub": str(user.id),
                               "tv": user.token_version}, ttl=259200)   # 3 days
@@ -1532,6 +1576,16 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.archive_s3_daily_mb = body.archive_s3_daily_mb
     if body.gateway_enforce is not None:
         tenant.gateway_enforce = _JUDGE[body.gateway_enforce]  # same tri-state mapping
+    if body.sso_required is not None:
+        if body.sso_required:
+            require_feature(tenant, "sso")
+            if not (db.query(TenantOIDC).filter(TenantOIDC.tenant_id == tenant.id,
+                                                TenantOIDC.enabled.is_(True)).first()
+                    or db.query(TenantSAML).filter(TenantSAML.tenant_id == tenant.id,
+                                                   TenantSAML.enabled.is_(True)).first()):
+                raise HTTPException(status_code=400,
+                                    detail="turn on OIDC or SAML sign-in first, then require it")
+        tenant.sso_required = bool(body.sso_required)
     if body.client_enforce is not None:
         tenant.client_enforce = _JUDGE[body.client_enforce]
     for sev_field in ("gateway_block_severity", "mcp_block_severity", "ci_block_severity"):
