@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from onelogin.saml2.auth import OneLogin_Saml2_Auth
 from onelogin.saml2.settings import OneLogin_Saml2_Settings
+from onelogin.saml2.utils import OneLogin_Saml2_Utils
+from onelogin.saml2.xml_utils import OneLogin_Saml2_XML
 
 _POST = "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
 _REDIRECT = "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
@@ -48,12 +50,31 @@ def _auth(req: dict, cfg, sp_entity_id: str, acs_url: str) -> OneLogin_Saml2_Aut
     return OneLogin_Saml2_Auth(req, old_settings=_settings(cfg, sp_entity_id, acs_url))
 
 
-def login_url(req: dict, cfg, sp_entity_id: str, acs_url: str, relay_state: str = "") -> str:
-    """The IdP redirect URL for SP-initiated login (HTTP-Redirect binding)."""
+def login_request(req: dict, cfg, sp_entity_id: str, acs_url: str,
+                  relay_state: str = "") -> tuple[str, str]:
+    """(IdP redirect URL, AuthnRequest ID) for SP-initiated login (HTTP-Redirect binding).
+    The caller keeps the ID so the ACS can insist the response answers THIS request."""
     try:
-        return _auth(req, cfg, sp_entity_id, acs_url).login(return_to=relay_state or None)
+        auth = _auth(req, cfg, sp_entity_id, acs_url)
+        url = auth.login(return_to=relay_state or None)
+        return url, auth.get_last_request_id() or ""
     except Exception as e:
         raise SAMLError(f"could not build SAML request: {e}")
+
+
+def login_url(req: dict, cfg, sp_entity_id: str, acs_url: str, relay_state: str = "") -> str:
+    """The IdP redirect URL for SP-initiated login (HTTP-Redirect binding)."""
+    return login_request(req, cfg, sp_entity_id, acs_url, relay_state)[0]
+
+
+def in_response_to(saml_response: str) -> str:
+    """The InResponseTo of a posted SAMLResponse, read WITHOUT validation — "" when absent
+    (IdP-initiated) or unparseable. Only for routing the ACS; process_acs still validates."""
+    try:
+        root = OneLogin_Saml2_XML.to_etree(OneLogin_Saml2_Utils.b64decode(saml_response))
+        return root.get("InResponseTo") or ""
+    except Exception:
+        return ""
 
 
 def _pick_email(attributes: dict, nameid: str) -> str:
@@ -64,11 +85,13 @@ def _pick_email(attributes: dict, nameid: str) -> str:
     return nameid if nameid and "@" in nameid else ""
 
 
-def process_acs(req: dict, cfg, sp_entity_id: str, acs_url: str) -> dict:
-    """Validate a SAMLResponse posted to the ACS; return {email, nameid, attributes}."""
+def process_acs(req: dict, cfg, sp_entity_id: str, acs_url: str,
+                request_id: str | None = None) -> dict:
+    """Validate a SAMLResponse posted to the ACS; return {email, nameid, attributes}.
+    With `request_id`, the SDK also checks the response's InResponseTo against it."""
     try:
         auth = _auth(req, cfg, sp_entity_id, acs_url)
-        auth.process_response()
+        auth.process_response(request_id=request_id)
     except Exception as e:
         raise SAMLError(f"SAML response error: {e}")
     errors = auth.get_errors()
