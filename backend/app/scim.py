@@ -16,9 +16,10 @@ Semantics worth naming:
   - Deactivation bumps token_version, killing the user's live sessions immediately.
   - The last active admin cannot be deactivated over SCIM: a mis-scoped IdP push must
     not be able to lock an org out of its own console.
-  - Admins cannot be renamed over SCIM: a provisioning-scoped credential (leaked or
-    mis-scoped) must not be able to hijack a privileged account's login identity by
-    changing its email. Admin lifecycle is a console decision, same as role.
+  - Admins cannot be renamed or reactivated over SCIM: a provisioning-scoped credential
+    (leaked or mis-scoped) must not be able to hijack a privileged account's login identity
+    by changing its email, or bring back an admin the console offboarded. Admin lifecycle
+    is a console decision, same as role.
 """
 
 from __future__ import annotations
@@ -200,6 +201,11 @@ def _apply_active(db, tenant, u: User, active: bool) -> JSONResponse | None:
         revoke_user_keys(db, u)
         _audit(db, tenant, "scim.user_deactivated", u.email)
     elif not u.active and active:
+        if u.role == "admin":
+            # Same rule as renames: restoring a privileged login is a console decision. An
+            # admin offboarded in the console must not come back on a provisioning push.
+            return _err(403, "cannot reactivate an admin over SCIM; manage admins in the "
+                             "console", "mutability")
         u.active = True
         _audit(db, tenant, "scim.user_reactivated", u.email)
     return None
