@@ -6,6 +6,7 @@
     python -m app.users list-users --tenant acme
     python -m app.users set-quota --tenant acme --users 100 --api-keys 500 --ingest-per-day 200000
     python -m app.users set-plan --tenant acme --plan enterprise   # licensing tier
+    python -m app.users set-plan --tenant acme --plan trial --trial-days 30   # trial clock
     python -m app.users suspend --tenant acme            # blocks logins/ingest/gateway
     python -m app.users resume --tenant acme
     python -m app.users purge-empty --older-than-days 30 # delete abandoned signups (--yes to apply)
@@ -32,10 +33,48 @@ def _get_tenant(db, ref: str) -> Tenant | None:
     return t
 
 
-def create_tenant(db, slug: str, name: str, plan: str = "free") -> Tenant:
+def apply_plan(tenant: Tenant, plan: str, trial_days: int | None = None) -> None:
+    """Set the tenant's plan; a trial gets a clock, as a self-serve signup's does.
+
+    plans.trial_expired() reads a trial with no end date as open-ended, so a trial set here
+    without one never expired and never showed the console's countdown. Moving INTO trial
+    starts PALIVANE_TRIAL_DAYS (or `trial_days`) from now; on an org already in trial the
+    clock is kept unless `trial_days` is given. `trial_days=0` is an open-ended trial,
+    on purpose."""
+    from datetime import datetime, timedelta, timezone
+
+    from .config import settings
+    was_trial = (tenant.plan or "") == "trial"
+    tenant.plan = plan
+    if plan != "trial":
+        return
+    if trial_days is None and was_trial and tenant.trial_ends_at is not None:
+        return
+    days = settings.trial_days if trial_days is None else trial_days
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    tenant.trial_ends_at = now + timedelta(days=days) if days > 0 else None
+
+
+def trial_note(tenant: Tenant) -> str:
+    """The trial clock as an operator reads it ("" when the org isn't on a trial)."""
+    if (tenant.plan or "") != "trial":
+        return ""
+    from .plans import trial_days_left, trial_expired
+    ends = tenant.trial_ends_at
+    if ends is None:
+        return "trial has no end date"
+    if trial_expired(tenant):
+        return f"trial ended {ends:%Y-%m-%d}"
+    left = trial_days_left(tenant)
+    return f"trial ends {ends:%Y-%m-%d} ({left} day{'' if left == 1 else 's'} left)"
+
+
+def create_tenant(db, slug: str, name: str, plan: str = "free",
+                  trial_days: int | None = None) -> Tenant:
     if _get_tenant(db, slug):
         raise SystemExit(f"tenant '{slug}' already exists")
-    t = Tenant(slug=slug.lower().strip(), name=name or slug, plan=plan)
+    t = Tenant(slug=slug.lower().strip(), name=name or slug)
+    apply_plan(t, plan, trial_days)
     db.add(t)
     db.commit()
     db.refresh(t)
@@ -66,7 +105,9 @@ def main(argv: list[str]) -> int:
     ct = sub.add_parser("create-tenant")
     ct.add_argument("--slug", required=True)
     ct.add_argument("--name", default="")
-    ct.add_argument("--plan", choices=["free", "team", "enterprise"], default="free")
+    ct.add_argument("--plan", choices=["trial", "free", "team", "enterprise"], default="free")
+    ct.add_argument("--trial-days", type=int, default=None,
+                    help="trial length (default PALIVANE_TRIAL_DAYS); 0 = no end date")
 
     cu = sub.add_parser("create-user")
     cu.add_argument("--tenant", required=True)
@@ -91,6 +132,10 @@ def main(argv: list[str]) -> int:
     spl = sub.add_parser("set-plan")
     spl.add_argument("--tenant", required=True)
     spl.add_argument("--plan", choices=["trial", "free", "team", "enterprise"], required=True)
+    spl.add_argument("--trial-days", type=int, default=None,
+                     help="trial: (re)start the clock at this many days from now; 0 = no end "
+                          "date. Omitted: a new trial gets PALIVANE_TRIAL_DAYS, a running one "
+                          "keeps its clock")
 
     for name in ("suspend", "resume"):
         sp = sub.add_parser(name)
@@ -129,8 +174,10 @@ def main(argv: list[str]) -> int:
     db = SessionLocal()
     try:
         if args.cmd == "create-tenant":
-            t = create_tenant(db, args.slug, args.name, args.plan)
-            print(f"created tenant #{t.id} '{t.slug}' ({t.name}) plan={t.plan}")
+            t = create_tenant(db, args.slug, args.name, args.plan, args.trial_days)
+            note = trial_note(t)
+            print(f"created tenant #{t.id} '{t.slug}' ({t.name}) plan={t.plan}"
+                  + (f", {note}" if note else ""))
         elif args.cmd == "create-user":
             password = args.password or getpass.getpass("password: ")
             u = create_user(db, args.tenant, args.email, password, args.role)
@@ -142,9 +189,11 @@ def main(argv: list[str]) -> int:
             tenant = _get_tenant(db, args.tenant)
             if tenant is None:
                 raise SystemExit(f"tenant '{args.tenant}' not found")
-            tenant.plan = args.plan
+            apply_plan(tenant, args.plan, args.trial_days)
             db.commit()
-            print(f"tenant '{tenant.slug}' is now on the {tenant.plan} plan")
+            note = trial_note(tenant)
+            print(f"tenant '{tenant.slug}' is now on the {tenant.plan} plan"
+                  + (f", {note}" if note else ""))
         elif args.cmd == "list-users":
             tenant = _get_tenant(db, args.tenant)
             if tenant is None:
@@ -221,6 +270,8 @@ def main(argv: list[str]) -> int:
                 if (t.status or "active") != "active":
                     flags.append(t.status)
                 flags.append("activated" if t.id in activated else "not activated")
+                if trial_note(t):
+                    flags.append(trial_note(t))
                 print(f"  {t.slug:<24} {PLANS[p]['label']:<11} {', '.join(flags)}")
         elif args.cmd == "license-issue":
             import sys as _sys
