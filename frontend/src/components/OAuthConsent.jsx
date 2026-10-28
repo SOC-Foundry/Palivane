@@ -6,11 +6,11 @@ import { api } from "../api.js";
 // cookie, so the authorize endpoint sees an anonymous request however thoroughly the user
 // is signed in. This page is the one place that holds the token, so it owns the approval.
 //
-// What it deliberately does NOT do is render anything out of its own query string. The
-// client name comes from /api/oauth/pending, resolved server-side by client_id against what
-// was recorded at registration — because "Palivane Official" is a trivial thing to put in a
-// URL, and a consent screen that repeats the caller's own claim about itself is a phishing
-// page with extra steps.
+// What it deliberately does NOT do is render anything out of its own query string: what it
+// shows comes from /api/oauth/pending, resolved server-side against the registration. That
+// stops a crafted URL renaming a real client, but not a client registered under a lying
+// name — registration is open — which is why the page leads with the redirect host, the
+// one thing an app can't misstate, and labels the name as the app's own claim.
 export default function OAuthConsent() {
   const q = new URLSearchParams(window.location.search);
   const clientId = q.get("client_id") || "";
@@ -68,10 +68,21 @@ export default function OAuthConsent() {
   return (
     <div className="consent-wrap">
       <div className="consent-card">
-        <h1 className="dsp">Allow <strong>{info.client_name}</strong> to read your Palivane data?</h1>
+        {/* Lead with where the grant goes, not what the app calls itself: registration is
+            open, so the name is whatever its registrant typed, "Palivane" included. The
+            redirect host is the one thing the app cannot fake, because the code goes there. */}
+        <h1 className="dsp">
+          {info.redirect_local
+            ? <>Allow an app <strong>on this computer</strong> to read your Palivane data?</>
+            : <>Allow an app at <strong>{info.redirect_host}</strong> to read your Palivane data?</>}
+        </h1>
         <p className="consent-lead">{info.scope_description}</p>
 
         <dl className="consent-facts">
+          <div>
+            <dt>Calls itself</dt>
+            <dd>“{info.client_name}” <span className="consent-unverified">(not verified: any app can use any name)</span></dd>
+          </div>
           <div><dt>Granting as</dt><dd>{info.granting_as.email} ({info.granting_as.role})</dd></div>
           <div><dt>Sends you back to</dt><dd><code>{info.redirect_uri}</code></dd></div>
           <div><dt>Access</dt><dd>Read only, so it cannot change or delete anything</dd></div>
