@@ -659,21 +659,25 @@ def require_export_auth(
     x_palivane_token: str = Header(default=""),
     db: Session = Depends(get_db),
 ) -> _ExportPrincipal:
-    """Auth for the pull/export surface (SIEM ingest): an `ak_…` API key — the machine
-    credential a scheduled poller can hold, via `Authorization: Bearer` or
-    `X-Palivane-Token` — or an admin session JWT (the console's download buttons).
-    Deliberately NOT the full-org /api/export/tenant, which stays session-admin-only."""
+    """Auth for the pull/export surface (SIEM ingest): a CONSOLE-scoped `ak_…` key whose user
+    is a current admin — the machine credential a scheduled poller holds, via
+    `Authorization: Bearer` or `X-Palivane-Token` — or an admin session JWT (the console's
+    download buttons). The same bar either way: exports are the whole org's findings and
+    audit trail, which only an admin sees in the console.
+    Deliberately NOT the full-org /api/export/tenant, which stays session-admin-only.
+
+    Ingest keys are refused. They are capture credentials, not read credentials: any user
+    can mint a browser-extension key for themselves, and fleet keys ride in MDM scripts on
+    every laptop. Accepting them here let anyone holding one download the whole org."""
     from .security import looks_like_api_key
     scheme, _, bearer = authorization.partition(" ")
     token = (x_palivane_token or "").strip() or (bearer.strip() if scheme.lower() == "bearer" else "")
     if looks_like_api_key(token):
-        from .gateway import _resolve_api_key
-        principal = _resolve_api_key(token, db)          # 401s on bad/expired/revoked
-        from .lifecycle import ensure_active
-        ensure_active(db, principal.tenant_id)
-        from .database import bind_tenant
-        bind_tenant(db, principal.tenant_id)             # RLS scoping, like every auth path
-        return _ExportPrincipal(principal.tenant_id, principal.actor)
+        from .auth import authenticate_console_key, user_for_console_key
+        key = authenticate_console_key(token, db)   # 401 for ingest/bogus/expired/revoked, alike
+        user = user_for_console_key(key, db)        # 401 if its user is gone; binds the tenant
+        require_admin(user)                          # 403 once its user is no longer an admin
+        return _ExportPrincipal(user.tenant_id, user.email)
     user = require_admin(get_current_user(request, authorization=authorization, db=db))
     return _ExportPrincipal(user.tenant_id, user.email)
 

@@ -12,7 +12,7 @@ combination:
 | **JSONL pull** | findings, filtered, incremental | anything that would rather poll than be pushed to |
 
 All four are Enterprise features. The first three are configured in **Settings**; the
-fourth needs only an API key.
+fourth needs only a console-scoped API key.
 
 The push routes are deliberately fire-and-forget. A slow or unreachable collector must
 never add latency to a prompt or drop a capture, so delivery runs off the request path and
@@ -144,8 +144,11 @@ If you would rather poll:
 GET /api/export/findings?since=<ISO8601>&severity=high&surface=llm_io&limit=5000
 ```
 
-Authenticate as a console admin or with an `ak_…` API key, so a scheduled SIEM poller can
-run without a human session. The response is JSONL, oldest first, and carries an
+Authenticate as a console admin, or with a **console-scoped** `ak_…` API key (scope
+`console_read` is enough) minted by an admin, so a scheduled SIEM poller can run without a
+human session. The key acts as the admin who minted it and stops working if they lose the
+admin role. Ingest keys are refused: they are capture credentials that sit on laptops, not
+read credentials. The response is JSONL, oldest first, and carries an
 `X-Palivane-Next-Since` header to use as the next poll's watermark.
 
 The watermark is inclusive: a finding exactly on the boundary is re-sent rather than
