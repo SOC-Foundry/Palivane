@@ -59,10 +59,20 @@ CODE_TTL = timedelta(seconds=60)
 ACCESS_TTL = timedelta(hours=1)
 REFRESH_TTL = timedelta(days=30)
 
-# One scope, matching the tool set: the remote MCP server exposes reads only. When a write
-# tool is added it needs its own scope AND a decision about the allowlist, not a quiet
-# widening of this one.
+# Two scopes. Read is every grant's floor. Triage is the one write the remote MCP server
+# offers (set a finding's status, the same call as the console's), granted only when the
+# client asked for it AND the person ticked it on the consent screen; the role rules of the
+# console still apply on top (only admins dismiss). Any further write tool needs its own
+# scope and its own consent line, not a quiet widening of these.
 READ_SCOPE = "palivane:read"
+TRIAGE_SCOPE = "palivane:triage"
+SCOPES = (READ_SCOPE, TRIAGE_SCOPE)
+
+
+def normalize_scopes(requested, allowed=SCOPES) -> str:
+    """Read always, plus whichever of `allowed` were requested, in a stable order."""
+    want = set(requested.split() if isinstance(requested, str) else (requested or []))
+    return " ".join(s for s in SCOPES if s == READ_SCOPE or (s in want and s in allowed))
 
 
 def _now() -> datetime:
@@ -157,9 +167,10 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
                 client_id=str(client_info.client_id),
                 client_name=(client_info.client_name or "")[:200],
                 redirect_uris="\n".join(uris),
-                # Never widen at registration: a client gets the read scope regardless of
-                # what it asks for, so a request for something broader cannot mint it.
-                scope=READ_SCOPE,
+                # Registered for read plus whatever known scope it asked for, nothing else: a
+                # request for something broader cannot mint it. Registering grants nothing on
+                # its own; a person still approves each scope at consent.
+                scope=normalize_scopes(client_info.scope or ""),
             ))
             db.commit()
         finally:
@@ -187,7 +198,9 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
             "redirect_uri": str(params.redirect_uri),
             "state": params.state or "",
             "code_challenge": params.code_challenge or "",
-            "scope": READ_SCOPE,
+            # What the client asked for, within what it registered (the SDK already refused
+            # anything outside that). Consent re-checks both and lets the person drop triage.
+            "scope": normalize_scopes(params.scopes or [], (client.scope or READ_SCOPE).split()),
         })
         return f"{_consent_url()}?{q}"
 

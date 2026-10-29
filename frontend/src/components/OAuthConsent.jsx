@@ -17,16 +17,24 @@ export default function OAuthConsent() {
   const redirectUri = q.get("redirect_uri") || "";
   const state = q.get("state") || "";
   const challenge = q.get("code_challenge") || "";
+  const requested = q.get("scope") || "";
 
   const [info, setInfo] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Write scopes the app asked for, each a box the person can untick. What is offered comes
+  // from the server (within the app's registration), never from the URL alone.
+  const [declined, setDeclined] = useState({});
 
   useEffect(() => {
-    api.oauthPending(clientId, redirectUri)
+    api.oauthPending(clientId, redirectUri, requested)
       .then(setInfo)
       .catch((e) => setError(e.message || "This authorization request is not valid."));
-  }, [clientId, redirectUri]);
+  }, [clientId, redirectUri, requested]);
+
+  const writes = (info?.scopes || []).filter((s) => s.writes);
+  const granted = (info?.scopes || []).filter((s) => !s.writes || !declined[s.scope]);
+  const grantsWrite = granted.some((s) => s.writes);
 
   const approve = async () => {
     setBusy(true);
@@ -34,6 +42,7 @@ export default function OAuthConsent() {
       const r = await api.oauthConsent({
         client_id: clientId, redirect_uri: redirectUri,
         code_challenge: challenge, state,
+        scope: granted.map((s) => s.scope).join(" "),
       });
       window.location.replace(r.redirect_to);
     } catch (e) {
@@ -73,8 +82,8 @@ export default function OAuthConsent() {
             redirect host is the one thing the app cannot fake, because the code goes there. */}
         <h1 className="dsp">
           {info.redirect_local
-            ? <>Allow an app <strong>on this computer</strong> to read your Palivane data?</>
-            : <>Allow an app at <strong>{info.redirect_host}</strong> to read your Palivane data?</>}
+            ? <>Allow an app <strong>on this computer</strong> to {grantsWrite ? "use" : "read"} your Palivane data?</>
+            : <>Allow an app at <strong>{info.redirect_host}</strong> to {grantsWrite ? "use" : "read"} your Palivane data?</>}
         </h1>
         <p className="consent-lead">{info.scope_description}</p>
 
@@ -85,8 +94,23 @@ export default function OAuthConsent() {
           </div>
           <div><dt>Granting as</dt><dd>{info.granting_as.email} ({info.granting_as.role})</dd></div>
           <div><dt>Sends you back to</dt><dd><code>{info.redirect_uri}</code></dd></div>
-          <div><dt>Access</dt><dd>Read only, so it cannot change or delete anything</dd></div>
+          <div><dt>Access</dt><dd>{grantsWrite
+            ? "Read, and change a finding's status. It cannot delete anything or change settings, users or keys"
+            : "Read only, so it cannot change or delete anything"}</dd></div>
         </dl>
+
+        {writes.length > 0 && (
+          <div className="consent-writes">
+            <p className="consent-writes-head">It also asks to change things:</p>
+            {writes.map((s) => (
+              <label key={s.scope} className="check">
+                <input type="checkbox" checked={!declined[s.scope]}
+                       onChange={(e) => setDeclined((d) => ({ ...d, [s.scope]: !e.target.checked }))} />
+                {s.description}
+              </label>
+            ))}
+          </div>
+        )}
 
         {/* True again as of the Authorized apps panel in Connections. It briefly said this
             when it was not true, which is the failure mode a consent screen can least
@@ -99,7 +123,7 @@ export default function OAuthConsent() {
 
         <div className="consent-actions">
           <button type="button" className="primary-btn slim" onClick={approve} disabled={busy}>
-            {busy ? "Authorizing…" : "Allow read access"}
+            {busy ? "Authorizing…" : grantsWrite ? "Allow" : "Allow read access"}
           </button>
           <button type="button" className="lp-nav-ghost" onClick={deny} disabled={busy}>Cancel</button>
         </div>
