@@ -724,3 +724,6 @@ class OAuthConsentRequest(BaseModel):
     redirect_uri: str = Field(max_length=2048)
     code_challenge: str = Field(default="", max_length=128)
     state: str = Field(default="", max_length=512)
+    # The scopes the person approved (space-separated). Re-checked against the client's
+    # registration; read is always granted, so "" means read only.
+    scope: str = Field(default="", max_length=200)

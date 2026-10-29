@@ -11,7 +11,7 @@ import hashlib
 
 import pytest
 
-from app.oauth_provider import READ_SCOPE
+from app.oauth_provider import READ_SCOPE, TRIAGE_SCOPE
 
 INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
         "params": {"protocolVersion": "2024-11-05", "capabilities": {},
@@ -38,7 +38,7 @@ def test_discovery_documents_point_clients_at_us(raw_client):
     assert a.status_code == 200 and a.json()["token_endpoint"].endswith("/token")
     p = raw_client.get("/.well-known/oauth-protected-resource/api/mcp")
     assert p.status_code == 200
-    assert p.json()["scopes_supported"] == [READ_SCOPE]
+    assert p.json()["scopes_supported"] == [READ_SCOPE, TRIAGE_SCOPE]
 
 
 def test_full_grant_reaches_mcp_as_the_approving_user(client, raw_client, db_factory):

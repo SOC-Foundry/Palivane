@@ -19,14 +19,17 @@ deactivated user is refused here exactly as it is there — one implementation, 
 
 What could NOT be shared is the write-route allowlist. `_user_for_api_key` gates writes by
 (method, path), and MCP multiplexes every call — reads included — over a single
-POST /api/mcp. Applied here it would refuse everything. Rather than reimplement
-authorization per tool, which is the parallel permission system the scope design
-deliberately avoided, this exposes READ TOOLS ONLY, with one exception: investigate_finding
-stores the analyst's report and an audit entry and sends the finding to the org's LLM, so
-it needs what its REST route needs, a console_write key (`_require_write_key`). OAuth
-grants carry no write scope, so they are refused. Adding `set_finding_status` and
-`sync_connector` needs a deliberate answer to "what is the allowlist when there are no
-routes", and that is a separate change.
+POST /api/mcp. Applied here it would refuse everything. So writes are per CONNECTION, not
+per route, and there are two:
+- `set_finding_status` (triage) runs only for an OAuth token whose grant carries
+  `palivane:triage` (asked for by the client, ticked by the person at consent), or a
+  console_write key (which may already PATCH a finding over REST). It calls the console's own
+  update_status as the caller, so role rules, the review record and the audit entry are the
+  console's.
+- `investigate_finding` stores the analyst's report and an audit entry and sends the finding
+  to the org's LLM, so it needs what its REST route needs, a console_write key
+  (`_require_write_key`); OAuth grants are refused for it for now.
+Any further write needs its own scope.
 
 Role still applies: tools whose REST equivalent is admin-gated call require_admin() on the
 resolved user, so an analyst's key sees exactly what an analyst sees. Calling an endpoint
@@ -84,6 +87,9 @@ _CALLER: contextvars.ContextVar[int | None] = contextvars.ContextVar("mcp_caller
 # which was used — an authorization rule that depended on the credential type would be a
 # second permission system.
 _OAUTH_USER: contextvars.ContextVar[int | None] = contextvars.ContextVar("mcp_oauth_user", default=None)
+# Whether this connection may triage: an OAuth grant with palivane:triage, or a console_write
+# key. Decided once by the wrapper from the credential; the one write tool checks it.
+_CAN_TRIAGE: contextvars.ContextVar[bool] = contextvars.ContextVar("mcp_can_triage", default=False)
 
 # stateless_http: this runs on Cloud Run behind a load balancer with min-instances 2, so
 # consecutive requests from one client can land on different instances. A session held in
@@ -113,6 +119,21 @@ mcp = FastMCP("palivane", stateless_http=True, streamable_http_path="/",
 
 def _oauth_user_id(token: str, db) -> int | None:
     """Resolve an OAuth access token to its subject, honouring expiry and revocation."""
+    grant = _oauth_grant(token, db)
+    return grant[0] if grant else None
+
+
+def triage_allowed(oauth_scopes: list[str] | None = None, key_scope: str | None = None) -> bool:
+    """May this connection triage? An OAuth grant that carries palivane:triage, or a
+    console_write key (which the REST allowlist already lets PATCH a finding). Nothing else."""
+    from .oauth_provider import TRIAGE_SCOPE
+    if oauth_scopes is not None:
+        return TRIAGE_SCOPE in oauth_scopes
+    return key_scope == "console_write"
+
+
+def _oauth_grant(token: str, db) -> tuple[int, list[str]] | None:
+    """(user id, granted scopes) for a live OAuth access token, or None."""
     from .models import OAuthToken as OAuthTokenRow, User
     from .security import hash_token
     row = (db.query(OAuthTokenRow)
@@ -132,7 +153,7 @@ def _oauth_user_id(token: str, db) -> int | None:
     # whose tenant doesn't match) must not carry the old grant into the new tenant.
     if row.tenant_id is None or row.tenant_id != user.tenant_id:
         return None
-    return user.id
+    return user.id, (row.scopes or "").split()
 
 
 def _utcnow_naive():
@@ -249,6 +270,24 @@ def _require_write_key() -> None:
 
 
 @mcp.tool()
+def set_finding_status(finding_id: int, status: str, reason: str = "") -> dict:
+    """Triage a finding: set its status to open, triaged, or dismissed (dismissing needs an
+    admin; `reason` for a dismissal is one of false_positive, expected, accepted_risk,
+    duplicate). Recorded in the audit log under your name. Needs a connection that was
+    allowed to triage: reconnect and tick "Change a finding's status" if this is refused."""
+    if not _CAN_TRIAGE.get():
+        raise HTTPException(
+            status_code=403,
+            detail="this connection is read-only. Reconnect Palivane and allow \"Change a "
+                   "finding's status\" on the consent screen, or use a console_write key.")
+    from . import main
+    from .schemas import StatusUpdate
+    body = StatusUpdate(status=status, via="mcp",
+                        reason=reason if status == "dismissed" else "")
+    return _read(main.update_status, admin=False, finding_id=finding_id, body=body)
+
+
+@mcp.tool()
 def investigate_finding(finding_id: int) -> dict:
     """Run the analyst on a finding: it gathers the finding's context and the actor's other
     recent findings and returns a written investigation with a RECOMMENDED action (it never
@@ -305,17 +344,20 @@ def build_asgi_app():
                 # An OAuth access token. It resolves to the user who approved consent, which
                 # is the same identity model as a console key — the tools cannot tell them
                 # apart, and neither can outrank the person behind them.
-                user_id = _oauth_user_id(token, db)
-                if user_id is None:
+                grant = _oauth_grant(token, db)
+                if grant is None:
                     return await _unauthorized("invalid or expired access token")(scope, receive, send)
+                user_id, scopes = grant
                 from .lifecycle import ensure_active
                 from .models import User
                 ensure_active(db, db.get(User, user_id).tenant_id)   # suspended org: refused
                 key_id, oauth_user = None, user_id
+                can_triage = triage_allowed(oauth_scopes=scopes)
             else:
                 key = authenticate_console_key(token, db)
                 user_for_console_key(key, db)    # rejects a key whose user is gone
                 key_id, oauth_user = key.id, None
+                can_triage = triage_allowed(key_scope=key.scope)
         except HTTPException as e:
             return await _unauthorized(str(e.detail))(scope, receive, send)
         except Exception:                    # never leak an internal error as an auth answer
@@ -325,10 +367,12 @@ def build_asgi_app():
             _close(db, gen)
         tok = _CALLER.set(key_id)
         utok = _OAUTH_USER.set(oauth_user)
+        ttok = _CAN_TRIAGE.set(can_triage)
         try:
             return await inner(scope, receive, send)
         finally:
             _CALLER.reset(tok)
             _OAUTH_USER.reset(utok)
+            _CAN_TRIAGE.reset(ttok)
 
     return app

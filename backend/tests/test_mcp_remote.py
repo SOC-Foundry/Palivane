@@ -97,17 +97,19 @@ def test_admin_gated_tool_follows_the_users_role(client, db_factory):
         db.close()
 
 
-def test_only_read_tools_are_exposed(client):
-    """No write tool exists yet — deliberately, because the allowlist that gates writes on
-    the REST path has no equivalent here. If one is added, this test should be the thing
-    that makes someone decide how it is authorized."""
+def test_the_one_write_tool_is_triage(client):
+    """Writes here are authorized per connection, not per route (the REST allowlist has no
+    equivalent on one multiplexed POST), and exactly one exists: set_finding_status, gated
+    by the palivane:triage scope or a console_write key (test_mcp_triage.py). Any new write
+    tool should fail this test until someone decides how IT is authorized."""
     from app.mcp_remote import mcp
     names = {t.name for t in mcp._tool_manager.list_tools()}
     assert names == {"list_findings", "get_finding", "ai_tool_inventory",
-                     "list_connectors", "gateway_usage", "investigate_finding"}
-    # investigate_finding recommends, never changes status, but it stores its report, so it
-    # needs a console_write key (test_mcp_investigate_scope.py).
-    assert not {n for n in names if "set_" in n or "sync" in n}
+                     "list_connectors", "gateway_usage", "investigate_finding",
+                     "set_finding_status"}
+    # investigate_finding never changes status, but it stores its report, so it needs a
+    # console_write key (test_mcp_investigate_scope.py); triage needs palivane:triage or one.
+    assert {n for n in names if "set_" in n or "sync" in n} == {"set_finding_status"}
 
 
 def test_bare_path_answers_the_challenge_instead_of_redirecting(raw_client):
