@@ -21,6 +21,11 @@ from .database import Base
 from .signal_summary import top_signals
 
 
+def _audit_redact(detail):
+    from .audit_log import redact
+    return redact(detail)
+
+
 def _judge_opt_in() -> bool:
     from .config import settings
     return bool(settings.judge_opt_in)
@@ -526,7 +531,8 @@ class AuditLog(Base):
             "id": self.id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "actor": self.actor, "action": self.action,
-            "target": self.target, "detail": self.detail or {},
+            # Redacted on read too, for any row written before redaction existed.
+            "target": self.target, "detail": _audit_redact(self.detail or {}),
         }
 
 
