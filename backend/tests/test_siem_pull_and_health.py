@@ -10,8 +10,10 @@ from app.crypto import unseal
 from app.models import Tenant
 
 
-def _mint_key(client, label="siem-poller"):
-    r = client.post("/api/apikeys", json={"label": label, "actor": "siem@acme.com"})
+def _mint_key(client, label="siem-poller", scope="console_read"):
+    # A SIEM poller holds a console-scoped key minted by an admin (it acts as that admin).
+    r = client.post("/api/apikeys", json={"label": label, "actor": "siem@acme.com",
+                                          "scope": scope})
     assert r.status_code == 200, r.text
     return r.json()["token"]
 
@@ -85,10 +87,46 @@ def test_audit_export_accepts_api_key_and_since(client, raw_client):
 def test_tenant_export_stays_session_admin_only(client, raw_client):
     # The full-org export (config, users, SSO setup) is deliberately NOT reachable with
     # an ingest API key — only a console admin session.
-    key = _mint_key(client)
+    key = _mint_key(client, scope="ingest")
     r = raw_client.get("/api/export/tenant", headers={"Authorization": f"Bearer {key}"})
     assert r.status_code == 401
     assert client.get("/api/export/tenant").status_code == 200
+
+
+def test_capture_keys_cannot_export(client, raw_client, db_factory):
+    """Ingest keys are capture credentials that sit on laptops: a user's own browser-extension
+    key, a fleet key in an MDM script. Accepting them let anyone holding one download the
+    whole org's findings and audit trail. They get the same 401 as an invented key."""
+    _persist_finding(client)
+    from app import users as users_cli
+    db = db_factory()
+    users_cli.create_user(db, "acme", "analyst@acme.com", "password123", "analyst")
+    db.close()
+    at = client.post("/api/auth/login", json={"email": "analyst@acme.com",
+                                              "password": "password123"}).json()["access_token"]
+    own_extension_key = raw_client.post("/api/extension/token?device=lap", headers={
+        "Authorization": f"Bearer {at}"}).json()["token"]
+    fleet_key = _mint_key(client, label="fleet", scope="ingest")
+    bogus = raw_client.get("/api/export/findings", headers={"X-Palivane-Token": "ak_bogusbogusbogus"})
+    for key in (own_extension_key, fleet_key):
+        for path in ("/api/export/findings", "/api/audit/export"):
+            r = raw_client.get(path, headers={"X-Palivane-Token": key})
+            assert r.status_code == 401, (path, r.status_code)
+            assert r.text == bogus.text                 # doesn't confirm the key is real
+
+
+def test_console_key_stops_exporting_when_its_admin_is_demoted(client, raw_client, db_factory):
+    """The key acts as the admin who minted it; exports are admin-only, so it follows the role."""
+    key = _mint_key(client)
+    h = {"Authorization": f"Bearer {key}"}
+    assert raw_client.get("/api/export/findings", headers=h).status_code == 200
+    from app.models import ApiKey, User
+    db = db_factory()
+    owner = db.get(User, db.query(ApiKey).filter(ApiKey.prefix == key[:11]).one().user_id)
+    owner.role = "analyst"
+    db.commit(); db.close()
+    assert raw_client.get("/api/export/findings", headers=h).status_code == 403
+    assert raw_client.get("/api/audit/export", headers=h).status_code == 403
 
 
 # --- fix 2: delivery visibility --------------------------------------------------------
