@@ -973,7 +973,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                   <label>Name<input value={org.name} onChange={setField("name")} /></label>
                   <label>LLM judge
                     <select value={org.judge} onChange={setField("judge")}>
-                      <option value="inherit">Inherit (global)</option>
+                      <option value="inherit">{tenant?.judge_opt_in ? "Default (off)" : "Inherit (global)"}</option>
                       <option value="on">On</option>
                       <option value="off">Off (no content sent to the LLM provider)</option>
                     </select>

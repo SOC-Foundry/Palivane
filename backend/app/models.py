@@ -21,6 +21,11 @@ from .database import Base
 from .signal_summary import top_signals
 
 
+def _judge_opt_in() -> bool:
+    from .config import settings
+    return bool(settings.judge_opt_in)
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -239,6 +244,8 @@ class Tenant(Base):
                 "evidence_context": self.evidence_context,
                 "ml_capture": bool(self.ml_capture),
                 "judge_enabled": self.judge_enabled, "retention_days": self.retention_days,
+                # What "inherit" means here: off until switched on (opt-in deployments).
+                "judge_opt_in": _judge_opt_in(),
                 "rate_limit": self.rate_limit, "ingest_rate_limit": self.ingest_rate_limit or 0,
                 "mcp_allowed_servers": self.mcp_allowed_servers or "",
                 "ide_ext_allowed": self.ide_ext_allowed or "",

@@ -109,6 +109,10 @@ jobs:
           JUDGE_PROVIDER: ${{ vars.JUDGE_PROVIDER }}
           JUDGE_MODEL: ${{ vars.JUDGE_MODEL }}
           PALIVANE_JUDGE_PLAN_GATED: ${{ vars.PALIVANE_JUDGE_PLAN_GATED }}
+          # Hosted: an org's content reaches the operator's judge only after it switches the
+          # judge On (FAQ: "only if you switch on the optional LLM judge"). Defaults to true
+          # with no repo variable; set the variable to "false" to override.
+          PALIVANE_JUDGE_OPT_IN: ${{ vars.PALIVANE_JUDGE_OPT_IN || 'true' }}
           PALIVANE_ALLOW_SIGNUP: ${{ vars.PALIVANE_ALLOW_SIGNUP }}
           PALIVANE_ENCRYPT_FINDINGS: ${{ vars.PALIVANE_ENCRYPT_FINDINGS }}
           # Cloud Run autoscaling. Empty -> deploy.sh defaults (min 1 / max 4). A warm pool
