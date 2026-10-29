@@ -10,8 +10,11 @@ from app import totp
 from app.main import app
 
 
-def _code(secret: str) -> str:
-    return totp._hotp(secret, int(time.time() // 30))
+def _code(secret: str, ahead: int = 0) -> str:
+    """The code for the current time-step, or `ahead` steps later. Each step's code is
+    single-use (enrolment's confirm included), and verify accepts one step either side of
+    now, so the use after enrolment takes ahead=1."""
+    return totp._hotp(secret, int(time.time() // 30) + ahead)
 
 
 def _enroll(client) -> tuple[str, list[str]]:
@@ -43,7 +46,7 @@ def test_login_requires_second_factor_then_totp(client):
     assert "access_token" not in lr.json()
     challenge = lr.json()["challenge"]
 
-    vr = raw.post("/api/auth/mfa/verify", json={"challenge": challenge, "code": _code(secret)})
+    vr = raw.post("/api/auth/mfa/verify", json={"challenge": challenge, "code": _code(secret, 1)})
     assert vr.status_code == 200 and "access_token" in vr.json()
     token = vr.json()["access_token"]
     assert raw.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"}).status_code == 200
@@ -69,7 +72,7 @@ def test_bad_code_rejected(client):
 
 def test_disable_returns_to_password_only(client):
     secret, _ = _enroll(client)
-    r = client.post("/api/auth/mfa/disable", json={"code": _code(secret)})
+    r = client.post("/api/auth/mfa/disable", json={"code": _code(secret, 1)})
     assert r.status_code == 200 and r.json()["mfa_enabled"] is False
     # Disabling ends every session; this one carries on with the token it was handed.
     me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {r.json()['access_token']}"})
@@ -92,7 +95,7 @@ def test_mfa_challenge_is_not_a_session_token(client):
 def test_totp_code_cannot_be_replayed(client):
     secret, _ = _enroll(client)
     raw = TestClient(app)
-    code = _code(secret)
+    code = _code(secret, 1)
     ch = raw.post("/api/auth/login", json={"email": "admin@acme.com", "password": "password123"}).json()["challenge"]
     assert raw.post("/api/auth/mfa/verify", json={"challenge": ch, "code": code}).status_code == 200
     # Same code (same time-step) presented again -> replay, rejected.
@@ -127,16 +130,89 @@ def test_disable_code_cannot_be_guessed(client, monkeypatch):
     for _ in range(2):
         assert client.post("/api/auth/mfa/disable", json={"code": wrong}).status_code == 400
     # Throttled now, even with the right code.
-    assert client.post("/api/auth/mfa/disable", json={"code": _code(secret)}).status_code == 429
+    assert client.post("/api/auth/mfa/disable", json={"code": _code(secret, 1)}).status_code == 429
 
 
 def test_disable_ends_other_sessions(client):
-    secret, _ = _enroll(client)
+    secret, recovery = _enroll(client)
     raw = TestClient(app)
     ch = raw.post("/api/auth/login", json={"email": "admin@acme.com",
                                            "password": "password123"}).json()["challenge"]
     other = raw.post("/api/auth/mfa/verify",
-                     json={"challenge": ch, "code": _code(secret)}).json()["access_token"]
-    r = client.post("/api/auth/mfa/disable", json={"code": _code(secret)})
+                     json={"challenge": ch, "code": _code(secret, 1)}).json()["access_token"]
+    r = client.post("/api/auth/mfa/disable", json={"code": recovery[0]})
     assert r.status_code == 200
     assert raw.get("/api/auth/me", headers={"Authorization": f"Bearer {other}"}).status_code == 401
+
+
+# --- the guess limit, single-use codes, and what disabling ends ------------------------------
+
+def test_password_logins_do_not_reset_the_mfa_guess_limit(client, monkeypatch):
+    """Clearing the failure count at the password step gave anyone holding the password a
+    fresh budget of TOTP guesses on every login (QA: 40 wrong guesses, no 429)."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "login_max_fails", 5)
+    secret, _ = _enroll(client)
+    wrong = "999999" if _code(secret, 1) != "999999" and _code(secret) != "999999" else "111111"
+    raw = TestClient(app)
+    codes = []
+    for _ in range(3):                      # three fresh logins, guessing each time
+        lr = raw.post("/api/auth/login", json={"email": "admin@acme.com",
+                                               "password": "password123"})
+        if lr.status_code == 429:
+            codes.append(429)
+            break
+        ch = lr.json()["challenge"]
+        for _ in range(4):
+            codes.append(raw.post("/api/auth/mfa/verify",
+                                  json={"challenge": ch, "code": wrong}).status_code)
+    assert 429 in codes and codes.index(429) <= 5   # throttled across logins, not per login
+
+
+def test_the_code_that_confirmed_cannot_sign_in(client):
+    secret = client.post("/api/auth/mfa/setup").json()["secret"]
+    code = _code(secret)
+    assert client.post("/api/auth/mfa/confirm", json={"code": code}).status_code == 200
+    raw = TestClient(app)
+    ch = raw.post("/api/auth/login", json={"email": "admin@acme.com",
+                                           "password": "password123"}).json()["challenge"]
+    assert raw.post("/api/auth/mfa/verify", json={"challenge": ch, "code": code}).status_code == 401
+
+
+def test_confirm_cannot_reissue_recovery_codes_once_on(client):
+    secret, first = _enroll(client)
+    r = client.post("/api/auth/mfa/confirm", json={"code": _code(secret, 1)})
+    assert r.status_code == 400 and "already enabled" in r.json()["detail"]
+    raw = TestClient(app)                   # the original recovery codes still work
+    ch = raw.post("/api/auth/login", json={"email": "admin@acme.com",
+                                           "password": "password123"}).json()["challenge"]
+    assert raw.post("/api/auth/mfa/verify", json={"challenge": ch, "code": first[0]}).status_code == 200
+
+
+def test_a_used_code_cannot_disable_mfa(client):
+    secret, _ = _enroll(client)
+    used = _code(secret, 1)
+    raw = TestClient(app)
+    ch = raw.post("/api/auth/login", json={"email": "admin@acme.com",
+                                           "password": "password123"}).json()["challenge"]
+    assert raw.post("/api/auth/mfa/verify", json={"challenge": ch, "code": used}).status_code == 200
+    assert client.post("/api/auth/mfa/disable", json={"code": used}).status_code == 400
+    assert client.get("/api/auth/me").json()["user"]["mfa_enabled"] is True
+
+
+def test_disabling_mfa_revokes_oauth_grants(client, db_factory):
+    from datetime import timedelta
+
+    from app.models import OAuthToken, User
+    from app.oauth_provider import _now
+    secret, recovery = _enroll(client)
+    db = db_factory()
+    admin = db.query(User).filter(User.email == "admin@acme.com").one()
+    db.add(OAuthToken(token_hash="h-mfa", kind="refresh", client_id="c1", user_id=admin.id,
+                      tenant_id=admin.tenant_id, scopes="palivane:read",
+                      expires_at=_now() + timedelta(days=1)))
+    db.commit(); db.close()
+    assert client.post("/api/auth/mfa/disable", json={"code": recovery[0]}).status_code == 200
+    db = db_factory()
+    assert db.query(OAuthToken).filter(OAuthToken.token_hash == "h-mfa").one().revoked_at
+    db.close()
