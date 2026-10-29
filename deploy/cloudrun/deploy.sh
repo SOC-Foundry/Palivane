@@ -47,6 +47,8 @@ ENV_VARS+="|JUDGE_PROVIDER=${JUDGE_PROVIDER:-auto}"
 [ -n "${JUDGE_MODEL:-}" ] && ENV_VARS+="|JUDGE_MODEL=${JUDGE_MODEL}"
 # Judge plan gating (SaaS: the operator-funded judge is an Enterprise entitlement).
 [ -n "${PALIVANE_JUDGE_PLAN_GATED:-}" ] && ENV_VARS+="|PALIVANE_JUDGE_PLAN_GATED=${PALIVANE_JUDGE_PLAN_GATED}"
+# Judge opt-in: an org's content reaches the operator-funded judge only after it chooses On.
+ENV_VARS+="|PALIVANE_JUDGE_OPT_IN=${PALIVANE_JUDGE_OPT_IN:-true}"
 # Public deploy: signup OFF by default (else the internet can self-register orgs). Set
 # PALIVANE_ALLOW_SIGNUP=true explicitly for an open multi-tenant deployment.
 ENV_VARS+="|PALIVANE_ALLOW_SIGNUP=${PALIVANE_ALLOW_SIGNUP:-false}"
