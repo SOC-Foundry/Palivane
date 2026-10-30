@@ -213,6 +213,10 @@ async def lifespan(_app: FastAPI):
                         # stay listed as the record of what was allowed).
                         from .allowlist import prune as _prune_allowlist
                         await asyncio.to_thread(_prune_allowlist, db)
+                        # Each org's findings retention (Settings), which only the manual
+                        # purge button used to apply.
+                        from .lifecycle import apply_retention
+                        await asyncio.to_thread(apply_retention, db)
                     # Spent OAuth codes and dead tokens. Registration is open and every
                     # refresh writes a new pair, so these tables only grow otherwise. ~hourly.
                     if ticks % 12 == 0:
@@ -3470,20 +3474,15 @@ def my_finding_respond(finding_id: int, body: dict,
 def purge_findings(current: User = Depends(require_admin), db: Session = Depends(get_db)):
     """Delete this tenant's findings older than its retention window (0 = keep forever).
     Idempotent; run it from a scheduler for ongoing enforcement."""
-    from datetime import datetime, timedelta, timezone
+    from .lifecycle import purge_expired_findings
     tenant = db.get(Tenant, current.tenant_id)
     days = tenant.retention_days if tenant else 0
-    if not days:
-        return {"deleted": 0, "retention_days": 0}
-    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
-    n = (db.query(Finding)
-         .filter(Finding.tenant_id == current.tenant_id, Finding.created_at < cutoff)
-         .delete())
-    db.commit()
-    from . import audit_log
-    audit_log.record(db, current.tenant_id, current.email, "findings.purge",
-                     detail={"deleted": n, "retention_days": days})
-    return {"deleted": n, "retention_days": days}
+    n = purge_expired_findings(db, tenant) if tenant else 0
+    if days:
+        from . import audit_log
+        audit_log.record(db, current.tenant_id, current.email, "findings.purge",
+                         detail={"deleted": n, "retention_days": days})
+    return {"deleted": n, "retention_days": days or 0}
 
 
 @app.post("/api/findings/dismiss-benign")
