@@ -23,12 +23,15 @@ async function req(path, opts = {}) {
   if (res.ok) return res.json();
 
   // Prefer the server's own explanation. FastAPI puts it in `detail`, a string for our
-  // HTTPExceptions, a list for 422 validation errors (left to the raw fallback below).
+  // HTTPExceptions, a list for 422 validation errors (its first message is shown).
   const body = await res.text();
   let detail = "";
   try {
     const parsed = JSON.parse(body);
     if (typeof parsed.detail === "string") detail = parsed.detail;
+    else if (Array.isArray(parsed.detail) && typeof parsed.detail[0]?.msg === "string") {
+      detail = parsed.detail[0].msg.replace(/^Value error, /, "");
+    }
   } catch { /* not JSON, fall through to the raw body */ }
 
   if (res.status === 401) {
