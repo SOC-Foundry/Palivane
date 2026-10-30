@@ -416,6 +416,8 @@ def _replay(chunks, receive, pending=None):
     return _rcv
 
 
+from .audit_log import RequestCredential as _RequestCredential  # noqa: E402
+app.add_middleware(_RequestCredential)   # audit entries name an API key's use
 # Outermost middleware (added last): sees raw receive before any body parsing.
 app.add_middleware(_BodySizeLimitMiddleware, max_bytes=settings.max_body_bytes)
 

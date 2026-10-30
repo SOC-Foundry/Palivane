@@ -268,8 +268,11 @@ def test_concurrent_code_exchange_mints_once(provider):
     _register(p)
     _mint_code(Session, "code-race", "c1", uid, tid)
     a = _run(p.load_authorization_code(_client(), "code-race"))
-    b = _run(p.load_authorization_code(_client(), "code-race"))
-    assert a is not None and b is not None
+    # Loading burns the code for any LATER load (one attempt per code), so the race is two
+    # requests that both read it before either wrote: the second holds the same object.
+    b = a.model_copy()
+    assert a is not None
+    assert _run(p.load_authorization_code(_client(), "code-race")) is None
     won = _run(p.exchange_authorization_code(_client(), a))
     with pytest.raises(ValueError):
         _run(p.exchange_authorization_code(_client(), b))

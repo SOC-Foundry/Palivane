@@ -135,6 +135,12 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
         uris = [str(u) for u in (client_info.redirect_uris or [])]
         if not uris:
             raise ValueError("at least one redirect_uri is required")
+        # Every client here is public (get_client: auth method `none`, PKCE is the proof). The
+        # SDK minted a client_secret for anyone who didn't ask for `none`, and it was never
+        # stored or checked: drop it from the response, which is built from this object.
+        client_info.client_secret = None
+        client_info.client_secret_expires_at = None
+        client_info.token_endpoint_auth_method = "none"
         bad = [u for u in uris if not valid_redirect_uri(u)]
         if bad:
             # Registration is open, so this list is attacker-controlled. A javascript: or
@@ -204,10 +210,18 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
                 return None
             if row.expires_at and row.expires_at < _now():
                 return None
+            expires_at = row.expires_at
+            # One attempt per code. The SDK checks the PKCE verifier only after this returns,
+            # so a wrong verifier used to leave the code live for another try. Expiring the row
+            # now burns it for any later load; this request's exchange still proceeds, since
+            # the SDK checks the expiry on the object returned here and exchange checks only
+            # used_at.
+            row.expires_at = _now()
+            db.commit()
             return AuthorizationCode(
                 code=authorization_code,
                 scopes=(row.scopes or READ_SCOPE).split(),
-                expires_at=row.expires_at.replace(tzinfo=timezone.utc).timestamp(),
+                expires_at=expires_at.replace(tzinfo=timezone.utc).timestamp(),
                 client_id=row.client_id,
                 code_challenge=row.code_challenge or "",
                 redirect_uri=row.redirect_uri,
