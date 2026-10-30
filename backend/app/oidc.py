@@ -264,6 +264,12 @@ def validate_id_token(meta: dict, issuer: str, client_id: str, id_token: str,
         raise OIDCError(f"ID token validation failed: {e}")
     if nonce and claims.get("nonce") != nonce:
         raise OIDCError("OIDC nonce mismatch")
+    # OIDC Core 3.1.3.7: an ID token issued to several audiences must name who it was
+    # issued FOR (azp), and that must be us. Without the check, a token the IdP minted for
+    # another client that merely lists us as an extra audience was accepted.
+    aud, azp = claims.get("aud"), claims.get("azp")
+    if (isinstance(aud, list) and len(aud) > 1 or azp is not None) and azp != client_id:
+        raise OIDCError("ID token was issued to a different client (azp)")
     email = claims.get("email")
     if not email:
         raise OIDCError("ID token has no email claim")
