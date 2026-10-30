@@ -597,7 +597,11 @@ class TenantSAML(Base):
 
 class LoginAttempt(Base):
     """A failed login, for brute-force throttling. DB-backed so the limit holds across
-    workers/replicas (multi-tenant SaaS). Rows are pruned past the throttle window."""
+    workers/replicas (multi-tenant SaaS). Rows are pruned past the throttle window.
+
+    `kind` keeps the other public endpoints that share the table (signup, password-reset
+    requests, demo sessions) in their own budget: counted together, twenty demo visits from
+    an office's one address locked everyone behind it out of login."""
 
     __tablename__ = "login_attempts"
 
@@ -605,6 +609,7 @@ class LoginAttempt(Base):
     email = Column(String(320), index=True, nullable=False)
     ip = Column(String(64), index=True, default="")
     created_at = Column(DateTime, default=_utcnow, index=True)
+    kind = Column(String(16), nullable=False, default="login")   # login | signup | forgot | demo
 
 
 class Finding(Base):

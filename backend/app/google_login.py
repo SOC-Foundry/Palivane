@@ -138,6 +138,8 @@ def google_callback(request: Request, code: str = "", state: str = "",
             # Joining an SSO-only org goes through its IdP, not around it.
             raise HTTPException(status_code=403, detail=SSO_REQUIRED_DETAIL)
         if claim.auto_approve:
+            from .auth import check_seat
+            check_seat(db, tenant.id)
             user = User(tenant_id=tenant.id, email=email,
                         password_hash=hash_password(secrets.token_urlsafe(32)),
                         role="analyst", email_verified=True)

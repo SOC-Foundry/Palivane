@@ -292,10 +292,10 @@ def signup(body: SignupRequest, request: Request, db: Session = Depends(get_db))
     # Public endpoint — throttle org-creation abuse per IP (reuses the login limiter, so a
     # single source can't mass-create orgs or, once email is on, spam verification mails).
     ip = _client_ip(request)
-    if _throttled(db, email, ip):
+    if _throttled(db, email, ip, kind="signup"):
         raise HTTPException(status_code=429,
                             detail="too many signups from here, try again later")
-    db.add(LoginAttempt(email=email, ip=ip))
+    db.add(LoginAttempt(email=email, ip=ip, kind="signup"))
     db.commit()
     claim = domains_mod.match_verified(db, email)
     if claim is not None:
@@ -397,19 +397,25 @@ def _client_ip(request: Request) -> str:
     return peer
 
 
-def _throttled(db: Session, email: str, ip: str) -> bool:
+_LOGIN_CANDIDATES = 10   # accounts sharing an email that a password is checked against
+
+
+def _throttled(db: Session, email: str, ip: str, kind: str = "login") -> bool:
     """DB-backed brute-force check (shared across workers/replicas). Blocks if this email
-    OR this IP has too many recent failures. Prunes rows past the window."""
+    OR this IP has too many recent attempts of this `kind` (LoginAttempt.kind). Prunes rows
+    past the window."""
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.login_window)
     db.query(LoginAttempt).filter(LoginAttempt.created_at < cutoff).delete()
     db.commit()
     by_email = db.query(LoginAttempt).filter(
-        LoginAttempt.email == email, LoginAttempt.created_at >= cutoff).count()
+        LoginAttempt.kind == kind, LoginAttempt.email == email,
+        LoginAttempt.created_at >= cutoff).count()
     if by_email >= settings.login_max_fails:
         return True
     if ip:
         by_ip = db.query(LoginAttempt).filter(
-            LoginAttempt.ip == ip, LoginAttempt.created_at >= cutoff).count()
+            LoginAttempt.kind == kind, LoginAttempt.ip == ip,
+            LoginAttempt.created_at >= cutoff).count()
         if by_ip >= settings.login_ip_max_fails:
             return True
     return False
@@ -434,8 +440,11 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     # with someone's email turned their plain login into a 409. So the password is checked
     # against each candidate, padded to two so the time taken doesn't count them, and only a
     # caller whose password opens more than one account is asked to name the org. Verified
-    # accounts sort first so unverified signups can't crowd out the real one.
-    matches = q.order_by(User.email_verified.desc(), User.id).limit(2).all()
+    # accounts sort first so unverified signups can't crowd out the real one. Up to
+    # _LOGIN_CANDIDATES are checked, not two: whoever controls two orgs could add two
+    # verified users with someone's email and push the real account out of a two-row window.
+    # Only an email in more than two orgs pays for the extra checks.
+    matches = q.order_by(User.email_verified.desc(), User.id).limit(_LOGIN_CANDIDATES).all()
     hashes = [u.password_hash for u in matches] + [DUMMY_PASSWORD_HASH] * (2 - len(matches))
     opened = [verify_password(body.password, h) for h in hashes]
     unlocked = [u for u, ok in zip(matches, opened) if ok]
@@ -473,7 +482,8 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         return {"mfa_required": True, "challenge": challenge}
 
     # A completed sign-in clears this email's recent failures.
-    db.query(LoginAttempt).filter(LoginAttempt.email == email).delete()
+    db.query(LoginAttempt).filter(LoginAttempt.kind == "login",
+                                  LoginAttempt.email == email).delete()
     db.commit()
     return _session_response(user)
 
@@ -492,9 +502,9 @@ def forgot_password(body: ForgotRequest, request: Request, db: Session = Depends
     from . import email as email_mod
     email_addr = body.email.lower().strip()
     ip = _client_ip(request)
-    if not email_mod.enabled() or _throttled(db, email_addr, ip):
+    if not email_mod.enabled() or _throttled(db, email_addr, ip, kind="forgot"):
         return {"ok": True}
-    db.add(LoginAttempt(email=email_addr, ip=ip))   # count toward the throttle window
+    db.add(LoginAttempt(email=email_addr, ip=ip, kind="forgot"))   # its own throttle window
     db.commit()
 
     q = db.query(User).filter(User.email == email_addr, User.active.is_(True))
@@ -507,6 +517,11 @@ def forgot_password(body: ForgotRequest, request: Request, db: Session = Depends
             continue
         if not non_sso_signin_allowed(db, user):
             continue   # SSO-only org: there is no password to reset (same 200 either way)
+        if not user.email_verified:
+            # A signup nobody confirmed: whoever made it chose the org name and may not own the
+            # address, so a reset mail would put a stranger's org name in a real inbox (and
+            # login refuses the account until it is verified anyway).
+            continue
         token = create_token({"typ": "pwreset", "sub": str(user.id),
                               "tv": user.token_version}, ttl=1800)
         email_mod.send(
@@ -542,7 +557,8 @@ def reset_password(body: ResetRequest, db: Session = Depends(get_db)):
     user.password_hash = hash_password(body.password)
     user.token_version += 1
     revoke_oauth_grants(db, user)
-    db.query(LoginAttempt).filter(LoginAttempt.email == user.email).delete()
+    db.query(LoginAttempt).filter(LoginAttempt.kind == "login",
+                                  LoginAttempt.email == user.email).delete()
     db.commit()
     audit_log.record(db, user.tenant_id, user.email, "user.password_reset", target=user.email)
     return {"ok": True}
@@ -608,7 +624,8 @@ def mfa_verify(body: MFAVerify, request: Request, db: Session = Depends(get_db))
         db.commit()
         raise HTTPException(status_code=401, detail="invalid code")
 
-    db.query(LoginAttempt).filter(LoginAttempt.email == user.email).delete()
+    db.query(LoginAttempt).filter(LoginAttempt.kind == "login",
+                                  LoginAttempt.email == user.email).delete()
     db.commit()
     return _session_response(user)
 
@@ -780,6 +797,33 @@ def create_user(body: UserCreate, current: User = Depends(require_admin), db: Se
     return user.to_dict() | {"invited": invite}
 
 
+def check_seat(db: Session, tenant_id: int) -> None:
+    """403 when the org has no seat left for one more user (its users quota). Every path that
+    creates a user calls it: admin invites and join approvals always did, while SSO
+    auto-provisioning, Google domain auto-join and SCIM let an org grow past its plan."""
+    from .metering import check_resource_quota
+    check_resource_quota(db, tenant_id, "users",
+                         db.query(User).filter(User.tenant_id == tenant_id).count())
+
+
+def lock_admin_changes(db: Session, tenant_id: int) -> None:
+    """Serialize changes that can remove an admin, per org, for the rest of the transaction.
+
+    The last-admin check counts, then writes. Two admins deactivating each other at once
+    both counted two and both went through, leaving none. Locking the org's row (Postgres)
+    makes the second wait for the first and count again; SQLite ignores FOR UPDATE, so the
+    callers also re-count after their write (_still_has_admin)."""
+    db.query(Tenant.id).filter(Tenant.id == tenant_id).with_for_update().first()
+
+
+def _still_has_admin(db: Session, tenant_id: int) -> None:
+    """After an admin was removed (flushed, not committed): refuse if none is left."""
+    db.flush()
+    if _active_admin_count(db, tenant_id) < 1:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="cannot remove the last active admin")
+
+
 def _active_admin_count(db: Session, tenant_id: int) -> int:
     return (
         db.query(User)
@@ -808,8 +852,11 @@ def update_user(user_id: int, body: UserUpdate, current: User = Depends(require_
             raise HTTPException(status_code=400, detail="you cannot deactivate your own account")
 
     # Never leave the tenant with zero active admins.
-    if (demoting or (deactivating and user.role == "admin")) and _active_admin_count(db, current.tenant_id) <= 1:
-        raise HTTPException(status_code=400, detail="cannot remove the last active admin")
+    removing_admin = demoting or (deactivating and user.role == "admin")
+    if removing_admin:
+        lock_admin_changes(db, current.tenant_id)
+        if _active_admin_count(db, current.tenant_id) <= 1:
+            raise HTTPException(status_code=400, detail="cannot remove the last active admin")
 
     if body.role is not None:
         user.role = body.role
@@ -820,6 +867,8 @@ def update_user(user_id: int, body: UserUpdate, current: User = Depends(require_
         # revoke the person's API keys (what /offboard does, minus the audit framing).
         user.token_version = (user.token_version or 0) + 1
         revoke_user_keys(db, user)
+    if removing_admin:
+        _still_has_admin(db, current.tenant_id)
     db.commit()
     db.refresh(user)
     audit_log.record(db, current.tenant_id, current.email, "user.update",
@@ -895,8 +944,10 @@ def offboard_user(user_id: int, current: User = Depends(require_admin),
         raise HTTPException(status_code=404, detail="user not found")
     if user.id == current.id:
         raise HTTPException(status_code=400, detail="you cannot offboard your own account")
-    if user.role == "admin" and _active_admin_count(db, current.tenant_id) <= 1:
-        raise HTTPException(status_code=400, detail="cannot remove the last active admin")
+    if user.role == "admin":
+        lock_admin_changes(db, current.tenant_id)
+        if _active_admin_count(db, current.tenant_id) <= 1:
+            raise HTTPException(status_code=400, detail="cannot remove the last active admin")
 
     user.active = False
     # Bumping token_version is what actually ends a live session: every JWT carries `tv` and
@@ -905,6 +956,8 @@ def offboard_user(user_id: int, current: User = Depends(require_admin),
     user.token_version += 1
 
     keys = revoke_user_keys(db, user)
+    if user.role == "admin":
+        _still_has_admin(db, current.tenant_id)
     db.commit()
 
     audit_log.record(db, current.tenant_id, current.email, "user.offboard",
@@ -1955,6 +2008,7 @@ def _sso_complete(db: Session, tenant: Tenant, email: str, auto_provision: bool,
     if user is None:
         if not auto_provision:
             raise HTTPException(status_code=403, detail="no account for this email, ask an admin")
+        check_seat(db, tenant.id)
         user = User(tenant_id=tenant.id, email=email,
                     password_hash=hash_password(secrets.token_urlsafe(32)), role="analyst")
         db.add(user)
