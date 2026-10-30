@@ -156,6 +156,11 @@ class Tenant(Base):
     # sign-in. Effective only while OIDC or SAML is enabled (auth.sso_required), and admins
     # keep their password as break-glass, so a broken IdP config can't lock the org out.
     sso_required = Column(Boolean, nullable=False, default=False)
+    # A confirmed secret in what an agent's tool returned (a file read, command output) is
+    # stopped before it reaches the model, in monitor mode too, on the gateway and the
+    # Inference hooks. Default on; an org whose repos keep fake vendor keys in fixtures can
+    # turn it off, and those results are then scored and recorded but not stopped.
+    block_tool_result_secrets = Column(Boolean, nullable=False, default=True)
     # Per-org gateway tokenization (tri-state; NULL inherits GATEWAY_TOKENIZE). Separate
     # from the global because turning it on changes what a provider receives, so it has to
     # be possible to pilot on one org rather than all of them at once.
@@ -299,6 +304,7 @@ class Tenant(Base):
                 "ask_on_warn": self.ask_on_warn,
                 "scim_enabled": bool(self.scim_token_hash),
                 "sso_required": bool(self.sso_required),
+                "block_tool_result_secrets": self.block_tool_result_secrets is not False,
                 "gateway_tokenize": self.gateway_tokenize,
                 "redact_on_block": self.redact_on_block,
                 "gateway_block_severity": self.gateway_block_severity or "",

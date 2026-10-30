@@ -286,6 +286,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
     custom_pii_patterns: tenant?.custom_pii_patterns || "",
     oversharing_rules: tenant?.oversharing_rules || "",
     analyst_enabled: tenant?.analyst_enabled === true,
+    block_tool_result_secrets: tenant?.block_tool_result_secrets !== false,
   });
   const setField = (k) => (e) => setOrgState((o) => ({ ...o, [k]: e.target.value }));
 
@@ -316,6 +317,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
         custom_pii_patterns: org.custom_pii_patterns,
         oversharing_rules: org.oversharing_rules,
         analyst_enabled: org.analyst_enabled,
+        block_tool_result_secrets: org.block_tool_result_secrets,
       });
       onTenant?.(t);
       flash("Organization settings saved.");
@@ -1104,6 +1106,17 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                       redacted. Injection, risky-action and policy blocks are never offered this.
                     </span>
                   </label>
+                  <label className="check">
+                    <input type="checkbox" checked={org.block_tool_result_secrets}
+                           onChange={(e) => setOrgState((o) => ({ ...o, block_tool_result_secrets: e.target.checked }))} />
+                    Block live credentials in tool output (on by default)
+                  </label>
+                  <p className="muted" style={{ marginTop: -6, fontSize: 11.5 }}>
+                    When a coding agent's tool returns a confirmed credential (a file read of <code>.env</code>,
+                    command output), the request carrying it to the model is stopped, in monitor mode too,
+                    on the gateway and Claude Inference hooks. Turn this off if your repositories keep fake
+                    vendor keys in test fixtures: those results are then recorded as findings but not stopped.
+                  </p>
                   <label>Justified proceed (Human Firewall)
                     <select value={org.self_justify} onChange={setField("self_justify")}>
                       <option value="inherit">Inherit (global)</option>

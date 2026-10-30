@@ -196,11 +196,21 @@ def test_the_denied_message_stays_denied_when_it_is_resent(client, raw_client):
 def test_benign_prompts_and_tool_output_are_allowed(client, raw_client):
     key = _setup(client, enforce="on")
     assert _post(raw_client, key, _frame([_user(_text("please refactor the config loader"))])).json() == {"action": "allow"}
-    # v1 does not scan tool output: a tool_result-only turn has nothing to scan.
+    # Ordinary tool output passes; only a confirmed secret in it stops the frame (QA H5).
+    loop = [_user(_text("read the env file")), _assistant(),
+            _user({"type": "tool_result", "tool_use_id": "t", "tool_name": "Read",
+                   "content": "DEBUG=true\nPORT=8080", "is_error": False})]
+    assert _post(raw_client, key, _frame(loop, session="loop"), rid="req_4").json() == {"action": "allow"}
+
+
+def test_a_secret_in_tool_output_is_denied_in_monitor_mode_too(client, raw_client):
+    key = _setup(client, enforce="off")
     loop = [_user(_text("read the env file")), _assistant(),
             _user({"type": "tool_result", "tool_use_id": "t", "tool_name": "Read",
                    "content": f"AWS_ACCESS_KEY_ID={AWS}", "is_error": False})]
-    assert _post(raw_client, key, _frame(loop, session="loop"), rid="req_4").json() == {"action": "allow"}
+    v = _post(raw_client, key, _frame(loop, session="loop2"), rid="req_4b").json()
+    assert v["action"] == "deny" and "tool result" in v["deny_reason"]
+    assert AWS not in v["deny_reason"]
 
 
 def test_a_dangerous_tool_call_is_denied_under_enforce_only(client, raw_client):
