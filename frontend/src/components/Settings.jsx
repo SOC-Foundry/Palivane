@@ -347,18 +347,23 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
 
   // --- SIEM forwarding ---
   const [siemCfg, setSiemCfg] = useState({
-    url: tenant?.siem_url || "", token: "", min: tenant?.siem_min_severity || "high",
+    url: "", token: "", min: tenant?.siem_min_severity || "high",
     format: tenant?.siem_format || "json",
     tokenSet: !!tenant?.siem_token_set,
+    // The URL is write-only (it can carry a token): only whether it's set and its host come back.
+    urlSet: !!tenant?.siem_url_set, urlHost: tenant?.siem_url_host || "",
   });
-  async function saveSiem() {
+  async function saveSiem(clearUrl = false) {
     try {
-      const payload = { siem_url: siemCfg.url, siem_min_severity: siemCfg.min,
-                        siem_format: siemCfg.format };
+      const payload = { siem_min_severity: siemCfg.min, siem_format: siemCfg.format };
+      if (clearUrl) payload.siem_url = "";
+      else if (siemCfg.url) payload.siem_url = siemCfg.url;     // write-only; only send if changed
       if (siemCfg.token) payload.siem_token = siemCfg.token;   // write-only; only send if changed
       const t = await api.updateTenant(payload);
-      onTenant?.(t); setSiemCfg((s) => ({ ...s, token: "", tokenSet: !!t.siem_token_set,
-                                           })); flash("SIEM saved.");
+      onTenant?.(t); setSiemCfg((s) => ({ ...s, url: "", token: "", tokenSet: !!t.siem_token_set,
+                                           urlSet: !!t.siem_url_set,
+                                           urlHost: t.siem_url_host || "" }));
+      flash(clearUrl ? "SIEM forwarding removed." : "SIEM saved.");
     } catch (e) { err(e); }
   }
   // --- Anthropic Inference hooks (Claude Enterprise) ---
@@ -1267,8 +1272,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                  (complements the pull-based JSONL export above). Vendor-neutral, point it at any
                  HTTP collector.</p>
               <div className="field-grid">
-                <label className="field-wide">Collector URL
-                  <input placeholder="https://http-inputs.splunkcloud.com/services/collector"
+                <label className="field-wide">Collector URL {siemCfg.urlSet && <span className="muted">(set to {siemCfg.urlHost || "a URL"}, leave blank to keep)</span>}
+                  <input type="password" placeholder={siemCfg.urlSet ? "••••••••" : "https://http-inputs.splunkcloud.com/services/collector"}
                          value={siemCfg.url} onChange={(e) => setSiemCfg((s) => ({ ...s, url: e.target.value }))} /></label>
                 <label className="field-wide">Token {siemCfg.tokenSet && <span className="muted">(set, leave blank to keep)</span>}
                   <input type="password" placeholder={siemCfg.tokenSet ? "••••••••" : "HEC / bearer token"}
@@ -1288,7 +1293,9 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                   </select></label>
               </div>
               <div className="form-row" style={{ gap: 10 }}>
-                <button type="button" className="primary-btn slim" onClick={saveSiem}>Save SIEM</button>
+                <button type="button" className="primary-btn slim" onClick={() => saveSiem()}>Save SIEM</button>
+                {siemCfg.urlSet && <button type="button" className="mini-btn"
+                                            onClick={() => window.confirm("Stop forwarding findings to the SIEM?") && saveSiem(true)}>Remove</button>}
                 <button type="button" className="mini-btn" onClick={testSiem}>Send test event</button>
               </div>
               <SinkHealth sink="siem_http" />
