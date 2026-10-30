@@ -115,7 +115,7 @@ def test_capture_key_dies_with_its_actor(client, raw_client, db_factory):
 
 
 def test_console_key_dies_with_its_user(client, raw_client, db_factory):
-    token = _mint_key(client, scope="console_read")
+    token = _mint_key(client, scope="console_write")
     admin = _admin(db_factory)
     other = _add_user(db_factory, "admin2@acme.com", role="admin")
     assert other

@@ -114,6 +114,12 @@ def _resolve_api_key(token: str, db: Session) -> Principal:
         raise HTTPException(status_code=401, detail="API key expired")
     if (key.scope or "ingest") not in API_KEY_SCOPES:
         raise HTTPException(status_code=401, detail="invalid API key")
+    if key.scope == "console_read":
+        # Capture and the gateway write: every call records a finding and the gateway spends
+        # the org's model upstream. A read-only key does neither, as on the REST API.
+        raise HTTPException(status_code=403,
+                            detail="this API key is read-only (scope console_read); use an "
+                                   "ingest key to capture or call the gateway")
     if not _key_user_live(key, db):
         # The person this key belongs to was deactivated (or moved org). Offboarding revokes
         # their keys, but a key minted before that existed — or a bare `active: false` from
