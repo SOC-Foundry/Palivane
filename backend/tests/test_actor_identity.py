@@ -34,7 +34,7 @@ def _mint(client, label: str, scope: str = "ingest", actor: str = "") -> str:
 # --- a key's label is not a person --------------------------------------------------------
 
 def test_console_key_without_an_actor_resolves_to_its_bound_user(client, db_factory):
-    token = _mint(client, "new token", scope="console_read")
+    token = _mint(client, "new token", scope="console_write")
     r = client.post("/api/ingest/ai-usage",
                     json={"content": "prod key AKIAIOSFODNN7EXAMPLE", "destination": "chatgpt.com"},
                     headers={"X-Palivane-Token": token})

@@ -267,9 +267,19 @@ def validate_id_token(meta: dict, issuer: str, client_id: str, id_token: str,
     email = claims.get("email")
     if not email:
         raise OIDCError("ID token has no email claim")
-    # If the IdP asserts the email is unverified, don't map it onto an existing account — an
-    # unverified/aliased address could otherwise be claimed as someone else's in the tenant.
-    # Enforced only when the claim is present (many IdPs omit it), mirroring Google login.
-    if claims.get("email_verified") is False:
+    if not email_verified_ok(claims.get("email_verified")):
         raise OIDCError("ID token email is not verified by the identity provider")
     return dict(claims)
+
+
+def email_verified_ok(value) -> bool:
+    """Whether an ID token's email_verified claim allows the email to be used.
+
+    If the IdP asserts the email is unverified, don't map it onto an existing account: an
+    unverified or aliased address could otherwise be claimed as someone else's in the
+    tenant. Absent passes (many IdPs omit it), mirroring Google login. Some IdPs send it as
+    a string, and "false" is as unverified as false: it is truthy, and an `is False` test
+    let it through. Anything else that isn't true or "true" is refused."""
+    if value is None or value is True:
+        return True
+    return isinstance(value, str) and value.strip().lower() == "true"
