@@ -107,11 +107,20 @@ def process_acs(req: dict, cfg, sp_entity_id: str, acs_url: str,
     # Replay protection material: the assertion id is unique per assertion, and its
     # NotOnOrAfter bounds how long a captured response could be re-POSTed. The caller caches
     # accepted ids until they expire and rejects reuse (the SDK checks signature/conditions
-    # but not single-use). get_last_assertion_not_on_or_after() is a list of unix timestamps.
-    noa = auth.get_last_assertion_not_on_or_after() or []
+    # but not single-use). get_last_assertion_not_on_or_after() is ONE unix timestamp (an int,
+    # from parse_SAML_to_time) or None; it was read as a list, and max() of an int made every
+    # SAML sign-in a 500.
     return {"email": email, "nameid": nameid, "attributes": attrs,
             "assertion_id": auth.get_last_assertion_id() or "",
-            "not_on_or_after": max(noa) if noa else 0}
+            "not_on_or_after": _timestamp(auth.get_last_assertion_not_on_or_after())}
+
+
+def _timestamp(value) -> int:
+    """A NotOnOrAfter as a unix timestamp, 0 when absent. An int is what python3-saml
+    returns; a list (the latest wins) is tolerated in case a version changes the shape."""
+    if isinstance(value, (list, tuple)):
+        value = max((v for v in value if isinstance(v, (int, float))), default=0)
+    return int(value) if isinstance(value, (int, float)) and value > 0 else 0
 
 
 def sp_metadata(cfg, sp_entity_id: str, acs_url: str) -> str:
