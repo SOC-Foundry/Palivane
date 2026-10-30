@@ -174,8 +174,13 @@ def _allow(db, tenant_id, pattern, *, days, kind="command", hits=0, revoked=Fals
 
 @pytest.fixture
 def mailbox(monkeypatch):
+    # The report delivers with send_now (it has to know a mail went), and skips the week
+    # entirely while email is off.
     sent = []
-    monkeypatch.setattr(email_mod, "send", lambda to, subject, body: sent.append((to, subject, body)))
+    monkeypatch.setattr(email_mod, "enabled", lambda: True)
+    monkeypatch.setattr(email_mod, "send", lambda *a, **k: None)   # nothing else goes out
+    monkeypatch.setattr(email_mod, "send_now",
+                        lambda to, subject, body: sent.append((to, subject, body)) or True)
     return sent
 
 
@@ -285,15 +290,13 @@ def test_a_week_whose_mail_all_failed_is_retried(client, db_factory, monkeypatch
     db = db_factory()
     _enable(db)
 
-    def down(*a, **k):
-        raise RuntimeError("smtp down")
-
-    monkeypatch.setattr(email_mod, "send", down)
+    monkeypatch.setattr(email_mod, "enabled", lambda: True)
+    monkeypatch.setattr(email_mod, "send_now", lambda *a: False)    # provider refused every mail
     assert alerts.run_weekly_reports(db, _now()) == 0
     db.expire_all()
     assert _tenant(db).weekly_report_last is None                 # window handed back
     sent = []
-    monkeypatch.setattr(email_mod, "send", lambda to, s, b: sent.append(to))
+    monkeypatch.setattr(email_mod, "send_now", lambda to, s, b: sent.append(to) or True)
     assert alerts.run_weekly_reports(db, _now()) == 1 and sent == ["admin@acme.com"]
     assert alerts.run_weekly_reports(db, _now()) == 0 and len(sent) == 1
     db.close()

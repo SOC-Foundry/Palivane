@@ -121,7 +121,8 @@ def _send_cf(to: str, subject: str, body: str) -> None:
         raise RuntimeError(f"cloudflare email api: {out.get('errors')}")
 
 
-def _send_sync(to: str, subject: str, body: str) -> None:
+def _send_sync(to: str, subject: str, body: str) -> bool:
+    """Deliver one email now; True if the provider accepted it. Never raises."""
     try:
         if _gmail_configured():   # HTTPS — the only Gmail path that works from Cloud Run
             _send_gmail(to, subject, body)
@@ -129,8 +130,19 @@ def _send_sync(to: str, subject: str, body: str) -> None:
             _send_smtp(to, subject, body)
         else:
             _send_cf(to, subject, body)
+        return True
     except Exception as e:   # best-effort, like alert/SIEM delivery
         log.warning("email to %s (%r) failed: %s", to, subject, str(e)[:200])
+        return False
+
+
+def send_now(to: str, subject: str, body: str) -> bool:
+    """Deliver one email in this thread and say whether it went: for a caller that must know
+    (the weekly report, which marks its week sent). send() queues and cannot tell; it
+    reported every failure as delivered. False when email is disabled."""
+    if not enabled():
+        return False
+    return _send_sync(to, subject, body)
 
 
 def send(to: str, subject: str, body: str) -> None:
