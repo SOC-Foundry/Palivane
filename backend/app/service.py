@@ -316,6 +316,12 @@ def _keep_unscanned(before: list, after: list) -> list:
                           if s.effective_check == UNSCANNED_CHECK and id(s) not in kept]
 
 
+# The check key a confirmed leak's signal carries when a turned-off check filtered it out and
+# run_analysis put it back for the record (the leak blocks regardless). Not a catalog key, so
+# no disabled-checks setting removes it again.
+RECORDED_WHILE_OFF = "confirmed_leak_recorded"
+
+
 def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                  tenant_id: int | None = None, signal_filter=None,
                  persist_benign: bool = True, agent: str = "",
@@ -401,9 +407,19 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         from .scoring import score
         # Client-reported evidence is filtered like any other: an admin who turned a check
         # off should not have it come back just because the detection ran on the client.
-        sigs = list(verdict.signals) + list(extra_signals or [])
+        raw_signals = list(verdict.signals)
+        sigs = raw_signals + list(extra_signals or [])
         for f in filters:
             sigs = _keep_unscanned(sigs, f(sigs))
+        if confirmed_pre_filter and not _confirmed_leak(sigs):
+            # The leak still blocks (confirmed_leak below), so the record must say so: with
+            # its signal filtered out the verdict scored benign, and a blocked credential
+            # left no finding and no alert. Its own signals come back, marked.
+            from dataclasses import replace
+            sigs += [replace(x, check=RECORDED_WHILE_OFF,
+                             detail=f"{x.detail} (recorded although this check is off: "
+                                    "confirmed leaks are always recorded)")
+                     for x in raw_signals if _confirmed_leak([x])]
         verdict = score(sigs)
 
     # Origin-aware severity: a leak whose content matches a document we scanned at rest

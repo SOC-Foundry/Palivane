@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.policies import resolve_disabled
+from app.service import RECORDED_WHILE_OFF as RECORDED
 
 
 class _O:  # stand-in for a PolicyOverride row
@@ -57,8 +58,11 @@ def test_group_override_applies_end_to_end(client, raw_client):
         "disabled_checks": ["pii_exposure"]})
     assert r.status_code == 200
 
-    # A svc actor no longer flags PII; a normal actor still does.
-    assert "pii_exposure" not in {s["category"] for s in _post(raw_client, bot, payload)["signals"]}
+    # A svc actor no longer flags PII; a normal actor still does. (A confirmed SSN still
+    # blocks, so it is recorded, under its own check key rather than the turned-off one.)
+    off = _post(raw_client, bot, payload)["signals"]
+    assert "pii_exposure" not in {s["category"] for s in off if s.get("check") != RECORDED}
+    assert any(s.get("check") == RECORDED for s in off)
     assert "pii_exposure" in {s["category"] for s in _post(raw_client, human, payload)["signals"]}
 
     # It shows up in the catalog response, and delete removes it.
@@ -122,7 +126,8 @@ def test_channel_scoped_override_end_to_end(client, raw_client):
                              json={"content": payload, "destination": "https://chatgpt.com/",
                                    "user": "dave@acme.com", "tool": "claude-code"},
                              headers={"X-Palivane-Token": key}).json()
-    assert "pii_exposure" not in {s["category"] for s in scoped["signals"]}
+    assert "pii_exposure" not in {s["category"] for s in scoped["signals"]
+                                  if s.get("check") != RECORDED}
 
     other_tool = raw_client.post("/api/ingest/ai-usage",
                                  json={"content": payload, "destination": "https://chatgpt.com/",
