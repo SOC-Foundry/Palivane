@@ -6,6 +6,7 @@ from __future__ import annotations
 from app.detectors.base import AnalysisInput, Category, Surface
 from app.detectors.shadow_ai import ShadowAIDetector, _dea_ok, _npi_ok, confirmed_leak
 from app.redaction import redact_text
+from app.service import RECORDED_WHILE_OFF
 
 det = ShadowAIDetector()
 
@@ -126,8 +127,10 @@ def test_phi_check_is_toggleable(client):
     assert r.status_code == 200
     res = client.post("/api/analyze", json={
         "content": "Patient MRN 4859302 admitted for observation", "persist": False})
-    cats = {s["category"] for s in res.json()["signals"]}
+    cats = {s["category"] for s in res.json()["signals"] if s.get("check") != RECORDED_WHILE_OFF}
     assert "phi_exposure" not in cats                        # tenant turned the check off
+    # A confirmed record still blocks, so it is kept for the record under its own key.
+    assert any(s.get("check") == RECORDED_WHILE_OFF for s in res.json()["signals"])
     client.patch("/api/tenant", json={"disabled_checks": []})
     res2 = client.post("/api/analyze", json={
         "content": "Patient MRN 4859302 admitted for observation", "persist": False})

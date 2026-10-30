@@ -4,6 +4,7 @@ exception queue, simulator, exec summary."""
 from __future__ import annotations
 
 from app.policies import resolve_enforce
+from app.service import RECORDED_WHILE_OFF
 
 
 class _Ov:
@@ -165,7 +166,8 @@ def test_simulate_respects_actor_override(client):
     r = client.post("/api/simulate",
                     json={"content": "my SSN is 123-45-6789", "plane": "prompt",
                           "actor": "quiet@acme.com"}).json()
-    assert not any(s["category"] == "pii_exposure" for s in r["signals"])
+    assert not any(s["category"] == "pii_exposure" and s.get("check") != RECORDED_WHILE_OFF
+                   for s in r["signals"])
     assert r["matched_override"]["match"] == "quiet@acme.com"
 
 

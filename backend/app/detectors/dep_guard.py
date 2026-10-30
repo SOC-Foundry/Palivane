@@ -41,6 +41,10 @@ _INSTALL_PAYLOAD = re.compile(
 _NPM_INSTALL_KEYS = ("preinstall", "install", "postinstall", "prepare", "prepublish")
 # A non-registry source in a version spec (git/url/tarball/local path).
 _NONREGISTRY = re.compile(r"^(?:git\+|git:|https?:|file:|link:|github:|bitbucket:|gitlab:|/|\.\.?/)", re.I)
+# A PEP 508 direct reference: `name[extras] @ <url>`, which pip installs from that URL with
+# no index involved. It passed as a plain name before.
+_PEP508_DIRECT = re.compile(
+    r"^([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*@\s*[A-Za-z][A-Za-z0-9+.-]*:")
 
 
 # pip options whose VALUE is where packages come from: an editable path or VCS URL, an index,
@@ -241,7 +245,10 @@ class DepGuardDetector:
             line = raw.strip()
             if not line or line.startswith("#"):
                 continue
-            if _NONREGISTRY.search(line) or _PIP_SOURCE_OPTION.match(line):
+            direct = _PEP508_DIRECT.match(line)
+            if direct:
+                names.append(direct.group(1))   # still checked against the denylist
+            if _NONREGISTRY.search(line) or _PIP_SOURCE_OPTION.match(line) or direct:
                 # One signal per distinct line. Identical signals each add weight, so twelve
                 # copies of the same line once scored a harmless command a perfect 100.
                 if line[:80] not in seen:

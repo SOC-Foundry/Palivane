@@ -122,6 +122,8 @@ _SECRECY = re.compile(
     r"|don'?t\s+(?:mention|reveal|disclose)\s+(?:this|it|that|these|those)\b"
     r"|don'?t\s+(?:mention|reveal|disclose)\b[^\n.]{0,60}?\bto\s+" + _AUDIENCE + r"\b"
     r"|don'?t\s+let\s+the\s+user\b"
+    r"|never\s+(?:tell|inform|notify|alert)\s+" + _AUDIENCE + r"\b(?!\s+to\b)"
+    r"|never\s+(?:mention|reveal|disclose)\s+(?:this|it|that|these|those)\b"
     r"|keep (?:this|it) (?:secret|hidden|between us|to yourself|confidential)"
     r"|(?:silently|secretly|covertly|quietly)\s+(?:run|execute|send|do|perform|fetch|read)"
     r"|do not (?:log|report|surface|show)\s+(?:this|it|these)",
@@ -134,6 +136,17 @@ _TOOL_POISON = re.compile(
     r"(?:tool|command|function|action)[^\n.]{0,80}?(?:first|always|must|run|execute|fetch|read)"
     r"|always (?:run|execute|fetch|call|read)\b[^\n.]{0,60}?\bfirst\b"
     r"|(?:for|on) every (?:request|prompt|message|turn)[^\n.]{0,60}?(?:run|execute|send|fetch)",
+    re.IGNORECASE,
+)
+
+
+# Fetch-and-execute: a remote script piped straight into a shell (or PowerShell's iex). In a
+# rules file the agent runs whatever the URL serves at that moment. Install one-liners are
+# common in genuine docs too, so this is a moderate signal (warns), not a block on its own.
+_REMOTE_EXEC = re.compile(
+    r"\b(?:curl|wget)\b[^\n|]{0,200}\|\s*(?:sudo\s+)?(?:ba|z|da|k)?sh\b"
+    r"|\b(?:iex|invoke-expression)\b[^\n]{0,40}?\b(?:iwr|irm|invoke-webrequest|"
+    r"invoke-restmethod|downloadstring)\b",
     re.IGNORECASE,
 )
 
@@ -232,6 +245,19 @@ class AgentRulesDetector:
                        "tool-poisoning / rules-file injection.",
                 weight=0.7, confidence=0.75, detector=self.name,
                 evidence=m.group(0).strip()[:120], check="rules_tool_poison",
+            ))
+
+        # 5. Fetch-and-execute — whatever the URL serves when the agent reads this is what runs.
+        m = _find(_REMOTE_EXEC, norm, raw)
+        if m:
+            signals.append(Signal(
+                category=Category.TOOL_POISONING,
+                title="Remote script piped to a shell in an agent rules file",
+                detail="The file has the agent download a script and run it in one step "
+                       "(curl … | sh, iex (irm …)), so it executes whatever that URL serves at "
+                       "the time, unreviewed. Pin a version or vendor the script instead.",
+                weight=0.5, confidence=0.6, detector=self.name,
+                evidence=m.group(0).strip()[:120], check="rules_remote_exec",
             ))
 
         return signals
