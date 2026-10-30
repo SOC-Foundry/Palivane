@@ -16,8 +16,9 @@ from sqlalchemy.orm import Session
 from . import audit_log
 from .config import settings
 from .models import (
-    Agent, AgentRole, ApiKey, BrowserExtension, DiscoveredUsage, EnrollmentToken, Finding,
-    PolicyOverride, TenantOIDC, TenantSAML, TenantUpstream, User,
+    Agent, AgentRole, AllowEntry, ApiKey, BrowserExtension, CorpusSample, DiscoveredUsage,
+    EnrollmentToken, ExceptionRecord, Finding, JoinRequest, PolicyOverride, SaasConnector,
+    SensorHeartbeat, TenantDomain, TenantOIDC, TenantSAML, TenantUpstream, UpgradeRequest, User,
 )
 
 _FINDINGS_CAP = 50000
@@ -81,6 +82,20 @@ def build_tenant_export(db: Session, tenant, include_content: bool = False,
     browser_exts = db.query(BrowserExtension).filter(BrowserExtension.tenant_id == tid).all()
     from .crypto import unwrap_dek
     dek = unwrap_dek(tenant.dek_wrapped) if tenant.dek_wrapped else None
+    # The rest of what the org owns. They used to be left out, so "everything we hold about
+    # you" wasn't. Secrets stay out (each to_dict already omits them); the ML corpus holds
+    # prompt text, so it rides only with include_content.
+    more = {name: [r.to_dict() for r in db.query(model).filter(model.tenant_id == tid)
+                   .order_by(model.id).limit(_FINDINGS_CAP)]
+            for name, model in (("allowlist", AllowEntry), ("exception_requests", ExceptionRecord),
+                                ("saas_connectors", SaasConnector),
+                                ("sensor_heartbeats", SensorHeartbeat),
+                                ("domains", TenantDomain), ("join_requests", JoinRequest),
+                                ("upgrade_requests", UpgradeRequest))}
+    if include_content:
+        more["ml_corpus"] = [c.to_dict(dek) for c in db.query(CorpusSample)
+                             .filter(CorpusSample.tenant_id == tid).order_by(CorpusSample.id)
+                             .limit(_FINDINGS_CAP)]
 
     return {
         "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -103,5 +118,7 @@ def build_tenant_export(db: Session, tenant, include_content: bool = False,
                    "enrollment_tokens": len(tokens), "findings": len(findings),
                    "agents": len(agents), "agent_roles": len(roles),
                    "policy_overrides": len(overrides), "discovered_usage": len(discovered),
-                   "browser_extensions": len(browser_exts)},
+                   "browser_extensions": len(browser_exts),
+                   **{k: len(v) for k, v in more.items()}},
+        **more,
     }

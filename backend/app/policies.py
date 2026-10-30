@@ -300,7 +300,16 @@ def checks_signal_filter(disabled: set[str]):
     if not disabled:
         return None
     active = set(disabled) | {_ALIASES[d] for d in disabled if d in _ALIASES}
-    return lambda signals: [s for s in signals if s.effective_check not in active]
+
+    def off(s) -> bool:
+        # A detector's own sub-key (prompt_injection_ml, rules_secrecy, …) is not something an
+        # admin can toggle, so it follows its category: turning off prompt injection used to
+        # leave the ML classifier's injection signal firing. Catalog sub-checks
+        # (hidden_characters, …) keep their own switch.
+        check = s.effective_check
+        return check in active or (check not in VALID_KEYS and s.category.value in active)
+
+    return lambda signals: [s for s in signals if not off(s)]
 
 
 def catalog_for(disabled: set[str]) -> dict:
