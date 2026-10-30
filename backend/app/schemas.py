@@ -531,6 +531,7 @@ class AgentUpdate(BaseModel):
     oidc_subject: str | None = Field(None, max_length=320)   # JWT subject mapping
     rate_limit: int | None = Field(None, ge=0)      # gateway req/min (0 = inherit tenant)
     block_severity: Literal["", "low", "suspicious", "high", "critical"] | None = None
+    active: bool | None = None                      # re-enable (or disable) explicitly
 
 
 class AgentTokenRequest(BaseModel):
@@ -551,7 +552,7 @@ class AgentRoleIn(BaseModel):
 
 class EnrollmentTokenCreate(BaseModel):
     label: str = ""
-    max_uses: int | None = None       # None = unlimited
+    max_uses: int | None = Field(None, ge=1)   # None = unlimited; 0 or less made a dead token
     expires_in_days: int | None = None
 
 
@@ -585,7 +586,7 @@ class ProvisionRequest(BaseModel):
     route_gateway: bool = False
     # Bound lifetime for the fleet-wide enrollment token baked into the installer. It's a
     # reusable credential in a file, so it expires by default (override/disable explicitly).
-    max_uses: int | None = None       # None = unlimited uses within the validity window
+    max_uses: int | None = Field(None, ge=1)  # None = unlimited uses within the validity window
     expires_in_days: int | None = 30  # None = never expires (not recommended for a fleet file)
 
 
