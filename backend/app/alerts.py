@@ -314,17 +314,19 @@ def _release_claim(db, tenant_id: int, column, claimed_at, previous) -> None:
     db.commit()
 
 
-def run_digests(db, now=None) -> int:
+def run_digests(db, now=None, tenant_id: int | None = None) -> int:
     """Send due per-tenant digests. For each tenant on hourly/daily with a webhook: if the
     window has elapsed, atomically claim it (a conditional timestamp update — safe across
-    workers), roll up alertable findings since the last window, and POST. Returns #sent."""
+    workers), roll up alertable findings since the last window, and POST. Returns #sent.
+    `tenant_id` limits it to one org (the console button); the background loop passes none."""
     from datetime import datetime, timedelta
     from sqlalchemy import func
     from .models import Tenant, Finding
     now = now or datetime.utcnow()
     tenants = (db.query(Tenant)
                .filter(Tenant.alert_digest.in_(("hourly", "daily")),
-                       Tenant.alert_webhook != "").all())
+                       Tenant.alert_webhook != "",
+                       *([Tenant.id == tenant_id] if tenant_id is not None else [])).all())
     sent = 0
     for t in tenants:
         interval = timedelta(seconds=_DIGEST_INTERVAL[t.alert_digest])

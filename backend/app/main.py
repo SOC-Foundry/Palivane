@@ -642,7 +642,8 @@ def run_digest_now(current: User = Depends(require_admin), db: Session = Depends
     """Force-send this tenant's digest now if one is due (Settings → Alerts button, or a
     cron for ops). The background loop does this automatically every few minutes."""
     from . import alerts
-    sent = alerts.run_digests(db)
+    # This org's only: an admin's button must not send (and claim the window of) every org's.
+    sent = alerts.run_digests(db, tenant_id=current.tenant_id)
     return {"sent": sent}
 
 
@@ -4800,7 +4801,53 @@ def _wire_oauth(target_app=None, cfg=None) -> None:
         scopes_supported=[READ_SCOPE],
         resource_name="Palivane",
     )
+    for r in routes:
+        if getattr(r, "path", "") == "/revoke":
+            r.app = _revoke_without_secret(r.app)
     target_app.router.routes.extend(routes)
+
+
+def _revoke_without_secret(inner):
+    """Let a public client revoke its token (RFC 7009). The SDK's RevocationRequest declares
+    `client_secret: str | None` with no default, so a client that rightly sends no secret
+    got a 400 and its token stayed live. An absent secret is passed on as an empty one, which
+    the SDK's client check reads as no secret: every client registered here is public (auth
+    method `none`, PKCE is the proof), and a client with a secret would still be refused."""
+    from urllib.parse import parse_qsl
+
+    from starlette.responses import JSONResponse
+    limit = 64 * 1024
+
+    async def app(scope, receive, send):
+        if scope["type"] != "http" or scope.get("method") != "POST":
+            return await inner(scope, receive, send)
+        body, more = b"", True
+        while more:
+            msg = await receive()
+            body += msg.get("body", b"")
+            more = msg.get("more_body", False)
+            if len(body) > limit:
+                return await JSONResponse({"error": "invalid_request"}, status_code=413)(
+                    scope, receive, send)
+        ctype = dict(scope.get("headers") or []).get(b"content-type", b"")
+        if (ctype.startswith(b"application/x-www-form-urlencoded")
+                and "client_secret" not in dict(parse_qsl(body.decode("latin-1")))):
+            body += (b"&" if body else b"") + b"client_secret="
+            scope = dict(scope, headers=[(k, v) for k, v in scope["headers"]
+                                         if k != b"content-length"]
+                         + [(b"content-length", str(len(body)).encode())])
+        done = False
+
+        async def replay():
+            nonlocal done
+            if not done:
+                done = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return await receive()
+
+        return await inner(scope, replay, send)
+
+    return app
 
 
 _wire_oauth()
