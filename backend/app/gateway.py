@@ -237,13 +237,16 @@ class GatewayPolicy:
     """A tenant's effective enforcement posture (its override, else the global default)."""
     enforce: bool
     block_severity: str
+    # Stop a confirmed secret in a request's tool_result (the org's block_tool_result_secrets).
+    tool_result_secrets: bool = True
 
 
 def _tenant_policy(tenant_id: int | None, db: Session) -> GatewayPolicy:
     t = db.get(Tenant, tenant_id) if tenant_id is not None else None
     enforce = t.gateway_enforce if t and t.gateway_enforce is not None else settings.gateway_enforce
     sev = (t.gateway_block_severity or "").strip() if t else ""
-    return GatewayPolicy(enforce=bool(enforce), block_severity=sev or settings.gateway_block_severity)
+    return GatewayPolicy(enforce=bool(enforce), block_severity=sev or settings.gateway_block_severity,
+                         tool_result_secrets=not t or t.block_tool_result_secrets is not False)
 
 
 def _effective_policy(principal: "Principal", db: Session) -> GatewayPolicy:
@@ -638,6 +641,18 @@ def _agentic_block(v: dict | None, pol: "GatewayPolicy") -> bool:
     if not v:
         return False
     return bool(v.get("authz_block")) or (pol.enforce and bool(_blocked(v, pol)))
+
+
+def _inbound_agentic_block(v: dict | None, pol: "GatewayPolicy") -> bool:
+    """`_agentic_block` for the tool activity a REQUEST carries. Its tool_result is on its
+    way to the model like a prompt is, so the prompt rule applies too: a confirmed secret
+    blocks even in monitor mode (a tool that read `.env` would otherwise hand the model the
+    key). The model's own next tool call (response side) is an action, not an upload, and
+    keeps `_agentic_block`. An org can turn the confirmed-secret stop off (fake vendor keys
+    in test fixtures); enforce mode and role denials still apply then."""
+    if _agentic_block(v, pol):
+        return True
+    return bool(v) and pol.tool_result_secrets and _should_block(v, pol)
 
 
 def _capture_agentic(payload: dict, tool: str, principal: Principal, db: Session) -> dict | None:
@@ -1083,7 +1098,7 @@ def chat_completions(request: Request, principal: Principal = Depends(get_gatewa
         return _openai_error(verdict)
     # Agentic tool-use inspection (agentless MCP over the LLM API).
     agentic = _capture_agentic(payload, tool, principal, db)
-    if _agentic_block(agentic, pol):
+    if _inbound_agentic_block(agentic, pol):
         return _openai_error(agentic)
     base, key = resolve_upstream(_openai_shape_provider(model), principal.tenant_id, db)
     if base:
@@ -1278,7 +1293,7 @@ def responses(request: Request, principal: Principal = Depends(get_gateway_princ
     if _should_block(verdict, pol):
         return _openai_error(verdict)
     agentic = _capture_activity_dict(_responses_agentic(payload), tool, principal, db)
-    if _agentic_block(agentic, pol):
+    if _inbound_agentic_block(agentic, pol):
         return _openai_error(agentic)
     base, key = resolve_upstream(_openai_shape_provider(model), principal.tenant_id, db)
     if base:
@@ -1369,7 +1384,7 @@ def messages(request: Request, principal: Principal = Depends(get_gateway_princi
         return _anthropic_error(verdict)
     # Agentic tool-use inspection (agentless MCP over the LLM API).
     agentic = _capture_agentic(payload, tool, principal, db)
-    if _agentic_block(agentic, pol):
+    if _inbound_agentic_block(agentic, pol):
         return _anthropic_error(agentic)
 
     # An Anthropic API key (tenant or global) always wins; the cloud-contract resolver
