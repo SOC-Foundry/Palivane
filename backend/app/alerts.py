@@ -237,6 +237,8 @@ def run_weekly_reports(db, now=None) -> int:
     now = now or datetime.utcnow()
     week = timedelta(days=7)
     sent = 0
+    if not email_mod.enabled():
+        return 0      # nothing can go out, so no week is claimed (and then lost)
     for t in db.query(Tenant).filter(Tenant.weekly_report.is_(True)).all():
         last = t.weekly_report_last
         if last and (now - last) < week:
@@ -289,12 +291,10 @@ def run_weekly_reports(db, now=None) -> int:
                                         User.active.is_(True)).all())
         mailed = False
         for a in admins:
-            try:
-                email_mod.send(a.email, "Palivane weekly report", body)
+            # Delivered now, not queued: send() swallowed failures, so a week whose every
+            # mail bounced was still marked sent and never retried.
+            if email_mod.send_now(a.email, "Palivane weekly report", body):
                 mailed = True
-            except Exception:                                     # noqa: BLE001
-                logging.getLogger("palivane.alerts").warning(
-                    "weekly report to %s failed", a.email)
         if mailed:
             sent += 1
         elif admins:

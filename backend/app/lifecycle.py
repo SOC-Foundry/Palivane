@@ -99,3 +99,41 @@ def purgeable_empty_tenants(db: Session, older_than_days: int) -> list[Tenant]:
             continue
         out.append(t)
     return out
+
+
+def purge_expired_findings(db: Session, tenant: Tenant, now=None) -> int:
+    """Delete `tenant`'s findings older than its retention_days (0 = keep forever); commits.
+    Returns the number deleted."""
+    from datetime import datetime, timedelta, timezone
+    days = tenant.retention_days or 0
+    if days <= 0:
+        return 0
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    n = (db.query(Finding)
+           .filter(Finding.tenant_id == tenant.id, Finding.created_at < now - timedelta(days=days))
+           .delete(synchronize_session=False))
+    db.commit()
+    return n
+
+
+def apply_retention(db: Session, now=None) -> int:
+    """Enforce every org's findings retention; run ~hourly by the background loop. Settings
+    and the Trust page promise it, and until this ran only an admin's manual purge applied
+    it. One org's failure doesn't stop the rest. Returns the total deleted."""
+    import logging
+
+    from . import audit_log
+    total = 0
+    for t in db.query(Tenant).filter(Tenant.retention_days > 0).all():
+        try:
+            n = purge_expired_findings(db, t, now)
+        except Exception:                                          # noqa: BLE001
+            db.rollback()
+            logging.getLogger("palivane.retention").warning(
+                "retention for %s failed", t.slug, exc_info=True)
+            continue
+        if n:
+            audit_log.record(db, t.id, "system", "findings.retention",
+                             detail={"deleted": n, "retention_days": t.retention_days})
+        total += n
+    return total
