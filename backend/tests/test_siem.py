@@ -87,7 +87,9 @@ def test_siem_config_roundtrip_token_write_only(client):
     t = client.patch("/api/tenant", json={"siem_url": "https://collector.acme.com/in",
                                           "siem_token": "sekret", "siem_format": "splunk_hec",
                                           "siem_min_severity": "suspicious"}).json()
-    assert t["siem_url"] == "https://collector.acme.com/in"
+    # The URL is write-only too (it can carry a token): only that it's set and where it points.
+    assert t["siem_url_set"] is True and t["siem_url_host"] == "https://collector.acme.com"
+    assert "siem_url" not in t
     assert t["siem_format"] == "splunk_hec" and t["siem_min_severity"] == "suspicious"
     assert t["siem_token_set"] is True
     assert "siem_token" not in t                       # write-only, never returned
