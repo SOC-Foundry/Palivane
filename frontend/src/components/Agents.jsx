@@ -93,6 +93,10 @@ export default function Agents({ tenant, onTenant }) {
     try { const r = await api.agentRotate(a.id); setToken({ name: r.name, token: r.token }); await load(); }
     catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
   }
+  async function enable(a) {
+    try { await api.agentUpdate(a.id, { active: true }); await load(); }
+    catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
+  }
   async function disable(a) {
     if (!window.confirm(`Disable ${a.name}? Its token will be rejected.`)) return;
     try { await api.agentDelete(a.id); await load(); }
@@ -242,6 +246,8 @@ export default function Agents({ tenant, onTenant }) {
                                            onClick={() => mintToken(a)}>Session token</button>}
                       {a.active && <button className="link-btn" style={{ marginLeft: 12, color: "var(--crit)" }}
                                            onClick={() => disable(a)}>Disable</button>}
+                      {!a.active && <button className="link-btn" style={{ marginLeft: 12 }}
+                                            onClick={() => enable(a)}>Enable</button>}
                     </td>
                   </tr>
                 ))}

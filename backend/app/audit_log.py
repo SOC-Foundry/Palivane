@@ -11,6 +11,7 @@ secret, the inference-hook secret and token-bearing webhook URLs there in plain 
 """
 from __future__ import annotations
 
+import contextvars
 from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
@@ -55,10 +56,45 @@ def redact(detail):
     return out
 
 
+# The credential behind the current request, when it isn't the person's own session: an
+# entry made with an admin's API key used to read exactly as if the admin had acted in the
+# console. A mutable holder per request (RequestCredential middleware) rather than a bare
+# value, because sync dependencies run in a copied context: a value they set would never
+# reach the endpoint, while a change to a shared holder does.
+_REQUEST: contextvars.ContextVar[dict | None] = contextvars.ContextVar("audit_request",
+                                                                       default=None)
+
+
+def note_credential(via: str) -> None:
+    """Record that this request is acting through `via` (e.g. "API key 'ci' #12")."""
+    holder = _REQUEST.get()
+    if holder is not None:
+        holder["via"] = via
+
+
+class RequestCredential:
+    """ASGI middleware: a fresh holder per HTTP request for note_credential."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        tok = _REQUEST.set({})
+        try:
+            return await self.app(scope, receive, send)
+        finally:
+            _REQUEST.reset(tok)
+
+
 def record(db: Session, tenant_id: int | None, actor: str, action: str,
            target: str = "", detail: dict | None = None) -> None:
     if tenant_id is None:
         return
+    via = (_REQUEST.get() or {}).get("via")
+    if via:
+        detail = {**(detail or {}), "via": via}
     try:
         db.add(AuditLog(tenant_id=tenant_id, actor=actor or "", action=action,
                         target=target or "", detail=redact(detail or {})))

@@ -161,6 +161,7 @@ def _user_for_api_key(request: Request, token: str, db: Session) -> User:
                        "management and key issuance require a signed-in session")
     user = user_for_console_key(key, db)
     request.state.api_key_id = key.id      # so audit entries can name the credential
+    audit_log.note_credential(f"API key '{key.label or ''}' #{key.id}")
     return user
 
 
@@ -852,7 +853,9 @@ def update_user(user_id: int, body: UserUpdate, current: User = Depends(require_
             raise HTTPException(status_code=400, detail="you cannot deactivate your own account")
 
     # Never leave the tenant with zero active admins.
-    removing_admin = demoting or (deactivating and user.role == "admin")
+    # Only an ACTIVE admin counts: demoting a deactivated one removes no access, and used to
+    # be refused whenever just one admin was active.
+    removing_admin = user.active and (demoting or (deactivating and user.role == "admin"))
     if removing_admin:
         lock_admin_changes(db, current.tenant_id)
         if _active_admin_count(db, current.tenant_id) <= 1:
@@ -1119,12 +1122,14 @@ def list_agents(current: User = Depends(require_admin), db: Session = Depends(ge
 @router.post("/agents/{agent_id}/rotate")
 def rotate_agent(agent_id: int, current: User = Depends(require_admin),
                  db: Session = Depends(get_db)):
-    """Rotate an agent's token — issues a new `ag_…` (old one stops working immediately)."""
+    """Rotate an agent's token — issues a new `ag_…` (old one stops working immediately).
+    A disabled agent stays disabled: rotating used to switch it back on without saying so.
+    Re-enabling is its own decision (PATCH active)."""
     agent = db.get(Agent, agent_id)
     if agent is None or agent.tenant_id != current.tenant_id:
         raise HTTPException(status_code=404, detail="agent not found")
     token, prefix, token_hash = generate_agent_token()
-    agent.prefix, agent.token_hash, agent.active = prefix, token_hash, True
+    agent.prefix, agent.token_hash = prefix, token_hash
     db.commit()
     audit_log.record(db, current.tenant_id, current.email, "agent.rotate", target=agent.name)
     return {**agent.to_dict(), "token": token}
@@ -1158,6 +1163,10 @@ def update_agent(agent_id: int, body: AgentUpdate, current: User = Depends(requi
         agent.rate_limit = body.rate_limit
     if body.block_severity is not None:
         agent.block_severity = body.block_severity
+    if body.active is not None and body.active != bool(agent.active):
+        agent.active = body.active
+        audit_log.record(db, current.tenant_id, current.email,
+                         "agent.enable" if body.active else "agent.disable", target=agent.name)
     db.commit()
     return agent.to_dict()
 
@@ -1815,6 +1824,22 @@ def get_oidc(current: User = Depends(require_admin), db: Session = Depends(get_d
     return _oidc_state(current.tenant_id, db)
 
 
+def _check_idp_url(url: str, what: str, fetched: bool) -> None:
+    """Refuse an IdP URL when it is saved, not first when someone tries to sign in: https only,
+    and a URL the server itself fetches (OIDC discovery) must be public, the same check
+    oidc._safe applies at fetch time. The SAML SSO URL is only where the browser is sent."""
+    from urllib.parse import urlparse
+
+    from .netguard import is_safe_url_static
+    if urlparse(url).scheme != "https" or not urlparse(url).hostname:
+        raise HTTPException(status_code=400, detail=f"the {what} must be an https:// URL")
+    # Static (no DNS): a name that doesn't resolve right now is not a reason to refuse the
+    # setting, and the fetch-time guard resolves and pins anyway.
+    if fetched and not is_safe_url_static(url):
+        raise HTTPException(status_code=400,
+                            detail=f"the {what} must be a public address, not a private one")
+
+
 @router.put("/oidc")
 def set_oidc(body: OIDCConfig, current: User = Depends(require_admin),
              db: Session = Depends(get_db)):
@@ -1826,6 +1851,8 @@ def set_oidc(body: OIDCConfig, current: User = Depends(require_admin),
     if row is None:
         row = TenantOIDC(tenant_id=current.tenant_id)
         db.add(row)
+    if body.issuer.strip():
+        _check_idp_url(body.issuer.strip(), "issuer", fetched=True)
     row.issuer = body.issuer.strip() or row.issuer
     row.client_id = body.client_id.strip() or row.client_id
     if body.client_secret:
@@ -1932,7 +1959,13 @@ def sso_session_redirect(user: User, origin: str, return_to: str = "") -> Redire
     if user.mfa_enabled:
         challenge = create_token({"typ": "mfa", "sub": str(user.id), "tv": user.token_version},
                                  ttl=300)
-        resp = RedirectResponse(f"{origin}/#mfa_challenge={challenge}", status_code=303)
+        # Where the sign-in was headed (a connect flow) rides along, so the console can hand
+        # the session on once the second factor is in; it used to be dropped here.
+        from urllib.parse import quote
+        back = _safe_return_to(return_to)
+        resp = RedirectResponse(
+            f"{origin}/#mfa_challenge={challenge}"
+            + (f"&return_to={quote(back, safe='')}" if back else ""), status_code=303)
     else:
         token = create_token({"sub": str(user.id), "tenant_id": user.tenant_id,
                               "role": user.role, "tv": user.token_version})
@@ -1949,7 +1982,12 @@ def sso_session_redirect(user: User, origin: str, return_to: str = "") -> Redire
 def oidc_login(org: str, request: Request, return_to: str = "", db: Session = Depends(get_db)):
     """Begin the SSO auth-code flow: redirect the browser to the tenant's IdP."""
     tenant, row = _enabled_oidc(org, db)
-    meta = oidc.discover(row.issuer)   # raises OIDCError -> 500-ish; acceptable for misconfig
+    try:
+        meta = oidc.discover(row.issuer)
+    except oidc.OIDCError as e:
+        # An unreachable or misconfigured IdP is not our crash: say so, not a bare 500.
+        raise HTTPException(status_code=502,
+                            detail=f"{e}. Check the issuer URL in Settings -> SSO.")
     nonce = secrets.token_urlsafe(16)
     # Signed, self-expiring state — no server-side session store needed (multi-worker safe).
     # return_to carries the connect landing through the IdP round-trip (signed, so tamper-proof).
@@ -2053,6 +2091,8 @@ def set_saml(body: SAMLConfig, current: User = Depends(require_admin),
         row = TenantSAML(tenant_id=current.tenant_id)
         db.add(row)
     row.idp_entity_id = body.idp_entity_id.strip() or row.idp_entity_id
+    if body.idp_sso_url.strip():
+        _check_idp_url(body.idp_sso_url.strip(), "IdP SSO URL", fetched=False)
     row.idp_sso_url = body.idp_sso_url.strip() or row.idp_sso_url
     if body.idp_x509_cert:
         row.idp_x509_cert = body.idp_x509_cert.strip()

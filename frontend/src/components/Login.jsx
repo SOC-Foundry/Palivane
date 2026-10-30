@@ -15,6 +15,7 @@ export default function Login({ onAuthed, onBack }) {
   const [googleLogin, setGoogleLogin] = useState(false);
   const [demoAvailable, setDemoAvailable] = useState(false);
   const [mfaChallenge, setMfaChallenge] = useState(null);   // set when login needs a 2nd factor
+  const [mfaReturnTo, setMfaReturnTo] = useState(null);     // where an SSO sign-in was headed
   const [mfaCode, setMfaCode] = useState("");
   const [pendingOrg, setPendingOrg] = useState(null);       // signup became a join request
   const [pendingKind, setPendingKind] = useState("approval"); // "approval" | "email"
@@ -40,9 +41,12 @@ export default function Login({ onAuthed, onBack }) {
       window.history.replaceState(null, "", window.location.pathname);
     }
     // SSO / Google sign-in for an account with MFA on hands back a challenge, not a session.
-    const c = window.location.hash.match(/^#mfa_challenge=(.+)$/);
+    const c = window.location.hash.match(/^#mfa_challenge=([^&]+)(?:&return_to=([^&]+))?$/);
     if (c) {
       setMfaChallenge(decodeURIComponent(c[1]));
+      const back = c[2] ? decodeURIComponent(c[2]) : "";
+      // Same-origin paths only: never an absolute or protocol-relative URL.
+      if (back.startsWith("/") && !back.startsWith("//")) setMfaReturnTo(back);
       window.history.replaceState(null, "", window.location.pathname);
     }
     // Join-confirm links bounce back as /#join=approved|verified|invalid.
@@ -146,6 +150,12 @@ export default function Login({ onAuthed, onBack }) {
     setBusy(true); setErr(null);
     try {
       const res = await api.mfaVerify(mfaChallenge, mfaCode.trim());
+      if (mfaReturnTo) {
+        // Hand the session on the way a non-MFA SSO sign-in does (#sso_token=…), so a
+        // connect flow finishes instead of landing on the console.
+        window.location.assign(`${mfaReturnTo}#sso_token=${encodeURIComponent(res.access_token)}`);
+        return;
+      }
       setToken(res.access_token);
       onAuthed(res.user);
     } catch (e) {

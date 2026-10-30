@@ -44,6 +44,9 @@ def apply_plan(tenant: Tenant, plan: str, trial_days: int | None = None) -> None
     from datetime import datetime, timedelta, timezone
 
     from .config import settings
+    if trial_days is not None and trial_days < 0:
+        # It used to fall through to `days > 0` and give an open-ended trial.
+        raise ValueError("trial_days must be 0 (open-ended) or more")
     was_trial = (tenant.plan or "") == "trial"
     tenant.plan = plan
     if plan != "trial":
