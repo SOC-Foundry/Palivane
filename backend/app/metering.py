@@ -103,6 +103,11 @@ def check_daily_gateway(db: Session, tenant_id: int) -> tuple[bool, int, int]:
     return int(total) <= limit, int(total), limit
 
 
+# The metering kinds that are traffic (one per request analyzed). Anything else in the table
+# (per-agent "ag<id>" rate buckets) re-counts requests already here.
+ANALYZED_KINDS = ("gateway", "ingest", "inference_hook")
+
+
 def record_and_check(db: Session, tenant_id: int | None, kind: str = "gateway",
                      limit: int | None = None) -> tuple[bool, int, int]:
     """Count one request in the current minute for `kind` and report whether it's allowed.

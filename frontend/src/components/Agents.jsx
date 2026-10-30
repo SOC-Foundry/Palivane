@@ -123,7 +123,7 @@ export default function Agents({ tenant, onTenant }) {
           <p className="page-sub">Where a poisoned instruction or sensitive data crossed an
              agent hop in the last {graph.window_days} days. Only flagged hops appear: this is
              the risk graph, not every call.</p>
-          <div className="table-scroll">
+          <div className="table-scroll always">
             <table className="data-table">
               <thead><tr><th>From</th><th></th><th>To</th><th>Messages</th><th>Worst</th><th>What crossed</th></tr></thead>
               <tbody>
@@ -196,7 +196,7 @@ export default function Agents({ tenant, onTenant }) {
       <div className="panel settings-card">
         <h2>Agents</h2>
         {agents && agents.length ? (
-          <div className="table-scroll">
+          <div className="table-scroll always">
             <table className="data-table">
               <thead><tr><th>Name</th><th>Kind</th><th>Role</th><th>OIDC subject</th><th>Extra deny</th><th>Req/min</th><th>Block ≥</th><th>Status</th><th></th></tr></thead>
               <tbody>
@@ -266,7 +266,7 @@ export default function Agents({ tenant, onTenant }) {
            <strong> enforce</strong> blocks it.</p>
 
         {roles.length > 0 && (
-          <div className="table-scroll">
+          <div className="table-scroll always">
             <table className="data-table" style={{ marginBottom: 16 }}>
               <thead><tr><th>Role</th><th>Allow tools</th><th>Allow servers</th><th>Commands</th><th>Data scopes</th><th>Deny</th><th>Mode</th><th></th></tr></thead>
               <tbody>

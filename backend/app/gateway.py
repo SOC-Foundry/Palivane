@@ -945,31 +945,45 @@ def _passthrough_stream(url: str, payload: dict, headers: dict, model: str = "",
     assembled output once the stream ends (no client-facing latency — the scan happens after
     the last token). The action is also recorded request-side on the next turn."""
     scan = principal is not None and settings.gateway_scan_responses
+    # Connect BEFORE the response starts. Opened inside the generator, a provider that was down
+    # surfaced after the 200 headers had gone: the client got an empty or cut-off stream instead
+    # of the upstream_unavailable 502 (main's TransportError handler can't answer a started
+    # response). The upstream's own status and content type are passed on, so its errors read
+    # as errors too.
+    from contextlib import ExitStack
+    opened = ExitStack()
+    try:
+        c = opened.enter_context(safe_client(timeout=120))
+        r = opened.enter_context(c.stream("POST", url, json=payload, headers=headers))
+    except BaseException:
+        opened.close()
+        raise
 
     def gen():
         buf: list[bytes] = []
         acc = 0
         try:
-            with safe_client(timeout=120) as c:
-                with c.stream("POST", url, json=payload, headers=headers) as r:
-                    for b in r.iter_bytes():
-                        if scan and acc < _STREAM_TEE_CAP:
-                            buf.append(b)
-                            acc += len(b)
-                        yield b
+            for b in r.iter_bytes():
+                if scan and acc < _STREAM_TEE_CAP:
+                    buf.append(b)
+                    acc += len(b)
+                yield b
         finally:
+            opened.close()
             if scan and buf:
                 # DLP sees the stream as the provider sent it, tokens and all. A token
                 # carries no personal data, so nothing is missed by scanning before
                 # reversing, and the tee stays byte-identical to what was scored.
                 _record_stream_dlp(b"".join(buf), model, tool, principal)
 
+    status = getattr(r, "status_code", 200)
+    ctype = (getattr(r, "headers", None) or {}).get("content-type", "text/event-stream")
     if tokens:
         from .tokenization import detokenize_stream
         return StreamingResponse(
             detokenize_stream(gen(), tokens, lambda n: _note_residual(n, tool)),
-            media_type="text/event-stream")
-    return StreamingResponse(gen(), media_type="text/event-stream")
+            status_code=status, media_type=ctype)
+    return StreamingResponse(gen(), status_code=status, media_type=ctype)
 
 
 # --- OpenAI shape ---------------------------------------------------------------------

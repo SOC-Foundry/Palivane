@@ -825,6 +825,9 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 @media (max-width: 1200px) {
   .table-scroll { overflow-x: auto; max-width: 100%; }
 }
+/* A table wide enough to overflow even a desktop content column (Agents: role, rate, severity
+   and action columns) opts in at every width; it pushed the whole page sideways at 1440px. */
+.table-scroll.always { overflow-x: auto; max-width: 100%; }
 /* A path or URL in running text (`<prefix>/palivane/events/YYYY/MM/...`) is one unbreakable word and
    was wider than a phone. Inline code may break anywhere; a code block keeps its own scrolling.
    Phones only, because breaking inside a word reflows table columns. */
