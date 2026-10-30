@@ -1749,6 +1749,24 @@ def _inference_hook_prompt(frame: dict, tenant_id: int, actor: str, tool: str,
                     "deny_reason": f"Palivane blocked this message. {ih.RESENT_FIX}"[:ih.DENY_REASON_MAX],
                     "reference_id": ih.reference_id(hit.finding_id)}
     from .schemas import MAX_CONTENT
+    # What the tools just returned goes to the model with this frame. latest_user_turn leaves
+    # it out (code and file contents are an agent's normal traffic, not a prompt to score),
+    # but a confirmed secret in it is stopped like one in a prompt, in monitor mode too,
+    # unless the org turned that off (it is then recorded, as on the gateway).
+    results = ih.latest_tool_results(messages)[:MAX_CONTENT]
+    if results.strip():
+        r = run_analysis(AnalysisInput(content=results, subject="agent tool_result",
+                                       sender=actor, channel=tool, surface=Surface.MCP,
+                                       metadata={"method": "tool_result"},
+                                       sender_claimed=claimed),
+                         persist=True, db=db, tenant_id=tenant_id, signal_filter=_mcp_filter,
+                         persist_benign=settings.mcp_persist_benign)
+        if (r.get("confirmed_leak") and settings.gateway_enforce_secrets
+                and _tenant_blocks_tool_result_secrets(tenant_id, db)):
+            return {"action": "deny",
+                    "deny_reason": ih.deny_reason("a tool result", r["signals"],
+                                                  ih.TOOL_RESULT_FIX),
+                    "reference_id": ih.reference_id(r["finding_id"])}
     content = ih.latest_user_turn(messages)[:MAX_CONTENT]
     if not content.strip():
         return {"action": "allow"}
@@ -1775,6 +1793,12 @@ def _inference_hook_prompt(frame: dict, tenant_id: int, actor: str, tool: str,
     return {"action": "deny",
             "deny_reason": ih.deny_reason("this message", result["signals"], fix),
             "reference_id": ih.reference_id(result["finding_id"])}
+
+
+def _tenant_blocks_tool_result_secrets(tenant_id: int | None, db: Session) -> bool:
+    """The org's block_tool_result_secrets (default on)."""
+    t = db.get(Tenant, tenant_id) if tenant_id is not None else None
+    return t is None or t.block_tool_result_secrets is not False
 
 
 def _remember_denial(db: Session, tenant_id: int, session: str, hashes: list[str],
