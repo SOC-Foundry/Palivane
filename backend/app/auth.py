@@ -846,6 +846,22 @@ def revoke_user_keys(db: Session, user: User) -> list[ApiKey]:
     return keys
 
 
+def repoint_capture_keys(db: Session, tenant_id: int, old_email: str, new_email: str) -> int:
+    """Move a renamed person's capture keys to their new address (caller commits).
+
+    Capture keys are bound to a person only by `actor`, their email, which revoke_user_keys
+    matches on. Left on the old address after a rename, deactivating or offboarding the
+    person missed them and their browser extension kept capturing as them. Moving them also
+    keeps a later account that is given the old address from inheriting them."""
+    old = (old_email or "").strip().lower()
+    if not old:
+        return 0
+    return (db.query(ApiKey)
+              .filter(ApiKey.tenant_id == tenant_id, ApiKey.active.is_(True),
+                      func.lower(ApiKey.actor) == old)
+              .update({ApiKey.actor: new_email}, synchronize_session=False))
+
+
 def revoke_oauth_grants(db: Session, user: User) -> int:
     """Revoke every live OAuth access/refresh token the user approved (remote MCP clients).
     OAuth tokens carry no `tv`, so wherever token_version is bumped to end sessions
