@@ -471,6 +471,28 @@ def _harvest_strings(obj, out: list) -> None:
             _harvest_strings(v, out)
 
 
+def _shell_command_of(raw) -> str:
+    """A tool call's `command` argument (from its input dict or JSON arguments string), for
+    the least-privilege check: the exact command rather than every argument joined with
+    newlines, where a description or cwd can't be told from a second command (see
+    authz.decision). Codex's list form (`["bash", "-lc", "<cmd>"]`) yields the command."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError):
+            return ""
+    if not isinstance(raw, dict):
+        return ""
+    v = raw.get("command", raw.get("cmd", ""))
+    if isinstance(v, list):
+        parts = [str(x) for x in v]
+        if (len(parts) >= 3 and parts[0].rsplit("/", 1)[-1] in ("bash", "sh", "zsh")
+                and parts[1] in ("-c", "-lc")):
+            return parts[-1]
+        return " ".join(parts)
+    return v if isinstance(v, str) else ""
+
+
 def _agentic_activity(payload: dict) -> dict | None:
     """Extract the current-turn agentic tool activity from an OpenAI/Anthropic request:
     advertised tool descriptions, the latest tool_use (name + args), and its tool_result
@@ -486,7 +508,7 @@ def _agentic_activity(payload: dict) -> dict | None:
             descs.append(fn["description"])
 
     messages = payload.get("messages") or []
-    tool_name, args_parts, result_parts = "", [], []
+    tool_name, args_parts, result_parts, shell_cmd = "", [], [], ""
 
     # Latest assistant tool_use — Anthropic content blocks or OpenAI tool_calls.
     for m in reversed(messages):
@@ -497,12 +519,14 @@ def _agentic_activity(payload: dict) -> dict | None:
             for b in content:
                 if isinstance(b, dict) and b.get("type") == "tool_use":
                     tool_name = tool_name or b.get("name", "")
+                    shell_cmd = shell_cmd or _shell_command_of(b.get("input"))
                     _harvest_strings(b.get("input", {}), args_parts)
         for tc in m.get("tool_calls") or []:
             fn = tc.get("function") if isinstance(tc, dict) else None
             if isinstance(fn, dict):
                 tool_name = tool_name or fn.get("name", "")
                 if isinstance(fn.get("arguments"), str):
+                    shell_cmd = shell_cmd or _shell_command_of(fn["arguments"])
                     args_parts.append(fn["arguments"])
         if tool_name or args_parts:
             break
@@ -532,7 +556,7 @@ def _agentic_activity(payload: dict) -> dict | None:
     method = "tools/call" if (tool_name or args_parts) else (
         "tools/advertised" if descs else "tool_result")
     return {"method": method, "tool": tool_name,
-            "args_text": "\n".join(args_parts)[:20000],
+            "args_text": "\n".join(args_parts)[:20000], "shell_command": shell_cmd,
             "result_text": "\n".join(p for p in result_parts if p)[:20000],
             "tool_descriptions": descs}
 
@@ -557,7 +581,8 @@ def _capture_activity_dict(act: dict | None, tool: str, principal: Principal, db
                   "args_text": act["args_text"], "tool_descriptions": act["tool_descriptions"]},
         sender_claimed=principal.actor_claimed,
     )
-    filt, dec = _gw_authz(principal, "", act["tool"], act["args_text"], db)
+    filt, dec = _gw_authz(principal, "", act["tool"], act["args_text"], db,
+                          shell_command=act.get("shell_command", ""))
     from . import allowlist
     allow_holder = allowlist.attach(db, principal.tenant_id, principal.actor, act["tool"],
                                     item.metadata, claimed=principal.actor_claimed)
@@ -579,7 +604,8 @@ def _authz_signal_gw(enforce: bool, reason: str, agent: str, what: str):
         evidence=f"{agent} → {(what or '')[:60]}", check="agent_authz")
 
 
-def _gw_authz(principal: Principal, server: str, tool: str, args_text: str, db: Session):
+def _gw_authz(principal: Principal, server: str, tool: str, args_text: str, db: Session,
+              shell_command: str = ""):
     """(signal_filter, decision) for an authenticated gateway agent's tool call. The filter
     records the least-privilege verdict; the caller hard-blocks on enforce+denied regardless
     of severity — same authoritative control as the ingest path. Falls back to the plain MCP
@@ -595,7 +621,8 @@ def _gw_authz(principal: Principal, server: str, tool: str, args_text: str, db: 
     def _filter(signals):
         out = _mcp_sig_filter(signals)
         cats = {s.category.value for s in signals}
-        denied, reason = authz_decide(role_d, server, tool, args_text, cats)
+        denied, reason = authz_decide(role_d, server, tool, args_text, cats,
+                                      shell_command=shell_command)
         if denied:
             dec["denied"] = True
             dec["reason"] = reason
@@ -623,10 +650,11 @@ def _response_activity(resp: dict) -> dict | None:
     gateway block a dangerous action *before* the client executes it (non-streaming path)."""
     if not isinstance(resp, dict):
         return None
-    tool_name, args = "", []
+    tool_name, args, shell_cmd = "", [], ""
     for b in resp.get("content") or []:                       # Anthropic
         if isinstance(b, dict) and b.get("type") == "tool_use":
             tool_name = tool_name or b.get("name", "")
+            shell_cmd = shell_cmd or _shell_command_of(b.get("input"))
             _harvest_strings(b.get("input", {}), args)
     for ch in resp.get("choices") or []:                      # OpenAI
         msg = ch.get("message") if isinstance(ch, dict) else None
@@ -635,6 +663,7 @@ def _response_activity(resp: dict) -> dict | None:
             if isinstance(fn, dict):
                 tool_name = tool_name or fn.get("name", "")
                 if isinstance(fn.get("arguments"), str):
+                    shell_cmd = shell_cmd or _shell_command_of(fn["arguments"])
                     args.append(fn["arguments"])
     if not args:
         return None
@@ -648,7 +677,7 @@ def _response_activity(resp: dict) -> dict | None:
             if isinstance(fn, dict) and fn.get("name"):
                 names.append(fn["name"])
     return {"method": "tools/call", "tool": tool_name, "tools": names or [tool_name],
-            "args_text": "\n".join(args)[:20000]}
+            "args_text": "\n".join(args)[:20000], "shell_command": shell_cmd}
 
 
 def _gw_extra_tools_denied(principal: Principal, tools: list, db: Session) -> bool:
@@ -666,7 +695,8 @@ def _gw_extra_tools_denied(principal: Principal, tools: list, db: Session) -> bo
 
 
 def _capture_tool_activity(tool_name: str, args_text: str, tool: str,
-                           principal: Principal, db: Session, tools: list | None = None) -> dict | None:
+                           principal: Principal, db: Session, tools: list | None = None,
+                           shell_command: str = "") -> dict | None:
     """Analyze one assembled tool call on the mcp surface (shared by the response-side and
     streaming paths). `tools` lists every name in a parallel tool_use so authz covers all."""
     if not args_text:
@@ -676,7 +706,7 @@ def _capture_tool_activity(tool_name: str, args_text: str, tool: str,
         channel=tool or "agent", surface=Surface.MCP,
         metadata={"method": "tools/call", "tool": tool_name, "args_text": args_text},
         sender_claimed=principal.actor_claimed)
-    filt, dec = _gw_authz(principal, "", tool_name, args_text, db)
+    filt, dec = _gw_authz(principal, "", tool_name, args_text, db, shell_command=shell_command)
     from . import allowlist
     allow_holder = allowlist.attach(db, principal.tenant_id, principal.actor, tool_name,
                                     item.metadata, claimed=principal.actor_claimed)
@@ -693,7 +723,8 @@ def _capture_response_agentic(resp: dict, tool: str, principal: Principal, db: S
     act = _response_activity(resp)
     if not act:
         return None
-    return _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db, act.get("tools"))
+    return _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db, act.get("tools"),
+                                   act.get("shell_command", ""))
 
 
 # --- Response-side DLP: scan the MODEL'S OUTPUT for secrets/PII ------------------------
@@ -838,16 +869,18 @@ def _stream_tool_use_openai(text: str) -> dict | None:
 def _assemble_tool_use(idx_name: dict, idx_json: dict) -> dict | None:
     if not idx_name:
         return None
-    names, args = [], []
+    names, args, shell_cmd = [], [], ""
     for i, name in idx_name.items():
         names.append(name)
         raw = idx_json.get(i, "")
+        shell_cmd = shell_cmd or _shell_command_of(raw)
         try:
             _harvest_strings(json.loads(raw), args)
         except (ValueError, TypeError):
             if raw:
                 args.append(raw)
-    return {"tool": names[0], "tools": names, "args_text": "\n".join(args)[:20000]}
+    return {"tool": names[0], "tools": names, "args_text": "\n".join(args)[:20000],
+            "shell_command": shell_cmd}
 
 
 def _read_stream(url: str, payload: dict, headers: dict) -> tuple[int, str, bytes]:
@@ -1064,7 +1097,8 @@ def chat_completions(request: Request, principal: Principal = Depends(get_gatewa
             decoded = raw.decode("utf-8", "replace")
             act = _stream_tool_use_openai(decoded)
             if act:
-                v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db, act.get("tools"))
+                v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db, act.get("tools"),
+                                   act.get("shell_command", ""))
                 if _agentic_block(v, pol):
                     return _openai_error(v)
             if settings.gateway_scan_responses:
@@ -1151,12 +1185,13 @@ def _responses_agentic(payload: dict) -> dict | None:
     descs = [t["description"] for t in (payload.get("tools") or [])
              if isinstance(t, dict) and isinstance(t.get("description"), str)]
     inp = payload.get("input")
-    tool_name, args_parts, result_parts = "", [], []
+    tool_name, args_parts, result_parts, shell_cmd = "", [], [], ""
     if isinstance(inp, list):
         for item in reversed(inp):
             if isinstance(item, dict) and item.get("type") == "function_call":
                 tool_name = item.get("name", "")
                 if isinstance(item.get("arguments"), str):
+                    shell_cmd = _shell_command_of(item["arguments"])
                     args_parts.append(item["arguments"])
                 break
         for item in reversed(inp):
@@ -1172,7 +1207,7 @@ def _responses_agentic(payload: dict) -> dict | None:
     method = "tools/call" if (tool_name or args_parts) else (
         "tools/advertised" if descs else "tool_result")
     return {"method": method, "tool": tool_name,
-            "args_text": "\n".join(args_parts)[:20000],
+            "args_text": "\n".join(args_parts)[:20000], "shell_command": shell_cmd,
             "result_text": "\n".join(p for p in result_parts if p)[:20000],
             "tool_descriptions": descs}
 
@@ -1181,15 +1216,17 @@ def _response_activity_responses(resp: dict) -> dict | None:
     """The tool_use the model just requested in a Responses reply — output[].function_call."""
     if not isinstance(resp, dict):
         return None
-    tool_name, args = "", []
+    tool_name, args, shell_cmd = "", [], ""
     for item in resp.get("output") or []:
         if isinstance(item, dict) and item.get("type") == "function_call":
             tool_name = tool_name or item.get("name", "")
             if isinstance(item.get("arguments"), str):
+                shell_cmd = shell_cmd or _shell_command_of(item["arguments"])
                 args.append(item["arguments"])
     if not args:
         return None
-    return {"method": "tools/call", "tool": tool_name, "args_text": "\n".join(args)[:20000]}
+    return {"method": "tools/call", "tool": tool_name, "args_text": "\n".join(args)[:20000],
+            "shell_command": shell_cmd}
 
 
 def _stream_tool_use_responses(text: str) -> dict | None:
@@ -1255,7 +1292,8 @@ def responses(request: Request, principal: Principal = Depends(get_gateway_princ
             decoded = raw.decode("utf-8", "replace")
             act = _stream_tool_use_responses(decoded)
             if act:
-                v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db, act.get("tools"))
+                v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db, act.get("tools"),
+                                   act.get("shell_command", ""))
                 if _agentic_block(v, pol):
                     return _openai_error(v)
             if settings.gateway_scan_responses:
@@ -1287,7 +1325,8 @@ def _capture_response_agentic_responses(resp: dict, tool: str, principal: Princi
     act = _response_activity_responses(resp)
     if not act:
         return None
-    return _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db, act.get("tools"))
+    return _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db, act.get("tools"),
+                                   act.get("shell_command", ""))
 
 
 # --- Anthropic shape (Claude Code, Anthropic SDK) -------------------------------------
@@ -1363,7 +1402,8 @@ def messages(request: Request, principal: Principal = Depends(get_gateway_princi
             decoded = raw.decode("utf-8", "replace")
             act = _stream_tool_use_anthropic(decoded)
             if act:
-                v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db, act.get("tools"))
+                v = _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db, act.get("tools"),
+                                   act.get("shell_command", ""))
                 if _agentic_block(v, pol):
                     return _anthropic_error(v)
             if settings.gateway_scan_responses:
