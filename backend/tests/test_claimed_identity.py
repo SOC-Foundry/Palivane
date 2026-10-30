@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 
 from app.main import _actor_claimed
 from app.policies import resolve_disabled, resolve_enforce
+from app.service import RECORDED_WHILE_OFF
 
 PII = "SSN 123-45-6789"
 
@@ -25,7 +26,10 @@ class _O:  # stand-in for a PolicyOverride row
 
 
 def _cats(resp: dict) -> set:
-    return {s["category"] for s in resp["signals"]}
+    """Categories the checks flagged. A confirmed leak a turned-off check filtered out is put
+    back for the record under RECORDED_WHILE_OFF (it blocks regardless); that isn't the check
+    firing, so it doesn't count here."""
+    return {s["category"] for s in resp["signals"] if s.get("check") != RECORDED_WHILE_OFF}
 
 
 def _post(raw_client, key, user="", content=PII):

@@ -37,6 +37,10 @@ INJECTION_TERMS = [
     "system prompt:", "system:", "you are now", "from now on you", "from now on,",
     "do not follow your", "stop following", "override your", "ignore your guidelines",
     "ignore your rules", "your real instructions are", "the following takes precedence",
+    # The same override aimed at the safety layer by name (QA: passed as clean).
+    "ignore previous safety", "ignore all safety", "ignore your safety", "ignore any safety",
+    "ignore safety instructions", "disregard previous safety", "disregard your safety",
+    "disregard all safety", "disregard safety instructions",
     "this overrides", "begin new session", "reset your instructions",
     # Policy puppetry — impersonating or rewriting the system layer instead of fighting it.
     "respond as if your system prompt", "as if your instructions said",

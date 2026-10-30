@@ -292,7 +292,15 @@ export default function Policies({ tenant, onTenant }) {
                 <tbody>
                   {exceptions.map((x) => (
                     <tr key={x.id}>
-                      <td>{x.actor}</td>
+                      <td>
+                        {x.actor}
+                        {x.claimed && (
+                          <div className="muted" style={{ fontSize: 11.5 }}
+                               title="Named by a shared fleet key, which can't prove who this is. A per-person exception can't apply.">
+                            identity not verified (fleet key)
+                          </div>
+                        )}
+                      </td>
                       <td className="muted">{x.destination ? <code>{x.destination}</code> : "-"}</td>
                       <td className="muted">{(x.categories || []).join(", ") || "-"}</td>
                       <td className="muted">{x.reason || "-"}</td>
@@ -307,7 +315,8 @@ export default function Policies({ tenant, onTenant }) {
                       <td>
                         {x.status === "pending" && (
                           <span style={{ display: "flex", gap: 8 }}>
-                            <button className="link-btn" disabled={saving === `exc:${x.id}`}
+                            <button className="link-btn" disabled={saving === `exc:${x.id}` || x.claimed}
+                                    title={x.claimed ? "A per-person exception can't apply to an identity a shared key only claims" : undefined}
                                     onClick={() => resolveException(x.id, "approve")}>Approve</button>
                             <button className="link-btn" disabled={saving === `exc:${x.id}`}
                                     onClick={() => resolveException(x.id, "deny")}>Deny</button>
