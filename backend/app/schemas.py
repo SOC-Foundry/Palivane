@@ -597,7 +597,7 @@ class AccessEvent(BaseModel):
 
 class CoverageRequest(BaseModel):
     events: list[AccessEvent] = Field(min_length=1, max_length=20000)
-    window_days: int | None = None  # only count findings within this many days as covered
+    window_days: int | None = Field(None, ge=1, le=3650)  # count findings this recent as covered
 
 
 class PolicyOverrideIn(BaseModel):
