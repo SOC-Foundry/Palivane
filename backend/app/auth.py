@@ -458,19 +458,23 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
                             detail="verify your email first, check your inbox for the "
                                    "confirmation link")
 
-    # Successful login clears this email's recent failures.
-    db.query(LoginAttempt).filter(LoginAttempt.email == email).delete()
     # Transparently upgrade legacy (PBKDF2) hashes to argon2id on successful login.
     if needs_rehash(user.password_hash):
         user.password_hash = hash_password(body.password)
-    db.commit()
 
     if user.mfa_enabled:
         # Password verified, but MFA is on — issue a short-lived challenge, not a session.
+        # The failure count is NOT cleared here: mfa_verify throttles on these same rows, and
+        # clearing them at the password step handed anyone holding the password a fresh
+        # budget of TOTP guesses on every login. It clears once the second factor succeeds.
+        db.commit()
         challenge = create_token({"typ": "mfa", "sub": str(user.id), "tv": user.token_version},
                                  ttl=300)
         return {"mfa_required": True, "challenge": challenge}
 
+    # A completed sign-in clears this email's recent failures.
+    db.query(LoginAttempt).filter(LoginAttempt.email == email).delete()
+    db.commit()
     return _session_response(user)
 
 
@@ -650,12 +654,20 @@ def mfa_setup(request: Request, current: User = Depends(get_current_user),
 @router.post("/auth/mfa/confirm")
 def mfa_confirm(body: MFACode, current: User = Depends(get_current_user),
                 db: Session = Depends(get_db)):
-    """Activate MFA by proving a code from the enrolled secret. Returns recovery codes ONCE."""
+    """Activate MFA by proving a code from the enrolled secret. Returns recovery codes ONCE.
+
+    Refused once MFA is on: re-confirming used to mint a fresh set of recovery codes with no
+    step-up, a quiet way for a live session to replace them. The code's time-step is
+    recorded, so the code that confirmed can't then be replayed at sign-in."""
+    if current.mfa_enabled:
+        raise HTTPException(status_code=400, detail="MFA is already enabled")
     secret = decrypt(current.mfa_secret)
     if not secret:
         raise HTTPException(status_code=400, detail="run MFA setup first")
-    if not totp.verify(secret, body.code):
+    step = totp.verify_step(secret, body.code)
+    if step is None:
         raise HTTPException(status_code=400, detail="invalid code")
+    current.mfa_last_step = step
     codes = totp.generate_recovery_codes()
     current.mfa_recovery = [totp.hash_code(c) for c in codes]
     current.mfa_enabled = True
@@ -677,7 +689,10 @@ def mfa_disable(body: MFACode, request: Request, current: User = Depends(get_cur
     ip = _client_ip(request)
     if _throttled(db, current.email, ip):
         raise HTTPException(status_code=429, detail="too many attempts, try again later")
-    ok = totp.verify(decrypt(current.mfa_secret), body.code) or \
+    # Same single-use rule as sign-in: a code from a time-step already used (to sign in, or
+    # to confirm) doesn't count again.
+    step = totp.verify_step(decrypt(current.mfa_secret), body.code)
+    ok = (step is not None and step > (current.mfa_last_step or 0)) or \
         totp.consume_recovery(current.mfa_recovery or [], body.code) is not None
     if not ok:
         db.add(LoginAttempt(email=current.email, ip=ip))
@@ -687,6 +702,9 @@ def mfa_disable(body: MFACode, request: Request, current: User = Depends(get_cur
     current.mfa_secret = ""
     current.mfa_recovery = []
     current.token_version = (current.token_version or 0) + 1
+    # OAuth grants too, as logout-all and password reset do: a connected app approved by
+    # whoever MFA was keeping out must not outlive the switch-off.
+    revoke_oauth_grants(db, current)
     db.commit()
     audit_log.record(db, current.tenant_id, current.email, "mfa.disable")
     return {"mfa_enabled": False, **_session_response(current)}
