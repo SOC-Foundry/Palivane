@@ -13,7 +13,7 @@ import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -735,7 +735,7 @@ def list_users(current: User = Depends(require_admin), db: Session = Depends(get
 
 @router.get("/audit")
 def list_audit(current: User = Depends(require_admin), db: Session = Depends(get_db),
-               limit: int = 100, action: str | None = None):
+               limit: int = Query(100, ge=1, le=500), action: str | None = None):
     """The tenant's admin audit trail (newest first). Optional `action` filter."""
     return {"entries": audit_log.recent(db, current.tenant_id, limit=limit, action=action)}
 
@@ -1003,6 +1003,12 @@ def extension_token(device: str = "", current: User = Depends(get_current_user),
         key = existing
         action = "extension.reconnect"
     else:
+        # A new key counts toward the org's API-key quota, as an admin-minted one does; this
+        # path used to skip the check. Rotating an existing device's key adds none.
+        from .metering import check_resource_quota
+        check_resource_quota(db, current.tenant_id, "api_keys",
+                             db.query(ApiKey).filter(ApiKey.tenant_id == current.tenant_id,
+                                                     ApiKey.active.is_(True)).count())
         key = ApiKey(tenant_id=current.tenant_id, label=label,
                      actor=current.email, prefix=prefix, token_hash=token_hash)
         db.add(key)
@@ -1698,6 +1704,13 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
     for _f in ("agent_oidc_issuer", "agent_oidc_jwks", "agent_oidc_audience"):
         _v = getattr(body, _f)
         if _v is not None:
+            if _f != "agent_oidc_audience" and _v.strip():
+                # The server fetches these (discovery, JWKS); refused at save like the webhook
+                # and SIEM URLs, not first when an agent's token is checked.
+                from .netguard import is_safe_url_static
+                if not _v.strip().startswith("https://") or not is_safe_url_static(_v.strip()):
+                    raise HTTPException(status_code=400,
+                                        detail=f"{_f} must be a public https:// URL")
             setattr(tenant, _f, _v.strip())
     if body.agent_attestation_enforce is not None:
         tenant.agent_attestation_enforce = bool(body.agent_attestation_enforce)
@@ -1710,6 +1723,14 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         if any(":" not in seg for seg in cleaned.split(";") if seg.strip()):
             raise HTTPException(status_code=400,
                                 detail="tool_suppress must be tool:category;tool:category")
+        # A misspelled category was saved and silently suppressed nothing.
+        from .detectors.base import Category
+        known = {c.value for c in Category}
+        unknown = sorted({c.strip() for seg in cleaned.split(";") if ":" in seg
+                          for c in seg.split(":", 1)[1].split(",") if c.strip()} - known)
+        if unknown:
+            raise HTTPException(status_code=400,
+                                detail=f"unknown category in tool_suppress: {', '.join(unknown)}")
         tenant.tool_suppress = cleaned
     if body.custom_pii_patterns is not None:
         # Validate each label=regex line with the SAME guard the scanner uses, so a pattern

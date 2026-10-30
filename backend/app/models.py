@@ -990,13 +990,13 @@ class AllowEntry(Base):
     last_hit_at = Column(DateTime, nullable=True)
 
     def status(self, now: datetime | None = None) -> str:
-        now = now or _utcnow()
+        now = now or _utcnow().replace(tzinfo=None)   # stored columns are naive UTC
         if self.revoked_at is not None:
             return "revoked"
         return "expired" if self.expires_at <= now else "active"
 
     def to_dict(self, now: datetime | None = None) -> dict:
-        now = now or _utcnow()
+        now = now or _utcnow().replace(tzinfo=None)
         left = (self.expires_at - now).total_seconds() if self.expires_at else 0
         return {"id": self.id, "kind": self.kind, "pattern": self.pattern,
                 "actor": self.actor or "", "tool": self.tool or "", "reason": self.reason or "",
@@ -1362,7 +1362,9 @@ class UsedSamlAssertion(Base):
     """Single-use record of an accepted SAML assertion, for replay protection. python3-saml
     validates signature/audience/conditions but not one-time use, so a captured valid
     SAMLResponse could be re-POSTed within its NotOnOrAfter window. We cache the assertion id
-    per tenant until it expires and reject reuse; rows are pruned once past expiry."""
+    per tenant until it expires and reject reuse; rows are pruned once past expiry.
+    Also holds other single-use token ids, prefixed by kind (`justify:<jti>`, see
+    main._spend_once)."""
     __tablename__ = "used_saml_assertions"
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, index=True)

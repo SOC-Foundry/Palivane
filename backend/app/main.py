@@ -8,11 +8,13 @@ gateway, browser extension, and egress proxy.
 from __future__ import annotations
 
 import hmac
+import logging
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+import httpx
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, or_
@@ -282,6 +284,21 @@ app = FastAPI(
     redoc_url=None,
     openapi_url="/api/openapi.json",
 )
+
+
+@app.exception_handler(httpx.TransportError)
+async def _upstream_unreachable(request: Request, exc: httpx.TransportError):
+    """A provider (or other upstream) that can't be reached is a 502, not a bare 500 that
+    reads like our crash. The body is shaped so Anthropic- and OpenAI-style clients both find
+    a message: they read `error.message`, and Anthropic's SDK also checks `type`."""
+    gateway = request.url.path.startswith(("/v1/", "/v1beta/"))
+    what = "the model provider" if gateway else "an upstream service"
+    logging.getLogger("uvicorn.error").warning("upstream unreachable on %s: %s",
+                                               request.url.path, type(exc).__name__)
+    return JSONResponse(status_code=502, content={"type": "error", "error": {
+        "type": "upstream_unavailable", "code": "upstream_unavailable",
+        "message": f"Palivane could not reach {what} ({type(exc).__name__}). "
+                   "Try again shortly."}})
 
 _CORS_ORIGINS = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 # The browser extension calls the API from its own origin (chrome-extension://<id>) with
@@ -703,7 +720,8 @@ def _parse_since(since: str):
 @app.get("/api/export/findings")
 def export_findings(
     current: _ExportPrincipal = Depends(require_export_auth), db: Session = Depends(get_db),
-    severity: str | None = None, surface: str | None = None, limit: int = 5000,
+    severity: str | None = None, surface: str | None = None,
+    limit: int = Query(5000, ge=1, le=50000),
     since: str | None = None,
 ):
     """Export findings as JSONL (SIEM ingest). Console admin or an `ak_…` API key, so a
@@ -737,7 +755,7 @@ def export_findings(
 @app.get("/api/export/tenant")
 def export_tenant(
     current: User = Depends(require_admin), db: Session = Depends(get_db),
-    include_content: bool = False, limit: int = 50000,
+    include_content: bool = False, limit: int = Query(50000, ge=1, le=50000),
 ):
     """Full self-serve data export for this org (security review / portability request):
     tenant config, users, keys, findings, audit log, SSO/upstream config, DPA record — as
@@ -794,7 +812,7 @@ def metrics_endpoint(request: Request):
 
 
 @app.get("/api/admin/funnel")
-def admin_funnel(request: Request, days: int | None = None,
+def admin_funnel(request: Request, days: int | None = Query(None, ge=1, le=3650),
                  include_internal: bool = False, db: Session = Depends(get_db)):
     """Vendor product-analytics funnel (signup → activation). Operator-only: gated by the
     operator token (PALIVANE_ADMIN_TOKEN, else PALIVANE_METRICS_TOKEN; Bearer only), NOT a tenant session — it
@@ -1311,6 +1329,28 @@ def _score_ai_usage(content: str, actor: str, tool: str, destination: str,
     return result, meta
 
 
+def _spend_once(db: Session, tenant_id: int, key: str, exp) -> bool:
+    """Record a single-use token as spent; False if it already was (or carries no id). The
+    justified-proceed token said "once" but was good for its whole 10 minutes. Shares the
+    single-use table SAML replay protection uses: unique per (tenant, id), pruned on expiry."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy.exc import IntegrityError
+
+    from .models import UsedSamlAssertion
+    if key.endswith(":"):
+        return False                      # minted before ids existed: not provably single-use
+    expires = (datetime.fromtimestamp(int(exp), timezone.utc).replace(tzinfo=None)
+               if exp else datetime.now(timezone.utc).replace(tzinfo=None))
+    db.add(UsedSamlAssertion(tenant_id=tenant_id, assertion_id=key[:255], expires_at=expires))
+    try:
+        db.commit()
+        return True
+    except IntegrityError:
+        db.rollback()
+        return False
+
+
 def _prompt_verdict(result: dict, content: str, tenant_id: int | None,
                     db: Session) -> tuple[str, bool, bool | None, str | None]:
     """(action, force_block, coached, redacted_content) for a scored prompt. Shared by the
@@ -1399,7 +1439,9 @@ def ingest_ai_usage(
                     # what pins the grant to the EXACT justified message — mandatory and
                     # always enforced (a token with no/blank hash never matches), so one
                     # justification can't wave through other same-class content.
-                    and want and want == have):
+                    and want and want == have
+                    and _spend_once(db, tenant_id, f"justify:{tok.get('jti') or ''}",
+                                    tok.get("exp"))):
                 action = "warn"
                 force_block = False       # the justified send goes through, once
                 overridden = True
@@ -1560,9 +1602,12 @@ def ingest_justify(
     from . import audit_log
     audit_log.record(db, tenant_id, actor, "finding.justified", target=str(row.id),
                      detail={"note": body.justification.strip()[:200]})
+    import secrets as _secrets
+
     from .security import create_token
     token = create_token({"typ": "justify", "tenant_id": tenant_id,
                           "finding_id": row.id, "actor": actor,
+                          "jti": _secrets.token_urlsafe(16),
                           "content_hash": (body.content_hash or "").lower()}, ttl=600)
     return {"ok": True, "override_token": token, "expires_in": 600}
 
@@ -3215,7 +3260,7 @@ def list_findings(
     status: str | None = None,
     surface: str | None = None,
     actor: str | None = None,
-    limit: int = 100,
+    limit: int = Query(100, ge=1, le=500),
 ):
     q = db.query(Finding).filter(Finding.tenant_id == current.tenant_id)
     if severity:
@@ -3401,7 +3446,7 @@ def _mine(q, db, current: User):
 
 
 @app.get("/api/my/findings")
-def my_findings(status: str = "open", limit: int = 100,
+def my_findings(status: str = "open", limit: int = Query(100, ge=1, le=500),
                 current: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Findings attributed to the caller. Any role: this is the one console view that is
     for the person who caused or owns the finding rather than for the security team."""
@@ -3532,7 +3577,7 @@ def _tenant_dek_unwrapped(db: Session, tenant_id: int) -> str | None:
 
 @app.get("/api/ml/corpus")
 def ml_corpus_list(current: User = Depends(get_current_user), db: Session = Depends(get_db),
-                   labeled: bool | None = None, limit: int = 50):
+                   labeled: bool | None = None, limit: int = Query(50, ge=1, le=500)):
     """This tenant's staged corpus samples (content decrypted for the analyst).
     `labeled=false` is the labeling queue; `labeled=true` reviews recorded labels."""
     q = db.query(CorpusSample).filter(CorpusSample.tenant_id == current.tenant_id)
@@ -3637,7 +3682,7 @@ def coverage_reconcile(body: CoverageRequest, current: User = Depends(require_ad
 
 @app.get("/api/activity/users")
 def activity_users(current: User = Depends(require_admin), db: Session = Depends(get_db),
-                   limit: int = 200):
+                   limit: int = Query(200, ge=1, le=2000)):
     """Per-registered-user scan log: each actor Palivane has findings for, with counts,
     severity mix, the categories they trip, and last-seen — the 'who is doing what' view."""
     _RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}
@@ -3674,7 +3719,7 @@ def activity_users(current: User = Depends(require_admin), db: Session = Depends
 
 @app.get("/api/exposure")
 def exposure(current: User = Depends(require_admin), db: Session = Depends(get_db),
-             limit: int = 200):
+             limit: int = Query(200, ge=1, le=2000)):
     """Blast radius of content-origin lineage: for each at-rest document that leaked into
     an AI tool, every leak that pulled from it — which tools, which users, how often, when.
     The inverse of finding.origin (finding -> source): here it's source -> leaks. Answers
@@ -3721,7 +3766,7 @@ def exposure(current: User = Depends(require_admin), db: Session = Depends(get_d
 
 @app.get("/api/audit/sessions")
 def audit_sessions(current: User = Depends(require_admin), db: Session = Depends(get_db),
-                   days: int = 7, limit: int = 200):
+                   days: int = Query(7, ge=1, le=365), limit: int = Query(200, ge=1, le=2000)):
     """Unified cross-vendor session audit: one row per actor summarizing everything they
     did across EVERY agent product (Claude Code, Cursor, Codex, Gemini CLI, Copilot,
     browser AI, MCP) in the window — the vendor tools touched, event count, kill-chain
@@ -3733,7 +3778,8 @@ def audit_sessions(current: User = Depends(require_admin), db: Session = Depends
 
 @app.get("/api/audit/timeline")
 def audit_timeline(actor: str, current: User = Depends(require_admin),
-                   db: Session = Depends(get_db), days: int = 7, limit: int = 500):
+                   db: Session = Depends(get_db), days: int = Query(7, ge=1, le=365),
+                   limit: int = Query(500, ge=1, le=5000)):
     """The normalized chronological timeline of one actor's activity across every vendor
     plane — each event in a common shape (when / vendor / action / verdict / kill-chain
     stage), newest first. Retention is Palivane's own, independent of any vendor's cap."""
@@ -3744,7 +3790,7 @@ def audit_timeline(actor: str, current: User = Depends(require_admin),
 
 @app.get("/api/agents/a2a-graph")
 def a2a_call_graph(current: User = Depends(get_current_user), db: Session = Depends(get_db),
-                   days: int = 30):
+                   days: int = Query(30, ge=1, le=365)):
     """The agent-to-agent call graph: nodes (agents) and directed from→to flows carrying the
     message count, worst severity, categories, and sample finding ids. Built from flagged A2A
     findings, so it's the risk graph — where a poisoned instruction or sensitive data crossed
@@ -3756,7 +3802,7 @@ def a2a_call_graph(current: User = Depends(get_current_user), db: Session = Depe
 @app.get("/api/audit/export")
 def audit_export(current: _ExportPrincipal = Depends(require_export_auth),
                  db: Session = Depends(get_db),
-                 days: int = 7, actor: str = "", format: str = "jsonl",
+                 days: int = Query(7, ge=1, le=365), actor: str = "", format: str = "jsonl",
                  since: str | None = None):
     """Export the normalized cross-vendor audit trail for a SIEM / data lake — the whole
     tenant's agent activity (or one actor's) over the window, as newline-delimited JSON
