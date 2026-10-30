@@ -4343,8 +4343,12 @@ def report_summary(days: int = 30, current: User = Depends(require_admin),
     hb = (db.query(SensorHeartbeat)
             .filter(SensorHeartbeat.tenant_id == current.tenant_id).all())
     covered = {h.actor for h in hb if h.actor and h.last_seen and h.last_seen >= since}
+    from .metering import ANALYZED_KINDS
+    # The traffic kinds only. The meter also holds per-agent rate buckets ("ag<id>"), a second
+    # count of calls already in "gateway"; summing every kind counted each agent call twice.
     analyzed = (db.query(func.coalesce(func.sum(GatewayUsage.count), 0))
                   .filter(GatewayUsage.tenant_id == current.tenant_id,
+                          GatewayUsage.kind.in_(ANALYZED_KINDS),
                           GatewayUsage.window_start >= since).scalar() or 0)
     return {"days": days, "generated_at": now.isoformat(),
             "analyzed_events": int(analyzed),

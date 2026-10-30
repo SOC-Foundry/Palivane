@@ -31,6 +31,17 @@ def _judge_opt_in() -> bool:
     return bool(settings.judge_opt_in)
 
 
+def _url_origin(url: str | None) -> str:
+    """scheme://host[:port] of a URL, nothing that could carry a credential; "" if unset."""
+    from urllib.parse import urlparse
+    try:
+        u = urlparse((url or "").strip())
+        host = u.hostname or ""
+        return f"{u.scheme}://{host}{f':{u.port}' if u.port else ''}" if host else ""
+    except ValueError:
+        return ""
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -268,7 +279,11 @@ class Tenant(Base):
                 "alert_digest": self.alert_digest or "off",
                 "weekly_report": bool(self.weekly_report),
                 # siem_token is write-only — never returned; expose whether one is set.
-                "siem_url": self.siem_url or "",
+                # siem_url is write-only too: a collector URL can carry its token in the query
+                # or path, and this dict reaches every analyst (/api/auth/me), the org export
+                # and the demo login. Only where it points (scheme://host) is shown.
+                "siem_url_set": bool((self.siem_url or "").strip()),
+                "siem_url_host": _url_origin(self.siem_url),
                 "siem_min_severity": self.siem_min_severity or "high",
                 "siem_format": self.siem_format or "json",
                 "siem_s3_bucket": self.siem_s3_bucket or "",
