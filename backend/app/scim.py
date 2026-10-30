@@ -234,8 +234,9 @@ def _apply_rename(db, tenant, u: User, raw_email: str) -> JSONResponse | None:
     # address it controls and then take it over with a password reset, and the person who
     # would notice is the one whose address was just removed. (No-op when email is off.)
     u.token_version = (u.token_version or 0) + 1
-    from .auth import revoke_oauth_grants
+    from .auth import repoint_capture_keys, revoke_oauth_grants
     revoke_oauth_grants(db, u)
+    repoint_capture_keys(db, tenant.id, old, email)
     from . import email as email_mod
     email_mod.send(
         old, "Your Palivane sign-in address was changed",
