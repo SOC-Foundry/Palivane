@@ -21,9 +21,12 @@ What could NOT be shared is the write-route allowlist. `_user_for_api_key` gates
 (method, path), and MCP multiplexes every call — reads included — over a single
 POST /api/mcp. Applied here it would refuse everything. Rather than reimplement
 authorization per tool, which is the parallel permission system the scope design
-deliberately avoided, this exposes READ TOOLS ONLY. There is no write to get wrong. Adding
-`set_finding_status` and `sync_connector` needs a deliberate answer to "what is the
-allowlist when there are no routes", and that is a separate change.
+deliberately avoided, this exposes READ TOOLS ONLY, with one exception: investigate_finding
+stores the analyst's report and an audit entry and sends the finding to the org's LLM, so
+it needs what its REST route needs, a console_write key (`_require_write_key`). OAuth
+grants carry no write scope, so they are refused. Adding `set_finding_status` and
+`sync_connector` needs a deliberate answer to "what is the allowlist when there are no
+routes", and that is a separate change.
 
 Role still applies: tools whose REST equivalent is admin-gated call require_admin() on the
 resolved user, so an analyst's key sees exactly what an analyst sees. Calling an endpoint
@@ -223,11 +226,36 @@ def gateway_usage() -> dict:
     return _read(main.usage, admin=True)
 
 
+def _require_write_key() -> None:
+    """Refuse a connection that may not write, as REST does for POST /investigate: only a
+    console_write key passes. A console_read key, or an OAuth grant (palivane:read is the
+    only scope, and its consent screen says it cannot change anything), is refused."""
+    key_id = _CALLER.get()
+    scope = None
+    if key_id is not None:
+        from .models import ApiKey
+        db, gen = _session()
+        try:
+            key = db.get(ApiKey, key_id)
+            scope = key.scope if key is not None else None
+        finally:
+            _close(db, gen)
+    if scope != "console_write":
+        raise HTTPException(
+            status_code=403,
+            detail="this connection is read-only. Investigating stores a report on the finding "
+                   "and sends it to your org's LLM provider, so it needs a console_write key "
+                   "(or the Investigate button in the console).")
+
+
 @mcp.tool()
 def investigate_finding(finding_id: int) -> dict:
-    """Run the read-only analyst on a finding: it gathers the finding's context and the
-    actor's other recent findings and returns a written investigation with a RECOMMENDED
-    action (it never applies one). Uses the tenant's LLM providers, the same as the judge."""
+    """Run the analyst on a finding: it gathers the finding's context and the actor's other
+    recent findings and returns a written investigation with a RECOMMENDED action (it never
+    applies one). Uses the tenant's LLM providers, the same as the judge. The report is
+    saved on the finding, so this needs a console_write key; read-only connections are
+    refused."""
+    _require_write_key()
     from . import main
     return _read(main.investigate_finding, admin=False, finding_id=finding_id)
 
