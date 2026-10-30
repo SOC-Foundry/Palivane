@@ -84,9 +84,14 @@ that says an earlier blocked message is still in the conversation and how to rem
 it, `/rewind` in Claude Code, a new task in Cowork). No rescanning, and nothing outside
 Palivane's own past denials is affected.
 
-`tool_result` blocks are **not** scanned in v1, matching the gateway. Tool output (file reads,
-command output) is where secrets fixtures live, and the PreToolUse and MCP paths already cover
-tool calls. See open question 1.
+`tool_result` blocks are scanned **for confirmed secrets only** (since 2026-10-29, QA H5),
+on their own, outside the prompt score: what a tool just returned is on its way to the model,
+so a live credential in it is denied like one in a prompt, in monitor mode too. Ordinary tool
+output (code, file contents) never stops a frame. Only the latest turn's results are read, so
+a result is checked once. The gateway applies the same rule to the latest tool_result. Orgs
+whose repositories keep fake vendor keys in test fixtures can turn it off
+(`block_tool_result_secrets`, Settings); results are then recorded but not stopped.
+See open question 1.
 
 ### 3.3 What a tool-call frame scans
 
@@ -153,9 +158,9 @@ org that hasn't listed it. Content signals fire as on every other plane.
 
 ## 4. Open questions
 
-1. **Scan tool results?** Decided 2026-10-23: not in v1, matching the gateway. Turning them on
-   catches a secret Claude reads from a file before it reaches the model, at the cost of
-   fixture noise. A per-tenant toggle later.
+1. **Scan tool results?** Decided 2026-10-23: not in v1. Revised 2026-10-29 (QA H5): scanned
+   for confirmed secrets, which deny; on by default with a per-org off switch for fixture-heavy
+   repos. Other findings in tool output are recorded, never denied.
 2. **Image-only content** is never sent by Anthropic, so screenshots aren't inspected. Nothing
    Palivane can do on this path.
 3. **The titling request.** The overview says hooks govern inference requests; whether

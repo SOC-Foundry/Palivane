@@ -17,6 +17,8 @@ Pure functions (no DB): the endpoint in main.py does the scoring and persistence
   prior_block_hashes / turn_block_hashes
                     a denied message stays in the transcript and is resent on every later
                     request; its block hashes are remembered and matched in later frames.
+  latest_tool_results
+                    the latest turn's tool_result text, checked for confirmed secrets only.
   tool_activities   a tool_call frame's tool_use blocks as MCPIngest-shaped dicts.
   deny_reason       the user-facing text (500-char cap), masked evidence only.
 """
@@ -137,6 +139,26 @@ def latest_user_turn(messages: list) -> str:
                 text = f"[attachment {b.get('file_name') or ''}]\n{text}"
             parts.append(text)
     return "\n".join(parts)
+
+
+def latest_tool_results(messages: list) -> str:
+    """The text of the latest user turn's tool_result blocks: what the tools just returned,
+    on its way to the model. Scanned on its own (main._inference_hook_prompt) for confirmed
+    secrets only. Only the latest turn, so a result is checked once, not on every later
+    request that resends it."""
+    _earlier, latest = _latest_user_messages(messages)
+    parts: list[str] = []
+    for m in latest:
+        for b in _blocks(m):
+            if b.get("type") != "tool_result":
+                continue
+            c = b.get("content")
+            if isinstance(c, str):
+                parts.append(c)
+            elif isinstance(c, list):      # text blocks; images are not text
+                parts.extend(x.get("text") or "" for x in c
+                             if isinstance(x, dict) and x.get("type") == "text")
+    return "\n".join(p for p in parts if p.strip())
 
 
 def turn_block_hashes(messages: list) -> list[str]:
@@ -260,6 +282,10 @@ def deny_reason(what: str, signals: list, fix: str = "") -> str:
 RESENT_FIX = ("A message that was blocked earlier is still in this conversation. Edit it to "
               "take the content out (Claude Code: /rewind; Cowork: edit it, or start a new "
               "task), or start a new chat.")
+
+
+TOOL_RESULT_FIX = ("A tool returned a live credential, and it was kept from the model. Remove "
+                   "or rotate it, then undo that step (Claude Code: /rewind) or start a new chat.")
 
 
 def reference_id(finding_id) -> str | None:
