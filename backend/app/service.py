@@ -221,7 +221,10 @@ def _fingerprint(tenant_id, item: AnalysisInput, signals: list[dict]) -> str:
     piling up new rows — the evidence snippet keeps *different* secrets/commands
     from the same actor as distinct findings."""
     import hashlib
-    parts = [str(tenant_id or 0), item.sender, item.channel, item.surface.value, item.subject]
+    # Sender case-folded: "Dev@acme.com" and "dev@acme.com" are one person and used to fold
+    # into two findings.
+    parts = [str(tenant_id or 0), (item.sender or "").strip().lower(), item.channel,
+             item.surface.value, item.subject]
     # `fold` is only present on a signal whose evidence cannot tell events apart; leaving it out
     # otherwise keeps every existing finding's fingerprint, so nothing already recorded stops folding.
     parts += sorted(f"{s.get('category','')}|{(s.get('evidence') or '')[:80]}"
