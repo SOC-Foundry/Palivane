@@ -64,6 +64,10 @@ _ML_MIN_PROBA = 0.80   # both tiers report only when the model is confident
 # freemail contact list warns and records, but hard-blocks only under an enforce
 # posture, never via confirmed_leak()'s monitor-mode override.
 CONTACT_LIST_TITLE = "Personal contact list (bulk emails)"
+# Title of a hit on an org's own custom PII pattern — same tier again. A regex an admin wrote
+# is not a confirmed leak: bundled into the built-in PII signal, one loose pattern (`.`)
+# force-blocked every prompt in the org, monitor mode included.
+CUSTOM_PATTERN_TITLE = "Org-defined pattern in outbound content"
 
 # --- PII --------------------------------------------------------------------------------
 
@@ -628,7 +632,7 @@ def confirmed_leak(signals) -> bool:
         cat = s.get("category") if isinstance(s, dict) else getattr(s.category, "value", "")
         title = s.get("title") if isinstance(s, dict) else getattr(s, "title", "")
         if (cat in ("secret_leak", "pii_exposure", "phi_exposure")
-                and title not in (HIGH_ENTROPY_TITLE, CONTACT_LIST_TITLE)):
+                and title not in (HIGH_ENTROPY_TITLE, CONTACT_LIST_TITLE, CUSTOM_PATTERN_TITLE)):
             return True
     return False
 
@@ -859,10 +863,7 @@ class ShadowAIDetector:
 
         # (A) Org-specific PII / confidential patterns (global env + this tenant's list).
         extra = (meta or {}).get("custom_pii", "")
-        for label, rx in custom_pii_patterns(extra):
-            if rx.search(text):
-                found.append(label)
-                weight = max(weight, 0.7)
+        custom = [label for label, rx in custom_pii_patterns(extra) if rx.search(text)]
 
         out: list[Signal] = []
         if bulk_emails:
@@ -883,6 +884,15 @@ class ShadowAIDetector:
                 detail="Personally identifiable information is about to leave for an AI tool.",
                 weight=weight, confidence=0.75, detector=self.name,
                 evidence="; ".join(found[:4]),
+            ))
+        if custom:
+            out.append(Signal(
+                category=Category.PII_EXPOSURE,
+                title=CUSTOM_PATTERN_TITLE,
+                detail="Content matching one of your organization's own data patterns is "
+                       "about to leave for an AI tool.",
+                weight=0.7, confidence=0.75, detector=self.name,
+                evidence="; ".join(custom[:4]),
             ))
         return out
 

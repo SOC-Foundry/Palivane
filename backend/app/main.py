@@ -1573,7 +1573,7 @@ def exception_request(
     modal). Recorded to the audit log so an admin can review/act — turns a hard wall into a
     request, which reduces shadow-AI workarounds. Token-gated (the extension's capture key)."""
     from . import audit_log
-    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
+    tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
     _enforce_rate(db, tenant_id)
     # Don't let a caller attach a request to a finding that isn't theirs: a cross-tenant
     # finding_id would surface another org's finding in this tenant's Exceptions queue.
@@ -1591,9 +1591,10 @@ def exception_request(
     # First-class queue row (the audit entry above is kept for compat/history): admins
     # review these under Policies → Exceptions and can approve into a scoped override.
     from .models import ExceptionRecord
+    actor = _attributed_actor(body.user, default_actor)
     row = ExceptionRecord(
         tenant_id=tenant_id, finding_id=body.finding_id,
-        actor=_attributed_actor(body.user, default_actor)[:320],
+        actor=actor[:320], claimed=_actor_claimed(actor, default_actor, default_claimed),
         destination=body.destination[:2048],
         categories=",".join(dict.fromkeys(c.strip() for c in body.categories[:8] if c.strip())),
         reason=body.reason[:2000])
@@ -4099,6 +4100,16 @@ def exception_resolve(req_id: int, body: ExceptionResolve,
                                        "pass disable_checks explicitly")
         if not row.actor:
             raise HTTPException(status_code=400, detail="request has no actor to scope to")
+        if row.claimed:
+            # The override would be written and then never apply: a claimed identity can
+            # only tighten policy, or anyone with the shared key could name this person and
+            # inherit the exemption. Say so instead of reporting an approval that does nothing.
+            raise HTTPException(
+                status_code=409,
+                detail=f"{row.actor} was identified by a shared fleet key, which can't prove who "
+                       "they are, so a per-person exception can't apply to them. Give them their "
+                       "own key (browser extension sign-in) and ask them to request it again, or "
+                       "deny this and change the policy for everyone.")
         channel = body.channel.strip().lower()
         ov = (db.query(PolicyOverride)
                 .filter(PolicyOverride.tenant_id == current.tenant_id,
@@ -4466,6 +4477,12 @@ def simulate(body: SimulateIn, current: User = Depends(require_admin),
                                  settings.gateway_tool_suppress)
     sig_filter = signal_filter_for(detect_tool(explicit=tool), extra=suppress,
                                    destination=destination)
+    allow_holder = None
+    if body.plane == "tool":
+        # The org's allowlist, as the ingest path applies it. Without it an allowlisted
+        # command simulated as blocked. Hits are not recorded: nothing ran.
+        from . import allowlist
+        allow_holder = allowlist.attach(db, current.tenant_id, actor, tool, item.metadata)
     result = run_analysis(item, persist=False, db=db, tenant_id=current.tenant_id,
                           signal_filter=sig_filter)
 
@@ -4504,7 +4521,8 @@ def simulate(body: SimulateIn, current: User = Depends(require_admin),
             "enforce_stance": effective_enforce,
             "matched_override": matched_enforce or matched_checks,
             "outcome_monitor": outcome_monitor,
-            "outcome_enforce": _outcome(True)}
+            "outcome_enforce": _outcome(True),
+            "allowlisted": sorted(set((allow_holder or {}).get("hits") or []))}
 
 
 @app.get("/api/discovery/inventory")

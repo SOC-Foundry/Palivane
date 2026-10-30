@@ -1279,6 +1279,10 @@ class ExceptionRecord(Base):
     resolved_by = Column(String(320), default="")
     resolution_note = Column(String(512), default="")
     applied_override_id = Column(Integer, nullable=True)  # PolicyOverride created on approve
+    # The actor was the client's claim (a fleet key's per-request user), not what the key
+    # proves. A per-person override can't relax policy for a claim (policies.resolve_disabled),
+    # so such a request can't be approved into one: saying "approved" would change nothing.
+    claimed = Column(Boolean, nullable=False, default=False)
 
     def to_dict(self) -> dict:
         return {"id": self.id, "finding_id": self.finding_id, "actor": self.actor,
@@ -1289,7 +1293,8 @@ class ExceptionRecord(Base):
                 "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
                 "resolved_by": self.resolved_by,
                 "resolution_note": self.resolution_note,
-                "applied_override_id": self.applied_override_id}
+                "applied_override_id": self.applied_override_id,
+                "claimed": bool(self.claimed)}
 
 
 class License(Base):
