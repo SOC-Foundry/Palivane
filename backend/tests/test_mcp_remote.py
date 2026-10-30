@@ -105,7 +105,8 @@ def test_only_read_tools_are_exposed(client):
     names = {t.name for t in mcp._tool_manager.list_tools()}
     assert names == {"list_findings", "get_finding", "ai_tool_inventory",
                      "list_connectors", "gateway_usage", "investigate_finding"}
-    # investigate_finding calls an LLM but is read-only — it recommends, never mutates.
+    # investigate_finding recommends, never changes status, but it stores its report, so it
+    # needs a console_write key (test_mcp_investigate_scope.py).
     assert not {n for n in names if "set_" in n or "sync" in n}
 
 
