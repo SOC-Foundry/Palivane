@@ -1869,7 +1869,8 @@ def _agent_authz_probe(agent: str, tenant_id, body, db: Session):
         # Decide against the RAW categories (the MCP filter drops source_code_leak, but a
         # role's data-scope may still forbid it).
         cats = {s.category.value for s in signals}
-        denied, reason = _authz_decide(role_d, body.server, body.tool, body.args_text, cats)
+        denied, reason = _authz_decide(role_d, body.server, body.tool, body.args_text, cats,
+                                       shell_command=body.shell_command)
         if denied:
             dec["denied"] = True
             dec["reason"] = reason
