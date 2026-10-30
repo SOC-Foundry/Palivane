@@ -59,8 +59,10 @@ def test_no_webhook_no_alert(client, db_factory, monkeypatch):
 def test_weekly_report_mails_admins_and_claims_window(client, db_factory, monkeypatch):
     sent = []
     import app.email as email_mod
-    monkeypatch.setattr(email_mod, "send",
-                        lambda to, subject, body: sent.append((to, subject, body)))
+    monkeypatch.setattr(email_mod, "enabled", lambda: True)
+    monkeypatch.setattr(email_mod, "send", lambda *a, **k: None)   # nothing else goes out
+    monkeypatch.setattr(email_mod, "send_now",      # the report delivers synchronously
+                        lambda to, subject, body: sent.append((to, subject, body)) or True)
     db = db_factory()
     t = _tenant(db)
     t.weekly_report = True
