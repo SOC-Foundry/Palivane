@@ -108,8 +108,31 @@ def _get_user(db: Session, tenant: Tenant, user_id: str) -> User:
 
 
 def _audit(db, tenant, action, target, detail=None):
+    """Queue an audit entry for after the request commits (_commit). audit_log.record
+    commits, so writing it mid-request committed the operations before it too: a PatchOp
+    whose later operation was refused still applied its earlier ones."""
     from . import audit_log
-    audit_log.record(db, tenant.id, "scim", action, target=target, detail=detail or {})
+    _after(db, lambda: audit_log.record(db, tenant.id, "scim", action, target=target,
+                                        detail=detail or {}))
+
+
+def _after(db, fn) -> None:
+    """Run `fn` once this request's changes are committed; dropped if they are rolled back."""
+    db.info.setdefault("scim_after", []).append(fn)
+
+
+def _commit(db) -> None:
+    """Commit the request's changes, then run what was queued for after (audit, mail)."""
+    db.commit()
+    for fn in db.info.pop("scim_after", []):
+        fn()
+
+
+def _refuse(db, resp: JSONResponse) -> JSONResponse:
+    """Refuse the whole request: nothing it changed is kept, nothing queued runs."""
+    db.rollback()
+    db.info.pop("scim_after", None)
+    return resp
 
 
 @router.get("/ServiceProviderConfig")
@@ -169,15 +192,20 @@ def create_user(body: dict, tenant: Tenant = Depends(scim_tenant),
         return _err(400, "userName must be an email address", "invalidValue")
     if db.query(User).filter(User.tenant_id == tenant.id, User.email == email).first():
         return _err(409, f"user {email} already exists", "uniqueness")
+    from .auth import check_seat
+    try:
+        check_seat(db, tenant.id)
+    except HTTPException as e:
+        return _err(403, str(e.detail), "")
     u = User(tenant_id=tenant.id, email=email, role="analyst",
              active=bool(body.get("active", True)),
              # Random unusable password: SCIM-provisioned users sign in via SSO (or set
              # one through the reset flow) — provisioning must never mint a credential.
              password_hash=hash_password(secrets.token_urlsafe(32)))
     db.add(u)
-    db.commit()
-    db.refresh(u)
     _audit(db, tenant, "scim.user_created", email)
+    _commit(db)
+    db.refresh(u)
     return JSONResponse(status_code=201, media_type=_SCIM_CT, content=_resource(u))
 
 
@@ -193,12 +221,18 @@ def get_user(user_id: str, tenant: Tenant = Depends(scim_tenant),
 
 def _apply_active(db, tenant, u: User, active: bool) -> JSONResponse | None:
     if u.active and not active:
+        from .auth import lock_admin_changes
+        lock_admin_changes(db, tenant.id)
         if u.role == "admin" and _active_admins(db, tenant.id) <= 1:
             return _err(409, "cannot deactivate the last active admin", "mutability")
         u.active = False
         u.token_version = (u.token_version or 0) + 1     # log out everywhere, now
         from .auth import revoke_user_keys                # and their API keys / OAuth grants
         revoke_user_keys(db, u)
+        if u.role == "admin":                             # re-count after the write (SQLite)
+            db.flush()
+            if _active_admins(db, tenant.id) < 1:
+                return _err(409, "cannot deactivate the last active admin", "mutability")
         _audit(db, tenant, "scim.user_deactivated", u.email)
     elif not u.active and active:
         if u.role == "admin":
@@ -238,12 +272,12 @@ def _apply_rename(db, tenant, u: User, raw_email: str) -> JSONResponse | None:
     revoke_oauth_grants(db, u)
     repoint_capture_keys(db, tenant.id, old, email)
     from . import email as email_mod
-    email_mod.send(
+    _after(db, lambda: email_mod.send(
         old, "Your Palivane sign-in address was changed",
         f"Your organization's identity provider changed the sign-in address of your Palivane "
         f"account (organization \"{tenant.slug}\") from {old} to {email}, and signed you out.\n\n"
         "If you expected this, there is nothing to do. If not, tell your Palivane admin now: "
-        "the new address can reset the account's password.")
+        "the new address can reset the account's password."))
     return None
 
 
@@ -256,12 +290,12 @@ def replace_user(user_id: str, body: dict, tenant: Tenant = Depends(scim_tenant)
         return _err(e.status_code, e.detail, e.scim_type)
     blocked = _apply_rename(db, tenant, u, str(body.get("userName") or ""))
     if blocked is not None:
-        return blocked
+        return _refuse(db, blocked)
     if "active" in body:
         blocked = _apply_active(db, tenant, u, bool(body.get("active")))
         if blocked is not None:
-            return blocked
-    db.commit()
+            return _refuse(db, blocked)
+    _commit(db)
     db.refresh(u)
     return JSONResponse(media_type=_SCIM_CT, content=_resource(u))
 
@@ -288,12 +322,12 @@ def patch_user(user_id: str, body: dict, tenant: Tenant = Depends(scim_tenant),
                 truthy = val if isinstance(val, bool) else str(val).lower() == "true"
                 blocked = _apply_active(db, tenant, u, truthy)
                 if blocked is not None:
-                    return blocked
+                    return _refuse(db, blocked)
             elif key == "userName" and val:
                 blocked = _apply_rename(db, tenant, u, str(val))
                 if blocked is not None:
-                    return blocked
-    db.commit()
+                    return _refuse(db, blocked)
+    _commit(db)
     db.refresh(u)
     return JSONResponse(media_type=_SCIM_CT, content=_resource(u))
 
@@ -309,6 +343,6 @@ def delete_user(user_id: str, tenant: Tenant = Depends(scim_tenant),
         return _err(e.status_code, e.detail, e.scim_type)
     blocked = _apply_active(db, tenant, u, False)
     if blocked is not None:
-        return blocked
-    db.commit()
+        return _refuse(db, blocked)
+    _commit(db)
     return Response(status_code=204)

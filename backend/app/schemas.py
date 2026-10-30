@@ -341,11 +341,23 @@ class ResetRequest(BaseModel):
     password: str = Field(min_length=8)
 
 
+_SIGNUP_EMAIL = re.compile(r"[^@\s\x00-\x1f]+@[^@\s\x00-\x1f]+\.[^@\s\x00-\x1f.]+")
+
+
 class SignupRequest(BaseModel):
     org_name: str = Field(min_length=2, description="organization / tenant name")
-    email: str = Field(min_length=3)
+    email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=8)
     slug: str = ""   # optional; derived from org_name when blank
+
+    @field_validator("email")
+    @classmethod
+    def _email_shape(cls, v: str) -> str:
+        # One @, a local part, a dotted domain, no spaces or control characters. Not RFC
+        # 5321 in full; enough that a signup is an address a confirmation mail can reach.
+        if not _SIGNUP_EMAIL.fullmatch(v.strip()):
+            raise ValueError("enter a valid email address")
+        return v
 
 
 class UserCreate(BaseModel):

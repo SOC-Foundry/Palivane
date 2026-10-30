@@ -68,11 +68,11 @@ def demo_login(request: Request, db: Session = Depends(get_db)):
     ip = _client_ip(request)
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.login_window)
     if ip and (db.query(LoginAttempt)
-               .filter(LoginAttempt.email == "__demo__", LoginAttempt.ip == ip,
+               .filter(LoginAttempt.kind == "demo", LoginAttempt.ip == ip,
                        LoginAttempt.created_at >= cutoff).count()
                >= settings.login_ip_max_fails):
         raise HTTPException(status_code=429, detail="too many demo sessions, try again later")
-    db.add(LoginAttempt(email="__demo__", ip=ip))
+    db.add(LoginAttempt(email="__demo__", ip=ip, kind="demo"))
     db.commit()
 
     user = (db.query(User)
