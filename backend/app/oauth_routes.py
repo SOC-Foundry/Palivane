@@ -29,7 +29,19 @@ from sqlalchemy.orm import Session
 from .auth import get_current_user
 from .database import get_db
 from .models import OAuthClient, OAuthCode, User
-from .oauth_provider import _LOOPBACK, CODE_TTL, READ_SCOPE, _now, valid_redirect_uri
+from .oauth_provider import (
+    _LOOPBACK, CODE_TTL, READ_SCOPE, TRIAGE_SCOPE, _now, normalize_scopes, valid_redirect_uri,
+)
+
+# What each scope lets an app do, in the words the consent screen shows.
+SCOPE_TEXT = {
+    READ_SCOPE: "Read your Palivane findings, inventory and reports. It can only see what you "
+                "can see.",
+    TRIAGE_SCOPE: "Change a finding's status: open or triaged (and dismissed, if you are an "
+                  "admin), and run the AI analyst on a finding, which saves its report and "
+                  "sends the finding's context to your organization's own LLM provider. Every "
+                  "change is recorded in the audit log under your name.",
+}
 from .schemas import OAuthConsentRequest
 from .security import hash_token
 
@@ -37,7 +49,7 @@ router = APIRouter(prefix="/api/oauth", tags=["oauth"])
 
 
 @router.get("/pending")
-def pending_consent(client_id: str, redirect_uri: str,
+def pending_consent(client_id: str, redirect_uri: str, scope: str = "",
                     current: User = Depends(get_current_user),
                     db: Session = Depends(get_db)):
     """What the consent screen should say — resolved server-side, not from the URL.
@@ -58,15 +70,19 @@ def pending_consent(client_id: str, redirect_uri: str,
         raise HTTPException(status_code=400, detail="redirect_uri is not registered for this client")
     from urllib.parse import urlparse
     host = urlparse(redirect_uri).hostname or ""
+    # What may be offered: what the URL asks for, within what the client registered. The URL
+    # is the caller's word, so a scope the client never registered for is never shown.
+    offered = normalize_scopes(scope, (client.scope or READ_SCOPE).split()).split()
     return {
         "client_name": client.client_name or client.client_id,
         "client_id": client.client_id,
         "redirect_uri": redirect_uri,
         "redirect_host": host,
         "redirect_local": host in _LOOPBACK,
-        "scope": READ_SCOPE,
-        "scope_description": "Read your Palivane findings, inventory and reports. "
-                             "It cannot change anything, and it can only see what you can see.",
+        "scope": " ".join(offered),
+        "scopes": [{"scope": s, "description": SCOPE_TEXT[s], "writes": s != READ_SCOPE}
+                   for s in offered],
+        "scope_description": SCOPE_TEXT[READ_SCOPE],
         "granting_as": {"email": current.email, "role": current.role},
     }
 
@@ -110,9 +126,9 @@ def grant_consent(body: OAuthConsentRequest,
         tenant_id=current.tenant_id,
         redirect_uri=body.redirect_uri,
         code_challenge=body.code_challenge,
-        # Granted scope is fixed, not requested: the tool set is read-only, so there is
-        # nothing else to grant and no negotiation to get wrong.
-        scopes=READ_SCOPE,
+        # Read, plus triage only if the client registered for it AND the person left it
+        # ticked. Never more than registration allowed, whatever the body says.
+        scopes=normalize_scopes(body.scope, (client.scope or READ_SCOPE).split()),
         expires_at=_now() + CODE_TTL,
     ))
     db.commit()
