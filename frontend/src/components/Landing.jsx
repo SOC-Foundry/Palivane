@@ -394,7 +394,7 @@ export default function Landing({ onSignIn }) {
         <div className="lp-wrap">
           <div className="lp-band-head rv">
             <span className="lp-eyebrow">How it works</span>
-            <h2 className="lp-h2">One checkpoint between your team and <span className="lp-hl">every AI tool</span></h2>
+            <h2 className="lp-h2">One checkpoint between your team and <span className="lp-hl">the AI tools they use</span></h2>
           </div>
           <div className="lp-flow rv" style={{ "--i": 1 }}>
             <div className="lp-flow-col">
