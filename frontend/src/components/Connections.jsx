@@ -44,10 +44,11 @@ export default function Connections() {
     api.oauthGrants().then((r) => setGrants(r.grants || [])).catch(() => setGrants([]));
   }, []);
 
-  async function revokeGrant(clientId, name) {
-    if (!window.confirm(`Revoke ${name}? It will lose access immediately.`)) return;
+  async function revokeGrant(clientId, name, userId, approver) {
+    // One row is one person's approval: revoke that, not the app for everyone who uses it.
+    if (!window.confirm(`Revoke ${name} for ${approver}? It will lose access to their Palivane data immediately.`)) return;
     try {
-      await api.revokeOauthGrant(clientId);
+      await api.revokeOauthGrant(clientId, userId);
       setMsg({ ok: true, text: `${name} can no longer read your Palivane data.` });
       load();
     } catch (e) {
@@ -162,7 +163,7 @@ export default function Connections() {
                       <td>{g.granted_at ? new Date(g.granted_at).toLocaleDateString() : "-"}</td>
                       <td>{g.expires_at ? new Date(g.expires_at).toLocaleDateString() : "-"}</td>
                       <td><button type="button" className="link-btn"
-                                  onClick={() => revokeGrant(g.client_id, g.client_name)}>revoke</button></td>
+                                  onClick={() => revokeGrant(g.client_id, g.client_name, g.user_id, g.granted_by)}>revoke</button></td>
                     </tr>
                   ))}
                 </tbody>

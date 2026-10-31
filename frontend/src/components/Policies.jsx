@@ -17,7 +17,10 @@ const BLANK = { scope: "group", match: "", channel: "", label: "", disabled_chec
 // How long ago an ISO timestamp was, coarsely, for the exceptions queue.
 function age(ts) {
   if (!ts) return "-";
-  const ms = Date.now() - new Date(ts).getTime();
+  // The API's timestamps are UTC without a zone; read bare, they parsed as local time and a
+  // new request showed "-" (west of UTC) or too old (east). Same as Allowlist and Audit.
+  const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(ts) ? ts : `${ts}Z`;
+  const ms = Date.now() - new Date(iso).getTime();
   if (!Number.isFinite(ms) || ms < 0) return "-";
   const mins = Math.floor(ms / 60000);
   if (mins < 60) return `${mins}m`;

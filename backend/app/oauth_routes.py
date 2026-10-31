@@ -168,6 +168,7 @@ def list_grants(current: User = Depends(get_current_user), db: Session = Depends
     return {"grants": [{
         "client_id": g["client_id"],
         "client_name": names.get(g["client_id"], g["client_id"]),
+        "user_id": g["user_id"],
         "granted_by": users.get(g["user_id"], "unknown"),
         "scopes": g["scopes"],
         "granted_at": g["granted_at"].isoformat() if g["granted_at"] else None,
@@ -176,12 +177,16 @@ def list_grants(current: User = Depends(get_current_user), db: Session = Depends
 
 
 @router.delete("/grants/{client_id}")
-def revoke_grant(client_id: str, current: User = Depends(get_current_user),
-                 db: Session = Depends(get_db)):
+def revoke_grant(client_id: str, user_id: int | None = None,
+                 current: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Cut an app off. Revokes every live token it holds, access and refresh together.
 
     Both kinds, or revoking is theatre: leaving the refresh token alive lets the client mint
     a fresh access token within the hour and carry on.
+
+    `user_id` limits it to one person's approval, which is what a row on Connections is (one
+    per app per approver): revoking an admin's own row used to cut off every user of that
+    app. Without it, an admin still revokes the app org-wide.
     """
     from .models import OAuthToken as Row
 
@@ -192,6 +197,8 @@ def revoke_grant(client_id: str, current: User = Depends(get_current_user),
     # An admin can cut off anything in their org; anyone else only what they approved.
     if current.role != "admin":
         q = q.filter(Row.user_id == current.id)
+    if user_id is not None:
+        q = q.filter(Row.user_id == user_id)
 
     rows = q.all()
     if not rows:
