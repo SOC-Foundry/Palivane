@@ -139,9 +139,9 @@ class Tenant(Base):
     # included) as NDJSON micro-batches under <prefix>/<naming>/events/… — the audit-trail
     # complement to the findings feed above. Content ships redacted unless the org opts
     # into raw prose; daily_mb caps bytes/day (0 = the PALIVANE_ARCHIVE_DAILY_MB default).
-    archive_s3_enabled = Column(Boolean, default=False)
-    archive_s3_raw_content = Column(Boolean, default=False)
-    archive_s3_daily_mb = Column(Integer, default=0)
+    archive_s3_enabled = Column(Boolean, default=False, nullable=False)
+    archive_s3_raw_content = Column(Boolean, default=False, nullable=False)
+    archive_s3_daily_mb = Column(Integer, default=0, nullable=False)
     # Per-tenant policy posture (each org picks its own monitor/enforce stance; empty/None
     # = inherit the global env default, same tri-state pattern as judge_enabled).
     gateway_enforce = Column(Boolean, nullable=True, default=None)
@@ -214,11 +214,11 @@ class Tenant(Base):
     agent_oidc_audience = Column(String(255), default="")
     # When agent OIDC is configured, block tool calls whose agent isn't OIDC-attested (a
     # bearer ag_ token or none). Off = flag only. Meaningless without agent_oidc_issuer.
-    agent_attestation_enforce = Column(Boolean, default=False)
+    agent_attestation_enforce = Column(Boolean, default=False, nullable=False)
     # Opt-in for the read-only AI analyst. OFF by default: investigating a finding sends its
     # redacted context out, so it stays off until an admin turns it on. It also needs a BYOK
     # judge key — the analyst has no operator-provider fallback (service.resolve_analyst_backends).
-    analyst_enabled = Column(Boolean, default=False)
+    analyst_enabled = Column(Boolean, default=False, nullable=False)
     # Data-processing agreement acceptance (compliance record; history in the audit log).
     dpa_version = Column(String(32), default="")
     dpa_accepted_at = Column(DateTime, nullable=True)
@@ -822,7 +822,7 @@ class DiscoveredUsage(Base):
     __tablename__ = "discovered_usage"
     __table_args__ = (UniqueConstraint("tenant_id", "actor", "tool", name="uq_usage_actor_tool"),)
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=True)
     actor = Column(String(320), default="", index=True)   # normalized (lowercased) user id
     team = Column(String(128), default="")                # department/team, if known
@@ -875,7 +875,7 @@ class Agent(Base):
     __tablename__ = "agents"
     __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_agent_tenant_name"),)
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
     name = Column(String(128), nullable=False)          # "billing-bot"
     kind = Column(String(16), default="service")        # service | interactive
@@ -916,7 +916,7 @@ class AgentRole(Base):
     __tablename__ = "agent_roles"
     __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_agentrole_tenant_name"),)
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
     name = Column(String(64), nullable=False)
     allow_tools = Column(String(2048), default="")     # comma-sep globs (MCP tool names)
@@ -958,7 +958,7 @@ class PolicyOverride(Base):
     __table_args__ = (UniqueConstraint("tenant_id", "scope", "match", "channel",
                                        name="uq_override_scope_match"),)
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=True)
     scope = Column(String(8), default="user")     # user | group
     match = Column(String(320), default="")       # email (user) or glob pattern (group)
@@ -1099,7 +1099,7 @@ class ContentFingerprint(Base):
     __table_args__ = (UniqueConstraint("tenant_id", "source", "ref",
                                        name="uq_fingerprint_tenant_source_ref"),)
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
     source = Column(String(32), default="")      # gdrive | sharepoint | slack | salesforce
     ref = Column(String(512), default="")        # stable id/path within the source
@@ -1134,7 +1134,7 @@ class OAuthClient(Base):
 
     __tablename__ = "oauth_clients"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     client_id = Column(String(64), unique=True, index=True, nullable=False)
     # Public clients (the MCP case) authenticate with PKCE and hold no secret; the column
     # stays for confidential clients rather than being assumed absent.
@@ -1152,7 +1152,7 @@ class OAuthCode(Base):
 
     __tablename__ = "oauth_codes"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     code_hash = Column(String(64), unique=True, index=True, nullable=False)
     client_id = Column(String(64), index=True, nullable=False)
     # WHO approved. The whole point of the consent step: a code — and the token it becomes
@@ -1173,7 +1173,7 @@ class OAuthToken(Base):
 
     __tablename__ = "oauth_tokens"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     token_hash = Column(String(64), unique=True, index=True, nullable=False)
     kind = Column(String(8), default="access")         # access | refresh
     client_id = Column(String(64), index=True, nullable=False)
@@ -1385,7 +1385,7 @@ class UsedSamlAssertion(Base):
     Also holds other single-use token ids, prefixed by kind (`justify:<jti>`, see
     main._spend_once)."""
     __tablename__ = "used_saml_assertions"
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer, index=True)
     assertion_id = Column(String(255))
     expires_at = Column(DateTime, index=True)
