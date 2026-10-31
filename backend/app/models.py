@@ -98,6 +98,10 @@ class Tenant(Base):
     # discovered AI tools, top actors. weekly_report_last is the send-window claim.
     weekly_report = Column(Boolean, default=False)
     weekly_report_last = Column(DateTime, nullable=True)
+    # A delivered week whose mail failed for SOME admins: who's left, and the report itself, so
+    # those few get it on a later run. {"to": [...], "body": "...", "tries": n}; None = nothing
+    # pending. Cleared when they're all reached, after _WEEKLY_RETRIES, or by the next report.
+    weekly_report_retry = Column(JSON, nullable=True)
     # SIEM forwarding: push findings >= siem_min_severity to a collector (Splunk HEC / generic
     # HTTP / CEF). Vendor-neutral — the SIEM specifics are the customer's URL + token + format.
     siem_url = Column(String(1024), default="")
@@ -1201,7 +1205,7 @@ class InferenceHookDenial(Base):
 
 
 class SensorHeartbeat(Base):
-    """Last-seen per (actor, plane, tool) — the fleet-health ledger.
+    """Last-seen per (actor, plane, tool, client) — the fleet-health ledger.
 
     Every capture-plane call (ai-usage, mcp, posture scans) upserts its row, so the
     console can distinguish "protected and quiet" from "silently dark" (hooks fail open
@@ -1209,8 +1213,8 @@ class SensorHeartbeat(Base):
     healthy device that just isn't sending anything)."""
 
     __tablename__ = "sensor_heartbeats"
-    __table_args__ = (UniqueConstraint("tenant_id", "actor", "plane", "tool",
-                                       name="uq_heartbeat_scope"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "actor", "plane", "tool", "client",
+                                       name="uq_heartbeat_sensor"),)
 
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=True)
