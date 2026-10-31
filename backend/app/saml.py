@@ -42,6 +42,10 @@ def _settings(cfg, sp_entity_id: str, acs_url: str) -> dict:
             "wantMessagesSigned": False,
             "wantAssertionsSigned": True,   # the IdP must sign the assertion
             "requestedAuthnContext": False,
+            # Email may come in NameID alone (_pick_email falls back to it). python3-saml
+            # requires an AttributeStatement by default, which refused minimal IdPs that send
+            # only NameID, with an opaque "invalid_response".
+            "wantAttributeStatement": False,
         },
     }
 

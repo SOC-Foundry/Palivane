@@ -35,6 +35,13 @@ def _safe(url: str) -> str:
     can't turn the server into an internal-network proxy."""
     from .netguard import is_safe_url
     if not is_safe_url(url):
+        # Say which it was: a name that doesn't resolve read as an SSRF block.
+        import socket
+        from urllib.parse import urlparse
+        try:
+            socket.getaddrinfo(urlparse(url).hostname or "", None)
+        except (socket.gaierror, UnicodeError):
+            raise OIDCError(f"could not resolve the host in {url}")
         raise OIDCError(f"refusing to fetch a non-public URL: {url}")
     return url
 

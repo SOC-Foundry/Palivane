@@ -296,8 +296,9 @@ def build_asgi_app():
         token = auth[7:].strip() if auth[:7].lower() == "bearer " else ""
         if not token:
             return await _unauthorized(
-                "this endpoint needs a console-scoped Palivane API key: "
-                "Authorization: Bearer ak_…")(scope, receive, send)
+                "sign in with OAuth (the resource metadata in WWW-Authenticate points the way), "
+                "or send a console-scoped Palivane API key: Authorization: Bearer ak_…")(
+                    scope, receive, send)
         db, gen = _session()
         try:
             if token.startswith("pat_"):

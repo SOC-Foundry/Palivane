@@ -911,7 +911,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                         <tr>
                           <th>Feature</th>
                           {catalog.tiers.map((t) => (
-                            <th key={t.name} className={t.name === catalog.current ? "plan-col-current" : ""}>
+                            <th key={t.name} className={t.name === catalog.current ? "plan-col-current" : ""}
+                                style={{ whiteSpace: "nowrap" }}>
                               {t.label}{t.name === catalog.current && <span className="chip chip-on" style={{ marginLeft: 6 }}>current</span>}
                             </th>
                           ))}
@@ -1111,17 +1112,19 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                       redacted. Injection, risky-action and policy blocks are never offered this.
                     </span>
                   </label>
-                  <label className="check">
-                    <input type="checkbox" checked={org.block_tool_result_secrets}
-                           onChange={(e) => setOrgState((o) => ({ ...o, block_tool_result_secrets: e.target.checked }))} />
-                    Block live credentials in tool output (on by default)
+                  <label>Live credentials in tool output
+                    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <input type="checkbox" checked={org.block_tool_result_secrets}
+                             onChange={(e) => setOrgState((o) => ({ ...o, block_tool_result_secrets: e.target.checked }))} />
+                      Block them (on by default)
+                    </span>
+                    <span className="muted" style={{ fontSize: 11.5, marginTop: 3 }}>
+                      When a coding agent's tool returns a confirmed credential (a file read of <code>.env</code>,
+                      command output), the request carrying it to the model is stopped, in monitor mode too,
+                      on the gateway and Claude Inference hooks. Turn this off if your repositories keep fake
+                      vendor keys in test fixtures: those results are then recorded as findings but not stopped.
+                    </span>
                   </label>
-                  <p className="muted" style={{ marginTop: -6, fontSize: 11.5 }}>
-                    When a coding agent's tool returns a confirmed credential (a file read of <code>.env</code>,
-                    command output), the request carrying it to the model is stopped, in monitor mode too,
-                    on the gateway and Claude Inference hooks. Turn this off if your repositories keep fake
-                    vendor keys in test fixtures: those results are then recorded as findings but not stopped.
-                  </p>
                   <label>Justified proceed (Human Firewall)
                     <select value={org.self_justify} onChange={setField("self_justify")}>
                       <option value="inherit">Inherit (global)</option>
