@@ -77,15 +77,33 @@ const FEATURES = [
   { tab: "Visibility", title: <>You finally know which AI tools are <span className="lp-hl">in use</span></>,
     sub: (st) => `Which AI tools are in use, by whom, and what each received, including the unapproved ones. Checked against a catalog of ${st.catalog_tools} tools; devices that report nothing are named, never counted as clean.`,
     href: "/coverage", link: "What each surface requires",
-    src: "/shots/discovery.png?v=7", alt: "Inventory of AI tools in use" },
+    src: "/shots/discovery.png?v=8", alt: "Inventory of AI tools in use" },
   { tab: "Agents", title: <>AI coding assistants stay <span className="lp-hl">inside the lines</span></>,
     sub: () => "Each assistant gets its own identity and limits, and every action is checked before it runs, not logged afterwards.",
     href: "/use-cases#engineering", link: "How engineering teams use it",
-    src: "/shots/agents.png?v=7", alt: "AI assistant identity and limits" },
+    src: "/shots/agents.png?v=8", alt: "AI assistant identity and limits" },
   { tab: "Trust", title: <>Know how often each check is <span className="lp-hl">right</span></>,
     sub: () => "One-click reviews become a readout per check, and noisy commands and paths become a time-limited allowlist.",
     src: "/shots/precision.png?v=1", alt: "Detection precision: how often each check was right" },
 ];
+
+// Proof the page can back up, each linked to the page that says it in full. No logos or
+// quotes: a security buyer discounts unverifiable ones, and these are all checkable.
+const TRUST = [
+  { title: "No AI in the scoring path", body: "Rules decide. The LLM judge is opt-in.", href: "/how-it-works" },
+  { title: "Self-host it", body: "Same detection, your infrastructure.", href: "/security" },
+  { title: "Read every client", body: "Every hook and scanner is on GitHub.", href: "https://github.com/SOC-Foundry/palivane-clients" },
+  { title: "SSO, MFA, audit log", body: "Every admin action recorded.", href: "/trust" },
+  { title: "DPA and subprocessors", body: "Published on the Trust page.", href: "/trust" },
+];
+
+// The one picture of how it works: where a prompt comes from, the checkpoint it passes,
+// and what can happen to it. Built from HTML, not an image, so it stays sharp and stacks on
+// a phone.
+const FLOW_FROM = ["Browser and AI sites", "Coding assistants", "Desktop apps", "Agents and CI"];
+const FLOW_CHECKS = ["Credentials", "Personal data", "Source code", "Hijacked instructions"];
+const FLOW_TO = ["ChatGPT", "Claude", "Copilot", "Gemini"];
+const SURFACES_ON_PHONE = 5;   // the rest sit behind "Show more" on a narrow screen
 
 const INSTALL_CMD = "curl -fsSL https://app.palivane.io/install.sh | bash";
 
@@ -283,6 +301,7 @@ export default function Landing({ onSignIn }) {
   const [surf, setSurf] = useState(0);
   const [step, setStep] = useState(0);
   const [feat, setFeat] = useState(0);
+  const [allSurf, setAllSurf] = useState(false);
   const rootRef = useRef(null);
   useReveal(rootRef);
   return (
@@ -357,6 +376,51 @@ export default function Landing({ onSignIn }) {
         </div>
       </section>
 
+      <section className="lp-trust-band" aria-label="Why security teams can trust it">
+        <div className="lp-wrap lp-trust">
+          {TRUST.map((t, i) => (
+            <a key={t.title} className="lp-trust-item rv" style={{ "--i": i }} href={t.href}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z" /><path d="M9 12l2 2 4-4" />
+              </svg>
+              <span><strong>{t.title}</strong>{t.body}</span>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <section className="lp-section">
+        <div className="lp-wrap">
+          <div className="lp-band-head rv">
+            <span className="lp-eyebrow">How it works</span>
+            <h2 className="lp-h2">One checkpoint between your team and <span className="lp-hl">every AI tool</span></h2>
+          </div>
+          <div className="lp-flow rv" style={{ "--i": 1 }}>
+            <div className="lp-flow-col">
+              <span className="lp-flow-label">Where it starts</span>
+              {FLOW_FROM.map((x) => <span key={x} className="lp-flow-chip">{x}</span>)}
+            </div>
+            <span className="lp-flow-arrow" aria-hidden="true" />
+            <div className="lp-flow-core">
+              <span className="lp-flow-brand">Palivane</span>
+              <span className="lp-flow-label">checks for</span>
+              <ul>{FLOW_CHECKS.map((x) => <li key={x}>{x}</li>)}</ul>
+              <div className="lp-flow-out">
+                <span className="ok">Allow</span><span className="warn">Warn</span><span className="block">Block</span>
+              </div>
+            </div>
+            <span className="lp-flow-arrow" aria-hidden="true" />
+            <div className="lp-flow-col">
+              <span className="lp-flow-label">Where it was going</span>
+              {FLOW_TO.map((x) => <span key={x} className="lp-flow-chip">{x}</span>)}
+            </div>
+          </div>
+          <p className="lp-sub lp-flow-note rv">In monitor mode it only records. Turn on blocking for
+            a person, a team, or one tool at a time, when you have seen enough.</p>
+        </div>
+      </section>
+
       <section className="lp-section">
         <div className="lp-wrap lp-split">
           <div className="lp-split-text rv">
@@ -367,7 +431,7 @@ export default function Landing({ onSignIn }) {
             <a className="lp-textlink" href="/how-it-works">How the detection works →</a>
           </div>
           <div className="lp-split-media rv" style={{ "--i": 1 }}>
-            <Clip src="/shots/demo18.mp4" poster="/shots/demo-poster18.png" />
+            <Clip src="/shots/demo18.mp4" poster="/shots/demo-poster19.png" />
           </div>
         </div>
       </section>
@@ -414,15 +478,23 @@ export default function Landing({ onSignIn }) {
               proxy and a certificate, so start without them.</p>
           </div>
           <div className="lp-tabs rv" style={{ "--i": 1 }}>
-            <div className="lp-tablist" role="tablist" aria-orientation="vertical">
+            <div className={`lp-tablist ${allSurf ? "all" : ""}`} role="tablist"
+                 aria-orientation="vertical">
               {CAPTURE.map((c, i) => (
                 <button key={c.title} type="button" role="tab" id={`surf-tab-${i}`}
                         aria-selected={surf === i} aria-controls="surf-panel"
-                        className={`lp-tab ${surf === i ? "is-on" : ""}`}
+                        className={`lp-tab ${surf === i ? "is-on" : ""} ${i >= SURFACES_ON_PHONE ? "lp-tab-extra" : ""}`}
                         onClick={() => setSurf(i)}>
                   <span className="lp-tab-n">{String(i + 1).padStart(2, "0")}</span>{c.title}
                 </button>
               ))}
+              {/* Eleven near-identical rows were a long scroll on a phone: the first few, then
+                  the rest on request. Desktop shows them all (CSS hides this button there). */}
+              {!allSurf && (
+                <button type="button" className="lp-tab-more" onClick={() => setAllSurf(true)}>
+                  Show {CAPTURE.length - SURFACES_ON_PHONE} more
+                </button>
+              )}
             </div>
             <div className="lp-tabpanel" role="tabpanel" id="surf-panel" key={surf}
                  aria-labelledby={`surf-tab-${surf}`}>
