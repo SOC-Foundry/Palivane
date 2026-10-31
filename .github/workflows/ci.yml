@@ -502,6 +502,15 @@ jobs:
           DATABASE_URL: postgresql+psycopg2://palivane:palivane@127.0.0.1:5432/palivane
           PALIVANE_SECRET_KEY: ci-only-not-a-real-key-0123456789abcdef
         run: alembic upgrade head
+      # Models and migrations must describe the same schema. Dev and self-host build tables
+      # from the models (create_all); prod gets only what the migrations create. They drifted
+      # once: eight OAuth indexes declared in models.py never reached Postgres (b0445ef199e2).
+      - name: Models match migrations
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg2://palivane:palivane@127.0.0.1:5432/palivane
+          PALIVANE_SECRET_KEY: ci-only-not-a-real-key-0123456789abcdef
+        run: alembic check
       - name: Create the non-superuser role the policies actually apply to
         env:
           PGPASSWORD: palivane
