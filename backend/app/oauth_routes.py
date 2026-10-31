@@ -38,7 +38,9 @@ SCOPE_TEXT = {
     READ_SCOPE: "Read your Palivane findings, inventory and reports. It can only see what you "
                 "can see.",
     TRIAGE_SCOPE: "Change a finding's status: open or triaged (and dismissed, if you are an "
-                  "admin). Every change is recorded in the audit log under your name.",
+                  "admin), and run the AI analyst on a finding, which saves its report and "
+                  "sends the finding's context to your organization's own LLM provider. Every "
+                  "change is recorded in the audit log under your name.",
 }
 from .schemas import OAuthConsentRequest
 from .security import hash_token
