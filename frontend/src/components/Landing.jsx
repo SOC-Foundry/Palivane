@@ -44,7 +44,7 @@ const CAPTURE = [
   { logos: [[BrandClaude, C.claude], [BrandOpenAI, C.openai]], title: "In desktop apps and AI extensions", body: "Claude and ChatGPT desktop, Claude in Chrome, and AI sidebar extensions like Monica and Sider. A blocked message says why: Claude explains it in the conversation, and sidebar extensions show it as an error. Needs a system proxy and a trusted CA, so it is usually phase two." },
   // Was its own "Headless" section. The MCP server is one more place Palivane runs, so it is
   // one more tab: the link and the clip stay reachable from here.
-  { logos: [[BrandClaude, C.claude]], title: "From your own AI assistant", notSurface: true, body: "Palivane ships an MCP server, so you can ask Claude what leaked recently without opening the console. Connect over OAuth to ask questions, or run it locally with a write key to triage findings and pull a compliance report.",
+  { logos: [[BrandClaude, C.claude]], title: "From your own AI assistant", notSurface: true, body: "Palivane ships an MCP server, so you can ask Claude what leaked recently without opening the console. Connect over OAuth to ask questions and, if you allow it, triage findings; run it locally with a write key to also pull a compliance report.",
     links: [["https://github.com/SOC-Foundry/palivane-clients/tree/main/mcp-server", "Wire it into Claude Code or Desktop"],
             ["/shots/mcp-demo.mp4?v=2", "Watch it work the triage queue"]] },
 ];

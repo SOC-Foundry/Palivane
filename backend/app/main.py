@@ -4873,7 +4873,7 @@ def _wire_oauth(target_app=None, cfg=None) -> None:
     from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
     from pydantic import AnyHttpUrl
 
-    from .oauth_provider import READ_SCOPE, PalivaneOAuthProvider
+    from .oauth_provider import READ_SCOPE, SCOPES, PalivaneOAuthProvider
 
     # Discovery documents are the one place a wrong base URL is actively harmful. Everything
     # else that falls back to app.palivane.io yields a bad docs link; here it would tell an
@@ -4913,14 +4913,14 @@ def _wire_oauth(target_app=None, cfg=None) -> None:
         # provisioning it, and grants nothing on its own — a registered client still reads
         # nothing until a real user approves it at consent.
         client_registration_options=ClientRegistrationOptions(
-            enabled=True, valid_scopes=[READ_SCOPE], default_scopes=[READ_SCOPE]),
+            enabled=True, valid_scopes=list(SCOPES), default_scopes=[READ_SCOPE]),
         revocation_options=RevocationOptions(enabled=True),
     )
     # Points MCP clients at the authorization server for this resource (RFC 9728).
     routes += create_protected_resource_routes(
         resource_url=AnyHttpUrl(f"{base}/api/mcp"),
         authorization_servers=[AnyHttpUrl(base)],
-        scopes_supported=[READ_SCOPE],
+        scopes_supported=list(SCOPES),
         resource_name="Palivane",
     )
     for r in routes:
