@@ -1634,6 +1634,75 @@ def _scan_gemini(contents: list, system_instruction=None) -> str:
     return "\n".join(p for p in chunks if p).strip()
 
 
+def _gemini_function_calls(parts) -> tuple[list[str], list[str], str]:
+    """(names, argument texts, shell command) of the functionCall parts in a Gemini turn."""
+    names, args, shell = [], [], ""
+    for p in parts or []:
+        fc = p.get("functionCall") if isinstance(p, dict) else None
+        if not isinstance(fc, dict):
+            continue
+        if fc.get("name"):
+            names.append(str(fc["name"]))
+        a = fc.get("args")
+        if a is not None:
+            args.append(json.dumps(a) if not isinstance(a, str) else a)
+            shell = shell or _shell_command_of(a)
+    return names, args, shell
+
+
+def _gemini_activity(payload: dict) -> dict | None:
+    """The current turn's tool activity in a Gemini request, normalized like _agentic_activity:
+    advertised functionDeclarations, the model's latest functionCall (the last "model" turn
+    that made one) and the functionResponse parts after it. Gemini requests went unchecked
+    for tool activity entirely, unlike the Anthropic and OpenAI shapes."""
+    descs: list[str] = []
+    for t in payload.get("tools") or []:
+        decls = (t.get("functionDeclarations") or t.get("function_declarations")
+                 if isinstance(t, dict) else None)
+        for d in decls or []:
+            if isinstance(d, dict) and isinstance(d.get("description"), str):
+                descs.append(d["description"])
+
+    contents = [c for c in (payload.get("contents") or []) if isinstance(c, dict)]
+    names, args, shell, results = [], [], "", []
+    for i in range(len(contents) - 1, -1, -1):
+        c = contents[i]
+        if c.get("role") != "model":
+            continue
+        names, args, shell = _gemini_function_calls(c.get("parts"))
+        if names or args:
+            for later in contents[i + 1:]:                 # the results it got back
+                for p in later.get("parts") or []:
+                    fr = p.get("functionResponse") if isinstance(p, dict) else None
+                    if isinstance(fr, dict) and fr.get("response") is not None:
+                        r = fr["response"]
+                        results.append(r if isinstance(r, str) else json.dumps(r))
+            break
+    if not (descs or names or args or results):
+        return None
+    method = "tools/call" if (names or args) else ("tools/advertised" if descs else "tool_result")
+    return {"method": method, "tool": names[0] if names else "", "tools": names,
+            "args_text": "\n".join(args)[:20000], "shell_command": shell,
+            "result_text": "\n".join(results)[:20000], "tool_descriptions": descs}
+
+
+def _gemini_response_call(data) -> dict | None:
+    """The functionCall(s) the model just asked for in a Gemini response, a JSON object or a
+    streamed array of chunks, so the call is checked before the client runs it."""
+    chunks = data if isinstance(data, list) else [data]
+    names, args, shell = [], [], ""
+    for d in chunks:
+        for cand in (d.get("candidates") or []) if isinstance(d, dict) else []:
+            n, a, s = _gemini_function_calls(((cand or {}).get("content") or {}).get("parts"))
+            names += n
+            args += a
+            shell = shell or s
+    if not (names or args):
+        return None
+    return {"tool": names[0] if names else "", "tools": names or [""],
+            "args_text": "\n".join(args)[:20000], "shell_command": shell}
+
+
 def _gemini_error(verdict: dict) -> JSONResponse:
     sigs = ", ".join(s["category"] for s in verdict.get("signals", [])[:4]) or "policy violation"
     return JSONResponse(status_code=403, content={"error": {
@@ -1681,10 +1750,26 @@ def _gemini_entry(model: str, method: str, request: Request,
 
     if _should_block(verdict, pol):
         return _gemini_error(verdict)
+    # Agentic tool-use inspection, as on the other shapes: the tool result on its way to the
+    # model (confirmed secrets block in monitor mode too) and the call that produced it.
+    agentic = _capture_activity_dict(_gemini_activity(payload), tool, principal, db)
+    if _inbound_agentic_block(agentic, pol):
+        return _gemini_error(agentic)
     base, key = resolve_upstream("gemini", principal.tenant_id, db)
     if key:
         sent, tokens = _tokenize_out(payload, principal, db)
         resp = _forward_gemini(model, method, sent, request, base, key)
+        # The model's next tool call, before the client executes it. The upstream body is
+        # buffered for both generateContent and streamGenerateContent (a JSON chunk array).
+        try:
+            called = _gemini_response_call(json.loads(resp.body))
+        except (ValueError, TypeError):
+            called = None
+        if called:
+            v = _capture_tool_activity(called["tool"], called["args_text"], tool, principal, db,
+                                       called["tools"], shell_command=called["shell_command"])
+            if _agentic_block(v, pol):
+                return _gemini_error(v)
         # Response-side DLP. _forward_gemini buffers the whole upstream body for BOTH
         # generateContent (a JSON object) and streamGenerateContent (a JSON array of
         # chunks, or SSE) — scan either, so a streamed completion can't exfiltrate
