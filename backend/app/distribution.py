@@ -181,7 +181,16 @@ def get_script(name: str):
         raise HTTPException(status_code=404, detail="script not available in this deployment")
     with open(path, "r", encoding="utf-8") as f:
         body = f.read()
-    return PlainTextResponse(body, media_type="text/x-shellscript")
+    return PlainTextResponse(body, media_type=_script_type(name))
+
+
+def _script_type(name: str) -> str:
+    """Content type by extension: a PowerShell or Python file isn't a shell script."""
+    if name.endswith(".ps1"):
+        return "text/plain"      # no registered type; plain text downloads and reads safely
+    if name.endswith(".py"):
+        return "text/x-python"
+    return "text/x-shellscript"
 
 
 @router.get("/install.sh")
