@@ -177,7 +177,10 @@ def main(argv: list[str]) -> int:
     db = SessionLocal()
     try:
         if args.cmd == "create-tenant":
-            t = create_tenant(db, args.slug, args.name, args.plan, args.trial_days)
+            try:
+                t = create_tenant(db, args.slug, args.name, args.plan, args.trial_days)
+            except ValueError as e:
+                raise SystemExit(f"error: {e}")
             note = trial_note(t)
             print(f"created tenant #{t.id} '{t.slug}' ({t.name}) plan={t.plan}"
                   + (f", {note}" if note else ""))
@@ -192,7 +195,10 @@ def main(argv: list[str]) -> int:
             tenant = _get_tenant(db, args.tenant)
             if tenant is None:
                 raise SystemExit(f"tenant '{args.tenant}' not found")
-            apply_plan(tenant, args.plan, args.trial_days)
+            try:
+                apply_plan(tenant, args.plan, args.trial_days)
+            except ValueError as e:          # e.g. a negative --trial-days: say so, no traceback
+                raise SystemExit(f"error: {e}")
             db.commit()
             note = trial_note(tenant)
             print(f"tenant '{tenant.slug}' is now on the {tenant.plan} plan"

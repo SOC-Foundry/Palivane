@@ -115,8 +115,9 @@ export const api = {
   oauthConsent: (payload) =>
     req("/oauth/consent", { method: "POST", body: JSON.stringify(payload) }),
   oauthGrants: () => req("/oauth/grants"),
-  revokeOauthGrant: (clientId) =>
-    req(`/oauth/grants/${encodeURIComponent(clientId)}`, { method: "DELETE" }),
+  revokeOauthGrant: (clientId, userId) =>
+    req(`/oauth/grants/${encodeURIComponent(clientId)}${userId != null ? `?user_id=${userId}` : ""}`,
+        { method: "DELETE" }),
   provision: (payload) =>
     req("/provision", { method: "POST", body: JSON.stringify(payload) }),
   policyPack: (params = {}) => {

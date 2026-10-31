@@ -4873,7 +4873,45 @@ def _wire_oauth(target_app=None, cfg=None) -> None:
     for r in routes:
         if getattr(r, "path", "") == "/revoke":
             r.app = _revoke_without_secret(r.app)
+        elif getattr(r, "path", "") == "/.well-known/oauth-authorization-server":
+            r.app = _public_client_metadata(r.app)
     target_app.router.routes.extend(routes)
+
+
+def _public_client_metadata(inner):
+    """Advertise `none` among the client auth methods. Every client here is public (PKCE is
+    the proof), but the SDK's metadata listed only the secret-based methods, which a strict
+    client reads as "this server needs a client secret"."""
+    import json as _json
+
+    async def app(scope, receive, send):
+        start, chunks = {}, []
+
+        async def capture(msg):
+            if msg["type"] == "http.response.start":
+                start.update(msg)
+            elif msg["type"] == "http.response.body":
+                chunks.append(msg.get("body", b""))
+                if not msg.get("more_body"):
+                    body = b"".join(chunks)
+                    try:
+                        doc = _json.loads(body)
+                        for k in ("token_endpoint_auth_methods_supported",
+                                  "revocation_endpoint_auth_methods_supported"):
+                            if isinstance(doc.get(k), list) and "none" not in doc[k]:
+                                doc[k] = ["none", *doc[k]]
+                        body = _json.dumps(doc).encode()
+                    except ValueError:
+                        pass
+                    headers = [(k, v) for k, v in start.get("headers", [])
+                               if k != b"content-length"]
+                    headers.append((b"content-length", str(len(body)).encode()))
+                    await send({**start, "headers": headers})
+                    await send({"type": "http.response.body", "body": body})
+
+        await inner(scope, receive, capture)
+
+    return app
 
 
 def _revoke_without_secret(inner):
@@ -4899,8 +4937,15 @@ def _revoke_without_secret(inner):
                 return await JSONResponse({"error": "invalid_request"}, status_code=413)(
                     scope, receive, send)
         ctype = dict(scope.get("headers") or []).get(b"content-type", b"")
+        form = dict(parse_qsl(body.decode("latin-1")))
+        if ctype.startswith(b"application/x-www-form-urlencoded") and not form.get("client_id"):
+            # RFC 6749 5.2: a request that can't identify its client is invalid_client (the SDK
+            # answered unauthorized_client, which means something else).
+            return await JSONResponse({"error": "invalid_client",
+                                       "error_description": "Missing client_id"},
+                                      status_code=401)(scope, receive, send)
         if (ctype.startswith(b"application/x-www-form-urlencoded")
-                and "client_secret" not in dict(parse_qsl(body.decode("latin-1")))):
+                and "client_secret" not in form):
             body += (b"&" if body else b"") + b"client_secret="
             scope = dict(scope, headers=[(k, v) for k, v in scope["headers"]
                                          if k != b"content-length"]
@@ -4959,4 +5004,8 @@ if _STATIC_DIR and _os.path.isdir(_STATIC_DIR):
         cand = _safe_static_file(_STATIC_ROOT, full_path)
         if cand is not None:
             return FileResponse(cand)                    # real file (logo, favicon, …)
+        if full_path.startswith(".well-known/"):
+            # A discovery probe (e.g. the root oauth-protected-resource form) must get a 404,
+            # not the console's HTML with a 200 that a client would try to parse.
+            raise HTTPException(status_code=404, detail="not found")
         return FileResponse(_os.path.join(_STATIC_ROOT, "index.html"))  # SPA routes
