@@ -274,6 +274,17 @@ def require_admin(current: User = Depends(get_current_user)) -> User:
     return current
 
 
+def require_session_admin(request: Request, current: User = Depends(require_admin)) -> User:
+    """An admin signed in to the console, not an API key acting as one. For reads too broad
+    to hand a long-lived credential (the full org export: users, keys, audit log, every
+    finding): a read-only console key used to pull it, because require_admin accepts keys
+    on GET."""
+    if getattr(request.state, "api_key_id", None) is not None:
+        raise HTTPException(status_code=403,
+                            detail="this needs a signed-in admin session, not an API key")
+    return current
+
+
 @router.post("/auth/signup")
 def signup(body: SignupRequest, request: Request, db: Session = Depends(get_db)):
     """Self-serve onboarding: create a new org (tenant) + its first admin, and log in.
@@ -1902,6 +1913,10 @@ def delete_oidc(current: User = Depends(require_admin), db: Session = Depends(ge
 
 
 def _enabled_oidc(org: str, db: Session) -> tuple[Tenant, TenantOIDC]:
+    # Deliberately NOT plan-gated (decided 2026-10-30): the sso feature gates CONFIGURING SSO
+    # (set_oidc / set_saml), not signing in with it. An org that downgrades keeps a working
+    # way in; gating here would lock out an org whose members only have SSO (sso_required,
+    # SCIM-provisioned users with no password). Same for _enabled_saml.
     tenant = db.query(Tenant).filter(Tenant.slug == org.strip().lower()).first()
     row = (db.query(TenantOIDC).filter(TenantOIDC.tenant_id == tenant.id).first()
            if tenant else None)
