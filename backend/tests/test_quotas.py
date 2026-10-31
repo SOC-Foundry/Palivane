@@ -61,7 +61,9 @@ def test_daily_ingest_quota(client, raw_client, monkeypatch):
     assert raw_client.post("/api/ingest/ai-usage", json=payload, headers=hdrs).status_code == 200
     assert raw_client.post("/api/ingest/ai-usage", json=payload, headers=hdrs).status_code == 200
     over = raw_client.post("/api/ingest/ai-usage", json=payload, headers=hdrs)
-    assert over.status_code == 429 and "daily" in over.json()["detail"]
+    # Fails open, marked (confirmed leaks would still block: test_qa_decisions).
+    assert over.status_code == 200 and over.json()["quota_exceeded"] is True
+    assert "daily" in over.json()["detail"]
 
 
 def test_tenant_override_beats_global(client, db_factory, monkeypatch):

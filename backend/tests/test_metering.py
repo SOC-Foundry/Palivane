@@ -79,8 +79,13 @@ def test_ingest_uses_its_own_rate_limit(client, raw_client, frozen_window):
     h = {"X-Palivane-Token": key}
     r1 = raw_client.post("/api/ingest/ai-usage", json=body, headers=h)
     r2 = raw_client.post("/api/ingest/ai-usage", json=body, headers=h)
-    assert r1.status_code == 200 and r2.status_code == 429
-    assert r2.headers.get("retry-after") == "60"
+    # Over the limit, ai-usage fails open with a marked verdict (a confirmed leak would still
+    # block: test_qa_decisions); endpoints that don't scan content still answer 429.
+    assert r1.status_code == 200 and "quota_exceeded" not in r1.json()
+    assert r2.status_code == 200 and r2.json()["quota_exceeded"] is True
+    assert "/min" in r2.json()["detail"]
+    r3 = raw_client.post("/api/exception-request", json={"reason": "x"}, headers=h)
+    assert r3.status_code == 429 and r3.headers.get("retry-after") == "60"
 
 
 def test_scan_code_is_rate_limited(client, raw_client, frozen_window):
