@@ -27,8 +27,8 @@ per route, and there are two:
   update_status as the caller, so role rules, the review record and the audit entry are the
   console's.
 - `investigate_finding` stores the analyst's report and an audit entry and sends the finding
-  to the org's LLM, so it needs what its REST route needs, a console_write key
-  (`_require_write_key`); OAuth grants are refused for it for now.
+  to the org's own LLM. It rides the same permission: the consent text for palivane:triage
+  says so, and a console_write key may already POST /investigate over REST.
 Any further write needs its own scope.
 
 Role still applies: tools whose REST equivalent is admin-gated call require_admin() on the
@@ -247,26 +247,14 @@ def gateway_usage() -> dict:
     return _read(main.usage, admin=True)
 
 
-def _require_write_key() -> None:
-    """Refuse a connection that may not write, as REST does for POST /investigate: only a
-    console_write key passes. A console_read key, or an OAuth grant (palivane:read is the
-    only scope, and its consent screen says it cannot change anything), is refused."""
-    key_id = _CALLER.get()
-    scope = None
-    if key_id is not None:
-        from .models import ApiKey
-        db, gen = _session()
-        try:
-            key = db.get(ApiKey, key_id)
-            scope = key.scope if key is not None else None
-        finally:
-            _close(db, gen)
-    if scope != "console_write":
+def _require_write() -> None:
+    """Refuse a connection that may not write: an OAuth grant without palivane:triage, or a
+    console_read key. Decided once per connection by the ASGI wrapper (_CAN_TRIAGE)."""
+    if not _CAN_TRIAGE.get():
         raise HTTPException(
             status_code=403,
-            detail="this connection is read-only. Investigating stores a report on the finding "
-                   "and sends it to your org's LLM provider, so it needs a console_write key "
-                   "(or the Investigate button in the console).")
+            detail="this connection is read-only. Reconnect Palivane and allow \"Change a "
+                   "finding's status\" on the consent screen, or use a console_write key.")
 
 
 @mcp.tool()
@@ -275,11 +263,7 @@ def set_finding_status(finding_id: int, status: str, reason: str = "") -> dict:
     admin; `reason` for a dismissal is one of false_positive, expected, accepted_risk,
     duplicate). Recorded in the audit log under your name. Needs a connection that was
     allowed to triage: reconnect and tick "Change a finding's status" if this is refused."""
-    if not _CAN_TRIAGE.get():
-        raise HTTPException(
-            status_code=403,
-            detail="this connection is read-only. Reconnect Palivane and allow \"Change a "
-                   "finding's status\" on the consent screen, or use a console_write key.")
+    _require_write()
     from . import main
     from .schemas import StatusUpdate
     body = StatusUpdate(status=status, via="mcp",
@@ -291,10 +275,10 @@ def set_finding_status(finding_id: int, status: str, reason: str = "") -> dict:
 def investigate_finding(finding_id: int) -> dict:
     """Run the analyst on a finding: it gathers the finding's context and the actor's other
     recent findings and returns a written investigation with a RECOMMENDED action (it never
-    applies one). Uses the tenant's LLM providers, the same as the judge. The report is
-    saved on the finding, so this needs a console_write key; read-only connections are
-    refused."""
-    _require_write_key()
+    applies one). Uses the tenant's own LLM provider. The report is saved on the finding, so
+    this needs a connection allowed to triage (palivane:triage, or a console_write key);
+    read-only connections are refused."""
+    _require_write()
     from . import main
     return _read(main.investigate_finding, admin=False, finding_id=finding_id)
 
