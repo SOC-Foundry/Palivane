@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from .auth import get_current_user, require_admin, router as auth_router
+from .auth import get_current_user, require_admin, require_session_admin, router as auth_router
 from .distribution import router as distribution_router
 from .billing import router as billing_router
 from .demo import router as demo_router
@@ -756,7 +756,7 @@ def export_findings(
 
 @app.get("/api/export/tenant")
 def export_tenant(
-    current: User = Depends(require_admin), db: Session = Depends(get_db),
+    current: User = Depends(require_session_admin), db: Session = Depends(get_db),
     include_content: bool = False, limit: int = Query(50000, ge=1, le=50000),
 ):
     """Full self-serve data export for this org (security review / portability request):
@@ -1079,19 +1079,54 @@ def _enforce_rate(db: Session, tenant_id: int | None) -> None:
     """Count one capture request against the tenant's sensor/ingest quota; 429 if over.
     Uses the `ingest` counter — separate from the gateway budget — so agentic tool-call
     volume can't starve real LLM traffic (bounded by `ingest_rate_limit`, default off)."""
+    over = _ingest_over_budget(db, tenant_id)
+    if over:
+        raise HTTPException(status_code=429, detail=over[0], headers={"Retry-After": over[1]})
+
+
+def _ingest_over_budget(db: Session, tenant_id: int | None) -> tuple[str, str] | None:
+    """Count one capture request; (reason, retry-after) when the org is over its per-minute
+    rate or daily quota, else None."""
     from .lifecycle import ensure_active
     from .metering import check_daily_ingest, record_and_check
     ensure_active(db, tenant_id)
     allowed, _count, limit = record_and_check(db, tenant_id, kind="ingest")
     if not allowed:
-        raise HTTPException(status_code=429, detail=f"ingest rate limit exceeded ({limit}/min)",
-                            headers={"Retry-After": "60"})
+        return f"ingest rate limit exceeded ({limit}/min)", "60"
     if tenant_id is not None:
         day_ok, _today, day_limit = check_daily_ingest(db, tenant_id)
         if not day_ok:
-            raise HTTPException(status_code=429,
-                                detail=f"daily ingest quota exceeded ({day_limit}/day)",
-                                headers={"Retry-After": "3600"})
+            return f"daily ingest quota exceeded ({day_limit}/day)", "3600"
+    return None
+
+
+def _over_quota_verdict(db: Session, tenant_id: int | None, content: str, actor: str,
+                        surface, channel: str, reason: str) -> dict:
+    """The answer to a capture request over the org's ingest quota. Clients treat a 429 as
+    fail-open, which let a confirmed live credential through once the quota ran out. So the
+    content is still checked, as a dry run (no judge, nothing stored): a confirmed leak is
+    blocked, as "confirmed leaks always block" promises; anything else is allowed unscored,
+    marked quota_exceeded so the client and the console can tell."""
+    from .detectors.shadow_ai import confirmed_leak
+    from .schemas import MAX_CONTENT
+    base = {"action": "allow", "force_block": False, "risk_score": 0, "severity": "none",
+            "signals": [], "finding_id": None, "quota_exceeded": True, "detail": reason}
+    if not settings.gateway_enforce_secrets or not (content or "").strip():
+        return base
+    try:
+        r = run_analysis(AnalysisInput(content=content[:MAX_CONTENT], sender=actor,
+                                       channel=channel, surface=surface),
+                         persist=False, db=db, tenant_id=tenant_id, use_judge=False,
+                         dry_run=True)
+    except Exception:
+        logging.getLogger("uvicorn.error").warning("over-quota leak check failed; allowing",
+                                                   exc_info=True)
+        return base
+    if r.get("confirmed_leak") or confirmed_leak(r.get("signals") or []):
+        leaks = [s for s in r["signals"] if confirmed_leak([s])]
+        return {**base, "action": "block", "force_block": True, "severity": r["severity"],
+                "risk_score": r["risk_score"], "signals": leaks}
+    return base
 
 
 def _ingest_auth(x_palivane_token: str, db: Session) -> tuple[int | None, str]:
@@ -1397,7 +1432,11 @@ def ingest_ai_usage(
     static EXTENSION_INGEST_TOKEN — not a user JWT — so it can be deployed via policy.
     Returns an action the client enforces: allow / warn / block."""
     tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
-    _enforce_rate(db, tenant_id)
+    over = _ingest_over_budget(db, tenant_id)
+    if over:
+        return _over_quota_verdict(db, tenant_id, body.content,
+                                   _attributed_actor(body.user, default_actor),
+                                   Surface.AI_USAGE, body.tool or "", over[0])
     actor = _attributed_actor(body.user, default_actor)
     claimed = _actor_claimed(actor, default_actor, default_claimed)
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
@@ -2201,22 +2240,32 @@ def _record_heartbeat(db: Session, tenant_id: int | None, actor: str,
         from datetime import datetime, timezone
 
         from .models import SensorHeartbeat
-        row = (db.query(SensorHeartbeat)
-                 .filter(SensorHeartbeat.tenant_id == tenant_id,
-                         SensorHeartbeat.actor == (actor or ""),
-                         SensorHeartbeat.plane == plane,
-                         SensorHeartbeat.tool == (tool or "")[:64])
-                 .one_or_none())
+        # One row per SENSOR: the client is part of the key. Keyed on (actor, plane, tool)
+        # alone, two clients reporting the same tool for one person ("Bash" from the Claude
+        # Code hook and from palivane-mcp) shared a row and the second hid the first.
+        client, version = _parse_client_ua(client_ua)
+        same = (db.query(SensorHeartbeat)
+                  .filter(SensorHeartbeat.tenant_id == tenant_id,
+                          SensorHeartbeat.actor == (actor or ""),
+                          SensorHeartbeat.plane == plane,
+                          SensorHeartbeat.tool == (tool or "")[:64]))
+        if client:
+            row = (same.filter(SensorHeartbeat.client == client).one_or_none()
+                   # a row from before clients were told apart (or from a UA-less request)
+                   # becomes this client's, rather than lingering as a second sensor
+                   or same.filter(SensorHeartbeat.client == "").first())
+        else:
+            # No UA: whichever of this sensor's rows was seen last (keeps its last known build).
+            row = same.order_by(SensorHeartbeat.last_seen.desc()).first()
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         if row is None:
             row = SensorHeartbeat(tenant_id=tenant_id, actor=(actor or ""), plane=plane,
-                                  tool=(tool or "")[:64], first_seen=now)
+                                  tool=(tool or "")[:64], client=client, first_seen=now)
             db.add(row)
         row.last_seen = now
         row.count = (row.count or 0) + 1
         row.dark_alerted_at = None   # back online — arm the gone-dark alert again
-        client, version = _parse_client_ua(client_ua)
-        if client:          # keep the last known build when a request carries no UA
+        if client:
             row.client, row.client_version = client, version
         agent, agent_version = _parse_agent_ua(client_ua)
         if agent:           # same rule: an older client without the parenthetical
@@ -2391,7 +2440,11 @@ def ingest_mcp(
     saw (agentic tool-use). Token-gated; returns an action the client enforces on the
     `mcp` surface: allow/warn/block. Benign verdicts aren't persisted by default."""
     tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
-    _enforce_rate(db, tenant_id)
+    over = _ingest_over_budget(db, tenant_id)
+    if over:
+        return _over_quota_verdict(db, tenant_id, body.args_text or "",
+                                   _attributed_actor(body.user, default_actor),
+                                   Surface.MCP, body.tool or "", over[0])
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     if body.parse_miss:
         _record_heartbeat(db, tenant_id, _attributed_actor(body.user, default_actor),

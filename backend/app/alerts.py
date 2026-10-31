@@ -240,6 +240,7 @@ def run_weekly_reports(db, now=None) -> int:
     if not email_mod.enabled():
         return 0      # nothing can go out, so no week is claimed (and then lost)
     for t in db.query(Tenant).filter(Tenant.weekly_report.is_(True)).all():
+        _retry_weekly(db, t, email_mod)
         last = t.weekly_report_last
         if last and (now - last) < week:
             continue
@@ -289,19 +290,48 @@ def run_weekly_reports(db, now=None) -> int:
         body = "\n".join(lines)
         admins = (db.query(User).filter(User.tenant_id == t.id, User.role == "admin",
                                         User.active.is_(True)).all())
-        mailed = False
+        mailed, missed = False, []
         for a in admins:
             # Delivered now, not queued: send() swallowed failures, so a week whose every
             # mail bounced was still marked sent and never retried.
-            if email_mod.send_now(a.email, "Palivane weekly report", body):
+            if email_mod.send_now(a.email, _WEEKLY_SUBJECT, body):
                 mailed = True
+            else:
+                missed.append(a.email)
         if mailed:
             sent += 1
+            # The week counts as sent, but the admins it missed still get it on a later run
+            # (it used to be lost for them). A newer report replaces any older pending one.
+            t.weekly_report_retry = ({"to": missed, "body": body, "tries": 0}
+                                     if missed else None)
+            db.commit()
         elif admins:
             # Every send failed: hand the window back (only if it is still ours) so the
             # next run retries it instead of the week silently going unreported.
             _release_claim(db, t.id, Tenant.weekly_report_last, now, last)
     return sent
+
+
+_WEEKLY_SUBJECT = "Palivane weekly report"
+_WEEKLY_RETRIES = 3     # runs (the loop ticks every 5 min) before a missed admin is given up on
+
+
+def _retry_weekly(db, t, email_mod) -> None:
+    """Re-send a delivered week's report to the admins it missed. Best effort, never raises."""
+    pending = t.weekly_report_retry
+    if not isinstance(pending, dict) or not pending.get("to"):
+        return
+    try:
+        still = [to for to in pending["to"]
+                 if not email_mod.send_now(to, _WEEKLY_SUBJECT, pending.get("body") or "")]
+        tries = int(pending.get("tries") or 0) + 1
+        t.weekly_report_retry = ({**pending, "to": still, "tries": tries}
+                                 if still and tries < _WEEKLY_RETRIES else None)
+        db.commit()
+    except Exception:                                             # noqa: BLE001
+        db.rollback()
+        logging.getLogger("palivane.alerts").warning(
+            "weekly report retry for %s failed", t.slug, exc_info=True)
 
 
 def _release_claim(db, tenant_id: int, column, claimed_at, previous) -> None:
