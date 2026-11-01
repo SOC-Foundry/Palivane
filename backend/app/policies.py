@@ -123,22 +123,25 @@ VALID_KEYS = {c["key"] for c in CATALOG}
 # have per-risk codes; NIST AI RMF and the EU AI Act are mapped at the function / article
 # level, which is the standard for control-to-framework mapping.
 #
-#   owasp_llm     — OWASP Top 10 for LLM Applications 2025 (LLM01–LLM10)
-#   owasp_agentic — OWASP Agentic AI: Threats & Mitigations (T1–T15)
+#   owasp_llm     — OWASP Top 10 for LLM Applications 2026 (LLM01–LLM10, Aug 2026)
+#   owasp_agentic — OWASP Top 10 for Agentic Applications 2026 (ASI01–ASI10, Dec 2025),
+#                   which superseded the Threats & Mitigations T-codes this used to cite
 #   nist_ai_rmf   — NIST AI RMF 1.0 core functions (GOVERN / MAP / MEASURE / MANAGE)
 #   eu_ai_act     — EU AI Act obligations by article (high-risk system requirements)
 FRAMEWORK_LABELS: dict[str, dict[str, str]] = {
     "owasp_llm": {
         "LLM01": "Prompt Injection", "LLM02": "Sensitive Information Disclosure",
-        "LLM03": "Supply Chain", "LLM04": "Data and Model Poisoning",
-        "LLM05": "Improper Output Handling", "LLM06": "Excessive Agency",
-        "LLM07": "System Prompt Leakage", "LLM08": "Vector and Embedding Weaknesses",
-        "LLM09": "Misinformation", "LLM10": "Unbounded Consumption",
+        "LLM03": "Excessive Agency", "LLM04": "Supply Chain",
+        "LLM05": "Data and Model Poisoning", "LLM06": "Unbounded Consumption",
+        "LLM07": "Misinformation", "LLM08": "Hidden Context Exposure",
+        "LLM09": "Vector and Embedding Weaknesses", "LLM10": "Improper Output Handling",
     },
     "owasp_agentic": {
-        "T2": "Tool Misuse", "T3": "Privilege Compromise", "T6": "Intent Breaking & Goal Manipulation",
-        "T8": "Repudiation & Untraceability", "T10": "Overwhelming Human-in-the-Loop",
-        "T12": "Agent Communication Poisoning", "T13": "Rogue Agents in the System",
+        "ASI01": "Agent Goal Hijack", "ASI02": "Tool Misuse and Exploitation",
+        "ASI03": "Identity and Privilege Abuse", "ASI04": "Agentic Supply Chain Vulnerabilities",
+        "ASI05": "Unexpected Code Execution (RCE)", "ASI06": "Memory & Context Poisoning",
+        "ASI07": "Insecure Inter-Agent Communication", "ASI08": "Cascading Failures",
+        "ASI09": "Human-Agent Trust Exploitation", "ASI10": "Rogue Agents",
     },
     "nist_ai_rmf": {
         "GOVERN": "Govern — policies, roles, accountability",
@@ -156,9 +159,9 @@ FRAMEWORK_LABELS: dict[str, dict[str, str]] = {
 # says so, rather than silently claiming coverage).
 _FW = "owasp_llm"; _AG = "owasp_agentic"; _NI = "nist_ai_rmf"; _EU = "eu_ai_act"
 FRAMEWORK_MAP: dict[str, dict[str, list[str]]] = {
-    "prompt_injection":  {_FW: ["LLM01"], _NI: ["MEASURE", "MANAGE"], _EU: ["Art.15"]},
+    "prompt_injection":  {_FW: ["LLM01"], _AG: ["ASI01"], _NI: ["MEASURE", "MANAGE"], _EU: ["Art.15"]},
     "jailbreak":         {_FW: ["LLM01"], _NI: ["MEASURE", "MANAGE"], _EU: ["Art.15"]},
-    "data_exfiltration": {_FW: ["LLM07", "LLM02"], _NI: ["MEASURE", "MANAGE"], _EU: ["Art.15"]},
+    "data_exfiltration": {_FW: ["LLM08", "LLM02"], _NI: ["MEASURE", "MANAGE"], _EU: ["Art.15"]},
     "hidden_characters": {_FW: ["LLM01"], _NI: ["MEASURE"], _EU: ["Art.15"]},
     "secret_leak":       {_FW: ["LLM02"], _NI: ["MANAGE"], _EU: ["Art.10", "Art.15"]},
     "pii_exposure":      {_FW: ["LLM02"], _NI: ["MANAGE"], _EU: ["Art.10"]},
@@ -166,24 +169,24 @@ FRAMEWORK_MAP: dict[str, dict[str, list[str]]] = {
     "source_code_leak":  {_FW: ["LLM02"], _NI: ["MANAGE"], _EU: ["Art.10"]},
     "confidential_data": {_FW: ["LLM02"], _NI: ["MANAGE"], _EU: ["Art.10"]},
     "unsanctioned_ai":   {_FW: ["LLM02"], _NI: ["GOVERN", "MAP"], _EU: ["Art.10"]},
-    "tool_poisoning":    {_FW: ["LLM01"], _AG: ["T2", "T12"], _NI: ["MEASURE"], _EU: ["Art.15"]},
-    "mcp_untrusted_server": {_FW: ["LLM03"], _AG: ["T2", "T13"], _NI: ["MAP", "MANAGE"], _EU: ["Art.15"]},
-    "dangerous_command": {_FW: ["LLM06"], _AG: ["T2"], _NI: ["MANAGE"], _EU: ["Art.14", "Art.15"]},
-    "sensitive_resource_access": {_FW: ["LLM06"], _AG: ["T2"], _NI: ["MANAGE"], _EU: ["Art.15"]},
-    "yolo_mode":         {_FW: ["LLM06"], _AG: ["T2", "T10"], _NI: ["GOVERN", "MANAGE"], _EU: ["Art.14"]},
-    "cursor_chat":       {_FW: ["LLM05", "LLM06"], _AG: ["T2"], _NI: ["MEASURE", "MANAGE"], _EU: ["Art.14"]},
-    "dependency_risk":   {_FW: ["LLM03"], _NI: ["MAP", "MANAGE"], _EU: ["Art.15"]},
-    "ide_extension":     {_FW: ["LLM03"], _NI: ["MAP"], _EU: ["Art.15"]},
+    "tool_poisoning":    {_FW: ["LLM01"], _AG: ["ASI01", "ASI04"], _NI: ["MEASURE"], _EU: ["Art.15"]},
+    "mcp_untrusted_server": {_FW: ["LLM04"], _AG: ["ASI04"], _NI: ["MAP", "MANAGE"], _EU: ["Art.15"]},
+    "dangerous_command": {_FW: ["LLM03"], _AG: ["ASI02", "ASI05"], _NI: ["MANAGE"], _EU: ["Art.14", "Art.15"]},
+    "sensitive_resource_access": {_FW: ["LLM03"], _AG: ["ASI02", "ASI03"], _NI: ["MANAGE"], _EU: ["Art.15"]},
+    "yolo_mode":         {_FW: ["LLM03"], _AG: ["ASI02", "ASI05"], _NI: ["GOVERN", "MANAGE"], _EU: ["Art.14"]},
+    "cursor_chat":       {_FW: ["LLM10", "LLM03"], _AG: ["ASI02"], _NI: ["MEASURE", "MANAGE"], _EU: ["Art.14"]},
+    "dependency_risk":   {_FW: ["LLM04"], _NI: ["MAP", "MANAGE"], _EU: ["Art.15"]},
+    "ide_extension":     {_FW: ["LLM04"], _NI: ["MAP"], _EU: ["Art.15"]},
     "credential_at_rest": {_FW: ["LLM02"], _NI: ["MANAGE"], _EU: ["Art.15"]},
-    "ci_unsafe_trigger": {_FW: ["LLM03"], _AG: ["T3"], _NI: ["MAP", "MANAGE"], _EU: ["Art.15"]},
-    "ci_unpinned_action": {_FW: ["LLM03"], _NI: ["MAP", "MANAGE"], _EU: ["Art.15"]},
-    "ci_excessive_permissions": {_FW: ["LLM06", "LLM03"], _AG: ["T3"], _NI: ["GOVERN", "MANAGE"], _EU: ["Art.15"]},
-    "ci_secrets_inherit": {_FW: ["LLM02", "LLM03"], _NI: ["MANAGE"], _EU: ["Art.15"]},
-    "ci_self_hosted_runner": {_FW: ["LLM03"], _NI: ["MAP", "MANAGE"], _EU: ["Art.15"]},
-    "ci_ai_agent":       {_FW: ["LLM06"], _AG: ["T2"], _NI: ["MAP", "GOVERN"], _EU: ["Art.14"]},
-    "ci_secrets_to_ai":  {_FW: ["LLM02", "LLM06"], _AG: ["T2"], _NI: ["MANAGE"], _EU: ["Art.10", "Art.15"]},
-    "data_oversharing":  {_FW: ["LLM02", "LLM06"], _NI: ["MANAGE"], _EU: ["Art.10", "Art.14"]},
-    "agent_authz":       {_FW: ["LLM06"], _AG: ["T3"], _NI: ["GOVERN", "MANAGE"], _EU: ["Art.14"]},
+    "ci_unsafe_trigger": {_FW: ["LLM04"], _AG: ["ASI03"], _NI: ["MAP", "MANAGE"], _EU: ["Art.15"]},
+    "ci_unpinned_action": {_FW: ["LLM04"], _NI: ["MAP", "MANAGE"], _EU: ["Art.15"]},
+    "ci_excessive_permissions": {_FW: ["LLM03", "LLM04"], _AG: ["ASI03"], _NI: ["GOVERN", "MANAGE"], _EU: ["Art.15"]},
+    "ci_secrets_inherit": {_FW: ["LLM02", "LLM04"], _NI: ["MANAGE"], _EU: ["Art.15"]},
+    "ci_self_hosted_runner": {_FW: ["LLM04"], _NI: ["MAP", "MANAGE"], _EU: ["Art.15"]},
+    "ci_ai_agent":       {_FW: ["LLM03"], _AG: ["ASI02"], _NI: ["MAP", "GOVERN"], _EU: ["Art.14"]},
+    "ci_secrets_to_ai":  {_FW: ["LLM02", "LLM03"], _AG: ["ASI03"], _NI: ["MANAGE"], _EU: ["Art.10", "Art.15"]},
+    "data_oversharing":  {_FW: ["LLM02", "LLM03"], _NI: ["MANAGE"], _EU: ["Art.10", "Art.14"]},
+    "agent_authz":       {_FW: ["LLM03"], _AG: ["ASI03"], _NI: ["GOVERN", "MANAGE"], _EU: ["Art.14"]},
 }
 # Fail loudly if a check ever ships without a mapping — an unmapped check would silently
 # understate coverage in the compliance report.
