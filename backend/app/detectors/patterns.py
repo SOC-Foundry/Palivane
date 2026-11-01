@@ -327,6 +327,54 @@ def _is_placeholder_conn(match_text: str) -> bool:
 _DUMMY_RUN_RE = re.compile(r"(.)\1{7,}")
 
 
+# A credential is issued at random. A token made of runs (`1234567890`, `abcdef`, `aaaa`) and
+# repeats (`abc123abc123`) is somebody typing a stand-in, which documentation does constantly.
+# Used by the Tier-2 entropy heuristic only: the Tier-1 vendor patterns are left alone.
+_VENDOR_PREFIX_RE = re.compile(r"^(?:[a-z]{2,10}[-_.]){1,2}")
+_SYNTHETIC_MAX_NOVEL = 9
+
+
+def _novel_chars(s: str, stop_above: int = _SYNTHETIC_MAX_NOVEL) -> int:
+    """How many characters of `s` are not explained by a run (3+ characters stepping by 0 or
+    +-1, digits wrapping 9->0) or by a repeat of 4+ characters seen earlier. Each run or repeat
+    counts once. A random string scores about its length; a typed stand-in scores a handful.
+    Stops counting past `stop_above`, which bounds the work on a long match."""
+    def step(a: str, b: str) -> int | None:
+        if a.isdigit() and b.isdigit():
+            d = (ord(b) - ord(a)) % 10
+            return {0: 0, 1: 1, 9: -1}.get(d)
+        if a.isalpha() and b.isalpha() and a.islower() == b.islower():
+            d = ord(b) - ord(a)
+            return d if d in (0, 1, -1) else None
+        return 0 if a == b else None
+
+    novel, i, n = 0, 0, len(s)
+    while i < n and novel <= stop_above:
+        run = 1
+        if i + 1 < n and (d := step(s[i], s[i + 1])) is not None:
+            run = 2
+            while i + run < n and step(s[i + run - 1], s[i + run]) == d:
+                run += 1
+        rep = 0
+        while rep < 256 and i + rep < n and s[i:i + rep + 1] in s[:i + rep]:
+            rep += 1
+        novel += 1
+        i += max(run if run >= 3 else 1, rep if rep >= 4 else 1)
+    return novel
+
+
+def _synthetic_body(match_text: str) -> bool:
+    """The token has a typed, not issued, body (see _novel_chars). Judged on what follows a
+    lowercase prefix (`sk_`, `test_`). The count is absolute, so padding a real key with a run
+    cannot pull it under the line: its own random characters still count.
+    Runs and repeats must also explain most of the body, so a short random body that happens to
+    hold one run (a 3-character step in 10 characters) is not taken for a stand-in."""
+    body = _VENDOR_PREFIX_RE.sub("", match_text, count=1) or match_text
+    novel = _novel_chars(body)
+    return novel <= _SYNTHETIC_MAX_NOVEL and novel * 2 <= len(body)
+
+
+
 # Low-signal file locations: test suites, fixtures, examples, docs, samples, mocks, and
 # vendored third-party trees. Credentials here are overwhelmingly illustrative, not
 # production leaks — mature scanners (gitleaks/trufflehog) suppress them via curated path
@@ -799,6 +847,8 @@ def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
             continue   # concatenated dictionary words (no camelCase boundaries), not a secret
         if _decodes_to_natural_language(tok):
             continue   # base64 of ordinary English/text, not a credential
+        if _synthetic_body(tok):
+            continue   # runs and repeats (`1234567890abcdef…`), a typed stand-in
         seen.add(tok)
         out.append(tok[:10] + "…")
     return out
