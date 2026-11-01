@@ -1035,6 +1035,17 @@ def _openai_upstream(base: str, key: str, path: str, model: str) -> tuple[str, d
     return url, headers
 
 
+def _release_db(db: Session) -> None:
+    """Hand the request's DB connection back to the pool before a slow upstream call.
+
+    An instance holds only a few connections (database.py) and a model call takes 10-120s;
+    held across it, a handful of concurrent turns would starve every other request on the
+    instance. Committing ends the transaction and returns the connection. The session stays
+    usable: its next query checks one out again, and database.after_begin re-applies the
+    tenant."""
+    db.commit()
+
+
 def _tokenize_out(payload: dict, principal: Principal, db: Session) -> tuple[dict, dict]:
     """Substitute personal data in an outbound payload, returning it and the reverse map.
 
@@ -1125,6 +1136,7 @@ def chat_completions(request: Request, principal: Principal = Depends(get_gatewa
         url, headers = _openai_upstream(base, key, "/chat/completions", model)
         if payload.get("stream"):
             sent, tokens = _tokenize_out(payload, principal, db)
+            _release_db(db)
             if not pol.enforce:
                 return _passthrough_stream(url, sent, headers, model, tool, principal,
                                            tokens)  # monitor: live output (teed)
@@ -1144,6 +1156,7 @@ def chat_completions(request: Request, principal: Principal = Depends(get_gatewa
                 raw = _reverse_bytes(raw, tokens, tool)
             return Response(content=raw, status_code=status, media_type=ctype)
         sent, tokens = _tokenize_out(payload, principal, db)
+        _release_db(db)
         with safe_client(timeout=60) as c:
             r = c.post(url, json=sent, headers=headers)
         data = r.json()
@@ -1319,6 +1332,7 @@ def responses(request: Request, principal: Principal = Depends(get_gateway_princ
     if base:
         url, headers = _openai_upstream(base, key, "/responses", model)
         sent, tokens = _tokenize_out(payload, principal, db)
+        _release_db(db)
         if payload.get("stream"):
             if not pol.enforce:
                 return _passthrough_stream(url, sent, headers, model, tool, principal,
@@ -1423,6 +1437,7 @@ def messages(request: Request, principal: Principal = Depends(get_gateway_princi
         # buffered path below and are answered as one synthesized SSE burst.
         if payload.get("stream") and flavor != "bedrock":
             sent, tokens = _tokenize_out(payload, principal, db)
+            _release_db(db)
             if flavor == "anthropic":
                 url = up["base"].rstrip("/") + "/v1/messages"
                 headers = _anthropic_headers(request, up["key"])
@@ -1449,6 +1464,7 @@ def messages(request: Request, principal: Principal = Depends(get_gateway_princi
                 raw = _reverse_bytes(raw, tokens, tool)
             return Response(content=raw, status_code=status, media_type=ctype)
         sent, tokens = _tokenize_out(payload, principal, db)
+        _release_db(db)
         if flavor == "anthropic":
             status, data = _post_upstream_anthropic("/v1/messages", sent, request,
                                                     up["base"], up["key"])
@@ -1600,6 +1616,7 @@ def count_tokens(request: Request, principal: Principal = Depends(get_gateway_pr
     payload = body
     base, key = resolve_upstream("anthropic", principal.tenant_id, db)
     if key:
+        _release_db(db)
         return _forward_anthropic("/v1/messages/count_tokens", payload, request, base, key)
     return JSONResponse(content={"input_tokens": 0})
 
@@ -1758,6 +1775,7 @@ def _gemini_entry(model: str, method: str, request: Request,
     base, key = resolve_upstream("gemini", principal.tenant_id, db)
     if key:
         sent, tokens = _tokenize_out(payload, principal, db)
+        _release_db(db)
         resp = _forward_gemini(model, method, sent, request, base, key)
         # The model's next tool call, before the client executes it. The upstream body is
         # buffered for both generateContent and streamGenerateContent (a JSON chunk array).
