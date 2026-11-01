@@ -170,6 +170,11 @@ class MCPConfigScan(BaseModel):
     path: str = ""
     findings: list[MCPClientFinding] = Field(default_factory=list, max_length=200)
     record: bool = False   # persist non-clean servers as findings (off by default)
+    # The reporting device (palivane-posture: user@host). When set, the declared servers
+    # also replace this device's inventory rows for `path` (device_assets); CI and the
+    # console leave it empty and record no inventory.
+    device: str = Field(default="", max_length=128)
+    user: str = ""
 
 
 class IDEExtScan(BaseModel):
@@ -177,6 +182,11 @@ class IDEExtScan(BaseModel):
     extensions: list[str] = Field(default_factory=list, max_length=10000)
     content: str = ""       # e.g. .vscode/extensions.json (recommendations)
     record: bool = False
+    # As MCPConfigScan.device: set by palivane-posture, whose list is the device's whole
+    # install, so it replaces the device's ide_extension inventory. `versions` is id → version.
+    device: str = Field(default="", max_length=128)
+    user: str = ""
+    versions: dict[str, str] = Field(default_factory=dict, max_length=10000)
 
 
 class BrowserExtItem(BaseModel):
@@ -197,6 +207,28 @@ class BrowserExtScan(BaseModel):
     device: str = Field(default="", max_length=128)
     user: str = ""
     record: bool = False
+
+
+class DeviceAssetItem(BaseModel):
+    """One inventory item — metadata only (never file contents)."""
+    kind: str = Field(min_length=1, max_length=32)
+    name: str = Field(min_length=1, max_length=255)
+    version: str = Field(default="", max_length=64)
+    source: str = Field(default="", max_length=255)   # where found: user | project:<name> | …
+    extra: dict[str, str | int | bool | None] = Field(default_factory=dict, max_length=16)
+
+
+class DeviceInventoryScan(BaseModel):
+    """palivane-posture's inventory of what is installed on the device that the other scans
+    don't already carry: coding agents (with whether Palivane's hooks are wired into them),
+    agent skills and plugins. Each kind in `kinds` replaces the device's rows of that kind;
+    `project` names the cwd whose project-level skills are included (other projects' rows
+    are kept)."""
+    device: str = Field(min_length=1, max_length=128)
+    user: str = ""
+    kinds: list[str] = Field(default_factory=list, max_length=8)
+    project: str = Field(default="", max_length=128)
+    items: list[DeviceAssetItem] = Field(default_factory=list, max_length=2000)
 
 
 class DevicePostureScan(BaseModel):
