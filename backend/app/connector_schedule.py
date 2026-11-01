@@ -14,7 +14,7 @@ next interval, so a revoked token does not hammer the API.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from . import github_secrets
 from .config import settings
@@ -85,7 +85,7 @@ def run_scheduled_scans(db, now: datetime | None = None, limit: int = MAX_PER_TI
     from .database import bind_tenant, clear_tenant
     from .models import SaasConnector
     from .saas_connectors import PLATFORMS, ConnectorError, sync_connector
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     scheduled = {k: v for k, v in PLATFORMS.items() if v.get("schedule_secs")}
     if not scheduled:
         return 0

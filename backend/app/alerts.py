@@ -230,11 +230,11 @@ def run_weekly_reports(db, now=None) -> int:
     severity, newly discovered AI tools, top actors, how often the findings the team reviewed
     were right, and the allowlist entries about to lapse. Window-claimed like run_digests so
     concurrent workers can't double-send. Returns #tenants mailed."""
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from sqlalchemy import func
     from .models import DiscoveredUsage, Finding, Tenant, User
     from . import email as email_mod
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     week = timedelta(days=7)
     sent = 0
     if not email_mod.enabled():
@@ -349,10 +349,10 @@ def run_digests(db, now=None, tenant_id: int | None = None) -> int:
     window has elapsed, atomically claim it (a conditional timestamp update — safe across
     workers), roll up alertable findings since the last window, and POST. Returns #sent.
     `tenant_id` limits it to one org (the console button); the background loop passes none."""
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from sqlalchemy import func
     from .models import Tenant, Finding
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     tenants = (db.query(Tenant)
                .filter(Tenant.alert_digest.in_(("hourly", "daily")),
                        Tenant.alert_webhook != "",
@@ -403,10 +403,10 @@ def run_fleet_alerts(db, now=None) -> int:
     upsert re-arms a sensor when it resumes), claimed with conditional updates so
     multiple workers can't double-send, and batched per tenant per sweep so a returned-
     from-vacation Monday is one message, not thirty. Returns #webhooks sent."""
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     from .models import ApiKey, SensorHeartbeat, Tenant
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     cutoff = now - timedelta(hours=_DARK_AFTER_HOURS)
     sent = 0
     for t in db.query(Tenant).filter(Tenant.alert_webhook != "").all():
