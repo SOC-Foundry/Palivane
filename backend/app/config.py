@@ -181,6 +181,10 @@ class Settings:
     # UNLABELED ml-corpus samples (consented capture, see ml/capture.py) are deleted on
     # the same clock — prose nobody triaged is exposure, not data. Labeled rows are kept.
     content_ttl_days: int = int(_env("PALIVANE_CONTENT_TTL_DAYS", "30"))
+    # Postgres connection pool per process (SQLAlchemy's defaults: 5 + 10 overflow). Lower them
+    # when many processes share a small server; see database.py.
+    db_pool_size: int = int(_env("PALIVANE_DB_POOL_SIZE", "5"))
+    db_max_overflow: int = int(_env("PALIVANE_DB_MAX_OVERFLOW", "10"))
     # Audit trail retention: entries older than this are deleted (~hourly). The log is
     # append-only, so without a period it grew forever; a stated period is also what a buyer's
     # compliance review asks for. 0 = keep forever.
