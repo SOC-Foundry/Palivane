@@ -30,16 +30,17 @@ def _control(report, family, code):
 
 
 def test_report_marks_enabled_control_covered_and_disabled_as_gap(client):
-    # LLM07 (System Prompt Leakage) is mapped by exactly one check (data_exfiltration), so
-    # disabling that check turns the control covered -> gap. A control with several mapped
-    # checks (e.g. LLM01) would stay covered until they're all off — that's the point.
-    llm07 = _control(client.get("/api/compliance/report").json(), "owasp_llm", "LLM07")
-    assert llm07["checks"] == ["data_exfiltration"] and llm07["status"] == "covered"
+    # LLM08 (Hidden Context Exposure, 2026; LLM07 System Prompt Leakage in 2025) is mapped by
+    # exactly one check (data_exfiltration), so disabling that check turns the control
+    # covered -> gap. A control with several mapped checks (e.g. LLM01) would stay covered
+    # until they're all off — that's the point.
+    llm08 = _control(client.get("/api/compliance/report").json(), "owasp_llm", "LLM08")
+    assert llm08["checks"] == ["data_exfiltration"] and llm08["status"] == "covered"
 
     assert client.patch("/api/tenant", json={"disabled_checks": ["data_exfiltration"]}).status_code == 200
-    llm07b = _control(client.get("/api/compliance/report").json(), "owasp_llm", "LLM07")
-    assert llm07b["status"] == "gap" and llm07b["enabled_checks"] == []
-    assert "data_exfiltration" in llm07b["checks"]          # still mapped, just off
+    llm08b = _control(client.get("/api/compliance/report").json(), "owasp_llm", "LLM08")
+    assert llm08b["status"] == "gap" and llm08b["enabled_checks"] == []
+    assert "data_exfiltration" in llm08b["checks"]          # still mapped, just off
 
 
 def test_report_has_all_four_frameworks_and_counts(client):

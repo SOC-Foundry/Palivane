@@ -16,8 +16,11 @@ builder, and an honest held-out benchmark against the regex baseline.
 
 The measured result: on synthetic paraphrase data the linear model catches injection
 phrasings the regex list misses (regex recall 0.34 → the competitive gap is real), but the
-numbers are inflated by train/test sharing one synthetic distribution. **Go/no-go
-(unchanged): do not wire it into the live path or commit weights until a real labeled
+numbers are inflated by train/test sharing one synthetic distribution. **Current state:
+the classifiers run in the live path as corroboration only**
+(`backend/app/detectors/ml_classifier.py`): a lone ML hint is dropped or held at `low` by
+`scoring.py` and cannot raise an alert unless a rule-based check agrees. **Go/no-go
+(unchanged in substance): the model does not get to act on its own until a real labeled
 corpus (consented captures, analyst-labeled, held-out by time window) shows it beats regex
 with a low FP rate.**
 
