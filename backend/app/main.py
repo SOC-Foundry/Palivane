@@ -509,8 +509,8 @@ def health():
 def setup_status(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Per-plane activity (findings in the last 24h) + enforcement/judge state, for the
     console's onboarding/health card — 'is each capture plane actually reporting?'"""
-    from datetime import datetime, timedelta
-    since = datetime.utcnow() - timedelta(hours=24)
+    from datetime import datetime, timedelta, timezone
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24)
     rows = (db.query(Finding.surface, func.count(Finding.id))
             .filter(Finding.tenant_id == current.tenant_id, Finding.created_at >= since)
             .group_by(Finding.surface).all())
@@ -1790,7 +1790,7 @@ def _inference_hook_verdict(raw: bytes, headers: dict, tenant_id: int | None,
                (tenant.inference_hook_secret, tenant.inference_hook_secret_prev) if v]
     if not ih.verify_signature([s for s in secrets if s], headers, raw):
         tenant.inference_hook_sig_failures = (tenant.inference_hook_sig_failures or 0) + 1
-        tenant.inference_hook_last_sig_failure = datetime.utcnow()
+        tenant.inference_hook_last_sig_failure = datetime.now(timezone.utc).replace(tzinfo=None)
         db.commit()
         raise HTTPException(status_code=401, detail="missing or invalid webhook signature")
     ensure_active(db, tenant_id)
@@ -1830,7 +1830,7 @@ def _inference_hook_prompt(frame: dict, tenant_id: int, actor: str, tool: str,
     from .models import InferenceHookDenial
     messages = frame.get("messages") if isinstance(frame.get("messages"), list) else []
     session = str(frame.get("session_id") or "")[:128]
-    cutoff = datetime.utcnow() - timedelta(seconds=ih.DENIAL_TTL_S)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=ih.DENIAL_TTL_S)
     # A denied message stays in the transcript and comes back with every later request,
     # behind newer turns this endpoint would otherwise be the only thing scanning.
     prior = ih.prior_block_hashes(messages)[-1000:]
@@ -1909,7 +1909,7 @@ def _remember_denial(db: Session, tenant_id: int, session: str, hashes: list[str
             from sqlalchemy.dialects.postgresql import insert
         else:
             from sqlalchemy.dialects.sqlite import insert
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         rows = [{"tenant_id": tenant_id, "session_id": session, "block_hash": h,
                  "finding_id": finding_id, "created_at": now} for h in dict.fromkeys(hashes)]
         db.execute(insert(InferenceHookDenial).values(rows).on_conflict_do_nothing(
