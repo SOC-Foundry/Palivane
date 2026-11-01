@@ -219,6 +219,11 @@ async def lifespan(_app: FastAPI):
                         # purge button used to apply.
                         from .lifecycle import apply_retention
                         await asyncio.to_thread(apply_retention, db)
+                        # The audit trail's retention period, and sensors dark for months
+                        # (uninstalled devices), so neither table grows forever.
+                        from .lifecycle import prune_audit_log, prune_dark_sensors
+                        await asyncio.to_thread(prune_audit_log, db)
+                        await asyncio.to_thread(prune_dark_sensors, db)
                     # Spent OAuth codes and dead tokens. Registration is open and every
                     # refresh writes a new pair, so these tables only grow otherwise. ~hourly.
                     if ticks % 12 == 0:
