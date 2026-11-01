@@ -21,6 +21,10 @@ from app.main import app
 def _isolate_palivane_state(tmp_path, monkeypatch):
     """Keep capture-plane circuit-breaker state out of the real ~/.palivane during tests."""
     monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path / "palivane-state"))
+    # palivane-posture's AI-asset inventory reads the real ~/.claude, ~/.codex, … and adds
+    # a post to every run; the posture tests that count posts predate it. Off by default,
+    # test_posture_inventory.py turns it back on against a throwaway HOME.
+    monkeypatch.setenv("PALIVANE_NO_INVENTORY", "1")
     # Session correlation is a global, default-on side effect (it writes an extra
     # correlated finding when an actor's events form an attack chain). Default it OFF so
     # unrelated tests get a clean per-event baseline; the correlation tests opt in

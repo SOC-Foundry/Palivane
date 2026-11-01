@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from .models import (
     Agent, AgentRole, AllowEntry, ApiKey, AuditLog, BrowserExtension, ContentFingerprint,
-    CorpusSample, DiscoveredUsage, EnrollmentToken, ExceptionRecord, Finding, GatewayUsage,
+    CorpusSample, DeviceAsset, DiscoveredUsage, EnrollmentToken, ExceptionRecord, Finding, GatewayUsage,
     InferenceHookDenial, JoinRequest,
     OAuthCode, OAuthToken, PolicyOverride, SaasConnector, SensorHeartbeat, Tenant,
     TenantDomain, TenantOIDC, TenantSAML, TenantUpstream, UpgradeRequest, User,
@@ -55,6 +55,7 @@ TENANT_TABLES = (
     ("used_saml_assertions", UsedSamlAssertion),
     ("discovered_usage", DiscoveredUsage),
     ("browser_extensions", BrowserExtension),
+    ("device_assets", DeviceAsset),
     ("agents", Agent),
     ("agent_roles", AgentRole),
     ("policy_overrides", PolicyOverride),
@@ -161,8 +162,9 @@ def prune_audit_log(db: Session, now=None) -> int:
 
 
 def prune_dark_sensors(db: Session, now=None) -> int:
-    """Forget sensors silent past PALIVANE_SENSOR_FORGET_DAYS (0 = never); run ~hourly. Long
-    past the 72h dark alert, so this never pre-empts a page. Returns rows removed."""
+    """Forget sensors (and device AI-asset rows) silent past PALIVANE_SENSOR_FORGET_DAYS
+    (0 = never); run ~hourly. Long past the 72h dark alert, so this never pre-empts a page.
+    Returns rows removed."""
     from datetime import timedelta
 
     from .config import settings
@@ -172,5 +174,10 @@ def prune_dark_sensors(db: Session, now=None) -> int:
     cutoff = (now or _naive_utcnow()) - timedelta(days=days)
     n = (db.query(SensorHeartbeat).filter(SensorHeartbeat.last_seen < cutoff)
          .delete(synchronize_session=False))
+    # The device's AI-asset inventory goes on the same clock. A live device refreshes its
+    # rows at least daily (palivane-posture re-sends its inventory report, which touches
+    # every row the device still has), so only a device that stopped reporting ages out.
+    n += (db.query(DeviceAsset).filter(DeviceAsset.last_seen < cutoff)
+          .delete(synchronize_session=False))
     db.commit()
     return n
