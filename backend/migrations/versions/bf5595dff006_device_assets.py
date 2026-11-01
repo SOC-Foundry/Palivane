@@ -42,7 +42,7 @@ def upgrade() -> None:
         sa.Column("last_seen", sa.DateTime()),
         sa.UniqueConstraint("tenant_id", "device", "kind", "name", name="uq_device_asset"),
     )
-    for col in ("id", "tenant_id", "device", "actor", "kind", "name", "last_seen"):
+    for col in ("tenant_id", "device", "actor", "kind", "name", "last_seen"):
         op.create_index(f"ix_device_assets_{col}", "device_assets", [col])
     if op.get_bind().dialect.name == "postgresql":
         t = "device_assets"

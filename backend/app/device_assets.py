@@ -60,7 +60,10 @@ def _apply(row: DeviceAsset, it: dict, actor: str, now: datetime) -> None:
     row.version = _cut(it.get("version"), 64)
     row.source = _cut(it.get("source"), 255)
     extra = it.get("extra")
-    row.extra = extra if isinstance(extra, dict) and extra else None
+    # Values are client-supplied: keep them short (strings clipped) so a device can't park
+    # arbitrary text in the inventory.
+    row.extra = ({k: (_cut(v, 255) if isinstance(v, str) else v) for k, v in extra.items()}
+                 if isinstance(extra, dict) and extra else None)
     row.last_seen = now
 
 
