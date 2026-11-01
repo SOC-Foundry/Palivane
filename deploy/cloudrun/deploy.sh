@@ -30,6 +30,10 @@ ENV_VARS="GATEWAY_ENFORCE=${GATEWAY_ENFORCE:-true}"
 # image ships tesseract; the app default is off (self-host opts in), hosted is on.
 # PALIVANE_OCR=false here turns it off without a rebuild.
 ENV_VARS+="|PALIVANE_OCR=${PALIVANE_OCR:-true}"
+# DB connections per instance (pool + overflow). The default Cloud SQL tier (db-f1-micro)
+# allows 25 in total, a few reserved for admin: 3 per instance keeps max-instances 6 at 18,
+# with room left for ops jobs and migrations. Raise both with the database tier.
+ENV_VARS+="|PALIVANE_DB_POOL_SIZE=${PALIVANE_DB_POOL_SIZE:-2}|PALIVANE_DB_MAX_OVERFLOW=${PALIVANE_DB_MAX_OVERFLOW:-1}"
 # Default stance for the local capture planes (CLI hooks, desktop proxy) on a device with
 # no local flag, where the tenant has not chosen one in Settings. Deliberately NOT given a
 # default here, unlike GATEWAY_ENFORCE: the app default is monitor, and a value written by

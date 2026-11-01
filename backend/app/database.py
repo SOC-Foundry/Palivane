@@ -18,8 +18,15 @@ from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from .config import settings
 
-connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-engine = create_engine(settings.database_url, connect_args=connect_args)
+if settings.database_url.startswith("sqlite"):
+    engine = create_engine(settings.database_url, connect_args={"check_same_thread": False})
+else:
+    # Each process holds up to pool_size + max_overflow connections, and every instance is a
+    # process, so instances x that must stay under the server's connection ceiling (25 on
+    # Cloud SQL db-f1-micro). pre_ping swaps out a connection the server dropped while it
+    # sat idle instead of failing the request that drew it.
+    engine = create_engine(settings.database_url, pool_size=settings.db_pool_size,
+                           max_overflow=settings.db_max_overflow, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
