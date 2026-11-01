@@ -137,3 +137,40 @@ def apply_retention(db: Session, now=None) -> int:
                              detail={"deleted": n, "retention_days": t.retention_days})
         total += n
     return total
+
+
+def _naive_utcnow():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def prune_audit_log(db: Session, now=None) -> int:
+    """Delete audit entries past PALIVANE_AUDIT_RETENTION_DAYS (0 = keep forever); run ~hourly
+    by the background loop, so each run removes about an hour's worth. Returns rows removed."""
+    from datetime import timedelta
+
+    from .config import settings
+    days = settings.audit_retention_days
+    if days <= 0:
+        return 0
+    cutoff = (now or _naive_utcnow()) - timedelta(days=days)
+    n = (db.query(AuditLog).filter(AuditLog.created_at < cutoff)
+         .delete(synchronize_session=False))
+    db.commit()
+    return n
+
+
+def prune_dark_sensors(db: Session, now=None) -> int:
+    """Forget sensors silent past PALIVANE_SENSOR_FORGET_DAYS (0 = never); run ~hourly. Long
+    past the 72h dark alert, so this never pre-empts a page. Returns rows removed."""
+    from datetime import timedelta
+
+    from .config import settings
+    days = settings.sensor_forget_days
+    if days <= 0:
+        return 0
+    cutoff = (now or _naive_utcnow()) - timedelta(days=days)
+    n = (db.query(SensorHeartbeat).filter(SensorHeartbeat.last_seen < cutoff)
+         .delete(synchronize_session=False))
+    db.commit()
+    return n
