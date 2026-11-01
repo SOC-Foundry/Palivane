@@ -867,6 +867,40 @@ class BrowserExtension(Base):
     last_seen = Column(DateTime, default=_utcnow, index=True)
 
 
+class DeviceAsset(Base):
+    """One AI asset present on one device — an MCP server, IDE or browser extension,
+    installed coding agent, agent skill or plugin — as that device last reported it. The
+    question this answers is "which devices have X" when X turns out to be compromised.
+
+    Written by the posture scans (device_assets.py): each report REPLACES the device's set
+    for the kind it covers, so an uninstalled item drops out. Metadata only — names,
+    versions, publishers; never file contents. Rows age out with the device on the
+    PALIVANE_SENSOR_FORGET_DAYS clock (lifecycle.prune_dark_sensors)."""
+
+    __tablename__ = "device_assets"
+    __table_args__ = (UniqueConstraint("tenant_id", "device", "kind", "name",
+                                       name="uq_device_asset"),)
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    device = Column(String(128), default="", index=True)  # posture: user@host; browser: install id
+    actor = Column(String(320), default="", index=True)   # who the device reports as
+    kind = Column(String(32), default="", index=True)     # mcp_server | ide_extension | browser_extension | agent | skill | plugin
+    name = Column(String(255), default="", index=True)
+    version = Column(String(64), default="")
+    source = Column(String(255), default="")              # config file / publisher / scope
+    extra = Column(JSON, nullable=True)
+    first_seen = Column(DateTime, default=_utcnow)
+    last_seen = Column(DateTime, default=_utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        return {"device": self.device, "actor": self.actor, "kind": self.kind,
+                "name": self.name, "version": self.version, "source": self.source,
+                "extra": self.extra or {},
+                "first_seen": self.first_seen.isoformat() if self.first_seen else None,
+                "last_seen": self.last_seen.isoformat() if self.last_seen else None}
+
+
 class Agent(Base):
     """A verifiable AI-agent identity within a tenant (Phase 0: identity + attribution; role
     is carried for the future least-privilege phase). Authenticates with an `ag_…` token

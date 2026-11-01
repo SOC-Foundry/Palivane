@@ -44,6 +44,175 @@ function reasonsText(reasons) {
     .join(", ") || "-";
 }
 
+// AI-asset inventory: what palivane-posture (and the browser extension) found installed on
+// each device, so "which devices have X" has an answer the day X is reported compromised.
+const ASSET_KINDS = [
+  ["", "all kinds"], ["mcp_server", "MCP servers"], ["ide_extension", "IDE extensions"],
+  ["browser_extension", "browser extensions"], ["agent", "coding agents"],
+  ["skill", "skills"], ["plugin", "plugins"],
+];
+const KIND_LABEL = Object.fromEntries(ASSET_KINDS.filter(([k]) => k));
+const ASSET_PAGE = 50;
+const DEVICE_PAGE = 100;
+
+// Where an item was found / extra facts worth a glance (hook state for agents).
+function assetDetail(d) {
+  const x = d.extra || {};
+  const bits = [];
+  if (d.source) bits.push(d.source);
+  if (x.palivane_hooks) {
+    const off = x.hooks_enabled === false ? " (hooks disabled)" : "";
+    bits.push(`Palivane hooks: ${x.palivane_hooks}${off}`);
+  }
+  if (x.package) bits.push(x.package);
+  if (x.host) bits.push(x.host);
+  if (x.enabled === false) bits.push("disabled");
+  return bits.join(" · ") || "-";
+}
+
+function AssetDevices({ asset }) {
+  const [rows, setRows] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const more = useCallback(async (offset) => {
+    setBusy(true); setErr(null);
+    try {
+      const d = await api.fleetAssetDevices(asset.kind, asset.name, { limit: DEVICE_PAGE, offset });
+      setRows((prev) => (offset ? [...prev, ...d.devices] : d.devices));
+      setTotal(d.total);
+    } catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
+    finally { setBusy(false); }
+  }, [asset.kind, asset.name]);
+  useEffect(() => { more(0); }, [more]);
+
+  if (err) return <div className="error">{err}</div>;
+  if (!rows.length) return <p className="muted">{busy ? "Loading devices..." : "No devices."}</p>;
+  return (
+    <>
+      <table className="data-table">
+        <thead><tr><th>Device</th><th>Actor</th><th>Version</th><th>Details</th><th>First seen</th><th>Last seen</th></tr></thead>
+        <tbody>
+          {rows.map((d) => (
+            <tr key={d.device}>
+              <td>{d.device}</td>
+              <td className="muted">{d.actor || "-"}</td>
+              <td>{d.version || "-"}</td>
+              <td className="muted">{assetDetail(d)}</td>
+              <td className="muted">{fmtWhen(d.first_seen)}</td>
+              <td className="muted">{fmtWhen(d.last_seen)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length < total && (
+        <button type="button" className="ghost-btn" disabled={busy} onClick={() => more(rows.length)}>
+          Show more ({total - rows.length} left)
+        </button>
+      )}
+    </>
+  );
+}
+
+function AssetInventory() {
+  const [query, setQuery] = useState("");
+  const [needle, setNeedle] = useState("");
+  const [kind, setKind] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  const [open, setOpen] = useState(null);
+
+  // Debounce typing so each keystroke isn't a request.
+  useEffect(() => {
+    const t = setTimeout(() => { setNeedle(query.trim()); setOffset(0); }, 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  useEffect(() => {
+    let live = true;
+    setErr(null);
+    api.fleetAssets({ kind, name: needle, limit: ASSET_PAGE, offset })
+      .then((d) => { if (live) { setData(d); setOpen(null); } })
+      .catch((e) => { if (live) setErr(String(e.message || e).replace(/^\d+:\s*/, "")); });
+    return () => { live = false; };
+  }, [kind, needle, offset]);
+
+  const assets = data?.assets || [];
+  const total = data?.total || 0;
+  const devices = data?.summary?.devices ?? 0;
+  const keyOf = (a) => `${a.kind}|${a.name}`;
+
+  return (
+    <div className="panel settings-card">
+      <h2>AI assets</h2>
+      <p className="muted" style={{ marginTop: 0 }}>
+        MCP servers, extensions, coding agents, skills and plugins installed across {devices} device{devices === 1 ? "" : "s"},
+        as each device last reported them. Search to find which devices have a given item.
+      </p>
+      <div className="override-row">
+        <input type="search" placeholder="Which devices have... (name, publisher, marketplace)" value={query}
+               aria-label="Search AI assets" onChange={(e) => setQuery(e.target.value)} />
+        <select value={kind} aria-label="Asset kind" onChange={(e) => { setKind(e.target.value); setOffset(0); }}>
+          {ASSET_KINDS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+        </select>
+      </div>
+      {err && <div className="error">{err}</div>}
+      {assets.length ? (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr><th aria-label="Expand" /><th>Kind</th><th>Name</th><th>Versions</th><th>Source</th><th>Devices</th><th>Last seen</th></tr>
+            </thead>
+            <tbody>
+              {assets.map((a) => {
+                const k = keyOf(a);
+                const isOpen = open === k;
+                return [
+                  <tr key={k} style={{ cursor: "pointer" }} onClick={() => setOpen(isOpen ? null : k)}>
+                    <td>
+                      <button type="button" className="ghost-btn" aria-expanded={isOpen}
+                              aria-label={`${isOpen ? "Hide" : "Show"} devices with ${a.name}`}
+                              onClick={(e) => { e.stopPropagation(); setOpen(isOpen ? null : k); }}>
+                        {isOpen ? "▾" : "▸"}
+                      </button>
+                    </td>
+                    <td className="muted">{KIND_LABEL[a.kind] || a.kind}</td>
+                    <td><code>{a.name}</code></td>
+                    <td className="muted">{a.versions.length ? a.versions.join(", ") : "-"}</td>
+                    <td className="muted">{a.sources.length ? a.sources.join(", ") : "-"}</td>
+                    <td><strong>{a.device_count}</strong></td>
+                    <td className="muted">{fmtWhen(a.last_seen)}</td>
+                  </tr>,
+                  isOpen && (
+                    <tr key={`${k}|devices`}>
+                      <td colSpan={7}><AssetDevices asset={a} /></td>
+                    </tr>
+                  ),
+                ];
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : data && (
+        <p className="muted">
+          {needle || kind ? "No matching assets." : "No inventory reported yet. Devices report it via palivane-posture at session start."}
+        </p>
+      )}
+      {total > ASSET_PAGE && (
+        <div className="head-actions">
+          <button type="button" className="ghost-btn" disabled={offset === 0}
+                  onClick={() => setOffset(Math.max(0, offset - ASSET_PAGE))}>Previous</button>
+          <span className="muted">{offset + 1}-{Math.min(offset + ASSET_PAGE, total)} of {total}</span>
+          <button type="button" className="ghost-btn" disabled={offset + ASSET_PAGE >= total}
+                  onClick={() => setOffset(offset + ASSET_PAGE)}>Next</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Fleet() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -70,7 +239,8 @@ export default function Fleet() {
         <div>
           <h1 className="page-title">Fleet</h1>
           <p className="page-sub">Sensor health per actor and plane, who is reporting,
-             who has gone quiet, which scans failed open, and which devices present revoked keys.</p>
+             who has gone quiet, which scans failed open, which devices present revoked keys,
+             and which AI assets each device has installed.</p>
         </div>
         <div className="head-actions">
           <button type="button" className="ghost-btn" onClick={load} disabled={busy}>
@@ -156,6 +326,8 @@ export default function Fleet() {
               </div>
             ) : <p className="muted">No sensor activity captured yet.</p>}
           </div>
+
+          <AssetInventory />
 
           {deadKeys.length > 0 && (
             <div className="panel settings-card">

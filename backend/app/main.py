@@ -55,6 +55,7 @@ from .schemas import (
     CodeScanRequest,
     CorpusLabel,
     CoverageRequest,
+    DeviceInventoryScan,
     DevicePostureScan,
     ConnectorCreate,
     ConnectorOptions,
@@ -2514,6 +2515,15 @@ def _parse_mcp_servers(content: str) -> list[dict]:
     return [{"name": name, **spec} for name, spec in servers.items() if isinstance(spec, dict)]
 
 
+def _is_json(content: str) -> bool:
+    import json as _json
+    try:
+        _json.loads(content)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
 @app.post("/api/scan/mcp-config")
 def scan_mcp_config(
     body: MCPConfigScan,
@@ -2621,6 +2631,15 @@ def scan_mcp_config(
             flagged.append({"name": name, "transport": transport, "action": action,
                             "severity": sev, "risk_score": result["risk_score"],
                             "signals": signals})
+
+    # Inventory: what this config file declares on the reporting device (posture only —
+    # CI and the console send no device). Skipped for an unparseable file, which would
+    # otherwise read as "declares nothing" and wipe the file's servers.
+    if body.device and _is_json(body.content):
+        from .device_assets import mcp_server_items, record_mcp_servers
+        record_mcp_servers(db, tenant_id, body.device,
+                           _attributed_actor(body.user, default_actor),
+                           body.path, mcp_server_items(servers, _srv_pkgs))
 
     # A credential the sender could not tie to a declared server still has to be reported:
     # dropping it would mean an unparseable config silently loses its secret detection.
@@ -2898,6 +2917,14 @@ def scan_ide_extensions(
                          })
     result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
                           db=db, tenant_id=tenant_id)
+    if body.device:
+        # palivane-posture's list is the device's whole install: it replaces the inventory.
+        from .device_assets import replace_assets
+        replace_assets(db, tenant_id, body.device, _attributed_actor(body.user, default_actor),
+                       "ide_extension",
+                       [{"name": e, "version": body.versions.get(e, ""),
+                         "source": e.split(".", 1)[0] if "." in e else ""}   # publisher
+                        for e in body.extensions])
     return {
         "action": _action_for(result["severity"]),
         "severity": result["severity"],
@@ -2941,6 +2968,15 @@ def scan_browser_extensions(
                           persist_benign=False)
     if body.record:
         record_browser_extensions(db, tenant_id, body.device or actor or "unknown", actor, exts)
+        # Same report into the cross-kind device inventory (keyed by id: names collide).
+        from .device_assets import replace_assets
+        replace_assets(db, tenant_id, body.device or actor or "unknown", actor,
+                       "browser_extension",
+                       [{"name": e["id"].strip().lower(), "version": e.get("version", ""),
+                         "source": e.get("name", ""),
+                         "extra": {"enabled": bool(e.get("enabled", True)),
+                                   "install_type": e.get("install_type", "")}}
+                        for e in exts])
     return {
         "action": _action_for(result["severity"]),
         "severity": result["severity"],
@@ -3011,6 +3047,39 @@ def scan_device_posture(
         "risk_score": result["risk_score"],
         "signals": result["signals"],
     }
+
+
+@app.post("/api/scan/device-inventory")
+def scan_device_inventory(
+    body: DeviceInventoryScan,
+    x_palivane_token: str = Header(default=""),
+    user_agent: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Record what palivane-posture found installed that the other scans don't carry:
+    AI coding agents (version, and whether Palivane's hooks are wired in and enabled),
+    agent skills and plugins. Inventory only — names and versions, no file contents, no
+    analysis. Each kind listed in `kinds` replaces the device's rows of that kind. The
+    client re-sends this at least daily, which also marks the device's extension and MCP
+    rows (posted only on change) as still present, so a live device never ages out."""
+    from .device_assets import INVENTORY_KINDS, replace_assets, touch_device
+    tenant_id, default_actor = _ingest_auth(x_palivane_token, db)
+    _enforce_rate(db, tenant_id)
+    actor = _attributed_actor(body.user, default_actor)
+    _record_heartbeat(db, tenant_id, actor, "posture", "device-inventory", user_agent)
+    kinds = [k for k in dict.fromkeys(body.kinds) if k in INVENTORY_KINDS]
+    project = f"project:{body.project}" if body.project else ""
+
+    def _other_project(row) -> bool:
+        return row.source.startswith("project:") and row.source != project
+
+    recorded = {}
+    for kind in kinds:
+        items = [i.model_dump() for i in body.items if i.kind == kind]
+        recorded[kind] = replace_assets(db, tenant_id, body.device, actor, kind, items,
+                                        keep=_other_project if kind == "skill" else None)
+    touch_device(db, tenant_id, body.device, ("mcp_server", "ide_extension"))
+    return {"recorded": recorded}
 
 
 @app.post("/api/scan/agent-rules")
@@ -4351,6 +4420,80 @@ def fleet_health(current: User = Depends(require_admin), db: Session = Depends(g
     return {"summary": summary, "sensors": sensors,
             "server_version": settings.version, "latest_client_versions": latest,
             "dead_keys": [k.to_dict() for k in dead]}
+
+
+@app.get("/api/fleet/assets")
+def fleet_assets(kind: str = "", name: str = "", device: str = "",
+                 limit: int = 50, offset: int = 0,
+                 current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """The AI-asset inventory rolled up by (kind, name): how many devices have each MCP
+    server, extension, agent, skill or plugin, which versions, and when last seen. `name`
+    is a case-insensitive substring of the name or source (an extension's display name, a
+    plugin's marketplace); `device` narrows to one device. Paged, widest spread first."""
+    from .models import DeviceAsset
+    limit, offset = max(1, min(limit, 200)), max(0, offset)
+    q = db.query(DeviceAsset).filter(DeviceAsset.tenant_id == current.tenant_id)
+    if kind:
+        q = q.filter(DeviceAsset.kind == kind)
+    if device:
+        q = q.filter(DeviceAsset.device == device)
+    if name:
+        needle = name.strip().lower()
+        q = q.filter(or_(func.lower(DeviceAsset.name).contains(needle, autoescape=True),
+                         func.lower(DeviceAsset.source).contains(needle, autoescape=True)))
+    n_devices = func.count(func.distinct(DeviceAsset.device))
+    grouped = (q.with_entities(DeviceAsset.kind, DeviceAsset.name,
+                               n_devices.label("device_count"),
+                               func.max(DeviceAsset.last_seen).label("last_seen"))
+                .group_by(DeviceAsset.kind, DeviceAsset.name))
+    total = grouped.count()
+    page = (grouped.order_by(n_devices.desc(), DeviceAsset.kind, DeviceAsset.name)
+                   .offset(offset).limit(limit).all())
+    # Versions and sources for just this page's assets (one query, not one per asset).
+    detail: dict[tuple, dict] = {}
+    if page:
+        keys = {(r.kind, r.name) for r in page}
+        for k, nm, ver, src in (q.filter(DeviceAsset.name.in_({r.name for r in page}))
+                                 .with_entities(DeviceAsset.kind, DeviceAsset.name,
+                                                DeviceAsset.version, DeviceAsset.source)
+                                 .distinct().limit(5000)):
+            if (k, nm) in keys:
+                d = detail.setdefault((k, nm), {"versions": set(), "sources": set()})
+                if ver:
+                    d["versions"].add(ver)
+                if src:
+                    d["sources"].add(src)
+    assets = [{"kind": r.kind, "name": r.name, "device_count": r.device_count,
+               "versions": sorted(detail.get((r.kind, r.name), {}).get("versions", ()))[:20],
+               "sources": sorted(detail.get((r.kind, r.name), {}).get("sources", ()))[:10],
+               "last_seen": r.last_seen.isoformat() if r.last_seen else None}
+              for r in page]
+    base = db.query(DeviceAsset).filter(DeviceAsset.tenant_id == current.tenant_id)
+    by_kind = dict(base.with_entities(DeviceAsset.kind,
+                                      func.count(func.distinct(DeviceAsset.name)))
+                       .group_by(DeviceAsset.kind).all())
+    return {"total": total, "limit": limit, "offset": offset, "assets": assets,
+            "summary": {"devices": base.with_entities(
+                            func.count(func.distinct(DeviceAsset.device))).scalar() or 0,
+                        "kinds": by_kind}}
+
+
+@app.get("/api/fleet/assets/devices")
+def fleet_asset_devices(kind: str, name: str, limit: int = 100, offset: int = 0,
+                        current: User = Depends(require_admin),
+                        db: Session = Depends(get_db)):
+    """Which devices have this exact asset (kind + name) — the incident question. Each
+    row carries the version and where it was found on that device. Paged, newest first."""
+    from .models import DeviceAsset
+    limit, offset = max(1, min(limit, 500)), max(0, offset)
+    q = (db.query(DeviceAsset)
+           .filter(DeviceAsset.tenant_id == current.tenant_id,
+                   DeviceAsset.kind == kind, DeviceAsset.name == name))
+    total = q.count()
+    rows = (q.order_by(DeviceAsset.last_seen.desc(), DeviceAsset.device)
+              .offset(offset).limit(limit).all())
+    return {"kind": kind, "name": name, "total": total, "limit": limit, "offset": offset,
+            "devices": [r.to_dict() for r in rows]}
 
 
 # --- Exec summary report ------------------------------------------------------------------
