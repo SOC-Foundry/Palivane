@@ -881,7 +881,7 @@ class DeviceAsset(Base):
     __table_args__ = (UniqueConstraint("tenant_id", "device", "kind", "name",
                                        name="uq_device_asset"),)
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
     device = Column(String(128), default="", index=True)  # posture: user@host; browser: install id
     actor = Column(String(320), default="", index=True)   # who the device reports as
