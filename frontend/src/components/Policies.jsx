@@ -173,10 +173,10 @@ export default function Policies({ tenant, onTenant }) {
                   {c.frameworks && Object.keys(c.frameworks).length > 0 && (
                     <div className="policy-frameworks">
                       {(c.frameworks.owasp_llm || []).map((code) => (
-                        <span key={code} className="fw-chip fw-owasp" title="OWASP Top 10 for LLM Applications">{code}</span>
+                        <span key={code} className="fw-chip fw-owasp" title="OWASP Top 10 for LLM Applications 2026">{code}</span>
                       ))}
                       {(c.frameworks.owasp_agentic || []).map((code) => (
-                        <span key={code} className="fw-chip fw-agentic" title="OWASP Agentic AI: Threats & Mitigations">Agentic {code}</span>
+                        <span key={code} className="fw-chip fw-agentic" title="OWASP Top 10 for Agentic Applications 2026">{code}</span>
                       ))}
                       {(c.frameworks.nist_ai_rmf || []).map((code) => (
                         <span key={code} className="fw-chip fw-nist" title="NIST AI RMF 1.0">NIST {code}</span>

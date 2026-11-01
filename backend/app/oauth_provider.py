@@ -6,9 +6,10 @@ supplies the protocol — PKCE verification, code exchange, metadata documents, 
 registration — and this supplies persistence plus the one thing no SDK can supply, which is
 the decision about WHOSE data a token may read.
 
-NOT WIRED YET. No routes reference this. Stage one is the token mechanics, so they can be
-read and argued with before a browser can reach any of it; the consent step and the routes
-are stage two.
+Live: main.py mounts the SDK's authorization-server routes on this provider, oauth_routes.py
+serves the consent step, and mcp_remote.py checks the scopes it grants (read, triage). The token
+mechanics landed first, unreachable, so they could be reviewed before a browser could reach
+them.
 
 The consent binding is `subject`. Every code and every token carries the id of the user who
 approved it, and the MCP tools act as exactly that user — same as a console-scoped API key.
