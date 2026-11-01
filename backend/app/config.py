@@ -181,6 +181,14 @@ class Settings:
     # UNLABELED ml-corpus samples (consented capture, see ml/capture.py) are deleted on
     # the same clock — prose nobody triaged is exposure, not data. Labeled rows are kept.
     content_ttl_days: int = int(_env("PALIVANE_CONTENT_TTL_DAYS", "30"))
+    # Audit trail retention: entries older than this are deleted (~hourly). The log is
+    # append-only, so without a period it grew forever; a stated period is also what a buyer's
+    # compliance review asks for. 0 = keep forever.
+    audit_retention_days: int = int(_env("PALIVANE_AUDIT_RETENTION_DAYS", "730"))
+    # Forget a sensor (its fleet-health row) after it has been silent this long. A device dark
+    # for months is an uninstalled laptop, and keeping it lists it as "dark" forever; one that
+    # comes back re-creates its row on its next call. 0 = never forget.
+    sensor_forget_days: int = int(_env("PALIVANE_SENSOR_FORGET_DAYS", "90"))
     # Consented ML-corpus capture, for tenants that set ml_capture=true (off by default):
     # sample this percent of scanned gateway prompts into the labeling queue, capped per
     # tenant per UTC day. Both bound volume, not consent — consent is the tenant flag.
