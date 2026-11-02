@@ -164,6 +164,35 @@ CATALOG: dict[str, tuple[str, str]] = {
     "summarywithai.com": ("Summarywithai", "assistant"),
     "getemil.io": ("Getemil", "assistant"),
     "getrecall.ai": ("Getrecall", "assistant"),
+    "rea.tools": ("Rea", "assistant"),
+    "multica.ai": ("Multica", "assistant"),
+    "pangram.com": ("Pangram", "assistant"),
+    "interview.talently.ai": ("Talently", "assistant"),
+    "anki-decks.com": ("Anki Decks", "assistant"),
+    "aiforgoogleslides.com": ("Aiforgoogleslides", "assistant"),
+    "far.site": ("Far", "assistant"),
+    "nurgo-software.com": ("Nurgo Software", "assistant"),
+    "mindpal.space": ("Mindpal", "assistant"),
+    "riffo.ai": ("Riffo", "assistant"),
+    "slideswizard.io": ("Slideswizard", "assistant"),
+    "transgate.ai": ("Transgate", "assistant"),
+    "rabbitholes.ai": ("Rabbitholes", "assistant"),
+    "rember.com": ("Rember", "assistant"),
+    "qurate.appcradle.net": ("Appcradle", "assistant"),
+    "firmos.ai": ("Firmos", "assistant"),
+    "smmry.com": ("Smmry", "assistant"),
+    "getnudgeai.com": ("Getnudgeai", "assistant"),
+    "summara.io": ("Summara", "assistant"),
+    "marblism.com": ("Marblism", "assistant"),
+    "spellapp.com": ("Spellapp", "assistant"),
+    "kosmik.app": ("Kosmik", "assistant"),
+    "magicpotion.app": ("Magicpotion", "assistant"),
+    "minusx.ai": ("Minusx", "assistant"),
+    "excelmatic.ai": ("Excelmatic", "assistant"),
+    "langfa.st": ("Langfa", "assistant"),
+    "tc.rebillion.ai": ("Rebillion", "assistant"),
+    "perch.app": ("Perch", "assistant"),
+    "x-doc.ai": ("X Doc", "assistant"),
 
     # --- Search / answer engines ---
     "perplexity.ai": ("Perplexity", "search"), "you.com": ("You.com", "search"),
@@ -303,6 +332,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "autodesk.com": ("Autodesk", "agent"),
     "paper2agent.ai": ("Paper2Agent", "agent"),
     "wisprflow.ai": ("Wisprflow", "agent"),
+    "salesagent.chat": ("Salesagent", "agent"),
 
     # --- Writing / productivity ---
     "jasper.ai": ("Jasper", "writing"), "copy.ai": ("Copy.ai", "writing"),
@@ -588,6 +618,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "cleanlab.ai": ("Cleanlab", "ml_platform"),
     "haystack.deepset.ai": ("deepset Haystack", "ml_platform"),
     "portkey.ai": ("Portkey", "api"),
+    "whisper-api.com": ("Whisper Api", "api"),
 }
 
 # Rows recorded from vendor marketing/site rather than a verified traffic capture: the
