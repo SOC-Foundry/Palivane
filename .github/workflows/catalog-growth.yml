@@ -117,6 +117,27 @@ jobs:
           service_account: ${{ vars.GCP_DEPLOY_SA }}
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
+      - name: Create the bucket if missing
+        # Mirrors deploy/terraform/storage.tf. Created here because prod is not in Terraform
+        # state yet (terraform-apply.yml would try to build the whole stack); import the bucket
+        # with the rest when prod is adopted. Private, versioned, 12 old generations kept.
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+          BUCKET: gs://${{ vars.MCP_REPUTATION_BUCKET }}
+        run: |
+          if gcloud storage buckets describe "$BUCKET" --project "$PROJECT_ID" >/dev/null 2>&1; then
+            echo "$BUCKET exists."
+            exit 0
+          fi
+          gcloud storage buckets create "$BUCKET" --project "$PROJECT_ID" \
+            --location "${REGION:-us-central1}" --uniform-bucket-level-access \
+            --public-access-prevention
+          echo '{"rule":[{"action":{"type":"Delete"},"condition":{"numNewerVersions":12,"isLive":false}}]}' \
+            > /tmp/lifecycle.json
+          gcloud storage buckets update "$BUCKET" --versioning --lifecycle-file=/tmp/lifecycle.json
+          echo "Created $BUCKET."
+
       - name: Fetch last week's dataset
         # The generator compares against the previous file (registry count must not drop
         # below --min-ratio of it) and keeps its stamp when nothing changed. First run: none.
