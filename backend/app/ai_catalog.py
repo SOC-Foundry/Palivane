@@ -172,6 +172,35 @@ CATALOG: dict[str, tuple[str, str]] = {
     "firmos.ai": ("FirmOS", "assistant"),
     "kosmik.app": ("Kosmik", "assistant"),
     "excelmatic.ai": ("Excelmatic (RowSpeak)", "assistant"),
+    "riffo.ai": ("Riffo", "assistant"),
+    "summara.io": ("Summara", "assistant"),
+    "langfa.st": ("Langfa", "assistant"),
+    "scribbl.co": ("Scribbl", "assistant"),
+    "galactica.org": ("Galactica", "assistant"),
+    "sourcely.net": ("Sourcely", "assistant"),
+    "mathgptpro.com": ("Mathgptpro", "assistant"),
+    "sitegpt.ai": ("Sitegpt", "assistant"),
+    "gpthelp.ai": ("Gpthelp", "assistant"),
+    "sitespeak.ai": ("Sitespeak", "assistant"),
+    "dearai.online": ("Dearai", "assistant"),
+    "inlinehelp.com": ("Inlinehelp", "assistant"),
+    "aidbase.ai": ("Aidbase", "assistant"),
+    "twig.so": ("Twig", "assistant"),
+    "neverjobless.com": ("Neverjobless", "assistant"),
+    "cohere.ai": ("Cohere", "assistant"),
+    "keploy.io": ("Keploy", "assistant"),
+    "portialabs.ai": ("Portialabs", "assistant"),
+    "predictionguard.com": ("Predictionguard", "assistant"),
+    "chatwithcloud.ai": ("Chatwithcloud", "assistant"),
+    "singlebase.cloud": ("Singlebase", "assistant"),
+    "getmaxim.ai": ("Getmaxim", "assistant"),
+    "pagerly.io": ("Pagerly", "assistant"),
+    "hexabot.ai": ("Hexabot", "assistant"),
+    "callstack.ai": ("Callstack", "assistant"),
+    "getkiln.ai": ("Getkiln", "assistant"),
+    "getcalmo.com": ("Getcalmo", "assistant"),
+    "tensorzero.com": ("Tensorzero", "assistant"),
+    "ingenimax.ai": ("Ingenimax", "assistant"),
 
     # --- Search / answer engines ---
     "perplexity.ai": ("Perplexity", "search"), "you.com": ("You.com", "search"),
@@ -398,6 +427,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "x-doc.ai": ("X-doc AI", "writing"),
     "pangram.com": ("Pangram", "writing"),
     "magicpotion.app": ("Magic Potion", "writing"),
+    "docs.aws.amazon.com": ("Amazon", "writing"),
 
     # --- Image / video / audio ---
     "midjourney.com": ("Midjourney", "image_video"), "labs.openai.com": ("DALL·E", "image_video"),
@@ -612,6 +642,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "haystack.deepset.ai": ("deepset Haystack", "ml_platform"),
     "portkey.ai": ("Portkey", "api"),
     "whisper-api.com": ("WhisperAPI", "api"),
+    "aimlapi.com": ("Aimlapi", "ml_platform"),
 }
 
 # Rows recorded from vendor marketing/site rather than a verified traffic capture: the
