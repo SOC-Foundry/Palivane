@@ -164,35 +164,14 @@ CATALOG: dict[str, tuple[str, str]] = {
     "summarywithai.com": ("Summarywithai", "assistant"),
     "getemil.io": ("Getemil", "assistant"),
     "getrecall.ai": ("Getrecall", "assistant"),
-    "rea.tools": ("Rea", "assistant"),
-    "multica.ai": ("Multica", "assistant"),
-    "pangram.com": ("Pangram", "assistant"),
     "interview.talently.ai": ("Talently", "assistant"),
-    "anki-decks.com": ("Anki Decks", "assistant"),
-    "aiforgoogleslides.com": ("Aiforgoogleslides", "assistant"),
-    "far.site": ("Far", "assistant"),
-    "nurgo-software.com": ("Nurgo Software", "assistant"),
-    "mindpal.space": ("Mindpal", "assistant"),
-    "riffo.ai": ("Riffo", "assistant"),
-    "slideswizard.io": ("Slideswizard", "assistant"),
-    "transgate.ai": ("Transgate", "assistant"),
-    "rabbitholes.ai": ("Rabbitholes", "assistant"),
+    "anki-decks.com": ("AnkiDecks", "assistant"),
+    "rabbitholes.ai": ("Slashspace (Rabbitholes)", "assistant"),
     "rember.com": ("Rember", "assistant"),
-    "qurate.appcradle.net": ("Appcradle", "assistant"),
-    "firmos.ai": ("Firmos", "assistant"),
-    "smmry.com": ("Smmry", "assistant"),
-    "getnudgeai.com": ("Getnudgeai", "assistant"),
-    "summara.io": ("Summara", "assistant"),
-    "marblism.com": ("Marblism", "assistant"),
-    "spellapp.com": ("Spellapp", "assistant"),
+    "qurate.appcradle.net": ("Qurate", "assistant"),
+    "firmos.ai": ("FirmOS", "assistant"),
     "kosmik.app": ("Kosmik", "assistant"),
-    "magicpotion.app": ("Magicpotion", "assistant"),
-    "minusx.ai": ("Minusx", "assistant"),
-    "excelmatic.ai": ("Excelmatic", "assistant"),
-    "langfa.st": ("Langfa", "assistant"),
-    "tc.rebillion.ai": ("Rebillion", "assistant"),
-    "perch.app": ("Perch", "assistant"),
-    "x-doc.ai": ("X Doc", "assistant"),
+    "excelmatic.ai": ("Excelmatic (RowSpeak)", "assistant"),
 
     # --- Search / answer engines ---
     "perplexity.ai": ("Perplexity", "search"), "you.com": ("You.com", "search"),
@@ -332,7 +311,12 @@ CATALOG: dict[str, tuple[str, str]] = {
     "autodesk.com": ("Autodesk", "agent"),
     "paper2agent.ai": ("Paper2Agent", "agent"),
     "wisprflow.ai": ("Wisprflow", "agent"),
-    "salesagent.chat": ("Salesagent", "agent"),
+    "multica.ai": ("Multica", "agent"),
+    "mindpal.space": ("MindPal", "agent"),
+    "marblism.com": ("Marblism", "agent"),
+    "minusx.ai": ("MinusX", "agent"),
+    "salesagent.chat": ("SalesAgent Chat", "agent"),
+    "tc.rebillion.ai": ("ReBillion", "agent"),
 
     # --- Writing / productivity ---
     "jasper.ai": ("Jasper", "writing"), "copy.ai": ("Copy.ai", "writing"),
@@ -407,6 +391,13 @@ CATALOG: dict[str, tuple[str, str]] = {
     "aipoemgenerator.org": ("AI Poem Generator", "writing"),
     "writewithlaika.com": ("Writewithlaika", "writing"),
     "chatgptwriter.ai": ("Chatgptwriter", "writing"),
+    "aiforgoogleslides.com": ("AI for Google Slides", "writing"),
+    "slideswizard.io": ("SlidesWizard", "writing"),
+    "spellapp.com": ("Spell", "writing"),
+    "smmry.com": ("SMMRY", "writing"),
+    "x-doc.ai": ("X-doc AI", "writing"),
+    "pangram.com": ("Pangram", "writing"),
+    "magicpotion.app": ("Magic Potion", "writing"),
 
     # --- Image / video / audio ---
     "midjourney.com": ("Midjourney", "image_video"), "labs.openai.com": ("DALL·E", "image_video"),
@@ -492,6 +483,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "hailuoai.video": ("Hailuoai", "image_video"),
     "maxvideoai.com": ("Maxvideoai", "image_video"),
     "audiocraft.metademolab.com": ("Metademolab", "image_video"),
+    "transgate.ai": ("Transgate", "image_video"),
 
     # --- Meeting / transcription notetakers (high data-exposure risk) ---
     "otter.ai": ("Otter.ai", "meeting"), "fireflies.ai": ("Fireflies.ai", "meeting"),
@@ -526,6 +518,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "loopinhq.com": ("Loopin", "meeting"),
     "get.meetgeek.ai": ("Meetgeek", "meeting"),
     "meetcosmos.com": ("Meetcosmos", "meeting"),
+    "getnudgeai.com": ("Nudge AI", "meeting"),
 
     # --- ML platforms / model hubs / API providers ---
     "huggingface.co": ("Hugging Face", "ml_platform"), "replicate.com": ("Replicate", "ml_platform"),
@@ -618,7 +611,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "cleanlab.ai": ("Cleanlab", "ml_platform"),
     "haystack.deepset.ai": ("deepset Haystack", "ml_platform"),
     "portkey.ai": ("Portkey", "api"),
-    "whisper-api.com": ("Whisper Api", "api"),
+    "whisper-api.com": ("WhisperAPI", "api"),
 }
 
 # Rows recorded from vendor marketing/site rather than a verified traffic capture: the
