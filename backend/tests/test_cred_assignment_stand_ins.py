@@ -20,24 +20,25 @@ def _random(n: int = 32) -> str:
     return out[:n]
 
 
+# Fixed ids: values are not test ids, and the random ones would differ between xdist workers.
 @pytest.mark.parametrize("text", [
     "X-Api-Token: " + RUNS,
     "api_key = \"" + RUNS + "\"",
     "auth_token=" + MIXED_RUNS,
     "client_secret: " + "abc123" * 5,
-])
+], ids=["header", "quoted-key", "mixed-case", "repeat"])
 def test_issued_credential_with_typed_value_is_a_sample(text):
     assert LABEL not in find_secrets(text)
 
 
-@pytest.mark.parametrize("text", [
-    "X-Api-Token: " + _random(),
-    "api_key = \"" + _random() + "\"",
+@pytest.mark.parametrize("make", [
+    lambda: "X-Api-Token: " + _random(),
+    lambda: "api_key = \"" + _random() + "\"",
     # padding a real token with a run does not hide its own random characters
-    "auth_token=" + RUNS + _random(16),
-])
-def test_random_value_still_flags(text):
-    assert LABEL in find_secrets(text)
+    lambda: "auth_token=" + RUNS + _random(16),
+], ids=["header", "quoted-key", "padded"])
+def test_random_value_still_flags(make):
+    assert LABEL in find_secrets(make())
 
 
 @pytest.mark.parametrize("lhs", ["password", "db_password", "DB_PASSWD", "pwd"])
