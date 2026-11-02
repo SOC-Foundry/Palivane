@@ -78,8 +78,9 @@ ENV_VARS+="|SEED_ON_START=${SEED_ON_START:-false}"
 [ -n "${CF_EMAIL_ACCOUNT_ID:-}" ] && ENV_VARS+="|CF_EMAIL_ACCOUNT_ID=${CF_EMAIL_ACCOUNT_ID}"
 [ -n "${GMAIL_SEND_AS:-}" ] && ENV_VARS+="|GMAIL_SEND_AS=${GMAIL_SEND_AS}"
 [ -n "${MAIL_FROM:-}" ] && ENV_VARS+="|MAIL_FROM=${MAIL_FROM}"
-# MCP reputation feed (opt-in): point at the shipped starter dataset
-# (/app/data/mcp-reputation-starter.json) or a licensed one.
+# MCP reputation feed (opt-in): "bundled" = the dataset fetched into the image from
+# MCP_REPUTATION_BUCKET above (/app/data/mcp_reputation.json, rebuilt weekly; it already
+# includes the curated starter rows), or a path for a licensed one. Unset = off.
 [ -n "${PALIVANE_MCP_REPUTATION_FEED:-}" ] && ENV_VARS+="|MCP_REPUTATION_FEED=${PALIVANE_MCP_REPUTATION_FEED}"
 # Public read-only demo — slug of the seeded demo tenant (run `python -m app.seed`
 # against prod once, with a random SEED_ADMIN_PASSWORD). Empty = no demo button.
@@ -268,6 +269,15 @@ fi
 
 # Built only after the checks above pass, so a deploy that is going to be refused does not
 # build and push an image first.
+# The MCP reputation dataset lives in GCS, not git (catalog-growth.yml rebuilds it weekly).
+# Copy it into the build context so the image carries it at /app/data. Best effort: the feed
+# is opt-in, and without the file a "bundled" feed just reports nothing.
+if [ -n "${MCP_REPUTATION_BUCKET:-}" ]; then
+  echo "==> Fetching MCP reputation dataset from gs://${MCP_REPUTATION_BUCKET}"
+  gcloud storage cp "gs://${MCP_REPUTATION_BUCKET}/mcp_reputation.json" \
+    backend/data/mcp_reputation.json --project "$PROJECT_ID" \
+    || echo "  ! could not fetch it; building without (the bundled feed will be empty)"
+fi
 echo "==> Building & pushing $IMAGE"
 gcloud builds submit --project "$PROJECT_ID" \
   --config deploy/cloudrun/cloudbuild.yaml \
