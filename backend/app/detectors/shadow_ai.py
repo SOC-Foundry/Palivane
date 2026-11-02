@@ -263,6 +263,26 @@ def _is_role_address(addr: str) -> bool:
     return local in _ROLE_LOCALPARTS or local.startswith(("noreply", "donotreply"))
 
 
+# Domains reserved for documentation (RFC 2606 / RFC 6761): no mailbox exists there, so an
+# address on one is a sample in a doc, never a person's contact details.
+_RESERVED_EMAIL_DOMAINS = frozenset({"example.com", "example.net", "example.org"})
+_RESERVED_EMAIL_TLDS = (".example", ".test", ".invalid", ".localhost")
+
+
+def _is_example_address(addr: str) -> bool:
+    domain = addr.rsplit("@", 1)[-1].lower()
+    return (domain in _RESERVED_EMAIL_DOMAINS or domain.endswith(_RESERVED_EMAIL_TLDS)
+            or any(domain.endswith("." + d) for d in _RESERVED_EMAIL_DOMAINS))
+
+
+def _is_fictional_phone(number: str) -> bool:
+    """A North American number on the 555 exchange (`(212) 555-0142`): the exchange films and
+    documentation use because it is not assigned to subscriber lines (555-0100..0199 is
+    reserved for fiction outright). Only the exchange is read, so any other number counts."""
+    d = re.sub(r"\D", "", number)
+    return len(d) >= 10 and d[-7:-4] == "555"
+
+
 # How close a record word must be to an identifier for the two to be one record. Roughly a
 # sentence or two either side. `customer` somewhere in a prompt and an email somewhere else in
 # it is a coincidence, and a long prompt (the conversation so far) makes coincidence certain.
@@ -274,11 +294,13 @@ def _identity_spans(text: str, with_ssn: bool = False) -> list[tuple[int, int]]:
     """Where in `text` a person is identified: a personal (non-role) email, a phone number, a
     CUED birth date, and optionally a dashed SSN."""
     spans: list[tuple[int, int]] = []
-    rxs = [PHONE_RE, _DOB_CUED_RE] + ([SSN_RE] if with_ssn else [])
+    rxs = [_DOB_CUED_RE] + ([SSN_RE] if with_ssn else [])
     for rx in rxs:
         spans += [m.span() for m in itertools.islice(rx.finditer(text), _MAX_SCANNED_MATCHES)]
+    spans += [m.span() for m in itertools.islice(PHONE_RE.finditer(text), _MAX_SCANNED_MATCHES)
+              if not _is_fictional_phone(m.group(0))]
     spans += [m.span() for m in itertools.islice(EMAIL_RE.finditer(text), _MAX_SCANNED_MATCHES)
-              if not _is_role_address(m.group(0))]
+              if not (_is_role_address(m.group(0)) or _is_example_address(m.group(0)))]
     return spans
 
 
@@ -728,8 +750,13 @@ class ShadowAIDetector:
         norm = normalize_for_match(text)
         secrets = (raw_secrets if raw_secrets is not None else find_secrets(text)) \
             or find_secrets(norm) \
-            or find_secrets(_deglue_secret_spacing(norm)) \
+            or [lbl for lbl in find_secrets(_deglue_secret_spacing(norm))
+                if lbl != "Credential assignment"] \
             or [lbl for lbl in find_secrets(norm.upper()) if lbl != "Credential assignment"]
+        # ^ the deglued view is for a vendor key split by spaces, which it reports under the
+        # vendor's label. Credential assignment is dropped from it: gluing a prefix-led run of
+        # prose together (a doc's sample key, then `and aws_secret_access_key = …`, then the
+        # next sentence) manufactured an assignment whose value was the glue.
         # ^ the `.upper()` view recovers case-SENSITIVE vendor prefixes (AKIA…) that a
         # homoglyph or case-mangle transform lower-cased ("акіа…"/"AkIa…" → normalize folds
         # to lowercase latin, then upper() restores "AKIA…"). Safe as a last-resort fallback:
@@ -825,7 +852,7 @@ class ShadowAIDetector:
         emails = EMAIL_RE.findall(text)
         personal = [e for e in emails if _personal_email(e)]
         bulk_emails = len(personal) >= 3 and not fixture   # its own warn-tier signal below
-        phones = PHONE_RE.findall(text)
+        phones = [p for p in PHONE_RE.findall(text) if not _is_fictional_phone(p)]
         if len(phones) >= 3 and not fixture:
             found.append(f"{len(phones)} phone numbers")
             weight = max(weight, 0.5)
