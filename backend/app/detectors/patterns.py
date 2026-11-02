@@ -284,6 +284,7 @@ _CODE_KEYWORD_VALUE_RE = re.compile(r"^(?:continue|undefined|function|nonlocal|o
 # own line begins somewhere inside the previous code line.
 _COMMENT_LINE_RE = re.compile(r"^[ \t]*\*|(?:^|\s)(?:#|//|/\*|--)\s")
 _PROSE_WORD_VALUE_RE = re.compile(r"^[A-Za-z]+(?:-[A-Za-z]+)*$")
+_PASSWORD_LHS_RE = re.compile(r"(?i)pass|pwd")
 _PROSE_CONTINUES_RE = re.compile(r"^[ \t]+[a-z]{2,}\b")
 
 
@@ -300,6 +301,11 @@ def _is_placeholder_assignment(match_text: str, line_before: str = "", after: st
         return False
     sep, quoted, val = mm.groups()
     if _PLACEHOLDER_VALUE_RE.match(val) or _ENV_EXPR_RE.match(val) or _EXPR_VALUE_RE.search(val):
+        return True
+    # An issued credential (token, API key, client secret) with a typed body
+    # (`X-Api-Token: 1234567890abcdef…`) is a docs sample. Not for passwords: people choose
+    # those, and a run like `abc123abc123` is exactly what they choose.
+    if not _PASSWORD_LHS_RE.search(match_text[:mm.start()]) and _synthetic_body(val):
         return True
     if quoted:
         return False
