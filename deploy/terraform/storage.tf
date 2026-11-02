@@ -2,6 +2,8 @@
 # in catalog-growth.yml and fetched into the image by deploy.sh; kept out of git because a
 # fresh copy every week would bloat history. Both sides run as the deploy SA, which already
 # holds roles/storage.admin, and the runtime never reads the bucket, so no IAM here.
+# Until prod is imported into state, catalog-growth.yml creates this same bucket itself
+# (terraform-apply.yml would otherwise try to build the whole stack); import it then.
 # Versioned, so a bad week can be rolled back by restoring the previous generation.
 resource "google_storage_bucket" "mcp_reputation" {
   name                        = "${var.project_id}-mcp-reputation"
