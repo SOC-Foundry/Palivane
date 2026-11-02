@@ -123,13 +123,20 @@ AGENTS.md, copilot-instructions.md, skill SKILL.md). The MCP-config scan also ru
 pin: a known-bad denylist (`MCP_SERVER_DENYLIST`), non-registry sources (git/URL/tarball
 instead of a pinned registry package), and, opt-in (`MCP_REPUTATION_ENABLED`), freshly
 published or freshly *republished* packages, the postmark-mcp "trusted then trojaned" tell.
-Opt-in (`PALIVANE_MCP_REPUTATION_FEED=bundled`), it also looks each server and package up
-in a reputation dataset (`backend/data/mcp_reputation.json`, built by
-`backend/tools/mcp_feed_build.py` from the official MCP registry, npm/PyPI metadata and OSV;
-rebuilt weekly into GCS and copied into the image at deploy, not kept in git): `malicious` only on an OSV
-`MAL-` advisory or a denylist hit, `trusted` only when every provenance check passes,
-`caution` otherwise, each with the reasons. A path in
-`PALIVANE_MCP_REPUTATION_FEED` swaps in another file.
+It also looks each server and package up in a reputation dataset covering the official MCP
+registry (`backend/tools/mcp_feed_build.py`, from registry, npm/PyPI and OSV metadata;
+rebuilt weekly into GCS and copied into the image at deploy, not kept in git). The managed
+service runs it; a self-hosted install opts in with `PALIVANE_MCP_REPUTATION_FEED=bundled`,
+or points it at another file. Every row lists its reasons:
+- `malicious`: only an OSV `MAL-` advisory on the latest release, a denylist hit, or a
+  curated incident. Flags the server as critical on its own.
+- `caution`: a concrete risk, such as deprecated or yanked, missing from its registry,
+  first published under 30 days ago, no release in a year, known advisories, earlier
+  malicious versions, an archived repo, or a near-miss of a well-known name. Shown as
+  context on a server the scan flags; it doesn't flag one by itself.
+- `unverified`: no risk found, but nothing to confirm trust either (a remote-only server,
+  a package type the dataset doesn't check, no source repo). Reports nothing.
+- `trusted`: every provenance check passes. Reports nothing.
 
 **Unified cross-vendor session audit** (`GET /api/audit/sessions`, `/api/audit/timeline`;
 console **Sessions** view): an enterprise runs Claude Code, Cursor, Codex, Gemini CLI,
