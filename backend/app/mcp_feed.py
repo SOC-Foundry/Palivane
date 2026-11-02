@@ -12,11 +12,12 @@ use it, or a path for a different (e.g. licensed) file. The heuristic checks run
 
 Feed schema (JSON object):
     { "_meta": { "generated_at": ..., "scoring_version": ..., "sources": {...} },   # optional
-      "<server-or-package-name>": { "tier": "trusted|caution|malicious",
+      "<server-or-package-name>": { "tier": "trusted|unverified|caution|malicious",
                                     "score": 0-100, "reason": "..." }, ... }
 Keys starting with "_" are reserved (metadata, comments) and never treated as names — no
 npm/PyPI package or registry server name can start with one. Lower score = worse. `tier` is
-authoritative for the verdict; `score`/`reason` enrich it.
+authoritative for the verdict; `score`/`reason` enrich it. `unverified` means the generator
+found no risk but couldn't confirm trust either (a remote-only server, say): no finding.
 """
 from __future__ import annotations
 
@@ -25,7 +26,7 @@ import os
 
 from .config import settings
 
-_TIERS = {"trusted", "caution", "malicious"}
+_TIERS = {"trusted", "unverified", "caution", "malicious"}
 _cache: dict = {"path": None, "mtime": None, "feed": {}, "meta": {}}
 
 
@@ -72,8 +73,9 @@ def meta() -> dict:
 
 def feed_signals(names: list[str]) -> list[dict]:
     """Reputation signals for the given server/package names from the scored feed.
-    `malicious` is a hard, high-weight flag; `caution` is advisory. `trusted` emits nothing
-    (a positive rating isn't a finding). Empty when no feed is configured."""
+    `malicious` is a hard, high-weight flag; `caution` (a concrete risk signal) is advisory.
+    `trusted` and `unverified` emit nothing: a positive rating isn't a finding, and "nothing to
+    inspect" isn't evidence of risk. Empty when no feed is configured."""
     feed = _load()
     if not feed:
         return []

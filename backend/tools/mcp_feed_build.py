@@ -24,9 +24,15 @@ signals that produced it:
                 repo belongs to <owner>); each package exists, has a source repo, is >= 30
                 days old, released within a year, not deprecated/yanked, no advisories, not
                 a near-miss of a well-known name. A remote-only server has no package to
-                inspect, so it is never trusted (at best caution 65, on its own domain).
-  - caution   — everything else, including "not enough evidence to call it trusted". The
-                default is caution, never trusted.
+                inspect, so it is never trusted (at best unverified 65, on its own domain).
+  - caution   — a concrete risk signal: deprecated/yanked/delisted, missing from its
+                registry, first published under 30 days ago, no release in a year, known
+                advisories, earlier malicious versions, an archived repo, or a near-miss of
+                a well-known name. This is the tier that produces a finding.
+  - unverified — no risk signal, but not enough evidence for trusted either: remote-only
+                (nothing to inspect), a package type this feed doesn't check, no source
+                repo, a publisher that doesn't own its repo. Absence of evidence, not
+                evidence of risk, so the app reports nothing for it. Never trusted.
 
     python tools/mcp_feed_build.py                 # from backend/; writes data/mcp_reputation.json
     python tools/mcp_feed_build.py --github        # also spot-check archived repos
@@ -51,7 +57,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
-SCORING_VERSION = "1"
+SCORING_VERSION = "2"
 BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_OUT = os.path.join(BACKEND, "data", "mcp_reputation.json")
 DEFAULT_CURATED = os.path.join(BACKEND, "data", "mcp-reputation-starter.json")
@@ -67,7 +73,7 @@ UA = "palivane-mcp-feed-build/1 (+https://palivane.io)"
 NEW_DAYS = 30          # first published less than this long ago = little track record
 STALE_DAYS = 365       # no release in this long = not "active"
 MAX_ERROR_RATIO = 0.02  # package-lookup errors (not 404s) above this abort the run
-_TIER_RANK = {"malicious": 0, "caution": 1, "trusted": 2}
+_TIER_RANK = {"malicious": 0, "caution": 1, "unverified": 2, "trusted": 3}
 _ECO = {"npm": "npm", "pypi": "PyPI"}
 _CODE_HOSTS = ("github.com/", "gitlab.com/", "bitbucket.org/", "codeberg.org/", "sr.ht/")
 
@@ -374,7 +380,8 @@ def score_server(entry: dict, pkg_info: dict, osv: dict, now: datetime, famous: 
     keys = [name.lower()] + [n.lower() for e, n in pkgs if e in _ECO]
 
     hard: list[str] = []      # malicious evidence
-    bad: list[str] = []       # caution signals
+    bad: list[str] = []       # risk signals: caution
+    gaps: list[str] = []      # couldn't verify: unverified unless there is also a risk
     good: list[str] = []      # evidence toward trusted
     penalty = 0
     bonus: set[str] = set()   # track-record evidence that lifts a trusted score above 80
@@ -390,7 +397,7 @@ def score_server(entry: dict, pkg_info: dict, osv: dict, now: datetime, famous: 
     repos = {srv_repo} if srv_repo else set()
     for eco, pname in pkgs:
         if eco not in _ECO:
-            bad.append(f"{eco} package not verified by this feed")
+            gaps.append(f"{eco} package not verified by this feed")
             penalty += 15
             continue
         tag = f"{eco} {pname}"
@@ -416,7 +423,7 @@ def score_server(entry: dict, pkg_info: dict, osv: dict, now: datetime, famous: 
             bad.append(f"{tag} first published {created.date()} (<{NEW_DAYS}d)")
             penalty += 20
         elif not created:
-            bad.append(f"{tag} publish date unknown")
+            gaps.append(f"{tag} publish date unknown")
             penalty += 10
         if created and now - created > timedelta(days=365):
             bonus.add("established")
@@ -435,7 +442,7 @@ def score_server(entry: dict, pkg_info: dict, osv: dict, now: datetime, famous: 
             penalty += 40
 
     if pkgs and not repos:
-        bad.append("no source repository")
+        gaps.append("no source repository")
         penalty += 25
     for r in sorted(repos):
         if archived.get(r):
@@ -449,22 +456,22 @@ def score_server(entry: dict, pkg_info: dict, osv: dict, now: datetime, famous: 
     elif any(r.startswith(f"github.com/{owner}/") for r in repos):
         good.append(f"GitHub publisher {owner} owns the source repo")
     else:
-        bad.append(f"publisher io.github.{owner} does not own the source repo")
+        gaps.append(f"publisher io.github.{owner} does not own the source repo")
         penalty += 10
 
     remotes = [r.get("url", "") for r in srv.get("remotes") or [] if r.get("url")]
     if not pkgs:
         if not remotes:
-            bad.append("no package or remote endpoint")
+            gaps.append("no package or remote endpoint")
             penalty += 30
         elif kind == "domain" and all(
                 _host(u) == owner or _host(u).endswith("." + owner) for u in remotes):
             # The best a remote-only server can show — but there is no package to inspect,
             # so it stays below trusted rather than being waved through on a domain alone.
-            bad.append("remote-only (no package to inspect), on publisher's domain")
+            gaps.append("remote-only (no package to inspect), on publisher's domain")
             penalty += 5
         else:
-            bad.append("remote-only (no package to inspect), off publisher's domain")
+            gaps.append("remote-only (no package to inspect), off publisher's domain")
             penalty += 25
     elif repos:
         good.append("sourced " + ", ".join(sorted(repos)[:2]))
@@ -472,12 +479,14 @@ def score_server(entry: dict, pkg_info: dict, osv: dict, now: datetime, famous: 
     if hard:
         reason = "; ".join(sorted(set(hard)))
         return {"tier": "malicious", "score": 0, "reason": reason, "keys": keys}
-    if not bad:
+    if not bad and not gaps:
         tier, score = "trusted", min(95, 80 + 5 * len(bonus))
         reason = "registry-listed; " + "; ".join(good) + "; no advisories"
     else:
-        tier, score = "caution", max(10, min(65, 70 - penalty))
-        reason = "; ".join(dict.fromkeys(bad))   # two mcpb bundles = one signal in the text
+        # Risks first: they are why a caution row is one, and the reason is truncated.
+        tier = "caution" if bad else "unverified"
+        score = max(10, min(65, 70 - penalty))
+        reason = "; ".join(dict.fromkeys(bad + gaps))   # two mcpb bundles = one signal
     return {"tier": tier, "score": score, "reason": reason[:400], "keys": keys}
 
 

@@ -27,6 +27,10 @@ on:
       limit:
         description: "Max candidates this run"
         default: "40"
+      dataset_only:
+        description: "Only rebuild the MCP reputation dataset (no catalog PR)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -38,6 +42,8 @@ concurrency:
 
 jobs:
   propose:
+    # A scheduled run has no inputs, so it always proposes.
+    if: ${{ !inputs.dataset_only }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
