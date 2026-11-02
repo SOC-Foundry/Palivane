@@ -20,3 +20,8 @@ output "front_service_account" {
 output "artifact_registry" {
   value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.palivane.repository_id}"
 }
+
+output "mcp_reputation_bucket" {
+  value       = google_storage_bucket.mcp_reputation.name
+  description = "Set as the MCP_REPUTATION_BUCKET repo variable (catalog-growth.yml uploads, deploy.sh fetches)."
+}
