@@ -12,6 +12,12 @@ name: Catalog growth (auto-PR)
 # cannot open this PR. Without the secret the push still happens and the PR step fails
 # visibly. The token is used for the push too, so the PR's CI runs; pushes and PRs made
 # with GITHUB_TOKEN never trigger workflows.
+#
+# The mcp-dataset job rebuilds the MCP reputation dataset (backend/tools/mcp_feed_build.py:
+# official MCP registry + npm/PyPI + OSV) into gs://$MCP_REPUTATION_BUCKET, not into git
+# (~12 MB a week would bloat history). deploy.sh fetches it into the image on the next
+# deploy; the app reads it only where PALIVANE_MCP_REPUTATION_FEED=bundled. Uploading needs
+# the deploy SA, and WIF issues that only to a main job in the production environment.
 
 on:
   schedule:
@@ -85,3 +91,70 @@ jobs:
               --title "catalog: weekly growth proposals (auto)" \
               --body-file /tmp/summary.md
           fi
+
+  mcp-dataset:
+    # Independent of the catalog PR: a source outage here costs nothing but this week's
+    # refresh, and the generator refuses to write a truncated dataset, so the object in the
+    # bucket is only replaced by a complete one.
+    if: github.ref == 'refs/heads/main' && vars.MCP_REPUTATION_BUCKET != ''
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      OBJ: gs://${{ vars.MCP_REPUTATION_BUCKET }}/mcp_reputation.json
+      OUT: backend/data/mcp_reputation.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Create the bucket if missing
+        # Mirrors deploy/terraform/storage.tf. Created here because prod is not in Terraform
+        # state yet (terraform-apply.yml would try to build the whole stack); import the bucket
+        # with the rest when prod is adopted. Private, versioned, 12 old generations kept.
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+          BUCKET: gs://${{ vars.MCP_REPUTATION_BUCKET }}
+        run: |
+          if gcloud storage buckets describe "$BUCKET" --project "$PROJECT_ID" >/dev/null 2>&1; then
+            echo "$BUCKET exists."
+            exit 0
+          fi
+          gcloud storage buckets create "$BUCKET" --project "$PROJECT_ID" \
+            --location "${REGION:-us-central1}" --uniform-bucket-level-access \
+            --public-access-prevention
+          echo '{"rule":[{"action":{"type":"Delete"},"condition":{"numNewerVersions":12,"isLive":false}}]}' \
+            > /tmp/lifecycle.json
+          gcloud storage buckets update "$BUCKET" --versioning --lifecycle-file=/tmp/lifecycle.json
+          echo "Created $BUCKET."
+
+      - name: Fetch last week's dataset
+        # The generator compares against the previous file (registry count must not drop
+        # below --min-ratio of it) and keeps its stamp when nothing changed. First run: none.
+        run: gcloud storage cp "$OBJ" "$OUT" || echo "No previous dataset; building from scratch."
+
+      - name: Rebuild the MCP reputation dataset
+        # Stdlib only, no backend install.
+        run: |
+          cp "$OUT" /tmp/prev.json 2>/dev/null || true
+          python backend/tools/mcp_feed_build.py 2>&1 | tee /tmp/feed.log
+          exit "${PIPESTATUS[0]}"
+
+      - name: Upload
+        run: |
+          if cmp -s "$OUT" /tmp/prev.json; then
+            echo "Dataset unchanged; nothing to upload."
+          else
+            gcloud storage cp "$OUT" "$OBJ"
+          fi
+          { echo "### MCP reputation dataset"; tail -n 1 /tmp/feed.log; } >> "$GITHUB_STEP_SUMMARY"

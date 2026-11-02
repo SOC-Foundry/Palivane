@@ -13,6 +13,26 @@ def _env(name: str, default: str = "") -> str:
     return os.getenv(name) or default
 
 
+# Where the MCP reputation dataset sits when present, resolved from this file so it holds for
+# the image (/app/app -> /app/data), the native tarball and a checkout (backend/data). Not in
+# git: deploy.sh fetches it from GCS into the image; elsewhere run tools/mcp_feed_build.py.
+BUNDLED_MCP_FEED = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                "data", "mcp_reputation.json")
+
+
+def _mcp_feed_path() -> str:
+    """PALIVANE_MCP_REPUTATION_FEED, else the legacy MCP_REPUTATION_FEED (what deploy.sh
+    sets). Opt-in: unset, empty or "off" disables the feed; "bundled" selects
+    BUNDLED_MCP_FEED; anything else is a path."""
+    raw = os.getenv("PALIVANE_MCP_REPUTATION_FEED")
+    if raw is None:
+        raw = os.getenv("MCP_REPUTATION_FEED")
+    raw = (raw or "").strip()
+    if raw.lower() == "bundled":
+        return BUNDLED_MCP_FEED
+    return "" if raw.lower() in ("", "off", "none", "false", "0") else raw
+
+
 @dataclass
 class Settings:
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
@@ -123,10 +143,10 @@ class Settings:
     mcp_reputation_enabled: bool = os.getenv("MCP_REPUTATION_ENABLED", "").lower() in ("1", "true", "yes")
     mcp_reputation_fresh_days: int = int(os.getenv("MCP_REPUTATION_FRESH_DAYS", "14"))
     # Path to a scored MCP-server reputation feed (JSON: name -> {tier, score, reason}).
-    # Empty = feed disabled (denylist + provenance + freshness still run). The feed itself
-    # — e.g. a curated/licensed dataset seeded from the official MCP registry — is an
-    # out-of-band data artifact the operator points this at; the code is the consumer.
-    mcp_reputation_feed: str = os.getenv("MCP_REPUTATION_FEED", "").strip()
+    # Opt-in. Unset, "" or "off" = feed disabled (denylist + provenance + freshness still
+    # run); "bundled" = data/mcp_reputation.json (fetched into the image from GCS at deploy,
+    # rebuilt weekly by tools/mcp_feed_build.py); a path = that file instead.
+    mcp_reputation_feed: str = _mcp_feed_path()
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./palivane.db")
     cors_origins: str = os.getenv("CORS_ORIGINS", "http://localhost:5173")
     # Reject request bodies larger than this (DoS/OOM guard); ~12 MB default.

@@ -41,3 +41,7 @@ scripts/hero-video/node_modules/
 
 # Rendered demo soundtracks — regenerable intermediates (only the muxed .mp4 is tracked)
 marketing/*-score.wav
+
+# MCP reputation dataset: built weekly into GCS by catalog-growth.yml, fetched into the
+# image by deploy.sh. Too big (and too churny) for git.
+backend/data/mcp_reputation.json
