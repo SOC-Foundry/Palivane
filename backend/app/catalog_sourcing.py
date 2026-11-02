@@ -42,6 +42,9 @@ HOST_DENYLIST: frozenset[str] = frozenset({
     "pharmapsychotic.com", "try.sanebox.com",
     # cut from #380: a lookalike of Microsoft Copilot's name, and sites that aren't AI tools
     "copilot.us", "lemmy.co", "huntr.co", "bettersheets.co",
+    # cut from #427: not AI tools (contract compliance, window management, agent RE guides)
+    # and a dead deployment
+    "far.site", "nurgo-software.com", "rea.tools", "perch.app",
 })
 
 _URL_RE = re.compile(r"https?://([a-z0-9][a-z0-9.-]*\.[a-z]{2,})", re.I)

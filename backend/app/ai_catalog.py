@@ -164,6 +164,14 @@ CATALOG: dict[str, tuple[str, str]] = {
     "summarywithai.com": ("Summarywithai", "assistant"),
     "getemil.io": ("Getemil", "assistant"),
     "getrecall.ai": ("Getrecall", "assistant"),
+    "interview.talently.ai": ("Talently", "assistant"),
+    "anki-decks.com": ("AnkiDecks", "assistant"),
+    "rabbitholes.ai": ("Slashspace (Rabbitholes)", "assistant"),
+    "rember.com": ("Rember", "assistant"),
+    "qurate.appcradle.net": ("Qurate", "assistant"),
+    "firmos.ai": ("FirmOS", "assistant"),
+    "kosmik.app": ("Kosmik", "assistant"),
+    "excelmatic.ai": ("Excelmatic (RowSpeak)", "assistant"),
 
     # --- Search / answer engines ---
     "perplexity.ai": ("Perplexity", "search"), "you.com": ("You.com", "search"),
@@ -303,6 +311,12 @@ CATALOG: dict[str, tuple[str, str]] = {
     "autodesk.com": ("Autodesk", "agent"),
     "paper2agent.ai": ("Paper2Agent", "agent"),
     "wisprflow.ai": ("Wisprflow", "agent"),
+    "multica.ai": ("Multica", "agent"),
+    "mindpal.space": ("MindPal", "agent"),
+    "marblism.com": ("Marblism", "agent"),
+    "minusx.ai": ("MinusX", "agent"),
+    "salesagent.chat": ("SalesAgent Chat", "agent"),
+    "tc.rebillion.ai": ("ReBillion", "agent"),
 
     # --- Writing / productivity ---
     "jasper.ai": ("Jasper", "writing"), "copy.ai": ("Copy.ai", "writing"),
@@ -377,6 +391,13 @@ CATALOG: dict[str, tuple[str, str]] = {
     "aipoemgenerator.org": ("AI Poem Generator", "writing"),
     "writewithlaika.com": ("Writewithlaika", "writing"),
     "chatgptwriter.ai": ("Chatgptwriter", "writing"),
+    "aiforgoogleslides.com": ("AI for Google Slides", "writing"),
+    "slideswizard.io": ("SlidesWizard", "writing"),
+    "spellapp.com": ("Spell", "writing"),
+    "smmry.com": ("SMMRY", "writing"),
+    "x-doc.ai": ("X-doc AI", "writing"),
+    "pangram.com": ("Pangram", "writing"),
+    "magicpotion.app": ("Magic Potion", "writing"),
 
     # --- Image / video / audio ---
     "midjourney.com": ("Midjourney", "image_video"), "labs.openai.com": ("DALL·E", "image_video"),
@@ -462,6 +483,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "hailuoai.video": ("Hailuoai", "image_video"),
     "maxvideoai.com": ("Maxvideoai", "image_video"),
     "audiocraft.metademolab.com": ("Metademolab", "image_video"),
+    "transgate.ai": ("Transgate", "image_video"),
 
     # --- Meeting / transcription notetakers (high data-exposure risk) ---
     "otter.ai": ("Otter.ai", "meeting"), "fireflies.ai": ("Fireflies.ai", "meeting"),
@@ -496,6 +518,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "loopinhq.com": ("Loopin", "meeting"),
     "get.meetgeek.ai": ("Meetgeek", "meeting"),
     "meetcosmos.com": ("Meetcosmos", "meeting"),
+    "getnudgeai.com": ("Nudge AI", "meeting"),
 
     # --- ML platforms / model hubs / API providers ---
     "huggingface.co": ("Hugging Face", "ml_platform"), "replicate.com": ("Replicate", "ml_platform"),
@@ -588,6 +611,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "cleanlab.ai": ("Cleanlab", "ml_platform"),
     "haystack.deepset.ai": ("deepset Haystack", "ml_platform"),
     "portkey.ai": ("Portkey", "api"),
+    "whisper-api.com": ("WhisperAPI", "api"),
 }
 
 # Rows recorded from vendor marketing/site rather than a verified traffic capture: the
