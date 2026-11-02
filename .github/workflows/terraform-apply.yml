@@ -4,8 +4,19 @@ name: Terraform apply (infra)
 # built by hand and is NOT yet in Terraform state, so an auto-apply would try to create
 # resources that already exist. Import prod into state first (see deploy/terraform/README),
 # confirm `plan` is a no-op, THEN re-enable the push trigger below.
+#
+# Guard: the job applies only the plan it just made, and refuses that plan if it would delete
+# or replace anything, or create a core resource (database, Cloud Run service, secrets,
+# network, registry). Against un-imported prod every plan creates the stack, so this refuses
+# until the import is done; afterwards ordinary changes (a bucket, an alert) go through.
+# A brand-new environment, built from nothing on purpose, sets allow_core_changes.
 on:
   workflow_dispatch:
+    inputs:
+      allow_core_changes:
+        description: "Allow creating core resources and any delete/replace (new environment only)"
+        type: boolean
+        default: false
   # push:
   #   branches: [main]
   #   paths:
@@ -38,7 +49,7 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
-      - name: Apply
+      - name: Plan
         env:
           TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
           TF_VAR_region: ${{ vars.GCP_REGION }}
@@ -48,4 +59,41 @@ jobs:
           terraform init -input=false \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config="prefix=palivane"
-          terraform apply -auto-approve -input=false
+          terraform plan -input=false -out=tfplan
+          terraform show -json tfplan > plan.json
+
+      - name: Refuse a plan that would rebuild or destroy prod
+        env:
+          ALLOW: ${{ inputs.allow_core_changes }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          # Creating one of these means Terraform does not know the live one exists.
+          CORE = {"google_sql_database_instance", "google_sql_database", "google_sql_user",
+                  "google_cloud_run_v2_service", "google_secret_manager_secret",
+                  "google_secret_manager_secret_version", "random_password",
+                  "google_compute_network", "google_compute_subnetwork",
+                  "google_service_networking_connection", "google_artifact_registry_repository"}
+          plan = json.load(open("plan.json"))
+          bad = []
+          for rc in plan.get("resource_changes", []):
+              acts = rc["change"]["actions"]
+              if "delete" in acts:
+                  bad.append(f"{'replace' if 'create' in acts else 'delete'} {rc['address']}")
+              elif "create" in acts and rc["type"] in CORE:
+                  bad.append(f"create {rc['address']}")
+          if not bad:
+              print("Plan touches no core resource and deletes nothing.")
+              sys.exit(0)
+          print("This plan would:\n  " + "\n  ".join(bad))
+          if os.environ.get("ALLOW") == "true":
+              print("allow_core_changes is set: applying anyway.")
+              sys.exit(0)
+          print("::error::Refusing. Prod is not in Terraform state yet (see deploy/terraform/README, "
+                "adopt_existing + import.sh). A new environment can set allow_core_changes.")
+          sys.exit(1)
+          PY
+
+      - name: Apply
+        # Exactly the plan that passed the guard, not a fresh one.
+        run: terraform apply -input=false tfplan
