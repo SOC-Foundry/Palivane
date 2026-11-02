@@ -1,20 +1,22 @@
 """Scored MCP-server reputation feed — the consumer side.
 
 The reputation module ships denylist + provenance + registry-freshness heuristics. This
-adds a *scored feed*: a curated (or licensed) dataset mapping MCP server names / packages to
-a reputation, so a config scan can say "this server scores 12/100, flagged malicious in the
-feed" rather than only "it's not on your allowlist." Competitors score thousands of servers;
-this is the hook that lets Palivane consume such a dataset.
+adds a *scored feed*: a dataset mapping MCP server names / packages to a reputation, so a
+config scan can say "this server scores 12/100, flagged malicious in the feed" rather than
+only "it's not on your allowlist."
 
-What's here is the loader + scoring lookup. The DATASET is not — sourcing/curating/licensing
-a many-thousand-server scored feed (seeded from the official MCP registry, Dec 2025 schema)
-is a data investment, not code. Point `PALIVANE_MCP_REPUTATION_FEED` at the JSON and this
-consumes it; ship nothing and the heuristic checks still run.
+The dataset, data/mcp_reputation.json, is built from public metadata (the official MCP
+registry, npm/PyPI, OSV) by tools/mcp_feed_build.py. It is not in git: the weekly
+catalog-growth workflow uploads it to GCS and deploy.sh copies it into the image. The feed is opt-in: set `PALIVANE_MCP_REPUTATION_FEED=bundled` to
+use it, or a path for a different (e.g. licensed) file. The heuristic checks run either way.
 
 Feed schema (JSON object):
-    { "<server-or-package-name>": { "tier": "trusted|caution|malicious",
+    { "_meta": { "generated_at": ..., "scoring_version": ..., "sources": {...} },   # optional
+      "<server-or-package-name>": { "tier": "trusted|caution|malicious",
                                     "score": 0-100, "reason": "..." }, ... }
-Lower score = worse. `tier` is authoritative for the verdict; `score`/`reason` enrich it.
+Keys starting with "_" are reserved (metadata, comments) and never treated as names — no
+npm/PyPI package or registry server name can start with one. Lower score = worse. `tier` is
+authoritative for the verdict; `score`/`reason` enrich it.
 """
 from __future__ import annotations
 
@@ -24,7 +26,7 @@ import os
 from .config import settings
 
 _TIERS = {"trusted", "caution", "malicious"}
-_cache: dict = {"path": None, "mtime": None, "feed": {}}
+_cache: dict = {"path": None, "mtime": None, "feed": {}, "meta": {}}
 
 
 def _load() -> dict:
@@ -44,8 +46,9 @@ def _load() -> dict:
     except (OSError, ValueError):
         return {}
     feed = {}
-    for name, entry in (raw.items() if isinstance(raw, dict) else []):
-        if not isinstance(entry, dict):
+    raw = raw if isinstance(raw, dict) else {}
+    for name, entry in raw.items():
+        if name.startswith("_") or not isinstance(entry, dict):
             continue
         tier = str(entry.get("tier", "")).lower()
         feed[name.strip().lower()] = {
@@ -53,12 +56,18 @@ def _load() -> dict:
             "score": entry.get("score"),
             "reason": str(entry.get("reason", "")),
         }
-    _cache.update(path=path, mtime=mtime, feed=feed)
+    meta = raw.get("_meta")
+    _cache.update(path=path, mtime=mtime, feed=feed, meta=meta if isinstance(meta, dict) else {})
     return feed
 
 
 def loaded() -> bool:
     return bool(_load())
+
+
+def meta() -> dict:
+    """The feed's `_meta` block (generated_at, scoring_version, sources), {} if none."""
+    return _cache["meta"] if _load() else {}
 
 
 def feed_signals(names: list[str]) -> list[dict]:

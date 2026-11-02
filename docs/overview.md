@@ -123,6 +123,13 @@ AGENTS.md, copilot-instructions.md, skill SKILL.md). The MCP-config scan also ru
 pin: a known-bad denylist (`MCP_SERVER_DENYLIST`), non-registry sources (git/URL/tarball
 instead of a pinned registry package), and, opt-in (`MCP_REPUTATION_ENABLED`), freshly
 published or freshly *republished* packages, the postmark-mcp "trusted then trojaned" tell.
+Opt-in (`PALIVANE_MCP_REPUTATION_FEED=bundled`), it also looks each server and package up
+in a reputation dataset (`backend/data/mcp_reputation.json`, built by
+`backend/tools/mcp_feed_build.py` from the official MCP registry, npm/PyPI metadata and OSV;
+rebuilt weekly into GCS and copied into the image at deploy, not kept in git): `malicious` only on an OSV
+`MAL-` advisory or a denylist hit, `trusted` only when every provenance check passes,
+`caution` otherwise, each with the reasons. A path in
+`PALIVANE_MCP_REPUTATION_FEED` swaps in another file.
 
 **Unified cross-vendor session audit** (`GET /api/audit/sessions`, `/api/audit/timeline`;
 console **Sessions** view): an enterprise runs Claude Code, Cursor, Codex, Gemini CLI,

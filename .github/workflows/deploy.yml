@@ -153,6 +153,9 @@ jobs:
           # deploy/cloudrun/Dockerfile). Left wired so a fork deploying its own install can
           # set the variable and get the stronger, true claim.
           PALIVANE_SELF_HOSTED: ${{ vars.PALIVANE_SELF_HOSTED }}
+          # The MCP reputation dataset is fetched from this bucket into the image (weekly
+          # build in catalog-growth.yml); the feed above decides whether the app uses it.
+          MCP_REPUTATION_BUCKET: ${{ vars.MCP_REPUTATION_BUCKET }}
           PALIVANE_MCP_REPUTATION_FEED: ${{ vars.PALIVANE_MCP_REPUTATION_FEED }}
           STRIPE_PUBLISHABLE_KEY: ${{ vars.STRIPE_PUBLISHABLE_KEY }}
           STRIPE_PRICE_TEAM_MONTHLY: ${{ vars.STRIPE_PRICE_TEAM_MONTHLY }}
