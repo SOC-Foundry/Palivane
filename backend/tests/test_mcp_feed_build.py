@@ -58,13 +58,12 @@ def test_github_namespace_trusted_only_when_it_owns_the_repo():
     own = _score(e, {("pypi", "alice-tool"): _info(repo="github.com/alice/tool")})
     assert own["tier"] == "trusted"
     other = _score(e, {("pypi", "alice-tool"): _info(repo="github.com/bob/tool")})
-    assert other["tier"] == "caution"
+    assert other["tier"] == "unverified"
     assert "does not own the source repo" in other["reason"]
 
 
 @pytest.mark.parametrize("info,osv,expect", [
     (_info(age_days=5), None, "first published"),
-    (_info(repo=None), None, "no source repository"),
     (_info(deprecated=True), None, "deprecated/yanked"),
     (_info(last_days=800), None, "no release since"),
     (_info(), {"mal": [], "vulns": ["GHSA-aaaa-bbbb-cccc"]}, "known advisories"),
@@ -77,18 +76,33 @@ def test_caution_signals(info, osv, expect):
     assert 10 <= s["score"] <= 65
 
 
-def test_missing_package_and_unverified_types_are_caution():
+def test_missing_package_is_caution_unverified_type_is_unverified():
     e = _srv("com.acme/mcp", [("npm", "@acme/gone")])
-    assert "not found on npm" in _score(e, {("npm", "@acme/gone"): None})["reason"]
+    gone = _score(e, {("npm", "@acme/gone"): None})
+    assert gone["tier"] == "caution" and "not found on npm" in gone["reason"]
     oci = _srv("com.acme/img", [("oci", "docker.io/acme/img")])
-    assert _score(oci)["tier"] == "caution"
+    assert _score(oci)["tier"] == "unverified"
+
+
+def test_no_source_repo_is_unverified_not_caution():
+    e = _srv("com.acme/mcp", [("npm", "@acme/mcp")])
+    s = _score(e, {("npm", "@acme/mcp"): _info(repo=None)})
+    assert s["tier"] == "unverified" and "no source repository" in s["reason"]
+
+
+def test_a_risk_makes_it_caution_and_leads_the_reason():
+    # a coverage gap (no repo) plus a real risk (brand new): caution, risk named first
+    e = _srv("com.acme/mcp", [("npm", "@acme/mcp")])
+    s = _score(e, {("npm", "@acme/mcp"): _info(age_days=5, repo=None)})
+    assert s["tier"] == "caution"
+    assert s["reason"].index("first published") < s["reason"].index("no source repository")
 
 
 def test_remote_only_is_never_trusted():
     on_domain = _score(_srv("com.acme/remote", remotes=["https://mcp.acme.com/mcp"]))
-    assert on_domain["tier"] == "caution" and on_domain["score"] == 65
+    assert on_domain["tier"] == "unverified" and on_domain["score"] == 65
     off_domain = _score(_srv("com.acme/remote", remotes=["https://elsewhere.example/mcp"]))
-    assert off_domain["tier"] == "caution" and off_domain["score"] < on_domain["score"]
+    assert off_domain["tier"] == "unverified" and off_domain["score"] < on_domain["score"]
 
 
 def test_typosquat_of_well_known_name():
@@ -234,7 +248,7 @@ def test_bundled_dataset_loads(monkeypatch):
     assert mcp_feed.loaded()
     meta = mcp_feed.meta()
     assert meta["scoring_version"] and meta["sources"]["registry_servers"] > 0
-    assert set(meta["tiers"]) == {"trusted", "caution", "malicious"}
+    assert set(meta["tiers"]) == {"trusted", "unverified", "caution", "malicious"}
 
 
 # --- main(): network handling ----------------------------------------------------------
@@ -298,3 +312,13 @@ def test_main_fails_on_lookup_errors_instead_of_marking_not_found(tmp_path):
     servers = [_srv(f"com.acme/s{i}", [("npm", f"@acme/s{i}")]) for i in range(10)]
     rc, out = _run(tmp_path, FakeHttp(servers, fail_npm=True))
     assert rc == 1 and not out.exists()
+
+
+def test_unverified_rows_emit_no_finding(tmp_path, monkeypatch):
+    path = _write(tmp_path, {
+        "remote-thing": {"tier": "unverified", "score": 65, "reason": "remote-only"},
+        "risky-thing": {"tier": "caution", "score": 40, "reason": "first published"}})
+    monkeypatch.setattr(settings, "mcp_reputation_feed", path)
+    assert mcp_feed.feed_signals(["remote-thing"]) == []
+    assert [s["title"] for s in mcp_feed.feed_signals(["risky-thing"])] == \
+        ["MCP server rated low-reputation"]
