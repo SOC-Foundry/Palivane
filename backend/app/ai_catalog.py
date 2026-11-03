@@ -172,35 +172,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "firmos.ai": ("FirmOS", "assistant"),
     "kosmik.app": ("Kosmik", "assistant"),
     "excelmatic.ai": ("Excelmatic (RowSpeak)", "assistant"),
-    "riffo.ai": ("Riffo", "assistant"),
-    "summara.io": ("Summara", "assistant"),
-    "langfa.st": ("Langfa", "assistant"),
-    "scribbl.co": ("Scribbl", "assistant"),
-    "galactica.org": ("Galactica", "assistant"),
-    "sourcely.net": ("Sourcely", "assistant"),
-    "mathgptpro.com": ("Mathgptpro", "assistant"),
-    "sitegpt.ai": ("Sitegpt", "assistant"),
-    "gpthelp.ai": ("Gpthelp", "assistant"),
-    "sitespeak.ai": ("Sitespeak", "assistant"),
-    "dearai.online": ("Dearai", "assistant"),
-    "inlinehelp.com": ("Inlinehelp", "assistant"),
-    "aidbase.ai": ("Aidbase", "assistant"),
-    "twig.so": ("Twig", "assistant"),
-    "neverjobless.com": ("Neverjobless", "assistant"),
-    "cohere.ai": ("Cohere", "assistant"),
-    "keploy.io": ("Keploy", "assistant"),
-    "portialabs.ai": ("Portialabs", "assistant"),
-    "predictionguard.com": ("Predictionguard", "assistant"),
-    "chatwithcloud.ai": ("Chatwithcloud", "assistant"),
-    "singlebase.cloud": ("Singlebase", "assistant"),
-    "getmaxim.ai": ("Getmaxim", "assistant"),
-    "pagerly.io": ("Pagerly", "assistant"),
-    "hexabot.ai": ("Hexabot", "assistant"),
-    "callstack.ai": ("Callstack", "assistant"),
-    "getkiln.ai": ("Getkiln", "assistant"),
-    "getcalmo.com": ("Getcalmo", "assistant"),
-    "tensorzero.com": ("Tensorzero", "assistant"),
-    "ingenimax.ai": ("Ingenimax", "assistant"),
+    "mathgptpro.com": ("Mathos AI (MathGPTPro)", "assistant"),
 
     # --- Search / answer engines ---
     "perplexity.ai": ("Perplexity", "search"), "you.com": ("You.com", "search"),
@@ -287,6 +259,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "gitingest.com": ("Gitingest", "coding"),
     "repomix.com": ("Repomix", "coding"),
     "stenography.dev": ("Stenography", "coding"),
+    "keploy.io": ("Keploy", "coding"),
 
     # --- Agents / automation ---
     "manus.im": ("Manus", "agent"), "devin.ai": ("Devin", "agent"),
@@ -346,6 +319,14 @@ CATALOG: dict[str, tuple[str, str]] = {
     "minusx.ai": ("MinusX", "agent"),
     "salesagent.chat": ("SalesAgent Chat", "agent"),
     "tc.rebillion.ai": ("ReBillion", "agent"),
+    "sitegpt.ai": ("SiteGPT", "agent"),
+    "gpthelp.ai": ("GPTHelp.ai", "agent"),
+    "sitespeak.ai": ("SiteSpeakAI", "agent"),
+    "aidbase.ai": ("Aidbase", "agent"),
+    "twig.so": ("Twig", "agent"),
+    "portialabs.ai": ("Rezonant (Portia Labs)", "agent"),
+    "hexabot.ai": ("Hexabot", "agent"),
+    "getcalmo.com": ("Calmo", "agent"),
 
     # --- Writing / productivity ---
     "jasper.ai": ("Jasper", "writing"), "copy.ai": ("Copy.ai", "writing"),
@@ -427,7 +408,6 @@ CATALOG: dict[str, tuple[str, str]] = {
     "x-doc.ai": ("X-doc AI", "writing"),
     "pangram.com": ("Pangram", "writing"),
     "magicpotion.app": ("Magic Potion", "writing"),
-    "docs.aws.amazon.com": ("Amazon", "writing"),
 
     # --- Image / video / audio ---
     "midjourney.com": ("Midjourney", "image_video"), "labs.openai.com": ("DALL·E", "image_video"),
@@ -549,6 +529,7 @@ CATALOG: dict[str, tuple[str, str]] = {
     "get.meetgeek.ai": ("Meetgeek", "meeting"),
     "meetcosmos.com": ("Meetcosmos", "meeting"),
     "getnudgeai.com": ("Nudge AI", "meeting"),
+    "scribbl.co": ("Scribbl", "meeting"),
 
     # --- ML platforms / model hubs / API providers ---
     "huggingface.co": ("Hugging Face", "ml_platform"), "replicate.com": ("Replicate", "ml_platform"),
@@ -642,7 +623,13 @@ CATALOG: dict[str, tuple[str, str]] = {
     "haystack.deepset.ai": ("deepset Haystack", "ml_platform"),
     "portkey.ai": ("Portkey", "api"),
     "whisper-api.com": ("WhisperAPI", "api"),
-    "aimlapi.com": ("Aimlapi", "ml_platform"),
+    "cohere.ai": ("Cohere", "api"),
+    "aimlapi.com": ("AI/ML API", "api"),
+    "tensorzero.com": ("TensorZero", "api"),
+    "getmaxim.ai": ("Maxim AI (Bifrost)", "api"),
+    "predictionguard.com": ("Prediction Guard", "ml_platform"),
+    "singlebase.cloud": ("Singlebase", "ml_platform"),
+    "getkiln.ai": ("Kiln AI", "ml_platform"),
 }
 
 # Rows recorded from vendor marketing/site rather than a verified traffic capture: the
