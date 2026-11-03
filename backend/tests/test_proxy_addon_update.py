@@ -200,6 +200,41 @@ def test_a_stale_lock_is_taken_over(tmp_path, signed_release, listener, why):
     assert not (home / ".palivane" / "update-addon.lock").exists()
 
 
+def test_a_lock_whose_mtime_cannot_be_read_does_not_kill_the_run(tmp_path, signed_release, listener):
+    # The lock vanishing between `mkdir` failing and the age check made `stat -c %Y` fail;
+    # the old fallback then ran GNU `stat -f`, whose `File: ...` output in the age arithmetic
+    # killed the run under `set -u` ("File: unbound variable"). A stat that fails like that,
+    # printing what GNU `stat -f` prints, stands in for the vanished lock.
+    home, addon, log, env = _setup(tmp_path, signed_release)
+    lock = _hold_lock(home, os.getpid())                 # a live owner, so not stale
+    body = ('stat() { case "$1" in -f) printf \'  File: "%s"\\n    ID: 0\\n\' "$3";; esac; return 1; }\n'
+            'OS=Linux\ncmd_update_addon')
+    out = _run(env, listener, body=body)
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert "unbound variable" not in out.stderr
+    assert "already running" in out.stdout
+    assert addon.read_bytes() == OLD and lock.exists()
+
+
+def test_lock_debug_traces_each_decision(tmp_path, signed_release, listener):
+    home, addon, log, env = _setup(tmp_path, signed_release)
+    trace = tmp_path / "trace.log"
+    env["PALIVANE_LOCK_DEBUG"] = str(trace)
+    with Reloader(home):
+        out = _run(env, listener)
+    assert out.returncode == 0, out.stdout + out.stderr
+    lines = trace.read_text().splitlines()
+    assert [l.split(" ", 2)[2].split(" ")[0] for l in lines][:1] == ["took"], lines
+    assert any("swapping in" in l for l in lines) and lines[-1].endswith("released lock"), lines
+    # off by default: no trace file without the variable
+    (home / ".palivane" / "palivane_addon.py").write_bytes(OLD)
+    del env["PALIVANE_LOCK_DEBUG"]
+    trace.unlink()
+    with Reloader(home):
+        _run(env, listener)
+    assert not trace.exists()
+
+
 def test_two_updates_at_once_end_with_one_clean_update(tmp_path, signed_release, listener):
     home, addon, log, env = _setup(tmp_path, signed_release)
     # A slow download, so both runs are mid-update at once (the timer firing while a session
@@ -209,17 +244,23 @@ def test_two_updates_at_once_end_with_one_clean_update(tmp_path, signed_release,
     (slow / "curl").write_text(f'#!/bin/sh\nsleep 1\nexec "{shutil.which("curl")}" "$@"\n')
     os.chmod(slow / "curl", 0o755)
     env["PATH"] = f"{slow}{os.pathsep}{env['PATH']}"
+    # Every lock decision both runs make, with timestamps: this failed once in ~200 CI runs
+    # (2026-11-02, both runs updated) and never locally, so a failure must carry its own story.
+    trace = tmp_path / "lock-trace.log"
+    env["PALIVANE_LOCK_DEBUG"] = str(trace)
     script = f'set -euo pipefail\nsource "{_DESKTOP}"\ncmd_update_addon\n'
     full = {**os.environ, **env, "PALIVANE_PROXY_PORT": str(listener)}
     with Reloader(home) as r:
         procs = [subprocess.Popen(["bash", "-c", script], env=full, text=True,
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT) for _ in range(2)]
         outs = [p.communicate(timeout=120)[0] for p in procs]
-    assert [p.returncode for p in procs] == [0, 0], outs
+    why = {"pids": [p.pid for p in procs], "outs": outs,
+           "lock trace": trace.read_text().splitlines() if trace.exists() else "(no trace)"}
+    assert [p.returncode for p in procs] == [0, 0], why
     # Exactly one run does the update; without the lock both did all of it (seen with the
     # old script under this same overlap): two swaps, two marker waits, two chances to restart.
-    assert sum("addon updated" in o for o in outs) == 1, outs
-    assert sum("already running" in o for o in outs) == 1, outs
+    assert sum("addon updated" in o for o in outs) == 1, why
+    assert sum("already running" in o for o in outs) == 1, why
     assert addon.read_bytes() == NEW
     assert r.loads == 1                                  # swapped in once
     assert not any("restart" in c for c in _calls(log))  # nobody restarted the proxy
