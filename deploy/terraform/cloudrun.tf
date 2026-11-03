@@ -41,6 +41,8 @@ resource "google_cloud_run_v2_service" "palivane" {
     service_account                  = local.run_sa_email
     max_instance_request_concurrency = 80
 
+    # Creation-time only: deploy.sh resizes the service on every deploy (MIN_INSTANCES /
+    # MAX_INSTANCES repo variables), so Terraform ignores it afterwards (lifecycle below).
     scaling {
       min_instance_count = var.min_instances
       max_instance_count = var.max_instances
@@ -67,6 +69,7 @@ resource "google_cloud_run_v2_service" "palivane" {
       image = var.image
       ports { container_port = 8080 }
 
+      # Creation-time only, like scaling: deploy.sh sets --cpu/--memory on every deploy.
       resources {
         limits            = { cpu = "1", memory = "512Mi" }
         cpu_idle          = true # scale CPU down between requests (matches min=0)
@@ -129,14 +132,19 @@ resource "google_cloud_run_v2_service" "palivane" {
     }
   }
 
-  # deploy.sh / the deploy.yml CI job own the mutable runtime config (image + env via
-  # --update-env-vars). Terraform owns the infra shell (service existence, VPC/SQL wiring,
-  # scaling, SA) and ignores what CI manages — so the two don't fight. client/client_version
-  # reflect the last deploy tool and would perpetually diff otherwise.
+  # deploy.sh / the deploy.yml CI job own the mutable runtime config: image, env (via
+  # --update-env-vars), CPU/memory and instance counts. Terraform owns the infra shell
+  # (service existence, VPC/SQL wiring, SA) and ignores what CI manages, so the two don't
+  # fight. Sizing used to be Terraform's too, but deploy.sh has always set it; the first
+  # real plan (2026-11-03) would have shrunk prod from 2 CPU / 1Gi / 2-6 instances to the
+  # defaults here. client/client_version reflect the last deploy tool and would perpetually
+  # diff otherwise.
   lifecycle {
     ignore_changes = [
       template[0].containers[0].image,
       template[0].containers[0].env,
+      template[0].containers[0].resources,
+      template[0].scaling,
       client,
       client_version,
       scaling, # service-level scaling block the deploy tool sets; template.scaling is authoritative here
