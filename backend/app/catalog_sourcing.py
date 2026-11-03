@@ -45,6 +45,10 @@ HOST_DENYLIST: frozenset[str] = frozenset({
     # cut from #427: not AI tools (contract compliance, window management, agent RE guides)
     # and a dead deployment
     "far.site", "nurgo-software.com", "rea.tools", "perch.app",
+    # cut from #433: AWS docs (a catalog name "Amazon" made "Amazon S3" read as an AI tool),
+    # a demo offline since 2022, a human resume service, on-call scheduling, and a host
+    # that has not answered for two weeks
+    "docs.aws.amazon.com", "galactica.org", "neverjobless.com", "pagerly.io", "riffo.ai",
 })
 
 _URL_RE = re.compile(r"https?://([a-z0-9][a-z0-9.-]*\.[a-z]{2,})", re.I)
