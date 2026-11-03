@@ -110,6 +110,7 @@ variable "mail_from" {
   default = ""
 }
 
+# Instance counts for a NEW service only; deploy.sh owns them after that (cloudrun.tf).
 variable "min_instances" {
   type    = number
   default = 0
