@@ -1,18 +1,25 @@
-name: Terraform apply (infra)
+name: Terraform plan / apply (infra)
 
-# Infra changes. MANUAL ONLY for now (workflow_dispatch): the existing production infra was
-# built by hand and is NOT yet in Terraform state, so an auto-apply would try to create
-# resources that already exist. Import prod into state first (see deploy/terraform/README),
-# confirm `plan` is a no-op, THEN re-enable the push trigger below.
+# MANUAL ONLY (workflow_dispatch), and PLAN-ONLY unless `apply` is ticked: a dispatch shows
+# what Terraform would change against the real state, in the run summary, and touches nothing.
 #
-# Guard: the job applies only the plan it just made, and refuses that plan if it would delete
-# or replace anything, or create a core resource (database, Cloud Run service, secrets,
-# network, registry). Against un-imported prod every plan creates the stack, so this refuses
-# until the import is done; afterwards ordinary changes (a bucket, an alert) go through.
-# A brand-new environment, built from nothing on purpose, sets allow_core_changes.
+# Whether prod is in state is unconfirmed. The July 2026 note here said prod was hand-built
+# and not in state; that was the old project. deploy/terraform/README says the current
+# `palivane` project was provisioned by this config, so it should be. A plan-only run settles
+# it. If the plan creates the stack, adopt it (README: adopt_existing + import.sh) before any
+# apply.
+#
+# Guard, on apply: the job applies only the plan it just made, and refuses that plan if it
+# would delete or replace anything, or create a core resource (database, Cloud Run service,
+# secrets, network, registry). A brand-new environment, built from nothing on purpose, sets
+# allow_core_changes.
 on:
   workflow_dispatch:
     inputs:
+      apply:
+        description: "Apply the plan (unticked = plan only, changes nothing)"
+        type: boolean
+        default: false
       allow_core_changes:
         description: "Allow creating core resources and any delete/replace (new environment only)"
         type: boolean
@@ -62,7 +69,26 @@ jobs:
           terraform plan -input=false -out=tfplan
           terraform show -json tfplan > plan.json
 
+      - name: Summarize the plan
+        # Addresses and actions only: values can be sensitive (state holds the secret key).
+        run: |
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import collections, json
+          plan = json.load(open("plan.json"))
+          rows = [(rc["address"], "/".join(rc["change"]["actions"]))
+                  for rc in plan.get("resource_changes", []) if rc["change"]["actions"] != ["no-op"]]
+          managed = sum(1 for rc in plan.get("resource_changes", []) if rc["mode"] == "managed")
+          counts = collections.Counter(a for _, a in rows)
+          print(f"### Terraform plan\n\n{managed} managed resources in config; "
+                f"{len(rows)} would change: {dict(counts) or 'none'}\n")
+          if rows:
+              print("| Resource | Action |\n| --- | --- |")
+              for addr, act in sorted(rows):
+                  print(f"| `{addr}` | {act} |")
+          PY
+
       - name: Refuse a plan that would rebuild or destroy prod
+        if: inputs.apply
         env:
           ALLOW: ${{ inputs.allow_core_changes }}
         run: |
@@ -89,11 +115,13 @@ jobs:
           if os.environ.get("ALLOW") == "true":
               print("allow_core_changes is set: applying anyway.")
               sys.exit(0)
-          print("::error::Refusing. Prod is not in Terraform state yet (see deploy/terraform/README, "
-                "adopt_existing + import.sh). A new environment can set allow_core_changes.")
+          print("::error::Refusing. If this creates the stack, prod is not in Terraform state: adopt it "
+                "first (deploy/terraform/README, adopt_existing + import.sh). A new environment can set "
+                "allow_core_changes.")
           sys.exit(1)
           PY
 
       - name: Apply
         # Exactly the plan that passed the guard, not a fresh one.
+        if: inputs.apply
         run: terraform apply -input=false tfplan
