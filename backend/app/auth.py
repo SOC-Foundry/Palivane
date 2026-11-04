@@ -1401,6 +1401,12 @@ def set_upstream(provider: str, body: UpstreamConfig, current: User = Depends(re
             raise HTTPException(status_code=400,
                                 detail="base_url must be an https(s) URL to a public host "
                                        "(private/loopback/metadata addresses are blocked)")
+    if provider in ("vertex", "bedrock"):
+        from .upstreams import tenant_cloud_config_error
+        if base:
+            raise HTTPException(status_code=400, detail=f"{provider} takes a config, not a base_url")
+        if body.key and (why := tenant_cloud_config_error(provider, body.key)):
+            raise HTTPException(status_code=400, detail=why)
     if row is None:
         row = TenantUpstream(tenant_id=current.tenant_id, provider=provider)
         db.add(row)
