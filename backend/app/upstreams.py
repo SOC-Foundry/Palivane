@@ -58,7 +58,11 @@ def resolve(provider: str, tenant_id: int | None, db: Session) -> tuple[str, str
             return g_base, g_key
     from . import crypto
     key = crypto.unseal_secret(row.key_encrypted, crypto.dek_for(db, tenant_id))
-    return (row.base_url or g_base), (key or g_key)
+    if row.base_url:
+        # A tenant-chosen host only ever gets the tenant's own key. Pairing it with the
+        # platform's global key sent that key to any host a tenant admin typed in.
+        return row.base_url, key or ""
+    return g_base, (key or g_key)
 
 
 def forwards(provider: str, tenant_id: int | None, db: Session) -> bool:
@@ -87,6 +91,54 @@ def _cfg_json(blob: str) -> dict | None:
         return None
 
 
+# Cloud-contract configs end up in a URL host (`{region}-aiplatform.googleapis.com`,
+# `bedrock-runtime.{region}.amazonaws.com`), so their fields are held to strict shapes:
+# a region with a dot, slash or '@' rewrites the host. Checked on write and on every use.
+import re as _re
+_REGION_RE = _re.compile(r"^[a-z]{2,12}(-[a-z0-9]{1,15}){0,3}$")
+_GCP_PROJECT_RE = _re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
+_GOOGLE_TOKEN_URIS = ("https://oauth2.googleapis.com/token", "https://accounts.google.com/o/oauth2/token")
+
+
+def valid_region(region) -> bool:
+    return isinstance(region, str) and bool(_REGION_RE.match(region))
+
+
+def _tenant_sa(raw) -> dict | None:
+    """The tenant's own service-account key, parsed and checked, or None. Its token_uri
+    must be Google's: google-auth POSTs the signed assertion there."""
+    import json
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return None
+    if not isinstance(raw, dict) or raw.get("type") != "service_account":
+        return None
+    if not (raw.get("client_email") and raw.get("private_key")):
+        return None
+    if raw.get("token_uri", _GOOGLE_TOKEN_URIS[0]) not in _GOOGLE_TOKEN_URIS:
+        return None
+    return raw
+
+
+def tenant_cloud_config_error(provider: str, blob: str) -> str | None:
+    """Why a tenant's Vertex/Bedrock config can't be used (None when it can)."""
+    cfg = _cfg_json(blob)
+    if cfg is None:
+        return "config must be a JSON object"
+    if not valid_region(cfg.get("region")):
+        return "region must be a cloud region id like us-central1 or us-east-1"
+    if provider == "vertex":
+        if not _GCP_PROJECT_RE.match(str(cfg.get("project") or "")):
+            return "project must be a Google Cloud project id"
+        if _tenant_sa(cfg.get("service_account_json")) is None:
+            return "service_account_json must be your own service-account key (Google token endpoint)"
+    elif not (cfg.get("key") or "").strip():
+        return "key must be your own Bedrock API key"
+    return None
+
+
 def resolve_anthropic_upstream(tenant_id: int | None, db: Session) -> dict | None:
     """Which upstream serves this tenant's Anthropic-shaped traffic, richest first:
     an Anthropic API key (tenant or global) always wins; otherwise a configured Vertex
@@ -99,20 +151,28 @@ def resolve_anthropic_upstream(tenant_id: int | None, db: Session) -> dict | Non
     if key:
         return {"flavor": "anthropic", "base": base, "key": key}
 
+    # A tenant's cloud config is used on its own terms or not at all: never mixed with
+    # the platform's project/region/key, and never authenticated with the platform's own
+    # credentials (Application Default Credentials or the ambient AWS chain belong to the
+    # deployment, so only the global config may use them).
     _, vk = resolve("vertex", tenant_id, db)
-    vcfg = _cfg_json(vk) or {}
-    project = vcfg.get("project") or settings.gateway_vertex_project
-    if (vk or settings.gateway_vertex_project) and project:
-        return {"flavor": "vertex", "project": project,
-                "region": vcfg.get("region") or settings.gateway_vertex_region,
-                "sa_json": vcfg.get("service_account_json")}
+    if vk:
+        if tenant_cloud_config_error("vertex", vk) is None:
+            vcfg = _cfg_json(vk)
+            return {"flavor": "vertex", "project": vcfg["project"], "region": vcfg["region"],
+                    "sa_json": _tenant_sa(vcfg["service_account_json"])}
+    elif settings.gateway_vertex_project and valid_region(settings.gateway_vertex_region):
+        return {"flavor": "vertex", "project": settings.gateway_vertex_project,
+                "region": settings.gateway_vertex_region, "sa_json": None}
 
     _, bk = resolve("bedrock", tenant_id, db)
-    bcfg = _cfg_json(bk) or {}
-    region = bcfg.get("region") or settings.gateway_bedrock_region
-    if (bk or settings.gateway_bedrock_region) and region:
-        return {"flavor": "bedrock", "region": region,
-                "key": bcfg.get("key") or settings.gateway_bedrock_key}
+    if bk:
+        if tenant_cloud_config_error("bedrock", bk) is None:
+            bcfg = _cfg_json(bk)
+            return {"flavor": "bedrock", "region": bcfg["region"], "key": bcfg["key"].strip()}
+    elif valid_region(settings.gateway_bedrock_region):
+        return {"flavor": "bedrock", "region": settings.gateway_bedrock_region,
+                "key": settings.gateway_bedrock_key}
     return None
 
 
@@ -127,7 +187,11 @@ def vertex_token(sa_json: dict | str | None) -> str:
     if isinstance(sa_json, str) and sa_json.strip():
         import json
         sa_json = json.loads(sa_json)
-    ck = (sa_json or {}).get("client_email") or "__adc__"
+    # Keyed by the whole credential, not a field the tenant chose: keyed by client_email,
+    # a tenant naming another tenant's service account (or "__adc__") was served its token.
+    import hashlib, json as _json
+    ck = (hashlib.sha256(_json.dumps(sa_json, sort_keys=True).encode()).hexdigest()
+          if sa_json else "__adc__")
     hit = _VTOK_CACHE.get(ck)
     if hit and hit[1] > _time.time():
         return hit[0]
