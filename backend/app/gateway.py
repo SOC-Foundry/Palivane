@@ -1510,6 +1510,9 @@ def _anthropic_transport(up: dict, payload: dict, request: Request,
     # and always percent-encode it with safe='' (no unescaped '/').
     if "/" in model or ".." in model:
         raise HTTPException(status_code=400, detail="invalid model id")
+    from .upstreams import valid_region
+    if not valid_region(up.get("region")):   # the region is part of the URL host
+        raise HTTPException(status_code=502, detail="upstream misconfigured (region)")
     if up["flavor"] == "vertex":
         body = {k: v for k, v in payload.items() if k not in ("model", "stream")}
         body["anthropic_version"] = "vertex-2023-10-16"

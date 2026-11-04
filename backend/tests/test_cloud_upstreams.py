@@ -53,7 +53,9 @@ def test_vertex_then_bedrock_precedence(client, db_factory, monkeypatch):
 def test_tenant_vertex_blob_over_global(client, db_factory, monkeypatch):
     monkeypatch.setattr(up_mod.settings, "gateway_anthropic_key", "")
     blob = json.dumps({"project": "tenant-proj", "region": "europe-west1",
-                       "service_account_json": {"client_email": "sa@t.iam"}})
+                       "service_account_json": {"type": "service_account", "client_email": "sa@t.iam",
+                                                "private_key": "placeholder",
+                                                "token_uri": "https://oauth2.googleapis.com/token"}})
     r = client.put("/api/upstreams/vertex", json={"base_url": "", "key": blob})
     assert r.status_code == 200, r.text
     from app.models import Tenant
