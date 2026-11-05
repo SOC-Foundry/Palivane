@@ -17,6 +17,11 @@ name: Ops (one-off admin job)
 # as the deploy SA (NOT inside the container) — for gcloud-level tasks the runtime SA
 # can't do: creating/rotating Secret Manager secrets, inspecting the service config, etc.
 # Set either secret or both; a dispatch with neither fails.
+#
+# OUTPUT: this repository is public, so run logs are too. Script and job output is never
+# printed in the clear: it is encrypted to the OPS_OUTPUT_GPG_KEY repo variable (an
+# operator's GPG public key) or withheld. See .github/scripts/ops_emit.sh to set up and
+# decrypt. Keep the scripts themselves from echoing secrets to stderr either way.
 on:
   workflow_dispatch:
     inputs:
@@ -75,6 +80,7 @@ jobs:
           GCP_DEPLOY_SA: ${{ vars.GCP_DEPLOY_SA }}
           TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
           TF_VAR_db_password: ${{ secrets.TF_DB_PASSWORD }}
+          OPS_OUTPUT_GPG_KEY: ${{ vars.OPS_OUTPUT_GPG_KEY }}
         run: |
           set -euo pipefail
           if [ -z "$OPS_RUNNER_SCRIPT" ] && [ -z "$OPS_SCRIPT" ]; then
@@ -82,7 +88,12 @@ jobs:
             exit 1
           fi
           [ -z "$OPS_RUNNER_SCRIPT" ] && { echo "(no runner script)"; exit 0; }
-          bash -euo pipefail -c "$OPS_RUNNER_SCRIPT"
+          out="$RUNNER_TEMP/runner-script.out"
+          rc=0
+          bash -euo pipefail -c "$OPS_RUNNER_SCRIPT" > "$out" 2>&1 || rc=$?
+          .github/scripts/ops_emit.sh "$out" "runner script output"
+          rm -f "$out"
+          exit "$rc"
 
       - name: Run admin job
         env:
@@ -128,6 +139,7 @@ jobs:
         if: always()
         env:
           OPS_SCRIPT: ${{ secrets.OPS_SCRIPT }}
+          OPS_OUTPUT_GPG_KEY: ${{ vars.OPS_OUTPUT_GPG_KEY }}
         run: |
           # Only the container job produces logs. A runner-only run (OPS_RUNNER_SCRIPT with
           # no OPS_SCRIPT) never creates palivane-ops, so skip the wait + read that would
@@ -144,10 +156,15 @@ jobs:
             --region "$REGION" --limit 1 --format 'value(metadata.name)' 2>/dev/null || true)
           FILTER='resource.type="cloud_run_job" AND resource.labels.job_name="palivane-ops" AND textPayload:*'
           [ -n "$EXEC" ] && FILTER="$FILTER AND labels.\"run.googleapis.com/execution_name\"=\"$EXEC\""
-          gcloud logging read "$FILTER" \
-            --project "$PROJECT_ID" --freshness 30m --limit 300 --order asc \
-            --format 'value(textPayload)' \
-            || echo "(could not read logs — grant the deploy SA roles/logging.viewer to see job output here)"
+          out="$RUNNER_TEMP/job.out"
+          if gcloud logging read "$FILTER" \
+              --project "$PROJECT_ID" --freshness 30m --limit 300 --order asc \
+              --format 'value(textPayload)' > "$out"; then
+            .github/scripts/ops_emit.sh "$out" "job output"
+          else
+            echo "(could not read logs — grant the deploy SA roles/logging.viewer to see job output here)"
+          fi
+          rm -f "$out"
 
       - name: Delete job
         if: always()
