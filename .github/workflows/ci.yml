@@ -530,7 +530,7 @@ jobs:
         # or error. (It used to grep for an exact "3 passed", which failed the job the moment
         # a fourth RLS test was added in #350.)
         run: |
-          python -m pytest tests/test_rls.py -q -rs | tee /tmp/rls.txt
+          python -m pytest tests/test_rls.py tests/test_rls_session_binding_pg.py -q -rs | tee /tmp/rls.txt
           summary="$(tail -n 1 /tmp/rls.txt)"
           if ! echo "$summary" | grep -qE '^[0-9]+ passed' || echo "$summary" | grep -qE 'skipped|failed|error'; then
             echo "RLS tests did not all RUN and pass ($summary) — see skip reason above"; exit 1
