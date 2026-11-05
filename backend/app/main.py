@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -4063,7 +4063,7 @@ def _slack_redirect_uri(request: Request) -> str:
 
 
 @app.get("/api/slack/install")
-def slack_install_url(request: Request, current: User = Depends(require_admin)):
+def slack_install_url(request: Request, response: Response, current: User = Depends(require_admin)):
     """The "Add to Slack" authorize URL for this org (Settings button). The signed state
     binds the install to the admin's tenant across the OAuth redirect. 404 when the
     operator hasn't registered a published Slack app (self-host without one: tenants
@@ -4071,7 +4071,12 @@ def slack_install_url(request: Request, current: User = Depends(require_admin)):
     from . import slack_install
     if not slack_install.configured():
         raise HTTPException(status_code=404, detail="Slack app not configured on this deployment")
-    return {"url": slack_install.install_url(current.tenant_id, _slack_redirect_uri(request))}
+    url, nonce = slack_install.install_url(current.tenant_id, _slack_redirect_uri(request))
+    # The callback only completes in the browser that asked for this link (see slack_install).
+    secure = (settings.public_base_url or str(request.base_url)).startswith("https")
+    response.set_cookie(slack_install.BIND_COOKIE, nonce, max_age=slack_install.BIND_TTL,
+                        httponly=True, samesite="lax", secure=secure, path=slack_install.BIND_PATH)
+    return {"url": url}
 
 
 @app.get("/api/slack/oauth/callback")
@@ -4087,10 +4092,13 @@ def slack_oauth_callback(request: Request, code: str = "", state: str = "",
     if not slack_install.configured():
         return RedirectResponse("/?slack=error")
     try:
-        slack_install.complete_install(db, code, state, _slack_redirect_uri(request))
+        slack_install.complete_install(db, code, state, _slack_redirect_uri(request),
+                                       request.cookies.get(slack_install.BIND_COOKIE, ""))
     except slack_install.InstallError:
         return RedirectResponse("/?slack=error")
-    return RedirectResponse("/?slack=installed")
+    resp = RedirectResponse("/?slack=installed")
+    resp.delete_cookie(slack_install.BIND_COOKIE, path=slack_install.BIND_PATH)
+    return resp
 
 
 @app.patch("/api/discovery/connectors/{connector_id}")
