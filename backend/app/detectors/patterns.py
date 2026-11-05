@@ -551,11 +551,41 @@ _MEDIA_MAGIC = (
 )
 
 
-def _media_blob_spans(text: str) -> list[tuple[int, int]]:
-    """Spans of long base64 runs that decode to a known media/archive container. Only the head
-    is decoded — enough for the magic, not the whole attachment, so a multi-megabyte paste
-    costs a few bytes rather than a full decode."""
-    spans: list[tuple[int, int]] = []
+# ASCII printable plus tab/newline/CR: what bytes.translate deletes to count the rest.
+_PRINTABLE_BYTES = bytes(range(0x20, 0x7f)) + b"\t\n\r"
+_MAX_MEDIA_DECODE = 16 * 1024 * 1024        # base64 chars decoded to check one blob's body
+
+
+def _decoded_blob(blob: str) -> bytes | None:
+    blob = blob[:_MAX_MEDIA_DECODE]
+    blob = blob[:len(blob) - len(blob) % 4]
+    try:
+        return base64.b64decode(blob, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+
+
+def _is_binary_body(raw: bytes, skip: int) -> bool:
+    """Whether the bytes after a container magic are binary, as real media is. A magic
+    prefix alone is five bytes anyone can type: "%PDF-" in front of plain text (a key, an
+    SSN, a card number) is text wearing a header, and it must reach the detectors."""
+    body = raw[skip:]
+    if not body:
+        return False
+    try:
+        body.decode("utf-8")
+        return False                                   # valid UTF-8 text: not media
+    except UnicodeDecodeError:
+        pass
+    other = len(body.translate(None, _PRINTABLE_BYTES))
+    return other / len(body) > 0.15
+
+
+def _media_blobs(text: str) -> list[tuple[int, int, bytes]]:
+    """(start, end, decoded bytes) of long base64 runs that decode to a known media/archive
+    container with a binary body. The head is decoded first, so a run with no magic costs a
+    few bytes rather than a full decode."""
+    out: list[tuple[int, int, bytes]] = []
     for m in _B64_RUN_RE.finditer(text):
         head = m.group(0)[:16]
         head = head[:len(head) - len(head) % 4]      # whole base64 quanta only
@@ -563,9 +593,34 @@ def _media_blob_spans(text: str) -> list[tuple[int, int]]:
             raw = base64.b64decode(head, validate=True)
         except (binascii.Error, ValueError):
             continue
-        if raw.startswith(_MEDIA_MAGIC):
-            spans.append((m.start(), m.end()))
-    return spans
+        magic = next((g for g in _MEDIA_MAGIC if raw.startswith(g)), None)
+        if magic is None:
+            continue
+        full = _decoded_blob(m.group(0))
+        if full is not None and _is_binary_body(full, len(magic)):
+            out.append((m.start(), m.end(), full))
+    return out
+
+
+def _media_blob_spans(text: str) -> list[tuple[int, int]]:
+    """Spans of long base64 runs that are real media/archive containers (see _media_blobs)."""
+    return [(a, b) for a, b, _raw in _media_blobs(text)]
+
+
+def _container_text(raw: bytes) -> str:
+    """Text inside a real document container (PDF, or a ZIP such as docx/xlsx) — data the
+    detectors must still read once the blob itself is stripped. '' for images and the rest."""
+    if raw.startswith(b"%PDF-"):
+        name = "attachment.pdf"
+    elif raw.startswith(b"PK\x03\x04"):
+        name = "attachment.docx"        # OOXML/ODF: the extractor reads any ZIP of XML it knows
+    else:
+        return ""
+    try:
+        from ..doc_extract import extract_detail
+        return extract_detail(name, raw).text
+    except Exception:                    # noqa: BLE001 — best-effort, never sinks an analysis
+        return ""
 
 
 # What a stripped attachment leaves behind. Deliberately boring: no colon, no vendor name, no
@@ -584,15 +639,20 @@ def strip_media_blobs(text: str) -> str:
 
     NOT a security boundary on its own: the engine runs the Tier-1 secret pass over the
     ORIGINAL bytes first and hands the result down, so wrapping a real `ghp_…` in something
-    shaped like a JPEG still gets caught. See Engine._without_attachments.
+    shaped like a JPEG still gets caught. See Engine._without_attachments. Only a blob with a
+    binary body counts (a media magic in front of text is not media), and a real PDF or
+    OOXML container leaves its extracted text in place of the blob.
     """
-    spans = _media_blob_spans(text)
-    if not spans:
+    blobs = _media_blobs(text)
+    if not blobs:
         return text
     out, end = [], 0
-    for start, stop in spans:                 # finditer spans: ordered, non-overlapping
+    for start, stop, raw in blobs:            # finditer spans: ordered, non-overlapping
         out.append(text[end:start])
         out.append(ATTACHMENT_PLACEHOLDER)
+        inner = _container_text(raw)
+        if inner:                             # a document's words are data, not blob
+            out.append("\n" + inner + "\n")
         end = stop
     out.append(text[end:])
     return "".join(out)
