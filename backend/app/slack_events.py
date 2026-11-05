@@ -9,9 +9,13 @@ messages and the recurrences fold.
 Trust model mirrors the Stripe webhook: the endpoint is public (Slack posts to it), so
 trust comes entirely from the request signature — HMAC-SHA256 of "v0:{ts}:{body}" with
 the app's signing secret (PALIVANE_SLACK_SIGNING_SECRET), constant-time compare, 5-minute
-replay window. Tenancy comes from the event's team_id, matched to the slack_messages
-connector whose bot token belongs to that workspace (resolved once via auth.test and
-cached in connector state).
+replay window. Tenancy comes from the event's team_id (or Grid enterprise_id), matched to
+exactly one slack_messages connector: one installed through the published app ("Add to
+Slack", which records the workspace and app id and allows one org per workspace), for the
+same api_app_id. A connector built from a pasted bot token only receives events on a
+deployment with no published app (self-host running its own app), and only when it is the
+one org claiming that workspace; anything ambiguous is dropped, never guessed. A signed
+event says which workspace it is from, not which org should see it.
 
 Slack requires an ack within 3 seconds and redelivers on timeout, so events are ack'd
 immediately and processed on a small worker pool; redeliveries are folded by event_id.
@@ -76,20 +80,45 @@ def _verify(body: bytes, ts: str, sig: str) -> bool:
     return hmac.compare_digest(expected, sig or "")
 
 
-def _connector_for_team(db, team_id: str):
-    """The active slack_messages connector whose workspace is team_id. Matched from
-    connector state; connectors not yet mapped get one auth.test call to learn (and
-    cache) their workspace, so the first event after an install does the wiring."""
+def _connector_for_team(db, team_id: str, enterprise_id: str = "", api_app_id: str = ""):
+    """The one slack_messages connector this workspace's events belong to, or None (see the
+    module docstring). Pasted-token connectors not yet mapped get one auth.test call to
+    learn (and cache) their workspace."""
+    from . import slack_install
     from .models import SaasConnector
-    from .saas_connectors import ConnectorError, _http_json, read_credentials
     rows = (db.query(SaasConnector)
               .filter(SaasConnector.platform == "slack_messages",
                       SaasConnector.active.is_(True)).all())
+
+    def matches(row) -> bool:
+        t, e = slack_install.workspace_ids(row.state or {})
+        return bool((team_id and t == team_id) or (enterprise_id and e == enterprise_id))
+
+    installed = [r for r in rows if (r.state or {}).get("app_installed") and matches(r)]
+    if installed or slack_install.configured():
+        hits = [r for r in installed if api_app_id and (r.state or {}).get("api_app_id") == api_app_id]
+        if len(hits) != 1:
+            if installed:
+                _log.warning("slack event for team %s: %d matching app installs, dropped",
+                             team_id or enterprise_id, len(hits))
+            return None
+        return hits[0]
+    pasted = [r for r in rows if not (r.state or {}).get("app_installed")]
+    _map_pasted(db, pasted)
+    hits = [r for r in pasted if matches(r)]
+    if len({r.tenant_id for r in hits}) != 1:
+        if hits:
+            _log.warning("slack event for team %s claimed by %d orgs, dropped",
+                         team_id or enterprise_id, len({r.tenant_id for r in hits}))
+        return None
+    return hits[0]
+
+
+def _map_pasted(db, rows) -> None:
+    """Learn the workspace of pasted-token connectors that don't know it yet."""
+    from .saas_connectors import ConnectorError, _http_json, read_credentials
     for row in rows:
-        if row.state.get("team_id") == team_id:
-            return row
-    for row in rows:
-        if row.state.get("team_id"):
+        if (row.state or {}).get("team_id"):
             continue
         try:
             token = (read_credentials(row, db).get("bot_token") or "").strip()
@@ -101,14 +130,12 @@ def _connector_for_team(db, team_id: str):
             continue
         tid = (info.get("team_id") or "") if info.get("ok") else ""
         if tid:
-            row.state = {**row.state, "team_id": tid}
+            row.state = {**(row.state or {}), "team_id": tid,
+                         "enterprise_id": str(info.get("enterprise_id") or "")}
             db.commit()
-        if tid == team_id:
-            return row
-    return None
 
 
-def _process_event(team_id: str, event: dict) -> None:
+def _process_event(team_id: str, event: dict, enterprise_id: str = "", api_app_id: str = "") -> None:
     """One message event through the engine — its own DB session (the request's session
     is gone by the time the pool runs this). Mirrors scan_slack_messages: same skips,
     same surface, same fingerprinting, same remediation gates. Never raises."""
@@ -117,7 +144,7 @@ def _process_event(team_id: str, event: dict) -> None:
 
     db = SessionLocal()
     try:
-        connector = _connector_for_team(db, team_id)
+        connector = _connector_for_team(db, team_id, enterprise_id, api_app_id)
         if connector is None:
             return                       # workspace not enrolled — ack'd and dropped
         # Same content filter as the pull scan: user messages with text; file_share
@@ -233,7 +260,8 @@ async def slack_events(request: Request):
     event = payload.get("event") or {}
     if event.get("type") != "message":
         return {"ok": True}
-    team_id = payload.get("team_id") or payload.get("enterprise_id") or ""
-    if team_id:
-        _submit(_process_event, team_id, event)
+    team_id = str(payload.get("team_id") or "")
+    enterprise_id = str(payload.get("enterprise_id") or "")
+    if team_id or enterprise_id:
+        _submit(_process_event, team_id, event, enterprise_id, str(payload.get("api_app_id") or ""))
     return {"ok": True}
