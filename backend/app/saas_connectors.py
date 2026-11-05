@@ -429,10 +429,32 @@ def _slack_readable_file(f: dict) -> bool:
     return ocr_enabled()              # an image is only readable when OCR is on and installed
 
 
+# Where Slack serves workspace files. The bot token goes nowhere else: an external or
+# remote file (files.remote.add, a Drive link share) carries a url_private on whatever
+# host its creator chose.
+_SLACK_FILE_HOSTS = ("files.slack.com", "files.slack-gov.com")
+
+
+def _slack_file_url(f: dict) -> str:
+    """The file's download URL, or "" when it isn't a Slack-hosted file we can send the
+    bot token to."""
+    if f.get("is_external") or f.get("mode") in ("external", "tombstone", "hidden_by_limit"):
+        return ""
+    url = f.get("url_private_download") or f.get("url_private") or ""
+    try:
+        u = urllib.parse.urlsplit(url)
+    except ValueError:
+        return ""
+    if u.scheme != "https" or u.port not in (None, 443) or u.username or u.password \
+            or (u.hostname or "").lower() not in _SLACK_FILE_HOSTS:
+        return ""
+    return url
+
+
 def _slack_file_text(f: dict, hdrs: dict) -> tuple[str, str, bool]:
     """(text, how, partial) for an attachment. Best-effort by design: one unreadable or
     expired file must not sink a whole workspace scan."""
-    url = f.get("url_private_download") or f.get("url_private") or ""
+    url = _slack_file_url(f)
     if not url:
         return "", "", False
     try:
