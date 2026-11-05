@@ -1716,22 +1716,36 @@ async def otlp_logs(
     events are mapped to the same detection as the ingest API. **Monitor-only** — OTEL is
     post-hoc, so this records but can't block. Always returns OTLP success: a telemetry
     export must never back up because of us (bad records are skipped, not rejected)."""
-    from . import otel
-    tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)  # 401s
-    _enforce_rate(db, tenant_id)
-    agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
-    attested = _agent_attestation(x_palivane_token, x_palivane_agent, tenant_id, db)
+    # Only reading the body is async. Auth, the DB and up to _OTLP_MAX_RECORDS detection
+    # passes (with the LLM judge, up to its timeout each) are synchronous: run on the event
+    # loop, one export stalled the instance for every tenant (one uvicorn process each).
+    from starlette.concurrency import run_in_threadpool
     try:
         doc = await request.json()
     except Exception:
+        doc = None
+    return await run_in_threadpool(_otlp_process, doc, x_palivane_token, x_palivane_agent, db)
+
+
+def _otlp_process(doc, x_palivane_token: str, x_palivane_agent: str, db: Session) -> dict:
+    from . import otel
+    tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)  # 401s
+    _enforce_rate(db, tenant_id)
+    if doc is None:
         return {"partialSuccess": {}}
+    agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
+    attested = _agent_attestation(x_palivane_token, x_palivane_agent, tenant_id, db)
     allowed = _tenant_mcp_allow(tenant_id, db)
     block = _tenant_mcp_block_severity(tenant_id, db)
     # Cap records processed per export so one 12 MB body can't fan out into tens of
-    # thousands of detection passes + finding writes (each export is one ingest-quota hit).
+    # thousands of detection passes + finding writes. Each record past the first also
+    # counts against the ingest quota (the request itself counted once above); over
+    # budget, the rest of the export is skipped, still answered as OTLP success.
     processed = 0
     for name, attrs in otel.iter_events(doc):
         if processed >= _OTLP_MAX_RECORDS:
+            break
+        if processed and _ingest_over_budget(db, tenant_id):
             break
         try:
             if name == "user_prompt":
