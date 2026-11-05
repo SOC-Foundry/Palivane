@@ -32,9 +32,14 @@ inspects the assembled tool_use, and blocks or replays it verbatim.
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
 import hmac
 import json
+import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -377,16 +382,19 @@ def _text_from_content(c) -> str:
     return ""
 
 
-def _scan_messages(messages: list, system=None) -> str:
-    """Scan the current outbound turn: the system prompt plus the latest user message.
+def _scan_messages(messages: list, system=None, scope: "_ScanScope | None" = None) -> str:
+    """Scan the current outbound turn: the system prompt plus the latest user message, and
+    (with a scope) any earlier user turn this tenant hasn't sent through before.
 
     Agents (e.g. Claude Code) resend the whole conversation history and large tool results
     on every request. Scanning all of that means one secret anywhere in the history poisons
     every later turn (cascading false positives) and re-flags the same content. So we inspect
     what the user is sending now — the latest user message's text — AND the `system` prompt
     (instructions; previously accepted but never scanned, letting an injection/secret ride in
-    the system field unchecked). tool-result/file-context blocks are still excluded."""
-    parts = []
+    the system field unchecked). Earlier turns go through the scope, which scans only the
+    ones not seen before: a history the client wrote itself is still read. tool-result
+    blocks are excluded (the agentic path scans them); attachments are _with_file_text's."""
+    parts, history = [], []
     sys_text = _text_from_content(system).strip() if system else ""
     if sys_text:
         parts.append(sys_text)
@@ -395,12 +403,212 @@ def _scan_messages(messages: list, system=None) -> str:
         if not isinstance(m, dict):
             continue
         role = (m.get("author") or {}).get("role") if isinstance(m.get("author"), dict) else m.get("role")
-        if role == "system":                       # OpenAI-style system message (in the array)
+        if role in ("system", "developer"):        # OpenAI-style system message (in the array)
             parts.append(_text_from_content(m.get("content")).strip())
-        elif role == "user" and not got_user:      # the latest user turn only
-            parts.append(_text_from_content(m.get("content")).strip())
-            got_user = True
+        elif role == "user":
+            text = _text_from_content(m.get("content")).strip()
+            if not got_user:                       # the latest user turn: always
+                parts.append(text)
+                got_user = True
+                if scope is not None:
+                    scope.note(text)
+            elif scope is not None and scope.take_history(text):
+                history.append(text)
+    parts.extend(reversed(history))
     return "\n".join(p for p in parts if p)
+
+
+# --- Coverage past the latest turn -------------------------------------------------------
+# Text already scanned for a tenant, by hash, so resent history and re-attached files are
+# read once rather than re-flagged on every turn. Remembered only when the request carrying
+# it was let through, so content that was blocked is blocked again when it comes back as
+# "history". Per instance and bounded: a miss rescans (a repeat finding at worst), it never
+# skips.
+_SEEN_MAX = 50_000
+_HISTORY_BUDGET = 200_000               # chars of unseen history read per request
+_seen: "OrderedDict[bytes, None]" = OrderedDict()
+_seen_lock = threading.Lock()
+
+
+class _ScanScope:
+    def __init__(self, tenant_id: int | None):
+        self.tenant_id = tenant_id
+        self._pending: list[bytes] = []
+        self._budget = _HISTORY_BUDGET
+        self.history_skipped = False
+
+    def _key(self, text: str) -> bytes:
+        return hashlib.sha256(f"{self.tenant_id}\0{text}".encode("utf-8", "replace")).digest()
+
+    def note(self, text: str) -> bool:
+        """Record `text` as part of this request. True when it hasn't been seen before."""
+        if not text:
+            return False
+        k = self._key(text)
+        self._pending.append(k)
+        with _seen_lock:
+            if k in _seen:
+                _seen.move_to_end(k)
+                return False
+        return True
+
+    def take_history(self, text: str) -> bool:
+        """note() for an earlier turn, within the request's history budget. Unseen text past
+        the budget is left unremembered (so a later request reads it) and marks the scan
+        partial."""
+        if not text:
+            return False
+        with _seen_lock:
+            seen = self._key(text) in _seen
+        if not seen and len(text) > self._budget:
+            self.history_skipped = True
+            return False
+        if self.note(text):
+            self._budget -= len(text)
+            return True
+        return False
+
+    def let_through(self) -> None:
+        """The request passed: what it carried counts as seen from now on."""
+        with _seen_lock:
+            for k in self._pending:
+                _seen[k] = None
+                _seen.move_to_end(k)
+            while len(_seen) > _SEEN_MAX:
+                _seen.popitem(last=False)
+        self._pending = []
+
+
+_MAX_FILES = 20                         # attachments read per request
+_MAX_FILE_BYTES = 10 * 1024 * 1024      # decoded size of one
+
+
+def _b64_bytes(data: str) -> bytes | None:
+    if data.startswith("data:"):
+        data = data.partition(",")[2]
+    if len(data) > (_MAX_FILE_BYTES * 4) // 3 + 4:
+        return None
+    try:
+        return base64.b64decode(data, validate=False)
+    except (binascii.Error, ValueError):
+        return None
+
+
+def _collect_files(body) -> list[tuple[str, str, bytes | str | None]]:
+    """(name, mime, content) for every non-image attachment in a request, whatever the
+    shape: Anthropic `document` blocks, OpenAI chat `file` parts, Responses `input_file`,
+    Gemini non-image inline/file data. content is bytes (inline, decoded), str (a text
+    document), or None (a reference — file id or URL — that the gateway can't read).
+    Images are _with_image_text's."""
+    out: list = []
+
+    def walk(node, depth=0):
+        if depth > 40 or len(out) > _MAX_FILES * 5:
+            return
+        if isinstance(node, list):
+            for x in node:
+                walk(x, depth + 1)
+            return
+        if not isinstance(node, dict):
+            return
+        t = node.get("type")
+        if t == "document" and isinstance(node.get("source"), dict):      # Anthropic
+            src, name = node["source"], str(node.get("title") or "document")
+            st, mime = src.get("type"), str(src.get("media_type") or "")
+            if st == "text" and isinstance(src.get("data"), str):
+                out.append((name, mime or "text/plain", src["data"]))
+            elif st == "base64" and isinstance(src.get("data"), str):
+                out.append((name, mime, _b64_bytes(src["data"])))
+            elif st == "content":
+                out.append((name, "text/plain", _text_from_content(src.get("content"))))
+            else:
+                out.append((name, mime, None))                            # url / file id
+        elif t == "file" and isinstance(node.get("file"), dict):          # OpenAI chat
+            f = node["file"]
+            data = f.get("file_data")
+            out.append((str(f.get("filename") or "file"), "",
+                        _b64_bytes(data) if isinstance(data, str) else None))
+        elif t == "input_file":                                           # Responses
+            data = node.get("file_data")
+            out.append((str(node.get("filename") or "file"), "",
+                        _b64_bytes(data) if isinstance(data, str) else None))
+        else:
+            inline = node.get("inline_data") or node.get("inlineData")    # Gemini
+            if isinstance(inline, dict) and isinstance(inline.get("data"), str):
+                mime = str(inline.get("mime_type") or inline.get("mimeType") or "")
+                if not mime.startswith("image/"):
+                    out.append(("inline", mime, _b64_bytes(inline["data"])))
+            ref = node.get("file_data") or node.get("fileData")
+            if isinstance(ref, dict) and (ref.get("file_uri") or ref.get("fileUri")):
+                mime = str(ref.get("mime_type") or ref.get("mimeType") or "")
+                if not mime.startswith("image/"):
+                    out.append(("file", mime, None))
+        for v in node.values():
+            if isinstance(v, (dict, list)):
+                walk(v, depth + 1)
+
+    walk(body)
+    return out
+
+
+def _with_file_text(prompt: str, body: dict, scope: "_ScanScope") -> tuple[str, list]:
+    """Read the request's attachments into the scan, as _with_image_text does for images.
+    A file seen before (scope) is not re-read. One partial-scan marker covers every file
+    that couldn't be read — a reference, too big, past the cap, an unreadable format — so
+    the verdict reads "partly scanned" rather than clean."""
+    from .doc_extract import extract_detail
+    files = _collect_files(body)
+    if not files:
+        return prompt, []
+    texts, unread, read = [], 0, 0
+    for name, mime, content in files:
+        if content is None or read >= _MAX_FILES:
+            unread += 1
+            continue
+        if isinstance(content, bytes):
+            fp = hashlib.sha256(content).hexdigest()
+            if not scope.note("file:" + fp):
+                continue
+            read += 1
+            text, _how, partial = extract_detail(name, content, mime)
+            if not text or partial:
+                unread += 1
+        else:
+            if not scope.note(content):
+                continue
+            read += 1
+            text = content
+        if text:
+            texts.append(text)
+    if texts:
+        prompt = "\n".join([prompt, "[attached files]", *texts]) if prompt else "\n".join(texts)
+    if not unread:
+        return prompt, []
+    return prompt, [unscanned_marker(
+        f"file={unread} of {len(files)} unread", "Attached files not fully scanned",
+        (f"This request carried {len(files)} attached file(s) and {unread} could not be read "
+         "(a file reference the gateway can't open, too large, past the files read, or a "
+         "format it can't parse), so it was only partly scanned. The verdict reflects the "
+         "text that was scanned."),
+        detector="gateway")]
+
+
+def _outbound_text(prompt: str, body: dict, scope: "_ScanScope") -> tuple[str, list]:
+    """The full request scan: the turn's text, plus image and attachment text, and the
+    partial-scan markers for what couldn't be read."""
+    prompt, img_unread = _with_image_text(prompt, body)
+    prompt, file_unread = _with_file_text(prompt, body, scope)
+    hist = [unscanned_marker(
+        "history=over budget", "Conversation history not fully scanned",
+        "Earlier turns in this request that hadn't been scanned before were longer than the "
+        "gateway reads in one request; the rest is scanned when it is sent again.",
+        detector="gateway")] if scope.history_skipped else []
+    return prompt, img_unread + file_unread + hist
+
+
+def _joined_capped(parts: list[str], cap: int = 20000) -> tuple[str, bool]:
+    text = "\n".join(p for p in parts if p)
+    return text[:cap], len(text) > cap
 
 
 def _with_image_text(prompt: str, body: dict) -> tuple[str, list]:
@@ -540,13 +748,21 @@ def _agentic_activity(payload: dict) -> dict | None:
         if tool_name or args_parts:
             break
 
-    # Latest tool_result — Anthropic user tool_result blocks or OpenAI role=tool message.
+    # Latest tool_result — Anthropic user tool_result blocks, or the OpenAI role=tool
+    # messages (one per parallel call) since the assistant's last turn.
+    tool_msgs = False
     for m in reversed(messages):
         if not isinstance(m, dict):
             continue
         if m.get("role") == "tool":                                   # OpenAI
-            if isinstance(m.get("content"), str):
-                result_parts.append(m["content"])
+            tool_msgs = True
+            c = m.get("content")
+            if isinstance(c, str):
+                result_parts.insert(0, c)
+            elif isinstance(c, list):
+                result_parts.insert(0, _responses_text(c))
+            continue
+        if tool_msgs:
             break
         content = m.get("content")
         if isinstance(content, list):
@@ -564,10 +780,12 @@ def _agentic_activity(payload: dict) -> dict | None:
         return None
     method = "tools/call" if (tool_name or args_parts) else (
         "tools/advertised" if descs else "tool_result")
+    args_text, args_cut = _joined_capped(args_parts)
+    result_text, result_cut = _joined_capped(result_parts)
     return {"method": method, "tool": tool_name,
-            "args_text": "\n".join(args_parts)[:20000], "shell_command": shell_cmd,
-            "result_text": "\n".join(p for p in result_parts if p)[:20000],
-            "tool_descriptions": descs}
+            "args_text": args_text, "shell_command": shell_cmd,
+            "result_text": result_text, "tool_descriptions": descs,
+            "truncated": args_cut or result_cut}
 
 
 def _capture_activity_dict(act: dict | None, tool: str, principal: Principal, db: Session) -> dict | None:
@@ -595,9 +813,14 @@ def _capture_activity_dict(act: dict | None, tool: str, principal: Principal, db
     from . import allowlist
     allow_holder = allowlist.attach(db, principal.tenant_id, principal.actor, act["tool"],
                                     item.metadata, claimed=principal.actor_claimed)
+    cut = [unscanned_marker(
+        "tool_io=truncated", "Tool input/output not fully scanned",
+        "The tool call's arguments or result were longer than the gateway reads, so only the "
+        "start was scanned. The verdict reflects the text that was scanned.",
+        detector="gateway")] if act.get("truncated") else None
     result = run_analysis(item, persist=True, db=db, tenant_id=principal.tenant_id,
                           signal_filter=filt, agent=principal.agent,
-                          persist_benign=settings.mcp_persist_benign)
+                          persist_benign=settings.mcp_persist_benign, extra_signals=cut)
     allowlist.record_hits(db, allow_holder)
     if dec["enforce"] and dec["denied"]:
         result["authz_block"] = True
@@ -1121,12 +1344,15 @@ def chat_completions(request: Request, principal: Principal = Depends(get_gatewa
     payload = _clamp_output_tokens(body)
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
-    prompt, unread = _with_image_text(_scan_messages(payload.get("messages", [])), payload)
+    scope = _ScanScope(principal.tenant_id)
+    prompt, unread = _outbound_text(_scan_messages(payload.get("messages", []), scope=scope),
+                                    payload, scope)
     verdict = _capture(prompt, model, tool, principal, db, extra_signals=unread)
     pol = _effective_policy(principal, db)
 
     if _should_block(verdict, pol):
         return _openai_error(verdict)
+    scope.let_through()
     # Agentic tool-use inspection (agentless MCP over the LLM API).
     agentic = _capture_agentic(payload, tool, principal, db)
     if _inbound_agentic_block(agentic, pol):
@@ -1200,17 +1426,20 @@ def _responses_item_text(item: dict) -> str:
     return _responses_text(item.get("content"))
 
 
-def _responses_user_text(inp, instructions=None) -> str:
+def _responses_user_text(inp, instructions=None, scope: "_ScanScope | None" = None) -> str:
     """The current outbound turn — mirrors _scan_messages: the system prompt (`instructions`
     plus any system/developer items) and only the latest user turn, so resent history
     doesn't cascade. `input` may be a bare string or an item list. A role-less item is user
     input, and a run of role-less parts (text, then an image) is one turn. Images are not
-    read here; the handler passes the body through _with_image_text."""
+    read here; the handler passes the body through _outbound_text. Earlier user turns go
+    through the scope, as in _scan_messages."""
     parts = [instructions.strip()] if isinstance(instructions, str) and instructions.strip() else []
     if isinstance(inp, str):
         parts.append(inp.strip())
+        if scope is not None:
+            scope.note(inp.strip())
     elif isinstance(inp, list):
-        turn, turn_open = [], True
+        turn, turn_open, history = [], True, []
         for item in reversed(inp):
             if not isinstance(item, dict):
                 continue
@@ -1221,9 +1450,17 @@ def _responses_user_text(inp, instructions=None) -> str:
             elif turn_open and (bare or (role == "user" and not turn)):
                 turn.append(_responses_item_text(item).strip())
                 turn_open = bare                          # only role-less parts run backwards
-            elif turn:
-                turn_open = False                         # the latest turn has ended
+                if scope is not None:
+                    scope.note(turn[-1])
+            else:
+                if turn:
+                    turn_open = False                     # the latest turn has ended
+                if scope is not None and (bare or role == "user"):
+                    text = _responses_item_text(item).strip()
+                    if scope.take_history(text):
+                        history.append(text)
         parts.extend(reversed(turn))
+        parts.extend(reversed(history))
     return "\n".join(p for p in parts if p)
 
 
@@ -1242,22 +1479,28 @@ def _responses_agentic(payload: dict) -> dict | None:
                     shell_cmd = _shell_command_of(item["arguments"])
                     args_parts.append(item["arguments"])
                 break
+        outputs = False                                   # one per parallel call
         for item in reversed(inp):
             if isinstance(item, dict) and item.get("type") == "function_call_output":
-                out = item.get("output")
+                outputs = True
+                out, got = item.get("output"), []
                 if isinstance(out, str):
-                    result_parts.append(out)
+                    got.append(out)
                 elif out is not None:
-                    _harvest_strings(out, result_parts)
+                    _harvest_strings(out, got)
+                result_parts[:0] = got
+            elif outputs:
                 break
     if not (descs or tool_name or args_parts or result_parts):
         return None
     method = "tools/call" if (tool_name or args_parts) else (
         "tools/advertised" if descs else "tool_result")
+    args_text, args_cut = _joined_capped(args_parts)
+    result_text, result_cut = _joined_capped(result_parts)
     return {"method": method, "tool": tool_name,
-            "args_text": "\n".join(args_parts)[:20000], "shell_command": shell_cmd,
-            "result_text": "\n".join(p for p in result_parts if p)[:20000],
-            "tool_descriptions": descs}
+            "args_text": args_text, "shell_command": shell_cmd,
+            "result_text": result_text, "tool_descriptions": descs,
+            "truncated": args_cut or result_cut}
 
 
 def _response_activity_responses(resp: dict) -> dict | None:
@@ -1318,13 +1561,15 @@ def responses(request: Request, principal: Principal = Depends(get_gateway_princ
     payload = _clamp_output_tokens(body)
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
-    prompt, unread = _with_image_text(
-        _responses_user_text(payload.get("input"), payload.get("instructions")), payload)
+    scope = _ScanScope(principal.tenant_id)
+    prompt, unread = _outbound_text(
+        _responses_user_text(payload.get("input"), payload.get("instructions"), scope), payload, scope)
     verdict = _capture(prompt, model, tool, principal, db, extra_signals=unread)
     pol = _effective_policy(principal, db)
 
     if _should_block(verdict, pol):
         return _openai_error(verdict)
+    scope.let_through()
     agentic = _capture_activity_dict(_responses_agentic(payload), tool, principal, db)
     if _inbound_agentic_block(agentic, pol):
         return _openai_error(agentic)
@@ -1410,12 +1655,15 @@ def messages(request: Request, principal: Principal = Depends(get_gateway_princi
     payload = _clamp_output_tokens(body)
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
-    prompt, unread = _with_image_text(_scan_messages(payload.get("messages", []), payload.get("system")), payload)
+    scope = _ScanScope(principal.tenant_id)
+    prompt, unread = _outbound_text(
+        _scan_messages(payload.get("messages", []), payload.get("system"), scope), payload, scope)
     verdict = _capture(prompt, model, tool, principal, db, extra_signals=unread)
     pol = _effective_policy(principal, db)
 
     if _should_block(verdict, pol):
         return _anthropic_error(verdict)
+    scope.let_through()
     # Agentic tool-use inspection (agentless MCP over the LLM API).
     agentic = _capture_agentic(payload, tool, principal, db)
     if _inbound_agentic_block(agentic, pol):
@@ -1701,9 +1949,12 @@ def _gemini_activity(payload: dict) -> dict | None:
     if not (descs or names or args or results):
         return None
     method = "tools/call" if (names or args) else ("tools/advertised" if descs else "tool_result")
+    args_text, args_cut = _joined_capped(args)
+    result_text, result_cut = _joined_capped(results)
     return {"method": method, "tool": names[0] if names else "", "tools": names,
-            "args_text": "\n".join(args)[:20000], "shell_command": shell,
-            "result_text": "\n".join(results)[:20000], "tool_descriptions": descs}
+            "args_text": args_text, "shell_command": shell,
+            "result_text": result_text, "tool_descriptions": descs,
+            "truncated": args_cut or result_cut}
 
 
 def _gemini_response_call(data) -> dict | None:
@@ -1762,14 +2013,16 @@ def _gemini_entry(model: str, method: str, request: Request,
         return limited
     payload = _clamp_output_tokens(body)
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
-    prompt, unread = _with_image_text(
+    scope = _ScanScope(principal.tenant_id)
+    prompt, unread = _outbound_text(
         _scan_gemini(payload.get("contents", []), payload.get("systemInstruction") or payload.get("system_instruction")),
-        payload)
+        payload, scope)
     verdict = _capture(prompt, model, tool, principal, db, extra_signals=unread)
     pol = _effective_policy(principal, db)
 
     if _should_block(verdict, pol):
         return _gemini_error(verdict)
+    scope.let_through()
     # Agentic tool-use inspection, as on the other shapes: the tool result on its way to the
     # model (confirmed secrets block in monitor mode too) and the call that produced it.
     agentic = _capture_activity_dict(_gemini_activity(payload), tool, principal, db)
