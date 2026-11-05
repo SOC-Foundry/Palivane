@@ -147,7 +147,7 @@ def _process_push(connector_id: int, payload: dict, delivery: str = "") -> None:
     finally:
         _settle(delivery, ok)
         github_secrets.max_seconds.reset(token)
-        clear_tenant()
+        clear_tenant(db)
         db.close()
 
 

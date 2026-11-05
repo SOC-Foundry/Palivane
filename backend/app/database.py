@@ -7,11 +7,13 @@ when it is set, a connection can only see/write rows for that tenant (plus `NULL
 "global" rows); when it is unset (system/background/auth paths that legitimately span
 tenants) the policies fall open. `bind_tenant()` sets it for an authenticated request; the
 `after_begin` listener re-applies it across any mid-request commits.
+
+The tenant lives on the Session (`Session.info`), not in a ContextVar: FastAPI runs sync
+dependencies in a worker thread with a copied context, so a ContextVar set during auth
+was invisible to the endpoint and every transaction after the first commit fell open.
 """
 
 from __future__ import annotations
-
-import contextvars
 
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
@@ -32,10 +34,9 @@ Base = declarative_base()
 
 _IS_PG = engine.dialect.name == "postgresql"
 
-# Current request's tenant, or None for system/cross-tenant contexts (RLS falls open).
-_tenant_ctx: contextvars.ContextVar[int | None] = contextvars.ContextVar(
-    "palivane_tenant_id", default=None
-)
+# Session.info key holding the session's tenant; absent/None for system/cross-tenant
+# contexts (RLS falls open).
+_TENANT_KEY = "palivane_tenant_id"
 
 
 def _apply_tenant(connection, tenant_id: int | None) -> None:
@@ -45,24 +46,34 @@ def _apply_tenant(connection, tenant_id: int | None) -> None:
     connection.exec_driver_sql("SELECT set_config('app.tenant_id', %s, true)", (val,))
 
 
+def bound_tenant(db: Session) -> int | None:
+    return db.info.get(_TENANT_KEY)
+
+
 def bind_tenant(db: Session, tenant_id: int | None) -> None:
-    """Scope this session to `tenant_id` for the rest of the request (RLS enforced)."""
-    _tenant_ctx.set(int(tenant_id) if tenant_id is not None else None)
+    """Scope this session to `tenant_id` for the rest of its life (RLS enforced), across
+    commits, until rebound or cleared."""
+    db.info[_TENANT_KEY] = int(tenant_id) if tenant_id is not None else None
     if _IS_PG:
         db.execute(text("SELECT set_config('app.tenant_id', :t, true)"),
                    {"t": "" if tenant_id is None else str(tenant_id)})
 
 
-def clear_tenant() -> None:
-    _tenant_ctx.set(None)
+def clear_tenant(db: Session) -> None:
+    """Back to system scope, for a session that goes on to cross-tenant work."""
+    db.info.pop(_TENANT_KEY, None)
+    if _IS_PG and db.in_transaction():
+        db.execute(text("SELECT set_config('app.tenant_id', '', true)"))
+
+
+def _reapply_tenant(session, transaction, connection):  # noqa: ANN001
+    # Re-assert the tenant GUC whenever a new transaction begins (e.g. after a
+    # mid-request commit), from the session's own binding.
+    _apply_tenant(connection, session.info.get(_TENANT_KEY))
 
 
 if _IS_PG:
-    @event.listens_for(SessionLocal, "after_begin")
-    def _reapply_tenant(session, transaction, connection):  # noqa: ANN001
-        # Re-assert the tenant GUC whenever a new transaction begins (e.g. after a
-        # mid-request commit), reading the request-scoped ContextVar.
-        _apply_tenant(connection, _tenant_ctx.get())
+    event.listen(SessionLocal, "after_begin", _reapply_tenant)
 
 
 def get_db():
@@ -70,5 +81,4 @@ def get_db():
     try:
         yield db
     finally:
-        clear_tenant()
         db.close()
