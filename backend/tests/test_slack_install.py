@@ -30,6 +30,17 @@ def _fake_exchange(monkeypatch, response=None, calls=None):
     return calls
 
 
+def _start_install(client, raw_client) -> str:
+    """Ask for the install link as the signed-in admin and hand its bind cookie to the
+    unauthenticated client that plays the same browser arriving back from slack.com.
+    Returns the state."""
+    r = client.get("/api/slack/install")
+    nonce = r.cookies.get(si.BIND_COOKIE)
+    assert nonce, "the install link must set the bind cookie"
+    raw_client.cookies.set(si.BIND_COOKIE, nonce, path=si.BIND_PATH)
+    return urllib.parse.parse_qs(urllib.parse.urlparse(r.json()["url"]).query)["state"][0]
+
+
 def test_install_url_carries_signed_tenant_state(client, monkeypatch):
     _configure(monkeypatch)
     r = client.get("/api/slack/install")
@@ -41,6 +52,20 @@ def test_install_url_carries_signed_tenant_state(client, monkeypatch):
     assert "channels:history" in q["scope"][0] and "users:read.email" in q["scope"][0]
     state = decode_token(q["state"][0])
     assert state["typ"] == "slack_install" and state["tenant_id"] > 0
+    assert state["bind"] and si.BIND_COOKIE in r.cookies     # bound to this browser
+
+
+def test_callback_from_another_browser_is_refused(client, raw_client, monkeypatch):
+    """The link handed to someone else (an admin at another company approving it) must
+    not attach their workspace to this org: no bind cookie, no install."""
+    _configure(monkeypatch)
+    calls = _fake_exchange(monkeypatch)
+    state = urllib.parse.parse_qs(urllib.parse.urlparse(
+        client.get("/api/slack/install").json()["url"]).query)["state"][0]
+    r = raw_client.get(f"/api/slack/oauth/callback?code=c0de&state={state}",
+                       follow_redirects=False)
+    assert r.headers["location"] == "/?slack=error"
+    assert calls == []                                       # the code was never exchanged
 
 
 def test_install_404_when_no_published_app(client, monkeypatch):
@@ -52,8 +77,7 @@ def test_install_404_when_no_published_app(client, monkeypatch):
 def test_callback_exchanges_code_and_creates_connector(client, raw_client, monkeypatch):
     _configure(monkeypatch)
     calls = _fake_exchange(monkeypatch)
-    state = urllib.parse.parse_qs(urllib.parse.urlparse(
-        client.get("/api/slack/install").json()["url"]).query)["state"][0]
+    state = _start_install(client, raw_client)
     # the callback is hit by the admin's BROWSER, unauthenticated — state carries tenancy
     r = raw_client.get(f"/api/slack/oauth/callback?code=c0de&state={state}",
                        follow_redirects=False)
@@ -66,8 +90,7 @@ def test_callback_exchanges_code_and_creates_connector(client, raw_client, monke
     conn = next(c for c in rows if c["platform"] == "slack_messages")
     assert conn["label"] == "Acme Health" and conn["configured"] is True
     # re-install (rotated token) upserts the same row rather than duplicating
-    state2 = urllib.parse.parse_qs(urllib.parse.urlparse(
-        client.get("/api/slack/install").json()["url"]).query)["state"][0]
+    state2 = _start_install(client, raw_client)
     raw_client.get(f"/api/slack/oauth/callback?code=c0de2&state={state2}",
                    follow_redirects=False)
     rows2 = [c for c in client.get("/api/discovery/connectors").json()["connectors"]
@@ -90,8 +113,7 @@ def test_callback_failure_paths_redirect_never_500(client, raw_client, monkeypat
     assert r.headers["location"] == "/?slack=error"
     # Slack refuses the exchange
     _fake_exchange(monkeypatch, response={"ok": False, "error": "invalid_code"})
-    state = urllib.parse.parse_qs(urllib.parse.urlparse(
-        client.get("/api/slack/install").json()["url"]).query)["state"][0]
+    state = _start_install(client, raw_client)
     r = raw_client.get(f"/api/slack/oauth/callback?code=bad&state={state}",
                        follow_redirects=False)
     assert r.headers["location"] == "/?slack=error"
@@ -103,8 +125,7 @@ def test_org_wide_install_labels_from_enterprise(client, raw_client, monkeypatch
     _fake_exchange(monkeypatch, response={
         "ok": True, "access_token": "xoxb-org-token",
         "team": None, "enterprise": {"id": "E1", "name": "Acme Health Org"}})
-    state = urllib.parse.parse_qs(urllib.parse.urlparse(
-        client.get("/api/slack/install").json()["url"]).query)["state"][0]
+    state = _start_install(client, raw_client)
     r = raw_client.get(f"/api/slack/oauth/callback?code=c0de&state={state}",
                        follow_redirects=False)
     assert r.headers["location"] == "/?slack=installed"
@@ -117,8 +138,7 @@ def test_installed_token_feeds_the_scanner(client, raw_client, monkeypatch, db_f
     """End-to-end: OAuth install stores the token the scanner then uses to pull Slack."""
     _configure(monkeypatch)
     _fake_exchange(monkeypatch)
-    state = urllib.parse.parse_qs(urllib.parse.urlparse(
-        client.get("/api/slack/install").json()["url"]).query)["state"][0]
+    state = _start_install(client, raw_client)
     raw_client.get(f"/api/slack/oauth/callback?code=c0de&state={state}", follow_redirects=False)
     db = db_factory()
     from app.models import SaasConnector
