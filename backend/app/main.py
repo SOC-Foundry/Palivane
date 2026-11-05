@@ -1146,7 +1146,17 @@ def _ingest_auth(x_palivane_token: str, db: Session) -> tuple[int | None, str]:
 def _ingest_caller(x_palivane_token: str, db: Session) -> tuple[int | None, str, bool]:
     """_ingest_auth, plus whether the default actor is itself only a claim: a device-enrolled
     key's identity was declared by the device (see gateway.key_actor_claimed). Endpoints whose
-    actor reaches per-user policy use this, so overrides can only tighten for claims."""
+    actor reaches per-user policy use this, so overrides can only tighten for claims.
+
+    Binds the session to the caller's tenant, so RLS scopes everything the ingest does."""
+    from .database import bind_tenant
+    tenant_id, actor, claimed = _ingest_caller_unbound(x_palivane_token, db)
+    if tenant_id is not None:
+        bind_tenant(db, tenant_id)
+    return tenant_id, actor, claimed
+
+
+def _ingest_caller_unbound(x_palivane_token: str, db: Session) -> tuple[int | None, str, bool]:
     from .security import looks_like_agent_token, looks_like_api_key, looks_like_jwt
 
     if looks_like_api_key(x_palivane_token):

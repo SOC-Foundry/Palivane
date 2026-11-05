@@ -119,5 +119,5 @@ def run_scheduled_scans(db, now: datetime | None = None, limit: int = MAX_PER_TI
             log.warning("scheduled scan of connector %s failed", cid, exc_info=True)
         finally:
             github_secrets.max_seconds.reset(limit_token)
-            clear_tenant()
+            clear_tenant(db)
     return ran
