@@ -88,7 +88,10 @@ def _valid_ssn9(d: str) -> bool:
     area != 000/666 and not 900-999, group != 00, serial != 0000."""
     area, group, serial = d[:3], d[3:5], d[5:9]
     return area not in ("000", "666") and area[0] != "9" and group != "00" and serial != "0000"
-EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+\.[a-z]{2,}\b", re.IGNORECASE)
+# Bounded to RFC 5321's limits (local part 64, a domain label 63). Unbounded, a long run of
+# word characters and dots with no '@' backtracked from every word boundary: quadratic,
+# minutes per scan at the 200 KB cap, and clients fail open on a timed-out scan.
+EMAIL_RE = re.compile(r"\b[\w.+-]{1,64}@[\w-]{1,63}\.[a-z]{2,63}\b", re.IGNORECASE)
 # Freemail/consumer mailbox providers. Only these count toward the bulk contact-list
 # heuristic: corporate addresses saturate developer content (git logs, CODEOWNERS,
 # commit trailers, on-call rosters) and read as workflow, not a personal-data leak.
