@@ -24,7 +24,7 @@ import re
 import urllib.parse
 
 from .base import AnalysisInput, Category, Signal, Surface
-from .decode import decode_b64, decode_hex
+from .decode import decode_obfuscated_detail
 from .normalize import leet_fold, normalize_for_match, normalize_keep_lines
 
 # --- Prompt injection: hijacking the model's instructions -----------------------------
@@ -327,14 +327,12 @@ class PromptThreatDetector:
         b64_flag = BASE64_RE.search(text)
         b64_dec = BASE64_DECODE_RE.search(text)
         hx = HEX_RE.search(text)
-        # Try BOTH interpretations independently — a hex run also matches the base64 charset,
-        # so a single `or` would short-circuit on the (garbage) base64 attempt and never try
-        # hex. An encoded blob that decodes to attack text under either is the real thing.
+        # Every blob, base64 AND hex (a hex run also matches the base64 charset), and the
+        # blobs inside what decoded — not the first match: a decoy blob ahead of the payload
+        # must not hide it. The percent view is folded in above already.
         hidden: list[str] = []
         if b64_dec or hx:
-            decoded = " ".join(d for d in (
-                decode_b64(b64_dec.group(0)) if b64_dec else "",
-                decode_hex(hx.group(0)) if hx else "") if d)
+            decoded = decode_obfuscated_detail(text, percent=False).text
             if decoded:
                 hidden = (_hits(decoded, INJECTION_TERMS) + _hits(decoded, JAILBREAK_TERMS)
                           + _hits(decoded, EXFIL_TERMS))

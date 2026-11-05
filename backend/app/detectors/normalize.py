@@ -13,6 +13,8 @@ from __future__ import annotations
 import re
 import unicodedata
 
+import regex as _regex
+
 # Zero-width, bidi, and Unicode-tag characters used to hide/smuggle content.
 _ZERO_WIDTH = re.compile(
     r"[​-‏‪-‮⁠-⁤﻿]|[\U000e0000-\U000e007f]")
@@ -55,20 +57,42 @@ def command_leet_fold(text: str) -> str:
     return normalize_for_match(text).translate(_CMD_LEET_TABLE)
 
 
+# Format characters (zero-width, soft hyphen, bidi, tags, word joiner, BOM) and combining
+# marks (an underline or accent laid over each digit of a key): invisible or decorative, and
+# wedged between characters they split a match. `regex` for the Unicode property classes.
+_DROP_RE = _regex.compile(r"[\p{Cf}\p{Mn}\p{Me}]+")
+_NON_ASCII_DIGIT_RE = _regex.compile(r"(?![0-9])\p{Nd}")
+
+
+def canonical_fold(text: str) -> str:
+    """The one Unicode fold every matcher shares, secrets and PII included: NFKC
+    compatibility forms (fullwidth), format characters and combining marks removed, and
+    every Unicode decimal digit (Arabic-Indic, Devanagari, ...) mapped to ASCII. Letters and
+    line structure are otherwise left alone, so it is safe for the digit/credential regexes."""
+    if not text:
+        return text
+    t = unicodedata.normalize("NFKC", text)
+    if t.isascii():
+        return t
+    # NFKD exposes combining marks NFKC had composed into a letter; NFC re-composes the rest
+    # (Hangul syllables, scripts whose marks are spacing).
+    t = unicodedata.normalize("NFC", _DROP_RE.sub("", unicodedata.normalize("NFKD", t)))
+    return _NON_ASCII_DIGIT_RE.sub(lambda m: str(unicodedata.decimal(m.group(0))), t)
+
+
 def normalize_keep_lines(text: str) -> str:
-    """normalize_for_match without the whitespace collapse: same NFKC / zero-width /
+    """normalize_for_match without the whitespace collapse: same canonical fold and
     homoglyph folding, but line structure survives. For patterns that must anchor to the
     start of a line — a forged `system:` turn marker is an injection, the tail of
     "a three-level loading system:" is not, and only the line break tells them apart."""
     if not text:
         return text
-    t = unicodedata.normalize("NFKC", text)
-    t = _ZERO_WIDTH.sub("", t)
+    t = _ZERO_WIDTH.sub("", canonical_fold(text))
     return t.translate(_HOMOGLYPH_TABLE)
 
 
 def normalize_for_match(text: str) -> str:
-    """Return a folded view of `text` for keyword matching (NFKC, no zero-width,
+    """Return a folded view of `text` for keyword matching (canonical_fold, no zero-width,
     homoglyphs→Latin, collapsed whitespace)."""
     if not text:
         return text

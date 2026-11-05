@@ -17,13 +17,12 @@ from __future__ import annotations
 
 import itertools
 import re
-import unicodedata
 
 from ..config import settings
 from ..hosts import host_of as _host_of, on_host as _on_host
 from .base import AnalysisInput, Category, Signal, Surface
-from .decode import decode_obfuscated
-from .normalize import normalize_for_match
+from .decode import decode_obfuscated_detail
+from .normalize import canonical_fold, normalize_for_match
 from .patterns import (
     custom_pii_patterns,
     find_high_entropy_tokens,
@@ -727,9 +726,19 @@ class ShadowAIDetector:
         >85%-printable only) and re-run the EXISTING PII/secret finders on the decoded text.
         FP-safe: it only emits when the decoded view actually contains PII or a credential — a
         benign blob decodes to benign text (or to binary, which the printable guard drops)."""
-        decoded = decode_obfuscated(f"{item.subject}\n{item.content}")
+        # The same string prompt_threats decodes, so the two share one cached decode.
+        decoded, exhausted = decode_obfuscated_detail(f"{item.subject}\n{item.content}".strip())
+        if exhausted:
+            from ..scoring import unscanned_marker
+            partial = [unscanned_marker(
+                "encoded=over budget", "Encoded content not fully decoded",
+                "This item carried more encoded (base64/hex) content than the scanner decodes in "
+                "one pass, so some of it was not checked for hidden data. The verdict reflects "
+                "what was decoded.", detector=self.name)]
+        else:
+            partial = []
         if not decoded:
-            return []
+            return partial
         # PII/PHI are data-loss on every surface (mirrors the unconditional plaintext scans).
         target = _agent_file_target(item)
         out = self._scan_pii(decoded, item.metadata, tool_surface=item.surface in _TOOL_SURFACES,
@@ -742,7 +751,7 @@ class ShadowAIDetector:
             raw = find_secrets(decoded)
             out += self._scan_secrets(decoded, raw_secrets=raw)
             out += self._scan_high_entropy(decoded, item.channel, has_tier1=bool(raw))
-        return out
+        return out + partial
 
     def _scan_secrets(self, text: str, low_signal: bool = False,
                       raw_secrets: list[str] | None = None) -> list[Signal]:
@@ -819,10 +828,10 @@ class ShadowAIDetector:
         or date "in a record", a pile of phone numbers or addresses). Structured identifiers (a
         dashed SSN, a Luhn-valid card, a validated national id) are never dropped: real data
         gets pasted into fixtures by mistake."""
-        # Fold Unicode compatibility forms (fullwidth digits/hyphens, etc.) to their ASCII
-        # canon so a fullwidth-obfuscated SSN/card ("０７８－０５－１１２０") still matches the
-        # digit patterns. NFKC is lossless for these — benign text is unaffected.
-        text = unicodedata.normalize("NFKC", text)
+        # The shared canonical fold: fullwidth forms ("０７８－０５－１１２０"), non-ASCII
+        # digits, and zero-width / soft-hyphen / combining characters wedged between digits
+        # all come back to the plain digits the patterns match. Benign text is unaffected.
+        text = canonical_fold(text)
         found: list[str] = []
         weight = 0.0
 
@@ -929,9 +938,9 @@ class ShadowAIDetector:
     def _scan_phi(self, text: str) -> list[Signal]:
         """Protected health information — HIPAA-grade identifiers and patient records.
         Separate from _scan_pii so healthcare orgs can gate, block, and report on health
-        data as its own policy check (phi_exposure), with the same NFKC fold so fullwidth-
-        obfuscated identifiers still match."""
-        text = unicodedata.normalize("NFKC", text)
+        data as its own policy check (phi_exposure), with the same canonical fold so
+        fullwidth / zero-width / non-ASCII-digit obfuscated identifiers still match."""
+        text = canonical_fold(text)
         found: list[str] = []
         weight = 0.0
 
