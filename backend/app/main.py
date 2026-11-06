@@ -1268,7 +1268,8 @@ def _resolve_agent_jwt(token: str, db: Session):
     # SECURITY: an issuer is NOT tenant-unique — e.g. GitHub Actions' issuer
     # (token.actions.githubusercontent.com) is identical for every org. Resolve the tenant by
     # the *audience* the token actually validates against, not by .first() on the issuer.
-    matched = db.query(Tenant).filter(Tenant.agent_oidc_issuer == iss).all()
+    matched = (db.query(Tenant).filter(Tenant.agent_oidc_issuer == iss)
+                 .order_by(Tenant.id).all())
     if not matched:
         return None
     with_aud = [t for t in matched if (t.agent_oidc_audience or "").strip()]
@@ -1277,7 +1278,14 @@ def _resolve_agent_jwt(token: str, db: Session):
         # (minted for another app/tenant) would authenticate. Fail closed.
         raise HTTPException(status_code=401,
                             detail="agent JWT rejected: workload OIDC has no audience configured")
+    # Every tenant whose audience the token validates against is a candidate, and the token
+    # belongs to the one with an agent for its subject. Taking the first that validates (the
+    # old rule) let a tenant that copied another's issuer and audience claim its tokens, and
+    # gave up on the right tenant when an earlier one validated without an agent. Settings
+    # refuse a duplicate issuer+audience; two matches here are refused, never guessed.
     last_err = None
+    validated = False
+    hits = []
     for t in with_aud:
         try:
             claims = oidc.validate_agent_jwt(iss, t.agent_oidc_audience.strip(), token,
@@ -1285,16 +1293,23 @@ def _resolve_agent_jwt(token: str, db: Session):
         except oidc.OIDCError as e:
             last_err = e   # wrong audience for this tenant — try the next one sharing the issuer
             continue
-        # Audience validated → this is the token's tenant. Map sub → agent (else no attribution).
+        validated = True
         subject = (claims.get("sub") or claims.get("client_id") or claims.get("azp") or "").strip()
         if not subject:
-            return None
+            continue
         ag = (db.query(Agent).filter(Agent.tenant_id == t.id, Agent.oidc_subject == subject,
                                      Agent.active.is_(True)).one_or_none())
         if ag is not None:
-            ag.last_seen = _naive_now()
-            db.commit()
-        return ag
+            hits.append(ag)
+    if len(hits) > 1:
+        raise HTTPException(status_code=401,
+                            detail="agent JWT rejected: it matches agents in more than one org")
+    if hits:
+        hits[0].last_seen = _naive_now()
+        db.commit()
+        return hits[0]
+    if validated:
+        return None    # a valid token for this issuer, but no agent claims its subject
     raise HTTPException(status_code=401,
                         detail=f"agent JWT rejected: {last_err or 'no matching audience'}")
 
