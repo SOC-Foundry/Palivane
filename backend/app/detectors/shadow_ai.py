@@ -737,12 +737,13 @@ class ShadowAIDetector:
                 "what was decoded.", detector=self.name)]
         else:
             partial = []
+        out = self._scan_reshaped(item)
         if not decoded:
-            return partial
+            return out + partial
         # PII/PHI are data-loss on every surface (mirrors the unconditional plaintext scans).
         target = _agent_file_target(item)
-        out = self._scan_pii(decoded, item.metadata, tool_surface=item.surface in _TOOL_SURFACES,
-                             fixture=bool(target) and is_low_signal_path(target))
+        out += self._scan_pii(decoded, item.metadata, tool_surface=item.surface in _TOOL_SURFACES,
+                              fixture=bool(target) and is_low_signal_path(target))
         out += self._scan_phi(decoded)
         # Secrets: same surface set as the plaintext secret pass. Compute the raw find_secrets
         # pass on the decoded view ONCE and thread it into both secret detectors.
@@ -752,6 +753,24 @@ class ShadowAIDetector:
             out += self._scan_secrets(decoded, raw_secrets=raw)
             out += self._scan_high_entropy(decoded, item.channel, has_tier1=bool(raw))
         return out + partial
+
+    def _scan_reshaped(self, item: AnalysisInput) -> list[Signal]:
+        """A named-format credential (vendor prefix + body) hidden by reshaping it: one
+        character per dash/space, wrapped across lines, or reversed. Only when the plain text
+        holds no credential already (no double count), only named formats (the generic
+        "Credential assignment" pattern is left out: reshaped prose could form one), and only
+        on the surfaces where the plaintext secret pass runs."""
+        if item.surface not in (Surface.AI_USAGE, Surface.LLM_IO, Surface.MCP, Surface.AGENT_TOOLS,
+                                Surface.A2A, Surface.COLLAB):
+            return []
+        if item.secret_labels():
+            return []
+        from .decode import reshaped_views
+        for view in reshaped_views(f"{item.subject}\n{item.content}".strip()):
+            labels = [lbl for lbl in find_secrets(view) if lbl != "Credential assignment"]
+            if labels:
+                return self._scan_secrets(view, raw_secrets=labels)
+        return []
 
     def _scan_secrets(self, text: str, low_signal: bool = False,
                       raw_secrets: list[str] | None = None) -> list[Signal]:
