@@ -15,6 +15,22 @@ import urllib.request
 _RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}
 
 
+def _t(value) -> str:
+    """Untrusted text for a Slack message: one line, with Slack's control characters escaped.
+
+    File names, actors, subjects, tool names and upgrade notes come from outside. Unescaped,
+    `<!channel>` pings the whole channel, `<https://evil|Open the report>` is a disguised
+    link, and a newline starts a line that looks like Palivane's own. Slack asks for exactly
+    &, < and > to be escaped; the rest of the text is shown as written."""
+    text = " ".join(str(value if value is not None else "").split())
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _c(value) -> str:
+    """_t for text inside a `code` span: a backtick would end the span early."""
+    return _t(value).replace("`", "\u02cb")
+
+
 def _envelope(env: dict) -> dict:
     """Structured payload under the product's brand key."""
     return {"palivane": env}
@@ -26,7 +42,7 @@ def _payload(verdict: dict, subject: str, actor: str, surface: str) -> dict:
     # The concrete cause — the strongest signals with their (already-redacted) evidence — so
     # the alert says WHAT matched, not just which category buckets tripped.
     tops = top_signals(verdict.get("signals"), 3)
-    lines = "".join(f"\n  • {t['title']}" + (f" — `{t['evidence']}`" if t["evidence"] else "")
+    lines = "".join(f"\n  • {_t(t['title'])}" + (f" — `{_c(t['evidence'])}`" if t["evidence"] else "")
                     for t in tops)
     # Content origin: name the source document the leaked content came from, when known —
     # the "restrict it here" pointer, and flag when that source is itself sensitive.
@@ -34,7 +50,7 @@ def _payload(verdict: dict, subject: str, actor: str, surface: str) -> dict:
     origin_line = ""
     if origin:
         src = origin.get("title") or origin.get("ref") or "a scanned document"
-        origin_line = (f"\n  ↳ from {src} ({origin.get('source', 'at-rest')}, "
+        origin_line = (f"\n  ↳ from {_t(src)} ({_t(origin.get('source', 'at-rest'))}, "
                        f"{int(origin.get('containment', 0) * 100)}% match"
                        + (", sensitive source" if origin.get("sensitive") else "") + ")")
     # A reopen has to announce itself. It arrives looking like any other alert, but the
@@ -46,8 +62,8 @@ def _payload(verdict: dict, subject: str, actor: str, surface: str) -> dict:
     recur = (f"\n  ↻ dismissed earlier and has now happened {seen} time(s) — "
              "the close did not hold.") if reopened else ""
     text = (f":shield: *Palivane {head}{verdict.get('severity', '?').upper()}* — "
-            f"{subject or 'finding'} ({actor or 'unknown'})\n"
-            f"{cats} · risk {verdict.get('risk_score', '?')} · surface {surface}"
+            f"{_t(subject or 'finding')} ({_t(actor or 'unknown')})\n"
+            f"{_t(cats)} · risk {verdict.get('risk_score', '?')} · surface {_t(surface)}"
             f"{lines}{origin_line}{recur}")
     return {"text": text, **_envelope({
         "severity": verdict.get("severity"), "risk_score": verdict.get("risk_score"),
@@ -108,7 +124,7 @@ def notify_judge_down(webhook: str, health: dict) -> bool:
     returns True if a webhook was configured and the POST was attempted."""
     text = (":rotating_light: *Palivane: LLM judge is DOWN* — all configured providers are "
             f"failing ({health.get('consecutive_failures', '?')} consecutive calls). "
-            f"Last error: {health.get('last_error') or 'unknown'}.\n"
+            f"Last error: {_t(health.get('last_error') or 'unknown')}.\n"
             "Palivane is running offline detectors only. Restore a judge provider "
             "(top up API credits, or set a fallback provider key for failover).")
     if not webhook:
@@ -131,10 +147,10 @@ def notify_upgrade_request(webhook: str, org: str, plan: str, seats: int,
     signal that should never wait for someone to check /admin. Best-effort."""
     if not webhook:
         return False
-    text = (f":moneybag: *Palivane: upgrade request* — \"{org}\" wants the *{plan}* plan"
+    text = (f":moneybag: *Palivane: upgrade request* — \"{_t(org)}\" wants the *{_t(plan)}* plan"
             + (f" ({seats} seats)" if seats else "")
-            + f". Contact: {contact or 'unknown'}."
-            + (f"\n> {note}" if note else "")
+            + f". Contact: {_t(contact or 'unknown')}."
+            + (f"\n> {_t(note)}" if note else "")
             + "\nWork the queue in the operator console (/admin).")
     return send_sync(webhook, {"text": text, **_envelope({
         "event": "upgrade_request", "org": org, "plan": plan, "seats": seats})})
@@ -168,10 +184,10 @@ def _digest_payload(tenant, counts: dict, top: list, since, now) -> dict:
         t = top_signals(f.signals, 1)
         if not t:
             return ""
-        return f" — {t[0]['title']}" + (f" `{t[0]['evidence']}`" if t[0]["evidence"] else "")
+        return f" — {_t(t[0]['title'])}" + (f" `{_c(t[0]['evidence'])}`" if t[0]["evidence"] else "")
 
     lines = "\n".join(
-        f"• *{f.severity}* · {f.surface} · {(f.subject or 'finding')[:70]} ({f.sender or '—'}){_what(f)}"
+        f"• *{_t(f.severity)}* · {_t(f.surface)} · {_t((f.subject or 'finding')[:70])} ({_t(f.sender or '—')}){_what(f)}"
         for f in top)
     more = f"\n…and {total - len(top)} more" if total > len(top) else ""
     text = (f":shield: *Palivane {tenant.alert_digest} digest* — {total} finding(s) "
@@ -202,8 +218,8 @@ def notify_new_tool(webhook: str, tool: str, category: str, actor: str,
     if not webhook:
         return False
     return send_sync(webhook.strip(), {
-        "text": f":new: First sighting of *{tool}* ({category or 'AI tool'}) in your org "
-                f"— first actor: {actor or 'unknown'}, via {source}. Review it in "
+        "text": f":new: First sighting of *{_t(tool)}* ({_t(category or 'AI tool')}) in your org "
+                f"— first actor: {_t(actor or 'unknown')}, via {_t(source)}. Review it in "
                 "Discovery and sanction or block accordingly.",
         **_envelope({"kind": "new_ai_tool", "tool": tool, "category": category,
                      "actor": actor, "source": source}),
@@ -435,11 +451,11 @@ def run_fleet_alerts(db, now=None) -> int:
         db.commit()
         if not claimed_dark and not claimed_dead:
             continue
-        lines = [f"• gone dark: *{r.actor or 'unknown'}* ({r.plane}"
-                 f"{'/' + r.tool if r.tool else ''}) — last seen "
+        lines = [f"• gone dark: *{_t(r.actor or 'unknown')}* ({_t(r.plane)}"
+                 f"{'/' + _t(r.tool) if r.tool else ''}) — last seen "
                  f"{r.last_seen:%Y-%m-%d %H:%M} UTC" for r in claimed_dark]
-        lines += [f"• revoked key still in use: *{k.label or k.prefix}*"
-                  f"{' (' + k.actor + ')' if k.actor else ''} — last attempt "
+        lines += [f"• revoked key still in use: *{_t(k.label or k.prefix)}*"
+                  f"{' (' + _t(k.actor) + ')' if k.actor else ''} — last attempt "
                   f"{k.last_failed_at:%Y-%m-%d %H:%M} UTC" for k in claimed_dead]
         text = (f":shield: *Palivane fleet alert* — {len(claimed_dark)} sensor(s) dark"
                 + (f", {len(claimed_dead)} dead key(s) in use" if claimed_dead else "")
