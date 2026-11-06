@@ -28,6 +28,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import threading
 import time
 
 TOLERANCE_S = 300                 # webhook-timestamp window, either direction (spec)
@@ -75,6 +76,37 @@ def verify_signature(secrets: list[str], headers, body: bytes, now: float | None
         if any(hmac.compare_digest(expected, c) for c in candidates):
             return True
     return False
+
+
+# --- replays ---------------------------------------------------------------------------
+# A signed request is valid for TOLERANCE_S, so a captured one could be replayed until then,
+# scoring and recording the same prompt again. Standard Webhooks retries also reuse the
+# webhook-id, so a repeat must get the same answer, not an error: the first verdict for an
+# id is kept and returned for any repeat within the window. Per instance: a repeat landing
+# on another instance is scored again (a duplicate finding), which is the old behaviour.
+_SEEN_TTL_S = 2 * TOLERANCE_S
+_SEEN_MAX = 10_000
+_seen: dict[tuple, tuple[float, dict]] = {}
+_seen_lock = threading.Lock()
+
+
+def recall_verdict(tenant_id, msg_id: str, now: float | None = None) -> dict | None:
+    """The verdict already given for this tenant's webhook-id, if it is still remembered."""
+    now = time.time() if now is None else now
+    with _seen_lock:
+        hit = _seen.get((tenant_id, msg_id))
+        return dict(hit[1]) if hit and hit[0] > now else None
+
+
+def remember_verdict(tenant_id, msg_id: str, verdict: dict, now: float | None = None) -> None:
+    now = time.time() if now is None else now
+    with _seen_lock:
+        if len(_seen) >= _SEEN_MAX:
+            for k in [k for k, (exp, _v) in _seen.items() if exp <= now]:
+                _seen.pop(k, None)
+            while len(_seen) >= _SEEN_MAX:
+                _seen.pop(next(iter(_seen)))
+        _seen[(tenant_id, msg_id)] = (now + _SEEN_TTL_S, dict(verdict))
 
 
 def sign(secret: str, msg_id: str, ts: str, body: bytes) -> str:

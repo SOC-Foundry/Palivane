@@ -128,3 +128,13 @@ def signed_release(monkeypatch, tmp_path_factory):
     make.pin = pin
     make.pubkey = pub_pem
     return make
+
+
+@pytest.fixture(autouse=True)
+def _fresh_inference_hook_replays():
+    """inference_hooks keeps a per-process memory of verdicts by webhook-id, and tests reuse
+    tenant ids, request ids and bodies across their own databases."""
+    from app import inference_hooks
+    inference_hooks._seen.clear()
+    yield
+    inference_hooks._seen.clear()
