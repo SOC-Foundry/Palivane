@@ -428,6 +428,10 @@ jobs:
                 ;;
               fedora:*)
                 dnf install -y -q python3 python3-pip openssl sudo shadow-utils curl >/dev/null
+                # fedora:latest moved python3 past what the dependencies ship wheels for
+                # (3.15, Nov 2026). Do what install.sh tells an operator to: add a supported
+                # interpreter beside it, which install.sh then prefers.
+                dnf install -y -q python3.14 >/dev/null 2>&1 || dnf install -y -q python3.13 >/dev/null
                 ;;
               rockylinux:*|almalinux:*)
                 # NOT `curl`: RHEL 9 images ship curl-minimal, and installing curl conflicts
