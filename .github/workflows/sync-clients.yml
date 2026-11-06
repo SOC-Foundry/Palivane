@@ -52,6 +52,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Never publish a VS Code package that isn't the source in this commit (CI checks it
+      # too; this covers a dispatch or the nightly run against a commit that skipped CI).
+      - name: VS Code package matches its source
+        run: python3 .github/scripts/vsix_check.py
       - name: Mirror to palivane-clients
         env:
           TOKEN: ${{ secrets.CLIENTS_SYNC_TOKEN }}

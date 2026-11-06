@@ -83,13 +83,18 @@ def client(db_factory):
 
 
 @pytest.fixture
-def signed_release(monkeypatch):
-    """A release signed with a throwaway ECDSA P-256 key that the client scripts pin (via
-    PALIVANE_RELEASE_PUBKEY), with signatures required. Returns `make(files)` ->
+def signed_release(monkeypatch, tmp_path_factory):
+    """A release signed with a throwaway ECDSA P-256 key, pinned the way install.sh pins
+    it: ~/.palivane/release-pubkey.pem and a release-require-sig record of 1. Clients take
+    no trust anchor from the environment, so HOME is set to a fresh directory holding that
+    pin. A test that runs a client under another HOME pins it with
+    `make.pin(home, require="1", pubkey=None)` (require "0" = an unsigned deployment's
+    install record; pubkey = pin some other key). Returns `make(files)` ->
     (manifest_json_bytes, manifest_sig_bytes) for a {name: body_bytes} map, exactly as
     /cli/manifest.json and /cli/manifest.sig would serve them."""
     import hashlib
     import json as _json
+    from pathlib import Path
 
     from cryptography.hazmat.primitives import serialization as s
     from cryptography.hazmat.primitives.asymmetric import ec
@@ -97,11 +102,22 @@ def signed_release(monkeypatch):
     from app import release_signing
 
     priv = ec.generate_private_key(ec.SECP256R1())
+    pub_pem = priv.public_key().public_bytes(
+        s.Encoding.PEM, s.PublicFormat.SubjectPublicKeyInfo).decode()
     monkeypatch.setenv("PALIVANE_RELEASE_SIGNING_KEY", priv.private_bytes(
         s.Encoding.PEM, s.PrivateFormat.PKCS8, s.NoEncryption()).decode())
-    monkeypatch.setenv("PALIVANE_RELEASE_PUBKEY", priv.public_key().public_bytes(
-        s.Encoding.PEM, s.PublicFormat.SubjectPublicKeyInfo).decode())
-    monkeypatch.setenv("PALIVANE_RELEASE_REQUIRE_SIG", "1")
+    monkeypatch.setenv("PALIVANE_RELEASE_PUBKEY", pub_pem)   # server side: what install.sh bakes
+    monkeypatch.delenv("PALIVANE_RELEASE_REQUIRE_SIG", raising=False)
+
+    def pin(home, require: str = "1", pubkey: str | None = None) -> None:
+        d = Path(home) / ".palivane"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "release-pubkey.pem").write_text(pubkey or pub_pem)
+        (d / "release-require-sig").write_text(require + "\n")
+
+    home = tmp_path_factory.mktemp("release-home")
+    monkeypatch.setenv("HOME", str(home))
+    pin(home)
 
     def make(files: dict, **extra):
         meta = {n: {"sha256": hashlib.sha256(b).hexdigest(), "size": len(b)}
@@ -109,4 +125,6 @@ def signed_release(monkeypatch):
         manifest = {"version": "9.9.9", "self_update": True, "files": meta, **extra}
         return (_json.dumps(manifest).encode(),
                 release_signing.sign_files(meta).encode())
+    make.pin = pin
+    make.pubkey = pub_pem
     return make
