@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { api, setToken } from "../api.js";
 
+// Mirrors backend/app/auth.py _safe_return_to.
+function safeReturnTo(rt) {
+  if (!rt.startsWith("/extension-connect") || rt.length > 1024) return false;
+  return !(rt.startsWith("//") || rt.includes("\\") || rt.includes("://") || rt.includes("#")
+           || /[\n\r\t]/.test(rt));
+}
+
 export default function Login({ onAuthed, onBack }) {
   const [mode, setMode] = useState("signin");   // "signin" | "signup" | "forgot" | "reset"
   const [resetToken, setResetToken] = useState(null);
@@ -45,8 +52,10 @@ export default function Login({ onAuthed, onBack }) {
     if (c) {
       setMfaChallenge(decodeURIComponent(c[1]));
       const back = c[2] ? decodeURIComponent(c[2]) : "";
-      // Same-origin paths only: never an absolute or protocol-relative URL.
-      if (back.startsWith("/") && !back.startsWith("//")) setMfaReturnTo(back);
+      // The session token is appended to this path, so it gets the backend's rule exactly
+      // (auth._safe_return_to): the extension-connect page only, and nothing that could
+      // turn it into another origin ("\\", "://", its own "#", control characters).
+      if (safeReturnTo(back)) setMfaReturnTo(back);
       window.history.replaceState(null, "", window.location.pathname);
     }
     // Join-confirm links bounce back as /#join=approved|verified|invalid.

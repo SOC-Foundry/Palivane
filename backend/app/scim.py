@@ -69,6 +69,8 @@ def scim_tenant(authorization: str = Header(default=""),
     t = db.query(Tenant).filter(Tenant.scim_token_hash == h).first()
     if t is None:
         raise HTTPException(status_code=401, detail="unknown SCIM token")
+    from .lifecycle import ensure_active
+    ensure_active(db, t.id)          # a suspended org's directory can't provision into it
     bind_tenant(db, t.id)
     return t
 
