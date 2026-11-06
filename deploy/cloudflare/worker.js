@@ -126,9 +126,22 @@ export class RateCounter {
   }
 }
 
+// The rate-limit key for a client address: an IPv4 address as is, an IPv6 address by its
+// /64. A single IPv6 subscriber is routinely handed a whole /64 (18 quintillion addresses),
+// so keyed per address it could rotate past the limit on every request.
+function rateKey(ip) {
+  if (!ip.includes(':')) return ip;
+  const [head, tail] = ip.split('::');
+  const left = head ? head.split(':') : [];
+  const right = tail !== undefined && tail ? tail.split(':') : [];
+  const groups = tail === undefined ? left
+    : [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right];
+  return groups.slice(0, 4).map((g) => (g || '0').toLowerCase()).join(':') + '::/64';
+}
+
 async function authOverLimit(env, ip) {
   try {
-    const stub = env.RATE.get(env.RATE.idFromName(ip));
+    const stub = env.RATE.get(env.RATE.idFromName(rateKey(ip)));
     const r = await stub.fetch('https://rate/', {
       method: 'POST', body: JSON.stringify({ limit: AUTH_LIMIT }),
     });

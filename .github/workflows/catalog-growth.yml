@@ -46,9 +46,11 @@ jobs:
     if: ${{ !inputs.dataset_only }}
     runs-on: ubuntu-latest
     steps:
+      # No credential in .git/config while the scripts below parse fetched candidate data:
+      # the push token is handed to git only in the push step, after they have run.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          token: ${{ secrets.CATALOG_GROWTH_TOKEN || github.token }}
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
@@ -86,7 +88,11 @@ jobs:
           git checkout -B "$BRANCH"
           git add backend/app/ai_catalog.py README.md frontend/src/stats.gen.json
           git commit -m "catalog: weekly growth proposals (auto)"
-          git push -f origin "$BRANCH"
+          # The token rides in a header for this one push, not in the remote URL or config.
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" \
+            push -f origin "$BRANCH"
           # Refresh the open proposal PR if there is one. `gh pr edit <branch>` alone picks the
           # branch's newest PR even when it is long merged, and rewrote #67's description.
           OPEN=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')
