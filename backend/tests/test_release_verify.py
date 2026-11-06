@@ -84,19 +84,54 @@ def test_verified_manifest(signed_release, monkeypatch, backend):
     assert mod._verified_manifest(_fetcher(other, sig)) is None
     assert mod._verified_manifest(_fetcher(manifest, b"not base64!")) is None
     assert mod._verified_manifest(_fetcher(manifest, None)) is None   # unsigned: closed
+    # the environment can't allow unsigned; only the install record of an unsigned deployment
     monkeypatch.setenv("PALIVANE_RELEASE_REQUIRE_SIG", "0")
+    assert mod._verified_manifest(_fetcher(manifest, None)) is None
+    monkeypatch.delenv("PALIVANE_RELEASE_REQUIRE_SIG")
+    signed_release.pin(os.environ["HOME"], require="0")
     assert mod._verified_manifest(_fetcher(manifest, None)) is not None
+    # ...and PALIVANE_RELEASE_REQUIRE_SIG=1 still tightens it
+    monkeypatch.setenv("PALIVANE_RELEASE_REQUIRE_SIG", "1")
+    assert mod._verified_manifest(_fetcher(manifest, None)) is None
+    monkeypatch.delenv("PALIVANE_RELEASE_REQUIRE_SIG")
     # a signature that is served must still verify, even when unsigned is allowed
     assert mod._verified_manifest(_fetcher(other, sig)) is None
+
+
+def test_a_verified_signature_ratchets_unsigned_off(signed_release):
+    """An install recorded on an unsigned deployment (0/skip) accepts unsigned manifests only
+    until a signed one verifies: from then on, unsigned is a downgrade and is refused."""
+    mod = _load("palivane-connect")
+    manifest, sig = signed_release({"x": b"y"})
+    record = Path(os.environ["HOME"]) / ".palivane" / "release-require-sig"
+    for start in ("0", "skip"):
+        signed_release.pin(os.environ["HOME"], require=start)
+        assert mod._verified_manifest(_fetcher(manifest, None)) is not None
+        assert mod._verified_manifest(_fetcher(manifest, sig)) is not None
+        assert record.read_text().strip() == "1"
+        assert mod._verified_manifest(_fetcher(manifest, None)) is None
+
+
+def test_environment_cannot_swap_the_pinned_key(signed_release, monkeypatch):
+    """PALIVANE_RELEASE_PUBKEY is the server's setting; a client never trusts it, so a
+    variable injected into a hook's environment can't bless an attacker's signature."""
+    from cryptography.hazmat.primitives import serialization as s
+    from cryptography.hazmat.primitives.asymmetric import ec
+    attacker = ec.generate_private_key(ec.SECP256R1())
+    monkeypatch.setenv("PALIVANE_RELEASE_PUBKEY", attacker.public_key().public_bytes(
+        s.Encoding.PEM, s.PublicFormat.SubjectPublicKeyInfo).decode())
+    mod = _load("palivane-connect")
+    manifest, sig = signed_release({"x": b"y"})        # signed by the pinned (real) key
+    assert mod._release_pubkey().strip() == signed_release.pubkey.strip()
+    assert mod._verified_manifest(_fetcher(manifest, sig)) is not None
 
 
 def test_persisted_install_key_is_the_pin(signed_release, monkeypatch, tmp_path):
     """install.sh writes the deployment's key to ~/.palivane/release-pubkey.pem; a
     self-host's clients must verify against THAT rather than the vendor key."""
     mod = _load("palivane-connect")
-    pem = os.environ["PALIVANE_RELEASE_PUBKEY"]
-    monkeypatch.delenv("PALIVANE_RELEASE_PUBKEY")
-    monkeypatch.setenv("HOME", str(tmp_path))
+    pem = signed_release.pubkey
+    monkeypatch.setenv("HOME", str(tmp_path))                          # no pin here
     manifest, sig = signed_release({"x": b"y"})
     assert mod._verified_manifest(_fetcher(manifest, sig)) is None     # vendor key: no
     (tmp_path / ".palivane").mkdir()
@@ -161,6 +196,7 @@ def test_desktop_fetch_verified(signed_release, tmp_path):
     (srv / "manifest.sig").write_bytes(sig)
     (srv / "palivane_addon.py").write_bytes(addon)
     env = {"PALIVANE_URL": f"file://{tmp_path / 'srv'}"}
+    signed_release.pin(tmp_path)                       # _desktop runs with HOME=tmp_path
     dest = tmp_path / "out.py"
     r = _desktop(tmp_path, env, f'fetch_verified palivane_addon.py "{dest}" && echo OK')
     assert r.returncode == 0 and "OK" in r.stdout, r.stdout + r.stderr
@@ -184,9 +220,22 @@ def test_desktop_fetch_verified(signed_release, tmp_path):
     (srv / "manifest.sig").unlink()
     r = _desktop(tmp_path, env, f'fetch_verified palivane_addon.py "{dest}" || echo REFUSED')
     assert "REFUSED" in r.stdout and dest.read_bytes() == b"old\n"
-    r = _desktop(tmp_path, {**env, "PALIVANE_RELEASE_REQUIRE_SIG": "0"},
-                 f'fetch_verified palivane_addon.py "{dest}" && echo OK')
+    r = _desktop(tmp_path, {**env, "PALIVANE_RELEASE_REQUIRE_SIG": "0"},   # env can't loosen
+                 f'fetch_verified palivane_addon.py "{dest}" || echo REFUSED')
+    assert "REFUSED" in r.stdout and dest.read_bytes() == b"old\n"
+    signed_release.pin(tmp_path, require="0")          # an unsigned deployment's install
+    r = _desktop(tmp_path, env, f'fetch_verified palivane_addon.py "{dest}" && echo OK')
     assert "OK" in r.stdout and dest.read_bytes() == addon
+
+    # A signed manifest verifying ratchets that record to 1: unsigned is refused after.
+    (srv / "manifest.sig").write_bytes(sig)
+    r = _desktop(tmp_path, env, f'fetch_verified palivane_addon.py "{dest}" && echo OK')
+    assert "OK" in r.stdout
+    assert (tmp_path / ".palivane" / "release-require-sig").read_text().strip() == "1"
+    (srv / "manifest.sig").unlink()
+    dest.write_bytes(b"old\n")
+    r = _desktop(tmp_path, env, f'fetch_verified palivane_addon.py "{dest}" || echo REFUSED')
+    assert "REFUSED" in r.stdout and dest.read_bytes() == b"old\n"
     assert hashlib.sha256(dest.read_bytes()).hexdigest()
 
 

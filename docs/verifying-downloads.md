@@ -126,9 +126,9 @@ clean checkout and confirm the vendor signature over it.
 The extension ships as a `.vsix` in the public clients repo, alongside its source:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/SOC-Foundry/palivane-clients/main/vscode-extension/palivane-vscode-0.2.1.vsix
-sha256sum palivane-vscode-0.2.1.vsix        # compare against the release notes
-code --install-extension palivane-vscode-0.2.1.vsix
+curl -fsSLO https://raw.githubusercontent.com/SOC-Foundry/palivane-clients/main/vscode-extension/palivane-vscode-0.2.2.vsix
+sha256sum palivane-vscode-0.2.2.vsix        # compare against the release notes
+code --install-extension palivane-vscode-0.2.2.vsix
 ```
 
 Until it is published to the Marketplace (which signs and verifies on install) that
