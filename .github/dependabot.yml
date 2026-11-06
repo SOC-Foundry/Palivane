@@ -1,0 +1,22 @@
+# Dependency update PRs (security review, low: "Dependabot off"). Weekly, grouped so a week
+# is a few PRs rather than dozens; CI gates each one like any other PR. Security advisories
+# for these ecosystems still open PRs as soon as they are published.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      actions: { patterns: ["*"] }
+
+  - package-ecosystem: pip
+    directory: /backend
+    schedule: { interval: weekly }
+    groups:
+      python: { patterns: ["*"] }
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule: { interval: weekly }
+    groups:
+      frontend: { patterns: ["*"] }

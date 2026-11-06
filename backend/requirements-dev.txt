@@ -1,0 +1,5 @@
+# Everything the app needs, plus the test tools (CI and local development). The production
+# image installs requirements.txt only.
+-r requirements.txt
+pytest==9.1.1
+pytest-xdist==3.8.0     # -n auto in CI: the suite is parallel-safe, see .github/workflows/ci.yml
