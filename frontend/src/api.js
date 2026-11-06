@@ -202,9 +202,13 @@ export const api = {
   // --- admin settings ---
   updateTenant: (payload) =>
     req("/tenant", { method: "PATCH", body: JSON.stringify(payload) }),
-  extensionToken: (device = "") =>
-    req(`/extension/token${device ? `?device=${encodeURIComponent(device)}` : ""}`,
-        { method: "POST" }),
+  extensionToken: (device = "", redirectHost = "") => {
+    const q = new URLSearchParams();
+    if (device) q.set("device", device);
+    if (redirectHost) q.set("redirect_host", redirectHost);   // the server pins the extension
+    const qs = q.toString();
+    return req(`/extension/token${qs ? `?${qs}` : ""}`, { method: "POST" });
+  },
   testAlert: () => req("/alerts/test", { method: "POST" }),
   testSiem: () => req("/siem/test", { method: "POST" }),
   testSiemS3: () => req("/siem/s3/test", { method: "POST" }),

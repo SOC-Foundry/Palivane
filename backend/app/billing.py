@@ -8,7 +8,8 @@ falls back to the sales-led upgrade request, so nothing changes for deployments 
 Stripe account.
 
 Plan state stays authoritative in the tenants row; Stripe webhooks move it:
-  checkout.session.completed        -> plan=team, seats -> quota_users
+  checkout.session.completed        -> plan=team, seats -> quota_users (once paid; a delayed
+  checkout.session.async_payment_succeeded   payment method upgrades on this event instead)
   customer.subscription.updated     -> seat / status sync
   customer.subscription.deleted     -> plan=free (never touches enterprise)
 Webhook signatures are verified manually (HMAC-SHA256 per Stripe's scheme) — stdlib only,
@@ -237,7 +238,15 @@ def _handle_event(db: Session, event: dict) -> dict:
     kind = event.get("type", "")
     obj = (event.get("data") or {}).get("object") or {}
 
-    if kind == "checkout.session.completed":
+    if kind in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
+        # A completed checkout isn't necessarily paid: a delayed payment method (bank debit)
+        # completes "unpaid" and settles later as async_payment_succeeded, or fails. Only a
+        # paid (or free: trial, full discount) session upgrades the org.
+        status = obj.get("payment_status")
+        if status is not None and status not in ("paid", "no_payment_required"):
+            log.info("stripe webhook: checkout session %s is %s; waiting for the payment",
+                     obj.get("id"), status)
+            return {"ok": True}
         tenant = _tenant_for(db, obj)
         if tenant is None:
             log.warning("stripe webhook: no tenant for checkout session %s", obj.get("id"))

@@ -11,6 +11,7 @@ from __future__ import annotations
 import hmac
 import re
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
@@ -322,8 +323,26 @@ def signup(body: SignupRequest, request: Request, db: Session = Depends(get_db))
     claim = domains_mod.match_verified(db, email)
     if claim is not None:
         tenant = db.get(Tenant, claim.tenant_id)
-        if db.query(User).filter(User.tenant_id == claim.tenant_id,
-                                 User.email == email).first():
+        from . import email as email_mod
+        org = tenant.name or tenant.slug
+        exists = db.query(User).filter(User.tenant_id == claim.tenant_id,
+                                       User.email == email).first() is not None
+        pending = (not exists) and db.query(JoinRequest).filter(
+            JoinRequest.tenant_id == claim.tenant_id, JoinRequest.email == email,
+            JoinRequest.status == "pending").first() is not None
+        if (exists or pending) and email_mod.enabled():
+            # Answer exactly as a fresh request would, and tell the mailbox owner the rest:
+            # a different reply here told anyone which addresses have accounts in the org.
+            email_mod.send(
+                email, f"Your Palivane account at {org}",
+                (f"Someone (hopefully you) tried to sign up as {email} for the \"{org}\" "
+                 "organization on Palivane. "
+                 + ("That address already has an account: sign in, or reset the password from "
+                    "the sign-in page." if exists else
+                    "A request to join with that address is already waiting for an admin.")
+                 + "\n\nIf this wasn't you, ignore this email."))
+            return {"status": "confirm_email", "org": org}
+        if exists:
             raise HTTPException(status_code=409,
                                 detail="an account with that email already exists in "
                                        "your organization — sign in instead")
@@ -422,23 +441,26 @@ def _client_ip(request: Request) -> str:
 _LOGIN_CANDIDATES = 10   # accounts sharing an email that a password is checked against
 
 
-def _throttled(db: Session, email: str, ip: str, kind: str = "login") -> bool:
+def _throttled(db: Session, email: str, ip: str, kind: str = "login",
+               counting_this_one: bool = False) -> bool:
     """DB-backed brute-force check (shared across workers/replicas). Blocks if this email
     OR this IP has too many recent attempts of this `kind` (LoginAttempt.kind). Prunes rows
-    past the window."""
+    past the window. `counting_this_one`: the caller already recorded the current attempt,
+    so the limit is reached one row later."""
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.login_window)
     db.query(LoginAttempt).filter(LoginAttempt.created_at < cutoff).delete()
     db.commit()
     by_email = db.query(LoginAttempt).filter(
         LoginAttempt.kind == kind, LoginAttempt.email == email,
         LoginAttempt.created_at >= cutoff).count()
-    if by_email >= settings.login_max_fails:
+    extra = 1 if counting_this_one else 0
+    if by_email >= settings.login_max_fails + extra:
         return True
     if ip:
         by_ip = db.query(LoginAttempt).filter(
             LoginAttempt.kind == kind, LoginAttempt.ip == ip,
             LoginAttempt.created_at >= cutoff).count()
-        if by_ip >= settings.login_ip_max_fails:
+        if by_ip >= settings.login_ip_max_fails + extra:
             return True
     return False
 
@@ -447,7 +469,13 @@ def _throttled(db: Session, email: str, ip: str, kind: str = "login") -> bool:
 def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     email = body.email.lower().strip()
     ip = _client_ip(request)
-    if _throttled(db, email, ip):
+    # Record the attempt BEFORE checking the password, then count it in: counted after, a
+    # burst of parallel guesses all passed the check before any of them was recorded, and
+    # got well past the limit. A correct password removes this row again.
+    attempt = LoginAttempt(email=email, ip=ip)
+    db.add(attempt)
+    db.commit()
+    if _throttled(db, email, ip, counting_this_one=True):
         raise HTTPException(status_code=429,
                             detail="too many failed attempts, try again later")
 
@@ -475,9 +503,9 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
                             detail="multiple organizations use this email, specify your org")
     user = unlocked[0] if unlocked else None
     if not user:
-        db.add(LoginAttempt(email=email, ip=ip))
-        db.commit()
-        raise HTTPException(status_code=401, detail="invalid credentials")
+        raise HTTPException(status_code=401, detail="invalid credentials")   # attempt stays
+    db.delete(attempt)          # the password was right: not a failure
+    db.commit()
     # After the password check, so only someone holding the password learns the org is SSO-only.
     if not non_sso_signin_allowed(db, user):
         raise HTTPException(status_code=403, detail=SSO_REQUIRED_DETAIL)
@@ -995,7 +1023,8 @@ def offboard_user(user_id: int, current: User = Depends(require_admin),
 
 
 @router.post("/extension/token")
-def extension_token(device: str = "", current: User = Depends(get_current_user),
+def extension_token(device: str = "", redirect_host: str = "",
+                    current: User = Depends(get_current_user),
                     db: Session = Depends(get_db)):
     """Mint (or re-issue) a per-user, tenant-scoped capture key for the browser extension
     (self-serve / BYOD sign-in via the console). Any authenticated user can bind their own
@@ -1009,6 +1038,14 @@ def extension_token(device: str = "", current: User = Depends(get_current_user),
     When it's absent there is nothing to tell machines apart, so a fresh key is minted rather
     than rotating a shared per-user one — rotating it silently killed every other machine's
     key the moment a second one connected."""
+    # The connect page hands the key to a Chrome extension's callback host. Any extension
+    # owns a <its-id>.chromiumapp.org, so a link to /extension-connect naming another
+    # extension's callback would hand the user's key to it: with a published extension
+    # configured, only its callback is accepted.
+    host = (redirect_host or "").strip().lower()
+    if host.endswith(".chromiumapp.org") and settings.extension_id \
+            and host != f"{settings.extension_id.lower()}.chromiumapp.org":
+        raise HTTPException(status_code=400, detail="that extension is not this deployment's")
     dev = (device or "").strip()[:64]
     label = f"capture:{dev}" if dev else "browser-extension"
     token, prefix, token_hash = generate_api_key()
@@ -1635,6 +1672,15 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
             if not is_safe_url_static(siem):
                 raise HTTPException(status_code=400,
                                     detail="siem_url must be a public http(s) URL (no internal/loopback/metadata hosts)")
+        # The stored token was given for the old collector. Re-pointed at a different origin,
+        # it would go to the new one with the next event, so it is dropped unless this same
+        # request supplies one: whoever moves the URL must also hold the new collector's token.
+        from urllib.parse import urlsplit
+        def _origin(u: str) -> tuple:
+            p = urlsplit(u or "")
+            return (p.scheme.lower(), (p.hostname or "").lower(), p.port)
+        if _origin(siem) != _origin(tenant.siem_url) and body.siem_token is None:
+            tenant.siem_token = ""
         tenant.siem_url = siem
     if body.siem_token is not None:
         # Sealed at rest (enc:v1: tag) like other stored secrets; unsealed at send time.
@@ -1810,11 +1856,25 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
     return out
 
 
+_DELETE_STEP_UP_S = 15 * 60
+
+
 @router.delete("/tenant")
-def delete_tenant(body: TenantDelete, current: User = Depends(require_admin),
+def delete_tenant(body: TenantDelete, request: Request,
+                  current: User = Depends(require_session_admin),
                   db: Session = Depends(get_db)):
     """Delete this organization and ALL its data (GDPR "delete my org"). Irreversible —
-    the caller must pass the tenant slug as `confirm`."""
+    the caller must pass the tenant slug as `confirm`, from a console session (not an API
+    key) signed in within the last 15 minutes: a stolen or forgotten session can't wipe
+    the org."""
+    try:
+        iat = int(decode_token(request.headers.get("authorization", "").split(" ", 1)[-1]).get("iat") or 0)
+    except (TokenError, ValueError, TypeError):
+        iat = 0
+    if time.time() - iat > _DELETE_STEP_UP_S:
+        raise HTTPException(status_code=403,
+                            detail="sign in again to delete the organization (needs a sign-in "
+                                   "from the last 15 minutes)")
     tenant = db.get(Tenant, current.tenant_id)
     if body.confirm != tenant.slug:
         raise HTTPException(status_code=400,
