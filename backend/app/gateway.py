@@ -1006,7 +1006,7 @@ def _response_output_text(resp: dict) -> str:
         for p in ((cand.get("content") or {}).get("parts") or []) if isinstance(cand, dict) else []:
             if isinstance(p, dict) and isinstance(p.get("text"), str):
                 parts.append(p["text"])
-    return "\n".join(parts)[:200000]
+    return "\n".join(parts)        # run_analysis caps it at MAX_CONTENT and marks the cut
 
 
 def _stream_output_text(sse: str) -> str:
@@ -1028,7 +1028,7 @@ def _stream_output_text(sse: str) -> str:
             for p in ((cand.get("content") or {}).get("parts") or []) if isinstance(cand, dict) else []:
                 if isinstance(p, dict) and isinstance(p.get("text"), str):
                     parts.append(p["text"])
-    return "".join(parts)[:200000]
+    return "".join(parts)          # run_analysis caps it at MAX_CONTENT and marks the cut
 
 
 def _capture_response_dlp(text: str, model: str, tool: str, principal: Principal, db: Session) -> dict | None:

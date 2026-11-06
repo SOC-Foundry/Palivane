@@ -347,6 +347,19 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     sinks. For a hypothetical ("would this edited text still block?"), never for real traffic."""
     if dry_run:
         persist = False
+    # One cap for every caller, and it says when it applied: content past MAX_CONTENT used to
+    # be cut by each caller (inference hooks, response DLP, ...) with nothing recording that
+    # the rest went unread.
+    from .schemas import MAX_CONTENT
+    if len(item.content or "") > MAX_CONTENT:
+        from dataclasses import replace as _replace
+        from .scoring import unscanned_marker
+        item = _replace(item, content=item.content[:MAX_CONTENT])
+        extra_signals = list(extra_signals or []) + [unscanned_marker(
+            "content=truncated", "Content not fully scanned",
+            f"This item was longer than the {MAX_CONTENT:,} characters one scan reads, so only "
+            "the start was checked. The verdict reflects the text that was scanned.",
+            detector="engine")]
     # A tenant can opt out of the LLM judge (it ships content to the judge provider).
     tenant = db.get(Tenant, tenant_id) if tenant_id is not None else None
     include_judge = use_judge and not (tenant is not None and tenant.judge_enabled is False)
