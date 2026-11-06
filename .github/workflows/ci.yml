@@ -52,7 +52,7 @@ jobs:
       # repo that can take the suite down for an afternoon.
       - name: Install
         working-directory: backend
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt
       - name: Pytest
         working-directory: backend
         # -n auto: ~2,220 tests across the runner's cores instead of one. Verified
@@ -125,7 +125,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install the backend
         working-directory: backend
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt
       - name: Install playwright-core and its Chromium
         working-directory: frontend
         run: |
@@ -503,7 +503,7 @@ jobs:
           python-version: "3.12"
       - name: Install
         working-directory: backend
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt
       - name: Migrate
         working-directory: backend
         env:
@@ -573,7 +573,7 @@ jobs:
       - name: Install
         if: steps.changes.outputs.s3 == 'true'
         working-directory: backend
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt
       - name: Start MinIO
         if: steps.changes.outputs.s3 == 'true'
         # `docker run` rather than a service container: MinIO needs `server /data` as its

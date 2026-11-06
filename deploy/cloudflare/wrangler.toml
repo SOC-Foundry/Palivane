@@ -1,6 +1,9 @@
 name = "palivane-front"
 main = "worker.js"
 compatibility_date = "2026-07-01"
+# No *.workers.dev address: the Worker is only reachable on the routes below, so nothing
+# can reach the origin through a second, unadvertised hostname.
+workers_dev = false
 # The account that owns the palivane.io zone — pinned so wrangler never deploys to
 # another account by mistake.
 account_id = "e877e5d440048df1624a3512143c1281"
