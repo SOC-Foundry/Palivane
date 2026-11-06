@@ -1286,7 +1286,8 @@ def _openai_upstream(base: str, key: str, path: str, model: str) -> tuple[str, d
     headers = {"Content-Type": "application/json"}
     is_azure = ".openai.azure.com" in base or ".cognitiveservices.azure.com" in base
     if is_azure and "/openai/v1" not in base:
-        url = (base.rstrip("/") + f"/openai/deployments/{model}{path}"
+        from urllib.parse import quote      # the model id comes from the request body
+        url = (base.rstrip("/") + f"/openai/deployments/{quote(model, safe='')}{path}"
                f"?api-version={settings.gateway_azure_api_version}")
     else:
         url = base.rstrip("/") + path
@@ -1903,7 +1904,11 @@ def count_tokens(request: Request, principal: Principal = Depends(get_gateway_pr
                  db: Session = Depends(get_db), body=Depends(_json_body)):
     """Token-counting pre-flight Claude Code issues before a turn. Authenticated
     passthrough to Anthropic (or a stub offline); no finding — the paired /v1/messages
-    call is where capture and enforcement happen."""
+    call is where capture and enforcement happen. Still a call on the platform's upstream
+    key, so it is counted and refused for a suspended org like any other."""
+    limited = _rate_limited(db, principal, "anthropic")
+    if limited:
+        return limited
     payload = body
     base, key = resolve_upstream("anthropic", principal.tenant_id, db)
     if key:
@@ -2037,7 +2042,8 @@ def _forward_gemini(model: str, method: str, payload: dict, request: Request,
                     base: str, key: str) -> Response:
     """Passthrough to Gemini, preserving query params (e.g. ?alt=sse) but swapping in our
     upstream key. Returns the upstream bytes verbatim so both JSON and streaming work."""
-    url = f"{base.rstrip('/')}/v1beta/models/{model}:{method}"
+    from urllib.parse import quote          # the model id comes from the request path
+    url = f"{base.rstrip('/')}/v1beta/models/{quote(model, safe='')}:{method}"
     params = {k: v for k, v in request.query_params.items() if k != "key"}
     headers = {"Content-Type": "application/json", "x-goog-api-key": key}
     with safe_client(timeout=120) as c:
