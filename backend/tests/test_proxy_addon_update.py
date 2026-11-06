@@ -539,3 +539,24 @@ def test_windows_port_has_the_same_update_path():
     assert "AbandonedMutexException" in wrapper and "ReleaseMutex()" in wrapper
     assert "Invoke-UpdateAddonLocked" in wrapper and "already running" in wrapper
     assert '.palivane-new"' not in ps                    # every temp name is per-run
+
+
+def test_a_lock_whose_pid_file_exists_is_not_claimed(tmp_path):
+    """The mkdir is the lock and the pid file is a second, exclusive (noclobber) claim: a run
+    that made the directory but finds a pid file it didn't write backs off, so two runs that
+    both saw their mkdir succeed can't both update (seen in CI, 2026-11-06)."""
+    lock = tmp_path / "update-addon.lock"
+    lock.mkdir()
+    (lock / "pid").write_text("12345\n")
+    trace = tmp_path / "trace.log"
+    script = (f'set -euo pipefail\nsource "{_DESKTOP}"\n'
+              f'if claim_lock "{lock}" "took lock"; then echo CLAIMED; else echo BACKED_OFF; fi\n')
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
+                       env={**os.environ, "HOME": str(tmp_path), "PALIVANE_LOCK_DEBUG": str(trace)})
+    assert "BACKED_OFF" in r.stdout, r.stdout + r.stderr
+    assert (lock / "pid").read_text() == "12345\n"
+    assert "not ours" in trace.read_text()
+    (lock / "pid").unlink()
+    r = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
+                       env={**os.environ, "HOME": str(tmp_path), "PALIVANE_LOCK_DEBUG": str(trace)})
+    assert "CLAIMED" in r.stdout and "inode" in trace.read_text()
