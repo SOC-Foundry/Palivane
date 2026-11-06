@@ -378,6 +378,13 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         from .plans import has_feature
         item.metadata = {**(item.metadata or {}),
                          "ml_encoder": has_feature(tenant, "ml_encoder")}
+    # The judge is a model call (up to tens of seconds). An instance has only a few pooled
+    # connections (database.py), so hand this one back first: committing a session with
+    # nothing pending ends its read-only transaction and returns the connection, and the
+    # next query takes one again (RLS re-applied by database.after_begin). With pending
+    # writes the caller's transaction is left alone.
+    if include_judge and db is not None and not (db.new or db.dirty or db.deleted):
+        db.commit()
     verdict = engine.analyze(item, include_judge=include_judge,
                              judge_backends=byok or None)
     # Did the judge actually participate? (a provider is configured AND it ran for this
