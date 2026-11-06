@@ -1738,6 +1738,17 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
                     raise HTTPException(status_code=400,
                                         detail=f"{_f} must be a public https:// URL")
             setattr(tenant, _f, _v.strip())
+    if body.agent_oidc_issuer is not None or body.agent_oidc_audience is not None:
+        # An issuer is shared (every GitHub Actions org has the same one), so the audience is
+        # what tells tenants' workload tokens apart. Two orgs trusting the same issuer AND
+        # audience would each accept the other's tokens: refuse the second.
+        iss, aud = (tenant.agent_oidc_issuer or "").strip(), (tenant.agent_oidc_audience or "").strip()
+        if iss and aud and db.query(Tenant).filter(Tenant.id != tenant.id,
+                                                   Tenant.agent_oidc_issuer == iss,
+                                                   Tenant.agent_oidc_audience == aud).first():
+            raise HTTPException(status_code=409,
+                                detail="another org already trusts this workload issuer with this "
+                                       "audience; use an audience unique to your org")
     if body.agent_attestation_enforce is not None:
         tenant.agent_attestation_enforce = bool(body.agent_attestation_enforce)
     if body.analyst_enabled is not None:
