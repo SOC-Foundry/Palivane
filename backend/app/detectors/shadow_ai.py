@@ -902,7 +902,9 @@ class ShadowAIDetector:
 
         # (A) Org-specific PII / confidential patterns (global env + this tenant's list).
         extra = (meta or {}).get("custom_pii", "")
-        custom = [label for label, rx in custom_pii_patterns(extra) if rx.search(text)]
+        from .patterns import custom_regex_timeouts
+        with custom_regex_timeouts() as timed_out:
+            custom = [label for label, rx in custom_pii_patterns(extra) if rx.search(text)]
 
         out: list[Signal] = []
         if bulk_emails:
@@ -924,6 +926,15 @@ class ShadowAIDetector:
                 weight=weight, confidence=0.75, detector=self.name,
                 evidence="; ".join(found[:4]),
             ))
+        if timed_out:
+            # A pattern that ran out of time matched nothing; that is not "clean".
+            from ..scoring import unscanned_marker
+            out.append(unscanned_marker(
+                f"custom_pattern={len(timed_out)} timed out", "Custom patterns not fully checked",
+                f"{len(timed_out)} of your organization's data patterns took longer than the "
+                "per-scan time budget on this content and were skipped, so it was only partly "
+                "checked against them. A simpler pattern (no nested repetition) avoids this.",
+                detector=self.name))
         if custom:
             out.append(Signal(
                 category=Category.PII_EXPOSURE,
