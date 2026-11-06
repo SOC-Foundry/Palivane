@@ -4185,9 +4185,30 @@ def connectors_delete(connector_id: int, current: User = Depends(require_admin),
                      SaasConnector.id == connector_id).first())
     if not row:
         raise HTTPException(404, "connector not found")
+    revoked = _revoke_connector_grant(row, db)
     db.delete(row)
     db.commit()
-    return {"deleted": connector_id}
+    return {"deleted": connector_id, "revoked_at_provider": revoked}
+
+
+def _revoke_connector_grant(row, db) -> bool:
+    """Best-effort: revoke at the provider a credential Palivane itself was granted, so a
+    disconnect doesn't leave a live token behind. Only a Slack install through the published
+    app qualifies; every other connector holds a credential the customer made (their own
+    Slack app, a service-account key, a PAT) and revokes on their side. Never blocks the
+    delete."""
+    if row.platform != "slack_messages" or not (row.state or {}).get("app_installed"):
+        return False
+    from . import saas_connectors as sc
+    try:
+        token = (sc.read_credentials(row, db).get("bot_token") or "").strip()
+        if not token:
+            return False
+        out = sc._http_json("https://slack.com/api/auth.revoke",
+                            headers={"Authorization": f"Bearer {token}"}, data=b"")
+        return bool(out.get("ok") and out.get("revoked"))
+    except Exception:                                             # noqa: BLE001
+        return False
 
 
 @app.get("/api/policies")
