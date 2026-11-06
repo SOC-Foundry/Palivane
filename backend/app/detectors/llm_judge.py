@@ -558,8 +558,8 @@ class LLMJudgeDetector:
             # A partial-scan marker, so the verdict reads "partly scanned" rather than clean.
             from ..scoring import unscanned_marker
             return [unscanned_marker(
-                f"detector={self.name}", "LLM judge unavailable",
-                "all configured judge providers failed, running offline detectors only",
+                f"detector={self.name}", title="LLM judge unavailable",
+                detail="all configured judge providers failed, running offline detectors only",
                 detector=self.name)]
         if verdict is None:     # a provider ran but returned no verdict
             return []
