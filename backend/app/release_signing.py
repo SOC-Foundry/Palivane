@@ -16,9 +16,20 @@ from the shipped code and identical across deployments of the same release, so a
 is signed once and any instance can serve the signature. `base_url`/`self_update` (which
 vary per deployment) are deliberately NOT signed.
 
-Server side: the private key comes from `PALIVANE_RELEASE_SIGNING_KEY` (PEM), mirroring
-`PALIVANE_LICENSE_SIGNING_KEY`; in production it lives in Secret Manager
-(`palivane-release-signing-key`). When it's unset the deployment serves an *unsigned*
+Two signatures. `manifest.sig` (v1) covers the {name: sha256} map, which every client
+verifies. `manifest.sig2` (v2) covers that map plus `issued`, a release timestamp that the
+manifest also carries. A client that has seen v2 refuses a release older than the newest
+it has accepted, and refuses a manifest without v2: replaying an older signed release, or
+stripping the v2 signature, no longer rolls it back.
+
+Where the signatures come from, in order:
+  1. A bundle signed at BUILD time (release/signed-manifest.json, written by
+     backend/tools/release_sign.py with a Cloud KMS key in the deploy pipeline). The
+     private key never enters the running service, so compromising the backend can't
+     sign a malicious release. The bundle is served only while its digest matches the
+     files this image serves.
+  2. `PALIVANE_RELEASE_SIGNING_KEY` (PEM) in the environment: self-hosts and dev. The
+     production service no longer has it once the deploy signs with KMS. When it's unset the deployment serves an *unsigned*
 manifest and the generated installer warns-but-proceeds — so nothing breaks before the
 key is provisioned; enforcement flips on automatically once it is. That flip is why
 `key_pair_problem` exists: the service refuses to boot (in production) if the key it signs
@@ -34,6 +45,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
+import os
 
 from .config import _env
 
@@ -64,7 +77,8 @@ def _signing_key_pem() -> str:
 
 
 def signing_enabled() -> bool:
-    return bool(_signing_key_pem())
+    """Whether this deployment serves signed releases (install.sh then fails closed)."""
+    return bool(_signing_key_pem()) or _bundle() is not None
 
 
 def _spki_der(public_key) -> bytes:
@@ -139,12 +153,137 @@ def enforce_key_pair(prod: bool, log) -> None:
     On Cloud Run, refusing to boot is the safe outcome and not an outage: a revision that
     fails its startup probe never receives traffic, so the previous revision keeps serving
     and the deploy fails instead of the installer."""
-    problem = key_pair_problem()
+    from .release_files import served_files
+    problem = key_pair_problem() or bundle_problem(served_files())
     if not problem:
         return
     if prod:
         raise RuntimeError(problem)
     log.warning(problem)
+
+
+_log = logging.getLogger("palivane.release_signing")
+
+# backend/release/signed-manifest.json in the repo; /app/release/ in the image.
+BUNDLE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           "release", "signed-manifest.json")
+_BUNDLE: dict | None = None
+_BUNDLE_LOADED = False
+
+
+def _bundle() -> dict | None:
+    """The build-time signature bundle, or None when this image carries none."""
+    global _BUNDLE, _BUNDLE_LOADED
+    if not _BUNDLE_LOADED:
+        _BUNDLE_LOADED = True
+        try:
+            with open(BUNDLE_PATH) as f:
+                b = json.load(f)
+            if all(isinstance(b.get(k), str) for k in ("files_digest", "sig", "sig2")) \
+                    and isinstance(b.get("issued"), int):
+                _BUNDLE = b
+            else:
+                _log.error("release bundle %s is malformed; ignoring it", BUNDLE_PATH)
+        except FileNotFoundError:
+            pass
+        except (OSError, ValueError):
+            _log.error("release bundle %s is unreadable; ignoring it", BUNDLE_PATH)
+    return _BUNDLE
+
+
+def _bundle_for(files: dict) -> dict | None:
+    """The bundle, if it signs exactly these files."""
+    b = _bundle()
+    if b and b["files_digest"] == hashlib.sha256(canonical_files_digest(files)).hexdigest():
+        return b
+    return None
+
+
+def bundle_problem(files: dict) -> str | None:
+    """Why this image's signature bundle can't be served, or None (also None with no bundle).
+    Checked at startup next to key_pair_problem: a bundle that doesn't match the files or
+    doesn't verify under the pinned key would make every client refuse every update."""
+    b = _bundle()
+    if b is None:
+        return None
+    if _bundle_for(files) is None:
+        return ("release/signed-manifest.json was signed for different files than this image "
+                "serves (the CLI changed after signing), so the release would go out unsigned "
+                "and every client would refuse it. Re-run backend/tools/release_sign.py.")
+    if not (verify_files(files, b["sig"]) and verify_release(files, b["issued"], b["sig2"])):
+        return ("release/signed-manifest.json does not verify under the key the installer "
+                "pins, so every client would refuse it. The KMS key that signed it is not "
+                "the pinned release key.")
+    return None
+
+
+def _env_issued(files: dict) -> int:
+    """`issued` for a release signed from the environment: the newest served file's mtime.
+    The same for every instance of one image (unlike a process start time, which would
+    make instances look like rollbacks of each other), and later for a later release."""
+    from .release_files import ALLOW, resolve
+    newest = 0
+    for name in files:
+        path = resolve(ALLOW.get(name, ""))
+        if path:
+            try:
+                newest = max(newest, int(os.stat(path).st_mtime))
+            except OSError:
+                pass
+    return newest
+
+
+def release_issued(files: dict) -> int | None:
+    """The `issued` the manifest carries (and v2 signs), or None when nothing signs."""
+    b = _bundle_for(files)
+    if b:
+        return b["issued"]
+    return _env_issued(files) if _signing_key_pem() else None
+
+
+def canonical_release_digest(files: dict, issued: int) -> bytes:
+    """What v2 signs: {"files": {name: sha256}, "issued": N} as canonical JSON."""
+    hashes = {name: meta["sha256"] for name, meta in files.items()}
+    return json.dumps({"files": hashes, "issued": int(issued)},
+                      separators=(",", ":"), sort_keys=True).encode()
+
+
+def _sign(message: bytes) -> str | None:
+    pem = _signing_key_pem()
+    if not pem:
+        return None
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
+    key = load_pem_private_key(pem.encode(), password=None)
+    return base64.b64encode(key.sign(message, ec.ECDSA(hashes.SHA256()))).decode()
+
+
+def _verify(message: bytes, signature_b64: str, pubkey_pem: str | None) -> bool:
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import load_pem_public_key
+    try:
+        pub = load_pem_public_key((pubkey_pem or release_pubkey_pem()).encode())
+        pub.verify(base64.b64decode(signature_b64), message, ec.ECDSA(hashes.SHA256()))
+        return True
+    except (InvalidSignature, ValueError, TypeError):
+        return False
+
+
+def sign_release(files: dict) -> str | None:
+    """The v2 signature (base64 DER) over files + issued, or None when nothing signs."""
+    b = _bundle_for(files)
+    if b:
+        return b["sig2"]
+    issued = release_issued(files)
+    return _sign(canonical_release_digest(files, issued)) if issued is not None else None
+
+
+def verify_release(files: dict, issued: int, signature_b64: str,
+                   pubkey_pem: str | None = None) -> bool:
+    return _verify(canonical_release_digest(files, issued), signature_b64, pubkey_pem)
 
 
 def canonical_files_digest(files: dict) -> bytes:
@@ -157,33 +296,18 @@ def canonical_files_digest(files: dict) -> bytes:
 
 def sign_files(files: dict) -> str | None:
     """Base64 ECDSA-P256/SHA-256 signature (DER) over the canonical files digest, or None
-    if no key is set (the deployment then serves an unsigned manifest). The DER encoding is
+    if nothing signs (the deployment then serves an unsigned manifest). The DER encoding is
     exactly what `openssl dgst -sha256 -verify` consumes on the installer side."""
-    pem = _signing_key_pem()
-    if not pem:
-        return None
-    from cryptography.hazmat.primitives import hashes
-    from cryptography.hazmat.primitives.asymmetric import ec
-    from cryptography.hazmat.primitives.serialization import load_pem_private_key
-    key = load_pem_private_key(pem.encode(), password=None)
-    sig = key.sign(canonical_files_digest(files), ec.ECDSA(hashes.SHA256()))
-    return base64.b64encode(sig).decode()
+    b = _bundle_for(files)
+    if b:
+        return b["sig"]
+    return _sign(canonical_files_digest(files))
 
 
 def verify_files(files: dict, signature_b64: str, pubkey_pem: str | None = None) -> bool:
     """True iff `signature_b64` is a valid signature over `files` under the pinned key.
     Used by tests and any client that wants to verify in-process."""
-    from cryptography.exceptions import InvalidSignature
-    from cryptography.hazmat.primitives import hashes
-    from cryptography.hazmat.primitives.asymmetric import ec
-    from cryptography.hazmat.primitives.serialization import load_pem_public_key
-    try:
-        pub = load_pem_public_key((pubkey_pem or release_pubkey_pem()).encode())
-        pub.verify(base64.b64decode(signature_b64), canonical_files_digest(files),
-                   ec.ECDSA(hashes.SHA256()))
-        return True
-    except (InvalidSignature, ValueError, TypeError):
-        return False
+    return _verify(canonical_files_digest(files), signature_b64, pubkey_pem)
 
 
 def sha256_hex(blob: bytes) -> str:

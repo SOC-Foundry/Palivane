@@ -151,3 +151,17 @@ variable "db_edition" {
   type    = string
   default = "ENTERPRISE"
 }
+
+# Members allowed to sign with the release key (kms.tf), e.g.
+# ["serviceAccount:palivane-deploy@<project>.iam.gserviceaccount.com"]. Never the runtime SA.
+variable "release_signer_members" {
+  type    = list(string)
+  default = []
+}
+
+# Members allowed to import a version into the release key. Set only while running
+# deploy/gcp/import-release-key.sh, then set back to [].
+variable "release_key_importers" {
+  type    = list(string)
+  default = []
+}

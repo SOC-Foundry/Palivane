@@ -167,6 +167,10 @@ jobs:
           PALIVANE_AWS_DELIVERY_PRINCIPAL: ${{ vars.PALIVANE_AWS_DELIVERY_PRINCIPAL }}
           PALIVANE_SLACK_CLIENT_ID: ${{ vars.PALIVANE_SLACK_CLIENT_ID }}
           PALIVANE_SLACK_REDIRECT_URL: ${{ vars.PALIVANE_SLACK_REDIRECT_URL }}
+          # Cloud KMS key version that signs the CLI release at build time (full
+          # cryptoKeyVersions resource name; deploy/terraform/kms.tf). Set, the service no
+          # longer holds the release private key. Unset, the old env-key signing applies.
+          RELEASE_KMS_KEY_VERSION: ${{ vars.RELEASE_KMS_KEY_VERSION }}
         run: ./deploy/cloudrun/deploy.sh
 
       # A deploy that fails above leaves the previous revision serving: Cloud Run only moves
@@ -224,3 +228,18 @@ jobs:
             exit 1
           fi
           echo "release signature verifies against the key the installer pins"
+
+          # v2 (rollback guard): files + issued, served as manifest.sig2.
+          if ! curl -fsS "$ORIGIN/cli/manifest.sig2" -o manifest.sig2; then
+            echo "::error::/cli/manifest.sig2 is not being served, so clients get no rollback" \
+                 "protection."
+            exit 1
+          fi
+          python3 -c 'import json,sys;m=json.load(open("manifest.json"));sys.stdout.write(json.dumps({"files":{k:v["sha256"] for k,v in m["files"].items()},"issued":int(m["issued"])},separators=(",",":"),sort_keys=True))' > digest2
+          openssl base64 -d -A -in manifest.sig2 -out sig2.der
+          if ! openssl dgst -sha256 -verify served-pub.pem -signature sig2.der digest2; then
+            echo "::error::the served v2 manifest signature does not verify against the key the" \
+                 "served installer pins."
+            exit 1
+          fi
+          echo "v2 release signature verifies too"
