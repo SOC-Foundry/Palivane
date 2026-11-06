@@ -169,7 +169,7 @@ def test_claimed_domain_auto_approve_signs_in(client, raw_client, db_factory, mo
     db = db_factory()
     u = (db.query(User).filter(User.tenant_id == tid,
                                User.email == "fasttrack@acme.com").first())
-    assert u is not None and u.role == "analyst"
+    assert u is not None and u.role == "member"     # auto-joined users start least-privilege
     db.close()
 
 

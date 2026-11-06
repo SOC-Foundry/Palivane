@@ -45,7 +45,7 @@ import logging
 from fastapi import HTTPException
 from mcp.server.fastmcp import FastMCP
 
-from .auth import authenticate_console_key, require_admin, user_for_console_key
+from .auth import authenticate_console_key, require_admin, require_analyst, user_for_console_key
 from .config import settings
 from .database import SessionLocal, get_db
 
@@ -201,6 +201,8 @@ def _read(fn, admin: bool, **kwargs):
     try:
         if admin:
             require_admin(user)              # the Depends() a direct call skips
+        else:
+            require_analyst(user)            # every other tool reads or triages org findings
         return fn(current=user, db=db, **kwargs)
     finally:
         _close(db, gen)
