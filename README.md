@@ -251,7 +251,7 @@ the schema):
 ```bash
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 
 # Optional: enrich detection with an LLM judge (Claude, GPT, or Gemini)
 cp .env.example .env          # then set ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY

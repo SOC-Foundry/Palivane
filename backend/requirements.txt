@@ -31,7 +31,6 @@ boto3==1.43.46            # optional SIEM/data-lake delivery to S3 (per-tenant, 
 pillow==13.0.0            # image decode + header-only pixel-count check before OCR
 pytesseract==0.3.13       # tesseract wrapper; per-call timeout= bounds request latency
 
-# --- dev / test ---
-pytest==9.1.1
-pytest-xdist==3.8.0     # -n auto in CI: the suite is parallel-safe, see .github/workflows/ci.yml
-httpx==0.28.1             # FastAPI TestClient
+# httpx: the gateway's upstream client and netguard; also FastAPI's TestClient.
+httpx==0.28.1
+# Test tools live in requirements-dev.txt, so the production image doesn't ship them.

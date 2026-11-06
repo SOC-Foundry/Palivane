@@ -20,7 +20,7 @@ needed for the SAML deps to install:
 
 ```bash
 sudo apt-get install -y --no-install-recommends libxml2-dev libxmlsec1-dev libxmlsec1-openssl pkg-config
-cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 ```
 
 Build the SPA (writes `frontend/dist`, which the backend serves):
