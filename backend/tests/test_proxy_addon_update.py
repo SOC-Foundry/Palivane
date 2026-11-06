@@ -462,7 +462,7 @@ def test_posture_hands_the_addon_to_palivane_desktop(tmp_path, monkeypatch, sign
     def fetch(url, token, timeout=20.0):
         name = url.rsplit("/cli/", 1)[-1]
         fetched.append(name)
-        return {"manifest.json": manifest, "manifest.sig": sig}.get(name, NEW)
+        return {"manifest.json": manifest, "manifest.sig": sig, "manifest.sig2": None}.get(name, NEW)
     monkeypatch.setattr(wp, "_fetch", fetch)
     monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(home / ".palivane"),))
     n = wp.self_update({"url": "https://pv.example", "token": "t"}, {}, say=lambda *a: None)
@@ -483,7 +483,7 @@ def test_posture_swaps_it_itself_for_an_older_palivane_desktop(tmp_path, monkeyp
     signed_release.pin(home)                           # the pin install.sh leaves
     manifest, sig = signed_release({"palivane_addon.py": NEW})
     monkeypatch.setattr(wp, "_fetch", lambda url, token, timeout=20.0: {
-        "manifest.json": manifest, "manifest.sig": sig}.get(url.rsplit("/cli/", 1)[-1], NEW))
+        "manifest.json": manifest, "manifest.sig": sig, "manifest.sig2": None}.get(url.rsplit("/cli/", 1)[-1], NEW))
     monkeypatch.setattr(wp, "_UPDATE_DIRS", (str(home / ".palivane"),))
     assert wp.self_update({"url": "https://pv.example", "token": "t"}, {},
                           say=lambda *a: None) == 1
@@ -503,7 +503,7 @@ def test_connect_hands_the_addon_to_palivane_desktop(tmp_path, monkeypatch, sign
     manifest, sig = signed_release({"palivane_addon.py": NEW,
                                     **{n: b"# v2\n" for n in wc._PLANE_SCRIPTS}})
     monkeypatch.setattr(wc, "_http_get", lambda url: {
-        "manifest.json": manifest, "manifest.sig": sig}.get(url.rsplit("/", 1)[-1], b"# v2\n"))
+        "manifest.json": manifest, "manifest.sig": sig, "manifest.sig2": None}.get(url.rsplit("/", 1)[-1], b"# v2\n"))
     monkeypatch.setattr(wc, "_MANAGED_BIN", str(tmp_path / "bin"))
     monkeypatch.setattr(wc, "_in_repo_checkout", lambda: False)
     monkeypatch.setattr(wc.sys, "argv", ["palivane-connect"])
