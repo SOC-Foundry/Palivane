@@ -17,6 +17,8 @@ def _configure(client, **over):
     body = {"issuer": "https://idp.test", "client_id": "cid",
             "client_secret": "csecret", "enabled": True}
     body.update(over)
+    if body.get("auto_provision") and "allowed_domain" not in body:
+        body["allowed_domain"] = "acme.com"   # auto-provision is refused without a domain
     return client.put("/api/oidc", json=body)
 
 
@@ -66,7 +68,7 @@ def test_callback_provisions_user_and_issues_working_session(client, monkeypatch
     me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
     assert me.json()["user"]["email"] == "sso@acme.com"
-    assert me.json()["user"]["role"] == "analyst"     # auto-provisioned as analyst
+    assert me.json()["user"]["role"] == "member"      # auto-provisioned least-privilege
 
 
 def test_callback_rejects_bad_state(client, monkeypatch):
@@ -144,3 +146,11 @@ def test_login_sets_the_binding_cookie(client, monkeypatch):
     monkeypatch.setattr(oidc_mod, "discover", lambda issuer: META)
     r = client.get("/api/auth/oidc/acme/login", follow_redirects=False)
     assert r.cookies.get(SSO_BIND_COOKIE)
+
+
+def test_auto_provision_needs_an_allowed_domain(client):
+    """Without a domain, anyone the IdP signs in (any tenant of a multi-tenant IdP) could
+    join the org on first sign-in."""
+    r = _configure(client, auto_provision=True, allowed_domain="")
+    assert r.status_code == 400 and "domain" in r.json()["detail"]
+    assert _configure(client, auto_provision=True, allowed_domain="acme.com").status_code == 200

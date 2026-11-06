@@ -197,7 +197,7 @@ def create_user(body: dict, tenant: Tenant = Depends(scim_tenant),
         check_seat(db, tenant.id)
     except HTTPException as e:
         return _err(403, str(e.detail), "")
-    u = User(tenant_id=tenant.id, email=email, role="analyst",
+    u = User(tenant_id=tenant.id, email=email, role="member",
              active=bool(body.get("active", True)),
              # Random unusable password: SCIM-provisioned users sign in via SSO (or set
              # one through the reset flow) — provisioning must never mint a credential.

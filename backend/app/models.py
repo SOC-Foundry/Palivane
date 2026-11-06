@@ -354,7 +354,7 @@ class User(Base):
     tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
     email = Column(String(320), index=True, nullable=False)
     password_hash = Column(String(256), nullable=False)
-    role = Column(String(32), default="analyst")  # admin | analyst
+    role = Column(String(32), default="analyst")  # admin | analyst | member (own findings only)
     active = Column(Boolean, default=True)
     # Mailbox proven. Default True (existing/CLI-created/invited users are trusted); a
     # self-serve NEW-ORG signup is created False when the email plane is on and can't log
