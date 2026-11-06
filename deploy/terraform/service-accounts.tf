@@ -39,11 +39,13 @@ resource "google_service_account" "dataset" {
 
 # --- release: what deploy/cloudrun/deploy.sh does ------------------------------------------
 resource "google_project_iam_member" "release" {
+  # run.admin: deploy the service and its invoker policy. builds.editor + serviceUsageConsumer:
+  # gcloud builds submit. secretmanager.viewer: list the secret versions to bind, never read them.
   for_each = toset([
-    "roles/run.admin",                         # deploy the service (and its invoker policy)
-    "roles/cloudbuild.builds.editor",          # gcloud builds submit
-    "roles/serviceusage.serviceUsageConsumer", # ... which needs to use the Cloud Build API
-    "roles/secretmanager.viewer",              # list secret versions to bind (never read them)
+    "roles/run.admin",
+    "roles/cloudbuild.builds.editor",
+    "roles/serviceusage.serviceUsageConsumer",
+    "roles/secretmanager.viewer",
   ])
   project = var.project_id
   role    = each.value
@@ -59,8 +61,9 @@ resource "google_service_account_iam_member" "release_act_as" {
   member             = "serviceAccount:${google_service_account.release.email}"
 }
 
+# Cloud Build's source staging bucket.
 resource "google_storage_bucket_iam_member" "release_build_source" {
-  bucket = local.cloudbuild_bkt       # Cloud Build's source staging bucket
+  bucket = local.cloudbuild_bkt
   role   = "roles/storage.admin"
   member = "serviceAccount:${google_service_account.release.email}"
 }
@@ -72,8 +75,9 @@ resource "google_artifact_registry_repository_iam_member" "release_push" {
   member     = "serviceAccount:${google_service_account.release.email}"
 }
 
+# deploy.sh bakes the MCP dataset into the image.
 resource "google_storage_bucket_iam_member" "release_reads_dataset" {
-  bucket = google_storage_bucket.mcp_reputation.name   # baked into the image
+  bucket = google_storage_bucket.mcp_reputation.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.release.email}"
 }
