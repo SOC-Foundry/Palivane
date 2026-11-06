@@ -16,6 +16,7 @@ import base64
 import binascii
 import functools
 import html
+import json
 import re
 import urllib.parse
 import zlib
@@ -140,8 +141,45 @@ def _unwrapped(text: str) -> str:
     return "\n".join(out)
 
 
+# Pieces of one value kept apart so no single string holds it: string literals glued by a
+# `+` ("AKIA" + "IOSF…", 'sk_' + 'live_…'), and a JSON document's string values in order
+# ({"id": "AKIA", "rest": "IOSF…"}, ["ghp_", "…"]).
+_CONCAT_RE = re.compile(r"""(["'])[ \t]*\+[ \t]*\1""")
+_MAX_JSON_VIEW = 500_000
+
+
+def _json_strings(text: str) -> str | None:
+    """Every string in a JSON document (keys and values), in order, glued together."""
+    t = text.strip()
+    if not t or t[0] not in "{[" or len(t) > _MAX_JSON_VIEW:
+        return None
+    try:
+        doc = json.loads(t)
+    except ValueError:
+        return None
+    parts: list[str] = []
+
+    def walk(node):
+        if isinstance(node, str):
+            parts.append(node)
+        elif isinstance(node, dict):
+            for k, v in node.items():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+    walk(doc)
+    return "".join(parts) if len(parts) > 1 else None
+
+
 def reshaped_views(text: str) -> list[str]:
     out = []
+    glued = _CONCAT_RE.sub("", text)
+    if glued != text:
+        out.append(glued)
+    joined = _json_strings(text)
+    if joined:
+        out.append(joined)
     spaced = _SPACED_RE.sub(lambda m: re.sub(r"[-. ]", "", m.group(1)), text)
     if spaced != text:
         out.append(spaced)
