@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import binascii
 import functools
+import html
 import re
 import urllib.parse
 import zlib
@@ -92,12 +93,75 @@ def _not_encoded(blob: str) -> bool:
     return blob.isalpha() and (blob.islower() or blob.isupper())
 
 
+# Escapes that spell characters out: \u0041 / \x41 (JSON, JS, Python string literals) and HTML
+# numeric entities (&#65; &#x41;). Decoding them is lossless, so the result gets the full scan.
+_ESC_RE = re.compile(r"\\(?:u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2})")
+_ENTITY_RE = re.compile(r"&#(?:\d{1,7}|[xX][0-9a-fA-F]{1,6});")
+
+
+def literal_views(text: str) -> list[str]:
+    """`text` with character escapes and numeric entities decoded, when it has any."""
+    out = []
+    if _ESC_RE.search(text):
+        out.append(_ESC_RE.sub(lambda m: chr(int(m.group(0)[2:], 16)), text))
+    if _ENTITY_RE.search(text):
+        out.append(html.unescape(text))
+    return [v for v in out if v != text]
+
+
+# Reshapings that leave a value intact but break a pattern: one character per separator
+# ("A-K-I-A-…", "s k _ l i v e"), a key wrapped across lines, or the whole thing reversed.
+# Unlike the decodings these can glue ordinary prose into lookalikes, so the caller checks
+# them against named secret formats only, never the entropy or PII heuristics.
+# Bounded repeats (a key is at most ~100 characters): unbounded, a long "a a a a …" run made
+# _SPACED_RE backtrack quadratically, the D1 problem again.
+_SPACED_RE = re.compile(r"(?<![\w])((?:[A-Za-z0-9][-. ]){7,100}[A-Za-z0-9])(?![\w])")
+_WRAP_TAIL_RE = re.compile(r"[A-Za-z0-9+/=_-]{8}[ \t\r]*$")
+_WRAP_HEAD_RE = re.compile(r"[ \t]*[A-Za-z0-9+/=_-]{8}")
+
+
+def _unwrapped(text: str) -> str:
+    """Lines joined where one ends and the next starts with a run of token characters (a key
+    wrapped by an editor or a terminal). Line by line, looking at each line's tail only: a
+    regex over the whole text scanned ahead from every position of a long run."""
+    lines = text.split("\n")
+    if len(lines) < 2:
+        return text
+    out: list[str] = []
+    cur = [lines[0]]                      # pieces of the line being built (no re-copying)
+    for ln in lines[1:]:
+        if _WRAP_TAIL_RE.search(cur[-1][-64:]) and _WRAP_HEAD_RE.match(ln):
+            cur[-1] = cur[-1].rstrip()
+            cur.append(ln.lstrip())
+        else:
+            out.append("".join(cur))
+            cur = [ln]
+    out.append("".join(cur))
+    return "\n".join(out)
+
+
+def reshaped_views(text: str) -> list[str]:
+    out = []
+    spaced = _SPACED_RE.sub(lambda m: re.sub(r"[-. ]", "", m.group(1)), text)
+    if spaced != text:
+        out.append(spaced)
+    wrapped = _unwrapped(text)
+    if wrapped != text:
+        out.append(wrapped)
+    out.append(text[::-1])
+    return out
+
+
 def decode_obfuscated_detail(text: str, percent: bool = True) -> Decoded:
     """Decode every base64/hex blob, then the blobs inside what decoded, up to _MAX_DEPTH
     levels, within one _BUDGET of encoded characters; plus (with `percent`) a
     percent-decoded view. Meant only to be re-scanned for attack phrases / PII / secrets an
     encoded blob is hiding — never surfaced verbatim."""
     blobs = _decode_blobs(text)
+    lit = literal_views(text)
+    if lit:
+        blobs = Decoded("\n".join([blobs.text, *lit]) if blobs.text else "\n".join(lit),
+                        blobs.exhausted)
     if percent and "%" in text:
         try:
             dec = urllib.parse.unquote(text)
