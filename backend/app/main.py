@@ -1834,6 +1834,29 @@ def _inference_hook_verdict(raw: bytes, headers: dict, tenant_id: int | None,
         db.commit()
         raise HTTPException(status_code=401, detail="missing or invalid webhook signature")
     ensure_active(db, tenant_id)
+    # A repeat of a signed request (a retry, or a replay inside the signature window) gets
+    # the answer the first one got, without being scored and recorded again.
+    msg_id = str({str(k).lower(): v for k, v in headers.items()}.get("webhook-id") or "")
+    if msg_id:        # a retry or replay repeats the body too; the id alone is the sender's
+        import hashlib
+        msg_id = f"{msg_id}:{hashlib.sha256(raw).hexdigest()}"
+    repeat = ih.recall_verdict(tenant_id, msg_id) if msg_id else None
+    if repeat is not None:
+        return repeat
+    verdict = _inference_hook_verdict_fresh(raw, headers, tenant_id, default_actor, db,
+                                            default_claimed)
+    if msg_id:
+        ih.remember_verdict(tenant_id, msg_id, verdict)
+    return verdict
+
+
+def _inference_hook_verdict_fresh(raw: bytes, headers: dict, tenant_id: int,
+                                  default_actor: str, db: Session,
+                                  default_claimed: bool = False) -> dict:
+    import json as _json
+
+    from . import inference_hooks as ih
+    from .metering import record_and_check
     # Counted for usage, never limited: a 429 is a webhook failure, and under the org's
     # fail-closed setting an exhausted quota would block every prompt in the org.
     record_and_check(db, tenant_id, kind="inference_hook", limit=0)
