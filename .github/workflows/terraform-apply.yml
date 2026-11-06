@@ -24,6 +24,10 @@ on:
         description: "Allow creating core resources and any delete/replace (new environment only)"
         type: boolean
         default: false
+      release_key_import:
+        description: "Let the deploy SA import a version into the release signing key (kms.tf); untick again after the import"
+        type: boolean
+        default: false
   # push:
   #   branches: [main]
   #   paths:
@@ -62,6 +66,10 @@ jobs:
           TF_VAR_region: ${{ vars.GCP_REGION }}
           TF_VAR_image: ${{ vars.DEPLOY_IMAGE }} # ignored by lifecycle; any valid ref works
           TF_VAR_db_password: ${{ secrets.TF_DB_PASSWORD }}
+          # Release signing in KMS (kms.tf): the deploy SA signs; it may import only on a
+          # dispatch that asks for it.
+          TF_VAR_release_signer_members: '["serviceAccount:${{ vars.GCP_DEPLOY_SA }}"]'
+          TF_VAR_release_key_importers: ${{ inputs.release_key_import && format('["serviceAccount:{0}"]', vars.GCP_DEPLOY_SA) || '[]' }}
         run: |
           terraform init -input=false \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \

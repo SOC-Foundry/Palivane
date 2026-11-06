@@ -396,6 +396,8 @@ def _serve(signed_release, bodies: dict, served: dict | None = None, sig=b"<vali
             if sig is None:
                 raise OSError("404")
             return _R(good if sig == b"<valid>" else sig)
+        if name == "manifest.sig2":                 # a release with no v2 signature
+            raise OSError("404")
         fetched.append(req.full_url)
         return _R((served or {}).get(name, bodies.get(name, b"")))
     return fake_urlopen, fetched

@@ -14,8 +14,6 @@ files on the allowlist are served, resolved from a fixed base dir — no path tr
 
 from __future__ import annotations
 
-import hashlib
-import os
 import re
 
 from fastapi import APIRouter, HTTPException
@@ -25,38 +23,7 @@ from .config import settings
 
 router = APIRouter(tags=["distribution"])
 
-# public name -> path relative to the repo/app root (cli/ and proxy/ are copied into the
-# image alongside the backend). palivane_addon.py keeps its .py name; the CLI tools don't.
-_ALLOW = {
-    "palivane-connect": "cli/palivane-connect",
-    "palivane-reenroll": "cli/palivane-reenroll",
-    "palivane-reenroll.ps1": "cli/palivane-reenroll.ps1",
-    "palivane-desktop.ps1": "cli/palivane-desktop.ps1",
-    "palivane-hook": "cli/palivane-hook",
-    "palivane-cursor-hook": "cli/palivane-cursor-hook",
-    "palivane-gemini-hook": "cli/palivane-gemini-hook",
-    "palivane-codex-hook": "cli/palivane-codex-hook",
-    "palivane-copilot-hook": "cli/palivane-copilot-hook",
-    "palivane-mcp": "cli/palivane-mcp",
-    # Same script, clearer name. "palivane-mcp" is the GUARD that wraps somebody else's MCP
-    # server; "the Palivane MCP server" is the thing that exposes Palivane's own tools, and
-    # for months those two have shared a name in the one part of the product a launch
-    # visitor touches first. Installing both spellings fixes the confusion without breaking
-    # a single config in the field, which a rename would.
-    "palivane-mcp-guard": "cli/palivane-mcp",
-    "palivane-posture": "cli/palivane-posture",
-    "palivane-secrets": "cli/palivane-secrets",
-    "palivane-s3-scan": "cli/palivane-s3-scan",
-    "palivane-dbscan": "cli/palivane-dbscan",
-    "palivane-github-scan": "cli/palivane-github-scan",
-    "palivane-ci-scan": "cli/palivane-ci-scan",
-    "palivane-otel": "cli/palivane-otel",
-    "palivane-desktop": "cli/palivane-desktop",
-    "palivane_addon.py": "proxy/palivane_addon.py",
-    # Shared local-detection module; palivane-secrets and palivane-s3-scan both
-    # import it, and fetch it from here when it is not already beside them.
-    "palivane_detect.py": "cli/palivane_detect.py",
-}
+from .release_files import ALLOW as _ALLOW, resolve as _resolve, served_files
 
 # The POSIX CLI tools install under these names via install.sh. Excluded: palivane_addon.py
 # (the proxy addon, fetched separately by palivane-desktop); palivane-reenroll.ps1 /
@@ -67,20 +34,6 @@ _ALLOW = {
 _INSTALLER_SKIP = {"palivane_addon.py", "palivane-reenroll.ps1", "palivane-desktop.ps1",
                    "palivane-s3-scan", "palivane-dbscan", "palivane-github-scan", "palivane-ci-scan"}
 _CLI_TOOLS = [n for n in _ALLOW if n not in _INSTALLER_SKIP]
-
-# Candidate roots: /app in the container (backend copied to /app, cli/ to /app/cli), and
-# the repo root in dev (backend/app/distribution.py -> parents[2]).
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_ROOTS = [os.path.dirname(os.path.dirname(_HERE)), os.path.dirname(_HERE)]
-
-
-def _resolve(rel: str) -> str | None:
-    for root in _ROOTS:
-        cand = os.path.join(root, rel)
-        if os.path.isfile(cand):
-            return cand
-    return None
-
 
 def _base_url() -> str:
     return (settings.public_base_url or "https://app.palivane.io").rstrip("/")
@@ -96,17 +49,14 @@ def _manifest() -> dict:
     Computed once per process (the files are baked into the image)."""
     global _MANIFEST_CACHE
     if _MANIFEST_CACHE is None:
-        files: dict[str, dict] = {}
-        for name, rel in _ALLOW.items():
-            path = _resolve(rel)
-            if path is None:
-                continue          # not shipped in this deployment — omit, don't fake it
-            with open(path, "rb") as f:
-                blob = f.read()
-            files[name] = {"sha256": hashlib.sha256(blob).hexdigest(), "size": len(blob)}
+        from . import release_signing
+        files = served_files()
         _MANIFEST_CACHE = {"version": settings.version,
                            "self_update": settings.self_update_enabled,
                            "base_url": _base_url(), "files": files}
+        issued = release_signing.release_issued(files)
+        if issued is not None:
+            _MANIFEST_CACHE["issued"] = issued      # signed by manifest.sig2 (rollback guard)
     return _MANIFEST_CACHE
 
 
@@ -165,6 +115,19 @@ def cli_manifest_sig():
     treats the release as unsigned (warns, proceeds). See release_signing.py."""
     from . import release_signing
     sig = release_signing.sign_files(_manifest()["files"])
+    if sig is None:
+        raise HTTPException(status_code=404, detail="release signing not configured")
+    return PlainTextResponse(sig, media_type="text/plain",
+                             headers={"Cache-Control": "no-cache"})
+
+
+@router.get("/cli/manifest.sig2")
+def cli_manifest_sig2():
+    """v2 signature: ECDSA P-256 / SHA-256 (DER, base64) over the canonical
+    {"files": {name: sha256}, "issued": N}, with N the manifest's `issued`. Clients that
+    have seen it refuse older releases and v1-only manifests. 404 when nothing signs."""
+    from . import release_signing
+    sig = release_signing.sign_release(_manifest()["files"])
     if sig is None:
         raise HTTPException(status_code=404, detail="release signing not configured")
     return PlainTextResponse(sig, media_type="text/plain",
@@ -300,6 +263,22 @@ PY
   if openssl dgst -sha256 -verify "$TMP/pub.pem" -signature "$TMP/sig.der" "$TMP/digest" >/dev/null 2>&1; then
     echo "  ✓ release signature verified"
     SIG_VERIFIED=1
+    # v2 (manifest.sig2): the same files plus the release time, which later updates use as a
+    # rollback guard (release_signing.canonical_release_digest).
+    if curl -fsS -o "$TMP/manifest.sig2" "$PALIVANE_URL/cli/manifest.sig2" 2>/dev/null; then
+      python3 - "$TMP/manifest.json" > "$TMP/digest2" <<'PY'
+import json, sys
+m = json.load(open(sys.argv[1]))
+sys.stdout.write(json.dumps({{"files": {{k: v["sha256"] for k, v in m["files"].items()}},
+                             "issued": int(m["issued"])}}, separators=(",", ":"), sort_keys=True))
+PY
+      if openssl base64 -d -A -in "$TMP/manifest.sig2" -out "$TMP/sig2.der" 2>/dev/null \
+         && openssl dgst -sha256 -verify "$TMP/pub.pem" -signature "$TMP/sig2.der" "$TMP/digest2" >/dev/null 2>&1; then
+        RELEASE_ISSUED="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1]))["issued"]))' "$TMP/manifest.json")"
+      else
+        echo "  ✗ release v2 signature INVALID — refusing to install (possible tampering)"; return 1
+      fi
+    fi
   else
     echo "  ✗ release signature INVALID — refusing to install (possible tampering)"; return 1
   fi
@@ -339,6 +318,8 @@ echo "  installed: $TOOLS"
 printf '%s\\n' "$PALIVANE_RELEASE_PUBKEY" > "$HOME/.palivane/release-pubkey.pem"
 [ "${{SIG_VERIFIED:-}}" = 1 ] && REQUIRE_SIG=1
 printf '%s\\n' "$REQUIRE_SIG" > "$HOME/.palivane/release-require-sig"
+# The release time v2 signed: later updates refuse anything older (rollback guard).
+[ -n "${{RELEASE_ISSUED:-}}" ] && printf '%s\\n' "$RELEASE_ISSUED" > "$HOME/.palivane/release-issued"
 
 # Put ~/.palivane/bin on PATH for future shells (bash, zsh, fish), and this one.
 add_path() {{
