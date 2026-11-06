@@ -84,7 +84,7 @@ export default function ExtensionConnect() {
 
   function connect() {
     setStatus("connecting");
-    api.extensionToken(device)
+    api.extensionToken(device, new URL(redirectUri).hostname)
       .then((r) => {
         const u = new URL(redirectUri);
         const params = `token=${encodeURIComponent(r.token)}` +
