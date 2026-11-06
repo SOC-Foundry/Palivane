@@ -59,7 +59,9 @@ jobs:
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOY_SA }}
+          # The infra identity (deploy/terraform/service-accounts.tf); GCP_DEPLOY_SA until the
+          # split is applied and GCP_INFRA_SA is set.
+          service_account: ${{ vars.GCP_INFRA_SA || vars.GCP_DEPLOY_SA }}
       - name: Plan
         env:
           TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
@@ -68,8 +70,15 @@ jobs:
           TF_VAR_db_password: ${{ secrets.TF_DB_PASSWORD }}
           # Release signing in KMS (kms.tf): the deploy SA signs; it may import only on a
           # dispatch that asks for it.
-          TF_VAR_release_signer_members: '["serviceAccount:${{ vars.GCP_DEPLOY_SA }}"]'
-          TF_VAR_release_key_importers: ${{ inputs.release_key_import && format('["serviceAccount:{0}"]', vars.GCP_DEPLOY_SA) || '[]' }}
+          # Before the identity split the deploy SA signs; after it the release SA does (its
+          # own binding in service-accounts.tf). The import runs through ops as infra.
+          TF_VAR_release_signer_members: ${{ vars.GCP_INFRA_SA == '' && format('["serviceAccount:{0}"]', vars.GCP_DEPLOY_SA) || '[]' }}
+          TF_VAR_release_key_importers: ${{ inputs.release_key_import && format('["serviceAccount:{0}"]', vars.GCP_INFRA_SA || vars.GCP_DEPLOY_SA) || '[]' }}
+          # Split CI/CD identities (service-accounts.tf).
+          TF_VAR_wif_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          TF_VAR_github_repo: ${{ github.repository }}
+          TF_VAR_infra_sa_email: ${{ vars.GCP_INFRA_SA }}
+          TF_VAR_scope_infra_identity: ${{ vars.SCOPE_INFRA_IDENTITY == 'true' }}
         run: |
           terraform init -input=false \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \

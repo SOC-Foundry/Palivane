@@ -6,7 +6,7 @@
 # deploy/gcp/import-release-key.sh, so every installed client keeps verifying against the key
 # it already pins. HSM-protected; the private half can't be exported once imported.
 #
-# Who may sign: var.release_signer_members (the deploy SA). Who may import:
+# Who may sign: the release SA (service-accounts.tf) and var.release_signer_members. Who may import:
 # var.release_key_importers, set only for the import run and then emptied again. The
 # runtime service account gets nothing here.
 

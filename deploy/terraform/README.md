@@ -71,3 +71,32 @@ scope.
   reach is via the Worker (running as `palivane-front`). Set `invoker_members` accordingly.
 - Background loops (alert digests, content-TTL scrub) run when the instance has CPU; with
   `min_instances=0` + CPU idle they run during traffic/cold-starts, same as the current prod.
+
+## Split CI/CD identities
+
+`service-accounts.tf` replaces the one owner-equivalent CI account with three (security review
+H7, M12):
+
+| Account | Repo variable | Used by | Can |
+| --- | --- | --- | --- |
+| `palivane-release` | `GCP_DEPLOY_SA` | `deploy.yml` (every merge) | build, deploy Cloud Run, sign the release with KMS, read the dataset |
+| `palivane-dataset` | `GCP_DATASET_SA` | `catalog-growth.yml` | objects in the MCP dataset bucket |
+| `palivane-deploy` (existing) | `GCP_INFRA_SA` | `terraform-apply.yml`, `ops.yml` (dispatched by hand) | everything, as before |
+
+Each account is bound to one GitHub environment's OIDC subject
+(`repo:<owner/name>:environment:<env>`), so the WIF provider needs no change. The dataset
+workflow's build job, which parses data from the internet, has no `id-token` permission, so it
+can't mint a token for any account.
+
+Cutover, in order (each Terraform step: a plan-only dispatch first, then apply):
+
+1. Move release signing to KMS first (`deploy/gcp/import-release-key.sh`, then
+   `RELEASE_KMS_KEY_VERSION`). The release account deliberately can't read the signing-key secret.
+2. Apply. This creates the two accounts and their roles; nothing uses them yet.
+3. Set `GCP_INFRA_SA` to `palivane-deploy@<project>.iam.gserviceaccount.com`, then
+   `GCP_DEPLOY_SA` to the `release_sa_email` output and `GCP_DATASET_SA` to `dataset_sa_email`.
+   Apply again (it moves the KMS signer binding to the release account).
+4. Merge or dispatch a deploy and run `catalog-growth.yml`. If either fails on a permission,
+   set `GCP_DEPLOY_SA` back to `palivane-deploy` and report the missing role.
+5. Set the repo variable `SCOPE_INFRA_IDENTITY=true` and apply: `palivane-deploy` then answers
+   only to `production-infra` jobs.
