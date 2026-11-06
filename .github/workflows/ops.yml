@@ -45,7 +45,9 @@ jobs:
     # of failing at the token exchange.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: production
+    # production-infra: the infra identity (GCP_INFRA_SA) answers only to this environment
+    # once the identity split is applied (deploy/terraform/service-accounts.tf).
+    environment: production-infra
     env:
       PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       REGION: ${{ vars.GCP_REGION }}
@@ -57,7 +59,7 @@ jobs:
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOY_SA }}
+          service_account: ${{ vars.GCP_INFRA_SA || vars.GCP_DEPLOY_SA }}
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
       - name: Ensure log access
@@ -68,7 +70,7 @@ jobs:
           # Idempotent: re-adding an existing binding is a no-op. Placed before the job
           # runs so a first-time grant has the job's runtime (~minutes) to propagate.
           gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-            --member "serviceAccount:${{ vars.GCP_DEPLOY_SA }}" \
+            --member "serviceAccount:${{ vars.GCP_INFRA_SA || vars.GCP_DEPLOY_SA }}" \
             --role roles/logging.viewer --condition=None --quiet >/dev/null \
             || echo "(grant failed — job output may be unavailable this run)"
 
@@ -77,7 +79,7 @@ jobs:
           OPS_RUNNER_SCRIPT: ${{ secrets.OPS_RUNNER_SCRIPT }}
           OPS_SCRIPT: ${{ secrets.OPS_SCRIPT }}
           # For gcloud/terraform tasks the script runs (all optional; empty when unset).
-          GCP_DEPLOY_SA: ${{ vars.GCP_DEPLOY_SA }}
+          GCP_DEPLOY_SA: ${{ vars.GCP_INFRA_SA || vars.GCP_DEPLOY_SA }}   # the account this job runs as
           TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
           TF_VAR_db_password: ${{ secrets.TF_DB_PASSWORD }}
           OPS_OUTPUT_GPG_KEY: ${{ vars.OPS_OUTPUT_GPG_KEY }}
