@@ -31,3 +31,11 @@ output "mcp_reputation_bucket" {
 output "release_signing_key" {
   value = google_kms_crypto_key.release.id
 }
+
+output "release_sa_email" {
+  value = google_service_account.release.email
+}
+
+output "dataset_sa_email" {
+  value = google_service_account.dataset.email
+}

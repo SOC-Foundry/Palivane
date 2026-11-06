@@ -165,3 +165,30 @@ variable "release_key_importers" {
   type    = list(string)
   default = []
 }
+
+# Split CI/CD identities (service-accounts.tf). The WIF provider resource name
+# (projects/N/locations/global/workloadIdentityPools/P/providers/X, the
+# GCP_WORKLOAD_IDENTITY_PROVIDER repo variable) and the GitHub repository (owner/name).
+# Empty = the service accounts are created but no one can impersonate them yet.
+variable "wif_provider" {
+  type    = string
+  default = ""
+}
+
+variable "github_repo" {
+  type    = string
+  default = ""
+}
+
+# The existing deploy account that becomes the infra identity (GCP_INFRA_SA).
+variable "infra_sa_email" {
+  type    = string
+  default = ""
+}
+
+# true = the infra account answers only to production-infra jobs. Leave false until deploys
+# and the dataset job run on their own accounts (see service-accounts.tf).
+variable "scope_infra_identity" {
+  type    = bool
+  default = false
+}
