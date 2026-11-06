@@ -1908,12 +1908,11 @@ def _inference_hook_prompt(frame: dict, tenant_id: int, actor: str, tool: str,
             return {"action": "deny",
                     "deny_reason": f"Palivane blocked this message. {ih.RESENT_FIX}"[:ih.DENY_REASON_MAX],
                     "reference_id": ih.reference_id(hit.finding_id)}
-    from .schemas import MAX_CONTENT
     # What the tools just returned goes to the model with this frame. latest_user_turn leaves
     # it out (code and file contents are an agent's normal traffic, not a prompt to score),
     # but a confirmed secret in it is stopped like one in a prompt, in monitor mode too,
     # unless the org turned that off (it is then recorded, as on the gateway).
-    results = ih.latest_tool_results(messages)[:MAX_CONTENT]
+    results = ih.latest_tool_results(messages)        # run_analysis caps it and says so
     if results.strip():
         r = run_analysis(AnalysisInput(content=results, subject="agent tool_result",
                                        sender=actor, channel=tool, surface=Surface.MCP,
@@ -1927,7 +1926,7 @@ def _inference_hook_prompt(frame: dict, tenant_id: int, actor: str, tool: str,
                     "deny_reason": ih.deny_reason("a tool result", r["signals"],
                                                   ih.TOOL_RESULT_FIX),
                     "reference_id": ih.reference_id(r["finding_id"])}
-    content = ih.latest_user_turn(messages)[:MAX_CONTENT]
+    content = ih.latest_user_turn(messages)           # run_analysis caps it and says so
     if not content.strip():
         return {"action": "allow"}
     # No destination: the org governs Claude through Anthropic itself, so this is never a
@@ -2458,6 +2457,12 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
     # tool call by a NAMED agent that isn't OIDC-attested (a bearer ag_ token, or none) is an
     # attestation gap. Flag it always; enforce hard-blocks like an authz enforce-deny.
     attest_extra, attest_block = _attestation_signals(agent, attested, tenant_id, db, body)
+    if body.args_truncated:
+        from .scoring import unscanned_marker
+        attest_extra = list(attest_extra or []) + [unscanned_marker(
+            "tool_args=truncated", "Tool arguments not fully scanned",
+            "The tool call's arguments were longer than the scanner reads, so only the start "
+            "was checked. The verdict reflects the text that was scanned.", detector="mcp")]
     # EMA issuance-leg audit events (auth/id-jag.*) are benign by design but must persist
     # — they're the per-server grant trail the spec calls a use case and nobody else logs.
     is_ema_auth_event = body.method.startswith("auth/")

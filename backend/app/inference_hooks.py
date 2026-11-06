@@ -35,7 +35,7 @@ TOLERANCE_S = 300                 # webhook-timestamp window, either direction (
 DENY_REASON_MAX = 500             # Anthropic truncates past this
 REFERENCE_ID_MAX = 50
 DENIAL_TTL_S = 7 * 86400          # how long a denied message is remembered per session
-_MAX_ARGS_TEXT = 20000
+_MAX_ARGS_TEXT = 200_000      # schemas.MAX_CONTENT: past it, args_truncated marks the scan partial
 
 
 # --- signature -------------------------------------------------------------------------
@@ -258,10 +258,13 @@ def tool_activities(messages: list, user: str = "") -> list[dict]:
             act["resource"] = str(tool_input.get("file_path") or tool_input.get("path"))
         elif isinstance(tool_input, dict) and lowered == "bash" and tool_input.get("command"):
             act["args_text"] = str(tool_input["command"])[:_MAX_ARGS_TEXT]
+            act["args_truncated"] = len(str(tool_input["command"])) > _MAX_ARGS_TEXT
         else:
             harvested: list[str] = []
             _harvest(tool_input, harvested)
-            act["args_text"] = "\n".join(harvested)[:_MAX_ARGS_TEXT]
+            joined = "\n".join(harvested)
+            act["args_text"] = joined[:_MAX_ARGS_TEXT]
+            act["args_truncated"] = len(joined) > _MAX_ARGS_TEXT
         out.append(act)
     return out
 

@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 
 _CC_SCOPE = "com.anthropic.claude_code.events"
-_MAX_ARGS_TEXT = 20000
+_MAX_ARGS_TEXT = 200_000      # schemas.MAX_CONTENT: past it, args_truncated marks the scan partial
 
 
 def _scalar(value):
@@ -114,9 +114,12 @@ def mcp_fields(event_name: str, attrs: dict) -> dict | None:
         return out
     elif tool == "Bash" and isinstance(tool_input, dict) and tool_input.get("command"):
         out["args_text"] = str(tool_input["command"])[:_MAX_ARGS_TEXT]
+        out["args_truncated"] = len(str(tool_input["command"])) > _MAX_ARGS_TEXT
         return out
     harvested: list[str] = []
     _harvest_strings(tool_input, harvested)
     _harvest_strings(params, harvested)
-    out["args_text"] = "\n".join(harvested)[:_MAX_ARGS_TEXT]
+    joined = "\n".join(harvested)
+    out["args_text"] = joined[:_MAX_ARGS_TEXT]
+    out["args_truncated"] = len(joined) > _MAX_ARGS_TEXT
     return out

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
+import contextvars
 import logging
 import math
 import os
@@ -34,6 +36,28 @@ _log = logging.getLogger("palivane.patterns")
 # longer rejects safe alternations like `(foo|bar)+` — the timeout makes that guesswork
 # unnecessary.
 _CUSTOM_MATCH_TIMEOUT = float(os.getenv("PALIVANE_CUSTOM_REGEX_TIMEOUT", "0.25"))
+
+# A pattern that ran out of time matched nothing, which looks exactly like "no such data".
+# A scan that wants to say so opens custom_regex_timeouts() and gets the patterns that timed
+# out inside it (a contextvar, so concurrent scans don't see each other's).
+_timed_out: contextvars.ContextVar = contextvars.ContextVar("custom_regex_timeouts", default=None)
+
+
+@contextlib.contextmanager
+def custom_regex_timeouts():
+    """Collect the custom patterns that hit their time budget within this block."""
+    hits: list[str] = []
+    token = _timed_out.set(hits)
+    try:
+        yield hits
+    finally:
+        _timed_out.reset(token)
+
+
+def _note_timeout(src: str) -> None:
+    hits = _timed_out.get()
+    if hits is not None:
+        hits.append(src)
 _REDOS_RISKY = re.compile(r"\([^()]*[+*][^()]*\)[?]?[*+]")
 
 
@@ -55,6 +79,7 @@ class _TimedPattern:
         except TimeoutError:
             _log.warning("custom regex exceeded %.2fs budget, skipped this scan: %r",
                          _CUSTOM_MATCH_TIMEOUT, self._src[:80])
+            _note_timeout(self._src)
             return []
 
     def search(self, text: str):
@@ -63,6 +88,7 @@ class _TimedPattern:
         except TimeoutError:
             _log.warning("custom regex exceeded %.2fs budget, skipped this scan: %r",
                          _CUSTOM_MATCH_TIMEOUT, self._src[:80])
+            _note_timeout(self._src)
             return None
 
 
