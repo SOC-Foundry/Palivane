@@ -12,7 +12,7 @@ API + the `/install.sh` & `/cli` endpoints single-origin on one port.
 # -> dist/palivane-native-<tag>.tar.gz  (frontend prebuilt; no Node needed on the server)
 ```
 
-**2. Install on the target server** (needs only Python 3.12+; Postgres for production):
+**2. Install on the target server** (needs only Python 3.12-3.14: it prefers a supported `python3.X` beside a newer default `python3`, or set `PALIVANE_PYTHON`; Postgres for production):
 ```bash
 tar xzf palivane-native-<tag>.tar.gz
 sudo ./palivane/install.sh
