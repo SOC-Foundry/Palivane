@@ -412,6 +412,7 @@ def test_refresh_planes_updates_and_is_atomic(tmp_path, monkeypatch, signed_rele
     monkeypatch.setattr(wc.sys, "argv", ["palivane-connect"])
     # No proxy addon in this sandboxed HOME, so it isn't fetched.
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    signed_release.pin(tmp_path / "home")              # the pin install.sh leaves
 
     msgs = wc._refresh_planes("https://palivane.example")
     for name in wc._PLANE_SCRIPTS:
@@ -431,6 +432,7 @@ def test_refresh_planes_refuses_tampered_or_unsigned(tmp_path, monkeypatch, sign
     monkeypatch.setattr(wc, "_in_repo_checkout", lambda: False)
     monkeypatch.setattr(wc.sys, "argv", ["palivane-connect"])
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    signed_release.pin(tmp_path / "home")              # the pin install.sh leaves
 
     fake, _ = _serve(signed_release, bodies, served={"palivane-hook": b"evil\n"})
     monkeypatch.setattr(wc.urllib.request, "urlopen", fake)
