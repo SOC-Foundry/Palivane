@@ -25,3 +25,9 @@ output "mcp_reputation_bucket" {
   value       = google_storage_bucket.mcp_reputation.name
   description = "Set as the MCP_REPUTATION_BUCKET repo variable (catalog-growth.yml uploads, deploy.sh fetches)."
 }
+
+# The release signing key; its imported version N is what RELEASE_KMS_KEY_VERSION names:
+# <this>/cryptoKeyVersions/N.
+output "release_signing_key" {
+  value = google_kms_crypto_key.release.id
+}

@@ -137,6 +137,12 @@ for pair in \
   "PALIVANE_SLACK_SIGNING_SECRET=palivane-slack-signing-secret" \
   "GATEWAY_BEDROCK_KEY=gateway-bedrock-key"; do
   name="${pair##*=}"
+  # Signing with Cloud KMS at build time (below) means the service must not hold the
+  # private key at all: never bind it, even while the secret still exists.
+  if [ "$name" = "palivane-release-signing-key" ] && [ -n "${RELEASE_KMS_KEY_VERSION:-}" ]; then
+    echo "==> release signing uses Cloud KMS; $name is not bound to the service"
+    continue
+  fi
   # Require an ENABLED VERSION, not merely that the secret exists. Terraform creates
   # palivane-smtp-pass deliberately empty (the value is added out of band), so a
   # describe-only check wires up ":latest" for a secret that has nothing to resolve to,
@@ -277,6 +283,16 @@ if [ -n "${MCP_REPUTATION_BUCKET:-}" ]; then
   gcloud storage cp "gs://${MCP_REPUTATION_BUCKET}/mcp_reputation.json" \
     backend/data/mcp_reputation.json --project "$PROJECT_ID" \
     || echo "  ! could not fetch it; building without (the bundled feed will be empty)"
+fi
+# Sign the CLI release with Cloud KMS before the build, so the image carries the signatures
+# (backend/release/signed-manifest.json) and the service never holds the private key.
+# release_sign.py refuses to write a bundle whose signatures don't verify under the key the
+# installer pins, which also replaces the signing-key check above for this path.
+rm -f backend/release/signed-manifest.json
+if [ -n "${RELEASE_KMS_KEY_VERSION:-}" ]; then
+  echo "==> Signing the CLI release with Cloud KMS"
+  python3 backend/tools/release_sign.py --kms-key-version "$RELEASE_KMS_KEY_VERSION" \
+    || { echo "ERROR: Cloud KMS release signing failed (see above). Not deploying." >&2; exit 1; }
 fi
 echo "==> Building & pushing $IMAGE"
 gcloud builds submit --project "$PROJECT_ID" \

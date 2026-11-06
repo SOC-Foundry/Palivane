@@ -200,3 +200,30 @@ PALIVANE_RELEASE_SIGNING_KEY="$(cat release-priv.pem)" ./deploy/native/build-rel
 
 Keep the private half out of CI unless the build box is one you would trust to mint a
 release: anything holding it can sign bytes that every pinned installer will accept.
+
+## Operator: signing with Cloud KMS instead
+
+The managed service signs in the deploy pipeline, so the running service never holds the
+release private key. With the repo variable `RELEASE_KMS_KEY_VERSION` set (a full
+`cryptoKeyVersions` resource name), `deploy.sh`:
+
+1. runs `backend/tools/release_sign.py`, which has Cloud KMS sign the manifest of exactly the
+   files the image will serve, checks both signatures against the pinned key with `openssl`,
+   and writes `backend/release/signed-manifest.json` into the build;
+2. stops binding `palivane-release-signing-key` to the service.
+
+The backend serves that bundle only while it signs the files it actually serves, and a
+production service whose bundle does not match or verify refuses to boot, as above.
+
+**Two signatures.** `/cli/manifest.sig` (v1) signs the `{name: sha256}` map, as before.
+`/cli/manifest.sig2` (v2) signs `{"files": {...}, "issued": N}`, where `issued` is the
+release time the manifest carries. A client that has accepted a v2 release records `issued`
+in `~/.palivane/release-issued` and from then on refuses an older release, or a manifest
+without `manifest.sig2`. Replaying an old signed release no longer rolls a machine back.
+
+**Moving the existing key into KMS** (the key stays the same, so installed clients keep
+working): follow the steps at the top of `deploy/gcp/import-release-key.sh`. Terraform
+(`deploy/terraform/kms.tf`) creates the HSM-backed, import-only key; the script imports the
+current key into it and prints the version for `RELEASE_KMS_KEY_VERSION`. Once a deploy has
+shown the KMS signatures verifying, disable and destroy the
+`palivane-release-signing-key` secret versions.

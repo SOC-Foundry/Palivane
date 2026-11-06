@@ -10,6 +10,7 @@ locals {
     "servicenetworking.googleapis.com",
     "vpcaccess.googleapis.com",
     "storage.googleapis.com",
+    "cloudkms.googleapis.com",
   ]
 }
 
