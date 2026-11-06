@@ -256,8 +256,12 @@ def test_self_update_fails_closed_without_a_signature(tmp_path, monkeypatch):
     monkeypatch.setattr(wp, "_fetch", _fake_server({"palivane-hook": b"new\n"}, sig=None))
     assert wp.self_update({"url": "https://w", "token": "t"}, {}, say=lambda *a: None) == 0
     assert b"old" in p.read_bytes()
-    # …unless the install recorded an unsigned deployment (install.sh REQUIRE_SIG=0).
+    # …unless the install recorded an unsigned deployment (install.sh REQUIRE_SIG=0);
+    # the environment alone can't allow it.
     monkeypatch.setenv("PALIVANE_RELEASE_REQUIRE_SIG", "0")
+    assert wp.self_update({"url": "https://w", "token": "t"}, {}, say=lambda *a: None) == 0
+    monkeypatch.delenv("PALIVANE_RELEASE_REQUIRE_SIG")
+    _SIGN.pin(os.environ["HOME"], require="0")
     assert wp.self_update({"url": "https://w", "token": "t"}, {}, say=lambda *a: None) == 1
 
 
@@ -270,7 +274,7 @@ def test_self_update_rejects_a_signature_from_another_key(tmp_path, monkeypatch)
     from cryptography.hazmat.primitives.asymmetric import ec
     other = ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(
         s.Encoding.PEM, s.PublicFormat.SubjectPublicKeyInfo).decode()
-    monkeypatch.setenv("PALIVANE_RELEASE_PUBKEY", other)
+    _SIGN.pin(os.environ["HOME"], pubkey=other)
     assert wp.self_update({"url": "https://w", "token": "t"}, {}, say=lambda *a: None) == 0
     assert b"old" in p.read_bytes()
 

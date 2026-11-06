@@ -299,6 +299,7 @@ PY
   # ECDSA P-256 / SHA-256 — verifiable by the stock openssl dgst CLI on any machine.
   if openssl dgst -sha256 -verify "$TMP/pub.pem" -signature "$TMP/sig.der" "$TMP/digest" >/dev/null 2>&1; then
     echo "  ✓ release signature verified"
+    SIG_VERIFIED=1
   else
     echo "  ✗ release signature INVALID — refusing to install (possible tampering)"; return 1
   fi
@@ -333,8 +334,10 @@ echo "  installed: $TOOLS"
 # Persist the trust anchor for everything installed tools download later (palivane-posture's
 # self-update, palivane-connect's plane refresh, palivane-desktop's addon fetch): they verify
 # manifest.sig against THIS key, and accept an unsigned release only if this deployment did
-# not sign at install time (REQUIRE_SIG 0/skip). Without the record they fail closed.
+# not sign at install time (REQUIRE_SIG 0/skip). Without the record they fail closed. A
+# signature that verified here means the deployment signs: record 1 whatever REQUIRE_SIG was.
 printf '%s\\n' "$PALIVANE_RELEASE_PUBKEY" > "$HOME/.palivane/release-pubkey.pem"
+[ "${{SIG_VERIFIED:-}}" = 1 ] && REQUIRE_SIG=1
 printf '%s\\n' "$REQUIRE_SIG" > "$HOME/.palivane/release-require-sig"
 
 # Put ~/.palivane/bin on PATH for future shells (bash, zsh, fish), and this one.

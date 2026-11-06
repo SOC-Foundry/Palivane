@@ -95,6 +95,7 @@ def _setup(tmp_path, signed_release, served: bytes = NEW, manifest_body: bytes |
     but nothing loads; "fails": the restart command fails."""
     home = tmp_path / "home"
     (home / ".palivane").mkdir(parents=True)
+    signed_release.pin(home)                           # as install.sh left it
     addon = home / ".palivane" / "palivane_addon.py"
     addon.write_bytes(OLD)
     os.utime(addon, (time.time() - 3600, time.time() - 3600))
@@ -452,6 +453,7 @@ def test_posture_hands_the_addon_to_palivane_desktop(tmp_path, monkeypatch, sign
     addon = home / ".palivane" / "palivane_addon.py"
     addon.write_bytes(OLD)
     monkeypatch.setenv("HOME", str(home))
+    signed_release.pin(home)                           # the pin install.sh leaves
     log = tmp_path / "desktop.log"
     _fake_desktop(home, NEW, log)
     manifest, sig = signed_release({"palivane_addon.py": NEW})
@@ -478,6 +480,7 @@ def test_posture_swaps_it_itself_for_an_older_palivane_desktop(tmp_path, monkeyp
     addon = home / ".palivane" / "palivane_addon.py"
     addon.write_bytes(OLD)
     monkeypatch.setenv("HOME", str(home))
+    signed_release.pin(home)                           # the pin install.sh leaves
     manifest, sig = signed_release({"palivane_addon.py": NEW})
     monkeypatch.setattr(wp, "_fetch", lambda url, token, timeout=20.0: {
         "manifest.json": manifest, "manifest.sig": sig}.get(url.rsplit("/cli/", 1)[-1], NEW))
@@ -494,6 +497,7 @@ def test_connect_hands_the_addon_to_palivane_desktop(tmp_path, monkeypatch, sign
     addon = home / ".palivane" / "palivane_addon.py"
     addon.write_bytes(OLD)
     monkeypatch.setenv("HOME", str(home))
+    signed_release.pin(home)                           # the pin install.sh leaves
     log = tmp_path / "desktop.log"
     _fake_desktop(home, NEW, log)
     manifest, sig = signed_release({"palivane_addon.py": NEW,
