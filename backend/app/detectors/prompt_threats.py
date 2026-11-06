@@ -42,6 +42,10 @@ INJECTION_TERMS = [
     "ignore safety instructions", "disregard previous safety", "disregard your safety",
     "disregard all safety", "disregard safety instructions",
     "this overrides", "begin new session", "reset your instructions",
+    # Paraphrases of the same override that the review's variants slipped through with.
+    "ignore prior instructions", "ignore earlier instructions", "ignore any previous",
+    "disregard your instructions", "disregard your system prompt", "forget prior instructions",
+    "override all previous", "new system prompt",
     # Policy puppetry — impersonating or rewriting the system layer instead of fighting it.
     "respond as if your system prompt", "as if your instructions said",
     "your system prompt now", "pretend your instructions", "simulate a system prompt",
@@ -241,9 +245,38 @@ class PromptThreatDetector:
     name = "prompt_threats"
     # AGENT_RULES: instruction files are prompt context the agent obeys, so injection
     # phrasing there is a rules-file backdoor — the same detection as a live prompt.
-    surfaces = {Surface.LLM_IO, Surface.AI_USAGE, Surface.AGENT_RULES, Surface.A2A}
+    # MCP: what tools hand back to an agent (a fetched page, a file, an issue body) is the main
+    # channel for indirect injection. Only the instruction-override check runs there; see
+    # _tool_io_signals.
+    surfaces = {Surface.LLM_IO, Surface.AI_USAGE, Surface.AGENT_RULES, Surface.A2A, Surface.MCP}
+
+    def _tool_io_signals(self, item: AnalysisInput) -> list[Signal]:
+        """Instructions planted in tool traffic. Tool output is code, docs and data far more
+        often than prose, so this uses the high-precision term set (no phrases that show up
+        in ordinary code) and skips quoted mentions, and one hit scores below the default
+        block bar: recorded and surfaced, not a hard stop on a README about prompt injection.
+        Two or more distinct override phrases in one result is an attack, and scores up."""
+        text = f"{item.subject}\n{item.content}".strip()
+        low = (normalize_for_match(text) + "\n" + leet_fold(text)).lower()
+        terms = [t for t in INJECTION_TERMS if t not in _CODE_FP_TERMS]
+        _lines = normalize_keep_lines(text).split("\n")
+        anchor_hay = "\n".join(_lines) + "\n" + "\n".join(leet_fold(ln) for ln in _lines)
+        inj = [t for t in _hits(low, terms, anchor_hay) if not _is_quoted_mention(text, t)]
+        if not inj:
+            return []
+        return [Signal(
+            category=Category.PROMPT_INJECTION,
+            title="Instructions hidden in tool output",
+            detail="Text an agent's tool returned tries to override the agent's instructions "
+                   "(indirect prompt injection).",
+            weight=0.55 if len(inj) == 1 else 0.8,
+            confidence=min(1.0, 0.55 + 0.15 * len(inj)),
+            detector=self.name, evidence=", ".join(inj[:5]), check="prompt_injection",
+        )]
 
     def analyze(self, item: AnalysisInput) -> list[Signal]:
+        if item.surface == Surface.MCP:
+            return self._tool_io_signals(item)
         precision = item.surface == Surface.AI_USAGE  # code-heavy: high-precision subset
         text = f"{item.subject}\n{item.content}".strip()
         # Match keywords against a normalized view (folds homoglyphs / fullwidth /
