@@ -104,6 +104,7 @@ class MCPIngest(BaseModel):
     server: str = ""                                   # MCP server host
     tool: str = ""                                     # tool name for tools/call
     args_text: str = Field("", max_length=MAX_CONTENT)  # joined string values of the tool arguments
+    args_truncated: bool = False                       # the extractor cut args_text at its cap
     # A shell tool's exact command, sent beside args_text (which also joins its description /
     # cwd) so least-privilege can split the command on newlines too (authz.decision).
     shell_command: str = Field("", max_length=MAX_CONTENT)
