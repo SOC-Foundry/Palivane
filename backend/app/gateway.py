@@ -593,10 +593,11 @@ def _with_file_text(prompt: str, body: dict, scope: "_ScanScope") -> tuple[str, 
         detector="gateway")]
 
 
-def _outbound_text(prompt: str, body: dict, scope: "_ScanScope") -> tuple[str, list]:
+def _outbound_text(prompt: str, body: dict, scope: "_ScanScope",
+                   db: Session | None = None) -> tuple[str, list]:
     """The full request scan: the turn's text, plus image and attachment text, and the
     partial-scan markers for what couldn't be read."""
-    prompt, img_unread = _with_image_text(prompt, body)
+    prompt, img_unread = _with_image_text(prompt, body, db)
     prompt, file_unread = _with_file_text(prompt, body, scope)
     hist = [unscanned_marker(
         "history=over budget", "Conversation history not fully scanned",
@@ -611,7 +612,7 @@ def _joined_capped(parts: list[str], cap: int = 20000) -> tuple[str, bool]:
     return text[:cap], len(text) > cap
 
 
-def _with_image_text(prompt: str, body: dict) -> tuple[str, list]:
+def _with_image_text(prompt: str, body: dict, db: Session | None = None) -> tuple[str, list]:
     """Opt-in image DLP (PALIVANE_OCR): OCR base64 images in the request body (Anthropic
     `source.data`, OpenAI `image_url` data: URIs — chat's object form and Responses'
     `input_image` string form — Gemini `inline_data`) and append the
@@ -627,6 +628,8 @@ def _with_image_text(prompt: str, body: dict) -> tuple[str, list]:
     if not images:
         return prompt, []
     ocr_on = ocr_enabled()
+    if ocr_on and db is not None and not (db.new or db.dirty or db.deleted):
+        _release_db(db)      # OCR takes seconds per image: don't hold a pooled connection
     got = read_images(images) if ocr_on else None
     if got and got.text:
         prompt = f"{prompt}\n[image text]\n{got.text}"
@@ -1346,7 +1349,7 @@ def chat_completions(request: Request, principal: Principal = Depends(get_gatewa
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
     scope = _ScanScope(principal.tenant_id)
     prompt, unread = _outbound_text(_scan_messages(payload.get("messages", []), scope=scope),
-                                    payload, scope)
+                                    payload, scope, db)
     verdict = _capture(prompt, model, tool, principal, db, extra_signals=unread)
     pol = _effective_policy(principal, db)
 
@@ -1563,7 +1566,7 @@ def responses(request: Request, principal: Principal = Depends(get_gateway_princ
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
     scope = _ScanScope(principal.tenant_id)
     prompt, unread = _outbound_text(
-        _responses_user_text(payload.get("input"), payload.get("instructions"), scope), payload, scope)
+        _responses_user_text(payload.get("input"), payload.get("instructions"), scope), payload, scope, db)
     verdict = _capture(prompt, model, tool, principal, db, extra_signals=unread)
     pol = _effective_policy(principal, db)
 
@@ -1657,7 +1660,7 @@ def messages(request: Request, principal: Principal = Depends(get_gateway_princi
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
     scope = _ScanScope(principal.tenant_id)
     prompt, unread = _outbound_text(
-        _scan_messages(payload.get("messages", []), payload.get("system"), scope), payload, scope)
+        _scan_messages(payload.get("messages", []), payload.get("system"), scope), payload, scope, db)
     verdict = _capture(prompt, model, tool, principal, db, extra_signals=unread)
     pol = _effective_policy(principal, db)
 
@@ -2016,7 +2019,7 @@ def _gemini_entry(model: str, method: str, request: Request,
     scope = _ScanScope(principal.tenant_id)
     prompt, unread = _outbound_text(
         _scan_gemini(payload.get("contents", []), payload.get("systemInstruction") or payload.get("system_instruction")),
-        payload, scope)
+        payload, scope, db)
     verdict = _capture(prompt, model, tool, principal, db, extra_signals=unread)
     pol = _effective_policy(principal, db)
 
