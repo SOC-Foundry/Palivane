@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse, Response
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from .auth import get_current_user, require_admin, require_session_admin, router as auth_router
+from .auth import get_current_user, require_admin, require_analyst, require_session_admin, router as auth_router
 from .distribution import router as distribution_router
 from .billing import router as billing_router
 from .demo import router as demo_router
@@ -507,7 +507,7 @@ def health():
 
 
 @app.get("/api/setup-status")
-def setup_status(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def setup_status(current: User = Depends(require_analyst), db: Session = Depends(get_db)):
     """Per-plane activity (findings in the last 24h) + enforcement/judge state, for the
     console's onboarding/health card — 'is each capture plane actually reporting?'"""
     from datetime import datetime, timedelta, timezone
@@ -1043,13 +1043,13 @@ def _input_from_request(req: AnalyzeRequest) -> AnalysisInput:
 
 
 @app.post("/api/analyze")
-def analyze(req: AnalyzeRequest, current: User = Depends(get_current_user),
+def analyze(req: AnalyzeRequest, current: User = Depends(require_analyst),
             db: Session = Depends(get_db)):
     return run_analysis(_input_from_request(req), req.persist, db, tenant_id=current.tenant_id)
 
 
 @app.post("/api/analyze/batch")
-def analyze_batch(req: BatchAnalyzeRequest, current: User = Depends(get_current_user),
+def analyze_batch(req: BatchAnalyzeRequest, current: User = Depends(require_analyst),
                   db: Session = Depends(get_db)):
     """Analyze many items in one call — e.g. a SIEM exporting a batch of messages."""
     results = [run_analysis(_input_from_request(it), it.persist, db, tenant_id=current.tenant_id)
@@ -3407,7 +3407,7 @@ def policy_pack(
 
 @app.get("/api/findings")
 def list_findings(
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_analyst),
     db: Session = Depends(get_db),
     severity: str | None = None,
     status: str | None = None,
@@ -3433,7 +3433,7 @@ def list_findings(
 
 
 @app.get("/api/findings/{finding_id}")
-def get_finding(finding_id: int, current: User = Depends(get_current_user),
+def get_finding(finding_id: int, current: User = Depends(require_analyst),
                 db: Session = Depends(get_db)):
     row = db.get(Finding, finding_id)
     if not row or row.tenant_id != current.tenant_id:
@@ -3445,7 +3445,7 @@ def get_finding(finding_id: int, current: User = Depends(get_current_user),
 
 
 @app.post("/api/findings/{finding_id}/investigate")
-def investigate_finding(finding_id: int, current: User = Depends(get_current_user),
+def investigate_finding(finding_id: int, current: User = Depends(require_analyst),
                         db: Session = Depends(get_db)):
     """Read-only analyst agent: investigate a finding and RECOMMEND an action — it never
     applies one (acting is a separate, approval-gated step). Runs on the tenant's OWN LLM key
@@ -3492,7 +3492,7 @@ def investigate_finding(finding_id: int, current: User = Depends(get_current_use
 
 @app.patch("/api/findings/{finding_id}")
 def update_status(finding_id: int, body: StatusUpdate,
-                  current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+                  current: User = Depends(require_analyst), db: Session = Depends(get_db)):
     row = db.get(Finding, finding_id)
     if not row or row.tenant_id != current.tenant_id:
         raise HTTPException(status_code=404, detail="finding not found")
@@ -3518,7 +3518,7 @@ def update_status(finding_id: int, body: StatusUpdate,
 
 
 @app.post("/api/findings/bulk-status")
-def bulk_update_status(body: BulkStatusUpdate, current: User = Depends(get_current_user),
+def bulk_update_status(body: BulkStatusUpdate, current: User = Depends(require_analyst),
                        db: Session = Depends(get_db)):
     """Set the status of many findings at once (group triage from the console). Only rows
     in the caller's tenant are touched; unknown/foreign ids are silently skipped."""
@@ -3729,7 +3729,7 @@ def _tenant_dek_unwrapped(db: Session, tenant_id: int) -> str | None:
 
 
 @app.get("/api/ml/corpus")
-def ml_corpus_list(current: User = Depends(get_current_user), db: Session = Depends(get_db),
+def ml_corpus_list(current: User = Depends(require_analyst), db: Session = Depends(get_db),
                    labeled: bool | None = None, limit: int = Query(50, ge=1, le=500)):
     """This tenant's staged corpus samples (content decrypted for the analyst).
     `labeled=false` is the labeling queue; `labeled=true` reviews recorded labels."""
@@ -3744,7 +3744,7 @@ def ml_corpus_list(current: User = Depends(get_current_user), db: Session = Depe
 
 
 @app.get("/api/ml/corpus/stats")
-def ml_corpus_stats(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def ml_corpus_stats(current: User = Depends(require_analyst), db: Session = Depends(get_db)):
     """Corpus progress: how much is staged, how much a human has labeled, and how often
     the analyst disagreed with the regex weak label (the interesting training signal)."""
     base = db.query(CorpusSample).filter(CorpusSample.tenant_id == current.tenant_id)
@@ -3762,7 +3762,7 @@ def ml_corpus_stats(current: User = Depends(get_current_user), db: Session = Dep
 
 @app.post("/api/ml/corpus/{sample_id}/label")
 def ml_corpus_label(sample_id: int, body: CorpusLabel,
-                    current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+                    current: User = Depends(require_analyst), db: Session = Depends(get_db)):
     """Record an analyst's ground-truth label (injection | benign), with attribution.
     Relabeling is allowed — the latest analyst decision wins; the audit log keeps history."""
     row = db.get(CorpusSample, sample_id)
@@ -3942,7 +3942,7 @@ def audit_timeline(actor: str, current: User = Depends(require_admin),
 
 
 @app.get("/api/agents/a2a-graph")
-def a2a_call_graph(current: User = Depends(get_current_user), db: Session = Depends(get_db),
+def a2a_call_graph(current: User = Depends(require_analyst), db: Session = Depends(get_db),
                    days: int = Query(30, ge=1, le=365)):
     """The agent-to-agent call graph: nodes (agents) and directed from→to flows carrying the
     message count, worst severity, categories, and sample finding ids. Built from flagged A2A
@@ -4892,7 +4892,7 @@ STATS_WINDOWS = {"24h": timedelta(hours=24), "7d": timedelta(days=7), "30d": tim
 
 
 @app.get("/api/stats")
-def stats(window: str = "24h", current: User = Depends(get_current_user),
+def stats(window: str = "24h", current: User = Depends(require_analyst),
           db: Session = Depends(get_db)):
     """Dashboard aggregates.
 

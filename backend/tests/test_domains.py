@@ -65,7 +65,7 @@ def test_signup_on_claimed_domain_becomes_join_request(client, raw_client, monke
 
     # approve -> the parked password works for login, scoped to the right org
     rid = reqs[0]["id"]
-    assert client.post(f"/api/join-requests/{rid}/approve").json()["role"] == "analyst"
+    assert client.post(f"/api/join-requests/{rid}/approve").json()["role"] == "member"
     login = raw_client.post("/api/auth/login", json={
         "email": "newbie@acme.com", "password": "password123"})
     assert login.status_code == 200

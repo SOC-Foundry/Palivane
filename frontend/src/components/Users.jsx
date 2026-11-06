@@ -132,7 +132,8 @@ export default function Users({ currentUser }) {
                  value={password} onChange={(e) => setPassword(e.target.value)}
                  minLength={password ? 8 : undefined} required={!emailEnabled} />
           <select value={role} onChange={(e) => setRole(e.target.value)}>
-            <option value="analyst">Analyst</option>
+            <option value="member">Member (own findings only)</option>
+                <option value="analyst">Analyst</option>
             <option value="admin">Admin</option>
           </select>
           <button className="primary-btn slim"
@@ -268,10 +269,17 @@ export default function Users({ currentUser }) {
                             Make analyst
                           </button>
                         ) : (
-                          <button className="mini-btn" disabled={busy}
-                                  onClick={() => patch(u, { role: "admin" })}>
-                            Make admin
-                          </button>
+                          <>
+                            <button className="mini-btn" disabled={busy}
+                                    title={u.role === "member" ? "Analysts see every finding in the org" : "Members see only their own findings"}
+                                    onClick={() => patch(u, { role: u.role === "member" ? "analyst" : "member" })}>
+                              {u.role === "member" ? "Make analyst" : "Make member"}
+                            </button>
+                            <button className="mini-btn" disabled={busy}
+                                    onClick={() => patch(u, { role: "admin" })}>
+                              Make admin
+                            </button>
+                          </>
                         )}
                         {u.active ? (
                           <>
