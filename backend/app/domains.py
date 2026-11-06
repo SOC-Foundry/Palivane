@@ -208,7 +208,7 @@ def approve(db: Session, req: JoinRequest, decided_by: str) -> User:
     check_resource_quota(db, req.tenant_id, "users",
                          db.query(User).filter(User.tenant_id == req.tenant_id).count())
     user = User(tenant_id=req.tenant_id, email=req.email,
-                password_hash=req.password_hash, role="analyst")
+                password_hash=req.password_hash, role="member")
     req.status = "approved"
     req.decided_at = datetime.now(timezone.utc).replace(tzinfo=None)
     req.decided_by = decided_by

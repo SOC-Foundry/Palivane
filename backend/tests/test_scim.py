@@ -140,13 +140,13 @@ def test_unsupported_filter_is_501_not_wrong(client):
     assert r.status_code == 501 and r.json()["scimType"] == "invalidFilter"
 
 
-def test_scim_created_user_has_no_usable_password_and_is_analyst(client, db_factory):
+def test_scim_created_user_has_no_usable_password_and_is_a_member(client, db_factory):
     tok = _mint(client)
     client.post("/scim/v2/Users", headers=_h(tok), json={"userName": "sso-only@acme.com"})
     from app.models import User
     db = db_factory()
     u = db.query(User).filter(User.email == "sso-only@acme.com").first()
-    assert u.role == "analyst" and u.password_hash
+    assert u.role == "member" and u.password_hash
     db.close()
 
 

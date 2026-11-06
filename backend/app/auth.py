@@ -274,6 +274,16 @@ def require_admin(current: User = Depends(get_current_user)) -> User:
     return current
 
 
+def require_analyst(current: User = Depends(get_current_user)) -> User:
+    """Org-wide reads (every finding, stats, the corpus): admins and analysts. A "member", the
+    least-privilege role auto-provisioned users get, sees only their own findings
+    (/api/my/findings) until an admin promotes them."""
+    if current.role == "member":
+        raise HTTPException(status_code=403,
+                            detail="your role sees only your own findings; ask an admin for analyst access")
+    return current
+
+
 def require_session_admin(request: Request, current: User = Depends(require_admin)) -> User:
     """An admin signed in to the console, not an API key acting as one. For reads too broad
     to hand a long-lived credential (the full org export: users, keys, audit log, every
@@ -1902,6 +1912,9 @@ def set_oidc(body: OIDCConfig, current: User = Depends(require_admin),
         row.auto_provision = body.auto_provision
     if body.allowed_domain is not None:
         row.allowed_domain = body.allowed_domain.strip().lower()
+    if row.auto_provision and not (row.allowed_domain or "").strip():
+        raise HTTPException(status_code=400,
+                            detail="automatic sign-up needs an allowed email domain")
     db.commit()
     audit_log.record(db, current.tenant_id, current.email, "oidc.update",
                      detail={"enabled": row.enabled})
@@ -2088,9 +2101,14 @@ def _sso_complete(db: Session, tenant: Tenant, email: str, auto_provision: bool,
     if user is None:
         if not auto_provision:
             raise HTTPException(status_code=403, detail="no account for this email, ask an admin")
+        if not allowed_domain:
+            # Auto-provision without a domain lets anyone the identity provider will sign in
+            # (a multi-tenant IdP: any of its users) join this org. Refused at save too.
+            raise HTTPException(status_code=403,
+                                detail="automatic sign-up needs an allowed email domain; ask an admin")
         check_seat(db, tenant.id)
         user = User(tenant_id=tenant.id, email=email,
-                    password_hash=hash_password(secrets.token_urlsafe(32)), role="analyst")
+                    password_hash=hash_password(secrets.token_urlsafe(32)), role="member")
         db.add(user)
         db.commit()
         db.refresh(user)
@@ -2144,6 +2162,9 @@ def set_saml(body: SAMLConfig, current: User = Depends(require_admin),
         row.auto_provision = body.auto_provision
     if body.allowed_domain is not None:
         row.allowed_domain = body.allowed_domain.strip().lower()
+    if row.auto_provision and not (row.allowed_domain or "").strip():
+        raise HTTPException(status_code=400,
+                            detail="automatic sign-up needs an allowed email domain")
     db.commit()
     audit_log.record(db, current.tenant_id, current.email, "saml.update",
                      detail={"enabled": row.enabled})

@@ -142,7 +142,7 @@ def google_callback(request: Request, code: str = "", state: str = "",
             check_seat(db, tenant.id)
             user = User(tenant_id=tenant.id, email=email,
                         password_hash=hash_password(secrets.token_urlsafe(32)),
-                        role="analyst", email_verified=True)
+                        role="member", email_verified=True)
             db.add(user)
             db.commit()
             db.refresh(user)

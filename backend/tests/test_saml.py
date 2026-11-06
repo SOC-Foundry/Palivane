@@ -16,6 +16,8 @@ def _configure(client, **over):
             "idp_sso_url": "https://idp.example/sso",
             "idp_x509_cert": CERT, "enabled": True}
     body.update(over)
+    if body.get("auto_provision") and "allowed_domain" not in body:
+        body["allowed_domain"] = "acme.com"   # auto-provision is refused without a domain
     return client.put("/api/saml", json=body)
 
 
@@ -75,7 +77,7 @@ def test_acs_provisions_user_and_issues_session(client, raw_client, monkeypatch)
     token = r.headers["location"].split("#sso_token=")[1]
     me = raw_client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200 and me.json()["user"]["email"] == "sso-saml@acme.com"
-    assert me.json()["user"]["role"] == "analyst"
+    assert me.json()["user"]["role"] == "member"      # auto-provisioned least-privilege
 
 
 def test_acs_rejects_replayed_assertion(client, raw_client, monkeypatch):

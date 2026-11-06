@@ -56,7 +56,7 @@ const NAV = [
     { v: "findings",    icon: <IconList />,      label: "Findings",    admin: false },
     // Everyone, deliberately: this is the view for the person a finding belongs to, and
     // the whole point is that it does not need a security person in the loop.
-    { v: "mine",        icon: <IconInbox />,     label: "Your findings", admin: false },
+    { v: "mine",        icon: <IconInbox />,     label: "Your findings", admin: false, member: true },
     { v: "sessions",    icon: <IconActivity />,  label: "Sessions" },
     { v: "scanlog",     icon: <IconTerminal />,  label: "Scan log" },
   ]},
@@ -85,7 +85,7 @@ const NAV = [
   // and Help, so a lone "RECORDS" label above it would be the one heading they ever saw,
   // and wrong.
   { head: null, items: [
-    { v: "help",        icon: <IconBook />,      label: "Help",        admin: false },
+    { v: "help",        icon: <IconBook />,      label: "Help",        admin: false, member: true },
   ]},
 ];
 
@@ -95,6 +95,12 @@ const NAV = [
 const VIEW_ADMIN = new Map(
   NAV.flatMap((g) => g.items.map((it) => [it.v, it.admin !== false])));
 const VIEWS = new Set(VIEW_ADMIN.keys());
+// What a "member" (the least-privilege role auto-provisioned users get) may open: their own
+// findings and Help. Every other screen reads the whole org's data, which the API refuses them.
+const VIEW_MEMBER = new Set(NAV.flatMap((g) => g.items.filter((it) => it.member).map((it) => it.v)));
+const canOpen = (v, role) => role === "admin" ? true
+  : role === "member" ? VIEW_MEMBER.has(v) : !VIEW_ADMIN.get(v);
+const homeView = (role) => (role === "member" ? "mine" : DEFAULT_VIEW);
 const REVIEW_PAGE = 500;   // the most GET /api/findings returns in one call
 
 
@@ -213,15 +219,15 @@ export default function App() {
   // reading /pricing or /docs must stay there, and every public path is a real route.
   useEffect(() => {
     if (!auth || !isRoot(window.location.pathname)) return;
-    navigate(DEFAULT_VIEW, null, { replace: true });
+    navigate(homeView(auth.user?.role), null, { replace: true });
   }, [auth, navigate]);
 
   // Deep link to an admin screen as a non-admin: fall back rather than render a page whose
   // every request will 403. Mirrors the nav, which filters the same screens out.
   useEffect(() => {
     if (!auth || !route) return;
-    if (VIEW_ADMIN.get(route.view) && auth.user?.role !== "admin") {
-      navigate(DEFAULT_VIEW, null, { replace: true });
+    if (!canOpen(route.view, auth.user?.role)) {
+      navigate(homeView(auth.user?.role), null, { replace: true });
     }
   }, [auth, route, navigate]);
 
@@ -261,7 +267,7 @@ export default function App() {
   }, [selectFinding]);
 
   const refresh = useCallback(async () => {
-    if (!auth) return;
+    if (!auth || auth.user?.role === "member") return;   // org-wide data: not for members
     const [s, f] = await Promise.all([
       api.stats(statsWindow),
       api.findings({ status: statusFilter, limit: 500 }),
@@ -417,7 +423,7 @@ export default function App() {
         <div className="sidebar-panel" id="console-nav">
           <nav className="nav" aria-label="Console" ref={navRef}>
             {NAV.map((group) => {
-              const shown = group.items.filter((it) => it.admin === false || isAdmin);
+              const shown = group.items.filter((it) => canOpen(it.v, auth.user?.role));
               if (!shown.length) return null;   // a non-admin sees Findings, Your findings, Help
               return (
                 <div key={group.head ?? "_"} className="nav-group">

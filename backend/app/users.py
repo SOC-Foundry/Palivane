@@ -116,7 +116,7 @@ def main(argv: list[str]) -> int:
     cu.add_argument("--tenant", required=True)
     cu.add_argument("--email", required=True)
     cu.add_argument("--password")
-    cu.add_argument("--role", choices=["admin", "analyst"], default="analyst")
+    cu.add_argument("--role", choices=["admin", "analyst", "member"], default="analyst")
 
     sub.add_parser("list-tenants")
     lu = sub.add_parser("list-users")

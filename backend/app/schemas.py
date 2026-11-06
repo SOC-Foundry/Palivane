@@ -397,12 +397,12 @@ class UserCreate(BaseModel):
     # Empty password = email invite: the account is created with an unguessable random
     # password and the user gets a set-password link (requires the email plane).
     password: str = ""
-    role: Literal["admin", "analyst"] = "analyst"
+    role: Literal["admin", "analyst", "member"] = "analyst"
 
 
 class UserUpdate(BaseModel):
     # Both optional — change role (promote/demote), toggle login access, or both.
-    role: Literal["admin", "analyst"] | None = None
+    role: Literal["admin", "analyst", "member"] | None = None
     active: bool | None = None
 
 
