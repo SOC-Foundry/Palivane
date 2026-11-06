@@ -257,6 +257,12 @@ def test_two_updates_at_once_end_with_one_clean_update(tmp_path, signed_release,
         outs = [p.communicate(timeout=120)[0] for p in procs]
     why = {"pids": [p.pid for p in procs], "outs": outs,
            "lock trace": trace.read_text().splitlines() if trace.exists() else "(no trace)"}
+    # pytest cuts an assertion message to about one line, which cost the trace in both CI
+    # failures so far; captured stdout is printed whole when the test fails.
+    print("pids:", why["pids"])
+    for pid, out in zip(why["pids"], outs):
+        print(f"--- output of {pid}:\n{out}")
+    print("--- lock trace:", *(why["lock trace"] if trace.exists() else ["(no trace)"]), sep="\n")
     assert [p.returncode for p in procs] == [0, 0], why
     # Exactly one run does the update; without the lock both did all of it (seen with the
     # old script under this same overlap): two swaps, two marker waits, two chances to restart.

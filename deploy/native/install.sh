@@ -2,7 +2,7 @@
 # Palivane native installer — run Palivane directly on a server, NO Docker.
 #
 # Run as root on the TARGET server from an extracted release tarball (built by
-# build-release.sh). The target needs only Python 3.12+ (and Postgres for production; the
+# build-release.sh). The target needs only Python 3.12-3.14 (and Postgres for production; the
 # default is a local SQLite file). Sets up a system user, a venv, /etc/palivane/palivane.env,
 # runs migrations, and installs + starts the systemd service.
 #
@@ -17,9 +17,29 @@ SVCUSER=palivane
 SRC="$(cd "$(dirname "$0")" && pwd)"
 
 [ "$(id -u)" = 0 ] || { echo "run as root: sudo ./install.sh" >&2; exit 1; }
-command -v python3 >/dev/null || { echo "python3 3.12+ is required" >&2; exit 1; }
-PYV="$(python3 -c 'import sys;print("%d%02d"%sys.version_info[:2])')"
-[ "$PYV" -ge 312 ] || { echo "Python 3.12+ required (found $(python3 -V))" >&2; exit 1; }
+# The interpreter for the venv: PALIVANE_PYTHON, else the first of these that is a version the
+# dependencies ship wheels for (3.12-3.14). A distro's default python3 can run ahead of that
+# (Fedora's moved to 3.15 in Nov 2026, and psycopg2-binary then has to build from source and
+# fails without pg_config), so a supported versioned interpreter beside it is preferred.
+PY_MIN=312 PY_MAX=314
+py_ver() { "$1" -c 'import sys;print("%d%02d"%sys.version_info[:2])' 2>/dev/null; }
+PY="${PALIVANE_PYTHON:-}"
+if [ -z "$PY" ]; then
+  for c in python3.14 python3.13 python3.12 python3; do
+    command -v "$c" >/dev/null 2>&1 || continue
+    v="$(py_ver "$c" || true)"
+    if [ -n "$v" ] && [ "$v" -ge "$PY_MIN" ] && [ "$v" -le "$PY_MAX" ]; then PY="$c"; break; fi
+  done
+fi
+if [ -z "$PY" ]; then
+  found="$(python3 -V 2>/dev/null || echo "no python3")"
+  echo "Python 3.12-3.14 is required (found: $found). Install a supported one beside it, e.g." >&2
+  echo "  dnf install python3.14   |   apt-get install python3.12 python3.12-venv" >&2
+  echo "or point PALIVANE_PYTHON at an interpreter to use." >&2
+  exit 1
+fi
+command -v "$PY" >/dev/null 2>&1 || { echo "PALIVANE_PYTHON=$PY is not runnable" >&2; exit 1; }
+echo "==> using $PY ($("$PY" -V 2>&1))"
 for f in backend static palivane-api.service palivane.env.example; do
   [ -e "$SRC/$f" ] || { echo "missing $f — run this from an extracted release tarball" >&2; exit 1; }
 done
@@ -36,7 +56,7 @@ cp -r "$SRC/static" "$PREFIX/static"
 [ -d "$SRC/proxy" ] && cp -r "$SRC/proxy" "$PREFIX/proxy"
 
 echo "==> python venv + dependencies"
-python3 -m venv "$PREFIX/backend/.venv"
+"$PY" -m venv "$PREFIX/backend/.venv"
 "$PREFIX/backend/.venv/bin/pip" install --quiet --upgrade pip
 "$PREFIX/backend/.venv/bin/pip" install --quiet -r "$PREFIX/backend/requirements.txt"
 
