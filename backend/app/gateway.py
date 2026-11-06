@@ -1160,6 +1160,39 @@ def _record_stream_dlp(raw: bytes, model: str, tool: str, principal: Principal) 
 _STREAM_TEE_CAP = 2_000_000   # cap the accumulated copy so a huge stream can't blow memory
 
 
+def _role_enforces(principal: Principal, db: Session) -> bool:
+    """Whether this caller is an agent whose role enforces. Its streams are buffered and
+    checked like an enforcing gateway's, so the role can block a tool call it forbids even
+    when the gateway itself only monitors (what the non-streaming paths already do)."""
+    if not principal.agent:
+        return False
+    from .authz import role_context
+    ctx = role_context(db, principal.tenant_id, principal.agent)
+    return bool(ctx and ctx[1])
+
+
+def _record_stream_tool_use(raw: bytes, tool: str, principal: Principal) -> None:
+    """Post-stream record of the tool call(s) a passed-through stream asked for, so monitor
+    mode sees what the model told the agent to run (it can't block what already went out).
+    Best-effort, on a fresh session, never raises."""
+    try:
+        text = raw.decode("utf-8", "replace")
+        act = (_stream_tool_use_anthropic(text) or _stream_tool_use_openai(text)
+               or _stream_tool_use_responses(text))
+        if not act:
+            return
+        from .database import SessionLocal, bind_tenant
+        db = SessionLocal()
+        try:
+            bind_tenant(db, principal.tenant_id)
+            _capture_tool_activity(act["tool"], act["args_text"], tool, principal, db,
+                                   act.get("tools"), act.get("shell_command", ""))
+        finally:
+            db.close()
+    except Exception:
+        pass
+
+
 def _passthrough_stream(url: str, payload: dict, headers: dict, model: str = "",
                         tool: str = "", principal: Principal | None = None,
                         tokens: dict | None = None) -> StreamingResponse:
@@ -1168,6 +1201,7 @@ def _passthrough_stream(url: str, payload: dict, headers: dict, model: str = "",
     assembled output once the stream ends (no client-facing latency — the scan happens after
     the last token). The action is also recorded request-side on the next turn."""
     scan = principal is not None and settings.gateway_scan_responses
+    tee = principal is not None          # tool calls are recorded whether or not DLP is on
     # Connect BEFORE the response starts. Opened inside the generator, a provider that was down
     # surfaced after the 200 headers had gone: the client got an empty or cut-off stream instead
     # of the upstream_unavailable 502 (main's TransportError handler can't answer a started
@@ -1187,7 +1221,7 @@ def _passthrough_stream(url: str, payload: dict, headers: dict, model: str = "",
         acc = 0
         try:
             for b in r.iter_bytes():
-                if scan and acc < _STREAM_TEE_CAP:
+                if tee and acc < _STREAM_TEE_CAP:
                     buf.append(b)
                     acc += len(b)
                 yield b
@@ -1198,6 +1232,8 @@ def _passthrough_stream(url: str, payload: dict, headers: dict, model: str = "",
                 # carries no personal data, so nothing is missed by scanning before
                 # reversing, and the tee stays byte-identical to what was scored.
                 _record_stream_dlp(b"".join(buf), model, tool, principal)
+            if tee and buf:
+                _record_stream_tool_use(b"".join(buf), tool, principal)
 
     status = getattr(r, "status_code", 200)
     ctype = (getattr(r, "headers", None) or {}).get("content-type", "text/event-stream")
@@ -1363,7 +1399,7 @@ def chat_completions(request: Request, principal: Principal = Depends(get_gatewa
         if payload.get("stream"):
             sent, tokens = _tokenize_out(payload, principal, db)
             _release_db(db)
-            if not pol.enforce:
+            if not pol.enforce and not _role_enforces(principal, db):
                 return _passthrough_stream(url, sent, headers, model, tool, principal,
                                            tokens)  # monitor: live output (teed)
             status, ctype, raw = _read_stream(url, sent, headers)
@@ -1579,7 +1615,7 @@ def responses(request: Request, principal: Principal = Depends(get_gateway_princ
         sent, tokens = _tokenize_out(payload, principal, db)
         _release_db(db)
         if payload.get("stream"):
-            if not pol.enforce:
+            if not pol.enforce and not _role_enforces(principal, db):
                 return _passthrough_stream(url, sent, headers, model, tool, principal,
                                            tokens)  # monitor: live output (teed)
             status, ctype, raw = _read_stream(url, sent, headers)
@@ -1604,11 +1640,12 @@ def responses(request: Request, principal: Principal = Depends(get_gateway_princ
             dlp = _capture_response_dlp(_response_output_text(data), model, tool, principal, db)
             if pol.enforce and dlp and _blocked(dlp, pol):
                 return _openai_error(dlp)
-        if pol.enforce:
-            ragentic = _capture_response_agentic(data, tool, principal, db) or \
-                _capture_response_agentic_responses(data, tool, principal, db)
-            if _agentic_block(ragentic, pol):
-                return _openai_error(ragentic)
+        # Recorded in every mode; _agentic_block decides (an enforcing agent role blocks
+        # under a monitor-mode gateway too), as _scan_response does for chat completions.
+        ragentic = _capture_response_agentic(data, tool, principal, db) or \
+            _capture_response_agentic_responses(data, tool, principal, db)
+        if _agentic_block(ragentic, pol):
+            return _openai_error(ragentic)
         if tokens:
             data = _reverse_obj(data, tokens, tool)
         return JSONResponse(status_code=r.status_code, content=data)
@@ -1692,7 +1729,7 @@ def messages(request: Request, principal: Principal = Depends(get_gateway_princi
                 body = sent
             else:
                 url, body, headers = _anthropic_transport(up, sent, request, stream=True)
-            if not pol.enforce:
+            if not pol.enforce and not _role_enforces(principal, db):
                 return _passthrough_stream(url, body, headers, model, tool, principal,
                                            tokens)  # monitor: live output (teed)
             # enforce: buffer, inspect the assembled tool_use, block or replay verbatim.
@@ -1727,10 +1764,10 @@ def messages(request: Request, principal: Principal = Depends(get_gateway_princi
             dlp = _capture_response_dlp(_response_output_text(data), model, tool, principal, db)
             if pol.enforce and dlp and _blocked(dlp, pol):
                 return _anthropic_error(dlp)
-        if pol.enforce:
-            ragentic = _capture_response_agentic(data, tool, principal, db)
-            if _agentic_block(ragentic, pol):
-                return _anthropic_error(ragentic)
+        # Recorded in every mode; _agentic_block decides (see the Responses handler).
+        ragentic = _capture_response_agentic(data, tool, principal, db)
+        if _agentic_block(ragentic, pol):
+            return _anthropic_error(ragentic)
         if tokens:
             data = _reverse_obj(data, tokens, tool)
         if payload.get("stream") and flavor == "bedrock" and status == 200:
@@ -2036,9 +2073,12 @@ def _gemini_entry(model: str, method: str, request: Request,
         # The model's next tool call, before the client executes it. The upstream body is
         # buffered for both generateContent and streamGenerateContent (a JSON chunk array).
         try:
-            called = _gemini_response_call(json.loads(resp.body))
+            body_json = json.loads(resp.body)
         except (ValueError, TypeError):
-            called = None
+            # streamGenerateContent with ?alt=sse is SSE, not JSON: read its data: lines
+            # (json.loads failing here used to skip the check silently).
+            body_json = list(_sse_json(resp.body.decode("utf-8", "replace")))
+        called = _gemini_response_call(body_json) if body_json else None
         if called:
             v = _capture_tool_activity(called["tool"], called["args_text"], tool, principal, db,
                                        called["tools"], shell_command=called["shell_command"])
