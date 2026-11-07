@@ -77,6 +77,9 @@ jobs:
           # Split CI/CD identities (service-accounts.tf).
           TF_VAR_wif_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           TF_VAR_github_repo: ${{ github.repository }}
+          # The repo uses GitHub's immutable OIDC subjects: the token's sub is built from ids,
+          # not names (gh api repos/<repo>/actions/oidc/customization/sub).
+          TF_VAR_github_oidc_sub_prefix: repo:${{ github.repository_owner }}@${{ github.repository_owner_id }}/${{ github.event.repository.name }}@${{ github.repository_id }}
           TF_VAR_infra_sa_email: ${{ vars.GCP_INFRA_SA }}
           TF_VAR_scope_infra_identity: ${{ vars.SCOPE_INFRA_IDENTITY == 'true' }}
         run: |

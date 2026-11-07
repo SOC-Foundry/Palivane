@@ -9,8 +9,10 @@
 #                                   terraform-apply.yml and ops.yml, both dispatched by hand.
 #
 # Each is impersonable only from its own GitHub environment: GitHub's OIDC subject for an
-# environment job is "repo:<owner/name>:environment:<env>", so the bindings name that subject
-# and the existing WIF provider needs no change.
+# environment job is "<prefix>:environment:<env>", so the bindings name that subject and the
+# existing WIF provider needs no change. The prefix is "repo:<owner/name>", or with immutable
+# subjects on (this repo) "repo:<owner>@<owner_id>/<name>@<repo_id>"; terraform-apply.yml
+# passes the latter.
 #
 # Cutover (deploy/terraform/README.md, "Split CI/CD identities"):
 #   1. Release signing on KMS first (RELEASE_KMS_KEY_VERSION): the release SA has no access
@@ -22,7 +24,8 @@
 
 locals {
   wif_pool       = var.wif_provider != "" ? replace(var.wif_provider, "/\\/providers\\/.*$/", "") : ""
-  env_subject    = { for env in ["production", "production-infra"] : env => "principal://iam.googleapis.com/${local.wif_pool}/subject/repo:${var.github_repo}:environment:${env}" }
+  sub_prefix     = var.github_oidc_sub_prefix != "" ? var.github_oidc_sub_prefix : "repo:${var.github_repo}"
+  env_subject    = { for env in ["production", "production-infra"] : env => "principal://iam.googleapis.com/${local.wif_pool}/subject/${local.sub_prefix}:environment:${env}" }
   wif_ready      = local.wif_pool != "" && var.github_repo != ""
   cloudbuild_bkt = "${var.project_id}_cloudbuild"
 }
