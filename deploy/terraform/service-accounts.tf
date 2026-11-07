@@ -122,3 +122,12 @@ resource "google_service_account_iam_binding" "infra_wif" {
   role               = "roles/iam.workloadIdentityUser"
   members            = [local.env_subject["production-infra"]]
 }
+
+# The monthly Worker key rotation (.github/workflows/rotate-front-key.yml) runs as the infra
+# identity: it may create and delete keys on the front-door account, and no other account's.
+resource "google_service_account_iam_member" "infra_rotates_front_key" {
+  count              = var.infra_sa_email != "" ? 1 : 0
+  service_account_id = google_service_account.front.name
+  role               = "roles/iam.serviceAccountKeyAdmin"
+  member             = "serviceAccount:${var.infra_sa_email}"
+}
