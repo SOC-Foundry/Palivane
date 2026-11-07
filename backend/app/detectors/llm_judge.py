@@ -158,7 +158,7 @@ class _OpenAIBackend:
         self.model = model
 
     def run(self, system: str, user: str, output_format=JudgeVerdict):
-        completion = self._client.beta.chat.completions.parse(
+        completion = self._client.chat.completions.parse(
             model=self.model,
             max_tokens=2048,
             messages=[
