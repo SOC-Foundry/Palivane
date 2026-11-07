@@ -53,7 +53,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends libpq5 curl \
 ENV OMP_THREAD_LIMIT=1
 
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# The hashed lock (generated from requirements.in): every package, direct or transitive, is
+# pinned and must match its recorded hash, so a swapped or re-uploaded release can't get in.
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 
 COPY backend/ .
 RUN chmod +x docker-entrypoint.sh

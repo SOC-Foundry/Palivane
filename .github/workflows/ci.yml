@@ -53,6 +53,20 @@ jobs:
       - name: Install
         working-directory: backend
         run: pip install -r requirements-dev.txt
+      # The image installs requirements.txt, the hashed lock compiled from requirements.in.
+      # Recompiled here without upgrading anything, it must come out identical; if not, the
+      # lock is stale (regenerate it, see the header of requirements.in).
+      - name: Lockfile matches requirements.in
+        working-directory: backend
+        run: |
+          pip install --quiet pip-tools==7.6.2
+          cp requirements.txt /tmp/requirements.lock
+          pip-compile --quiet --generate-hashes --allow-unsafe --strip-extras --no-emit-index-url \
+            --no-upgrade --output-file /tmp/requirements.lock requirements.in
+          if ! diff <(grep -v '^#' requirements.txt) <(grep -v '^#' /tmp/requirements.lock); then
+            echo "::error::backend/requirements.txt is out of date with requirements.in — regenerate it (header of requirements.in)."
+            exit 1
+          fi
       - name: Pytest
         working-directory: backend
         # -n auto: ~2,220 tests across the runner's cores instead of one. Verified

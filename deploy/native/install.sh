@@ -58,7 +58,9 @@ cp -r "$SRC/static" "$PREFIX/static"
 echo "==> python venv + dependencies"
 "$PY" -m venv "$PREFIX/backend/.venv"
 "$PREFIX/backend/.venv/bin/pip" install --quiet --upgrade pip
-"$PREFIX/backend/.venv/bin/pip" install --quiet -r "$PREFIX/backend/requirements.txt"
+# requirements.in, not the hashed lock: the lock is resolved for Python 3.12 (the image), and
+# this installer supports 3.12-3.14, where some transitive pins differ.
+"$PREFIX/backend/.venv/bin/pip" install --quiet -r "$PREFIX/backend/requirements.in"
 
 echo "==> environment file"
 if [ ! -f "$ENVFILE" ]; then
