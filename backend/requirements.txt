@@ -2,7 +2,7 @@
 # are reproducible and a compromised/breaking upstream can't slip in on the next build.
 # Bump deliberately (watch the CVE notes below). Proper hash-locking (pip-compile) is the
 # next step; see docs. Direct deps only — pip resolves transitives.
-fastapi==0.139.0
+fastapi==0.162.0
 uvicorn[standard]==0.54.0
 sqlalchemy==2.1.6
 pydantic==2.14.2
