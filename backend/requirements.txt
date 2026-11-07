@@ -18,9 +18,8 @@ argon2-cffi==25.1.0       # argon2id password hashing (legacy PBKDF2 still verif
 authlib==1.9.3            # OIDC ID-token / JWKS validation (>=1.9.1: GHSA-8m4g-j4wp-wgcg, -6v38-4h7w-rj9h, -7vr2-2fgp-9w7p)
 prometheus-client==0.26.0 # /metrics exposition
 python3-saml==1.16.0      # per-tenant SAML SSO (pulls lxml + xmlsec manylinux wheels)
-mcp>=1.2,<2               # remote MCP endpoint (app/mcp_remote.py). Pinned to the v1
-                          # line for the same reason mcp-server/ is: v2 renamed
-                          # FastMCP and changed the API surface.
+mcp>=2.3.0,<3             # remote MCP endpoint (app/mcp_remote.py), on the v2 API
+                          # (MCPServer; transport options on streamable_http_app).
 python-multipart==0.0.33  # SAML ACS form parsing (>=0.0.18: CVE-2024-53981 multipart DoS)
 regex==2026.9.29           # tenant/admin custom patterns only — backtracking-resistant engine
                           # + per-match timeout= (stdlib `re` has neither) to bound ReDoS
