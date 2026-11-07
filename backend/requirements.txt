@@ -6,7 +6,7 @@ fastapi==0.139.0
 uvicorn[standard]==0.54.0
 sqlalchemy==2.1.6
 pydantic==2.14.2
-anthropic[vertex,bedrock]==0.116.0  # LLM judge — Claude via API key, GCP Vertex, or AWS Bedrock
+anthropic[vertex,bedrock]==2.4.0  # LLM judge — Claude via API key, GCP Vertex, or AWS Bedrock
                           # (extras' deps already present: google-auth via google-genai, boto3 below)
 openai==2.45.0            # LLM judge — GPT backend (optional)
 google-genai==2.11.0      # LLM judge — Gemini backend (optional)
