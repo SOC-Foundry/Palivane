@@ -22,7 +22,8 @@ def _guc(db) -> str:
 
 def test_tenant_guc_survives_commits_until_cleared(monkeypatch):
     monkeypatch.setattr(database, "_IS_PG", True)     # the app's own DB may be sqlite here
-    engine = create_engine(URL)
+    from app.config import pin_postgres_driver
+    engine = create_engine(pin_postgres_driver(URL))
     maker = sessionmaker(bind=engine)
     event.listen(maker, "after_begin", database._reapply_tenant)
     db = maker()

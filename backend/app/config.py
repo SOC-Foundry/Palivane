@@ -33,6 +33,16 @@ def _mcp_feed_path() -> str:
     return "" if raw.lower() in ("", "off", "none", "false", "0") else raw
 
 
+def pin_postgres_driver(url: str) -> str:
+    """A bare postgresql:// (or postgres://) URL names psycopg2 explicitly. SQLAlchemy 2.1
+    made the bare scheme mean psycopg (v3), which isn't installed, so a DATABASE_URL written
+    the usual way would fail at the first connection; psycopg2 is the driver this ships."""
+    for bare in ("postgresql://", "postgres://"):
+        if url.startswith(bare):
+            return "postgresql+psycopg2://" + url[len(bare):]
+    return url
+
+
 @dataclass
 class Settings:
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
@@ -147,7 +157,7 @@ class Settings:
     # run); "bundled" = data/mcp_reputation.json (fetched into the image from GCS at deploy,
     # rebuilt weekly by tools/mcp_feed_build.py); a path = that file instead.
     mcp_reputation_feed: str = _mcp_feed_path()
-    database_url: str = os.getenv("DATABASE_URL", "sqlite:///./palivane.db")
+    database_url: str = pin_postgres_driver(os.getenv("DATABASE_URL", "sqlite:///./palivane.db"))
     cors_origins: str = os.getenv("CORS_ORIGINS", "http://localhost:5173")
     # Reject request bodies larger than this (DoS/OOM guard); ~12 MB default.
     max_body_bytes: int = int(_env("PALIVANE_MAX_BODY_BYTES", "12000000"))
