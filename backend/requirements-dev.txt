@@ -1,5 +1,5 @@
 # Everything the app needs, plus the test tools (CI and local development). The production
-# image installs requirements.txt only.
--r requirements.txt
+# image installs the hashed lock (requirements.txt) only.
+-r requirements.in
 pytest==9.2.0
 pytest-xdist==3.8.0     # -n auto in CI: the suite is parallel-safe, see .github/workflows/ci.yml
