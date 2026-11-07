@@ -295,8 +295,12 @@ if [ -n "${RELEASE_KMS_KEY_VERSION:-}" ]; then
     || { echo "ERROR: Cloud KMS release signing failed (see above). Not deploying." >&2; exit 1; }
 fi
 echo "==> Building & pushing $IMAGE"
+# An explicit staging dir (the same path gcloud defaults to) skips gcloud's check that the
+# default bucket belongs to the project, which lists every bucket. The release SA only has
+# rights on this one bucket, not project-wide storage.buckets.list.
 gcloud builds submit --project "$PROJECT_ID" \
   --config deploy/cloudrun/cloudbuild.yaml \
+  --gcs-source-staging-dir "gs://${PROJECT_ID}_cloudbuild/source" \
   --suppress-logs \
   --substitutions "_REGION=${REGION},_REPO=${REPO},_IMAGE=${IMAGE_NAME},_TAG=${TAG},_SELF_HOSTED=${PALIVANE_SELF_HOSTED:-},_APP_ORIGIN=${PALIVANE_APP_ORIGIN:-}" .
 
