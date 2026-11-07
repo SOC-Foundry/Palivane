@@ -180,6 +180,13 @@ variable "github_repo" {
   default = ""
 }
 
+# The repo's OIDC subject prefix when GitHub immutable subjects are on:
+# "repo:<owner>@<owner_id>/<name>@<repo_id>". Empty = "repo:<github_repo>".
+variable "github_oidc_sub_prefix" {
+  type    = string
+  default = ""
+}
+
 # The existing deploy account that becomes the infra identity (GCP_INFRA_SA).
 variable "infra_sa_email" {
   type    = string
