@@ -43,7 +43,7 @@ import contextvars
 import logging
 
 from fastapi import HTTPException
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from .auth import authenticate_console_key, require_admin, require_analyst, user_for_console_key
 from .config import settings
@@ -99,7 +99,7 @@ _CAN_TRIAGE: contextvars.ContextVar[bool] = contextvars.ContextVar("mcp_can_tria
 # /api/mcp would put the endpoint at /api/mcp/mcp and answer /api/mcp with a 307 the MCP
 # client does not follow. Serving at the mount root makes the URL the obvious one.
 # transport_security: the SDK auto-enables DNS-rebinding protection with a localhost-ONLY
-# host allowlist (FastMCP's default host is 127.0.0.1), so behind Cloudflare it answers every
+# host allowlist (the SDK's default host is 127.0.0.1), so behind Cloudflare it answers every
 # request whose Host is app.palivane.io with 421 Misdirected Request — the client sees "Got
 # new credentials, but reconnecting failed: HTTP 421". That protection exists to stop a
 # malicious web page from rebinding to a LOCALLY-run MCP server; it is redundant here, where
@@ -108,8 +108,11 @@ _CAN_TRIAGE: contextvars.ContextVar[bool] = contextvars.ContextVar("mcp_can_tria
 # host validation stays with the app's own allowlist.
 from mcp.server.transport_security import TransportSecuritySettings  # noqa: E402
 
-mcp = FastMCP("palivane", stateless_http=True, streamable_http_path="/",
-              transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False))
+mcp = MCPServer("palivane")
+# MCP SDK v2 takes the transport options when the HTTP app is built, not on the server.
+_HTTP_APP_OPTIONS = dict(
+    stateless_http=True, streamable_http_path="/",
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False))
 
 # The transport's session manager is SINGLE-USE: StreamableHTTPSessionManager.run() raises
 # on a second call for the same instance. One lifespan per process makes that invisible in
@@ -332,7 +335,7 @@ def _unauthorized(message: str):
 
 def build_asgi_app():
     """The mounted app: authenticate the bearer key, then hand off to the MCP transport."""
-    inner = mcp.streamable_http_app()
+    inner = mcp.streamable_http_app(**_HTTP_APP_OPTIONS)
 
     async def app(scope, receive, send):
         if scope["type"] != "http":
