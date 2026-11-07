@@ -94,3 +94,12 @@ gcloud iam service-accounts keys delete <OLD_KEY_ID> \
   show Cloudflare egress IPs).
 - Team access no longer needs per-user `run.invoker`/IAP grants — auth is Palivane's
   own login. GCP-side access for teammates is only about deploy/admin rights.
+
+
+## Key rotation
+
+The `GCP_SA_KEY` secret is rotated monthly by `.github/workflows/rotate-front-key.yml`
+(also runnable on demand). It needs the repo secret `CLOUDFLARE_API_TOKEN` (Workers Scripts:
+Edit on this account) and, in Terraform, `infra_sa_email` set so the infra identity may manage
+`palivane-front`'s keys. Old keys are deleted only after a request has gone through the Worker
+with the new one.
