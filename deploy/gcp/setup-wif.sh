@@ -72,6 +72,8 @@ ROLES=(
   roles/resourcemanager.projectIamAdmin
   roles/serviceusage.serviceUsageAdmin
   roles/logging.viewer   # ops.yml reads one-off admin job output from Cloud Logging
+  roles/cloudkms.admin   # deploy/terraform/kms.tf: the release signing key
+  roles/artifactregistry.admin  # service-accounts.tf: the release SA's push binding on the repo
 )
 for role in "${ROLES[@]}"; do
   for attempt in 1 2 3 4 5; do
