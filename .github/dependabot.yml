@@ -1,5 +1,7 @@
-# Dependency update PRs (security review, low: "Dependabot off"). Weekly, grouped so a week
-# is a few PRs rather than dozens; CI gates each one like any other PR. Security advisories
+# Dependency update PRs (security review, low: "Dependabot off"). Weekly. Minor and patch
+# updates are grouped so a week is a few PRs; each MAJOR update arrives as its own PR, so one
+# breaking jump (the first python group mixed five) can't hold the safe ones back.
+# CI gates each one like any other PR. Security advisories
 # for these ecosystems still open PRs as soon as they are published.
 version: 2
 updates:
@@ -7,16 +9,16 @@ updates:
     directory: /
     schedule: { interval: weekly }
     groups:
-      actions: { patterns: ["*"] }
+      actions: { patterns: ["*"], update-types: ["minor", "patch"] }
 
   - package-ecosystem: pip
     directory: /backend
     schedule: { interval: weekly }
     groups:
-      python: { patterns: ["*"] }
+      python: { patterns: ["*"], update-types: ["minor", "patch"] }
 
   - package-ecosystem: npm
     directory: /frontend
     schedule: { interval: weekly }
     groups:
-      frontend: { patterns: ["*"] }
+      frontend: { patterns: ["*"], update-types: ["minor", "patch"] }
