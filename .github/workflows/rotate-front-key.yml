@@ -1,0 +1,100 @@
+name: Rotate the Cloudflare Worker's GCP key
+
+# The Cloudflare Worker (deploy/cloudflare) invokes the private Cloud Run service with an ID
+# token it mints from a palivane-front service-account JSON key. Cloudflare can't federate
+# into GCP, so the key can't be replaced by workload identity; it is rotated instead, so a
+# leaked copy stops working within a month (security review, low).
+#
+# Monthly and on demand. As the infra identity: create a new key, put it into the Worker's
+# GCP_SA_KEY secret, check requests still reach Cloud Run through the Worker, and only then
+# delete the older keys. A failed check leaves the old keys in place (the job fails, loudly).
+#
+# Needs the repo secret CLOUDFLARE_API_TOKEN (a token with Workers Scripts: Edit on the
+# account in deploy/cloudflare/wrangler.toml). Without it the job skips with a notice.
+on:
+  schedule:
+    - cron: "23 5 1 * *"      # 05:23 UTC on the 1st of each month
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: rotate-front-key
+  cancel-in-progress: false
+
+jobs:
+  rotate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production-infra
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      FRONT_SA: palivane-front@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      ORIGIN: https://app.palivane.io
+    steps:
+      - name: Cloudflare token present?
+        id: cf
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::notice::CLOUDFLARE_API_TOKEN is not set; the Worker key was NOT rotated."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.cf.outputs.skip != 'true'
+      - name: Authenticate to GCP
+        if: steps.cf.outputs.skip != 'true'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_INFRA_SA || vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        if: steps.cf.outputs.skip != 'true'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.cf.outputs.skip != 'true'
+        with:
+          node-version: "24"
+
+      - name: Create a new key and hand it to the Worker
+        if: steps.cf.outputs.skip != 'true'
+        id: newkey
+        working-directory: deploy/cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key="$RUNNER_TEMP/front-key.json"
+          gcloud iam service-accounts keys create "$key" --iam-account "$FRONT_SA" --project "$PROJECT_ID" --quiet
+          id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["private_key_id"])' "$key")"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          npx --yes wrangler@4.155.0 secret put GCP_SA_KEY < "$key"
+          shred -u "$key" 2>/dev/null || rm -f "$key"
+          echo "new key $id is in the Worker"
+
+      - name: Requests still reach Cloud Run through the Worker
+        if: steps.cf.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 12); do
+            if curl -fsS "$ORIGIN/api/health" >/dev/null; then echo "healthy through the Worker"; exit 0; fi
+            sleep 10
+          done
+          echo "::error::$ORIGIN/api/health fails after the key swap. The old keys were NOT deleted; check the Worker's GCP_SA_KEY secret."
+          exit 1
+
+      - name: Delete the older keys
+        if: steps.cf.outputs.skip != 'true'
+        env:
+          NEW: ${{ steps.newkey.outputs.id }}
+        run: |
+          set -euo pipefail
+          for k in $(gcloud iam service-accounts keys list --iam-account "$FRONT_SA" --project "$PROJECT_ID" \
+                       --managed-by user --format 'value(name.basename())'); do
+            [ "$k" = "$NEW" ] && continue
+            gcloud iam service-accounts keys delete "$k" --iam-account "$FRONT_SA" --project "$PROJECT_ID" --quiet
+            echo "deleted old key $k"
+          done
