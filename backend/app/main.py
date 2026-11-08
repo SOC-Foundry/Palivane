@@ -224,6 +224,9 @@ async def lifespan(_app: FastAPI):
                         # (uninstalled devices), so neither table grows forever.
                         from .lifecycle import prune_audit_log, prune_dark_sensors
                         await asyncio.to_thread(prune_audit_log, db)
+                        # Meter this month's sensors before any dark ones are forgotten.
+                        from .developer_meter import backfill_from_heartbeats
+                        await asyncio.to_thread(backfill_from_heartbeats, db)
                         await asyncio.to_thread(prune_dark_sensors, db)
                     # Spent OAuth codes and dead tokens. Registration is open and every
                     # refresh writes a new pair, so these tables only grow otherwise. ~hourly.
@@ -2354,6 +2357,11 @@ def _record_heartbeat(db: Session, tenant_id: int | None, actor: str,
         db.commit()
     except Exception:
         db.rollback()
+        return
+    # The monthly per-plane head count (per-developer pricing). Its own best-effort write, at
+    # most once per person, plane and month in this process.
+    from .developer_meter import record as _meter
+    _meter(db, tenant_id, actor or "", plane, tool or "", _parse_client_ua(client_ua)[0])
 
 
 def _tenant_mcp_allow(tenant_id: int | None, db: Session) -> str:
@@ -4516,6 +4524,15 @@ def fleet_health(current: User = Depends(require_admin), db: Session = Depends(g
     return {"summary": summary, "sensors": sensors,
             "server_version": settings.version, "latest_client_versions": latest,
             "dead_keys": [k.to_dict() for k in dead]}
+
+
+@app.get("/api/fleet/developers")
+def fleet_developers(months: int = 3, current: User = Depends(require_admin),
+                     db: Session = Depends(get_db)):
+    """People each protection plane covered, per calendar month (app/developer_meter.py): the
+    head count behind per-developer pricing. Counts only; the meter stores no names."""
+    from .developer_meter import summary
+    return summary(db, current.tenant_id, months=months)
 
 
 @app.get("/api/fleet/assets")
