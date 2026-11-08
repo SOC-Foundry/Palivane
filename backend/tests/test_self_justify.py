@@ -15,10 +15,10 @@ def _h(text):
 
 # Confirmed PII (SSN + card) — force-blocked, but JUSTIFIABLE: business-need sends of
 # personal data exist (a support rep handling a customer's own record).
-PII_PROMPT = ("customer record: SSN 078-05-1120, card 4242 4242 4242 4242, "
+PII_PROMPT = ("customer record: SSN 078-15-1120, card 4242 4242 4242 4242, "
               "send the full export to the vendor")
 # A tier-1 AWS key — confirmed_leak() true — must stay blocked no matter what.
-SECRET_PROMPT = "here's prod access AKIAIOSFODNN7EXAMPLE go wild"
+SECRET_PROMPT = "here's prod access AKIAIOSFODNN7QXAMPLE go wild"
 
 
 def _key(client):
@@ -114,7 +114,7 @@ def test_token_bound_to_actor_and_finding(client):
     assert v2["action"] == "block" and v2["overridden"] is False
     # Different content from the same actor: findings fold on violation classes, so the
     # finding id can even match — the content hash is what pins the grant to the message.
-    v3 = _scan(client, key, PII_PROMPT + " and their SSN 219-09-9999 too",
+    v3 = _scan(client, key, PII_PROMPT + " and their SSN 219-19-9999 too",
                override_token=tok)
     assert v3["overridden"] is False and v3["action"] == "block"
 

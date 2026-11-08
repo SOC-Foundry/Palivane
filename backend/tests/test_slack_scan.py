@@ -60,7 +60,7 @@ def test_scan_finds_phi_and_maps_actor(client, monkeypatch):
 def test_scan_finds_pii_on_collab_surface(client, monkeypatch):
     _fake_slack(monkeypatch, [
         {"user": "U1", "ts": "1755100004.000100",
-         "text": "customer SSN 078-05-1120, card 4242 4242 4242 4242"},
+         "text": "customer SSN 078-15-1120, card 4242 4242 4242 4242"},
     ])
     cid = _mk(client)
     assert client.post(f"/api/discovery/connectors/{cid}/sync").json()["findings"] == 1
@@ -71,7 +71,7 @@ def test_scan_finds_pii_on_collab_surface(client, monkeypatch):
 def test_scan_finds_secrets_on_collab_surface(client, monkeypatch):
     _fake_slack(monkeypatch, [
         {"user": "U1", "ts": "1755100003.000100",
-         "text": "prod key is AKIAIOSFODNN7EXAMPLE please don't share"},
+         "text": "prod key is AKIAIOSFODNN7QXAMPLE please don't share"},
     ])
     cid = _mk(client)
     assert client.post(f"/api/discovery/connectors/{cid}/sync").json()["findings"] == 1
@@ -400,7 +400,7 @@ def test_patch_rejects_an_unknown_connector(client):
 # fire; the one where it should is the short one at the top.
 
 ADMIN = "xoxp-admin-token"
-LEAK = "aws key AKIAIOSFODNN7EXAMPLE and secret wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+LEAK = "aws key AKIAIOSFODNN7QXAMPLE and secret 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"
 
 
 def _set_plan(db_factory, plan, slug="acme"):

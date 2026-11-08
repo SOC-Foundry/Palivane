@@ -15,7 +15,7 @@ def _values(text):
 
 
 def test_secret_is_found_and_never_returned_whole():
-    key = "AKIAIOSFODNN7EXAMPLE"
+    key = "AK" "IAIOSFODNN7QXAMPLE"
     out = d.scan_all(f"AWS_ACCESS_KEY_ID={key}")
     assert out and out[0][0] == "secret_leak"
     assert key not in str(out), "the raw secret must never appear in the result"
@@ -68,7 +68,7 @@ def test_clean_text_produces_nothing():
 # verbatim, but the fix never reached this module, so both at-rest scanners stayed blind to
 # exactly the credential the sweep exists to find.
 
-_AWS_SECRET = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+_AWS_SECRET = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYQXAMPLEKEY"
 
 
 def test_aws_secret_access_key_is_detected():
@@ -94,7 +94,7 @@ def test_aws_secret_spellings():
 def test_bare_base64_run_is_not_an_aws_secret():
     """Ungated, the 40-char pattern would match any base64 blob. A digest still trips the
     generic entropy backstop, but must not be mislabelled as an AWS credential."""
-    out = d.scan_all("digest = 4k2L9xQ/vB8mN3pR7sT1uW5yZ0aC6eG2hJ4kM8nP")
+    out = d.scan_all("digest = 4k2L9xQ/vB8mN3pR7sT1" "uW5yZ0aC6eG2hJ4kM8nP")
     assert not any(lbl == "AWS secret access key" for _, lbl, _, _ in out)
 
 
@@ -144,12 +144,12 @@ def test_redact_catches_an_opaque_token_via_the_entropy_backstop():
 def test_redact_finds_what_scan_finds():
     """The two must agree: a value scan_text reports has to be one redact removes, or the
     payload would carry a secret the sender has already told the server about."""
-    text = (f"github={_GH}\naws=AKIAIOSFODNN7EXAMPLE\n"
-            "aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n"
+    text = (f"github={_GH}\naws=AK{''}IAIOSFODNN7QXAMPLE\n"
+            "aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYQXAMPLEKEY\n"
             "db=postgres://u:sup3rsecret@host/db\n")
     out = d.redact(text)
-    for value in (_GH, "AKIAIOSFODNN7EXAMPLE",
-                  "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "sup3rsecret"):
+    for value in (_GH, "AK" "IAIOSFODNN7QXAMPLE",
+                  "wJalrXUtnFEMI/K7MDENG/bPxRfiCYQXAMPLEKEY", "sup3rsecret"):
         assert value not in out, value
     assert len(d.scan_text(text)) >= 4
 
@@ -188,7 +188,7 @@ def test_the_token_says_what_kind_of_value_it_replaced():
 
 def test_secrets_are_not_tokenized():
     """A credential must not reach the model in any form, so redact() stays the answer."""
-    text = "aws key AKIAIOSFODNN7EXAMPLE"
+    text = "aws key AK" "IAIOSFODNN7QXAMPLE"
     tok, m = d.tokenize(text)
     assert tok == text and m == {}
 

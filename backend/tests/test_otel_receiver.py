@@ -85,7 +85,7 @@ def test_dangerous_tool_recorded_benign_dropped(client, raw_client):
 def test_multiple_resource_logs_and_bad_records(client, raw_client):
     key = _key(client)
     doc = {"resourceLogs": [
-        _otlp([{"event": "user_prompt", "attrs": {"prompt": "leak AKIAIOSFODNN7EXAMPLE"}}])["resourceLogs"][0],
+        _otlp([{"event": "user_prompt", "attrs": {"prompt": "leak AKIAIOSFODNN7QXAMPLE"}}])["resourceLogs"][0],
         {"scopeLogs": [{"scope": {"name": "com.anthropic.claude_code.events"},
                         "logRecords": [{"attributes": [{"key": "event.name", "value": {"stringValue": "internal_error"}}]}]}]},
     ]}

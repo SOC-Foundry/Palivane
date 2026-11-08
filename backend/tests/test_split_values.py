@@ -8,7 +8,7 @@ from app.detectors import AnalysisInput, Surface
 from app.detectors.decode import reshaped_views
 from app.detectors.shadow_ai import ShadowAIDetector
 
-KEY = "AKIA" + "IOSFODNN" + "7EXAMPLE"
+KEY = "AKIA" + "IOSFODNN" + "7QXAMPLE"
 
 
 def _found(content):

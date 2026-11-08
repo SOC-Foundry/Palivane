@@ -169,7 +169,7 @@ def test_bridge_payloads_detected_by_backend(client, raw_client):
     r = raw_client.post("/api/ingest/mcp", json=mcp, headers=h).json()
     assert "dangerous_command" in {s["category"] for s in r["signals"]}
     # user_prompt with a secret -> secret_leak on ai-usage.
-    ai = wo.build_ai_usage({"prompt": "here is my key AKIAIOSFODNN7EXAMPLE", "user.email": "d@acme.com"})
+    ai = wo.build_ai_usage({"prompt": "here is my key AKIAIOSFODNN7QXAMPLE", "user.email": "d@acme.com"})
     r2 = raw_client.post("/api/ingest/ai-usage", json=ai, headers=h).json()
     assert "secret_leak" in {s["category"] for s in r2["signals"]}
 

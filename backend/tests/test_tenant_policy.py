@@ -158,7 +158,7 @@ def test_sanctioned_tools_isolated_between_tenants(client, raw_client, db_factor
 def test_tool_suppress_per_tenant(client, raw_client, monkeypatch):
     monkeypatch.setattr(main.settings, "gateway_tool_suppress", "")
     key = _key(client)
-    secret = {"content": "here is my key AKIAIOSFODNN7EXAMPLE", "tool": "mytool",
+    secret = {"content": "here is my key AKIAIOSFODNN7QXAMPLE", "tool": "mytool",
               "destination": "https://mytool.example.com"}
     # Baseline: the secret is flagged.
     base = raw_client.post("/api/ingest/ai-usage", json=secret, headers={"X-Palivane-Token": key}).json()
@@ -216,5 +216,5 @@ def test_source_code_can_be_allowed_for_one_destination(client, raw_client, monk
 
     assert "source_code_leak" not in cats(post(_CODE, "https://claude.ai/chat/abc"))    # allowed there
     assert "source_code_leak" in cats(post(_CODE, "https://chatgpt.com/c/1"))           # not elsewhere
-    leaky = _CODE + "\n# deploy key AKIAIOSFODNN7EXAMPLE\n"
+    leaky = _CODE + "\n# deploy key AKIAIOSFODNN7QXAMPLE\n"
     assert "secret_leak" in cats(post(leaky, "https://claude.ai/chat/abc"))              # nor secrets

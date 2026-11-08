@@ -177,8 +177,8 @@ def test_ai_sidebar_extension_hosts_scan_only_their_prompt_endpoints():
 
 def test_a_sidebar_prompt_body_is_harvested_for_its_text():
     body = json.dumps({"task_uid": "8f0c2a9e-4b1d-4c3e-9a77-2d5e6f1a0b3c",
-                       "data": {"items": [{"content": "my SSN is 078-05-1120"}]}})
-    assert "078-05-1120" in addon.harvest_prompt(body)
+                       "data": {"items": [{"content": "my SSN is 078-15-1120"}]}})
+    assert "078-15-1120" in addon.harvest_prompt(body)
 
 
 def test_claude_in_chrome_host_is_inspected_but_never_harvested():
@@ -260,10 +260,10 @@ def test_responses_list_input_scans_the_latest_user_turn_and_instructions():
 
 
 def test_responses_role_less_parts_are_one_user_turn():
-    body = {"input": [{"type": "input_text", "text": "first part 078-05-1120"},
+    body = {"input": [{"type": "input_text", "text": "first part 078-15-1120"},
                       {"type": "input_image", "image_url": "data:image/png;base64,AAAA"}]}
-    assert addon.extract_prompt(json.dumps(body)) == "first part 078-05-1120"
-    assert addon.extract_prompt(json.dumps({"input": "plain string 078-05-1120"})) == "plain string 078-05-1120"
+    assert addon.extract_prompt(json.dumps(body)) == "first part 078-15-1120"
+    assert addon.extract_prompt(json.dumps({"input": "plain string 078-15-1120"})) == "plain string 078-15-1120"
 
 
 def test_responses_matches_the_gateway():
@@ -867,7 +867,7 @@ _SESSION_EVENTS = {"events": [
     {"payload": {"type": "control_request", "request_id": "r2",
                  "request": {"subtype": "initialize", "sdkMcpServers": ["claude-in-chrome"]}, "uuid": "u2"}},
     {"payload": {"type": "user", "uuid": "u3", "session_id": "s1", "parent_tool_use_id": None,
-                 "message": {"role": "user", "content": "summarise this: my SSN is 078-05-1120"}}},
+                 "message": {"role": "user", "content": "summarise this: my SSN is 078-15-1120"}}},
 ]}
 
 
@@ -881,7 +881,7 @@ def test_claude_session_events_are_recognized_by_path():
 
 def test_claude_session_events_yield_only_the_typed_text():
     text = addon.code_session_user_text(json.dumps(_SESSION_EVENTS).encode())
-    assert text == "summarise this: my SSN is 078-05-1120"
+    assert text == "summarise this: my SSN is 078-15-1120"
     blocks = {"events": [{"payload": {"type": "user", "message": {"role": "user", "content": [
         {"type": "text", "text": "key AKIAQ3EGRZ7XKP4M2WNV"},
         {"type": "tool_result", "tool_use_id": "t", "content": "page text 4111 1111 1111 1111"}]}}}]}
@@ -898,7 +898,7 @@ def test_a_blocked_session_message_is_replaced_and_the_setup_events_kept():
                "risk_score": 95, "severity": "critical"}
     notice = addon.session_block_notice(verdict)
     assert notice.startswith("[Palivane blocked this message before it left your device")
-    assert "sensitive data: SSN." in notice and "078-05-1120" not in notice
+    assert "sensitive data: SSN." in notice and "078-15-1120" not in notice
     assert "Tell the user" not in notice                  # written to the person, not the model
     tokens = {"signals": [{"evidence": "x7Kq9PzLm2…", "weight": 0.7, "confidence": 0.7}]}
     assert "x7Kq…" in addon.session_block_notice(tokens) and "x7Kq9" not in addon.session_block_notice(tokens)
@@ -907,10 +907,10 @@ def test_a_blocked_session_message_is_replaced_and_the_setup_events_kept():
     assert [e["payload"]["type"] for e in events] == ["control_request", "control_request", "user"]
     assert events[1]["payload"]["request"]["subtype"] == "initialize"       # setup goes through
     assert events[2]["payload"]["message"]["content"] == notice
-    assert "078-05-1120" not in json.dumps(out)
+    assert "078-15-1120" not in json.dumps(out)
     # Block content: text replaced, a tool result kept for the session's bookkeeping.
     blocks = {"events": [{"payload": {"type": "user", "message": {"role": "user", "content": [
-        {"type": "text", "text": "SSN 078-05-1120"},
+        {"type": "text", "text": "SSN 078-15-1120"},
         {"type": "tool_result", "tool_use_id": "t", "content": "ok"}]}}}]}
     content = json.loads(addon.replace_user_event_text(json.dumps(blocks), notice))["events"][0]["payload"]["message"]["content"]
     assert content == [{"type": "text", "text": notice}, {"type": "tool_result", "tool_use_id": "t", "content": "ok"}]

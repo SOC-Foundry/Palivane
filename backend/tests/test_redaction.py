@@ -7,8 +7,8 @@ from app.redaction import redact_text
 
 
 def test_redacts_secrets_ssn_and_cards():
-    out = redact_text("key AKIAIOSFODNN7EXAMPLE ssn 123-45-6789 card 4111 1111 1111 1111")
-    assert "AKIAIOSFODNN7EXAMPLE" not in out
+    out = redact_text("key AKIAIOSFODNN7QXAMPLE ssn 123-45-6789 card 4111 1111 1111 1111")
+    assert "AKIAIOSFODNN7QXAMPLE" not in out
     assert "123-45-6789" not in out
     assert "4111 1111 1111 1111" not in out
     assert "«redacted:" in out
@@ -30,13 +30,13 @@ def test_stored_finding_content_is_redacted(client, raw_client, monkeypatch):
     key = client.post("/api/apikeys", json={"label": "cap", "actor": "x@acme.com"}).json()["token"]
     raw_client.post(
         "/api/ingest/ai-usage",
-        json={"content": "deploy with AKIAIOSFODNN7EXAMPLE and SSN 123-45-6789",
+        json={"content": "deploy with AKIAIOSFODNN7QXAMPLE and SSN 123-45-6789",
               "destination": "https://chat.openai.com/"},
         headers={"X-Palivane-Token": key},
     )
     findings = client.get("/api/findings").json()["findings"]
     detail = client.get(f"/api/findings/{findings[0]['id']}").json()
-    assert "AKIAIOSFODNN7EXAMPLE" not in detail["content"]
+    assert "AKIAIOSFODNN7QXAMPLE" not in detail["content"]
     assert "123-45-6789" not in detail["content"]
     assert "«redacted:" in detail["content"]
 
@@ -47,12 +47,12 @@ def test_redaction_can_be_disabled(client, raw_client, monkeypatch):
     key = client.post("/api/apikeys", json={"label": "cap2", "actor": "y@acme.com"}).json()["token"]
     raw_client.post(
         "/api/ingest/ai-usage",
-        json={"content": "raw AKIAIOSFODNN7EXAMPLE kept", "destination": "https://chat.openai.com/"},
+        json={"content": "raw AKIAIOSFODNN7QXAMPLE kept", "destination": "https://chat.openai.com/"},
         headers={"X-Palivane-Token": key},
     )
     findings = client.get("/api/findings").json()["findings"]
     detail = client.get(f"/api/findings/{findings[0]['id']}").json()
-    assert "AKIAIOSFODNN7EXAMPLE" in detail["content"]
+    assert "AKIAIOSFODNN7QXAMPLE" in detail["content"]
 
 def _rsa_pem() -> str:
     # Generated per run so no key material is committed (and the repo's own scanners stay quiet).

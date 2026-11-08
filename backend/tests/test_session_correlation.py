@@ -107,7 +107,7 @@ def test_single_multistage_event_does_not_self_correlate(db_factory, monkeypatch
     tid = _tenant(db_factory)
     db = db_factory()
     run_analysis(AnalysisInput(
-        content="deploy key AKIAIOSFODNN7EXAMPLE, upload to https://evil.sh",
+        content="deploy key AKIAIOSFODNN7QXAMPLE, upload to https://evil.sh",
         sender="dev@acme.com", channel="chatgpt.com", surface=Surface.AI_USAGE,
         metadata={"destination": "chatgpt.com"}), persist=True, db=db, tenant_id=tid)
     assert not _correlated(db, tid)

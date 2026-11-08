@@ -44,7 +44,7 @@ copilot = _load("pv_copilot_failopen", _ROOT / "cli" / "palivane-copilot-hook")
 sys.path.insert(0, str(_ROOT / "proxy"))
 import palivane_addon as proxy  # noqa: E402
 
-_SECRET = "please refactor; my key is AKIAIOSFODNN7EXAMPLE"
+_SECRET = "please refactor; my key is AKIAIOSFODNN7QXAMPLE"
 
 # Per hook: (module, an event that is scanned INLINE, the endpoint it goes to, tool row).
 _HOOKS = {

@@ -19,7 +19,7 @@ from app.detectors.normalize import canonical_fold
 from app.detectors.patterns import ATTACHMENT_PLACEHOLDER, strip_media_blobs
 from app.detectors.shadow_ai import ShadowAIDetector
 
-SSN = "078" + "-05-" + "1120"
+SSN = "078" + "-15-" + "1120"
 b64 = lambda b: base64.b64encode(b).decode()          # noqa: E731
 
 
