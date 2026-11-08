@@ -20,7 +20,8 @@ name: Ops (one-off admin job)
 #
 # OUTPUT: this repository is public, so run logs are too. Script and job output is never
 # printed in the clear: it is encrypted to the OPS_OUTPUT_GPG_KEY repo variable (an
-# operator's GPG public key) or withheld. See .github/scripts/ops_emit.sh to set up and
+# operator's GPG public key, attached to the run as the ops-output artifact) or withheld.
+# See .github/scripts/ops_emit.sh to set up and
 # decrypt. Keep the scripts themselves from echoing secrets to stderr either way.
 on:
   workflow_dispatch:
@@ -83,6 +84,7 @@ jobs:
           TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
           TF_VAR_db_password: ${{ secrets.TF_DB_PASSWORD }}
           OPS_OUTPUT_GPG_KEY: ${{ vars.OPS_OUTPUT_GPG_KEY }}
+          OPS_OUTPUT_DIR: ${{ runner.temp }}/ops-output
         run: |
           set -euo pipefail
           if [ -z "$OPS_RUNNER_SCRIPT" ] && [ -z "$OPS_SCRIPT" ]; then
@@ -142,6 +144,7 @@ jobs:
         env:
           OPS_SCRIPT: ${{ secrets.OPS_SCRIPT }}
           OPS_OUTPUT_GPG_KEY: ${{ vars.OPS_OUTPUT_GPG_KEY }}
+          OPS_OUTPUT_DIR: ${{ runner.temp }}/ops-output
         run: |
           # Only the container job produces logs. A runner-only run (OPS_RUNNER_SCRIPT with
           # no OPS_SCRIPT) never creates palivane-ops, so skip the wait + read that would
@@ -167,6 +170,17 @@ jobs:
             echo "(could not read logs — grant the deploy SA roles/logging.viewer to see job output here)"
           fi
           rm -f "$out"
+
+      # Encrypted output as a file, not log lines (see .github/scripts/ops_emit.sh): only the
+      # OPS_OUTPUT_GPG_KEY holder can read it, and log masking can't corrupt it.
+      - name: Attach encrypted output
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ops-output
+          path: ${{ runner.temp }}/ops-output
+          if-no-files-found: ignore
+          retention-days: 3
 
       - name: Delete job
         if: always()
