@@ -13,7 +13,9 @@ finds it first.
 
 **One-click ("Add to Slack").** Available only when the operator of your Palivane
 deployment has registered a published Slack app. If Settings shows the button, use it: you
-approve the read scopes in your own workspace and the bot token is stored for you.
+approve the scopes in your own workspace and the bot token is stored for you. The app asks
+for the same scopes as the table below, `channels:join` included; it only joins channels if
+you turn on "Scan every public channel".
 
 **Your own workspace app.** Always available, and the only route on a deployment with no
 published app. Ten minutes, once.
@@ -22,7 +24,7 @@ published app. Ten minutes, once.
 
 1. Go to `api.slack.com/apps` → **Create New App** → **From scratch**. Name it whatever
    your workspace will recognise; pick the workspace to install into.
-2. **OAuth & Permissions** → **Bot Token Scopes**, add exactly these six:
+2. **OAuth & Permissions** → **Bot Token Scopes**, add these:
 
    | Scope | Why |
    | --- | --- |
