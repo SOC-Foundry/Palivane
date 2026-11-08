@@ -40,10 +40,12 @@ route would have run.
 from __future__ import annotations
 
 import contextvars
+import functools
 import logging
 
 from fastapi import HTTPException
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from .auth import authenticate_console_key, require_admin, require_analyst, user_for_console_key
 from .config import settings
@@ -113,6 +115,21 @@ mcp = MCPServer("palivane")
 _HTTP_APP_OPTIONS = dict(
     stateless_http=True, streamable_http_path="/",
     transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False))
+
+
+def _tool(fn):
+    """mcp.tool(), with the API's refusals (HTTPException: read-only connection, role, not
+    found) passed to the client as ToolError. mcp 2 withholds any other exception's text, so
+    the caller would see only "Error executing tool <name>". Only the registered copy
+    converts; the function itself still raises HTTPException when called directly."""
+    @functools.wraps(fn)
+    def run(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except HTTPException as exc:
+            raise ToolError(f"{exc.status_code}: {exc.detail}") from exc
+    mcp.tool()(run)
+    return fn
 
 # The transport's session manager is SINGLE-USE: StreamableHTTPSessionManager.run() raises
 # on a second call for the same instance. One lifespan per process makes that invisible in
@@ -225,7 +242,7 @@ def _as_untrusted(result):
     return result
 
 
-@mcp.tool()
+@_tool
 def list_findings(severity: str = "", status: str = "", surface: str = "",
                   actor: str = "", limit: int = 50) -> dict:
     """Findings for your tenant, newest first. Filter by severity, status, surface, actor."""
@@ -235,7 +252,7 @@ def list_findings(severity: str = "", status: str = "", surface: str = "",
                                surface=surface or None, actor=actor or None, limit=min(limit, 200)))
 
 
-@mcp.tool()
+@_tool
 def get_finding(finding_id: int) -> dict:
     """Full detail for one finding: signals, evidence, actor, and the owner's response. When the
     org keeps evidence context, each signal also carries a short masked excerpt (`context`) of
@@ -245,21 +262,21 @@ def get_finding(finding_id: int) -> dict:
     return _as_untrusted(_read(main.get_finding, admin=False, finding_id=finding_id))
 
 
-@mcp.tool()
+@_tool
 def ai_tool_inventory() -> dict:
     """Shadow-AI inventory: which AI tools are in use, sanctioned or not, and the exposure."""
     from . import main
     return _read(main.discovery_inventory, admin=True)
 
 
-@mcp.tool()
+@_tool
 def list_connectors() -> dict:
     """SaaS connectors and their sync status."""
     from . import main
     return _read(main.connectors_list, admin=True)
 
 
-@mcp.tool()
+@_tool
 def gateway_usage() -> dict:
     """LLM-gateway usage: minute, 24h and daily totals against the limit."""
     from . import main
@@ -276,7 +293,7 @@ def _require_write() -> None:
                    "finding's status\" on the consent screen, or use a console_write key.")
 
 
-@mcp.tool()
+@_tool
 def set_finding_status(finding_id: int, status: str, reason: str = "") -> dict:
     """Triage a finding: set its status to open, triaged, or dismissed (dismissing needs an
     admin; `reason` for a dismissal is one of false_positive, expected, accepted_risk,
@@ -297,7 +314,7 @@ def set_finding_status(finding_id: int, status: str, reason: str = "") -> dict:
     return _read(main.update_status, admin=False, finding_id=finding_id, body=body)
 
 
-@mcp.tool()
+@_tool
 def investigate_finding(finding_id: int) -> dict:
     """Run the analyst on a finding: it gathers the finding's context and the actor's other
     recent findings and returns a written investigation with a RECOMMENDED action (it never
