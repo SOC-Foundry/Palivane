@@ -25,8 +25,9 @@ export const FAQ = [
 // How many of FAQ the landing page shows; /pricing#faq shows them all.
 export const FAQ_FIRST = 3;
 
-export function Faq({ items, className = "" }) {
-  const [openQ, setOpenQ] = useState(0);
+// `open`: the index shown expanded at first; -1 starts with every item collapsed.
+export function Faq({ items, className = "", open = 0 }) {
+  const [openQ, setOpenQ] = useState(open);
   return (
     <div className={`lp-faq ${className}`}>
       {items.map((f, i) => (

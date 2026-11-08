@@ -22,6 +22,7 @@ import emailMd from "../../../docs/email-scanning.md?raw";
 import realtimeMd from "../../../docs/realtime-scanning.md?raw";
 import scimMd from "../../../docs/scim-provisioning.md?raw";
 import siemMd from "../../../docs/siem-and-s3-delivery.md?raw";
+import mcpMd from "../../../mcp-server/README.md?raw";
 
 const DOCS = [
   { slug: "overview", title: "Overview & architecture", md: overviewMd },
@@ -38,6 +39,7 @@ const DOCS = [
   { slug: "realtime-scanning", title: "Real-time & on-write scanning", md: realtimeMd },
   { slug: "scim-provisioning", title: "SCIM provisioning (Okta / Entra)", md: scimMd },
   { slug: "siem-and-s3-delivery", title: "SIEM & S3 delivery", md: siemMd },
+  { slug: "mcp", title: "Connect your AI assistant (MCP)", md: mcpMd },
   { slug: "data-flows", title: "Data flows: what leaves the machine", md: dataFlowsMd },
   { slug: "verifying-downloads", title: "Verifying what you install", md: verifyMd },
   { slug: "pilot", title: "Pilot smoke test", md: pilotMd },

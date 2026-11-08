@@ -4,9 +4,11 @@
 // core promise is honesty about what it sees, so the matrix says precisely what each
 // claim on the landing page rests on. Content mirrors README "Where Palivane captures
 // AI usage", keep the two in sync. (Coverage.jsx is the console's fleet-coverage view;
-// this is the marketing page.)
+// this is the marketing page.) The gaps and the bypass list are accordions: every item
+// stays on the page, one line until opened.
 import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
 import { IconShield } from "./icons.jsx";
+import { Faq } from "./Faq.jsx";
 
 // mode: "block" (can stop it inline) | "observe" (visibility only)
 const GROUPS = [
@@ -16,146 +18,119 @@ const GROUPS = [
     rows: [
       {
         surface: "Your own AI apps & API traffic",
-        how: "LLM gateway, an OpenAI-, Anthropic-, Gemini- and xAI-compatible reverse proxy; prompts and responses are scored inline on the way to the provider. Orgs on a cloud contract can route Claude through AWS Bedrock or GCP Vertex AI instead of an API key.",
-        needs: "A base-URL change in the client or SDK. Nothing installed anywhere.",
+        how: "LLM gateway: an OpenAI-, Anthropic-, Gemini- and xAI-compatible reverse proxy that scores prompts and responses inline. Claude can also route through AWS Bedrock or GCP Vertex AI.",
+        needs: "A base-URL change in the client or SDK.",
         mode: "block",
       },
       {
-        surface: "Every Claude product, for Claude Enterprise: claude.ai, Cowork (cloud sessions too), Claude Code, Claude in Chrome, Claude for Microsoft 365",
-        how: "Anthropic Inference hooks: Anthropic sends each prompt, and each set of tool calls, to Palivane before the model runs, and waits for allow or deny",
-        needs: "Claude Enterprise. An Owner points Organization settings → Inference hooks at Palivane (endpoint URL, header key, signing secret). Nothing on any device. Palivane Team or Enterprise plan.",
+        surface: "Every Claude product, for Claude Enterprise: claude.ai, Cowork, Claude Code, Claude in Chrome, Claude for Microsoft 365",
+        how: "Anthropic Inference hooks: each prompt and set of tool calls comes to Palivane for allow or deny before the model runs.",
+        needs: "Claude Enterprise; an Owner points Inference hooks at Palivane. Palivane Team or Enterprise plan.",
         mode: "block",
       },
       {
-        surface: "Collaboration messaging: Slack, Microsoft Teams",
-        how: "Slack scanned in real time (Events API push) and on a cursor; Teams channels + thread replies via Graph delta, with opted-in 1:1/group chats via the export API",
-        note: "PII/PHI/secret detection on the collab surface. Bot token covers channels the bot is in; on Enterprise Grid a customer-generated Discovery token covers every private channel and DM org-wide. Enterprise can additionally delete a confirmed Slack leak (audit-logged). Real-time needs a public webhook URL; the scheduled pull is the safety net.",
-        needs: "A read-scoped bot token (Slack) or an Entra app registration with the protected ChannelMessage.Read.All (Teams). Nothing installed anywhere.",
+        surface: "Slack, Microsoft Teams",
+        how: "Slack: one-click Add to Slack, scanned in real time as messages and files land, with a scheduled pull as the safety net. Teams: channels and thread replies via Graph, opted-in chats via the export API.",
+        note: "The Slack bot reads channels it is in; an org can let it join every public channel. Enterprise Grid's Discovery API covers private channels and DMs org-wide.",
+        needs: "Add to Slack (or your own bot token); an Entra app with ChannelMessage.Read.All for Teams.",
         mode: "observe",
       },
       {
         surface: "Outbound email: Gmail, Outlook / Exchange Online",
-        how: "Scans each user's SENT mail, outbound is the leak surface, body + text attachments, watermark-incremental per mailbox",
-        needs: "Google domain-wide delegation (gmail.readonly) or an Entra app with Mail.Read. Nothing installed anywhere.",
+        how: "Each user's sent mail, body and text attachments, incrementally per mailbox.",
+        needs: "Google domain-wide delegation (gmail.readonly) or an Entra app with Mail.Read.",
         mode: "observe",
       },
       {
-        surface: "Document stores: Google Drive, SharePoint / OneDrive, Salesforce",
-        how: "Drive and SharePoint/OneDrive scan on write (Drive changes.watch, Graph change subscriptions) as well as on a cursor; Salesforce record + attachment text on a cursor",
-        note: "Reads what the file actually is: plain text, PDFs, Word/Excel/PowerPoint, RTF and OpenDocument, plus screenshots where OCR is enabled. Anything nothing can open (pre-2007 Office, encrypted PDFs) is reported as unread, never counted clean.",
-        needs: "A read-scoped token or connected app per platform. Nothing installed anywhere.",
+        surface: "Google Drive, SharePoint / OneDrive, Salesforce",
+        how: "Drive and SharePoint/OneDrive scanned on write and on a cursor; Salesforce records and attachments on a cursor.",
+        note: "Reads PDFs, Office, RTF, OpenDocument, and images where OCR is on. What can't be opened is reported as unread, never clean.",
+        needs: "A read-scoped token or connected app per platform.",
         mode: "observe",
       },
       {
         surface: "AI inside the warehouse: Snowflake Cortex, Databricks Model Serving",
-        how: "Polled from the platform's own records — Snowflake QUERY_HISTORY for Cortex/AI_* calls, Databricks inference tables for Model Serving — then scored like any other prompt. This is where analysts and pipelines call an LLM without a browser, a laptop or an egress path anything else could watch.",
-        note: "Detect-after, not inline: the call has already run when it is scored, so this surface reports and alerts, it does not block. Prompts written as SQL literals are scored; a prompt bound from a column is counted and reported as unscored rather than passed over silently (see the gaps below).",
-        needs: "A read-scoped warehouse credential — key-pair JWT for Snowflake, a service principal for Databricks. Nothing installed anywhere.",
+        how: "Polled from Snowflake QUERY_HISTORY and Databricks inference tables, then scored like any prompt: the LLM calls no browser or laptop ever sees.",
+        needs: "A read-scoped warehouse credential.",
         mode: "observe",
       },
       {
         surface: "Alerts, SIEM, data lake",
-        how: "Findings pushed from the backend (Slack/webhook alerts, Splunk HEC / CEF / JSON, S3 NDJSON archive)",
-        needs: "A destination URL or bucket. Nothing installed anywhere.",
+        how: "Slack and webhook alerts, Splunk HEC / CEF / JSON, an S3 NDJSON archive.",
+        needs: "A destination URL or bucket.",
         mode: "observe",
       },
     ],
   },
   {
-    title: "Browser & desktop planes, pushed via MDM, or one command",
-    sub: "These need something on the machine. On a managed fleet you push it (Jamf, Intune, Group Policy) and nobody installs anything by hand; on an unmanaged machine it's one command.",
+    title: "Browser & desktop, pushed via MDM or one command",
+    sub: "On a managed fleet you push these (Jamf, Intune, Group Policy); on an unmanaged machine it's one command.",
     rows: [
       {
-        surface: "Browser AI (claude.ai, ChatGPT, Gemini, Microsoft Copilot web)",
-        how: "Manifest V3 browser extension, intercepts the prompt before it's sent",
-        needs: "Extension install: one click from the Chrome Web Store, browser-policy force-install on a managed fleet, or a self-hosted CRX for air-gapped ones.",
+        surface: "Browser AI: claude.ai, ChatGPT, Gemini, Copilot web",
+        how: "Manifest V3 extension; checks the prompt before it is sent.",
+        needs: "Chrome Web Store, policy force-install, or a self-hosted CRX.",
         mode: "block",
       },
       {
-        surface: "Desktop AI apps, AI browser extensions, IDE assistants, third-party CLIs (Claude/ChatGPT desktop, Claude in Chrome, Monica, Sider, Merlin, HARPA, MaxAI, GitHub Copilot, ...)",
-        how: "Local TLS egress proxy (mitmproxy), inspects outbound calls to known AI hosts. Extensions use the browser's own network, so the proxy sees them where the browser extension can't. In Claude Desktop, claude.ai and Claude in Chrome a blocked message is replaced by a notice, so the reason shows in the conversation",
-        needs: "palivane-desktop: a local proxy + a trusted CA certificate, MDM-pushable.",
+        surface: "Desktop AI apps, AI browser extensions, IDE assistants, third-party CLIs",
+        how: "Local TLS egress proxy that inspects calls to known AI hosts, including sidebar extensions (Monica, Sider, Merlin, HARPA, MaxAI) the browser extension can't see. In Claude apps a blocked message shows its reason in the conversation.",
+        needs: "palivane-desktop: a local proxy and a trusted CA, MDM-pushable.",
         mode: "block",
       },
       {
-        surface: "Credentials already sitting on laptops",
-        how: "Scheduled local filesystem scan (palivane-secrets, TruffleHog-backed when available)",
-        needs: "The CLI helper + a scheduled task (launchd / cron / Task Scheduler), MDM-pushable.",
+        surface: "Credentials already on laptops",
+        how: "Scheduled local scan (palivane-secrets), including keys hidden by look-alike characters or encoding.",
+        needs: "The CLI helper and a scheduled task, MDM-pushable.",
         mode: "observe",
       },
     ],
   },
   {
-    title: "AI coding tools, local hooks, before anything leaves or runs",
-    sub: "Coding agents under subscription sign-in send prompts no network plane can see. These hooks read the prompt and the tool call on the device, before transmission or execution.",
+    title: "AI coding tools, checked before anything leaves or runs",
+    sub: "Coding agents on subscription sign-in send prompts no network plane can see. Local hooks read the prompt and the tool call first.",
     rows: [
       {
-        surface: "Claude Code, typed prompts & tool calls (shell, files, MCP)",
-        how: "UserPromptSubmit + PreToolUse hooks (palivane-hook), scored before the prompt leaves / before the tool runs",
-        needs: "One-line CLI install (palivane-connect wires the hooks).",
-        mode: "block",
-      },
-      {
-        surface: "Codex CLI / Gemini CLI, prompts & tool calls (every auth mode)",
-        how: "The same hook pattern per tool (palivane-codex-hook, palivane-gemini-hook)",
-        needs: "Same CLI install, hooks are wired automatically when the tool is present.",
+        surface: "Claude Code, Codex CLI, Gemini CLI, Cursor: prompts & tool calls",
+        how: "Each tool's own hooks (palivane-hook and siblings), scored before the prompt leaves or the tool runs.",
+        needs: "One-line CLI install; hooks are wired for every tool present.",
         mode: "block",
       },
       {
         surface: "GitHub Copilot, CLI & VS Code agent mode",
-        how: "Copilot hooks (palivane-copilot-hook): tool calls inspected pre-execution; prompts captured on submit",
-        needs: "Same CLI install.",
-        mode: "block",
-        note: "Tool calls are deniable; Copilot's hook API makes prompts observe-only.",
-      },
-      {
-        surface: "Cursor, prompts & tool calls",
-        how: "Cursor agent hooks, local, pre-execution (Cursor's chat pins its TLS certificate, so the proxy deliberately isn't the mechanism here)",
+        how: "Copilot hooks: tool calls checked before they run, prompts captured on submit.",
+        note: "Copilot's hook API makes prompts observe-only.",
         needs: "Same CLI install.",
         mode: "block",
       },
       {
-        surface: "Agent tool-use over MCP (remote and local stdio servers)",
-        how: "Remote/HTTP MCP through the egress proxy; local stdio via the palivane-mcp wrapper; tool definitions also read off gateway LLM traffic, requests, responses, and mid-stream",
-        needs: "The proxy or the wrapper, per server type.",
+        surface: "Agent tool use over MCP",
+        how: "Remote MCP through the egress proxy, local stdio servers through the palivane-mcp wrapper, tool definitions read off gateway traffic.",
+        needs: "The proxy or the wrapper.",
         mode: "block",
       },
     ],
   },
   {
-    title: "Code & CI, at the boundary where secrets become incidents",
+    title: "Code & CI",
     rows: [
       {
-        surface: "Commits & repositories",
-        how: "Pre-commit hook + GitHub Action → code scan (secrets, PII, dependency risk)",
-        needs: "A hook or workflow step in the repo.",
+        surface: "Commits, pull requests, CI pipelines",
+        how: "Pre-commit hook and GitHub Action for secrets, PII and dependency risk; pipeline scan for agents handed credentials and runner-posture risks (pwn-request triggers, unpinned actions).",
+        needs: "A hook or workflow step.",
         mode: "block",
       },
       {
-        surface: "Coding agents on CI runners (GitHub Actions, GitLab CI, CircleCI, Azure Pipelines)",
-        how: "Pipeline scan (palivane-ci-scan): flags steps handing agents non-model credentials or disabling approvals, plus runner-posture risks (pwn-request triggers, unpinned actions/orbs/includes, MR-privilege reach, self-hosted runners on fork triggers)",
-        needs: "A workflow step / job; runs pre-merge.",
-        mode: "block",
-      },
-      {
-        surface: "GitHub organization, scanned continuously",
-        how: "A read-only connector reads each repository's files once, then every new commit, on a schedule you set (hourly by default). An optional push webhook scans a push within seconds. Findings name the repository, path, line and commit with a masked preview",
-        note: "Finds a key that was committed and later deleted, because it stays in git history until it is rotated. Reads the default branch, or every branch if you choose. Test, fixture and docs paths can be skipped.",
-        needs: "A read-only fine-grained token (Contents and Metadata: Read). The webhook, if you want one, is added in GitHub. Nothing on devices.",
+        surface: "GitHub organization, continuously",
+        how: "A read-only connector reads every repository once, then each new commit (hourly, or within seconds with a push webhook). Finds keys deleted but still in history.",
+        needs: "A fine-grained read token.",
         mode: "observe",
       },
       {
-        surface: "Databases: credentials stored in tables",
-        how: "palivane-dbscan runs inside your network under a read-only role, reads a sample of each text and JSON column, and flags credentials found in them and credential-named columns kept in clear. Only column names, credential types and masked previews leave",
-        note: "Recognizes encrypted and hashed values and leaves them alone. Postgres and SQLite today.",
-        needs: "A read-only database role, and a machine that can reach the database to run the scanner.",
-        mode: "observe",
-      },
-      {
-        surface: "S3 buckets & GitHub repos at rest",
-        how: "Scans that run where the data lives. Detection happens in the account that owns the bucket or on the machine running the sweep, and only findings travel: a category, a label, a line number, a masked preview",
-        note: "Reads documents, not just text: PDFs, Word/Excel/PowerPoint, RTF and OpenDocument as well as source and exports. Read-only by design: it reports what is already exposed and how to fix it, and never deletes an object, rewrites history, or changes a bucket policy.",
-        needs: "Read credentials for the target (s3:GetObject / a read token). Nothing on devices.",
+        surface: "S3 buckets, repositories, databases at rest",
+        how: "Scanners that run where the data lives, so only findings travel: category, label, line, masked preview. palivane-dbscan samples Postgres and SQLite tables under a read-only role.",
+        note: "Read-only by design: reports what is exposed, never deletes or rewrites.",
+        needs: "Read credentials for the target.",
         mode: "observe",
       },
     ],
@@ -164,21 +139,21 @@ const GROUPS = [
 
 // The gaps, stated plainly. A coverage page that only lists wins is a brochure.
 const GAPS = [
-  ["Unmanaged, unenrolled devices", "A personal laptop with no extension, proxy, or hooks is invisible. The coverage view in the console exists precisely to show you who that is."],
-  ["Copilot prompts", "Copilot's hook API allows inspecting tool calls (deniable) but exposes prompts observe-only, we can see them, not stop them."],
-  ["Column-bound warehouse prompts", "A Cortex or Model Serving call whose prompt comes from a table column rather than a SQL literal does not carry the text in the query record, so there is nothing to score. Those calls are counted and surfaced as column-bound, so the number is visible rather than being quietly absent from the total."],
-  ["OTEL-bridge capture", "Orgs using the claude-otel bridge get monitor-only, post-hoc capture, the event has already happened when it's scored."],
-  ["Slack private channels and DMs (below Enterprise Grid)", "With a bot token, Palivane reads only conversations the bot is in: public channels can be auto-joined, private ones must invite it, and DMs are invisible. On Enterprise Grid this is fully covered, your Org Owner enables the Discovery API and hands Palivane a discovery:read token (the Slack Discovery connector, your own key, no Palivane app) which reads every private channel and DM org-wide. Below Grid, Slack exposes no equivalent API, so uninvited private channels and DMs stay out of reach."],
-  ["Database scans sample", "palivane-dbscan reads 2,000 rows per table by default, so one bad row in a large log table can be missed until you raise the sample. It finds credentials in the database, not where the key that encrypts them is kept."],
-  ["GitHub scanning has an edge", "It reads the default branch unless you choose every branch, a push is seen within seconds only if the webhook is added (otherwise at the next scheduled scan), and a secret that was never pushed, on a laptop branch or in a stash, is out of reach."],
-  ["Formats nothing can open", "Pre-2007 Office files (.doc/.xls/.ppt) are binary containers and encrypted PDFs are encrypted; neither is readable. Images need OCR, which runs locally and is off unless enabled. All three are counted and reported as unread rather than passed over, so a scan never quietly implies it looked."],
-  ["SaaS scanning is detect-after, not pre-delivery", "Slack (Events API), SharePoint/OneDrive and Drive (change notifications) now scan within seconds of a message or file landing when a public webhook URL is set; Teams, email and Salesforce run on a cursor. Either way a leak is found AFTER it lands, not before, these platforms expose no pre-delivery inspection point below Enterprise Grid, so this plane is observe-only by construction."],
-  ["Teams chats are opt-in and metered", "Channel messages (and thread replies) scan by default, but 1:1 and group chats need each mailbox named and a licensed Teams export model, and ChannelMessage.Read.All is a Microsoft protected API that takes one-time approval. A reply to a thread whose root has already left the sync window is only re-seen when that root next changes."],
-  ["Email scanning is outbound only", "Gmail and Outlook are scanned on the SENT side, outbound is where data actually leaves the org. Inbound mail isn't scanned, and both run on a per-mailbox cursor with no pre-send inspection point, so a leak is found after the message is sent, not before."],
-  ["Inference hooks are allow or deny", "Anthropic's hook can't redact or rewrite, so coaching mode shows as a block that says what to remove. It is Claude Enterprise only (not Bedrock, Vertex or the API platform), and Anthropic never sends image bytes, so a screenshot isn't inspected on this plane."],
-  ["AI sidebar extensions are covered by host", "Monica, Sider, Merlin, HARPA and MaxAI are inspected at the API hosts read from each extension's own code, and only on their chat endpoints. A vendor that moves to a new host drops out until the list is updated; the proxy counts prompt-like requests it can't read, so that shows in Fleet rather than going quiet."],
-  ["Mobile apps", "Native mobile AI apps are not covered. The browser extension covers mobile web only where the browser supports extensions."],
-  ["Agentic browsers", "Where the agent IS the browser (Perplexity Comet, Dia, the ChatGPT desktop app that absorbed Atlas), the model call originates from the browser itself, not a page fetch the extension wraps. The egress proxy now parses Comet's assistant SSE and flags its agent WebSocket, and the ChatGPT desktop app rides the proxy's existing chatgpt.com handling (but none of it has been verified against a real build yet (no Linux builds exist; the macOS/Windows pass is docs/agentic-browser-verification.md). Until that pass lands, treat these as discover-only: we see the usage, inline interception is built but unproven. Dia stays discovery-only by design) its real API hosts are unverified (catalog row flagged provisional)."],
+  ["Unmanaged, unenrolled devices", "A personal laptop with no extension, proxy, or hooks is invisible. The console's coverage view exists to show you who that is."],
+  ["Copilot prompts", "Copilot's hook API lets us deny tool calls but only observe prompts."],
+  ["Column-bound warehouse prompts", "A Cortex or Model Serving prompt read from a table column isn't in the query record, so there is nothing to score. Those calls are counted and shown as column-bound."],
+  ["OTEL-bridge capture", "The claude-otel bridge is monitor-only and after the fact."],
+  ["Slack private channels and DMs (below Enterprise Grid)", "A bot reads only conversations it is in: public channels can be auto-joined, private ones must invite it, DMs are invisible. Enterprise Grid's Discovery API covers all of them; below Grid Slack offers no equivalent."],
+  ["Database scans sample", "palivane-dbscan reads 2,000 rows per table by default, so one bad row in a large table can be missed until you raise the sample."],
+  ["GitHub scanning has an edge", "Default branch unless you choose every branch; seconds only with the webhook; a secret never pushed is out of reach."],
+  ["Formats nothing can open", "Pre-2007 Office, encrypted PDFs, and images with OCR off are reported as unread, never as clean."],
+  ["SaaS scanning is detect-after", "Slack, Drive and SharePoint scan within seconds of landing; Teams, email and Salesforce on a cursor. Either way the leak is found after it lands: these platforms have no pre-delivery inspection point."],
+  ["Teams chats are opt-in and metered", "1:1 and group chats need each mailbox named and a licensed export model; ChannelMessage.Read.All needs Microsoft's one-time approval."],
+  ["Email scanning is outbound only", "Sent mail only, after it is sent. Inbound isn't scanned."],
+  ["Inference hooks are allow or deny", "Anthropic's hook can't redact, is Claude Enterprise only, and never carries image bytes."],
+  ["AI sidebar extensions are covered by host", "Inspected at the API hosts in each extension's code. A vendor that moves hosts drops out until the list is updated, and Fleet shows the unreadable traffic."],
+  ["Mobile apps", "Native mobile AI apps are not covered."],
+  ["Agentic browsers", "Perplexity Comet and the ChatGPT desktop app are handled by the proxy but not yet verified against real builds; treat them as discovery-only for now. Dia is discovery-only by design."],
 ];
 
 // The threat model, including the bypass list. Every control here runs on a machine the
@@ -186,23 +161,21 @@ const GAPS = [
 // team does. Framing: Palivane prevents accidents and produces evidence; it is not an
 // insider-threat containment tool.
 const BYPASSES = [
-  ["Local admin can disable the planes", "A developer with root can unset the hooks, remove the proxy and CA, or uninstall the extension. On managed fleets MDM re-applies configuration and the coverage view shows the device going dark, you'll know, but only after the fact."],
-  ["Environment overrides", "Gateway routing rides on a base-URL variable; a shell export can point a tool back at the provider. The local hooks still see prompts and tool calls in the supported coding tools, but a tool we don't hook, run off-fleet, is out of sight."],
-  ["The second screen", "A phone on desk data-egress: reading source on the laptop and retyping it into a personal device never touches any control Palivane (or any endpoint product) has."],
-  ["Novel or self-hosted AI endpoints", "The egress proxy inspects known AI hosts. An unlisted endpoint (a personal VPS running an open-weights model) passes as ordinary HTTPS unless you add it to the inspected list."],
+  ["Local admin can disable the planes", "Root can remove hooks, the proxy, or the extension. MDM re-applies them and the coverage view shows the device going dark, after the fact."],
+  ["Environment overrides", "A shell export can point a tool back at the provider. The hooks still see supported coding tools; an unhooked tool off-fleet is out of sight."],
+  ["The second screen", "Retyping source into a phone touches no endpoint control, ours or anyone's."],
+  ["Novel or self-hosted AI endpoints", "The proxy inspects known AI hosts. An unlisted endpoint passes as ordinary HTTPS unless you add it."],
 ];
 
-// What Palivane does with what it captures. The tables above are about seeing; this is
-// about governing and enforcing, the plane an evaluator scoping "coverage" as the whole
-// product will look for. Kept off the capture tables on purpose (these aren't interception
-// points), but named here so nothing reads as missing.
+// What Palivane does with what it captures: not interception points, but named here so
+// nothing reads as missing to an evaluator scoping "coverage" as the whole product.
 const GOVERNANCE = [
-  ["Enforcement, per surface", "Every plane starts in monitor mode; blocking is a per-org switch. Actions are allow / warn / redact / tokenize, and a confirmed secret or PII leak hard-blocks even in monitor mode. Block thresholds are set per surface (gateway, capture planes, CI) by severity."],
-  ["Justified proceed (Human Firewall)", "When it's enabled, a blocked user records a business justification and proceeds immediately, in the browser and in the coding-tool hooks. The reason lands on the finding and in the audit log, so enforcement teaches instead of queueing tickets. Confirmed credentials stay non-overridable."],
-  ["Agent least-privilege", "AI agents get their own short-lived identities (API key or OIDC workload identity), per-agent rate limits, and role policies (allowed servers/tools/commands, need-to-know data scopes). MCP tool-calls are checked before they execute, not logged after. MCP server configs are also checked against a reputation dataset built from the official MCP registry (with npm, PyPI and OSV advisory data) and rebuilt weekly; a server with a known-malicious release is flagged critical."],
-  ["Identity & provisioning", "Per-org SSO (OIDC + SAML 2.0) and TOTP MFA. SCIM 2.0 lets Okta / Entra ID own the user lifecycle: a person removed from the directory is deactivated here on the next sync, live sessions killed immediately; the last active admin can't be deactivated over SCIM."],
-  ["Alerting & reporting", "Real-time webhook/Slack alerts and a first-sighting page when a new AI tool appears in the org; a weekly exec email (findings, new tools, top actors); and continuous export to your SIEM (Splunk HEC / CEF / JSON) or an S3 data lake."],
-  ["Data governance", "Metadata-first by default (the verdict, not the prompt); per-org retention with content TTL separate from metadata; redaction and tokenization before storage; self-serve JSON export and organization deletion; an in-product DPA with versioned acceptance."],
+  ["Enforcement, per surface", "Monitor first; blocking is a per-org switch. Allow, warn, redact or tokenize, with thresholds per surface. A confirmed secret or PII leak blocks even in monitor mode."],
+  ["Justified proceed", "A blocked user records a business reason and carries on; it lands on the finding and in the audit log. Confirmed credentials can't be overridden."],
+  ["Agent least-privilege", "Short-lived agent identities, per-agent rate limits, role policies for servers, tools and data. MCP tool calls are checked before they run, and MCP servers against a weekly reputation dataset."],
+  ["Identity & provisioning", "Per-org SSO (OIDC, SAML 2.0), TOTP MFA, and SCIM 2.0 from Okta or Entra ID."],
+  ["Alerting & reporting", "Real-time alerts, first-sighting of new AI tools, a weekly exec email, SIEM and S3 export."],
+  ["Data governance", "The verdict, not the prompt, by default; per-org retention; redaction before storage; self-serve export and deletion; an in-product DPA."],
 ];
 
 function ModeBadge({ mode }) {
@@ -210,6 +183,8 @@ function ModeBadge({ mode }) {
     ? <span className="cov-badge cov-block">can block</span>
     : <span className="cov-badge cov-observe">observe-only</span>;
 }
+
+const asItems = (pairs) => pairs.map(([q, a]) => ({ q, a }));
 
 export default function CoverageMatrix() {
   return (
@@ -219,36 +194,19 @@ export default function CoverageMatrix() {
       <section className="lp-pagehead">
         <div className="lp-tagline">COVERAGE</div>
         <h1>What Palivane sees, and what that takes</h1>
-        <p>Every surface, the exact interception mechanism, what it requires, and whether it
-           can block or only observe. Most tools in this category won't publish this table;
-           we'd rather you evaluate against it than find out later.</p>
+        <p>Every surface, how it's captured, what it requires, and whether it can block or
+           only observe. Gaps included.</p>
       </section>
 
       <section className="lp-section">
         <div className="lp-wrap">
           <div className="cov-explainer">
-            <h2 className="lp-h2" style={{ fontSize: 19, marginBottom: 8 }}>
-              What the Enforcement column means</h2>
-            <p className="lp-sub" style={{ textAlign: "left", margin: "0 0 10px" }}>
-              <strong>Can block</strong> means the check sits in front of an action that hasn't
-              happened yet (the API request, the paste, the prompt, the merge) so refusing it
-              prevents the thing. <strong>Observe-only</strong> means the action already
-              happened and the check reports on it.
-            </p>
-            <p className="lp-sub" style={{ textAlign: "left", margin: "0 0 10px" }}>
-              It's a question of <em>when you look</em>, not of how good the detection is. The
-              same workflow scan that fails a pull request before merge becomes observe-only
-              once that code is in the repo, because there is nothing left to refuse, only a
-              fact to hand you, with the fix.
-            </p>
             <p className="lp-sub" style={{ textAlign: "left", margin: 0 }}>
-              That's why scanning at rest is deliberately read-only. Palivane reads your bucket
-              with <code>s3:GetObject</code> and your repositories with a read token; it cannot
-              delete an object or rewrite a branch, because it is never given the access to do
-              so. Handing a detection tool write access to production so it could "remediate"
-              on a match is a worse failure mode than a finding you action yourself. The
-              enforcement point for <em>new</em> secrets is earlier, the pre-commit hook and
-              the pull-request gate, both of which can block.
+              <strong>Can block</strong> means the check sits in front of an action that hasn't
+              happened yet (the request, the prompt, the merge). <strong>Observe-only</strong> means
+              it already happened and the check reports it. Scanning at rest is read-only on
+              purpose: Palivane is never given access to delete or rewrite your data, and the
+              hook and pull-request gate stop new secrets earlier.
             </p>
           </div>
           {GROUPS.map((g) => (
@@ -275,12 +233,9 @@ export default function CoverageMatrix() {
             </div>
           ))}
           <p className="lp-sub" style={{ textAlign: "left" }}>
-            Every plane above starts in <strong>monitor mode</strong>: you see findings before
-            anything is ever blocked, and blocking is a per-org switch (confirmed secret leaks
-            hard-block even in monitor mode, by design). Deployment details for each plane are
-            on the <a className="lp-textlink" href="/setup">Setup page</a>; exactly what leaves
-            the machine, per mode, is on the <a className="lp-textlink" href="/docs/data-flows">data-flows
-            page</a>.
+            Every plane starts in <strong>monitor mode</strong>. Deployment details are on the{" "}
+            <a className="lp-textlink" href="/setup">Setup page</a>; what leaves the machine, per
+            mode, is on the <a className="lp-textlink" href="/docs/data-flows">data-flows page</a>.
           </p>
         </div>
       </section>
@@ -289,45 +244,34 @@ export default function CoverageMatrix() {
         <div className="lp-wrap">
           <h2 className="lp-h2">Measured detection quality</h2>
           <p className="lp-sub" style={{ textAlign: "left" }}>
-            Detection is layered: deterministic rules, two on-box ML classifiers, and an
-            optional LLM judge. Numbers below are from our own labeled corpora with the LLM
-            judge disabled, measured 2026-08-12 (the ML classifier evals ship with their
-            weights and are dated there). The corpora and the harnesses that produce
-            these are in the repo, reproduce it yourself:
+            Our own labeled corpora, LLM judge off, measured 2026-08-12. The corpora and harnesses
+            are in the repo, so you can reproduce them:
             {" "}<code>pytest tests/bench_recall.py tests/bench_false_positives.py tests/bench_evasion.py tests/bench_code_discrimination.py -s</code>.
-            We publish the weak numbers too; a benchmark that only flatters is a brochure.
           </p>
           <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))" }}>
             <div className="lp-card">
               <div className="bench-stat">100%</div>
               <h3>Recall</h3>
-              <p>97 of 97 malicious payloads detected and actioned across injection,
-                 jailbreak, exfiltration, PII, secrets, source-code IP, dangerous commands.</p>
+              <p>97 of 97 malicious payloads: injection, jailbreak, exfiltration, PII, secrets,
+                 source code, dangerous commands.</p>
             </div>
             <div className="lp-card">
               <div className="bench-stat">0%</div>
               <h3>False-positive rate</h3>
-              <p>0 of 103 benign samples. A structural proprietary-vs-generic code discriminator
-                 separates internal IP from stdlib/tutorial boilerplate, on a held-out corpus it
-                 keeps 25 of 25 generic snippets benign while flagging 12 of 12 proprietary ones.</p>
+              <p>0 of 103 benign samples. Generic code stays benign (25 of 25) while proprietary
+                 code is flagged (12 of 12).</p>
             </div>
             <div className="lp-card">
               <div className="bench-stat">7</div>
               <h3>Known evasion bypasses</h3>
-              <p>Adversarial transforms (leetspeak, word-splitting, translation, secret spacing)
-                 that still defeat the offline detectors in our own evasion matrix. Tracked, not
-                 hidden, the LLM judge closes most of these when enabled. Encoded-payload
-                 wrappers (base64/hex/url) are now decoded and re-scanned.</p>
+              <p>Transforms (leetspeak, word-splitting, translation) that still beat the offline
+                 detectors. Published, not hidden; the LLM judge closes most of them.</p>
             </div>
             <div className="lp-card">
               <div className="bench-stat">2</div>
               <h3>On-box ML classifiers</h3>
-              <p>Beside the rules: a code/prose classifier (98% accuracy, 99% precision
-                 held-out) that catches config-shaped fragments the keyword rules read past,
-                 and a prompt-injection classifier (precision 1.0 held-out, zero false
-                 positives on a benign-prose check) that catches paraphrased phrasing. Both
-                 CPU-only, deterministic, sub-millisecond, no model service in the loop, weights
-                 and eval shipped in the repo.</p>
+              <p>Code/prose (99% precision) and prompt injection (precision 1.0), both held-out.
+                 CPU-only, sub-millisecond, weights in the repo.</p>
             </div>
           </div>
         </div>
@@ -336,8 +280,7 @@ export default function CoverageMatrix() {
       <section className="lp-section">
         <div className="lp-wrap">
           <h2 className="lp-h2">Governance & enforcement</h2>
-          <p className="lp-sub">The tables above are what Palivane <em>sees</em>. This is what it
-             <em> does</em> with it, the part that isn't a capture point but is still coverage.</p>
+          <p className="lp-sub">What Palivane <em>does</em> with what it sees.</p>
           <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}>
             {GOVERNANCE.map(([title, body]) => (
               <div className="lp-card" key={title}>
@@ -350,47 +293,24 @@ export default function CoverageMatrix() {
       </section>
 
       <section className="lp-section">
-        <div className="lp-wrap">
+        <div className="lp-wrap lp-faq-wrap">
           <h2 className="lp-h2">Known gaps</h2>
-          <p className="lp-sub">Where the visibility ends. If a vendor tells you their coverage
-             has no edges, ask harder questions.</p>
-          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}>
-            {GAPS.map(([title, body]) => (
-              <div className="lp-card" key={title}>
-                <h3>{title}</h3>
-                <p style={{ marginTop: 8 }}>{body}</p>
-              </div>
-            ))}
-          </div>
+          <p className="lp-sub">Where the visibility ends. If a vendor says their coverage has no
+             edges, ask harder questions.</p>
+          <Faq items={asItems(GAPS)} open={-1} />
         </div>
       </section>
 
       <section className="lp-section alt">
-        <div className="lp-wrap">
+        <div className="lp-wrap lp-faq-wrap">
           <h2 className="lp-h2">The threat model, including how to bypass us</h2>
-          <p className="lp-sub">Every control above runs on a machine its user administers, so
-             an honest threat model starts with what a determined person can defeat. Palivane
-             is built to <strong>stop accidents before they happen and produce evidence and
-             coverage visibility for everything else</strong>: the engineer about to paste a
-             customer export into ChatGPT at 6pm, the agent about to run a destructive command,
-             the key that's been sitting in a repo since March. It is not an insider-threat
-             containment tool, and a vendor who claims endpoint controls can contain a
-             malicious insider is describing a product that doesn't exist.</p>
-          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}>
-            {BYPASSES.map(([title, body]) => (
-              <div className="lp-card" key={title}>
-                <h3>{title}</h3>
-                <p style={{ marginTop: 8 }}>{body}</p>
-              </div>
-            ))}
-          </div>
+          <p className="lp-sub">Every control runs on a machine its user administers. Palivane
+             stops accidents and produces evidence for everything else; it is not an
+             insider-threat containment tool, and nobody's endpoint control is.</p>
+          <Faq items={asItems(BYPASSES)} open={-1} />
           <p className="lp-sub" style={{ textAlign: "left", marginTop: 18 }}>
-            What this buys you in practice: the accidental leak is stopped inline, the risky
-            pattern is visible before it becomes an incident, policy violations carry an audit
-            trail, and the <strong>coverage view names every device and person outside the
-            controls</strong>: so the bypass itself becomes a signal. If your requirement is
-            containing a malicious insider with local admin, you need device attestation and a
-            legal deterrent, not a DLP product, ours or anyone's.
+            The coverage view names every device and person outside the controls, so a bypass
+            becomes a signal rather than a silence.
           </p>
         </div>
       </section>
@@ -401,8 +321,7 @@ export default function CoverageMatrix() {
             <IconShield width={22} height={22} />
             <div>
               <strong>Prove it against your own fleet.</strong> The console's coverage view shows
-              which people and machines are actually reporting (per plane) and which aren't.
-              Start in monitor mode and see what your coverage really is this afternoon.
+              which people and machines are reporting, per plane, and which aren't.
             </div>
             <a className="primary-btn slim" href="/#signin" style={{ textDecoration: "none" }}>Open the console →</a>
           </div>

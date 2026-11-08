@@ -1,7 +1,7 @@
 # Compliance program
 
 Policy suite and security-questionnaire responses backing the SOC 2 program and the
-public [/trust](https://app.palivane.io/trust) page. Every control cited here is
+public [/security](https://palivane.io/security#controls) page. Every control cited here is
 implemented; where a policy names a cadence, the calendar below is the commitment.
 
 **Owner:** David Kerschieter (Founder, acts as CEO, CISO, and DPO). Single-operator
@@ -22,7 +22,7 @@ context: separation-of-duties controls are replaced by documented compensating c
 | 10 | [Acceptable Use & Endpoints](policies/10-acceptable-use-endpoints.md) | CC6.7, CC6.8 |
 | 11 | [Data Retention & Disposal](policies/11-data-retention-disposal.md) | C1.2 |
 
-Questionnaire: [CAIQ-style responses](caiq.md) (hand this + the DPA + /trust to reviewers).
+Questionnaire: [CAIQ-style responses](caiq.md) (hand this + the DPA + /security to reviewers).
 
 ## Compliance calendar
 

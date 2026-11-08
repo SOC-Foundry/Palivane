@@ -26,7 +26,7 @@ this: redaction before storage, metadata-only defaults, per-tenant encryption.
 4. **Change control**, no change reaches production outside the gated flow (Policy 03).
 5. **Verified recoverability**, backups exist AND restores are drilled (Policy 05).
 6. **Honest disclosure**, incidents and vulnerabilities are handled per Policy 04 and
-   `SECURITY.md`; the public /trust page states only implemented controls.
+   `SECURITY.md`; the public /security page states only implemented controls.
 
 ## Organization & accountability
 
