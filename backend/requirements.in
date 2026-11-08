@@ -9,11 +9,11 @@
 # next step; see docs. Direct deps only — pip resolves transitives.
 fastapi==0.162.0
 uvicorn[standard]==0.54.0
-sqlalchemy==2.1.6
+sqlalchemy==2.1.8
 pydantic==2.14.2
 anthropic[vertex,bedrock]==2.4.0  # LLM judge — Claude via API key, GCP Vertex, or AWS Bedrock
                           # (extras' deps already present: google-auth via google-genai, boto3 below)
-openai==3.42.1            # LLM judge — GPT backend (optional)
+openai==3.45.0            # LLM judge — GPT backend (optional)
 google-genai==2.34.0      # LLM judge — Gemini backend (optional)
 alembic==1.20.1           # schema migrations
 psycopg2-binary==2.9.13   # PostgreSQL driver
