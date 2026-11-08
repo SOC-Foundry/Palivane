@@ -71,7 +71,7 @@ def test_weekly_report_mails_admins_and_claims_window(client, db_factory, monkey
     # a finding + a discovered tool inside the window
     key = client.post("/api/apikeys", json={"label": "x", "actor": "dev@acme.com"}).json()["token"]
     client.post("/api/ingest/ai-usage",
-                json={"content": "customer SSN 078-05-1120 card 4242 4242 4242 4242",
+                json={"content": "customer SSN 078-15-1120 card 4242 4242 4242 4242",
                       "destination": "chatgpt.com", "user": "dev@acme.com"},
                 headers={"X-Palivane-Token": key})
     ingest_oauth_grants(db, t.id, [_grant(app_name="NotebookLM")])

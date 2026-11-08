@@ -167,7 +167,7 @@ def test_the_owner_answering_is_not_a_review(client, db_factory):
 
 def test_a_recurrence_that_reopens_a_dismissed_finding_clears_its_review(client, db_factory):
     key = client.post("/api/apikeys", json={"label": "k", "actor": "dev@acme.com"}).json()["token"]
-    prompt = "Please summarize the claim for Maria Lopez, SSN 457-55-5462, and email her about the denial."
+    prompt = "Please summarize the claim for Maria Lopez, SSN 457-56-5462, and email her about the denial."
     post = lambda: client.post("/api/ingest/ai-usage", json={"content": prompt, "destination": "https://chatgpt.com/",
                                                               "tool": "chatgpt"}, headers={"X-Palivane-Token": key}).json()
     first = post()

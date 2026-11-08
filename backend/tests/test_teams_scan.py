@@ -96,7 +96,7 @@ def test_scan_finds_phi_and_maps_actor(client, monkeypatch):
 def test_html_bodies_are_stripped_before_detection(client, monkeypatch):
     _fake_graph(monkeypatch, [
         _msg("M1", "U1",
-             "<p>customer SSN <b>078-05-1120</b>, card 4242&nbsp;4242 4242 4242</p>",
+             "<p>customer SSN <b>078-15-1120</b>, card 4242&nbsp;4242 4242 4242</p>",
              html=True),
     ])
     cid = _mk(client)
@@ -110,7 +110,7 @@ def test_thread_replies_are_scanned(client, monkeypatch):
     _fake_graph(monkeypatch,
                 [_msg("M1", "U1", "kicking off the deploy thread")],
                 replies={"M1": [_msg("R1", "U1",
-                                     "prod key is AKIAIOSFODNN7EXAMPLE please don't share",
+                                     "prod key is AKIAIOSFODNN7QXAMPLE please don't share",
                                      reply_to="M1")]})
     cid = _mk(client)
     summary = client.post(f"/api/discovery/connectors/{cid}/sync").json()
@@ -140,9 +140,9 @@ def test_delta_link_stored_and_second_sync_is_incremental(client, monkeypatch):
 def test_system_events_and_deleted_messages_are_skipped(client, monkeypatch):
     _fake_graph(monkeypatch, [
         _msg("M1", "U1", "user added to channel", mtype="systemEventMessage"),
-        _msg("M2", "U1", "SSN 078-05-1120", deleted=True),
+        _msg("M2", "U1", "SSN 078-15-1120", deleted=True),
         {"id": "M3", "messageType": "message", "from": {},        # bot / no user
-         "body": {"contentType": "text", "content": "SSN 078-05-1120"}},
+         "body": {"contentType": "text", "content": "SSN 078-15-1120"}},
     ])
     cid = _mk(client)
     summary = client.post(f"/api/discovery/connectors/{cid}/sync").json()
@@ -154,7 +154,7 @@ def test_scan_budget_truncates_and_keeps_old_delta(client, monkeypatch):
     monkeypatch.setattr(sc, "_MAX_MESSAGES_PER_SYNC", 1)
     _fake_graph(monkeypatch, [
         _msg("M1", "U1", "patient MRN 4859302 admitted, diagnosis E11.9"),
-        _msg("M2", "U1", "customer SSN 078-05-1120"),
+        _msg("M2", "U1", "customer SSN 078-15-1120"),
     ])
     cid = _mk(client)
     summary = client.post(f"/api/discovery/connectors/{cid}/sync").json()
@@ -165,7 +165,7 @@ def test_scan_budget_truncates_and_keeps_old_delta(client, monkeypatch):
 
 
 def test_chat_users_scanned_and_deduped_across_parties(client, monkeypatch):
-    leak = _msg("CM1", "U1", "here's the db password hunter2 and key AKIAIOSFODNN7EXAMPLE")
+    leak = _msg("CM1", "U1", "here's the db password hunter2 and key AKIAIOSFODNN7QXAMPLE")
     leak["chatId"] = "19:chat1"
     _fake_graph(monkeypatch, [],
                 chats={"a%40acme.com": [leak], "b%40acme.com": [leak]},

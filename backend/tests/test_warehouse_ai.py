@@ -89,8 +89,8 @@ def test_dbx_extract_chat_last_user_turn():
 
 
 def test_dbx_extract_completions_prompt():
-    assert wa.extract_databricks_prompt({"prompt": "leak: AKIAIOSFODNN7EXAMPLE"}) \
-        == "leak: AKIAIOSFODNN7EXAMPLE"
+    assert wa.extract_databricks_prompt({"prompt": "leak: AKIAIOSFODNN7QXAMPLE"}) \
+        == "leak: AKIAIOSFODNN7QXAMPLE"
 
 
 def test_dbx_extract_custom_pyfunc_harvests_strings():
@@ -99,8 +99,8 @@ def test_dbx_extract_custom_pyfunc_harvests_strings():
 
 
 def test_dbx_extract_non_json_falls_back_to_raw():
-    assert wa.extract_databricks_prompt("not json but has AKIAIOSFODNN7EXAMPLE").strip() \
-        .endswith("AKIAIOSFODNN7EXAMPLE")
+    assert wa.extract_databricks_prompt("not json but has AKIAIOSFODNN7QXAMPLE").strip() \
+        .endswith("AKIAIOSFODNN7QXAMPLE")
 
 
 def _mk_databricks(client):

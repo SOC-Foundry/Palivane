@@ -202,7 +202,7 @@ def test_payload_shape_and_filtering(monkeypatch):
 
 def test_block_finding_exits_1(monkeypatch):
     listings = [{"Contents": [{"Key": "a.env", "Size": 10}], "IsTruncated": False}]
-    s3 = FakeS3(pab=_BLOCKED_PAB, listings=listings, objects={"a.env": b"AKIAIOSFODNN7EXAMPLE"})
+    s3 = FakeS3(pab=_BLOCKED_PAB, listings=listings, objects={"a.env": b"AKIAIOSFODNN7QXAMPLE"})
     resp = {"action": "block", "scanned": 1, "bucket": "b", "public": False,
             "objects": [{"key": "a.env", "action": "block", "severity": "high",
                          "signals": [{"category": "secret_leak", "evidence": "AKIA…"}]}]}

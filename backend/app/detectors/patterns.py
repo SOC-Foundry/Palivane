@@ -398,12 +398,20 @@ def _novel_chars(s: str, stop_above: int = _SYNTHETIC_MAX_NOVEL) -> int:
     return novel
 
 
+# Vendor documentation marks its sample keys this way: AWS's AKIAIOSFODNN7EXAMPLE and its
+# secret …EXAMPLEKEY appear in every AWS doc and thousands of READMEs, and an agent reading
+# one was a forced block. An issued key never spells EXAMPLE.
+_DOC_SAMPLE_RE = re.compile(r"EXAMPLE")
+
+
 def _synthetic_body(match_text: str) -> bool:
     """The token has a typed, not issued, body (see _novel_chars). Judged on what follows a
     lowercase prefix (`sk_`, `test_`). The count is absolute, so padding a real key with a run
     cannot pull it under the line: its own random characters still count.
     Runs and repeats must also explain most of the body, so a short random body that happens to
     hold one run (a 3-character step in 10 characters) is not taken for a stand-in."""
+    if _DOC_SAMPLE_RE.search(match_text):
+        return True
     body = _VENDOR_PREFIX_RE.sub("", match_text, count=1) or match_text
     novel = _novel_chars(body)
     return novel <= _SYNTHETIC_MAX_NOVEL and novel * 2 <= len(body)
@@ -452,8 +460,8 @@ def find_secrets(text: str) -> list[str]:
                               (custom_patterns(), False)):
         for label, rx in patterns:
             for m in rx.finditer(text):
-                if _DUMMY_RUN_RE.search(m.group(0)):
-                    continue   # masked/placeholder stand-in (sk_test_xxxx…), not a real key
+                if _DUMMY_RUN_RE.search(m.group(0)) or _DOC_SAMPLE_RE.search(m.group(0)):
+                    continue   # masked/placeholder or vendor-doc sample (sk_test_xxxx…, …EXAMPLE)
                 if label == "Credential assignment" and _is_placeholder_assignment(
                         m.group(0),
                         text[max(text.rfind("\n", 0, m.start()) + 1, m.start() - 200):m.start()],

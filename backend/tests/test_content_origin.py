@@ -92,7 +92,7 @@ def test_finding_gets_origin_end_to_end(client, db_factory):
     """A leak that trips a DLP category and matches a scanned doc carries the origin."""
     tid = _tid(db_factory)
     db = db_factory()
-    leaky = DOC + " AWS key AKIAIOSFODNN7EXAMPLE and password=Pr0dDb9xKmz2024"
+    leaky = DOC + " AWS key AKIAIOSFODNN7QXAMPLE and password=Pr0dDb9xKmz2024"
     co.store_fingerprint(db, tid, "gdrive", "file-1", "Q3-forecast.docx",
                          "finance@acme.com", leaky)
     db.commit(); db.close()

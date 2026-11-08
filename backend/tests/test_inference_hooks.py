@@ -228,10 +228,10 @@ def test_a_dangerous_tool_call_is_denied_under_enforce_only(client, raw_client):
 def test_a_coached_prompt_is_denied_under_enforce_with_the_fix(client, raw_client):
     key = _setup(client, enforce="on")
     client.patch("/api/tenant", json={"redact_mode": "on"})
-    v = _post(raw_client, key, _frame([_user(_text("my SSN is 078-05-1120, fill in the form"))])).json()
+    v = _post(raw_client, key, _frame([_user(_text("my SSN is 078-15-1120, fill in the form"))])).json()
     assert v["action"] == "deny"
     assert "sensitive values are taken out" in v["deny_reason"]
-    assert "078-05-1120" not in v["deny_reason"]
+    assert "078-15-1120" not in v["deny_reason"]
 
 
 def test_rotation_keeps_the_previous_secret_working(client, raw_client):

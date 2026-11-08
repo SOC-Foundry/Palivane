@@ -86,7 +86,7 @@ def test_hardcoded_literal_assignment_still_flagged():
 # --- known-format secrets are untouched by any of the above -----------------------------
 
 def test_known_format_secrets_still_detected():
-    assert "AWS access key id" in find_secrets("key = AKIAIOSFODNN7EXAMPLE")
+    assert "AWS access key id" in find_secrets("key = AKIAIOSFODNN7QXAMPLE")
     assert "GitHub token" in find_secrets("t = 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")
     assert "Stripe secret key" in find_secrets("k = sk_live_4eC39HqLyjWDarjtT1zdp7dcABCDEFGH")
 
@@ -129,7 +129,7 @@ def test_allowlist_demotes_generic_only_in_low_signal_file_paths():
 
 def test_allowlist_never_demotes_distinctive_keys():
     # a real vendor key leaks wherever it is — test path or not
-    assert _secret_flagged('k = "AKIAIOSFODNN7EXAMPLE"', "tests/test_x.py", "git")
+    assert _secret_flagged('k = "AKIAIOSFODNN7QXAMPLE"', "tests/test_x.py", "git")
 
 
 def test_allowlist_never_applies_to_prompt_channels():
@@ -143,11 +143,11 @@ def test_allowlist_never_applies_to_prompt_channels():
 def test_secret_labels_cache_memoizes_and_matches():
     from app.detectors.base import AnalysisInput, Surface
     from app.detectors.patterns import find_secrets
-    item = AnalysisInput(content='key = "AKIAIOSFODNN7EXAMPLE"', subject="config.py",
+    item = AnalysisInput(content='key = "AKIAIOSFODNN7QXAMPLE"', subject="config.py",
                          channel="git", surface=Surface.AI_USAGE)
     first = item.secret_labels()
     assert first is item.secret_labels()                      # memoized: same object
-    assert first == find_secrets("config.py\n" + 'key = "AKIAIOSFODNN7EXAMPLE"')
+    assert first == find_secrets("config.py\n" + 'key = "AKIAIOSFODNN7QXAMPLE"')
     assert "AWS access key id" in first                        # recall intact
 
 
@@ -226,18 +226,18 @@ def test_aws_secret_access_key_detected_and_redacted():
     what makes it redactable.
     """
     from app.redaction import redact_text
-    secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-    sample = f"deploy with AWS key AKIAIOSFODNN7EXAMPLE and secret {secret} plus ssn 078-05-1120"
+    secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYQXAMPLEKEY"
+    sample = f"deploy with AWS key AKIAIOSFODNN7QXAMPLE and secret {secret} plus ssn 078-15-1120"
     found = find_secrets(sample)
     assert "AWS secret access key" in found
     assert "AWS access key id" in found          # the pair, not one or the other
     out = redact_text(sample)
     assert secret not in out, "the secret survived redaction"
-    assert "AKIAIOSFODNN7EXAMPLE" not in out and "078-05-1120" not in out
+    assert "AKIAIOSFODNN7QXAMPLE" not in out and "078-15-1120" not in out
 
 
 def test_aws_secret_spellings_all_detected():
-    secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYQXAMPLEKEY"
     for text in (f"aws_secret_access_key={secret}",          # "_" is a word char: needs a
                  f"AWS Secret Access Key: {secret}",         # lookbehind, not \b
                  f"secret-key {secret}",

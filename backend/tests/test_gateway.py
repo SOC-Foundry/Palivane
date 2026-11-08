@@ -579,7 +579,7 @@ def test_responses_stream_enforce_blocks(client, monkeypatch):
 
 def test_response_output_text_all_shapes():
     from app import gateway as g
-    assert "AKIA" in g._response_output_text({"choices": [{"message": {"content": "key AKIAIOSFODNN7EXAMPLE"}}]})
+    assert "AKIA" in g._response_output_text({"choices": [{"message": {"content": "key AKIAIOSFODNN7QXAMPLE"}}]})
     assert "sk-" in g._response_output_text({"content": [{"type": "text", "text": "token sk-live"}]})
     assert "out" in g._response_output_text({"output": [{"content": [{"type": "output_text", "text": "out"}]}]})
     assert "gm" in g._response_output_text({"candidates": [{"content": {"parts": [{"text": "gm"}]}}]})
@@ -588,8 +588,8 @@ def test_response_output_text_all_shapes():
 def test_stream_output_text_assembles_deltas():
     from app import gateway as g
     openai_sse = ('data: {"choices":[{"delta":{"content":"here is "}}]}\n\n'
-                  'data: {"choices":[{"delta":{"content":"AKIAIOSFODNN7EXAMPLE"}}]}\n\ndata: [DONE]\n\n')
-    assert "AKIAIOSFODNN7EXAMPLE" in g._stream_output_text(openai_sse)
+                  'data: {"choices":[{"delta":{"content":"AKIAIOSFODNN7QXAMPLE"}}]}\n\ndata: [DONE]\n\n')
+    assert "AKIAIOSFODNN7QXAMPLE" in g._stream_output_text(openai_sse)
     anthropic_sse = ('data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"sk-ant-"}}\n\n'
                      'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"abcdefghijklmnop"}}\n\n')
     assert "sk-ant-abcdefghijklmnop" in g._stream_output_text(anthropic_sse)
@@ -602,7 +602,7 @@ def test_response_dlp_blocks_secret_in_output(client, monkeypatch):
     monkeypatch.setattr(gateway, "resolve_upstream", lambda *a, **k: ("https://up", "key"))
     monkeypatch.setattr(gateway, "_post_upstream_anthropic", lambda *a, **k: (200, {
         "type": "message", "role": "assistant", "content": [
-            {"type": "text", "text": "sure, the prod key is AKIAIOSFODNN7EXAMPLE and sk-ant-abcdefghijklmnopqrstuv"}]}))
+            {"type": "text", "text": "sure, the prod key is AKIAIOSFODNN7QXAMPLE and sk-ant-abcdefghijklmnopqrstuv"}]}))
     r = client.post("/v1/messages", json={"model": "claude-opus-4-8",
                     "messages": [{"role": "user", "content": "what's the deploy key?"}]},
                     headers={"x-api-key": _token(client), "Authorization": ""})
@@ -632,7 +632,7 @@ def test_response_dlp_toggle_off(client, monkeypatch):
     monkeypatch.setattr(gateway.settings, "gateway_scan_responses", False)   # DLP off
     monkeypatch.setattr(gateway, "resolve_upstream", lambda *a, **k: ("https://up", "key"))
     monkeypatch.setattr(gateway, "_post_upstream_anthropic", lambda *a, **k: (200, {
-        "type": "message", "role": "assistant", "content": [{"type": "text", "text": "key AKIAIOSFODNN7EXAMPLE"}]}))
+        "type": "message", "role": "assistant", "content": [{"type": "text", "text": "key AKIAIOSFODNN7QXAMPLE"}]}))
     r = client.post("/v1/messages", json={"model": "claude-opus-4-8",
                     "messages": [{"role": "user", "content": "hi"}]},
                     headers={"x-api-key": _token(client), "Authorization": ""})
@@ -667,7 +667,7 @@ def test_stream_tee_forwards_live_and_records(monkeypatch):
         def __exit__(self, *a): pass
         def iter_bytes(self):
             yield b'data: {"choices":[{"delta":{"content":"here: "}}]}\n\n'
-            yield b'data: {"choices":[{"delta":{"content":"AKIAIOSFODNN7EXAMPLE"}}]}\n\n'
+            yield b'data: {"choices":[{"delta":{"content":"AKIAIOSFODNN7QXAMPLE"}}]}\n\n'
             yield b'data: [DONE]\n\n'
 
     class _Client:
@@ -678,8 +678,8 @@ def test_stream_tee_forwards_live_and_records(monkeypatch):
     monkeypatch.setattr(gateway.httpx, "Client", lambda *a, **k: _Client())
     resp = gateway._passthrough_stream("http://up", {}, {}, "gpt-4o", "", gateway.Principal(1, "x"))
     live = b"".join(_drain(resp))                             # consuming runs the generator + finally
-    assert b"AKIAIOSFODNN7EXAMPLE" in live                    # (a) forwarded to the client
-    assert recorded and b"AKIAIOSFODNN7EXAMPLE" in recorded["raw"]   # (b) teed to the recorder
+    assert b"AKIAIOSFODNN7QXAMPLE" in live                    # (a) forwarded to the client
+    assert recorded and b"AKIAIOSFODNN7QXAMPLE" in recorded["raw"]   # (b) teed to the recorder
 
 
 def test_record_stream_dlp_scans_assembled_output(monkeypatch):
@@ -691,9 +691,9 @@ def test_record_stream_dlp_scans_assembled_output(monkeypatch):
         def close(self): pass
     monkeypatch.setattr("app.database.SessionLocal", lambda: _DB())
     sse = ('data: {"choices":[{"delta":{"content":"the key is "}}]}\n\n'
-           'data: {"choices":[{"delta":{"content":"AKIAIOSFODNN7EXAMPLE"}}]}\n\ndata: [DONE]\n\n')
+           'data: {"choices":[{"delta":{"content":"AKIAIOSFODNN7QXAMPLE"}}]}\n\ndata: [DONE]\n\n')
     gateway._record_stream_dlp(sse.encode(), "gpt-4o", "", gateway.Principal(1, "x"))
-    assert "AKIAIOSFODNN7EXAMPLE" in seen.get("text", "")
+    assert "AKIAIOSFODNN7QXAMPLE" in seen.get("text", "")
 
 
 def test_stream_tee_off_when_scanning_disabled(monkeypatch):
@@ -745,7 +745,7 @@ def test_confirmed_secret_blocked_even_in_monitor(client, monkeypatch):
     monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
     monkeypatch.setattr(gateway.settings, "gateway_enforce_secrets", True)
     body = {"model": "gpt-4o", "messages": [
-        {"role": "user", "content": "here is the key AKIAIOSFODNN7EXAMPLE for the deploy"}]}
+        {"role": "user", "content": "here is the key AKIAIOSFODNN7QXAMPLE for the deploy"}]}
     r = client.post("/v1/chat/completions", json=body)
     assert r.status_code == 403 and r.json()["error"]["type"] == "palivane_blocked"
 
@@ -764,7 +764,7 @@ def test_enforce_secrets_can_be_disabled(client, monkeypatch):
     monkeypatch.setattr(gateway.settings, "gateway_enforce", False)
     monkeypatch.setattr(gateway.settings, "gateway_enforce_secrets", False)
     body = {"model": "gpt-4o", "messages": [
-        {"role": "user", "content": "key AKIAIOSFODNN7EXAMPLE"}]}
+        {"role": "user", "content": "key AKIAIOSFODNN7QXAMPLE"}]}
     assert client.post("/v1/chat/completions", json=body).status_code == 200
 
 

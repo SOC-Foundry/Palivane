@@ -394,7 +394,7 @@ def test_tier2_high_entropy_not_suppressed_by_client_tool():
     assert Category.SECRET_LEAK in _cats(token, channel="claude-code")
     assert Category.SECRET_LEAK in _cats(token, channel="cursor")
     # A known-prefix secret is caught regardless of tool.
-    assert Category.SECRET_LEAK in _cats("AKIAIOSFODNN7EXAMPLE", channel="claude-code")
+    assert Category.SECRET_LEAK in _cats("AKIAIOSFODNN7QXAMPLE", channel="claude-code")
 
 
 def test_custom_regex_rejects_redos_and_invalid():
@@ -627,7 +627,7 @@ def test_distinctive_credentials_and_structured_pii_are_never_demoted_by_path():
     for text, cat in ((_VENDOR_KEY, "secret_leak"),
                       ("-----BEGIN RSA " + "PRIVATE KEY-----\nMIIEowIBAAKCAQEA0Z3VS5JJcds3xfn\n-----END RSA "
                        + "PRIVATE KEY-----", "secret_leak"),
-                      ("ssn 078-05-1120", "pii_exposure"),
+                      ("ssn 078-15-1120", "pii_exposure"),
                       ("card 4012 8888 8888 1881", "pii_exposure")):
         assert cat in _tool_cats("Write", resource=path, args_text=f"{path}\n{text}"), text[:30]
 
@@ -653,7 +653,7 @@ def test_bare_nine_digit_numbers_in_tool_calls_are_not_ssns():
 
 def test_nine_digits_with_an_ssn_cue_still_count_in_a_tool_call():
     assert "pii_exposure" in _tool_cats("Bash", args_text="echo 'ssn 234567890' >> /tmp/x")
-    assert "pii_exposure" in _tool_cats("Bash", args_text="echo 078-05-1120 >> /tmp/x")
+    assert "pii_exposure" in _tool_cats("Bash", args_text="echo 078-15-1120 >> /tmp/x")
 
 
 def test_a_bare_nine_digit_number_in_a_prompt_is_still_the_warn_level_guess():

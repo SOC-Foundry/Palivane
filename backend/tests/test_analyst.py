@@ -51,7 +51,7 @@ def _byok(client, monkeypatch, backend=None):
 def _make_finding(client) -> int:
     key = client.post("/api/apikeys", json={"label": "ext", "actor": "dev@acme.com"}).json()["token"]
     r = client.post("/api/ingest/ai-usage",
-                    json={"content": "prod key AKIAIOSFODNN7EXAMPLE", "destination": "chatgpt.com",
+                    json={"content": "prod key AKIAIOSFODNN7QXAMPLE", "destination": "chatgpt.com",
                           "user": "dev@acme.com"},
                     headers={"X-Palivane-Token": key})
     fid = r.json()["finding_id"]
@@ -85,7 +85,7 @@ def test_sender_and_subject_are_redacted_before_leaving(client, monkeypatch):
     assert "[redacted]" in sent                       # it was masked, not just dropped
     # Evidence names the pattern, not the match: the detector emits the label, so the key
     # itself is not in the payload even though the finding is about that key.
-    assert "AKIAIOSFODNN7EXAMPLE" not in sent
+    assert "AKIAIOSFODNN7QXAMPLE" not in sent
 
 
 def test_investigate_returns_a_recommendation(client, monkeypatch):

@@ -150,7 +150,7 @@ def test_shell_secret_blocks_under_enforce_end_to_end(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "cop", "actor": "d@a.com"}).json()["token"]
     a = hook.build_activity({"toolName": "bash",
                              "toolArgs": json.dumps(
-                                 {"command": "export AWS_KEY=AKIAIOSFODNN7EXAMPLE"})})
+                                 {"command": "export AWS_KEY=AKIAIOSFODNN7QXAMPLE"})})
     body = raw_client.post("/api/ingest/mcp", json=a, headers={"X-Palivane-Token": key}).json()
     assert "secret_leak" in {s["category"] for s in body["signals"]}
     assert "enforce" in body                             # org stance rides every verdict
