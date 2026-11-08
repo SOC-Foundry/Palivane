@@ -162,6 +162,7 @@ export const api = {
     req(`/allowlist/${id}/renew`, { method: "POST", body: JSON.stringify({ expires_in_days: days }) }),
   allowlistRevoke: (id) => req(`/allowlist/${id}/revoke`, { method: "POST" }),
   fleet: () => req("/fleet"),
+  fleetDevelopers: (months = 3) => req(`/fleet/developers?months=${months}`),
   // AI-asset inventory: { kind, name (substring), device, limit, offset }.
   fleetAssets: (params = {}) => {
     const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null)).toString();
