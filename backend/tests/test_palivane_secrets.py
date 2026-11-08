@@ -21,7 +21,7 @@ def test_mask_redacts():
 def test_scan_text_finds_typed_secrets():
     text = ("GITHUB_TOKEN=ghp_0123456789abcdefghij0123\n"
             "nothing here\n"
-            "aws = AKIAIOSFODNN7EXAMPLE\n")
+            "aws = AKIAIOSFODNN7QXAMPLE\n")
     hits = ws.scan_text(text)
     labels = {t for t, _, _ in hits}
     assert "GitHub token" in labels
@@ -97,7 +97,7 @@ def test_iter_target_files_covers_wellknown_and_env(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".aws").mkdir()
-    (tmp_path / ".aws" / "credentials").write_text("[default]\naws_secret_access_key=AKIAIOSFODNN7EXAMPLE\n")
+    (tmp_path / ".aws" / "credentials").write_text("[default]\naws_secret_access_key=AKIAIOSFODNN7QXAMPLE\n")
     proj = tmp_path / "src" / "app"
     proj.mkdir(parents=True)
     (proj / ".env").write_text("SECRET=x")
@@ -154,7 +154,7 @@ def test_engine_trufflehog_maps_masks_and_verifies(monkeypatch):
     monkeypatch.setattr(ws, "_run", lambda cmd: "\n".join([
         _json.dumps({"DetectorName": "Github", "Verified": True, "Raw": "ghp_LIVEabcdefghij",
                      "SourceMetadata": {"Data": {"Filesystem": {"file": "/r/.env", "line": 3}}}}),
-        _json.dumps({"DetectorName": "AWS", "Verified": False, "Raw": "AKIAIOSFODNN7EXAMPLE",
+        _json.dumps({"DetectorName": "AWS", "Verified": False, "Raw": "AKIAIOSFODNN7QXAMPLE",
                      "SourceMetadata": {"Data": {"Filesystem": {"file": "/r/tf", "line": 1}}}}),
     ]))
     out = ws._engine_findings("trufflehog", ["/r"])

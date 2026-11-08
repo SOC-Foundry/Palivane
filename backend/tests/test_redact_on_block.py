@@ -17,8 +17,8 @@ from app import redact_spans
 from app.detectors import AnalysisInput, Surface
 from app.engine import engine
 
-AWS = "AKIA" + "IOSFODNN7EXAMPLE"
-SSN = "078-05-1120"
+AWS = "AKIA" + "IOSFODNN7QXAMPLE"
+SSN = "078-15-1120"
 
 
 def _key(client) -> str:
@@ -169,7 +169,7 @@ def test_injection_block_is_not_redactable(client, raw_client):
 def test_value_only_found_in_a_normalized_view_is_not_offered(client, raw_client):
     # Fullwidth digits: the detector folds them (NFKC) and blocks, but the raw text holds no
     # span that would clear it, so nothing is offered rather than a removal that fails.
-    r = _scan(raw_client, _key(client), "My SSN is ０７８－０５－１１２０")
+    r = _scan(raw_client, _key(client), "My SSN is ０７８－１５－１１２０")
     assert r["action"] == "block"
     assert r["redactable"] is False and r["redactions"] == []
 

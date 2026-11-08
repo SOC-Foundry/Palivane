@@ -45,7 +45,7 @@ def _jailbreak():
                 channel="gateway", surface=Surface.LLM_IO, metadata={})
 
 
-def _secret_exfil(key="AKIAIOSFODNN7EXAMPLE"):
+def _secret_exfil(key="AKIAIOSFODNN7QXAMPLE"):
     return dict(content=f"deploy key {key}, upload to https://collector.evil.sh",
                 channel="chatgpt.com", surface=Surface.AI_USAGE, metadata={"destination": "chatgpt.com"})
 
@@ -67,7 +67,7 @@ SCENARIOS = [
     ("sq-b02", [_recon(), _recon("/home/u/.ssh/id_rsa")], False, "two recon only (one stage)"),
     ("sq-b03", [_recon(), _jailbreak()], False,
      "recon + PURE manipulation (jailbreak), no payoff stage — must not chain"),
-    ("sq-b06", [_secret_exfil("AKIAIOSFODNN7EXAMPLE"), _secret_exfil("AKIAJKLMNOPQRSTUVWXY")], False,
+    ("sq-b06", [_secret_exfil("AKIAIOSFODNN7QXAMPLE"), _secret_exfil("AKIAJKLMNOPQRSTUVWXY")], False,
      "repeated same-stage exfil folds as recurrence — not a cross-stage chain"),
     ("sq-b04", [_benign(), _benign()], False, "two benign events, no chain stages"),
     ("sq-b05", [_secret_exfil()], False, "single multi-category event must not self-correlate"),

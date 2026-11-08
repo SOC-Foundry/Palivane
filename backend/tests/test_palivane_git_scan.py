@@ -38,10 +38,10 @@ def test_diff_modes_include_renames(monkeypatch):
 
 def test_non_utf8_is_decoded_not_skipped(tmp_path):
     f = tmp_path / "latin1.env"
-    f.write_bytes(b"caf\xe9 AWS_SECRET=AKIAIOSFODNN7EXAMPLE\n")
+    f.write_bytes(b"caf\xe9 AWS_SECRET=AKIAIOSFODNN7QXAMPLE\n")
     content, problem = gscan._content(str(f), "range")
     assert problem is None
-    assert "AKIAIOSFODNN7EXAMPLE" in content and "�" in content
+    assert "AKIAIOSFODNN7QXAMPLE" in content and "�" in content
 
 
 def test_binary_is_skipped_quietly(tmp_path):
@@ -52,7 +52,7 @@ def test_binary_is_skipped_quietly(tmp_path):
 
 def test_oversized_file_is_truncated_with_a_problem(tmp_path):
     f = tmp_path / "big.txt"
-    f.write_bytes(b"KEY=AKIAIOSFODNN7EXAMPLE\n" + b"a" * (gscan.MAX_BYTES + 10))
+    f.write_bytes(b"KEY=AKIAIOSFODNN7QXAMPLE\n" + b"a" * (gscan.MAX_BYTES + 10))
     content, problem = gscan._content(str(f), "range")
     assert len(content) == gscan.MAX_BYTES and content.startswith("KEY=AKIA")
     assert problem and "only the first" in problem

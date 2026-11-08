@@ -56,7 +56,7 @@ def test_outlook_platform_listed(client):
 
 def test_outlook_pii_finding_with_recipient(client, monkeypatch):
     _fake_outlook(monkeypatch, {"dev@acme.com": [
-        _omsg("M1", body="customer SSN 078-05-1120 card 4242 4242 4242 4242"),
+        _omsg("M1", body="customer SSN 078-15-1120 card 4242 4242 4242 4242"),
         _omsg("M2", subject="lunch", body="see you"),
     ]})
     cid = _mk(client, "outlook_messages", MS_CREDS)
@@ -72,7 +72,7 @@ def test_outlook_html_stripped_and_attachment_scanned(client, monkeypatch):
                                           has_atts=True)]},
                   atts=[{"name": "dump.csv", "contentType": "text/csv", "size": 40,
                          "contentBytes": base64.b64encode(
-                             b"ssn\n078-05-1120").decode()},
+                             b"ssn\n078-15-1120").decode()},
                         {"name": "x.png", "contentType": "image/png", "size": 40,
                          "contentBytes": ""}])
     cid = _mk(client, "outlook_messages", MS_CREDS)
@@ -83,7 +83,7 @@ def test_outlook_html_stripped_and_attachment_scanned(client, monkeypatch):
 def test_outlook_refused_mailbox_isolated_and_watermark(client, monkeypatch):
     _fake_outlook(monkeypatch,
                   {"dead@acme.com": [], "dev@acme.com": [
-                      _omsg("M1", body="SSN 078-05-1120")]},
+                      _omsg("M1", body="SSN 078-15-1120")]},
                   refuse=("dead@acme.com",))
     cid = _mk(client, "outlook_messages", MS_CREDS)
     summary = client.post(f"/api/discovery/connectors/{cid}/sync").json()

@@ -109,9 +109,9 @@ def test_capture_encrypted_at_rest_like_findings(client, db_factory, monkeypatch
 def test_capture_redacts_secrets_like_findings(client, monkeypatch):
     monkeypatch.setattr(settings, "redact_findings", True)
     _opt_in(client, monkeypatch)
-    _scan(client, "here is the key AKIAIOSFODNN7EXAMPLE please use it")
+    _scan(client, "here is the key AKIAIOSFODNN7QXAMPLE please use it")
     content = _samples(client)[0]["content"]
-    assert "AKIAIOSFODNN7EXAMPLE" not in content
+    assert "AKIAIOSFODNN7QXAMPLE" not in content
 
 
 def test_daily_cap_bounds_volume(client, monkeypatch):

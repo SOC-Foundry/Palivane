@@ -26,7 +26,7 @@ def _auth(token: str) -> dict:
 def _finding(client) -> int:
     """One real, persisted finding to triage."""
     r = client.post("/api/analyze", json={
-        "content": "aws key AKIAIOSFODNN7EXAMPLE leaked",
+        "content": "aws key AKIAIOSFODNN7QXAMPLE leaked",
         "surface": "ai_usage", "actor": "dev@acme.com", "persist": True})
     assert r.status_code == 200, r.text
     fid = r.json()["finding_id"]

@@ -107,15 +107,15 @@ def test_message_event_creates_finding_with_actor_and_channel(client, monkeypatc
 def test_redelivered_event_id_is_folded(client, monkeypatch, db_factory):
     _wire(monkeypatch, db_factory)
     _mk_connector(client)
-    _post(client, _event("customer SSN 078-05-1120", eid="EvSame"))
-    _post(client, _event("customer SSN 078-05-1120", eid="EvSame"))
+    _post(client, _event("customer SSN 078-15-1120", eid="EvSame"))
+    _post(client, _event("customer SSN 078-15-1120", eid="EvSame"))
     assert len(client.get("/api/findings?surface=collab").json()["findings"]) == 1
 
 
 def test_unknown_workspace_is_acked_and_dropped(client, monkeypatch, db_factory):
     _wire(monkeypatch, db_factory)
     _mk_connector(client)                        # connector maps to T1 via auth.test
-    r = _post(client, _event("customer SSN 078-05-1120", team="T-OTHER"))
+    r = _post(client, _event("customer SSN 078-15-1120", team="T-OTHER"))
     assert r.status_code == 200                  # always ack — Slack must not retry
     assert client.get("/api/findings?surface=collab").json()["findings"] == []
 
@@ -123,8 +123,8 @@ def test_unknown_workspace_is_acked_and_dropped(client, monkeypatch, db_factory)
 def test_bot_and_subtype_messages_are_ignored(client, monkeypatch, db_factory):
     _wire(monkeypatch, db_factory)
     _mk_connector(client)
-    _post(client, _event("SSN 078-05-1120", eid="Ev-b", bot_id="B1"))
-    _post(client, _event("SSN 078-05-1120", eid="Ev-s", subtype="message_changed"))
+    _post(client, _event("SSN 078-15-1120", eid="Ev-b", bot_id="B1"))
+    _post(client, _event("SSN 078-15-1120", eid="Ev-s", subtype="message_changed"))
     assert client.get("/api/findings?surface=collab").json()["findings"] == []
 
 

@@ -118,8 +118,8 @@ def run(monkeypatch):
 
 
 def test_message_is_scanned_as_its_typed_text_only(run):
-    seen, _ = run(RPC + "PerformAction", perform_action("my ssn is 078-05-1120"))
-    assert seen == ["my ssn is 078-05-1120"]       # no uuid, session id, locale or timezone
+    seen, _ = run(RPC + "PerformAction", perform_action("my ssn is 078-15-1120"))
+    assert seen == ["my ssn is 078-15-1120"]       # no uuid, session id, locale or timezone
 
 
 def test_a_secret_in_the_message_is_blocked(run):
@@ -138,17 +138,17 @@ def test_a_secret_in_the_message_is_blocked(run):
 
 
 def test_a_framed_send_keeps_a_valid_frame(run):
-    body = connect_frame(perform_action("my SSN is 078-05-1120 please"))
+    body = connect_frame(perform_action("my SSN is 078-15-1120 please"))
     _, flow = run(RPC + "PerformAction", body, block=True)
     new = flow.request.content
     assert flow.response is None and new[0] == 0
     assert int.from_bytes(new[1:5], "big") == len(new) - 5
-    assert "078-05-1120" not in addon.claude_rpc_text(new)
+    assert "078-15-1120" not in addon.claude_rpc_text(new)
 
 
 def test_a_send_that_cannot_be_rewritten_is_refused(run):
     import gzip
-    payload = gzip.compress(perform_action("my SSN is 078-05-1120"))
+    payload = gzip.compress(perform_action("my SSN is 078-15-1120"))
     compressed = b"\x01" + len(payload).to_bytes(4, "big") + payload   # flag 1: compressed envelope
     _, flow = run(RPC + "PerformAction", compressed, block=True,
                   headers={"connect-content-encoding": "gzip"})
@@ -157,13 +157,13 @@ def test_a_send_that_cannot_be_rewritten_is_refused(run):
 
 def test_only_the_typed_text_is_replaced():
     notice = "[Palivane blocked this message]"
-    body = _head() + _m(2, _s(3, "first part with an SSN 078-05-1120") + _s(4, "claude-sonnet-4-5")
+    body = _head() + _m(2, _s(3, "first part with an SSN 078-15-1120") + _s(4, "claude-sonnet-4-5")
                         + _s(5, "second typed part here") + _s(12, "America/Chicago"))
     new = addon.replace_rpc_text(body, notice)
     leaves = addon._pb_strings(new)
     assert notice in leaves and "[removed by Palivane]" in leaves
     assert "claude-sonnet-4-5" in leaves and "America/Chicago" in leaves   # not typed text
-    assert not any("078-05-1120" in t for t in leaves)
+    assert not any("078-15-1120" in t for t in leaves)
     assert addon.replace_rpc_text(state_action(), notice) is None          # nothing typed
     assert addon.replace_rpc_text(b"plain text, not protobuf", notice) is None
 
@@ -191,30 +191,30 @@ def test_the_pages_own_compressed_telemetry_is_not_scanned(run):
 
 def test_the_old_completion_json_is_still_scanned(run):
     seen, _ = run("/api/organizations/o1/chat_conversations/c1/completion",
-                  b'{"prompt": "my ssn is 078-05-1120", "timezone": "UTC"}')
-    assert seen == ["my ssn is 078-05-1120"]
+                  b'{"prompt": "my ssn is 078-15-1120", "timezone": "UTC"}')
+    assert seen == ["my ssn is 078-15-1120"]
 
 
 def test_a_connect_envelope_is_unwrapped():
-    assert addon.claude_rpc_text(connect_frame(perform_action("my ssn is 078-05-1120"))) == "my ssn is 078-05-1120"
+    assert addon.claude_rpc_text(connect_frame(perform_action("my ssn is 078-15-1120"))) == "my ssn is 078-15-1120"
 
 
 def test_a_compressed_envelope_is_reported_not_skipped():
-    payload = zlib.compress(perform_action("my ssn is 078-05-1120"))
+    payload = zlib.compress(perform_action("my ssn is 078-15-1120"))
     assert addon.claude_rpc_text(b"\x01" + len(payload).to_bytes(4, "big") + payload) is None
 
 
 def test_a_body_that_is_not_protobuf_is_scanned_as_text(run):
     """If claude.ai changes shape the proxy must fall back to the text, not go quiet."""
-    seen, _ = run(RPC + "PerformAction", b'{"prompt": "my ssn is 078-05-1120"}')
-    assert seen and "078-05-1120" in seen[0]
-    seen, _ = run(RPC + "PerformAction", b"my ssn is 078-05-1120, plain text")
-    assert seen and "078-05-1120" in seen[0]
+    seen, _ = run(RPC + "PerformAction", b'{"prompt": "my ssn is 078-15-1120"}')
+    assert seen and "078-15-1120" in seen[0]
+    seen, _ = run(RPC + "PerformAction", b"my ssn is 078-15-1120, plain text")
+    assert seen and "078-15-1120" in seen[0]
 
 
 def test_a_message_whose_only_text_looks_like_an_id_is_still_a_message():
     # the ids are set aside by shape; a short real word is not lost for being short
-    assert addon.claude_rpc_text(perform_action("hello there, 078-05-1120")) == "hello there, 078-05-1120"
+    assert addon.claude_rpc_text(perform_action("hello there, 078-15-1120")) == "hello there, 078-15-1120"
 
 
 def test_other_hosts_are_not_treated_as_claude_rpc():
@@ -228,7 +228,7 @@ def test_a_block_is_a_connect_error_the_client_reads_as_final(run):
     # When the text can't be swapped out (here a compressed envelope) the send is refused.
     import json
     import gzip
-    payload = gzip.compress(perform_action("my ssn is 078-05-1120"))
+    payload = gzip.compress(perform_action("my ssn is 078-15-1120"))
     _, flow = run(RPC + "PerformAction", b"\x01" + len(payload).to_bytes(4, "big") + payload,
                   block=True, headers={"connect-content-encoding": "gzip"})
     status, body = flow.response[1], json.loads(flow.response[2])
@@ -238,7 +238,7 @@ def test_a_block_is_a_connect_error_the_client_reads_as_final(run):
 
 def test_other_hosts_keep_the_api_shaped_refusal(run):
     import json
-    _, flow = run("/v1/messages", b'{"messages":[{"role":"user","content":"my ssn is 078-05-1120"}]}',
+    _, flow = run("/v1/messages", b'{"messages":[{"role":"user","content":"my ssn is 078-15-1120"}]}',
                   block=True, host="api.anthropic.com")
     assert flow.response[1] == 400 and json.loads(flow.response[2])["type"] == "error"
 
@@ -246,36 +246,36 @@ def test_other_hosts_keep_the_api_shaped_refusal(run):
 def test_a_retry_of_a_stopped_send_is_answered_without_scanning_again(run):
     """claude.ai retries a send it was told failed, on a backoff; each retry used to be scanned
     again and counted as another sighting for as long as the app kept trying."""
-    body = lambda: perform_action("my ssn is 078-05-1120")            # new message ids every time
+    body = lambda: perform_action("my ssn is 078-15-1120")            # new message ids every time
     seen, first = run(RPC + "PerformAction", body(), block=True)
     assert len(seen) == 1 and first.response is None                 # rewritten, not refused
     for _ in range(7):
         again, flow = run(RPC + "PerformAction", body(), block=True, guard=first.guard)
         assert again == [], "a retry of the same text was scanned again"
-        assert flow.response is None and b"078-05-1120" not in flow.request.content
+        assert flow.response is None and b"078-15-1120" not in flow.request.content
     assert len(run.scans) == 1
 
 
 def test_new_words_are_scanned_and_the_quiet_window_expires(run, monkeypatch):
-    seen, first = run(RPC + "PerformAction", perform_action("my ssn is 078-05-1120"), block=True)
-    seen, flow = run(RPC + "PerformAction", perform_action("my other ssn is 219-09-9999"), block=True, guard=first.guard)
+    seen, first = run(RPC + "PerformAction", perform_action("my ssn is 078-15-1120"), block=True)
+    seen, flow = run(RPC + "PerformAction", perform_action("my other ssn is 219-19-9999"), block=True, guard=first.guard)
     assert len(seen) == 1                                  # different text: a new send, scanned
     real = addon.time.time
     monkeypatch.setattr(addon.time, "time", lambda: real() + 3600)
-    seen, flow = run(RPC + "PerformAction", perform_action("my ssn is 078-05-1120"), block=True, guard=first.guard)
+    seen, flow = run(RPC + "PerformAction", perform_action("my ssn is 078-15-1120"), block=True, guard=first.guard)
     assert len(seen) == 1                                  # an hour later it is checked again
 
 
 
 _SSN_BODY = json.dumps({"task_uid": "8f0c2a9e-4b1d-4c3e-9a77-2d5e6f1a0b3c",
-                        "data": {"items": [{"content": "my SSN is 078-05-1120"}]}}).encode()
+                        "data": {"items": [{"content": "my SSN is 078-15-1120"}]}}).encode()
 
 
 def test_a_blocked_monica_chat_gets_an_error_monica_shows(run):
     # Monica's chat stream shows a JSON reply as "(code) msg" only when it has a top-level
     # `code`; the Anthropic-shaped body has none and showed as "INVALID_MESSAGE_CONTENT".
     seen, flow = run("/api/custom_bot/chat", _SSN_BODY, block=True, host="api.monica.im")
-    assert seen and "078-05-1120" in seen[0]
+    assert seen and "078-15-1120" in seen[0]
     _, status, resp = flow.response
     j = json.loads(resp)
     assert status == 403 and j["code"] == "permission_denied"
@@ -289,7 +289,7 @@ def test_a_blocked_merlin_chat_is_an_error_event(run):
     event, data, end = resp.decode().split("\n", 2)
     assert status == 200 and event == "event: error" and end == "\n"
     j = json.loads(data.removeprefix("data: "))
-    assert j["message"].startswith("Blocked by Palivane") and "078-05-1120" not in j["message"]
+    assert j["message"].startswith("Blocked by Palivane") and "078-15-1120" not in j["message"]
 
 
 def test_a_blocked_harpa_ask_is_the_message_as_a_json_string(run):
@@ -314,7 +314,7 @@ def test_the_api_shaped_block_also_carries_a_top_level_message(run):
 def test_an_openai_responses_list_input_is_scanned_and_blocked(run):
     import json
     body = json.dumps({"model": "gpt-5-codex", "input": [
-        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "earlier 078-05-1120"}]},
+        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "earlier 078-15-1120"}]},
         {"type": "reasoning", "encrypted_content": "gAAAAABopaque"},
         {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "key AKIA4YTGH2NBQF7XZP3K"}]},
     ]}).encode()
@@ -347,20 +347,20 @@ def test_a_gzip_compressed_send_is_decoded_and_blocked(run, monkeypatch, tmp_pat
 
 def test_a_gzip_envelope_without_the_header_is_recognised_by_its_magic():
     import gzip
-    body = compressed_frame(gzip.compress(perform_action("my ssn is 078-05-1120")))
-    assert addon.claude_rpc_text(body) == "my ssn is 078-05-1120"
+    body = compressed_frame(gzip.compress(perform_action("my ssn is 078-15-1120")))
+    assert addon.claude_rpc_text(body) == "my ssn is 078-15-1120"
 
 
 def test_a_zstd_compressed_send_is_decoded():
     zstd = pytest.importorskip("compression.zstd")
-    body = compressed_frame(zstd.compress(perform_action("my ssn is 078-05-1120")))
-    assert addon.claude_rpc_text(body, "zstd") == "my ssn is 078-05-1120"
+    body = compressed_frame(zstd.compress(perform_action("my ssn is 078-15-1120")))
+    assert addon.claude_rpc_text(body, "zstd") == "my ssn is 078-15-1120"
 
 
 def test_a_brotli_compressed_send_is_decoded():
     brotli = pytest.importorskip("brotli")
-    body = compressed_frame(brotli.compress(perform_action("my ssn is 078-05-1120")))
-    assert addon.claude_rpc_text(body, "br") == "my ssn is 078-05-1120"
+    body = compressed_frame(brotli.compress(perform_action("my ssn is 078-15-1120")))
+    assert addon.claude_rpc_text(body, "br") == "my ssn is 078-15-1120"
 
 
 def test_an_oversize_decompressed_send_is_unreadable(run, monkeypatch, tmp_path):
@@ -379,7 +379,7 @@ def test_an_oversize_decompressed_send_is_unreadable(run, monkeypatch, tmp_path)
 def test_an_unknown_codec_or_corrupt_data_is_unreadable(run, monkeypatch, tmp_path):
     import gzip
     monkeypatch.setenv("PALIVANE_STATE_DIR", str(tmp_path))
-    good = gzip.compress(perform_action("my ssn is 078-05-1120"))
+    good = gzip.compress(perform_action("my ssn is 078-15-1120"))
     assert addon.claude_rpc_text(compressed_frame(good), "snappy") is None
     assert addon.claude_rpc_text(compressed_frame(good[:-6]), "gzip") is None    # truncated
     assert addon.claude_rpc_text(compressed_frame(b"not gzip at all"), "gzip") is None

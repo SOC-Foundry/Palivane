@@ -351,7 +351,7 @@ def test_prompt_with_confirmed_secret_force_blocks_end_to_end(client, raw_client
     # subscription auth. The verdict must carry force_block so even monitor mode stops it.
     key = _key(client)
     p = hook.build_prompt_usage({"hook_event_name": "UserPromptSubmit",
-                                 "prompt": "use AKIAIOSFODNN7EXAMPLE to deploy"})
+                                 "prompt": "use AKIAIOSFODNN7QXAMPLE to deploy"})
     body = raw_client.post("/api/ingest/ai-usage", json=p,
                            headers={"X-Palivane-Token": key}).json()
     assert "secret_leak" in {s["category"] for s in body["signals"]}
@@ -481,7 +481,7 @@ def test_block_with_self_justify_saves_state_and_extends_reason(tmp_path, monkey
                "self_justify": True, "finding_id": 77, "signals": [], "remediation": []}
     out = hook.prompt_block_output(verdict)
     # main() appends the instructions; simulate its branch directly
-    hook._save_last_block("customer SSN 078-05-1120", verdict)
+    hook._save_last_block("customer SSN 078-15-1120", verdict)
     saved = json.loads((tmp_path / "last-block.json").read_text())
     assert saved["finding_id"] == 77 and len(saved["content_hash"]) == 64
     assert "decision" in out and out["decision"] == "block"

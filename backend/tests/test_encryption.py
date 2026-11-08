@@ -8,8 +8,8 @@ from app.models import Finding
 
 
 def test_seal_unseal_roundtrip_and_passthrough():
-    s = seal("prompt with AKIAIOSFODNN7EXAMPLE")
-    assert s.startswith("enc:v1:") and unseal(s) == "prompt with AKIAIOSFODNN7EXAMPLE"
+    s = seal("prompt with AKIAIOSFODNN7QXAMPLE")
+    assert s.startswith("enc:v1:") and unseal(s) == "prompt with AKIAIOSFODNN7QXAMPLE"
     assert seal("") == "" and unseal("") == ""
     assert unseal("plaintext row") == "plaintext row"   # legacy/plaintext untouched
 
@@ -50,11 +50,11 @@ def test_redact_then_encrypt_compose(client, db_factory, monkeypatch):
     monkeypatch.setattr(main.settings, "redact_findings", True)
     monkeypatch.setattr(main.settings, "encrypt_findings", True)
     monkeypatch.setattr(main.settings, "store_content", True)
-    fid = _persist(client, "key AKIAIOSFODNN7EXAMPLE here")
+    fid = _persist(client, "key AKIAIOSFODNN7QXAMPLE here")
     db = db_factory()
     raw = db.get(Finding, fid).content
     db.close()
     assert raw.startswith("enc:")
     # Decrypted view is the redacted content (secret masked), not the raw key.
     detail = client.get(f"/api/findings/{fid}").json()
-    assert "AKIAIOSFODNN7EXAMPLE" not in detail["content"] and "«redacted:" in detail["content"]
+    assert "AKIAIOSFODNN7QXAMPLE" not in detail["content"] and "«redacted:" in detail["content"]

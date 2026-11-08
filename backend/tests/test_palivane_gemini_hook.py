@@ -139,7 +139,7 @@ def test_config_reuses_claude_settings_pair(monkeypatch, tmp_path):
 def test_prompt_secret_force_blocks_end_to_end(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "gem", "actor": "d@a.com"}).json()["token"]
     p = hook.build_ai_usage({"hook_event_name": "BeforeAgent",
-                             "prompt": "deploy with AKIAIOSFODNN7EXAMPLE now"})
+                             "prompt": "deploy with AKIAIOSFODNN7QXAMPLE now"})
     body = raw_client.post("/api/ingest/ai-usage", json=p, headers={"X-Palivane-Token": key}).json()
     assert "secret_leak" in {s["category"] for s in body["signals"]}
     assert body["force_block"] is True

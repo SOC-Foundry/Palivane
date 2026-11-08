@@ -114,7 +114,7 @@ def _two_live_tenants(db_factory):
     a = _make_tenant(db_factory, "alpha")
     b = _make_tenant(db_factory, "bravo")
     # Each tenant gets a distinct, risky finding (a secret leak -> persisted).
-    a_key, a_find = _seed_via_api(a, "here is our key AKIAIOSFODNN7EXAMPLE for alpha")
+    a_key, a_find = _seed_via_api(a, "here is our key AKIAIOSFODNN7QXAMPLE for alpha")
     b_key, b_find = _seed_via_api(b, "bravo secret AKIA1234567890ABCDEF ssn 123-45-6789")
     return a, b, {"a_key": a_key, "a_find": a_find, "b_key": b_key, "b_find": b_find}
 

@@ -24,7 +24,7 @@ _TOKEN = "gh" + "p" + "_" + "".join(_rnd.choice(string.ascii_letters + string.di
                                     for _ in range(36))
 _KEY_ID = "AK" + "IA" + "".join(_rnd.choice(string.ascii_uppercase + string.digits)
                                 for _ in range(16))
-_SSN = "07" + "8-0" + "5-11" + "20"
+_SSN = "51" + "3-2" + "7-48" + "61"
 
 
 def _fullwidth(s: str) -> str:

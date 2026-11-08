@@ -56,9 +56,9 @@ SECRETS = {
 }
 
 PERSONAL = {
-    "ssn dashed": ("457-55-5462", "claimant SSN {} on file"),
+    "ssn dashed": ("457-56-5462", "claimant SSN {} on file"),
     "ssn spaced": ("457 55 5462", "claimant SSN {} on file"),
-    "ssn bare": ("457555462", "ssn {} for the claimant"),
+    "ssn bare": ("457565462", "ssn {} for the claimant"),
     "card": ("4532015112830366", "charge {} for the renewal"),
     "card grouped": ("4532 0151 1283 0366", "charge {} for the renewal"),
     "email": ("maria.lopez@northwind-example.com", "reach her at {} today"),
@@ -156,7 +156,7 @@ def test_a_lookalike_letter_cannot_hide_a_key_from_the_mask():
 def test_text_in_another_script_is_shown_as_written_not_as_the_folded_copy_the_mask_scans():
     # The mask scans a copy in which Cyrillic lookalikes are folded to Latin. What it shows must be
     # the real text: only the SSN changes.
-    text = "Привет, пожалуйста, проверьте отчёт по клиенту, SSN 457-55-5462, спасибо"
+    text = "Привет, пожалуйста, проверьте отчёт по клиенту, SSN 457-56-5462, спасибо"
     assert excerpts.mask_text(text) == "Привет, пожалуйста, проверьте отчёт по клиенту, SSN «redacted:SSN», спасибо"
 
 
@@ -183,7 +183,7 @@ def test_mask_text_handles_empty_and_huge_input():
     assert excerpts.mask_text("") == "" and excerpts.mask_text(None) is None
     huge = ("lorem ipsum dolor sit amet " * 60_000)
     t0 = time.perf_counter()
-    out = excerpts.mask_text(huge + " SSN 457-55-5462")
+    out = excerpts.mask_text(huge + " SSN 457-56-5462")
     assert time.perf_counter() - t0 < 5
     assert len(out) <= excerpts.MAX_SCAN
 
@@ -210,7 +210,7 @@ def _by_cat(sigs, entries, cat):
 
 def test_a_pii_finding_shows_the_words_around_the_match_and_not_the_match():
     item, sigs, entries = _analyze(
-        "Please summarize the claim for Maria Lopez, SSN 457-55-5462, and email her about the denial.")
+        "Please summarize the claim for Maria Lopez, SSN 457-56-5462, and email her about the denial.")
     (e,) = _by_cat(sigs, entries, "pii_exposure")
     assert e["where"] == "prompt" and e["cut"] == [False, False]
     assert "claim for Maria Lopez, SSN «redacted:SSN»" in e["text"]
@@ -259,7 +259,7 @@ def test_an_injection_finding_shows_the_phrase_in_its_sentence():
 
 def test_a_long_prompt_is_cut_around_the_match_and_says_so():
     filler = "The quarterly numbers were discussed at length by everyone present. " * 70
-    item, sigs, entries = _analyze(filler + "Patient SSN 457-55-5462 attached. " + filler)
+    item, sigs, entries = _analyze(filler + "Patient SSN 457-56-5462 attached. " + filler)
     (e,) = _by_cat(sigs, entries, "pii_exposure")
     assert len(e["text"]) <= excerpts.MAX_TEXT
     assert e["cut"] == [True, True]
@@ -270,11 +270,11 @@ def test_a_long_prompt_is_cut_around_the_match_and_says_so():
 def test_everything_sensitive_inside_the_window_is_masked_not_only_the_match():
     # The SSN is what fired. The email, the phone and the bearer token beside it did not, and
     # must not be shown for that reason.
-    text = ("Authorization: Bearer Zk3f9Qx2Lm8Rt5Yb; patient SSN 457-55-5462; "
+    text = ("Authorization: Bearer Zk3f9Qx2Lm8Rt5Yb; patient SSN 457-56-5462; "
             "maria.lopez@northwind-example.com; (415) 555-0132")
     item, sigs, entries = _analyze(text)
     (e,) = _by_cat(sigs, entries, "pii_exposure")
-    for raw in ("457-55-5462", "maria.lopez", "northwind-example", "555-0132", "Zk3f9Qx2Lm8Rt5Yb"):
+    for raw in ("457-56-5462", "maria.lopez", "northwind-example", "555-0132", "Zk3f9Qx2Lm8Rt5Yb"):
         assert raw not in e["text"], e["text"]
     assert e["text"].count("«redacted") >= 4
 
@@ -282,7 +282,7 @@ def test_everything_sensitive_inside_the_window_is_masked_not_only_the_match():
 def test_a_window_edge_never_cuts_a_secret_in_half():
     # An SSN, with a JWT ending 30 characters before it: the window's left edge (80 back) lands
     # inside the JWT. The window must grow to take the whole token, which is then masked.
-    text = "x " * 400 + JWT + " " * 30 + "SSN 457-55-5462 end " + "y " * 400
+    text = "x " * 400 + JWT + " " * 30 + "SSN 457-56-5462 end " + "y " * 400
     item, sigs, entries = _analyze(text)
     e = _by_cat(sigs, entries, "pii_exposure")[0]
     assert not _leaks(JWT, e["text"], chunk=8)
@@ -290,7 +290,7 @@ def test_a_window_edge_never_cuts_a_secret_in_half():
 
 
 def test_hidden_characters_do_not_reach_the_excerpt():
-    item, sigs, entries = _analyze("note‮ the claimant SSN 457-55-5462 ​​done")
+    item, sigs, entries = _analyze("note‮ the claimant SSN 457-56-5462 ​​done")
     e = _by_cat(sigs, entries, "pii_exposure")[0]
     assert "‮" not in e["text"] and "​" not in e["text"]
 
@@ -317,7 +317,7 @@ def test_nothing_is_guessed_when_the_match_is_not_in_the_text():
 
 
 def test_the_number_of_excerpts_per_finding_is_bounded():
-    item = AnalysisInput(content="SSN 457-55-5462", sender="a@acme.com", channel="chatgpt",
+    item = AnalysisInput(content="SSN 457-56-5462", sender="a@acme.com", channel="chatgpt",
                          surface=Surface.AI_USAGE, metadata={})
     sigs = [{"category": "pii_exposure", "title": "x", "evidence": "SSN", "detail": "",
              "weight": 0.8, "confidence": 0.75}] * 30
@@ -331,7 +331,7 @@ def test_build_survives_missing_pieces():
 
 
 def test_build_on_a_megabyte_is_bounded_in_time_and_size():
-    text = ("alpha beta gamma delta " * 45_000) + " SSN 457-55-5462"
+    text = ("alpha beta gamma delta " * 45_000) + " SSN 457-56-5462"
     item = AnalysisInput(content=text, sender="a@acme.com", channel="chatgpt",
                          surface=Surface.AI_USAGE, metadata={})
     sigs = [{"category": "pii_exposure", "title": "x", "evidence": "SSN", "detail": "",

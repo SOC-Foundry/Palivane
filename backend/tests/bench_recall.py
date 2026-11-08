@@ -161,7 +161,7 @@ CORPUS: list[Sample] = [
     # === secret_leak (ai_usage: content bound for an external AI tool) ==================
     # All FAKE / test-shaped values.
     Sample("sec-aws", "secret_leak",
-           "Here's the config: aws_access_key_id = AKIAIOSFODNN7EXAMPLE",
+           "Here's the config: aws_access_key_id = AKIAIOSFODNN7QXAMPLE",
            metadata={"destination": "chatgpt.com"}),
     Sample("sec-github", "secret_leak",
            "token: ghp_1234567890abcdefghijklmnopqrstuvwx99",
@@ -199,13 +199,13 @@ CORPUS: list[Sample] = [
 
     # === pii_exposure (ai_usage) ========================================================
     Sample("pii-ssn-dashed", "pii_exposure",
-           "The applicant's SSN is 078-05-1120, please summarize their file.",
+           "The applicant's SSN is 078-15-1120, please summarize their file.",
            metadata={"destination": "chatgpt.com"}),
     Sample("pii-card", "pii_exposure",
            "Charge the card 4111 1111 1111 1111 exp 12/29 for the order.",
            metadata={"destination": "chatgpt.com"}),
     Sample("pii-ssn-context", "pii_exposure",
-           "social security number: 219099999 belongs to the patient on file.",
+           "social security number: 219199999 belongs to the patient on file.",
            metadata={"destination": "chatgpt.com"}),
     Sample("pii-record", "pii_exposure",
            "Customer full name: Jane Q. Doe, date of birth 1985-04-12, email jane.doe@gmail.com.",
@@ -226,7 +226,7 @@ CORPUS: list[Sample] = [
            "Passport number X1234567 for traveler, please book the flight.",
            metadata={"destination": "chatgpt.com"}),
     Sample("pii-phones", "pii_exposure",
-           "Call list: 415-555-0100, 415-555-0132, 212-555-0177 for the outreach.",
+           "Call list: 415-867-2301, 415-392-7718, 212-639-4405 for the outreach.",
            metadata={"destination": "chatgpt.com"}),
 
     # === dangerous_command (mcp) ========================================================
