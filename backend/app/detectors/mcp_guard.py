@@ -59,8 +59,12 @@ _SENSITIVE_PATH = re.compile(
 # text reaches an AI tool. `[\w.-]+\.pem` used to match them all, so `openssl x509 -in ca.pem`
 # scored critical/block with a perfect 100.
 _PUBLIC_CERT_NAME = re.compile(
-    r"(?:ca|cacert|ca-cert|ca-bundle|ca-certificates|cert|certs|certificate|chain|fullchain"
-    r"|root-?ca|[\w.-]*[-_.]cert|[\w.-]*[-_.]certificate)\.pem",
+    r"(?:ca|cacert|ca-cert|ca-certs|ca-bundle|ca-certificates|cert|certs|certificate|chain|fullchain"
+    r"|root|root-?ca|[\w.-]*[-_.](?:cert|certs|certificate|chain|root|ca-bundle)"
+    # The public half of a key pair, by its conventional names: `pub.pem`, `release-pubkey.pem`,
+    # `served-pub.pem`, `public_key.pem`. In the 30-day prod review (2026-11-08) these were the
+    # largest group of "sensitive resource" hits, from agents verifying release signatures.
+    r"|pub|public|pubkey|public[-_]?key|[\w.-]*[-_.](?:pub|public|pubkey|public[-_]?key))\.pem",
     re.IGNORECASE,
 )
 
@@ -447,6 +451,12 @@ class MCPGuardDetector:
         tool = m.get("tool", "")
         args_text = m.get("args_text", "") or ""
         resource = m.get("resource", "") or ""
+        # What a tool RETURNED (the egress proxy reports it as method "tool_result"): a file
+        # listing that names `.env`, or a doc page quoting `curl … | bash`, is output the agent
+        # read, not a file it opened or a command it ran. The sensitive-path and dangerous-command
+        # checks below are about actions, so they skip it; secrets and injection in the text are
+        # still caught by the content detectors. Most hits in the 30-day prod review were these.
+        result_only = method == "tool_result" and not tool
         # The tenant's allowlist: commands and paths it has decided are fine. Only entries that
         # have not lapsed are ever put here (app/allowlist.py builds it). Empty for most calls;
         # see detectors/allow.py for what an entry can and cannot say.
@@ -508,7 +518,7 @@ class MCPGuardDetector:
         else:
             haystack = _norm_path(f"{resource}\n{args_text}")
         allowed_path = tenant_allow.path_ok if tenant_allow else None
-        mres = None if bookkeeping else _sensitive_path(haystack, allowed_path)
+        mres = None if (bookkeeping or result_only) else _sensitive_path(haystack, allowed_path)
         if mres:
             signals.append(Signal(
                 category=Category.SENSITIVE_RESOURCE_ACCESS,
@@ -530,7 +540,7 @@ class MCPGuardDetector:
         # and every tool on an MCP server, still gets scanned, because we cannot know what it
         # does and a silent miss there is far worse than a noisy hit.
         can_execute = bool(server) or (tool not in _NON_EXECUTING_BUILTINS and tool not in BOOKKEEPING_BUILTINS)
-        mcmd = _dangerous_command(args_text, tenant_allow) if can_execute else None
+        mcmd = _dangerous_command(args_text, tenant_allow) if can_execute and not result_only else None
         if mcmd:
             statement = collapse_ws(statement_at(mcmd.string, mcmd.start()))
             signals.append(Signal(
