@@ -36,9 +36,10 @@ BIND_PATH = "/api/slack"
 _AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize"
 _ACCESS_URL = "https://slack.com/api/oauth.v2.access"
 # Read-only scan scopes — must match the published app's manifest. No write scopes:
-# Phase 1 never posts, edits, or deletes anything in the workspace.
+# Phase 1 never posts, edits, or deletes anything in the workspace. files:read lets the scan
+# open attachments, as it does for a pasted bot token.
 _SCOPES = ("channels:read,groups:read,channels:history,groups:history,"
-           "users:read,users:read.email")
+           "users:read,users:read.email,files:read")
 
 
 class InstallError(Exception):
