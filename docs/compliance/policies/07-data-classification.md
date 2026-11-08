@@ -9,7 +9,7 @@
 | **Restricted** | Finding content, scanned prompts/args, secrets material handled by detectors, per-tenant DEKs, the vendor license signing key, provider keys | Redacted before storage; encrypted at rest under per-tenant keys; keys in Secret Manager only; never in logs, tickets, or chat |
 | **Confidential** | Customer identities (emails, org names), audit logs, usage metrics, license blobs | Encrypted at rest (disk); access via authenticated, tenant-scoped APIs only |
 | **Internal** | Source code, runbooks, this policy suite | Private repo, access-controlled |
-| **Public** | Marketing site, docs, /trust, published extensions | No restriction |
+| **Public** | Marketing site, docs, /security, published extensions | No restriction |
 
 ## Product-enforced handling of Restricted data
 

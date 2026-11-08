@@ -93,8 +93,8 @@ const TRUST = [
   { title: "No AI in the scoring path", body: "Rules decide. The LLM judge is opt-in.", href: "/how-it-works" },
   { title: "Self-host it", body: "Same detection, your infrastructure.", href: "/security" },
   { title: "Read every client", body: "Every hook and scanner is on GitHub.", href: "https://github.com/SOC-Foundry/palivane-clients" },
-  { title: "SSO, MFA, audit log", body: "Every admin action recorded.", href: "/trust" },
-  { title: "DPA and subprocessors", body: "Published on the Trust page.", href: "/trust" },
+  { title: "SSO, MFA, audit log", body: "Every admin action recorded.", href: "/security#controls" },
+  { title: "DPA and subprocessors", body: "Published on the Security page.", href: "/security#disclosure" },
 ];
 
 // The one picture of how it works: where a prompt comes from, the checkpoint it passes,

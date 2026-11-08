@@ -1,5 +1,5 @@
 // Public EU AI Act page at /eu-ai-act — an honest deployer-side mapping, same contract as
-// /trust: every claim here is implemented and verifiable (marketing's promise and
+// /security: every claim here is implemented and verifiable (marketing's promise and
 // engineering's checklist). Most Palivane customers are DEPLOYERS of AI systems and users
 // of GPAI under the Act; this page maps their concrete obligations to the control or
 // evidence Palivane produces, and says plainly what Palivane does not do.

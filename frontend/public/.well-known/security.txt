@@ -1,5 +1,5 @@
 Contact: mailto:security@palivane.io
 Expires: 2027-09-05T00:00:00.000Z
 Preferred-Languages: en
-Policy: https://palivane.io/trust
+Policy: https://palivane.io/security#disclosure
 Canonical: https://palivane.io/.well-known/security.txt
