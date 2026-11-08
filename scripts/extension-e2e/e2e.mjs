@@ -40,8 +40,8 @@ const PORT = { palivane: 18099, slow: 18098, https: 18443, ctl: 18444 };
 const PALI = `http://127.0.0.1:${PORT.palivane}`;
 const SLOW = `http://127.0.0.1:${PORT.slow}`;
 const CTL = `http://127.0.0.1:${PORT.ctl}`;
-const SSN = "My SSN is 078-05-1120";           // the SSA's published example, not a real person
-const AWS = "use AKIAIOSFODNN7EXAMPLE to deploy"; // AWS's documented example key
+const SSN = "My SSN is 078-15-1120";           // a fake (the published samples are excluded as nobody's number)
+const AWS = "use AK" + "IAIOSFODNN7QXAMPLE to deploy"; // a fake key (AWS's documented sample is excluded)
 
 // PALIVANE_E2E_TMPDIR: where the run's scratch folder goes (CI points it at a directory it uploads
 // when the run fails: the children's log, the browser console and a screenshot of each open tab).
@@ -185,7 +185,7 @@ try {
     return s;
   }
   const blocked = (r) => r.modal && !r.clean && /blocked/.test(r.title) && !r.arrived;
-  const held = (r) => r.modal && /held/.test(r.title) && /redacted/.test(r.clean) && !r.clean.includes("078-05-1120") && !r.arrived;
+  const held = (r) => r.modal && /held/.test(r.title) && /redacted/.test(r.clean) && !r.clean.includes("078-15-1120") && !r.arrived;
   const wentOut = (r) => r.arrived && !r.modal;
 
   // ---- 1. the org's settings -----------------------------------------------------------------
@@ -266,23 +266,23 @@ try {
     && r.bodies.some((b) => b.includes(marker)) && !r.bodies.some((b) => b.includes(secret))
     && r.seen.length === 1 && r.seen[0].includes(marker) && !r.seen[0].includes(secret)
     && /status 200/.test(r.status) && !r.modalAfter && /Removed/.test(r.toast);
-  const AWSKEY = "AKIAIOSFODNN7EXAMPLE";
+  const AWSKEY = "AK" + "IAIOSFODNN7QXAMPLE";
   r = await redactFlow("redact, claude.ai, emoji before the key", { text: `${FAMILY} \u{1F511} use ${AWSKEY} to deploy, ${FAMILY}` });
   check("REDACT: a blocked key is offered 'Send with these removed'; the page's own send carries «redacted:AWS access key» and not the key (emoji and a ZWJ sequence before it)",
         sentRedacted(r, AWSKEY, "«redacted:AWS access key»") && r.seen[0] === `${FAMILY} \u{1F511} use «redacted:AWS access key» to deploy, ${FAMILY}`, JSON.stringify(r));
   check("...the resend was allowed and the original finding records that a redacted version was sent", !!r.finding?.redacted_resend_at, JSON.stringify(r.finding?.redacted_resend_at));
-  r = await redactFlow("redact, chatgpt.com, rich editor emptied on send", { host: "chatgpt.com", composer: "ce", text: "My SSN is 078-05-1120, and again 078-05-1120" });
+  r = await redactFlow("redact, chatgpt.com, rich editor emptied on send", { host: "chatgpt.com", composer: "ce", text: "My SSN is 078-15-1120, and again 078-15-1120" });
   check("REDACT on chatgpt.com with a rich-editor box the page empties on send: both SSNs go, the marker arrives",
-        sentRedacted(r, "078-05-1120", "«redacted:SSN»") && r.seen[0] === "My SSN is «redacted:SSN», and again «redacted:SSN»", JSON.stringify(r));
+        sentRedacted(r, "078-15-1120", "«redacted:SSN»") && r.seen[0] === "My SSN is «redacted:SSN», and again «redacted:SSN»", JSON.stringify(r));
   r = await redactFlow("redact, claude.ai protobuf RPC", { mode: "rpc", text: `deploy key ${AWSKEY} now` });
   check("REDACT on claude.ai's protobuf PerformAction send: the site's own RPC carries the marker, not the key",
         sentRedacted(r, AWSKEY, "«redacted:AWS access key»"), JSON.stringify(r));
-  r = await redactFlow("redact, gemini form-encoded", { host: "gemini.google.com", mode: "real", text: "SSN 078-05-1120 please" });
-  check("REDACT on a real-shaped Gemini send", sentRedacted(r, "078-05-1120", "«redacted:SSN»"), JSON.stringify(r));
-  r = await redactFlow("redact, text changed before the click", { text: `use ${AWSKEY} please`, retype: "now it is SSN 078-05-1120, thanks" });
+  r = await redactFlow("redact, gemini form-encoded", { host: "gemini.google.com", mode: "real", text: "SSN 078-15-1120 please" });
+  check("REDACT on a real-shaped Gemini send", sentRedacted(r, "078-15-1120", "«redacted:SSN»"), JSON.stringify(r));
+  r = await redactFlow("redact, text changed before the click", { text: `use ${AWSKEY} please`, retype: "now it is SSN 078-15-1120, thanks" });
   check("REDACT after the text changed: the box is re-checked and the NEW values are removed (no stale offsets)",
         r.offered && r.seen.length === 1 && r.seen[0] === "now it is SSN «redacted:SSN», thanks"
-        && r.bodies.some((b) => b.includes("«redacted:SSN»")) && !r.bodies.some((b) => b.includes("078-05-1120") || b.includes(AWSKEY)), JSON.stringify(r));
+        && r.bodies.some((b) => b.includes("«redacted:SSN»")) && !r.bodies.some((b) => b.includes("078-15-1120") || b.includes(AWSKEY)), JSON.stringify(r));
   await tenant({ redact_on_block: "off" });
   r = await redactFlow("redact off", { text: `use ${AWSKEY} please` });
   check("REDACT set to Off: the block modal has no 'Send with these removed'", !r.offered && r.modal && !r.before.some((b) => b.includes(AWSKEY)), JSON.stringify(r));
