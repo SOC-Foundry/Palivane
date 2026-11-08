@@ -9,8 +9,8 @@ from app.detectors import AnalysisInput, Surface
 from app.detectors.decode import decode_obfuscated_detail, literal_views, reshaped_views
 from app.detectors.shadow_ai import ShadowAIDetector
 
-KEY = "AKIA" + "IOSFODNN" + "7EXAMPLE"
-SSN = "078" + "-05-" + "1120"
+KEY = "AKIA" + "IOSFODNN" + "7QXAMPLE"
+SSN = "078" + "-15-" + "1120"
 
 
 def _secret_sigs(content):

@@ -151,7 +151,7 @@ def test_config_reuses_claude_gateway_pair(monkeypatch, tmp_path):
 def test_prompt_secret_detected_end_to_end(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "cur", "actor": "d@a.com"}).json()["token"]
     p = hook.build_ai_usage({"hook_event_name": "beforeSubmitPrompt",
-                             "prompt": "deploy with AKIAIOSFODNN7EXAMPLE and secret key"})
+                             "prompt": "deploy with AKIAIOSFODNN7QXAMPLE and secret key"})
     body = raw_client.post("/api/ingest/ai-usage", json=p, headers={"X-Palivane-Token": key}).json()
     assert body["action"] in ("warn", "block")
     assert {"secret_leak"} & {s["category"] for s in body["signals"]}

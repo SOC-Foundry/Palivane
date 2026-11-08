@@ -16,7 +16,7 @@ _d = SecretsAtRestDetector()
 _TRUFFLEHOG_JSONL = "\n".join([
     json.dumps({"DetectorName": "Github", "Verified": True, "Raw": "ghp_LIVEabcdefghijklmnop",
                 "SourceMetadata": {"Data": {"Filesystem": {"file": "/repo/.env", "line": 4}}}}),
-    json.dumps({"DetectorName": "AWS", "Verified": False, "Raw": "AKIAIOSFODNN7EXAMPLE",
+    json.dumps({"DetectorName": "AWS", "Verified": False, "Raw": "AKIAIOSFODNN7QXAMPLE",
                 "SourceMetadata": {"Data": {"Git": {"file": "config.tf", "line": 9,
                                                     "repository": "git@x/y"}}}}),
 ])

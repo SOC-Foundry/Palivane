@@ -36,7 +36,7 @@ def _mint(client, label: str, scope: str = "ingest", actor: str = "") -> str:
 def test_console_key_without_an_actor_resolves_to_its_bound_user(client, db_factory):
     token = _mint(client, "new token", scope="console_write")
     r = client.post("/api/ingest/ai-usage",
-                    json={"content": "prod key AKIAIOSFODNN7EXAMPLE", "destination": "chatgpt.com"},
+                    json={"content": "prod key AKIAIOSFODNN7QXAMPLE", "destination": "chatgpt.com"},
                     headers={"X-Palivane-Token": token})
     fid = r.json()["finding_id"]
     detail = client.get(f"/api/findings/{fid}").json()
@@ -47,7 +47,7 @@ def test_console_key_without_an_actor_resolves_to_its_bound_user(client, db_fact
 def test_ingest_key_without_an_actor_is_not_named_after_its_label(client):
     token = _mint(client, "new token")            # no actor, no bound user
     r = client.post("/api/ingest/ai-usage",
-                    json={"content": "prod key AKIAIOSFODNN7EXAMPLE", "destination": "chatgpt.com"},
+                    json={"content": "prod key AKIAIOSFODNN7QXAMPLE", "destination": "chatgpt.com"},
                     headers={"X-Palivane-Token": token})
     detail = client.get(f"/api/findings/{r.json()['finding_id']}").json()
     assert detail["sender"] == "api-key"          # honestly unattributed, not a display name
@@ -56,7 +56,7 @@ def test_ingest_key_without_an_actor_is_not_named_after_its_label(client):
 def test_explicit_key_actor_still_wins(client):
     token = _mint(client, "fleet", actor="svc@acme.com")
     r = client.post("/api/ingest/ai-usage",
-                    json={"content": "prod key AKIAIOSFODNN7EXAMPLE", "destination": "chatgpt.com"},
+                    json={"content": "prod key AKIAIOSFODNN7QXAMPLE", "destination": "chatgpt.com"},
                     headers={"X-Palivane-Token": token})
     assert client.get(f"/api/findings/{r.json()['finding_id']}").json()["sender"] == "svc@acme.com"
 

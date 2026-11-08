@@ -41,7 +41,7 @@ def test_clean_object_allowed(raw_client, db_factory, monkeypatch):
 
 def test_secret_object_flagged(raw_client, db_factory, monkeypatch):
     _setup(db_factory, monkeypatch)
-    body = _scan(raw_client, [{"key": "dump/prod.env", "content": "AWS_KEY=AKIAIOSFODNN7EXAMPLE\n"}]).json()
+    body = _scan(raw_client, [{"key": "dump/prod.env", "content": "AWS_KEY=AKIAIOSFODNN7QXAMPLE\n"}]).json()
     assert body["action"] in ("block", "warn")
     assert body["objects"][0]["key"] == "dump/prod.env"
     assert any(s["category"] == "secret_leak" for s in body["objects"][0]["signals"])
@@ -49,7 +49,7 @@ def test_secret_object_flagged(raw_client, db_factory, monkeypatch):
 
 def test_public_bucket_escalates_to_block(raw_client, db_factory, monkeypatch):
     _setup(db_factory, monkeypatch)
-    obj = [{"key": "dump/prod.env", "content": "AWS_KEY=AKIAIOSFODNN7EXAMPLE\n"}]
+    obj = [{"key": "dump/prod.env", "content": "AWS_KEY=AKIAIOSFODNN7QXAMPLE\n"}]
     private = _scan(raw_client, obj, public=False).json()
     public = _scan(raw_client, obj, public=True).json()
     # Same content: a private hit may be block-or-warn, but a PUBLIC bucket is always block,
@@ -63,7 +63,7 @@ def test_public_bucket_escalates_to_block(raw_client, db_factory, monkeypatch):
 def test_record_flag_scans_and_flags(raw_client, db_factory, monkeypatch):
     _setup(db_factory, monkeypatch)
     # record=True persists server-side; the response still carries the flagged object.
-    body = _scan(raw_client, [{"key": "leak.env", "content": "token=AKIAIOSFODNN7EXAMPLE\n"}],
+    body = _scan(raw_client, [{"key": "leak.env", "content": "token=AKIAIOSFODNN7QXAMPLE\n"}],
                  public=True, record=True).json()
     assert body["objects"] and body["objects"][0]["public"] is True
     assert body["action"] == "block"
@@ -92,7 +92,7 @@ def test_no_object_text_is_required_or_echoed(raw_client, db_factory, monkeypatc
     _setup(db_factory, monkeypatch)
     r = _scan(raw_client, [{"key": "db.sql", "findings": [_finding(masked="AKIA••••7777")]}])
     body = r.text
-    assert "AKIAIOSFODNN7EXAMPLE" not in body       # nothing that looks like a real value
+    assert "AKIAIOSFODNN7QXAMPLE" not in body       # nothing that looks like a real value
     assert "content" not in r.json()["objects"][0]
 
 
@@ -119,7 +119,7 @@ def test_legacy_content_payload_still_works(raw_client, db_factory, monkeypatch)
     """Older installed CLIs still POST object text; they must not break on upgrade."""
     _setup(db_factory, monkeypatch)
     r = _scan(raw_client, [{"key": "old.env",
-                            "content": "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}]).json()
+                            "content": "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYQXAMPLEKEY"}]).json()
     assert r["objects"] and r["objects"][0]["action"] == "block"
 
 

@@ -53,7 +53,7 @@ def test_secret_blocks(raw_client, db_factory, monkeypatch):
     _seed_tenant(db_factory)
     monkeypatch.setattr(main.settings, "extension_ingest_token", "ext-secret")
     monkeypatch.setattr(main.settings, "ingest_tenant", "acme")
-    body = _scan(raw_client, [{"path": "prod.env", "content": "AWS_KEY=AKIAIOSFODNN7EXAMPLE\n"}]).json()
+    body = _scan(raw_client, [{"path": "prod.env", "content": "AWS_KEY=AKIAIOSFODNN7QXAMPLE\n"}]).json()
     assert body["action"] == "block"
     assert body["files"][0]["path"] == "prod.env"
     assert body["files"][0]["action"] == "block"
@@ -75,7 +75,7 @@ def test_per_file_results_and_overall_worst(raw_client, db_factory, monkeypatch)
     monkeypatch.setattr(main.settings, "ingest_tenant", "acme")
     body = _scan(raw_client, [
         {"path": "ok.py", "content": "print('hi')\n"},
-        {"path": "secret.env", "content": "token=AKIAIOSFODNN7EXAMPLE\n"},
+        {"path": "secret.env", "content": "token=AKIAIOSFODNN7QXAMPLE\n"},
     ]).json()
     assert body["scanned"] == 2
     assert body["action"] == "block"            # worst-of
@@ -87,7 +87,7 @@ def test_record_persists_only_flagged(client, raw_client):
     key = client.post("/api/apikeys", json={"label": "git", "actor": "ci@acme.com"}).json()["token"]
     _scan(raw_client, [
         {"path": "ok.py", "content": "print('hi')\n"},
-        {"path": "leak.env", "content": "AWS_KEY=AKIAIOSFODNN7EXAMPLE\n"},
+        {"path": "leak.env", "content": "AWS_KEY=AKIAIOSFODNN7QXAMPLE\n"},
     ], token=key, record=True)
     findings = client.get("/api/findings").json()["findings"]
     git_findings = [f for f in findings if f["channel"] == "git"]
@@ -121,7 +121,7 @@ def test_no_file_text_is_required_or_echoed(raw_client, db_factory, monkeypatch)
     _setup(db_factory, monkeypatch)
     r = _scan(raw_client, [{"path": "acme/api@main:prod.tf",
                             "findings": [_finding(masked="AKIA••••7777")]}])
-    assert "AKIAIOSFODNN7EXAMPLE" not in r.text
+    assert "AKIAIOSFODNN7QXAMPLE" not in r.text
     assert "content" not in r.json()["files"][0]
 
 
@@ -172,5 +172,5 @@ def test_clean_files_are_not_recorded(raw_client, db_factory, monkeypatch):
 def test_precommit_content_path_still_works(raw_client, db_factory, monkeypatch):
     """The hook scans a file on the machine the request came from, so it still sends text."""
     _setup(db_factory, monkeypatch)
-    body = _scan(raw_client, [{"path": "cfg.py", "content": "KEY = 'AKIAIOSFODNN7EXAMPLE'\n"}]).json()
+    body = _scan(raw_client, [{"path": "cfg.py", "content": "KEY = 'AKIAIOSFODNN7QXAMPLE'\n"}]).json()
     assert body["action"] in ("warn", "block") and body["files"]

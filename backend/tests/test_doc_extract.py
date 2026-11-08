@@ -22,7 +22,7 @@ _spec = importlib.util.spec_from_file_location("palivane_detect", _MODULE)
 d = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(d)
 
-AWS = "AKIAIOSFODNN7EXAMPLE"
+AWS = "AKIAIOSFODAO7QXAMPLE"
 SSN = "412-88-7390"
 
 

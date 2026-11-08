@@ -82,11 +82,18 @@ _ID_LABEL_RE = re.compile(
     r"ref|build|job|tracking|device|serial)\b[^\n]{0,16}$")
 
 
+# SSNs published as samples, which the SSA voided: 078-05-1120 (the Woolworth wallet card),
+# 219-09-9999 (an SSA leaflet) and 457-55-5462 (LifeLock's advertising). They fill tutorials
+# and test data; like the 555 phone range, they are nobody's number.
+_SAMPLE_SSNS = frozenset({"078051120", "219099999", "457555462"})
+
+
 def _valid_ssn9(d: str) -> bool:
     """SSA structural rules — cheaply rules out most 9-digit numbers that aren't SSNs:
-    area != 000/666 and not 900-999, group != 00, serial != 0000."""
+    area != 000/666 and not 900-999, group != 00, serial != 0000; and not a published sample."""
     area, group, serial = d[:3], d[3:5], d[5:9]
-    return area not in ("000", "666") and area[0] != "9" and group != "00" and serial != "0000"
+    return (area not in ("000", "666") and area[0] != "9" and group != "00" and serial != "0000"
+            and d not in _SAMPLE_SSNS)
 # Bounded to RFC 5321's limits (local part 64, a domain label 63). Unbounded, a long run of
 # word characters and dots with no '@' backtracked from every word boundary: quadratic,
 # minutes per scan at the 200 KB cap, and clients fail open on a timed-out scan.
@@ -860,7 +867,7 @@ class ShadowAIDetector:
         found: list[str] = []
         weight = 0.0
 
-        if SSN_RE.search(text):
+        if any(re.sub(r"\D", "", m.group(0)) not in _SAMPLE_SSNS for m in SSN_RE.finditer(text)):
             found.append("SSN")
             weight = max(weight, 0.8)
         else:

@@ -146,7 +146,7 @@ def test_exposure_check_survives_a_bucket_it_cannot_read(cli, s3):
 def test_end_to_end_secret_is_found_locally_and_no_bytes_are_sent(cli, s3, bucket, monkeypatch):
     """The whole point of the change, against a real object store: the scanner reads the
     object, detects in-process, and the request carries findings but none of the content."""
-    secret = "AKIAIOSFODNN7EXAMPLE"
+    secret = "AKIAIOSFODNN7QXAMPLE"
     s3.put_object(Bucket=bucket, Key="exports/.env", Body=f"AWS_ACCESS_KEY_ID={secret}\n".encode())
     s3.put_object(Bucket=bucket, Key="notes.txt", Body=b"nothing sensitive here")
 

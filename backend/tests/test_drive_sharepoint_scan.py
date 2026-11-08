@@ -234,7 +234,7 @@ def test_gdrive_reads_an_uploaded_pdf(client, monkeypatch):
         {"id": "p1", "name": "invoice.pdf", "mimeType": "application/pdf",
          "modifiedTime": "2026-08-20T10:00:00.000Z",
          "lastModifyingUser": {"emailAddress": "alice@acme.com"}},
-    ], {"p1": _pdf_bytes("aws key AKIAIOSFODNN7EXAMPLE")})
+    ], {"p1": _pdf_bytes("aws key AKIAIOSFODNN7QXAMPLE")})
     cid = _mk(client, "gdrive_files", GDRIVE_CREDS)
     summary = client.post(f"/api/discovery/connectors/{cid}/sync").json()
     assert summary["files"] == 1 and summary["findings"] == 1
@@ -283,7 +283,7 @@ def test_an_image_is_read_when_ocr_is_on(client, monkeypatch):
     monkeypatch.setattr(ocr, "ocr_available", lambda: True)
     monkeypatch.setattr("app.config.settings.gateway_ocr", True)   # PALIVANE_OCR=true
     monkeypatch.setattr(ocr, "extract_image_text",
-                        lambda imgs, max_images=4, **k: "aws key AKIAIOSFODNN7EXAMPLE")
+                        lambda imgs, max_images=4, **k: "aws key AKIAIOSFODNN7QXAMPLE")
     _fake_gdrive(monkeypatch, [
         {"id": "i2", "name": "paste.png", "mimeType": "image/png",
          "modifiedTime": "2026-08-20T10:00:00.000Z"},

@@ -26,7 +26,7 @@ def _load(name: str, script: str):
 
 claude_hook = _load("palivane_hook_evidence", "palivane-hook")
 
-SSN_PROMPT = "Please summarize the claim for Maria Lopez, SSN 457-55-5462, and email her about the denial."
+SSN_PROMPT = "Please summarize the claim for Maria Lopez, SSN 457-56-5462, and email her about the denial."
 AWS_ID = "AK" + "IA" + "4YTGH2NBQF7XZP3K"
 AWS_SECRET = "wJalrXUtn" + "FEMI/K7MDENG/" + "bPxRfiCYQ4Zr8Lm2"
 
@@ -88,7 +88,7 @@ def test_opting_in_keeps_a_masked_excerpt_and_still_no_prompt(client, raw_client
     (ctx,) = [c for c in _contexts(d) if "SSN" in c["text"]]
     assert ctx["where"] == "prompt"
     assert "claim for Maria Lopez, SSN «redacted:SSN»" in ctx["text"]
-    assert "457-55-5462" not in json.dumps(d)                   # not in the excerpt, not anywhere in the detail
+    assert "457-56-5462" not in json.dumps(d)                   # not in the excerpt, not anywhere in the detail
     assert d["content"] == "" and d["content_retained"] is False   # the prompt itself is still not stored
 
 

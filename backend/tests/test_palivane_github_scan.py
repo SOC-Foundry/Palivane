@@ -101,13 +101,13 @@ def _blob(text: str):
 
 def test_scan_blob_returns_findings_not_content(monkeypatch):
     monkeypatch.setattr(ghs, "_gh_get",
-                        lambda p, t, a: _blob("AWS_KEY = 'AKIAIOSFODNN7EXAMPLE'\n"))
+                        lambda p, t, a: _blob("AWS_KEY = 'AKIAIOSFODNN7QXAMPLE'\n"))
     hit = ghs.scan_blob(_ITEM, "gh", ghs.GITHUB_API)
     assert hit["path"] == "acme/api@main:src/app.py"
     assert "content" not in hit
     assert hit["findings"][0]["category"] == "secret_leak"
     assert hit["findings"][0]["line"] == 1
-    assert "AKIAIOSFODNN7EXAMPLE" not in str(hit), "the raw value must never leave the machine"
+    assert "AKIAIOSFODNN7QXAMPLE" not in str(hit), "the raw value must never leave the machine"
 
 
 def test_scan_blob_returns_none_for_a_clean_file(monkeypatch):
@@ -120,7 +120,7 @@ def test_scan_blob_returns_none_for_a_clean_file(monkeypatch):
 
 def test_scan_blob_finds_the_aws_secret_half(monkeypatch):
     monkeypatch.setattr(ghs, "_gh_get", lambda p, t, a: _blob(
-        "aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n"))
+        "aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYQXAMPLEKEY\n"))
     hit = ghs.scan_blob(_ITEM, "gh", ghs.GITHUB_API)
     assert hit and hit["findings"][0]["label"] == "AWS secret access key"
 

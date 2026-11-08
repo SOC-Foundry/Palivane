@@ -49,9 +49,9 @@ def test_private_channel_and_dm_are_scanned(client, monkeypatch):
           channels=[{"id": "C1", "name": "board", "is_private": True, "team_id": "T1"},
                     {"id": "D1", "is_im": True, "team_id": "T1"}],
           history={"C1": [{"user": "U1", "ts": "1755100002.0001",
-                           "text": "customer SSN 078-05-1120, card 4242 4242 4242 4242"}],
+                           "text": "customer SSN 078-15-1120, card 4242 4242 4242 4242"}],
                    "D1": [{"user": "U1", "ts": "1755100003.0001",
-                           "text": "prod key AKIAIOSFODNN7EXAMPLE don't tell anyone"}]})
+                           "text": "prod key AKIAIOSFODNN7QXAMPLE don't tell anyone"}]})
     cid = _mk(client)
     summary = client.post(f"/api/discovery/connectors/{cid}/sync").json()
     assert summary["conversations"] == 2 and summary["messages"] == 2
@@ -68,7 +68,7 @@ def test_unreadable_conversation_skipped_not_fatal(client, monkeypatch):
           channels=[{"id": "C1", "name": "ok", "team_id": "T1"},
                     {"id": "CX", "name": "denied", "is_private": True, "team_id": "T1"}],
           history={"C1": [{"user": "U1", "ts": "1755100004.0001",
-                           "text": "SSN 078-05-1120"}]},
+                           "text": "SSN 078-15-1120"}]},
           deny=("CX",))
     cid = _mk(client)
     summary = client.post(f"/api/discovery/connectors/{cid}/sync").json()
