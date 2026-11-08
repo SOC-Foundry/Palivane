@@ -261,6 +261,9 @@ _PLACEHOLDER_VALUE_RE = re.compile(
     r"(?:user|owner|admin|root|test|demo|example|sample)(?:password|passwd|pass)|"
     r"placeholder|example|examplekey|sample|todo|tbd|fixme|none|null|nil|test|testing|"
     r"dummy|fake|redacted|secret|password|passwd|<[^>]+>|\$?\{[^}]+\}|\$[a-z_]+|env\.[a-z_.]+|"
+    # Fill-in instructions in a template or a setup guide: `SECRET='PASTE_SECRET_HERE'`,
+    # `TOKEN=your_token_here`, `KEY=REPLACE_ME`. An issued credential never reads as an order.
+    r"(?:paste|insert|enter|replace|put)[_-].*|.*[_-]here|replace[_-]?me|fill[_-]?(?:in|me).*|"
     # The marker a redacted value is replaced by (app/redaction.py, app/redact_spans.py):
     # `DB_PASSWORD=«redacted:password or secret»` is a message with the secret already gone.
     r"«redacted\b.*)$")
