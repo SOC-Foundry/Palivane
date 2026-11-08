@@ -213,6 +213,42 @@ function AssetInventory() {
   );
 }
 
+// People each plane covered, per calendar month: the head count behind per-developer pricing.
+// Counts only (the meter keeps a keyed hash per person, never a name).
+function DeveloperMeter() {
+  const [d, setD] = useState(null);
+  useEffect(() => { api.fleetDevelopers(3).then(setD).catch(() => setD(null)); }, []);
+  const months = d?.months || [];
+  if (!months.length) return null;
+  const cols = [["agent", "Agent plane"], ["browser_only", "Browser / desktop only"],
+                ["browser", "Browser"], ["desktop", "Desktop apps"],
+                ["claude_enterprise", "Claude Enterprise"], ["ci_repos", "CI repos"]];
+  return (
+    <div className="panel settings-card">
+      <h2>People covered, by month</h2>
+      <p className="muted" style={{ marginTop: 0 }}>Distinct people each plane reported for in the
+         month (UTC). <strong>Agent plane</strong> is coding-tool hooks and MCP tool calls;
+         <strong> browser / desktop only</strong> is people seen there and not on the agent plane.
+         CI counts repositories.</p>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead><tr><th>Month</th>{cols.map(([k, l]) => <th key={k}>{l}</th>)}<th>Unattributed</th></tr></thead>
+          <tbody>
+            {months.map((m) => (
+              <tr key={m.month}>
+                <td style={{ whiteSpace: "nowrap" }}>{m.month}</td>
+                {cols.map(([k]) => <td key={k}>{k === "agent" ? <strong>{m[k]}</strong> : m[k]}</td>)}
+                <td className="muted" title="Planes that had reports naming no person (a shared key with no user set)">
+                  {m.unattributed ? `${m.unattributed} plane${m.unattributed > 1 ? "s" : ""}` : "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function Fleet() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -264,6 +300,8 @@ export default function Fleet() {
               <div><span className="usage-n">{s.failed_open ?? "-"}</span><span className="usage-l">failed open 7d</span></div>
             </div>
           </div>
+
+          <DeveloperMeter />
 
           {failedOpen.length > 0 && (
             <div className="panel settings-card">

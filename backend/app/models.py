@@ -1310,6 +1310,30 @@ class SensorHeartbeat(Base):
                 "client_version": self.client_version or ""}
 
 
+
+class DeveloperActivity(Base):
+    """Who used which protection plane in a calendar month: one row per (tenant, month, kind,
+    person), written the first time that person's sensor reports in that month
+    (app/developer_meter.py). The meter behind per-developer pricing, kept apart from
+    sensor_heartbeats because a heartbeat holds only its LAST contact and is pruned once a
+    device goes dark, so last month cannot be counted from it afterwards.
+
+    `identity` is a keyed hash of the person (a CI row: of the repository), never the name:
+    this table outlives the sensors it counts. An empty identity is a report that named
+    nobody (a shared ingest key with no user), counted so the gap is visible."""
+
+    __tablename__ = "developer_activity"
+    __table_args__ = (UniqueConstraint("tenant_id", "month", "kind", "identity",
+                                       name="uq_developer_activity"),)
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    month = Column(String(7), default="", index=True)      # "2026-11", UTC
+    # agent | desktop | browser | claude_enterprise | ci
+    kind = Column(String(24), default="", index=True)
+    identity = Column(String(40), default="")
+    first_seen = Column(DateTime, default=_utcnow)
+
 class ExceptionRecord(Base):
     """A block-screen exception request with review state.
 
