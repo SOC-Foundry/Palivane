@@ -541,18 +541,24 @@ def _is_domain_ident(ident: str) -> bool:
     return len(segs) >= 3 or len(content) >= 2 or sum(len(s) for s in content) >= 7
 
 
+# `class`, `import`, `return` and `select … from` are also English ("world class", "import
+# tariffs", "you can return by…", "select an option from"), and any one marker lets the
+# domain-identifier count run, so a web page naming a few CamelCase products scored as
+# proprietary code. Those markers are held to how code is written: at the start of a line,
+# or SQL in capitals or in a full query shape.
 CODE_MARKERS = [
     re.compile(r"\bdef\s+\w+\s*\("),
     re.compile(r"\bfunction\s+\w+\s*\("),
-    re.compile(r"\bclass\s+\w+\b"),
-    re.compile(r"\bimport\s+[\w.]+"),
-    re.compile(r"\b(SELECT|INSERT|UPDATE|DELETE)\b.+\bFROM\b", re.IGNORECASE),
+    re.compile(r"^[ \t]*(?:export[ \t]+|public[ \t]+|abstract[ \t]+|final[ \t]+)*class[ \t]+\w+", re.MULTILINE),
+    re.compile(r"^[ \t]*(?:import[ \t]+[\w.{*]|from[ \t]+[\w.]+[ \t]+import\b)", re.MULTILINE),
+    re.compile(r"\b(?:SELECT|UPDATE|DELETE)\b[^\n]+\bFROM\b"),
+    re.compile(r"(?i)\bselect[ \t]+[\w.*, \t]+?[ \t]+from[ \t]+[\w.]+[ \t]+(?:where|join|group[ \t]+by|order[ \t]+by|limit)\b"),
     re.compile(r"(mongodb|postgres|postgresql|mysql|redis)://", re.IGNORECASE),
     re.compile(r"=>|::|\bconst\s+\w+\s*="),
     # A body: a return statement, an indented assignment, or a decorator — so a single real
     # function (def + return) clears the ≥2-marker bar instead of scoring zero unless it also
     # carries explicit "confidential/proprietary" label words.
-    re.compile(r"\breturn[ \t]+\S"),
+    re.compile(r"^[ \t]*return\b[ \t]*\S", re.MULTILINE),
     # Indentation matched with [ \t] (never \s) so the quantifiers can't span newlines and
     # backtrack catastrophically on a whitespace/CRLF flood (ReDoS on the AI_USAGE surface).
     re.compile(r"^[ \t]+[\w.\[\]]+[ \t]*[-+*/|&]?=[ \t]*\S", re.MULTILINE),
