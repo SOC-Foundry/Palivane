@@ -544,8 +544,8 @@ export default function App() {
           <>
             <div className="content-head">
               <div>
-                <h1 className="page-title">Findings</h1>
-                <p className="page-sub">Live risk verdicts from the gateway, browser extension, and egress proxy.</p>
+                <h1 className="page-title" title="Live risk verdicts from every capture plane">Findings</h1>
+                <p className="page-sub page-sub-quiet">Live risk verdicts from the gateway, browser extension, and egress proxy.</p>
               </div>
               <div className="head-actions">
                 <span className="live-pill" title="Auto-updates every 15 seconds">
@@ -576,8 +576,8 @@ export default function App() {
                   status={statusFilter}
                   onStatus={setStatusFilter}
                   onConnect={() => navigate("connect")}
-                  onBulkStatus={async (ids, status) => {
-                    await api.bulkStatus(ids, status);
+                  onBulkStatus={async (ids, status, reason = "") => {
+                    await api.bulkStatus(ids, status, reason);
                     await refresh();
                   }}
                 />

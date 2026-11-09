@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 function RiskBadge({ severity, score }) {
   return (
@@ -70,13 +70,24 @@ function groupFindings(findings) {
       a.latest.last_seen || a.latest.created_at || ""));
 }
 
-function FindingRow({ f, selectedId, onSelect }) {
+// The row checkbox: a click selects without opening the finding.
+function Pick({ checked, partial = false, onChange, label }) {
+  const ref = useRef(null);
+  useEffect(() => { if (ref.current) ref.current.indeterminate = partial && !checked; }, [partial, checked]);
+  return (
+    <input ref={ref} type="checkbox" className="row-pick" checked={checked} aria-label={label}
+           onClick={(e) => e.stopPropagation()} onChange={(e) => onChange(e.target.checked)} />
+  );
+}
+
+function FindingRow({ f, selectedId, onSelect, picked, onPick }) {
   const surf = SURFACE[f.surface];
   return (
     <li
-      className={`finding-row ${f.id === selectedId ? "active" : ""}`}
+      className={`finding-row sev-row-${f.severity} ${f.id === selectedId ? "active" : ""} ${picked ? "picked" : ""}`}
       onClick={() => onSelect(f.id)}
     >
+      {onPick && <Pick checked={picked} onChange={(on) => onPick([f.id], on)} label="Select finding" />}
       <RiskBadge severity={f.severity} score={f.risk_score} />
       <div className="finding-main">
         <div className="finding-subject">
@@ -84,13 +95,13 @@ function FindingRow({ f, selectedId, onSelect }) {
           {(f.seen_count || 1) > 1 && (
             <span className="seen-badge" title={`seen ${f.seen_count} times`}>×{f.seen_count}</span>
           )}
+          {f.top_signals?.[0] && (
+            <span className="finding-what">
+              {f.top_signals[0].title}
+              {f.top_signals[0].evidence && <code>{f.top_signals[0].evidence}</code>}
+            </span>
+          )}
         </div>
-        {f.top_signals?.[0] && (
-          <div className="finding-what">
-            {f.top_signals[0].title}
-            {f.top_signals[0].evidence && <code>{f.top_signals[0].evidence}</code>}
-          </div>
-        )}
         <div className="finding-meta">
           {surf && <span className={`tag tag-${surf.cls}`}>{surf.label}</span>}
           <span className="chan">{f.channel}</span>
@@ -105,7 +116,7 @@ function FindingRow({ f, selectedId, onSelect }) {
   );
 }
 
-function GroupRow({ g, expanded, onToggle, selectedId, onSelect, onBulkStatus }) {
+function GroupRow({ g, expanded, onToggle, selectedId, onSelect, onBulkStatus, picked, onPick }) {
   const surf = SURFACE[g.surface];
   const label = (g.categories.length
     ? g.categories.map((c) => CAT_LABEL[c] || c).join(" · ")
@@ -116,8 +127,14 @@ function GroupRow({ g, expanded, onToggle, selectedId, onSelect, onBulkStatus })
       {/* One click both opens the worst finding's detail AND expands the members — so a
           click always populates the detail pane (never "clicked a row, nothing opened"),
           with the individual occurrences right there if you want a specific one. */}
-      <li className={`finding-row group-row ${expanded ? "expanded" : ""} ${g.worst.id === selectedId ? "active" : ""}`}
+      <li className={`finding-row group-row sev-row-${g.worst.severity} ${expanded ? "expanded" : ""} ${g.worst.id === selectedId ? "active" : ""}`}
           onClick={() => { onSelect(g.worst.id); onToggle(); }}>
+        {onPick && (() => {
+          const ids = g.items.map((f) => f.id);
+          const n = ids.filter((id) => picked.has(id)).length;
+          return <Pick checked={n === ids.length} partial={n > 0} onChange={(on) => onPick(ids, on)}
+                       label="Select every finding in this group" />;
+        })()}
         <RiskBadge severity={g.worst.severity} score={g.worst.risk_score} />
         <div className="finding-main">
           <div className="finding-subject">
@@ -125,13 +142,13 @@ function GroupRow({ g, expanded, onToggle, selectedId, onSelect, onBulkStatus })
             <span className="count-pill group-count" title={`${g.events} events across ${g.items.length} findings`}>
               {g.events > g.items.length ? `${g.items.length} · ${g.events} events` : g.items.length}
             </span>
+            {g.worst.top_signals?.[0] && (
+              <span className="finding-what">
+                {g.worst.top_signals[0].title}
+                {g.worst.top_signals[0].evidence && <code>{g.worst.top_signals[0].evidence}</code>}
+              </span>
+            )}
           </div>
-          {g.worst.top_signals?.[0] && (
-            <div className="finding-what">
-              {g.worst.top_signals[0].title}
-              {g.worst.top_signals[0].evidence && <code>{g.worst.top_signals[0].evidence}</code>}
-            </div>
-          )}
           <div className="finding-meta">
             {surf && <span className={`tag tag-${surf.cls}`}>{surf.label}</span>}
             {g.sender && <span className="sender">{g.sender}</span>}
@@ -149,7 +166,8 @@ function GroupRow({ g, expanded, onToggle, selectedId, onSelect, onBulkStatus })
         <span className="group-chevron">{expanded ? "▾" : "▸"}</span>
       </li>
       {expanded && g.items.map((f) => (
-        <FindingRow key={f.id} f={f} selectedId={selectedId} onSelect={onSelect} />
+        <FindingRow key={f.id} f={f} selectedId={selectedId} onSelect={onSelect}
+                    picked={picked?.has(f.id)} onPick={onPick} />
       ))}
     </>
   );
@@ -162,12 +180,50 @@ export default function FindingsList({ findings, selectedId, onSelect, filter, o
   const [surface, setSurface] = useState("");
   const [grouped, setGrouped] = useState(true);
   const [expanded, setExpanded] = useState(() => new Set());
+  // Ticked findings for the bulk bar. Kept to ids still loaded, so a finding that left the
+  // queue (closed elsewhere, filtered out) can never be acted on unseen.
+  const [picked, setPicked] = useState(() => new Set());
+  const [reason, setReason] = useState("false_positive");
+  const [busy, setBusy] = useState(false);
+  const [bulkErr, setBulkErr] = useState("");
 
   let shown = surface ? findings.filter((f) => f.surface === surface) : findings;
   if (filter === "actionable") shown = shown.filter((f) => ACTIONABLE.has(f.severity));
   else if (filter) shown = shown.filter((f) => f.severity === filter);
 
   const groups = grouped ? groupFindings(shown) : null;
+  const shownIds = shown.map((f) => f.id);
+  const pickedShown = shownIds.filter((id) => picked.has(id));
+
+  useEffect(() => {
+    const live = new Set(findings.map((f) => f.id));
+    setPicked((prev) => {
+      const next = new Set([...prev].filter((id) => live.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [findings]);
+
+  function pick(ids, on) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => (on ? next.add(id) : next.delete(id)));
+      return next;
+    });
+  }
+
+  async function bulk(status) {
+    if (!onBulkStatus || pickedShown.length === 0) return;
+    setBusy(true);
+    setBulkErr("");
+    try {
+      await onBulkStatus(pickedShown, status, status === "dismissed" ? reason : "");
+      setPicked(new Set());
+    } catch (e) {
+      setBulkErr(String(e.message || e).replace(/^\d+:\s*/, ""));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   // A finding opened by URL (/app/findings/:id) can sit inside a collapsed group, where
   // its row is never rendered at all — the detail pane opens but the list shows nothing
@@ -193,7 +249,13 @@ export default function FindingsList({ findings, selectedId, onSelect, filter, o
   return (
     <div className="findings panel">
       <div className="findings-head">
-        <h2>Queue <span className="count-pill">{grouped ? groups.length : shown.length}</span></h2>
+        <h2>
+          {onBulkStatus && shownIds.length > 0 && (
+            <Pick checked={pickedShown.length === shownIds.length} partial={pickedShown.length > 0}
+                  onChange={(on) => pick(shownIds, on)} label="Select every finding shown" />
+          )}
+          Queue <span className="count-pill">{grouped ? groups.length : shown.length}</span>
+        </h2>
         <div className="findings-filters">
           <label className="group-toggle" title="Collapse similar findings (same user, surface, and signal types) into one incident row">
             <input type="checkbox" checked={grouped} onChange={(e) => setGrouped(e.target.checked)} />
@@ -248,19 +310,42 @@ export default function FindingsList({ findings, selectedId, onSelect, filter, o
           </button>
         </div>
       )}
+      {onBulkStatus && pickedShown.length > 0 && (
+        <div className="bulk-bar" role="toolbar" aria-label="Bulk actions">
+          <strong>{pickedShown.length} selected</strong>
+          <button type="button" className="ghost-btn slim" disabled={busy} onClick={() => bulk("triaged")}>Triage</button>
+          <span className="bulk-dismiss">
+            <select value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Dismissal reason">
+              <option value="false_positive">false positive</option>
+              <option value="expected">expected</option>
+              <option value="accepted_risk">accepted risk</option>
+              <option value="duplicate">duplicate</option>
+            </select>
+            <button type="button" className="ghost-btn slim" disabled={busy} onClick={() => bulk("dismissed")}>Dismiss</button>
+          </span>
+          {status !== "open" && (
+            <button type="button" className="ghost-btn slim" disabled={busy} onClick={() => bulk("open")}>Reopen</button>
+          )}
+          <button type="button" className="link-btn" onClick={() => setPicked(new Set())}>clear</button>
+          {bulkErr && <span className="bulk-err">{bulkErr}</span>}
+        </div>
+      )}
       <ul className="finding-rows">
         {grouped
           ? groups.map((g) => (
               // A group of one is just a finding — render it as a plain row that opens on
               // the first click, not a folder you expand to reveal a single identical row.
               g.items.length === 1
-                ? <FindingRow key={g.key} f={g.items[0]} selectedId={selectedId} onSelect={onSelect} />
+                ? <FindingRow key={g.key} f={g.items[0]} selectedId={selectedId} onSelect={onSelect}
+                              picked={picked.has(g.items[0].id)} onPick={onBulkStatus ? pick : null} />
                 : <GroupRow key={g.key} g={g} expanded={expanded.has(g.key)}
                             onToggle={() => toggle(g.key)} selectedId={selectedId}
-                            onSelect={onSelect} onBulkStatus={onBulkStatus} />
+                            onSelect={onSelect} onBulkStatus={onBulkStatus}
+                            picked={picked} onPick={onBulkStatus ? pick : null} />
             ))
           : shown.map((f) => (
-              <FindingRow key={f.id} f={f} selectedId={selectedId} onSelect={onSelect} />
+              <FindingRow key={f.id} f={f} selectedId={selectedId} onSelect={onSelect}
+                          picked={picked.has(f.id)} onPick={onBulkStatus ? pick : null} />
             ))}
       </ul>
     </div>
