@@ -84,7 +84,7 @@ function FindingRow({ f, selectedId, onSelect, picked, onPick }) {
   const surf = SURFACE[f.surface];
   return (
     <li
-      className={`finding-row ${f.id === selectedId ? "active" : ""} ${picked ? "picked" : ""}`}
+      className={`finding-row sev-row-${f.severity} ${f.id === selectedId ? "active" : ""} ${picked ? "picked" : ""}`}
       onClick={() => onSelect(f.id)}
     >
       {onPick && <Pick checked={picked} onChange={(on) => onPick([f.id], on)} label="Select finding" />}
@@ -127,7 +127,7 @@ function GroupRow({ g, expanded, onToggle, selectedId, onSelect, onBulkStatus, p
       {/* One click both opens the worst finding's detail AND expands the members — so a
           click always populates the detail pane (never "clicked a row, nothing opened"),
           with the individual occurrences right there if you want a specific one. */}
-      <li className={`finding-row group-row ${expanded ? "expanded" : ""} ${g.worst.id === selectedId ? "active" : ""}`}
+      <li className={`finding-row group-row sev-row-${g.worst.severity} ${expanded ? "expanded" : ""} ${g.worst.id === selectedId ? "active" : ""}`}
           onClick={() => { onSelect(g.worst.id); onToggle(); }}>
         {onPick && (() => {
           const ids = g.items.map((f) => f.id);
