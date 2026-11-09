@@ -3608,6 +3608,11 @@ _MY_ACTIONS = {
     "fixed": "the exposure is removed or access is restricted",
     "not_mine": "this is not the owner's data or account",
     "approved": "this is expected and sanctioned",
+    # The detection is wrong: a public key, a docs example, a test value. Unlike the others it
+    # leaves the finding OPEN, flagged, in the security team's queue: "not a leak" is the
+    # claim someone with a reason to hide a real one would make, so a person checks it, and
+    # their dismissal as a false positive is what reaches the precision readout.
+    "false_alarm": "this is not a leak: the detection is wrong",
 }
 
 
@@ -3655,11 +3660,22 @@ def _mine(q, db, current: User):
 def my_findings(status: str = "open", limit: int = Query(100, ge=1, le=500),
                 current: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Findings attributed to the caller. Any role: this is the one console view that is
-    for the person who caused or owns the finding rather than for the security team."""
+    for the person who caused or owns the finding rather than for the security team.
+
+    `status` is the person's view, not the queue's: `open` = still needs their answer (open,
+    not answered yet), `triaged` = they (or the other party) answered, `all` = everything.
+    A "false alarm" answer leaves the finding open for the security team, so status alone
+    would keep it in "needs an answer" after it was answered."""
     q = db.query(Finding).filter(Finding.tenant_id == current.tenant_id)
-    if status and status != "all":
-        q = q.filter(Finding.status == status)
+    if status == "open":
+        q = q.filter(Finding.status == "open")
+    elif status == "triaged":
+        q = q.filter(Finding.status != "dismissed")
     rows = _mine(q, db, current).order_by(Finding.last_seen.desc()).limit(min(limit, 500)).all()
+    if status == "open":
+        rows = [r for r in rows if not r.owner_response]
+    elif status == "triaged":
+        rows = [r for r in rows if r.owner_response]
     # Owners get the summary, never the stored prose: the point is to tell someone their own
     # document leaked, not to hand every user a content-reading surface.
     out = []
@@ -3712,9 +3728,15 @@ def my_finding_respond(finding_id: int, body: dict,
     row.owner_response = {"action": action, "note": note, "by": current.email, "as": basis,
                           "at": _now.now(_tz.utc).isoformat()}
     # Answered, not closed. `triaged` moves it out of the untouched queue while leaving it
-    # open to an admin; `dismissed` stays a decision only the security team makes.
-    if row.status == "open":
-        row.status = "triaged"
+    # open to an admin; `dismissed` stays a decision only the security team makes. A false
+    # alarm stays open so it is in front of the security team, flagged, until they decide.
+    if action != "false_alarm":
+        if row.status == "open":
+            row.status = "triaged"
+    elif row.status == "triaged" and row.reviewed_at is None:
+        # Revised from an earlier answer that had moved it out of the queue: put it back in
+        # front of the security team. One an admin triaged stays as they left it.
+        row.status = "open"
     db.commit()
     from . import audit_log
     audit_log.record(db, current.tenant_id, current.email, "finding.owner_response",
