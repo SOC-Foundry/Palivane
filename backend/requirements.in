@@ -14,7 +14,7 @@ pydantic==2.14.2
 anthropic[vertex,bedrock]==2.4.0  # LLM judge — Claude via API key, GCP Vertex, or AWS Bedrock
                           # (extras' deps already present: google-auth via google-genai, boto3 below)
 openai==3.45.0            # LLM judge — GPT backend (optional)
-google-genai==2.34.0      # LLM judge — Gemini backend (optional)
+google-genai==3.0.0      # LLM judge — Gemini backend (optional)
 alembic==1.20.1           # schema migrations
 psycopg2-binary==2.9.13   # PostgreSQL driver
 cryptography==50.0.2      # encrypt tenant secrets + finding content at rest
