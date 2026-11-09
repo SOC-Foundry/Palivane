@@ -35,11 +35,13 @@ BIND_PATH = "/api/slack"
 
 _AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize"
 _ACCESS_URL = "https://slack.com/api/oauth.v2.access"
-# Scan scopes — must match the published app's manifest. Nothing that posts, edits, or
-# deletes in the workspace. files:read lets the scan open attachments; channels:join backs
-# the per-org "Scan every public channel" setting (off by default), as for a pasted token.
+# Bot scopes — must match the published app's manifest. files:read lets the scan open
+# attachments; channels:join backs "Scan every public channel" (off by default); chat:write and
+# im:write back "Notify the sender" (off by default), the bot's only post: a private message to
+# the person whose message was flagged. The bot edits and deletes nothing; redaction and
+# deletion use a workspace admin's own user token (app/slack_remediation.py).
 _SCOPES = ("channels:read,groups:read,channels:history,groups:history,"
-           "users:read,users:read.email,files:read,channels:join")
+           "users:read,users:read.email,files:read,channels:join,chat:write,im:write")
 
 
 class InstallError(Exception):

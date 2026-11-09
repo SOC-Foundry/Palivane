@@ -469,6 +469,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
 
   // --- Slack scanning (collab-surface DLP via the published Slack app) ---
   const [slackConns, setSlackConns] = useState([]);
+  const [slackAdminDraft, setSlackAdminDraft] = useState({});
   // Whether THIS deployment has a published Slack app registered. Without one there is no
   // "Add to Slack" to offer: /api/slack/install can only 404, and the honest answer is the
   // workspace-app route. Null until known, so the button never flashes in and out.
@@ -494,13 +495,32 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                : "Auto-join off. Only channels the bot was invited to are scanned.");
     } catch (e) { err(e); }
   }
-  async function setSlackRemediate(id, on) {
+  // Remediation switches (backend app/slack_remediation.py). One PATCH per change; the
+  // message says what will happen from now on.
+  const SLACK_ACTION_MSG = {
+    remediate: [`Confirmed leaks will be DELETED from Slack (the fallback when redaction is also on). `
+                + `Every deletion is written to the audit log.`,
+                "Deletion off."],
+    redact: ["Confirmed leaks will be REDACTED in Slack: the values are replaced, the rest of the "
+             + "message stays. Slack allows this only on Enterprise Grid; elsewhere it is recorded as "
+             + "failed (turn on deletion as the fallback).", "Redaction off."],
+    notify_sender: ["The person who posted a confirmed leak gets a private message from the Palivane "
+                    + "bot saying what was found (never the value) and what happened to it.",
+                    "Sender notices off."],
+  };
+  async function setSlackAction(id, key, on) {
     try {
-      const c = await api.updateConnector(id, { remediate: on });
+      const c = await api.updateConnector(id, { [key]: on });
       setSlackConns((cs) => cs.map((x) => (x.id === id ? c : x)));
-      flash(on ? "Confirmed leaks will be DELETED from Slack on the next scan. Every "
-                 + "deletion is written to the audit log."
-               : "Deletion off. Confirmed leaks are recorded, not removed.");
+      flash(SLACK_ACTION_MSG[key][on ? 0 : 1]);
+    } catch (e) { err(e); }
+  }
+  async function setSlackAdminToken(id, token) {
+    try {
+      const c = await api.updateConnector(id, { admin_token: token });
+      setSlackConns((cs) => cs.map((x) => (x.id === id ? c : x)));
+      setSlackAdminDraft((d) => ({ ...d, [id]: "" }));
+      flash(token ? "Admin token saved. It is stored encrypted and never shown again." : "Admin token removed.");
     } catch (e) { err(e); }
   }
   async function syncSlack(id) {
@@ -1423,20 +1443,54 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                   <button type="button" className="mini-btn" onClick={() => syncSlack(c.id)}>Scan now</button>
                 </div>
               ))}
-              {can("remediation") && slackConns.map((c) => (
-                <label key={`rm-${c.id}`} className="form-row" style={{ gap: 8, marginTop: 6,
-                                                                        alignItems: "flex-start" }}>
-                  <input type="checkbox" checked={!!c.options?.remediate}
-                         onChange={(e) => setSlackRemediate(c.id, e.target.checked)} />
-                  <span style={{ fontSize: 12 }}>Delete confirmed leaks from{" "}
-                    <strong>{c.label || "this workspace"}</strong>{" "}
-                    <span className="muted">a message this scan flags at high or critical is
-                    removed from Slack, and the deletion is written to the audit log. Needs the
-                    workspace-admin user token (<code>xoxp-…</code>) on this connector; the bot
-                    token cannot delete anyone else's message. Deletion is all Slack allows below
-                    Enterprise Grid: editing someone else's message to mask just the sensitive
-                    part is Grid-only.</span></span>
-                </label>
+              {slackConns.map((c) => (
+                <div key={`rm-${c.id}`} style={{ marginTop: 10 }}>
+                  <div className="muted" style={{ fontSize: 12, marginBottom: 2 }}>
+                    When a message in <strong>{c.label || "this workspace"}</strong> is flagged at
+                    high or critical (each action is written to the audit log):</div>
+                  <label className="form-row" style={{ gap: 8, alignItems: "flex-start" }}>
+                    <input type="checkbox" checked={!!c.options?.notify_sender}
+                           onChange={(e) => setSlackAction(c.id, "notify_sender", e.target.checked)} />
+                    <span style={{ fontSize: 12 }}>Notify the sender{" "}
+                      <span className="muted">a private message from the Palivane bot naming what was
+                      found (never the value) and what happened to their message.</span></span>
+                  </label>
+                  {can("remediation") && (<>
+                    <label className="form-row" style={{ gap: 8, alignItems: "flex-start" }}>
+                      <input type="checkbox" checked={!!c.options?.redact}
+                             onChange={(e) => setSlackAction(c.id, "redact", e.target.checked)} />
+                      <span style={{ fontSize: 12 }}>Redact the values{" "}
+                        <span className="muted">replaces them with «redacted», keeps the rest of the
+                        message. Slack allows editing another person's message only on Enterprise
+                        Grid; elsewhere it is recorded as failed and deletion (below) is the
+                        fallback.</span></span>
+                    </label>
+                    <label className="form-row" style={{ gap: 8, alignItems: "flex-start" }}>
+                      <input type="checkbox" checked={!!c.options?.remediate}
+                             onChange={(e) => setSlackAction(c.id, "remediate", e.target.checked)} />
+                      <span style={{ fontSize: 12 }}>Delete the message{" "}
+                        <span className="muted">works on every Slack plan.</span></span>
+                    </label>
+                    {(c.options?.redact || c.options?.remediate) && (
+                      <div className="form-row" style={{ gap: 8, fontSize: 12 }}>
+                        {c.options?.admin_token ? (
+                          <span className="muted">Workspace-admin token saved.{" "}
+                            <button type="button" className="mini-btn"
+                                    onClick={() => setSlackAdminToken(c.id, "")}>Remove</button></span>
+                        ) : (<>
+                          <input type="password" placeholder="Workspace-admin user token (xoxp-…)"
+                                 autoComplete="off" value={slackAdminDraft[c.id] || ""}
+                                 onChange={(e) => setSlackAdminDraft((d) => ({ ...d, [c.id]: e.target.value }))}
+                                 style={{ minWidth: 280 }} />
+                          <button type="button" className="mini-btn" disabled={!slackAdminDraft[c.id]}
+                                  onClick={() => setSlackAdminToken(c.id, slackAdminDraft[c.id])}>Save</button>
+                          <span className="muted">needed to redact or delete: the bot cannot change anyone
+                            else's message.</span>
+                        </>)}
+                      </div>
+                    )}
+                  </>)}
+                </div>
               ))}
               {slackConns.map((c) => (
                 <label key={`aj-${c.id}`} className="form-row" style={{ gap: 8, marginTop: 6,

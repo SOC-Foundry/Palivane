@@ -175,7 +175,7 @@ def _process_event(team_id: str, event: dict, enterprise_id: str = "", api_app_i
         from .service import run_analysis
         from . import content_origin
 
-        findings: list[tuple[str, dict]] = []   # (ts to remediate, result)
+        findings: list[tuple[str, dict, bool]] = []   # (ts to remediate, result, from the text)
         text = (event.get("text") or "").strip()
         if text:
             result = run_analysis(
@@ -188,7 +188,7 @@ def _process_event(team_id: str, event: dict, enterprise_id: str = "", api_app_i
                 db, connector.tenant_id, "slack", f"{cid}:{event.get('ts', '')}",
                 where, actor, text, sensitive=result.get("finding_id") is not None)
             if result.get("finding_id") is not None:
-                findings.append((event.get("ts", ""), result))
+                findings.append((event.get("ts", ""), result, True))
         for fo in (event.get("files") or []):
             if not sc._slack_readable_file(fo) or int(fo.get("size") or 0) > sc._MAX_FILE_BYTES:
                 continue
@@ -205,27 +205,20 @@ def _process_event(team_id: str, event: dict, enterprise_id: str = "", api_app_i
                 persist=True, db=db, tenant_id=connector.tenant_id,
                 persist_benign=False, use_judge=False)
             if result.get("finding_id") is not None:
-                findings.append((event.get("ts", ""), result))
+                findings.append((event.get("ts", ""), result, False))
 
-        # Remediation: identical gates to the pull scan (opt-in, admin user token,
-        # Enterprise feature, confirmed-leak tier), audit-logged BEFORE it is counted.
-        admin_token = sc._remediation_enabled(db, connector, creds)
-        if admin_token:
-            for ts, result in findings:
-                if (not ts or sc._SEV_RANK.get(result.get("severity", ""), 0)
-                        < sc._REMEDIATE_MIN_RANK):
-                    continue
-                ok, why = sc._slack_delete(cid, ts, admin_token)
-                from . import audit_log
-                audit_log.record(
-                    db, connector.tenant_id, actor,
-                    "slack.message_deleted" if ok else "slack.message_delete_failed",
-                    f"{where}:{ts}",
-                    {"finding_id": result.get("finding_id"),
-                     "severity": result.get("severity"), "channel": where,
-                     "connector": connector.label or connector.id, "realtime": True,
-                     **({} if ok else {"error": why})})
-                break                    # one message, one delete
+        # Remediation: the same module and gates as the pull scan (app/slack_remediation.py).
+        # One message, one set of actions, on its first confirmed-tier finding. Redaction works
+        # on the message text, so a file's finding passes no text (and falls back to delete).
+        from . import slack_remediation
+        tier = [f for f in findings if slack_remediation.SEV_RANK.get(f[1].get("severity", ""), 0)
+                >= slack_remediation.CONFIRMED_MIN_RANK]
+        if tier:
+            ts, result, from_text = tier[0]
+            slack_remediation.remediate(
+                db, connector, creds, channel=cid, where=where, ts=ts,
+                user_id=event.get("user", ""), actor=actor, text=text if from_text else "",
+                result=result, realtime=True)
     except Exception:                                             # noqa: BLE001
         _log.exception("slack event processing failed (team %s)", team_id)
     finally:

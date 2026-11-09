@@ -361,7 +361,8 @@ def test_options_round_trip_without_the_credential(client, db_factory):
     cid = _mk(client, "opts")
     listed = client.get("/api/discovery/connectors").json()["connectors"]
     row = next(c for c in listed if c["id"] == cid)
-    assert row["options"] == {"auto_join": False, "remediate": False}
+    assert row["options"] == {"auto_join": False, "remediate": False, "redact": False,
+                              "notify_sender": False, "admin_token": False}
 
     r = client.patch(f"/api/discovery/connectors/{cid}", json={"auto_join": True})
     assert r.status_code == 200 and r.json()["options"]["auto_join"] is True
@@ -511,3 +512,19 @@ def test_admin_token_never_leaves_the_api(client, db_factory, monkeypatch):
     assert ADMIN not in client.get("/api/discovery/connectors").text
     assert ADMIN not in client.patch(f"/api/discovery/connectors/{cid}",
                                      json={"remediate": True}).text
+
+
+def test_admin_token_is_write_only_and_must_be_a_user_token(client):
+    """Redaction and deletion need a workspace admin's user token, added to a workspace that
+    Add to Slack connected with only the bot token. Stored, never shown; a bot token refused."""
+    cid = _mk(client, "admin")
+    bot_like = "xox" + "b-" + "1" * 12
+    assert client.patch(f"/api/discovery/connectors/{cid}",
+                        json={"admin_token": bot_like}).status_code == 400
+    user_tok = "xox" + "p-" + "2" * 12
+    r = client.patch(f"/api/discovery/connectors/{cid}", json={"admin_token": user_tok})
+    assert r.status_code == 200 and r.json()["options"]["admin_token"] is True
+    assert user_tok not in r.text
+    assert user_tok not in client.get("/api/discovery/connectors").text
+    r = client.patch(f"/api/discovery/connectors/{cid}", json={"admin_token": ""})
+    assert r.json()["options"]["admin_token"] is False
