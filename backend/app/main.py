@@ -25,6 +25,7 @@ from .distribution import router as distribution_router
 from .billing import router as billing_router
 from .demo import router as demo_router
 from .slack_events import router as slack_events_router
+from .slack_interactions import router as slack_interactions_router
 from .scim import router as scim_router
 from .webhooks_graph import router as graph_webhook_router
 from .github_webhook import router as github_webhook_router
@@ -456,6 +457,7 @@ app.include_router(auth_router)
 app.include_router(billing_router)
 app.include_router(demo_router)
 app.include_router(slack_events_router)
+app.include_router(slack_interactions_router)
 app.include_router(scim_router)
 app.include_router(graph_webhook_router)
 app.include_router(github_webhook_router)
@@ -4176,6 +4178,13 @@ def connectors_update(connector_id: int, body: ConnectorOptions,
         audit_log.record(db, current.tenant_id, current.email,
                          "slack.admin_token_set" if tok else "slack.admin_token_removed",
                          str(row.id), {"connector": row.label or row.id})
+    if "alert_channel" in opts:
+        ch = opts["alert_channel"].strip()
+        if row.platform != "slack_messages":
+            raise HTTPException(400, "an alert channel applies to a Slack connector only")
+        if ch and not re.fullmatch(r"#?[a-z0-9][a-z0-9._-]{0,79}|[CG][A-Z0-9]{8,20}", ch):
+            raise HTTPException(400, "the alert channel is a channel id (C…) or a #name")
+        opts["alert_channel"] = ch
     if opts:
         merge_options(row, opts, db)
         db.commit()
