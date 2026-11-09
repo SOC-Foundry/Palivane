@@ -738,6 +738,9 @@ class ConnectorOptions(BaseModel):
     # Write-only: the workspace-admin user token (xoxp-) redaction and deletion need, added to a
     # workspace connected with Add to Slack (which holds only the bot token). "" removes it.
     admin_token: str | None = Field(None, max_length=256)
+    # The channel the bot posts each confirmed leak to, with action buttons: a channel id
+    # (C…/G…) or #name. "" turns the alerts off.
+    alert_channel: str | None = Field(None, max_length=81)
 
 
 class ConnectorCreate(BaseModel):
