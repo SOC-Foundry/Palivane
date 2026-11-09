@@ -537,7 +537,14 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
   async function syncSlack(id) {
     try {
       const s = await api.syncConnector(id);
-      flash(`Scanned ${s.messages} message(s) across ${s.channels} channel(s), ${s.findings} finding(s).`);
+      const joinedTxt = s.joined ? ` Joined ${s.joined} channel(s).` : "";
+      const failed = Object.entries(s.join_failed || {});
+      const failTxt = failed.length
+        ? ` Could not join ${failed.reduce((n, [, c]) => n + c, 0)} channel(s): ${failed.map(([w, c]) => `${w} (${c})`).join(", ")}`
+          + (s.join_failed.missing_scope ? ". Reinstall with Add to Slack so the bot gets channels:join." : ".")
+        : "";
+      flash(`Scanned ${s.messages} message(s) across ${s.channels} channel(s), ${s.findings} finding(s).${joinedTxt}${failTxt}`,
+            !failed.length);
       loadSlack();
     } catch (e) { err(e); }
   }
