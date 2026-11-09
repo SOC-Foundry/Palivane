@@ -148,7 +148,12 @@ def complete_install(db, code: str, state: str, redirect_uri: str, bind_nonce: s
     if not row:
         row = SaasConnector(tenant_id=tenant_id, platform="slack_messages", label=label)
         db.add(row)
-    store_credentials(row, {"bot_token": token}, db)
+    # A reinstall swaps the bot token and keeps everything else on the connector: the admin
+    # user token, the alert channel and every switch. Replacing the whole blob wiped them, so
+    # deletion silently stopped after a reinstall (seen 2026-11-09).
+    from .saas_connectors import read_credentials
+    kept = read_credentials(row, db) if row.id and row.credentials_enc else {}
+    store_credentials(row, {**kept, "bot_token": token}, db)
     # What slack_events routes on: only an app install receives the published app's events.
     row.state = {**(row.state or {}), "team_id": team_id, "enterprise_id": enterprise_id,
                  "app_installed": True, "api_app_id": str(data.get("app_id") or "")}
