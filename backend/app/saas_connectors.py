@@ -656,10 +656,14 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
     channels, joined = _slack_channels(hdrs, bool(creds.get("auto_join")))
     channels = _rotate(channels, state.get("resume_at", ""))
     gaps: dict[str, list] = {k: v for k, v in (state.get("backfill") or {}).items()}
-    admin_token = _remediation_enabled(db, connector, creds)
+    from . import slack_remediation
+    # Any action switched on and allowed: redact/delete need the admin token, notify the bot.
+    remediating = bool(slack_remediation.admin_token(db, connector, creds)
+                       or creds.get("notify_sender"))
 
     users: dict[str, str] = {}
     scanned = findings = deleted = delete_failed = 0
+    redacted = redact_failed = notified = notify_failed = 0
     files_scanned = files_skipped = files_partial = file_bytes = 0
     truncated = False
     resume_at = ""
@@ -667,7 +671,7 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
 
     def scan(m: dict) -> None:
         nonlocal scanned, findings, deleted, delete_failed, files_scanned, files_skipped, \
-            files_partial, file_bytes
+            files_partial, file_bytes, redacted, redact_failed, notified, notify_failed
         actor = _slack_actor(users, m["user"], hdrs)
         result = run_analysis(
             AnalysisInput(content=m["text"], sender=actor, channel="slack",
@@ -716,25 +720,18 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
         scanned += 1
         if result.get("finding_id") is not None:
             findings += 1
-            # Remediation. Only ever a message this scan just flagged, only at the
-            # confirmed-leak tier, and every deletion is written to the audit log
-            # BEFORE it is reported — a message removed with no record of what it was
-            # or why is worse than the leak it was removing.
-            if admin_token and _SEV_RANK.get(result.get("severity", ""), 0) >= _REMEDIATE_MIN_RANK:
-                ok, why = _slack_delete(cid, m["ts"], admin_token)
-                from . import audit_log
-                audit_log.record(
-                    db, connector.tenant_id, actor,
-                    "slack.message_deleted" if ok else "slack.message_delete_failed",
-                    f"{where}:{m['ts']}",
-                    {"finding_id": result.get("finding_id"),
-                     "severity": result.get("severity"),
-                     "channel": where, "connector": connector.label or connector.id,
-                     **({} if ok else {"error": why})})
-                if ok:
-                    deleted += 1
-                else:
-                    delete_failed += 1
+            # Remediation (app/slack_remediation.py): only a message this scan just flagged,
+            # only at the confirmed-leak tier, every action audit-logged before it counts.
+            if remediating:
+                r = slack_remediation.remediate(
+                    db, connector, creds, channel=cid, where=where, ts=m["ts"],
+                    user_id=m.get("user", ""), actor=actor, text=m["text"], result=result)
+                redacted += r["redacted"]
+                deleted += r["deleted"]
+                notified += r["notified"]
+                redact_failed += "redact" in r["failed"]
+                delete_failed += "delete" in r["failed"]
+                notify_failed += "notify" in r["failed"]
 
     for ch in channels:
         cid, cname = ch.get("id", ""), ch.get("name", "")
@@ -763,10 +760,16 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
         summary["files"] = files_scanned
     if deleted:
         summary["deleted"] = deleted
-    if delete_failed:
-        # Surfaced, because a remediation that silently stopped working reads exactly like
-        # a workspace with nothing left to remediate.
-        summary["delete_failed"] = delete_failed
+    if redacted:
+        summary["redacted"] = redacted
+    if notified:
+        summary["notified"] = notified
+    # Failures are surfaced, because a remediation that silently stopped working reads exactly
+    # like a workspace with nothing left to remediate.
+    for k, v in (("delete_failed", delete_failed), ("redact_failed", redact_failed),
+                 ("notify_failed", notify_failed)):
+        if v:
+            summary[k] = v
     if files_skipped:
         # Surfaced, not swallowed: "12 attachments unreadable" is the honest way to say
         # that PDFs, Office documents and images are not covered.
@@ -2425,7 +2428,7 @@ def read_credentials(connector, db=None) -> dict:
 # Non-secret scan options live inside the (encrypted) credential blob, so they need no
 # column — but only these keys may ever be read back out to the API. A bot token must not
 # reach the console through this door.
-PUBLIC_OPTIONS = ("auto_join", "remediate")
+PUBLIC_OPTIONS = ("auto_join", "remediate", "redact", "notify_sender")
 
 
 def connector_options(connector, db=None) -> dict:
@@ -2436,6 +2439,8 @@ def connector_options(connector, db=None) -> dict:
     except Exception:                                             # noqa: BLE001
         return {}
     out = {k: bool(creds.get(k)) for k in PUBLIC_OPTIONS}
+    if connector.platform == "slack_messages":
+        out["admin_token"] = bool((creds.get("admin_token") or "").startswith("xoxp-"))   # whether, never the token
     if connector.platform == "github_secrets":
         out["webhook_secret"] = bool(creds.get("webhook_secret"))    # only whether it is set, never the secret
     return out

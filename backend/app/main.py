@@ -4164,6 +4164,18 @@ def connectors_update(connector_id: int, body: ConnectorOptions,
     if row is None:
         raise HTTPException(404, "connector not found")
     opts = body.model_dump(exclude_none=True)
+    if "admin_token" in opts:
+        tok = opts["admin_token"].strip()
+        if row.platform != "slack_messages":
+            raise HTTPException(400, "an admin token applies to a Slack connector only")
+        if tok and not tok.startswith("xoxp-"):
+            raise HTTPException(400, "the admin token is a Slack user token (xoxp-…) from a "
+                                     "workspace admin; a bot token cannot change anyone else's message")
+        opts["admin_token"] = tok
+        from . import audit_log
+        audit_log.record(db, current.tenant_id, current.email,
+                         "slack.admin_token_set" if tok else "slack.admin_token_removed",
+                         str(row.id), {"connector": row.label or row.id})
     if opts:
         merge_options(row, opts, db)
         db.commit()
