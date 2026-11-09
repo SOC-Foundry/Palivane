@@ -500,7 +500,7 @@ export default function App() {
           </div>
         )}
         {view === "connect" ? (
-          <Connect tenant={auth.tenant} />
+          <Connect tenant={auth.tenant} onNavigate={navigate} />
         ) : view === "connections" ? (
           <Connections />
         ) : view === "discovery" ? (
