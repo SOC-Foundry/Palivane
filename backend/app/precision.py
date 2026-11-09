@@ -12,11 +12,14 @@ an analyst confirming it, or its owner having answered. So this reads the review
   no reason        dismissed with no reason given                   could be either: reported as a range
   duplicate        dismissed as a duplicate                         not counted either way
 
-Only reviews made by one person on one finding count (`manual`, and `analyst` where a person applied
-the AI analyst's recommendation). Findings closed in bulk, and ones reviewed before the record
-existed or answered only by their owner, are counted and shown, and kept out of every rate: a
-"clear the queue" is not a judgement of each finding, and dividing by it would make every check look
-like noise.
+Reviews made by one person on one finding count (`manual`, and `analyst` where a person applied
+the AI analyst's recommendation). So do bulk dismissals that carry an explicit judgement (false
+positive, expected, accepted risk): someone chose that reason for the rows they ticked. Other bulk
+closes (bulk triage, bulk dismissals with no reason or as duplicates), and findings reviewed before
+the record existed or answered only by their owner, are counted and shown, and kept out of every
+rate: a "clear the queue" is not a judgement of each finding, and dividing by it would make every
+check look like noise. Counting only the bulk false positives would do the same in reverse, so the
+judged bulk reasons that say a check was right count alongside them.
 
 Read it by finding (one row is one distinct event class) with the events behind it alongside: a
 false positive that fired 300 times is one finding and 300 events.
@@ -71,6 +74,10 @@ def _now() -> datetime:
 
 
 # --- the arithmetic (pure) --------------------------------------------------------------------------
+
+# The bulk dismissal reasons that are a judgement of each ticked finding, and so count.
+BULK_JUDGED = ("false_positive", "expected", "accepted_risk")
+
 
 def bucket(status: str, reason: str) -> str:
     """Which of the five a review is. `triaged` needed action; a dismissal is what its reason says,
@@ -172,7 +179,7 @@ def compute(reviews: list[dict], legacy: list[dict], backlog: dict, now: datetim
     (`status, reason, via, reviewed_at, last_seen, events, signals, channel, sender, id`), `legacy` the
     triaged/dismissed ones with no review record (`status, answered`), `backlog` what is still open."""
     since = now - timedelta(days=days)
-    overall, bulk = _tally(), {"findings": 0, "events": 0}
+    overall, bulk = _tally(), {"findings": 0, "events": 0, "counted": 0}
     by_check: dict[str, dict] = {}
     titles: dict[str, str] = {}
     by_tool: dict[str, dict] = {}
@@ -189,9 +196,11 @@ def compute(reviews: list[dict], legacy: list[dict], backlog: dict, now: datetim
     for r in reviews:
         events = max(int(r.get("events") or 1), 1)
         if r.get("via") == "bulk":
-            bulk["findings"] += 1
-            bulk["events"] += events
-            continue
+            if r["status"] != "dismissed" or (r.get("reason") or "") not in BULK_JUDGED:
+                bulk["findings"] += 1
+                bulk["events"] += events
+                continue
+            bulk["counted"] += 1
         b = bucket(r["status"], r.get("reason") or "")
         check, title, evidence = primary(r.get("signals"))
         titles.setdefault(check, title)
@@ -314,7 +323,7 @@ def format_quality(r: dict, expiring: list[dict], lapsed: list[dict], now: datet
         q.append("  Reviewed: nothing in this period.")
     skipped = []
     if bulk["findings"]:
-        skipped.append(f"{bulk['findings']} closed in bulk")
+        skipped.append(f"{bulk['findings']} closed in bulk")   # judged bulk dismissals are under Reviewed
     if nc["answered_by_owner"]:
         skipped.append(f"{nc['answered_by_owner']} answered by their owner but not reviewed")
     if skipped:

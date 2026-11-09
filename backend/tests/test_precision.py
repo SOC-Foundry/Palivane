@@ -262,9 +262,10 @@ def test_events_are_counted_beside_findings_and_noise_is_shown_by_volume():
 
 
 def test_bulk_closures_are_counted_apart_and_never_enter_a_rate():
+    """Bulk closes without a judged reason (here: no reason) stay out of every rate."""
     reviews = [_rv("triaged")] * 3 + [_rv(via="bulk", events=40)] * 50
     out = _compute(reviews)
-    assert out["bulk"] == {"findings": 50, "events": 2000}
+    assert out["bulk"] == {"findings": 50, "events": 2000, "counted": 0}
     assert out["reviewed"]["findings"] == 3 and out["reviewed"]["actionable_rate"] == 1.0
     assert out["checks"][0]["findings"] == 3 and out["trend"][-1]["findings"] <= 3
 
@@ -363,7 +364,7 @@ def test_an_empty_readout_has_the_same_shape():
     out = _compute([])
     assert out["reviewed"]["judged"] == 0 and out["reviewed"]["actionable_rate"] is None
     assert out["reviewed"]["correct_low"] is None and out["checks"] == [] and out["recurring_noise"] == []
-    assert out["bulk"] == {"findings": 0, "events": 0} and out["reviewed"]["verdict"] == "low_sample"
+    assert out["bulk"] == {"findings": 0, "events": 0, "counted": 0} and out["reviewed"]["verdict"] == "low_sample"
     assert len(out["trend"]) >= 5
 
 
@@ -403,7 +404,7 @@ def test_the_endpoint_counts_what_the_database_holds(client, db_factory):
     r = out["reviewed"]
     assert (r["findings"], r["judged"], r["actionable"], r["expected"], r["false_positive"], r["unspecified"]) == (6, 6, 3, 1, 1, 1)
     assert r["events"] == 5 * 3 + 1 and r["via_analyst"] == 1
-    assert out["bulk"] == {"findings": 1, "events": 10}
+    assert out["bulk"] == {"findings": 1, "events": 10, "counted": 0}
     assert out["not_counted"] == {"answered_by_owner": 1, "before_tracking": 1}
     assert out["backlog"]["open"] == 2 and out["backlog"]["open_high"] == 1 and out["backlog"]["oldest_open_days"] == 9
     assert out["truncated"] is False and out["limits"]["reasons"] == list(review.REASONS)
@@ -475,3 +476,17 @@ def test_only_a_judgement_about_the_detector_becomes_a_label(kw, label):
 def test_the_reason_travels_with_the_label():
     ex = finding_to_example(_f(review_reason="false_positive", review_via="manual"))
     assert ex["note"] == "analyst dismissed (false_positive)"
+
+
+def test_bulk_dismissals_with_a_judged_reason_count():
+    """Ticking findings and dismissing them as false positives (or as expected / accepted risk)
+    is a judgement of each: they enter the rates. Bulk triage and bulk duplicates do not."""
+    reviews = ([_rv("triaged")] * 2
+               + [_rv("dismissed", reason="false_positive", via="bulk")] * 3
+               + [_rv("dismissed", reason="expected", via="bulk")]
+               + [_rv("dismissed", reason="duplicate", via="bulk")]
+               + [_rv("triaged", via="bulk")])
+    out = _compute(reviews)
+    r = out["reviewed"]
+    assert (r["findings"], r["false_positive"], r["expected"], r["actionable"]) == (6, 3, 1, 2)
+    assert out["bulk"]["counted"] == 4 and out["bulk"]["findings"] == 2

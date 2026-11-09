@@ -71,7 +71,7 @@ export default function Precision({ labelFor = (k) => k }) {
   const nc = data?.not_counted || {};
   const bulk = data?.bulk || {};
   const notCounted = data && [
-    bulk.findings ? `${bulk.findings} closed in bulk (${bulk.events} events)` : null,
+    bulk.findings ? `${bulk.findings} closed in bulk without a judged reason (${bulk.events} events)` : null,
     nc.answered_by_owner ? `${nc.answered_by_owner} answered by their owner but not reviewed` : null,
     nc.before_tracking ? `${nc.before_tracking} reviewed before this was recorded` : null,
   ].filter(Boolean);
@@ -89,8 +89,9 @@ export default function Precision({ labelFor = (k) => k }) {
         </span>
       </div>
       <p className="muted" style={{ marginTop: 6 }}>
-        How often the findings your team reviewed were right. Only a review by one person on one
-        finding counts; anything else is listed under <em>Not counted</em>, never folded into a
+        How often the findings your team reviewed were right. A review by one person on one finding
+        counts, and so does a bulk dismissal with a judged reason (false positive, expected,
+        accepted risk); anything else is listed under <em>Not counted</em>, never folded into a
         rate. A dismissal says why (false positive, expected, accepted risk, duplicate) so a check
         that fires on things you are fine with is told apart from one that is wrong.
       </p>
@@ -125,6 +126,7 @@ export default function Precision({ labelFor = (k) => k }) {
 
       {data && (
         <p className="muted pr-notes">
+          {bulk.counted ? <><strong>Counted from bulk:</strong> {bulk.counted} judged dismissal{bulk.counted === 1 ? "" : "s"}. </> : null}
           {notCounted.length ? <><strong>Not counted:</strong> {notCounted.join(" · ")}. </> : null}
           <strong>Open now:</strong> {data.backlog.open}
           {data.backlog.open_high ? ` (${data.backlog.open_high} high or critical)` : ""}
