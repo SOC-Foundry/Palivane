@@ -130,6 +130,7 @@ export default function Precision({ labelFor = (k) => k }) {
           {notCounted.length ? <><strong>Not counted:</strong> {notCounted.join(" · ")}. </> : null}
           <strong>Open now:</strong> {data.backlog.open}
           {data.backlog.open_high ? ` (${data.backlog.open_high} high or critical)` : ""}
+          {data.backlog.owner_false_alarm ? `; ${data.backlog.owner_false_alarm} flagged as a false alarm by their owner, waiting for review` : ""}
           {data.backlog.oldest_open_days == null ? "" : data.backlog.oldest_open_days < 1
             ? ", the oldest raised today"
             : `, the oldest ${data.backlog.oldest_open_days} day${data.backlog.oldest_open_days === 1 ? "" : "s"} old`}.
