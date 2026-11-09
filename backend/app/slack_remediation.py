@@ -127,6 +127,25 @@ def do_notify(bot: str, user_id: str, where: str, labels: list[str], outcome: st
     return ok, why
 
 
+def _done_before(db, tenant_id: int, target: str) -> set[str]:
+    """The actions that already succeeded on this message (from the audit log). A message is
+    scanned more than once (real time, then the scheduled pull; the first scan after the bot
+    joins a channel), and without this each scan notified the sender again."""
+    from .models import AuditLog
+    try:
+        rows = (db.query(AuditLog.action)
+                  .filter(AuditLog.tenant_id == tenant_id, AuditLog.target == target,
+                          AuditLog.action.in_(tuple(_SUCCESS.values()))).all())
+    except Exception:                                             # noqa: BLE001
+        log.debug("remediation history unreadable; acting as if none", exc_info=True)
+        return set()
+    return {a for (a,) in rows}
+
+
+_SUCCESS = {"redact": "slack.message_redacted", "delete": "slack.message_deleted",
+            "notify": "slack.sender_notified", "alert": "slack.alert_posted"}
+
+
 def remediate(db, connector, creds: dict, *, channel: str, where: str, ts: str, user_id: str,
               actor: str, text: str, result: dict, realtime: bool = False) -> dict:
     """Run the enabled actions on one flagged message, then post the security team's alert
@@ -143,6 +162,10 @@ def remediate(db, connector, creds: dict, *, channel: str, where: str, ts: str, 
         token = admin_token(db, connector, creds)
         signals = result.get("signals") or []
         outcome = ""
+        before = _done_before(db, connector.tenant_id, target)
+        if before & {_SUCCESS["redact"], _SUCCESS["delete"]}:
+            # Already changed: nothing left to redact or delete, and the sender was told then.
+            return out
 
         if token and creds.get("redact") and text:
             ok, why, n = do_redact(token, channel, ts, text, signals)
@@ -165,7 +188,7 @@ def remediate(db, connector, creds: dict, *, channel: str, where: str, ts: str, 
                 out["failed"].append("delete")
 
         bot = (creds.get("bot_token") or "").strip()
-        if creds.get("notify_sender") and bot and user_id:
+        if creds.get("notify_sender") and bot and user_id and _SUCCESS["notify"] not in before:
             ok, why = do_notify(bot, user_id, where, labels_of(result), outcome)
             audit_log.record(db, connector.tenant_id, actor,
                              "slack.sender_notified" if ok else "slack.sender_notify_failed",
@@ -175,7 +198,7 @@ def remediate(db, connector, creds: dict, *, channel: str, where: str, ts: str, 
             if not ok:
                 out["failed"].append("notify")
 
-        if (creds.get("alert_channel") or "").strip() and bot:
+        if (creds.get("alert_channel") or "").strip() and bot and _SUCCESS["alert"] not in before:
             ok, why = post_alert(connector, creds, channel=channel, where=where, ts=ts,
                                  user_id=user_id, actor=actor, result=result, done=out,
                                  can_change=bool(token))
