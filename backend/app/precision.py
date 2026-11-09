@@ -285,9 +285,14 @@ def readout(db: Session, tenant_id: int, days: int, now: datetime | None = None)
     oldest = (db.query(func.min(Finding.created_at))
                 .filter(Finding.tenant_id == tenant_id, Finding.status == "open",
                         Finding.severity.in_(("suspicious", "high", "critical"))).scalar())
+    # Open findings whose owner answered "false alarm": the likely false positives a person
+    # still has to confirm (their dismissal as false_positive is what enters the rates).
+    flagged = sum(1 for (resp,) in open_q.with_entities(Finding.owner_response).all()
+                  if isinstance(resp, dict) and resp.get("action") == "false_alarm")
     backlog = {"open": open_q.count(),
                "open_high": open_q.filter(Finding.severity.in_(("high", "critical"))).count(),
-               "oldest_open_days": (now - oldest).days if oldest else None}
+               "oldest_open_days": (now - oldest).days if oldest else None,
+               "owner_false_alarm": flagged}
     return compute(reviews, legacy, backlog, now, days, truncated)
 
 
