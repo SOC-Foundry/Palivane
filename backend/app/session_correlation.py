@@ -70,6 +70,21 @@ _CATEGORY_STAGE = {
     # sensitive into an AI tool" — which the underlying finding already said, at the right
     # severity. Real egress still reaches this stage through data_exfiltration.
 }
+# A secret IN a prompt carries the data_exfiltration category, but it is the secret itself:
+# collection, not something leaving. (The exfiltration-phrase check stays exfiltration: an
+# instruction to send data out is the payoff an injected agent acts on. What stops one person
+# talking about security from becoming a "collection → exfiltration" chain, as seen in prod on
+# 2026-11-09, is the agent-action rule below, not this map.) Keyed on detector and title.
+_SIGNAL_STAGE = {
+    ("prompt_threats", "Credential/secret present in LLM I/O"): "collection",
+}
+
+# A chain is an AGENT's sequence: a tool or MCP call is what turns "read the secrets" into
+# "did something with them". A person's own prompts can be links in an agent's chain (the
+# injected instruction, the pasted key), but on their own they are what the per-event
+# findings already say. So a chain needs at least one finding from an agent's actions.
+_AGENT_SURFACES = {"mcp", "agent_tools", "a2a"}
+
 # Categories that never contribute to a chain (authorship noise, and correlation's own output).
 _IGNORED = {"ai_generated", "session_correlation"}
 
@@ -102,7 +117,9 @@ def stages_in(signals) -> set[str]:
             continue
         cat = (s.get("category") if isinstance(s, dict) else getattr(s, "category", "")) or ""
         cat = getattr(cat, "value", cat)
-        stage = _CATEGORY_STAGE.get(cat)
+        det = (s.get("detector") if isinstance(s, dict) else getattr(s, "detector", "")) or ""
+        title = (s.get("title") if isinstance(s, dict) else getattr(s, "title", "")) or ""
+        stage = _SIGNAL_STAGE.get((det, title)) or _CATEGORY_STAGE.get(cat)
         if stage:
             out.add(stage)
     return out
@@ -173,15 +190,17 @@ def correlate(db: Session, tenant_id: int | None, actor: str, agent: str = "",
 
     stages: set[str] = set()
     contributing: list[int] = []
+    agent_acted = False
     for f in recent:
         st = stages_in(f.signals)
         if st:
             stages |= st
             contributing.append(f.id)
+            agent_acted = agent_acted or (f.surface in _AGENT_SURFACES)
     # Correlation is about a SEQUENCE: the chain must span ≥2 distinct events. A single
     # event that itself carries two categories (a secret plus an exfil destination) is
     # already flagged on its own — it is not a cross-event chain.
-    if len(contributing) < 2 or not _should_correlate(stages):
+    if len(contributing) < 2 or not agent_acted or not _should_correlate(stages):
         return None
 
     severity, score = _severity_for(stages)
