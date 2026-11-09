@@ -465,8 +465,11 @@ def _slack_file_text(f: dict, hdrs: dict) -> tuple[str, str, bool]:
     return tuple(extract_detail(_slack_file_name(f), raw, f.get("mimetype") or ""))
 
 
-def _slack_channels(hdrs: dict, auto_join: bool) -> tuple[list[dict], int]:
-    """The channels to scan, and how many the bot joined to get there.
+def _slack_channels(hdrs: dict, auto_join: bool, join_errors: dict | None = None) -> tuple[list[dict], int]:
+    """The channels to scan, and how many the bot joined to get there. A channel it could not
+    join is counted in `join_errors` by Slack's reason (missing_scope when the install predates
+    channels:join): skipped silently, "Scan every public channel" read as working when it
+    joined nothing.
 
     Default is what the bot was invited to. With auto_join it also enumerates every
     public channel in the workspace and joins the ones it is not in, which is the closest
@@ -499,8 +502,13 @@ def _slack_channels(hdrs: dict, auto_join: bool) -> tuple[list[dict], int]:
                     joined += 1
                 else:
                     by_id.pop(cid, None)
-            except ConnectorError:
+                    if join_errors is not None:
+                        why = str(r.get("error") or "unknown")[:40]
+                        join_errors[why] = join_errors.get(why, 0) + 1
+            except ConnectorError as e:
                 by_id.pop(cid, None)
+                if join_errors is not None:
+                    join_errors["request_failed"] = join_errors.get("request_failed", 0) + 1
     # Private channels are only ever the ones somebody invited the bot to.
     for ch in _slack_pages(f"{_SLACK_API_BASE}/users.conversations",
                            {"types": "private_channel", "limit": "200"}, hdrs, "channels"):
@@ -653,7 +661,8 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
     marks: dict[str, str] = dict(state.get("channels") or {})
     default_oldest = f"{time.time() - _SCAN_LOOKBACK_SECS:.6f}"
 
-    channels, joined = _slack_channels(hdrs, bool(creds.get("auto_join")))
+    join_errors: dict[str, int] = {}
+    channels, joined = _slack_channels(hdrs, bool(creds.get("auto_join")), join_errors)
     channels = _rotate(channels, state.get("resume_at", ""))
     gaps: dict[str, list] = {k: v for k, v in (state.get("backfill") or {}).items()}
     from . import slack_remediation
@@ -756,6 +765,8 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
     summary = {"channels": len(channels), "messages": scanned, "findings": findings}
     if joined:
         summary["joined"] = joined
+    if join_errors:
+        summary["join_failed"] = join_errors     # {slack reason: channels}
     if files_scanned:
         summary["files"] = files_scanned
     if deleted:
