@@ -502,9 +502,9 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
     remediate: [`Confirmed leaks will be DELETED from Slack (the fallback when redaction is also on). `
                 + `Every deletion is written to the audit log.`,
                 "Deletion off."],
-    redact: ["Confirmed leaks will be REDACTED in Slack: the values are replaced, the rest of the "
-             + "message stays. Slack allows this only on Enterprise Grid; elsewhere it is recorded as "
-             + "failed (turn on deletion as the fallback).", "Redaction off."],
+    redact: ["Confirmed leaks will be REDACTED in Slack where your org has the Discovery API "
+             + "(Enterprise Grid): the values are replaced, the rest of the message stays. Without it, "
+             + "deletion is the fallback if it is on.", "Redaction off."],
     notify_sender: ["The person who posted a confirmed leak gets a private message from the Palivane "
                     + "bot saying what was found (never the value) and what happened to it.",
                     "Sender notices off."],
@@ -1490,9 +1490,10 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                              onChange={(e) => setSlackAction(c.id, "redact", e.target.checked)} />
                       <span style={{ fontSize: 12 }}>Redact the values{" "}
                         <span className="muted">replaces them with «redacted», keeps the rest of the
-                        message. Slack allows editing another person's message only on Enterprise
-                        Grid; elsewhere it is recorded as failed and deletion (below) is the
-                        fallback.</span></span>
+                        message. Enterprise Grid only: Slack allows editing another person's message
+                        solely through its Discovery API, so this needs your org's Discovery API
+                        connected to Palivane (set up with us). Without it, redaction is recorded as
+                        not possible and deletion is the fallback.</span></span>
                     </label>
                     <label className="form-row" style={{ gap: 8, alignItems: "flex-start" }}>
                       <input type="checkbox" checked={!!c.options?.remediate}
@@ -1500,7 +1501,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                       <span style={{ fontSize: 12 }}>Delete the message{" "}
                         <span className="muted">works on every Slack plan.</span></span>
                     </label>
-                    {(c.options?.redact || c.options?.remediate) && (
+                    {c.options?.remediate && (
                       <div className="form-row" style={{ gap: 8, fontSize: 12 }}>
                         {c.options?.admin_token ? (
                           <span className="muted">Workspace-admin token saved.{" "}
@@ -1513,8 +1514,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                                  style={{ minWidth: 280 }} />
                           <button type="button" className="mini-btn" disabled={!slackAdminDraft[c.id]}
                                   onClick={() => setSlackAdminToken(c.id, slackAdminDraft[c.id])}>Save</button>
-                          <span className="muted">needed to redact or delete: the bot cannot change anyone
-                            else's message.</span>
+                          <span className="muted">needed to delete: the bot cannot remove anyone else's
+                            message.</span>
                         </>)}
                       </div>
                     )}
