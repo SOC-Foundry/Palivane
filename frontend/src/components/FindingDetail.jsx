@@ -375,10 +375,11 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
                   title={analystEnabled ? undefined : "Turn on the AI analyst in Settings first"}>
             {investigating ? "Investigating…" : report ? "🔎 Re-investigate" : "🔎 Investigate (AI analyst)"}
           </button>
-          <span className="muted" style={{ fontSize: 12 }}>
-            {analystEnabled
-              ? "Reads the finding + this actor's history and recommends an action. It never applies it. Runs on your org's own LLM key."
-              : "Off by default. An admin can enable the AI analyst in Settings — it sends the finding's redacted context to your org's own LLM provider (your key, never ours)."}
+          <span className="muted" style={{ fontSize: 12 }}
+                title={analystEnabled
+                  ? "Reads the finding and this actor's history and recommends an action. It never applies it. Runs on your org's own LLM key."
+                  : "Off by default. An admin can enable the AI analyst in Settings: it sends the finding's redacted context to your org's own LLM provider (your key, never ours)."}>
+            {analystEnabled ? "Recommends, never acts. Your org's LLM key." : "Off: an admin enables it in Settings."}
           </span>
         </div>
         {investigateErr && <div className="error" style={{ marginTop: 10 }}>{investigateErr}</div>}
@@ -478,12 +479,10 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
         {finding.content
           ? <pre className="content-block">{finding.content}</pre>
           : (
-            <p className="content-empty">
-              Prompt text is not stored. Palivane keeps the verdict, the matched signals,
-              redacted evidence and who sent it, never the prose itself, which cannot be
-              redacted for concepts or IP and would make this store worth stealing.
-              An admin who wants full text for their own triage can turn it on under
-              Settings → Store prompt content.
+            <p className="content-empty"
+               title="Palivane keeps the verdict, the matched signals, redacted evidence and who sent it, never the prose itself, which cannot be redacted for concepts or IP and would make this store worth stealing.">
+              Not stored, by design (the signals below are what was kept). An admin can turn it
+              on under Settings → Store prompt content.
             </p>
           )}
       </div>

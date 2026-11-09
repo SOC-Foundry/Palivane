@@ -197,7 +197,21 @@ function SurfaceSplit({ bySurface, scope }) {
   );
 }
 
+// The charts take most of a screen above the queue, so they start folded on the Findings page
+// and the choice is remembered per browser. The tiles stay: they are the queue's headline.
+const CHARTS_KEY = "palivane.findings.charts";
+
+function readChartsOpen() {
+  try { return window.localStorage.getItem(CHARTS_KEY) === "1"; } catch { return false; }
+}
+
 export default function Dashboard({ stats, window: win = "24h", onWindow }) {
+  const [chartsOpen, setChartsOpen] = useState(readChartsOpen);
+  function toggleCharts() {
+    const next = !chartsOpen;
+    setChartsOpen(next);
+    try { window.localStorage.setItem(CHARTS_KEY, next ? "1" : "0"); } catch { /* private window */ }
+  }
   if (!stats) {
     return (
       <div className="dashboard">
@@ -211,9 +225,14 @@ export default function Dashboard({ stats, window: win = "24h", onWindow }) {
           interleave, and each says which it is on. */}
       <div className="dashboard-head">
         <h2>Activity</h2>
-        {onWindow && <WindowPicker value={win} onChange={onWindow} />}
+        <div className="dashboard-tools">
+          <button type="button" className="link-btn" onClick={toggleCharts} aria-expanded={chartsOpen}>
+            {chartsOpen ? "Hide charts" : "Show charts"}
+          </button>
+          {onWindow && <WindowPicker value={win} onChange={onWindow} />}
+        </div>
       </div>
-      <div className="dashboard">
+      <div className="dashboard dashboard-compact">
         <StatCard icon={<IconInbox />} value={stats.analyzed_total ?? stats.total} label="Analyzed" tone="neutral"
                   scope={WINDOW_LABEL[win]}
                   delta={<Delta now={stats.analyzed_total ?? stats.total} before={stats.previous?.analyzed_total} />} />
@@ -238,13 +257,15 @@ export default function Dashboard({ stats, window: win = "24h", onWindow }) {
           grid: with grid rows the short pair gets spaced to the tall panel's row heights
           and drifts apart, and squaring them up by stretching instead strands each
           heading above a floating body. A flex column just lets them sit. */}
-      <div className="charts-grid">
-        <div className="charts-col">
-          <RiskDistribution bySeverity={stats.by_severity} total={stats.total} scope={WINDOW_LABEL[win]} />
-          <SetupHealth />
+      {chartsOpen && (
+        <div className="charts-grid">
+          <div className="charts-col">
+            <RiskDistribution bySeverity={stats.by_severity} total={stats.total} scope={WINDOW_LABEL[win]} />
+            <SetupHealth />
+          </div>
+          <SurfaceSplit bySurface={stats.by_surface} scope={WINDOW_LABEL[win]} />
         </div>
-        <SurfaceSplit bySurface={stats.by_surface} scope={WINDOW_LABEL[win]} />
-      </div>
+      )}
     </>
   );
 }
