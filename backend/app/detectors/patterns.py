@@ -904,6 +904,23 @@ _PAGE_PROTOCOL_FIELD_TAIL_RE = re.compile(
     r"|__requestverificationtoken)=$", re.IGNORECASE)
 
 
+# The one-time values of an OAuth/OIDC sign-in, none of them a credential anyone can reuse: the
+# authorization `code` (single use, minutes to live, worthless without the client's secret or
+# PKCE verifier), `state`, `nonce`, the PKCE `code_verifier`/`code_challenge`, `session_state`.
+# A browser extension's own sign-in (Claude in Chrome exchanging a code with its
+# chromiumapp.org redirect) put a "possible secret" on every login; the 30-day prod review
+# (2026-11-08) traced many of the ~190 high-entropy hits to this. Only in a text that is an
+# OAuth exchange (it names redirect_uri, grant_type, response_type or client_id), and only these
+# fields: client_secret, refresh_token and access_token in the same request still flag.
+_OAUTH_CONTEXT_RE = re.compile(
+    r"(?:^|[&?#\s\"'{,])[\"']?(?:redirect_uri|grant_type|response_type|client_id)[\"']?\s*[=:]",
+    re.IGNORECASE)
+_OAUTH_ONE_TIME_FIELD_TAIL_RE = re.compile(
+    r"(?:(?:^|[&?#])(?:code|state|nonce|session_state|code_verifier|code_challenge)="
+    r"|[\"'](?:code|state|nonce|session_state|code_verifier|code_challenge)[\"']\s*:\s*[\"'])$",
+    re.IGNORECASE)
+
+
 def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
     """Return truncated evidence for token-like substrings that look like secrets:
     24–80 chars of [A-Za-z0-9_], mixed character classes, high Shannon entropy, and not
@@ -913,6 +930,7 @@ def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
     masked = [(m.start(), m.end()) for m in _NONSECRET_BLOB_RE.finditer(text)]
     masked += _media_blob_spans(text)      # base64 attachments carried as a bare JSON field
     masked += [(m.start(), m.end()) for m in _FORM_BOUNDARY_RE.finditer(text)]
+    oauth = bool(_OAUTH_CONTEXT_RE.search(text))
     for m in _TOKEN_CANDIDATE_RE.finditer(text):
         tok = _after_uuid_tail(text, m.start(), m.group(0))
         if len(tok) < 24:
@@ -925,6 +943,8 @@ def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
             continue   # inside a data URI / integrity hash / ssh public key / multipart boundary
         if _PAGE_PROTOCOL_FIELD_TAIL_RE.search(text[max(0, m.start() - 32):m.start()]):
             continue   # the page's own request token (`at=`, `f.sid=`, csrf), not the user's data
+        if oauth and _OAUTH_ONE_TIME_FIELD_TAIL_RE.search(text[max(0, m.start() - 24):m.start()]):
+            continue   # an OAuth sign-in's one-time value (code, state, nonce, PKCE), not reusable
         classes = (any(c.islower() for c in tok) + any(c.isupper() for c in tok)
                    + any(c.isdigit() for c in tok))
         if classes < 2 or _shannon_entropy(tok) < min_entropy:
