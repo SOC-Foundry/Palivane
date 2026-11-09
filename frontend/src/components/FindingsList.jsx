@@ -43,6 +43,8 @@ const CAT_LABEL = {
 };
 
 const SEV_RANK = { benign: 0, low: 1, suspicious: 2, high: 3, critical: 4 };
+// What the person a finding belongs to answered (Your findings).
+const OWNER_LABEL = { fixed: "fixed", not_mine: "not mine", approved: "approved use", false_alarm: "false alarm" };
 const ACTIONABLE = new Set(["suspicious", "high", "critical"]);
 
 // One incident = same actor, same surface, same signal-category set. Repeats of the exact
@@ -108,6 +110,12 @@ function FindingRow({ f, selectedId, onSelect, picked, onPick }) {
           {f.sender && <span className="sender">{f.sender}</span>}
           {f.ai_generated && <span className="tag tag-ai">AI-generated</span>}
           {f.attack_intent && <span className="tag tag-atk">attack intent</span>}
+          {f.owner_response && (
+            <span className={`tag ${f.owner_response.action === "false_alarm" ? "tag-owner-fa" : "tag-owner"}`}
+                  title={f.owner_response.note ? `${f.owner_response.by}: ${f.owner_response.note}` : f.owner_response.by}>
+              owner: {OWNER_LABEL[f.owner_response.action] || f.owner_response.action}
+            </span>
+          )}
           <span className="finding-age">{timeAgo(f.last_seen || f.created_at)}</span>
         </div>
       </div>
