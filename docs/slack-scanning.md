@@ -113,12 +113,28 @@ suspicious-but-unconfirmed hit is recorded and nothing else.
 | **Notify the sender** | The Palivane bot sends the person who posted it a private message naming what was found (never the value) and what happened to their message, with a reminder to rotate a credential | the bot's `chat:write` and `im:write` scopes; any plan |
 | **Redact the values** | The flagged values are replaced with `«redacted:<label>»`; the rest of the message stays | a workspace-admin user token; **Enterprise Grid** on Slack's side; Enterprise plan |
 | **Delete the message** | The message is removed | a workspace-admin user token; any Slack plan; Enterprise plan |
+| **Alert the security team** | The bot posts the leak to your alert channel, with buttons for the actions above | an alert channel; the Slack app's Interactivity URL (below) |
 
 How they combine: with redaction and deletion both on, a message is redacted, and deleted
 only when redaction could not be done (Slack refused because the workspace is not on Grid,
 or the value is visible only after decoding, so there is no exact stretch of text to
 replace). The sender's notice says which happened, or asks them to delete it when neither
 ran.
+
+**Alerts with buttons.** Set an **alert channel** and the bot posts every confirmed leak there:
+what was found, where, who posted it, what has already been done, a link to the finding, and a
+button for each action not yet taken (**Redact**, **Delete**, **Notify sender**, **Dismiss as
+false positive**). A click is checked three ways before anything happens: Slack's request
+signature, the button's own signature (it names the exact message, so it cannot be pointed at
+another one), and that the person who clicked is a **Palivane admin** of the organization,
+matched by their Slack email. Anyone else gets a private "only a Palivane admin can do this".
+The alert is then updated to say who did what, and the action is audit-logged under that
+admin's own address. The message text is read back from Slack at click time; Palivane does
+not store it.
+
+To enable the buttons, the Slack app needs one setting: **Interactivity & Shortcuts →
+Interactivity on, Request URL `https://<your Palivane host>/api/slack/interactions`**. The bot
+joins a public alert channel by itself; invite it to a private one.
 
 **The admin token.** `chat.update` and `chat.delete` with a bot token touch nothing but the
 bot's own posts, so redaction and deletion use a workspace admin's **user** token (`xoxp-…`),

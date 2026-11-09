@@ -470,6 +470,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
   // --- Slack scanning (collab-surface DLP via the published Slack app) ---
   const [slackConns, setSlackConns] = useState([]);
   const [slackAdminDraft, setSlackAdminDraft] = useState({});
+  const [slackAlertDraft, setSlackAlertDraft] = useState({});
   // Whether THIS deployment has a published Slack app registered. Without one there is no
   // "Add to Slack" to offer: /api/slack/install can only 404, and the honest answer is the
   // workspace-app route. Null until known, so the button never flashes in and out.
@@ -513,6 +514,16 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
       const c = await api.updateConnector(id, { [key]: on });
       setSlackConns((cs) => cs.map((x) => (x.id === id ? c : x)));
       flash(SLACK_ACTION_MSG[key][on ? 0 : 1]);
+    } catch (e) { err(e); }
+  }
+  async function setSlackAlertChannel(id, channel) {
+    try {
+      const c = await api.updateConnector(id, { alert_channel: channel.trim() });
+      setSlackConns((cs) => cs.map((x) => (x.id === id ? c : x)));
+      setSlackAlertDraft((d) => { const n = { ...d }; delete n[id]; return n; });
+      flash(channel.trim() ? `Confirmed leaks will be posted to ${channel.trim()} with action buttons. `
+                             + "Invite the Palivane bot if the channel is private."
+                           : "Slack alerts with buttons off.");
     } catch (e) { err(e); }
   }
   async function setSlackAdminToken(id, token) {
@@ -1448,6 +1459,17 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                   <div className="muted" style={{ fontSize: 12, marginBottom: 2 }}>
                     When a message in <strong>{c.label || "this workspace"}</strong> is flagged at
                     high or critical (each action is written to the audit log):</div>
+                  <div className="form-row" style={{ gap: 8, fontSize: 12, alignItems: "center" }}>
+                    <span>Alert channel</span>
+                    <input placeholder="#security-alerts" autoComplete="off" style={{ width: 200 }}
+                           value={slackAlertDraft[c.id] ?? (c.options?.alert_channel || "")}
+                           onChange={(e) => setSlackAlertDraft((d) => ({ ...d, [c.id]: e.target.value }))} />
+                    <button type="button" className="mini-btn"
+                            disabled={(slackAlertDraft[c.id] ?? null) === null}
+                            onClick={() => setSlackAlertChannel(c.id, slackAlertDraft[c.id] || "")}>Save</button>
+                    <span className="muted">the bot posts each confirmed leak here with Redact, Delete,
+                      Notify sender and Dismiss buttons for Palivane admins. Empty turns it off.</span>
+                  </div>
                   <label className="form-row" style={{ gap: 8, alignItems: "flex-start" }}>
                     <input type="checkbox" checked={!!c.options?.notify_sender}
                            onChange={(e) => setSlackAction(c.id, "notify_sender", e.target.checked)} />

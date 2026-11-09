@@ -659,7 +659,7 @@ def scan_slack_messages(db, connector, creds: dict) -> dict:
     from . import slack_remediation
     # Any action switched on and allowed: redact/delete need the admin token, notify the bot.
     remediating = bool(slack_remediation.admin_token(db, connector, creds)
-                       or creds.get("notify_sender"))
+                       or creds.get("notify_sender") or (creds.get("alert_channel") or "").strip())
 
     users: dict[str, str] = {}
     scanned = findings = deleted = delete_failed = 0
@@ -2441,6 +2441,7 @@ def connector_options(connector, db=None) -> dict:
     out = {k: bool(creds.get(k)) for k in PUBLIC_OPTIONS}
     if connector.platform == "slack_messages":
         out["admin_token"] = bool((creds.get("admin_token") or "").startswith("xoxp-"))   # whether, never the token
+        out["alert_channel"] = (creds.get("alert_channel") or "").strip()
     if connector.platform == "github_secrets":
         out["webhook_secret"] = bool(creds.get("webhook_secret"))    # only whether it is set, never the secret
     return out

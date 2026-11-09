@@ -362,7 +362,8 @@ def test_options_round_trip_without_the_credential(client, db_factory):
     listed = client.get("/api/discovery/connectors").json()["connectors"]
     row = next(c for c in listed if c["id"] == cid)
     assert row["options"] == {"auto_join": False, "remediate": False, "redact": False,
-                              "notify_sender": False, "admin_token": False}
+                              "notify_sender": False, "admin_token": False,
+                              "alert_channel": ""}
 
     r = client.patch(f"/api/discovery/connectors/{cid}", json={"auto_join": True})
     assert r.status_code == 200 and r.json()["options"]["auto_join"] is True
