@@ -733,6 +733,11 @@ class ConnectorOptions(BaseModel):
     "leave alone", so a partial PATCH cannot silently clear a setting it did not mention."""
     auto_join: bool | None = None
     remediate: bool | None = None
+    redact: bool | None = None
+    notify_sender: bool | None = None
+    # Write-only: the workspace-admin user token (xoxp-) redaction and deletion need, added to a
+    # workspace connected with Add to Slack (which holds only the bot token). "" removes it.
+    admin_token: str | None = Field(None, max_length=256)
 
 
 class ConnectorCreate(BaseModel):
