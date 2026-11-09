@@ -43,18 +43,18 @@ def _actions(blocks):
 
 
 def test_buttons_offer_only_what_has_not_been_done():
-    blocks = sr.alert_blocks(CONN, result=RESULT, done={}, can_change=True, **LOC)
+    blocks = sr.alert_blocks(CONN, result=RESULT, done={}, can_delete=True, can_redact=True, **LOC)
     assert _actions(blocks) == ["redact", "delete", "notify", "dismiss"]
     assert "AWS access key id" in blocks[0]["text"]["text"] and KEY not in json.dumps(blocks)
     after = sr.alert_blocks(CONN, result=RESULT, done={"deleted": True, "notified": True},
-                            can_change=True, **LOC)
+                            can_delete=True, can_redact=True, **LOC)
     assert _actions(after) == ["dismiss"] and "deleted, sender notified" in json.dumps(after)
-    no_token = sr.alert_blocks(CONN, result=RESULT, done={}, can_change=False, **LOC)
+    no_token = sr.alert_blocks(CONN, result=RESULT, done={}, can_delete=False, can_redact=False, **LOC)
     assert _actions(no_token) == ["notify", "dismiss"]
 
 
 def test_button_values_are_signed():
-    value = sr.alert_blocks(CONN, result=RESULT, done={}, can_change=True, **LOC)[-1]["elements"][1]["value"]
+    value = sr.alert_blocks(CONN, result=RESULT, done={}, can_delete=True, can_redact=True, **LOC)[-1]["elements"][1]["value"]
     fields = sr.unsign_action(value)
     assert fields["a"] == "delete" and fields["c"] == "C1" and fields["t"] == LOC["ts"] and fields["k"] == 5
     body, _, mac = value.rpartition(".")
@@ -66,7 +66,7 @@ def test_alert_joins_a_public_channel_it_was_not_invited_to(monkeypatch):
     slack = FakeSlack(fail={"chat.postMessage": "not_in_channel"})
     monkeypatch.setattr(sr, "_api", slack)
     ok, _ = sr.post_alert(CONN, {"bot_token": "xoxb-t", "alert_channel": "#security"},
-                          result=RESULT, done={}, can_change=True, **LOC)
+                          result=RESULT, done={}, can_delete=True, can_redact=True, **LOC)
     assert ok and [c[0] for c in slack.calls] == ["chat.postMessage", "conversations.join", "chat.postMessage"]
     assert slack.calls[-1][2]["channel"] == "C777"
 
@@ -94,6 +94,7 @@ def world(client, db_factory, monkeypatch):
     monkeypatch.setattr(si, "_message_text", lambda bot, c, ts: f"deploy with {KEY} tonight")
     clicker = {"email": admin}
     monkeypatch.setattr(si, "_clicker_email", lambda bot, uid: clicker["email"])
+    monkeypatch.setattr(sr, "discovery_token", lambda db, c: "xox" + "p-discovery")
     return SimpleNamespace(cid=cid, fid=fid, slack=slack, said=said, clicker=clicker,
                            client=client, db_factory=db_factory)
 
@@ -104,7 +105,7 @@ def _click(w, action, value=None):
                "response_url": "https://hooks.slack.com/actions/x",
                "message": {"text": "alert", "blocks": sr.alert_blocks(
                    SimpleNamespace(id=w.cid, tenant_id=1, label="acme"), result={**RESULT, "finding_id": w.fid},
-                   done={}, can_change=True, **LOC)},
+                   done={}, can_delete=True, can_redact=True, **LOC)},
                "actions": [{"action_id": f"{sr.ALERT_ACTION_ID}:{action}",
                             "value": value or sr.sign_action(fields)}]}
     si.handle_click(payload, db_factory=w.db_factory)
@@ -122,7 +123,7 @@ def test_delete_from_the_alert(world):
 def test_redact_from_the_alert_reads_the_message_back(world):
     _click(world, "redact")
     method, _, params = world.slack.calls[0]
-    assert method == "chat.update" and KEY not in params["text"] and params["text"].endswith(" tonight")
+    assert method == sr._DISCOVERY_EDIT and KEY not in params["text"] and params["text"].endswith(" tonight")
 
 
 def test_dismiss_from_the_alert_records_a_false_positive(world):
