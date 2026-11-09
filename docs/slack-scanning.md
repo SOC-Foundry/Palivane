@@ -98,7 +98,7 @@ Some of the rest is Slack's design, not ours, and it is worth being precise abou
 | Read public channels | yes | yes |
 | Read private channels / DMs uninvited | **no** | yes (Discovery API) |
 | Block before delivery | **no** | yes |
-| Edit someone else's message in place (redact) | **no** | yes, with an org admin's user token |
+| Edit someone else's message in place (redact) | **no** | yes, through the Discovery API |
 | Delete someone else's message | **yes**, with a workspace-admin user token | yes |
 | Message the person who posted it | yes (the bot) | yes |
 
@@ -111,14 +111,19 @@ suspicious-but-unconfirmed hit is recorded and nothing else.
 | Action | What happens | Needs |
 | --- | --- | --- |
 | **Notify the sender** | The Palivane bot sends the person who posted it a private message naming what was found (never the value) and what happened to their message, with a reminder to rotate a credential | the bot's `chat:write` and `im:write` scopes; any plan |
-| **Redact the values** | The flagged values are replaced with `«redacted:<label>»`; the rest of the message stays | a workspace-admin user token; **Enterprise Grid** on Slack's side; Enterprise plan |
+| **Redact the values** | The flagged values are replaced with `«redacted:<label>»`; the rest of the message stays | **Enterprise Grid** with Slack's Discovery API enabled and a Slack Discovery connector; Enterprise plan. Provisional: verified with the first Grid org |
 | **Delete the message** | The message is removed | a workspace-admin user token; any Slack plan; Enterprise plan |
 | **Alert the security team** | The bot posts the leak to your alert channel, with buttons for the actions above | an alert channel; the Slack app's Interactivity URL (below) |
 
 How they combine: with redaction and deletion both on, a message is redacted, and deleted
-only when redaction could not be done (Slack refused because the workspace is not on Grid,
-or the value is visible only after decoding, so there is no exact stretch of text to
-replace). The sender's notice says which happened, or asks them to delete it when neither
+only when redaction could not be done (no Discovery API, Slack refused the edit, or the
+value is visible only after decoding, so there is no exact stretch of text to replace).
+
+**Why redaction needs the Discovery API.** Slack's normal API lets nobody, admins included,
+edit a message they did not post, on any plan. The one route is the Discovery API: Enterprise
+Grid only, enabled by the org owner, and limited by Slack to security and compliance apps.
+Palivane uses the token of the org's Slack Discovery connector (the one that already reads
+private channels and DMs org-wide) for the edit. The sender's notice says which happened, or asks them to delete it when neither
 ran.
 
 **Alerts with buttons.** Set an **alert channel** and the bot posts every confirmed leak there:
@@ -136,8 +141,8 @@ To enable the buttons, the Slack app needs one setting: **Interactivity & Shortc
 Interactivity on, Request URL `https://<your Palivane host>/api/slack/interactions`**. The bot
 joins a public alert channel by itself; invite it to a private one.
 
-**The admin token.** `chat.update` and `chat.delete` with a bot token touch nothing but the
-bot's own posts, so redaction and deletion use a workspace admin's **user** token (`xoxp-…`),
+**The admin token.** `chat.delete` with a bot token removes nothing but the bot's own posts,
+so deletion uses a workspace admin's **user** token (`xoxp-…`),
 added under the workspace's remediation switches. It is a much stronger credential than
 the bot token (it can do anything its owner can): stored encrypted, write-only, never
 returned by the API, and setting or removing it is written to the audit log.

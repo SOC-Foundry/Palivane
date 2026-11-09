@@ -42,9 +42,12 @@ def audit(monkeypatch):
     return rec
 
 
-def _run(monkeypatch, creds, slack, admin="xoxp-" + secrets.token_hex(8), result=RESULT, text=TEXT):
+def _run(monkeypatch, creds, slack, admin="xoxp-" + secrets.token_hex(8), result=RESULT, text=TEXT,
+         discovery="xoxp-" + secrets.token_hex(8)):
     monkeypatch.setattr(sr, "_api", slack)
-    monkeypatch.setattr(sr, "admin_token", lambda db, c, cr: admin if (cr.get("redact") or cr.get("remediate")) else "")
+    monkeypatch.setattr(sr, "admin_token", lambda db, c, cr: admin if cr.get("remediate") else "")
+    monkeypatch.setattr(sr, "discovery_token", lambda db, c: discovery)
+    monkeypatch.setattr(sr, "_done_before", lambda db, tid, target: set())
     return sr.remediate(SimpleNamespace(rollback=lambda: None), CONN,
                         {"bot_token": "xoxb-" + secrets.token_hex(8), **creds},
                         channel="C1", where="#ops", ts="1700000000.000100", user_id="U9",
@@ -61,26 +64,32 @@ def test_nothing_runs_below_the_confirmed_tier(monkeypatch, audit):
 def test_redact_replaces_only_the_value(monkeypatch, audit):
     slack = FakeSlack()
     out = _run(monkeypatch, {"redact": True}, slack)
-    assert out["redacted"] and slack.methods() == ["chat.update"]
+    assert out["redacted"] and slack.methods() == [sr._DISCOVERY_EDIT]
     new_text = slack.calls[0][2]["text"]
     assert KEY not in new_text and new_text.startswith("deploy with ") and new_text.endswith(" tonight")
     assert audit[0][0] == "slack.message_redacted"
 
 
-def test_redact_refused_outside_grid_falls_back_to_delete(monkeypatch, audit):
-    slack = FakeSlack(fail={"chat.update": "cant_update_message"})
-    out = _run(monkeypatch, {"redact": True, "remediate": True}, slack)
+def test_without_a_discovery_token_redaction_falls_back_to_delete(monkeypatch, audit):
+    slack = FakeSlack()
+    out = _run(monkeypatch, {"redact": True, "remediate": True}, slack, discovery="")
     assert not out["redacted"] and out["deleted"] and out["failed"] == ["redact"]
-    assert slack.methods() == ["chat.update", "chat.delete"]
+    assert slack.methods() == ["chat.delete"]                  # no edit attempted without Grid
     assert [a for a, _ in audit] == ["slack.message_redact_failed", "slack.message_deleted"]
-    assert "Enterprise Grid" in audit[0][1]["error"]
+    assert "Discovery API" in audit[0][1]["error"]
+
+
+def test_a_refused_discovery_edit_also_falls_back(monkeypatch, audit):
+    slack = FakeSlack(fail={sr._DISCOVERY_EDIT: "not_allowed"})
+    out = _run(monkeypatch, {"redact": True, "remediate": True}, slack)
+    assert out["deleted"] and slack.methods() == [sr._DISCOVERY_EDIT, "chat.delete"]
 
 
 def test_redact_skips_a_value_with_no_exact_span(monkeypatch, audit):
     slack = FakeSlack()
     folded = "deploy with " + "".join(chr(ord(c) + 0xFEE0) for c in KEY)   # fullwidth: no raw span
     out = _run(monkeypatch, {"redact": True}, slack, text=folded)
-    assert not out["redacted"] and "chat.update" not in slack.methods()
+    assert not out["redacted"] and sr._DISCOVERY_EDIT not in slack.methods()
     assert audit[0][1]["error"] == "no_exact_span"
 
 

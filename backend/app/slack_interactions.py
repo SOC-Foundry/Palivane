@@ -138,15 +138,15 @@ def handle_click(payload: dict, db_factory=None) -> None:
                 "connector": connector.label or connector.id, "via": "slack_alert"}
         ok, why = False, ""
         if action in ("redact", "delete"):
-            token = sr.admin_token(db, connector, {**creds, "remediate": True})
-            if not token:
-                ok, why = False, ("no workspace-admin token on this connector, or the plan has "
-                                  "no remediation")
-            elif action == "redact":
-                ok, why, _ = sr.do_redact(token, channel, ts, _message_text(bot, channel, ts),
-                                          finding.signals or [])
+            if action == "redact":
+                ok, why, _ = sr.do_redact(sr.discovery_token(db, connector), channel, ts,
+                                          _message_text(bot, channel, ts), finding.signals or [],
+                                          (connector.state or {}).get("team_id", ""))
             else:
-                ok, why = sr.do_delete(token, channel, ts)
+                token = sr.admin_token(db, connector, {**creds, "remediate": True})
+                ok, why = (sr.do_delete(token, channel, ts) if token else
+                           (False, "no workspace-admin token on this connector, or the plan has "
+                                   "no remediation"))
             names = {"redact": ("slack.message_redacted", "slack.message_redact_failed"),
                      "delete": ("slack.message_deleted", "slack.message_delete_failed")}[action]
             audit_log.record(db, connector.tenant_id, admin.email, names[0] if ok else names[1],
