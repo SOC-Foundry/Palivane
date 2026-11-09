@@ -323,7 +323,7 @@ def format_quality(r: dict, expiring: list[dict], lapsed: list[dict], now: datet
         q.append("  Reviewed: nothing in this period.")
     skipped = []
     if bulk["findings"]:
-        skipped.append(f"{bulk['findings']} closed in bulk without a judged reason")
+        skipped.append(f"{bulk['findings']} closed in bulk")   # judged bulk dismissals are under Reviewed
     if nc["answered_by_owner"]:
         skipped.append(f"{nc['answered_by_owner']} answered by their owner but not reviewed")
     if skipped:
