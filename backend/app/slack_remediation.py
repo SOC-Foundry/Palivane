@@ -7,9 +7,13 @@ Each action is a per-workspace switch, off by default, and runs only on a messag
 just flagged at the confirmed-leak tier (high or critical):
 
   redact          replace the flagged values in the message with «redacted:<label>», keeping
-                  the rest. Slack lets one person edit another's message only on Enterprise
-                  Grid, and only with an org admin's user token; anywhere else Slack refuses
-                  (cant_update_message) and that is recorded, not hidden. Enterprise plan.
+                  the rest. Slack's normal API lets nobody edit another person's message, on
+                  any plan; the only route is the Discovery API, which is Enterprise Grid,
+                  enabled by the org owner, for approved DLP/e-discovery apps. So redaction
+                  runs only when the org has a Slack Discovery connector (its token is used);
+                  without one it is recorded as needing it. PROVISIONAL: built to Slack's
+                  documented Discovery edit call, not yet verified against a live Grid org.
+                  Enterprise plan.
   remediate       delete the message (the existing switch). A workspace admin's user token;
                   a bot can delete only its own posts. Enterprise plan. When redaction is on
                   too, deletion is the fallback for a message that could not be redacted.
@@ -34,10 +38,6 @@ CONFIRMED_MIN_RANK = 3            # high | critical — the confirmed-leak tier
 SEV_RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}
 _DATA_CATEGORIES = ("secret_leak", "pii_exposure", "phi_exposure", "confidential_data")
 _WORDS = re.compile(r"^[A-Za-z][A-Za-z ()/&,.'-]{1,60}$")
-# What Slack says when the caller may not edit another person's message (every plan but Grid).
-_NOT_EDITABLE = {"cant_update_message", "edit_window_closed", "not_authorized", "missing_scope",
-                 "message_not_found"}
-
 
 def _api(method: str, token: str, params: dict) -> tuple[bool, str, dict]:
     from .saas_connectors import _SLACK_API_BASE, ConnectorError, _http_json
@@ -51,10 +51,36 @@ def _api(method: str, token: str, params: dict) -> tuple[bool, str, dict]:
     return (True, "", r) if r.get("ok") else (False, r.get("error", "unknown"), r)
 
 
+# The Discovery API's message edit. PROVISIONAL: confirm the method and its parameters against
+# Slack's Discovery API reference with the first Grid org that enables it.
+_DISCOVERY_EDIT = "discovery.chat.update"
+NEEDS_DISCOVERY = ("needs_discovery_api (Slack allows editing another person's message only "
+                   "through its Discovery API: Enterprise Grid, enabled by the org owner)")
+
+
+def discovery_token(db, connector) -> str:
+    """The Discovery token redaction runs on: the org's active Slack Discovery connector, when
+    its plan has remediation. "" otherwise (every workspace below Enterprise Grid)."""
+    from .models import SaasConnector, Tenant
+    from .plans import has_feature
+    from .saas_connectors import read_credentials
+    tenant = db.get(Tenant, connector.tenant_id)
+    if tenant is None or not has_feature(tenant, "remediation"):
+        return ""
+    row = (db.query(SaasConnector)
+             .filter(SaasConnector.tenant_id == connector.tenant_id,
+                     SaasConnector.platform == "slack_discovery",
+                     SaasConnector.active.is_(True)).first())
+    if row is None:
+        return ""
+    token = (read_credentials(row, db).get("discovery_token") or "").strip()
+    return token if token.startswith("xox") else ""
+
+
 def admin_token(db, connector, creds: dict) -> str:
-    """The admin user token that may redact or delete, or "" when neither may run: neither
-    switch on, no admin user token, or a plan without the remediation feature."""
-    if not (creds.get("remediate") or creds.get("redact")):
+    """The workspace-admin user token deletion runs on, or "" when it may not run: the switch
+    off, no admin user token, or a plan without the remediation feature."""
+    if not creds.get("remediate"):
         return ""
     token = (creds.get("admin_token") or "").strip()
     if not token.startswith("xoxp-"):
@@ -98,17 +124,21 @@ def _notice(where: str, labels: list[str], outcome: str) -> str:
 # Used by remediate() below (the automatic path) and by the buttons on the security team's
 # alert (app/slack_interactions.py), so a click does exactly what the switch would have done.
 
-def do_redact(token: str, channel: str, ts: str, text: str, signals: list[dict]) -> tuple[bool, str, int]:
-    """Replace the flagged values in one message. Returns (ok, error, values replaced)."""
+def do_redact(token: str, channel: str, ts: str, text: str, signals: list[dict],
+              team: str = "") -> tuple[bool, str, int]:
+    """Replace the flagged values in one message through the Discovery API (`token` is the
+    org's Discovery token; "" means there is none). Returns (ok, error, values replaced)."""
+    if not token:
+        return False, NEEDS_DISCOVERY, 0
     spans = (redact_spans.find_spans(text, signals) if text and redact_spans.precheck(signals) else [])
     if not spans:
         # The value is visible only after folding or decoding, so there is no exact stretch
         # of the message to replace: redacting would leave it in place.
         return False, "no_exact_span", 0
-    ok, why, _ = _api("chat.update", token,
-                      {"channel": channel, "ts": ts, "text": redact_spans.apply(text, spans)})
-    if not ok and why in _NOT_EDITABLE:
-        why = f"{why} (Slack lets an admin edit another person's message only on Enterprise Grid)"
+    params = {"channel": channel, "ts": ts, "text": redact_spans.apply(text, spans)}
+    if team:
+        params["team"] = team
+    ok, why, _ = _api(_DISCOVERY_EDIT, token, params)
     return ok, why, len(spans)
 
 
@@ -167,8 +197,10 @@ def remediate(db, connector, creds: dict, *, channel: str, where: str, ts: str, 
             # Already changed: nothing left to redact or delete, and the sender was told then.
             return out
 
-        if token and creds.get("redact") and text:
-            ok, why, n = do_redact(token, channel, ts, text, signals)
+        if creds.get("redact") and text:
+            ok, why, n = do_redact(discovery_token(db, connector), channel, ts, text, signals,
+                                   (connector.state or {}).get("team_id", "")
+                                   if isinstance(getattr(connector, "state", None), dict) else "")
             audit_log.record(db, connector.tenant_id, actor,
                              "slack.message_redacted" if ok else "slack.message_redact_failed",
                              target, {**base, "values": n, **({} if ok else {"error": why})})
@@ -201,7 +233,8 @@ def remediate(db, connector, creds: dict, *, channel: str, where: str, ts: str, 
         if (creds.get("alert_channel") or "").strip() and bot and _SUCCESS["alert"] not in before:
             ok, why = post_alert(connector, creds, channel=channel, where=where, ts=ts,
                                  user_id=user_id, actor=actor, result=result, done=out,
-                                 can_change=bool(token))
+                                 can_delete=bool(token),
+                                 can_redact=bool(text and discovery_token(db, connector)))
             audit_log.record(db, connector.tenant_id, actor,
                              "slack.alert_posted" if ok else "slack.alert_post_failed",
                              target, {**base, "alert_channel": creds.get("alert_channel"),
@@ -273,7 +306,7 @@ def _button(label: str, action: str, fields: dict, style: str = "", confirm: str
 
 
 def alert_blocks(connector, *, channel: str, where: str, ts: str, user_id: str, actor: str,
-                 result: dict, done: dict, can_change: bool) -> list[dict]:
+                 result: dict, done: dict, can_delete: bool, can_redact: bool = False) -> list[dict]:
     from .config import settings
     sev = result.get("severity", "high")
     what = ", ".join(labels_of(result))
@@ -291,9 +324,10 @@ def alert_blocks(connector, *, channel: str, where: str, ts: str, user_id: str, 
     fields = {"f": fid, "k": connector.id, "c": channel, "t": ts, "u": user_id, "w": where}
     buttons = []
     gone = done.get("deleted") or done.get("redacted")
-    if can_change and not gone:
+    if can_redact and not gone:
         buttons.append(_button("Redact", "redact", fields, confirm=(
-            "Replace the flagged values in the message. Slack allows this only on Enterprise Grid.")))
+            "Replace the flagged values in the message, keeping the rest.")))
+    if can_delete and not gone:
         buttons.append(_button("Delete", "delete", fields, style="danger",
                                confirm="Delete the message from Slack. This cannot be undone."))
     if user_id and not done.get("notified"):
