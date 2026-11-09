@@ -14,8 +14,9 @@ finds it first.
 **One-click ("Add to Slack").** Available only when the operator of your Palivane
 deployment has registered a published Slack app. If Settings shows the button, use it: you
 approve the scopes in your own workspace and the bot token is stored for you. The app asks
-for the same scopes as the table below, `channels:join` included; it only joins channels if
-you turn on "Scan every public channel".
+for the same scopes as the table below, `channels:join`, `chat:write` and `im:write` included;
+it only joins channels if you turn on "Scan every public channel", and only posts if you turn on
+"Notify the sender".
 
 **Your own workspace app.** Always available, and the only route on a deployment with no
 published app. Ten minutes, once.
@@ -36,8 +37,10 @@ published app. Ten minutes, once.
    | `users:read.email` | match that person to a Palivane user |
    | `files:read` | read text attachments (CSV, JSON, logs, source) |
    | `channels:join` | optional; lets the bot cover public channels nobody invited it to |
+   | `chat:write`, `im:write` | optional; "Notify the sender" (a private message to the person who posted a leak) |
 
-   No write scopes. The bot never posts, edits, or deletes anything.
+   The bot never edits or deletes anything. With the notify scopes it posts one kind of
+   message: a private notice to the person whose message was flagged.
 3. **Install to Workspace**, approve, and copy the **Bot User OAuth Token** (`xoxb-…`).
 4. In Palivane: **Settings → Slack scanning**, add the token as a `slack_messages`
    connector.
@@ -85,8 +88,8 @@ a large backlog drains over several runs rather than in one long request.
 
 ## What it does not do
 
-**Nothing is blocked before delivery, and nothing is edited.** One remediation is
-available, and only on Enterprise: deletion.
+**Nothing is blocked before delivery.** Slack offers no pre-delivery inspection point below
+Enterprise Grid, so this plane finds a leak after it lands and then acts on it (below).
 
 Some of the rest is Slack's design, not ours, and it is worth being precise about which:
 
@@ -95,45 +98,43 @@ Some of the rest is Slack's design, not ours, and it is worth being precise abou
 | Read public channels | yes | yes |
 | Read private channels / DMs uninvited | **no** | yes (Discovery API) |
 | Block before delivery | **no** | yes |
-| Edit someone else's message in place | **no** | yes (`discovery:write`) |
-| Delete someone else's message | **yes**, with an admin user token (below) | yes |
+| Edit someone else's message in place (redact) | **no** | yes, with an org admin's user token |
+| Delete someone else's message | **yes**, with a workspace-admin user token | yes |
+| Message the person who posted it | yes (the bot) | yes |
 
-`chat.update` refuses to touch a message the caller did not author, on every plan, so
-"redact the SSN and leave the sentence" is genuinely Grid-only. Deletion is the one
-remediation reachable below Grid, and only with a workspace-admin **user** token, which is
-a much stronger credential than the bot token and is treated separately.
+## Acting on a confirmed leak
 
-## Deleting a confirmed leak (Enterprise)
+**Settings → Slack scanning**, per workspace. Each action is off by default and runs only on
+a message the scan has just flagged at **high or critical** (the confirmed-leak tier); a
+suspicious-but-unconfirmed hit is recorded and nothing else.
 
-**Settings → Slack scanning → "Delete confirmed leaks"** removes a message the scan has
-just flagged at high or critical from the workspace.
+| Action | What happens | Needs |
+| --- | --- | --- |
+| **Notify the sender** | The Palivane bot sends the person who posted it a private message naming what was found (never the value) and what happened to their message, with a reminder to rotate a credential | the bot's `chat:write` and `im:write` scopes; any plan |
+| **Redact the values** | The flagged values are replaced with `«redacted:<label>»`; the rest of the message stays | a workspace-admin user token; **Enterprise Grid** on Slack's side; Enterprise plan |
+| **Delete the message** | The message is removed | a workspace-admin user token; any Slack plan; Enterprise plan |
 
-What it needs, and why:
+How they combine: with redaction and deletion both on, a message is redacted, and deleted
+only when redaction could not be done (Slack refused because the workspace is not on Grid,
+or the value is visible only after decoding, so there is no exact stretch of text to
+replace). The sender's notice says which happened, or asks them to delete it when neither
+ran.
 
-- **A workspace-admin user token** (`xoxp-…`) on the connector, alongside the bot token.
-  `chat.delete` with a bot token can remove nothing but the bot's own posts, so there is no
-  version of this that runs on the bot token alone. This is a much stronger credential than
-  the bot token: it can do anything its owner can. It is stored encrypted, write-only, and
-  never returned by the API.
-- **The Enterprise plan.** This destroys customer content, so it sits behind a deliberate
-  conversation rather than a checkbox a trial finds by accident.
-- **The switch, off by default.**
+**The admin token.** `chat.update` and `chat.delete` with a bot token touch nothing but the
+bot's own posts, so redaction and deletion use a workspace admin's **user** token (`xoxp-…`),
+added under the workspace's remediation switches. It is a much stronger credential than
+the bot token (it can do anything its owner can): stored encrypted, write-only, never
+returned by the API, and setting or removing it is written to the audit log.
 
-What it will and will not touch:
+**The record.** Every action is written to the audit log **before** it is reported, whether
+it worked or not (`slack.message_redacted`, `slack.message_deleted`, `slack.sender_notified`
+and their `…_failed` twins), with the finding id, severity, channel, and who posted it.
+Failures are also counted in the scan summary, because remediation that quietly stopped
+working looks exactly like a workspace with nothing left to fix.
 
-- Only a message **this scan flagged**, at **high or critical**: the confirmed-leak tier.
-  A suspicious-but-unconfirmed hit is recorded, never deleted.
-- **Every deletion is written to the audit log first** (`slack.message_deleted`), with the
-  finding id, severity, channel, and who posted it. A message removed with no record of
-  what it was is worse than the leak it removed.
-- A deletion that fails is recorded too (`slack.message_delete_failed`) and counted in the
-  sync summary, because remediation that quietly stopped working looks exactly like a
-  workspace with nothing left to remediate.
-
-It is deletion, not redaction. Slack will not let any caller edit a message it did not
-author, on any plan, so "mask the SSN and leave the sentence" is genuinely Grid-only. If you
-are on Enterprise Grid and want in-place redaction or tombstoning, that is a different
-integration (Discovery API with discovery:write, org-owner install) and we will scope it with you.
+Files are not redacted (a message's attachment is deleted with its message, or the sender is
+notified). Shared channels owned by another organization's workspace cannot be changed from
+yours.
 
 ## Private channels & DMs on Enterprise Grid (Discovery API)
 
