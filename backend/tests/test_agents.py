@@ -105,7 +105,12 @@ def test_session_token_ttl_bounds(client):
                        json={"ttl_minutes": 100000}).status_code == 422
 
 
-def test_per_agent_rate_limit(client, raw_client):
+def test_per_agent_rate_limit(client, raw_client, monkeypatch):
+    # The budget is a calendar-minute bucket; three requests straddling :59 -> :00 split
+    # across two buckets and the third got 200 (main, 2026-11-10). Hold the clock still.
+    from app import metering
+    frozen = metering._now()
+    monkeypatch.setattr(metering, "_now", lambda: frozen)
     ag = _make_agent(client, "throttled-bot")
     assert client.patch(f"/api/agents/{ag['id']}",
                         json={"rate_limit": 2}).json()["rate_limit"] == 2
