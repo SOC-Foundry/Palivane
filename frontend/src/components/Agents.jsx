@@ -104,7 +104,7 @@ export default function Agents({ tenant, onTenant }) {
   }
 
   return (
-    <div className="connect">
+    <div className="connect page-wide">
       <div className="content-head">
         <div>
           <h1 className="page-title">Agents</h1>
@@ -143,29 +143,6 @@ export default function Agents({ tenant, onTenant }) {
         </div>
       )}
 
-      <div className="panel settings-card">
-        <h2>Workload identity (OIDC)</h2>
-        <p className="muted" style={{ marginTop: 0 }}>Optionally trust JWTs from your workload
-           IdP as agent credentials (instead of Palivane's <code>ag_</code> token). A token whose
-           <code> iss</code> matches and validates against the issuer's JWKS is mapped to the agent
-           whose <strong>OIDC subject</strong> equals the token's <code>sub</code>/<code>client_id</code>.</p>
-        <div className="override-row">
-          <input placeholder="issuer (https://idp.example)" value={oidc.agent_oidc_issuer}
-                 onChange={(e) => setOidc((o) => ({ ...o, agent_oidc_issuer: e.target.value }))} />
-          <input placeholder="JWKS URI (optional; discovered if blank)" value={oidc.agent_oidc_jwks}
-                 onChange={(e) => setOidc((o) => ({ ...o, agent_oidc_jwks: e.target.value }))} />
-          <input placeholder="audience (optional)" value={oidc.agent_oidc_audience}
-                 onChange={(e) => setOidc((o) => ({ ...o, agent_oidc_audience: e.target.value }))} />
-        </div>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 14 }}>
-          <input type="checkbox" checked={oidc.agent_attestation_enforce}
-                 onChange={(e) => setOidc((o) => ({ ...o, agent_attestation_enforce: e.target.checked }))} />
-          Block tool calls that aren't OIDC-attested
-          <span className="muted" style={{ fontSize: 12 }}>
-            (off = flag only; a bearer <code>ag_</code> token or none is flagged either way)</span>
-        </label>
-        <button className="primary-btn slim" style={{ marginTop: 10 }} onClick={saveOidc}>Save workload identity</button>
-      </div>
 
       {token && (
         <div className="panel settings-card" style={{ borderColor: "rgba(124,108,255,.5)" }}>
@@ -176,22 +153,6 @@ export default function Agents({ tenant, onTenant }) {
           <button className="ghost-btn" style={{ marginTop: 10 }} onClick={() => setToken(null)}>Done</button>
         </div>
       )}
-
-      <div className="panel settings-card">
-        <h2>Register an agent</h2>
-        <div className="override-row">
-          <input placeholder="agent name (e.g. billing-bot)" value={draft.name}
-                 onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} />
-          <select value={draft.kind} onChange={(e) => setDraft((d) => ({ ...d, kind: e.target.value }))}>
-            <option value="service">service (autonomous)</option>
-            <option value="interactive">interactive (human-in-the-loop)</option>
-          </select>
-          <input placeholder="OIDC subject (optional)" value={draft.oidc_subject}
-                 title="JWT sub/client_id if this agent authenticates with a workload OIDC token"
-                 onChange={(e) => setDraft((d) => ({ ...d, oidc_subject: e.target.value }))} />
-          <button className="primary-btn slim" onClick={create} disabled={busy}>{busy ? "..." : "Create agent"}</button>
-        </div>
-      </div>
 
       <div className="panel settings-card">
         <h2>Agents</h2>
@@ -239,7 +200,7 @@ export default function Agents({ tenant, onTenant }) {
                     <td>{a.active
                       ? <span className="cat cat-unsanctioned_ai">active</span>
                       : <span className="cat cat-secret_leak">disabled</span>}</td>
-                    <td>
+                    <td className="nowrap">
                       <button className="link-btn" onClick={() => rotate(a)}>Rotate</button>
                       {a.active && <button className="link-btn" style={{ marginLeft: 12 }}
                                            title="Mint a 1-hour session token (JWT), the long-lived ag_ credential stays offline"
@@ -258,6 +219,48 @@ export default function Agents({ tenant, onTenant }) {
       </div>
 
       {/* Least-privilege roles */}
+      <div className="page-grid">
+      <div className="panel settings-card">
+        <h2>Register an agent</h2>
+        <div className="override-row">
+          <input placeholder="agent name (e.g. billing-bot)" value={draft.name}
+                 onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} />
+          <select value={draft.kind} onChange={(e) => setDraft((d) => ({ ...d, kind: e.target.value }))}>
+            <option value="service">service (autonomous)</option>
+            <option value="interactive">interactive (human-in-the-loop)</option>
+          </select>
+          <input placeholder="OIDC subject (optional)" value={draft.oidc_subject}
+                 title="JWT sub/client_id if this agent authenticates with a workload OIDC token"
+                 onChange={(e) => setDraft((d) => ({ ...d, oidc_subject: e.target.value }))} />
+          <button className="primary-btn slim" onClick={create} disabled={busy}>{busy ? "..." : "Create agent"}</button>
+        </div>
+      </div>
+
+      <div className="panel settings-card">
+        <h2>Workload identity (OIDC)</h2>
+        <p className="muted" style={{ marginTop: 0 }}>Optionally trust JWTs from your workload
+           IdP as agent credentials (instead of Palivane's <code>ag_</code> token). A token whose
+           <code> iss</code> matches and validates against the issuer's JWKS is mapped to the agent
+           whose <strong>OIDC subject</strong> equals the token's <code>sub</code>/<code>client_id</code>.</p>
+        <div className="override-row">
+          <input placeholder="issuer (https://idp.example)" value={oidc.agent_oidc_issuer}
+                 onChange={(e) => setOidc((o) => ({ ...o, agent_oidc_issuer: e.target.value }))} />
+          <input placeholder="JWKS URI (optional; discovered if blank)" value={oidc.agent_oidc_jwks}
+                 onChange={(e) => setOidc((o) => ({ ...o, agent_oidc_jwks: e.target.value }))} />
+          <input placeholder="audience (optional)" value={oidc.agent_oidc_audience}
+                 onChange={(e) => setOidc((o) => ({ ...o, agent_oidc_audience: e.target.value }))} />
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 14 }}>
+          <input type="checkbox" checked={oidc.agent_attestation_enforce}
+                 onChange={(e) => setOidc((o) => ({ ...o, agent_attestation_enforce: e.target.checked }))} />
+          Block tool calls that aren't OIDC-attested
+          <span className="muted" style={{ fontSize: 12 }}>
+            (off = flag only; a bearer <code>ag_</code> token or none is flagged either way)</span>
+        </label>
+        <button className="primary-btn slim" style={{ marginTop: 10 }} onClick={saveOidc}>Save workload identity</button>
+      </div>
+      </div>
+
       <div className="panel settings-card">
         <h2>Roles (least-privilege)</h2>
         <p className="muted" style={{ marginTop: 0 }}>Limit which MCP tools/servers an agent may

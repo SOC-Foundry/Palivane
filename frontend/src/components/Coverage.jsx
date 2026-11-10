@@ -35,7 +35,7 @@ export default function Coverage() {
   }
 
   return (
-    <div className="connect">
+    <div className="connect page-wide">
       <div className="content-head">
         <div>
           <h1 className="page-title">Coverage reconciliation</h1>

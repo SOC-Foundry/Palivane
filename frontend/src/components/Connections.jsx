@@ -85,7 +85,7 @@ export default function Connections() {
   }
 
   return (
-    <div className="connect">
+    <div className="connect page-wide">
       <div className="content-head">
         <div>
           <h1 className="page-title">Connections</h1>
@@ -143,6 +143,7 @@ export default function Connections() {
           writes another pair, so a raw token list would read as many grants for one click.
           This is what the consent screen promises — it said so before this existed, which
           was the bug. */}
+      <div className="page-grid">
       <div className="panel settings-card">
         <h2>Authorized apps ({grants.length})</h2>
         <p className="muted">Applications you approved from a consent screen, typically an AI
@@ -203,6 +204,7 @@ export default function Connections() {
             <button type="button" className="mini-btn" onClick={() => setMinted(null)}>dismiss</button>
           </div>
         )}
+      </div>
       </div>
 
       <div className="panel settings-card">
