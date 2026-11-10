@@ -58,7 +58,7 @@ export default function Audit() {
   const actions = [...new Set(entries.map((e) => e.action))].sort();
 
   return (
-    <div className="settings">
+    <div className="settings page-wide">
       <div className="content-head">
         <div>
           <h1 className="page-title">Audit log</h1>
@@ -96,7 +96,7 @@ export default function Audit() {
                     <td><span className={`audit-act audit-act-${actionKind(e.action)}`}
                               title={e.action}>{actionLabel(e.action)}</span></td>
                     <td className="ut-email">{e.target || "-"}</td>
-                    <td className="audit-detail">{summarize(e.detail)}</td>
+                    <td className="audit-detail" title={summarize(e.detail)}>{summarize(e.detail)}</td>
                   </tr>
                 ))}
               </tbody>

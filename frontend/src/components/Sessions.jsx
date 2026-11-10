@@ -3,7 +3,7 @@
 // Copilot, browser AI, MCP) in the window; click through to the normalized, chronological
 // timeline of that actor's activity across all of them. The "one console for every agent"
 // view no single-vendor log can produce.
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { IconRefresh } from "./icons.jsx";
 
@@ -13,7 +13,8 @@ const SEV = { benign: "sev-benign", low: "sev-benign", suspicious: "sev-suspicio
 function fmtWhen(ts) {
   if (!ts) return "-";
   const d = new Date(ts);
-  return Number.isNaN(d.getTime()) ? String(ts) : d.toLocaleString();
+  return Number.isNaN(d.getTime()) ? String(ts)
+    : d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 export default function Sessions() {
@@ -46,71 +47,88 @@ export default function Sessions() {
   const sessions = data?.sessions || [];
 
   return (
-    <div className="view">
-      <div className="view-head">
+    <div className="page-wide">
+      <div className="content-head">
         <div>
-          <h1>Sessions</h1>
-          <p className="muted">Unified cross-vendor audit, every actor's activity across
+          <h1 className="page-title">Sessions</h1>
+          <p className="page-sub">Unified cross-vendor audit, every actor's activity across
             all agent tools in one normalized timeline. Palivane's retention, not any vendor's cap.</p>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div className="head-actions">
           <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
             <option value={1}>Last 24h</option>
             <option value={7}>Last 7 days</option>
             <option value={30}>Last 30 days</option>
           </select>
-          <button type="button" className="mini-btn"
+          <button type="button" className="ghost-btn"
                   onClick={() => api.downloadAudit(days, "jsonl").catch((e) => setErr(String(e.message || e)))}>
             Export JSONL
           </button>
-          <button type="button" className="mini-btn"
+          <button type="button" className="ghost-btn"
                   onClick={() => api.downloadAudit(days, "cef").catch((e) => setErr(String(e.message || e)))}>
             Export CEF
           </button>
-          <button type="button" className="mini-btn" onClick={load} disabled={busy}>
-            <IconRefresh /> Refresh
+          <button type="button" className="ghost-btn" onClick={load} disabled={busy}>
+            <IconRefresh /> <span>Refresh</span>
           </button>
         </div>
       </div>
 
-      {err && <div className="banner banner-error">{err}</div>}
+      {err && <div className="error">{err}</div>}
       {!sessions.length && !busy && <div className="panel muted">No agent activity in this window.</div>}
 
-      {sessions.map((s) => (
-        <div key={s.actor} className="panel" style={{ marginBottom: 10 }}>
-          <div className="session-row" style={{ display: "flex", alignItems: "center", gap: 12,
-                 cursor: "pointer", flexWrap: "wrap" }} onClick={() => toggle(s.actor)}>
-            <span className={`chip ${SEV[s.peak_severity] || ""}`}>{s.peak_severity}</span>
-            <strong style={{ minWidth: 180 }}>{s.actor}</strong>
-            {s.chain_detected &&
-              <span className="chip sev-critical" title="A correlated attack chain fired for this actor">⛓ attack chain</span>}
-            <span className="muted">{s.events} event{s.events === 1 ? "" : "s"}</span>
-            <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {s.vendors.map((v) => <span key={v} className="chip">{v}</span>)}
-            </span>
-            {s.stages.length > 0 &&
-              <span className="muted" style={{ marginLeft: "auto" }}>{s.stages.join(" → ")}</span>}
-            <span className="muted">{fmtWhen(s.last_seen)}</span>
+      {sessions.length > 0 && (
+        <div className="panel settings-card">
+          <h2>Actors <span className="count-pill">{sessions.length}</span></h2>
+          <div className="table-scroll">
+            <table className="data-table session-table">
+              <thead>
+                <tr><th>Peak</th><th>Actor</th><th>Events</th><th>Tools</th><th>Kill-chain stages</th><th>Last seen</th></tr>
+              </thead>
+              <tbody>
+                {sessions.map((s) => (
+                  <Fragment key={s.actor}>
+                    <tr className={open === s.actor ? "row-on" : ""} style={{ cursor: "pointer" }}
+                        onClick={() => toggle(s.actor)} aria-expanded={open === s.actor}>
+                      <td><span className={`chip ${SEV[s.peak_severity] || ""}`}>{s.peak_severity}</span></td>
+                      <td>
+                        <strong>{s.actor}</strong>
+                        {s.chain_detected &&
+                          <span className="chip sev-critical" style={{ marginLeft: 8 }}
+                                title="A correlated attack chain fired for this actor">⛓ attack chain</span>}
+                      </td>
+                      <td>{s.events}</td>
+                      <td><span className="chip-row">{s.vendors.map((v) => <span key={v} className="chip">{v}</span>)}</span></td>
+                      <td className="muted">{s.stages.length ? s.stages.join(" → ") : "-"}</td>
+                      <td className="muted nowrap">{fmtWhen(s.last_seen)}</td>
+                    </tr>
+                    {open === s.actor && (
+                      <tr className="session-timeline-row">
+                        <td colSpan={6}>
+                          <div className="session-timeline">
+                            {(timeline[s.actor] || []).map((e) => (
+                              <div key={e.finding_id} className="session-event">
+                                <span className="muted nowrap">{fmtWhen(e.ts)}</span>
+                                <span className="chip">{e.vendor}</span>
+                                <span className={`chip ${SEV[e.severity] || ""}`}>{e.severity}</span>
+                                <span>{e.action}</span>
+                                {e.stages.length > 0 && <span className="muted">· {e.stages.join(", ")}</span>}
+                                {e.is_chain && <span className="chip sev-critical">chain</span>}
+                              </div>
+                            ))}
+                            {!timeline[s.actor] && <div className="muted">Loading timeline...</div>}
+                            {timeline[s.actor] && !timeline[s.actor].length && <div className="muted">No events.</div>}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
           </div>
-
-          {open === s.actor && (
-            <div className="session-timeline" style={{ marginTop: 10, borderTop: "1px solid var(--line)", paddingTop: 8 }}>
-              {(timeline[s.actor] || []).map((e) => (
-                <div key={e.finding_id} style={{ display: "flex", gap: 10, padding: "4px 0",
-                       alignItems: "baseline", flexWrap: "wrap" }}>
-                  <span className="muted" style={{ minWidth: 150 }}>{fmtWhen(e.ts)}</span>
-                  <span className="chip">{e.vendor}</span>
-                  <span className={`chip ${SEV[e.severity] || ""}`}>{e.severity}</span>
-                  <span>{e.action}</span>
-                  {e.stages.length > 0 && <span className="muted">· {e.stages.join(", ")}</span>}
-                  {e.is_chain && <span className="chip sev-critical">chain</span>}
-                </div>
-              ))}
-              {!(timeline[s.actor] || []).length && <div className="muted">Loading timeline...</div>}
-            </div>
-          )}
         </div>
-      ))}
+      )}
     </div>
   );
 }
