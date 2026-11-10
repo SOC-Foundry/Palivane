@@ -2674,7 +2674,8 @@ def scan_mcp_config(
         )
         result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
                               db=db, tenant_id=tenant_id, signal_filter=_mcp_filter,
-                              extra_signals=_client_signals(_by_server.get(name, [])))
+                              extra_signals=_client_signals(_by_server.get(name, [])),
+                              persist_benign=False)
         signals = list(result["signals"])
         sev = result["severity"]
         # Supply-chain signals for this server's launcher package (respects the
@@ -2727,7 +2728,8 @@ def scan_mcp_config(
                              metadata={"path": body.path, "unattributed": True})
         result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
                               db=db, tenant_id=tenant_id, signal_filter=_mcp_filter,
-                              extra_signals=_client_signals(_unattributed))
+                              extra_signals=_client_signals(_unattributed),
+                              persist_benign=False)
         action = _action_for(result["severity"], block_sev)
         if action != "allow":
             worst = max(worst, _ACTION_RANK.get(result["severity"], 0))
@@ -2992,8 +2994,11 @@ def scan_ide_extensions(
                              "allowed": _tenant_or_global(tenant_id, db, "ide_ext_allowed", settings.ide_ext_allowed),
                              "denylist": _tenant_or_global(tenant_id, db, "ide_ext_denylist", settings.ide_ext_denylist),
                          })
+    # An inventory, like browser-extensions: a clean report is not a finding. Without this every
+    # posture run that changed the install list left a score-0 "open" finding in the queue.
     result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
-                          db=db, tenant_id=tenant_id)
+                          db=db, tenant_id=tenant_id,
+                          persist_benign=False)
     if body.device:
         # palivane-posture's list is the device's whole install: it replaces the inventory.
         from .device_assets import replace_assets
@@ -3085,7 +3090,8 @@ def scan_agent_config(
                          metadata={"kind": "agent_config", "tool": body.tool})
     result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
                           db=db, tenant_id=tenant_id, agent=agent,
-                          extra_signals=_client_signals(body.findings))
+                          extra_signals=_client_signals(body.findings),
+                          persist_benign=False)
     return {
         "action": _action_for(result["severity"]),
         "severity": result["severity"],
@@ -3117,7 +3123,8 @@ def scan_device_posture(
                          sender_claimed=_actor_claimed(actor, default_actor, default_claimed),
                          surface=Surface.DEVICE, metadata={"kind": "device_posture"})
     result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
-                          db=db, tenant_id=tenant_id, agent=agent)
+                          db=db, tenant_id=tenant_id, agent=agent,
+                          persist_benign=False)
     return {
         "action": _action_for(result["severity"]),
         "severity": result["severity"],
@@ -3187,7 +3194,8 @@ def scan_agent_rules(
     )
     result = run_analysis(item, persist=bool(body.record) and tenant_id is not None,
                           db=db, tenant_id=tenant_id, agent=agent,
-                          extra_signals=_client_signals(body.findings))
+                          extra_signals=_client_signals(body.findings),
+                          persist_benign=False)
     return {
         "action": _action_for(result["severity"]),
         "severity": result["severity"],

@@ -368,43 +368,6 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
         <button className="link-btn" onClick={onClose}>close</button>
       </div>
 
-      <div className="detail-section analyst">
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <button className="primary-btn slim" onClick={investigate}
-                  disabled={investigating || !analystEnabled}
-                  title={analystEnabled ? undefined : "Turn on the AI analyst in Settings first"}>
-            {investigating ? "Investigating…" : report ? "🔎 Re-investigate" : "🔎 Investigate (AI analyst)"}
-          </button>
-          <span className="muted" style={{ fontSize: 12 }}
-                title={analystEnabled
-                  ? "Reads the finding and this actor's history and recommends an action. It never applies it. Runs on your org's own LLM key."
-                  : "Off by default. An admin can enable the AI analyst in Settings: it sends the finding's redacted context to your org's own LLM provider (your key, never ours)."}>
-            {analystEnabled ? "Recommends, never acts. Your org's LLM key." : "Off: an admin enables it in Settings."}
-          </span>
-        </div>
-        {investigateErr && <div className="error" style={{ marginTop: 10 }}>{investigateErr}</div>}
-        {report && (
-          <div className="analyst-report" style={{ marginTop: 12 }}>
-            <p><strong>Summary.</strong> {report.summary}</p>
-            <p><strong>Assessment.</strong> {report.assessment}</p>
-            <p><strong>Related activity.</strong> {report.related_activity}</p>
-            <p><strong>Recommended:</strong>{" "}
-              <span className={`status-chip status-${report.recommended_action}`}>
-                {report.recommended_action}</span>{" "}
-              <span className="muted" style={{ fontSize: 12 }}>
-                ({Math.round((report.confidence || 0) * 100)}% confidence · {report.by})</span>
-            </p>
-            <p className="muted" style={{ fontSize: 13 }}>{report.rationale}</p>
-            <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
-              <button className="primary-btn slim" onClick={applyRecommendation}>
-                Apply: mark {APPLY[report.recommended_action] || "triaged"}
-              </button>
-              <span className="muted" style={{ fontSize: 12 }}>You approve. The analyst never applies it.</span>
-            </div>
-          </div>
-        )}
-      </div>
-
       <h3>{finding.subject || "(no subject)"}</h3>
       <div className="detail-meta">
         <span>{finding.channel}</span>
@@ -561,6 +524,44 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
           )}
         </div>
       )}
+
+      <div className="detail-section analyst">
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {/* Off, it is a muted control rather than the panel's loudest button. */}
+          <button className={analystEnabled ? "primary-btn slim" : "ghost-btn"} onClick={investigate}
+                  disabled={investigating || !analystEnabled}
+                  title={analystEnabled ? undefined : "Turn on the AI analyst in Settings first"}>
+            {investigating ? "Investigating…" : report ? "🔎 Re-investigate" : "🔎 Investigate (AI analyst)"}
+          </button>
+          <span className="muted" style={{ fontSize: 12 }}
+                title={analystEnabled
+                  ? "Reads the finding and this actor's history and recommends an action. It never applies it. Runs on your org's own LLM key."
+                  : "Off by default. An admin can enable the AI analyst in Settings: it sends the finding's redacted context to your org's own LLM provider (your key, never ours)."}>
+            {analystEnabled ? "Recommends, never acts. Your org's LLM key." : "Off: an admin enables it in Settings."}
+          </span>
+        </div>
+        {investigateErr && <div className="error" style={{ marginTop: 10 }}>{investigateErr}</div>}
+        {report && (
+          <div className="analyst-report" style={{ marginTop: 12 }}>
+            <p><strong>Summary.</strong> {report.summary}</p>
+            <p><strong>Assessment.</strong> {report.assessment}</p>
+            <p><strong>Related activity.</strong> {report.related_activity}</p>
+            <p><strong>Recommended:</strong>{" "}
+              <span className={`status-chip status-${report.recommended_action}`}>
+                {report.recommended_action}</span>{" "}
+              <span className="muted" style={{ fontSize: 12 }}>
+                ({Math.round((report.confidence || 0) * 100)}% confidence · {report.by})</span>
+            </p>
+            <p className="muted" style={{ fontSize: 13 }}>{report.rationale}</p>
+            <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
+              <button className="primary-btn slim" onClick={applyRecommendation}>
+                Apply: mark {APPLY[report.recommended_action] || "triaged"}
+              </button>
+              <span className="muted" style={{ fontSize: 12 }}>You approve. The analyst never applies it.</span>
+            </div>
+          </div>
+        )}
+      </div>
 
       {isAdmin && status === "open" && (
         <div className={`detail-actions quick-review${reviewing ? " pinned" : ""}`}>
