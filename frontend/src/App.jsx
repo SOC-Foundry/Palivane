@@ -3,7 +3,7 @@ import { api, getToken, setToken, setUnauthorizedHandler } from "./api.js";
 import { DEFAULT_VIEW, isRoot, parseRoute, viewToPath } from "./route.js";
 import { APP_ORIGIN, isOffConsoleOrigin } from "./deployment.js";
 import Dashboard from "./components/Dashboard.jsx";
-import FindingsList from "./components/FindingsList.jsx";
+import FindingsList, { matchesSeverity } from "./components/FindingsList.jsx";
 import FindingDetail from "./components/FindingDetail.jsx";
 import Connect from "./components/Connect.jsx";
 import Users from "./components/Users.jsx";
@@ -249,9 +249,11 @@ export default function App() {
 
   // Review mode: walk the open findings worst first, one verdict each, so the precision readout fills
   // from judgements that carry a reason instead of from bulk clears. It reads the open list itself
-  // (the list on screen may be filtered), and moves on after each verdict.
+  // and walks the severities the queue is showing (warn+ by default: a benign verdict was never
+  // flagged, so confirming it one by one adds nothing), moving on after each verdict.
   const [reviewing, setReviewing] = useState(false);
   const [reviewLeft, setReviewLeft] = useState(null);
+  const [reviewMix, setReviewMix] = useState("");
   // The list API returns at most REVIEW_PAGE rows, most recently seen first. Past that, the walk
   // is worst first within the most recent REVIEW_PAGE; older open findings move into the page
   // as these close. The button says "500+" rather than a count it does not have. #294
@@ -259,12 +261,18 @@ export default function App() {
     const rank = { critical: 4, high: 3, suspicious: 2, low: 1, benign: 0 };
     const page = (await api.findings({ status: "open", limit: REVIEW_PAGE })).findings;
     const open = page
-      .filter((f) => f.id !== skipId)
+      .filter((f) => f.id !== skipId && matchesSeverity(f, filter))
       .sort((a, b) => (rank[b.severity] ?? 0) - (rank[a.severity] ?? 0) || a.id - b.id);
     setReviewLeft(page.length >= REVIEW_PAGE ? `${REVIEW_PAGE}+` : open.length);
+    // What is left, by severity, so the count says what kind of findings remain.
+    const bySev = {};
+    for (const f of open) bySev[f.severity] = (bySev[f.severity] || 0) + 1;
+    setReviewMix(Object.keys(rank).filter((s) => bySev[s]).map((s) => `${bySev[s]} ${s}`).join(" · "));
     if (!open.length) { setReviewing(false); return; }
     selectFinding(open[0].id);
-  }, [selectFinding]);
+  }, [selectFinding, filter]);
+  // A different severity filter is a different walk: drop the old count ("Nothing to review").
+  useEffect(() => { setReviewLeft(null); setReviewMix(""); }, [filter]);
 
   const refresh = useCallback(async () => {
     if (!auth || auth.user?.role === "member") return;   // org-wide data: not for members
@@ -553,9 +561,10 @@ export default function App() {
                 </span>
                 {isAdmin && (
                   <button type="button" className="ghost-btn"
-                          title={`Go through the open findings worst first, one verdict each (worst first among the ${REVIEW_PAGE} most recently seen)`}
+                          title={`Go through the open findings the queue is showing (its severity filter), worst first, one verdict each (among the ${REVIEW_PAGE} most recently seen)`}
                           onClick={() => { setReviewing(true); nextToReview(); }}>
-                    <span>{reviewing ? `Reviewing${reviewLeft != null ? ` (${reviewLeft} left)` : ""}` : "Review"}</span>
+                    <span>{reviewing ? `Reviewing${reviewLeft != null ? ` (${reviewLeft} left${reviewMix ? `: ${reviewMix}` : ""})` : ""}`
+                      : reviewLeft === 0 ? "Nothing to review" : "Review"}</span>
                   </button>
                 )}
                 <button type="button" className="ghost-btn" onClick={refresh}>

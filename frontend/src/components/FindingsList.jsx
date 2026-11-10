@@ -47,6 +47,13 @@ const SEV_RANK = { benign: 0, low: 1, suspicious: 2, high: 3, critical: 4 };
 const OWNER_LABEL = { fixed: "fixed", not_mine: "not mine", approved: "approved use", false_alarm: "false alarm" };
 const ACTIONABLE = new Set(["suspicious", "high", "critical"]);
 
+// The queue's severity filter ("actionable" = warn+, "" = all). Review mode walks the same set,
+// so what it steps through is what the queue shows.
+export function matchesSeverity(f, filter) {
+  if (filter === "actionable") return ACTIONABLE.has(f.severity);
+  return !filter || f.severity === filter;
+}
+
 // One incident = same actor, same surface, same signal-category set. Repeats of the exact
 // same event already fold server-side (seen_count); this collapses the *variations* one
 // noisy actor/session produces into a single triageable row.
@@ -196,8 +203,7 @@ export default function FindingsList({ findings, selectedId, onSelect, filter, o
   const [bulkErr, setBulkErr] = useState("");
 
   let shown = surface ? findings.filter((f) => f.surface === surface) : findings;
-  if (filter === "actionable") shown = shown.filter((f) => ACTIONABLE.has(f.severity));
-  else if (filter) shown = shown.filter((f) => f.severity === filter);
+  shown = shown.filter((f) => matchesSeverity(f, filter));
 
   const groups = grouped ? groupFindings(shown) : null;
   const shownIds = shown.map((f) => f.id);
