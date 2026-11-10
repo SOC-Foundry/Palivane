@@ -76,3 +76,17 @@ def test_sanctioned_agentic_extension_is_silent():
                  meta={"allowed": "ms-python.python"})
     # allowlist configured and Q not on it: the stricter unapproved signal wins
     assert any("Unapproved" in s.title for s in sigs)
+
+
+def test_clean_recorded_list_is_not_a_finding(client, raw_client):
+    """palivane-posture records every install-list change. A clean list is inventory, not a
+    finding: it must not leave a score-0 open row in the queue. A flagged one still records."""
+    key = client.post("/api/apikeys", json={"label": "ide3", "actor": "dev@acme.com"}).json()["token"]
+    raw_client.post("/api/scan/ide-extensions", headers={"X-Palivane-Token": key},
+                    json={"extensions": ["ms-python.python"], "record": True})
+    rows = client.get("/api/findings").json()["findings"]
+    assert not [f for f in rows if f["subject"] == "ide-extensions"]
+    raw_client.post("/api/scan/ide-extensions", headers={"X-Palivane-Token": key},
+                    json={"extensions": ["ahban.shshshsh"], "record": True})
+    rows = client.get("/api/findings").json()["findings"]
+    assert [f for f in rows if f["subject"] == "ide-extensions"]
