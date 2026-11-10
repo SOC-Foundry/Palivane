@@ -182,7 +182,7 @@ export default function Discovery({ tenant, onTenant }) {
 
   const s = inv?.summary;
   return (
-    <div className="connect">
+    <div className="connect page-wide">
       <div className="content-head">
         <div>
           <h1 className="page-title">Shadow-AI discovery</h1>
@@ -250,6 +250,7 @@ export default function Discovery({ tenant, onTenant }) {
         ) : <p className="muted">No AI usage discovered yet. Ingest logs below, or connect a capture plane.</p>}
       </div>
 
+      <div className="page-grid">
       {/* By team */}
       {inv && inv.teams.length > 0 && (
         <div className="panel settings-card">
@@ -276,6 +277,7 @@ export default function Discovery({ tenant, onTenant }) {
         </div>
       )}
 
+      <div>
       <BrowserExtensions tenant={tenant} onTenant={onTenant} />
 
       {/* Ingest logs */}
@@ -285,7 +287,7 @@ export default function Discovery({ tenant, onTenant }) {
            <code> actor,destination[,team]</code> (one per line), or a JSON array of
            <code> {"{actor, destination, team, count}"}</code>. Destinations are matched against
            Palivane's AI-tool catalog.</p>
-        <textarea rows={7} style={{ width: "100%" }}
+        <textarea rows={4} style={{ width: "100%" }}
           placeholder={"alice@acme.com,chatgpt.com,Sales\nbob@acme.com,https://otter.ai/,Legal"}
           value={text} onChange={(e) => setText(e.target.value)} />
         {err && <div className="error">{err}</div>}
@@ -293,6 +295,8 @@ export default function Discovery({ tenant, onTenant }) {
         <button className="primary-btn slim" onClick={ingest} disabled={busy}>
           {busy ? "..." : "Ingest logs"}
         </button>
+      </div>
+      </div>
       </div>
     </div>
   );

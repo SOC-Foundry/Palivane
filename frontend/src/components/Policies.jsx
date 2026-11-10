@@ -38,6 +38,7 @@ export default function Policies({ tenant, onTenant }) {
   const [exceptions, setExceptions] = useState(null);
   const [showResolved, setShowResolved] = useState(false);
   const [note, setNote] = useState("");        // shared approve/deny note
+  const [tab, setTab] = useState("checks");
 
   const load = useCallback(async () => {
     try { setCat(await api.policies()); }
@@ -126,13 +127,13 @@ export default function Policies({ tenant, onTenant }) {
   }
   const checkLabel = (key) => (cat?.checks.find((c) => c.key === key)?.label || key);
 
-  if (!cat) return <div className="connect policies-page"><p className="muted">Loading policies...</p></div>;
+  if (!cat) return <div className="connect policies-page page-wide"><p className="muted">Loading policies...</p></div>;
 
   const total = cat.checks.length;
   const on = cat.checks.filter((c) => c.enabled).length;
 
   return (
-    <div className="connect policies-page">
+    <div className="connect policies-page page-wide">
       <div className="content-head">
         <div>
           <h1 className="page-title">Policies</h1>
@@ -156,6 +157,22 @@ export default function Policies({ tenant, onTenant }) {
       {err && <div className="error">{err}</div>}
       {flash && <div className="hint" style={{ color: "var(--benign)" }}>{flash}</div>}
 
+      {/* Five sections stacked ran to five and a half screens; each is its own job, so each
+          gets a tab and the page fits the window. */}
+      <div className="page-tabs" role="tablist">
+        {[["checks", "Checks", `${on}/${total}`],
+          ["overrides", "Overrides", (cat.overrides || []).length || null],
+          ["allowlist", "Allowlist", null],
+          ["exceptions", "Exceptions", exceptions?.filter((x) => x.status === "pending").length || null],
+          ["precision", "Precision", null]].map(([k, label, n]) => (
+          <button key={k} type="button" role="tab" aria-selected={tab === k}
+                  className={tab === k ? "on" : ""} onClick={() => setTab(k)}>
+            {label}{n != null && <span className="count-pill">{n}</span>}
+          </button>
+        ))}
+      </div>
+
+      {tab === "checks" && <div className="policy-groups">
       {cat.groups.map((group) => (
         <div key={group} className="panel settings-card">
           <h2>{group}</h2>
@@ -200,8 +217,10 @@ export default function Policies({ tenant, onTenant }) {
         </div>
       ))}
 
+      </div>}
+
       {/* Per-user / per-group overrides */}
-      <div className="panel settings-card">
+      {tab === "overrides" && <div className="panel settings-card">
         <h2>Per-user &amp; per-group overrides</h2>
         <p className="muted" style={{ marginTop: 0 }}>Give a specific user or group its own check
            set, it <strong>replaces</strong> the org default for matched people. A user match is
@@ -265,13 +284,13 @@ export default function Policies({ tenant, onTenant }) {
             {saving === "override" ? "..." : "Add override"}
           </button>
         </div>
-      </div>
+      </div>}
 
       {/* Commands and paths the org has decided are fine, each with an expiry. */}
-      <Allowlist />
+      {tab === "allowlist" && <Allowlist />}
 
       {/* Exception requests, users asking to allow a blocked destination/category. */}
-      <div className="panel settings-card">
+      {tab === "exceptions" && <div className="panel settings-card">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
           <h2 style={{ margin: 0 }}>Exceptions</h2>
           <label className="muted" style={{ fontSize: 12.5, display: "flex", alignItems: "center", gap: 6 }}>
@@ -338,11 +357,11 @@ export default function Policies({ tenant, onTenant }) {
             )}
           </>
         )}
-      </div>
+      </div>}
 
       {/* How often the findings the team reviewed were right, per check (replaces the old
           findings-vs-dismissals table, which counted open findings as if they were reviewed). */}
-      <Precision labelFor={checkLabel} />
+      {tab === "precision" && <Precision labelFor={checkLabel} />}
     </div>
   );
 }
