@@ -31,7 +31,7 @@ export default function ScanLog() {
   }
 
   return (
-    <div className="connect">
+    <div className="connect page-wide">
       <div className="content-head">
         <div>
           <h1 className="page-title">Scan log</h1>
@@ -42,6 +42,7 @@ export default function ScanLog() {
 
       {err && <div className="error">{err}</div>}
 
+      <div className={sel ? "page-split" : undefined}>
       <div className="panel settings-card">
         <h2>Users</h2>
         {users && users.length ? (
@@ -54,12 +55,15 @@ export default function ScanLog() {
                       style={{ cursor: "pointer" }} onClick={() => openUser(u.actor)}>
                     <td><strong>{u.actor}</strong></td>
                     <td>{u.findings}</td>
-                    <td>{u.high
+                    <td className="nowrap">{u.high
                       ? <span style={{ color: u.critical ? "var(--crit)" : "var(--high)", fontWeight: 700 }}>{u.high}{u.critical ? ` (${u.critical} crit)` : ""}</span>
                       : <span className="muted">0</span>}</td>
-                    <td className="muted">{u.categories.map((c) => `${CAT_LABEL[c.category] || c.category} ${c.count}`).join(", ") || "-"}</td>
+                    {(() => {
+                      const cats = u.categories.map((c) => `${CAT_LABEL[c.category] || c.category} ${c.count}`).join(", ") || "-";
+                      return <td className="muted cell-clip" title={cats}>{cats}</td>;
+                    })()}
                     <td><span className={`sev sev-${RISK_CLASS(u.max_risk)}`}>{u.max_risk}</span></td>
-                    <td className="muted">{u.last_seen ? u.last_seen.slice(0, 10) : "-"}</td>
+                    <td className="muted nowrap">{u.last_seen ? u.last_seen.slice(0, 10) : "-"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -69,8 +73,9 @@ export default function ScanLog() {
       </div>
 
       {sel && (
-        <div className="panel settings-card">
-          <h2>{sel}, recent findings</h2>
+        <div className="panel settings-card split-side">
+          <h2>{sel}, recent findings
+            <button type="button" className="link-btn split-close" onClick={() => setSel(null)}>close</button></h2>
           {findings.length ? (
             <div className="table-scroll">
               <table className="data-table">
@@ -78,7 +83,7 @@ export default function ScanLog() {
                 <tbody>
                   {findings.map((f) => (
                     <tr key={f.id}>
-                      <td className="muted">{(f.created_at || "").slice(0, 16).replace("T", " ")}</td>
+                      <td className="muted nowrap">{(f.created_at || "").slice(0, 16).replace("T", " ")}</td>
                       <td className="muted">{f.surface}</td>
                       <td><span className={`sev sev-${f.severity}`}>{f.severity}</span></td>
                       <td>{f.risk_score}</td>
@@ -91,6 +96,7 @@ export default function ScanLog() {
           ) : <p className="muted">No findings for this user.</p>}
         </div>
       )}
+      </div>
     </div>
   );
 }

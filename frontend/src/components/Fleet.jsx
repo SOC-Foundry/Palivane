@@ -9,7 +9,8 @@ const HEALTH_CLASS = { fresh: "sev-benign", stale: "sev-suspicious", dark: "sev-
 function fmtWhen(ts) {
   if (!ts) return "-";
   const d = new Date(ts);
-  return Number.isNaN(d.getTime()) ? String(ts) : d.toLocaleString();
+  return Number.isNaN(d.getTime()) ? String(ts)
+    : d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 // A sensor's installed build. Detection/policy is server-side and always current, so a
@@ -270,7 +271,7 @@ export default function Fleet() {
     .sort((a, b) => String(b.last_scan_fail || "").localeCompare(String(a.last_scan_fail || "")));
 
   return (
-    <div className="connect">
+    <div className="connect page-wide">
       <div className="content-head">
         <div>
           <h1 className="page-title">Fleet</h1>
@@ -301,8 +302,6 @@ export default function Fleet() {
             </div>
           </div>
 
-          <DeveloperMeter />
-
           {failedOpen.length > 0 && (
             <div className="panel settings-card">
               <h2>Scans failed open</h2>
@@ -327,6 +326,31 @@ export default function Fleet() {
                         <td className="muted">{fmtWhen(row.first_scan_fail)}</td>
                         <td className="muted">{fmtWhen(row.last_scan_fail)}</td>
                         <td className="muted">{reasonsText(row.scan_fail_reasons)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {deadKeys.length > 0 && (
+            <div className="panel settings-card">
+              <h2>Devices presenting revoked keys</h2>
+              <p style={{ color: "var(--crit)", marginTop: 0 }}>
+                These devices keep sending events with a revoked key. They <strong>fail open</strong>:
+                their traffic is no longer inspected. Re-run <code>palivane-connect</code> on each
+                device to enroll a fresh key.
+              </p>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead><tr><th>Label</th><th>Actor</th><th>Key prefix</th><th>Last failed</th></tr></thead>
+                  <tbody>
+                    {deadKeys.map((k) => (
+                      <tr key={k.id}>
+                        <td>{k.label || "-"}</td>
+                        <td>{k.actor || "-"}</td>
+                        <td className="muted"><code>{k.prefix}</code></td>
+                        <td className="muted">{fmtWhen(k.last_failed_at)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -365,33 +389,9 @@ export default function Fleet() {
             ) : <p className="muted">No sensor activity captured yet.</p>}
           </div>
 
+          <DeveloperMeter />
           <AssetInventory />
 
-          {deadKeys.length > 0 && (
-            <div className="panel settings-card">
-              <h2>Devices presenting revoked keys</h2>
-              <p style={{ color: "var(--crit)", marginTop: 0 }}>
-                These devices keep sending events with a revoked key. They <strong>fail open</strong>
-                their traffic is no longer inspected. Re-run <code>palivane-connect</code> on each
-                device to enroll a fresh key.
-              </p>
-              <div className="table-scroll">
-                <table className="data-table">
-                  <thead><tr><th>Label</th><th>Actor</th><th>Key prefix</th><th>Last failed</th></tr></thead>
-                  <tbody>
-                    {deadKeys.map((k) => (
-                      <tr key={k.id}>
-                        <td>{k.label || "-"}</td>
-                        <td>{k.actor || "-"}</td>
-                        <td className="muted"><code>{k.prefix}</code></td>
-                        <td className="muted">{fmtWhen(k.last_failed_at)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
         </>
       )}
       {!data && !err && <p className="muted">Loading fleet...</p>}

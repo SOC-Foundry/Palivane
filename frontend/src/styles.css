@@ -791,7 +791,7 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 }
 
 /* ===== Users / team page ===== */
-.users-page { max-width: 920px; }
+.users-page { max-width: 1240px; }
 .users-head { margin-bottom: 20px; }
 .users-title { font-size: 20px; font-weight: 800; color: #ffffff; text-transform: none; letter-spacing: -0.3px; }
 .users-sub { font-size: 13.5px; color: var(--muted); margin: 6px 0 0; max-width: 640px; line-height: 1.6; }
@@ -2449,3 +2449,67 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 .src-detail-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .src-detail-head h3 { margin: 0; }
 .src-detail p { margin: 10px 0 8px; }
+
+/* --- Pages that fit the window (Fleet, Scan log, Sessions, Discovery, Agents, Audit…) -------
+   The data pages sat in the 900px .connect card, a card holding cards: on a 1600px screen
+   two thirds of the width went unused, every table cell wrapped onto two or three lines and
+   Fleet ran to three screens. .page-wide drops the outer card and the cap so tables use the
+   width .content already gives them; .page-grid pairs the short panels instead of stacking
+   them; tables get tighter rows. */
+.page-wide { max-width: none; background: none; border: 0; padding: 0; box-shadow: none; }
+.page-wide > .panel, .page-wide > .page-grid, .page-wide > .page-split { margin-bottom: 16px; }
+.page-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.page-grid > .panel, .page-grid > div > .panel { margin: 0; }
+.page-grid > div { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.page-split { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.page-split > .panel { margin: 0; }
+.split-side { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; }
+.split-close { margin-left: auto; text-transform: none; letter-spacing: 0; font-size: 12px; }
+.page-wide .panel h2:has(.split-close) { display: flex; align-items: center; gap: 8px; }
+.page-wide .usage-stats { flex-wrap: wrap; }
+.page-wide .panel.settings-card { padding-top: 16px; padding-bottom: 16px; }
+.page-wide .data-table td { padding: 7px 12px; }
+.page-wide .data-table th { padding-top: 8px; padding-bottom: 8px; }
+.nowrap { white-space: nowrap; }
+.chip-row { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+
+.session-table td { vertical-align: middle; }
+.session-timeline-row > td { background: var(--panel-2); padding: 6px 16px 10px; }
+.session-timeline-row:hover > td { background: var(--panel-2); }
+.session-event { display: flex; gap: 10px; padding: 4px 0; align-items: baseline; flex-wrap: wrap; font-size: 13px; }
+
+/* The audit log keeps its own scroller sized to the window, with the header pinned, so the
+   page never runs to five screens and the filter stays in reach. */
+.page-wide .audit-scroll { max-height: calc(100vh - 230px); overflow: auto; }
+.page-wide .audit-scroll .table-scroll { overflow: visible; }
+.page-wide .audit-table th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.page-wide .audit-table td { padding: 7px 12px; }
+.page-wide .audit-detail { max-width: 720px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 1100px) {
+  .page-grid, .page-split { grid-template-columns: minmax(0, 1fr); }
+  .split-side { position: static; max-height: none; }
+}
+
+/* Policies: one tab per section instead of five stacked sections. */
+.policies-page.page-wide { max-width: none; }
+.page-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: -6px 0 16px; flex-wrap: wrap; }
+.page-tabs button {
+  background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted);
+  padding: 9px 14px; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 7px; margin-bottom: -1px;
+}
+.page-tabs button:hover { color: var(--text); }
+.page-tabs button.on { color: var(--accent-2); border-bottom-color: var(--accent); }
+/* Groups run from 2 to 7 checks, so a grid left holes under the short ones; columns balance
+   them. Inside a group one column of rows, packed tighter. */
+.policy-groups { columns: 2; column-gap: 16px; }
+.policy-groups > .panel { break-inside: avoid; margin: 0 0 16px; display: block; }
+.policy-groups .policy-list { grid-template-columns: minmax(0, 1fr); }
+.policy-groups .policy-row { padding: 10px 2px; }
+.policy-groups .policy-row:nth-child(2) { border-top: 1px solid var(--border-soft); }
+.policy-groups .policy-frameworks { margin-top: 6px; }
+@media (max-width: 1100px) { .policy-groups { columns: 1; } }
+@media (min-width: 2000px) { .policy-groups { columns: 3; } }
+.cell-clip { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.page-split .cell-clip { max-width: 200px; }
