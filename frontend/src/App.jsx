@@ -19,7 +19,6 @@ import Setup from "./components/Setup.jsx";
 import UseCases from "./components/UseCases.jsx";
 import Pricing from "./components/Pricing.jsx";
 import WhyPalivane from "./components/WhyPalivane.jsx";
-import Trust from "./components/Trust.jsx";
 import Security from "./components/Security.jsx";
 import EUAIAct from "./components/EUAIAct.jsx";
 import Support from "./components/Support.jsx";
@@ -368,11 +367,8 @@ export default function App() {
   if (legalPath === "/why-palivane" || legalPath === "/why-palivane") {
     return <WhyPalivane />;
   }
-  if (legalPath === "/security") {
+  if (legalPath === "/security" || legalPath === "/trust") {
     return <Security />;
-  }
-  if (legalPath === "/trust") {
-    return <Trust />;
   }
   if (legalPath === "/eu-ai-act") {
     return <EUAIAct />;

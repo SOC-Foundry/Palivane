@@ -14,6 +14,8 @@ COPY frontend/ ./
 # The /docs pages import repo markdown via ?raw ("../../../docs/*.md" from
 # /web/src/components resolves to /docs) — the docs must exist in the build stage.
 COPY docs/ /docs/
+# The MCP page renders the server's own README ("../../../mcp-server/README.md").
+COPY mcp-server/README.md /mcp-server/README.md
 # Which deployment this image IS. The marketing pages make a promise about where prompt
 # text goes, and the honest answer differs: self-hosted it never leaves the operator's own
 # infrastructure, managed it reaches Palivane. Baked in at build time rather than fetched,

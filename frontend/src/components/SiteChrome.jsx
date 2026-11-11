@@ -40,8 +40,7 @@ const MENU = [
   { label: "Resources", items: [
     { href: "/docs",    label: "Documentation", note: "Setup, deployment, reference" },
     { href: "/setup",   label: "Set it up",     note: "One command, one afternoon" },
-    { href: "/security", label: "Security",        note: "Where your data goes, and who runs it" },
-    { href: "/trust",   label: "Trust & security", note: "Posture, data handling, disclosure" },
+    { href: "/security", label: "Security & trust", note: "Where your data goes, who runs it, the controls" },
     { href: "/support", label: "Support",       note: "Get help, by plan" },
   ]},
 ];
@@ -291,8 +290,7 @@ export function SiteFooter() {
       [demoUrl(), "See the live demo"], ["mailto:sales@palivane.io", "Talk to sales"],
       ["/setup", "Set it up"], ["/docs", "Documentation"], ["/support", "Support"],
     ]},
-    // Security and Trust & security were two links to two neighbouring pages. One link now:
-    // /security links on to /trust for the controls inventory.
+    // Security and Trust & security are one page now; /trust lands on its controls section.
     { head: "Trust", links: [
       ["/security", "Security & trust"], ["/eu-ai-act", "EU AI Act"],
       ["/privacy", "Privacy"], ["/terms", "Terms"],

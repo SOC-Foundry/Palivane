@@ -11,7 +11,7 @@
 | Anthropic | LLM judge (detection quality) | Scanned content, only when the org's judge is enabled (per-org opt-out; no training on API data) | SOC 2 |
 | Google Workspace | Transactional email | Email addresses, notification metadata | SOC 2, ISO 27001 |
 
-Public list mirrored on /trust; the DPA commits to notifying customers of additions.
+Public list mirrored on /security; the DPA commits to notifying customers of additions.
 
 ## Supporting vendors (no customer data)
 

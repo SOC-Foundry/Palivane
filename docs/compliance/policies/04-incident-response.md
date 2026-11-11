@@ -34,7 +34,7 @@ loss, or a report to security@palivane.io that reproduces.
   what they should do. Contact = org admin emails.
 - **Regulators/processors:** per DPA commitments; subprocessor incidents flow through
   (Policy 06).
-- No public minimization: the /trust page gets a factual note for SEV-1s.
+- No public minimization: the /security page gets a factual note for SEV-1s.
 
 ## Precedent on file
 

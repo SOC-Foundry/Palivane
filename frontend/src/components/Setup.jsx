@@ -2,47 +2,46 @@
 // self-serve (one command) path and the org-wide MDM rollout. Mirrors the Connect page in
 // the console, kept in sync with app/distribution.py + docs/mdm-policy-pack.md.
 import { SiteNav, SiteFooter, Clip } from "./SiteChrome.jsx";
+import { Faq } from "./Faq.jsx";
 
 const SELF = [
   { n: "1", title: "Get your capture key",
-    body: "Open the console → Connect → 'Generate a capture key.' Every source authenticates with this one org key and routes its findings back here." },
+    body: "Console → Connect → Generate a capture key. Every source authenticates with it." },
   { n: "2", title: "Run one command",
-    body: "On any machine, run  curl -fsSL <your-url>/install.sh | bash . It signs you in (a browser window opens), installs the governance CLI, and wires prompt + tool-call hooks into Claude Code, Cursor, Codex, and Gemini CLI — each prompt scored inline by your Palivane backend, with no AI gateway inserted, so subscription sign-ins keep working and a risky prompt can be blocked before it reaches the model. It then asks whether to also cover desktop AI apps (Claude and ChatGPT) and browsers system-wide: answer yes for full coverage, which needs sudo because it installs a local CA and sets the system proxy, or press Enter to keep the sudo-free CLI setup. To choose up front, pass  --desktop  (everything) or  --cli-only . No config files, all subscription-compatible." },
-  { n: "3", title: "Finish the browser extension",
-    body: "Install the Palivane extension from the Chrome Web Store (chromewebstore.google.com/detail/fnejondlaacijahdjkhcgiijlnjoapho, which works on Chrome and Edge; managed fleets force-install the same listing by browser policy) then click 'Sign in to Palivane' in its popup to bind it to your org. Now claude.ai, ChatGPT, and Gemini are covered too." },
-  { n: "4", title: "Route through your provider account (optional · admin)",
-    body: "Want a hard, unbypassable gateway instead of the local proxy? In Settings → Gateway upstreams, paste your org's Anthropic (or OpenAI / Gemini) API key and palivane-connect will point Claude Code at the gateway. This bills to your API account rather than each user's subscription, leave it unset to keep the subscription-friendly proxy path above." },
+    body: "curl -fsSL <your-url>/install.sh | bash  signs you in and wires hooks into Claude Code, Cursor, Codex and Gemini CLI, so prompts are scored before they leave and subscription sign-ins keep working. Answer yes (or pass  --desktop ) to also cover desktop AI apps and browsers system-wide; that needs sudo for a local CA and proxy." },
+  { n: "3", title: "Add the browser extension",
+    body: "Install it from the Chrome Web Store (Chrome and Edge) and click Sign in to Palivane. claude.ai, ChatGPT and Gemini are now covered." },
+  { n: "4", title: "Connect Slack and your SaaS (optional · admin)",
+    body: "Settings → Slack scanning → Add to Slack, approve in your workspace, and invite the bot to channels (or let it join every public one). Teams, email, Drive, SharePoint, GitHub and Salesforce connect from the same page." },
   { n: "5", title: "Watch findings roll in",
-    body: "The Findings view shows live risk verdicts from the gateway, the browser extension, and the egress proxy (CLIs + desktop apps), allow, warn, or block, by surface and severity." },
+    body: "Findings shows live verdicts by surface and severity. Prefer your assistant? Add app.palivane.io/api/mcp/ to Claude and ask it." },
 ];
 
 const UNINSTALL = [
-  { n: "1", title: "Remove the editor & CLI hooks",
-    body: "Run  palivane-connect --uninstall . It strips the Claude Code, Cursor, Gemini, and Codex hooks, the Palivane env, and the creds files it wrote, and leaves any hooks you added yourself untouched. Safe to run anytime; a no-op if nothing's installed." },
-  { n: "2", title: "Remove the egress proxy",
-    body: "Run  palivane-desktop uninstall  to stop the proxy, revert the system-proxy setting, and remove the per-tool CLI shims (it also untrusts the CA in your system + NSS stores automatically). The root CA is left in place only if you skip that step, to remove it by hand: macOS Keychain; Debian/Ubuntu delete /usr/local/share/ca-certificates/palivane-mitmproxy.crt then run update-ca-certificates; Fedora/RHEL/Arch/openSUSE delete palivane-mitmproxy.crt from your p11-kit anchors dir (/etc/pki/ca-trust/source/anchors or /etc/ca-certificates/trust-source/anchors) then run update-ca-trust extract. Chromium/Electron desktop apps also trust it in NSS: certutil -d sql:~/.pki/nssdb -D -n palivane-mitmproxy." },
-  { n: "3", title: "Remove the CLI & extension",
-    body: "rm -rf ~/.palivane  removes the CLI and local state, then drop the ~/.palivane/bin line from your shell rc. Finally, remove the Palivane extension from Chrome/Edge. On an MDM fleet, pull the policy pack instead, the profile owns every device's settings, so removing it reverts them all." },
+  ["Remove the editor & CLI hooks",
+   "Run  palivane-connect --uninstall . It removes the hooks, env and credential files it wrote and leaves hooks you added yourself alone."],
+  ["Remove the egress proxy",
+   "Run  palivane-desktop uninstall . It stops the proxy, reverts the system proxy, removes the CLI shims and untrusts the CA. To remove the CA by hand: macOS Keychain; Debian/Ubuntu delete /usr/local/share/ca-certificates/palivane-mitmproxy.crt and run update-ca-certificates; Fedora/RHEL/Arch/openSUSE delete it from your p11-kit anchors directory and run update-ca-trust extract; for Chromium/Electron, certutil -d sql:~/.pki/nssdb -D -n palivane-mitmproxy."],
+  ["Remove the CLI & extension",
+   "rm -rf ~/.palivane , drop the ~/.palivane/bin line from your shell rc, and remove the extension. On an MDM fleet, pull the policy pack and every device reverts."],
 ];
 
 const ORG = [
-  { n: "1", title: "Pick how you ship software",
-    body: "Connect → Quick start. Choose an MDM policy pack (Jamf · Intune · GPO) or a per-OS setup script. Palivane generates everything already pointed at your org and pre-loaded with your policy." },
-  { n: "2", title: "Push the pack fleet-wide",
-    body: "One pack your MDM pushes: extension force-install, egress-proxy profile, and Claude Code managed settings + hooks. No proprietary agent, and nobody has to touch a laptop. Set your org's model key first (Part 1, step 4) so gateway-routed Claude Code keeps answering; the proxy leg also needs your root CA in the device trust store." },
+  { n: "1", title: "Generate the pack",
+    body: "Connect → Quick start: an MDM policy pack (Jamf, Intune, GPO) or a per-OS script, already pointed at your org." },
+  { n: "2", title: "Push it fleet-wide",
+    body: "Extension force-install, egress-proxy profile and root CA, Claude Code managed settings and hooks. No proprietary agent, nobody touches a laptop." },
   { n: "3", title: "Confirm coverage",
-    body: "Discovery and Coverage show the AI tools in use across teams (sanctioned or not) with the real sensitive-data exposure each one received, and name the devices they cannot see rather than counting them as clean." },
+    body: "Discovery and Coverage show the AI tools in use and the data each received, and name the devices they can't see." },
 ];
 
 const CI = [
   { n: "1", title: "Add one workflow file",
-    body: "Copy Palivane's GitHub Actions template into your repo as .github/workflows/palivane-ci-scan.yml. It fetches the scanner from your console at run time, so there's nothing to vendor and nothing to keep updated." },
-  { n: "2", title: "Let the runner authenticate as itself",
-    body: "The template asks GitHub for a short-lived OIDC token (permissions: id-token: write) and presents that to Palivane, so no long-lived Palivane key has to live in your repository secrets. Register the GitHub issuer once under Agents → workload identity. Prefer a key? Set PALIVANE_TOKEN as a secret instead." },
+    body: "Copy the GitHub Actions template to .github/workflows/palivane-ci-scan.yml. It fetches the scanner at run time; nothing to vendor." },
+  { n: "2", title: "Authenticate with OIDC",
+    body: "The runner presents a short-lived GitHub OIDC token, so no Palivane key lives in your secrets. Register the issuer once under Agents → workload identity." },
   { n: "3", title: "Choose what fails a pull request",
-    body: "By default an exploitable workflow fails the check, while hardening debt (unpinned actions, over-broad token permissions) is recorded and warns, so the gate doesn't fail a pull request over problems its author didn't introduce. Settings → CI scan block severity changes that line for your whole org." },
-  { n: "4", title: "Sweep every repo (optional · admin)",
-    body: "Run the same scanner with --org to audit every repository's workflows on a schedule, not just the ones being changed. Findings land in the same console, and any AI agents it finds show up in Discovery against the repo that runs them." },
+    body: "Exploitable workflows fail the check; hardening debt warns. Adjust under Settings → CI scan block severity. Add --org to sweep every repository on a schedule." },
 ];
 
 function Steps({ items }) {
@@ -74,15 +73,14 @@ export default function Setup() {
       <section className="lp-section alt">
         <div className="lp-wrap">
           <Clip lead src="/shots/setup8.mp4" poster="/shots/setup-poster8.png"
-                caption="Self-serve in one command (Claude Code, Cursor, and the AI CLIs via the sudo-free egress proxy; browsers via the extension), then an agentless org-wide rollout via MDM, ending in full coverage across every team." />
+                caption="One command on one machine, then an org-wide rollout through MDM." />
         </div>
       </section>
 
       <section className="lp-section">
         <div className="lp-wrap">
           <h2 className="lp-h2">Part 1, you & your team</h2>
-          <p className="lp-sub">The fastest way to protect your own machine, about two minutes.
-             Small team without MDM? Same command, just run it once on each machine.</p>
+          <p className="lp-sub">About two minutes per machine. No MDM? Run the same command on each.</p>
           <Steps items={SELF} />
         </div>
       </section>
@@ -90,7 +88,7 @@ export default function Setup() {
       <section className="lp-section alt">
         <div className="lp-wrap">
           <h2 className="lp-h2">Part 2, your whole org (MDM)</h2>
-          <p className="lp-sub">One pack, pushed to every device by your existing MDM. No agent, no per-user setup.</p>
+          <p className="lp-sub">One pack, pushed by your existing MDM.</p>
           <Steps items={ORG} />
         </div>
       </section>
@@ -98,20 +96,17 @@ export default function Setup() {
       <section className="lp-section">
         <div className="lp-wrap">
           <h2 className="lp-h2">Part 3, your CI pipelines (optional)</h2>
-          <p className="lp-sub">Cover the machines nobody is sitting at. If coding agents run in your
-             CI, this is where they hold credentials and act unsupervised, one workflow file covers it.
-             On GitLab, the same scanner runs as a job against the checkout and applies the GitLab
-             rules (remote includes, fork-MR privilege reach, runner tags).</p>
+          <p className="lp-sub">Where coding agents hold credentials and act unsupervised. GitLab
+             runs the same scanner as a job.</p>
           <Steps items={CI} />
         </div>
       </section>
 
       <section className="lp-section alt">
-        <div className="lp-wrap">
+        <div className="lp-wrap lp-faq-wrap">
           <h2 className="lp-h2">Uninstalling</h2>
-          <p className="lp-sub">Cleanly reverse a single-machine install in three steps
-             it only removes Palivane's own config and leaves your other settings alone.</p>
-          <Steps items={UNINSTALL} />
+          <p className="lp-sub">Removes only Palivane's own config.</p>
+          <Faq items={UNINSTALL.map(([q, a]) => ({ q, a }))} open={-1} />
         </div>
       </section>
 

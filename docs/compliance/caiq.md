@@ -1,7 +1,7 @@
 # Security questionnaire responses (CAIQ-style)
 
 Pre-filled answers to the questions security reviewers ask most, organized by CAIQ v4
-domain. Hand this with the [/trust](https://app.palivane.io/trust) page and the
+domain. Hand this with the [/security](https://palivane.io/security#controls) page and the
 in-product DPA. Company: **Palivane** · Service: **Palivane, AI Security Gateway**
 (hosted at app.palivane.io; self-hosted option available). Current as of
 **2026-07-19**; contact security@palivane.io.
@@ -117,7 +117,7 @@ headcount-based separation of duties. Our SOC 2 Type II program is underway.
 
 | Q | Answer |
 |---|---|
-| Subprocessor list published? | Yes, /trust page and Policy 06 (GCP, Cloudflare, Anthropic, Google Workspace), all SOC 2 attested. |
+| Subprocessor list published? | Yes, /security page and Policy 06 (GCP, Cloudflare, Anthropic, Google Workspace), all SOC 2 attested. |
 | Vendor review process? | Attestation + least-privilege scoping before adoption; annual review (Policy 06). |
 | Software supply chain? | Minimal dependencies (CLI tools deliberately stdlib-only), lockfiles, CI gate, dependency-risk scanning (our own detector + OSV). |
 

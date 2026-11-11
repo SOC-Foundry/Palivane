@@ -9,7 +9,7 @@ const SELF_SERVE = [
   ["Documentation", "Setup, deployment, and reference for every plane.", "/docs"],
   ["Set it up", "The one-command install and what your MDM pushes.", "/setup"],
   ["Coverage", "Every surface, and exactly what each one needs.", "/coverage"],
-  ["Trust & security", "Data handling, tenant isolation, and disclosure.", "/trust"],
+  ["Security & trust", "Data handling, tenant isolation, and disclosure.", "/security#controls"],
 ];
 
 // What actually reaches a human, by plan — mirrors what each tier includes, nothing more.
@@ -96,7 +96,7 @@ export default function Support() {
           </div>
           <p className="lp-sub" style={{ marginTop: 18 }}>
             For a security issue, please use <a href="mailto:security@palivane.io">security@palivane.io</a> and
-            see the <a href="/trust">Trust &amp; security</a> page for scope and safe-harbor terms.
+            see the <a href="/security#disclosure">Security &amp; trust</a> page for scope and safe-harbor terms.
           </p>
         </div>
       </section>
