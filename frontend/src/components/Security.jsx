@@ -1,21 +1,15 @@
-// Public security page at /security, written for the person who has to approve Palivane:
-// a security reviewer deciding where this runs and what it holds.
-//
-// /trust is the controls inventory — encryption, isolation, disclosure, resilience. This
-// page is the DECISION: hosted or self-hosted, what crosses the boundary in each, what is
-// retained, and who is on the other end. It exists because the honest answer to "who
-// operates this" is small, and a reviewer who discovers that after reading the controls
-// page reads the controls page as spin. Better they get it here, in our words, first.
+// Public security page at /security (and /trust, which lands on #controls), written for the
+// person who has to approve Palivane: a security reviewer deciding where this runs, what it
+// holds, who operates it, and which controls back that up. It used to be two pages; the
+// decision and the controls inventory now sit on one.
 //
 // Every claim below is checked against the code that implements it. If a default changes,
 // this page changes in the same commit — it is the page a buyer will quote back to us.
-import { Fragment } from "react";
+import { Fragment, useEffect } from "react";
 import { SiteNav, SiteFooter } from "./SiteChrome.jsx";
-import { DuoServer, DuoEye, DuoLock, DuoUsers, DuoRadar } from "./duoicons.jsx";
+import { DuoServer, DuoEye, DuoLock, DuoUsers, DuoShield } from "./duoicons.jsx";
 
-// The deployment decision. Kept as one row per question with an answer per column, rather
-// than two independent cards, because side-by-side cards whose rows do not line up are not
-// a comparison — the reader has to hold each answer in their head to match it to the other.
+// The deployment decision: one row per question, an answer per column, so the two line up.
 const DEPLOY_COLS = [
   ["Palivane-hosted", "app.palivane.io · Google Cloud us-central1 (US)"],
   ["Self-hosted", "Your infrastructure · your region · your database"],
@@ -23,41 +17,52 @@ const DEPLOY_COLS = [
 
 const DEPLOY_ROWS = [
   ["Where captured traffic goes",
-   "Through our infrastructure. Prompts are scanned in our service before a verdict is written.",
-   "Nowhere it does not already go. Detection runs inside your network and no prompt content reaches us."],
+   "Through our service, which scans it and writes a verdict.",
+   "Nowhere new. Detection runs inside your network."],
   ["Who can read your content",
-   "By default nobody — the default posture is metadata-only, so what we hold is that a prompt carried an AWS key, not the prompt. Switch on content storage and it is encrypted under a per-tenant key, and readable by an operator with database access.",
-   "Only you. We have no access of any kind to a self-hosted deployment."],
-  ["Data residency",
-   "United States. No region choice today.",
-   "Wherever you run it."],
-  ["Who operates it",
-   "We do. Read “Who is on the other end” below before you decide.",
-   "You do. We support it; we cannot see it."],
-  ["Time to running",
-   "One command, no contact with us required.",
-   "A conversation with us first — see “Self-hosting, plainly” below."],
+   "By default nobody: we keep that a prompt carried an AWS key, not the prompt. Opt-in content storage is encrypted under a per-tenant key.",
+   "Only you."],
+  ["Data residency", "United States.", "Wherever you run it."],
+  ["Who operates it", "We do (see below).", "You do. We support it; we cannot see it."],
+  ["Time to running", "One command.", "A conversation with us first."],
 ];
 
-// What crosses the boundary, per plane. The table exists because the answer DIFFERS by
-// plane, and a reviewer who assumes "all of it, always" is wrong in both directions.
+// What crosses the boundary, per plane: the answer differs, so it is listed.
 const FLOWS = [
-  ["Browser extension", "Prompt text is scanned and a verdict plus metadata is sent. The text itself is sent only if your org has switched on content storage."],
-  ["CLI hooks — Claude Code, Cursor, Codex, Copilot, Gemini", "The same verdict-and-metadata default. A hook that cannot reach Palivane fails open: your tooling keeps working and the capture is lost rather than your work."],
-  ["Egress proxy (desktop apps)", "Traffic is inspected by the proxy on your own machine. The verdict is what leaves it."],
-  ["MCP — local stdio wrapper and hosted endpoint", "Tool calls are inspected. Benign captures are discarded rather than stored, unless you turn that on."],
-  ["SaaS connectors — Workspace, M365, Slack, Salesforce", "Read-only API access under credentials you grant and can revoke from the console at any time."],
-  ["Warehouse AI — Snowflake Cortex, Databricks Model Serving", "Read-only queries against the platform's own logs, under a credential you issue and can revoke. We read records of AI calls your warehouse already kept; nothing is added to it."],
-  ["Optional LLM judge", "Off unless you enable it. When on, the content it reviews goes to a model provider — your own account if you supply a key, and otherwise ours, which is why Anthropic appears in our subprocessor list. Detection without the judge is deterministic and involves no AI service at all."],
-  ["Optional AI analyst", "Off unless you enable it, and then it runs only when someone clicks Investigate on one finding. It sends that finding's redacted context — evidence labels like “AWS access key id”, not the key — to your own provider account. Unlike the judge there is no fallback to ours: no key of yours, no analyst. It recommends an action and never applies one."],
+  ["Browser extension & CLI hooks", "A verdict and metadata. Text only if your org turns on content storage. A hook that can't reach us fails open."],
+  ["Egress proxy", "Inspected on your machine; the verdict leaves it."],
+  ["MCP", "Tool calls inspected; benign ones discarded unless you keep them."],
+  ["SaaS connectors", "Read-only API access you grant and can revoke. Slack installs with one click; the bot joins public channels only if you turn that on."],
+  ["Warehouse AI", "Read-only queries against the platform's own AI-call records."],
+  ["At-rest scanners", "Run where the data lives; only category, location and a masked preview travel."],
+  ["Optional LLM judge", "Off unless enabled. Then the content it reviews goes to a model provider, yours if you supply a key, otherwise ours (Anthropic, below)."],
+  ["Optional AI analyst", "Runs when someone clicks Investigate, on redacted context, with your own provider key only. Recommends, never acts."],
 ];
 
 const RETENTION = [
-  ["Metadata-only by default", "A finding records the verdict, the detector that fired, the surface and the actor. Not the prompt."],
-  ["Benign traffic is not persisted", "Clean captures feed the inventory and usage counters, then go. Keeping them is opt-in, per surface."],
-  ["Content storage is an explicit opt-in", "Per organization, off until an admin turns it on, encrypted under a per-tenant data key when they do."],
-  ["Retention is yours to set", "Per-org findings retention, down to days."],
-  ["Export and deletion are self-serve", "Full JSON export, and organization deletion that removes every row your org owns — without going through us."],
+  ["Metadata-only by default", "The verdict, detector, surface and actor. Not the prompt."],
+  ["Benign traffic isn't kept", "Clean captures feed the inventory, then go."],
+  ["Content storage is opt-in", "Per org, encrypted under a per-tenant data key."],
+  ["Retention, export, deletion", "Per-org retention down to days; self-serve JSON export and organization deletion."],
+];
+
+// The controls inventory (formerly /trust). Every item is implemented and verifiable.
+const CONTROLS = [
+  ["Encryption", "TLS everywhere, Cloudflare at the edge and IAM-authenticated to the origin. Finding content encrypted under per-tenant data keys on encrypted Cloud SQL."],
+  ["Tenant isolation", "Postgres row-level security on every tenant table, beneath the application's own scoping. Per-tenant provider keys, so no org bills another's account."],
+  ["Identity & access", "Per-org OIDC and SAML 2.0 SSO, TOTP MFA, SCIM 2.0, admin/analyst/member roles, short-lived agent identities, instant session revocation, an admin audit log."],
+  ["Infrastructure", "Cloud Run reachable only through the Cloudflare front door; private-IP database; secrets in Secret Manager; Terraform-managed, with separate least-privilege identities for deploys, data jobs and infrastructure."],
+  ["Signed releases", "The CLI, hooks and installer are signed with a key held in Cloud KMS that never leaves it. Once a client has verified a signed release, it refuses unsigned or older ones."],
+  ["Resilience", "Daily backups with 14-day point-in-time recovery; restores drilled and verified row by row (July 2026, ~35 minutes); multi-region uptime probes."],
+  ["Open endpoint code", "Everything that runs on your machines is public: Apache-2.0 at github.com/SOC-Foundry/palivane-clients (the VS Code extension is MIT)."],
+  ["Testing", "Recurring internal adversarial reviews, most recently November 2026, findings remediated. An independent penetration test is scheduled in the SOC 2 window."],
+];
+
+const SUBPROCESSORS = [
+  ["Google Cloud Platform", "Hosting and database (us-central1, US)"],
+  ["Cloudflare", "Edge network, TLS, DDoS and WAF"],
+  ["Anthropic", "Optional LLM judge, off unless enabled; no customer content used for training"],
+  ["Google Workspace", "Transactional email"],
 ];
 
 const CELL = {
@@ -66,32 +71,41 @@ const CELL = {
   verticalAlign: "top",
 };
 
+const GRID = { gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))" };
+
+function Heading({ icon, children, id }) {
+  return (
+    <h2 className="lp-h2" id={id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      {icon && <span className="lp-card-icon" style={{ width: 34, height: 34, marginBottom: 0 }}>{icon}</span>}
+      {children}
+    </h2>
+  );
+}
+
 export default function Security() {
+  // /trust (the old controls page) lands on the controls section.
+  useEffect(() => {
+    if (window.location.pathname === "/trust" && !window.location.hash) {
+      document.getElementById("controls")?.scrollIntoView();
+    }
+  }, []);
+
   return (
     <div className="landing">
       <SiteNav />
 
       <section className="lp-pagehead">
-        <div className="lp-tagline">SECURITY</div>
+        <div className="lp-tagline">SECURITY &amp; TRUST</div>
         <h1>Where your data goes, and who is on the other end</h1>
-        <p>Palivane reads the traffic you care most about, so the deployment question matters
-           more here than it does for most tools. This page answers it directly: what crosses
-           the boundary, what we keep, what we are, and when you should run it yourself
-           instead. The controls behind it are inventoried on{" "}
-           <a href="/trust">Trust &amp; security</a>; the per-surface detail is in{" "}
-           <a href="/docs/data-flows">Data flows</a>.</p>
+        <p>What crosses the boundary, what we keep, who operates it, and the controls behind
+           it. Per-surface detail is in <a className="lp-textlink" href="/docs/data-flows">Data flows</a>; questions go
+           to <a className="lp-textlink" href="mailto:security@palivane.io">security@palivane.io</a>.</p>
       </section>
 
-      {/* Deployment first: it is the decision, and it changes every answer below it. */}
       <section className="lp-section">
         <div className="lp-wrap">
-          <h2 className="lp-h2" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="lp-card-icon" style={{ width: 34, height: 34, marginBottom: 0 }}><DuoServer /></span>
-            Two ways to run it
-          </h2>
-          <p className="lp-sub" style={{ maxWidth: "72ch" }}>
-            Same detection engine either way. What differs is who holds the data.
-          </p>
+          <Heading icon={<DuoServer />}>Two ways to run it</Heading>
+          <p className="lp-sub" style={{ maxWidth: "72ch" }}>Same engine either way. What differs is who holds the data.</p>
           <div style={{ overflowX: "auto" }}>
             <div className="lp-card" style={{ minWidth: 640, padding: 0 }}>
               <div style={{ display: "grid", gridTemplateColumns: "minmax(150px, 22%) 1fr 1fr" }}>
@@ -117,15 +131,9 @@ export default function Security() {
 
       <section className="lp-section alt">
         <div className="lp-wrap">
-          <h2 className="lp-h2" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="lp-card-icon" style={{ width: 34, height: 34, marginBottom: 0 }}><DuoEye /></span>
-            What actually crosses the boundary
-          </h2>
-          <p className="lp-sub" style={{ maxWidth: "72ch" }}>
-            Per capture plane, on a hosted deployment. On a self-hosted one the answer is
-            “nothing”, for all of them.
-          </p>
-          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}>
+          <Heading icon={<DuoEye />}>What crosses the boundary</Heading>
+          <p className="lp-sub" style={{ maxWidth: "72ch" }}>Per plane, on a hosted deployment. Self-hosted: nothing, for all of them.</p>
+          <div className="lp-cards" style={GRID}>
             {FLOWS.map(([t, body]) => (
               <div key={t} className="lp-card"><h3>{t}</h3><p>{body}</p></div>
             ))}
@@ -135,11 +143,8 @@ export default function Security() {
 
       <section className="lp-section">
         <div className="lp-wrap">
-          <h2 className="lp-h2" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="lp-card-icon" style={{ width: 34, height: 34, marginBottom: 0 }}><DuoLock /></span>
-            What we retain
-          </h2>
-          <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))" }}>
+          <Heading icon={<DuoLock />}>What we retain</Heading>
+          <div className="lp-cards" style={GRID}>
             {RETENTION.map(([t, body]) => (
               <div key={t} className="lp-card"><h3>{t}</h3><p>{body}</p></div>
             ))}
@@ -147,44 +152,36 @@ export default function Security() {
         </div>
       </section>
 
-      {/* The section this page exists for. Nothing here is softened: a reviewer who finds
-          any of it out later would be right to discount everything else we say. */}
+      {/* Nothing here is softened: a reviewer who finds any of it out later would be right
+          to discount everything else we say. */}
       <section className="lp-section alt">
         <div className="lp-wrap">
-          <h2 className="lp-h2" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="lp-card-icon" style={{ width: 34, height: 34, marginBottom: 0 }}><DuoUsers /></span>
-            Who is on the other end
-          </h2>
+          <Heading icon={<DuoUsers />}>Who is on the other end</Heading>
           <div style={{ maxWidth: "74ch" }}>
             <p className="lp-sub">
-              <strong>Palivane is founder-operated.</strong> One person builds it, deploys it
-              and is on call for it. That is unusual for a security vendor and you should
-              price it into your review rather than discover it afterwards.
+              <strong>Palivane is founder-operated.</strong> One person builds, deploys and is on
+              call for it. Price that into your review.
             </p>
             <p className="lp-sub">
-              <strong>We are not SOC 2 certified today.</strong> The Type II program is
-              underway with a report expected in 2027, Type I sooner, and an independent
-              penetration test is scheduled inside that observation window. Until those
-              exist, what we can give a reviewer is this page, our DPA, a completed CAIQ
-              questionnaire and the source of everything that runs on your machines. Not an
-              attestation. If your process requires one, self-hosting is the honest answer
-              and we would rather say so now than waste your quarter.
+              <strong>We are not SOC 2 certified today.</strong> The Type II program is underway,
+              report expected in 2027, Type I sooner. Until then we offer this page, our DPA, a
+              completed CAIQ and the source of everything on your machines. If your process needs
+              an attestation, self-hosting is the honest answer.
             </p>
             <p className="lp-sub">
-              <strong>A hosted deployment concentrates risk, by design.</strong> It holds
-              scored, labelled findings across every tenant — which makes it a more
-              attractive target than any single tool it watches. Metadata-only defaults,
-              per-tenant encryption keys and Postgres row-level security are how we shrink
-              that blast radius, and they are real. They do not make the concentration go
-              away. If your threat model takes that seriously, it is a legitimate reason to
-              run Palivane yourself, and we will help you do it.
+              <strong>A hosted deployment concentrates risk.</strong> It holds findings across
+              tenants. Metadata-only defaults, per-tenant keys and row-level security shrink that
+              blast radius; they don't remove it. If that matters to you, run it yourself and we
+              will help.
             </p>
             <p className="lp-sub">
-              <strong>Your own inventory will flag us.</strong> Palivane does not exempt
-              itself from its own shadow-AI detection: unless you add it to your sanctioned
-              list, <code>app.palivane.io</code> shows up as an unsanctioned destination in
-              your inventory alongside everything else. That is deliberate. A tool that hid
-              its own traffic from you would be the wrong tool.
+              <strong>Your own inventory will flag us.</strong> Until you sanction it,{" "}
+              <code>app.palivane.io</code> shows as an unsanctioned AI destination like any other.
+            </p>
+            <p className="lp-sub">
+              <strong>Self-hosting goes through us today.</strong> The client side is public to
+              audit; the server package is handed over and supported rather than downloaded.{" "}
+              <a className="lp-textlink" href="mailto:sales@palivane.io">sales@palivane.io</a>.
             </p>
           </div>
         </div>
@@ -192,50 +189,42 @@ export default function Security() {
 
       <section className="lp-section">
         <div className="lp-wrap">
-          <h2 className="lp-h2">Self-hosting, plainly</h2>
-          <div style={{ maxWidth: "74ch" }}>
-            <p className="lp-sub">
-              Self-hosting is a real, supported deployment — and today it goes through us
-              rather than a download link. Everything that runs on your machines is already
-              public at{" "}
-              <a href="https://github.com/SOC-Foundry/palivane-clients">github.com/SOC-Foundry/palivane-clients</a>{" "}
-              — Apache-2.0, apart from the VS Code extension, which is MIT — so you can
-              audit the capture side before you talk to anyone. The server package
-              is not yet a self-serve release; we hand it over, help you stand it up and
-              support it from there.
-            </p>
-            <p className="lp-sub">
-              Being direct about the trade: that means the deployment which requires the most
-              trust from us is the one you can start alone, and the one that requires none is
-              the one where you have to talk to us first. We would rather state that than
-              let you find it at the bottom of a pricing page. If self-hosting is what your
-              review needs, start the conversation:{" "}
-              <a href="mailto:sales@palivane.io">sales@palivane.io</a>.
-            </p>
+          <Heading icon={<DuoShield />} id="controls">Controls</Heading>
+          <div className="lp-cards" style={GRID}>
+            {CONTROLS.map(([t, body]) => (
+              <div key={t} className="lp-card"><h3>{t}</h3><p>{body}</p></div>
+            ))}
           </div>
         </div>
       </section>
 
       <section className="lp-section alt">
         <div className="lp-wrap">
-          <h2 className="lp-h2" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="lp-card-icon" style={{ width: 34, height: 34, marginBottom: 0 }}><DuoRadar /></span>
-            You do not have to decide this first
-          </h2>
-          <div style={{ maxWidth: "74ch" }}>
-            <p className="lp-sub">
-              Palivane starts in monitor mode: it observes, scores and reports, and blocks
-              nothing until you turn enforcement on for specific rules. So the first decision
-              is not “do we route everything through this vendor forever”, it is “can we look
-              at what is already leaving, for a couple of weeks, and read the report”.
-            </p>
-            <p className="lp-sub">
-              That is a smaller question, and it is the one most teams should answer first —
-              on hosted if the scope is acceptable to you, self-hosted if it is not.{" "}
-              <a href="mailto:sales@palivane.io">Ask for an AI exposure assessment</a>, or
-              read <a href="/trust">how the controls are built</a> before you do.
-            </p>
+          <h2 className="lp-h2" id="disclosure">Vulnerability disclosure</h2>
+          <p className="lp-sub" style={{ maxWidth: "74ch" }}>
+            Report to <a className="lp-textlink" href="mailto:security@palivane.io">security@palivane.io</a> (also at{" "}
+            <code>/.well-known/security.txt</code>). Acknowledgement within 2 business days,
+            triage within 5. Good-faith testing against your own org or the public site is
+            authorized and we won't pursue it legally, provided it respects other tenants' data,
+            avoids degrading the service, and allows reasonable time to fix. In scope: palivane.io,
+            app.palivane.io, the browser extension and the open-source clients. Out of scope:
+            denial of service, social engineering, and third-party services.
+          </p>
+
+          <h2 className="lp-h2" style={{ marginTop: 36 }}>Compliance & subprocessors</h2>
+          <p className="lp-sub" style={{ maxWidth: "74ch" }}>
+            SOC 2 Type II in progress (report 2027). The DPA is accepted in-product with version
+            history; the CAIQ is available on <a className="lp-textlink" href="mailto:security@palivane.io">request</a>.
+          </p>
+          <div className="lp-cards" style={GRID}>
+            {SUBPROCESSORS.map(([name, role]) => (
+              <div key={name} className="lp-card"><h3>{name}</h3><p>{role}</p></div>
+            ))}
           </div>
+          <p className="lp-sub" style={{ marginTop: 16 }}>
+            Not ready to decide? Palivane starts in monitor mode and blocks nothing until you say
+            so. <a className="lp-textlink" href="mailto:sales@palivane.io">Ask for an AI exposure assessment</a>.
+          </p>
         </div>
       </section>
 

@@ -15,35 +15,22 @@ const PIPELINE = [
   { icon: <IconAlert />, label: "Verdict", sub: "allow, warn, or block" },
 ];
 
-const SURFACES = [
-  ["llm_io", "Prompts & responses on your own models"],
-  ["ai_usage", "Content bound for external AI tools"],
-  ["collab", "Collaboration content (Slack, Teams) that AI integrations can read"],
-  ["mcp", "MCP servers — local stdio and remote"],
-  ["agent_tools", "An assistant's own tools: shell, file edits, reads"],
-  ["deps", "Dependency manifests (supply chain)"],
-  ["ide", "Editor extensions"],
-  ["secrets", "Credentials at rest on a device"],
-  ["oversharing", "LLM responses returning restricted data"],
-  ["ci", "GitHub Actions workflows, runner posture, and agents running in CI"],
-];
-
 const DETECTORS = [
-  { icon: <DuoMessageAlert />, title: "Prompt threats", surface: "llm_io", body: "Instruction-override / injection, jailbreak & guardrail-evasion, and system-prompt / secret exfiltration. Matches a normalized view of the text (folds homoglyph, full-width, zero-width & spacing tricks) and decodes base64 blobs to re-scan hidden payloads." },
-  { icon: <DuoGhost />, title: "Shadow-AI", surface: "ai_usage · mcp", body: "Secrets, PII (SSN with/without dashes, Luhn-valid cards, IBAN / national IDs, single-record combos), proprietary source code, and confidential business content, including classification labels (TLP, Purview/MIP)." },
-  { icon: <DuoTool />, title: "Agentic (MCP) guard", surface: "mcp", body: "Sensitive-file access, dangerous commands, tool-poisoning, and untrusted MCP servers, read off the agent's tool-use, even for local stdio MCP." },
-  { icon: <DuoPackage />, title: "Supply-chain & IDE", surface: "deps · ide", body: "Risky dependency manifests (install-script abuse, non-registry sources, known-bad packages + OSV CVEs) and unapproved editor extensions." },
-  { icon: <DuoKey />, title: "Credentials at rest", surface: "secrets", body: "Live keys on managed endpoints (cloud SA keys, .npmrc, .git-credentials, key files) optionally with TruffleHog/Gitleaks verification." },
-  { icon: <DuoEye />, title: "Agent safety & oversharing", surface: "ide · oversharing · ci", body: "Unsafe coding-agent autonomy (YOLO / auto-apply / --dangerously-skip-permissions), dangerous commands in AI chats, and need-to-know oversharing, an LLM returning restricted data to the wrong recipient." },
-  { icon: <DuoNodes />, title: "ML classifier", surface: "ai_usage · llm_io · collab", body: "A hashed n-gram model (trained on a labeled code/prose corpus; 96% accuracy, 97% precision held-out) catches the source-code boundary cases keyword rules read past (config fragments, minified snippets), and a second model flags injection PHRASING (paraphrased 'ignore your instructions') at held-out precision 1.0. CPU-only and deterministic, sub-millisecond, runs on-box: no model service in the loop. Alone it corroborates; agreeing with the rules check it escalates." },
-  { icon: <DuoTerminal />, title: "CI runners", surface: "ci", body: "Agents on GitHub Actions runners (Claude Code, Codex, Gemini, aider, as actions or CLI steps), flagged when a step hands one non-model credentials or disables approvals. Plus the posture that exposes a runner: pull_request_target checking out PR head, unpinned third-party actions, write-all permissions, secrets: inherit, self-hosted runners on PR triggers." },
+  { icon: <DuoMessageAlert />, title: "Prompt threats", surface: "llm_io", body: "Injection, jailbreak and system-prompt exfiltration, matched on text with look-alike and zero-width tricks folded and encoded blobs decoded." },
+  { icon: <DuoGhost />, title: "Shadow-AI", surface: "ai_usage · mcp · collab", body: "Secrets, PII and PHI, proprietary source code, and confidential content including TLP and Purview labels." },
+  { icon: <DuoTool />, title: "Agentic (MCP) guard", surface: "mcp", body: "Sensitive-file access, dangerous commands, tool poisoning and untrusted servers, read off the agent's tool use, local stdio MCP included." },
+  { icon: <DuoPackage />, title: "Supply-chain & IDE", surface: "deps · ide", body: "Risky dependencies (install scripts, non-registry sources, known-bad packages, CVEs) and unapproved editor extensions." },
+  { icon: <DuoKey />, title: "Credentials at rest", surface: "secrets", body: "Keys on laptops, in buckets, repositories and databases, found where they sit; only masked findings leave." },
+  { icon: <DuoEye />, title: "Agent safety & oversharing", surface: "ide · oversharing", body: "Coding agents running with approvals off, dangerous commands in AI chats, and an LLM returning restricted data to the wrong person." },
+  { icon: <DuoNodes />, title: "ML classifiers", surface: "ai_usage · llm_io · collab", body: "Two on-box models: one finds code the keyword rules read past, one finds paraphrased injection. CPU-only, sub-millisecond." },
+  { icon: <DuoTerminal />, title: "CI runners", surface: "ci", body: "Agents in pipelines handed credentials or approvals turned off, plus runner posture: pwn-request triggers, unpinned actions, write-all tokens." },
 ];
 
 const TIERS = [
-  { cls: "t-crit", badge: "Tier 1", title: "Known formats", action: "hard block", body: "Distinctive-prefix patterns. OpenAI, Anthropic, AWS, GitHub (incl. fine-grained PATs), GitLab, Stripe, Slack, Google, npm/PyPI, PEM keys, JWTs, labeled key=value. Near-certain, full weight." },
-  { cls: "t-high", badge: "Tier 1b", title: "Evasion variants", action: "hard block", body: "The same prefixes with the separator stripped (ghp_... → ghp...). A real key never ships without its delimiter, so this reads as a deliberate DLP bypass." },
-  { cls: "t-susp", badge: "Tier 2", title: "High-entropy heuristic", action: "warn", body: "Novel / vendor tokens with no known prefix, caught via Shannon entropy + mixed character classes, excluding hex digests (git SHAs) and UUIDs. Lower-confidence, so it warns." },
-  { cls: "t-ai", badge: "Custom", title: "Your own patterns", action: "your call", body: "Per-org secret / PII / confidential regexes (customer IDs, account numbers, MRNs, codenames), applied across every plane, no redeploy." },
+  { cls: "t-crit", badge: "Tier 1", title: "Known formats", action: "hard block", body: "Distinctive prefixes: OpenAI, Anthropic, AWS, GitHub, GitLab, Stripe, Slack, Google, npm, PyPI, PEM keys, JWTs." },
+  { cls: "t-high", badge: "Tier 1b", title: "Disguised keys", action: "hard block", body: "The same keys with separators stripped, spaced out, written in look-alike characters, or base64/hex-encoded." },
+  { cls: "t-susp", badge: "Tier 2", title: "High-entropy heuristic", action: "warn", body: "Novel tokens with no known prefix, by entropy and character mix, excluding hashes and UUIDs." },
+  { cls: "t-ai", badge: "Custom", title: "Your own patterns", action: "your call", body: "Per-org patterns (customer IDs, account numbers, codenames) applied on every plane." },
 ];
 
 const SEVERITIES = [
@@ -62,19 +49,18 @@ export default function HowItWorks() {
       <section className="lp-pagehead">
         <div className="lp-tagline">HOW IT WORKS</div>
         <h1>How Palivane works</h1>
-        <p>Every piece of AI-bound content ends up as one risk verdict. The engine is regex and
-           heuristics, deterministic, millisecond-fast, and it calls no third-party AI service
-           to reach a decision. The one exception is the optional LLM judge, which is off
-           unless you turn it on and sends the content it reviews to your chosen provider.</p>
+        <p>Every piece of AI-bound content ends up as one verdict, reached by deterministic
+           rules and on-box models in milliseconds, with no third-party AI call unless you turn
+           on the optional LLM judge.</p>
       </section>
 
       {/* Pipeline */}
       <section className="lp-section">
         <div className="lp-wrap">
           <h2 className="lp-h2">Everything runs through the same five steps</h2>
-          <p className="lp-sub">A prompt to your own model, a paste into ChatGPT, an action an AI
-             assistant is about to take, a commit, one pipeline, one policy, one console. Each
-             step is spelled out below.</p>
+          <p className="lp-sub">A prompt, a paste into ChatGPT, an agent's next action, a commit:
+             one pipeline, one policy, one console. Each item runs only the detectors for its
+             surface, and one that errors can never sink the analysis.</p>
           <div className="hiw-pipeline">
             {PIPELINE.map((s, i) => (
               <div className="hiw-pipe-cell" key={s.label}>
@@ -90,28 +76,12 @@ export default function HowItWorks() {
         </div>
       </section>
 
-      {/* Surfaces */}
-      <section className="lp-section alt">
-        <div className="lp-wrap">
-          <h2 className="lp-h2">Routed by surface</h2>
-          <p className="lp-sub">Each submission is tagged with where it came from. The engine runs
-             only the detectors that declare that surface, and one that errors can never sink the analysis.</p>
-          <div className="hiw-surfaces">
-            {SURFACES.map(([key, desc]) => (
-              <div className="hiw-surface" key={key}>
-                <code>{key}</code><span>{desc}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* Detectors */}
       <section className="lp-section">
         <div className="lp-wrap">
           <h2 className="lp-h2">The offline detectors</h2>
-          <p className="lp-sub">Each emits <strong>signals</strong>: pieces of evidence carrying a
-             <em> weight</em> (how much it matters) and a <em>confidence</em> (how sure it is).</p>
+          <p className="lp-sub">Each emits <strong>signals</strong>, evidence with a weight and a
+             confidence.</p>
           <div className="lp-cards">
             {DETECTORS.map((d) => (
               <div className="lp-card" key={d.title}>
@@ -149,9 +119,8 @@ export default function HowItWorks() {
       <section className="lp-section">
         <div className="lp-wrap">
           <h2 className="lp-h2">Scoring fuses signals into one verdict</h2>
-          <p className="lp-sub">A <strong>saturating probabilistic OR</strong>: a few strong signals
-             reliably escalate, while many weak ones can't trivially max the score. Attack / data-loss
-             is the base; an "AI-generated" read only amplifies, never fires on its own.</p>
+          <p className="lp-sub">A <strong>saturating OR</strong>: a few strong signals escalate,
+             many weak ones can't max the score.</p>
           <div className="hiw-formula">
             <code>risk = 1 − Π ( 1 − weightᵢ × confidenceᵢ )</code>
             <span>combined, mapped to 0-100 → a severity and a recommended action</span>
@@ -175,11 +144,7 @@ export default function HowItWorks() {
       {/* Latency */}
       <section className="lp-section">
         <div className="lp-wrap">
-          <h2 className="lp-h2">What inline inspection costs in latency</h2>
-          <p className="lp-sub">The whole detection engine is deterministic and in-process,
-             no model call sits between the prompt and the provider. Measured on a
-             production-class core (rules path, the default; the optional LLM judge runs
-             out-of-band):</p>
+          <h2 className="lp-h2">What inline inspection costs</h2>
           <table className="hiw-table">
             <thead><tr><th>Input</th><th>p50</th><th>p95</th></tr></thead>
             <tbody>
@@ -188,10 +153,8 @@ export default function HowItWorks() {
               <tr><td>Document paste (~18&nbsp;KB)</td><td><code>44&nbsp;ms</code></td><td><code>65&nbsp;ms</code></td></tr>
             </tbody>
           </table>
-          <p className="lp-sub" style={{ fontSize: 13, opacity: 0.8 }}>Scoring time only,
-             network round-trip to your Palivane deployment adds the usual in-region
-             single-digit milliseconds. Streaming responses pass through live in monitor
-             mode, inspection tees the stream rather than buffering it.</p>
+          <p className="lp-sub" style={{ fontSize: 13, opacity: 0.8 }}>Scoring time on the rules
+             path, measured in-process. Streaming responses pass through live in monitor mode.</p>
         </div>
       </section>
 
@@ -203,14 +166,13 @@ export default function HowItWorks() {
           <div className="hiw-modes">
             <div className="hiw-mode">
               <h3><span className="hiw-dot dot-monitor" /> Monitor</h3>
-              <p>Only confirmed secret and personal-data leaks are blocked; everything else passes through and findings are recorded. Ideal for a
-                 rollout's first phase, so you see exactly what would trip before enforcing.</p>
+              <p>Findings are recorded and traffic passes, except confirmed secret and personal-data
+                 leaks, which are blocked. See what would trip before you enforce.</p>
             </div>
             <div className="hiw-mode hiw-mode-enforce">
               <h3><span className="hiw-dot dot-enforce" /> Enforce</h3>
-              <p>Findings at or above your block severity are stopped at the source: the extension
-                 shows a block modal, the gateway returns an error, the git hook fails the commit,
-                 the GitHub Actions check fails the pull request.</p>
+              <p>Findings at your block severity are stopped at the source: a block in the browser,
+                 an error from the gateway, a failed commit or pull request.</p>
             </div>
           </div>
           <p className="lp-sub" style={{ marginTop: 18 }}>Source-code detection is auto-suppressed for
@@ -235,10 +197,9 @@ export default function HowItWorks() {
       <section className="lp-section alt">
         <div className="lp-wrap">
           <h2 className="lp-h2">…or skip the console entirely</h2>
-          <p className="lp-sub">Palivane ships an <strong>MCP server</strong>, so you can drive it from
-             the assistant you already use: ask what leaked today, work the triage queue, check
-             shadow-AI usage, or pull a compliance report from Claude or any MCP client, without ever
-             opening a dashboard.</p>
+          <p className="lp-sub">The console is also a hosted <strong>MCP server</strong>. Add{" "}
+             <code>app.palivane.io/api/mcp/</code> to Claude or any MCP client, approve it once, and
+             ask what leaked today, work the triage queue, or check shadow-AI usage.</p>
           <figure className="lp-shot lp-shot-lead">
             <video src="/shots/mcp-demo.mp4?v=2" poster="/shots/mcp-demo-poster.png" controls playsInline
                    preload="metadata"
@@ -247,7 +208,7 @@ export default function HowItWorks() {
                action, and OWASP Top-10 coverage.</figcaption>
           </figure>
           <p className="lp-sub" style={{ textAlign: "center" }}>
-            <a className="lp-textlink" href="https://github.com/SOC-Foundry/palivane-clients/tree/main/mcp-server">Wire it into Claude Code or Desktop →</a>
+            <a className="lp-textlink" href="/docs/mcp">Connect your assistant →</a>
           </p>
         </div>
       </section>
@@ -256,11 +217,9 @@ export default function HowItWorks() {
       <section className="lp-section">
         <div className="lp-wrap">
           <h2 className="lp-h2">Built for agents that act</h2>
-          <p className="lp-sub">When agents take actions on their own, three questions matter:
-             is this finding real, is the agent who it claims to be, and which agent fed which?
-             Palivane answers all three: an <strong>analyst</strong> that investigates and
-             recommends, <strong>identity attestation</strong> that blocks unattested tool calls,
-             and an <strong>agent-to-agent flow graph</strong> that shows where risk crossed a hop.</p>
+          <p className="lp-sub">An <strong>analyst</strong> that investigates findings and
+             recommends, <strong>identity attestation</strong> that blocks unattested tool calls, and
+             an <strong>agent-to-agent flow graph</strong> that shows where risk crossed a hop.</p>
           <figure className="lp-shot lp-shot-lead">
             <video src="/shots/agent-demo.mp4?v=2" poster="/shots/agent-demo-poster.png" controls playsInline
                    preload="metadata"
@@ -278,12 +237,9 @@ export default function HowItWorks() {
           <div className="lp-banner">
             <IconShield width={22} height={22} />
             <div>
-              <strong>Zero external LLM dependency, the judge is additive.</strong> Everything above
-              runs with no API key and no outbound call: fast, private, deterministic, and complete on
-              its own. When you want a second opinion, add the optional LLM judge, a frontier model
-              (Claude, GPT, or Gemini) that reads content like an analyst for the novel cases the rules
-              miss, running on a provider API key you control. Turn it off for data-residency and the
-              engine still fully works.
+              <strong>No external LLM dependency.</strong> Everything above runs with no API key and
+              no outbound call. The optional LLM judge (Claude, GPT or Gemini, on your key) adds a
+              second opinion for the cases rules miss.
             </div>
             <a className="primary-btn slim" href={signInUrl()} style={{ textDecoration: "none" }}>Open the console →</a>
           </div>
