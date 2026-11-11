@@ -137,6 +137,10 @@ these will block on every surface. Everything is attributed to your `@palivane.i
 - Revoke any test keys in the console → **Team / API keys**, including the console
   keys from step 4 (**Connections → Console API key**). They are long-lived by design,
   so nothing expires them for you.
+- Close the test findings: Console → **Findings**, select them, and dismiss as **Expected**
+  (they are real detections of a test, not false positives, so the precision readout keeps
+  them out of its false-positive count). Left open, they sit at the top of the queue as
+  critical alerts long after the test.
 
 ## What "pass" means
 All three planes produce findings attributed to you, and the test payload is blocked in the
