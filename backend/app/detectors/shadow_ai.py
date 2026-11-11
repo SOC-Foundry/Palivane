@@ -646,6 +646,24 @@ def _card_shape_ok(d: str) -> bool:
     return False
 
 
+# How card numbers are actually written: contiguous, or in the network's groups with one kind of
+# separator (4-4-4-4; Amex 4-6-5; Diners 4-6-4; short Visa 4-4-4-1..3 or 4-3-3-3). The candidate
+# regex takes any single space or dash between digits, so a run of small numbers in a command or
+# a table ("4 0 0 1 2 ...") could add up to a "card" that passed both Luhn and the network prefix.
+_CARD_GROUPINGS = frozenset({(4, 4, 4, 4), (4, 6, 5), (4, 6, 4), (4, 4, 4, 3), (4, 4, 4, 2),
+                             (4, 4, 4, 1), (4, 3, 3, 3)})
+
+
+def _card_grouping_ok(raw: str) -> bool:
+    raw = raw.strip(" -")        # the candidate regex also takes the separator after the last digit
+    groups = re.split(r"[ -]", raw)
+    if len(groups) == 1:
+        return True
+    if len(set(re.findall(r"[ -]", raw))) > 1:
+        return False
+    return tuple(len(g) for g in groups) in _CARD_GROUPINGS
+
+
 def _sanctioned(override: str | None = None) -> set[str]:
     """Approved AI destinations — a per-tenant override when supplied (via metadata),
     else the global SANCTIONED_AI_TOOLS. Hosts or tool names, comma or newline separated,
@@ -888,6 +906,7 @@ class ShadowAIDetector:
         cards = [m.group(0) for m in CC_CANDIDATE_RE.finditer(text)
                  if _luhn_ok(re.sub(r"[ -]", "", m.group(0)))
                  and _card_shape_ok(re.sub(r"[ -]", "", m.group(0)))
+                 and _card_grouping_ok(m.group(0))
                  and not (illustrative and re.sub(r"[ -]", "", m.group(0)) in _TEST_CARDS)]
         if cards:
             found.append(f"{len(cards)} payment card number(s)")
