@@ -176,7 +176,10 @@ class _GeminiBackend:
         self._genai = genai
         self._client = genai.Client(
             api_key=api_key,
-            http_options=genai.types.HttpOptions(timeout=int(settings.judge_timeout * 1000)))
+            # v1beta pinned: google-genai 3.0 moved the default to v1, and the structured-output
+            # fields this sends (responseSchema, systemInstruction) are what v1beta serves.
+            http_options=genai.types.HttpOptions(api_version="v1beta",
+                                                 timeout=int(settings.judge_timeout * 1000)))
         self.model = model
 
     def run(self, system: str, user: str, output_format=JudgeVerdict):
