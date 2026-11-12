@@ -10,17 +10,17 @@
 fastapi==0.162.0
 uvicorn[standard]==0.54.0
 sqlalchemy==2.1.8
-pydantic==2.14.2
-anthropic[vertex,bedrock]==2.4.0  # LLM judge — Claude via API key, GCP Vertex, or AWS Bedrock
+pydantic==2.14.3
+anthropic[vertex,bedrock]==2.6.0  # LLM judge — Claude via API key, GCP Vertex, or AWS Bedrock
                           # (extras' deps already present: google-auth via google-genai, boto3 below)
-openai==3.45.0            # LLM judge — GPT backend (optional)
+openai==3.46.0            # LLM judge — GPT backend (optional)
 google-genai==2.34.0      # LLM judge — Gemini backend (optional)
 alembic==1.20.1           # schema migrations
 psycopg2-binary==2.9.13   # PostgreSQL driver
 cryptography==50.0.2      # encrypt tenant secrets + finding content at rest
                           # (>=50.0.0: CVE-2026-69247 PKCS#7 Bleichenbacher oracle)
 argon2-cffi==25.1.0       # argon2id password hashing (legacy PBKDF2 still verified)
-authlib==1.9.3            # OIDC ID-token / JWKS validation (>=1.9.1: GHSA-8m4g-j4wp-wgcg, -6v38-4h7w-rj9h, -7vr2-2fgp-9w7p)
+authlib==1.9.5            # OIDC ID-token / JWKS validation (>=1.9.1: GHSA-8m4g-j4wp-wgcg, -6v38-4h7w-rj9h, -7vr2-2fgp-9w7p)
 prometheus-client==0.26.0 # /metrics exposition
 python3-saml==1.16.0      # per-tenant SAML SSO (pulls lxml + xmlsec manylinux wheels)
 mcp>=2.3.0,<3             # remote MCP endpoint (app/mcp_remote.py), on the v2 API
@@ -28,7 +28,7 @@ mcp>=2.3.0,<3             # remote MCP endpoint (app/mcp_remote.py), on the v2 A
 python-multipart==0.0.33  # SAML ACS form parsing (>=0.0.18: CVE-2024-53981 multipart DoS)
 regex==2026.9.29           # tenant/admin custom patterns only — backtracking-resistant engine
                           # + per-match timeout= (stdlib `re` has neither) to bound ReDoS
-boto3==1.43.123            # optional SIEM/data-lake delivery to S3 (per-tenant, lazy-imported)
+boto3==1.43.125            # optional SIEM/data-lake delivery to S3 (per-tenant, lazy-imported)
 # Image DLP via OCR (app/ocr.py). Installed everywhere, used only when PALIVANE_OCR=true AND
 # the tesseract binary is on PATH (the Cloud Run/compose image installs it; native installs
 # add it with the OS package manager). Local only — never a cloud vision API.
