@@ -30,7 +30,7 @@ log = logging.getLogger("palivane.slack_interactions")
 router = APIRouter(prefix="/api", tags=["slack"])
 
 _DONE = {"redact": "Redacted", "delete": "Deleted", "notify": "Sender notified",
-         "dismiss": "Dismissed as a false positive"}
+         "contain": "Sender contained for 24 hours", "dismiss": "Dismissed as a false positive"}
 
 
 def _respond(url: str, payload: dict) -> None:
@@ -157,6 +157,19 @@ def handle_click(payload: dict, db_factory=None) -> None:
             audit_log.record(db, connector.tenant_id, admin.email,
                              "slack.sender_notified" if ok else "slack.sender_notify_failed",
                              target, {**base, **({} if ok else {"error": why})})
+        elif action == "contain":
+            from . import containment
+            try:
+                row = containment.create(db, connector.tenant_id, "user", fields.get("e", ""),
+                                         f"Slack alert on finding #{finding.id} ({where})", None,
+                                         admin.email)
+                ok, why = True, ""
+                base["containment_id"] = row.id
+            except containment.ContainmentError as e:
+                ok, why = False, str(e)
+            if not ok:
+                audit_log.record(db, connector.tenant_id, admin.email, "containment.failed",
+                                 fields.get("e", ""), {**base, "error": why})
         elif action == "dismiss":
             finding.status = "dismissed"
             review.record_review(finding, "dismissed", admin.email, "manual", "false_positive")
