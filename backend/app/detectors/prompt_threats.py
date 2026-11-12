@@ -236,6 +236,40 @@ def _is_quoted_mention(text: str, term: str) -> bool:
     return seen > 0
 
 
+# The one-word jailbreak terms ("jailbreak", "unfiltered") are also ordinary nouns and
+# adjectives in writing ABOUT the subject: "attack strategies, including jailbreaks, prompt
+# injection and multi-turn attacks" is a product description, not an attempt. A hit whose
+# every occurrence is a plural or sits in a list ("including X,", "X, Y and Z", "such as X")
+# with no imperative is a mention. Multi-word terms ("do anything now", "ignore your safety")
+# read as commands on their own and are never treated this way.
+_NOUN_LIST_CUE = re.compile(
+    r"(?:including|such as|like|e\.g\.|against|known|common|detect\w*|test\w*|strateg\w*|"
+    r"attacks?|attempts?|techniques?|categor\w*|types? of|kinds? of|list of)\W{1,12}$"
+    r"|^\W{0,3}(?:s\b|ing\b|ed\b|,\s|\sand\b|\sor\b)")
+_IMPERATIVE_NEAR = re.compile(
+    r"\b(?:you are|you're|you will|you must|now you|from now|act as|pretend|enable|activate|"
+    r"enter|switch to|turn on|become|mode on|i want you|let'?s)\b")
+
+
+def _is_noun_mention(low: str, term: str) -> bool:
+    """True when a ONE-WORD term appears only as a noun in prose about the subject."""
+    tl = term.lower()
+    if " " in tl:
+        return False
+    pos, seen = low.find(tl), 0
+    while pos != -1:
+        seen += 1
+        end = pos + len(tl)
+        before, after = low[max(0, pos - 60):pos], low[end:end + 12]
+        window = low[max(0, pos - 160):end + 160]
+        if _IMPERATIVE_NEAR.search(window):
+            return False
+        if not (_NOUN_LIST_CUE.search(before) or _NOUN_LIST_CUE.match(after)):
+            return False
+        pos = low.find(tl, end)
+    return seen > 0
+
+
 # Terms too common in ordinary source/config (YAML keys, prompt templates in code) to
 # match against ai_usage captures — kept for llm_io, where the content is a live prompt.
 _CODE_FP_TERMS = {"system:", "system prompt:"}
@@ -317,7 +351,8 @@ class PromptThreatDetector:
                 detector=self.name, evidence=", ".join(inj[:5]),
             ))
 
-        jb = [t for t in _hits(low, JAILBREAK_TERMS) if not _is_quoted_mention(text, t)]
+        jb = [t for t in _hits(low, JAILBREAK_TERMS)
+              if not _is_quoted_mention(text, t) and not _is_noun_mention(low, t)]
         if jb:
             signals.append(Signal(
                 category=Category.JAILBREAK,
