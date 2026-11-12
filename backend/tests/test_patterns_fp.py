@@ -545,3 +545,16 @@ def test_keyword_value_after_newline_folding_not_flagged():
     code = 'token = (bot.get("bot_token") or "").strip()\n        if not token:\n            continue\n'
     assert "Credential assignment" not in find_secrets(normalize_for_match(code))
     assert "Credential assignment" in find_secrets('password = "continue"')
+
+
+def test_a_password_hash_is_not_a_possible_secret():
+    # A modular-crypt hash is what is stored INSTEAD of a secret. One bcrypt hash pasted into
+    # a chat became four "possible secrets" (prod #1419, 2026-11-11): the candidate regex
+    # stops at each `$`, so the hash shredded into token-shaped pieces. The hash is masked
+    # whole; a bare long base64 run (an exfiltrated key's shape) is still scanned, above.
+    body = "".join(chr(65 + (i * 7) % 26) + str(i % 10) for i in range(27))   # 54 mixed chars
+    for hashed in ("$2b$12$" + body, "$argon2id$v=19$m=65536,t=3,p=4$" + body[:22] + "$" + body,
+                   "$6$" + body[:16] + "$" + body + body[:32], "$pbkdf2-sha256$29000$" + body):
+        assert find_high_entropy_tokens("stored value: " + hashed) == [], hashed[:12]
+    # The same characters with no hash marker still read as a possible key.
+    assert find_high_entropy_tokens("stored value: " + body)
