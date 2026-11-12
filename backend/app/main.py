@@ -34,7 +34,7 @@ from .google_login import router as google_login_router
 from .domains import router as domains_router
 from .allowlist import router as allowlist_router
 from .precision import router as precision_router
-from . import review
+from . import containment, review
 from .config import settings, _env
 from .gateway import gemini_router, router as gateway_router
 from .database import Base, engine as db_engine, get_db
@@ -46,6 +46,7 @@ from .models import (Agent, AgentRole, CorpusSample, Finding, PolicyOverride, Sa
 from .schemas import (
     A2AIngest,
     AIUsageIngest,
+    ContainmentCreate,
     JustifyRequest,
     AnalyzeRequest,
     BatchAnalyzeRequest,
@@ -1468,6 +1469,11 @@ def ingest_ai_usage(
     static EXTENSION_INGEST_TOKEN — not a user JWT — so it can be deployed via policy.
     Returns an action the client enforces: allow / warn / block."""
     tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
+    held = _containment_answer(db, tenant_id, _attributed_actor(body.user, default_actor),
+                               x_palivane_token, x_palivane_agent, "ai-usage", body.tool or "",
+                               user_agent, body.scan_failed)
+    if held:
+        return held
     over = _ingest_over_budget(db, tenant_id)
     if over:
         return _over_quota_verdict(db, tenant_id, body.content,
@@ -1604,8 +1610,15 @@ def ingest_a2a(
     agent's behavioral chain: a poisoned inbound message followed by that agent exfiltrating
     reads as one correlated attack, not two unrelated events. Token-gated like other ingest."""
     tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
-    _enforce_rate(db, tenant_id)
     to_agent = (body.to_agent or "").strip() or default_actor
+    held = _containment_answer(db, tenant_id, to_agent, x_palivane_token, x_palivane_agent,
+                               "a2a", (body.from_agent or "").strip(), user_agent)
+    if held is None and containment.active(db, tenant_id):
+        # The receiving agent is the session actor; a contained SENDER is stopped too.
+        held = containment.check(db, tenant_id, agent=(body.from_agent or "").strip())
+    if held:
+        return held
+    _enforce_rate(db, tenant_id)
     claimed = _actor_claimed(to_agent, default_actor, default_claimed)
     frm = (body.from_agent or "").strip() or "unknown-agent"
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
@@ -2301,6 +2314,21 @@ def _clean_scan_failed(raw, now: datetime) -> dict | None:
             "first": first or last or now, "last": last or first or now}
 
 
+def _containment_answer(db: Session, tenant_id: int | None, actor: str, token: str,
+                        agent_header: str, plane: str, tool: str = "", client_ua: str = "",
+                        scan_failed=None) -> dict | None:
+    """The block verdict when an admin has contained this caller (app/containment.py), else
+    None. Checked before the quota and parse-miss shortcuts, which answer allow. The sensor
+    still checks in, so a contained device reads as alive and blocked, not as gone dark."""
+    if not containment.active(db, tenant_id):
+        return None
+    agent = _capture_agent(token, agent_header, tenant_id, db)
+    held = containment.check(db, tenant_id, actor=actor, agent=agent, token=token)
+    if held is not None:
+        _record_heartbeat(db, tenant_id, actor, plane, tool, client_ua, scan_failed=scan_failed)
+    return held
+
+
 def _record_heartbeat(db: Session, tenant_id: int | None, actor: str,
                       plane: str, tool: str = "", client_ua: str = "",
                       parse_miss: bool = False, scan_failed=None) -> None:
@@ -2523,6 +2551,11 @@ def ingest_mcp(
     saw (agentic tool-use). Token-gated; returns an action the client enforces on the
     `mcp` surface: allow/warn/block. Benign verdicts aren't persisted by default."""
     tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
+    held = _containment_answer(db, tenant_id, _attributed_actor(body.user, default_actor),
+                               x_palivane_token, x_palivane_agent, "mcp", body.tool or "",
+                               user_agent, body.scan_failed)
+    if held:
+        return held
     over = _ingest_over_budget(db, tenant_id)
     if over:
         return _over_quota_verdict(db, tenant_id, body.args_text or "",
@@ -2556,6 +2589,14 @@ def ingest_mcp_batch(
     (palivane-mcp) that would otherwise post per tool call. Counts as a single ingest
     request against the tenant's sensor quota. Returns per-item verdicts, index-aligned."""
     tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
+    if body.items:
+        first = _attributed_actor(body.items[0].user, default_actor)
+        held = _containment_answer(db, tenant_id, first, x_palivane_token, x_palivane_agent,
+                                   "mcp", body.items[0].tool or "", user_agent)
+        if held:
+            # One caller, one credential: the whole batch is the contained caller's. Items
+            # attributed to other people on a shared key are checked one by one below.
+            return {"results": [held for _ in body.items]}
     _enforce_rate(db, tenant_id)
     agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
     if body.items:
@@ -2564,9 +2605,12 @@ def ingest_mcp_batch(
     allowed = _tenant_mcp_allow(tenant_id, db)
     block = _tenant_mcp_block_severity(tenant_id, db)
     attested = _agent_attestation(x_palivane_token, x_palivane_agent, tenant_id, db)
-    results = [_score_mcp(item, tenant_id, default_actor, allowed, block, db, agent=agent,
-                          client_ua=user_agent, attested=attested,
-                          default_claimed=default_claimed)
+    contained = containment.active(db, tenant_id)
+    results = [(contained and containment.check(
+                    db, tenant_id, actor=_attributed_actor(item.user, default_actor)))
+               or _score_mcp(item, tenant_id, default_actor, allowed, block, db, agent=agent,
+                             client_ua=user_agent, attested=attested,
+                             default_claimed=default_claimed)
                for item in body.items]
     return {"results": results}
 
@@ -4575,6 +4619,72 @@ def fleet_health(current: User = Depends(require_admin), db: Session = Depends(g
     return {"summary": summary, "sensors": sensors,
             "server_version": settings.version, "latest_client_versions": latest,
             "dead_keys": [k.to_dict() for k in dead]}
+
+
+def _containment_rows(db: Session, tenant_id: int, include_ended: bool) -> list[dict]:
+    """Containments for the console, each with when its target last checked in. One that is
+    active, has stopped nothing since it began and whose target has gone silent is flagged
+    `quiet`: the device may have been cut off from Palivane, or had its hooks removed, to get
+    around it (a contained device fails closed offline, but a removed hook does not ask)."""
+    from datetime import timedelta
+    from sqlalchemy import func
+    from .models import ApiKey, Containment, SensorHeartbeat
+    q = db.query(Containment).filter(Containment.tenant_id == tenant_id)
+    now = _naive_now()
+    if not include_ended:
+        q = q.filter(Containment.released_at.is_(None), Containment.expires_at > now)
+    out = []
+    for r in q.order_by(Containment.created_at.desc()).limit(200).all():
+        d = r.to_dict()
+        d["active"] = r.released_at is None and r.expires_at > now
+        seen = None
+        if r.scope == "user":
+            seen = (db.query(func.max(SensorHeartbeat.last_seen))
+                      .filter(SensorHeartbeat.tenant_id == tenant_id,
+                              func.lower(SensorHeartbeat.actor) == r.target).scalar())
+        elif r.scope == "device" and r.target.isdigit():
+            key = db.get(ApiKey, int(r.target))
+            seen = key.last_used_at if key and key.tenant_id == tenant_id else None
+        elif r.scope == "agent":
+            ag = (db.query(Agent).filter(Agent.tenant_id == tenant_id, Agent.name == r.target)
+                    .one_or_none())
+            seen = ag.last_seen if ag else None
+        d["target_last_seen"] = seen.isoformat() if seen else None
+        d["quiet"] = bool(d["active"] and not r.blocked and r.scope != "org"
+                          and r.created_at and now - r.created_at > timedelta(hours=1)
+                          and (seen is None or seen < r.created_at))
+        out.append(d)
+    return out
+
+
+@app.get("/api/containments")
+def containments_list(all: bool = False, current: User = Depends(require_admin),
+                      db: Session = Depends(get_db)):
+    """Active containments (and, with all=true, the ones that ended)."""
+    return {"containments": _containment_rows(db, current.tenant_id, include_ended=all),
+            "max_hours": containment.MAX_HOURS, "default_hours": containment.DEFAULT_HOURS}
+
+
+@app.post("/api/containments")
+def containments_create(body: ContainmentCreate, current: User = Depends(require_admin),
+                        db: Session = Depends(get_db)):
+    """Stop a person, a device, an agent or the whole org now, on every plane."""
+    try:
+        row = containment.create(db, current.tenant_id, body.scope, body.target, body.reason,
+                                 body.hours, current.email)
+    except containment.ContainmentError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return row.to_dict()
+
+
+@app.post("/api/containments/{containment_id}/release")
+def containments_release(containment_id: int, current: User = Depends(require_admin),
+                         db: Session = Depends(get_db)):
+    try:
+        row = containment.release(db, current.tenant_id, containment_id, current.email)
+    except containment.ContainmentError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return row.to_dict()
 
 
 @app.get("/api/fleet/developers")

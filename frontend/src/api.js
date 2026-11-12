@@ -162,6 +162,10 @@ export const api = {
     req(`/allowlist/${id}/renew`, { method: "POST", body: JSON.stringify({ expires_in_days: days }) }),
   allowlistRevoke: (id) => req(`/allowlist/${id}/revoke`, { method: "POST" }),
   fleet: () => req("/fleet"),
+  // Containment: stop a person / device / agent / the org on every plane (app/containment.py).
+  containments: (all = false) => req("/containments" + (all ? "?all=true" : "")),
+  contain: (payload) => req("/containments", { method: "POST", body: JSON.stringify(payload) }),
+  releaseContainment: (id) => req(`/containments/${id}/release`, { method: "POST" }),
   fleetDevelopers: (months = 3) => req(`/fleet/developers?months=${months}`),
   // AI-asset inventory: { kind, name (substring), device, limit, offset }.
   fleetAssets: (params = {}) => {

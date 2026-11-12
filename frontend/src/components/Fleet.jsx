@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { IconRefresh } from "./icons.jsx";
+import ContainmentPanel from "./Containment.jsx";
 
 const HEALTH_CLASS = { fresh: "sev-benign", stale: "sev-suspicious", dark: "sev-critical" };
 
@@ -290,6 +291,8 @@ export default function Fleet() {
 
       {data && (
         <>
+          <ContainmentPanel />
+
           <div className="panel settings-card">
             <div className="usage-stats">
               <div><span className="usage-n">{s.actors ?? "-"}</span><span className="usage-l">actors</span></div>
