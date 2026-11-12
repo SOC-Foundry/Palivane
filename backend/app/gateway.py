@@ -5,7 +5,8 @@ Three provider-compatible entry points so apps just repoint their client:
   POST /v1/chat/completions                      — OpenAI shape (OpenAI SDK, OpenAI-compatible tools)
   POST /v1/responses                             — OpenAI Responses API (Codex CLI, newer SDKs)
   POST /v1/messages                              — Anthropic shape (Claude Code, Anthropic SDK)
-  POST /v1beta/models/{model}:generateContent    — Gemini shape (google-genai SDK, Gemini CLI)
+  POST /v1beta/models/{model}:generateContent    — Gemini shape (google-genai SDK, Gemini CLI;
+                                                    also under /v1, google-genai 3.x's default)
 
 Each scans the prompt on the `llm_io` surface, records a finding, blocks at/above
 `GATEWAY_BLOCK_SEVERITY` in enforce mode, and forwards allowed calls to the configured
@@ -1925,6 +1926,10 @@ def count_tokens(request: Request, principal: Principal = Depends(get_gateway_pr
 # message,status}}`. Its own router because the path prefix is `/v1beta`, not `/v1`.
 
 gemini_router = APIRouter(prefix="/v1beta", tags=["gateway"])
+# google-genai 3.0 calls the stable `/v1` API by default (2.x called `/v1beta`), so an SDK
+# pointed at the gateway sends `/v1/models/{model}:generateContent`. Same handlers; the
+# upstream call keeps whichever version the client asked for (_forward_gemini).
+gemini_v1_router = APIRouter(prefix="/v1", tags=["gateway"])
 
 
 def _scan_gemini(contents: list, system_instruction=None) -> str:
@@ -2043,7 +2048,8 @@ def _forward_gemini(model: str, method: str, payload: dict, request: Request,
     """Passthrough to Gemini, preserving query params (e.g. ?alt=sse) but swapping in our
     upstream key. Returns the upstream bytes verbatim so both JSON and streaming work."""
     from urllib.parse import quote          # the model id comes from the request path
-    url = f"{base.rstrip('/')}/v1beta/models/{quote(model, safe='')}:{method}"
+    version = "v1" if request.url.path.startswith("/v1/") else "v1beta"
+    url = f"{base.rstrip('/')}/{version}/models/{quote(model, safe='')}:{method}"
     params = {k: v for k, v in request.query_params.items() if k != "key"}
     headers = {"Content-Type": "application/json", "x-goog-api-key": key}
     with safe_client(timeout=120) as c:
@@ -2124,6 +2130,7 @@ def _gemini_entry(model: str, method: str, request: Request,
     return JSONResponse(content=_gemini_stub(model, verdict))
 
 
+@gemini_v1_router.post("/models/{model}:generateContent")
 @gemini_router.post("/models/{model}:generateContent")
 def gemini_generate(model: str, request: Request,
                     principal: Principal = Depends(get_gateway_principal),
@@ -2131,6 +2138,7 @@ def gemini_generate(model: str, request: Request,
     return _gemini_entry(model, "generateContent", request, principal, db, body)
 
 
+@gemini_v1_router.post("/models/{model}:streamGenerateContent")
 @gemini_router.post("/models/{model}:streamGenerateContent")
 def gemini_stream_generate(model: str, request: Request,
                            principal: Principal = Depends(get_gateway_principal),
