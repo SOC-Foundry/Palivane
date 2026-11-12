@@ -167,6 +167,18 @@ _PII_CONTEXT = [
     ("Aadhaar", re.compile(r"\baadhaar\b", re.I), re.compile(r"\b\d{4}\s?\d{4}\s?\d{4}\b"), 0.7),
 ]
 
+_PII_CONTEXT_WINDOW = 120   # chars each way from the keyword in which the value must sit
+
+
+def _context_value_near(text: str, ctx_re, val_re) -> bool:
+    """A value of the right shape within _PII_CONTEXT_WINDOW of the keyword that names it."""
+    for m in ctx_re.finditer(text):
+        a, b = max(0, m.start() - _PII_CONTEXT_WINDOW), m.end() + _PII_CONTEXT_WINDOW
+        if val_re.search(text, a, b):
+            return True
+    return False
+
+
 # --- International national IDs (EU / APAC / Americas) ----------------------------------
 # Digit-run formats are ambiguous, so each carries a check-digit validator (or a
 # self-identifying alphanumeric structure) rather than matching bare numbers — the same
@@ -935,8 +947,12 @@ class ShadowAIDetector:
             if rx.search(text):
                 found.append(label)
                 weight = max(weight, w)
+        # The keyword and the value have to be NEAR each other (the CLI scanner already
+        # checks them on one line). Anywhere-in-text, an 18,000-char article that said
+        # "records with passport numbers" in one paragraph and had an acronym in another
+        # was a "passport number" (a security-news page blocked at 83, 2026-11-11).
         for label, ctx_re, val_re, w in _PII_CONTEXT:
-            if ctx_re.search(text) and val_re.search(text):
+            if _context_value_near(text, ctx_re, val_re):
                 found.append(label)
                 weight = max(weight, w)
         # International national IDs, each check-digit-validated (or self-identifying).
