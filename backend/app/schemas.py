@@ -583,6 +583,14 @@ class AgentRoleIn(BaseModel):
     enforce: bool = False
 
 
+class ContainmentCreate(BaseModel):
+    """Contain a person, a device, an agent or the org (app/containment.py)."""
+    scope: str = Field(pattern="^(org|agent|device|user)$")
+    target: str = Field("", max_length=320)    # email | key id | agent name | "" for org
+    reason: str = Field("", max_length=500)    # for the security team; not shown to the person
+    hours: float | None = Field(None, gt=0, le=720)
+
+
 class EnrollmentTokenCreate(BaseModel):
     label: str = ""
     max_uses: int | None = Field(None, ge=1)   # None = unlimited; 0 or less made a dead token
