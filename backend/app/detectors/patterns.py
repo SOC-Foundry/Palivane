@@ -513,6 +513,16 @@ def custom_pii_patterns(extra: str = "") -> list[tuple[str, _TimedPattern]]:
 # caller scores it at warn-level (not a hard block on its own). Candidates exclude `-`
 # and `.` so UUIDs, dotted ids, and kebab-case phrases don't qualify.
 _TOKEN_CANDIDATE_RE = re.compile(r"[A-Za-z0-9_]{24,80}")
+# A PASSWORD HASH is random-looking and is not a credential: it is what is stored INSTEAD of
+# the secret, and it arrives with its modular-crypt marker: `$2b$12$…` (bcrypt), `$argon2id$…`,
+# `$scrypt$…`, `$pbkdf2-sha256$…`, `$5$`/`$6$` (sha-crypt). The candidate regex stops at `$`, so
+# one bcrypt hash pasted into a chat became four "possible secrets" (prod #1419, 2026-11-11).
+# The hash is masked whole. Only the marker form: a bare long base64 run still scans, because
+# that is also the shape of an exfiltrated key (test_base64_without_a_media_magic_is_still_
+# scanned). Known-format keys never go through this path, so nothing with a prefix is lost.
+_HASH_FORMAT_RE = re.compile(
+    r"\$(?:2[abxy]?|argon2(?:i|d|id)|scrypt|pbkdf2(?:-sha\d+)?|sha\d+|md5|[156]|y|gy|7)\$"
+    r"[A-Za-z0-9./+=,$-]{20,}")
 _HEX_RE = re.compile(r"^[0-9a-fA-F]+$")   # git SHAs / md5 / sha digests — not secrets
 # A candidate immediately followed by a dotted suffix is the STEM of a filename, hostname, or
 # dotted identifier — not a standalone credential: `0be77fbc37f7_analyst_enabled`.py (a
@@ -930,6 +940,7 @@ def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
     masked = [(m.start(), m.end()) for m in _NONSECRET_BLOB_RE.finditer(text)]
     masked += _media_blob_spans(text)      # base64 attachments carried as a bare JSON field
     masked += [(m.start(), m.end()) for m in _FORM_BOUNDARY_RE.finditer(text)]
+    masked += [(m.start(), m.end()) for m in _HASH_FORMAT_RE.finditer(text)]
     oauth = bool(_OAUTH_CONTEXT_RE.search(text))
     for m in _TOKEN_CANDIDATE_RE.finditer(text):
         tok = _after_uuid_tail(text, m.start(), m.group(0))
@@ -940,7 +951,8 @@ def find_high_entropy_tokens(text: str, min_entropy: float = 3.6) -> list[str]:
         if _DOTTED_SUFFIX_RE.match(text, m.end()):
             continue   # a filename/hostname/dotted-id stem (foo.py, id.apps.googleusercontent.com)
         if any(s <= m.start() < e for s, e in masked):
-            continue   # inside a data URI / integrity hash / ssh public key / multipart boundary
+            continue   # inside a data URI / integrity hash / ssh public key / multipart
+                       # boundary / password hash
         if _PAGE_PROTOCOL_FIELD_TAIL_RE.search(text[max(0, m.start() - 32):m.start()]):
             continue   # the page's own request token (`at=`, `f.sid=`, csrf), not the user's data
         if oauth and _OAUTH_ONE_TIME_FIELD_TAIL_RE.search(text[max(0, m.start() - 24):m.start()]):
