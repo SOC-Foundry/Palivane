@@ -662,3 +662,13 @@ def test_a_bare_nine_digit_number_in_a_prompt_is_still_the_warn_level_guess():
                          channel="ai_tool")
     ev = [s.evidence for s in det.analyze(item) if s.category == Category.PII_EXPOSURE]
     assert "possible SSN (9-digit)" in ev
+
+
+def test_a_context_pii_keyword_needs_its_value_nearby():
+    # The keyword and a value of the right shape have to sit together. Anywhere-in-text, an
+    # article that said "records with passport numbers" in one paragraph and had an acronym
+    # in another read as a passport number (a security-news page blocked, 2026-11-11).
+    far = "records with passport numbers were exposed. " + "and so on " * 60 + "per the CNBC2026 report"
+    assert Category.PII_EXPOSURE not in _cats(far)
+    assert Category.PII_EXPOSURE in _cats("passport A1234567 issued 2020")
+    assert Category.PII_EXPOSURE in _cats("her passport (no. K8841223) expires next year")
