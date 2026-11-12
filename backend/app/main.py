@@ -36,7 +36,7 @@ from .allowlist import router as allowlist_router
 from .precision import router as precision_router
 from . import containment, review
 from .config import settings, _env
-from .gateway import gemini_router, router as gateway_router
+from .gateway import gemini_router, gemini_v1_router, router as gateway_router
 from .database import Base, engine as db_engine, get_db
 from .detectors import AnalysisInput, Category, Signal, Surface
 from . import crypto
@@ -470,6 +470,7 @@ app.include_router(precision_router)
 app.include_router(distribution_router)
 app.include_router(gateway_router)
 app.include_router(gemini_router)
+app.include_router(gemini_v1_router)
 
 
 @app.middleware("http")
