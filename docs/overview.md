@@ -34,6 +34,10 @@ Palivane covers both from one control plane, captured **automatically at the edg
 - **Scans** commits, CI pipelines, repositories, buckets, databases and laptops for
   credentials already exposed, with only masked findings leaving the machine.
 - **Scans** Slack, Teams, email, Drive, SharePoint and Salesforce for what landed there.
+- **Contains** a person, a device, an agent or the whole org in one action: prompts and tool
+  calls denied, AI sites blocked, model calls refused, on every plane at once. A contained
+  device keeps blocking while it cannot reach Palivane, so going offline is not a way out.
+  Every containment expires or is released, and both are audited.
 - **Gives** security teams one console to triage, set policy, and prove coverage.
 
 Core detection runs **offline** on local rules and on-box classifiers, with no LLM key. An

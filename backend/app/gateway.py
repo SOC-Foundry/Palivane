@@ -77,6 +77,7 @@ class Principal:
     # The actor is the client's own claim, not something the credential proves — see
     # policies.resolve_disabled. Per-user overrides and allowlist entries may only tighten.
     actor_claimed: bool = False
+    key_id: int = 0  # the ApiKey row (one per enrolled device) — device containment
 
 
 def key_actor_claimed(key: ApiKey) -> bool:
@@ -137,7 +138,7 @@ def _resolve_api_key(token: str, db: Session) -> Principal:
     except Exception:
         db.rollback()
     return Principal(tenant_id=key.tenant_id, actor=_key_identity(key, db),
-                     actor_claimed=key_actor_claimed(key))
+                     actor_claimed=key_actor_claimed(key), key_id=key.id)
 
 
 def _key_user_live(key: ApiKey, db: Session) -> bool:
@@ -328,6 +329,27 @@ def _clamp_output_tokens(payload: dict) -> dict:
 _RETRY_HEADER = {"Retry-After": "60"}
 
 
+def _contained(db: Session, principal: "Principal", shape: str) -> JSONResponse | None:
+    """A provider-shaped 403 when an admin has contained this caller (app/containment.py):
+    the person, the device's key, the agent or the whole org. Unlike the capture endpoints this
+    is an HTTP error, because the caller here is the model client itself, and an error is
+    what stops it."""
+    from . import containment
+    c = containment.match(db, principal.tenant_id, actor=principal.actor,
+                          agent=principal.agent, key_id=principal.key_id)
+    if c is None:
+        return None
+    containment.record_block(db, c)
+    msg = "Palivane: " + containment.message(c)
+    if shape == "anthropic":
+        body = {"type": "error", "error": {"type": "permission_error", "message": msg}}
+    elif shape == "gemini":
+        body = {"error": {"code": 403, "status": "PERMISSION_DENIED", "message": msg}}
+    else:
+        body = {"error": {"message": msg, "type": "contained", "code": "contained"}}
+    return JSONResponse(status_code=403, content=body)
+
+
 def _rate_limited(db: Session, principal: "Principal", shape: str) -> JSONResponse | None:
     """Count this request; return a provider-shaped 429 if the tenant is over its limit
     (or a 403 when the whole tenant is suspended)."""
@@ -338,6 +360,9 @@ def _rate_limited(db: Session, principal: "Principal", shape: str) -> JSONRespon
         return JSONResponse(status_code=403,
                             content={"error": {"message": SUSPENDED_DETAIL,
                                                "type": "forbidden", "code": "suspended"}})
+    held = _contained(db, principal, shape)
+    if held is not None:
+        return held
     allowed, count, limit = record_and_check(db, principal.tenant_id)
     msg = f"Palivane rate limit exceeded ({limit}/min)."
     # Daily backstop, checked after the minute bucket records this request so the count is

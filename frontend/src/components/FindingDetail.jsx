@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { cleanError, expiryChoices } from "./Allowlist.jsx";
+import { ContainDialog } from "./Containment.jsx";
 
 const CAT_LABEL = {
   ai_generated: "AI-generated",
@@ -284,6 +285,9 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
   const status = finding.status || "open";
   const steps = remediationFor(finding);
   const checks = isAdmin && finding.sender ? checksOf(finding) : [];
+  const [containing, setContaining] = useState(false);     // the Contain dialog is open
+  const [contained, setContained] = useState(null);        // the containment just made
+  const canContain = isAdmin && !!finding.sender && finding.sender.includes("@");
 
   async function setStatus(s) {
     setStatusErr("");
@@ -376,9 +380,27 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
               {investigating ? "Investigating…" : report ? "Re-investigate" : "Investigate"}
             </button>
           </span>
+          {canContain && !contained && (
+            <button type="button" className="ghost-btn slim contain-btn" onClick={() => setContaining((v) => !v)}
+                    title={`Stop ${finding.sender}'s AI tools and agents on every device now, pending review`}>
+              Contain
+            </button>
+          )}
           <button className="link-btn" onClick={onClose}>close</button>
         </div>
       </div>
+
+      {containing && (
+        <ContainDialog scope="user" target={finding.sender} label={finding.sender}
+                       onDone={(row) => { setContained(row); setContaining(false); }}
+                       onCancel={() => setContaining(false)} />
+      )}
+      {contained && (
+        <div className="contain-done">
+          {finding.sender} is contained until {new Date(contained.expires_at + "Z").toLocaleString()}.
+          Release it from Fleet → Containment.
+        </div>
+      )}
 
       <h3>{finding.subject || "(no subject)"}</h3>
       <div className="detail-meta">

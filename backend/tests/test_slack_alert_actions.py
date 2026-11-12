@@ -44,13 +44,20 @@ def _actions(blocks):
 
 def test_buttons_offer_only_what_has_not_been_done():
     blocks = sr.alert_blocks(CONN, result=RESULT, done={}, can_delete=True, can_redact=True, **LOC)
-    assert _actions(blocks) == ["redact", "delete", "notify", "dismiss"]
+    assert _actions(blocks) == ["redact", "delete", "notify", "contain", "dismiss"]
     assert "AWS access key id" in blocks[0]["text"]["text"] and KEY not in json.dumps(blocks)
     after = sr.alert_blocks(CONN, result=RESULT, done={"deleted": True, "notified": True},
                             can_delete=True, can_redact=True, **LOC)
-    assert _actions(after) == ["dismiss"] and "deleted, sender notified" in json.dumps(after)
+    assert _actions(after) == ["contain", "dismiss"] and "deleted, sender notified" in json.dumps(after)
     no_token = sr.alert_blocks(CONN, result=RESULT, done={}, can_delete=False, can_redact=False, **LOC)
-    assert _actions(no_token) == ["notify", "dismiss"]
+    assert _actions(no_token) == ["notify", "contain", "dismiss"]
+    # Contain needs a sender Palivane can name (an email); a bare Slack id gets no button.
+    anon = sr.alert_blocks(CONN, result=RESULT, done={}, can_delete=False, can_redact=False,
+                           **{**LOC, "actor": ""})
+    assert _actions(anon) == ["notify", "dismiss"]
+    held = sr.alert_blocks(CONN, result=RESULT, done={"contained": True}, can_delete=False,
+                           can_redact=False, **LOC)
+    assert _actions(held) == ["notify", "dismiss"]
 
 
 def test_button_values_are_signed():

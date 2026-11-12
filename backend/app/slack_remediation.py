@@ -321,7 +321,8 @@ def alert_blocks(connector, *, channel: str, where: str, ts: str, user_id: str, 
               {"type": "context", "elements": [{"type": "mrkdwn", "text":
                   ("Already done: " + ", ".join(taken) if taken else "No action taken yet.")
                   + (f"  <{link}|Open in Palivane>" if link else "")}]}]
-    fields = {"f": fid, "k": connector.id, "c": channel, "t": ts, "u": user_id, "w": where}
+    fields = {"f": fid, "k": connector.id, "c": channel, "t": ts, "u": user_id, "w": where,
+              "e": actor if actor and "@" in actor else ""}
     buttons = []
     gone = done.get("deleted") or done.get("redacted")
     if can_redact and not gone:
@@ -332,6 +333,11 @@ def alert_blocks(connector, *, channel: str, where: str, ts: str, user_id: str, 
                                confirm="Delete the message from Slack. This cannot be undone."))
     if user_id and not done.get("notified"):
         buttons.append(_button("Notify sender", "notify", fields))
+    # The sender as Palivane knows them (an email): contain them on every plane for 24 hours.
+    if actor and "@" in actor and not done.get("contained"):
+        buttons.append(_button("Contain sender", "contain", fields, style="danger", confirm=(
+            f"Stop {actor}'s AI tools and agents on every device for 24 hours, pending review. "
+            "Release it from Palivane → Fleet.")))
     buttons.append(_button("Dismiss as false positive", "dismiss", fields))
     blocks.append({"type": "actions", "block_id": "palivane_actions", "elements": buttons})
     return blocks

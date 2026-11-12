@@ -1334,6 +1334,45 @@ class DeveloperActivity(Base):
     identity = Column(String(40), default="")
     first_seen = Column(DateTime, default=_utcnow)
 
+
+class Containment(Base):
+    """An admin's "stop this now" on a person, a device, an agent or the whole org
+    (app/containment.py). While active, every capture decision for the target answers block
+    and the gateway refuses its model calls. It always ends: at `expires_at`, or earlier when
+    someone releases it. Rows are kept after they end, as the record of who stopped what,
+    why, and for how long."""
+
+    __tablename__ = "containments"
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    scope = Column(String(16), default="")          # user | device | agent | org
+    # user: the email (lowercased); device: the enrollment key's id; agent: the agent's name;
+    # org: "*".
+    target = Column(String(320), default="")
+    label = Column(String(320), default="")         # what the console shows (key label, ...)
+    reason = Column(String(500), default="")
+    created_by = Column(String(320), default="")
+    created_at = Column(DateTime, default=_utcnow)
+    expires_at = Column(DateTime, index=True)
+    released_at = Column(DateTime, nullable=True, index=True)
+    released_by = Column(String(320), default="")
+    # What it stopped: decisions refused while active, and the last one. A containment that
+    # never stops anything again and whose target went quiet is worth a look (the device may
+    # have been cut off from Palivane on purpose).
+    blocked = Column(Integer, default=0)
+    last_blocked_at = Column(DateTime, nullable=True)
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "scope": self.scope, "target": self.target, "label": self.label,
+                "reason": self.reason, "created_by": self.created_by,
+                "created_at": self.created_at.isoformat() if self.created_at else None,
+                "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+                "released_at": self.released_at.isoformat() if self.released_at else None,
+                "released_by": self.released_by, "blocked": self.blocked or 0,
+                "last_blocked_at": self.last_blocked_at.isoformat() if self.last_blocked_at else None}
+
+
 class ExceptionRecord(Base):
     """A block-screen exception request with review state.
 
