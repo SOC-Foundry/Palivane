@@ -4860,10 +4860,25 @@ def fleet_people(attention: bool = True, q: str = "",
             "events": int(g.events or 0), "failed_open": int(g.failed_open or 0),
             "stale_builds": int(g.stale_builds or 0),
             "retired_builds": sum(1 for d in rows if d.get("client_retired")),
+            # A person's identity keeping a machine's hours: an unregistered agent under
+            # their key (activity.cadence). One small query per listed person.
+            "round_the_clock": bool("@" in (g.actor or "")
+                                    and activity.cadence(db, tid, g.actor, now)["round_the_clock"]),
             "rows": rows,
         })
     return {"people": people, "total": total, "limit": limit, "offset": offset,
             "attention": attention, "summary": summary}
+
+
+@app.get("/api/fleet/unattended")
+def fleet_unattended(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Actors on a person's identity that keep a machine's hours (active in 20 of 24 hours
+    on 5 of the last 7 days): a cron'd coding agent or a CI job running under someone's
+    key. Nobody else can see this, because nobody else has per-tool hook telemetry. Each
+    is a candidate to register as an agent with its own identity and limits; registered
+    agents are not listed."""
+    return {"unattended": activity.unattended(db, current.tenant_id),
+            "limits": {"hours": activity.UNATTENDED_HOURS, "days": activity.UNATTENDED_DAYS}}
 
 
 def _containment_actor(db: Session, tenant_id: int, r) -> str:

@@ -345,6 +345,59 @@ function buildsCell(p) {
   return <span style={{ color: p.retired_builds ? "var(--crit)" : "var(--susp)" }}>{[retired, stale].filter(Boolean).join(", ")}</span>;
 }
 
+// A person's identity keeping a machine's hours is an agent nobody registered: a cron'd
+// coding agent, a CI job, running under someone's key, with that person's permissions and
+// none of an agent's limits. Register it, and it gets its own identity.
+function UnattendedAgents({ tick }) {
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState(null);
+  useEffect(() => { api.fleetUnattended().then(setData).catch(() => setData(null)); }, [tick]);
+  const rows = data?.unattended || [];
+  if (!rows.length) return null;
+
+  async function register(actor) {
+    setBusy(actor); setMsg(null);
+    const name = `agent:${actor}`;
+    try {
+      const r = await api.agentCreate({ name, kind: "service" });
+      setMsg({ ok: true, text: `Registered ${name}. Its identity token is shown once: ${r.token}. Put it on the machine that runs as ${actor} (PALIVANE_AGENT_TOKEN), and its actions attribute to the agent, with the agent's limits.` });
+      setData({ ...data, unattended: rows.filter((x) => x.actor !== actor) });
+    } catch (e) { setMsg({ ok: false, text: String(e.message || e).replace(/^\d+:\s*/, "") }); }
+    finally { setBusy(""); }
+  }
+
+  return (
+    <div className="panel settings-card">
+      <h2>Agents under a person's key <span className="count-pill">{rows.length}</span></h2>
+      <p className="muted" style={{ marginTop: 0 }}>
+        These identities were active in {data.limits.hours} of 24 hours on {data.limits.days} of the
+        last 7 days: a machine's cadence, not a person's. A scheduled coding agent or a CI job is
+        running under someone's key, with that person's permissions and none of an agent's limits.
+        Register it to give it its own identity.
+      </p>
+      {msg && <div className={msg.ok ? "flash-ok" : "flash-err"}>{msg.text}</div>}
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead><tr><th>Identity</th><th>Hours of the day</th><th>Days</th><th>Last seen</th><th></th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.actor}>
+                <td><strong>{r.actor}</strong></td>
+                <td>{r.hours_of_day} of 24</td>
+                <td>{r.days} of 7</td>
+                <td className="muted">{fmtWhen(r.last_seen)}</td>
+                <td><button type="button" className="ghost-btn slim" disabled={busy === r.actor}
+                            onClick={() => register(r.actor)}>Register as agent</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // One row per person, paged, worst first. Defaults to the people with something to look
 // at: a sensor past 24h, a scan that failed open this week, or a stale/retired build.
 function PeopleLedger({ tick }) {
@@ -422,7 +475,14 @@ function PeopleLedger({ tick }) {
                         {isOpen ? "▾" : "▸"}
                       </button>
                     </td>
-                    <td><strong>{p.actor || "(unattributed)"}</strong></td>
+                    <td><strong>{p.actor || "(unattributed)"}</strong>
+                      {p.round_the_clock && (
+                        <span className="chip chip-warn" style={{ marginLeft: 8 }}
+                              title="Active in 20 of 24 hours on 5 of the last 7 days: a machine's cadence on a person's identity. Likely an unregistered agent under their key; see the panel above.">
+                          24/7
+                        </span>
+                      )}
+                    </td>
                     <td className="muted">{planesText(p.planes)}</td>
                     <td>{p.sensors}</td>
                     <td className="muted">{fmtWhen(p.last_seen)}</td>
@@ -575,6 +635,7 @@ export default function Fleet() {
             </div>
           )}
 
+          <UnattendedAgents tick={tick} />
           <PeopleLedger tick={tick} />
           <DeveloperMeter />
           <AssetInventory />
