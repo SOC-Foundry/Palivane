@@ -67,6 +67,10 @@ def mark_routed(db: Session, verdict: dict, lane: dict) -> None:
         row.signals = [note] + [s for s in (row.signals or []) if s.get("check") != "routed"]
         row.recommended_action = "allow"
         db.commit()
+        # The finding was persisted, and its exposure opened, before the lane was chosen;
+        # the data stayed inside, so there is nothing to notify about.
+        from . import exposures
+        exposures.close_for_finding(db, row.tenant_id, row.id, "routed")
     except Exception:
         db.rollback()
     verdict["routed_to"] = lane["label"]

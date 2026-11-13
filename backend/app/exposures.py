@@ -46,27 +46,33 @@ def classes_of(signals) -> list[str]:
     return sorted({_cat(s) for s in signals or [] if _cat(s) in REGIMES})
 
 
+_RANK = {"benign": 0, "low": 1, "suspicious": 2, "high": 3, "critical": 4}
+
+
 def left_the_boundary(tenant, finding: Finding, result: dict | None) -> bool:
     """Whether the data actually went out. A verdict is a recommendation; what happened
-    depends on the control at the capture point: a confirmed secret/PII leak is stopped on
-    every plane in any mode (the certain-leak rule), and a block-level verdict is stopped
-    where the org enforces (the gateway for llm_io, the clients elsewhere). Everything else
-    passed, in monitor mode by design."""
-    result = result or {}
+    depends on the control at the capture point, modelled here exactly as the planes
+    decide it: the certain-leak rule (main._prompt_verdict: force_block) stops a confirmed
+    secret/PII leak on every plane in any mode unless the deployment switched it off; the
+    gateway stops a verdict at or above its block severity when the org enforces
+    (gateway._blocked); the clients stop at high and above when the org enforces
+    (main._action_for, redaction included: the original is still not sent). Everything
+    else passed, in monitor mode by design."""
     from .config import settings
-    if result.get("confirmed_leak"):
-        # The certain-leak rule (main._prompt_verdict: force_block) stops a confirmed
-        # secret/PII leak on every plane in any mode, unless it is switched off for the
-        # deployment, in which case the data went out like anything else.
-        return not settings.gateway_enforce_secrets
-    if (finding.recommended_action or "") != "block":
-        return True
+    result = result or {}
+    if result.get("confirmed_leak") and settings.gateway_enforce_secrets:
+        return False
+    rank = _RANK.get(finding.severity or "", 0)
     if (finding.surface or "") == "llm_io":
         enforce = getattr(tenant, "gateway_enforce", None)
         enforce = settings.gateway_enforce if enforce is None else bool(enforce)
+        block_at = ((getattr(tenant, "gateway_block_severity", "") or "").strip()
+                    or settings.gateway_block_severity)
     else:
-        enforce = bool(getattr(tenant, "client_enforce", None))
-    return not enforce
+        enforce = getattr(tenant, "client_enforce", None)
+        enforce = settings.client_enforce if enforce is None else bool(enforce)
+        block_at = "high"
+    return not (enforce and rank >= _RANK.get(block_at, 3))
 
 
 def qualifies(finding: Finding, signals, result: dict | None = None, tenant=None) -> list[str]:
@@ -81,6 +87,32 @@ def qualifies(finding: Finding, signals, result: dict | None = None, tenant=None
     if not left_the_boundary(tenant, finding, result):
         return []
     return classes_of(signals)
+
+
+def _destination(finding: Finding) -> str:
+    """Where it went: the tool, else the model the gateway saw (its subject), else the plane."""
+    ch = (finding.channel or "").strip()
+    if ch and ch not in ("unknown", "gateway"):
+        return ch[:128]
+    return ((finding.subject or "").strip() or finding.surface or "")[:128]
+
+
+def close_for_finding(db: Session, tenant_id: int | None, finding_id: int, reason: str) -> bool:
+    """The data did not leave after all (the request went down a private lane): the
+    exposure opened at capture time is withdrawn."""
+    if tenant_id is None or not finding_id:
+        return False
+    try:
+        row = (db.query(ExposureRecord).filter(ExposureRecord.tenant_id == tenant_id,
+                                               ExposureRecord.finding_id == finding_id).one_or_none())
+        if row is None:
+            return False
+        db.delete(row)
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        return False
 
 
 def open_for(db: Session, tenant_id: int | None, finding: Finding, signals, result: dict | None = None,
@@ -100,7 +132,7 @@ def open_for(db: Session, tenant_id: int | None, finding: Finding, signals, resu
         row = ExposureRecord(
             tenant_id=tenant_id, finding_id=finding.id, classes=",".join(classes),
             regime=regime, opened_at=now, deadline_at=now + timedelta(hours=hours),
-            actor=(finding.sender or "")[:320], destination=(finding.channel or finding.surface or "")[:128],
+            actor=(finding.sender or "")[:320], destination=_destination(finding),
             surface=(finding.surface or "")[:32], status="open")
         db.add(row)
         db.commit()
