@@ -295,6 +295,15 @@ function DeveloperMeter() {
   );
 }
 
+// On the mcp plane a sensor row is one per client and the tools it called are counted
+// inside it; elsewhere `tool` is the assistant, scan kind or repo.
+function toolCell(row) {
+  const names = Object.entries(row.tools || {}).sort((a, b) => b[1] - a[1]);
+  if (!names.length) return row.tool || "-";
+  const top = names.slice(0, 12).map(([t, n]) => `${t} ×${n}`).join(", ");
+  return <span title={names.length > 12 ? `${top}, …` : top}>{names.length} tool{names.length === 1 ? "" : "s"}</span>;
+}
+
 // The sensors one person has, under their row in the ledger.
 function PersonSensors({ rows }) {
   return (
@@ -306,7 +315,7 @@ function PersonSensors({ rows }) {
         {rows.map((row, i) => (
           <tr key={`${row.plane}|${row.tool}|${row.client}|${i}`}>
             <td className="muted">{row.plane}</td>
-            <td className="muted">{row.tool || "-"}</td>
+            <td className="muted">{toolCell(row)}</td>
             <td className="muted">{clientCell(row)}</td>
             <td className="muted">{fmtWhen(row.last_seen)}</td>
             <td>{row.count}</td>

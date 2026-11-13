@@ -41,11 +41,13 @@ def test_two_clients_reporting_one_tool_are_two_sensors(client, raw_client, db_f
     assert _mcp(raw_client, key, "").status_code == 200                # no UA: no third row
     db = db_factory()
     try:
+        # On the mcp plane the row is one per client, with the tools called counted inside.
         rows = (db.query(SensorHeartbeat)
-                  .filter(SensorHeartbeat.actor == "dev@acme.com", SensorHeartbeat.tool == "Bash")
+                  .filter(SensorHeartbeat.actor == "dev@acme.com", SensorHeartbeat.plane == "mcp")
                   .all())
         assert sorted(r.client for r in rows) == ["palivane-hook", "palivane-mcp"]
         assert sum(r.count for r in rows) == 3
+        assert sum(r.tools.get("Bash", 0) for r in rows) == 3 and all(r.tool == "" for r in rows)
     finally:
         db.close()
 
@@ -53,16 +55,18 @@ def test_two_clients_reporting_one_tool_are_two_sensors(client, raw_client, db_f
 def test_a_legacy_row_is_adopted_not_duplicated(client, raw_client, db_factory):
     from datetime import datetime
     db = db_factory()
-    db.add(SensorHeartbeat(tenant_id=_acme(db).id, actor="dev@acme.com", plane="mcp", tool="Bash",
-                           client="", count=5, first_seen=datetime.utcnow(),
+    # A row from before clients were told apart (client ""), in the collapsed shape the
+    # tools-inside migration leaves mcp rows in (tool "", the tools counted inside).
+    db.add(SensorHeartbeat(tenant_id=_acme(db).id, actor="dev@acme.com", plane="mcp", tool="",
+                           tools={"Bash": 5}, client="", count=5, first_seen=datetime.utcnow(),
                            last_seen=datetime.utcnow()))
     db.commit(); db.close()
     key = client.post("/api/apikeys", json={"label": "fleet", "scope": "ingest"}).json()["token"]
     _mcp(raw_client, key, "palivane-hook/1.2.0 (claude-code/2.1.4)")
     db = db_factory()
     try:
-        rows = db.query(SensorHeartbeat).filter(SensorHeartbeat.tool == "Bash").all()
-        assert [(r.client, r.count) for r in rows] == [("palivane-hook", 6)]
+        rows = db.query(SensorHeartbeat).filter(SensorHeartbeat.plane == "mcp").all()
+        assert [(r.client, r.count, r.tools) for r in rows] == [("palivane-hook", 6, {"Bash": 6})]
     finally:
         db.close()
 

@@ -2330,6 +2330,23 @@ def _containment_answer(db: Session, tenant_id: int | None, actor: str, token: s
     return held
 
 
+# Planes whose `tool` is the tool CALLED (an open namespace an MCP server controls), kept
+# inside one row per actor and client rather than one row per name.
+_TOOLS_INSIDE_PLANES = frozenset({"mcp"})
+_TOOLS_INSIDE_CAP = 200
+
+
+def _count_tool(tools, name: str) -> dict:
+    """`tools` with one more call of `name`. Past the cap a new name evicts the least-called
+    one, so the row stays bounded whatever an MCP server advertises."""
+    out = dict(tools or {})
+    out[name] = int(out.get(name) or 0) + 1
+    while len(out) > _TOOLS_INSIDE_CAP:
+        victim = min((k for k in out if k != name), key=lambda k: (out[k], k))
+        del out[victim]
+    return out
+
+
 def _record_heartbeat(db: Session, tenant_id: int | None, actor: str,
                       plane: str, tool: str = "", client_ua: str = "",
                       parse_miss: bool = False, scan_failed=None) -> None:
@@ -2345,11 +2362,17 @@ def _record_heartbeat(db: Session, tenant_id: int | None, actor: str,
         # alone, two clients reporting the same tool for one person ("Bash" from the Claude
         # Code hook and from palivane-mcp) shared a row and the second hid the first.
         client, version = _parse_client_ua(client_ua)
+        # One row per PLANE on mcp. `tool` there is the tool CALLED, and a coding agent calls
+        # dozens (Bash, Read, Edit, every MCP tool), so keyed by tool one developer was twenty
+        # or thirty sensor rows and a database insert per new name. The names still count,
+        # inside the row (`tools`), capped so an MCP server's tool list cannot grow it.
+        called = (tool or "")[:64] if plane in _TOOLS_INSIDE_PLANES else ""
+        tool_key = "" if plane in _TOOLS_INSIDE_PLANES else (tool or "")[:64]
         same = (db.query(SensorHeartbeat)
                   .filter(SensorHeartbeat.tenant_id == tenant_id,
                           SensorHeartbeat.actor == (actor or ""),
                           SensorHeartbeat.plane == plane,
-                          SensorHeartbeat.tool == (tool or "")[:64]))
+                          SensorHeartbeat.tool == tool_key))
         if client:
             row = (same.filter(SensorHeartbeat.client == client).one_or_none()
                    # a row from before clients were told apart (or from a UA-less request)
@@ -2361,10 +2384,12 @@ def _record_heartbeat(db: Session, tenant_id: int | None, actor: str,
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         if row is None:
             row = SensorHeartbeat(tenant_id=tenant_id, actor=(actor or ""), plane=plane,
-                                  tool=(tool or "")[:64], client=client, first_seen=now)
+                                  tool=tool_key, client=client, first_seen=now)
             db.add(row)
         row.last_seen = now
         row.count = (row.count or 0) + 1
+        if called:
+            row.tools = _count_tool(row.tools, called)   # a new dict, so the JSON column saves
         row.dark_alerted_at = None   # back online — arm the gone-dark alert again
         if client:
             row.client, row.client_version = client, version
