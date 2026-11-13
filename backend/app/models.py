@@ -1262,6 +1262,10 @@ class SensorHeartbeat(Base):
     first_seen = Column(DateTime, default=_utcnow)
     last_seen = Column(DateTime, default=_utcnow, index=True)
     count = Column(Integer, default=0)
+    # On the mcp plane the row is one per (actor, client) and the tools CALLED are counted
+    # here, {name: count}, capped (main._record_heartbeat): keyed by tool, one coding agent
+    # was twenty or thirty rows. Empty on every other plane.
+    tools = Column(JSON, default=dict)
     # Client build the sensor last reported (parsed from its User-Agent, e.g.
     # "palivane-hook/1.1.0"). Lets the console spot devices running stale plumbing —
     # server-side detection updates instantly, but installed scripts don't.
@@ -1306,8 +1310,8 @@ class SensorHeartbeat(Base):
                 "scan_fail_reasons": dict(self.scan_fail_reasons or {}),
                 "first_seen": self.first_seen.isoformat() if self.first_seen else None,
                 "last_seen": self.last_seen.isoformat() if self.last_seen else None,
-                "count": self.count, "client": self.client or "",
-                "client_version": self.client_version or ""}
+                "count": self.count, "tools": dict(self.tools or {}),
+                "client": self.client or "", "client_version": self.client_version or ""}
 
 
 
