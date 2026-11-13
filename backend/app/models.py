@@ -1375,6 +1375,39 @@ class InstructionTaint(Base):
     finding_id = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
     expires_at = Column(DateTime, index=True)
+class SecretSighting(Base):
+    """One secret value (as a keyed fingerprint, never the value) seen in one finding: who,
+    which surface and tool, when. app/secrets_ledger.py."""
+
+    __tablename__ = "secret_sightings"
+    __table_args__ = (UniqueConstraint("tenant_id", "secret_fp", "finding_id", name="uq_secret_sighting"),)
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    secret_fp = Column(String(32), default="", nullable=False, index=True)
+    label = Column(String(64), default="")
+    finding_id = Column(Integer, nullable=True, index=True)
+    actor = Column(String(320), default="")
+    surface = Column(String(32), default="")
+    channel = Column(String(64), default="")
+    seen_at = Column(DateTime, default=_utcnow, index=True)
+
+
+class SecretRotation(Base):
+    """A secret the org says it rotated: when, by whom, and when the old value was last
+    verified gone (not seen for a week after the rotation). app/secrets_ledger.py."""
+
+    __tablename__ = "secret_rotations"
+    __table_args__ = (UniqueConstraint("tenant_id", "secret_fp", name="uq_secret_rotation"),)
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    secret_fp = Column(String(32), default="", nullable=False)
+    label = Column(String(64), default="")
+    rotated_at = Column(DateTime, default=_utcnow)
+    rotated_by = Column(String(320), default="")
+    note = Column(String(500), default="")
+    verified_at = Column(DateTime, nullable=True)
 
 
 class Containment(Base):

@@ -273,6 +273,84 @@ function checksOf(finding) {
   return [...seen.entries()];
 }
 
+// Where else this finding's secret went, and whether its rotation took. The value itself is
+// never stored or shown: the ledger keys on a one-way fingerprint of it.
+function SecretTravel({ finding, isAdmin }) {
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+  const hasSecret = (finding.signals || []).some((s) => s.category === "secret_leak");
+  useEffect(() => {
+    if (!hasSecret) return;
+    let live = true;
+    api.findingSecrets(finding.id).then((r) => { if (live) setData(r.secrets || []); }).catch(() => {});
+    return () => { live = false; };
+  }, [finding.id, hasSecret]);
+  if (!hasSecret || !data || !data.length) return null;
+
+  async function rotated(fp) {
+    setBusy(fp); setErr("");
+    try {
+      const t = await api.secretRotated(fp);
+      setData(data.map((x) => (x.secret === fp ? t : x)));
+    } catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
+    finally { setBusy(""); }
+  }
+
+  const STATUS = {
+    none: ["not rotated", "sev-suspicious"], watching: ["rotated, watching", "sev-low"],
+    verified: ["rotation verified", "sev-benign"], still_seen: ["still seen after rotation", "sev-critical"],
+  };
+  const when = (ts) => (ts ? new Date(ts + (ts.endsWith("Z") ? "" : "Z")).toLocaleString() : "-");
+  return (
+    <div className="detail-section">
+      <h4>Where this secret went</h4>
+      {err && <div className="error">{err}</div>}
+      {data.map((t) => {
+        const [label, cls] = STATUS[t.rotation.status] || STATUS.none;
+        return (
+          <div key={t.secret} style={{ marginBottom: 10 }}>
+            <div>
+              <strong>{t.label || "secret"}</strong>{" "}
+              <span className={`badge ${cls}`}>{label}</span>
+            </div>
+            <div className="muted" style={{ fontSize: 13 }}>
+              Seen {t.sightings} time{t.sightings === 1 ? "" : "s"} in 90 days
+              {t.first_seen && <>, first {when(t.first_seen)}, last {when(t.last_seen)}</>}.
+              {t.actors.length > 0 && <> People: {t.actors.join(", ")}.</>}
+              {t.tools.length > 0 && <> Through: {t.tools.join(", ")}.</>}
+              {t.findings.length > 1 && <> Findings: {t.findings.map((id) => `#${id}`).join(", ")}.</>}
+            </div>
+            {t.rotation.status === "still_seen" && (
+              <div style={{ color: "var(--crit)", fontSize: 13 }}>
+                The old value was seen again after the rotation ({when(t.rotation.last_seen_after)}): the rotation did
+                not take, or a copy is still in use somewhere.
+              </div>
+            )}
+            {t.rotation.status === "watching" && (
+              <div className="muted" style={{ fontSize: 13 }}>
+                Rotated {when(t.rotation.rotated_at)} by {t.rotation.rotated_by}. Verified once it stays unseen until {when(t.rotation.verify_due)}.
+              </div>
+            )}
+            {t.rotation.status === "verified" && (
+              <div className="muted" style={{ fontSize: 13 }}>
+                Rotated {when(t.rotation.rotated_at)} by {t.rotation.rotated_by}; the old value has not been seen since.
+              </div>
+            )}
+            {isAdmin && t.rotation.status !== "watching" && (
+              <button type="button" className="ghost-btn slim" disabled={busy === t.secret}
+                      onClick={() => rotated(t.secret)} style={{ marginTop: 6 }}
+                      title="Record that this secret was rotated. The ledger then watches for the old value and verifies the rotation after a week without a sighting.">
+                {t.rotation.status === "none" ? "Mark rotated" : "Rotated again"}
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function FindingDetail({ finding, isAdmin, analystEnabled, onClose, onStatusChange, onReviewed, reviewing }) {
   const [suppressed, setSuppressed] = useState(null);
   const [report, setReport] = useState(finding?.investigation || null);   // persisted or fresh
@@ -455,6 +533,8 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
             Restrict access at the source to stop the leak at its root.</p>
         </div>
       )}
+
+      <SecretTravel finding={finding} isAdmin={isAdmin} />
 
       {finding.owner_response && (
         <div className="detail-section">
