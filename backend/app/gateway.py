@@ -79,6 +79,8 @@ class Principal:
     # policies.resolve_disabled. Per-user overrides and allowlist entries may only tighten.
     actor_claimed: bool = False
     key_id: int = 0  # the ApiKey row (one per enrolled device) — device containment
+    # The key is a development key (models.ApiKey.development): its label, else "".
+    development: str = ""
 
 
 def key_actor_claimed(key: ApiKey) -> bool:
@@ -138,8 +140,14 @@ def _resolve_api_key(token: str, db: Session) -> Principal:
         db.commit()
     except Exception:
         db.rollback()
+    dev = (key.label or key.prefix or "key") if key.development else ""
+    # Everything this request records goes through service.run_analysis, which reads the
+    # marker from the request context: the capture endpoints pass tenant and actor through
+    # a dozen call sites, and this is the one fact about the credential they all need.
+    from .service import development_capture
+    development_capture.set(dev)
     return Principal(tenant_id=key.tenant_id, actor=_key_identity(key, db),
-                     actor_claimed=key_actor_claimed(key), key_id=key.id)
+                     actor_claimed=key_actor_claimed(key), key_id=key.id, development=dev)
 
 
 def _key_user_live(key: ApiKey, db: Session) -> bool:

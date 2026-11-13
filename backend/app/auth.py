@@ -31,7 +31,7 @@ from .models import (
     TenantUpstream, User,
 )
 from .schemas import (
-    AgentCreate, AgentRoleIn, AgentTokenRequest, AgentUpdate, ApiKeyCreate, EnrollmentTokenCreate, EnrollRequest, LoginRequest, MFACode, MFAVerify,
+    AgentCreate, AgentRoleIn, AgentTokenRequest, AgentUpdate, ApiKeyCreate, ApiKeyUpdate, EnrollmentTokenCreate, EnrollRequest, LoginRequest, MFACode, MFAVerify,
     DPAAccept, ForgotRequest, OIDCConfig, ResetRequest, SAMLConfig, SignupRequest, TenantDelete, TenantUpdate,
     JudgeKeyConfig, UpstreamConfig, UserCreate, UserUpdate,
 )
@@ -1114,13 +1114,31 @@ def create_api_key(body: ApiKeyCreate, current: User = Depends(require_admin),
     user_id = current.id if body.scope in CONSOLE_SCOPES else None
     key = ApiKey(tenant_id=current.tenant_id, label=body.label, actor=body.actor,
                  prefix=prefix, token_hash=token_hash, expires_at=expires_at,
-                 scope=body.scope, user_id=user_id)
+                 scope=body.scope, user_id=user_id, development=bool(body.development))
     db.add(key)
     db.commit()
     db.refresh(key)
     audit_log.record(db, current.tenant_id, current.email, "apikey.create",
-                     target=body.label or body.actor, detail={"scope": body.scope})
+                     target=body.label or body.actor,
+                     detail={"scope": body.scope, **({"development": True} if body.development else {})})
     return {**key.to_dict(), "token": token}
+
+
+@router.patch("/apikeys/{key_id}")
+def update_api_key(key_id: int, body: ApiKeyUpdate, current: User = Depends(require_admin),
+                   db: Session = Depends(get_db)):
+    """Mark a key as a development key, or stop. Its captures are still recorded, as
+    dismissed/expected, and kept out of the queue, the alerts and the chain lookback
+    (service.run_analysis). Audited: this is a decision to stop looking at a device."""
+    key = db.get(ApiKey, key_id)
+    if key is None or key.tenant_id != current.tenant_id:
+        raise HTTPException(status_code=404, detail="api key not found")
+    key.development = bool(body.development)
+    db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "apikey.development",
+                     target=key.label or key.actor or str(key_id),
+                     detail={"development": key.development})
+    return key.to_dict()
 
 
 @router.get("/apikeys")
