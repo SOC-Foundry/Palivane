@@ -1431,6 +1431,31 @@ class TenantLane(Base):
         return {"provider": self.provider, "label": self.label or "", "base_url": self.base_url or "",
                 "key_set": bool(self.key_encrypted),
                 "classes": [c for c in (self.classes or "").split(",") if c]}
+class ExposureRecord(Base):
+    """Regulated data that reached a provider: one row per finding whose personal or health
+    data actually left, with the regime, its deadline, and the status a person works it
+    through. app/exposures.py."""
+
+    __tablename__ = "exposure_register"
+    __table_args__ = (UniqueConstraint("tenant_id", "finding_id", name="uq_exposure_finding"),)
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    finding_id = Column(Integer, nullable=False)
+    classes = Column(String(128), default="")          # comma-separated regulated classes
+    regime = Column(String(64), default="")
+    actor = Column(String(320), default="")
+    destination = Column(String(128), default="")
+    surface = Column(String(32), default="")
+    opened_at = Column(DateTime, default=_utcnow)
+    deadline_at = Column(DateTime, index=True)
+    status = Column(String(16), default="open")        # open | acknowledged | notified | closed
+    note = Column(String(1000), default="")
+    acknowledged_by = Column(String(320), default="")
+    acknowledged_at = Column(DateTime, nullable=True)
+    notified_at = Column(DateTime, nullable=True)
+    closed_at = Column(DateTime, nullable=True)
+    closed_reason = Column(String(32), default="")
 
 
 class Containment(Base):

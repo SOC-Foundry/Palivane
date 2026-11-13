@@ -566,6 +566,12 @@ class SecretRotatedIn(BaseModel):
     note: str = Field("", max_length=500)
 
 
+class ExposureStatusIn(BaseModel):
+    status: Literal["open", "acknowledged", "notified", "closed"]
+    note: str = Field("", max_length=1000)
+    reason: str = Field("", max_length=32)
+
+
 class ApiKeyUpdate(BaseModel):
     development: bool
 

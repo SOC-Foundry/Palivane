@@ -43,7 +43,7 @@ from . import crypto
 from .engine import engine
 from .models import (Agent, AgentRole, CorpusSample, Finding, PolicyOverride, SaasConnector,
                      Tenant, User)
-from .schemas import SecretRotatedIn
+from .schemas import ExposureStatusIn, SecretRotatedIn
 from .schemas import (
     A2AIngest,
     AIUsageIngest,
@@ -3613,6 +3613,33 @@ def get_finding(finding_id: int, current: User = Depends(require_analyst),
     tenant = db.get(Tenant, current.tenant_id)
     dek = unwrap_dek(tenant.dek_wrapped) if tenant and tenant.dek_wrapped else None
     return row.to_detail(dek)
+
+
+@app.get("/api/exposures")
+def list_exposures(include_closed: bool = False, current: User = Depends(require_analyst),
+                   db: Session = Depends(get_db)):
+    """The exposure register: regulated data that reached a provider, soonest deadline
+    first, each with its clock, status and a drafted notification. app/exposures.py."""
+    from . import exposures
+    return {"exposures": exposures.listing(db, current.tenant_id, include_closed),
+            "statuses": list(exposures.STATUSES)}
+
+
+@app.post("/api/exposures/{exposure_id}/status")
+def set_exposure_status(exposure_id: int, body: ExposureStatusIn,
+                        current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Work an exposure: acknowledged (someone owns it), notified (the regulator or the
+    subjects were told), closed (with a reason). Audited."""
+    from . import audit_log, exposures
+    row = exposures.set_status(db, current.tenant_id, exposure_id, body.status, current.email,
+                               body.note, body.reason)
+    if row is None:
+        raise HTTPException(status_code=404, detail="exposure not found")
+    audit_log.record(db, current.tenant_id, current.email, "exposure.status",
+                     target=str(exposure_id), detail={"status": body.status, "finding_id": row.finding_id,
+                                                      **({"reason": body.reason} if body.reason else {})})
+    f = db.get(Finding, row.finding_id)
+    return exposures.summarise(row, f)
 
 
 @app.get("/api/findings/{finding_id}/secrets")
