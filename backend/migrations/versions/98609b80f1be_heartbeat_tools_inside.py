@@ -91,15 +91,19 @@ def collapse_tools_inside(conn) -> int:
             last_parse_miss = _latest(last_parse_miss, _dt(r["last_parse_miss"]))
             first_fail = _earliest(first_fail, _dt(r["first_scan_fail"]))
             last_fail = _latest(last_fail, _dt(r["last_scan_fail"]))
+        # The siblings go BEFORE the kept row takes tool "": a group with a legacy row that
+        # already has tool "" (a UA-less report from before clients were told apart) would
+        # otherwise trip the (tenant, actor, plane, tool, client) unique constraint, and a
+        # migration that fails is a revision that never starts (prod, 2026-11-13).
+        gone = [r["id"] for r in members if r["id"] != keep["id"]]
+        if gone:
+            conn.execute(sa.delete(t).where(t.c.id.in_(gone)))
+            removed += len(gone)
         conn.execute(sa.update(t).where(t.c.id == keep["id"]).values(
             tool="", tools=tools, count=count, parse_miss_count=parse_miss,
             scan_fail_count=fails, scan_fail_reasons=reasons,
             first_seen=first_seen, last_seen=last_seen, last_parse_miss=last_parse_miss,
             first_scan_fail=first_fail, last_scan_fail=last_fail))
-        gone = [r["id"] for r in members if r["id"] != keep["id"]]
-        if gone:
-            conn.execute(sa.delete(t).where(t.c.id.in_(gone)))
-            removed += len(gone)
     return removed
 
 
