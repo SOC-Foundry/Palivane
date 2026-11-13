@@ -1362,6 +1362,21 @@ class ActorHours(Base):
     last_at = Column(DateTime, nullable=True)
 
 
+class InstructionTaint(Base):
+    """An actor received instruction-shaped content from an untrusted source (a tool result,
+    advertised tool descriptions, another agent's message), for a window. app/provenance.py."""
+
+    __tablename__ = "instruction_taints"
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    actor = Column(String(320), default="", nullable=False, index=True)   # lowercased
+    source = Column(String(320), default="", nullable=False)
+    finding_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    expires_at = Column(DateTime, index=True)
+
+
 class Containment(Base):
     """An admin's "stop this now" on a person, a device, an agent or the whole org
     (app/containment.py). While active, every capture decision for the target answers block
