@@ -34,7 +34,7 @@ from .google_login import router as google_login_router
 from .domains import router as domains_router
 from .allowlist import router as allowlist_router
 from .precision import router as precision_router
-from . import containment, review
+from . import containment, activity, review
 from .config import settings, _env
 from .gateway import gemini_router, gemini_v1_router, router as gateway_router
 from .database import Base, engine as db_engine, get_db
@@ -2453,6 +2453,10 @@ def _record_heartbeat(db: Session, tenant_id: int | None, actor: str,
     # most once per person, plane and month in this process.
     from .developer_meter import record as _meter
     _meter(db, tenant_id, actor or "", plane, tool or "", _parse_client_ua(client_ua)[0])
+    # When this person is usually active (one write per actor per hour), for the judgement
+    # calls that need to know whether silence is unusual (containment's quiet warning).
+    from .activity import note as _note_activity
+    _note_activity(db, tenant_id, actor or "")
 
 
 def _tenant_mcp_allow(tenant_id: int | None, db: Session) -> str:
@@ -4862,6 +4866,20 @@ def fleet_people(attention: bool = True, q: str = "",
             "attention": attention, "summary": summary}
 
 
+def _containment_actor(db: Session, tenant_id: int, r) -> str:
+    """The actor whose activity history says whether a containment's silence is unusual:
+    the person, the device key's actor, or the agent's name."""
+    if r.scope == "user":
+        return r.target
+    if r.scope == "agent":
+        return r.target
+    if r.scope == "device" and r.target.isdigit():
+        from .models import ApiKey
+        key = db.get(ApiKey, int(r.target))
+        return (key.actor or "") if key and key.tenant_id == tenant_id else ""
+    return ""
+
+
 def _containment_rows(db: Session, tenant_id: int, include_ended: bool) -> list[dict]:
     """Containments for the console, each with when its target last checked in. One that is
     active, has stopped nothing since it began and whose target has gone silent is flagged
@@ -4891,9 +4909,18 @@ def _containment_rows(db: Session, tenant_id: int, include_ended: bool) -> list[
                     .one_or_none())
             seen = ag.last_seen if ag else None
         d["target_last_seen"] = seen.isoformat() if seen else None
-        d["quiet"] = bool(d["active"] and not r.blocked and r.scope != "org"
-                          and r.created_at and now - r.created_at > timedelta(hours=1)
-                          and (seen is None or seen < r.created_at))
+        # Quiet: contained, nothing stopped, no check-in since, for over an hour, AT AN HOUR
+        # THE TARGET IS USUALLY ACTIVE. Without the last clause a person contained at six
+        # and gone home for the evening looked exactly like one who stripped the hooks.
+        # A target with no activity history at all (never seen, or seen too long ago to
+        # know) keeps the plain one-hour rule: silence is all there is to go on.
+        silent = bool(d["active"] and not r.blocked and r.scope != "org"
+                      and r.created_at and now - r.created_at > timedelta(hours=1)
+                      and (seen is None or seen < r.created_at))
+        who = _containment_actor(db, tenant_id, r)
+        if silent and who and activity.has_history(db, tenant_id, who, now):
+            silent = activity.expected_now(db, tenant_id, who, now)
+        d["quiet"] = silent
         out.append(d)
     return out
 

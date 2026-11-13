@@ -114,8 +114,9 @@ export default function ContainmentPanel() {
       {quiet.length > 0 && (
         <div className="contain-quiet">
           {quiet.length === 1 ? "A contained target has gone quiet" : `${quiet.length} contained targets have gone quiet`}:
-          nothing stopped since containment began and no check-in since. The device may have been
-          cut off from Palivane, or had its hooks removed. Worth a look.
+          nothing stopped since containment began and no check-in since, at an hour they are
+          usually active. The device may have been cut off from Palivane, or had its hooks
+          removed. Worth a look.
         </div>
       )}
       {rows && rows.length === 0 && <p className="muted">Nothing is contained.</p>}
