@@ -215,6 +215,10 @@ export const api = {
     return req("/findings" + (q ? `?${q}` : ""));
   },
   finding: (id) => req(`/findings/${id}`),
+  // The exposure register: regulated data that reached a provider, with the clock.
+  exposures: (includeClosed = false) => req("/exposures" + (includeClosed ? "?include_closed=1" : "")),
+  setExposureStatus: (id, payload) =>
+    req(`/exposures/${id}/status`, { method: "POST", body: JSON.stringify(payload) }),
   // Where else each secret in a finding travelled, and its rotation status.
   findingSecrets: (id) => req(`/findings/${id}/secrets`),
   secretRotated: (fp, note = "") =>
