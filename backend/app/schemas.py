@@ -51,6 +51,12 @@ class AIUsageIngest(BaseModel):
     destination: str = ""   # AI tool URL/domain
     user: str = ""          # end-user identity (from SSO/extension)
     tool: str = ""          # capturing tool id (e.g. "claude-code") for per-tool policy
+    # The desktop proxy also reports what a provider SENT BACK: `direction` "response" with
+    # the raw reply in `content` (`response_format` "json" or "sse"); the backend lifts the
+    # assistant text out and scans it as the gateway scans its own responses. Observe-only:
+    # the bytes reached the client as they streamed.
+    direction: str = Field(default="", max_length=16)
+    response_format: str = Field(default="", max_length=8)
     # Host and path of the request the content was captured from (no query string), so a finding
     # can say where it came from. Metadata only; the extension sends it, a proxy may.
     endpoint: str = Field(default="", max_length=200)
