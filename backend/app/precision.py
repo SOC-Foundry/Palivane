@@ -53,6 +53,8 @@ EXPECTED_SHARE = 0.4       # this much "expected" means the fix is an allowlist,
 FALSE_POSITIVE_SHARE = 0.25
 NO_REASON_SHARE = 0.4
 NOISY_ROWS = 10
+SIGNATURE_ROWS = 15        # false-positive signatures (check + what matched) the readout lists
+MAIL_SIGNATURE_MIN = 3     # findings a signature needs before the weekly mail names it
 
 BUCKETS = ("actionable", "expected", "false_positive", "unspecified", "duplicate")
 
@@ -185,6 +187,10 @@ def compute(reviews: list[dict], legacy: list[dict], backlog: dict, now: datetim
     by_tool: dict[str, dict] = {}
     weeks: dict[str, dict] = {}
     noisy: list[dict] = []
+    # What the false positives were: one row per (check, title, evidence) signature, so a
+    # detector fix starts from "this rule matched this, N times" rather than from someone
+    # noticing. Four detector PRs in two days came from exactly that noticing (2026-11-12).
+    signatures: dict[tuple[str, str, str], dict] = {}
     via_analyst = 0
 
     # every week in the window, so an empty one is a gap the chart shows rather than hides
@@ -216,6 +222,16 @@ def compute(reviews: list[dict], legacy: list[dict], backlog: dict, now: datetim
             t["events"] += events
             t[b] += 1
             t[f"{b}_events"] += events
+        if b == "false_positive":
+            sig = signatures.setdefault((check, title, evidence), {
+                "check": check, "title": title, "evidence": evidence,
+                "findings": 0, "events": 0, "ids": [], "last_reviewed": None})
+            sig["findings"] += 1
+            sig["events"] += events
+            if len(sig["ids"]) < 3:
+                sig["ids"].append(r.get("id"))
+            if wk is not None and (sig["last_reviewed"] is None or wk > sig["last_reviewed"]):
+                sig["last_reviewed"] = wk
         # "keeps firing" means it fired AFTER the dismissal; a finding that piled up its events
         # before someone closed it is not noise the dismissal failed to stop.
         seen = r.get("last_seen")
@@ -242,6 +258,9 @@ def compute(reviews: list[dict], legacy: list[dict], backlog: dict, now: datetim
         tools.append(row)
     tools.sort(key=lambda c: -c["judged"])
     noisy.sort(key=lambda n: -n["events"])
+    fps = sorted(signatures.values(), key=lambda g: (-g["findings"], -g["events"], g["check"], g["evidence"]))
+    for g in fps:
+        g["last_reviewed"] = g["last_reviewed"].isoformat() if g["last_reviewed"] else None
 
     owner = sum(1 for r in legacy if r.get("answered") and r.get("status") == "triaged")
     return {
@@ -255,6 +274,7 @@ def compute(reviews: list[dict], legacy: list[dict], backlog: dict, now: datetim
         "tools": tools[:10],
         "trend": [{"week": k, **_rates(v)} for k, v in sorted(weeks.items())],
         "recurring_noise": noisy[:NOISY_ROWS],
+        "false_positive_signatures": fps[:SIGNATURE_ROWS],
         "limits": {"min_judged": MIN_JUDGED, "reasons": list(REASONS)},
     }
 
@@ -339,6 +359,24 @@ def format_quality(r: dict, expiring: list[dict], lapsed: list[dict], now: datet
         for c in tune:
             q.append(f"    {c['title'] or c['check']}: {c['actionable']} of {c['judged']} reviewed "
                      f"needed action. {c['hint']}")
+    # The false positives by what matched, so a detector fix starts from the data. The
+    # evidence goes in the mail only when it is a detector's label ("AWS access key id",
+    # "passport number"); a matched token is stored truncated with an ellipsis, and even
+    # ten characters of one are content, which this mail does not carry.
+    fps = r.get("false_positive_signatures") or []
+    if fps:
+        total = sum(g["findings"] for g in fps)
+        # Named only when it is a pattern: one or two of a kind is an incident, which the
+        # console lists; three and up is a rule that keeps being wrong.
+        patterns = [g for g in fps if g["findings"] >= MAIL_SIGNATURE_MIN][:3]
+        q.append(f"  False positives: {_n(total, 'finding')} across {_n(len(fps), 'signature')}"
+                 + ("; most often:" if patterns else "."))
+        for g in patterns:
+            what = g["title"] or g["check"]
+            if g["evidence"] and _label_like(g["evidence"]):
+                what += f" ({g['evidence']})"
+            q.append(f"    {what}: {_n(g['findings'], 'finding')}"
+                     + (f", {g['events']} events" if g["events"] > g["findings"] else "") + ".")
     if bl["open"]:
         line = f"  Open now: {bl['open']}"
         if bl["open_high"]:
@@ -368,6 +406,16 @@ def format_quality(r: dict, expiring: list[dict], lapsed: list[dict], now: datet
     if a:
         out += ["", "Allowlist"] + a + ["  Renew or revoke: console -> Policies -> Allowlist."]
     return out
+
+
+def _label_like(evidence: str) -> bool:
+    """A detector's label for what matched, as opposed to a piece of what matched: no
+    truncation ellipsis (a matched token is stored as its first characters plus one), short,
+    and made of words rather than one long run."""
+    e = evidence.strip()
+    if not e or "…" in e or len(e) > 48:
+        return False
+    return not any(len(part) > 24 for part in e.split())
 
 
 def _pct(v) -> str:

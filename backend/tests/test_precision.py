@@ -490,3 +490,17 @@ def test_bulk_dismissals_with_a_judged_reason_count():
     r = out["reviewed"]
     assert (r["findings"], r["false_positive"], r["expected"], r["actionable"]) == (6, 3, 1, 2)
     assert out["bulk"]["counted"] == 4 and out["bulk"]["findings"] == 2
+
+
+def test_the_readout_lists_false_positive_signatures_with_examples(client, db_factory):
+    tid = _tid(db_factory)
+    a = _add(db_factory, tid, status="dismissed", reason="false_positive", ago_days=1,
+             signals=[_sig("secret_leak", title="Credentials/secrets in outbound content", evidence="AWS access key id")])
+    b = _add(db_factory, tid, status="dismissed", reason="false_positive", ago_days=2, seen=3,
+             signals=[_sig("secret_leak", title="Credentials/secrets in outbound content", evidence="AWS access key id")])
+    _add(db_factory, tid, status="dismissed", reason="expected", ago_days=1)
+    r = _readout(client, days=7)
+    sigs = r["false_positive_signatures"]
+    assert len(sigs) == 1
+    assert sigs[0]["evidence"] == "AWS access key id" and sigs[0]["findings"] == 2 and sigs[0]["events"] == 4
+    assert sorted(sigs[0]["ids"]) == sorted([a, b])

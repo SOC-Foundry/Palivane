@@ -171,6 +171,37 @@ export default function Precision({ labelFor = (k) => k }) {
         </>
       )}
 
+      {data && (data.false_positive_signatures || []).length > 0 && (
+        <>
+          <h3 className="help-h3">False positives, by what matched</h3>
+          <p className="muted" style={{ margin: "0 0 8px" }}>
+            Findings dismissed as false positives in this period, grouped by the check and the
+            evidence it matched: where a detector fix starts. The weekly report carries the top three.
+          </p>
+          <div className="table-scroll">
+            <table className="data-table pr-table">
+              <thead><tr><th>What matched</th><th>Findings</th><th>Events</th><th>Last dismissed</th><th>Examples</th></tr></thead>
+              <tbody>
+                {data.false_positive_signatures.map((g) => (
+                  <tr key={`${g.check}|${g.title}|${g.evidence}`}>
+                    <td>
+                      <strong>{g.title || labelFor(g.check)}</strong>
+                      {g.evidence && <div className="pr-sub"><code>{g.evidence}</code></div>}
+                    </td>
+                    <td>{g.findings}</td>
+                    <td>{g.events}</td>
+                    <td className="muted">{g.last_reviewed ? new Date(g.last_reviewed + "Z").toLocaleDateString() : "-"}</td>
+                    <td>{g.ids.map((id, i) => (
+                      <span key={id}>{i > 0 ? ", " : ""}<a className="link-btn" href={`/app/findings/${id}`}>#{id}</a></span>
+                    ))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
       {data && data.recurring_noise.length > 0 && (
         <>
           <h3 className="help-h3">Dismissed, and keep firing</h3>
