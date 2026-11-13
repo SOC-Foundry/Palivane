@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from .models import (
     Agent, AgentRole, AllowEntry, ApiKey, AuditLog, BrowserExtension, ContentFingerprint,
-    ActorHours, Containment, CorpusSample, InstructionTaint, SecretRotation, SecretSighting, DeveloperActivity, DeviceAsset, DiscoveredUsage, EnrollmentToken, ExceptionRecord, Finding, GatewayUsage,
+    ActorHours, Containment, CorpusSample, TenantLane, InstructionTaint, SecretRotation, SecretSighting, DeveloperActivity, DeviceAsset, DiscoveredUsage, EnrollmentToken, ExceptionRecord, Finding, GatewayUsage,
     InferenceHookDenial, JoinRequest,
     OAuthCode, OAuthToken, PolicyOverride, SaasConnector, SensorHeartbeat, Tenant,
     TenantDomain, TenantOIDC, TenantSAML, TenantUpstream, UpgradeRequest, User,
@@ -68,6 +68,7 @@ TENANT_TABLES = (
     ("developer_activity", DeveloperActivity),
     ("containments", Containment),
     ("actor_hours", ActorHours),
+    ("tenant_lanes", TenantLane),
     ("instruction_taints", InstructionTaint),
     ("secret_sightings", SecretSighting),
     ("secret_rotations", SecretRotation),

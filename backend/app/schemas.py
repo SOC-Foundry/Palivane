@@ -525,6 +525,15 @@ class DPAAccept(BaseModel):
     version: str | None = None   # DPA version accepted; None = the current server version
 
 
+class LaneConfig(BaseModel):
+    """A provider's private lane: where requests carrying the named data classes go
+    instead of being blocked (app/lanes.py). `key` is write-only; empty keeps the one set."""
+    label: str = Field("", max_length=128)
+    base_url: str = ""
+    key: str = ""
+    classes: list[str] = Field(default_factory=list)
+
+
 class UpstreamConfig(BaseModel):
     base_url: str = ""
     # Write-only: the provider API key. Stored encrypted, never returned. Leave empty on
