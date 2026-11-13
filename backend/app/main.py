@@ -735,17 +735,21 @@ def _parse_since(since: str):
 @app.get("/api/export/findings")
 def export_findings(
     current: _ExportPrincipal = Depends(require_export_auth), db: Session = Depends(get_db),
-    severity: str | None = None, surface: str | None = None,
+    severity: str | None = None, surface: str | None = None, status: str | None = None,
     limit: int = Query(5000, ge=1, le=50000),
     since: str | None = None,
 ):
-    """Export findings as JSONL (SIEM ingest). Console admin or an `ak_…` API key, so a
-    SIEM's scheduled poller can authenticate. Filterable by severity/surface.
+    """Export findings as JSONL (SIEM ingest, and the palivane-findings CLI). Console admin
+    or a console-read `ak_…` API key, so a SIEM's scheduled poller can authenticate.
+    Filterable by severity/surface/status.
 
     Incremental pull: pass `since` (ISO 8601) to get only findings active at/after the
     watermark, oldest first; the response's X-Palivane-Next-Since header is the watermark
     for the next poll. The filter is inclusive (a boundary tie is re-sent rather than
-    skipped), so consumers dedupe on (finding_id, last_seen)."""
+    skipped), so consumers dedupe on (finding_id, last_seen).
+
+    A pull with no `since` is a person looking, not a poller polling, and is audited as
+    the key's user (a poller's every-minute watermark pulls would bury the audit log)."""
     import json as _json
     from fastapi.responses import Response as _Resp
     q = db.query(Finding).filter(Finding.tenant_id == current.tenant_id)
@@ -753,6 +757,8 @@ def export_findings(
         q = q.filter(Finding.severity == severity)
     if surface:
         q = q.filter(Finding.surface == surface)
+    if status:
+        q = q.filter(Finding.status == status)
     headers = {"Content-Disposition": "attachment; filename=palivane-findings.jsonl"}
     if since is not None:
         q = q.filter(Finding.last_seen >= _parse_since(since))
@@ -763,8 +769,37 @@ def export_findings(
             headers["X-Palivane-Next-Since"] = max(marks).isoformat() + "Z"
     else:
         rows = q.order_by(Finding.created_at.desc()).limit(min(limit, 20000)).all()
+        from . import audit_log
+        audit_log.record(db, current.tenant_id, current.actor, "findings.export",
+                         detail={"count": len(rows),
+                                 **{k: v for k, v in (("severity", severity), ("surface", surface),
+                                                      ("status", status)) if v}})
     body = "\n".join(_json.dumps(r.to_summary()) for r in rows)
     return _Resp(content=body, media_type="application/x-ndjson", headers=headers)
+
+
+@app.get("/api/export/findings/{finding_id}")
+def export_finding(finding_id: int, content: bool = False,
+                   current: _ExportPrincipal = Depends(require_export_auth),
+                   db: Session = Depends(get_db)):
+    """One finding in full, for a terminal (palivane-findings show) or a script: the same
+    detail the console shows, on the same credential as the export above. The captured
+    content comes only on request (`content=1`), since most reads are about the signals
+    and the review, and content is the sensitive part. Every read is audited as the key's
+    user: a key that reads findings leaves the same trail a person in the console would."""
+    row = db.get(Finding, finding_id)
+    if not row or row.tenant_id != current.tenant_id:
+        raise HTTPException(status_code=404, detail="finding not found")
+    from . import audit_log
+    from .crypto import unwrap_dek
+    tenant = db.get(Tenant, current.tenant_id)
+    dek = unwrap_dek(tenant.dek_wrapped) if tenant and tenant.dek_wrapped else None
+    d = row.to_detail(dek)
+    if not content:
+        d["content"] = ""
+    audit_log.record(db, current.tenant_id, current.actor, "finding.export",
+                     target=str(finding_id), detail={"content": bool(content)})
+    return d
 
 
 @app.get("/api/export/tenant")
