@@ -31,6 +31,8 @@ ALLOW = {
     "palivane-dbscan": "cli/palivane-dbscan",
     "palivane-github-scan": "cli/palivane-github-scan",
     "palivane-ci-scan": "cli/palivane-ci-scan",
+    # Read-only: an org's findings from a terminal, on a console-read key (audited).
+    "palivane-findings": "cli/palivane-findings",
     "palivane-otel": "cli/palivane-otel",
     "palivane-desktop": "cli/palivane-desktop",
     "palivane_addon.py": "proxy/palivane_addon.py",
