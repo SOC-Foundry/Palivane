@@ -69,6 +69,16 @@ export default function Connections() {
     finally { setMinting(false); }
   }
 
+  async function setDevelopment(k, development) {
+    try {
+      await api.updateApiKey(k.id, { development });
+      flash(development
+        ? "Development key: its captures are recorded as dismissed (expected) and stay out of the queue, alerts and attack chains."
+        : "Back to a normal key.");
+      load();
+    } catch (e) { flash(e.message || "Could not update that key.", false); }
+  }
+
   async function revoke(k) {
     if (!window.confirm(`Revoke key for "${k.actor || k.label || k.prefix}"? Its device stops reporting.`)) return;
     try { await api.deleteApiKey(k.id); flash("Key revoked."); load(); }
@@ -120,9 +130,23 @@ export default function Connections() {
               <tbody>
                 {visibleKeys.map((k) => (
                   <tr key={k.id} style={{ opacity: k.active ? 1 : 0.5 }}>
-                    <td>{k.actor || k.label || "-"}</td>
+                    <td>{k.actor || k.label || "-"}
+                      {k.development && (
+                        <span className="chip chip-warn" style={{ marginLeft: 8 }}
+                              title="A development key: what it captures is recorded as dismissed (expected) and kept out of the queue, the alerts and attack chains. For a machine that works on detection itself.">
+                          dev
+                        </span>
+                      )}
+                    </td>
                     <td title={(SCOPES[k.scope] || SCOPES.ingest).hint}>
                       {(SCOPES[k.scope] || SCOPES.ingest).label}
+                      {k.active && k.scope === "ingest" && (
+                        <button type="button" className="link-btn" style={{ marginLeft: 8 }}
+                                title={k.development ? "Treat this key's captures as real again" : "Mark as a development key: captures recorded as dismissed (expected), not queued or alerted"}
+                                onClick={() => setDevelopment(k, !k.development)}>
+                          {k.development ? "not dev" : "dev"}
+                        </button>
+                      )}
                     </td>
                     <td><code>{k.prefix}</code></td>
                     <td>{when(k.last_used_at)}</td>

@@ -412,6 +412,12 @@ class ApiKey(Base):
     token_hash = Column(String(64), nullable=False)
     actor = Column(String(320), default="")  # identity to attribute findings to
     active = Column(Boolean, default=True)
+    # A DEVELOPMENT key: its traffic is someone working on detection (fixtures, the hook
+    # source, a workflow that pipes base64 into bash). What it captures is recorded, so
+    # coverage and the precision readout stay honest, but as `dismissed`/`expected` by the
+    # key, kept out of the queue, the alerts and the attack-chain lookback. Set on the key
+    # in the console (Connections), never claimed by the client.
+    development = Column(Boolean, default=False, nullable=False, server_default="0")
     created_at = Column(DateTime, default=_utcnow)
     last_used_at = Column(DateTime, nullable=True)
     # Stamped when a client presents this key AFTER it was revoked/expired — the fleet
@@ -427,6 +433,7 @@ class ApiKey(Base):
         return {
             "id": self.id, "label": self.label, "prefix": self.prefix,
             "actor": self.actor, "active": self.active,
+            "development": bool(self.development),
             "scope": self.scope or "ingest", "user_id": self.user_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_used_at": self.last_used_at.isoformat() if self.last_used_at else None,
