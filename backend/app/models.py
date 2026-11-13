@@ -1346,6 +1346,22 @@ class DeveloperActivity(Base):
     first_seen = Column(DateTime, default=_utcnow)
 
 
+class ActorHours(Base):
+    """When an actor is usually active: a count per hour of the week (UTC slot 0..167),
+    with the last time that slot was seen. Written once per actor per hour from the
+    sensor heartbeats (app/activity.py); read by containment's quiet warning."""
+
+    __tablename__ = "actor_hours"
+    __table_args__ = (UniqueConstraint("tenant_id", "actor", "slot", name="uq_actor_hours_slot"),)
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    actor = Column(String(320), default="", nullable=False, index=True)   # lowercased
+    slot = Column(Integer, default=0, nullable=False)                     # weekday*24 + hour
+    count = Column(Integer, default=0, nullable=False)
+    last_at = Column(DateTime, nullable=True)
+
+
 class Containment(Base):
     """An admin's "stop this now" on a person, a device, an agent or the whole org
     (app/containment.py). While active, every capture decision for the target answers block
