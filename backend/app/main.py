@@ -43,6 +43,7 @@ from . import crypto
 from .engine import engine
 from .models import (Agent, AgentRole, CorpusSample, Finding, PolicyOverride, SaasConnector,
                      Tenant, User)
+from .schemas import SecretRotatedIn
 from .schemas import (
     A2AIngest,
     AIUsageIngest,
@@ -3612,6 +3613,43 @@ def get_finding(finding_id: int, current: User = Depends(require_analyst),
     tenant = db.get(Tenant, current.tenant_id)
     dek = unwrap_dek(tenant.dek_wrapped) if tenant and tenant.dek_wrapped else None
     return row.to_detail(dek)
+
+
+@app.get("/api/findings/{finding_id}/secrets")
+def finding_secrets(finding_id: int, current: User = Depends(require_analyst),
+                    db: Session = Depends(get_db)):
+    """Where else each secret in this finding has been seen in the last 90 days (people,
+    tools, findings), and whether it is rotated and verified gone. app/secrets_ledger.py."""
+    row = db.get(Finding, finding_id)
+    if not row or row.tenant_id != current.tenant_id:
+        raise HTTPException(status_code=404, detail="finding not found")
+    from . import secrets_ledger
+    return {"secrets": secrets_ledger.for_finding(db, current.tenant_id, finding_id)}
+
+
+@app.post("/api/secrets/{secret_fp}/rotated")
+def secret_rotated(secret_fp: str, body: SecretRotatedIn, current: User = Depends(require_admin),
+                   db: Session = Depends(get_db)):
+    """The org rotated this secret. From now on the ledger watches for the old value: a
+    sighting after this is "still seen" (the rotation did not take, or a copy is still in
+    use); a week without one is "verified". Audited."""
+    from . import audit_log, secrets_ledger
+    from .models import SecretSighting
+    if not (db.query(SecretSighting.id)
+              .filter(SecretSighting.tenant_id == current.tenant_id,
+                      SecretSighting.secret_fp == secret_fp).first()):
+        raise HTTPException(status_code=404, detail="no such secret in this org's ledger")
+    rot = secrets_ledger.mark_rotated(db, current.tenant_id, secret_fp, current.email, body.note)
+    audit_log.record(db, current.tenant_id, current.email, "secret.rotated",
+                     target=secret_fp, detail={"label": rot.label or "", **({"note": body.note} if body.note else {})})
+    return secrets_ledger.travel(db, current.tenant_id, secret_fp)
+
+
+@app.get("/api/secrets/rotations")
+def secret_rotations(current: User = Depends(require_analyst), db: Session = Depends(get_db)):
+    """Every rotation on record with its status: watching, verified, or still seen."""
+    from . import secrets_ledger
+    return {"rotations": secrets_ledger.rotations(db, current.tenant_id)}
 
 
 @app.post("/api/findings/{finding_id}/investigate")

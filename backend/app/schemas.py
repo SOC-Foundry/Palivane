@@ -553,6 +553,10 @@ class ApiKeyCreate(BaseModel):
     development: bool = False
 
 
+class SecretRotatedIn(BaseModel):
+    note: str = Field("", max_length=500)
+
+
 class ApiKeyUpdate(BaseModel):
     development: bool
 

@@ -213,6 +213,10 @@ export const api = {
     return req("/findings" + (q ? `?${q}` : ""));
   },
   finding: (id) => req(`/findings/${id}`),
+  // Where else each secret in a finding travelled, and its rotation status.
+  findingSecrets: (id) => req(`/findings/${id}/secrets`),
+  secretRotated: (fp, note = "") =>
+    req(`/secrets/${fp}/rotated`, { method: "POST", body: JSON.stringify({ note }) }),
   setStatus: (id, status, via = "", reason = "") =>
     req(`/findings/${id}`, { method: "PATCH", body: JSON.stringify({ status, via, reason }) }),
   bulkStatus: (ids, status, reason = "") =>

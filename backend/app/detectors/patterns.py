@@ -490,6 +490,36 @@ def find_secrets(text: str) -> list[str]:
     return out
 
 
+def find_secret_matches(text: str) -> list[tuple[str, str]]:
+    """(label, matched value) for every distinct secret the canonical and custom patterns
+    match in `text`, with the same placeholder and sample skips as find_secrets. Evasion
+    variants are left out: a separator-stripped token is not the value a key manager holds.
+    For the secrets ledger (app/secrets_ledger.py), which fingerprints the value and never
+    stores it. Deduplicated on the value, first label wins, in order of appearance."""
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    hits: list[tuple[int, str, str]] = []
+    for patterns in (SECRET_PATTERNS, custom_patterns()):
+        for label, rx in patterns:
+            for m in rx.finditer(text):
+                value = m.group(0)
+                if _DUMMY_RUN_RE.search(value) or _DOC_SAMPLE_RE.search(value):
+                    continue
+                if label == "Credential assignment" and _is_placeholder_assignment(
+                        value, text[max(text.rfind("\n", 0, m.start()) + 1, m.start() - 200):m.start()],
+                        text[m.end():m.end() + 40]):
+                    continue
+                if label == "Connection string credential" and _is_placeholder_conn(value):
+                    continue
+                hits.append((m.start(), label, value))
+    for _, label, value in sorted(hits, key=lambda h: h[0]):
+        if value in seen:
+            continue
+        seen.add(value)
+        out.append((label, value))
+    return out
+
+
 def custom_pii_patterns(extra: str = "") -> list[tuple[str, _TimedPattern]]:
     """Org-specific PII / confidential-data patterns — `label=regex` per line (newline- or
     `;`-separated). Sourced from the global CUSTOM_PII_PATTERNS env AND a per-tenant `extra`
