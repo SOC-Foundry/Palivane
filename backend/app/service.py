@@ -23,7 +23,7 @@ from .crypto import seal
 # as the rest of the scan path — a late import would bind a different instance if the
 # config module was ever reloaded.
 from .ml import capture as ml_capture
-from . import excerpts, review
+from . import excerpts, review, secrets_ledger
 from .redaction import redact_text
 from .scoring import UNSCANNED_CHECK
 from .session_correlation import correlate, is_chain_relevant
@@ -581,6 +581,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                                          "recurrence": prior.seen_count},
                                 item.subject, item.sender, item.surface.value)
             provenance.remember(db, tenant_id, item, result["signals"], prior.id)
+            secrets_ledger.record(db, tenant_id, item, result["signals"], prior.id)
             return {"finding_id": prior.id, "recurrence": prior.seen_count,
                     "reopened": reopened, "judge_used": judge_ran, **result}
         finding = Finding(
@@ -618,6 +619,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         db.refresh(finding)
         finding_id = finding.id
         provenance.remember(db, tenant_id, item, result["signals"], finding_id)
+        secrets_ledger.record(db, tenant_id, item, result["signals"], finding_id)
         if dev:
             # Recorded and reviewed by the key; nothing to page anyone about, and not a link
             # in anyone's chain (a dismissed finding never is).
