@@ -310,3 +310,54 @@ def test_the_window_is_claimed_so_the_new_sections_do_not_double_send(client, db
     assert alerts.run_weekly_reports(db, _now()) == 1 and alerts.run_weekly_reports(db, _now()) == 0
     assert len(mailbox) == 1
     db.close()
+
+
+# --- false positives, by what matched --------------------------------------------------------------
+
+def _fp(evidence, check="secret_leak", title="Credentials/secrets in outbound content", events=1, fid=1):
+    rv = _rv("dismissed", "false_positive", events=events, check=check, title=title)
+    rv["id"] = fid
+    rv["signals"][0]["evidence"] = evidence
+    return rv
+
+
+def test_false_positives_are_grouped_by_check_and_evidence():
+    r = _readout([_fp("AWS access key id", fid=1), _fp("AWS access key id", fid=2, events=4),
+                  _fp("mDMEavDr2B…", check="secret_leak", title="Possible secret (high-entropy token)", fid=3),
+                  _rv("dismissed", "expected"), _rv("triaged")])
+    sigs = r["false_positive_signatures"]
+    assert [(g["evidence"], g["findings"], g["events"], g["ids"]) for g in sigs] == [
+        ("AWS access key id", 2, 5, [1, 2]), ("mDMEavDr2B…", 1, 1, [3])]
+    assert sigs[0]["check"] == "secret_leak" and sigs[0]["last_reviewed"]
+
+
+def test_a_bulk_false_positive_dismissal_counts_toward_the_signatures():
+    r = _readout([_fp("passport number", check="pii_exposure", title="Personal data in outbound content")
+                  | {"via": "bulk"}])
+    assert [g["evidence"] for g in r["false_positive_signatures"]] == ["passport number"]
+
+
+def test_the_mail_names_a_pattern_by_its_label_but_never_a_matched_token():
+    out = _text(precision.format_quality(_readout([
+        _fp("AWS access key id", fid=1), _fp("AWS access key id", fid=2), _fp("AWS access key id", fid=3, events=2),
+        _fp("mDMEavDr2B…", title="Possible secret (high-entropy token)", fid=4),
+        _fp("mDMEavDr2B…", title="Possible secret (high-entropy token)", fid=5),
+        _fp("mDMEavDr2B…", title="Possible secret (high-entropy token)", fid=6),
+        _fp("Thisisonelongrunofcharactersthatlookslikeatoken", title="Possible secret (high-entropy token)", fid=7),
+    ]), [], [], _now()))
+    assert "False positives: 7 findings across 3 signatures; most often:" in out
+    assert "Credentials/secrets in outbound content (AWS access key id): 3 findings, 4 events." in out
+    assert "Possible secret (high-entropy token): 3 findings." in out       # the token itself is not in the mail
+    assert "mDMEavDr2B" not in out and "Thisisonelongrun" not in out
+
+
+def test_one_or_two_of_a_kind_is_counted_but_not_named_in_the_mail():
+    out = _text(precision.format_quality(_readout([_fp("AWS access key id", fid=1), _fp("AWS access key id", fid=2)]),
+                                         [], [], _now()))
+    assert "False positives: 2 findings across 1 signature." in out
+    assert "most often" not in out and "AWS access key id" not in out
+
+
+def test_no_false_positives_means_no_section():
+    out = _text(precision.format_quality(_readout([_rv("dismissed", "expected"), _rv("triaged")]), [], [], _now()))
+    assert "False positives" not in out
