@@ -463,6 +463,17 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                      for x in raw_signals if _confirmed_leak([x])]
         verdict = score(sigs)
 
+    # Instruction provenance: an action by an actor who just received instruction-shaped
+    # content from an untrusted source (a tool result, another agent) carries one more
+    # signal naming that source, and scores as a strong prompt-injection link. Applied
+    # before the verdict is read for the same reason as the origin boost below.
+    from . import provenance
+    if not dry_run:
+        taint = provenance.signal_for(db, tenant_id, item, verdict.signals)
+        if taint is not None:
+            from .scoring import score
+            verdict = score(list(verdict.signals) + [taint])
+
     # Origin-aware severity: a leak whose content matches a document we scanned at rest
     # is confirmed real org data, not merely PII-shaped text — so it scores higher, and a
     # match to a KNOWN-SENSITIVE source (the doc's own scan tripped a data-loss category)
@@ -569,6 +580,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                 _dispatch_sinks(tenant, {**result, "finding_id": prior.id, "reopened": True,
                                          "recurrence": prior.seen_count},
                                 item.subject, item.sender, item.surface.value)
+            provenance.remember(db, tenant_id, item, result["signals"], prior.id)
             return {"finding_id": prior.id, "recurrence": prior.seen_count,
                     "reopened": reopened, "judge_used": judge_ran, **result}
         finding = Finding(
@@ -605,6 +617,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         db.commit()
         db.refresh(finding)
         finding_id = finding.id
+        provenance.remember(db, tenant_id, item, result["signals"], finding_id)
         if dev:
             # Recorded and reviewed by the key; nothing to page anyone about, and not a link
             # in anyone's chain (a dismissed finding never is).
