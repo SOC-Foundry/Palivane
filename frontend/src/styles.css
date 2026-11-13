@@ -45,6 +45,17 @@
 
 * { box-sizing: border-box; }
 
+/* Scrollbars that belong to the theme. The nav already had thin themed bars; every other
+   pane (the findings queue, the detail drawer, table-scroll) showed the browser's light
+   default, a bright strip against the dark panels. One rule for all of them: thin, the
+   thumb in the panel's border colour, no track, a little brighter under the pointer. */
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background: var(--border-bright); background-clip: padding-box; }
+*::-webkit-scrollbar-corner { background: transparent; }
+
 body {
   margin: 0;
   background: var(--bg);
