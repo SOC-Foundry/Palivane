@@ -558,3 +558,35 @@ def test_a_password_hash_is_not_a_possible_secret():
         assert find_high_entropy_tokens("stored value: " + hashed) == [], hashed[:12]
     # The same characters with no hash marker still read as a possible key.
     assert find_high_entropy_tokens("stored value: " + body)
+
+
+def test_a_pgp_public_key_block_is_not_a_possible_secret_but_the_private_one_is():
+    # OpenPGP armour spells it `PGP PUBLIC KEY BLOCK`, so the PEM mask did not reach it and
+    # the ops GPG public key, printed by a workflow, became four "possible secrets" across
+    # three prod findings (#1432/#1433/#1439, 2026-11-12). A public key is public.
+    body = ("mDMEavDr2BYJKwYBBAHaRw8BAQdAEqNOuyFIKff1TGCe5IqelEc3EYxlXE5/nbWC\n"
+            "UHAdhQW0IlBhbGl2YW5lIG9wcyA8ZGF2aWRrQHRhY2h0ZWNoLm5ldD6IlgQTFgoA\n"
+            "CQgLAgQWAgMBAh4BAheAAAoJENWPV5qoBA+FEIQA/2fTj+MwEuetTcoEqiakHO1c\n"
+            "=VJpE\n")
+    plain = "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\n" + body + "-----END PGP PUBLIC KEY BLOCK-----\n"
+    headed = ("-----BEGIN PGP PUBLIC KEY BLOCK-----\nVersion: GnuPG v2\nComment: ops key\n\n"
+              + body + "-----END PGP PUBLIC KEY BLOCK-----\n")
+    for block in (plain, headed):
+        assert find_high_entropy_tokens("OPS_OUTPUT_GPG_KEY: " + block) == []
+    # The same lines without the armour are still a bare high-entropy run, and the private
+    # half of the pair is still a private key.
+    assert find_high_entropy_tokens(body)
+    assert "Private key block" in find_secrets(
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----\n" + body + "-----END PGP PRIVATE KEY BLOCK-----")
+
+
+def test_stripe_object_ids_are_not_secrets_but_stripe_credentials_are():
+    # A webhook endpoint, customer or subscription id is prefix + random suffix, so it passes
+    # every entropy gate while naming an object, not a credential (prod #1437, 2026-11-13).
+    for oid in ("we_1U8NTCC0n5u2OIhO1ViyhoGU", "cus_R4kT9xQm2ZpL7vN1wE3bYc",
+                "sub_1QaB2cD3eF4gH5iJ6kL7mN8o", "price_1PqR2sT3uV4wX5yZ6aB7cD8e"):
+        assert find_high_entropy_tokens(f"webhook endpoint {oid} -> /api/billing/webhook") == [], oid
+    # Stripe's credentials keep their own prefixes: the secret key has a Tier-1 pattern and
+    # the webhook signing secret still reads as a possible key.
+    assert "Stripe secret key" in find_secrets("STRIPE_KEY=sk_live_4eC39HqLyjWDarjtT1zdp7dcABCDEFGH")
+    assert find_high_entropy_tokens("STRIPE_WEBHOOK_SECRET=whsec_8f3Kd92LmQ7xP4vR1tY6uB0nC5eW2aZ9")
