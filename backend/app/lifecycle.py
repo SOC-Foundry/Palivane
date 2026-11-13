@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from .models import (
     Agent, AgentRole, AllowEntry, ApiKey, AuditLog, BrowserExtension, ContentFingerprint,
-    Containment, CorpusSample, DeveloperActivity, DeviceAsset, DiscoveredUsage, EnrollmentToken, ExceptionRecord, Finding, GatewayUsage,
+    ActorHours, Containment, CorpusSample, DeveloperActivity, DeviceAsset, DiscoveredUsage, EnrollmentToken, ExceptionRecord, Finding, GatewayUsage,
     InferenceHookDenial, JoinRequest,
     OAuthCode, OAuthToken, PolicyOverride, SaasConnector, SensorHeartbeat, Tenant,
     TenantDomain, TenantOIDC, TenantSAML, TenantUpstream, UpgradeRequest, User,
@@ -67,6 +67,7 @@ TENANT_TABLES = (
     ("sensor_heartbeats", SensorHeartbeat),
     ("developer_activity", DeveloperActivity),
     ("containments", Containment),
+    ("actor_hours", ActorHours),
     ("inference_hook_denials", InferenceHookDenial),
     ("upgrade_requests", UpgradeRequest),
     # Domain capture: freeing the claim matters — a verified domain held by a dead
