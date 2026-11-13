@@ -96,6 +96,59 @@ def expected_now(db: Session, tenant_id: int, actor: str, now: datetime | None =
         ActorHours.slot.in_(slots), ActorHours.last_at >= now - LOOKBACK).first() is not None
 
 
+# An actor active in this many distinct hours of the day, on this many distinct days of
+# the last week, is not keeping a person's hours. A long day is 12 hours; a person on call
+# might touch 16; 20 of 24, five days running, is a process.
+UNATTENDED_HOURS = 20
+UNATTENDED_DAYS = 5
+
+
+def cadence(db: Session, tenant_id: int, actor: str, now: datetime | None = None) -> dict:
+    """How an actor's last week is spread: distinct hours of the day and days seen, and
+    whether that is a machine's cadence rather than a person's."""
+    actor = _norm(actor)
+    now = now or _now()
+    rows = (db.query(ActorHours.slot)
+              .filter(ActorHours.tenant_id == tenant_id, ActorHours.actor == actor,
+                      ActorHours.last_at >= now - timedelta(days=7)).all())
+    hours = {slot % 24 for (slot,) in rows}
+    days = {slot // 24 for (slot,) in rows}
+    return {"hours_of_day": len(hours), "days": len(days),
+            "round_the_clock": len(hours) >= UNATTENDED_HOURS and len(days) >= UNATTENDED_DAYS}
+
+
+def unattended(db: Session, tenant_id: int, now: datetime | None = None) -> list[dict]:
+    """Actors on a PERSON's identity (an email) that keep a machine's hours: an unregistered
+    agent running under someone's key. Registered agents and non-person actors (a repo, a
+    bot's own name) are not candidates. Sorted by hours, most machine-like first."""
+    from sqlalchemy import func
+    from .models import Agent
+    now = now or _now()
+    since = now - timedelta(days=7)
+    rows = (db.query(ActorHours.actor, func.count(func.distinct(ActorHours.slot % 24)).label("hours"),
+                     func.count(func.distinct(ActorHours.slot / 24)).label("days"),
+                     func.max(ActorHours.last_at).label("last_at"))
+              .filter(ActorHours.tenant_id == tenant_id, ActorHours.last_at >= since,
+                      ActorHours.actor.contains("@"))
+              .group_by(ActorHours.actor)
+              .having(func.count(func.distinct(ActorHours.slot % 24)) >= UNATTENDED_HOURS)
+              .all())
+    agents = {a.lower() for (a,) in db.query(Agent.name).filter(Agent.tenant_id == tenant_id).all()}
+    out = []
+    for r in rows:
+        # SQLite integer division differs from Postgres for `/`; recount days in Python.
+        days = {slot // 24 for (slot,) in db.query(ActorHours.slot).filter(
+            ActorHours.tenant_id == tenant_id, ActorHours.actor == r.actor, ActorHours.last_at >= since)}
+        # Registered already, under its own name or as the console registers it from
+        # the Fleet panel (`agent:<identity>`).
+        if len(days) < UNATTENDED_DAYS or r.actor in agents or f"agent:{r.actor}" in agents:
+            continue
+        out.append({"actor": r.actor, "hours_of_day": int(r.hours), "days": len(days),
+                    "last_seen": r.last_at.isoformat() if r.last_at else None})
+    out.sort(key=lambda d: (-d["hours_of_day"], -d["days"], d["actor"]))
+    return out
+
+
 def reset_cache() -> None:
     """Tests: forget the per-process write throttle."""
     with _lock:

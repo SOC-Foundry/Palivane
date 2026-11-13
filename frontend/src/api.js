@@ -171,6 +171,8 @@ export const api = {
     const q = new URLSearchParams(params).toString();
     return req("/fleet" + (q ? `?${q}` : ""));
   },
+  // People's identities keeping a machine's hours: unregistered agents under someone's key.
+  fleetUnattended: () => req("/fleet/unattended"),
   // One row per person, paged, worst first: { attention, q, limit, offset }.
   fleetPeople: (params = {}) => {
     const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null)).toString();
