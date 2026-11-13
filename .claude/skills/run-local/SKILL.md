@@ -61,7 +61,7 @@ findings** tab is legitimately empty for admin — that is correct, not a bug.
 
 ## Drive it — walk every console tab
 
-Sign in and click through all 18 nav tabs, capturing per-tab console errors,
+Sign in and click through all 19 nav tabs, capturing per-tab console errors,
 failed `/api` calls, headings, and screenshots. The driver is next to this file:
 
 ```bash
@@ -76,7 +76,7 @@ It writes `walk-results.json` + `shots/tab-*.png` in the cwd and prints a
 `SUMMARY` with an issue count. **Look at a screenshot or two** — a green
 "0 issues" only means no thrown errors, not that the page rendered.
 
-Expected: 18 tabs, 0 console errors, 0 failed API calls. The **Connect** tab
+Expected: 19 tabs, 0 console errors, 0 failed API calls. The **Connect** tab
 shows an informational "No model provider key set" banner (styled `.error` but
 it's just a notice — expected locally with no Anthropic key); the walk script
 whitelists it. **Audit** shows an empty state until an admin action is recorded.
