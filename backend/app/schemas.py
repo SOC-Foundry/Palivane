@@ -549,6 +549,12 @@ class ApiKeyCreate(BaseModel):
     # server — acting as the admin who minted it. Defaults to ingest so an existing
     # caller that omits the field gets exactly what it got before.
     scope: Literal["ingest", "console_read", "console_write"] = "ingest"
+    # A development key: see models.ApiKey.development.
+    development: bool = False
+
+
+class ApiKeyUpdate(BaseModel):
+    development: bool
 
 
 class AgentCreate(BaseModel):

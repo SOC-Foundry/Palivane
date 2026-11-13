@@ -6,6 +6,8 @@ email pulled from a mailbox is stored identically to one submitted via the API.
 
 from __future__ import annotations
 
+from contextvars import ContextVar
+
 import logging
 
 from sqlalchemy.orm import Session
@@ -325,6 +327,22 @@ def _keep_unscanned(before: list, after: list) -> list:
 RECORDED_WHILE_OFF = "confirmed_leak_recorded"
 
 
+# The label of the development key behind the request being served, "" otherwise. Set by
+# gateway._resolve_api_key, read here when a finding is persisted. A request context is
+# copied per request (Starlette runs a sync endpoint in a thread with its own copy), so
+# the value cannot leak into another request.
+development_capture: ContextVar[str] = ContextVar("palivane_development_capture", default="")
+
+
+def _development_review(finding, label: str) -> None:
+    """Record a development key's capture as reviewed by the key: dismissed, `expected`
+    (a real detection of something the org is fine with: its own fixtures), via `bulk`
+    (nobody looked at this one). Recorded, not dropped: Fleet still sees the sensor, the
+    precision readout still sees the detection, and `all` in the console still finds it."""
+    finding.status = "dismissed"
+    review.record_review(finding, "dismissed", f"development key {label}"[:320], "bulk", "expected")
+
+
 def run_analysis(item: AnalysisInput, persist: bool, db: Session,
                  tenant_id: int | None = None, signal_filter=None,
                  persist_benign: bool = True, agent: str = "",
@@ -511,8 +529,9 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             # is a distinct thing a person did, and "again" there is genuinely new. So a
             # dismissal is overridden only for a live act at high/critical: serious, and
             # happening right now. Everything else stays dismissed.
+            dev = development_capture.get()
             reopened = (prior.status == "dismissed" and verdict.severity in ("high", "critical")
-                        and item.surface in _LIVE_ACT_SURFACES)
+                        and item.surface in _LIVE_ACT_SURFACES and not dev)
             if reopened:
                 prior.status = "open"
                 review.record_review(prior, "open")      # it has not been reviewed again yet
@@ -579,10 +598,17 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             judge_used=judge_ran,
             origin=origin,
         )
+        dev = development_capture.get()
+        if dev:
+            _development_review(finding, dev)
         db.add(finding)
         db.commit()
         db.refresh(finding)
         finding_id = finding.id
+        if dev:
+            # Recorded and reviewed by the key; nothing to page anyone about, and not a link
+            # in anyone's chain (a dismissed finding never is).
+            return {"finding_id": finding_id, "judge_used": judge_ran, "development": True, **result}
         _dispatch_sinks(tenant, {**result, "finding_id": finding_id},
                         item.subject, item.sender, item.surface.value)
         # Session behavioral correlation: this event alone is stored; now look across the

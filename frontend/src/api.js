@@ -105,6 +105,9 @@ export const api = {
     req("/apikeys", { method: "POST", body: JSON.stringify(payload) }),
   apiKeys: () => req("/apikeys"),
   deleteApiKey: (id) => req(`/apikeys/${id}`, { method: "DELETE" }),
+  // { development: bool }: a development key's captures are recorded as dismissed/expected.
+  updateApiKey: (id, payload) =>
+    req(`/apikeys/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   enrollTokens: () => req("/enroll/tokens"),
   deleteEnrollToken: (id) => req(`/enroll/tokens/${id}`, { method: "DELETE" }),
   // OAuth authorization-server surface. `req` already prefixes /api, so these paths must
