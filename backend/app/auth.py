@@ -30,6 +30,7 @@ from .models import (
     GatewayUsage, LoginAttempt, PolicyOverride, Tenant, TenantOIDC, TenantSAML,
     TenantUpstream, User,
 )
+from .schemas import LaneConfig
 from .schemas import (
     AgentCreate, AgentRoleIn, AgentTokenRequest, AgentUpdate, ApiKeyCreate, ApiKeyUpdate, EnrollmentTokenCreate, EnrollRequest, LoginRequest, MFACode, MFAVerify,
     DPAAccept, ForgotRequest, OIDCConfig, ResetRequest, SAMLConfig, SignupRequest, TenantDelete, TenantUpdate,
@@ -1481,6 +1482,69 @@ def set_upstream(provider: str, body: UpstreamConfig, current: User = Depends(re
     db.commit()
     audit_log.record(db, current.tenant_id, current.email, "upstream.set", target=provider)
     return _upstream_state(provider, current.tenant_id, db)
+
+
+@router.get("/upstreams/{provider}/lane")
+def get_lane(provider: str, current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """This org's private lane for a provider, if any (never the key)."""
+    if provider not in PROVIDERS:
+        raise HTTPException(status_code=404, detail="unknown provider")
+    from .models import TenantLane
+    row = (db.query(TenantLane).filter(TenantLane.tenant_id == current.tenant_id,
+                                       TenantLane.provider == provider).first())
+    from .lanes import CLASSES
+    return {"lane": row.to_dict() if row else None, "classes": list(CLASSES)}
+
+
+@router.put("/upstreams/{provider}/lane")
+def set_lane(provider: str, body: LaneConfig, current: User = Depends(require_admin),
+             db: Session = Depends(get_db)):
+    """Set the private lane: the endpoint requests carrying the chosen data classes go to,
+    instead of being blocked. Key stored encrypted; an empty key keeps the existing one."""
+    if provider not in PROVIDERS or provider in ("vertex", "bedrock"):
+        raise HTTPException(status_code=404, detail="a lane needs an API-key provider (openai, anthropic, gemini, xai)")
+    from .lanes import CLASSES
+    from .models import TenantLane
+    base = body.base_url.strip()
+    if not base:
+        raise HTTPException(status_code=400, detail="base_url is required")
+    from .netguard import is_safe_url_static
+    if not is_safe_url_static(base):
+        raise HTTPException(status_code=400,
+                            detail="base_url must be an https(s) URL to a public host "
+                                   "(private/loopback/metadata addresses are blocked)")
+    classes = [c for c in body.classes if c in CLASSES]
+    if not classes:
+        raise HTTPException(status_code=400, detail=f"pick at least one data class ({', '.join(CLASSES)})")
+    row = (db.query(TenantLane).filter(TenantLane.tenant_id == current.tenant_id,
+                                       TenantLane.provider == provider).first())
+    if row is None:
+        row = TenantLane(tenant_id=current.tenant_id, provider=provider)
+        db.add(row)
+    row.label, row.base_url, row.classes = body.label.strip(), base, ",".join(classes)
+    if body.key:
+        row.key_encrypted = crypto.seal_secret(crypto.dek_for(db, row.tenant_id), body.key)
+    if not row.key_encrypted:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="a key is required the first time")
+    db.commit()
+    db.refresh(row)
+    audit_log.record(db, current.tenant_id, current.email, "lane.set", target=provider,
+                     detail={"classes": classes, "label": row.label})
+    return row.to_dict()
+
+
+@router.delete("/upstreams/{provider}/lane")
+def delete_lane(provider: str, current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Remove the lane: requests carrying its classes are blocked or allowed by policy again."""
+    from .models import TenantLane
+    row = (db.query(TenantLane).filter(TenantLane.tenant_id == current.tenant_id,
+                                       TenantLane.provider == provider).first())
+    if row is not None:
+        db.delete(row)
+        db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "lane.delete", target=provider)
+    return {"ok": True}
 
 
 @router.delete("/upstreams/{provider}")
