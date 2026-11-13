@@ -544,6 +544,12 @@ _NONSECRET_ID_PREFIXES = (
     "run_", "step_", "thread_", "asst_",   # OpenAI Assistants objects
     "evt_",        # webhook event id
     "chatcmpl-",   # OpenAI completion id
+    # Stripe object ids: a webhook endpoint, customer, subscription, price, product, payment
+    # intent, charge, invoice or payment method is addressed by one of these, and every one
+    # is prefix + random suffix. `we_1U8NTCC…` in a deploy note read as a key (prod #1437,
+    # 2026-11-13). Stripe's credentials keep their own prefixes (`sk_`, `rk_`, `whsec_`) and
+    # are matched by Tier-1, so none of them is listed here.
+    "we_", "cus_", "sub_", "price_", "prod_", "pi_", "ch_", "in_", "pm_", "seti_",
 )
 
 # base64 DER/SubjectPublicKeyInfo headers. A PUBLIC key is not a secret — the PEM-wrapped
@@ -565,8 +571,13 @@ _NONSECRET_BLOB_RE = re.compile(
     r"|\bssh-(?:rsa|ed25519|dss)\s+[A-Za-z0-9+/=]+"
     # Public PEM blocks — an X.509 certificate or a PUBLIC key is not a secret (the private
     # half is; that stays caught by the "Private key block" pattern). Mask the base64 body
-    # so cert files don't read as high-entropy tokens.
-    r"|-----BEGIN (?:CERTIFICATE|[A-Z ]*PUBLIC KEY)-----[A-Za-z0-9+/=\s]*?-----END (?:CERTIFICATE|[A-Z ]*PUBLIC KEY)-----",
+    # so cert files don't read as high-entropy tokens. OpenPGP armour spells it
+    # `PGP PUBLIC KEY BLOCK` and may open with `Version:`/`Comment:` header lines; one such
+    # block (the ops GPG public key, printed by a workflow) became four "possible secrets"
+    # across three prod findings (#1432/#1433/#1439, 2026-11-12).
+    r"|-----BEGIN (?:CERTIFICATE|[A-Z ]*PUBLIC KEY(?: BLOCK)?)-----"
+    r"(?:[A-Za-z0-9+/=\s]|(?:Version|Comment|Hash|Charset|MessageID):[^\n]*\n)*?"
+    r"-----END (?:CERTIFICATE|[A-Z ]*PUBLIC KEY(?: BLOCK)?)-----",
     re.IGNORECASE)
 
 
