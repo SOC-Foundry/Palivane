@@ -47,8 +47,9 @@ def _cat(s) -> str:
 
 def record(db: Session, tenant_id: int | None, item: AnalysisInput, signals, finding_id: int) -> int:
     """After a finding with a secret is persisted: a sighting per distinct secret value in
-    the event, under the finding. Idempotent per (secret, finding), so a recurrence that
-    folds into the same finding adds nothing. Best-effort; never raises into capture."""
+    the event, under the finding. One row per (secret, finding): a recurrence that folds
+    into the same finding refreshes the row's seen_at rather than adding another, so the
+    rotation watch still sees the value come back. Best-effort; never raises."""
     if tenant_id is None or db is None or not finding_id:
         return 0
     if not any(_cat(s) == "secret_leak" for s in signals or []):
@@ -63,9 +64,13 @@ def record(db: Session, tenant_id: int | None, item: AnalysisInput, signals, fin
         surface = getattr(item.surface, "value", item.surface)
         for label, value in matches:
             fp = fingerprint(tenant_id, value)
-            if (db.query(SecretSighting.id)
-                  .filter(SecretSighting.tenant_id == tenant_id, SecretSighting.secret_fp == fp,
-                          SecretSighting.finding_id == finding_id).first()):
+            prior = (db.query(SecretSighting)
+                       .filter(SecretSighting.tenant_id == tenant_id, SecretSighting.secret_fp == fp,
+                               SecretSighting.finding_id == finding_id).first())
+            if prior is not None:
+                # A recurrence folds into the same finding, but it is a fresh sighting: the
+                # value was sent again, which is exactly what a rotation watch must see.
+                prior.seen_at = now
                 continue
             db.add(SecretSighting(tenant_id=tenant_id, secret_fp=fp, label=label[:64],
                                   finding_id=finding_id, actor=(item.sender or "")[:320],
