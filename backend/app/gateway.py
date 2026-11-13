@@ -295,6 +295,17 @@ def _openai_shape_provider(model: str) -> str:
     return "xai" if str(model or "").lower().startswith("grok") else "openai"
 
 
+def _lane(principal: Principal, provider: str, verdict: dict, db: Session) -> dict | None:
+    """The org's private lane for this request, if its verdict carries one of the lane's
+    data classes (app/lanes.py): the request goes there instead of being blocked, and the
+    finding records where it went. Nothing else about the request changes."""
+    from . import lanes
+    lane = lanes.lane_for(db, principal.tenant_id, provider, verdict)
+    if lane:
+        lanes.mark_routed(db, verdict, lane)
+    return lane
+
+
 def _should_block(verdict: dict, pol: GatewayPolicy) -> bool:
     """Block when the tenant enforces and the verdict clears the bar, OR — even in monitor
     mode — when it carries a CONFIRMED secret/PII leak (block-the-certain default)."""
@@ -1424,14 +1435,18 @@ def chat_completions(request: Request, principal: Principal = Depends(get_gatewa
     verdict = _capture(prompt, model, tool, principal, db, extra_signals=unread)
     pol = _effective_policy(principal, db)
 
-    if _should_block(verdict, pol):
+    lane = _lane(principal, _openai_shape_provider(model), verdict, db)
+    if lane is None and _should_block(verdict, pol):
         return _openai_error(verdict)
     scope.let_through()
     # Agentic tool-use inspection (agentless MCP over the LLM API).
     agentic = _capture_agentic(payload, tool, principal, db)
     if _inbound_agentic_block(agentic, pol):
         return _openai_error(agentic)
-    base, key = resolve_upstream(_openai_shape_provider(model), principal.tenant_id, db)
+    if lane:
+        base, key = lane["base"], lane["key"]
+    else:
+        base, key = resolve_upstream(_openai_shape_provider(model), principal.tenant_id, db)
     if base:
         url, headers = _openai_upstream(base, key, "/chat/completions", model)
         if payload.get("stream"):
@@ -1641,13 +1656,17 @@ def responses(request: Request, principal: Principal = Depends(get_gateway_princ
     verdict = _capture(prompt, model, tool, principal, db, extra_signals=unread)
     pol = _effective_policy(principal, db)
 
-    if _should_block(verdict, pol):
+    lane = _lane(principal, _openai_shape_provider(model), verdict, db)
+    if lane is None and _should_block(verdict, pol):
         return _openai_error(verdict)
     scope.let_through()
     agentic = _capture_activity_dict(_responses_agentic(payload), tool, principal, db)
     if _inbound_agentic_block(agentic, pol):
         return _openai_error(agentic)
-    base, key = resolve_upstream(_openai_shape_provider(model), principal.tenant_id, db)
+    if lane:
+        base, key = lane["base"], lane["key"]
+    else:
+        base, key = resolve_upstream(_openai_shape_provider(model), principal.tenant_id, db)
     if base:
         url, headers = _openai_upstream(base, key, "/responses", model)
         sent, tokens = _tokenize_out(payload, principal, db)
@@ -1736,7 +1755,10 @@ def messages(request: Request, principal: Principal = Depends(get_gateway_princi
     verdict = _capture(prompt, model, tool, principal, db, extra_signals=unread)
     pol = _effective_policy(principal, db)
 
-    if _should_block(verdict, pol):
+    # A request carrying a data class the org routes goes down its private lane for this
+    # provider instead of being blocked (app/lanes.py); every other verdict is policy as usual.
+    lane = _lane(principal, "anthropic", verdict, db)
+    if lane is None and _should_block(verdict, pol):
         return _anthropic_error(verdict)
     scope.let_through()
     # Agentic tool-use inspection (agentless MCP over the LLM API).
@@ -1747,7 +1769,10 @@ def messages(request: Request, principal: Principal = Depends(get_gateway_princi
     # An Anthropic API key (tenant or global) always wins; the cloud-contract resolver
     # (Vertex/Bedrock) is consulted only when none is configured. Checked through the
     # module-level resolve_upstream import — the seam the tests stub.
-    base, key = resolve_upstream("anthropic", principal.tenant_id, db)
+    if lane:
+        base, key = lane["base"], lane["key"]
+    else:
+        base, key = resolve_upstream("anthropic", principal.tenant_id, db)
     if key:
         up = {"flavor": "anthropic", "base": base, "key": key}
     else:

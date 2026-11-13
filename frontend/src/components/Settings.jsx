@@ -709,6 +709,35 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
     try { await api.deleteUpstream(p); await loadUps(); flash(`${PROVIDERS[p]} reset to global default.`); }
     catch (e) { err(e); }
   }
+  // --- Private lanes: route instead of block ---
+  const LANE_CLASSES = [["secret_leak", "secrets"], ["pii_exposure", "personal data"], ["phi_exposure", "health data"],
+                        ["source_code_leak", "source code"], ["confidential_data", "confidential documents"],
+                        ["data_oversharing", "restricted data"]];
+  const [lanes, setLanes] = useState({});       // provider -> lane | null
+  const [laneDraft, setLaneDraft] = useState({});
+  const [laneOpen, setLaneOpen] = useState({});
+  const loadLanes = useCallback(async () => {
+    const out = {};
+    for (const p of ["openai", "anthropic", "gemini", "xai"]) {
+      try { out[p] = (await api.lane(p)).lane; } catch { out[p] = null; }
+    }
+    setLanes(out);
+  }, []);
+  async function saveLane(p) {
+    const d = laneDraft[p] || {};
+    const cur = lanes[p] || {};
+    try {
+      await api.setLane(p, { label: d.label ?? cur.label ?? "", base_url: d.base_url ?? cur.base_url ?? "",
+                             key: d.key || "", classes: d.classes ?? cur.classes ?? [] });
+      setLaneDraft((s) => ({ ...s, [p]: { ...d, key: "" } }));
+      await loadLanes();
+      flash(`${PROVIDERS[p]} private lane saved. Requests carrying those classes now go there instead of being blocked.`);
+    } catch (e) { err(e); }
+  }
+  async function clearLane(p) {
+    try { await api.deleteLane(p); await loadLanes(); flash(`${PROVIDERS[p]} private lane removed.`); }
+    catch (e) { err(e); }
+  }
 
   // --- BYOK judge key ---
   const [judgeKey, setJudgeKeyState] = useState(null);   // {provider, model, key_set}
@@ -818,8 +847,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
     } catch (e) { err(e); }
   }
 
-  useEffect(() => { loadUsage(); loadUps(); loadJudgeKey(); loadOidc(); loadSaml(); loadDpa(); loadCatalog(); loadUpgrade(); loadBilling(); loadSinkHealth(); loadSlack(); loadGithub(); },
-    [loadUsage, loadUps, loadJudgeKey, loadOidc, loadSaml, loadDpa, loadCatalog, loadUpgrade, loadBilling, loadSinkHealth, loadSlack]);
+  useEffect(() => { loadUsage(); loadUps(); loadLanes(); loadJudgeKey(); loadOidc(); loadSaml(); loadDpa(); loadCatalog(); loadUpgrade(); loadBilling(); loadSinkHealth(); loadSlack(); loadGithub(); },
+    [loadUsage, loadUps, loadLanes, loadJudgeKey, loadOidc, loadSaml, loadDpa, loadCatalog, loadUpgrade, loadBilling, loadSinkHealth, loadSlack]);
 
   async function logoutEverywhere() {
     try { await api.logoutAll(); } catch { /* ignore */ }
@@ -1691,6 +1720,48 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                            onChange={(e) => setUpDraft((s) => ({ ...s, [u.provider]: { ...d, key: e.target.value } }))} />
                     <button type="button" className="mini-btn" onClick={() => saveUpstream(u.provider)}>Save</button>
                     <button type="button" className="mini-btn" onClick={() => clearUpstream(u.provider)}>Reset</button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="panel settings-card">
+              <h2>Private lanes: route instead of block</h2>
+              <p className="muted">A prompt carrying a data class you name goes to that provider's private
+                lane (your zero-retention or self-hosted endpoint) instead of being blocked. The developer
+                never sees a refusal, the data never leaves your boundary, and the finding records which
+                lane it took. Injections and dangerous commands are not data classes and still follow policy.</p>
+              {["openai", "anthropic", "gemini", "xai"].map((p) => {
+                const cur = lanes[p]; const d = laneDraft[p] || {};
+                const classes = d.classes ?? cur?.classes ?? [];
+                const open = laneOpen[p] ?? Boolean(cur);
+                return (
+                  <div key={p} className="upstream-row" style={{ flexWrap: "wrap" }}>
+                    <div className="upstream-name">{PROVIDERS[p]}
+                      <span className={`chip ${cur ? "chip-on" : "chip-off"}`}>{cur ? `lane: ${cur.label || cur.base_url}` : "no lane"}</span>
+                    </div>
+                    {!open ? (
+                      <button type="button" className="mini-btn" onClick={() => setLaneOpen((s) => ({ ...s, [p]: true }))}>Add lane</button>
+                    ) : (
+                      <>
+                        <input placeholder="label (e.g. zero-retention)" value={d.label ?? cur?.label ?? ""}
+                               onChange={(e) => setLaneDraft((s) => ({ ...s, [p]: { ...d, label: e.target.value } }))} />
+                        <input placeholder="base URL" value={d.base_url ?? cur?.base_url ?? ""}
+                               onChange={(e) => setLaneDraft((s) => ({ ...s, [p]: { ...d, base_url: e.target.value } }))} />
+                        <input type="password" placeholder={cur?.key_set ? "key set, enter to replace" : "API key"} value={d.key || ""}
+                               onChange={(e) => setLaneDraft((s) => ({ ...s, [p]: { ...d, key: e.target.value } }))} />
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", width: "100%" }}>
+                          {LANE_CLASSES.map(([k, label]) => (
+                            <label key={k} className="muted" style={{ fontSize: 12 }}>
+                              <input type="checkbox" checked={classes.includes(k)}
+                                     onChange={(e) => setLaneDraft((s) => ({ ...s, [p]: { ...d, classes: e.target.checked ? [...classes, k] : classes.filter((x) => x !== k) } }))} /> {label}
+                            </label>
+                          ))}
+                        </div>
+                        <button type="button" className="mini-btn" onClick={() => saveLane(p)}>Save lane</button>
+                        {cur && <button type="button" className="mini-btn" onClick={() => clearLane(p)}>Remove</button>}
+                      </>
+                    )}
                   </div>
                 );
               })}

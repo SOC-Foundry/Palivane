@@ -280,6 +280,11 @@ export const api = {
   setUpstream: (provider, payload) =>
     req(`/upstreams/${provider}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteUpstream: (provider) => req(`/upstreams/${provider}`, { method: "DELETE" }),
+  // The provider's private lane: where requests carrying chosen data classes go instead of being blocked.
+  lane: (provider) => req(`/upstreams/${provider}/lane`),
+  setLane: (provider, payload) =>
+    req(`/upstreams/${provider}/lane`, { method: "PUT", body: JSON.stringify(payload) }),
+  deleteLane: (provider) => req(`/upstreams/${provider}/lane`, { method: "DELETE" }),
   auditSessions: (days = 7) => req(`/audit/sessions?days=${days}`),
   auditTimeline: (actor, days = 7) =>
     req(`/audit/timeline?actor=${encodeURIComponent(actor)}&days=${days}`),

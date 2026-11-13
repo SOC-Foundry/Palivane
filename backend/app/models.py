@@ -1410,6 +1410,29 @@ class SecretRotation(Base):
     verified_at = Column(DateTime, nullable=True)
 
 
+class TenantLane(Base):
+    """A private upstream per provider for the data classes the org will not send to the
+    default one; the gateway routes those requests here instead of blocking. app/lanes.py."""
+
+    __tablename__ = "tenant_lanes"
+    __table_args__ = (UniqueConstraint("tenant_id", "provider", name="uq_tenant_lane_provider"),)
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    provider = Column(String(32), nullable=False)        # openai | anthropic | gemini | xai
+    label = Column(String(128), default="")
+    base_url = Column(String(512), default="")
+    key_encrypted = Column(Text, default="")
+    classes = Column(String(256), default="")            # comma-separated data classes
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def to_dict(self) -> dict:
+        return {"provider": self.provider, "label": self.label or "", "base_url": self.base_url or "",
+                "key_set": bool(self.key_encrypted),
+                "classes": [c for c in (self.classes or "").split(",") if c]}
+
+
 class Containment(Base):
     """An admin's "stop this now" on a person, a device, an agent or the whole org
     (app/containment.py). While active, every capture decision for the target answers block
