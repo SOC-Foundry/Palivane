@@ -74,3 +74,38 @@ def mark_routed(db: Session, verdict: dict, lane: dict) -> None:
     except Exception:
         db.rollback()
     verdict["routed_to"] = lane["label"]
+
+
+# The provider behind an AI host the desktop proxy reports as a destination.
+_HOST_PROVIDER = (
+    ("api.anthropic.com", "anthropic"),
+    ("api.openai.com", "openai"),
+    ("generativelanguage.googleapis.com", "gemini"),
+    ("api.x.ai", "xai"),
+)
+
+
+def provider_for_destination(destination: str) -> str:
+    """"anthropic" for https://api.anthropic.com/v1/messages, "" for a web chat or anything
+    the gateway does not serve."""
+    from urllib.parse import urlparse
+    d = (destination or "").strip().lower()
+    host = urlparse(d if "://" in d else "https://" + d).hostname or ""
+    for suffix, provider in _HOST_PROVIDER:
+        if host == suffix or host.endswith("." + suffix):
+            return provider
+    return ""
+
+
+def route_for_capture(db: Session, tenant_id: int | None, destination: str, verdict: dict) -> dict | None:
+    """For a prompt the desktop proxy captured on its way to a provider's API: the lane it
+    should take, if the org has one for that provider and the verdict carries one of its
+    classes. The proxy then sends the request through the Palivane gateway, which holds
+    the lane's key and does the routing; the proxy never sees the key."""
+    provider = provider_for_destination(destination)
+    if not provider:
+        return None
+    lane = lane_for(db, tenant_id, provider, verdict)
+    if lane is None:
+        return None
+    return {"provider": provider, "label": lane["label"], "classes": lane["classes"]}

@@ -34,7 +34,7 @@ from .google_login import router as google_login_router
 from .domains import router as domains_router
 from .allowlist import router as allowlist_router
 from .precision import router as precision_router
-from . import containment, activity, review
+from . import containment, activity, lanes, review
 from .config import settings, _env
 from .gateway import gemini_router, gemini_v1_router, router as gateway_router
 from .database import Base, engine as db_engine, get_db
@@ -1492,6 +1492,45 @@ def _prompt_verdict(result: dict, content: str, tenant_id: int | None,
     return action, force_block, coached, redacted_content
 
 
+def _gateway_base() -> str:
+    return (settings.public_base_url or "").rstrip("/")
+
+
+def _ingest_ai_response(body: AIUsageIngest, actor: str, claimed: bool, tenant_id: int | None,
+                        agent: str, db: Session) -> dict:
+    """What a provider sent BACK, as the desktop proxy saw it. The assistant text is lifted
+    out of the raw reply (JSON or SSE, the gateway's own parsers) and scanned the way the
+    gateway scans its responses: the data-loss categories only, tagged as a response so a
+    reply that returns an org document is matched against the at-rest fingerprints. The
+    bytes already reached the client, so the answer is a record, never a block."""
+    import json as _json
+
+    from .gateway import _response_dlp_filter, _response_output_text, _stream_output_text
+    raw = body.content
+    text = ""
+    if body.response_format == "sse" or raw.lstrip().startswith(("event:", "data:")):
+        text = _stream_output_text(raw)
+    else:
+        try:
+            text = _response_output_text(_json.loads(raw))
+        except (ValueError, TypeError):
+            text = ""
+    if not text.strip():
+        return {"action": "allow", "risk_score": 0, "severity": "none", "signals": [],
+                "finding_id": None, "direction": "response"}
+    from .policy import detect_tool
+    tool = detect_tool(explicit=body.tool) or body.tool or "ai_tool"
+    item = AnalysisInput(content=text, subject=f"LLM response ({tool})", sender=actor,
+                         channel=tool, surface=Surface.AI_USAGE,
+                         metadata={"direction": "response", "destination": body.destination},
+                         sender_claimed=claimed)
+    result = run_analysis(item, persist=True, db=db, tenant_id=tenant_id, agent=agent,
+                          signal_filter=_response_dlp_filter,
+                          persist_benign=settings.usage_persist_benign)
+    return {"action": "allow", "risk_score": result["risk_score"], "severity": result["severity"],
+            "signals": result["signals"], "finding_id": result["finding_id"], "direction": "response"}
+
+
 @app.post("/api/ingest/ai-usage")
 def ingest_ai_usage(
     body: AIUsageIngest,
@@ -1530,11 +1569,20 @@ def ingest_ai_usage(
                 "finding_id": None, "parse_miss": True}
     _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool, user_agent,
                       scan_failed=body.scan_failed)
+    if body.direction == "response":
+        return _ingest_ai_response(body, actor, claimed, tenant_id, agent, db)
     result, meta = _score_ai_usage(body.content, actor, body.tool, body.destination,
                                    tenant_id, agent, db, endpoint=body.endpoint,
                                    claimed=claimed)
     action, force_block, coached, redacted_content = _prompt_verdict(
         result, body.content, tenant_id, db)
+    # Route instead of block: the org has a private lane for this provider and the verdict
+    # carries one of its classes. The proxy resends through the gateway, which holds the
+    # lane and routes there (app/lanes.py); this capture is marked routed, not stopped.
+    route = lanes.route_for_capture(db, tenant_id, body.destination, result)
+    if route is not None:
+        lanes.mark_routed(db, result, {**route, "base": "", "key": ""})
+        action, force_block, coached, redacted_content = "allow", False, None, None
     # Justified proceed: an override token minted by /api/ingest/justify lets the SAME
     # content (recurrence-folds into the same finding), from the SAME actor, through as a
     # warn — recorded, never silent. Confirmed PII/PHI is justifiable (business-need sends
@@ -1615,6 +1663,11 @@ def ingest_ai_usage(
         "self_justify": self_justify,
         # This submission carried a valid override token and went through as a warn.
         "overridden": overridden,
+        # Route instead of block: when set, the proxy resends this request through the
+        # Palivane gateway (same path, the device key as credential), which forwards it
+        # down the org's private lane for that provider.
+        "route_via_gateway": ({"provider": route["provider"], "label": route["label"],
+                               "gateway": _gateway_base()} if route else None),
         # A confirmed secret/PII leak: the client should block regardless of its local
         # enforce flag ("block the certain" — monitor everything else). Kept under coaching:
         # a client that can show the cleaned copy holds the prompt with it, any other blocks.
