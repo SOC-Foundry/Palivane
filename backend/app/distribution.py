@@ -31,11 +31,12 @@ from .release_files import ALLOW as _ALLOW, resolve as _resolve, served_files
 # directly on Windows — install.sh is bash); and palivane-s3-scan / palivane-github-scan —
 # ops/admin scanners run on demand (CI / a security box), not planes installed on every
 # developer machine, so they're downloadable but not auto-installed.
-# palivane-findings is an operator's read-only view of the org's findings: downloadable,
-# not a sensor, so not installed on every developer machine either.
+# palivane-findings (an operator's read-only view of the org's findings) IS installed
+# everywhere: a stdlib script that does nothing without a console-read key, and the
+# admin's own laptop is where the installer runs too (it took a curl to get it the first
+# time, 2026-11-13).
 _INSTALLER_SKIP = {"palivane_addon.py", "palivane-reenroll.ps1", "palivane-desktop.ps1",
-                   "palivane-s3-scan", "palivane-dbscan", "palivane-github-scan", "palivane-ci-scan",
-                   "palivane-findings"}
+                   "palivane-s3-scan", "palivane-dbscan", "palivane-github-scan", "palivane-ci-scan"}
 _CLI_TOOLS = [n for n in _ALLOW if n not in _INSTALLER_SKIP]
 
 def _base_url() -> str:
