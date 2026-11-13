@@ -305,8 +305,11 @@ export default function CoverageMatrix() {
         <div className="lp-wrap lp-faq-wrap">
           <h2 className="lp-h2">The threat model, including how to bypass us</h2>
           <p className="lp-sub">Every control runs on a machine its user administers. Palivane
-             stops accidents and produces evidence for everything else; it is not an
-             insider-threat containment tool, and nobody's endpoint control is.</p>
+             stops accidents and produces evidence for everything else. A containment pauses a
+             person, a device or an agent on every plane and keeps blocking offline, but a local
+             admin can still strip the controls, and Fleet then shows that device as gone quiet
+             rather than stopped. It is not an insider-threat containment tool, and nobody's
+             endpoint control is.</p>
           <Faq items={asItems(BYPASSES)} open={-1} />
           <p className="lp-sub" style={{ textAlign: "left", marginTop: 18 }}>
             The coverage view names every device and person outside the controls, so a bypass

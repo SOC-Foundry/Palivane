@@ -85,6 +85,12 @@ const FEATURES = [
   { tab: "Trust", title: <>Know how often each check is <span className="lp-hl">right</span></>,
     sub: () => "One-click reviews become a readout per check, and noisy commands and paths become a time-limited allowlist.",
     src: "/shots/precision.png?v=1", alt: "Detection precision: how often each check was right" },
+  // Containment is a pause pending review, not a guarantee against a determined insider:
+  // /coverage says so under the threat model, and the quiet badge is the honest half of it.
+  { tab: "Containment", title: <>Stop one person's AI use <span className="lp-hl">everywhere, now</span></>,
+    sub: () => "One action pauses a person, a device, an agent or the whole org on every plane: prompts and tool calls denied, AI sites blocked, model calls refused. A device that drops offline keeps blocking until the containment expires or you release it, and Fleet flags one that went quiet instead of being stopped.",
+    href: "/coverage", link: "What it can and cannot stop",
+    src: "/shots/containment.png?v=1", alt: "Containment panel on Fleet: an active person, a quiet agent, and a released containment" },
 ];
 
 // Proof the page can back up, each linked to the page that says it in full. No logos or
