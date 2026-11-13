@@ -201,19 +201,48 @@ def apply_origin(verdict, origin: dict) -> None:
         detector="content_origin", evidence=where)] + list(verdict.signals)
 
 
+def apply_regurgitation(verdict, origin: dict) -> None:
+    """A model's OUTPUT matched a document scanned at rest: the model returned the org's own
+    data. Every product inspects what goes to the model; this is the other direction, where
+    a RAG store with the wrong permissions, a memorised document, or a shared assistant
+    context surfaces to whoever asked. Scores on its own, since the text need carry no secret
+    or PII to be a leak: high for any org document, critical for a known-sensitive one."""
+    from .detectors.base import Category, Signal
+    from .scoring import severity_for
+    sensitive = bool(origin.get("sensitive"))
+    where = origin.get("title") or origin.get("ref") or "a scanned document"
+    verdict.risk_score = max(verdict.risk_score, 85 if sensitive else 65)
+    verdict.severity, verdict.recommended_action = severity_for(verdict.risk_score)
+    verdict.signals = [Signal(
+        category=Category.CONFIDENTIAL_DATA if sensitive else Category.DATA_OVERSHARING,
+        title=("Model returned a known sensitive document" if sensitive
+               else "Model returned org data"),
+        detail=(f"The model's reply overlaps “{where}” ({int(origin.get('containment', 0) * 100)}% "
+                f"match) from your {origin.get('source', 'at-rest')} scan"
+                + (", a source that itself holds sensitive data." if sensitive else ".")
+                + " Nobody typed it: the model produced it, so the question is where the model"
+                  " got it (a retrieval store, a shared context, training) and who can ask for it."),
+        weight=0.9 if sensitive else 0.8, confidence=0.9,
+        detector="content_origin", evidence=where, check="model_regurgitation")] + list(verdict.signals)
+
+
 def trace_origin(db: Session, tenant_id, item: AnalysisInput, verdict) -> dict | None:
     """The scanned-at-rest document a data-loss finding was lifted from, if any, with the verdict
     boosted for it (apply_origin). Read-only match, gated to data-loss findings on egress surfaces
-    (an injection has no source document)."""
+    (an injection has no source document).
+
+    A model RESPONSE (metadata direction "response") is matched regardless of what the
+    detectors found in it: the match itself is the finding there (apply_regurgitation)."""
     if item.surface.value not in ("ai_usage", "llm_io"):
         return None
+    inbound = (item.metadata or {}).get("direction") == "response"
     _DLP = {"secret_leak", "pii_exposure", "phi_exposure", "source_code_leak", "confidential_data"}
-    if not any(s.category.value in _DLP for s in verdict.signals):
+    if not inbound and not any(s.category.value in _DLP for s in verdict.signals):
         return None
     from . import content_origin
     origin = content_origin.match_origin(db, tenant_id, item.content)
     if origin:
-        apply_origin(verdict, origin)
+        (apply_regurgitation if inbound else apply_origin)(verdict, origin)
     return origin
 
 
