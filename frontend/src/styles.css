@@ -1995,12 +1995,12 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 /* Detection checks as a grid rather than one long column. */
 .lp-checklist-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .lp-checklist-grid li:last-child:nth-child(odd) { grid-column: 1 / -1; }
-.lp-feattabs { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 28px; }
+.lp-feattabs { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 28px; }
 .lp-feat-panel { animation: lp-tab-in .45s cubic-bezier(.2, .7, .2, 1) both; }
 .lp-h3 { font-size: 34px; }
 @media (max-width: 900px) {
   .lp-checklist-grid { grid-template-columns: 1fr; }
-  .lp-feattabs { grid-template-columns: 1fr; }
+  .lp-feattabs { grid-template-columns: 1fr 1fr; }
   .lp-h3 { font-size: 28px; }
 }
 
