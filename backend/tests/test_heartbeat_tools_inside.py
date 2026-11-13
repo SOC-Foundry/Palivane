@@ -116,13 +116,20 @@ def test_the_migration_collapses_existing_rows(db_factory):
         # another tenant: collapsed on its own
         SensorHeartbeat(tenant_id=2, actor="dev@acme.com", plane="mcp", tool="Bash", client="palivane-hook",
                         first_seen=now, last_seen=now, count=1),
+        # a legacy UA-less row that already has tool "": the kept row must not take tool ""
+        # while this one still exists, or the unique constraint fires (prod, 2026-11-13)
+        SensorHeartbeat(tenant_id=1, actor="ops@acme.com", plane="mcp", tool="", client="",
+                        first_seen=now - timedelta(days=9), last_seen=now - timedelta(days=9), count=4),
+        SensorHeartbeat(tenant_id=1, actor="ops@acme.com", plane="mcp", tool="Read", client="",
+                        first_seen=now - timedelta(days=1), last_seen=now - timedelta(days=1), count=2),
     ]
     db.add_all(rows)
     db.commit()
     with db.bind.begin() as conn:
-        assert mig.collapse_tools_inside(conn) == 2
+        assert mig.collapse_tools_inside(conn) == 3
     db.expire_all()
-    mcp = (db.execute(select(SensorHeartbeat).where(SensorHeartbeat.plane == "mcp", SensorHeartbeat.tenant_id == 1))
+    mcp = (db.execute(select(SensorHeartbeat).where(SensorHeartbeat.plane == "mcp", SensorHeartbeat.tenant_id == 1,
+                                                    SensorHeartbeat.actor == "dev@acme.com"))
              .scalars().all())
     by_client = {r.client: r for r in mcp}
     assert set(by_client) == {"palivane-hook", "palivane-mcp"}
@@ -136,4 +143,7 @@ def test_the_migration_collapses_existing_rows(db_factory):
     other = db.execute(select(SensorHeartbeat).where(SensorHeartbeat.plane == "ai-usage")).scalars().one()
     assert other.tool == "claude-code" and not other.tools
     assert db.execute(select(SensorHeartbeat).where(SensorHeartbeat.tenant_id == 2)).scalars().one().tools == {"Bash": 1}
+    legacy = db.execute(select(SensorHeartbeat).where(SensorHeartbeat.actor == "ops@acme.com")).scalars().one()
+    assert legacy.tool == "" and legacy.tools == {"Read": 2} and legacy.count == 6
+    assert legacy.last_seen == now - timedelta(days=1)
     db.close()
