@@ -64,12 +64,21 @@ def test_data_the_controls_stopped_is_not_an_exposure(client, db_factory):
     f = db.get(Finding, r["finding_id"])
     tenant = db.get(Tenant, tid)
     assert exposures.qualifies(f, f.signals, r, tenant) == []
-    # A warn-level verdict goes out in monitor mode and is stopped where the org enforces.
-    f.recommended_action, soft = "block", {**r, "confirmed_leak": False}
+    # A high verdict goes out in monitor mode and is stopped where the org enforces.
+    soft = {**r, "confirmed_leak": False}
+    assert f.severity in ("high", "critical")
     assert exposures.qualifies(f, f.signals, soft, tenant) == ["phi_exposure", "pii_exposure"]
     tenant.client_enforce = True
     assert exposures.qualifies(f, f.signals, soft, tenant) == []
     tenant.client_enforce = False
+    # The gateway stops at its own block severity, which the org can set.
+    f.surface = "llm_io"
+    tenant.gateway_enforce, tenant.gateway_block_severity = True, "critical"
+    f.severity = "high"
+    assert exposures.qualifies(f, f.signals, soft, tenant) == ["phi_exposure", "pii_exposure"]
+    f.severity = "critical"
+    assert exposures.qualifies(f, f.signals, soft, tenant) == []
+    f.surface, tenant.gateway_enforce = "ai_usage", None
     # Routed down a private lane: it stayed inside the boundary.
     assert exposures.qualifies(f, [{"category": "data_oversharing", "check": "routed"}] + list(f.signals), soft, tenant) == []
     # A development key's capture is not an exposure either.
@@ -156,4 +165,27 @@ def test_soonest_deadline_first_and_other_orgs_apart(client, db_factory, left):
     out = client.get("/api/exposures").json()["exposures"]
     assert [e["finding_id"] for e in out] == [a["finding_id"], b["finding_id"]]
     assert all(e["actor"].endswith("@acme.com") for e in out)
+    db.close()
+
+
+def test_a_request_routed_down_a_lane_withdraws_its_exposure(client, db_factory, left, monkeypatch):
+    # The gateway persists the finding (and the exposure) before it picks the lane; the lane
+    # then withdraws the exposure, since the data stayed inside (QA, 2026-11-13).
+    from app import lanes
+    tid = _tid(db_factory)
+    db = db_factory()
+    r = _event(db, tid, surface=Surface.LLM_IO, channel="unknown")
+    assert len(client.get("/api/exposures").json()["exposures"]) == 1
+    lanes.mark_routed(db, r, {"label": "zero-retention", "classes": ["pii_exposure"], "provider": "anthropic"})
+    assert client.get("/api/exposures").json()["exposures"] == []
+    assert client.get("/api/exposures?include_closed=1").json()["exposures"] == []
+    db.close()
+
+
+def test_the_destination_is_the_model_when_the_tool_is_unknown(client, db_factory, left):
+    tid = _tid(db_factory)
+    db = db_factory()
+    run_analysis(AnalysisInput(content=SSN, sender="dev@acme.com", channel="unknown", surface=Surface.LLM_IO,
+                               subject="claude-3-5-sonnet"), persist=True, db=db, tenant_id=tid)
+    assert client.get("/api/exposures").json()["exposures"][0]["destination"] == "claude-3-5-sonnet"
     db.close()

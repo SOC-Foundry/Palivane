@@ -61,13 +61,36 @@ def test_sightings_follow_a_secret_across_people_tools_and_findings(client, db_f
     db.close()
 
 
-def test_a_recurrence_adds_no_second_sighting(client, db_factory):
+def test_a_recurrence_adds_no_second_sighting_but_refreshes_the_last(client, db_factory):
     tid = _tid(db_factory)
     db = db_factory()
     a = _event(db, tid, f"deploy with {AWS}")
+    first = db.query(SecretSighting).one().seen_at
     b = _event(db, tid, f"deploy with {AWS}")
     assert a["finding_id"] == b["finding_id"]
-    assert db.query(SecretSighting).count() == 1
+    db.expire_all()
+    rows = db.query(SecretSighting).all()
+    assert len(rows) == 1 and rows[0].seen_at >= first
+    db.close()
+
+
+def test_a_recurrence_after_rotation_is_still_seen(client, db_factory):
+    # The same person pastes the same key again after it was rotated: the event folds into
+    # the original finding, and the rotation watch must still catch it (QA, 2026-11-13).
+    tid = _tid(db_factory)
+    db = db_factory()
+    r = _event(db, tid, f"deploy with {AWS}")
+    fp = secrets_ledger.fingerprint(tid, AWS)
+    assert client.post(f"/api/secrets/{fp}/rotated", json={}).json()["rotation"]["status"] == "watching"
+    rot = db.query(SecretRotation).one()
+    rot.rotated_at -= timedelta(hours=1)
+    for sg in db.query(SecretSighting).all():
+        sg.seen_at -= timedelta(hours=2)
+    db.commit()
+    again = _event(db, tid, f"deploy with {AWS}")
+    assert again["finding_id"] == r["finding_id"]
+    t = client.get(f"/api/findings/{r['finding_id']}/secrets").json()["secrets"][0]
+    assert t["rotation"]["status"] == "still_seen"
     db.close()
 
 
