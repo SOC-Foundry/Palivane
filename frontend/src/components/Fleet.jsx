@@ -1,11 +1,16 @@
-// Fleet, sensor health across the org: which actors/planes are reporting, which have
-// gone quiet, and which devices are still presenting revoked (dead) keys.
+// Fleet, sensor health across the org: who is reporting, who has gone quiet, which scans
+// failed open, which devices still present revoked (dead) keys, and what AI assets the
+// devices have installed. Built to stay readable at a few hundred people: the ledger is one
+// row per person (a sensor row is keyed by tool, so one developer is twenty or thirty of
+// them), paged, worst first, and showing only what needs a look unless asked otherwise.
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { IconRefresh } from "./icons.jsx";
 import ContainmentPanel from "./Containment.jsx";
 
 const HEALTH_CLASS = { fresh: "sev-benign", stale: "sev-suspicious", dark: "sev-critical" };
+const PEOPLE_PAGE = 50;
+const SHORT_LIST = 10;    // rows a panel shows before "Show all"
 
 function fmtWhen(ts) {
   if (!ts) return "-";
@@ -44,6 +49,16 @@ function reasonsText(reasons) {
     .sort((a, b) => b[1] - a[1])
     .map(([k, n]) => `${REASON_LABEL[k] || k} ×${n}`)
     .join(", ") || "-";
+}
+
+// "Show all" for a panel that is usually short but has no natural cap.
+function ShowAll({ total, shown, open, onToggle, what }) {
+  if (total <= shown && !open) return null;
+  return (
+    <button type="button" className="link-btn" onClick={onToggle}>
+      {open ? `Show the first ${SHORT_LIST}` : `Show all ${total} ${what}`}
+    </button>
+  );
 }
 
 // AI-asset inventory: what palivane-posture (and the browser extension) found installed on
@@ -117,11 +132,15 @@ function AssetDevices({ asset }) {
   );
 }
 
+// Search-first: the inventory is every item on every device, which is a long list for one
+// developer and a very long one for a fleet. The counts per kind say what is out there;
+// the table opens for a search, a kind, or on request.
 function AssetInventory() {
   const [query, setQuery] = useState("");
   const [needle, setNeedle] = useState("");
   const [kind, setKind] = useState("");
   const [offset, setOffset] = useState(0);
+  const [browse, setBrowse] = useState(false);
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [open, setOpen] = useState(null);
@@ -144,6 +163,8 @@ function AssetInventory() {
   const assets = data?.assets || [];
   const total = data?.total || 0;
   const devices = data?.summary?.devices ?? 0;
+  const kinds = data?.summary?.kinds || {};
+  const expanded = Boolean(needle || kind || browse);
   const keyOf = (a) => `${a.kind}|${a.name}`;
 
   return (
@@ -153,6 +174,17 @@ function AssetInventory() {
         MCP servers, extensions, coding agents, skills and plugins installed across {devices} device{devices === 1 ? "" : "s"},
         as each device last reported them. Search to find which devices have a given item.
       </p>
+      {Object.keys(kinds).length > 0 && (
+        <div className="head-actions" style={{ justifyContent: "flex-start", marginBottom: 12 }}>
+          {ASSET_KINDS.filter(([k]) => k && kinds[k]).map(([k, label]) => (
+            <button key={k} type="button" className={`chip ${kind === k ? "chip-on" : "chip-off"}`}
+                    style={{ cursor: "pointer" }} aria-pressed={kind === k}
+                    onClick={() => { setKind(kind === k ? "" : k); setOffset(0); }}>
+              {kinds[k]} {label}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="override-row">
         <input type="search" placeholder="Which devices have... (name, publisher, marketplace)" value={query}
                aria-label="Search AI assets" onChange={(e) => setQuery(e.target.value)} />
@@ -161,7 +193,12 @@ function AssetInventory() {
         </select>
       </div>
       {err && <div className="error">{err}</div>}
-      {assets.length ? (
+      {!expanded && data && (
+        total
+          ? <button type="button" className="link-btn" onClick={() => setBrowse(true)}>Browse all {total} items</button>
+          : <p className="muted">No inventory reported yet. Devices report it via palivane-posture at session start.</p>
+      )}
+      {expanded && (assets.length ? (
         <div className="table-scroll">
           <table className="data-table">
             <thead>
@@ -201,14 +238,21 @@ function AssetInventory() {
         <p className="muted">
           {needle || kind ? "No matching assets." : "No inventory reported yet. Devices report it via palivane-posture at session start."}
         </p>
-      )}
-      {total > ASSET_PAGE && (
+      ))}
+      {expanded && (
         <div className="head-actions">
-          <button type="button" className="ghost-btn" disabled={offset === 0}
-                  onClick={() => setOffset(Math.max(0, offset - ASSET_PAGE))}>Previous</button>
-          <span className="muted">{offset + 1}-{Math.min(offset + ASSET_PAGE, total)} of {total}</span>
-          <button type="button" className="ghost-btn" disabled={offset + ASSET_PAGE >= total}
-                  onClick={() => setOffset(offset + ASSET_PAGE)}>Next</button>
+          {browse && !needle && !kind && (
+            <button type="button" className="link-btn" onClick={() => setBrowse(false)}>Collapse</button>
+          )}
+          {total > ASSET_PAGE && (
+            <>
+              <button type="button" className="ghost-btn" disabled={offset === 0}
+                      onClick={() => setOffset(Math.max(0, offset - ASSET_PAGE))}>Previous</button>
+              <span className="muted">{offset + 1}-{Math.min(offset + ASSET_PAGE, total)} of {total}</span>
+              <button type="button" className="ghost-btn" disabled={offset + ASSET_PAGE >= total}
+                      onClick={() => setOffset(offset + ASSET_PAGE)}>Next</button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -251,34 +295,188 @@ function DeveloperMeter() {
   );
 }
 
+// The sensors one person has, under their row in the ledger.
+function PersonSensors({ rows }) {
+  return (
+    <table className="data-table">
+      <thead>
+        <tr><th>Plane</th><th>Tool</th><th>Client</th><th>Last seen</th><th>Events</th><th>Failed open</th><th>Health</th></tr>
+      </thead>
+      <tbody>
+        {rows.map((row, i) => (
+          <tr key={`${row.plane}|${row.tool}|${row.client}|${i}`}>
+            <td className="muted">{row.plane}</td>
+            <td className="muted">{row.tool || "-"}</td>
+            <td className="muted">{clientCell(row)}</td>
+            <td className="muted">{fmtWhen(row.last_seen)}</td>
+            <td>{row.count}</td>
+            <td title={row.scan_fail_count ? `since ${fmtWhen(row.first_scan_fail)}: ${reasonsText(row.scan_fail_reasons)}` : undefined}
+                style={row.scan_fail_count ? { color: "var(--susp)" } : undefined}>
+              {row.scan_fail_count || 0}
+            </td>
+            <td><span className={`badge ${HEALTH_CLASS[row.health] || "sev-low"}`}>{row.health}</span></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function planesText(planes) {
+  return Object.entries(planes || {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([p, n]) => (n > 1 ? `${p} ×${n}` : p))
+    .join(", ") || "-";
+}
+
+function buildsCell(p) {
+  if (!p.stale_builds) return <span className="muted">current</span>;
+  const retired = p.retired_builds ? `${p.retired_builds} retired` : "";
+  const stale = p.stale_builds - p.retired_builds ? `${p.stale_builds - p.retired_builds} stale` : "";
+  return <span style={{ color: p.retired_builds ? "var(--crit)" : "var(--susp)" }}>{[retired, stale].filter(Boolean).join(", ")}</span>;
+}
+
+// One row per person, paged, worst first. Defaults to the people with something to look
+// at: a sensor past 24h, a scan that failed open this week, or a stale/retired build.
+function PeopleLedger({ tick }) {
+  const [attention, setAttention] = useState(true);
+  const [query, setQuery] = useState("");
+  const [needle, setNeedle] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  const [open, setOpen] = useState(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => { setNeedle(query.trim()); setOffset(0); }, 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  useEffect(() => {
+    let live = true;
+    setErr(null);
+    api.fleetPeople({ attention: attention ? 1 : 0, q: needle, limit: PEOPLE_PAGE, offset })
+      .then((d) => { if (live) { setData(d); setOpen(null); } })
+      .catch((e) => { if (live) setErr(String(e.message || e).replace(/^\d+:\s*/, "")); });
+    return () => { live = false; };
+  }, [attention, needle, offset, tick]);
+
+  const people = data?.people || [];
+  const total = data?.total || 0;
+  const s = data?.summary || {};
+
+  return (
+    <div className="panel settings-card">
+      <h2>
+        People
+        {s.people > 0 && <span className="count-pill">{s.people}</span>}
+        <span className="head-actions" style={{ marginLeft: "auto", fontWeight: 400 }}>
+          <label className="muted" style={{ fontSize: 12 }}>
+            <input type="checkbox" checked={attention}
+                   onChange={(e) => { setAttention(e.target.checked); setOffset(0); }} /> needs attention only
+          </label>
+        </span>
+      </h2>
+      <p className="muted" style={{ marginTop: 0 }}>
+        One row per person, worst first. A person's health is their <em>oldest</em> sensor, so
+        someone whose laptop hook went dark stays flagged while their browser extension keeps
+        reporting. Expand a row for the sensors.
+      </p>
+      <div className="override-row">
+        <input type="search" placeholder="Find a person..." value={query} aria-label="Search people"
+               onChange={(e) => setQuery(e.target.value)} />
+      </div>
+      {err && <div className="error">{err}</div>}
+      {data && !people.length && (
+        <p className="muted">
+          {needle ? "Nobody matches."
+            : attention ? (s.people ? "Everyone is reporting, current, and scanned. Nothing needs a look."
+                                    : "No sensor activity captured yet.")
+            : "No sensor activity captured yet."}
+        </p>
+      )}
+      {people.length > 0 && (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr><th aria-label="Expand" /><th>Person</th><th>Planes</th><th>Sensors</th><th>Last seen</th><th>Oldest sensor</th><th>Events</th><th>Failed open 7d</th><th>Builds</th><th>Health</th></tr>
+            </thead>
+            <tbody>
+              {people.map((p) => {
+                const isOpen = open === p.actor;
+                return [
+                  <tr key={p.actor} style={{ cursor: "pointer" }} onClick={() => setOpen(isOpen ? null : p.actor)}>
+                    <td>
+                      <button type="button" className="ghost-btn" aria-expanded={isOpen}
+                              aria-label={`${isOpen ? "Hide" : "Show"} sensors for ${p.actor}`}
+                              onClick={(e) => { e.stopPropagation(); setOpen(isOpen ? null : p.actor); }}>
+                        {isOpen ? "▾" : "▸"}
+                      </button>
+                    </td>
+                    <td><strong>{p.actor || "(unattributed)"}</strong></td>
+                    <td className="muted">{planesText(p.planes)}</td>
+                    <td>{p.sensors}</td>
+                    <td className="muted">{fmtWhen(p.last_seen)}</td>
+                    <td className="muted">{fmtWhen(p.oldest_seen)}</td>
+                    <td>{p.events}</td>
+                    <td style={p.failed_open ? { color: "var(--susp)" } : undefined}>{p.failed_open || 0}</td>
+                    <td>{buildsCell(p)}</td>
+                    <td><span className={`badge ${HEALTH_CLASS[p.worst] || "sev-low"}`}>{p.worst}</span></td>
+                  </tr>,
+                  isOpen && (
+                    <tr key={`${p.actor}|sensors`}>
+                      <td colSpan={10}><PersonSensors rows={p.rows} /></td>
+                    </tr>
+                  ),
+                ];
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {total > PEOPLE_PAGE && (
+        <div className="head-actions">
+          <button type="button" className="ghost-btn" disabled={offset === 0}
+                  onClick={() => setOffset(Math.max(0, offset - PEOPLE_PAGE))}>Previous</button>
+          <span className="muted">{offset + 1}-{Math.min(offset + PEOPLE_PAGE, total)} of {total}</span>
+          <button type="button" className="ghost-btn" disabled={offset + PEOPLE_PAGE >= total}
+                  onClick={() => setOffset(offset + PEOPLE_PAGE)}>Next</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Fleet() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [tick, setTick] = useState(0);
+  const [allFailed, setAllFailed] = useState(false);
+  const [allDead, setAllDead] = useState(false);
 
   const load = useCallback(async () => {
     setErr(null); setBusy(true);
-    try { setData(await api.fleet()); }
+    try { setData(await api.fleet({ sensors: 0 })); setTick((t) => t + 1); }
     catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
     finally { setBusy(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
 
   const s = data?.summary || {};
-  const sensors = data?.sensors || [];
   const deadKeys = data?.dead_keys || [];
-  const failedOpen = sensors
-    .filter((r) => r.scan_fail_count > 0)
-    .sort((a, b) => String(b.last_scan_fail || "").localeCompare(String(a.last_scan_fail || "")));
+  const failedOpen = data?.failed_open_devices || [];
+  const failedShown = allFailed ? failedOpen : failedOpen.slice(0, SHORT_LIST);
+  const deadShown = allDead ? deadKeys : deadKeys.slice(0, SHORT_LIST);
 
   return (
     <div className="connect page-wide">
       <div className="content-head">
         <div>
           <h1 className="page-title">Fleet</h1>
-          <p className="page-sub">Sensor health per actor and plane, who is reporting,
-             who has gone quiet, which scans failed open, which devices present revoked keys,
-             and which AI assets each device has installed.</p>
+          <p className="page-sub">Who is reporting and who has gone quiet, one row per person;
+             which devices let scans fail open or present revoked keys; and which AI assets
+             the devices have installed.</p>
         </div>
         <div className="head-actions">
           <button type="button" className="ghost-btn" onClick={load} disabled={busy}>
@@ -295,50 +493,54 @@ export default function Fleet() {
 
           <div className="panel settings-card">
             <div className="usage-stats">
-              <div><span className="usage-n">{s.actors ?? "-"}</span><span className="usage-l">actors</span></div>
+              <div><span className="usage-n">{s.actors ?? "-"}</span><span className="usage-l">people</span></div>
+              <div><span className="usage-n">{s.sensors ?? "-"}</span><span className="usage-l">sensors</span></div>
               <div><span className="usage-n">{s.fresh ?? "-"}</span><span className="usage-l">fresh &lt;24h</span></div>
               <div><span className="usage-n">{s.stale ?? "-"}</span><span className="usage-l">stale 24-72h</span></div>
               <div><span className="usage-n">{s.dark ?? "-"}</span><span className="usage-l">dark &gt;72h</span></div>
               <div><span className="usage-n">{s.dead_keys ?? "-"}</span><span className="usage-l">dead keys</span></div>
               <div><span className="usage-n">{s.stale_clients ?? "-"}</span><span className="usage-l">stale builds</span></div>
-              <div><span className="usage-n">{s.failed_open ?? "-"}</span><span className="usage-l">failed open 7d</span></div>
+              <div><span className="usage-n">{s.failed_open_devices ?? "-"}</span><span className="usage-l">devices failed open 7d</span></div>
             </div>
           </div>
 
           {failedOpen.length > 0 && (
             <div className="panel settings-card">
-              <h2>Scans failed open</h2>
+              <h2>Scans failed open <span className="count-pill">{failedOpen.length}</span></h2>
               <p style={{ color: "var(--susp)", marginTop: 0 }}>
                 When a scan cannot complete (Palivane unreachable, a timeout, a rejected key) the
                 sensor lets the user through <strong>unscanned</strong> rather than block them. Each
-                device counts those and reports the tally the next time it reaches Palivane. A device
-                that never reaches it again shows up as stale or dark below instead.
+                device counts those and reports the tally the next time it reaches Palivane, one
+                row per device here however many tools it was asked about. A device that never
+                reaches it again shows up as dark in the people list instead.
               </p>
               <div className="table-scroll">
                 <table className="data-table">
                   <thead>
-                    <tr><th>Actor</th><th>Client</th><th>Plane / tool</th><th>Failed open</th><th>Since</th><th>Last</th><th>Why</th></tr>
+                    <tr><th>Person</th><th>Client</th><th>Sensors</th><th>Failed open</th><th>Since</th><th>Last</th><th>Why</th></tr>
                   </thead>
                   <tbody>
-                    {failedOpen.map((row, i) => (
-                      <tr key={`fo|${row.actor}|${row.plane}|${row.tool}|${i}`}>
-                        <td>{row.actor}</td>
-                        <td className="muted">{row.client || "-"}</td>
-                        <td className="muted">{row.plane}{row.tool ? ` / ${row.tool}` : ""}</td>
-                        <td><strong>{row.scan_fail_count}</strong></td>
+                    {failedShown.map((row) => (
+                      <tr key={`fo|${row.actor}|${row.client}`}>
+                        <td>{row.actor || "(unattributed)"}</td>
+                        <td className="muted">{clientCell(row)}</td>
+                        <td className="muted" title={row.tools.join(", ")}>{row.sensors}</td>
+                        <td><strong>{row.failed_open}</strong></td>
                         <td className="muted">{fmtWhen(row.first_scan_fail)}</td>
                         <td className="muted">{fmtWhen(row.last_scan_fail)}</td>
-                        <td className="muted">{reasonsText(row.scan_fail_reasons)}</td>
+                        <td className="muted">{reasonsText(row.reasons)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              <ShowAll total={failedOpen.length} shown={failedShown.length} open={allFailed}
+                       onToggle={() => setAllFailed((v) => !v)} what="devices" />
             </div>
           )}
           {deadKeys.length > 0 && (
             <div className="panel settings-card">
-              <h2>Devices presenting revoked keys</h2>
+              <h2>Devices presenting revoked keys <span className="count-pill">{deadKeys.length}</span></h2>
               <p style={{ color: "var(--crit)", marginTop: 0 }}>
                 These devices keep sending events with a revoked key. They <strong>fail open</strong>:
                 their traffic is no longer inspected. Re-run <code>palivane-connect</code> on each
@@ -348,7 +550,7 @@ export default function Fleet() {
                 <table className="data-table">
                   <thead><tr><th>Label</th><th>Actor</th><th>Key prefix</th><th>Last failed</th></tr></thead>
                   <tbody>
-                    {deadKeys.map((k) => (
+                    {deadShown.map((k) => (
                       <tr key={k.id}>
                         <td>{k.label || "-"}</td>
                         <td>{k.actor || "-"}</td>
@@ -359,42 +561,14 @@ export default function Fleet() {
                   </tbody>
                 </table>
               </div>
+              <ShowAll total={deadKeys.length} shown={deadShown.length} open={allDead}
+                       onToggle={() => setAllDead((v) => !v)} what="devices" />
             </div>
           )}
 
-          <div className="panel settings-card">
-            <h2>Sensors</h2>
-            {sensors.length ? (
-              <div className="table-scroll">
-                <table className="data-table">
-                  <thead>
-                    <tr><th>Actor</th><th>Plane</th><th>Tool</th><th>Client</th><th>Last seen</th><th>Events</th><th>Failed open</th><th>Health</th></tr>
-                  </thead>
-                  <tbody>
-                    {sensors.map((row, i) => (
-                      <tr key={`${row.actor}|${row.plane}|${row.tool}|${i}`}>
-                        <td>{row.actor}</td>
-                        <td className="muted">{row.plane}</td>
-                        <td className="muted">{row.tool || "-"}</td>
-                        <td className="muted">{clientCell(row)}</td>
-                        <td className="muted">{fmtWhen(row.last_seen)}</td>
-                        <td>{row.count}</td>
-                        <td title={row.scan_fail_count ? `since ${fmtWhen(row.first_scan_fail)}: ${reasonsText(row.scan_fail_reasons)}` : undefined}
-                            style={row.scan_fail_count ? { color: "var(--susp)" } : undefined}>
-                          {row.scan_fail_count || 0}
-                        </td>
-                        <td><span className={`badge ${HEALTH_CLASS[row.health] || "sev-low"}`}>{row.health}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : <p className="muted">No sensor activity captured yet.</p>}
-          </div>
-
+          <PeopleLedger tick={tick} />
           <DeveloperMeter />
           <AssetInventory />
-
         </>
       )}
       {!data && !err && <p className="muted">Loading fleet...</p>}
