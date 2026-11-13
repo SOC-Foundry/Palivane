@@ -161,7 +161,18 @@ export const api = {
   allowlistRenew: (id, days) =>
     req(`/allowlist/${id}/renew`, { method: "POST", body: JSON.stringify({ expires_in_days: days }) }),
   allowlistRevoke: (id) => req(`/allowlist/${id}/revoke`, { method: "POST" }),
-  fleet: () => req("/fleet"),
+  // Fleet health: the summary strip, scans failed open per device and dead keys. The
+  // flat sensor list is capped server-side; the console reads the ledger per person from
+  // fleetPeople, so it asks for the summary without it.
+  fleet: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return req("/fleet" + (q ? `?${q}` : ""));
+  },
+  // One row per person, paged, worst first: { attention, q, limit, offset }.
+  fleetPeople: (params = {}) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null)).toString();
+    return req("/fleet/people" + (q ? `?${q}` : ""));
+  },
   // Containment: stop a person / device / agent / the org on every plane (app/containment.py).
   containments: (all = false) => req("/containments" + (all ? "?all=true" : "")),
   contain: (payload) => req("/containments", { method: "POST", body: JSON.stringify(payload) }),

@@ -4542,84 +4542,246 @@ def policies_analytics(days: int = 30, current: User = Depends(require_admin),
 # --- Fleet health (sensor heartbeats + dead-key visibility) ------------------------------
 
 
+# Sensor health is a bucket on how long ago the sensor last checked in.
+_FLEET_FRESH = 24      # hours: a sensor seen within this is fresh
+_FLEET_STALE = 72      # hours: within this, stale; beyond it, dark
+_FLEET_FAIL_DAYS = 7   # a scan that failed open within this window counts on the ledger
+
+# Clients on an auto-updating channel this server doesn't distribute: the browser
+# extension ships from the Chrome Web Store / Edge Add-ons, which pushes updates on
+# its own schedule (and lags review) — the server has no authoritative "latest", and
+# comparing against the repo manifest would misflag every install while a submission
+# sits in review. Known name, store-managed currency.
+_AUTO_UPDATED_CLIENTS = frozenset({"palivane-extension"})
+
+
+def _fleet_bucket(now, last_seen) -> str:
+    from datetime import timedelta
+    if last_seen is None:
+        return "dark"
+    age = now - last_seen
+    if age <= timedelta(hours=_FLEET_FRESH):
+        return "fresh"
+    if age <= timedelta(hours=_FLEET_STALE):
+        return "stale"
+    return "dark"
+
+
+def _fleet_client_currency(s: dict, latest: dict) -> None:
+    """Annotate one sensor dict with whether its installed build is current.
+
+    Client builds: sensors reporting a version older than this deployment serves have
+    stale plumbing (hooks/addon/scanner). Server-side detection is already current for
+    them — this is only about the installed scripts, which self-update at session start.
+
+    A client name this deployment does not ship is NOT current: that is exactly what a
+    RETIRED client looks like (the palivane-* generation after the 2026-08 rename), and it
+    can never reach the current version because nothing publishes it any more. Treating an
+    unknown name as current hid 20 of 43 sensors from stale_clients — the most stale ones
+    in the fleet. Only a sensor that reports no client name at all is exempt."""
+    name = s.get("client") or ""
+    if not name or name in _AUTO_UPDATED_CLIENTS:
+        s["client_current"] = True          # nothing declared / store-updated — cannot judge
+        s["client_retired"] = False
+    elif name not in latest:
+        s["client_current"] = False         # retired/unrecognised build
+        s["client_retired"] = True
+    else:
+        s["client_current"] = s["client_version"] == latest[name]
+        s["client_retired"] = False
+
+
+def _fleet_stale_build_sql(H, latest: dict):
+    """The SQL twin of _fleet_client_currency: 1 for a sensor whose build is stale or
+    retired, 0 otherwise, so a per-person roll-up can count them without loading rows."""
+    from sqlalchemy import and_, case
+    known = list(latest) + list(_AUTO_UPDATED_CLIENTS)
+    stale = [and_(H.client == name, H.client_version != ver) for name, ver in latest.items()]
+    retired = and_(H.client != "", H.client.notin_(known))
+    return case((or_(*stale, retired), 1), else_=0)
+
+
 @app.get("/api/fleet")
-def fleet_health(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+def fleet_health(sensors: bool = True, current: User = Depends(require_admin),
+                 db: Session = Depends(get_db)):
     """Sensor-health ledger: who reported, from which plane, how recently — plus devices
     still presenting a revoked/expired key. This is what distinguishes "protected and
-    quiet" from "silently dark" on a fail-open control."""
+    quiet" from "silently dark" on a fail-open control.
+
+    The summary is counted in SQL over every sensor. The flat `sensors` list is capped at
+    the 2000 most recently seen (`?sensors=0` leaves it out); the console reads the ledger
+    per person from /api/fleet/people, which pages and has no such cap, so a fleet of
+    hundreds never loses its darkest sensors off the end of a list sorted newest-first."""
     from datetime import datetime, timedelta, timezone
 
-    from .models import ApiKey, SensorHeartbeat
+    from sqlalchemy import and_, case
+
+    from .distribution import client_versions
+    from .models import ApiKey, SensorHeartbeat as H
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    rows = (db.query(SensorHeartbeat)
-              .filter(SensorHeartbeat.tenant_id == current.tenant_id)
-              .order_by(SensorHeartbeat.last_seen.desc()).limit(2000).all())
+    fresh_cut, stale_cut = now - timedelta(hours=_FLEET_FRESH), now - timedelta(hours=_FLEET_STALE)
+    fail_cut = now - timedelta(days=_FLEET_FAIL_DAYS)
+    latest = client_versions()
+    base = db.query(H).filter(H.tenant_id == current.tenant_id)
 
-    def _bucket(last_seen) -> str:
-        if last_seen is None:
-            return "dark"
-        age = now - last_seen
-        if age <= timedelta(hours=24):
-            return "fresh"
-        if age <= timedelta(hours=72):
-            return "stale"
-        return "dark"
-
-    sensors = []
+    rows = base.order_by(H.last_seen.desc()).limit(2000).all() if sensors else []
+    out_sensors = []
     for r in rows:
         d = r.to_dict()
-        d["health"] = _bucket(r.last_seen)
-        sensors.append(d)
-    dead_cutoff = now - timedelta(days=7)
+        d["health"] = _fleet_bucket(now, r.last_seen)
+        _fleet_client_currency(d, latest)
+        out_sensors.append(d)
+
     dead = (db.query(ApiKey)
               .filter(ApiKey.tenant_id == current.tenant_id,
                       ApiKey.active.is_(False),
                       ApiKey.last_failed_at.isnot(None),
-                      ApiKey.last_failed_at >= dead_cutoff)
+                      ApiKey.last_failed_at >= fail_cut)
               .order_by(ApiKey.last_failed_at.desc()).limit(100).all())
-    # Client builds: sensors reporting a version older than this deployment serves have
-    # stale plumbing (hooks/addon/scanner). Server-side detection is already current for
-    # them — this is only about the installed scripts, which self-update at session start.
-    #
-    # A client name this deployment does not ship is NOT current: that is exactly what a
-    # RETIRED client looks like (the palivane-* generation after the 2026-08 rename), and it
-    # can never reach the current version because nothing publishes it any more. Treating an
-    # unknown name as current hid 20 of 43 sensors from stale_clients — the most stale ones
-    # in the fleet. Only a sensor that reports no client name at all is exempt.
-    from .distribution import client_versions
-    latest = client_versions()
-    # Clients on an auto-updating channel this server doesn't distribute: the browser
-    # extension ships from the Chrome Web Store / Edge Add-ons, which pushes updates on
-    # its own schedule (and lags review) — the server has no authoritative "latest", and
-    # comparing against the repo manifest would misflag every install while a submission
-    # sits in review. Known name, store-managed currency.
-    auto_updated = {"palivane-extension"}
-    for s in sensors:
-        name = s.get("client") or ""
-        if not name or name in auto_updated:
-            s["client_current"] = True          # nothing declared / store-updated — cannot judge
-            s["client_retired"] = False
-        elif name not in latest:
-            s["client_current"] = False         # retired/unrecognised build
-            s["client_retired"] = True
-        else:
-            s["client_current"] = s["client_version"] == latest[name]
-            s["client_retired"] = False
-    summary = {"actors": len({s["actor"] for s in sensors}),
-               "fresh": sum(1 for s in sensors if s["health"] == "fresh"),
-               "stale": sum(1 for s in sensors if s["health"] == "stale"),
-               "dark": sum(1 for s in sensors if s["health"] == "dark"),
+
+    # Scans that let traffic through UNSCANNED in the last 7 days because a scan failed
+    # (SEC-01), rolled up per DEVICE (actor + client): a laptop whose Claude Code hook timed
+    # out reports one sensor per tool it was asked about, and twenty rows for one outage
+    # buried the second device. Reported by the client on its next good contact; a client
+    # that never gets a good contact again shows up as stale/dark instead.
+    failed_rows = (base.filter(H.last_scan_fail.isnot(None), H.last_scan_fail >= fail_cut)
+                       .order_by(H.last_scan_fail.desc()).limit(2000).all())
+    by_device: dict[tuple[str, str], dict] = {}
+    for r in failed_rows:
+        d = by_device.setdefault((r.actor or "", r.client or ""), {
+            "actor": r.actor or "", "client": r.client or "", "client_version": r.client_version or "",
+            "sensors": 0, "failed_open": 0, "first_scan_fail": None, "last_scan_fail": None,
+            "reasons": {}, "tools": []})
+        d["sensors"] += 1
+        d["failed_open"] += r.scan_fail_count or 0
+        if r.first_scan_fail and (d["first_scan_fail"] is None or r.first_scan_fail < d["first_scan_fail"]):
+            d["first_scan_fail"] = r.first_scan_fail
+        if r.last_scan_fail and (d["last_scan_fail"] is None or r.last_scan_fail > d["last_scan_fail"]):
+            d["last_scan_fail"] = r.last_scan_fail
+        for reason, n in (r.scan_fail_reasons or {}).items():
+            d["reasons"][reason] = d["reasons"].get(reason, 0) + int(n or 0)
+        if len(d["tools"]) < 8:
+            d["tools"].append(f"{r.plane}/{r.tool}" if r.tool else r.plane)
+    failed_open_devices = sorted(by_device.values(), key=lambda d: (-d["failed_open"], d["actor"]))
+    for d in failed_open_devices:
+        d["first_scan_fail"] = d["first_scan_fail"].isoformat() if d["first_scan_fail"] else None
+        d["last_scan_fail"] = d["last_scan_fail"].isoformat() if d["last_scan_fail"] else None
+        _fleet_client_currency(d, latest)
+
+    stale_build = _fleet_stale_build_sql(H, latest)
+    retired_build = case((and_(H.client != "", H.client.notin_(list(latest) + list(_AUTO_UPDATED_CLIENTS))), 1), else_=0)
+    agg = (base.with_entities(
+               func.count().label("sensors"),
+               func.count(func.distinct(H.actor)).label("actors"),
+               func.coalesce(func.sum(case((H.last_seen > fresh_cut, 1), else_=0)), 0).label("fresh"),
+               func.coalesce(func.sum(case((and_(H.last_seen <= fresh_cut, H.last_seen > stale_cut), 1), else_=0)), 0).label("stale"),
+               func.coalesce(func.sum(case((or_(H.last_seen.is_(None), H.last_seen <= stale_cut), 1), else_=0)), 0).label("dark"),
+               func.coalesce(func.sum(stale_build), 0).label("stale_clients"),
+               func.coalesce(func.sum(retired_build), 0).label("retired_clients"),
+               func.coalesce(func.sum(case((and_(H.last_scan_fail.isnot(None), H.last_scan_fail >= fail_cut), 1), else_=0)), 0).label("failed_open"))
+           .one())
+    summary = {"actors": int(agg.actors or 0), "sensors": int(agg.sensors or 0),
+               "fresh": int(agg.fresh), "stale": int(agg.stale), "dark": int(agg.dark),
                "dead_keys": len(dead),
-               "stale_clients": sum(1 for s in sensors if not s["client_current"]),
-               # Sensors that let traffic through UNSCANNED in the last 7 days because a
-               # scan failed (SEC-01) — reported by the client on its next good contact.
-               # A client that never gets a good contact again shows up as stale/dark.
-               "failed_open": sum(1 for r in rows if r.last_scan_fail is not None
-                                  and r.last_scan_fail >= now - timedelta(days=7)),
-               "retired_clients": sum(1 for s in sensors if s["client_retired"])}
-    return {"summary": summary, "sensors": sensors,
+               "stale_clients": int(agg.stale_clients),
+               # Sensors that let traffic through UNSCANNED in the last 7 days (SEC-01).
+               "failed_open": int(agg.failed_open),
+               "failed_open_devices": len(failed_open_devices),
+               "retired_clients": int(agg.retired_clients)}
+    return {"summary": summary, "sensors": out_sensors,
+            "failed_open_devices": failed_open_devices,
             "server_version": settings.version, "latest_client_versions": latest,
             "dead_keys": [k.to_dict() for k in dead]}
+
+
+@app.get("/api/fleet/people")
+def fleet_people(attention: bool = True, q: str = "",
+                 limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0),
+                 current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """The sensor ledger rolled up to one row per person, paged, worst first.
+
+    A sensor row is keyed by tool, so one developer's Claude Code hook alone is twenty or
+    thirty rows (Bash, Read, Edit, every MCP tool); at a few hundred people the flat list
+    passed the 2000-row cap and, sorted newest-first, dropped the dark sensors first — the
+    one thing the page exists to show. This groups in SQL, so there is no cap, and sorts by
+    the OLDEST sensor each person has, so dark comes first.
+
+    `attention` (the default) keeps only people with something to look at: a sensor past
+    24h, a scan that failed open in the last 7 days, or a stale/retired build. `q` matches
+    the actor. Each person carries their sensor rows for the expanded view."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import and_, case
+
+    from .distribution import client_versions
+    from .models import SensorHeartbeat as H
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    fresh_cut = now - timedelta(hours=_FLEET_FRESH)
+    fail_cut = now - timedelta(days=_FLEET_FAIL_DAYS)
+    latest = client_versions()
+    tid = current.tenant_id
+
+    stale_build = _fleet_stale_build_sql(H, latest)
+    failed7 = case((and_(H.last_scan_fail.isnot(None), H.last_scan_fail >= fail_cut),
+                    H.scan_fail_count), else_=0)
+    oldest = func.min(H.last_seen)
+    grouped = (db.query(H.actor.label("actor"),
+                        func.count().label("sensors"),
+                        func.count(func.distinct(H.plane)).label("planes"),
+                        func.max(H.last_seen).label("last_seen"),
+                        oldest.label("oldest_seen"),
+                        func.coalesce(func.sum(H.count), 0).label("events"),
+                        func.coalesce(func.sum(failed7), 0).label("failed_open"),
+                        func.coalesce(func.sum(stale_build), 0).label("stale_builds"))
+                 .filter(H.tenant_id == tid)
+                 .group_by(H.actor))
+    needs_look = or_(oldest <= fresh_cut, func.sum(failed7) > 0, func.sum(stale_build) > 0)
+
+    # Head counts over everyone, before the filter, so the strip is the whole fleet.
+    everyone = grouped.all()
+    summary = {"people": len(everyone), "attention": 0, "fresh": 0, "stale": 0, "dark": 0}
+    for g in everyone:
+        summary[_fleet_bucket(now, g.oldest_seen)] += 1
+        if (g.oldest_seen is None or g.oldest_seen <= fresh_cut) or g.failed_open or g.stale_builds:
+            summary["attention"] += 1
+
+    page_q = grouped
+    if q.strip():
+        page_q = page_q.filter(H.actor.ilike(f"%{q.strip()}%"))
+    if attention:
+        page_q = page_q.having(needs_look)
+    total = page_q.count()
+    page = (page_q.order_by(oldest.asc(), func.sum(failed7).desc(), H.actor.asc())
+                  .offset(offset).limit(limit).all())
+
+    actors = [g.actor for g in page]
+    rows_by_actor: dict[str, list[dict]] = {a: [] for a in actors}
+    if actors:
+        for r in (db.query(H).filter(H.tenant_id == tid, H.actor.in_(actors))
+                    .order_by(H.last_seen.desc()).limit(5000)):
+            d = r.to_dict()
+            d["health"] = _fleet_bucket(now, r.last_seen)
+            _fleet_client_currency(d, latest)
+            rows_by_actor.setdefault(r.actor, []).append(d)
+
+    people = []
+    for g in page:
+        rows = rows_by_actor.get(g.actor, [])
+        planes: dict[str, int] = {}
+        for d in rows:
+            planes[d["plane"]] = planes.get(d["plane"], 0) + 1
+        people.append({
+            "actor": g.actor, "sensors": int(g.sensors), "planes": planes,
+            "last_seen": g.last_seen.isoformat() if g.last_seen else None,
+            "oldest_seen": g.oldest_seen.isoformat() if g.oldest_seen else None,
+            "worst": _fleet_bucket(now, g.oldest_seen),
+            "events": int(g.events or 0), "failed_open": int(g.failed_open or 0),
+            "stale_builds": int(g.stale_builds or 0),
+            "retired_builds": sum(1 for d in rows if d.get("client_retired")),
+            "rows": rows,
+        })
+    return {"people": people, "total": total, "limit": limit, "offset": offset,
+            "attention": attention, "summary": summary}
 
 
 def _containment_rows(db: Session, tenant_id: int, include_ended: bool) -> list[dict]:
