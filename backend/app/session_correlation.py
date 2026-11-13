@@ -99,13 +99,40 @@ _IGNORED = {"ai_generated", "session_correlation"}
 # stranger. A signal stored without a weight (older rows) counts: absence is not weakness.
 _MIN_LINK_STRENGTH = 0.5
 
+# A chain also needs an ANCHOR: one contributing finding whose link is evidence on its own.
+# Measured on the real engine: a known-format secret is 0.77, a sensitive path 0.81, a
+# dashed SSN leaving for an AI tool 0.6, a poisoned agent message 0.62; a dangerous-command
+# phrase in chat is 0.56 and an exfil phrase 0.52. The last two are links, in two stages,
+# one a payoff, so the stage logic reads them as a sequence; but each is a guess, and a
+# chain of guesses is a guess with a critical badge. They can still be links; one of them
+# cannot be the only thing holding the chain up.
+_MIN_ANCHOR_STRENGTH = 0.6
 
-def _is_link(sig) -> bool:
+
+def _strength(sig) -> float | None:
     w = sig.get("weight") if isinstance(sig, dict) else getattr(sig, "weight", None)
     c = sig.get("confidence") if isinstance(sig, dict) else getattr(sig, "confidence", None)
     if w is None or c is None:
-        return True
-    return w * c >= _MIN_LINK_STRENGTH
+        return None
+    return w * c
+
+
+def _is_link(sig) -> bool:
+    st = _strength(sig)
+    return True if st is None else st >= _MIN_LINK_STRENGTH
+
+
+def has_anchor(signals) -> bool:
+    """Whether a finding carries a link strong enough to anchor a chain on its own. A
+    signal stored without a weight (older rows) counts, as for links."""
+    for s in signals or []:
+        cat = (s.get("category") if isinstance(s, dict) else getattr(s, "category", "")) or ""
+        if getattr(cat, "value", cat) in _IGNORED:
+            continue
+        st = _strength(s)
+        if st is None or st >= _MIN_ANCHOR_STRENGTH:
+            return True
+    return False
 
 
 def stages_in(signals) -> set[str]:
@@ -164,6 +191,92 @@ def _order(stages: set[str]) -> list[str]:
     return [s for s in _STAGE_ORDER if s in stages]
 
 
+def _chain_of(findings) -> tuple[set[str], list[int]]:
+    """The chain a list of one actor's findings makes: its stages and the ids of the
+    findings that contribute, or (set(), []) when they make no chain.
+
+    Correlation is about a SEQUENCE: the chain must span 2+ distinct events, one of them an
+    agent's action (a person's chat prompts alone are not a chain), with 2+ stages one of
+    which is a payoff stage, and at least one anchor (see `_MIN_ANCHOR_STRENGTH`). A single
+    event that itself carries two categories (a secret plus an exfil destination) is already
+    flagged on its own; it is not a cross-event chain."""
+    stages: set[str] = set()
+    contributing: list[int] = []
+    agent_acted = anchored = False
+    for f in findings:
+        st = stages_in(f.signals)
+        if st:
+            stages |= st
+            contributing.append(f.id)
+            agent_acted = agent_acted or (f.surface in _AGENT_SURFACES)
+            anchored = anchored or has_anchor(f.signals)
+    if len(contributing) < 2 or not agent_acted or not anchored or not _should_correlate(stages):
+        return set(), []
+    return stages, contributing
+
+
+def _with_contributing(origin, ids) -> dict:
+    prior = origin.get("contributing") if isinstance(origin, dict) else None
+    merged = sorted(set(prior or []) | set(ids))
+    return {**(origin if isinstance(origin, dict) else {}), "contributing": merged}
+
+
+def reconcile_chains(db: Session, tenant_id: int | None, finding_ids, by: str = "",
+                     reason: str = "") -> list[int]:
+    """After findings are dismissed: re-derive every open chain they were part of from the
+    findings that are still standing, and dismiss the chain if it no longer holds.
+
+    A chain is only ever as good as its links. When a person judged the links false
+    positives, the "attack chain" built on them stayed open, critical, at the top of the
+    queue (prod #1426/#1431, 2026-11-12: 19 findings dismissed, two chains left). The chain
+    inherits the review: dismissed, by the same person, for the same reason (the detector
+    was wrong because its inputs were), via `bulk`, since nobody looked at the chain itself.
+
+    Returns the ids of the chains dismissed. The caller audits and commits."""
+    from . import review
+    ids = {int(i) for i in (finding_ids or [])}
+    if tenant_id is None or not ids:
+        return []
+    inputs = (db.query(Finding.id, Finding.sender)
+                .filter(Finding.tenant_id == tenant_id, Finding.id.in_(ids)).all())
+    actors = {sender for _, sender in inputs if sender}
+    if not actors:
+        return []
+    chains = (db.query(Finding)
+                .filter(Finding.tenant_id == tenant_id, Finding.surface == "session",
+                        Finding.sender.in_(actors),
+                        or_(Finding.status.is_(None), Finding.status != "dismissed"))
+                .all())
+    window = timedelta(minutes=max(1, config.settings.session_window_min))
+    dismissed: list[int] = []
+    for chain in chains:
+        listed = (chain.origin or {}).get("contributing") if isinstance(chain.origin, dict) else None
+        if listed and not (set(listed) & ids):
+            continue                       # built from other findings; this review is not about it
+        anchor_t = chain.last_seen or chain.created_at or datetime.now(timezone.utc).replace(tzinfo=None)
+        standing = (db.query(Finding)
+                      .filter(Finding.tenant_id == tenant_id, Finding.sender == chain.sender,
+                              Finding.surface != "session",
+                              Finding.last_seen >= anchor_t - window,
+                              Finding.last_seen <= anchor_t + window,
+                              or_(Finding.status.is_(None), Finding.status != "dismissed"))
+                      .order_by(Finding.last_seen.desc()).limit(300).all())
+        stages, contributing = _chain_of(standing)
+        if stages and _fingerprint(tenant_id, chain.sender, stages) == chain.fingerprint:
+            # Still holds on what is left: the list is what is left, not what it was.
+            chain.origin = {**(chain.origin if isinstance(chain.origin, dict) else {}),
+                            "contributing": sorted(contributing)}
+            db.commit()
+            continue
+        review.record_review(chain, "dismissed", by, "bulk",
+                             reason if reason in review.REASONS else "false_positive")
+        chain.status = "dismissed"
+        dismissed.append(chain.id)
+    if dismissed:
+        db.commit()
+    return dismissed
+
+
 def correlate(db: Session, tenant_id: int | None, actor: str, agent: str = "",
               dispatch=None) -> int | None:
     """Look across the actor's recent findings for an escalating attack chain; if present,
@@ -188,19 +301,8 @@ def correlate(db: Session, tenant_id: int | None, actor: str, agent: str = "",
               .order_by(Finding.last_seen.desc())
               .limit(300).all())
 
-    stages: set[str] = set()
-    contributing: list[int] = []
-    agent_acted = False
-    for f in recent:
-        st = stages_in(f.signals)
-        if st:
-            stages |= st
-            contributing.append(f.id)
-            agent_acted = agent_acted or (f.surface in _AGENT_SURFACES)
-    # Correlation is about a SEQUENCE: the chain must span ≥2 distinct events. A single
-    # event that itself carries two categories (a secret plus an exfil destination) is
-    # already flagged on its own — it is not a cross-event chain.
-    if len(contributing) < 2 or not agent_acted or not _should_correlate(stages):
+    stages, contributing = _chain_of(recent)
+    if not stages:
         return None
 
     severity, score = _severity_for(stages)
@@ -214,6 +316,7 @@ def correlate(db: Session, tenant_id: int | None, actor: str, agent: str = "",
     if prior is not None:
         prior.seen_count = (prior.seen_count or 1) + 1
         prior.last_seen = now
+        prior.origin = _with_contributing(prior.origin, contributing)
         db.commit()
         return prior.id
 
@@ -236,6 +339,9 @@ def correlate(db: Session, tenant_id: int | None, actor: str, agent: str = "",
         content="", risk_score=score, severity=severity,
         recommended_action="block", ai_generated=False, attack_intent=True,
         signals=[signal], judge_used=False,
+        # Which findings this chain is made of, so a review of them reaches it
+        # (reconcile_chains) and the console can show the links.
+        origin={"contributing": sorted(contributing)},
     )
     db.add(finding)
     db.commit()

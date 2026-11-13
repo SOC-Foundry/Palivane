@@ -3612,15 +3612,29 @@ def update_status(finding_id: int, body: StatusUpdate,
     review.record_review(row, body.status, current.email,
                          "analyst" if body.via == "analyst" else "manual", body.reason)
     db.commit()
+    chains = _chains_after_dismissal(db, current.tenant_id, [finding_id], body.status,
+                                     current.email, body.reason)
     from . import audit_log
     detail = {"status": row.status}
     if body.via:
         detail["via"] = body.via[:40]     # e.g. "analyst" — a human approving the AI's rec
     if row.review_reason:
         detail["reason"] = row.review_reason
+    if chains:
+        detail["chains_dismissed"] = chains
     audit_log.record(db, current.tenant_id, current.email, "finding.status",
                      target=str(finding_id), detail=detail)
-    return {"id": finding_id, "status": row.status}
+    return {"id": finding_id, "status": row.status, "chains_dismissed": chains}
+
+
+def _chains_after_dismissal(db: Session, tenant_id: int, ids, status: str, by: str,
+                            reason: str | None) -> list[int]:
+    """Dismissing findings dismisses the attack chains built on them that no longer hold
+    (session_correlation.reconcile_chains). A no-op for any other status."""
+    if status != "dismissed":
+        return []
+    from .session_correlation import reconcile_chains
+    return reconcile_chains(db, tenant_id, ids, by, reason or "")
 
 
 @app.post("/api/findings/bulk-status")
@@ -3638,11 +3652,14 @@ def bulk_update_status(body: BulkStatusUpdate, current: User = Depends(require_a
          .update(review.review_update(Finding, body.status, current.email, via, body.reason),
                  synchronize_session=False))
     db.commit()
+    chains = _chains_after_dismissal(db, current.tenant_id, body.ids, body.status,
+                                     current.email, body.reason)
     from . import audit_log
     audit_log.record(db, current.tenant_id, current.email, "finding.bulk_status",
                      detail={"status": body.status, "count": n, "ids": body.ids[:50],
-                             **({"reason": body.reason} if body.status == "dismissed" and body.reason else {})})
-    return {"updated": n, "status": body.status}
+                             **({"reason": body.reason} if body.status == "dismissed" and body.reason else {}),
+                             **({"chains_dismissed": chains} if chains else {})})
+    return {"updated": n, "status": body.status, "chains_dismissed": chains}
 
 
 # --- Your own findings: the person a finding belongs to answers for it ----------------
@@ -3818,16 +3835,17 @@ def dismiss_benign_findings(current: User = Depends(require_admin),
     """Bulk-dismiss this tenant's open allow-level (benign/low) findings — one-time cleanup
     for backlogs recorded before benign captures stopped persisting (see
     PALIVANE_USAGE_PERSIST_BENIGN). Idempotent; verdicts and content are kept."""
-    n = (db.query(Finding)
-         .filter(Finding.tenant_id == current.tenant_id, Finding.status == "open",
-                 Finding.severity.in_(["benign", "low"]))
-         .update(review.review_update(Finding, "dismissed", current.email, "bulk"),
-                 synchronize_session=False))
+    q = db.query(Finding).filter(Finding.tenant_id == current.tenant_id, Finding.status == "open",
+                                 Finding.severity.in_(["benign", "low"]))
+    ids = [i for (i,) in q.with_entities(Finding.id).all()]
+    n = q.update(review.review_update(Finding, "dismissed", current.email, "bulk"),
+                 synchronize_session=False)
     db.commit()
+    chains = _chains_after_dismissal(db, current.tenant_id, ids, "dismissed", current.email, "")
     from . import audit_log
     audit_log.record(db, current.tenant_id, current.email, "findings.dismiss_benign",
-                     detail={"dismissed": n})
-    return {"dismissed": n}
+                     detail={"dismissed": n, **({"chains_dismissed": chains} if chains else {})})
+    return {"dismissed": n, "chains_dismissed": chains}
 
 
 @app.get("/api/corpus/export")
