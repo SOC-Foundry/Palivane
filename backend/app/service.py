@@ -23,7 +23,7 @@ from .crypto import seal
 # as the rest of the scan path — a late import would bind a different instance if the
 # config module was ever reloaded.
 from .ml import capture as ml_capture
-from . import excerpts, review, secrets_ledger
+from . import excerpts, exposures, review, secrets_ledger
 from .redaction import redact_text
 from .scoring import UNSCANNED_CHECK
 from .session_correlation import correlate, is_chain_relevant
@@ -649,6 +649,8 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         finding_id = finding.id
         provenance.remember(db, tenant_id, item, result["signals"], finding_id)
         secrets_ledger.record(db, tenant_id, item, result["signals"], finding_id)
+        if not dev:
+            exposures.open_for(db, tenant_id, finding, result["signals"], result, tenant)
         if dev:
             # Recorded and reviewed by the key; nothing to page anyone about, and not a link
             # in anyone's chain (a dismissed finding never is).

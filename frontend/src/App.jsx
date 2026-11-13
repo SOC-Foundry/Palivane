@@ -38,6 +38,7 @@ import Simulator from "./components/Simulator.jsx";
 import Report from "./components/Report.jsx";
 import Help from "./components/Help.jsx";
 import MyFindings from "./components/MyFindings.jsx";
+import Exposures from "./components/Exposures.jsx";
 import { IconList, IconPlug, IconShield, IconRefresh, IconLogout, IconUsers, IconGear, IconClipboard, IconInbox, IconTarget, IconRadar, IconSliders, IconActivity, IconBot, IconBook, IconTerminal, IconEye, IconNodes, IconBeaker, IconLink, IconFileSearch, IconMenu, IconClose } from "./components/icons.jsx";
 
 // Sidebar navigation, grouped.
@@ -56,6 +57,7 @@ const NAV = [
     // Everyone, deliberately: this is the view for the person a finding belongs to, and
     // the whole point is that it does not need a security person in the loop.
     { v: "mine",        icon: <IconInbox />,     label: "Your findings", admin: false, member: true },
+    { v: "exposures",   icon: <IconShield />,    label: "Exposures" },
     { v: "sessions",    icon: <IconActivity />,  label: "Sessions" },
     { v: "scanlog",     icon: <IconTerminal />,  label: "Scan log" },
   ]},
@@ -542,6 +544,8 @@ export default function App() {
           <Audit />
         ) : view === "mine" ? (
           <MyFindings />
+        ) : view === "exposures" ? (
+          <Exposures />
         ) : view === "help" ? (
           <Help isAdmin={isAdmin} onNavigate={navigate} />
         ) : (
