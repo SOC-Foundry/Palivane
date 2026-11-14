@@ -7,4 +7,3 @@ type: application
 version: 0.1.0
 appVersion: "latest"
 home: https://palivane.io
-sources: ["https://github.com/SOC-Foundry/Palivane"]
