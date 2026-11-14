@@ -5,15 +5,14 @@
 import proof from "../proof.gen.json";
 import { SiteFooter, SiteNav } from "./SiteChrome.jsx";
 
-const REPO = "https://github.com/SOC-Foundry/Palivane/blob/main/backend/tests/";
-
-const REPRODUCE = `git clone https://github.com/SOC-Foundry/Palivane && cd Palivane/backend
-python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
-.venv/bin/python -m tests.bench_false_positives        # benign corpus, per-sample FP report
-.venv/bin/python -m tests.bench_recall                 # labelled malicious corpus, misses printed verbatim
-.venv/bin/python -m tests.bench_evasion                # obfuscation matrix, every bypass listed
-.venv/bin/python -m tests.bench_code_discrimination    # proprietary vs tutorial code
-.venv/bin/python -m tests.bench_proof --check          # the numbers on this page, against the engine`;
+// The benchmarks ship inside the backend image (deploy/cloudrun/Dockerfile copies backend/
+// whole, tests included), so any self-hosted install can rerun them without the source repo.
+const REPRODUCE = `# inside any self-hosted Palivane (docker compose; the service is "app")
+docker compose exec app python -m tests.bench_false_positives      # benign corpus, per-sample FP report
+docker compose exec app python -m tests.bench_recall               # labelled malicious corpus, misses printed verbatim
+docker compose exec app python -m tests.bench_evasion              # obfuscation matrix, every bypass listed
+docker compose exec app python -m tests.bench_code_discrimination  # proprietary vs tutorial code
+docker compose exec app python -m tests.bench_proof --print        # the numbers on this page, measured now`;
 
 const pretty = (s) => s.replace(/_/g, " ");
 
@@ -42,8 +41,8 @@ export default function Proof() {
         <h1>The numbers, <span className="lp-hl">and the commands that produce them.</span></h1>
         <p className="lp-sub">Four benchmarks run against the detection engine on every commit.
            The figures below are written by the benchmarks themselves, dated and tied to the
-           engine build; CI fails if the page and the engine disagree. Clone the repo and run
-           them yourself.</p>
+           engine build; CI fails if the page and the engine disagree. The benchmarks ship in
+           every install, so you can rerun them yourself.</p>
       </section>
 
       <section className="lp-stats-band">
@@ -84,7 +83,7 @@ export default function Proof() {
               <p>A deliberately clean corpus scored through the real analysis path. Any warn, block
                  or data-loss signal on a clean sample is a false positive. Rate by sample class:</p>
               <Table caption="False positives by category" cols={["class", "samples", "false positives"]} rows={fpRows} />
-              <p><a className="lp-textlink" href={REPO + "bench_false_positives.py"}>bench_false_positives.py →</a></p>
+              <p className="muted"><code>backend/tests/bench_false_positives.py</code></p>
             </div>
             <div className="lp-card">
               <h3>Recall: {rc.detected} of {rc.malicious_samples} ({rc.rate_pct}%)</h3>
@@ -92,7 +91,7 @@ export default function Proof() {
                  engine raises that category; {rc.actioned} of the {rc.detected} also reached a warn
                  or block verdict. Misses are printed verbatim so they cannot be papered over.</p>
               <Table caption="Recall by category" cols={["category", "samples", "detected"]} rows={rcRows} />
-              <p><a className="lp-textlink" href={REPO + "bench_recall.py"}>bench_recall.py →</a></p>
+              <p className="muted"><code>backend/tests/bench_recall.py</code></p>
             </div>
             <div className="lp-card">
               <h3>Evasion: {ev.bypasses} bypasses in {ev.attempts} attempts</h3>
@@ -105,7 +104,7 @@ export default function Proof() {
               <ul className="lp-list">
                 {ev.bypass_list.map((b) => <li key={b}><code>{b}</code></li>)}
               </ul>
-              <p><a className="lp-textlink" href={REPO + "bench_evasion.py"}>bench_evasion.py →</a></p>
+              <p className="muted"><code>backend/tests/bench_evasion.py</code></p>
             </div>
             <div className="lp-card">
               <h3>Code discrimination: your code vs. tutorial code</h3>
@@ -114,7 +113,7 @@ export default function Proof() {
                  business identifiers must raise a source-code signal. Result: {cd.generic_false_positives} generic
                  false positives ({cd.generic_fp_rate_pct}%), {cd.proprietary_recall_pct}% proprietary recall.
                  The corpus is synthetic and in the repo.</p>
-              <p><a className="lp-textlink" href={REPO + "bench_code_discrimination.py"}>bench_code_discrimination.py →</a></p>
+              <p className="muted"><code>backend/tests/bench_code_discrimination.py</code></p>
             </div>
           </div>
         </div>
@@ -169,7 +168,8 @@ export default function Proof() {
           </div>
           <pre className="lp-pre"><code>{REPRODUCE}</code></pre>
           <p className="lp-sub" style={{ textAlign: "left", margin: "16px 0 0" }}>
-            Each run takes seconds and needs no API key. The corpora are synthetic: every key,
+            Each run takes seconds and needs no API key or source checkout: the benchmarks and their
+            corpora are part of the backend image, so a self-hosted install reruns them as-is. The corpora are synthetic: every key,
             card number and record in them is a documented fake. What this measures is the offline
             rule, pattern and classifier layer, the part that runs with no network call and must
             not be wrong on its own. The optional LLM judge sits on top of it and is not in these

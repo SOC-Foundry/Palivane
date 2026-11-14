@@ -77,7 +77,7 @@ export default function Assessment() {
           </div>
           <p className="lp-sub" style={{ textAlign: "left", margin: "16px 0 0" }}>
             What installs: a browser extension, the CLI hooks for coding assistants, and a
-            local proxy with its CA for desktop apps. Everything is on GitHub, and the coverage
+            local proxy with its CA for desktop apps. Every client is open source, and the coverage
             page says what each surface needs and where the edges are.{" "}
             <a className="lp-textlink" href="/coverage">What each surface requires →</a>
           </p>
