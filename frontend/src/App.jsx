@@ -14,6 +14,7 @@ import Landing from "./components/Landing.jsx";
 import Legal from "./components/Legal.jsx";
 import OAuthConsent from "./components/OAuthConsent.jsx";
 import HowItWorks from "./components/HowItWorks.jsx";
+import Assessment from "./components/Assessment.jsx";
 import CoverageMatrix from "./components/CoverageMatrix.jsx";
 import Setup from "./components/Setup.jsx";
 import UseCases from "./components/UseCases.jsx";
@@ -353,6 +354,9 @@ export default function App() {
   }
   if (legalPath === "/how-it-works") {
     return <HowItWorks />;
+  }
+  if (legalPath === "/assessment") {
+    return <Assessment />;
   }
   if (legalPath === "/coverage") {
     return <CoverageMatrix />;

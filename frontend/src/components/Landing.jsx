@@ -580,7 +580,9 @@ export default function Landing({ onSignIn }) {
         <div className="lp-wrap">
           <div className="lp-closing rv">
             <h2>Start by <span className="lp-hl">watching.</span></h2>
-            <p>Run it in monitor mode, then switch on blocking when you have seen enough.</p>
+            <p>Run it in monitor mode for a week and get the report, then switch on blocking
+               when you have seen enough.{" "}
+              <a className="lp-textlink" href="/assessment">How the 7-day assessment works →</a></p>
             {/* The one place on the landing page with a route to a human. The hero stays
                 two self-serve CTAs on purpose; someone who has read to the bottom and
                 still wants a conversation is exactly who should find this. */}

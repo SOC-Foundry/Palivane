@@ -5179,6 +5179,15 @@ def report_summary(days: int = 30, current: User = Depends(require_admin),
                    db: Session = Depends(get_db)):
     """The numbers a security lead forwards upward: window totals, what was prevented,
     where it came from, who's covered. Printable from the console's Report page."""
+    return report_numbers(db, current.tenant_id, days)
+
+
+def report_numbers(db: Session, tenant_id: int, days: int = 30) -> dict:
+    """The AI Exposure Assessment payload for one tenant and window.
+
+    Shared by the console's Report page (above) and the day-7 trial notice (trial.py), which
+    mails the headline numbers of the first week so the assessment reaches the admins
+    without anyone re-opening the console."""
     from datetime import datetime, timedelta, timezone
 
     from .detectors.shadow_ai import confirmed_leak
@@ -5190,7 +5199,7 @@ def report_summary(days: int = 30, current: User = Depends(require_admin),
     rows = (db.query(Finding.severity, Finding.status, Finding.signals,
                      Finding.channel, Finding.sender, Finding.recommended_action,
                      Finding.origin)
-              .filter(Finding.tenant_id == current.tenant_id,
+              .filter(Finding.tenant_id == tenant_id,
                       Finding.last_seen >= since)
               .limit(20000).all())
     by_severity: dict[str, int] = {}
@@ -5217,13 +5226,13 @@ def report_summary(days: int = 30, current: User = Depends(require_admin),
             prevented += 1
 
     hb = (db.query(SensorHeartbeat)
-            .filter(SensorHeartbeat.tenant_id == current.tenant_id).all())
+            .filter(SensorHeartbeat.tenant_id == tenant_id).all())
     covered = {h.actor for h in hb if h.actor and h.last_seen and h.last_seen >= since}
     from .metering import ANALYZED_KINDS
     # The traffic kinds only. The meter also holds per-agent rate buckets ("ag<id>"), a second
     # count of calls already in "gateway"; summing every kind counted each agent call twice.
     analyzed = (db.query(func.coalesce(func.sum(GatewayUsage.count), 0))
-                  .filter(GatewayUsage.tenant_id == current.tenant_id,
+                  .filter(GatewayUsage.tenant_id == tenant_id,
                           GatewayUsage.kind.in_(ANALYZED_KINDS),
                           GatewayUsage.window_start >= since).scalar() or 0)
     return {"days": days, "generated_at": now.isoformat(),
@@ -5238,7 +5247,7 @@ def report_summary(days: int = 30, current: User = Depends(require_admin),
             # many distinct source documents leaked — "which of our data is walking out."
             "leaks_with_known_source": traced,
             "leaked_source_documents": len(leaked_docs),
-            "shadow": _report_shadow(db, current.tenant_id),
+            "shadow": _report_shadow(db, tenant_id),
             "recommendations": _report_recommendations(
                 by_category, by_severity, len(actors), len(covered))}
 
