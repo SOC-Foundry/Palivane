@@ -1677,6 +1677,8 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         require_feature(tenant, "alerts")
     if (body.siem_url or "").strip() or (body.siem_token or "").strip():
         require_feature(tenant, "siem")
+    if (body.ticket_kind or "").strip() or (body.ticket_token or "").strip():
+        require_feature(tenant, "alerts")
     if any((getattr(body, f) or "").strip() for f in
            ("siem_s3_bucket", "siem_s3_key_id", "siem_s3_secret", "siem_s3_role_arn")):
         require_feature(tenant, "s3_delivery")
@@ -1769,6 +1771,28 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         # Legacy plaintext rows keep working — unseal passes untagged values through.
         tenant.siem_token = crypto.seal_secret(crypto.tenant_dek(tenant, db),
                                                body.siem_token.strip())
+    if body.ticket_kind is not None:
+        if body.ticket_kind not in ("", "jira", "servicenow"):
+            raise HTTPException(status_code=400, detail="invalid ticket_kind")
+        tenant.ticket_kind = body.ticket_kind
+        if not body.ticket_kind:   # switching ticketing off drops the credential too
+            tenant.ticket_token = ""
+    if body.ticket_url is not None:
+        url = body.ticket_url.strip().rstrip("/")
+        if url:
+            from .netguard import is_safe_url_static
+            if not is_safe_url_static(url):
+                raise HTTPException(status_code=400, detail="ticket_url must be a public https URL")
+        tenant.ticket_url = url
+    if body.ticket_user is not None:
+        tenant.ticket_user = body.ticket_user.strip()
+    if body.ticket_token is not None:
+        tenant.ticket_token = (crypto.seal_secret(crypto.tenant_dek(tenant, db), body.ticket_token.strip())
+                               if body.ticket_token.strip() else "")
+    if body.ticket_project is not None:
+        tenant.ticket_project = body.ticket_project.strip()
+    if body.ticket_issue_type is not None:
+        tenant.ticket_issue_type = body.ticket_issue_type.strip()
     if body.siem_min_severity is not None:
         if body.siem_min_severity not in ("low", "suspicious", "high", "critical"):
             raise HTTPException(status_code=400, detail="invalid siem_min_severity")

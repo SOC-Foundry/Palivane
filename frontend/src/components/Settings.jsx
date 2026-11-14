@@ -366,6 +366,33 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
       flash(clearUrl ? "SIEM forwarding removed." : "SIEM saved.");
     } catch (e) { err(e); }
   }
+  // --- Ticketing (Jira / ServiceNow) ---
+  const [ticketCfg, setTicketCfg] = useState({
+    kind: tenant?.ticket_kind || "", url: "", user: tenant?.ticket_user || "", token: "",
+    project: tenant?.ticket_project || "", issueType: tenant?.ticket_issue_type || "",
+    tokenSet: !!tenant?.ticket_token_set, urlHost: tenant?.ticket_url_host || "",
+  });
+  async function saveTickets(off = false) {
+    try {
+      const payload = off ? { ticket_kind: "" } : {
+        ticket_kind: ticketCfg.kind, ticket_user: ticketCfg.user,
+        ticket_project: ticketCfg.project, ticket_issue_type: ticketCfg.issueType,
+      };
+      if (!off && ticketCfg.url) payload.ticket_url = ticketCfg.url;      // write-only; only if changed
+      if (!off && ticketCfg.token) payload.ticket_token = ticketCfg.token; // write-only; only if changed
+      const t = await api.updateTenant(payload);
+      onTenant?.(t);
+      setTicketCfg((s) => ({ ...s, kind: t.ticket_kind || "", url: "", token: "",
+                             tokenSet: !!t.ticket_token_set, urlHost: t.ticket_url_host || "" }));
+      flash(off ? "Ticketing switched off." : "Ticketing saved.");
+    } catch (e) { err(e); }
+  }
+  async function testTickets() {
+    try {
+      const r = await api.testTickets();
+      flash(r.ok ? r.detail : `Tracker test failed: ${r.detail}`, !!r.ok);
+    } catch (e) { err(e); }
+  }
   // --- Anthropic Inference hooks (Claude Enterprise) ---
   const [ihSecret, setIhSecret] = useState("");
   const [ihKey, setIhKey] = useState("");
@@ -1374,6 +1401,49 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                  blocks capture). Internal/private endpoints are blocked, use a reachable collector.
                  Events arrive with the Splunk sourcetype <code>palivane:finding</code>, which also
                  sets the S3 object path below.</p>
+            </div>
+
+            {/* Ticketing */}
+            <div className="panel settings-card">
+              <h2>Tickets: Jira / ServiceNow</h2>
+              <PlanLock need="alerts" />
+              <p className="muted" style={{ fontSize: 12 }}>One click on an exposure or a containment
+                 creates the ticket in your own tracker, with the facts a responder needs and a link
+                 back here. Never the matched values. One ticket per row; the link shows afterwards.</p>
+              <div className="field-grid">
+                <label>Tracker
+                  <select value={ticketCfg.kind} onChange={(e) => setTicketCfg((s) => ({ ...s, kind: e.target.value }))}>
+                    <option value="">Off</option>
+                    <option value="jira">Jira Cloud</option>
+                    <option value="servicenow">ServiceNow</option>
+                  </select></label>
+                <label>{ticketCfg.kind === "servicenow" ? "Table" : "Project key"}
+                  <input placeholder={ticketCfg.kind === "servicenow" ? "incident" : "SEC"} value={ticketCfg.project}
+                         onChange={(e) => setTicketCfg((s) => ({ ...s, project: e.target.value }))} /></label>
+                <label className="field-wide">Instance URL {ticketCfg.urlHost && <span className="muted">(set to {ticketCfg.urlHost}, leave blank to keep)</span>}
+                  <input placeholder={ticketCfg.kind === "servicenow" ? "https://acme.service-now.com" : "https://acme.atlassian.net"}
+                         value={ticketCfg.url} onChange={(e) => setTicketCfg((s) => ({ ...s, url: e.target.value }))} /></label>
+                <label>{ticketCfg.kind === "servicenow" ? "User" : "Account email"}
+                  <input value={ticketCfg.user} onChange={(e) => setTicketCfg((s) => ({ ...s, user: e.target.value }))} /></label>
+                <label>{ticketCfg.kind === "servicenow" ? "Password" : "API token"} {ticketCfg.tokenSet && <span className="muted">(set, leave blank to keep)</span>}
+                  <input type="password" placeholder={ticketCfg.tokenSet ? "••••••••" : ""} value={ticketCfg.token}
+                         onChange={(e) => setTicketCfg((s) => ({ ...s, token: e.target.value }))} /></label>
+                {ticketCfg.kind !== "servicenow" && (
+                  <label>Issue type
+                    <input placeholder="Task" value={ticketCfg.issueType}
+                           onChange={(e) => setTicketCfg((s) => ({ ...s, issueType: e.target.value }))} /></label>
+                )}
+              </div>
+              <div className="form-row" style={{ gap: 10 }}>
+                <button type="button" className="primary-btn slim" onClick={() => saveTickets()}>Save ticketing</button>
+                {tenant?.ticket_kind && <button type="button" className="mini-btn"
+                                               onClick={() => window.confirm("Switch ticketing off? The credential is dropped.") && saveTickets(true)}>Switch off</button>}
+                <button type="button" className="mini-btn" onClick={testTickets}>Test connection</button>
+              </div>
+              <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Jira: an Atlassian API token for the
+                 account email; issues land in the project key with the issue type (default Task).
+                 ServiceNow: a user with write on the table (default <code>incident</code>). The credential
+                 is sealed at rest and only ever sent to the instance URL; internal hosts are refused.</p>
             </div>
 
             {/* Anthropic Inference hooks */}

@@ -3673,9 +3673,12 @@ def list_exposures(include_closed: bool = False, current: User = Depends(require
                    db: Session = Depends(get_db)):
     """The exposure register: regulated data that reached a provider, soonest deadline
     first, each with its clock, status and a drafted notification. app/exposures.py."""
-    from . import exposures
-    return {"exposures": exposures.listing(db, current.tenant_id, include_closed),
-            "statuses": list(exposures.STATUSES)}
+    from . import exposures, tickets
+    rows = exposures.listing(db, current.tenant_id, include_closed)
+    made = tickets.by_kind(db, current.tenant_id, "exposure")
+    for r in rows:
+        r["ticket"] = made.get(r["id"])
+    return {"exposures": rows, "statuses": list(exposures.STATUSES)}
 
 
 @app.post("/api/exposures/{exposure_id}/status")
@@ -3693,6 +3696,69 @@ def set_exposure_status(exposure_id: int, body: ExposureStatusIn,
                                                       **({"reason": body.reason} if body.reason else {})})
     f = db.get(Finding, row.finding_id)
     return exposures.summarise(row, f)
+
+
+# --- Tickets: an exposure or a containment becomes a Jira issue / ServiceNow incident -------
+
+
+@app.post("/api/exposures/{exposure_id}/ticket")
+def exposure_ticket(exposure_id: int, current: User = Depends(require_admin),
+                    db: Session = Depends(get_db)):
+    """Create the ticket for one exposure in the org's tracker (app/tickets.py), or return
+    the one already made. Audited."""
+    from . import audit_log, email as email_mod, exposures, tickets
+    from .models import ExposureRecord
+    row = (db.query(ExposureRecord).filter(ExposureRecord.tenant_id == current.tenant_id,
+                                           ExposureRecord.id == exposure_id).one_or_none())
+    if row is None:
+        raise HTTPException(status_code=404, detail="exposure not found")
+    tenant = db.get(Tenant, current.tenant_id)
+    summary = exposures.summarise(row, db.get(Finding, row.finding_id))
+    title, body, sev = tickets.exposure_ticket(summary, email_mod.base_url())
+    fresh = tickets.existing(db, current.tenant_id, "exposure", exposure_id) is None
+    try:
+        t = tickets.create(db, tenant, "exposure", exposure_id, title, body, current.email, sev)
+    except tickets.TicketError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if fresh:
+        audit_log.record(db, current.tenant_id, current.email, "ticket.create",
+                         target=t.key, detail={"kind": "exposure", "exposure_id": exposure_id,
+                                               "finding_id": row.finding_id, "tracker": t.tracker})
+    return t.to_dict()
+
+
+@app.post("/api/containments/{containment_id}/ticket")
+def containment_ticket(containment_id: int, current: User = Depends(require_admin),
+                       db: Session = Depends(get_db)):
+    """Create the ticket for one containment, or return the one already made. Audited."""
+    from . import audit_log, email as email_mod, tickets
+    from .models import Containment
+    row = (db.query(Containment).filter(Containment.tenant_id == current.tenant_id,
+                                        Containment.id == containment_id).one_or_none())
+    if row is None:
+        raise HTTPException(status_code=404, detail="containment not found")
+    tenant = db.get(Tenant, current.tenant_id)
+    d = next((r for r in _containment_rows(db, current.tenant_id, include_ended=True)
+              if r["id"] == containment_id), row.to_dict())
+    title, body, sev = tickets.containment_ticket(d, email_mod.base_url())
+    fresh = tickets.existing(db, current.tenant_id, "containment", containment_id) is None
+    try:
+        t = tickets.create(db, tenant, "containment", containment_id, title, body, current.email, sev)
+    except tickets.TicketError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if fresh:
+        audit_log.record(db, current.tenant_id, current.email, "ticket.create",
+                         target=t.key, detail={"kind": "containment", "containment_id": containment_id,
+                                               "tracker": t.tracker})
+    return t.to_dict()
+
+
+@app.post("/api/tickets/test")
+def tickets_test(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Prove the tracker URL and credentials work; creates nothing."""
+    from . import tickets
+    ok, detail = tickets.test_connection(db.get(Tenant, current.tenant_id), db)
+    return {"ok": ok, "detail": detail}
 
 
 @app.get("/api/findings/{finding_id}/secrets")
@@ -5062,7 +5128,12 @@ def _containment_rows(db: Session, tenant_id: int, include_ended: bool) -> list[
 def containments_list(all: bool = False, current: User = Depends(require_admin),
                       db: Session = Depends(get_db)):
     """Active containments (and, with all=true, the ones that ended)."""
-    return {"containments": _containment_rows(db, current.tenant_id, include_ended=all),
+    from . import tickets
+    rows = _containment_rows(db, current.tenant_id, include_ended=all)
+    made = tickets.by_kind(db, current.tenant_id, "containment")
+    for r in rows:
+        r["ticket"] = made.get(r["id"])
+    return {"containments": rows,
             "max_hours": containment.MAX_HOURS, "default_hours": containment.DEFAULT_HOURS}
 
 
@@ -5250,6 +5321,88 @@ def report_numbers(db: Session, tenant_id: int, days: int = 30) -> dict:
             "shadow": _report_shadow(db, tenant_id),
             "recommendations": _report_recommendations(
                 by_category, by_severity, len(actors), len(covered))}
+
+
+@app.get("/api/export/evidence")
+def export_evidence(days: int = Query(30, ge=1, le=365), current: User = Depends(require_admin),
+                    db: Session = Depends(get_db)):
+    """The evidence pack: one zip an auditor or a customer's security questionnaire can take
+    as-is. The assessment numbers, the exposure register, the containment log, the admin
+    audit trail, the agent-activity trail and the precision readout for the window, each as
+    a file, with a README that says what each is. Audited as a pull."""
+    import csv
+    import io
+    import json
+    import zipfile
+    from datetime import datetime, timedelta, timezone
+
+    from . import audit_log, exposures, precision, session_audit
+    from .models import AuditLog, Containment
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    since = now - timedelta(days=days)
+    tenant = db.get(Tenant, current.tenant_id)
+    org = (tenant.slug if tenant else "") or "org"
+
+    def csv_of(cols: list[str], rows: list[dict]) -> str:
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(cols)
+        for r in rows:
+            w.writerow(["" if r.get(c) is None else (json.dumps(r[c]) if isinstance(r[c], (dict, list)) else r[c])
+                        for c in cols])
+        return buf.getvalue()
+
+    summary = report_numbers(db, current.tenant_id, days)
+    exp_rows = [r for r in exposures.listing(db, current.tenant_id, include_closed=True)
+                if not r.get("opened_at") or r["opened_at"] >= since.isoformat()]
+    exp_cols = ["id", "finding_id", "classes", "regime", "actor", "destination", "surface",
+                "opened_at", "deadline_at", "status", "closed_reason", "acknowledged_by",
+                "acknowledged_at", "notified_at", "closed_at", "note"]
+    con_rows = [r.to_dict() for r in db.query(Containment)
+                .filter(Containment.tenant_id == current.tenant_id, Containment.created_at >= since)
+                .order_by(Containment.created_at.desc()).limit(5000).all()]
+    con_cols = ["id", "scope", "target", "label", "reason", "created_by", "created_at",
+                "expires_at", "released_at", "released_by", "blocked", "last_blocked_at"]
+    aud_rows = [r.to_dict() for r in db.query(AuditLog)
+                .filter(AuditLog.tenant_id == current.tenant_id, AuditLog.created_at >= since)
+                .order_by(AuditLog.created_at.desc()).limit(20000).all()]
+    aud_cols = ["id", "created_at", "actor", "action", "target", "detail"]
+    readout = precision.readout(db, current.tenant_id, days)
+    sessions, _ = session_audit.export(db, current.tenant_id, org=org, days=days, fmt="jsonl")
+
+    readme = (
+        f"Palivane evidence pack for {org}\n"
+        f"Window: last {days} days ({since.date().isoformat()} to {now.date().isoformat()})\n"
+        f"Generated: {now.isoformat()}Z by {current.email}\n\n"
+        "summary.json         The AI exposure assessment for the window: events analyzed,\n"
+        "                     findings by severity, category and tool, what would have been\n"
+        "                     blocked, who is covered, unsanctioned tools, recommendations.\n"
+        "exposures.csv        The exposure register: regulated data that reached a provider,\n"
+        "                     with regime, deadline and how each was worked. Opened in window.\n"
+        "containments.csv     Who was stopped, by whom, why, for how long, what it stopped.\n"
+        "admin_audit.csv      Every admin action in the window (settings, keys, reviews, tickets).\n"
+        "agent_activity.jsonl The normalized cross-vendor activity trail (one event per line).\n"
+        "precision.csv        How often each check was right, from your team's own reviews.\n"
+        "precision.json       The same readout with what was and was not counted.\n\n"
+        "Findings store masked evidence; nothing in this pack carries a matched value.\n"
+    )
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("README.txt", readme)
+        z.writestr("summary.json", json.dumps(summary, indent=2, default=str))
+        z.writestr("exposures.csv", csv_of(exp_cols, exp_rows))
+        z.writestr("containments.csv", csv_of(con_cols, con_rows))
+        z.writestr("admin_audit.csv", csv_of(aud_cols, aud_rows))
+        z.writestr("agent_activity.jsonl", sessions)
+        z.writestr("precision.csv", precision.to_csv(readout))
+        z.writestr("precision.json", json.dumps(readout, indent=2, default=str))
+    audit_log.record(db, current.tenant_id, current.email, "evidence.export",
+                     detail={"days": days, "exposures": len(exp_rows), "containments": len(con_rows),
+                             "audit_rows": len(aud_rows)})
+    name = f"palivane-evidence-{org}-{now.date().isoformat()}-{days}d.zip"
+    return Response(buf.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @app.get("/api/capture/hooked")

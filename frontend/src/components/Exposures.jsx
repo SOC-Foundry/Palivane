@@ -44,6 +44,11 @@ export default function Exposures() {
     catch (x) { setErr(String(x.message || x).replace(/^\d+:\s*/, "")); }
   }
 
+  async function ticket(e) {
+    setErr(null);
+    try { await api.exposureTicket(e.id); await load(); }
+    catch (x) { setErr(String(x.message || x).replace(/^\d+:\s*/, "")); }
+  }
   async function copy(e) {
     try { await navigator.clipboard.writeText(e.draft); setCopied(e.id); setTimeout(() => setCopied(null), 2000); }
     catch { setOpen(e.id); }
@@ -91,7 +96,7 @@ export default function Exposures() {
               <div className="table-scroll">
                 <table className="data-table">
                   <thead>
-                    <tr><th>Clock</th><th>What</th><th>Who</th><th>Where</th><th>Left at</th><th>Regime</th><th>Status</th><th></th></tr>
+                    <tr><th>Clock</th><th>What</th><th>Who</th><th>Where</th><th>Left at</th><th>Regime</th><th>Status</th><th>Ticket</th><th></th></tr>
                   </thead>
                   <tbody>
                     {rows.map((e) => [
@@ -115,6 +120,10 @@ export default function Exposures() {
                           )}
                         </td>
                         <td>
+                          {e.ticket ? <a href={e.ticket.url} target="_blank" rel="noreferrer">{e.ticket.key}</a>
+                                    : <button type="button" className="link-btn" onClick={() => ticket(e)} disabled={busy}>create</button>}
+                        </td>
+                        <td>
                           <button type="button" className="link-btn" onClick={() => copy(e)}>{copied === e.id ? "copied" : "copy draft"}</button>
                           {" "}
                           <button type="button" className="link-btn" onClick={() => setOpen(open === e.id ? null : e.id)}>{open === e.id ? "hide" : "draft"}</button>
@@ -122,7 +131,7 @@ export default function Exposures() {
                       </tr>,
                       open === e.id && (
                         <tr key={`${e.id}|draft`}>
-                          <td colSpan={8}>
+                          <td colSpan={9}>
                             <pre style={{ whiteSpace: "pre-wrap", fontSize: 12.5, margin: 0 }}>{e.draft}</pre>
                           </td>
                         </tr>

@@ -171,7 +171,7 @@ def features_of(tenant: Tenant | None) -> list[str]:
 # strings live next to the gate definitions so the two can't drift.
 FEATURE_LABELS: dict[str, str] = {
     "device_setup": "Self-serve device installers (per-OS)",
-    "alerts": "Webhook alerts + digests",
+    "alerts": "Webhook alerts, digests + Jira/ServiceNow tickets",
     "mdm": "MDM policy pack (Jamf · Intune · GPO)",
     "inference_hooks": "Anthropic Inference hooks (Claude Enterprise)",
     "sso": "SSO — OIDC & SAML",
