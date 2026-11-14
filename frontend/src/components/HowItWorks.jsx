@@ -201,7 +201,7 @@ export default function HowItWorks() {
              <code>app.palivane.io/api/mcp/</code> to Claude or any MCP client, approve it once, and
              ask what leaked today, work the triage queue, or check shadow-AI usage.</p>
           <figure className="lp-shot lp-shot-lead">
-            <video src="/shots/mcp-demo.mp4?v=2" poster="/shots/mcp-demo-poster.png" controls playsInline
+            <video src="/shots/mcp-demo.mp4?v=3" poster="/shots/mcp-demo-poster.png" controls playsInline
                    preload="metadata"
                    style={{ display: "block", width: "100%", borderRadius: 12, border: "1px solid #22271F" }} />
             <figcaption>Four questions, four MCP tool calls: findings, shadow-AI inventory, a triage
@@ -221,7 +221,7 @@ export default function HowItWorks() {
              recommends, <strong>identity attestation</strong> that blocks unattested tool calls, and
              an <strong>agent-to-agent flow graph</strong> that shows where risk crossed a hop.</p>
           <figure className="lp-shot lp-shot-lead">
-            <video src="/shots/agent-demo.mp4?v=2" poster="/shots/agent-demo-poster.png" controls playsInline
+            <video src="/shots/agent-demo.mp4?v=3" poster="/shots/agent-demo-poster.png" controls playsInline
                    preload="metadata"
                    style={{ display: "block", width: "100%", borderRadius: 12, border: "1px solid #22271F" }} />
             <figcaption>The analyst investigating a credential-leak finding and recommending an

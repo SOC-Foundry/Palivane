@@ -52,7 +52,7 @@ export default function AgentsSite() {
 
       <section className="lp-section" id="clip">
         <div className="lp-wrap">
-          <Clip src="/shots/agent-demo.mp4?v=2" poster="/shots/agent-demo-poster.png" lead
+          <Clip src="/shots/agent-demo.mp4?v=3" poster="/shots/agent-demo-poster.png" lead
                 caption="The analyst investigating a credential-leak finding and recommending an action, attestation allowing an OIDC agent while blocking an unattested one, and the agent-to-agent flow graph." />
         </div>
       </section>

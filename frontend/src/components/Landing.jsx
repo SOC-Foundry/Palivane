@@ -46,7 +46,7 @@ const CAPTURE = [
   // one more tab: the link and the clip stay reachable from here.
   { logos: [[BrandClaude, C.claude]], title: "From your own AI assistant", notSurface: true, body: "Palivane ships an MCP server, so you can ask Claude what leaked recently without opening the console. Connect over OAuth to ask questions and, if you allow it, triage findings; run it locally with a write key to also pull a compliance report.",
     links: [["https://github.com/SOC-Foundry/palivane-clients/tree/main/mcp-server", "Wire it into Claude Code or Desktop"],
-            ["/shots/mcp-demo.mp4?v=2", "Watch it work the triage queue"]] },
+            ["/shots/mcp-demo.mp4?v=3", "Watch it work the triage queue"]] },
 ];
 
 // Number and label only. Each tile used to carry a second line of small print; the surfaces
@@ -438,7 +438,7 @@ export default function Landing({ onSignIn }) {
             <a className="lp-textlink" href="/how-it-works">How the detection works →</a>
           </div>
           <div className="lp-split-media rv" style={{ "--i": 1 }}>
-            <Clip src="/shots/demo18.mp4" poster="/shots/demo-poster19.png" />
+            <Clip src="/shots/demo18.mp4?v=2" poster="/shots/demo-poster19.png" />
           </div>
         </div>
       </section>
