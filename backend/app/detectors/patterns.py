@@ -119,6 +119,9 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("OpenAI API key", re.compile(r"sk-(?:proj|svcacct|admin)-[A-Za-z0-9_\-]{20,}")),
     ("Anthropic API key", re.compile(r"sk-ant-[a-zA-Z0-9_\-]{16,}")),
     ("AWS access key id", re.compile(r"AKIA[0-9A-Z]{16}")),
+    # The org's own self-test secret (app/canary.py): recognised like any other format so a
+    # `palivane-hook selftest` or a paste into an AI site proves the whole path end to end.
+    ("Palivane canary", re.compile(r"pvcanary_[0-9a-f]{24}")),
     # The SECRET half. It has no distinguishing prefix — 40 chars of base64 — so it is
     # gated on an adjacent "secret[ access][ key]" label. Ungated it would match any 40-char
     # base64 run (hashes, blob chunks). Note the entropy backstop cannot cover this at all:

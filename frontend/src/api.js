@@ -206,6 +206,8 @@ export const api = {
     req("/discovery/ingest", { method: "POST", body: JSON.stringify({ events }) }),
   stats: (window = "24h") => req(`/stats?window=${encodeURIComponent(window)}`),
   setupStatus: () => req("/setup-status"),
+  // The canary self-test: first and last canary finding, minutes to first finding.
+  selftest: () => req("/selftest"),
   analyze: (payload) =>
     req("/analyze", { method: "POST", body: JSON.stringify(payload) }),
   findings: (params = {}) => {

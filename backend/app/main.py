@@ -5405,6 +5405,27 @@ def export_evidence(days: int = Query(30, ge=1, le=365), current: User = Depends
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
+@app.get("/api/capture/canary")
+def capture_canary(x_palivane_token: str = Header(default=""), db: Session = Depends(get_db)):
+    """The org's self-test secret, for `palivane-hook selftest` (app/canary.py). Any capture
+    key of the org may fetch it: it is only ever a test value."""
+    from . import canary
+    tenant_id, _actor = _ingest_auth(x_palivane_token, db)
+    return {"canary": canary.value(tenant_id),
+            "hint": "send this through any sensor; the finding it raises is the proof"}
+
+
+@app.get("/api/selftest")
+def selftest_status(current: User = Depends(require_analyst), db: Session = Depends(get_db)):
+    """What the canary self-test has shown: first and last canary finding, and the minutes
+    from the org's first capture key to its first finding. Admins also get the value."""
+    from . import canary
+    out = canary.status(db, current.tenant_id)
+    if current.role == "admin":
+        out["canary"] = canary.value(current.tenant_id)
+    return out
+
+
 @app.get("/api/capture/hooked")
 def hooked_tools(x_palivane_token: str = Header(default=""), db: Session = Depends(get_db)):
     """Which of this actor's tools have a LIVE local hook, so the egress proxy can stop

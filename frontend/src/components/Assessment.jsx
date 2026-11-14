@@ -16,7 +16,7 @@ const YOU_GET = [
 
 const STEPS = [
   ["Sign up", "A free account for your org. Nothing is billed; the trial clock is fourteen days."],
-  ["Install on a few machines", "One command per laptop puts the hooks, the proxy and the browser extension in monitor mode. Nobody is blocked during the assessment."],
+  ["Install on a few machines", "One command per laptop puts the hooks, the proxy and the browser extension in monitor mode. A self-test sends the org's own canary secret through the real path and shows the first finding within minutes. Nobody is blocked during the assessment."],
   ["Wait seven days", "The console fills as people work. Day seven, the admins get a mail with the headline numbers and a link to the full report."],
   ["Read it, then decide", "Print the report or save it as a PDF. If you keep going, switch on enforcement for the checks the week proved right."],
 ];
