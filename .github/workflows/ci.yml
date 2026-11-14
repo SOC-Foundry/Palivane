@@ -74,6 +74,11 @@ jobs:
         # written for it (conftest gives every test its own tmp_path DB and its own
         # PALIVANE_STATE_DIR), so nothing shares state between workers.
         run: python -m pytest -q -n auto
+      - name: Published benchmark numbers match the engine
+        working-directory: backend
+        # /proof shows frontend/src/proof.gen.json, written by the benchmarks themselves.
+        # Regenerate with `python -m tests.bench_proof` when a detector change moves a number.
+        run: python -m tests.bench_proof --check
 
   frontend-build:
     runs-on: ubuntu-latest

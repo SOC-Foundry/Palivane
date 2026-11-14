@@ -97,6 +97,7 @@ const FEATURES = [
 // quotes: a security buyer discounts unverifiable ones, and these are all checkable.
 const TRUST = [
   { title: "No AI in the scoring path", body: "Rules decide. The LLM judge is opt-in.", href: "/how-it-works" },
+  { title: "Benchmarked in the open", body: "Dated numbers, and the commands to rerun them.", href: "/proof" },
   { title: "Self-host it", body: "Same detection, your infrastructure.", href: "/security" },
   { title: "Read every client", body: "Every hook and scanner is on GitHub.", href: "https://github.com/SOC-Foundry/palivane-clients" },
   { title: "SSO, MFA, audit log", body: "Every admin action recorded.", href: "/security#controls" },
