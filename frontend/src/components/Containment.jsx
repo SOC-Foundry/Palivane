@@ -91,6 +91,10 @@ export default function ContainmentPanel() {
     try { await api.releaseContainment(id); await load(); }
     catch (e) { setErr(String(e.message || e)); }
   }
+  async function ticket(id) {
+    try { await api.containmentTicket(id); await load(); }
+    catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
+  }
   const active = (rows || []).filter((r) => r.active);
   const quiet = active.filter((r) => r.quiet);
 
@@ -123,7 +127,7 @@ export default function ContainmentPanel() {
       {rows && rows.length > 0 && (
         <div className="table-scroll">
           <table className="data-table">
-            <thead><tr><th>Who / what</th><th>Scope</th><th>Since</th><th>Until</th><th>Stopped</th><th>By</th><th>Reason</th><th></th></tr></thead>
+            <thead><tr><th>Who / what</th><th>Scope</th><th>Since</th><th>Until</th><th>Stopped</th><th>By</th><th>Reason</th><th>Ticket</th><th></th></tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id} className={r.active ? (r.quiet ? "row-quiet" : "row-on") : "row-ended"}>
@@ -134,6 +138,8 @@ export default function ContainmentPanel() {
                   <td title={r.last_blocked_at ? `last ${fmtWhen(r.last_blocked_at)}` : undefined}>{r.blocked}</td>
                   <td className="muted">{r.released_by || r.created_by}</td>
                   <td className="muted cell-clip" title={r.reason}>{r.reason || "-"}</td>
+                  <td>{r.ticket ? <a href={r.ticket.url} target="_blank" rel="noreferrer">{r.ticket.key}</a>
+                                : <button type="button" className="link-btn" onClick={() => ticket(r.id)}>create</button>}</td>
                   <td>{r.active && <button type="button" className="link-btn" onClick={() => release(r.id)}>Release</button>}</td>
                 </tr>
               ))}

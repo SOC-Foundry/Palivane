@@ -110,6 +110,15 @@ class Tenant(Base):
     siem_token = Column(String(2048), default="")
     siem_min_severity = Column(String(16), default="high")
     siem_format = Column(String(16), default="json")  # json | splunk_hec | cef
+    # Ticketing (app/tickets.py): an exposure or a containment becomes a Jira issue or a
+    # ServiceNow incident in the org's own tracker. The token (Jira API token / ServiceNow
+    # password) is write-only and sealed at rest like siem_token.
+    ticket_kind = Column(String(16), default="")        # "" | jira | servicenow
+    ticket_url = Column(String(1024), default="")       # https://acme.atlassian.net
+    ticket_user = Column(String(320), default="")       # Jira account email / ServiceNow user
+    ticket_token = Column(String(2048), default="")
+    ticket_project = Column(String(64), default="")     # Jira project key / ServiceNow table
+    ticket_issue_type = Column(String(64), default="")  # Jira issue type (default Task)
     # SIEM/data-lake delivery to S3 (independent of the HTTP push above): batched-ish per-
     # finding JSON objects to a bucket a Panther S3 log source / Athena / Snowflake can ingest.
     siem_s3_bucket = Column(String(255), default="")
@@ -310,6 +319,16 @@ class Tenant(Base):
                 "archive_s3_raw_content": bool(self.archive_s3_raw_content),
                 "archive_s3_daily_mb": self.archive_s3_daily_mb or 0,
                 "siem_token_set": bool((self.siem_token or "").strip()),
+                # Ticketing: the token is write-only; the rest is plain config the console edits.
+                "ticket_kind": self.ticket_kind or "",
+                "ticket_url_host": _url_origin(self.ticket_url),
+                "ticket_user": self.ticket_user or "",
+                "ticket_project": self.ticket_project or "",
+                "ticket_issue_type": self.ticket_issue_type or "",
+                "ticket_token_set": bool((self.ticket_token or "").strip()),
+                "ticket_configured": bool((self.ticket_kind or "") in ("jira", "servicenow")
+                                          and (self.ticket_url or "").strip()
+                                          and (self.ticket_token or "").strip()),
                 # Inference hooks secrets are write-only: only whether each slot is set.
                 "inference_hook_secret_set": bool((self.inference_hook_secret or "").strip()),
                 "inference_hook_prev_secret_set": bool((self.inference_hook_secret_prev or "").strip()),
@@ -1611,3 +1630,27 @@ class UsedSamlAssertion(Base):
     expires_at = Column(DateTime, index=True)
     __table_args__ = (UniqueConstraint("tenant_id", "assertion_id",
                                        name="uq_used_saml_assertion"),)
+
+
+class Ticket(Base):
+    """A ticket Palivane created in the org's tracker for one exposure or containment
+    (app/tickets.py). One per (kind, ref_id): the tracker is asked once, and the console
+    shows the link instead of a second Create button."""
+
+    __tablename__ = "tickets"
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    kind = Column(String(16), default="")       # exposure | containment
+    ref_id = Column(Integer, nullable=False)    # the exposure's or containment's id
+    tracker = Column(String(16), default="")    # jira | servicenow
+    key = Column(String(64), default="")        # PROJ-123 / INC0010042
+    url = Column(String(1024), default="")
+    created_by = Column(String(320), default="")
+    created_at = Column(DateTime, default=_utcnow)
+    __table_args__ = (UniqueConstraint("tenant_id", "kind", "ref_id", name="uq_ticket_ref"),)
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "kind": self.kind, "ref_id": self.ref_id, "tracker": self.tracker,
+                "key": self.key, "url": self.url, "created_by": self.created_by,
+                "created_at": self.created_at.isoformat() if self.created_at else None}

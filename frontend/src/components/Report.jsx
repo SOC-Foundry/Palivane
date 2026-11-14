@@ -73,6 +73,17 @@ function Headline({ d }) {
 export default function Report() {
   const [days, setDays] = useState(30);
   const [data, setData] = useState(null);
+  const [packing, setPacking] = useState(false);
+  async function evidence() {
+    setPacking(true);
+    try {
+      const { blob, name } = await api.exportEvidence(days);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = name; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    } catch (e) { setErr(String(e.message || e)); }
+    finally { setPacking(false); }
+  }
   const [err, setErr] = useState(null);
 
   const load = useCallback(async () => {
@@ -102,6 +113,10 @@ export default function Report() {
           </select>
           <button type="button" className="primary-btn slim" onClick={() => window.print()}>
             Print / save PDF
+          </button>
+          <button type="button" className="ghost-btn" onClick={evidence} disabled={packing}
+                  title="A zip: this summary, the exposure register, containments, the admin and agent audit trails, and the precision readout">
+            {packing ? "Packing…" : "Evidence pack (zip)"}
           </button>
         </div>
       </div>

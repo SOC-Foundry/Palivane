@@ -219,6 +219,18 @@ export const api = {
   exposures: (includeClosed = false) => req("/exposures" + (includeClosed ? "?include_closed=1" : "")),
   setExposureStatus: (id, payload) =>
     req(`/exposures/${id}/status`, { method: "POST", body: JSON.stringify(payload) }),
+  // Tickets: an exposure or a containment becomes a Jira issue / ServiceNow incident.
+  exposureTicket: (id) => req(`/exposures/${id}/ticket`, { method: "POST" }),
+  containmentTicket: (id) => req(`/containments/${id}/ticket`, { method: "POST" }),
+  testTickets: () => req("/tickets/test", { method: "POST" }),
+  // The evidence pack: a zip of the assessment, registers, audit trails and precision readout.
+  exportEvidence: async (days = 30) => {
+    const res = await rawFetch(`/export/evidence?days=${days}`);
+    if (!res.ok) throw new Error(`${res.status}`);
+    const name = (res.headers.get("content-disposition") || "").match(/filename="([^"]+)"/)?.[1]
+                 || `palivane-evidence-${days}d.zip`;
+    return { blob: await res.blob(), name };
+  },
   // Where else each secret in a finding travelled, and its rotation status.
   findingSecrets: (id) => req(`/findings/${id}/secrets`),
   secretRotated: (fp, note = "") =>

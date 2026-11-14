@@ -477,6 +477,13 @@ class TenantUpdate(BaseModel):
     # (Fernet + base64, ~1.5x + overhead) inside the 2048-char column.
     siem_token: str | None = Field(None, max_length=1024)
     siem_min_severity: str | None = None    # minimum severity to forward
+    # Ticketing (Jira / ServiceNow); the token is write-only and sealed like siem_token.
+    ticket_kind: str | None = None
+    ticket_url: str | None = Field(None, max_length=1024)
+    ticket_user: str | None = Field(None, max_length=320)
+    ticket_token: str | None = Field(None, max_length=1024)
+    ticket_project: str | None = Field(None, max_length=64)
+    ticket_issue_type: str | None = Field(None, max_length=64)
     siem_format: str | None = None          # json | splunk_hec | cef
     siem_s3_bucket: str | None = Field(None, max_length=255)   # S3 delivery bucket
     siem_s3_prefix: str | None = Field(None, max_length=255)   # key prefix
