@@ -7,6 +7,7 @@ the public page can never claim a result the shipped engine does not produce:
 
     .venv/bin/python -m tests.bench_proof            # regenerate the snapshot
     .venv/bin/python -m tests.bench_proof --check    # CI: fail if the committed one is stale
+    python -m tests.bench_proof --print              # measure now, print the JSON (any install)
 
 Same idea as frontend/scripts/gen-stats.mjs for the stats band. `--check` compares the
 measured numbers, not the date: a detector change that moves any number fails CI until the
@@ -96,6 +97,11 @@ def _numbers(snap: dict) -> dict:
 
 def main(argv: list[str]) -> int:
     snap = snapshot()
+    if "--print" in argv:
+        # Inside a shipped image there is no frontend/ to write to and no committed file to
+        # compare against; this is the form a self-hosted install reruns from the /proof page.
+        print(json.dumps(snap, indent=2))
+        return 0
     if "--check" in argv:
         if not OUT.exists():
             print(f"bench_proof: {OUT} missing — run `python -m tests.bench_proof`")
