@@ -80,7 +80,7 @@ const FEATURES = [
     src: "/shots/discovery.png?v=8", alt: "Inventory of AI tools in use" },
   { tab: "Agents", title: <>AI coding assistants stay <span className="lp-hl">inside the lines</span></>,
     sub: () => "Each assistant gets its own identity and limits, and every action is checked before it runs, not logged afterwards.",
-    href: "/use-cases#engineering", link: "How engineering teams use it",
+    href: "/agents", link: "How agents are kept inside the lines",
     src: "/shots/agents.png?v=8", alt: "AI assistant identity and limits" },
   { tab: "Trust", title: <>Know how often each check is <span className="lp-hl">right</span></>,
     sub: () => "One-click reviews become a readout per check, and noisy commands and paths become a time-limited allowlist.",

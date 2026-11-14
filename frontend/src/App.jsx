@@ -16,6 +16,7 @@ import OAuthConsent from "./components/OAuthConsent.jsx";
 import HowItWorks from "./components/HowItWorks.jsx";
 import Assessment from "./components/Assessment.jsx";
 import Proof from "./components/Proof.jsx";
+import AgentsSite from "./components/AgentsSite.jsx";
 import CoverageMatrix from "./components/CoverageMatrix.jsx";
 import Setup from "./components/Setup.jsx";
 import UseCases from "./components/UseCases.jsx";
@@ -361,6 +362,9 @@ export default function App() {
   }
   if (legalPath === "/proof") {
     return <Proof />;
+  }
+  if (legalPath === "/agents") {
+    return <AgentsSite />;
   }
   if (legalPath === "/coverage") {
     return <CoverageMatrix />;
