@@ -72,7 +72,7 @@ export default function Setup() {
 
       <section className="lp-section alt">
         <div className="lp-wrap">
-          <Clip lead src="/shots/setup8.mp4" poster="/shots/setup-poster8.png"
+          <Clip lead src="/shots/setup8.mp4?v=2" poster="/shots/setup-poster8.png"
                 caption="One command on one machine, then an org-wide rollout through MDM." />
         </div>
       </section>

@@ -36,7 +36,7 @@ Are we covered for the OWASP LLM Top 10? Show the gaps.
 - Pre-seed so the finding id you say out loud (e.g. `4821`) actually exists — rehearse once,
   note the real id, then record.
 - Prime Claude to answer tersely ("one short line per finding") so panels don't sprawl.
-- The rendered `mcp-demo.mp4` already has a **lofi soundtrack** (same bed as the hero/setup
+- The rendered `mcp-demo.mp4` already has a **quiet, melancholy soundtrack** (same bed as the hero/setup
   clips) baked in via `scripts/mcp_score.py`. PH still autoplays muted, so keep captions.
   Regenerate the score with a numpy+scipy env:
   `python scripts/mcp_score.py` → `marketing/mcp-demo-score.wav`, then mux:

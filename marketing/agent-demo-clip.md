@@ -4,7 +4,7 @@ A ~27s rendered clip for **Palivane's agent features**: the read-only **analyst*
 investigates a finding and recommends an action, **agent attestation** (only workload-identity
 agents act — the rest are flagged or blocked), and the **A2A flow graph** (which agent fed
 which, and where risk crossed the hop). 1920×1080, **captioned** (galleries autoplay muted),
-loopable, lofi soundtrack baked in.
+loopable, quiet and melancholy electric-piano soundtrack baked in.
 
 Rendered by `scripts/agent_video.py` (picture) + `scripts/agent_score.py` (sound) — same
 technique and sonic family as the hero / setup / MCP clips. The field names, action verbs,
