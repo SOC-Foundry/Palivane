@@ -30,6 +30,7 @@ const MENU = [
     { href: "/proof",        label: "Proof",        note: "Benchmarks, dated, and how to rerun them" },
   ]},
   { label: "Use cases", items: [
+    { href: "/agents",                label: "AI agents",      note: "Identity, pre-execution checks, provenance" },
     { href: "/use-cases#engineering", label: "Engineering",    note: "Coding assistants and agents" },
     { href: "/use-cases#security",    label: "Security teams", note: "Shadow-AI discovery and response" },
     { href: "/use-cases#compliance",  label: "Compliance",     note: "Evidence, audit, and residency" },
@@ -286,7 +287,7 @@ export function SiteFooter() {
   const COLS = [
     { head: "Product", links: [
       ["/how-it-works", "How it works"], ["/coverage", "Coverage"],
-      ["/use-cases", "Use cases"], ["/why-palivane", "Why Palivane"], ["/proof", "Proof"],
+      ["/use-cases", "Use cases"], ["/agents", "AI agents"], ["/why-palivane", "Why Palivane"], ["/proof", "Proof"],
       ["/pricing", "Pricing"],
     ]},
     // The buyer's column, in the order a buyer moves: see it working, ask a human, install it.
