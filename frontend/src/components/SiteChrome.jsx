@@ -38,6 +38,8 @@ const MENU = [
   // self-serve Team plan.
   { label: "Pricing", href: "/pricing" },
   { label: "Resources", items: [
+    // The way to try it: first in the list because it is the lowest-commitment click.
+    { href: "/assessment", label: "7-day assessment", note: "Install, watch a week, get the report" },
     { href: "/docs",    label: "Documentation", note: "Setup, deployment, reference" },
     { href: "/setup",   label: "Set it up",     note: "One command, one afternoon" },
     { href: "/security", label: "Security & trust", note: "Where your data goes, who runs it, the controls" },
@@ -287,6 +289,7 @@ export function SiteFooter() {
     ]},
     // The buyer's column, in the order a buyer moves: see it working, ask a human, install it.
     { head: "Get started", links: [
+      ["/assessment", "7-day assessment"],
       [demoUrl(), "See the live demo"], ["mailto:sales@palivane.io", "Talk to sales"],
       ["/setup", "Set it up"], ["/docs", "Documentation"], ["/support", "Support"],
     ]},

@@ -48,7 +48,7 @@ def test_no_notice_early_in_trial(db_factory, monkeypatch):
 
 
 @pytest.mark.parametrize("days_left,stage,expect", [
-    (6.5, "d7", "ends in 7 days"),
+    (6.5, "d7", "7-day AI exposure assessment"),
     (1.5, "d2", "ends in 2 days"),
     (-0.5, "expired", "has ended"),
 ])
@@ -84,7 +84,7 @@ def test_stages_progress_as_clock_runs(db_factory, monkeypatch):
     assert trial_mod.run_notices(db, now=NOW + timedelta(days=5)) == 1   # d2
     assert trial_mod.run_notices(db, now=NOW + timedelta(days=7)) == 1   # expired
     assert [s[1] for s in sent] == [
-        "Your Palivane trial for Trialco ends in 6 days",
+        "Your 7-day AI exposure assessment for Trialco is ready",
         "Your Palivane trial for Trialco ends in 1 day",
         "Your Palivane trial for Trialco has ended",
     ]
@@ -188,3 +188,64 @@ def test_operator_queue_and_close(db_factory, monkeypatch):
     assert c.post("/api/plans/upgrade", json={"plan": "team"}).status_code == 200
     db2 = db_factory()
     assert db2.query(UpgradeRequest).count() == 2
+
+
+# --- the d7 notice is the 7-day assessment -------------------------------------------------
+
+_NUMBERS = {"analyzed_events": 412, "findings": 3, "prevented_blocks": 2,
+            "by_severity": {"critical": 1, "high": 2},
+            "by_tool": {"claude-code": 2, "chatgpt": 1},
+            "shadow": {"unsanctioned_tools": 1},
+            "covered_actors": 6, "actors_with_findings": 2}
+
+
+def test_d7_notice_carries_the_weeks_numbers(db_factory, monkeypatch):
+    db = db_factory()
+    _trial_tenant(db, days_left=7)
+    sent = _enable_email(monkeypatch)
+    monkeypatch.setattr(trial_mod, "_assessment", lambda db, tenant_id: dict(_NUMBERS))
+    assert trial_mod.run_notices(db, now=NOW) == 1
+    (to, subject, body), = sent
+    assert "7-day AI exposure assessment" in subject
+    assert "Events analyzed:            412" in body
+    assert "Findings:                   3 (critical 1, high 2)" in body
+    assert "Would have been blocked:    2" in body
+    assert "AI tools seen:              2 (claude-code, chatgpt)" in body
+    assert "Unsanctioned tools:         1" in body
+    assert "People covered by sensors:  6, with findings: 2" in body
+    assert "under Report" in body and "ends in 7 days" in body
+    assert "Nothing reported yet" not in body
+
+
+def test_d7_notice_from_a_real_empty_week(db_factory, monkeypatch):
+    """No monkeypatch of the report: the helper runs against the tenant's actual rows."""
+    db = db_factory()
+    _trial_tenant(db, days_left=7)
+    sent = _enable_email(monkeypatch)
+    assert trial_mod.run_notices(db, now=NOW) == 1
+    body = sent[0][2]
+    assert "Findings:                   0" in body
+    assert "Nothing reported yet" in body
+
+
+def test_d7_notice_still_sends_when_the_report_fails(db_factory, monkeypatch):
+    import app.main as main_mod
+    db = db_factory()
+    _trial_tenant(db, days_left=7)
+    sent = _enable_email(monkeypatch)
+
+    def boom(db, tenant_id, days=30):
+        raise RuntimeError("report broke")
+    monkeypatch.setattr(main_mod, "report_numbers", boom)
+    assert trial_mod.run_notices(db, now=NOW) == 1
+    body = sent[0][2]
+    assert "is ready in the console" in body and "ends in 7 days" in body
+    assert _notice(db) == "d7"
+
+
+def test_other_stages_unchanged_by_assessment(db_factory, monkeypatch):
+    db = db_factory()
+    _trial_tenant(db, days_left=2)
+    sent = _enable_email(monkeypatch)
+    assert trial_mod.run_notices(db, now=NOW) == 1
+    assert "assessment" not in sent[0][2].lower()
