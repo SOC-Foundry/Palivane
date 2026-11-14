@@ -27,6 +27,7 @@ const MENU = [
     { href: "/how-it-works", label: "How it works", note: "The four planes, end to end" },
     { href: "/coverage",     label: "Coverage",     note: "Every surface, and what each needs" },
     { href: "/why-palivane", label: "Why Palivane", note: "What makes it different" },
+    { href: "/proof",        label: "Proof",        note: "Benchmarks, dated, and how to rerun them" },
   ]},
   { label: "Use cases", items: [
     { href: "/use-cases#engineering", label: "Engineering",    note: "Coding assistants and agents" },
@@ -285,7 +286,8 @@ export function SiteFooter() {
   const COLS = [
     { head: "Product", links: [
       ["/how-it-works", "How it works"], ["/coverage", "Coverage"],
-      ["/use-cases", "Use cases"], ["/why-palivane", "Why Palivane"], ["/pricing", "Pricing"],
+      ["/use-cases", "Use cases"], ["/why-palivane", "Why Palivane"], ["/proof", "Proof"],
+      ["/pricing", "Pricing"],
     ]},
     // The buyer's column, in the order a buyer moves: see it working, ask a human, install it.
     { head: "Get started", links: [

@@ -1,0 +1,125 @@
+{
+  "generated_on": "2026-11-13",
+  "engine": "daac0233a74a",
+  "judge_enabled": false,
+  "false_positives": {
+    "benign_samples": 123,
+    "false_positives": 0,
+    "rate_pct": 0.0,
+    "by_category": {
+      "ai_prompts": {
+        "total": 20,
+        "false_positives": 0
+      },
+      "business_legal_security": {
+        "total": 18,
+        "false_positives": 0
+      },
+      "code": {
+        "total": 15,
+        "false_positives": 0
+      },
+      "docs_wording": {
+        "total": 12,
+        "false_positives": 0
+      },
+      "live_traffic_shapes": {
+        "total": 6,
+        "false_positives": 0
+      },
+      "mcp_benign": {
+        "total": 15,
+        "false_positives": 0
+      },
+      "pii_lookalike": {
+        "total": 20,
+        "false_positives": 0
+      },
+      "sanctioned_dest": {
+        "total": 2,
+        "false_positives": 0
+      },
+      "secretish": {
+        "total": 14,
+        "false_positives": 0
+      },
+      "unsanctioned_dest_clean": {
+        "total": 1,
+        "false_positives": 0
+      }
+    }
+  },
+  "recall": {
+    "malicious_samples": 97,
+    "detected": 97,
+    "actioned": 97,
+    "rate_pct": 100.0,
+    "by_category": {
+      "confidential_data": {
+        "total": 8,
+        "detected": 8
+      },
+      "dangerous_command": {
+        "total": 10,
+        "detected": 10
+      },
+      "data_exfiltration": {
+        "total": 10,
+        "detected": 10
+      },
+      "jailbreak": {
+        "total": 10,
+        "detected": 10
+      },
+      "pii_exposure": {
+        "total": 10,
+        "detected": 10
+      },
+      "prompt_injection": {
+        "total": 11,
+        "detected": 11
+      },
+      "secret_leak": {
+        "total": 12,
+        "detected": 12
+      },
+      "sensitive_resource_access": {
+        "total": 10,
+        "detected": 10
+      },
+      "source_code_leak": {
+        "total": 8,
+        "detected": 8
+      },
+      "tool_poisoning": {
+        "total": 8,
+        "detected": 8
+      }
+    }
+  },
+  "evasion": {
+    "payloads": 8,
+    "baseline_detected": 8,
+    "transforms": 14,
+    "attempts": 69,
+    "bypasses": 7,
+    "ceiling": 7,
+    "bypass_list": [
+      "dangerous_command/word_split",
+      "pii_ssn/word_split",
+      "prompt_injection/leetspeak",
+      "prompt_injection/word_split",
+      "secret_aws/secret_spacing",
+      "secret_sk/secret_spacing",
+      "secret_sk/separator_strip"
+    ]
+  },
+  "code_discrimination": {
+    "generic_samples": 25,
+    "generic_false_positives": 0,
+    "generic_fp_rate_pct": 0.0,
+    "proprietary_samples": 12,
+    "proprietary_missed": 0,
+    "proprietary_recall_pct": 100.0
+  }
+}

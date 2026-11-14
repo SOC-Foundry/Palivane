@@ -2199,7 +2199,7 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 
 /* ===== Landing: trust strip (verifiable proof, each item links to where it is said in full) ===== */
 .lp-trust-band { border-bottom: 1px solid var(--border); background: var(--bg); }
-.lp-trust { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; padding-block: 26px; }
+.lp-trust { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; padding-block: 26px; }
 .lp-trust-item {
   display: flex; gap: 10px; align-items: flex-start; padding: 6px 18px;
   border-left: 1px solid var(--border-soft); color: var(--muted); text-decoration: none;
@@ -2561,3 +2561,14 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 }
 .data-table tr.row-quiet td { background: rgba(251, 191, 36, 0.06); }
 .data-table tr.row-ended td { color: var(--muted); }
+
+/* ===== /proof: the reproduce block and the bypass list ===== */
+.lp-pre {
+  margin: 0; padding: 18px 20px; overflow-x: auto;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  font-size: 13px; line-height: 1.6; color: var(--text);
+}
+.lp-pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+.lp-cards-wide { grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr)); }
+.lp-list { margin: 0 0 10px; padding-left: 18px; color: var(--muted); font-size: 14px; line-height: 1.8; }
+.landing .lp-card .hiw-table td, .landing .lp-card .hiw-table th { padding: 8px 10px; }
