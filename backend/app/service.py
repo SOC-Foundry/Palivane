@@ -23,7 +23,7 @@ from .crypto import seal
 # as the rest of the scan path — a late import would bind a different instance if the
 # config module was ever reloaded.
 from .ml import capture as ml_capture
-from . import excerpts, exposures, review, secrets_ledger
+from . import canary, excerpts, exposures, review, secrets_ledger
 from .redaction import redact_text
 from .scoring import UNSCANNED_CHECK
 from .session_correlation import correlate, is_chain_relevant
@@ -571,7 +571,8 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             # happening right now. Everything else stays dismissed.
             dev = development_capture.get()
             reopened = (prior.status == "dismissed" and verdict.severity in ("high", "critical")
-                        and item.surface in _LIVE_ACT_SURFACES and not dev)
+                        and item.surface in _LIVE_ACT_SURFACES and not dev
+                        and not canary.contains(tenant_id, item.content))
             if reopened:
                 prior.status = "open"
                 review.record_review(prior, "open")      # it has not been reviewed again yet
@@ -643,6 +644,8 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
         dev = development_capture.get()
         if dev:
             _development_review(finding, dev)
+        elif canary.contains(tenant_id, item.content):
+            canary.review(finding)      # a self-test: right, expected, out of the queue
         db.add(finding)
         db.commit()
         db.refresh(finding)

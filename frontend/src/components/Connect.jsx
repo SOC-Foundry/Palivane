@@ -49,6 +49,55 @@ function StatusDot({ n }) {
   );
 }
 
+// The canary self-test: is anything reaching the console? One command on a laptop, or one
+// paste into an AI site, raises a finding the engine recognises as the org's own test secret.
+// Reviewed on arrival, so it proves the path without leaving work in the queue.
+function SelfTest() {
+  const [s, setS] = useState(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let live = true;
+    const load = () => api.selftest().then((r) => live && setS(r)).catch((e) => live && setErr(String(e.message || e)));
+    load();
+    const t = setInterval(load, 15000);
+    return () => { live = false; clearInterval(t); };
+  }, []);
+  const ago = (iso) => {
+    if (!iso) return "";
+    const m = Math.round((Date.now() - new Date(iso + (iso.endsWith("Z") ? "" : "Z")).getTime()) / 60000);
+    return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
+  };
+  return (
+    <div className="panel quickstart">
+      <div className="qs-head">
+        <h2>Self-test: prove the path</h2>
+      </div>
+      <p className="muted" style={{ marginTop: 4 }}>
+        On any installed laptop, run <code>palivane-hook selftest</code>. It sends the org's own
+        test secret through the real capture path and prints the verdict; the finding lands here
+        already reviewed, so nothing is left to triage.
+        {s?.canary && <> To test the browser extension or the proxy, paste this into any AI
+          tool instead: <code>{s.canary}</code></>}
+      </p>
+      {err && <p className="mine-err">{err}</p>}
+      {s && (
+        s.count === 0 ? (
+          <p className="muted">No canary has arrived yet{s.first_key_at ? ` (first capture key minted ${ago(s.first_key_at)})` : ""}.</p>
+        ) : (
+          <p>
+            <strong>{s.count}</strong> self-test{s.count === 1 ? "" : "s"} recorded. Last seen{" "}
+            <strong>{ago(s.last.at)}</strong> from {s.last.sender || "an unnamed device"} via {s.last.channel || s.last.surface}
+            {" "}({s.last.severity}{s.last.action ? `, ${s.last.action}` : ""}).
+            {s.minutes_to_first_finding != null && <> First finding arrived{" "}
+              <strong>{s.minutes_to_first_finding < 1 ? "under a minute" : `${s.minutes_to_first_finding} minutes`}</strong>{" "}
+              after the first capture key was minted.</>}
+          </p>
+        )
+      )}
+    </div>
+  );
+}
+
 export default function Connect({ tenant, onNavigate }) {
   const [key, setKey] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -318,6 +367,8 @@ export default function Connect({ tenant, onNavigate }) {
           </div>
         )}
       </div>
+
+      <SelfTest />
 
       <h2 className="src-title">Sources</h2>
       <div className="src-grid">
