@@ -4004,6 +4004,48 @@ def my_findings(status: str = "open", limit: int = Query(100, ge=1, le=500),
     return {"findings": out, "actions": _MY_ACTIONS}
 
 
+def _my_record_parts(db: Session, current: User):
+    from . import containment, exposures
+    email = _my_email(current)
+    tenant = db.get(Tenant, current.tenant_id)
+    rows = (_mine(db.query(Finding).filter(Finding.tenant_id == current.tenant_id), db, current)
+            .order_by(Finding.last_seen.desc()).limit(5000).all())
+    exp = [e for e in exposures.listing(db, current.tenant_id, include_closed=True)
+           if (e.get("actor") or "").lower() == email]
+    held = containment.match(db, current.tenant_id, actor=email) if email else None
+    if held:
+        from .models import Containment
+        row = db.get(Containment, held["id"])
+        held = {"id": held["id"], "scope": held["scope"], "target": held["target"],
+                "expires_at": held["expires_at"].isoformat() if held.get("expires_at") else None,
+                "reason": (row.reason if row else "") or "", "since": row.created_at.isoformat() if row and row.created_at else None}
+    return tenant, email, rows, exp, held
+
+
+@app.get("/api/my/record")
+def my_record(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """What Palivane holds about the caller, told to the caller (app/my_record.py). Any role."""
+    from . import my_record as rec
+    tenant, email, rows, exp, held = _my_record_parts(db, current)
+    return rec.summary(db, tenant, email, rows, exp, held)
+
+
+@app.get("/api/my/record/export")
+def my_record_export(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """The same, plus every finding's summary, as a file: a data-subject access request
+    answered by the person themselves. Audited as a pull, by them."""
+    import json
+
+    from . import audit_log, my_record as rec
+    tenant, email, rows, exp, held = _my_record_parts(db, current)
+    body = rec.export(db, tenant, email, rows, exp, held)
+    audit_log.record(db, current.tenant_id, current.email, "record.export",
+                     target=email, detail={"findings": len(rows), "exposures": len(exp)})
+    name = f"palivane-record-{(email or 'me').replace('@', '-at-')}-{body['generated_at'][:10]}.json"
+    return Response(json.dumps(body, indent=2, default=str), media_type="application/json",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
 @app.post("/api/my/findings/{finding_id}/respond")
 def my_finding_respond(finding_id: int, body: dict,
                        current: User = Depends(get_current_user),
