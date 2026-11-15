@@ -37,6 +37,7 @@ DEMO_VIEWER = "viewer@demo.local"
 # Prefixes, matched on the request path. Anything new that mints a token or a link bound to the
 # tenant belongs here (tests/test_demo.py walks every route to keep the write side honest).
 DEMO_BLOCKED_GET = (
+    "/api/my/record/export",   # audits the pull: a write a demo session may not make
     "/api/slack/install",
     "/api/export/",
     "/api/audit/export",

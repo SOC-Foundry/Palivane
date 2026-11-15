@@ -81,6 +81,14 @@ export const api = {
     req("/auth/reset", { method: "POST", body: JSON.stringify({ token, password }) }),
   me: () => req("/auth/me"),
   myFindings: (status = "open") => req(`/my/findings?status=${encodeURIComponent(status)}`),
+  // Your record: what Palivane holds about the signed-in person, and its export.
+  myRecord: () => req("/my/record"),
+  exportMyRecord: async () => {
+    const res = await rawFetch("/my/record/export");
+    if (!res.ok) throw new Error(`${res.status}`);
+    const name = (res.headers.get("content-disposition") || "").match(/filename="([^"]+)"/)?.[1] || "palivane-record.json";
+    return { blob: await res.blob(), name };
+  },
   respondToMyFinding: (id, action, note) =>
     req(`/my/findings/${id}/respond`, { method: "POST", body: JSON.stringify({ action, note }) }),
   patternFromExamples: (examples, counter_examples) =>
