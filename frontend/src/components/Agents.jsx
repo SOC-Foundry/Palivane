@@ -18,7 +18,7 @@ function AttestedCommits() {
     <div className="panel settings-card">
       <h2>AI-assisted commits</h2>
       <p className="muted" style={{ fontSize: 12 }}>Run <code>palivane-hook git-install</code> in a repo and every commit
-         made after an agent worked there carries <code>Palivane-AI-Assisted</code> and <code>Palivane-Scan</code>
+         made after an agent worked there carries <code>Palivane-AI-Assisted</code> and <code>Palivane-Scan</code>{" "}
          trailers; the commit is registered here with the findings Palivane raised in that window. An auditor
          checks a sha with <code>GET /api/attest/verify?sha=</code>.</p>
       {rows === null ? <p className="muted">Loading…</p> : rows.length === 0 ? (

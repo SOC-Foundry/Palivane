@@ -5213,6 +5213,35 @@ def containments_release(containment_id: int, current: User = Depends(require_ad
     return row.to_dict()
 
 
+@app.post("/api/containments/{containment_id}/revert")
+def containments_revert(containment_id: int, body: dict | None = None,
+                        current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Also put the agent's files back: the target's devices restore every file the agent
+    changed since the containment began (or `since`, ISO) from the hook's journal."""
+    from datetime import datetime
+    since = None
+    raw = (body or {}).get("since") if isinstance(body, dict) else None
+    if raw:
+        try:
+            since = datetime.fromisoformat(str(raw).replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="since must be an ISO time")
+    try:
+        row = containment.request_revert(db, current.tenant_id, containment_id, current.email, since)
+    except containment.ContainmentError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return row.to_dict()
+
+
+@app.post("/api/containments/revert-report")
+def containments_revert_report(body: dict, x_palivane_token: str = Header(default=""),
+                               db: Session = Depends(get_db)):
+    """A device's hook reporting what it restored for a containment (capture key)."""
+    tenant_id, _actor = _ingest_auth(x_palivane_token, db)
+    ok = containment.record_revert(db, tenant_id, int(body.get("containment_id") or 0), body)
+    return {"recorded": ok}
+
+
 @app.get("/api/fleet/developers")
 def fleet_developers(months: int = 3, current: User = Depends(require_admin),
                      db: Session = Depends(get_db)):
