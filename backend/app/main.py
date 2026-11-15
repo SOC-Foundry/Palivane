@@ -5500,9 +5500,33 @@ def capture_canary(x_palivane_token: str = Header(default=""), db: Session = Dep
     """The org's self-test secret, for `palivane-hook selftest` (app/canary.py). Any capture
     key of the org may fetch it: it is only ever a test value."""
     from . import canary
+    from . import email as email_mod
     tenant_id, _actor = _ingest_auth(x_palivane_token, db)
     return {"canary": canary.value(tenant_id),
+            "instruction": canary.instruction_text(tenant_id, email_mod.base_url()),
             "hint": "send this through any sensor; the finding it raises is the proof"}
+
+
+@app.get("/api/canary/obey/{token}", status_code=204)
+def canary_obey(token: str, request: Request, db: Session = Depends(get_db)):
+    """The beacon a planted canary instruction tells an agent to fetch. Unauthenticated on
+    purpose: the token names the org and proves it is ours. Records an obey finding with no
+    actor (an agent the sensors do not see), reviewed on arrival like every canary."""
+    from . import canary
+    tid = canary.instruction_tenant(token)
+    if tid is None:
+        raise HTTPException(status_code=404)
+    from .database import bind_tenant
+    bind_tenant(db, tid)
+    _enforce_rate(db, tid)
+    ua = (request.headers.get("user-agent") or "")[:120]
+    remote = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "") or "").split(",")[0].strip()[:80]
+    run_analysis(AnalysisInput(content=f"canary beacon {token}", subject="Canary beacon", sender="",
+                               channel="beacon", surface=Surface.AGENT_TOOLS,
+                               metadata={"canary_beacon": True, "canary_token": token, "remote": remote, "ua": ua,
+                                         "method": "tools/call", "tool": "beacon"}),
+                 persist=True, db=db, tenant_id=tid, use_judge=False)
+    return Response(status_code=204)
 
 
 @app.get("/api/selftest")
@@ -5510,9 +5534,11 @@ def selftest_status(current: User = Depends(require_analyst), db: Session = Depe
     """What the canary self-test has shown: first and last canary finding, and the minutes
     from the org's first capture key to its first finding. Admins also get the value."""
     from . import canary
+    from . import email as email_mod
     out = canary.status(db, current.tenant_id)
     if current.role == "admin":
         out["canary"] = canary.value(current.tenant_id)
+        out["canary_instruction"] = canary.instruction_text(current.tenant_id, email_mod.base_url())
     return out
 
 
