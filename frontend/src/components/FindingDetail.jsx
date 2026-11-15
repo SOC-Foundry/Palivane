@@ -321,6 +321,14 @@ function SecretTravel({ finding, isAdmin }) {
               {t.tools.length > 0 && <> Through: {t.tools.join(", ")}.</>}
               {t.findings.length > 1 && <> Findings: {t.findings.map((id) => `#${id}`).join(", ")}.</>}
             </div>
+            {t.reach && (
+              <div style={{ fontSize: 13, marginTop: 2 }}>
+                <span className={`badge sev-${t.reach.severity === "critical" ? "critical" : t.reach.severity === "high" ? "high" : t.reach.severity === "low" ? "benign" : "suspicious"}`}>
+                  reach: {t.reach.severity}
+                </span>{" "}
+                <span className="muted">{t.reach.scope}{t.reach.source === "aws" && t.reach.detail?.last_used ? ` Last used ${when(t.reach.detail.last_used)}${t.reach.detail.last_service ? ` (${t.reach.detail.last_service})` : ""}.` : ""}</span>
+              </div>
+            )}
             {t.rotation.status === "still_seen" && (
               <div style={{ color: "var(--crit)", fontSize: 13 }}>
                 The old value was seen again after the rotation ({when(t.rotation.last_seen_after)}): the rotation did
