@@ -646,6 +646,8 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             _development_review(finding, dev)
         elif canary.contains(tenant_id, item.content):
             canary.review(finding)      # a self-test: right, expected, out of the queue
+        elif canary.is_instruction_finding(tenant_id, result["signals"]):
+            canary.review_instruction(finding)   # a measurement, not an incident
         db.add(finding)
         db.commit()
         db.refresh(finding)

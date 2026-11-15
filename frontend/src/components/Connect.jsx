@@ -79,6 +79,28 @@ function SelfTest() {
         {s?.canary && <> To test the browser extension or the proxy, paste this into any AI
           tool instead: <code>{s.canary}</code></>}
       </p>
+      {s?.canary_instruction && (
+        <p className="muted" style={{ marginTop: 6 }}>
+          To learn which agents follow orders found in content, paste this line into a document, wiki
+          page or README they read. Reading it is recorded; running the command it names is the
+          agent obeying an instruction nobody typed. Both land here reviewed, never in the queue.
+          <br /><code style={{ userSelect: "all" }}>{s.canary_instruction}</code>
+        </p>
+      )}
+      {s?.instruction && (s.instruction.reads || s.instruction.obeys) ? (
+        <table className="data-table" style={{ marginTop: 10 }}>
+          <thead><tr><th>Agent</th><th>Read the canary</th><th>Obeyed it</th><th>Last</th></tr></thead>
+          <tbody>
+            {Object.entries(s.instruction.agents).map(([who, a]) => (
+              <tr key={who}>
+                <td>{who}</td><td>{a.read}</td>
+                <td>{a.obeyed ? <span className="badge sev-high">{a.obeyed}</span> : 0}</td>
+                <td className="muted">{ago(a.last)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
       {err && <p className="mine-err">{err}</p>}
       {s && (
         s.count === 0 ? (

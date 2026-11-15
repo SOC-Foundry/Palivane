@@ -4,6 +4,7 @@ from .agent_safety import AgentSafetyDetector
 from .ci_guard import CIGuardDetector
 from .dep_guard import DepGuardDetector
 from .phantom_deps import PhantomDepsDetector
+from .canary_instruction import CanaryInstructionDetector
 from .device_posture import DevicePostureDetector
 from .ext_guard import BrowserExtGuardDetector, ExtGuardDetector
 from .llm_judge import LLMJudgeDetector
@@ -30,6 +31,7 @@ __all__ = [
     "OversharingDetector",
     "DepGuardDetector",
     "PhantomDepsDetector",
+    "CanaryInstructionDetector",
     "DevicePostureDetector",
     "ExtGuardDetector",
     "BrowserExtGuardDetector",
