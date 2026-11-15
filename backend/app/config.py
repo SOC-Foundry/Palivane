@@ -151,6 +151,9 @@ class Settings:
     # (network egress) and always fail open.
     mcp_server_denylist: str = os.getenv("MCP_SERVER_DENYLIST", "")
     mcp_reputation_enabled: bool = os.getenv("MCP_REPUTATION_ENABLED", "").lower() in ("1", "true", "yes")
+    # Phantom dependencies (detectors/phantom_deps.py): registry-check the packages a model
+    # suggests or an agent installs. On by default; cached, pinned, fail-open. PHANTOM_DEPS_ENABLED=0 to stop.
+    phantom_deps_enabled: bool = os.getenv("PHANTOM_DEPS_ENABLED", "1").lower() not in ("0", "false", "no")
     mcp_reputation_fresh_days: int = int(os.getenv("MCP_REPUTATION_FRESH_DAYS", "14"))
     # Path to a scored MCP-server reputation feed (JSON: name -> {tier, score, reason}).
     # Opt-in. Unset, "" or "off" = feed disabled (denylist + provenance + freshness still
