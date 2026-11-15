@@ -19,7 +19,7 @@ from .models import (
     InferenceHookDenial, JoinRequest,
     OAuthCode, OAuthToken, PolicyOverride, SaasConnector, SensorHeartbeat, Tenant,
     TenantDomain, TenantOIDC, TenantSAML, TenantUpstream, UpgradeRequest, User,
-    UsedSamlAssertion, Ticket, CommitAttestation,
+    UsedSamlAssertion, Ticket, CommitAttestation, SecretReach,
 )
 
 SUSPENDED_DETAIL = "this organization is suspended — contact your Palivane operator"
@@ -72,6 +72,7 @@ TENANT_TABLES = (
     ("exposure_register", ExposureRecord),
     ("tickets", Ticket),
     ("commit_attestations", CommitAttestation),
+    ("secret_reach", SecretReach),
     ("instruction_taints", InstructionTaint),
     ("secret_sightings", SecretSighting),
     ("secret_rotations", SecretRotation),

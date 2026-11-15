@@ -1712,3 +1712,26 @@ class SharedSignature(Base):
     status = Column(String(16), default="active", index=True)  # active | retracted
     first_seen = Column(DateTime, nullable=True)
     last_seen = Column(DateTime, nullable=True)
+
+
+class SecretReach(Base):
+    """What one leaked credential can reach (app/reach.py), keyed by the ledger's fingerprint.
+    The value itself is never stored; the assessment was made while it was in memory."""
+
+    __tablename__ = "secret_reach"
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    secret_fp = Column(String(64), nullable=False)
+    label = Column(String(64), default="")
+    kind = Column(String(24), default="")        # cloud | source | chat | provider | payments | test | unknown
+    scope = Column(String(500), default="")
+    severity = Column(String(16), default="medium")
+    source = Column(String(16), default="static")  # static | aws
+    detail = Column(JSON, nullable=True)
+    checked_at = Column(DateTime, nullable=True)
+    __table_args__ = (UniqueConstraint("tenant_id", "secret_fp", name="uq_secret_reach_fp"),)
+
+    def to_dict(self) -> dict:
+        return {"kind": self.kind, "scope": self.scope, "severity": self.severity, "source": self.source,
+                "detail": self.detail or {}, "checked_at": self.checked_at.isoformat() if self.checked_at else None}

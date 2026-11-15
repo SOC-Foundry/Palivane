@@ -59,11 +59,13 @@ def record(db: Session, tenant_id: int | None, item: AnalysisInput, signals, fin
     if not matches:
         return 0
     added = 0
+    fresh: list[tuple[str, str, str]] = []
     try:
         now = _now()
         surface = getattr(item.surface, "value", item.surface)
         for label, value in matches:
             fp = fingerprint(tenant_id, value)
+            fresh.append((fp, label, value))
             prior = (db.query(SecretSighting)
                        .filter(SecretSighting.tenant_id == tenant_id, SecretSighting.secret_fp == fp,
                                SecretSighting.finding_id == finding_id).first())
@@ -81,6 +83,16 @@ def record(db: Session, tenant_id: int | None, item: AnalysisInput, signals, fin
     except Exception:
         db.rollback()
         return 0
+    # What each secret can reach (app/reach.py): computed once per fingerprint, while the
+    # value is still in memory. Best-effort, after the sightings are safe.
+    try:
+        from . import reach
+        from .models import Tenant
+        tenant = db.get(Tenant, tenant_id)
+        for fp, label, value in fresh:
+            reach.assess(db, tenant, tenant_id, fp, label, value)
+    except Exception:
+        pass
     return added
 
 
@@ -129,7 +141,13 @@ def travel(db: Session, tenant_id: int, fp: str, days: int = 90, now: datetime |
         "tools": sorted({f"{r.surface}/{r.channel}" if r.channel else r.surface for r in rows}),
         "findings": sorted({r.finding_id for r in rows}, reverse=True)[:20],
         "rotation": status,
+        "reach": _reach(db, tenant_id, fp),
     }
+
+
+def _reach(db: Session, tenant_id: int, fp: str) -> dict | None:
+    from . import reach
+    return reach.for_fingerprint(db, tenant_id, fp)
 
 
 def for_finding(db: Session, tenant_id: int, finding_id: int, now: datetime | None = None) -> list[dict]:
