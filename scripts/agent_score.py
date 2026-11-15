@@ -1,6 +1,6 @@
 """Score for the agent-suite demo clip (scripts/agent_video.py renders the picture).
 
-Reuses demo_score.render — the same clean electric-piano, pad and sub bed (v5, subtle and melancholy) as the hero, setup and MCP
+Reuses demo_score.render — the same v6 bed (sub, plucks, kick and hats; see demo_score.py) as the hero, setup and MCP
 cuts, so this clip sits in the same sonic family. Sections track the ~27s storyboard: title
 card, three scenes (analyst → attestation → A2A, each a small lift, the graph building), then
 a settle under the closing card.

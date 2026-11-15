@@ -1,6 +1,6 @@
 """Score for the MCP demo clip (scripts/mcp_video.py renders the picture).
 
-Reuses demo_score.render — the same clean electric-piano, pad and sub bed (v5, subtle and melancholy) as the hero and setup
+Reuses demo_score.render — the same v6 bed (sub, plucks, kick and hats; see demo_score.py) as the hero and setup
 cuts, so this clip sits in the same sonic family. Sections track the ~26s storyboard: title
 card, four asks (each a small lift), then a settle under the closing card.
 
