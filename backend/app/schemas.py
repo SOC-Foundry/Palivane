@@ -93,6 +93,21 @@ class JustifyRequest(BaseModel):
     content_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-fA-F]{64}$")
 
 
+class CommitAttestIn(BaseModel):
+    """post-commit from `palivane-hook git-report`: the commit and what its trailers say."""
+    sha: str = Field(min_length=7, max_length=64)
+    repo: str = Field(default="", max_length=300)
+    branch: str = Field(default="", max_length=120)
+    author: str = Field(default="", max_length=320)
+    subject: str = Field(default="", max_length=200)
+    agent: str = Field(default="", max_length=120)
+    tool_calls: int = Field(default=0, ge=0, le=100000)
+    files: int = Field(default=0, ge=0, le=100000)
+    blocked: int = Field(default=0, ge=0, le=100000)
+    window_start: str = Field(default="", max_length=40)
+    window_end: str = Field(default="", max_length=40)
+
+
 class A2AIngest(BaseModel):
     """One agent-to-agent message — an orchestrator handing a sub-agent a task, or a peer
     agent's output fed to another. Scanned for a poisoned/injected instruction (OWASP
