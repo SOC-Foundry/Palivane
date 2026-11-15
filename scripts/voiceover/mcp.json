@@ -1,0 +1,26 @@
+[
+ {
+  "t": 0.3,
+  "text": "What if you never opened the security dashboard?"
+ },
+ {
+  "t": 3.0,
+  "text": "Which high-severity findings landed today, and who triggered them?"
+ },
+ {
+  "t": 7.4,
+  "text": "Which unsanctioned tools are in use, and what leaked?"
+ },
+ {
+  "t": 12.0,
+  "text": "Mark it triaged. It's in the audit log."
+ },
+ {
+  "t": 16.7,
+  "text": "Covered for the OWASP LLM Top 10? Eight of ten."
+ },
+ {
+  "t": 21.8,
+  "text": "Palivane's MCP server, in the assistant you already use."
+ }
+]
