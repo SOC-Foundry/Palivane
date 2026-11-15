@@ -45,7 +45,7 @@ from .models import (Agent, AgentRole, CorpusSample, Finding, PolicyOverride, Sa
                      Tenant, User)
 from .schemas import ExposureStatusIn, SecretRotatedIn
 from .schemas import (
-    A2AIngest,
+    A2AIngest, CommitAttestIn,
     AIUsageIngest,
     ContainmentCreate,
     JustifyRequest,
@@ -5403,6 +5403,32 @@ def export_evidence(days: int = Query(30, ge=1, le=365), current: User = Depends
     name = f"palivane-evidence-{org}-{now.date().isoformat()}-{days}d.zip"
     return Response(buf.getvalue(), media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.post("/api/attest/commit")
+def attest_commit(body: CommitAttestIn, x_palivane_token: str = Header(default=""),
+                  db: Session = Depends(get_db)):
+    """post-commit from a device: register an AI-assisted commit (app/attest.py). The server
+    counts the key's actor's findings in the trailer's window and signs the row."""
+    from . import attest
+    tenant_id, actor = _ingest_auth(x_palivane_token, db)
+    row = attest.register(db, tenant_id, actor, body.model_dump())
+    return {"id": row.id, "sha": row.sha, "findings": row.findings, "token": row.token}
+
+
+@app.get("/api/attestations")
+def attestations(limit: int = Query(200, ge=1, le=1000), current: User = Depends(require_analyst),
+                 db: Session = Depends(get_db)):
+    """Which commits were AI-assisted, and what Palivane saw in the window before each."""
+    from . import attest
+    return {"attestations": attest.listing(db, current.tenant_id, limit)}
+
+
+@app.get("/api/attest/verify")
+def attest_verify(sha: str, current: User = Depends(require_analyst), db: Session = Depends(get_db)):
+    """Check one commit (full or short sha) against the record."""
+    from . import attest
+    return attest.verify(db, current.tenant_id, sha)
 
 
 @app.get("/api/capture/canary")

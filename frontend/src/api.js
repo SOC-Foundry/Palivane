@@ -133,6 +133,8 @@ export const api = {
   activityUsers: () => req("/activity/users"),
   exposure: () => req("/exposure"),
   agents: () => req("/agents"),
+  // AI-assisted commits registered by `palivane-hook git-report` (app/attest.py).
+  attestations: () => req("/attestations"),
   agentCreate: (payload) => req("/agents", { method: "POST", body: JSON.stringify(payload) }),
   agentRotate: (id) => req(`/agents/${id}/rotate`, { method: "POST" }),
   agentDelete: (id) => req(`/agents/${id}`, { method: "DELETE" }),

@@ -1654,3 +1654,39 @@ class Ticket(Base):
         return {"id": self.id, "kind": self.kind, "ref_id": self.ref_id, "tracker": self.tracker,
                 "key": self.key, "url": self.url, "created_by": self.created_by,
                 "created_at": self.created_at.isoformat() if self.created_at else None}
+
+
+class CommitAttestation(Base):
+    """A commit a device registered as AI-assisted (app/attest.py): what the agent did in the
+    repo before it, and how many findings Palivane raised for that person in the window."""
+
+    __tablename__ = "commit_attestations"
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    sha = Column(String(64), nullable=False)
+    repo = Column(String(300), default="")
+    branch = Column(String(120), default="")
+    author = Column(String(320), default="")
+    actor = Column(String(320), default="")      # the capture key's actor: who the findings belong to
+    subject = Column(String(200), default="")
+    agent = Column(String(120), default="")
+    tool_calls = Column(Integer, default=0)
+    files = Column(Integer, default=0)
+    blocked = Column(Integer, default=0)
+    findings = Column(Integer, default=0)
+    finding_ids = Column(JSON, nullable=True)
+    window_start = Column(DateTime, nullable=True)
+    window_end = Column(DateTime, nullable=True)
+    token = Column(String(64), default="")
+    created_at = Column(DateTime, default=_utcnow, index=True)
+    __table_args__ = (UniqueConstraint("tenant_id", "sha", name="uq_attest_sha"),)
+
+    def to_dict(self) -> dict:
+        iso = lambda d: d.isoformat() if d else None
+        return {"id": self.id, "sha": self.sha, "repo": self.repo, "branch": self.branch,
+                "author": self.author, "actor": self.actor, "subject": self.subject, "agent": self.agent,
+                "tool_calls": self.tool_calls or 0, "files": self.files or 0, "blocked": self.blocked or 0,
+                "findings": self.findings or 0, "finding_ids": self.finding_ids or [],
+                "window_start": iso(self.window_start), "window_end": iso(self.window_end),
+                "token": self.token, "created_at": iso(self.created_at)}

@@ -8,6 +8,46 @@ const BLANK_ROLE = { name: "", allow_tools: "", allow_servers: "", allow_command
                      deny: "", data_scopes: "", default_allow: false, enforce: false };
 const _csv = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
 
+// Commits a device registered as AI-assisted (`palivane-hook git-install` puts the trailers
+// in; post-commit reports them). What the agent did before each, and what Palivane saw.
+function AttestedCommits() {
+  const [rows, setRows] = useState(null);
+  useEffect(() => { api.attestations().then((r) => setRows(r.attestations)).catch(() => setRows([])); }, []);
+  const when = (iso) => iso ? new Date(iso.endsWith("Z") ? iso : iso + "Z").toLocaleString() : "";
+  return (
+    <div className="panel settings-card">
+      <h2>AI-assisted commits</h2>
+      <p className="muted" style={{ fontSize: 12 }}>Run <code>palivane-hook git-install</code> in a repo and every commit
+         made after an agent worked there carries <code>Palivane-AI-Assisted</code> and <code>Palivane-Scan</code>
+         trailers; the commit is registered here with the findings Palivane raised in that window. An auditor
+         checks a sha with <code>GET /api/attest/verify?sha=</code>.</p>
+      {rows === null ? <p className="muted">Loading…</p> : rows.length === 0 ? (
+        <p className="muted">No attested commits yet.</p>
+      ) : (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead><tr><th>Commit</th><th>Repo</th><th>Author</th><th>Agent</th><th>Tool calls</th><th>Files</th><th>Blocked</th><th>Findings</th><th>When</th></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td><code>{r.sha.slice(0, 10)}</code> <span className="muted cell-clip" title={r.subject}>{r.subject}</span></td>
+                  <td className="muted cell-clip" title={r.repo}>{r.repo.replace(/^.*[/:]/, "")}{r.branch ? ` @ ${r.branch}` : ""}</td>
+                  <td className="muted">{r.author || r.actor}</td>
+                  <td className="muted">{r.agent}</td>
+                  <td>{r.tool_calls}</td><td>{r.files}</td>
+                  <td>{r.blocked ? <span className="badge sev-high">{r.blocked}</span> : 0}</td>
+                  <td>{r.findings ? <span className="badge sev-suspicious">{r.findings}</span> : 0}</td>
+                  <td className="muted nowrap">{when(r.created_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Agents({ tenant, onTenant }) {
   const [agents, setAgents] = useState(null);
   const [roles, setRoles] = useState([]);
@@ -260,6 +300,8 @@ export default function Agents({ tenant, onTenant }) {
         <button className="primary-btn slim" style={{ marginTop: 10 }} onClick={saveOidc}>Save workload identity</button>
       </div>
       </div>
+
+      <AttestedCommits />
 
       <div className="panel settings-card">
         <h2>Roles (least-privilege)</h2>
