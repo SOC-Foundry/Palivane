@@ -393,6 +393,17 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
       flash(r.ok ? r.detail : `Tracker test failed: ${r.detail}`, !!r.ok);
     } catch (e) { err(e); }
   }
+  // --- Shared threat signatures ---
+  const [shared, setShared] = useState(null);
+  useEffect(() => { api.sharedSignatures().then(setShared).catch(() => setShared({ signatures: [], active: 0, contributing: false })); }, []);
+  async function saveShare(on) {
+    try {
+      const t = await api.updateTenant({ share_signatures: on });
+      onTenant?.(t); setShared((s) => ({ ...(s || {}), contributing: !!t.share_signatures }));
+      flash(on ? "Your confirmed tool-poisoning findings now feed every org's defences."
+               : "Contribution switched off. You still receive the feed.");
+    } catch (e) { err(e); }
+  }
   // --- Anthropic Inference hooks (Claude Enterprise) ---
   const [ihSecret, setIhSecret] = useState("");
   const [ihKey, setIhKey] = useState("");
@@ -1143,6 +1154,23 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
             </Section>
 
             <Section id="policy" active={section}>
+
+              <div className="panel settings-card">
+                <h2>Shared threat signatures</h2>
+                <p className="muted" style={{ fontSize: 12 }}>When any organisation confirms a poisoned MCP tool
+                   description, its digest reaches every other organisation within minutes and scores as a
+                   confirmed poisoning here. Nothing identifies the reporter: a hash, a masked excerpt and a
+                   count. Everyone receives the feed; contributing is opt-in.</p>
+                <label className="check">
+                  <input type="checkbox" checked={!!(shared?.contributing ?? tenant?.share_signatures)}
+                         onChange={(e) => saveShare(e.target.checked)} />
+                  Contribute our confirmed tool-poisoning findings (digests only)
+                </label>
+                <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+                  {shared ? `${shared.active} active signature${shared.active === 1 ? "" : "s"} on the feed.` : "Loading…"}
+                  {" "}A finding dismissed as a false positive withdraws its report.
+                </p>
+              </div>
 
               <div className="panel settings-card">
                 <h2>Enforcement</h2>

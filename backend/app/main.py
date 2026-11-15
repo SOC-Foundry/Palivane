@@ -34,7 +34,7 @@ from .google_login import router as google_login_router
 from .domains import router as domains_router
 from .allowlist import router as allowlist_router
 from .precision import router as precision_router
-from . import containment, activity, lanes, review
+from . import containment, activity, lanes, review, sharedsigs
 from .config import settings, _env
 from .gateway import gemini_router, gemini_v1_router, router as gateway_router
 from .database import Base, engine as db_engine, get_db
@@ -2593,6 +2593,7 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
             "args_text": body.args_text, "resource": body.resource,
             "tool_descriptions": body.tool_descriptions, "transport": body.transport,
             "allowed_servers": allowed_servers,
+            "shared_signatures": sharedsigs.known(db),
             "command": body.command, "binary_sha256": body.binary_sha256,
             "pin_status": body.pin_status,
             # Extracted EMA metadata only (kind/verified/typ/iss/aud/resource/scope/
@@ -3862,8 +3863,19 @@ def update_status(finding_id: int, body: StatusUpdate,
     db.commit()
     chains = _chains_after_dismissal(db, current.tenant_id, [finding_id], body.status,
                                      current.email, body.reason)
+    # The shared feed: a confirmed tool-poisoning goes out (if the org contributes), a
+    # false positive comes back. app/sharedsigs.py.
+    shared = 0
+    if any(sg.get("category") == "tool_poisoning" for sg in (row.signals or [])):
+        tenant_row = db.get(Tenant, current.tenant_id)
+        if body.status == "triaged":
+            shared = sharedsigs.contribute(db, tenant_row, row)
+        elif body.status == "dismissed" and body.reason == "false_positive":
+            shared = -sharedsigs.withdraw(db, tenant_row, row)
     from . import audit_log
     detail = {"status": row.status}
+    if shared:
+        detail["shared_signatures"] = shared
     if body.via:
         detail["via"] = body.via[:40]     # e.g. "analyst" — a human approving the AI's rec
     if row.review_reason:
@@ -5445,6 +5457,16 @@ def export_evidence(days: int = Query(30, ge=1, le=365), current: User = Depends
     name = f"palivane-evidence-{org}-{now.date().isoformat()}-{days}d.zip"
     return Response(buf.getvalue(), media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.get("/api/shared-signatures")
+def shared_signatures(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """The shared threat-signature feed (app/sharedsigs.py): what every org is protected
+    against, and whether this org contributes."""
+    tenant = db.get(Tenant, current.tenant_id)
+    rows = sharedsigs.listing(db)
+    return {"signatures": rows, "contributing": bool(tenant and tenant.share_signatures),
+            "active": sum(1 for r in rows if r["status"] == "active")}
 
 
 @app.post("/api/attest/commit")

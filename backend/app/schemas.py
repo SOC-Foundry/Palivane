@@ -522,6 +522,7 @@ class TenantUpdate(BaseModel):
     # follows the global CLIENT_ENFORCE (default monitor).
     client_enforce: Literal["on", "off", "inherit"] | None = None
     sso_required: bool | None = None
+    share_signatures: bool | None = None   # contribute to the shared threat-signature feed
     block_tool_result_secrets: bool | None = None
     redact_mode: Literal["on", "off", "inherit"] | None = None   # coaching mode (tri-state)
     self_justify: Literal["on", "off", "inherit"] | None = None  # justified-proceed (tri-state)
