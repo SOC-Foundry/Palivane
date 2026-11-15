@@ -364,6 +364,12 @@ _DEFENSIVE_LEAD = re.compile(
 )
 
 
+def _desc_digest(text: str) -> str:
+    """The shared feed's digest of a tool description (app/sharedsigs.py.digest_text)."""
+    from ..sharedsigs import digest_text
+    return digest_text(text)
+
+
 def _poison_match(text: str) -> re.Match | None:
     """The first poisoning directive in `text`, passing over credential-file mentions that
     are warnings. Keeps searching after a skipped one: a defensive sentence must not hide a
@@ -446,6 +452,7 @@ class MCPGuardDetector:
 
     def analyze(self, item: AnalysisInput) -> list[Signal]:
         m = item.metadata or {}
+        m_meta = m
         method = m.get("method", "")
         server = m.get("server", "")
         tool = m.get("tool", "")
@@ -561,8 +568,26 @@ class MCPGuardDetector:
 
         # 4) Tool poisoning — injection hidden in a tool description (scan a normalized view
         # so homoglyph / zero-width / fullwidth obfuscation of the directive can't hide it).
+        shared = m_meta.get("shared_signatures") or {}
         for desc in descriptions:
             if not isinstance(desc, str):
+                continue
+            digest = _desc_digest(desc)
+            fold = f"desc:{digest}" + (f"|srv:{server}" if server else "")
+            hit = shared.get(digest) if shared else None
+            if hit:
+                # Confirmed by other organisations' reviews: scores like a confirmed poisoning,
+                # whatever the pattern match says. app/sharedsigs.py.
+                n = hit.get("reports") or 1
+                signals.append(Signal(
+                    category=Category.TOOL_POISONING,
+                    title="Tool description reported poisoned by other organisations",
+                    detail=(f"This exact tool description was confirmed as poisoned by {n} "
+                            f"organisation{'s' if n != 1 else ''} on the shared signature feed "
+                            f"(first seen {str(hit.get('first_seen') or '')[:10]})."),
+                    weight=0.95, confidence=0.95, detector=self.name,
+                    evidence=(hit.get("sample") or "")[:160], fold_key=fold, check="shared_signature",
+                ))
                 continue
             m = _poison_match(desc) or _poison_match(normalize_for_match(desc))
             if not m:
@@ -573,7 +598,20 @@ class MCPGuardDetector:
                 detail="An advertised MCP tool description contains hidden instructions "
                        "aimed at the model (tool-poisoning / prompt injection).",
                 weight=0.9, confidence=0.85, detector=self.name,
-                evidence=_match_context(m),
+                evidence=_match_context(m), fold_key=fold,
             ))
+        if server and shared:
+            from ..sharedsigs import digest_name
+            hit = shared.get(digest_name(server))
+            if hit:
+                n = hit.get("reports") or 1
+                signals.append(Signal(
+                    category=Category.TOOL_POISONING,
+                    title="MCP server reported malicious by other organisations",
+                    detail=(f"'{server}' was confirmed as serving poisoned tools by {n} "
+                            f"organisation{'s' if n != 1 else ''} on the shared signature feed."),
+                    weight=0.95, confidence=0.9, detector=self.name,
+                    evidence=server[:160], fold_key=f"srv:{server}", check="shared_signature",
+                ))
 
         return signals

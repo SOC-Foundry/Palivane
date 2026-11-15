@@ -141,6 +141,8 @@ export const api = {
   activityUsers: () => req("/activity/users"),
   exposure: () => req("/exposure"),
   agents: () => req("/agents"),
+  // The shared threat-signature feed (app/sharedsigs.py).
+  sharedSignatures: () => req("/shared-signatures"),
   // AI-assisted commits registered by `palivane-hook git-report` (app/attest.py).
   attestations: () => req("/attestations"),
   agentCreate: (payload) => req("/agents", { method: "POST", body: JSON.stringify(payload) }),

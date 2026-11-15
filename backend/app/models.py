@@ -180,6 +180,9 @@ class Tenant(Base):
     # sign-in. Effective only while OIDC or SAML is enabled (auth.sso_required), and admins
     # keep their password as break-glass, so a broken IdP config can't lock the org out.
     sso_required = Column(Boolean, nullable=False, default=False)
+    # Contribute confirmed poisoned tool descriptions / servers to the shared feed
+    # (app/sharedsigs.py). Consumption is always on; this is the opt-in to give back.
+    share_signatures = Column(Boolean, nullable=False, default=False)
     # A confirmed secret in what an agent's tool returned (a file read, command output) is
     # stopped before it reaches the model, in monitor mode too, on the gateway and the
     # Inference hooks. Default on; an org whose repos keep fake vendor keys in fixtures can
@@ -342,6 +345,7 @@ class Tenant(Base):
                 "ask_on_warn": self.ask_on_warn,
                 "scim_enabled": bool(self.scim_token_hash),
                 "sso_required": bool(self.sso_required),
+                "share_signatures": bool(self.share_signatures),
                 "block_tool_result_secrets": self.block_tool_result_secrets is not False,
                 "gateway_tokenize": self.gateway_tokenize,
                 "redact_on_block": self.redact_on_block,
@@ -1690,3 +1694,21 @@ class CommitAttestation(Base):
                 "findings": self.findings or 0, "finding_ids": self.finding_ids or [],
                 "window_start": iso(self.window_start), "window_end": iso(self.window_end),
                 "token": self.token, "created_at": iso(self.created_at)}
+
+
+class SharedSignature(Base):
+    """A confirmed poisoned tool description or MCP server, shared across every org
+    (app/sharedsigs.py). Global on purpose: no tenant_id, no RLS, nothing that names an org;
+    reporters are keyed handles, the sample is a masked excerpt."""
+
+    __tablename__ = "shared_signatures"
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String(24), default="")          # tool_description | mcp_server
+    digest = Column(String(64), nullable=False, unique=True)
+    sample = Column(String(200), default="")
+    reporters = Column(JSON, nullable=True)        # keyed tenant handles
+    reports = Column(Integer, default=0)
+    status = Column(String(16), default="active", index=True)  # active | retracted
+    first_seen = Column(DateTime, nullable=True)
+    last_seen = Column(DateTime, nullable=True)

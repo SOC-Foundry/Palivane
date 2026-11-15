@@ -1861,6 +1861,8 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.archive_s3_daily_mb = body.archive_s3_daily_mb
     if body.gateway_enforce is not None:
         tenant.gateway_enforce = _JUDGE[body.gateway_enforce]  # same tri-state mapping
+    if body.share_signatures is not None:
+        tenant.share_signatures = bool(body.share_signatures)
     if body.sso_required is not None:
         if body.sso_required:
             require_feature(tenant, "sso")
