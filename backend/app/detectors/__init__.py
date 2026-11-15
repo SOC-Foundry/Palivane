@@ -3,6 +3,7 @@ from .agent_rules import AgentRulesDetector
 from .agent_safety import AgentSafetyDetector
 from .ci_guard import CIGuardDetector
 from .dep_guard import DepGuardDetector
+from .phantom_deps import PhantomDepsDetector
 from .device_posture import DevicePostureDetector
 from .ext_guard import BrowserExtGuardDetector, ExtGuardDetector
 from .llm_judge import LLMJudgeDetector
@@ -28,6 +29,7 @@ __all__ = [
     "MLClassifierDetector",
     "OversharingDetector",
     "DepGuardDetector",
+    "PhantomDepsDetector",
     "DevicePostureDetector",
     "ExtGuardDetector",
     "BrowserExtGuardDetector",

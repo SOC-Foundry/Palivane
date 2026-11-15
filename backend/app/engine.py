@@ -20,6 +20,7 @@ from .detectors import (
     BrowserExtGuardDetector,
     CIGuardDetector,
     DepGuardDetector,
+    PhantomDepsDetector,
     DevicePostureDetector,
     OversharingDetector,
     ExtGuardDetector,
@@ -55,6 +56,7 @@ class Engine:
         self.mcp_guard = MCPGuardDetector()
         self.ml_classifier = MLClassifierDetector()
         self.dep_guard = DepGuardDetector()
+        self.phantom_deps = PhantomDepsDetector()
         self.ext_guard = ExtGuardDetector()
         self.browser_ext_guard = BrowserExtGuardDetector()
         self.secrets_at_rest = SecretsAtRestDetector()
@@ -65,7 +67,7 @@ class Engine:
         self.device_posture = DevicePostureDetector()
         self.judge = LLMJudgeDetector()
         self.detectors = [self.prompt_threats, self.shadow_ai, self.ml_classifier, self.mcp_guard,
-                          self.dep_guard, self.ext_guard, self.browser_ext_guard,
+                          self.dep_guard, self.phantom_deps, self.ext_guard, self.browser_ext_guard,
                           self.secrets_at_rest,
                           self.agent_safety, self.agent_rules, self.oversharing,
                           self.ci_guard, self.device_posture, self.judge]

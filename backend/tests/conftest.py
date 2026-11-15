@@ -131,6 +131,15 @@ def signed_release(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _registries_offline(monkeypatch):
+    """The phantom-dependency check asks PyPI/npm/... about package names; a test must never
+    reach the network. Answer "could not be asked" (fail-open) unless a test fakes it."""
+    from app import registry_lookup
+    registry_lookup.clear_cache()
+    monkeypatch.setattr(registry_lookup, "lookup", lambda eco, name: None)
+
+
+@pytest.fixture(autouse=True)
 def _fresh_inference_hook_replays():
     """inference_hooks keeps a per-process memory of verdicts by webhook-id, and tests reuse
     tenant ids, request ids and bodies across their own databases."""

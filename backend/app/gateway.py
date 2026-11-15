@@ -1024,7 +1024,8 @@ def _capture_response_agentic(resp: dict, tool: str, principal: Principal, db: S
 # a jailbroken/compromised model echoing secrets, RAG/tool output surfacing data the user
 # shouldn't see, or exfiltration via the completion. Only data-loss categories apply to an
 # output (a model returning code is normal; prompt-attack categories are about the input).
-_RESPONSE_DLP_KEEP = {"secret_leak", "pii_exposure"}
+# dependency_risk: the phantom-dependency check reads install lines in the reply (detectors/phantom_deps.py).
+_RESPONSE_DLP_KEEP = {"secret_leak", "pii_exposure", "dependency_risk"}
 
 
 def _response_dlp_filter(signals: list) -> list:
