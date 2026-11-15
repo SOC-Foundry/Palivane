@@ -1508,9 +1508,16 @@ class Containment(Base):
     # have been cut off from Palivane on purpose).
     blocked = Column(Integer, default=0)
     last_blocked_at = Column(DateTime, nullable=True)
+    # Undo: put the agent's files back from this moment. The device's hook does it from its
+    # journal when it sees revert_since in the containment answer, and reports here.
+    revert_since = Column(DateTime, nullable=True)
+    revert_by = Column(String(320), default="")
+    reverts = Column(JSON, nullable=True)
 
     def to_dict(self) -> dict:
         return {"id": self.id, "scope": self.scope, "target": self.target, "label": self.label,
+                "revert_since": self.revert_since.isoformat() if self.revert_since else None,
+                "revert_by": self.revert_by or "", "reverts": self.reverts or [],
                 "reason": self.reason, "created_by": self.created_by,
                 "created_at": self.created_at.isoformat() if self.created_at else None,
                 "expires_at": self.expires_at.isoformat() if self.expires_at else None,

@@ -236,6 +236,8 @@ export const api = {
   // Tickets: an exposure or a containment becomes a Jira issue / ServiceNow incident.
   exposureTicket: (id) => req(`/exposures/${id}/ticket`, { method: "POST" }),
   containmentTicket: (id) => req(`/containments/${id}/ticket`, { method: "POST" }),
+  // Undo: the target's devices put the agent's files back from when the containment began.
+  containmentRevert: (id) => req(`/containments/${id}/revert`, { method: "POST", body: JSON.stringify({}) }),
   testTickets: () => req("/tickets/test", { method: "POST" }),
   // The evidence pack: a zip of the assessment, registers, audit trails and precision readout.
   exportEvidence: async (days = 30) => {

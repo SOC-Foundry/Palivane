@@ -91,6 +91,11 @@ export default function ContainmentPanel() {
     try { await api.releaseContainment(id); await load(); }
     catch (e) { setErr(String(e.message || e)); }
   }
+  async function revert(id) {
+    if (!window.confirm("Ask this target's devices to put back every file the agent changed since the containment began? The hook restores from its journal on its next call.")) return;
+    try { await api.containmentRevert(id); await load(); }
+    catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
+  }
   async function ticket(id) {
     try { await api.containmentTicket(id); await load(); }
     catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
@@ -140,7 +145,17 @@ export default function ContainmentPanel() {
                   <td className="muted cell-clip" title={r.reason}>{r.reason || "-"}</td>
                   <td>{r.ticket ? <a href={r.ticket.url} target="_blank" rel="noreferrer">{r.ticket.key}</a>
                                 : <button type="button" className="link-btn" onClick={() => ticket(r.id)}>create</button>}</td>
-                  <td>{r.active && <button type="button" className="link-btn" onClick={() => release(r.id)}>Release</button>}</td>
+                  <td className="nowrap">
+                    {r.active && <button type="button" className="link-btn" onClick={() => release(r.id)}>Release</button>}
+                    {r.active && r.scope !== "org" && !r.revert_since && (
+                      <>{" "}<button type="button" className="link-btn" onClick={() => revert(r.id)} title="Put the agent's files back from when this began">Undo files</button></>
+                    )}
+                    {r.revert_since && (
+                      <span className="muted" style={{ fontSize: 12 }} title={`requested by ${r.revert_by}`}>
+                        {" "}undo {r.reverts?.length ? `done on ${r.reverts.length} device${r.reverts.length === 1 ? "" : "s"}: ${r.reverts.reduce((a, x) => a + (x.restored || 0), 0)} restored, ${r.reverts.reduce((a, x) => a + (x.deleted || 0), 0)} removed` : "requested, waiting for the device"}
+                      </span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

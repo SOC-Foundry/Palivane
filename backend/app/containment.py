@@ -69,7 +69,8 @@ def active(db, tenant_id: int | None) -> list[dict]:
               .filter(Containment.tenant_id == tenant_id, Containment.released_at.is_(None),
                       Containment.expires_at > now)
               .all())
-    out = [{"id": r.id, "scope": r.scope, "target": r.target, "expires_at": r.expires_at}
+    out = [{"id": r.id, "scope": r.scope, "target": r.target, "expires_at": r.expires_at,
+            "revert_since": r.revert_since}
            for r in rows]
     with _lock:
         _cache[tenant_id] = (now_mono, out)
@@ -131,8 +132,9 @@ def verdict(c: dict) -> dict:
             "severity": "critical", "finding_id": None,
             "signals": [{"category": "contained", "title": "Contained by your security team",
                          "detail": msg, "evidence": "", "weight": 1.0}],
-            "contained": {"until": _epoch(c["expires_at"]), "scope": c["scope"],
-                          "message": msg}}
+            "contained": {"until": _epoch(c["expires_at"]), "scope": c["scope"], "id": c.get("id"),
+                          "message": msg,
+                          **({"revert_since": _epoch(c["revert_since"])} if c.get("revert_since") else {})}}
 
 
 def record_block(db, c: dict) -> None:
@@ -202,6 +204,42 @@ def create(db, tenant_id: int, scope: str, target: str, reason: str, hours: floa
                      detail={"scope": scope, "hours": round(hrs, 2), "reason": row.reason,
                              "containment_id": row.id})
     return row
+
+
+def request_revert(db, tenant_id: int, containment_id: int, by: str, since=None):
+    """Ask the contained target's devices to put the agent's files back from `since`
+    (default: when the containment began). The hook does it on its next call."""
+    from . import audit_log
+    from .models import Containment
+    row = db.get(Containment, containment_id)
+    if row is None or row.tenant_id != tenant_id:
+        raise ContainmentError("no such containment")
+    if row.scope == "org":
+        raise ContainmentError("revert is per person, device or agent, not the whole org")
+    row.revert_since = since or row.created_at or _now()
+    row.revert_by = (by or "")[:320]
+    db.commit()
+    invalidate(tenant_id)
+    audit_log.record(db, tenant_id, by, "containment.revert", target=row.label,
+                     detail={"scope": row.scope, "containment_id": row.id,
+                             "since": row.revert_since.isoformat()})
+    return row
+
+
+def record_revert(db, tenant_id: int, containment_id: int, report: dict) -> bool:
+    """A device reports what it restored. Appended to the containment's `reverts`."""
+    from .models import Containment
+    row = db.get(Containment, containment_id) if containment_id else None
+    if row is None or row.tenant_id != tenant_id:
+        return False
+    entry = {"at": _now().isoformat(), "host": str(report.get("host") or "")[:120],
+             "cwd": str(report.get("cwd") or "")[:300],
+             "restored": int(report.get("restored") or 0), "deleted": int(report.get("deleted") or 0),
+             "failed": int(report.get("failed") or 0),
+             "files": [str(f)[:300] for f in (report.get("files") or [])][:100]}
+    row.reverts = (list(row.reverts or []) + [entry])[-50:]
+    db.commit()
+    return True
 
 
 def release(db, tenant_id: int, containment_id: int, by: str):
