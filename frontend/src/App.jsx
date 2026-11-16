@@ -186,6 +186,36 @@ export default function App() {
   // sidebar is a fixed column and `navOpen` has no visible effect.
   const [navOpen, setNavOpen] = useState(false);
   const viewLabel = NAV.flatMap((g) => g.items).find((it) => it.v === view)?.label ?? "Menu";
+  // Desktop: the sidebar collapses to an icon rail. Twenty entries in six groups no longer
+  // fit a laptop height, and the queue plus the detail pane want the width. Remembered per
+  // browser; with no preference stored it follows the window (rail under 1280px). `[` toggles.
+  const [railed, setRailed] = useState(() => {
+    try {
+      const v = localStorage.getItem("palivane.sidebar");
+      if (v === "rail") return true;
+      if (v === "full") return false;
+    } catch { /* private mode */ }
+    return typeof window !== "undefined" && window.innerWidth < 1280;
+  });
+  const toggleRail = () => setRailed((r) => {
+    try { localStorage.setItem("palivane.sidebar", r ? "full" : "rail"); } catch { /* private mode */ }
+    return !r;
+  });
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "[" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      toggleRail();
+    };
+    const onResize = () => {
+      try { if (localStorage.getItem("palivane.sidebar")) return; } catch { /* private mode */ }
+      setRailed(window.innerWidth < 1280);
+    };
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onResize);
+    return () => { document.removeEventListener("keydown", onKey); window.removeEventListener("resize", onResize); };
+  }, []);
   useEffect(() => { setNavOpen(false); }, [view]);
   useEffect(() => {
     if (!navOpen) return undefined;
@@ -429,14 +459,23 @@ export default function App() {
   const isAdmin = auth.user?.role === "admin";
 
   return (
-    <div className="app-shell">
-      <aside className={`sidebar${navOpen ? " open" : ""}`}>
+    <div className={`app-shell${railed ? " rail" : ""}`}>
+      <aside className={`sidebar${navOpen ? " open" : ""}${railed ? " rail" : ""}`}>
         <div className="sidebar-brand">
           <img className="sidebar-emblem" src="/palivane-emblem.svg" alt="Palivane" />
-          <div>
+          <div className="brand-text">
             <div className="brand-name">Palivane</div>
             <div className="brand-sub">AI Security Gateway</div>
           </div>
+          <button type="button" className="rail-toggle" onClick={toggleRail}
+                  title={railed ? "Expand the sidebar  [" : "Collapse the sidebar  ["}
+                  aria-label={railed ? "Expand the sidebar" : "Collapse the sidebar"} aria-pressed={railed}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <line x1="9" y1="4" x2="9" y2="20" />
+              {railed ? <polyline points="13 9 16 12 13 15" /> : <polyline points="17 9 14 12 17 15" />}
+            </svg>
+          </button>
         </div>
 
         {/* Phones only (hidden by CSS above 900px). */}
@@ -457,6 +496,7 @@ export default function App() {
                     <button key={it.v} type="button"
                             className={`nav-item ${view === it.v ? "nav-on" : ""}`}
                             aria-current={view === it.v ? "page" : undefined}
+                            title={railed ? it.label : undefined}
                             onClick={() => { navigate(it.v); setNavOpen(false); }}>
                       {it.icon} <span>{it.label}</span>
                     </button>
@@ -479,7 +519,7 @@ export default function App() {
               <div className="account-org">{auth.tenant?.name || auth.tenant?.slug}</div>
               <div className="account-email">{auth.user?.email}</div>
             </div>
-            <button type="button" className="signout" onClick={logout}>
+            <button type="button" className="signout" onClick={logout} title={railed ? "Sign out" : undefined}>
               <IconLogout /> <span>Sign out</span>
             </button>
           </div>

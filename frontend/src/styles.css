@@ -163,6 +163,36 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); paddi
    wrapper takes no part in layout, so the sidebar is the column it always was. */
 .sidebar-panel { display: contents; }
 .nav-toggle { display: none; }
+
+/* ===== the icon rail =====
+   Collapsed, the sidebar is a 64px column of icons: labels and group names go, groups become
+   hairlines, the active icon keeps its highlight, and the label is the native tooltip. */
+.rail-toggle {
+  margin-left: auto; flex: none; display: grid; place-items: center; width: 28px; height: 28px;
+  background: transparent; border: 1px solid transparent; border-radius: 4px; color: var(--muted-2); cursor: pointer;
+  transition: all .15s ease;
+}
+.rail-toggle:hover { color: var(--text); border-color: var(--border); background: var(--panel-2); }
+.rail-toggle:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.app-shell.rail { grid-template-columns: 64px minmax(0, 1fr); }
+.sidebar.rail { padding: 20px 10px; }
+.sidebar.rail .sidebar-brand { flex-direction: column; gap: 10px; padding: 2px 0 18px; }
+.sidebar.rail .brand-text { display: none; }
+.sidebar.rail .sidebar-emblem { height: 30px; }
+.sidebar.rail .rail-toggle { margin-left: 0; }
+.sidebar.rail .nav { gap: 6px; margin-right: 0; padding-right: 0; }
+.sidebar.rail .nav-head { display: none; }
+.sidebar.rail .nav-group { gap: 2px; }
+.sidebar.rail .nav-group + .nav-group { border-top: 1px solid var(--border); padding-top: 6px; }
+.sidebar.rail .nav-item { justify-content: center; padding: 9px 0; gap: 0; }
+.sidebar.rail .nav-item span { display: none; }
+.sidebar.rail .nav-item svg { width: 18px; height: 18px; }
+.sidebar.rail .sidebar-foot { gap: 10px; align-items: stretch; }
+.sidebar.rail .judge-status { justify-content: center; padding: 9px 0; }
+.sidebar.rail .judge-status span:not(.judge-dot) { display: none; }
+.sidebar.rail .account { display: none; }
+.sidebar.rail .signout { justify-content: center; padding: 9px 0; }
+.sidebar.rail .signout span { display: none; }
 .judge-status {
   display: flex; align-items: center; gap: 10px;
   font-size: 12px; font-weight: 600; padding: 9px 12px; border-radius: 4px;
@@ -2578,3 +2608,23 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 .lp-new-list li a { display: flex; gap: 10px; align-items: baseline; height: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border-soft); background: var(--panel); text-decoration: none; color: var(--muted); font-size: 14px; line-height: 1.5; transition: border-color .18s ease; }
 .lp-new-list li a:hover { border-color: var(--accent-2); }
 .lp-new-list li a strong { color: var(--text); white-space: nowrap; }
+
+/* On a phone the sidebar is the top bar and the rail has no meaning: every rail rule above
+   is undone here so the bar and its menu panel look the same whether or not a desktop
+   preference is stored. */
+@media (max-width: 900px) {
+  .rail-toggle { display: none; }
+  .app-shell.rail { grid-template-columns: minmax(0, 1fr); }
+  .sidebar.rail { padding: 0 16px; }
+  .sidebar.rail .sidebar-brand { flex-direction: row; gap: 10px; padding: 0; }
+  .sidebar.rail .brand-text { display: block; }
+  .sidebar.rail .sidebar-emblem { height: 28px; }
+  .sidebar.rail .nav { gap: 13px; }
+  .sidebar.rail .nav-head { display: block; }
+  .sidebar.rail .nav-group { gap: 3px; }
+  .sidebar.rail .nav-group + .nav-group { border-top: 0; padding-top: 0; }
+  .sidebar.rail .nav-item { justify-content: flex-start; padding: 7px 12px; gap: 12px; }
+  .sidebar.rail .nav-item span, .sidebar.rail .signout span, .sidebar.rail .judge-status span:not(.judge-dot) { display: inline; }
+  .sidebar.rail .account { display: block; }
+  .sidebar.rail .judge-status, .sidebar.rail .signout { justify-content: flex-start; padding: 9px 12px; }
+}
