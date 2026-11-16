@@ -8,23 +8,23 @@
   "text": "From the Connect page, generate a capture key and pick your platform."
  },
  {
-  "t": 17.5,
+  "t": 13.6,
   "text": "Run palivane-connect on a laptop. Claude Code, Cursor, the hooks and the browser extension are configured, in monitor mode."
  },
  {
-  "t": 28.0,
+  "t": 22.7,
   "text": "Settings hold the policy: what to block, what to route, who gets alerted."
  },
  {
-  "t": 36.5,
+  "t": 35.9,
   "text": "To cover the fleet, push the policy pack through Jamf, Intune or Group Policy. No agent to install."
  },
  {
-  "t": 46.5,
+  "t": 45.0,
   "text": "Findings start arriving as people work. Watch for a week, then switch on enforcement for the checks that proved right."
  },
  {
-  "t": 54.5,
+  "t": 54.0,
   "text": "Palivane. Set it up today."
  }
 ]

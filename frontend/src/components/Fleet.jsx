@@ -348,6 +348,47 @@ function buildsCell(p) {
 // A person's identity keeping a machine's hours is an agent nobody registered: a cron'd
 // coding agent, a CI job, running under someone's key, with that person's permissions and
 // none of an agent's limits. Register it, and it gets its own identity.
+// One number per agent, trending: canary instructions read and obeyed, provenance hits,
+// blocked commands, phantom installs, poisoned tools offered, attested commits. The page
+// nobody else can show, because nobody else has the rows.
+function AgentScores({ tick }) {
+  const [d, setD] = useState(null);
+  useEffect(() => { api.fleetAgentScores(30).then(setD).catch(() => setD(null)); }, [tick]);
+  const rows = d?.agents || [];
+  if (!rows.length) return null;
+  const cls = (s) => (s >= 90 ? "sev-benign" : s >= 70 ? "sev-low" : s >= 50 ? "sev-suspicious" : s >= 30 ? "sev-high" : "sev-critical");
+  const trend = (r) => (r.previous == null ? "" : r.score > r.previous ? "▲" : r.score < r.previous ? "▼" : "=");
+  return (
+    <div className="panel settings-card">
+      <h2>Agent susceptibility <span className="count-pill">{rows.length}</span></h2>
+      <p className="muted" style={{ marginTop: 0 }}>
+        How much each agent can be pushed around, from the last {d.days} days: canary instructions it
+        read and obeyed, actions it took on instructions nobody typed, commands blocked, packages it tried
+        to install that do not exist, poisoned tools it was offered. 100 is an agent nothing has moved.
+        The arrow compares with the {d.days} days before.
+      </p>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead><tr><th>Agent</th><th>Score</th><th>Obeyed canary</th><th>Read canary</th><th>Acted on planted instruction</th><th>Blocked</th><th>Phantom installs</th><th>Poisoned tools seen</th><th>Attested commits</th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.agent}>
+                <td><strong>{r.agent}</strong></td>
+                <td><span className={`badge ${cls(r.score)}`}>{r.score}</span> <span className="muted">{trend(r)}{r.previous != null ? ` ${r.previous}` : ""}</span></td>
+                <td>{r.obeyed ? <span className="badge sev-critical">{r.obeyed}</span> : 0}</td>
+                <td>{r.read}</td>
+                <td>{r.provenance ? <span className="badge sev-high">{r.provenance}</span> : 0}</td>
+                <td>{r.blocked}</td><td>{r.phantom}</td><td>{r.poisoned}</td>
+                <td className="muted">{r.attested_commits}{r.attested_findings ? ` (${r.attested_findings} findings)` : ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function UnattendedAgents({ tick }) {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState("");
@@ -635,6 +676,7 @@ export default function Fleet() {
             </div>
           )}
 
+          <AgentScores tick={tick} />
           <UnattendedAgents tick={tick} />
           <PeopleLedger tick={tick} />
           <DeveloperMeter />

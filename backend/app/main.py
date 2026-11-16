@@ -5108,6 +5108,67 @@ def fleet_people(attention: bool = True, q: str = "",
             "attention": attention, "summary": summary}
 
 
+@app.get("/api/fleet/agent-scores")
+def fleet_agent_scores(days: int = Query(30, ge=7, le=90), current: User = Depends(require_admin),
+                       db: Session = Depends(get_db)):
+    """One number per agent, trending: how much an agent can be pushed around. Built from
+    rows that already exist: canary instructions it read and obeyed, provenance hits (it acted
+    on an instruction nobody typed), commands blocked, phantom packages it tried to install,
+    poisoned tools it was offered, and the commits it attested. 100 is an agent nothing has
+    moved; the deductions are capped so one bad afternoon reads as one bad afternoon."""
+    from datetime import datetime, timedelta, timezone
+
+    from .models import CommitAttestation
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    since, prev = now - timedelta(days=days), now - timedelta(days=2 * days)
+    rows = (db.query(Finding.sender, Finding.agent, Finding.signals, Finding.recommended_action,
+                     Finding.last_seen, Finding.reviewed_by)
+              .filter(Finding.tenant_id == current.tenant_id, Finding.last_seen >= prev,
+                      Finding.surface.in_(("agent_tools", "mcp", "a2a")))
+              .limit(50000).all())
+    att = (db.query(CommitAttestation.actor, func.count(CommitAttestation.id), func.sum(CommitAttestation.findings))
+             .filter(CommitAttestation.tenant_id == current.tenant_id, CommitAttestation.created_at >= since)
+             .group_by(CommitAttestation.actor).all())
+    attested = {a.lower(): (n or 0, f or 0) for a, n, f in att if a}
+
+    def blank():
+        return {"obeyed": 0, "read": 0, "provenance": 0, "blocked": 0, "phantom": 0, "poisoned": 0, "events": 0}
+    cur: dict[str, dict] = {}
+    old: dict[str, dict] = {}
+    for sender, agent, signals, action, seen, _by in rows:
+        who = (agent or sender or "").lower()
+        if not who:
+            continue
+        bucket = cur if (seen and seen >= since) else old
+        c = bucket.setdefault(who, blank())
+        c["events"] += 1
+        checks = {s.get("check") for s in (signals or [])}
+        cats = {s.get("category") for s in (signals or [])}
+        if "canary_instruction_obeyed" in checks: c["obeyed"] += 1
+        elif "canary_instruction_read" in checks: c["read"] += 1
+        if "instruction_provenance" in checks: c["provenance"] += 1
+        if "phantom_dependency" in checks: c["phantom"] += 1
+        if "tool_poisoning" in cats: c["poisoned"] += 1
+        if action == "block": c["blocked"] += 1
+
+    def score(c: dict) -> int:
+        s = 100
+        s -= min(50, 25 * c["obeyed"])
+        s -= min(30, 10 * c["provenance"])
+        s -= min(20, 3 * c["blocked"])
+        s -= min(15, 5 * c["phantom"])
+        s -= min(10, 2 * c["read"])
+        return max(0, s)
+    out = []
+    for who in set(cur) | set(old) | set(attested):
+        c = cur.get(who, blank()); o = old.get(who)
+        n_att, f_att = attested.get(who, (0, 0))
+        out.append({"agent": who, "score": score(c), "previous": score(o) if o else None,
+                    "attested_commits": n_att, "attested_findings": f_att, **c})
+    out.sort(key=lambda r: (r["score"], -r["events"]))
+    return {"days": days, "agents": out[:200]}
+
+
 @app.get("/api/fleet/unattended")
 def fleet_unattended(current: User = Depends(require_admin), db: Session = Depends(get_db)):
     """Actors on a person's identity that keep a machine's hours (active in 20 of 24 hours
