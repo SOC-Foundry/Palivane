@@ -4,51 +4,51 @@
   "text": "Every verdict in this video came from a live Palivane instance."
  },
  {
-  "t": 4.8,
+  "t": 4.6,
   "text": "In the browser, a prompt to Claude carries an AWS key and a customer record. Palivane stops it before it leaves, and says why."
  },
  {
-  "t": 14.0,
+  "t": 13.2,
   "text": "Same for ChatGPT."
  },
  {
-  "t": 23.5,
+  "t": 22.3,
   "text": "And Gemini. One policy, every AI site."
  },
  {
-  "t": 33.0,
+  "t": 31.4,
   "text": "Coding agents go through the gateway. Claude Code reads a production env file into its prompt, and the request never reaches Anthropic."
  },
  {
-  "t": 43.5,
+  "t": 41.0,
   "text": "Codex is told what was in the prompt and how to fix it."
  },
  {
-  "t": 52.0,
+  "t": 50.1,
   "text": "Cursor gets the same answer. The editor is not a way around the policy."
  },
  {
-  "t": 60.5,
+  "t": 59.2,
   "text": "At rest, Palivane finds the public bucket holding sensitive data."
  },
  {
-  "t": 70.0,
+  "t": 68.8,
   "text": "And the GitHub Actions workflow handing deploy keys to an agent."
  },
  {
-  "t": 80.0,
+  "t": 78.9,
   "text": "In Drive, it traces a confidential document to every place it surfaced."
  },
  {
-  "t": 89.5,
+  "t": 88.5,
   "text": "Including the Slack message and the attachment."
  },
  {
-  "t": 99.0,
+  "t": 98.1,
   "text": "Everything lands in one console: findings with their evidence, the shadow-AI inventory, coverage, and the report you forward upward."
  },
  {
-  "t": 118.0,
+  "t": 118.5,
   "text": "Palivane. See what your team sends to AI, and stop what shouldn't leave."
  }
 ]

@@ -161,6 +161,16 @@ export default function Proof() {
       </section>
 
       <section className="lp-section">
+        <div className="lp-wrap lp-faq-wrap">
+          <h2 className="lp-h2">The feed is built from reviews</h2>
+          <p className="lp-sub">When any organisation confirms a poisoned MCP tool description, its digest
+             reaches every other organisation within minutes and scores as a confirmed poisoning there.
+             No vendor research team decides what is in the feed: the reviews customers already do, with
+             nothing that names the reporter. Contributing is opt-in; receiving is for everyone.</p>
+        </div>
+      </section>
+
+      <section className="lp-section">
         <div className="lp-wrap">
           <div className="lp-band-head">
             <span className="lp-eyebrow">Reproduce</span>
