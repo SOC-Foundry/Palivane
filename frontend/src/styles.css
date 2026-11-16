@@ -2572,3 +2572,9 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
 .lp-cards-wide { grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr)); }
 .lp-list { margin: 0 0 10px; padding-left: 18px; color: var(--muted); font-size: 14px; line-height: 1.8; }
 .landing .lp-card .hiw-table td, .landing .lp-card .hiw-table th { padding: 8px 10px; }
+
+/* ===== landing: new this month ===== */
+.lp-new-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 10px 22px; }
+.lp-new-list li a { display: flex; gap: 10px; align-items: baseline; height: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border-soft); background: var(--panel); text-decoration: none; color: var(--muted); font-size: 14px; line-height: 1.5; transition: border-color .18s ease; }
+.lp-new-list li a:hover { border-color: var(--accent-2); }
+.lp-new-list li a strong { color: var(--text); white-space: nowrap; }

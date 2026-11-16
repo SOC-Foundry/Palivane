@@ -88,20 +88,32 @@ const FEATURES = [
   // Containment is a pause pending review, not a guarantee against a determined insider:
   // /coverage says so under the threat model, and the quiet badge is the honest half of it.
   { tab: "Containment", title: <>Stop one person's AI use <span className="lp-hl">everywhere, now</span></>,
-    sub: () => "One action pauses a person, a device, an agent or the whole org on every plane: prompts and tool calls denied, AI sites blocked, model calls refused. A device that drops offline keeps blocking until the containment expires or you release it, and Fleet flags one that went quiet instead of being stopped.",
+    sub: () => "One action pauses a person, a device, an agent or the whole org on every plane: prompts and tool calls denied, AI sites blocked, model calls refused. A device that drops offline keeps blocking until the containment expires or you release it, Fleet flags one that went quiet instead of being stopped, and Undo files puts back everything the agent changed.",
     href: "/coverage", link: "What it can and cannot stop",
     src: "/shots/containment.png?v=1", alt: "Containment panel on Fleet: an active person, a quiet agent, and a released containment" },
 ];
 
 // Proof the page can back up, each linked to the page that says it in full. No logos or
 // quotes: a security buyer discounts unverifiable ones, and these are all checkable.
+// The month's additions, one line each, linking to where each is shown in full. A band,
+// not a section per feature: the page says the product is moving without getting longer.
+const NEW = [
+  ["Undo for agents", "Containment can put back every file the agent changed.", "/agents"],
+  ["Canary instructions", "One line in a document tells you which agents follow orders they find.", "/agents"],
+  ["Commit attestations", "Commits made after an agent worked carry signed trailers saying so.", "/agents"],
+  ["Phantom dependencies", "Every install line a model suggests is checked against the registries first.", "/agents"],
+  ["Shared signatures", "One org's confirmed poisoned MCP tool protects every other within minutes.", "/proof"],
+  ["Blast radius", "A leaked key says what it unlocks, so rotation gets a priority order.", "/how-it-works"],
+  ["Your record", "Everyone can see and export what Palivane holds about them.", "/assessment"],
+];
+
 const TRUST = [
   { title: "No AI in the scoring path", body: "Rules decide. The LLM judge is opt-in.", href: "/how-it-works" },
   { title: "Benchmarked in the open", body: "Dated numbers, and the commands to rerun them.", href: "/proof" },
   { title: "Self-host it", body: "Same detection, your infrastructure.", href: "/security" },
   { title: "Read every client", body: "Every hook and scanner is on GitHub.", href: "https://github.com/SOC-Foundry/palivane-clients" },
-  { title: "SSO, MFA, audit log", body: "Every admin action recorded.", href: "/security#controls" },
-  { title: "DPA and subprocessors", body: "Published on the Security page.", href: "/security#disclosure" },
+  { title: "SSO, MFA, audit log, DPA", body: "Every admin action recorded; subprocessors published.", href: "/security#controls" },
+  { title: "Your record", body: "The person monitored sees and exports what was captured about them.", href: "/how-it-works" },
 ];
 
 // The one picture of how it works: where a prompt comes from, the checkpoint it passes,
@@ -474,6 +486,20 @@ export default function Landing({ onSignIn }) {
                     onZoom={(s, a) => setZoom({ src: s, alt: a })} />
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="lp-section lp-new" aria-label="New this month">
+        <div className="lp-wrap">
+          <div className="lp-band-head rv">
+            <span className="lp-eyebrow">New this month</span>
+            <h2 className="lp-h2">Seven things no one else <span className="lp-hl">is doing</span></h2>
+          </div>
+          <ul className="lp-new-list rv">
+            {NEW.map(([what, how, href]) => (
+              <li key={what}><a href={href}><strong>{what}</strong><span>{how}</span></a></li>
+            ))}
+          </ul>
         </div>
       </section>
 
