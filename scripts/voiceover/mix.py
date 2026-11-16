@@ -20,6 +20,17 @@ def load(path):
     x = x.astype(float) / 32768
     return x if x.ndim == 2 else np.stack([x, x], 1)
 
+def trim(v, db=-40.0, keep=0.05):
+    """Drop the silence a synthesizer puts before (and after) the words, keeping `keep`
+    seconds of air on each side, so a line starts where the script says it does."""
+    env = np.abs(v).max(axis=1); thr = 10 ** (db / 20)
+    idx = np.where(env > thr)[0]
+    if not len(idx):
+        return v
+    a = max(0, idx[0] - int(keep * SR)); b = min(len(v), idx[-1] + int(keep * SR))
+    return v[a:b]
+
+
 def main(a):
     clip, music, lines, out = a[:4]
     music_db = float(a[a.index("--music-db") + 1]) if "--music-db" in a else -14.0
@@ -36,6 +47,7 @@ def main(a):
     prev_end = 0.0
     for i, ln in enumerate(spec):
         v = load(ln["wav"]); v *= 10 ** (-3 / 20) / (np.abs(v).max() + 1e-9)
+        v = trim(v)                       # the synthesizer pads up to ~0.7 s of silence before speech
         s = int(ln["t"] * SR); e = min(n, s + len(v))
         vo[s:e] += v[: e - s]
         gap = ln["t"] - prev_end
