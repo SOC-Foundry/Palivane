@@ -409,6 +409,21 @@ export default function Landing({ onSignIn }) {
         </div>
       </section>
 
+      <section className="lp-section lp-new" aria-label="New this month">
+        <div className="lp-wrap">
+          <div className="lp-band-head rv">
+            <span className="lp-eyebrow">New this month</span>
+            <h2 className="lp-h2">Seven things no one else <span className="lp-hl">is doing</span></h2>
+          </div>
+          <ul className="lp-new-list rv">
+            {NEW.map(([what, how, href]) => (
+              <li key={what}><a href={href}><strong>{what}</strong><span>{how}</span></a></li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+
       <section className="lp-section">
         <div className="lp-wrap">
           <div className="lp-band-head rv">
@@ -486,20 +501,6 @@ export default function Landing({ onSignIn }) {
                     onZoom={(s, a) => setZoom({ src: s, alt: a })} />
             </div>
           </div>
-        </div>
-      </section>
-
-      <section className="lp-section lp-new" aria-label="New this month">
-        <div className="lp-wrap">
-          <div className="lp-band-head rv">
-            <span className="lp-eyebrow">New this month</span>
-            <h2 className="lp-h2">Seven things no one else <span className="lp-hl">is doing</span></h2>
-          </div>
-          <ul className="lp-new-list rv">
-            {NEW.map(([what, how, href]) => (
-              <li key={what}><a href={href}><strong>{what}</strong><span>{how}</span></a></li>
-            ))}
-          </ul>
         </div>
       </section>
 
