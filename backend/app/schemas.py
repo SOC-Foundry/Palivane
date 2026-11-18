@@ -399,10 +399,13 @@ _SIGNUP_EMAIL = re.compile(r"[^@\s\x00-\x1f]+@[^@\s\x00-\x1f]+\.[^@\s\x00-\x1f.]
 
 
 class SignupRequest(BaseModel):
-    org_name: str = Field(min_length=2, description="organization / tenant name")
+    # Blank only for a personal workspace (plan="personal"), where the name is derived from
+    # the address; the handler insists on two characters for an organization.
+    org_name: str = Field(default="", max_length=120, description="organization / tenant name")
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=8)
     slug: str = ""   # optional; derived from org_name when blank
+    plan: str = Field(default="", pattern="^(|personal)$")   # "" = an organization's trial
 
     @field_validator("email")
     @classmethod

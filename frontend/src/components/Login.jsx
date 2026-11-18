@@ -9,7 +9,9 @@ function safeReturnTo(rt) {
 }
 
 export default function Login({ onAuthed, onBack }) {
-  const [mode, setMode] = useState("signin");   // "signin" | "signup" | "forgot" | "reset"
+  const [mode, setMode] = useState(() => /^#signup(-personal)?$/.test(window.location.hash) ? "signup" : "signin");   // "signin" | "signup" | "forgot" | "reset"
+  // A one-person workspace: free, no clock, no organization name to invent.
+  const [personal, setPersonal] = useState(() => window.location.hash === "#signup-personal");
   const [resetToken, setResetToken] = useState(null);
   const [notice, setNotice] = useState(null);   // green info banner (sent / reset ok)
   const [emailEnabled, setEmailEnabled] = useState(false);
@@ -96,7 +98,7 @@ export default function Login({ onAuthed, onBack }) {
         return;
       }
       const res = signup
-        ? await api.signup(org.trim(), email.trim(), password)
+        ? await api.signup(org.trim(), email.trim(), password, personal ? "personal" : "")
         : await api.login(email.trim(), password, org.trim());
       if (res.mfa_required) { setMfaChallenge(res.challenge); return; }   // second-factor step
       // Domain capture: the email belongs to an org already on Palivane, request queued.
@@ -229,15 +231,26 @@ export default function Login({ onAuthed, onBack }) {
         <img className="login-logo" src="/palivane-emblem.svg" alt="Palivane" />
         <div className="login-wordmark">PALIVANE</div>
         <p className="login-sub">
-          {mode === "signup" ? "Create your organization" :
+          {mode === "signup" ? (personal ? "Create your personal workspace" : "Create your organization") :
            mode === "forgot" ? "We'll email you a password-reset link" :
            mode === "reset" ? "Choose a new password" :
            "Sign in to your security workspace"}
         </p>
-        {mode !== "reset" && (
+        {signup && (
+          <div className="signup-kind" role="radiogroup" aria-label="Who is this for">
+            <button type="button" className={`chip-toggle ${!personal ? "on" : ""}`} onClick={() => setPersonal(false)}>For my organization</button>
+            <button type="button" className={`chip-toggle ${personal ? "on" : ""}`} onClick={() => setPersonal(true)}>Just me, free</button>
+          </div>
+        )}
+        {mode !== "reset" && !(signup && personal) && (
           <input placeholder={signup ? "organization name" : "organization (only if required)"}
                  value={org} onChange={(e) => setOrg(e.target.value)}
                  autoFocus={signup} required={signup} />
+        )}
+        {signup && personal && (
+          <p className="muted" style={{ margin: "2px 0 6px", fontSize: 12.5 }}>A workspace for one person: the same
+             sensors and detection, nothing sent anywhere you did not choose, free with no expiry. Invite a
+             second person later and it becomes a team.</p>
         )}
         {mode !== "reset" && (
           <input type="email" placeholder="email" value={email}
@@ -252,9 +265,9 @@ export default function Login({ onAuthed, onBack }) {
         {notice && <div className="login-sub" style={{ color: "var(--ok, #4caf50)" }}>{notice}</div>}
         {err && <div className="error">{err}</div>}
         <button className="primary-btn"
-                disabled={busy || (mode === "forgot" ? !email : !password || (mode !== "reset" && !email)) || (signup && !org)}>
+                disabled={busy || (mode === "forgot" ? !email : !password || (mode !== "reset" && !email)) || (signup && !personal && !org)}>
           {busy ? "..." :
-           mode === "signup" ? "Create organization" :
+           mode === "signup" ? (personal ? "Create workspace" : "Create organization") :
            mode === "forgot" ? "Send reset link" :
            mode === "reset" ? "Set new password" : "Sign in"}
         </button>

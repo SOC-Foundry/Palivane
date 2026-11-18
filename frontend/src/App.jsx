@@ -18,6 +18,7 @@ import Assessment from "./components/Assessment.jsx";
 import Proof from "./components/Proof.jsx";
 import AgentsSite from "./components/AgentsSite.jsx";
 import Demos from "./components/Demos.jsx";
+import PersonalSite from "./components/PersonalSite.jsx";
 import CoverageMatrix from "./components/CoverageMatrix.jsx";
 import Setup from "./components/Setup.jsx";
 import UseCases from "./components/UseCases.jsx";
@@ -119,10 +120,10 @@ export default function App() {
   // read those fragments, so without this a reset link silently renders the marketing page
   // and the token is never consumed (Login.jsx parses the hash on mount).
   const [showLogin, setShowLogin] = useState(
-    () => /^#(signin|demo|reset=.+|join=\w+|mfa_challenge=.+)$/.test(window.location.hash));
+    () => /^#(signin|signup|signup-personal|demo|reset=.+|join=\w+|mfa_challenge=.+)$/.test(window.location.hash));
   useEffect(() => {   // same-page hash navigation (e.g. the landing "See the live demo" link)
     const onHash = () => {
-      if (/^#(signin|demo|reset=.+|join=\w+|mfa_challenge=.+)$/.test(window.location.hash)) setShowLogin(true);
+      if (/^#(signin|signup|signup-personal|demo|reset=.+|join=\w+|mfa_challenge=.+)$/.test(window.location.hash)) setShowLogin(true);
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -402,6 +403,9 @@ export default function App() {
   }
   if (legalPath === "/demos") {
     return <Demos />;
+  }
+  if (legalPath === "/personal") {
+    return <PersonalSite />;
   }
   if (legalPath === "/coverage") {
     return <CoverageMatrix />;

@@ -69,6 +69,14 @@ PLANS: dict[str, dict] = {
         "features": frozenset({"device_setup"}),
         "quotas": {"users": 5, "api_keys": 10, "ingest_per_day": 2000},
     },
+    "personal": {
+        "label": "Personal",
+        # One person, free, no clock. The install is the same as an org's; what is missing is
+        # everything about other people: alerts to a team, MDM, SSO, SIEM. The org product is
+        # what happens when the third person on a team already has this.
+        "features": frozenset({"device_setup"}),
+        "quotas": {"users": 1, "api_keys": 5, "ingest_per_day": 5000},
+    },
     "team": {
         "label": "Team",
         # inference_hooks: Anthropic's server-side hook exists only for Claude Enterprise
