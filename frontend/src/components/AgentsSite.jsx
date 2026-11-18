@@ -100,12 +100,13 @@ export default function AgentsSite() {
         <div className="lp-wrap">
           <div className="lp-band-head">
             <span className="lp-eyebrow">New this month</span>
-            <h2 className="lp-h2">Four things no one else <span className="lp-hl">does for agents</span></h2>
+            <h2 className="lp-h2">Five things no one else <span className="lp-hl">does for agents</span></h2>
           </div>
           <div className="lp-cards lp-cards-2">
             <div className="lp-card"><h3>Undo</h3><p>The hook journals every file before an agent changes it. Containment gains an "Undo files" button, and <code>palivane-hook undo --since 30m</code> does the same from a terminal. Everyone can stop an agent; this puts the files back.</p></div>
             <div className="lp-card"><h3>Canary instructions</h3><p>One line pasted into a document. Agents that read it are recorded; agents that run the command it names have followed an order planted in content, and the finding names the document. A susceptibility score per agent, measured, not claimed.</p></div>
             <div className="lp-card"><h3>Commit attestations</h3><p>Commits made after an agent worked in a repo carry <code>Palivane-AI-Assisted</code> and <code>Palivane-Scan</code> trailers and are registered with the findings raised in that window, signed. "Which code was AI-written, and was it checked" is a <code>git log</code> away.</p></div>
+            <div className="lp-card"><h3>Capability passports</h3><p>A signed, short-lived token that names what one agent may do: which MCP servers and tools, which shell commands, which model providers. The hook presents it on every tool call and the gateway takes it as the credential; outside the scope the call is refused, whatever the role or the prompt says. Revoke it and the agent stops. An MCP server handed a passport can verify it with one request.</p></div>
             <div className="lp-card"><h3>Phantom dependencies</h3><p>Every install line a model suggests, and every one an agent is about to run, is checked against PyPI, npm, crates.io, RubyGems and the Go proxy. A package that does not exist, or appeared this week, is flagged before it is pasted or installed.</p></div>
           </div>
         </div>

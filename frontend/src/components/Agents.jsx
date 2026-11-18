@@ -88,6 +88,28 @@ export default function Agents({ tenant, onTenant }) {
     try { await api.agentUpdate(a.id, patch); await load(); }
     catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
   }
+  // Passports: a signed, short-lived scope (servers, tools, commands, providers) the hook
+  // and the gateway check before the action, independent of the role.
+  const [pass, setPass] = useState(null);           // agent being issued to
+  const [passDraft, setPassDraft] = useState({ ttl_minutes: 60, servers: "", tools: "", commands: "", providers: "", note: "" });
+  const [passports, setPassports] = useState([]);
+  const loadPassports = () => api.passports().then((r) => setPassports(r.passports)).catch(() => setPassports([]));
+  useEffect(() => { loadPassports(); }, []);
+  async function issuePassport() {
+    if (!pass) return;
+    const split = (v) => v.split(",").map((x) => x.trim()).filter(Boolean);
+    try {
+      const r = await api.issuePassport(pass.id, { ttl_minutes: Number(passDraft.ttl_minutes) || 60, servers: split(passDraft.servers),
+                                                   tools: split(passDraft.tools), commands: split(passDraft.commands),
+                                                   providers: split(passDraft.providers), note: passDraft.note });
+      setToken({ name: `${pass.name} (passport, ${r.expires_in / 60} min)`, token: r.token });
+      setPass(null); loadPassports();
+    } catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
+  }
+  async function revokePassport(id) {
+    try { await api.revokePassport(id); loadPassports(); }
+    catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
+  }
   async function mintToken(a) {
     try { const r = await api.agentToken(a.id, 60); setToken({ name: `${r.agent} (session, 1h)`, token: r.token }); }
     catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
@@ -245,6 +267,9 @@ export default function Agents({ tenant, onTenant }) {
                       {a.active && <button className="link-btn" style={{ marginLeft: 12 }}
                                            title="Mint a 1-hour session token (JWT), the long-lived ag_ credential stays offline"
                                            onClick={() => mintToken(a)}>Session token</button>}
+                      {a.active && <button className="link-btn" style={{ marginLeft: 12 }}
+                                           title="Issue a capability passport: a signed scope (servers, tools, commands, providers), at most a day"
+                                           onClick={() => setPass(a)}>Passport</button>}
                       {a.active && <button className="link-btn" style={{ marginLeft: 12, color: "var(--crit)" }}
                                            onClick={() => disable(a)}>Disable</button>}
                       {!a.active && <button className="link-btn" style={{ marginLeft: 12 }}
@@ -299,6 +324,56 @@ export default function Agents({ tenant, onTenant }) {
         </label>
         <button className="primary-btn slim" style={{ marginTop: 10 }} onClick={saveOidc}>Save workload identity</button>
       </div>
+      </div>
+
+      {pass && (
+        <div className="panel settings-card">
+          <h2>Passport for {pass.name}</h2>
+          <p className="muted" style={{ fontSize: 12 }}>A signed token naming what this agent may do, for at most a day. The hook
+             refuses tool calls outside it and the gateway refuses providers outside it, whatever the role says. Leave a field
+             blank to leave that dimension open. Globs allowed: <code>git *</code>, <code>read_*</code>. Hand it to the agent as
+             <code> PALIVANE_PASSPORT</code> for the hook, or as its gateway API key.</p>
+          <div className="field-grid">
+            <label>Valid for (minutes)<input type="number" min="1" max="1440" value={passDraft.ttl_minutes} onChange={(e) => setPassDraft((d) => ({ ...d, ttl_minutes: e.target.value }))} /></label>
+            <label>Providers<input placeholder="anthropic, openai, gemini" value={passDraft.providers} onChange={(e) => setPassDraft((d) => ({ ...d, providers: e.target.value }))} /></label>
+            <label>MCP servers<input placeholder="files-mcp, github-mcp" value={passDraft.servers} onChange={(e) => setPassDraft((d) => ({ ...d, servers: e.target.value }))} /></label>
+            <label>Tools<input placeholder="read_file, Bash, list_*" value={passDraft.tools} onChange={(e) => setPassDraft((d) => ({ ...d, tools: e.target.value }))} /></label>
+            <label className="field-wide">Shell commands<input placeholder="git *, npm test, pytest *" value={passDraft.commands} onChange={(e) => setPassDraft((d) => ({ ...d, commands: e.target.value }))} /></label>
+            <label className="field-wide">Note<input placeholder="release day, ticket SEC-42" value={passDraft.note} onChange={(e) => setPassDraft((d) => ({ ...d, note: e.target.value }))} /></label>
+          </div>
+          <div className="form-row" style={{ gap: 10 }}>
+            <button className="primary-btn slim" onClick={issuePassport}>Issue passport</button>
+            <button className="mini-btn" onClick={() => setPass(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div className="panel settings-card">
+        <h2>Passports <span className="count-pill">{passports.length}</span></h2>
+        <p className="muted" style={{ fontSize: 12 }}>Live capability scopes. An MCP server handed a passport can check it with
+           <code> GET /api/passports/verify?token=</code> and any capture key.</p>
+        {passports.length === 0 ? <p className="muted">No live passports.</p> : (
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead><tr><th>Agent</th><th>Scope</th><th>Issued</th><th>Expires</th><th>Uses</th><th>Note</th><th></th></tr></thead>
+              <tbody>
+                {passports.map((p) => (
+                  <tr key={p.id}>
+                    <td><strong>{p.agent}</strong></td>
+                    <td className="muted" style={{ fontSize: 12 }}>
+                      {["servers", "tools", "commands", "providers"].filter((k) => (p.scope[k] || []).length).map((k) => `${k}: ${p.scope[k].join(", ")}`).join(" · ") || "unrestricted"}
+                    </td>
+                    <td className="muted nowrap">{p.issued_by}</td>
+                    <td className="muted nowrap">{p.expires_at ? new Date(p.expires_at + (p.expires_at.endsWith("Z") ? "" : "Z")).toLocaleString() : "-"}</td>
+                    <td>{p.uses}</td>
+                    <td className="muted cell-clip">{p.note}</td>
+                    <td><button className="link-btn" style={{ color: "var(--crit)" }} onClick={() => revokePassport(p.id)}>Revoke</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <AttestedCommits />
