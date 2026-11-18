@@ -304,8 +304,6 @@ export const api = {
   planCatalog: () => req("/plans"),
   demoLogin: () => req("/auth/demo", { method: "POST" }),
   billing: () => req("/billing"),
-  billingCheckout: (seats, interval) =>
-    req("/billing/checkout", { method: "POST", body: JSON.stringify({ seats, interval }) }),
   billingPortal: () => req("/billing/portal", { method: "POST" }),
   upgradeRequest: () => req("/plans/upgrade"),
   requestUpgrade: (plan, seats, note) =>

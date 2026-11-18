@@ -1,20 +1,31 @@
-"""Plan / licensing tiers (Free · Team · Enterprise).
+"""Plan / licensing tiers (Personal, Free, Team, Enterprise, plus trial states).
 
-The plan is the licensing unit for both self-serve teams and enterprises: it decides
-which features a tenant may configure and the default resource quotas it inherits.
-Operator-set only (`python -m app.users set-plan`) — upgrades are sales-led ("contact
-us"), so there is deliberately no API for a tenant to change its own plan.
+The plan decides which features a tenant may configure and the default resource
+quotas it inherits.
 
-Two different kinds of "free" exist, deliberately:
+Who sets it:
 
-  * `trial`  — what a hosted signup gets: every feature, for 14 days, so a buyer can see
-    findings from their own traffic before paying. On expiry the tenant becomes `expired`
-    (see plan_of): gated features switch off and quotas tighten, but capture and detection
-    keep working — this is a security control, so a lapsed trial must never silently stop
-    protecting a fleet that is still pointed at it.
-  * `free`   — the source-available self-host path. An instance with no license file runs
-    here indefinitely (see app/licensing.py). Kept fully functional on purpose: running it
-    yourself is the honest free option, and it costs the vendor nothing.
+  * An operator, with `python -m app.users set-plan`.
+  * A signed license on a self-hosted instance (`app/licensing.py`), which can lift
+    the column.
+  * A tenant can ask (`POST /api/plans/upgrade`). That records a request for sales.
+    It does not change the plan. There is no card checkout: Team is the protected-user
+    bands on /pricing, which are ranges quoted after an assessment
+    (`app/billing.py` refuses a new Checkout Session). A Stripe webhook can still
+    move a subscription that already exists.
+
+Tiers:
+
+  * `trial` — hosted signup: every feature, for 14 days, so a buyer can see findings
+    from their own traffic. On expiry the tenant becomes `expired` (see plan_of):
+    gated features switch off and quotas tighten, but capture and detection keep
+    working. A lapsed trial must never silently stop protecting a fleet that is
+    still pointed at it.
+  * `personal` — one person, free, no clock. Device installers only (`device_setup`).
+  * `free` — unlicensed self-host, indefinitely (see app/licensing.py). Same feature
+    set as personal: `device_setup`, the per-OS installers. Alerts, MDM, SSO, SIEM,
+    and the rest stay off until a Team or Enterprise license is applied. A supported
+    self-host is an Enterprise deployment, not this tier.
 
 Quota precedence: tenant override column > plan default > PALIVANE_QUOTA_* global.
 Feature gates are enforced server-side at the endpoints that *configure* a gated
@@ -92,10 +103,9 @@ PLANS: dict[str, dict] = {
     },
 }
 
-PLAN_NAMES = tuple(PLANS)   # ("trial", "expired", "free", "team", "enterprise")
-# The tiers a customer can actually buy — the order used for "which plan do I need?" and
-# for the console's comparison table. `trial` and `expired` are states, not products, and
-# `free` is the self-host path, so none of them belong in a purchase comparison.
+PLAN_NAMES = tuple(PLANS)   # trial, expired, free, personal, team, enterprise
+# What a customer can buy. `trial` and `expired` are states. `free` is unlicensed
+# self-host. `personal` is the free one-person product. None of those are a purchase.
 PURCHASABLE = ("team", "enterprise")
 
 # Feature -> the plan named in the 402 message: the cheapest PURCHASABLE plan that has it

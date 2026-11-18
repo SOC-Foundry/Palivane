@@ -2,9 +2,10 @@
 
 Okta / Entra ID / OneLogin push joiners, movers, and leavers here, so the org's directory
 is the source of truth: a person removed from the IdP is deactivated in Palivane within
-the IdP's sync interval instead of whenever someone remembers. Users resource only —
-Palivane's authorization model is two roles, so Groups have nothing to map onto (role
-stays a console decision; SCIM-created users arrive as analysts).
+the IdP's sync interval instead of whenever someone remembers. Users resource only.
+Console roles are admin, analyst, and member. Groups are not provisioned: an IdP group
+has nothing to map onto yet, and role stays a console decision. SCIM-created users
+arrive as member (the create path sets role="member"; it does not grant analyst or admin).
 
 Auth: a per-tenant bearer token (`scim_…`), minted by an admin in the console (one active
 token per org; minting again rotates it). Stored as a SHA-256 hash — the plaintext is

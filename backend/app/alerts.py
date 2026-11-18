@@ -148,7 +148,7 @@ def notify_upgrade_request(webhook: str, org: str, plan: str, seats: int,
     if not webhook:
         return False
     text = (f":moneybag: *Palivane: upgrade request* — \"{_t(org)}\" wants the *{_t(plan)}* plan"
-            + (f" ({seats} seats)" if seats else "")
+            + (f" ({seats} protected users)" if seats else "")
             + f". Contact: {_t(contact or 'unknown')}."
             + (f"\n> {_t(note)}" if note else "")
             + "\nWork the queue in the operator console (/admin).")

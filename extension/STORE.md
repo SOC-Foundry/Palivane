@@ -8,8 +8,11 @@ account-bound and must be done from your own developer account.
 
 - **Icons**, `icons/icon-{16,32,48,128}.png`, wired into `manifest.json` (`icons` +
   `action.default_icon`). The 128px icon is what the store requires.
-- **Manifest V3**, single-purpose, no remote code, `injected.js` is packaged and loaded
-  via `web_accessible_resources` (reviewers reject extensions that fetch remote JS).
+- **Manifest V3**, single-purpose, no remote code. `injected.js` is packaged in the zip
+  and registered as a MAIN-world content script (`"world": "MAIN"` in `manifest.json`).
+  It is not fetched at runtime, and it is not listed under `web_accessible_resources`.
+  The isolated-world `content.js` talks to it over a per-page channel. Reviewers reject
+  extensions that fetch remote JS; this one does not.
 - **Packaging**, `./build.sh` produces `palivane-shadow-ai-guard-<version>.zip` with the
   icons included (and fails if the 128px icon is missing).
 

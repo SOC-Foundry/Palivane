@@ -325,10 +325,11 @@ were never going to buy.
 tested price. Nobody has paid any of them. The assessment is what tests them, which is one
 more reason it is the entry offer rather than a subscription page.
 
-**Also unsettled: the product still sells the old price.** Self-serve Stripe checkout at
-$12/user is live in the console (`STRIPE_PUBLISHABLE_KEY` is set in production). Until that
-is turned off or repriced, the site and the product disagree. See the note in the PR that
-made this change.
+**The console no longer sells the old price.** Self-serve Stripe Checkout at $12/user
+is closed (`backend/app/billing.py`). Settings offers an assessment and a sales
+conversation, the same path as `/pricing`. A subscription that already exists can
+still open the Stripe customer portal. The bands themselves are still a hypothesis:
+nobody has paid one, and there is no Stripe price id for a band.
 
 Marketplaces matter to this question more than they look: enterprise procurement burns
 committed cloud spend, which makes a marketplace listing *effectively discounted* against

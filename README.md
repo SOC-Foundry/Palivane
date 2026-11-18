@@ -954,7 +954,7 @@ backend/
     detectors/        # prompt-threats (llm_io), shadow-ai (ai_usage), mcp-guard (mcp),
                       #   dep-guard + ext-guard (deps/ide supply chain), secrets-at-rest
                       #   (secrets), LLM judge (Claude/GPT/Gemini)
-    security.py       # password hashing (PBKDF2) + HS256 JWTs + API keys
+    security.py       # password hashing (argon2id; legacy PBKDF2 verifies and upgrades) + HS256 JWTs + API keys
     auth.py           # auth deps + /api/auth (+ /extension/token) + /api/users + /api/apikeys
     gateway.py        # LLM gateway: OpenAI/Anthropic/Gemini + agentic tool_use enforcement (req/resp/stream)
     osv.py            # OSV.dev advisory lookup for pinned deps (opt-in CVE scan)
@@ -975,7 +975,8 @@ backend/
   migrations/         # Alembic schema migrations (api_keys, enrollment_tokens, tenant mcp allowlist)
   Dockerfile          # backend image (+ docker-entrypoint.sh: wait-db, migrate, seed)
   tests/              # pytest: detectors, scoring, engine, gateway (+ agentic/stream), mcp-guard,
-                      #         dep-guard, ext-guard, mcp/deps/config scans, policy-pack, auth, eval… (287 tests)
+                      #         dep-guard, ext-guard, scans, policy-pack, auth, billing, eval…
+                      #         (~3,600 test functions; run `pytest` in backend/)
 docker-compose.yml    # db + backend + web (local hosted stack)
 deploy/               # systemd unit (api) + env example
 cli/                  # palivane-connect (self-serve onboarding: Claude Code + Cursor) + local
@@ -1007,10 +1008,19 @@ extension needs for the Chrome Web Store / Edge Add-ons listing.
 
 ## Next steps
 
-- **Tune detection** on a partner's corpus via the triage→corpus feedback loop; add
-  detectors (deepfake-audio metadata, attachment hash intel, more PII locales).
-- **More sources** behind the `Connector` protocol (SIEM webhook, Slack, MS Teams).
-- **Per-tenant config** — sanctioned-tools / reputation / gateway-policy toggles are
-  currently global env; move them per-tenant for true multi-tenancy.
-- **Device-identity tagging** — mTLS device certs on the proxy + managed-browser
-  attributes in the extension, to stamp findings per device and tighten coverage.
+Per-tenant policy is already in the console. Sanctioned tools, gateway enforce,
+retention, quotas, and upstream keys are org settings (`PATCH /api/tenant`, Settings),
+not a process-wide env. Slack, Teams, and SIEM delivery have shipped
+(`backend/app/saas_connectors.py`, `backend/app/siem.py`).
+
+Still ahead, and tracked in the docs rather than implied as unbuilt:
+
+- Detection quality on a real tenant's labels. The triage → corpus loop is the path.
+  The on-box classifier corroborates a rule; it does not carry a verdict alone until
+  the gate in [`docs/ml-classifier-baseline.md`](docs/ml-classifier-baseline.md) passes.
+- Live proof for the connectors and agentic-browser parsers that are built and not yet
+  run against a real tenant
+  ([`docs/connector-smoke-tests.md`](docs/connector-smoke-tests.md),
+  [`docs/roadmap-frontier.md`](docs/roadmap-frontier.md)).
+- Device identity on a finding (mTLS device certs on the proxy, managed-browser
+  attributes on the extension). That stamp is not in the capture path today.

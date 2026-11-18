@@ -1,5 +1,6 @@
-"""Self-serve billing: Stripe Checkout for Team. Dark until configured; webhook-driven
-plan state; Enterprise never auto-touched."""
+"""Billing: new card checkout is closed (Team is a protected-user quote). Stripe stays
+for webhooks and the customer portal of a subscription that already exists. Enterprise
+is never auto-downgraded."""
 
 from __future__ import annotations
 
@@ -42,40 +43,26 @@ def _tenant(db_factory, plan=None):
 
 def test_billing_dark_by_default(client):
     r = client.get("/api/billing")
-    assert r.status_code == 200 and r.json()["enabled"] is False
+    body = r.json()
+    assert r.status_code == 200 and body["enabled"] is False
+    assert body["checkout"] is False
     assert client.post("/api/billing/checkout", json={}).status_code == 400
     assert client.post("/api/billing/portal").status_code == 400
 
 
-def test_checkout_returns_embedded_client_secret(client, db_factory, monkeypatch):
+def test_checkout_stays_closed_when_stripe_is_configured(client, db_factory, monkeypatch):
+    """Price ids in the environment are the old per-user prices. Configuring them
+    must not open Checkout, and must not call Stripe."""
     _enable(monkeypatch)
-    seen = {}
-
-    def fake_stripe(method, path, params=None):
-        seen.update({"method": method, "path": path, "params": params})
-        return {"client_secret": "cs_test_embedded_secret_123"}
-
-    monkeypatch.setattr(billing, "_stripe", fake_stripe)
+    called = {}
+    monkeypatch.setattr(billing, "_stripe", lambda *a, **k: called.update(called=True))
     _tenant(db_factory, plan="free")
     r = client.post("/api/billing/checkout", json={"interval": "year", "seats": 25})
-    assert r.status_code == 200 and r.json()["client_secret"].startswith("cs_test_")
-    assert seen["path"] == "/checkout/sessions"
-    assert seen["params"]["ui_mode"] == "embedded_page"           # in-page, not a redirect
-    assert "return_url" in seen["params"] and "success_url" not in seen["params"]
-    assert seen["params"]["line_items[0][price]"] == "price_y1"
-    assert seen["params"]["line_items[0][quantity]"] == 25
-    assert seen["params"]["mode"] == "subscription"
-
-
-def test_checkout_seats_floor_is_member_count(client, db_factory, monkeypatch):
-    _enable(monkeypatch)
-    captured = {}
-    monkeypatch.setattr(billing, "_stripe",
-                        lambda m, p, params=None: captured.update(params) or {"client_secret": "cs_x"})
-    _tenant(db_factory, plan="free")
-    # acme has 1 user; asking for 0 seats floors to max(1, members)=1
-    r = client.post("/api/billing/checkout", json={"seats": 0})
-    assert r.status_code == 200 and captured["line_items[0][quantity]"] == 1
+    assert r.status_code == 400
+    assert r.json()["detail"] == billing.CHECKOUT_CLOSED
+    assert "called" not in called
+    status = client.get("/api/billing").json()
+    assert status["enabled"] is True and status["checkout"] is False
 
 
 def test_webhook_rejects_bad_and_stale_signatures(raw_client, monkeypatch):
@@ -226,18 +213,21 @@ def test_second_checkout_keeps_the_live_subscription(client, raw_client, db_fact
     db.close()
 
 
-def test_checkout_blocked_for_enterprise_and_double_subscribe(client, db_factory, monkeypatch):
+def test_checkout_closed_for_enterprise_and_for_an_existing_subscription(client, db_factory,
+                                                                         monkeypatch):
     _enable(monkeypatch)
     tid = _tenant(db_factory)
     db = db_factory()
     db.get(Tenant, tid).plan = "enterprise"
     db.commit(); db.close()
-    assert client.post("/api/billing/checkout", json={}).status_code == 400
+    assert client.post("/api/billing/checkout", json={}).json()["detail"] == billing.CHECKOUT_CLOSED
     db = db_factory()
     t = db.get(Tenant, tid)
     t.plan, t.stripe_subscription_id = "team", "sub_live"
     db.commit(); db.close()
-    assert client.post("/api/billing/checkout", json={}).status_code == 409
+    # An existing subscription is managed in the portal. Checkout does not grow it.
+    r = client.post("/api/billing/checkout", json={"seats": 40})
+    assert r.status_code == 400 and r.json()["detail"] == billing.CHECKOUT_CLOSED
 
 
 def test_csp_opens_for_stripe_only_when_configured(raw_client, monkeypatch):
@@ -255,4 +245,5 @@ def test_csp_opens_for_stripe_only_when_configured(raw_client, monkeypatch):
 def test_billing_status_exposes_publishable_key(client, monkeypatch):
     _enable(monkeypatch)
     monkeypatch.setattr(billing.settings, "stripe_publishable_key", "pk_live_abc")
-    assert client.get("/api/billing").json()["publishable_key"] == "pk_live_abc"
+    body = client.get("/api/billing").json()
+    assert body["publishable_key"] == "pk_live_abc" and body["checkout"] is False
