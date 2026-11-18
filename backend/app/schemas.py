@@ -81,6 +81,22 @@ class AIUsageIngest(BaseModel):
     scan_failed: Any = None
 
 
+class AIAttachmentIngest(BaseModel):
+    """A file or screenshot the browser extension captured on its way to ChatGPT, Claude
+    or Gemini. The bytes are base64; the backend turns them into text (documents directly,
+    images through the local OCR path) and scores that text like a prompt. An unreadable
+    file is a partial allow, never a block."""
+    filename: str = Field(default="attachment", max_length=256)
+    mime: str = Field(default="", max_length=128)
+    data_b64: str = Field(min_length=1, max_length=7_000_000)
+    destination: str = ""
+    user: str = ""
+    tool: str = ""
+    endpoint: str = Field(default="", max_length=200)
+    # Same fail-open tally as a prompt, typed Any so a bad report cannot 422 the scan.
+    scan_failed: Any = None
+
+
 class JustifyRequest(BaseModel):
     """A blocked user's business justification — recorded on the finding, exchanged for a
     short-lived override token that lets the SAME content through once policy allows."""

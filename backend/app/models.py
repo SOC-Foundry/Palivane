@@ -119,6 +119,9 @@ class Tenant(Base):
     ticket_token = Column(String(2048), default="")
     ticket_project = Column(String(64), default="")     # Jira project key / ServiceNow table
     ticket_issue_type = Column(String(64), default="")  # Jira issue type (default Task)
+    # Webhook credential for tracker → Palivane status (app/tickets.py). Sealed at rest.
+    # The admin copies a URL that carries it; polling is the fallback when it never arrives.
+    ticket_webhook_secret = Column(String(2048), default="")
     # SIEM/data-lake delivery to S3 (independent of the HTTP push above): batched-ish per-
     # finding JSON objects to a bucket a Panther S3 log source / Athena / Snowflake can ingest.
     siem_s3_bucket = Column(String(255), default="")
@@ -1646,7 +1649,9 @@ class UsedSamlAssertion(Base):
 class Ticket(Base):
     """A ticket Palivane created in the org's tracker for one exposure or containment
     (app/tickets.py). One per (kind, ref_id): the tracker is asked once, and the console
-    shows the link instead of a second Create button."""
+    shows the link instead of a second Create button. `status` follows the tracker
+    (open | resolved) and is kept in step both ways: a webhook or a poll when the
+    tracker moves, a push when Palivane does."""
 
     __tablename__ = "tickets"
 
@@ -1657,13 +1662,20 @@ class Ticket(Base):
     tracker = Column(String(16), default="")    # jira | servicenow
     key = Column(String(64), default="")        # PROJ-123 / INC0010042
     url = Column(String(1024), default="")
+    external_id = Column(String(64), default="")  # Jira issue id / ServiceNow sys_id
+    status = Column(String(16), default="open")  # open | resolved
+    external_status = Column(String(64), default="")  # the tracker's own status name
+    synced_at = Column(DateTime, nullable=True)
     created_by = Column(String(320), default="")
     created_at = Column(DateTime, default=_utcnow)
     __table_args__ = (UniqueConstraint("tenant_id", "kind", "ref_id", name="uq_ticket_ref"),)
 
     def to_dict(self) -> dict:
         return {"id": self.id, "kind": self.kind, "ref_id": self.ref_id, "tracker": self.tracker,
-                "key": self.key, "url": self.url, "created_by": self.created_by,
+                "key": self.key, "url": self.url, "status": self.status or "open",
+                "external_status": self.external_status or "",
+                "created_by": self.created_by,
+                "synced_at": self.synced_at.isoformat() if self.synced_at else None,
                 "created_at": self.created_at.isoformat() if self.created_at else None}
 
 

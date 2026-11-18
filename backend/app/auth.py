@@ -1844,6 +1844,7 @@ def update_tenant(body: TenantUpdate, current: User = Depends(require_admin),
         tenant.ticket_kind = body.ticket_kind
         if not body.ticket_kind:   # switching ticketing off drops the credential too
             tenant.ticket_token = ""
+            tenant.ticket_webhook_secret = ""
     if body.ticket_url is not None:
         url = body.ticket_url.strip().rstrip("/")
         if url:

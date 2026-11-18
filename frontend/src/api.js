@@ -249,6 +249,8 @@ export const api = {
   // Undo: the target's devices put the agent's files back from when the containment began.
   containmentRevert: (id) => req(`/containments/${id}/revert`, { method: "POST", body: JSON.stringify({}) }),
   testTickets: () => req("/tickets/test", { method: "POST" }),
+  ticketWebhooks: () => req("/tickets/webhooks"),
+  rotateTicketWebhooks: () => req("/tickets/webhooks/rotate", { method: "POST" }),
   // The evidence pack: a zip of the assessment, registers, audit trails and precision readout.
   exportEvidence: async (days = 30) => {
     const res = await rawFetch(`/export/evidence?days=${days}`);

@@ -48,6 +48,7 @@ from .schemas import ExposureStatusIn, SecretRotatedIn
 from .schemas import (
     A2AIngest, CommitAttestIn, ReplayIn, PassportIn,
     AIUsageIngest,
+    AIAttachmentIngest,
     ContainmentCreate,
     JustifyRequest,
     AnalyzeRequest,
@@ -206,6 +207,9 @@ async def lifespan(_app: FastAPI):
                     # Fleet health: page when a sensor goes dark or a revoked key keeps
                     # being presented (edge-triggered inside; safe on every tick).
                     await asyncio.to_thread(alerts.run_fleet_alerts, db)
+                    # Tracker status for tickets a webhook did not deliver. Best-effort.
+                    from .tickets import poll_trackers
+                    await asyncio.to_thread(poll_trackers, db)
                     # Trial lifecycle notices (7-day / 2-day / expiry emails). Cheap: one
                     # query over plan="trial" tenants; per-stage dedupe in run_notices.
                     from .trial import run_notices
@@ -1541,7 +1545,7 @@ def _agent_attestation(x_palivane_token: str, x_palivane_agent: str, tenant_id, 
 def _score_ai_usage(content: str, actor: str, tool: str, destination: str,
                     tenant_id: int | None, agent: str, db: Session,
                     endpoint: str = "", use_judge: bool = True,
-                    claimed: bool = False) -> tuple[dict, dict]:
+                    claimed: bool = False, subject: str = "") -> tuple[dict, dict]:
     """Score one ai-usage capture on the AI_USAGE surface + feed discovery. Shared by the
     ai-usage ingest endpoint and the OTLP receiver so their behavior can't drift. Returns
     (verdict, metadata)."""
@@ -1552,7 +1556,7 @@ def _score_ai_usage(content: str, actor: str, tool: str, destination: str,
         tenant_id, db, "sanctioned_ai_tools", settings.sanctioned_ai_tools)
     meta["custom_pii"] = _tenant_or_global(tenant_id, db, "custom_pii_patterns", "")
     item = AnalysisInput(
-        content=content, sender=actor, channel=tool or "ai_tool",
+        content=content, sender=actor, channel=tool or "ai_tool", subject=subject,
         surface=Surface.AI_USAGE, metadata=meta, sender_claimed=claimed,
     )
     from .policy import detect_tool, signal_filter_for
@@ -1662,53 +1666,9 @@ def _ingest_ai_response(body: AIUsageIngest, actor: str, claimed: bool, tenant_i
             "signals": result["signals"], "finding_id": result["finding_id"], "direction": "response"}
 
 
-@app.post("/api/ingest/ai-usage")
-def ingest_ai_usage(
-    body: AIUsageIngest,
-    x_palivane_token: str = Header(default=""),
-    x_palivane_agent: str = Header(default=""),
-    x_palivane_client: str = Header(default=""),
-    user_agent: str = Header(default=""),
-    db: Session = Depends(get_db),
-):
-    """Score content a browser extension / proxy captured on its way to an AI tool.
-
-    Authenticated by a per-tenant API key (`ak_…`, minted in the console) or the shared
-    static EXTENSION_INGEST_TOKEN — not a user JWT — so it can be deployed via policy.
-    Returns an action the client enforces: allow / warn / block."""
-    # The extension cannot set User-Agent. Its client token arrives on X-Palivane-Client
-    # so a fail-open it reports later is attributed to palivane-extension in Fleet.
-    user_agent = _capture_client_ua(user_agent, x_palivane_client)
-    tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
-    held = _containment_answer(db, tenant_id, _attributed_actor(body.user, default_actor),
-                               x_palivane_token, x_palivane_agent, "ai-usage", body.tool or "",
-                               user_agent, body.scan_failed)
-    if held:
-        return held
-    over = _ingest_over_budget(db, tenant_id)
-    if over:
-        return _over_quota_verdict(db, tenant_id, body.content,
-                                   _attributed_actor(body.user, default_actor),
-                                   Surface.AI_USAGE, body.tool or "", over[0])
-    actor = _attributed_actor(body.user, default_actor)
-    claimed = _actor_claimed(actor, default_actor, default_claimed)
-    agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
-    if body.parse_miss:
-        # The client recognised the event and got nothing out of it — vendor shape drift.
-        # There is no content to score, so this exists purely to make the drift visible:
-        # without it a fail-open client keeps checking in and the heartbeat stays green
-        # while coverage is gone. Answer with the allow shape a fail-open client expects.
-        _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool, user_agent,
-                          parse_miss=True, scan_failed=body.scan_failed)
-        return {"action": "allow", "risk_score": 0, "severity": "none", "signals": [],
-                "finding_id": None, "parse_miss": True}
-    _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool, user_agent,
-                      scan_failed=body.scan_failed)
-    if body.direction == "response":
-        return _ingest_ai_response(body, actor, claimed, tenant_id, agent, db)
-    result, meta = _score_ai_usage(body.content, actor, body.tool, body.destination,
-                                   tenant_id, agent, db, endpoint=body.endpoint,
-                                   claimed=claimed)
+def _ai_usage_decision(body, result, meta, actor, tenant_id, agent, db, user_agent, claimed):
+    """The allow/warn/block answer for one scored ai-usage capture. Shared by prompt ingest
+    and attachment ingest so a file and a typed prompt follow one policy."""
     action, force_block, coached, redacted_content = _prompt_verdict(
         result, body.content, tenant_id, db)
     # Route instead of block: the org has a private lane for this provider and the verdict
@@ -1817,6 +1777,168 @@ def ingest_ai_usage(
         # (the actual refresh happens at session start via palivane-posture, never mid-call).
         "client_latest": _client_latest(user_agent),
     }
+
+
+
+@app.post("/api/ingest/ai-usage")
+def ingest_ai_usage(
+    body: AIUsageIngest,
+    x_palivane_token: str = Header(default=""),
+    x_palivane_agent: str = Header(default=""),
+    x_palivane_client: str = Header(default=""),
+    user_agent: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Score content a browser extension / proxy captured on its way to an AI tool.
+
+    Authenticated by a per-tenant API key (`ak_…`, minted in the console) or the shared
+    static EXTENSION_INGEST_TOKEN — not a user JWT — so it can be deployed via policy.
+    Returns an action the client enforces: allow / warn / block."""
+    # The extension cannot set User-Agent. Its client token arrives on X-Palivane-Client
+    # so a fail-open it reports later is attributed to palivane-extension in Fleet.
+    user_agent = _capture_client_ua(user_agent, x_palivane_client)
+    tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
+    held = _containment_answer(db, tenant_id, _attributed_actor(body.user, default_actor),
+                               x_palivane_token, x_palivane_agent, "ai-usage", body.tool or "",
+                               user_agent, body.scan_failed)
+    if held:
+        return held
+    over = _ingest_over_budget(db, tenant_id)
+    if over:
+        return _over_quota_verdict(db, tenant_id, body.content,
+                                   _attributed_actor(body.user, default_actor),
+                                   Surface.AI_USAGE, body.tool or "", over[0])
+    actor = _attributed_actor(body.user, default_actor)
+    claimed = _actor_claimed(actor, default_actor, default_claimed)
+    agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
+    if body.parse_miss:
+        # The client recognised the event and got nothing out of it — vendor shape drift.
+        # There is no content to score, so this exists purely to make the drift visible:
+        # without it a fail-open client keeps checking in and the heartbeat stays green
+        # while coverage is gone. Answer with the allow shape a fail-open client expects.
+        _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool, user_agent,
+                          parse_miss=True, scan_failed=body.scan_failed)
+        return {"action": "allow", "risk_score": 0, "severity": "none", "signals": [],
+                "finding_id": None, "parse_miss": True}
+    _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool, user_agent,
+                      scan_failed=body.scan_failed)
+    if body.direction == "response":
+        return _ingest_ai_response(body, actor, claimed, tenant_id, agent, db)
+    result, meta = _score_ai_usage(body.content, actor, body.tool, body.destination,
+                                   tenant_id, agent, db, endpoint=body.endpoint,
+                                   claimed=claimed)
+    return _ai_usage_decision(body, result, meta, actor, tenant_id, agent, db,
+                              user_agent, claimed)
+
+
+def _attachment_name(name: str) -> str:
+    """A filename safe to store as a finding subject: no path, no NUL, bounded."""
+    name = (name or "attachment").replace("\\", "/").rsplit("/", 1)[-1]
+    name = name.replace("\x00", "").strip()[:200]
+    return name or "attachment"
+
+
+def _attachment_unread(code: str, tenant_id, actor: str, tool: str, db: Session,
+                       claimed: bool) -> dict:
+    """An attachment the detectors could not read. Fail open, and say so: the client
+    must not present this as a clean check, and must not block on it."""
+    return {"action": "allow", "risk_score": 0, "severity": "none", "signals": [],
+            "finding_id": None, "attachment": True, "partial": True, "unread": code,
+            "force_block": False, "coached": False,
+            "enforce": _client_enforce_for(tenant_id, actor, tool, db, claimed=claimed)}
+
+
+@app.post("/api/ingest/ai-attachment")
+def ingest_ai_attachment(
+    body: AIAttachmentIngest,
+    x_palivane_token: str = Header(default=""),
+    x_palivane_agent: str = Header(default=""),
+    x_palivane_client: str = Header(default=""),
+    user_agent: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Score a file or screenshot captured on its way to an AI tool.
+
+    Same authentication, containment, quota, monitor/enforce verdict and fail-open shape
+    as `/api/ingest/ai-usage`. Text and documents go through the shared extractor; images
+    go through local OCR (`app/ocr.py`) and only when that is enabled. The raw bytes are
+    not stored: the extracted text is what a finding retains, under the org's content policy.
+    An image with OCR off, a format this cannot open, or a file over 5 MB is allowed and
+    marked unread — never blocked for being unreadable."""
+    import base64
+
+    from .doc_extract import extract_detail
+    from .schemas import MAX_CONTENT
+
+    user_agent = _capture_client_ua(user_agent, x_palivane_client)
+    tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
+    actor = _attributed_actor(body.user, default_actor)
+    claimed = _actor_claimed(actor, default_actor, default_claimed)
+    held = _containment_answer(db, tenant_id, actor, x_palivane_token, x_palivane_agent,
+                               "ai-usage", body.tool or "", user_agent, body.scan_failed)
+    if held:
+        held["attachment"] = True
+        return held
+    agent = _capture_agent(x_palivane_token, x_palivane_agent, tenant_id, db)
+    name = _attachment_name(body.filename)
+    try:
+        raw = base64.b64decode(body.data_b64, validate=False)
+    except Exception:
+        raw = None
+    if raw is None or len(raw) > 5_000_000:
+        _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool or "", user_agent,
+                          scan_failed=body.scan_failed)
+        return _attachment_unread("too_large" if raw else "unreadable", tenant_id, actor,
+                                  body.tool, db, claimed)
+    if not raw:
+        _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool or "", user_agent,
+                          scan_failed=body.scan_failed)
+        return {"action": "allow", "risk_score": 0, "severity": "none", "signals": [],
+                "finding_id": None, "attachment": True, "force_block": False,
+                "enforce": _client_enforce_for(tenant_id, actor, body.tool, db, claimed=claimed)}
+    extracted = extract_detail(name, raw, body.mime or "")
+    if not (extracted.text or "").strip():
+        # An image with nothing read (OCR off, OCR blank, or a format we cannot open) is
+        # unread, not clean. An empty text file has nothing in it.
+        from .doc_extract import kind_of
+        kind = kind_of(name, body.mime or "")
+        if kind == "image" or not kind:
+            _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool or "", user_agent,
+                              scan_failed=body.scan_failed)
+            return _attachment_unread("image" if kind == "image" else "unreadable",
+                                      tenant_id, actor, body.tool, db, claimed)
+        _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool or "", user_agent,
+                          scan_failed=body.scan_failed)
+        return {"action": "allow", "risk_score": 0, "severity": "none", "signals": [],
+                "finding_id": None, "attachment": True, "force_block": False,
+                "enforce": _client_enforce_for(tenant_id, actor, body.tool, db, claimed=claimed)}
+    text = extracted.text
+    truncated = len(text) > MAX_CONTENT or extracted.partial
+    text = text[:MAX_CONTENT]
+    over = _ingest_over_budget(db, tenant_id)
+    if over:
+        # Same rule as a prompt over quota: a confirmed leak still blocks, nothing is stored.
+        verdict = _over_quota_verdict(db, tenant_id, text, actor, Surface.AI_USAGE,
+                                      body.tool or "", over[0])
+        verdict["attachment"] = True
+        return verdict
+    _record_heartbeat(db, tenant_id, actor, "ai-usage", body.tool or "", user_agent,
+                      scan_failed=body.scan_failed)
+    # A synthetic prompt so the shared decision (justify, redact, coaching, enforce) applies.
+    # The filename is the subject a reviewer sees; the bytes never are.
+    scored = AIUsageIngest(content=text, destination=body.destination, user=body.user,
+                           tool=body.tool, endpoint=body.endpoint)
+    result, meta = _score_ai_usage(text, actor, body.tool, body.destination, tenant_id, agent,
+                                   db, endpoint=body.endpoint, claimed=claimed,
+                                   subject=f"attachment: {name}")
+    verdict = _ai_usage_decision(scored, result, meta, actor, tenant_id, agent, db,
+                                 user_agent, claimed)
+    verdict["attachment"] = True
+    verdict["extract"] = extracted.how or ""
+    if truncated and verdict.get("action") == "allow" and not verdict.get("force_block"):
+        verdict["partial"] = True
+        verdict["unread"] = "partial"
+    return verdict
 
 
 @app.post("/api/ingest/a2a")
@@ -3844,6 +3966,8 @@ def set_exposure_status(exposure_id: int, body: ExposureStatusIn,
     audit_log.record(db, current.tenant_id, current.email, "exposure.status",
                      target=str(exposure_id), detail={"status": body.status, "finding_id": row.finding_id,
                                                       **({"reason": body.reason} if body.reason else {})})
+    from . import tickets
+    tickets.on_exposure(db, db.get(Tenant, current.tenant_id), row)
     f = db.get(Finding, row.finding_id)
     return exposures.summarise(row, f)
 
@@ -3909,6 +4033,42 @@ def tickets_test(current: User = Depends(require_admin), db: Session = Depends(g
     from . import tickets
     ok, detail = tickets.test_connection(db.get(Tenant, current.tenant_id), db)
     return {"ok": ok, "detail": detail}
+
+
+@app.get("/api/tickets/webhooks")
+def ticket_webhooks(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """The Jira and ServiceNow webhook URLs. The token in each URL is the credential."""
+    from . import tickets
+    return tickets.webhook_urls(db, db.get(Tenant, current.tenant_id))
+
+
+@app.post("/api/tickets/webhooks/rotate")
+def ticket_webhooks_rotate(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Invalidate the webhook URL and mint another. Audited; the new token is not."""
+    from . import audit_log, tickets
+    tenant = db.get(Tenant, current.tenant_id)
+    urls = tickets.rotate_webhook_secret(db, tenant)
+    audit_log.record(db, current.tenant_id, current.email, "ticket.webhook_rotate")
+    return urls
+
+
+@app.post("/api/webhooks/tickets/{tracker}/{slug}")
+async def ticket_webhook(tracker: str, slug: str, request: Request,
+                         db: Session = Depends(get_db)):
+    """Jira or ServiceNow telling us a ticket moved. Polling covers the ones that never
+    arrive. A bad token is 401; an authentic event we do not recognise is 200 so the
+    tracker does not retry it."""
+    from . import tickets
+    token = (request.headers.get("x-palivane-webhook-token")
+             or request.query_params.get("token") or "")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    try:
+        return tickets.receive_webhook(db, tracker, slug, token, body)
+    except tickets.WebhookRejected:
+        raise HTTPException(status_code=401, detail="invalid webhook token")
 
 
 @app.get("/api/findings/{finding_id}/secrets")
@@ -4033,6 +4193,8 @@ def update_status(finding_id: int, body: StatusUpdate,
         detail["chains_dismissed"] = chains
     audit_log.record(db, current.tenant_id, current.email, "finding.status",
                      target=str(finding_id), detail=detail)
+    from . import tickets
+    tickets.on_finding(db, db.get(Tenant, current.tenant_id), row)
     return {"id": finding_id, "status": row.status, "chains_dismissed": chains}
 
 
@@ -4068,6 +4230,10 @@ def bulk_update_status(body: BulkStatusUpdate, current: User = Depends(require_a
                      detail={"status": body.status, "count": n, "ids": body.ids[:50],
                              **({"reason": body.reason} if body.status == "dismissed" and body.reason else {}),
                              **({"chains_dismissed": chains} if chains else {})})
+    from . import tickets
+    rows = (db.query(Finding).filter(Finding.tenant_id == current.tenant_id,
+                                     Finding.id.in_(body.ids)).all())
+    tickets.on_findings(db, db.get(Tenant, current.tenant_id), rows)
     return {"updated": n, "status": body.status, "chains_dismissed": chains}
 
 
@@ -5420,6 +5586,8 @@ def containments_release(containment_id: int, current: User = Depends(require_ad
         row = containment.release(db, current.tenant_id, containment_id, current.email)
     except containment.ContainmentError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    from . import tickets
+    tickets.on_containment(db, db.get(Tenant, current.tenant_id), row)
     return row.to_dict()
 
 

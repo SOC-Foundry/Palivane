@@ -303,6 +303,51 @@ try {
   check("an SSN past character 8,000 of a form-encoded (Gemini-style) send is still found and blocked", blocked(r), JSON.stringify(r));
   r = await send("gemini, form-encoded, short", { host: "gemini.google.com" });
   check("a short form-encoded send is blocked", blocked(r), JSON.stringify(r));
+
+  // ---- 3c. files and screenshots on ChatGPT, Claude and Gemini ------------------------------
+  // The upload is its own request, before any prompt. A text file is scanned like a prompt
+  // (same block, including a confirmed leak with enforce off). An image with OCR off is not
+  // blocked; it is allowed and marked unread.
+  async function attach(label, { host = "chatgpt.com", text = SSN, mode = "attach", ext = {}, extraWait = 0 } = {}) {
+    await fetch(CTL + "/__log", { method: "DELETE" });
+    await setConfig({ backendUrl: PALI, token: key, user: "dev@demo.local", enforce: true, ...ext });
+    await sw.evaluate(() => chrome.storage.local.set({ lastVerdict: null, lastSkip: null, blockCount: 0 }));
+    const page = await ctx.newPage();
+    await page.goto(`https://${host}/?mode=${mode}`);
+    if (text) await page.fill("#prompt", text);
+    await page.click("#send");
+    await page.waitForFunction(() => document.getElementById("out").textContent !== "", null, { timeout: 20000 }).catch(() => {});
+    await page.waitForTimeout(700 + extraWait);
+    const ui = await page.evaluate(() => ({
+      modal: !!document.getElementById("palivane-modal"),
+      title: (document.querySelector("#palivane-modal [role=alertdialog] > div")?.innerText || "").replace(/\s+/g, " ").trim(),
+      notice: (document.getElementById("palivane-notice")?.innerText || "").replace(/\s+/g, " "),
+      banner: (document.getElementById("palivane-banner")?.innerText || "").replace(/\s+/g, " "),
+    }));
+    const log = await (await fetch(CTL + "/__log")).json();
+    const needle = text ? text.slice(-10) : "";
+    const arrived = mode === "attach-shot"
+      ? log.some((x) => /files|upload/.test(x.path))
+      : log.some((x) => needle && x.body.includes(needle));
+    await page.close();
+    return { label, ...ui, arrived };
+  }
+  r = await attach("chatgpt file");
+  check("an SSN in a file attached on chatgpt.com is blocked and the file does not arrive", blocked(r) && /file/.test(r.title), JSON.stringify(r));
+  r = await attach("claude file", { host: "claude.ai" });
+  check("an SSN in a file attached on claude.ai is blocked and does not arrive", blocked(r), JSON.stringify(r));
+  r = await attach("gemini file", { host: "gemini.google.com" });
+  check("an SSN in a file attached on gemini.google.com is blocked and does not arrive", blocked(r), JSON.stringify(r));
+  r = await attach("benign file", { text: "please summarise this paragraph for me" });
+  check("a benign file is uploaded with no block", wentOut(r) && !r.banner && !r.notice, JSON.stringify(r));
+  r = await attach("file, monitor", { ext: { enforce: false } });
+  check("a confirmed PII leak in a file blocks even with the extension in monitor mode", blocked(r), JSON.stringify(r));
+  r = await attach("screenshot, ocr off", { mode: "attach-shot", text: "" });
+  check("a screenshot with OCR off is uploaded (fail open) and marked not read", r.arrived && !r.modal && /attached image was not read/.test(r.notice), JSON.stringify(r));
+  r = await attach("file, slow backend", { ext: { backendUrl: SLOW }, extraWait: 2500 });
+  check("a backend slower than 4s lets the file out (fail open)...", r.arrived && !r.modal, JSON.stringify(r));
+  check("...and the person is told the file's answer came too late", /answer arrived after the message was sent/.test(r.notice), r.notice);
+
   // A real Gemini send carries opaque ids around the typed text: an upload id, a session uuid,
   // page state and an `at` token. Only the text is a prompt; scanning the rest read every
   // random-looking id as a possible secret and filled the console with findings nobody caused.

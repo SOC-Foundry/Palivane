@@ -371,6 +371,11 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
     project: tenant?.ticket_project || "", issueType: tenant?.ticket_issue_type || "",
     tokenSet: !!tenant?.ticket_token_set, urlHost: tenant?.ticket_url_host || "",
   });
+  const [ticketHooks, setTicketHooks] = useState(null);
+  useEffect(() => {
+    if (!tenant?.ticket_configured) { setTicketHooks(null); return; }
+    api.ticketWebhooks().then(setTicketHooks).catch(() => setTicketHooks(null));
+  }, [tenant?.ticket_configured, tenant?.ticket_kind]);
   async function saveTickets(off = false) {
     try {
       const payload = off ? { ticket_kind: "" } : {
@@ -1471,7 +1476,27 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
               <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Jira: an Atlassian API token for the
                  account email; issues land in the project key with the issue type (default Task).
                  ServiceNow: a user with write on the table (default <code>incident</code>). The credential
-                 is sealed at rest and only ever sent to the instance URL; internal hosts are refused.</p>
+                 is sealed at rest and only ever sent to the instance URL; internal hosts are refused.
+                 Resolving or closing the ticket triages the finding and closes the exposure. Closing
+                 the exposure, reviewing the finding, or releasing a containment resolves the ticket.
+                 Closing a containment's ticket does not lift the containment. Status is polled every
+                 few minutes when a webhook cannot reach Palivane.</p>
+              {ticketHooks?.configured && (
+                <div className="field-grid" style={{ marginTop: 10 }}>
+                  <label className="field-wide">{ticketCfg.kind === "servicenow" ? "ServiceNow" : "Jira"} webhook URL
+                    <input readOnly value={(ticketCfg.kind === "servicenow" ? ticketHooks.servicenow : ticketHooks.jira) || ""}
+                           onFocus={(e) => e.target.select()} /></label>
+                  <div>
+                    <button type="button" className="mini-btn" onClick={async () => {
+                      try {
+                        const t = await api.rotateTicketWebhooks();
+                        setTicketHooks(t);
+                        flash("Webhook URL rotated. The previous one no longer works.");
+                      } catch (e) { err(e); }
+                    }}>Rotate webhook URL</button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Anthropic Inference hooks */}
