@@ -19,6 +19,7 @@ import Proof from "./components/Proof.jsx";
 import AgentsSite from "./components/AgentsSite.jsx";
 import Demos from "./components/Demos.jsx";
 import PersonalSite from "./components/PersonalSite.jsx";
+import WarrantySite from "./components/WarrantySite.jsx";
 import CoverageMatrix from "./components/CoverageMatrix.jsx";
 import Setup from "./components/Setup.jsx";
 import UseCases from "./components/UseCases.jsx";
@@ -406,6 +407,9 @@ export default function App() {
   }
   if (legalPath === "/personal") {
     return <PersonalSite />;
+  }
+  if (legalPath === "/warranty") {
+    return <WarrantySite />;
   }
   if (legalPath === "/coverage") {
     return <CoverageMatrix />;

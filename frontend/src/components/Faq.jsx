@@ -20,6 +20,10 @@ export const FAQ = [
     a: "Capture fails open. A down collector never blocks a prompt or breaks a developer's tool. Confirmed secret and PII leaks are the exception and still hard-block." },
   { q: "How much of a team does this need to run?",
     a: "One person, part time. Set it up once, then work from digests rather than a queue." },
+  { q: "Is there any guarantee?",
+    a: <>Yes, in writing. On the Team and Enterprise plans, if a credential or a regulated record leaves through
+       a covered surface on a device that passed the self-test and Palivane raised no finding, that month is free
+       for the affected users. The terms are one page: <a className="lp-textlink" href="/warranty">the detection warranty</a>.</> },
 ];
 
 // How many of FAQ the landing page shows; /pricing#faq shows them all.
