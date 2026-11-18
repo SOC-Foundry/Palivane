@@ -98,6 +98,10 @@ const FEATURES = [
 // The month's additions, one line each, linking to where each is shown in full. A band,
 // not a section per feature: the page says the product is moving without getting longer.
 const NEW = [
+  ["Detection warranty", "If it leaves through a covered surface and we did not record it, that month is free.", "/warranty"],
+  ["Capability passports", "A signed, short-lived scope per agent, refused outside it whatever the role says.", "/agents"],
+  ["Flight recorder", "An agent's session as a recording, replayed against any policy to see what it would have stopped.", "/how-it-works"],
+  ["Free for one person", "The personal workspace: same detection, no clock, no card.", "/personal"],
   ["Undo for agents", "Containment can put back every file the agent changed.", "/agents"],
   ["Canary instructions", "One line in a document tells you which agents follow orders they find.", "/agents"],
   ["Commit attestations", "Commits made after an agent worked carry signed trailers saying so.", "/agents"],
@@ -414,7 +418,7 @@ export default function Landing({ onSignIn }) {
         <div className="lp-wrap">
           <div className="lp-band-head rv">
             <span className="lp-eyebrow">New this month</span>
-            <h2 className="lp-h2">Seven things no one else <span className="lp-hl">is doing</span></h2>
+            <h2 className="lp-h2">Eleven things no one else <span className="lp-hl">is doing</span></h2>
           </div>
           <ul className="lp-new-list rv">
             {NEW.map(([what, how, href]) => (
