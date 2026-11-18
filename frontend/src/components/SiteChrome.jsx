@@ -28,6 +28,7 @@ const MENU = [
     { href: "/coverage",     label: "Coverage",     note: "Every surface, and what each needs" },
     { href: "/why-palivane", label: "Why Palivane", note: "What makes it different" },
     { href: "/proof",        label: "Proof",        note: "Benchmarks, dated, and how to rerun them" },
+    { href: "/warranty",     label: "Detection warranty", note: "Missed on a covered surface, that month is free" },
   ]},
   { label: "Use cases", items: [
     { href: "/agents",                label: "AI agents",      note: "Identity, pre-execution checks, provenance" },
@@ -300,7 +301,7 @@ export function SiteFooter() {
     ]},
     // Security and Trust & security are one page now; /trust lands on its controls section.
     { head: "Trust", links: [
-      ["/security", "Security & trust"], ["/eu-ai-act", "EU AI Act"],
+      ["/security", "Security & trust"], ["/warranty", "Detection warranty"], ["/eu-ai-act", "EU AI Act"],
       ["/privacy", "Privacy"], ["/terms", "Terms"],
     ]},
   ];

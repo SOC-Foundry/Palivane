@@ -167,6 +167,8 @@ export default function Proof() {
              reaches every other organisation within minutes and scores as a confirmed poisoning there.
              No vendor research team decides what is in the feed: the reviews customers already do, with
              nothing that names the reporter. Contributing is opt-in; receiving is for everyone.</p>
+          <p className="lp-sub">Because the coverage is measured, it is also warranted: a miss on a covered surface
+             makes that month free.{" "}<a className="lp-textlink" href="/warranty">The detection warranty →</a></p>
         </div>
       </section>
 

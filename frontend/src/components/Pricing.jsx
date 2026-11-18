@@ -132,6 +132,11 @@ export default function Pricing() {
           <div className="lp-cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", alignItems: "start" }}>
             {TIERS.map((t) => <Tier key={t.name} t={t} />)}
           </div>
+          <p className="lp-sub" style={{ marginTop: 18 }}>
+            Team and Enterprise carry the detection warranty: a credential or regulated record that leaves
+            through a covered surface on a self-tested device without a finding makes that month free for the
+            affected users.{" "}<a className="lp-textlink" href="/warranty">The terms, in plain words →</a>
+          </p>
           <div style={{ maxWidth: 720, margin: "34px auto 0" }}>
             <h2 className="lp-h2" style={{ textAlign: "center" }}>What a subscription costs</h2>
             <p className="lp-sub" style={{ textAlign: "center" }}>
