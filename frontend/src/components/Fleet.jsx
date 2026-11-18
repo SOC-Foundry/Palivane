@@ -36,6 +36,7 @@ function clientCell(row) {
 }
 
 // Why a scan failed open, in the words the client reported (a fixed vocabulary, SEC-01).
+// The browser extension uses the same words. "network" is the backend being unreachable.
 const REASON_LABEL = {
   timeout: "timeout", network: "network error", "server-error": "server error (5xx)",
   "auth-rejected": "key rejected", "rate-limited": "rate limited", "http-error": "HTTP error",

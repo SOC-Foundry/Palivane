@@ -93,6 +93,8 @@ jobs:
         # context); this check is what stops the landing-page numbers drifting from the
         # detector source. Regenerate with `node scripts/gen-stats.mjs` when it fails.
         run: node scripts/gen-stats.mjs --check
+      - name: Extension fail-open ledger
+        run: node --test extension/failopen.test.js
       - name: Public claims match the coverage matrix
         working-directory: frontend
         # gen-stats keeps the NUMBERS honest; this keeps the prose honest. A small

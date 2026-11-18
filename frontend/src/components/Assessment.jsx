@@ -10,7 +10,7 @@ const YOU_GET = [
   ["Which AI tools are in use", "Every assistant, agent and site your people reached in the week, sanctioned or not, with who used it and how often. Devices that reported nothing are named, never counted as clean."],
   ["What left, and what would have been stopped", "Findings by severity and by data class: secrets, personal and health data, source code, confidential documents. Each one says which tool it went to and whether blocking would have caught it."],
   ["How often the checks were right", "The precision readout: of the findings your team reviewed, how many needed action, which checks are worth tuning, and the false positives grouped by what matched."],
-  ["Who is covered, and who is not", "Every person and device the sensors reported for, and the ones outside the controls. The gaps are listed on purpose."],
+  ["Who is covered, by plane", "Gateway, browser and proxy, MCP, and secrets at rest, each marked reporting or silent. A plane with nothing in the window is listed. Devices that never installed stay invisible, which the report says."],
   ["What to turn on first", "Recommendations derived from what fired in your week, in the order worth doing them, each naming its own evidence."],
 ];
 
@@ -18,7 +18,7 @@ const STEPS = [
   ["Sign up", "A free account for your org. Nothing is billed; the trial clock is fourteen days."],
   ["Install on a few machines", "One command per laptop puts the hooks, the proxy and the browser extension in monitor mode. A self-test sends the org's own canary secret through the real path and shows the first finding within minutes. Nobody is blocked during the assessment."],
   ["Wait seven days", "The console fills as people work. Day seven, the admins get a mail with the headline numbers and a link to the full report."],
-  ["Read it, then decide", "Print the report or save it as a PDF. If you keep going, switch on enforcement for the checks the week proved right."],
+  ["Read it, then decide", "Print the closeout or save it as a PDF: coverage by plane, unsanctioned tools, confirmed secrets and personal data, the people most often flagged, how often the checks were right, and a date to switch to enforce. If the week does not support a date, the page says that instead."],
 ];
 
 export default function Assessment() {
