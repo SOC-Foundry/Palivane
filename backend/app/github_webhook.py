@@ -111,9 +111,10 @@ def _secret_for(connector_id: int) -> str:
     """The connector's webhook secret ("" for anything that should not accept pushes). Own session:
     the endpoint has no signed-in user, and the credential is sealed under the tenant's key."""
     from . import saas_connectors as sc
-    from .database import SessionLocal
+    from .database import SessionLocal, allow_cross_tenant
     db = SessionLocal()
     try:
+        allow_cross_tenant(db, "webhook.github")
         row = db.get(SaasConnector, connector_id)
         if row is None or not row.active or row.platform != "github_secrets":
             return ""
@@ -128,11 +129,12 @@ def _process_push(connector_id: int, payload: dict, delivery: str = "") -> None:
     """Scan a push in its own session. Never raises: a failed push scan is caught up by the next
     scheduled one, or sooner by a redelivery (_settle forgets a failed delivery)."""
     from . import github_secrets, saas_connectors as sc
-    from .database import SessionLocal, bind_tenant, clear_tenant
+    from .database import SessionLocal, allow_cross_tenant, bind_tenant
     db = SessionLocal()
     token = github_secrets.max_seconds.set(_SCAN_SECS)
     ok = False
     try:
+        allow_cross_tenant(db, "webhook.github")
         row = db.get(SaasConnector, connector_id)
         if row is None or not row.active or row.platform != "github_secrets":
             ok = True                                             # nothing to scan, now or on a redelivery
@@ -147,7 +149,6 @@ def _process_push(connector_id: int, payload: dict, delivery: str = "") -> None:
     finally:
         _settle(delivery, ok)
         github_secrets.max_seconds.reset(token)
-        clear_tenant(db)
         db.close()
 
 

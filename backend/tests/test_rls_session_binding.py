@@ -6,6 +6,7 @@ from __future__ import annotations
 import contextvars
 import threading
 
+import pytest
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 
@@ -43,6 +44,25 @@ def test_clear_returns_the_session_to_system_scope(monkeypatch):
     database.clear_tenant(db)
     db.execute(text("SELECT 1"))
     assert database.bound_tenant(db) is None and applied == [None]
+
+
+def test_request_session_refuses_a_tenant_query_until_scoped():
+    """The guard runs on SQLite, where RLS cannot. A request session that touches a
+    tenant table before bind_tenant or allow_cross_tenant fails closed in the app."""
+    from app.models import User
+    eng = create_engine("sqlite://")
+    database.Base.metadata.create_all(eng)
+    db = sessionmaker(bind=eng)()
+    database.mark_request(db)
+    with pytest.raises(database.TenantScopeError):
+        db.query(User).all()
+    database.bind_tenant(db, 7)
+    assert db.query(User).all() == []
+    database.allow_cross_tenant(db, "test.login")
+    assert db.query(User).all() == []
+    database.clear_tenant(db)
+    with pytest.raises(database.TenantScopeError):
+        db.query(User).all()
 
 
 def test_sessions_do_not_share_a_binding():

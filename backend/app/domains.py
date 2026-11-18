@@ -110,7 +110,10 @@ def claim_domain(body: dict, current: User = Depends(require_admin),
     # Postgres RLS a tenant-bound session sees only its own rows: another org's claim was
     # invisible here and the insert died on the unique constraint (a 500), and a stale claim
     # could never be superseded. Unbind for this one global step, rebind right after.
-    bind_tenant(db, None)
+    from .database import allow_cross_tenant
+    # Domains are globally unique. Fail-closed RLS would hide another org's claim;
+    # this is the explicit, audited opt-in for that one lookup. The finally rebinds.
+    allow_cross_tenant(db, "domains.claim")
     try:
         d = _claim_or_supersede(db, dom, current.tenant_id)
         db.commit()
@@ -239,9 +242,13 @@ def confirm_join(token: str, db: Session = Depends(get_db)):
         return bounce("invalid")
     if payload.get("typ") != "join":
         return bounce("invalid")
+    from .database import bind_tenant, ensure_cross_tenant
+    # The link names a request id, not an org. Find it, then narrow to that org.
+    ensure_cross_tenant(db, "auth.join")
     req = db.get(JoinRequest, int(payload.get("sub", 0)))
     if req is None or req.status != "pending":
         return bounce("invalid")
+    bind_tenant(db, req.tenant_id)
     tenant = db.get(Tenant, req.tenant_id)
     if tenant is None or tenant.status == "suspended":
         return bounce("invalid")

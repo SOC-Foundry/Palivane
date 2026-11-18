@@ -1772,3 +1772,71 @@ class Passport(Base):
                 "note": self.note or "", "issued_by": self.issued_by or "", "issued_at": iso(self.issued_at),
                 "expires_at": iso(self.expires_at), "revoked_at": iso(self.revoked_at), "revoked_by": self.revoked_by or "",
                 "uses": self.uses or 0, "last_used_at": iso(self.last_used_at), "live": live}
+
+
+class DeliveryOutbox(Base):
+    """One SIEM or alert delivery waiting to be sent.
+
+    Capture inserts the row in the same transaction as the finding and returns. A
+    lifespan loop claims rows, delivers them, and retries with backoff. `dead` is the
+    dead-letter state: the event is kept so Settings can show it, and it is not sent
+    again. The payload is the event itself — never the webhook URL or the SIEM token.
+    Those are read from the tenant at send time, so a rotated credential applies to
+    anything still queued.
+    """
+
+    __tablename__ = "delivery_outbox"
+    __table_args__ = (
+        Index("ix_delivery_outbox_due", "status", "next_attempt_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    sink = Column(String(16), nullable=False)          # alert | siem_http | siem_s3
+    payload = Column(JSON, nullable=True)
+    status = Column(String(16), nullable=False, default="pending")  # pending|inflight|delivered|dead
+    attempts = Column(Integer, nullable=False, default=0)
+    next_attempt_at = Column(DateTime, nullable=True, index=True)
+    last_error = Column(String(300), default="")
+    claimed_by = Column(String(128), default="")
+    claimed_until = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow, index=True)
+    delivered_at = Column(DateTime, nullable=True)
+
+
+class DeliveryCursor(Base):
+    """Durable per-tenant, per-sink delivery summary.
+
+    Delivered outbox rows are pruned, so "last success" cannot be a max() over them
+    forever. This row is updated in the same transaction as the outcome and is what
+    GET /api/siem/status reports after a restart.
+    """
+
+    __tablename__ = "delivery_cursors"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "sink", name="uq_delivery_cursor_sink"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    sink = Column(String(16), nullable=False)
+    last_success_at = Column(DateTime, nullable=True)
+    last_failure_at = Column(DateTime, nullable=True)
+    last_error = Column(String(300), default="")
+    dead_count = Column(Integer, nullable=False, default=0)
+
+
+class CrossTenantAudit(Base):
+    """A record that some session was explicitly allowed to see every tenant.
+
+    No tenant_id: the row is written before a tenant is known (login) and the table
+    is not under the tenant RLS policy. High-frequency reasons (API-key resolution,
+    the outbox loop) are recorded once per process; login and operator actions are
+    recorded every time.
+    """
+
+    __tablename__ = "cross_tenant_audit"
+
+    id = Column(Integer, primary_key=True)
+    reason = Column(String(120), nullable=False, index=True)
+    created_at = Column(DateTime, default=_utcnow, index=True)

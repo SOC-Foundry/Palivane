@@ -5,15 +5,16 @@ Microsoft Sentinel / Elastic / Sumo / Datadog (generic JSON over HTTP), and anyt
 ingests CEF. The SIEM specifics (endpoint URL, token, index) are the customer's config, not
 per-vendor code here. Complements the pull-based JSONL export (/api/export/findings).
 
-Fire-and-forget on the request path (daemon thread, short timeout, SSRF-guarded) so a slow
-or down collector never adds latency or breaks capture.
+Capture enqueues a row and returns (see app/outbox.py). A lifespan loop delivers it,
+with retries, so a slow or down collector never adds latency or breaks capture and a
+restart does not drop the event. `send_detail` / `send_sync` stay synchronous for the
+"test event" button and for the outbox worker.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import threading
 import time
 import urllib.request
 
@@ -118,24 +119,22 @@ def send_sync(url: str, token: str, fmt: str, fields: dict, timeout: float = 8.0
     return ok
 
 
-def _deliver(url: str, token: str, fmt: str, fields: dict,
-             tenant_id: int) -> None:
-    """Pool job: send + record the outcome (a silently-lost finding defeats the sink)."""
-    ok, detail = send_detail(url, token, fmt, fields)
-    from . import sink_health
-    sink_health.record(tenant_id, "siem_http", ok, detail)
-    if not ok:
-        log.warning("SIEM push failed (tenant %s): %s", tenant_id, detail)
-
-
 def forward(url: str, token: str, min_severity: str, fmt: str, verdict: dict,
             subject: str = "", actor: str = "", surface: str = "", org: str = "",
-            tenant_id: int = 0) -> None:
-    """Push a finding to the tenant's SIEM if configured and severity >= min_severity. Non-blocking."""
+            tenant_id: int = 0, db=None) -> None:
+    """Queue a finding for the tenant's SIEM if configured and severity >= min_severity.
+
+    The URL and token are checked here so an unconfigured sink does not enqueue, but
+    they are not stored on the row. The worker reads the tenant's current credential
+    when it sends. `db` is the capture session: the row commits with the finding.
+    """
     if not url:
         return
     if _RANK.get(verdict.get("severity"), 0) < _RANK.get(min_severity or "high", 3):
         return
     fields = _fields(verdict, subject, actor, surface, org)
-    from .dispatch import submit
-    submit(_deliver, url, token, fmt or "json", fields, tenant_id)  # bounded shared pool
+    if db is None or not tenant_id:
+        log.warning("SIEM forward skipped: no tenant session to queue the event")
+        return
+    from .outbox import enqueue
+    enqueue(db, tenant_id, "siem_http", fields)

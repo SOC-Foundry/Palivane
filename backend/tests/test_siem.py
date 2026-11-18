@@ -60,17 +60,29 @@ def test_cef_header_escapes_pipe_no_injection():
 # --- gating + SSRF --------------------------------------------------------------------
 
 def test_forward_gates_on_severity(monkeypatch):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app import outbox
+    from app.database import Base
+    from app.models import DeliveryOutbox, Tenant
     sent = []
-    monkeypatch.setattr(siem, "send_detail", lambda *a, **k: (sent.append(a) or True, ""))
-    # below threshold -> not forwarded
+    monkeypatch.setattr(siem, "send_detail", lambda *a, **k: (sent.append(a) or (True, "")))
+    eng = create_engine("sqlite://")
+    Base.metadata.create_all(eng)
+    db = sessionmaker(bind=eng)()
+    t = Tenant(slug="acme", name="Acme", siem_url="https://c/x", siem_token="tok")
+    db.add(t)
+    db.commit()
+    # below threshold -> not queued
     siem.forward("https://c/x", "", "high", "json",
-                 {"severity": "suspicious", "risk_score": 40, "signals": []})
-    assert sent == []
-    # at threshold -> forwarded (delivery runs on the dispatch pool; join briefly)
-    import time
-    siem.forward("https://c/x", "", "high", "json", _VERDICT)
-    time.sleep(0.1)
-    # the pool job called our stub
+                 {"severity": "suspicious", "risk_score": 40, "signals": []},
+                 tenant_id=t.id, db=db)
+    db.commit()
+    assert db.query(DeliveryOutbox).count() == 0 and sent == []
+    siem.forward("https://c/x", "tok", "high", "json", _VERDICT, tenant_id=t.id, db=db)
+    db.commit()
+    assert sent == []                                    # queued, not sent yet
+    outbox.drain_once(db)
     assert sent, "expected a forward at/above threshold"
 
 

@@ -82,10 +82,13 @@ def run_scheduled_scans(db, now: datetime | None = None, limit: int = MAX_PER_TI
     """Scan the connectors that are due. Returns how many were scanned."""
     if not settings.connector_schedule:
         return 0
-    from .database import bind_tenant, clear_tenant
+    from .database import allow_cross_tenant, bind_tenant
     from .models import SaasConnector
     from .saas_connectors import PLATFORMS, ConnectorError, sync_connector
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    # The due-list and the claim are cross-tenant. Each sync binds to that connector's
+    # org and the finally puts the bypass back so the next claim is visible.
+    allow_cross_tenant(db, "job.connectors")
     scheduled = {k: v for k, v in PLATFORMS.items() if v.get("schedule_secs")}
     if not scheduled:
         return 0
@@ -119,5 +122,5 @@ def run_scheduled_scans(db, now: datetime | None = None, limit: int = MAX_PER_TI
             log.warning("scheduled scan of connector %s failed", cid, exc_info=True)
         finally:
             github_secrets.max_seconds.reset(limit_token)
-            clear_tenant(db)
+            allow_cross_tenant(db, "job.connectors")
     return ran

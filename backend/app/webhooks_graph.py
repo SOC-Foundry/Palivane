@@ -100,12 +100,13 @@ def _debounced(connector_id: int, drive_id: str) -> bool:
 def _scan_notified_drive(connector_id: int, sub_id: str) -> None:
     """Run the per-drive delta scan a notification pointed at — its own session, never
     raises (a failed on-write scan is caught up by the next cron sync)."""
-    from .database import SessionLocal, bind_tenant
+    from .database import SessionLocal, allow_cross_tenant, bind_tenant
     from . import saas_connectors as sc
 
     db = SessionLocal()
     try:
         from .models import SaasConnector
+        allow_cross_tenant(db, "webhook.graph")
         row = db.get(SaasConnector, connector_id)
         if row is None or not row.active or row.platform != "sharepoint_files":
             return
@@ -136,12 +137,13 @@ def _sync_notified_connector(connector_id: int) -> None:
     """Google Drive notifications are opaque ("something changed"), and the gdrive scan
     is already watermark-incremental — so the on-write path is simply: run that
     connector's normal sync now. Own session; never raises (cron is the safety net)."""
-    from .database import SessionLocal, bind_tenant
+    from .database import SessionLocal, allow_cross_tenant, bind_tenant
     from . import saas_connectors as sc
 
     db = SessionLocal()
     try:
         from .models import SaasConnector
+        allow_cross_tenant(db, "webhook.graph")
         row = db.get(SaasConnector, connector_id)
         if row is None or not row.active or row.platform != "gdrive_files":
             return

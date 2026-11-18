@@ -162,17 +162,31 @@ def test_role_takes_precedence_over_static_keys(fake_boto3, delivery_principal):
 # --- delivery through the sinks ----------------------------------------------------------
 
 def test_forward_s3_delivers_with_role_only(monkeypatch):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app import outbox
+    from app.database import Base
+    from app.models import DeliveryOutbox, Tenant
     calls = []
     monkeypatch.setattr(s3, "_put", lambda *a, **k: (calls.append((a, k)) or (True, "")))
-    import app.dispatch as dispatch
-    monkeypatch.setattr(dispatch, "submit", lambda fn, *a, **k: fn(*a, **k))
+    eng = create_engine("sqlite://")
+    Base.metadata.create_all(eng)
+    db = sessionmaker(bind=eng)()
+    t = Tenant(slug="acme", name="Acme", siem_s3_bucket="b",
+               siem_s3_role_arn=ROLE, siem_s3_external_id="plv-x")
+    db.add(t)
+    db.commit()
     v = {"severity": "critical", "risk_score": 90, "finding_id": 1,
          "signals": [{"category": "secret_leak"}]}
     # no keys, no role -> no-op
-    s3.forward_s3("b", "", "", "", "", "high", v)
-    assert calls == []
-    # role only -> delivered, with the role threaded through to the put
-    s3.forward_s3("b", "", "", "", "", "high", v, role_arn=ROLE, external_id="plv-x")
+    s3.forward_s3("b", "", "", "", "", "high", v, tenant_id=t.id, db=db)
+    db.commit()
+    assert calls == [] and db.query(DeliveryOutbox).count() == 0
+    # role only -> queued, then delivered with the role threaded through to the put
+    s3.forward_s3("b", "", "", "", "", "high", v, role_arn=ROLE, external_id="plv-x",
+                  tenant_id=t.id, db=db)
+    db.commit()
+    outbox.drain_once(db)
     assert len(calls) == 1
     assert calls[0][1].get("role_arn") == ROLE and calls[0][1].get("external_id") == "plv-x"
 

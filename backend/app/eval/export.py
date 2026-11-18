@@ -81,6 +81,8 @@ def main(argv: list[str]) -> int:
 
     db = SessionLocal()
     try:
+        from ..database import allow_cross_tenant
+        allow_cross_tenant(db, "cli")
         tenant_id = None
         if args.tenant:
             t = db.query(Tenant).filter(Tenant.slug == args.tenant).first()

@@ -21,7 +21,7 @@ import time
 from . import metrics
 
 # Sinks we track. Keys are stable API strings (the console keys on them).
-SINKS = ("siem_http", "siem_s3", "archive_s3")
+SINKS = ("siem_http", "siem_s3", "archive_s3", "alert")
 
 _lock = threading.Lock()
 # (tenant_id, sink) -> {"ok": int, "failed": int, "last_ok_ts": float|None,

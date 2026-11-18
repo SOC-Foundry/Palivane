@@ -176,6 +176,8 @@ def main(argv: list[str]) -> int:
     args = p.parse_args(argv)
     db = SessionLocal()
     try:
+        from .database import allow_cross_tenant
+        allow_cross_tenant(db, "cli")
         if args.cmd == "create-tenant":
             try:
                 t = create_tenant(db, args.slug, args.name, args.plan, args.trial_days)

@@ -197,6 +197,10 @@ async def lifespan(_app: FastAPI):
                     judge_alerted = False
                 db = SessionLocal()
                 try:
+                    from .database import allow_cross_tenant
+                    # One audited opt-in for the whole tick. These jobs read every tenant;
+                    # without it Postgres RLS (fail closed) would make each of them a no-op.
+                    allow_cross_tenant(db, "job.digest")
                     await asyncio.to_thread(alerts.run_digests, db)
                     await asyncio.to_thread(alerts.run_weekly_reports, db)
                     # Fleet health: page when a sensor goes dark or a revoked key keeps
@@ -237,6 +241,15 @@ async def lifespan(_app: FastAPI):
                     if ticks % 12 == 0:
                         from .oauth_provider import prune as _oauth_prune
                         await asyncio.to_thread(_oauth_prune, db)
+                        # SAML replay rows and one-time proceed tokens. Each ACS deletes its
+                        # own tenant's expired rows; this catches tenants that stop signing in.
+                        from .models import UsedSamlAssertion
+                        def _prune_saml_replay(session):
+                            session.query(UsedSamlAssertion).filter(
+                                UsedSamlAssertion.expires_at < _naive_now()).delete(
+                                    synchronize_session=False)
+                            session.commit()
+                        await asyncio.to_thread(_prune_saml_replay, db)
                     # The public demo's sample data, moved forward to "now" so its dashboard
                     # isn't empty. First tick after boot, then ~hourly; a no-op without a demo.
                     if ticks % 12 == 1:
@@ -259,6 +272,8 @@ async def lifespan(_app: FastAPI):
                 await asyncio.sleep(300)
                 db = SessionLocal()
                 try:
+                    from .database import allow_cross_tenant
+                    allow_cross_tenant(db, "job.connectors")
                     await asyncio.to_thread(run_scheduled_scans, db)
                 finally:
                     db.close()
@@ -267,8 +282,23 @@ async def lifespan(_app: FastAPI):
             except Exception as e:
                 log.warning("connector loop error: %s", e)
 
+    async def _outbox_loop():
+        # SIEM and alert delivery. Much more frequent than the digest tick: a finding
+        # should leave the process within a couple of seconds, and the row survives a
+        # restart if this instance dies first.
+        from . import outbox
+        while True:
+            try:
+                await asyncio.sleep(outbox.INTERVAL)
+                await asyncio.to_thread(outbox.drain_once)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.warning("outbox loop error: %s", e)
+
     task = asyncio.create_task(_digest_loop())
     connector_task = asyncio.create_task(_connector_loop())
+    outbox_task = asyncio.create_task(_outbox_loop())
     # The remote MCP transport keeps its own session manager, and Starlette does NOT run a
     # mounted sub-app's lifespan — mounting it without this yields an app that accepts a
     # request and then hangs. So the parent lifespan owns it.
@@ -279,6 +309,14 @@ async def lifespan(_app: FastAPI):
         finally:
             task.cancel()
             connector_task.cancel()
+            outbox_task.cancel()
+            # One last batch during the SIGTERM grace period. Anything still pending
+            # stays in the outbox for the next instance.
+            try:
+                from . import outbox
+                await asyncio.to_thread(outbox.drain_once)
+            except Exception:
+                log.warning("outbox shutdown drain failed", exc_info=True)
         # Ship any buffered archive events before the instance goes away (Cloud Run
         # SIGTERM grace period) — the in-memory batch must not die with the process.
         from . import archive_s3
@@ -665,14 +703,17 @@ def pattern_from_examples(body: dict, current: User = Depends(require_admin)):
 
 @app.get("/api/siem/status")
 def siem_status(current: User = Depends(require_admin), db: Session = Depends(get_db)):
-    """Delivery health for this tenant's out-of-band sinks (SIEM HTTP push, S3 findings,
-    S3 event archive): attempt/failure counts and the last error per sink, plus the event
-    archive's buffer counters. Per-instance and since process start — an observability
-    aid for 'is my SIEM actually receiving events', not a billing meter."""
-    from . import archive_s3, sink_health
+    """Delivery health for this tenant's out-of-band sinks.
+
+    `outbox` is durable and shared across instances: backlog depth (pending + in
+    flight), dead-lettered events, and the last success and failure. `sinks` and
+    `archive` stay per-instance counters since process start."""
+    from . import archive_s3, outbox, sink_health
     return {"sinks": sink_health.snapshot(current.tenant_id),
+            "outbox": outbox.snapshot(db, current.tenant_id),
             "archive": archive_s3.stats(),
-            "scope": "this API instance, since process start"}
+            "scope": "outbox is shared across instances; sinks and archive are this "
+                     "process, since it started"}
 
 
 @app.post("/api/alerts/digest/run")
@@ -923,7 +964,7 @@ def admin_funnel(request: Request, days: int | None = Query(None, ge=1, le=3650)
     aggregates across all tenants. Returns 404 when no metrics token is configured, so it
     can't be left open by accident on a deployment that never set one up."""
     from . import funnel
-    _require_operator(request)
+    _operator_scope(request, db, "operator.funnel")
     return funnel.compute(db, days=days, include_internal=include_internal)
 
 
@@ -934,7 +975,7 @@ def admin_plans(request: Request, db: Session = Depends(get_db)):
     tenant admin must never see other orgs). 404 when no metrics token is configured."""
     from .plans import PLANS, plan_of
     from .models import Finding
-    _require_operator(request)
+    _operator_scope(request, db, "operator.plans")
     activated = {r[0] for r in db.query(Finding.tenant_id).distinct().all()}
     counts: dict[str, int] = {p: 0 for p in PLANS}
     rows = []
@@ -1012,7 +1053,7 @@ def admin_upgrade_requests(request: Request, db: Session = Depends(get_db)):
     """Operator queue of in-console upgrade requests, newest first. Cross-tenant, so
     operator-token-gated like the funnel; 404 when no metrics token is configured."""
     from .models import UpgradeRequest
-    _require_operator(request)
+    _operator_scope(request, db, "operator.admin")
     rows = (db.query(UpgradeRequest, Tenant).join(Tenant, UpgradeRequest.tenant_id == Tenant.id)
             .order_by(UpgradeRequest.created_at.desc(), UpgradeRequest.id.desc()).all())
     return {"requests": [{**r.to_dict(), "org": t.name or t.slug, "slug": t.slug,
@@ -1024,7 +1065,7 @@ def admin_upgrade_request_close(rid: int, request: Request, db: Session = Depend
     """Mark a worked upgrade request closed (bookkeeping only — the plan change itself is
     `users set-plan` or a license). Operator-gated."""
     from .models import UpgradeRequest
-    _require_operator(request)
+    _operator_scope(request, db, "operator.admin")
     row = db.get(UpgradeRequest, rid)
     if row is None:
         raise HTTPException(status_code=404, detail="upgrade request not found")
@@ -1039,7 +1080,7 @@ def admin_licenses(request: Request, db: Session = Depends(get_db)):
     """Owner license registry — every issued self-hosted license and its status. Vendor-
     only: gated by PALIVANE_METRICS_TOKEN (not a tenant session); 404 without a token."""
     from .models import License
-    _require_operator(request)
+    _operator_scope(request, db, "operator.admin")
     rows = db.query(License).order_by(License.issued_at.desc()).all()
     return {"licenses": [r.to_dict() for r in rows]}
 
@@ -1053,7 +1094,7 @@ def admin_license_issue(body: dict, request: Request, db: Session = Depends(get_
     from . import licensing
     from .models import License
     import secrets as _secrets
-    _require_operator(request)
+    _operator_scope(request, db, "operator.admin")
     key = licensing.signing_key()
     if not key:
         raise HTTPException(status_code=503, detail="license issuing not enabled here (no signing key)")
@@ -1084,7 +1125,7 @@ def admin_license_revoke(lic_id: str, request: Request, db: Session = Depends(ge
     """Revoke a self-hosted license from the operator console — renewals refused, the
     instance drops to Free at term end. Operator-gated."""
     from .models import License
-    _require_operator(request)
+    _operator_scope(request, db, "operator.admin")
     row = db.get(License, lic_id)
     if row is None:
         raise HTTPException(status_code=404, detail="license not found")
@@ -1330,6 +1371,16 @@ def _token_matches(provided: str, expected: str) -> bool:
                                expected.encode("utf-8", "surrogateescape"))
 
 
+def _operator_scope(request: Request, db: Session, reason: str) -> None:
+    """Operator token, then an audited cross-tenant scope.
+
+    These routes aggregate every org. Fail-closed RLS would otherwise return an
+    empty queue to a valid operator token."""
+    _require_operator(request)
+    from .database import allow_cross_tenant
+    allow_cross_tenant(db, reason)
+
+
 def _require_operator(request: Request) -> None:
     """Gate the vendor /api/admin/* surface on PALIVANE_ADMIN_TOKEN (falling back to
     PALIVANE_METRICS_TOKEN) — a cross-tenant operator credential, NOT a tenant session.
@@ -1349,11 +1400,14 @@ def _require_operator(request: Request) -> None:
 def _resolve_agent_token(token: str, db: Session) -> Agent:
     """Resolve an `ag_…` agent token to its Agent (401 on unknown/disabled). Bumps last_seen."""
     from .security import hash_token
+    from .database import bind_tenant, ensure_cross_tenant
+    ensure_cross_tenant(db, "auth.agent")
     row = (db.query(Agent)
              .filter(Agent.token_hash == hash_token(token), Agent.active.is_(True))
              .one_or_none())
     if row is None:
         raise HTTPException(status_code=401, detail="invalid or disabled agent token")
+    bind_tenant(db, row.tenant_id)
     row.last_seen = _naive_now()
     db.commit()
     return row
@@ -1366,6 +1420,8 @@ def _resolve_agent_jwt(token: str, db: Session):
     agent). Raises HTTP 401 on a token that fails signature/claims validation."""
     from .security import jwt_unverified_claims
     from . import oidc
+    from .database import ensure_cross_tenant
+    ensure_cross_tenant(db, "auth.agent")
     iss = (jwt_unverified_claims(token).get("iss") or "").strip()
     if not iss:
         return None

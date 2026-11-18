@@ -689,6 +689,7 @@ def test_record_stream_dlp_scans_assembled_output(monkeypatch):
                         lambda text, model, tool, principal, db: seen.update(text=text))
     class _DB:
         def close(self): pass
+        info = {}
     monkeypatch.setattr("app.database.SessionLocal", lambda: _DB())
     sse = ('data: {"choices":[{"delta":{"content":"the key is "}}]}\n\n'
            'data: {"choices":[{"delta":{"content":"AKIAIOSFODNN7QXAMPLE"}}]}\n\ndata: [DONE]\n\n')

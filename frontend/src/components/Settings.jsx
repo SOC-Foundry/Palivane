@@ -458,6 +458,26 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
       </p>
     );
   };
+  const OutboxLine = ({ sink, label }) => {
+    const q = sinkHealth?.outbox;
+    const s = sink ? q?.by_sink?.[sink] : q;
+    if (!s) return null;
+    const when = (v) => (v ? ` (${v})` : "");
+    return (
+      <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+        {label || "Delivery queue"}: {s.backlog ?? 0} waiting
+        {" · "}
+        <span style={{ color: "var(--ok, #2e7d32)" }}>
+          last success{s.last_success ? when(s.last_success) : ": none yet"}
+        </span>
+        {" · "}
+        <span style={{ color: s.dead ? "var(--danger, #c62828)" : "inherit" }}>
+          {s.dead || 0} failed
+          {s.last_error ? ` — ${s.last_failure || ""} ${s.last_error}` : ""}
+        </span>
+      </p>
+    );
+  };
 
   // --- SIEM S3 / data-lake delivery ---
   const [s3Cfg, setS3Cfg] = useState({
@@ -1352,12 +1372,14 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                 <button type="button" className="mini-btn" onClick={testAlert}>Send test</button>
                 <button type="button" className="mini-btn" onClick={exportFindings}>Export findings (JSONL)</button>
               </div>
+              <OutboxLine sink="alert" label="Alert queue" />
               <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>In digest mode, alertable
                  findings are batched into a rollup on the chosen cadence, <strong>critical findings
                  still fire in real time</strong>. The weekly report covers findings by severity, new AI
                  tools, the most-flagged actors, how often the findings your team reviewed were right
                  (and which checks to tune), and allowlist entries about to lapse. Findings export is
-                 for SIEM ingest. Alerts fail open, a down webhook never blocks capture.</p>
+                 for SIEM ingest. Real-time alerts are written to a durable queue and retried; a down
+                 webhook never blocks capture, and a restart does not drop what was queued.</p>
             </div>
 
             {/* SIEM forwarding */}
@@ -1395,9 +1417,16 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                 <button type="button" className="mini-btn" onClick={testSiem}>Send test event</button>
               </div>
               <SinkHealth sink="siem_http" />
+              <OutboxLine />
+              <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>The queue is shared across
+                 every API instance and survives a restart. Backlog is events waiting or in flight.
+                 Failures are events that exhausted retries and were dead-lettered. The delivery-health
+                 line above counts only what this process has attempted since it started.</p>
+              <OutboxLine sink="siem_http" label="SIEM queue" />
+              <OutboxLine sink="siem_s3" label="S3 queue" />
               <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Pushes each finding at/above
-                 the threshold as it's captured; SSRF-guarded and fail-open (a down collector never
-                 blocks capture). Internal/private endpoints are blocked, use a reachable collector.
+                 the threshold as it's captured. The push is queued, retried, and SSRF-guarded, so a
+                 down collector never blocks capture. Internal/private endpoints are blocked, use a reachable collector.
                  Events arrive with the Splunk sourcetype <code>palivane:finding</code>, which also
                  sets the S3 object path below.</p>
             </div>
@@ -1535,6 +1564,7 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                 {s3Cfg.archive && <button type="button" className="mini-btn" onClick={testArchive}>Write test event</button>}
               </div>
               <SinkHealth sink="siem_s3" label="Findings delivery" />
+              <OutboxLine sink="siem_s3" label="S3 queue" />
               {s3Cfg.archive && <SinkHealth sink="archive_s3" label="Event archive" />}
               <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>Findings are written under
                  <code> &lt;prefix&gt;/palivane/findings/YYYY/MM/DD/...json</code> (path follows the

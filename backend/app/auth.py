@@ -103,6 +103,10 @@ def authenticate_console_key(token: str, db: Session) -> ApiKey:
     below — but it must not grow a second copy of the credential checks, which is how two
     authentication paths drift apart and one of them stops rejecting something.
     """
+    from .database import bind_tenant, ensure_cross_tenant
+    # The prefix is not tenant-scoped, so the lookup has to see every org. Bind as
+    # soon as the key is known so the rest of the request is not cross-tenant.
+    ensure_cross_tenant(db, "auth.api_key")
     key = (db.query(ApiKey)
            .filter(ApiKey.prefix == token[:11], ApiKey.active.is_(True))
            .first())
@@ -117,6 +121,7 @@ def authenticate_console_key(token: str, db: Session) -> ApiKey:
         # credential for this API, and saying "wrong scope" would confirm the key is real.
         raise HTTPException(status_code=401, detail="invalid API key",
                             headers={"WWW-Authenticate": "Bearer"})
+    bind_tenant(db, key.tenant_id)
     return key
 
 
@@ -228,9 +233,23 @@ def user_for_session_payload(payload: dict, db: Session) -> User:
     if payload.get("typ"):
         raise HTTPException(status_code=401, detail="not a session token",
                             headers={"WWW-Authenticate": "Bearer"})
+    from .database import bind_tenant, ensure_cross_tenant
+    # The session token carries the tenant. Bind BEFORE the user lookup so RLS (and
+    # the request guard) never see an unbound read of the users table. Tokens minted
+    # before tenant_id was in the claim fall back to an audited cross-tenant read.
+    try:
+        tid = int(payload["tenant_id"]) if payload.get("tenant_id") is not None else None
+    except (TypeError, ValueError):
+        tid = None
+    if tid is not None:
+        bind_tenant(db, tid)
+    else:
+        ensure_cross_tenant(db, "auth.session")
     try:
         user = db.get(User, int(payload.get("sub", 0)))
     except (TypeError, ValueError):
+        user = None
+    if user is not None and tid is not None and user.tenant_id != tid:
         user = None
     if user is None or not user.active:
         raise HTTPException(status_code=401, detail="user not found or inactive")
@@ -240,7 +259,7 @@ def user_for_session_payload(payload: dict, db: Session) -> User:
     ensure_active(db, user.tenant_id)
     # Scope the DB session to this tenant so RLS enforces isolation on everything the
     # request touches after auth (defense-in-depth with the app-level tenant_id filters).
-    from .database import bind_tenant
+    # Also clears a cross-tenant fallback used for a token that had no tenant_id.
     bind_tenant(db, user.tenant_id)
     return user
 
@@ -309,6 +328,10 @@ def signup(body: SignupRequest, request: Request, db: Session = Depends(get_db))
     by its admin, or immediately when the domain has auto_approve)."""
     if not settings.allow_signup:
         raise HTTPException(status_code=403, detail="self-serve signup is disabled")
+    from .database import allow_cross_tenant
+    # Signup looks up claimed domains and existing accounts before any org exists
+    # for this request. Audited; the new org is bound once it has an id.
+    allow_cross_tenant(db, "auth.signup")
 
     from . import domains as domains_mod
     from .models import JoinRequest
@@ -411,7 +434,8 @@ def signup(body: SignupRequest, request: Request, db: Session = Depends(get_db))
     db.commit()
     db.refresh(user)
     if verify:
-        token = create_token({"typ": "email_verify", "sub": str(user.id)}, ttl=86400)
+        token = create_token({"typ": "email_verify", "sub": str(user.id),
+                              "tenant_id": user.tenant_id}, ttl=86400)
         email_mod.send(
             email, "Verify your Palivane account",
             f"Welcome to Palivane. Confirm this address to activate your new organization "
@@ -474,6 +498,10 @@ def _throttled(db: Session, email: str, ip: str, kind: str = "login",
 
 @router.post("/auth/login")
 def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    from .database import allow_cross_tenant, bind_tenant
+    # Email is unique per org, not globally. The password check has to see every
+    # candidate; once one account opens, the session narrows to that org.
+    allow_cross_tenant(db, "auth.login")
     email = body.email.lower().strip()
     ip = _client_ip(request)
     # Record the attempt BEFORE checking the password, then count it in: counted after, a
@@ -511,6 +539,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     user = unlocked[0] if unlocked else None
     if not user:
         raise HTTPException(status_code=401, detail="invalid credentials")   # attempt stays
+    bind_tenant(db, user.tenant_id)
     db.delete(attempt)          # the password was right: not a failure
     db.commit()
     # After the password check, so only someone holding the password learns the org is SSO-only.
@@ -534,8 +563,8 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         # clearing them at the password step handed anyone holding the password a fresh
         # budget of TOTP guesses on every login. It clears once the second factor succeeds.
         db.commit()
-        challenge = create_token({"typ": "mfa", "sub": str(user.id), "tv": user.token_version},
-                                 ttl=300)
+        challenge = create_token({"typ": "mfa", "sub": str(user.id), "tv": user.token_version,
+                                  "tenant_id": user.tenant_id}, ttl=300)
         return {"mfa_required": True, "challenge": challenge}
 
     # A completed sign-in clears this email's recent failures.
@@ -557,6 +586,8 @@ def forgot_password(body: ForgotRequest, request: Request, db: Session = Depends
     must not reveal whether an account exists. Reuses the login throttle so this can't be
     used as an email-spam cannon; throttled requests silently skip the send."""
     from . import email as email_mod
+    from .database import allow_cross_tenant
+    allow_cross_tenant(db, "auth.forgot")
     email_addr = body.email.lower().strip()
     ip = _client_ip(request)
     if not email_mod.enabled() or _throttled(db, email_addr, ip, kind="forgot"):
@@ -580,7 +611,7 @@ def forgot_password(body: ForgotRequest, request: Request, db: Session = Depends
             # login refuses the account until it is verified anyway).
             continue
         token = create_token({"typ": "pwreset", "sub": str(user.id),
-                              "tv": user.token_version}, ttl=1800)
+                              "tv": user.token_version, "tenant_id": user.tenant_id}, ttl=1800)
         email_mod.send(
             user.email, "Reset your Palivane password",
             f"A password reset was requested for your Palivane account "
@@ -602,6 +633,15 @@ def reset_password(body: ResetRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="invalid or expired reset link")
     if payload.get("typ") != "pwreset":
         raise HTTPException(status_code=400, detail="invalid or expired reset link")
+    from .database import bind_tenant, ensure_cross_tenant
+    try:
+        tid = int(payload["tenant_id"]) if payload.get("tenant_id") is not None else None
+    except (TypeError, ValueError):
+        tid = None
+    if tid is not None:
+        bind_tenant(db, tid)
+    else:
+        ensure_cross_tenant(db, "auth.reset")
     user = db.get(User, int(payload.get("sub", 0)))
     if user is None or not user.active or int(payload.get("tv", -1)) != user.token_version:
         raise HTTPException(status_code=400, detail="invalid or expired reset link")
@@ -634,6 +674,15 @@ def verify_email(token: str, db: Session = Depends(get_db)):
         return RedirectResponse(f"{base}/#verified=bad")
     if payload.get("typ") != "email_verify":
         return RedirectResponse(f"{base}/#verified=bad")
+    from .database import bind_tenant, ensure_cross_tenant
+    try:
+        tid = int(payload["tenant_id"]) if payload.get("tenant_id") is not None else None
+    except (TypeError, ValueError):
+        tid = None
+    if tid is not None:
+        bind_tenant(db, tid)
+    else:
+        ensure_cross_tenant(db, "auth.verify")
     user = db.get(User, int(payload.get("sub", 0)))
     if user is None or not user.active:
         return RedirectResponse(f"{base}/#verified=bad")
@@ -653,6 +702,15 @@ def mfa_verify(body: MFAVerify, request: Request, db: Session = Depends(get_db))
         raise HTTPException(status_code=400, detail="invalid or expired MFA challenge")
     if payload.get("typ") != "mfa":
         raise HTTPException(status_code=400, detail="invalid MFA challenge")
+    from .database import bind_tenant, ensure_cross_tenant
+    try:
+        tid = int(payload["tenant_id"]) if payload.get("tenant_id") is not None else None
+    except (TypeError, ValueError):
+        tid = None
+    if tid is not None:
+        bind_tenant(db, tid)
+    else:
+        ensure_cross_tenant(db, "auth.mfa")
     user = db.get(User, int(payload.get("sub", 0)))
     if user is None or not user.active or not user.mfa_enabled:
         raise HTTPException(status_code=401, detail="invalid credentials")
@@ -1383,6 +1441,8 @@ def enroll(body: EnrollRequest, db: Session = Depends(get_db)):
     """Device self-registration: present an enrollment token, receive a per-device API key.
     Public (no user auth) — the enrollment token is the credential. Returns an `ak_` key
     bound to the token's tenant and attributed to the device identity."""
+    from .database import bind_tenant, ensure_cross_tenant
+    ensure_cross_tenant(db, "auth.enroll")
     et = (
         db.query(EnrollmentToken)
         .filter(EnrollmentToken.prefix == body.token[:11], EnrollmentToken.active.is_(True))
@@ -1392,6 +1452,7 @@ def enroll(body: EnrollRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="invalid enrollment token")
     if et.expires_at and et.expires_at < _naive_utc():
         raise HTTPException(status_code=401, detail="enrollment token expired")
+    bind_tenant(db, et.tenant_id)
 
     # Atomically claim one use: a single conditional UPDATE gated on uses < max_uses, so
     # concurrent requests can't each pass a check-then-increment race and over-redeem a
@@ -2122,6 +2183,9 @@ def _enabled_oidc(org: str, db: Session) -> tuple[Tenant, TenantOIDC]:
     # way in; gating here would lock out an org whose members only have SSO (sso_required,
     # SCIM-provisioned users with no password). Same for _enabled_saml.
     tenant = db.query(Tenant).filter(Tenant.slug == org.strip().lower()).first()
+    if tenant is not None:
+        from .database import bind_tenant
+        bind_tenant(db, tenant.id)
     row = (db.query(TenantOIDC).filter(TenantOIDC.tenant_id == tenant.id).first()
            if tenant else None)
     if row is None or not row.enabled or not (row.issuer and row.client_id):
@@ -2197,8 +2261,8 @@ def sso_session_redirect(user: User, origin: str, return_to: str = "") -> Redire
     has MFA on, an MFA challenge instead, exactly as password login does. An IdP proves the
     first factor only; skipping the second here made SSO a way around a user's MFA."""
     if user.mfa_enabled:
-        challenge = create_token({"typ": "mfa", "sub": str(user.id), "tv": user.token_version},
-                                 ttl=300)
+        challenge = create_token({"typ": "mfa", "sub": str(user.id), "tv": user.token_version,
+                                  "tenant_id": user.tenant_id}, ttl=300)
         # Where the sign-in was headed (a connect flow) rides along, so the console can hand
         # the session on once the second factor is in; it used to be dropped here.
         from urllib.parse import quote
@@ -2368,6 +2432,9 @@ def delete_saml(current: User = Depends(require_admin), db: Session = Depends(ge
 
 def _enabled_saml(org: str, db: Session):
     tenant = db.query(Tenant).filter(Tenant.slug == org.strip().lower()).first()
+    if tenant is not None:
+        from .database import bind_tenant
+        bind_tenant(db, tenant.id)
     row = (db.query(TenantSAML).filter(TenantSAML.tenant_id == tenant.id).first()
            if tenant else None)
     if row is None or not row.enabled or not (row.idp_entity_id and row.idp_sso_url and row.idp_x509_cert):
@@ -2521,6 +2588,8 @@ def sso_login(org: str, request: Request, return_to: str = "", db: Session = Dep
     q = f"?return_to={quote(rt, safe='')}" if rt else ""
     tenant = db.query(Tenant).filter(Tenant.slug == org.strip().lower()).first()
     if tenant:
+        from .database import bind_tenant
+        bind_tenant(db, tenant.id)
         o = db.query(TenantOIDC).filter(TenantOIDC.tenant_id == tenant.id).first()
         if o and o.enabled:
             return RedirectResponse(f"{base}/api/auth/oidc/{tenant.slug}/login{q}", status_code=307)

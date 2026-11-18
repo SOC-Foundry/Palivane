@@ -143,13 +143,25 @@ def test_sink_health_records_and_snapshots():
 
 
 def test_forward_failure_lands_in_sink_health(monkeypatch):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app import outbox
+    from app.database import Base
+    from app.models import Tenant
     sink_health.reset()
-    import app.dispatch as dispatch
-    monkeypatch.setattr(dispatch, "submit", lambda fn, *a, **k: fn(*a, **k))
     monkeypatch.setattr(siem, "send_detail", lambda *a, **k: (False, "HTTP Error 403: token expired"))
+    eng = create_engine("sqlite://")
+    Base.metadata.create_all(eng)
+    db = sessionmaker(bind=eng)()
+    t = Tenant(slug="acme", name="Acme", siem_url="https://c/x", siem_token="tok")
+    db.add(t)
+    db.commit()
     siem.forward("https://c/x", "tok", "high", "json",
-                 {"severity": "critical", "risk_score": 90, "signals": []}, tenant_id=42)
-    s = sink_health.snapshot(42)["siem_http"]
+                 {"severity": "critical", "risk_score": 90, "signals": []},
+                 tenant_id=t.id, db=db)
+    db.commit()
+    outbox.drain_once(db)
+    s = sink_health.snapshot(t.id)["siem_http"]
     assert s["failed"] == 1 and "403" in s["last_error"]
 
 
@@ -157,7 +169,10 @@ def test_siem_status_endpoint(client, raw_client):
     r = client.get("/api/siem/status")
     assert r.status_code == 200
     body = r.json()
-    assert set(body["sinks"]) == {"siem_http", "siem_s3", "archive_s3"}
+    assert set(body["sinks"]) == {"siem_http", "siem_s3", "archive_s3", "alert"}
+    assert body["outbox"]["backlog"] == 0
+    assert "last_success" in body["outbox"] and "dead" in body["outbox"]
+    assert set(body["outbox"]["by_sink"]) == {"alert", "siem_http", "siem_s3"}
     assert "batches" in body["archive"] and "put_failures" in body["archive"]
     assert raw_client.get("/api/siem/status").status_code == 401
 

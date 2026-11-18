@@ -209,6 +209,8 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
                                       authorization_code: str) -> AuthorizationCode | None:
         db, close = self._session()
         try:
+            from .database import ensure_cross_tenant
+            ensure_cross_tenant(db, "auth.oauth")
             row = (db.query(OAuthCode)
                      .filter(OAuthCode.code_hash == hash_token(authorization_code))
                      .one_or_none())
@@ -250,6 +252,8 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
         """Spend the code once and issue the pair. PKCE was verified by the SDK."""
         db, close = self._session()
         try:
+            from .database import ensure_cross_tenant
+            ensure_cross_tenant(db, "auth.oauth")
             row = (db.query(OAuthCode)
                      .filter(OAuthCode.code_hash == hash_token(authorization_code.code))
                      .one_or_none())
@@ -302,6 +306,9 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
         return access, refresh, max(int((access_ends - now).total_seconds()), 0)
 
     def _load(self, db, token: str, kind: str):
+        from .database import bind_tenant, ensure_cross_tenant
+        # The hash is the only key. See every tenant for the lookup, then narrow.
+        ensure_cross_tenant(db, "auth.oauth")
         row = (db.query(OAuthTokenRow)
                  .filter(OAuthTokenRow.token_hash == hash_token(token),
                          OAuthTokenRow.kind == kind)
@@ -310,6 +317,8 @@ class PalivaneOAuthProvider(OAuthAuthorizationServerProvider):
             return None
         if row.expires_at and row.expires_at < _now():
             return None
+        if row.tenant_id is not None:
+            bind_tenant(db, row.tenant_id)
         return row
 
     async def load_access_token(self, token: str) -> AccessToken | None:

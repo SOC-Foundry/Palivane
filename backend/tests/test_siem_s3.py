@@ -9,10 +9,10 @@ import app.service as service
 def _capture_puts(monkeypatch):
     calls = []
     monkeypatch.setattr(s3, "_put", lambda *a, **k: (calls.append((a, k)) or (True, "")))
-    # dispatch.submit runs in a pool; call synchronously in tests for determinism.
-    import app.dispatch as dispatch
-    monkeypatch.setattr(dispatch, "submit", lambda fn, *a, **k: fn(*a, **k))
-    monkeypatch.setattr(s3, "submit", None, raising=False)
+    # The outbox normally sends on the lifespan loop. Deliver inside the request so
+    # this test observes the put before it returns.
+    import app.outbox as outbox
+    monkeypatch.setattr(outbox, "INLINE", True)
     return calls
 
 
@@ -23,13 +23,33 @@ def test_key_is_date_partitioned():
 
 
 def test_forward_gated_by_config_and_severity(monkeypatch):
-    calls = _capture_puts(monkeypatch)
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app import outbox
+    from app.database import Base
+    from app.models import DeliveryOutbox, Tenant
+    calls = []
+    monkeypatch.setattr(s3, "_put", lambda *a, **k: (calls.append((a, k)) or (True, "")))
+    eng = create_engine("sqlite://")
+    Base.metadata.create_all(eng)
+    db = sessionmaker(bind=eng)()
+    t = Tenant(slug="acme", name="Acme", siem_s3_bucket="b", siem_s3_prefix="p",
+               siem_s3_region="us-east-1", siem_s3_key_id="AKIA_x", siem_s3_secret="sek",
+               siem_min_severity="high")
+    db.add(t)
+    db.commit()
     v = {"severity": "critical", "risk_score": 90, "finding_id": 1, "signals": [{"category": "secret_leak"}]}
     # no bucket/creds -> no-op
-    s3.forward_s3("", "", "", "", "", "high", v)
+    s3.forward_s3("", "", "", "", "", "high", v, tenant_id=t.id, db=db)
+    db.commit()
+    assert db.query(DeliveryOutbox).count() == 0
+    # configured + severity >= threshold -> queued, then one put with the shared shape
+    s3.forward_s3("b", "p", "us-east-1", "AKIA_x", "sek", "high", v,
+                  subject="s", actor="a", surface="ai_usage", org="acme",
+                  tenant_id=t.id, db=db)
+    db.commit()
     assert calls == []
-    # configured + severity >= threshold -> one put, with the shared event shape
-    s3.forward_s3("b", "p", "us-east-1", "AKIA_x", "sek", "high", v, subject="s", actor="a", surface="ai_usage", org="acme")
+    outbox.drain_once(db)
     assert len(calls) == 1
     (bucket, prefix, region, kid, sec, fields), kw = calls[0]
     assert bucket == "b" and region == "us-east-1"
@@ -37,8 +57,10 @@ def test_forward_gated_by_config_and_severity(monkeypatch):
     # below threshold -> dropped
     calls.clear()
     s3.forward_s3("b", "p", "us-east-1", "AKIA_x", "sek", "high",
-                  {"severity": "low", "risk_score": 5, "signals": []})
-    assert calls == []
+                  {"severity": "low", "risk_score": 5, "signals": []},
+                  tenant_id=t.id, db=db)
+    db.commit()
+    assert calls == [] and db.query(DeliveryOutbox).filter_by(status="pending").count() == 0
 
 
 def test_s3_sink_runs_from_run_analysis(client, raw_client, monkeypatch):
