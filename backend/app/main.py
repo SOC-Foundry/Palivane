@@ -11,6 +11,7 @@ import hmac
 import logging
 import re
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -45,7 +46,7 @@ from .models import (Agent, AgentRole, CorpusSample, Finding, PolicyOverride, Sa
                      Tenant, User)
 from .schemas import ExposureStatusIn, SecretRotatedIn
 from .schemas import (
-    A2AIngest, CommitAttestIn, ReplayIn,
+    A2AIngest, CommitAttestIn, ReplayIn, PassportIn,
     AIUsageIngest,
     ContainmentCreate,
     JustifyRequest,
@@ -1209,7 +1210,14 @@ def _ingest_caller_unbound(x_palivane_token: str, db: Session) -> tuple[int | No
     if looks_like_agent_token(x_palivane_token):
         ag = _resolve_agent_token(x_palivane_token, db)      # 401s on bad/disabled agent
         return ag.tenant_id, ag.name, False
-    if looks_like_jwt(x_palivane_token):                     # OIDC/workload agent identity
+    if looks_like_jwt(x_palivane_token):                     # OIDC/workload agent identity, or a passport
+        from . import passports
+        if passports.is_passport(x_palivane_token):
+            ag, row = passports.resolve(db, x_palivane_token)
+            current_passport.set({"id": row.id, "scope": row.scope or {}, "agent": ag.name})
+            from .database import bind_tenant
+            bind_tenant(db, ag.tenant_id)
+            return ag.tenant_id, ag.name, False
         ag = _resolve_agent_jwt(x_palivane_token, db)
         if ag is None:
             raise HTTPException(status_code=401, detail="unrecognized or invalid agent JWT")
@@ -1357,6 +1365,10 @@ def _resolve_agent_jwt(token: str, db: Session):
                         detail=f"agent JWT rejected: {last_err or 'no matching audience'}")
 
 
+# The passport presented on this request (app/passports.py), for the tool-call gate below.
+current_passport: ContextVar[dict | None] = ContextVar("palivane_current_passport", default=None)
+
+
 def _capture_agent(x_palivane_token: str, x_palivane_agent: str, tenant_id, db: Session) -> str:
     """Best-effort agent name for attribution: an `X-Palivane-Agent` header or the primary token
     when it's an `ag_…` or an OIDC/workload JWT. Returns "" if none/mismatched (never raises)."""
@@ -1372,6 +1384,16 @@ def _capture_agent(x_palivane_token: str, x_palivane_agent: str, tenant_id, db: 
         db.commit()
         return row.name
     if looks_like_jwt(tok):
+        from . import passports
+        if passports.is_passport(tok):
+            try:
+                ag, row = passports.resolve(db, tok)
+            except HTTPException:
+                return ""
+            if tenant_id is not None and ag.tenant_id != tenant_id:
+                return ""
+            current_passport.set({"id": row.id, "scope": row.scope or {}, "agent": ag.name})
+            return ag.name
         try:
             ag = _resolve_agent_jwt(tok, db)
         except HTTPException:
@@ -2634,6 +2656,15 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
         action = "block"
     if attest_block:
         action = "block"
+    # The passport, if one was presented: a hard gate independent of scoring and of the role.
+    pp = current_passport.get()
+    passport_denied, passport_reason = (False, "")
+    if pp:
+        from . import passports
+        passport_denied, passport_reason = passports.decide_tool(pp.get("scope") or {}, body.server, body.tool,
+                                                                 body.shell_command or "")
+        if passport_denied:
+            action = "block"
     # Feed shadow-AI discovery: the MCP surface has no destination domain, so the plane's
     # User-Agent (palivane-cursor-hook / -hook / -gemini / -codex / -mcp) names the tool. This
     # is how Cursor, Claude Code, Gemini CLI and Codex show up in the inventory at all.
@@ -2644,6 +2675,11 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
     # Org enforce stance for local capture planes — same field as ai-usage verdicts,
     # staged per actor/tool via policy overrides.
     enforce = _client_enforce_for(tenant_id, actor, body.tool or "mcp", db, claimed=claimed)
+    if pp:
+        result["signals"] = list(result["signals"]) + ([{"category": "agent_authz", "title": "Action outside the agent's passport",
+                                                        "detail": passport_reason, "weight": 0.9, "confidence": 0.95,
+                                                        "detector": "passport", "evidence": f"passport #{pp['id']}", "check": "passport"}]
+                                                       if passport_denied else [])
     return {
         "action": action,
         "risk_score": result["risk_score"],
@@ -5557,6 +5593,48 @@ def shared_signatures(current: User = Depends(require_admin), db: Session = Depe
     rows = sharedsigs.listing(db)
     return {"signatures": rows, "contributing": bool(tenant and tenant.share_signatures),
             "active": sum(1 for r in rows if r["status"] == "active")}
+
+
+@app.post("/api/agents/{agent_id}/passport")
+def issue_passport(agent_id: int, body: PassportIn, current: User = Depends(require_admin),
+                   db: Session = Depends(get_db)):
+    """Issue a capability passport to an agent (app/passports.py): a signed token, at most a
+    day long, naming which servers, tools, commands and providers it may use. Shown once."""
+    from . import audit_log, passports
+    agent = db.get(Agent, agent_id)
+    if agent is None or agent.tenant_id != current.tenant_id:
+        raise HTTPException(status_code=404, detail="agent not found")
+    if not agent.active:
+        raise HTTPException(status_code=400, detail="agent is disabled")
+    token, row = passports.issue(db, current.tenant_id, agent, body.model_dump(exclude={"ttl_minutes", "note"}),
+                                 body.ttl_minutes, current.email, body.note)
+    audit_log.record(db, current.tenant_id, current.email, "passport.issue", target=agent.name,
+                     detail={"passport_id": row.id, "ttl_minutes": body.ttl_minutes, "scope": row.scope})
+    return {"token": token, "passport": row.to_dict(), "expires_in": body.ttl_minutes * 60}
+
+
+@app.get("/api/passports")
+def list_passports(all: bool = False, current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    from . import passports
+    return {"passports": passports.listing(db, current.tenant_id, include_ended=all)}
+
+
+@app.post("/api/passports/{passport_id}/revoke")
+def revoke_passport(passport_id: int, current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    from . import audit_log, passports
+    row = passports.revoke(db, current.tenant_id, passport_id, current.email)
+    audit_log.record(db, current.tenant_id, current.email, "passport.revoke", target=row.agent_name,
+                     detail={"passport_id": row.id})
+    return row.to_dict()
+
+
+@app.get("/api/passports/verify")
+def verify_passport(token: str, x_palivane_token: str = Header(default=""), db: Session = Depends(get_db)):
+    """For a tool that is handed a passport: is it live, whose is it, what does it allow.
+    Authenticated by any of the org's capture keys, so an MCP server can ask."""
+    from . import passports
+    tenant_id, _actor = _ingest_auth(x_palivane_token, db)
+    return passports.verify(db, tenant_id, token)
 
 
 @app.post("/api/attest/commit")

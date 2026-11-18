@@ -710,6 +710,16 @@ class PolicyOverrideIn(BaseModel):
     enforce: Literal["on", "off", "inherit"] = "inherit"
 
 
+class PassportIn(BaseModel):
+    """Issue a capability passport to an agent (app/passports.py)."""
+    ttl_minutes: int = Field(60, ge=1, le=1440)
+    servers: list[str] = Field(default_factory=list)
+    tools: list[str] = Field(default_factory=list)
+    commands: list[str] = Field(default_factory=list)
+    providers: list[str] = Field(default_factory=list)
+    note: str = Field("", max_length=200)
+
+
 class ReplayIn(BaseModel):
     """The flight recorder replayed against a policy (app/replay.py)."""
     actor: str = Field(min_length=1, max_length=320)

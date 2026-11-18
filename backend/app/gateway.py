@@ -81,6 +81,8 @@ class Principal:
     key_id: int = 0  # the ApiKey row (one per enrolled device) — device containment
     # The key is a development key (models.ApiKey.development): its label, else "".
     development: str = ""
+    # The capability passport presented as the credential (app/passports.py), else None.
+    passport: dict | None = None
 
 
 def key_actor_claimed(key: ApiKey) -> bool:
@@ -186,6 +188,18 @@ def _key_identity(key: ApiKey, db: Session) -> str:
     return "api-key"
 
 
+def _passport_gate(principal: Principal, provider: str):
+    """A 403 when the passport the caller presented does not allow this provider, else None."""
+    if not principal.passport:
+        return None
+    from . import passports
+    denied, reason = passports.decide_provider(principal.passport.get("scope") or {}, provider)
+    if not denied:
+        return None
+    return JSONResponse(status_code=403, content={"error": {"type": "passport",
+                        "message": f"Refused by Palivane: {reason}."}})
+
+
 def get_gateway_principal(request: Request, db: Session = Depends(get_db)) -> Principal:
     """Authenticate a gateway call by a long-lived API key (`ak_…`) or a user JWT, from
     `x-api-key` (Anthropic clients), `Authorization: Bearer` (OpenAI clients), or
@@ -214,6 +228,12 @@ def get_gateway_principal(request: Request, db: Session = Depends(get_db)) -> Pr
             payload = decode_token(token)
         except TokenError as exc:
             raise HTTPException(status_code=401, detail=str(exc))
+        if payload.get("typ") == "passport":
+            from . import passports
+            ag, row = passports.resolve(db, token)
+            bind_tenant(db, ag.tenant_id)
+            return Principal(tenant_id=ag.tenant_id, actor=ag.name, agent=ag.name, agent_id=ag.id,
+                             passport={"id": row.id, "scope": row.scope or {}})
         if payload.get("typ") == "agent":
             # A short-lived agent session token (minted in the console; TTL <= 24h). The
             # Agent row is re-checked live, so disabling the agent revokes these instantly.
@@ -1427,6 +1447,9 @@ def chat_completions(request: Request, principal: Principal = Depends(get_gatewa
     limited = _rate_limited(db, principal, "openai")
     if limited:
         return limited
+    gated = _passport_gate(principal, "openai")
+    if gated:
+        return gated
     payload = _clamp_output_tokens(body)
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
@@ -1648,6 +1671,9 @@ def responses(request: Request, principal: Principal = Depends(get_gateway_princ
     limited = _rate_limited(db, principal, "openai")
     if limited:
         return limited
+    gated = _passport_gate(principal, "openai")
+    if gated:
+        return gated
     payload = _clamp_output_tokens(body)
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
@@ -1747,6 +1773,9 @@ def messages(request: Request, principal: Principal = Depends(get_gateway_princi
     limited = _rate_limited(db, principal, "anthropic")
     if limited:
         return limited
+    gated = _passport_gate(principal, "anthropic")
+    if gated:
+        return gated
     payload = _clamp_output_tokens(body)
     model = payload.get("model", "unknown")
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
@@ -1969,6 +1998,9 @@ def count_tokens(request: Request, principal: Principal = Depends(get_gateway_pr
     limited = _rate_limited(db, principal, "anthropic")
     if limited:
         return limited
+    gated = _passport_gate(principal, "anthropic")
+    if gated:
+        return gated
     payload = body
     base, key = resolve_upstream("anthropic", principal.tenant_id, db)
     if key:
@@ -2122,6 +2154,9 @@ def _gemini_entry(model: str, method: str, request: Request,
     limited = _rate_limited(db, principal, "gemini")
     if limited:
         return limited
+    gated = _passport_gate(principal, "gemini")
+    if gated:
+        return gated
     payload = _clamp_output_tokens(body)
     tool = detect_tool(request.headers.get("user-agent", ""), request.headers.get("x-palivane-tool", ""))
     scope = _ScanScope(principal.tenant_id)

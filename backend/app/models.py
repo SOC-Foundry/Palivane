@@ -1742,3 +1742,33 @@ class SecretReach(Base):
     def to_dict(self) -> dict:
         return {"kind": self.kind, "scope": self.scope, "severity": self.severity, "source": self.source,
                 "detail": self.detail or {}, "checked_at": self.checked_at.isoformat() if self.checked_at else None}
+
+
+class Passport(Base):
+    """A capability passport issued to an agent (app/passports.py): the scope the token
+    carries, when it expires, whether it was revoked, how often it was presented."""
+
+    __tablename__ = "passports"
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    agent_id = Column(Integer, nullable=False)
+    agent_name = Column(String(128), default="")
+    jti = Column(String(32), nullable=False, unique=True)
+    scope = Column(JSON, nullable=True)        # {servers, tools, commands, providers}: globs
+    note = Column(String(200), default="")
+    issued_by = Column(String(320), default="")
+    issued_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True, index=True)
+    revoked_at = Column(DateTime, nullable=True)
+    revoked_by = Column(String(320), default="")
+    uses = Column(Integer, default=0)
+    last_used_at = Column(DateTime, nullable=True)
+
+    def to_dict(self, now=None) -> dict:
+        iso = lambda d: d.isoformat() if d else None
+        live = self.revoked_at is None and (self.expires_at is None or (now is None) or self.expires_at > now)
+        return {"id": self.id, "agent_id": self.agent_id, "agent": self.agent_name, "scope": self.scope or {},
+                "note": self.note or "", "issued_by": self.issued_by or "", "issued_at": iso(self.issued_at),
+                "expires_at": iso(self.expires_at), "revoked_at": iso(self.revoked_at), "revoked_by": self.revoked_by or "",
+                "uses": self.uses or 0, "last_used_at": iso(self.last_used_at), "live": live}

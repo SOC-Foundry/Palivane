@@ -150,6 +150,10 @@ export const api = {
   agentDelete: (id) => req(`/agents/${id}`, { method: "DELETE" }),
   agentUpdate: (id, payload) => req(`/agents/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   agentToken: (id, ttl) => req(`/agents/${id}/token`, { method: "POST", body: JSON.stringify({ ttl_minutes: ttl }) }),
+  // Capability passports (app/passports.py): issue, list, revoke.
+  issuePassport: (id, payload) => req(`/agents/${id}/passport`, { method: "POST", body: JSON.stringify(payload) }),
+  passports: (all = false) => req(`/passports${all ? "?all=1" : ""}`),
+  revokePassport: (id) => req(`/passports/${id}/revoke`, { method: "POST" }),
   agentRoles: () => req("/agent-roles"),
   agentRoleUpsert: (payload) => req("/agent-roles", { method: "POST", body: JSON.stringify(payload) }),
   agentRoleDelete: (id) => req(`/agent-roles/${id}`, { method: "DELETE" }),
