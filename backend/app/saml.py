@@ -81,6 +81,40 @@ def in_response_to(saml_response: str) -> str:
         return ""
 
 
+# Okta sends `groups`. Entra sends the claims URI (object ids, or display names if the
+# app is configured that way). Matched case-insensitively because IdPs disagree on case.
+_GROUP_ATTRS = (
+    "groups",
+    "group",
+    "http://schemas.microsoft.com/ws/2008/06/identity/claims/groups",
+    "http://schemas.xmlsoap.org/claims/group",
+)
+
+
+def groups_from_attributes(attributes: dict) -> list[str] | None:
+    """Directory groups on a SAML assertion.
+
+    None when no group attribute is present. An empty list means the assertion carried
+    the attribute and it was empty. An Entra overage URL standing in for the group list
+    is None, same as the OIDC path.
+    """
+    if not isinstance(attributes, dict) or not attributes:
+        return None
+    from .groups import collapse_groups, overage_only
+    lowered = {str(k).strip().lower(): v for k, v in attributes.items()}
+    found = False
+    names: list[str] = []
+    for key in _GROUP_ATTRS:
+        if key in lowered:
+            found = True
+            names.extend(collapse_groups(lowered[key]))
+    if not found:
+        return None
+    if overage_only(names):
+        return None
+    return names
+
+
 def _pick_email(attributes: dict, nameid: str) -> str:
     for k in _EMAIL_ATTRS:
         v = attributes.get(k)

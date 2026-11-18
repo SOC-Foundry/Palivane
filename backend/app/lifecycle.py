@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from .models import (
     Agent, AgentRole, AllowEntry, ApiKey, AuditLog, BrowserExtension, ContentFingerprint,
     ActorHours, Containment, CorpusSample, ExposureRecord, TenantLane, InstructionTaint, SecretRotation, SecretSighting, DeveloperActivity, DeviceAsset, DiscoveredUsage, EnrollmentToken, ExceptionRecord, Finding, GatewayUsage,
+    GroupMapping, ScimGroup, ScimGroupMember,
     InferenceHookDenial, JoinRequest,
     OAuthCode, OAuthToken, PolicyOverride, SaasConnector, SensorHeartbeat, Tenant,
     TenantDomain, TenantOIDC, TenantSAML, TenantUpstream, UpgradeRequest, User,
@@ -46,6 +47,10 @@ TENANT_TABLES = (
     ("api_keys", ApiKey),
     ("oauth_codes", OAuthCode),
     ("oauth_tokens", OAuthToken),
+    # Members reference users and scim_groups, so they go first.
+    ("scim_group_members", ScimGroupMember),
+    ("scim_groups", ScimGroup),
+    ("group_mappings", GroupMapping),
     ("users", User),
     ("enrollment_tokens", EnrollmentToken),
     ("upstreams", TenantUpstream),

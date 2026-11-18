@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 
 from .ai_catalog import CATEGORY_LABEL, classify, classify_name
 from .detectors.shadow_ai import _PERSONAL_EMAIL_DOMAINS
-from .models import BrowserExtension, DiscoveredUsage, TenantDomain
+from .models import BrowserExtension, DiscoveredUsage, TenantDomain, User
 
 
 def _account_type(db, tenant_id, actor: str) -> str:
@@ -70,10 +70,26 @@ def _is_sanctioned(tool: str, domain: str, sanctioned: set[str]) -> bool:
     return any(s and (d == s or d.endswith("." + s)) for s in sanctioned)
 
 
+def _directory_team(db, tenant_id, actor: str) -> str:
+    """The team an IdP group mapping stamped on this actor, if they are a user here."""
+    if not actor or "@" not in actor or tenant_id is None:
+        return ""
+    row = (db.query(User.team)
+             .filter(User.tenant_id == tenant_id, User.email == actor)
+             .first())
+    return (row[0] or "").strip() if row else ""
+
+
 def _upsert(db, tenant_id, actor, hit, *, source, inc=1, sensitive=False, risk=0, team="", when=None):
     """Increment (or create) the (actor, tool) row. Flushes a freshly-created row so a
-    subsequent lookup in the same request sees it (no duplicate-insert on the unique key)."""
+    subsequent lookup in the same request sees it (no duplicate-insert on the unique key).
+
+    A directory team (group mapping) wins over a team on the log line: Discovery groups
+    by the team the IdP says the person is on."""
     actor_n = _norm(actor) or "unknown"
+    directory = _directory_team(db, tenant_id, actor_n)
+    if directory:
+        team = directory
     row = (db.query(DiscoveredUsage)
              .filter(DiscoveredUsage.tenant_id == tenant_id,
                      DiscoveredUsage.actor == actor_n,
@@ -110,7 +126,9 @@ def _upsert(db, tenant_id, actor, hit, *, source, inc=1, sensitive=False, risk=0
         row.sensitive_count = (row.sensitive_count or 0) + 1
     if risk and risk > (row.max_risk or 0):
         row.max_risk = risk
-    if team and not row.team:
+    if directory:
+        row.team = directory
+    elif team and not row.team:
         row.team = team
     if source == "capture":               # capture is higher-signal than a log line
         row.source = "capture"
@@ -216,35 +234,50 @@ def ingest_oauth_grants(db, tenant_id, grants) -> dict:
     return {"grants": len(grants), "ai_apps": matched, "broad_scope": broad, "unknown": unknown}
 
 
-def build_inventory(db, tenant_id, sanctioned_raw: str) -> dict:
-    """Roll the store up into the discovery inventory: summary + by-tool + by-team."""
+def _row_team(row) -> str:
+    return (row.team or "").strip() or "Unassigned"
+
+
+def build_inventory(db, tenant_id, sanctioned_raw: str, team: str = "") -> dict:
+    """Roll the store up into the discovery inventory: summary + by-tool + by-team.
+
+    `team` narrows the tool list and the summary to one team (case-insensitive, and
+    "Unassigned" for rows with no team). The by-team rollup stays complete so the
+    console can switch teams without a second query.
+    """
     rows = db.query(DiscoveredUsage).filter(DiscoveredUsage.tenant_id == tenant_id).all()
     sanctioned = _sanctioned_set(sanctioned_raw)
+    want = (team or "").strip().lower()
 
     tools: dict[str, dict] = {}
     teams: dict[str, dict] = {}
+    visible: list = []
     for r in rows:
         san = _is_sanctioned(r.tool, r.domain, sanctioned)
-        t = tools.setdefault(r.tool, {
-            "tool": r.tool, "category": r.category, "category_label": CATEGORY_LABEL.get(r.category, r.category),
-            "domain": r.domain, "sanctioned": san, "users": set(), "events": 0,
-            "sensitive_events": 0, "max_risk": 0, "sources": set(), "last_seen": "",
-            "personal_users": set(), "corporate_users": set(),
-        })
-        t["users"].add(r.actor)
-        if r.account_type == "personal":
-            t["personal_users"].add(r.actor)
-        elif r.account_type == "corporate":
-            t["corporate_users"].add(r.actor)
-        t["events"] += r.event_count or 0
-        t["sensitive_events"] += r.sensitive_count or 0
-        t["max_risk"] = max(t["max_risk"], r.max_risk or 0)
-        t["sources"].add(r.source)
-        ls = r.last_seen.isoformat() if r.last_seen else ""
-        if ls > t["last_seen"]:
-            t["last_seen"] = ls
-
         team_name = r.team or "Unassigned"
+        in_filter = not want or team_name.lower() == want
+        if in_filter:
+            visible.append(r)
+            t = tools.setdefault(r.tool, {
+                "tool": r.tool, "category": r.category,
+                "category_label": CATEGORY_LABEL.get(r.category, r.category),
+                "domain": r.domain, "sanctioned": san, "users": set(), "events": 0,
+                "sensitive_events": 0, "max_risk": 0, "sources": set(), "last_seen": "",
+                "personal_users": set(), "corporate_users": set(),
+            })
+            t["users"].add(r.actor)
+            if r.account_type == "personal":
+                t["personal_users"].add(r.actor)
+            elif r.account_type == "corporate":
+                t["corporate_users"].add(r.actor)
+            t["events"] += r.event_count or 0
+            t["sensitive_events"] += r.sensitive_count or 0
+            t["max_risk"] = max(t["max_risk"], r.max_risk or 0)
+            t["sources"].add(r.source)
+            ls = r.last_seen.isoformat() if r.last_seen else ""
+            if ls > t["last_seen"]:
+                t["last_seen"] = ls
+
         g = teams.setdefault(team_name, {
             "team": team_name, "users": set(), "tools": set(), "unsanctioned_tools": set(),
             "events": 0, "sensitive_events": 0, "max_risk": 0,
@@ -289,15 +322,16 @@ def build_inventory(db, tenant_id, sanctioned_raw: str) -> dict:
     unsanctioned = [t for t in tool_list if not t["sanctioned"]]
     # The Netskope-style headline: distinct actors reaching ANY tool via a personal account,
     # and the sharper risk — personal accounts on UNsanctioned tools.
-    personal_actors = {r.actor for r in rows if r.account_type == "personal"}
+    personal_actors = {r.actor for r in visible if r.account_type == "personal"}
     personal_on_unsanctioned = len([t for t in unsanctioned if t["personal_user_count"]])
     return {
         "summary": {
             "tools": len(tool_list),
             "unsanctioned_tools": len(unsanctioned),
-            "users": len({r.actor for r in rows}),
+            "users": len({r.actor for r in visible}),
             "sensitive_events": sum(t["sensitive_events"] for t in tool_list),
-            "teams": len([g for g in team_list if g["team"] != "Unassigned"]),
+            "teams": len({(r.team or "Unassigned") for r in visible
+                          if (r.team or "Unassigned") != "Unassigned"}),
             "personal_account_users": len(personal_actors),
             "personal_on_unsanctioned_tools": personal_on_unsanctioned,
         },
