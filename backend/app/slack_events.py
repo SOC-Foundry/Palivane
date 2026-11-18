@@ -85,7 +85,10 @@ def _connector_for_team(db, team_id: str, enterprise_id: str = "", api_app_id: s
     module docstring). Pasted-token connectors not yet mapped get one auth.test call to
     learn (and cache) their workspace."""
     from . import slack_install
+    from .database import allow_cross_tenant, bind_tenant
     from .models import SaasConnector
+    # Workspace id is not a tenant id. See every connector, then narrow to the one org.
+    allow_cross_tenant(db, "webhook.slack")
     rows = (db.query(SaasConnector)
               .filter(SaasConnector.platform == "slack_messages",
                       SaasConnector.active.is_(True)).all())
@@ -102,6 +105,7 @@ def _connector_for_team(db, team_id: str, enterprise_id: str = "", api_app_id: s
                 _log.warning("slack event for team %s: %d matching app installs, dropped",
                              team_id or enterprise_id, len(hits))
             return None
+        bind_tenant(db, hits[0].tenant_id)
         return hits[0]
     pasted = [r for r in rows if not (r.state or {}).get("app_installed")]
     _map_pasted(db, pasted)
@@ -111,6 +115,7 @@ def _connector_for_team(db, team_id: str, enterprise_id: str = "", api_app_id: s
             _log.warning("slack event for team %s claimed by %d orgs, dropped",
                          team_id or enterprise_id, len({r.tenant_id for r in hits}))
         return None
+    bind_tenant(db, hits[0].tenant_id)
     return hits[0]
 
 

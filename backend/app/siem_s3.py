@@ -6,9 +6,10 @@ Per-finding objects (not an in-memory batch) on purpose: Cloud Run scales to zer
 many short-lived instances, so a buffered batch would lose data on shutdown. Finding volume
 is low enough that per-object writes are fine; batching is a later cost optimization.
 
-Fire-and-forget via the shared bounded pool (never blocks the request path). Credentials are
-the tenant's own AWS key (stored write-only). boto3 is imported lazily so the module loads
-even where boto3 isn't installed (tests mock the put).
+Capture enqueues a row and returns (see app/outbox.py). The worker reads the tenant's
+current bucket and credential when it sends, so a rotated key applies to anything
+still queued. boto3 is imported lazily so the module loads even where boto3 isn't
+installed (tests mock the put).
 """
 
 from __future__ import annotations
@@ -154,33 +155,24 @@ def _put(bucket: str, prefix: str, region: str, key_id: str, secret: str, fields
         return False, str(e)[:300]
 
 
-def _deliver(bucket: str, prefix: str, region: str, key_id: str, secret: str, fields: dict,
-             tenant_id: int, role_arn: str = "", external_id: str = "") -> None:
-    """Pool job: put + record the outcome, so a broken bucket/credential is visible."""
-    ok, detail = _put(bucket, prefix, region, key_id, secret, fields,
-                      role_arn=role_arn, external_id=external_id)
-    from . import sink_health
-    sink_health.record(tenant_id, "siem_s3", ok, detail)
-    if not ok:
-        log.warning("SIEM S3 delivery failed (tenant %s, bucket %s): %s",
-                    tenant_id, bucket, detail)
-
-
 def forward_s3(bucket: str, prefix: str, region: str, key_id: str, secret: str,
                min_severity: str, verdict: dict, subject: str = "", actor: str = "",
                surface: str = "", org: str = "",
-               tenant_id: int = 0, role_arn: str = "", external_id: str = "") -> None:
-    """Deliver a finding to the tenant's S3 sink if configured (an assumable role, or a
-    static key pair) and severity >= min_severity. Non-blocking and best-effort, but
-    failures are logged + counted (sink_health)."""
+               tenant_id: int = 0, role_arn: str = "", external_id: str = "",
+               db=None) -> None:
+    """Queue a finding for the tenant's S3 sink if configured (an assumable role, or a
+    static key pair) and severity >= min_severity. Does not block on the network.
+    The credential arguments gate the enqueue; the worker re-reads them from the tenant."""
     if not (bucket and (role_arn or (key_id and secret))):
         return
     if siem._RANK.get(verdict.get("severity"), 0) < siem._RANK.get(min_severity or "high", 3):
         return
     fields = siem._fields(verdict, subject, actor, surface, org)
-    from .dispatch import submit
-    submit(_deliver, bucket, prefix, region, key_id, secret, fields, tenant_id,
-           role_arn, external_id)
+    if db is None or not tenant_id:
+        log.warning("SIEM S3 forward skipped: no tenant session to queue the event")
+        return
+    from .outbox import enqueue
+    enqueue(db, tenant_id, "siem_s3", fields)
 
 
 def test(bucket: str, prefix: str, region: str, key_id: str, secret: str,

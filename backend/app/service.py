@@ -609,7 +609,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             if reopened:
                 _dispatch_sinks(tenant, {**result, "finding_id": prior.id, "reopened": True,
                                          "recurrence": prior.seen_count},
-                                item.subject, item.sender, item.surface.value)
+                                item.subject, item.sender, item.surface.value, db)
             provenance.remember(db, tenant_id, item, result["signals"], prior.id)
             secrets_ledger.record(db, tenant_id, item, result["signals"], prior.id)
             return {"finding_id": prior.id, "recurrence": prior.seen_count,
@@ -661,7 +661,7 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
             # in anyone's chain (a dismissed finding never is).
             return {"finding_id": finding_id, "judge_used": judge_ran, "development": True, **result}
         _dispatch_sinks(tenant, {**result, "finding_id": finding_id},
-                        item.subject, item.sender, item.surface.value)
+                        item.subject, item.sender, item.surface.value, db)
         # Session behavioral correlation: this event alone is stored; now look across the
         # actor's recent activity for an escalating attack CHAIN and record it if present.
         # Runs only for a real (non-recurrence) finding that itself touches a chain stage;
@@ -675,11 +675,13 @@ def run_analysis(item: AnalysisInput, persist: bool, db: Session,
     return {"finding_id": finding_id, "judge_used": judge_ran, **result}
 
 
-def _dispatch_sinks(tenant, payload: dict, subject: str, actor: str, surface: str) -> None:
-    """Fire the tenant's configured out-of-band sinks (alert webhook, SIEM push, S3 lake)
+def _dispatch_sinks(tenant, payload: dict, subject: str, actor: str, surface: str,
+                    db=None) -> None:
+    """Queue the tenant's configured out-of-band sinks (alert webhook, SIEM push, S3 lake)
     for a stored finding. Shared by the primary persist path and session correlation so a
-    correlated attack-chain finding alerts exactly like any other. Each sink is guarded and
-    best-effort; a sink being unset or failing never affects the caller."""
+    correlated attack-chain finding alerts exactly like any other. Each sink only inserts
+    an outbox row; a sink being unset never affects the caller, and the network happens
+    later on the outbox loop."""
     if tenant is None:
         return
     # Mask evidence the same way the stored finding is masked: the alert/SIEM/S3 formatters
@@ -692,16 +694,17 @@ def _dispatch_sinks(tenant, payload: dict, subject: str, actor: str, surface: st
         from . import alerts
         alerts.notify(tenant.alert_webhook.strip(), tenant.alert_min_severity, payload,
                       subject=subject, actor=actor, surface=surface,
-                      digest=tenant.alert_digest or "off")
-    # SIEM credentials are sealed at rest. _dispatch_sinks has no session (it also runs
-    # from the correlation path), so use the read-only unwrap: opening an existing DEK
-    # needs the KEK only. Legacy bare and enc:v1: rows still pass through.
+                      digest=tenant.alert_digest or "off",
+                      db=db, tenant_id=tenant.id)
+    # The outbox worker re-reads the sealed credential. Unseal here only to decide
+    # whether a sink is actually configured (an empty token still forwards; a missing
+    # URL does not). Legacy bare and enc:v1: rows still pass through.
     if (tenant.siem_url or "").strip():
         from . import siem
         siem.forward(tenant.siem_url.strip(), crypto.unseal_secret(tenant.siem_token, crypto.tenant_dek_readonly(tenant), legacy_plaintext=True),
                      tenant.siem_min_severity, tenant.siem_format, payload,
                      subject=subject, actor=actor, surface=surface, org=tenant.slug,
-                     tenant_id=tenant.id)
+                     tenant_id=tenant.id, db=db)
     if (tenant.siem_s3_bucket or "").strip():
         from . import siem_s3
         siem_s3.forward_s3(tenant.siem_s3_bucket.strip(), tenant.siem_s3_prefix or "",
@@ -711,4 +714,14 @@ def _dispatch_sinks(tenant, payload: dict, subject: str, actor: str, surface: st
                            org=tenant.slug,
                            tenant_id=tenant.id,
                            role_arn=getattr(tenant, "siem_s3_role_arn", "") or "",
-                           external_id=getattr(tenant, "siem_s3_external_id", "") or "")
+                           external_id=getattr(tenant, "siem_s3_external_id", "") or "",
+                           db=db)
+    # The finding is already committed by the time we are called. The outbox rows
+    # have to commit too, or closing the request session rolls them back and the
+    # event is gone.
+    if db is not None:
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            _log.warning("outbox commit failed", exc_info=True)

@@ -69,21 +69,18 @@ def test_capture_calls_are_metered_once_per_person_and_plane(client, raw_client)
     assert m["unattributed"] == 0
 
 
-def test_backfill_is_idempotent_and_catches_unmetered_sensors(client, raw_client):
+def test_backfill_is_idempotent_and_catches_unmetered_sensors(client, raw_client, db_factory):
     dm._SEEN.clear()
     _send(raw_client, _key(client, "three@acme.com"), HOOK_UA)
-    from app.database import get_db
-    from app.main import app
     from app.models import DeveloperActivity
-    gen = app.dependency_overrides.get(get_db, get_db)()
-    db = next(gen)
+    db = db_factory()
     try:
         db.query(DeveloperActivity).delete()      # as if the capture-time write had failed
         db.commit()
         assert dm.backfill_from_heartbeats(db) >= 1
         assert dm.backfill_from_heartbeats(db) == 0
     finally:
-        gen.close()
+        db.close()
     assert _this_month(client)["agent"] >= 1
 
 

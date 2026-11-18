@@ -132,6 +132,8 @@ def test_per_agent_block_severity_is_stricter_only(client, monkeypatch):
     # Pull a db session from the overridden dependency to evaluate policy directly.
     gen = _app.dependency_overrides[get_db]()
     db = next(gen)
+    from app.database import bind_tenant
+    bind_tenant(db, 1)
     try:
         agent_row_id = ag["id"]
         pol = _effective_policy(Principal(tenant_id=1, actor="x", agent="strict-bot",

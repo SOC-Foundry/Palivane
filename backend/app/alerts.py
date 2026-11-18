@@ -1,8 +1,8 @@
 """Outbound alerts — POST high/critical findings to a tenant's webhook (Slack-compatible).
 
-Fire-and-forget on the request path (a daemon thread with a short timeout) so a slow or
-down webhook never adds latency or breaks capture. `send_sync` is the same POST but
-blocking, for the "test webhook" button.
+Capture enqueues a row and returns (see app/outbox.py) so a slow or down webhook never
+adds latency or breaks capture, and a restart does not drop the alert. `send_sync` is
+the same POST but blocking, for the "test webhook" button and for the outbox worker.
 """
 
 from __future__ import annotations
@@ -91,31 +91,41 @@ def _active_in_window(since):
     return (Finding.last_seen > since) | (Finding.created_at > since)
 
 
-def send_sync(webhook: str, payload: dict, timeout: float = 8.0) -> bool:
+def send_result(webhook: str, payload: dict, timeout: float = 8.0) -> tuple[bool, str]:
+    """POST one alert. (ok, detail) so a failed delivery can say why."""
     from .netguard import is_safe_url, safe_urlopen
     if not is_safe_url(webhook):   # SSRF guard: no internal/metadata targets
-        return False
+        return False, "URL blocked (internal/loopback/metadata host)"
     try:
         req = urllib.request.Request(
             webhook, method="POST", data=json.dumps(payload).encode(),
             headers={"content-type": "application/json"})
         safe_urlopen(req, timeout)   # pinned to the validated IP (closes the DNS-rebind window)
-        return True
-    except Exception:
-        return False
+        return True, ""
+    except Exception as e:
+        return False, str(e)[:300]
+
+
+def send_sync(webhook: str, payload: dict, timeout: float = 8.0) -> bool:
+    ok, _detail = send_result(webhook, payload, timeout=timeout)
+    return ok
 
 
 def notify(webhook: str, min_severity: str, verdict: dict,
-           subject: str = "", actor: str = "", surface: str = "", digest: str = "off") -> None:
-    """Fire a real-time alert if the webhook is set and severity >= min_severity.
+           subject: str = "", actor: str = "", surface: str = "", digest: str = "off",
+           *, db=None, tenant_id: int = 0) -> None:
+    """Queue a real-time alert if the webhook is set and severity >= min_severity.
 
     In digest mode ("hourly"/"daily") only *critical* findings fire in real time — everything
-    else is rolled up by run_digests() so the channel isn't flooded per finding. Non-blocking."""
+    else is rolled up by run_digests() so the channel isn't flooded per finding. The queue
+    write does not wait on the webhook. `db` is the capture session."""
     if not webhook or not _realtime_ok(verdict.get("severity"), min_severity, digest):
         return
     payload = _payload(verdict, subject, actor, surface)
-    from .dispatch import submit
-    submit(send_sync, webhook, payload)   # bounded shared pool (no thread-per-finding)
+    if db is None or not tenant_id:
+        return
+    from .outbox import enqueue
+    enqueue(db, tenant_id, "alert", payload)
 
 
 def notify_judge_down(webhook: str, health: dict) -> bool:

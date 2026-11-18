@@ -116,10 +116,11 @@ def _webhooked(client, db_factory, monkeypatch):
     import app.dispatch as dispatch
     from app import alerts
     sent = []
-    monkeypatch.setattr(alerts, "send_sync", lambda url, payload, **k: sent.append(payload) or True)
-    # Alerts go out on the shared dispatch pool, so `sent` fills a moment after the request
-    # returns, and a loaded CI box lost that race (the reopen "reached nobody"). Run the
-    # delivery inline, as the SIEM tests do, so the assertion looks after delivery, not before.
+    monkeypatch.setattr(alerts, "send_result", lambda url, payload, **k: (sent.append(payload) or (True, "")))
+    # Alerts are queued and sent by the outbox loop. Deliver inside the request so the
+    # assertion looks after delivery, not at an empty queue.
+    import app.outbox as outbox
+    monkeypatch.setattr(outbox, "INLINE", True)
     monkeypatch.setattr(dispatch, "submit", lambda fn, *a, **k: fn(*a, **k))
     # Real-time alerting is gated on severity AND digest mode; "off" is the real-time mode.
     db = db_factory()

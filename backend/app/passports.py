@@ -74,6 +74,11 @@ def resolve(db: Session, token: str) -> tuple[Agent, Passport]:
         raise HTTPException(status_code=401, detail=str(e))
     if payload.get("typ") != "passport":
         raise HTTPException(status_code=401, detail="not a passport")
+    from .database import bind_tenant, ensure_cross_tenant
+    try:
+        bind_tenant(db, int(payload.get("tenant")))
+    except (TypeError, ValueError):
+        ensure_cross_tenant(db, "auth.oauth")
     row = (db.query(Passport).filter(Passport.jti == str(payload.get("jti") or "")).one_or_none())
     if row is None or row.tenant_id != int(payload.get("tenant", -1)):
         raise HTTPException(status_code=401, detail="unknown passport")

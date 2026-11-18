@@ -36,14 +36,29 @@ def test_no_webhook_no_alert(client, monkeypatch):
 
 
 def test_notify_severity_gating(monkeypatch):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app import outbox
+    from app.database import Base
+    from app.models import DeliveryOutbox, Tenant
     sent = []
-    monkeypatch.setattr(alerts, "send_sync", lambda url, payload, **k: sent.append(url) or True)
-    alerts.notify("https://x", "high", {"severity": "low", "risk_score": 5, "signals": []})
-    time.sleep(0.2)
-    assert sent == []                                   # below min severity -> nothing
-    alerts.notify("https://x", "high", {"severity": "critical", "risk_score": 92, "signals": []})
-    time.sleep(0.3)
-    assert sent == ["https://x"]                         # at/above min -> fired
+    monkeypatch.setattr(alerts, "send_result", lambda url, payload, **k: (sent.append(url) or (True, "")))
+    eng = create_engine("sqlite://")
+    Base.metadata.create_all(eng)
+    db = sessionmaker(bind=eng)()
+    t = Tenant(slug="acme", name="Acme", alert_webhook="https://x")
+    db.add(t)
+    db.commit()
+    alerts.notify("https://x", "high", {"severity": "low", "risk_score": 5, "signals": []},
+                  db=db, tenant_id=t.id)
+    db.commit()
+    assert db.query(DeliveryOutbox).count() == 0          # below min severity -> nothing queued
+    alerts.notify("https://x", "high", {"severity": "critical", "risk_score": 92, "signals": []},
+                  db=db, tenant_id=t.id)
+    db.commit()
+    assert sent == []                                     # queued, not sent on the request
+    outbox.drain_once(db)
+    assert sent == ["https://x"]
 
 
 def test_export_findings_jsonl(client):

@@ -1,11 +1,10 @@
-"""Shared bounded background dispatcher for fire-and-forget delivery (alerts, SIEM).
+"""Shared bounded background dispatcher for fire-and-forget work that is allowed to drop.
 
-Previously each finding spawned a raw daemon thread per sink — a finding storm (e.g. a
-10k-item scan with a slow/dead webhook) could create tens of thousands of threads and
-exhaust the worker. This routes those sends through one small, bounded thread pool with a
-capped queue: when saturated, extra jobs are dropped rather than piling up. Delivery is
-best-effort telemetry, so dropping under overload is the right trade — it must never add
-latency to, or take down, the capture path.
+SIEM pushes and real-time alerts do not come through here anymore: capture writes an
+outbox row (app/outbox.py) and a lifespan loop delivers it with retries. This pool is
+what is left for work that is still best-effort (email sends, the S3 event archive
+flush). When it is saturated, extra jobs are dropped rather than piling up, and that
+drop is counted. It must never add latency to, or take down, the request path.
 """
 
 from __future__ import annotations

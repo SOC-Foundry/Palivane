@@ -352,7 +352,7 @@ def correlate(db: Session, tenant_id: int | None, actor: str, agent: str = "",
                    "recommended_action": "block", "signals": [signal],
                    "finding_id": finding.id}
         try:
-            dispatch(db.get(Tenant, tenant_id), payload, finding.subject, actor, "session")
+            dispatch(db.get(Tenant, tenant_id), payload, finding.subject, actor, "session", db)
         except Exception:
             pass  # notification must never sink the correlation write
     return finding.id

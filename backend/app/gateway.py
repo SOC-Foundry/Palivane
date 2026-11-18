@@ -112,6 +112,10 @@ def _stamp_dead_key(token: str, db: Session, key: "ApiKey | None" = None) -> Non
 
 
 def _resolve_api_key(token: str, db: Session) -> Principal:
+    from .database import bind_tenant, ensure_cross_tenant
+    # Prefix lookup is cross-tenant. Narrow as soon as the key checks out, and not
+    # before: the dead-key stamp also looks the prefix up across orgs.
+    ensure_cross_tenant(db, "auth.api_key")
     key = (
         db.query(ApiKey)
         .filter(ApiKey.prefix == token[:11], ApiKey.active.is_(True))
@@ -125,6 +129,7 @@ def _resolve_api_key(token: str, db: Session) -> Principal:
         raise HTTPException(status_code=401, detail="API key expired")
     if (key.scope or "ingest") not in API_KEY_SCOPES:
         raise HTTPException(status_code=401, detail="invalid API key")
+    bind_tenant(db, key.tenant_id)
     if key.scope == "console_read":
         # Capture and the gateway write: every call records a finding and the gateway spends
         # the org's model upstream. A read-only key does neither, as on the REST API.
@@ -215,6 +220,8 @@ def get_gateway_principal(request: Request, db: Session = Depends(get_db)) -> Pr
         raise HTTPException(status_code=401, detail="missing API key",
                             headers={"WWW-Authenticate": "Bearer"})
     if looks_like_agent_token(token):        # an agent authenticating with its own ag_ token
+        from .database import ensure_cross_tenant
+        ensure_cross_tenant(db, "auth.agent")
         ag = (db.query(Agent).filter(Agent.token_hash == hash_token(token), Agent.active.is_(True))
               .one_or_none())
         if ag is None:
@@ -237,6 +244,12 @@ def get_gateway_principal(request: Request, db: Session = Depends(get_db)) -> Pr
         if payload.get("typ") == "agent":
             # A short-lived agent session token (minted in the console; TTL <= 24h). The
             # Agent row is re-checked live, so disabling the agent revokes these instantly.
+            from .database import bind_tenant as _bind
+            try:
+                _bind(db, int(payload.get("tenant")))
+            except (TypeError, ValueError):
+                from .database import ensure_cross_tenant
+                ensure_cross_tenant(db, "auth.agent")
             ag = db.get(Agent, int(payload.get("agent_id", 0)))
             if ag is None or not ag.active or ag.tenant_id != int(payload.get("tenant", -1)):
                 raise HTTPException(status_code=401, detail="agent not found or disabled")
@@ -1216,9 +1229,10 @@ def _record_stream_dlp(raw: bytes, model: str, tool: str, principal: Principal) 
         text = _stream_output_text(raw.decode("utf-8", "replace"))
         if not text:
             return
-        from .database import SessionLocal
+        from .database import SessionLocal, bind_tenant
         db = SessionLocal()
         try:
+            bind_tenant(db, principal.tenant_id)
             _capture_response_dlp(text, model, tool, principal, db)
         finally:
             db.close()

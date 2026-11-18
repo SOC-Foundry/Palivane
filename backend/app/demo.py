@@ -64,6 +64,10 @@ def demo_login(request: Request, db: Session = Depends(get_db)):
     if tenant is None:
         raise HTTPException(status_code=503,
                             detail="demo org is not seeded yet (run python -m app.seed)")
+    from .database import bind_tenant
+    # The demo org is named by configuration, not by a session. Bind before any
+    # tenant-table read so the viewer lookup cannot see another org.
+    bind_tenant(db, tenant.id)
     # Public token mint — per-IP throttle (piggybacks the login-attempt table) so one
     # source can't spin unlimited sessions.
     ip = _client_ip(request)

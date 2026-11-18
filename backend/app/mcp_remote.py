@@ -156,6 +156,8 @@ def _oauth_grant(token: str, db) -> tuple[int, list[str]] | None:
     """(user id, granted scopes) for a live OAuth access token, or None."""
     from .models import OAuthToken as OAuthTokenRow, User
     from .security import hash_token
+    from .database import bind_tenant, ensure_cross_tenant
+    ensure_cross_tenant(db, "auth.oauth")
     row = (db.query(OAuthTokenRow)
              .filter(OAuthTokenRow.token_hash == hash_token(token),
                      OAuthTokenRow.kind == "access")
@@ -164,6 +166,8 @@ def _oauth_grant(token: str, db) -> tuple[int, list[str]] | None:
         return None
     if row.expires_at and row.expires_at < _utcnow_naive():
         return None
+    if row.tenant_id is not None:
+        bind_tenant(db, row.tenant_id)
     user = db.get(User, row.user_id) if row.user_id else None
     # The grant dies with the person: a token approved by someone since deactivated must
     # stop working, exactly as a console key does.
@@ -187,15 +191,17 @@ def _caller_and_db():
     oauth_user_id = _OAUTH_USER.get()
     if key_id is None and oauth_user_id is not None:
         from .models import User
+        from .database import bind_tenant, ensure_cross_tenant
         db, gen = _session()
+        ensure_cross_tenant(db, "auth.oauth")
         user = db.get(User, oauth_user_id)
         if user is None or not user.active:
             _close(db, gen)
             raise HTTPException(status_code=401, detail="invalid or expired access token")
         # Same tail as user_for_console_key: a suspended org is refused, and the session is
-        # scoped to the tenant so Postgres RLS enforces isolation (unbound, it fails open).
+        # scoped to the tenant. Unbound, Postgres RLS fails closed, so the lookup above
+        # had to opt in first.
         try:
-            from .database import bind_tenant
             from .lifecycle import ensure_active
             ensure_active(db, user.tenant_id)
             bind_tenant(db, user.tenant_id)
@@ -207,6 +213,8 @@ def _caller_and_db():
         raise HTTPException(status_code=401, detail="unauthenticated")
     db, gen = _session()
     from .models import ApiKey
+    from .database import ensure_cross_tenant
+    ensure_cross_tenant(db, "auth.api_key")
     key = db.get(ApiKey, key_id)
     if key is None or not key.active:
         _close(db, gen)

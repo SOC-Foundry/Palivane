@@ -437,6 +437,8 @@ def run() -> None:
     Base.metadata.create_all(bind=db_engine)
     db = SessionLocal()
     try:
+        from .database import allow_cross_tenant
+        allow_cross_tenant(db, "seed")
         made = populate(db)
         org = made["org"]
         print(f"Seeded {made['total']} findings for tenant '{DEMO_SLUG}' "

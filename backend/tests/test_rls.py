@@ -21,7 +21,21 @@ pytestmark = pytest.mark.skipif(not URL, reason="set PALIVANE_RLS_TEST_URL to a 
 
 
 def _scope(cur, val):
+    """Bind to one tenant and clear any cross-tenant bypass."""
     cur.execute("SELECT set_config('app.tenant_id', %s, true)", (val,))
+    cur.execute("SELECT set_config('app.cross_tenant', '', true)")
+
+
+def _bypass(cur):
+    """Explicit cross-tenant opt-in. The app reaches this only via allow_cross_tenant."""
+    cur.execute("SELECT set_config('app.tenant_id', '', true)")
+    cur.execute("SELECT set_config('app.cross_tenant', 'on', true)")
+
+
+def _closed(cur):
+    """Neither bound nor bypassed: the policies must reveal nothing."""
+    cur.execute("SELECT set_config('app.tenant_id', '', true)")
+    cur.execute("SELECT set_config('app.cross_tenant', '', true)")
 
 
 def test_rls_read_and_write_isolation():
@@ -31,7 +45,8 @@ def test_rls_read_and_write_isolation():
         cur.execute("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")
         assert cur.fetchone()[0] is False, "RLS is not enforced for superusers — use a plain role"
 
-        # Seed with no tenant context (policies fall open).
+        # Seed under the explicit bypass. An unset GUC no longer falls open.
+        _bypass(cur)
         cur.execute("INSERT INTO tenants (slug, name) VALUES ('rls-a', 'A') RETURNING id")
         a = cur.fetchone()[0]
         cur.execute("INSERT INTO tenants (slug, name) VALUES ('rls-b', 'B') RETURNING id")
@@ -57,10 +72,18 @@ def test_rls_read_and_write_isolation():
         # ...but can write its own.
         cur.execute("INSERT INTO findings (tenant_id) VALUES (%s)", (a,))
 
-        # Back to no context: everything is visible again.
-        _scope(cur, "")
-        cur.execute("SELECT count(*) FROM tenants WHERE slug IN ('rls-a', 'rls-b')")
-        assert cur.fetchone()[0] == 2
+        # Fail closed: no tenant and no bypass sees nothing and cannot write.
+        _closed(cur)
+        cur.execute("SELECT count(*) FROM findings")
+        assert cur.fetchone()[0] == 0
+        cur.execute("SAVEPOINT sp2")
+        with pytest.raises(psycopg2.Error):
+            cur.execute("INSERT INTO findings (tenant_id) VALUES (%s)", (a,))
+        cur.execute("ROLLBACK TO SAVEPOINT sp2")
+        # The bypass sees every tenant again.
+        _bypass(cur)
+        cur.execute("SELECT count(*) FROM findings")
+        assert cur.fetchone()[0] >= 3
     finally:
         conn.rollback()
         conn.close()
@@ -80,6 +103,7 @@ def test_owner_match_on_postgres_stays_in_tenant():
     conn = psycopg2.connect(URL)
     try:
         cur = conn.cursor()
+        _bypass(cur)
         cur.execute("INSERT INTO tenants (slug, name) VALUES ('rls-e', 'E') RETURNING id")
         a = cur.fetchone()[0]
         cur.execute("INSERT INTO tenants (slug, name) VALUES ('rls-f', 'F') RETURNING id")
@@ -139,6 +163,7 @@ def test_rls_isolation_on_tables_added_by_f758200a1b4b():
     conn = psycopg2.connect(URL)
     try:
         cur = conn.cursor()
+        _bypass(cur)
         cur.execute("INSERT INTO tenants (slug, name) VALUES ('rls-c', 'C') RETURNING id")
         a = cur.fetchone()[0]
         cur.execute("INSERT INTO tenants (slug, name) VALUES ('rls-d', 'D') RETURNING id")
@@ -146,7 +171,15 @@ def test_rls_isolation_on_tables_added_by_f758200a1b4b():
         for t in (a, b):
             cur.execute("INSERT INTO upgrade_requests (tenant_id, plan, status) "
                         "VALUES (%s, 'team', 'pending')", (t,))
-        # Unbound, as on the SAML ACS path: the insert works for any tenant.
+        # Fail closed: the SAML replay insert does not work until the bypass is on.
+        # The ACS path calls allow_cross_tenant (or binds the org) before it writes.
+        _closed(cur)
+        cur.execute("SAVEPOINT sp0")
+        with pytest.raises(psycopg2.Error):
+            cur.execute("INSERT INTO used_saml_assertions (tenant_id, assertion_id) "
+                        "VALUES (%s, 'rls-x')", (b,))
+        cur.execute("ROLLBACK TO SAVEPOINT sp0")
+        _bypass(cur)
         cur.execute("INSERT INTO used_saml_assertions (tenant_id, assertion_id) "
                     "VALUES (%s, 'rls-x')", (b,))
 
@@ -161,7 +194,10 @@ def test_rls_isolation_on_tables_added_by_f758200a1b4b():
                         "VALUES (%s, 'team', 'pending')", (b,))
         cur.execute("ROLLBACK TO SAVEPOINT sp")
 
-        _scope(cur, "")
+        _closed(cur)
+        cur.execute("SELECT count(*) FROM upgrade_requests WHERE tenant_id IN (%s, %s)", (a, b))
+        assert cur.fetchone()[0] == 0
+        _bypass(cur)
         cur.execute("SELECT count(*) FROM upgrade_requests WHERE tenant_id IN (%s, %s)", (a, b))
         assert cur.fetchone()[0] == 2
     finally:

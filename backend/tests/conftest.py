@@ -13,7 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app import users as users_cli
-from app.database import Base, get_db
+from app.database import Base, get_db, mark_request
 from app.main import app
 
 
@@ -47,6 +47,9 @@ def db_factory(tmp_path):
 
     def _override():
         db = Session()
+        # Same guard the production get_db sets: a handler that queries a tenant
+        # table before bind_tenant or allow_cross_tenant fails the test.
+        mark_request(db)
         try:
             yield db
         finally:

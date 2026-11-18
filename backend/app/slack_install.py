@@ -137,8 +137,13 @@ def complete_install(db, code: str, state: str, redirect_uri: str, bind_nonce: s
     enterprise_id = str((data.get("enterprise") or {}).get("id") or "")
     if not (team_id or enterprise_id):
         raise InstallError("Slack returned no workspace id")
+    from .database import allow_cross_tenant, bind_tenant
+    # "Is this workspace already connected to a different org?" has to see every
+    # connector. Narrow to the installing org before writing its row.
+    allow_cross_tenant(db, "webhook.slack")
     if _installed_elsewhere(db, tenant_id, team_id, enterprise_id):
         raise InstallError("this Slack workspace is already connected to another org")
+    bind_tenant(db, tenant_id)
 
     from .models import SaasConnector
     row = (db.query(SaasConnector)

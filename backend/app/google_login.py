@@ -98,6 +98,10 @@ def google_callback(request: Request, code: str = "", state: str = "",
     except oidc.OIDCError as e:
         raise HTTPException(status_code=401, detail=str(e))
 
+    from .database import allow_cross_tenant
+    # The address may exist in more than one org. Audited; the session narrows once
+    # a single account is chosen (auth.non_sso / the sign-in helper bind on use).
+    allow_cross_tenant(db, "auth.google")
     email = (claims.get("email") or "").lower().strip()
     # Google marks unverified addresses (e.g. some Workspace aliases) — without this,
     # anyone could mint a Google account claiming a victim's email and walk in.
@@ -111,6 +115,8 @@ def google_callback(request: Request, code: str = "", state: str = "",
     # ambiguous with no org context, so those keep using password/SSO.
     users = db.query(User).filter(User.email == email, User.active.is_(True)).all()
     if len(users) == 1:
+        from .database import bind_tenant
+        bind_tenant(db, users[0].tenant_id)
         from .auth import SSO_REQUIRED_DETAIL, non_sso_signin_allowed
         if not non_sso_signin_allowed(db, users[0]):
             raise HTTPException(status_code=403, detail=SSO_REQUIRED_DETAIL)

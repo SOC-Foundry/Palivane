@@ -8,26 +8,28 @@ import time
 from app import alerts, siem
 
 
-def test_alerts_and_siem_use_bounded_dispatch(monkeypatch):
-    # Many findings must not create a thread each — count distinct worker threads used.
-    seen = set()
-    ev = threading.Event()
-
-    def fake_send(*a, **k):
-        seen.add(threading.current_thread().name)
-        time.sleep(0.01)
-        ev.set()
-        return True
-
-    monkeypatch.setattr(alerts, "send_sync", fake_send)
-    for _ in range(200):
+def test_alerts_enqueue_instead_of_the_dropping_pool(monkeypatch):
+    """Realtime alerts used to ride the bounded pool, which drops when it is full.
+    They now write an outbox row on the calling thread and do not send yet."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app.database import Base
+    from app.models import DeliveryOutbox, Tenant
+    sent = []
+    monkeypatch.setattr(alerts, "send_sync", lambda *a, **k: sent.append(1) or True)
+    eng = create_engine("sqlite://")
+    Base.metadata.create_all(eng)
+    db = sessionmaker(bind=eng)()
+    t = Tenant(slug="acme", name="Acme", alert_webhook="https://8.8.8.8/x")
+    db.add(t)
+    db.commit()
+    for _ in range(20):
         alerts.notify("https://8.8.8.8/x", "low",
-                      {"severity": "high", "risk_score": 80, "signals": []})
-    assert ev.wait(3)
-    time.sleep(0.2)
-    # All delivery ran on the shared, bounded pool (few threads), not 200 raw threads.
-    assert all(n.startswith("palivane-dispatch") for n in seen)
-    assert len(seen) <= 8 + 1
+                      {"severity": "high", "risk_score": 80, "signals": []},
+                      db=db, tenant_id=t.id)
+    db.commit()
+    assert sent == []
+    assert db.query(DeliveryOutbox).count() == 20
 
 
 def test_dispatch_drops_when_saturated(monkeypatch):
