@@ -45,7 +45,7 @@ from .models import (Agent, AgentRole, CorpusSample, Finding, PolicyOverride, Sa
                      Tenant, User)
 from .schemas import ExposureStatusIn, SecretRotatedIn
 from .schemas import (
-    A2AIngest, CommitAttestIn,
+    A2AIngest, CommitAttestIn, ReplayIn,
     AIUsageIngest,
     ContainmentCreate,
     JustifyRequest,
@@ -2586,7 +2586,7 @@ def _score_mcp(body: MCPIngest, tenant_id: int | None, default_actor: str,
     item = AnalysisInput(
         content=content, sender=actor, sender_claimed=claimed, channel=body.tool or "mcp",
         subject=(f"MCP {body.method}".strip() if is_mcp
-                 else f"Agent tool: {body.tool}".strip().rstrip(":")),
+                 else (f"Agent tool result: {body.tool}" if body.method == "tool_result" else f"Agent tool: {body.tool}").strip().rstrip(":")),
         surface=Surface.MCP if is_mcp else Surface.AGENT_TOOLS,
         metadata={
             "method": body.method, "server": body.server, "tool": body.tool,
@@ -5756,6 +5756,24 @@ def _report_recommendations(by_category: dict, by_severity: dict,
 
 
 # --- Protection simulator (nothing persisted) --------------------------------------------
+
+
+@app.get("/api/replay")
+def replay_recording(actor: str, days: int = Query(7, ge=1, le=90), since: str = "", until: str = "",
+                     current: User = Depends(require_analyst), db: Session = Depends(get_db)):
+    """The flight recorder: one actor's window as ordered steps (app/replay.py)."""
+    from . import replay as rp
+    return rp.recording(db, current.tenant_id, actor, since or None, until or None, days)
+
+
+@app.post("/api/replay")
+def replay_against_policy(body: ReplayIn, current: User = Depends(require_analyst),
+                          db: Session = Depends(get_db)):
+    """The same window, every step rescored under a proposed policy: which step would it
+    have stopped. Nothing is persisted."""
+    from . import replay as rp
+    rec = rp.recording(db, current.tenant_id, body.actor, body.since or None, body.until or None, body.days)
+    return rp.replay(rec, body.policy or {})
 
 
 @app.post("/api/simulate")
