@@ -20,6 +20,13 @@ const NOT = [
   "Monitor-mode use is covered for the record; blocking is only promised where blocking is switched on.",
 ];
 
+const LIMITS = [
+  ["The credit is the whole remedy", "The credit is the sole and exclusive remedy for a missed detection. Palivane is not liable for the loss itself, for any consequential, indirect or special damages, or for any amount beyond the fees paid for the affected users in that month."],
+  ["Not a compliance guarantee", "The warranty is a promise about the record, not about the law. It is not a representation that an organisation meets any statute, regulation or standard, and it does not replace the controls those require."],
+  ["We rely on the record", "A claim is decided on the sensor heartbeats, the self-test, the findings and the policy at the time, as the evidence pack shows them. A claim is refused where a sensor was disabled, altered or bypassed, or where the data was sent on purpose to raise a claim."],
+  ["The terms can change", "Palivane may change these terms with 30 days' notice on this page and by email to the organisation's admins. A change applies to incidents after the notice period, never before."],
+];
+
 const CLAIM = [
   ["Within 30 days", "Open a claim with the device, the surface, the provider and when. The evidence pack for that window is attached from the console in one click."],
   ["We check the record", "The sensor heartbeats, the self-test, the findings in the window, and the policy at the time. If the sensors were live and nothing was raised, the claim stands."],
@@ -83,9 +90,21 @@ export default function WarrantySite() {
           </div>
           <p className="lp-sub" style={{ textAlign: "left", margin: "18px 0 0" }}>
             Applies to the Team and Enterprise plans. The personal workspace and the trial carry the
-            same detection and the same self-test, without the credit. The full wording is in the
-            order form; this page is the whole of what it says.
+            same detection and the same self-test, without the credit. These terms are incorporated
+            into the order form by reference; where the two differ, the order form governs.
           </p>
+        </div>
+      </section>
+
+      <section className="lp-section alt">
+        <div className="lp-wrap">
+          <div className="lp-band-head">
+            <span className="lp-eyebrow">Limits</span>
+            <h2 className="lp-h2">What the promise is, and is not</h2>
+          </div>
+          <div className="lp-cards lp-cards-2">
+            {LIMITS.map(([h, p]) => <div className="lp-card" key={h}><h3>{h}</h3><p>{p}</p></div>)}
+          </div>
         </div>
       </section>
 
