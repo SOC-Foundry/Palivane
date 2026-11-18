@@ -49,8 +49,17 @@ sudo -u palivane .venv/bin/python -m app.users create-tenant --slug acme --name 
 sudo -u palivane .venv/bin/python -m app.users create-user --tenant acme --email soc@acme.com --role admin
 ```
 
-Set `INGEST_TENANT` in the env file to that tenant's slug so the extension/proxy
-attribute findings to it.
+Capture is attributed by the credential the client presents.
+
+Per-org and per-user capture keys (`ak_…`, minted on the console Connect page or by
+`palivane connect`) carry their own tenant. That is the path for a hosted deployment
+and for any install with more than one org. Leave `INGEST_TENANT` unset there.
+
+This unit file is a single-org install, so it may use the shared-token fallback
+instead: set `EXTENSION_INGEST_TOKEN` to a long random string and `INGEST_TENANT` to
+the slug created above (`acme`). The token authenticates; the slug picks the only org
+(`backend/app/main.py`, `_ingest_caller_unbound`). Those two are the wrong tool once
+a second org exists, because every shared-token client would land in the one slug.
 
 ## 4. Install units
 

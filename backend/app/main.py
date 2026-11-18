@@ -917,9 +917,10 @@ def upgrade_request_status(current: User = Depends(require_admin),
 @app.post("/api/plans/upgrade")
 def upgrade_request_create(body: dict, current: User = Depends(require_admin),
                            db: Session = Depends(get_db)):
-    """The in-console upgrade path (sales-led until a billing provider exists): record the
-    request, page the operator webhook, and email sales — so a buying signal never depends
-    on someone composing a mailto. One pending request per org (409 on a duplicate)."""
+    """Record a sales request. Team and Enterprise are quoted by protected users (the
+    bands on /pricing), not bought by card. `seats` is that protected-user count; the
+    column name is historical. Pages the operator webhook and emails sales. One pending
+    request per org (409 on a duplicate)."""
     from . import alerts, audit_log, email as email_mod
     from .models import UpgradeRequest
     from .plans import PLANS, PURCHASABLE
@@ -948,7 +949,7 @@ def upgrade_request_create(body: dict, current: User = Depends(require_admin),
     if email_mod.enabled():
         email_mod.send(
             settings.sales_email, f"Palivane upgrade request: {org} → {PLANS[plan]['label']}",
-            f"Org: {org}\nPlan: {PLANS[plan]['label']}\nSeats: {seats or 'unspecified'}\n"
+            f"Org: {org}\nPlan: {PLANS[plan]['label']}\nProtected users: {seats or 'unspecified'}\n"
             f"Contact: {current.email}\nNote: {note or '—'}\n\n"
             "Recorded in the operator console (/admin → Upgrade requests).")
     return {"request": row.to_dict()}

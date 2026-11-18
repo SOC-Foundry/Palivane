@@ -1,19 +1,28 @@
-"""Self-serve billing — Stripe Checkout for the Team plan.
+"""Billing — sales-led Team, with Stripe kept only for a subscription that already exists.
 
-The sales-led path (app/main.py /api/plans/upgrade, the operator CLI set-plan) stays for
-Enterprise; this is the card-swipe path for Team: a per-seat Stripe subscription bought
-through Checkout, managed through the Stripe customer portal. Dark by default — enabled()
-is false until STRIPE_SECRET_KEY plus at least one Team price id are set, and the console
-falls back to the sales-led upgrade request, so nothing changes for deployments without a
-Stripe account.
+Team is priced by protected users, in the bands published on /pricing
+(50–100, 100–500, 500–2,000, then custom). Those are ranges, quoted after an
+assessment. They are not Stripe prices. The configured price ids
+(STRIPE_PRICE_TEAM_MONTHLY / ANNUAL) are the old per-user amounts. Opening
+Checkout against them would bill per user again, and inventing a single dollar
+amount inside each range is a pricing decision this code does not get to make.
+New card checkout is therefore closed. A tenant asks in the console
+(POST /api/plans/upgrade) or by email; an operator sets the plan.
 
-Plan state stays authoritative in the tenants row; Stripe webhooks move it:
-  checkout.session.completed        -> plan=team, seats -> quota_users (once paid; a delayed
-  checkout.session.async_payment_succeeded   payment method upgrades on this event instead)
-  customer.subscription.updated     -> seat / status sync
+What stays, for an org that already paid by card:
+  the customer portal (invoices, payment method, cancel), and the webhooks that
+  reconcile that subscription. `quota_users` on those events is still the Stripe
+  line quantity of that old subscription, not a protected-user band.
+
+  checkout.session.completed        -> plan=team, quantity -> quota_users (once paid;
+  checkout.session.async_payment_succeeded   a delayed method upgrades on this event)
+  customer.subscription.updated     -> quantity / status sync
   customer.subscription.deleted     -> plan=free (never touches enterprise)
+
 Webhook signatures are verified manually (HMAC-SHA256 per Stripe's scheme) — stdlib only,
 same policy as the other outbound integrations (alerts, Cloudflare email).
+enabled() is false until STRIPE_SECRET_KEY plus at least one Team price id are set.
+That flag means "portal and webhooks can run", not "checkout is for sale".
 """
 
 from __future__ import annotations
@@ -28,7 +37,6 @@ from hashlib import sha256
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from . import audit_log
@@ -80,89 +88,49 @@ def _base_url() -> str:
     return settings.public_base_url or "http://localhost:5173"
 
 
-def _price_for(interval: str) -> str:
-    price = {"month": settings.stripe_price_team_monthly,
-             "year": settings.stripe_price_team_annual}.get(interval, "")
-    if not price:
-        raise HTTPException(status_code=400,
-                            detail=f"{interval}ly billing is not available here")
-    return price
+# Shown on POST /billing/checkout. Stable so the console and tests can match it.
+CHECKOUT_CLOSED = (
+    "Team is priced by protected users and quoted after an assessment. "
+    "Card checkout is closed. Start an assessment or talk to sales from "
+    "Settings, Plan and usage."
+)
 
 
 @router.get("/billing")
 def billing_status(current: User = Depends(require_admin), db: Session = Depends(get_db)):
-    """What the Settings plan card needs: is self-serve on, and where does this org stand."""
+    """What the Settings plan card needs. `enabled` means Stripe is configured for an
+    existing subscription's portal and webhooks. `checkout` is always false: a new
+    Team purchase is a sales conversation, not a card form."""
     tenant = db.get(Tenant, current.tenant_id)
     return {
         "enabled": enabled(),
+        "checkout": False,
         "subscribed": bool(tenant.stripe_subscription_id),
         "portal": bool(tenant.stripe_customer_id),
+        # Legacy subscription quantity, if any. Not a protected-user band.
         "seats": tenant.quota_users or 0,
         "intervals": [i for i, p in (("month", settings.stripe_price_team_monthly),
                                      ("year", settings.stripe_price_team_annual)) if p],
-        # Publishable key (pk_…) — not a secret; the frontend needs it to mount the
-        # embedded Checkout via Stripe.js.
         "publishable_key": settings.stripe_publishable_key,
     }
 
 
-class CheckoutRequest(BaseModel):
-    interval: str = "month"      # month | year
-    seats: int = 5
-
-
 @router.post("/billing/checkout")
-def create_checkout(body: CheckoutRequest, current: User = Depends(require_admin),
-                    db: Session = Depends(get_db)):
-    """Start a per-seat Team subscription as an EMBEDDED Checkout Session — mounted on our
-    own page (ui_mode=embedded), so the buyer never leaves the console. Returns the
-    session's client_secret for Stripe.js to render. The plan flips only when the
-    checkout.session.completed webhook lands — never here."""
-    if not enabled():
-        raise HTTPException(status_code=400, detail="self-serve billing is not configured")
-    tenant = db.get(Tenant, current.tenant_id)
-    if (tenant.plan or "").lower() == "enterprise":
-        raise HTTPException(status_code=400,
-                            detail="Enterprise plans are managed with sales, not by card")
-    if tenant.stripe_subscription_id:
-        raise HTTPException(status_code=409,
-                            detail="already subscribed. Use 'Manage billing' to change seats")
-    seats = max(1, min(int(body.seats or 1), 1000))
-    users = db.query(User).filter(User.tenant_id == tenant.id).count()
-    seats = max(seats, users)   # can't buy fewer seats than existing members
-    params = {
-        "mode": "subscription",
-        # Stripe renamed the embedded value: current API rejects "embedded" and wants
-        # "embedded_page" (the full prebuilt checkout mounted in-page via client_secret).
-        "ui_mode": "embedded_page",
-        "line_items[0][price]": _price_for(body.interval),
-        "line_items[0][quantity]": seats,
-        "line_items[0][adjustable_quantity][enabled]": "true",
-        "line_items[0][adjustable_quantity][minimum]": max(1, users),
-        "line_items[0][adjustable_quantity][maximum]": 1000,
-        "client_reference_id": tenant.id,
-        "subscription_data[metadata][tenant_id]": tenant.id,
-        "metadata[tenant_id]": tenant.id,
-        "allow_promotion_codes": "true",
-        # On completion Stripe redirects the embedded flow back to our own page — still on
-        # our domain start to finish. The webhook (not this URL) is what flips the plan.
-        "return_url": f"{_base_url()}/#billing=success",
-    }
-    # Reuse the Stripe customer across attempts so retries and re-subscribes don't
-    # spawn duplicate customer records.
-    if tenant.stripe_customer_id:
-        params["customer"] = tenant.stripe_customer_id
-    else:
-        params["customer_email"] = current.email
-    session = _stripe("POST", "/checkout/sessions", params)
-    audit_log.record(db, tenant.id, current.email, "billing.checkout",
-                     target="team", detail={"seats": seats, "interval": body.interval})
-    return {"client_secret": session["client_secret"]}
+def create_checkout(current: User = Depends(require_admin)):
+    """Refuse a new Checkout Session.
+
+    The published bands are ranges, and the Stripe price ids on this deployment are
+    the per-user prices. Either way, creating a session would sell the wrong thing.
+    `current` is the admin gate: an anonymous caller gets 401, not this 400.
+    """
+    del current
+    raise HTTPException(status_code=400, detail=CHECKOUT_CLOSED)
 
 
 @router.post("/billing/portal")
 def create_portal(current: User = Depends(require_admin), db: Session = Depends(get_db)):
-    """Stripe customer portal (invoices, payment method, seat changes, cancel)."""
+    """Stripe customer portal (invoices, payment method, cancel) for a subscription
+    that already exists. A new purchase does not start here."""
     tenant = db.get(Tenant, current.tenant_id)
     if not (enabled() and tenant.stripe_customer_id):
         raise HTTPException(status_code=400, detail="no billing account for this org yet")

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, setToken } from "../api.js";
 import { viewToPath } from "../route.js";
-import StripeCheckout from "./StripeCheckout.jsx";
 
 const PROVIDERS = { openai: "OpenAI", anthropic: "Anthropic", gemini: "Gemini", xai: "xAI (Grok)",
                     vertex: "Claude on Vertex AI", bedrock: "Claude on Bedrock" };
@@ -688,14 +687,12 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
   const loadUpgrade = useCallback(
     () => api.upgradeRequest().then((r) => setUpgrade(r.request)).catch(() => {}), []);
 
-  // --- Self-serve billing (Stripe; Team only — Enterprise stays sales-led). Dark unless
-  // the backend has Stripe configured, in which case the card-swipe path renders above
-  // the sales-led request form. ---
-  const [billing, setBilling] = useState(null);          // { enabled, subscribed, portal, intervals, publishable_key }
-  const [coDraft, setCoDraft] = useState({ seats: "", interval: "month" });
-  const [checkoutSecret, setCheckoutSecret] = useState(null);   // embedded Checkout client_secret
+  // Stripe stays for an org that already has a subscription (portal: invoices, cancel).
+  // A new Team purchase is the assessment / sales path. The published prices are
+  // protected-user bands, and the server refuses Checkout.
+  const [billing, setBilling] = useState(null);          // { enabled, subscribed, portal }
   const loadBilling = useCallback(() => api.billing().then(setBilling).catch(() => {}), []);
-  useEffect(() => {   // embedded Checkout returns to /#billing=success on completion
+  useEffect(() => {   // a Checkout started before this path closed can still return here
     if (window.location.hash === "#billing=success") {
       flash("Payment received. Your Team plan activates in a few seconds. Thanks!");
       window.history.replaceState(null, "", window.location.pathname);
@@ -703,14 +700,6 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function startCheckout(e) {
-    e.preventDefault();
-    try {
-      const r = await api.billingCheckout(Number(coDraft.seats) || 1, coDraft.interval);
-      setCheckoutSecret(r.client_secret);   // mounts the embedded form in-page (no redirect)
-    } catch (e2) { err(e2); }
-  }
 
   async function openPortal() {
     try {
@@ -934,47 +923,29 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                     to pick a plan.
                   </p>
                 )}
-                {/* Self-serve: buy Team by card via embedded Stripe Checkout — mounted in-page
-                    (no redirect). Renders only when billing is configured; Enterprise stays
-                    sales-led below. Once a session starts, the seat form is replaced by the
-                    embedded card form on our own domain. */}
-                {billing?.enabled && !billing.subscribed && !["team", "enterprise"].includes(plan) && (
-                  checkoutSecret && billing.publishable_key ? (
-                    <div className="checkout-embed" style={{ marginBottom: 14 }}>
-                      <StripeCheckout publishableKey={billing.publishable_key}
-                                      clientSecret={checkoutSecret} />
-                      <button className="link-btn link-muted" type="button"
-                              onClick={() => setCheckoutSecret(null)}>← back</button>
-                    </div>
-                  ) : (
-                    <form onSubmit={startCheckout}
-                          style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
-                      <label>Seats
-                        <input type="number" min="1" placeholder="5" value={coDraft.seats}
-                               style={{ width: 90 }}
-                               onChange={(e) => setCoDraft((s) => ({ ...s, seats: e.target.value }))} />
-                      </label>
-                      {billing.intervals.length > 1 && (
-                        <label>Billing
-                          <select value={coDraft.interval}
-                                  onChange={(e) => setCoDraft((s) => ({ ...s, interval: e.target.value }))}>
-                            <option value="month">Monthly, $12/user</option>
-                            <option value="year">Annual, $10/user/mo</option>
-                          </select>
-                        </label>
-                      )}
-                      <button className="primary-btn slim" type="submit">Upgrade to Team, pay by card →</button>
-                      <span className="muted" style={{ flexBasis: "100%" }}>
-                        Secure card entry by Stripe, right here on this page. Need Enterprise
-                        (SSO, SIEM, S3)? Use the request form below.
-                      </span>
-                    </form>
-                  )
+                {!["team", "enterprise"].includes(plan) && !billing?.subscribed && (
+                  <div style={{ marginBottom: 14 }}>
+                    <p className="muted" style={{ marginTop: 0 }}>
+                      Team is priced by protected users, from $1,000 a month. The published
+                      bands are 50–100, 100–500, and 500–2,000 protected users, then a custom
+                      annual price. An assessment scopes the band, and sales quotes it.
+                    </p>
+                    <p style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 0 }}>
+                      <a className="primary-btn slim"
+                         href="mailto:sales@palivane.io?subject=AI%20Exposure%20Assessment">
+                        Start an assessment →
+                      </a>
+                      <a className="secondary-btn slim"
+                         href="mailto:sales@palivane.io?subject=Palivane%20Team">
+                        Talk to sales →
+                      </a>
+                    </p>
+                  </div>
                 )}
                 {billing?.enabled && billing.portal && (billing.subscribed || plan === "team") && (
                   <p style={{ marginTop: 0 }}>
                     <button className="secondary-btn slim" type="button" onClick={openPortal}>
-                      Manage billing (seats, invoices, cancel) →
+                      Manage billing (invoices, payment method, cancel) →
                     </button>
                   </p>
                 )}
@@ -992,11 +963,11 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
                       <label>Plan
                         <select value={upDraftPlan.plan}
                                 onChange={(e) => setUpDraftPlan((s) => ({ ...s, plan: e.target.value }))}>
-                          <option value="team">Team, $12/user/mo</option>
-                          <option value="enterprise">Enterprise, custom</option>
+                          <option value="team">Team, by protected users</option>
+                          <option value="enterprise">Enterprise, custom annual</option>
                         </select>
                       </label>
-                      <label>Seats
+                      <label>Protected users
                         <input type="number" min="0" placeholder="optional" value={upDraftPlan.seats}
                                style={{ width: 90 }}
                                onChange={(e) => setUpDraftPlan((s) => ({ ...s, seats: e.target.value }))} />
