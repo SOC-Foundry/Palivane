@@ -301,7 +301,7 @@ export function SiteFooter() {
     ]},
     // Security and Trust & security are one page now; /trust lands on its controls section.
     { head: "Trust", links: [
-      ["/security", "Security & trust"], ["/warranty", "Detection warranty"], ["/eu-ai-act", "EU AI Act"],
+      ["/security", "Security & trust"], ["/status", "Status"], ["/warranty", "Detection warranty"], ["/eu-ai-act", "EU AI Act"],
       ["/privacy", "Privacy"], ["/terms", "Terms"],
     ]},
   ];

@@ -70,9 +70,165 @@ function Headline({ d }) {
   return <p className="report-lede">{parts}</p>;
 }
 
+function fmtDay(iso) {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+}
+
+function pct(rate) {
+  return rate == null ? null : `${Math.round(rate * 100)}%`;
+}
+
+// The closeout is the page a security lead forwards when the trial ends. Every figure is
+// a field the closeout endpoint read from stats, setup-status, the discovery inventory
+// or the precision readout. An empty section says so; it does not fill in an example.
+function Closeout({ c }) {
+  const enforce = c.enforce || {};
+  const precision = c.precision || {};
+  const confirmed = c.confirmed || {};
+  const rate = pct(precision.actionable_rate);
+  return (
+    <>
+      <div className="panel settings-card">
+        <h2>Capture coverage by plane</h2>
+        <p className="muted">The same planes as the setup check. A plane is reporting when it
+           raised a finding in this window or a sensor checked in. Last 24 hours is the live
+           setup card, so the two cannot disagree about today.</p>
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr><th>Plane</th><th>Findings</th><th>Last 24 hours</th><th>Sensors</th><th>Reporting</th></tr>
+            </thead>
+            <tbody>
+              {(c.planes || []).map((p) => (
+                <tr key={p.plane}>
+                  <td>{p.label}</td>
+                  <td>{p.findings}</td>
+                  <td>{p.last_24h}</td>
+                  <td>{p.sensors}</td>
+                  <td>{p.reporting ? "Yes" : "No"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="panel settings-card">
+        <h2>Unsanctioned AI tools</h2>
+        <p className="muted">From the discovery inventory, classified against the allowlist in
+           force now. A tool with no row was not observed.</p>
+        {(c.unsanctioned || []).length ? (
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead><tr><th>Tool</th><th>Domain</th><th>People</th><th>Events</th><th>Sensitive events</th></tr></thead>
+              <tbody>
+                {c.unsanctioned.map((t) => (
+                  <tr key={`${t.tool}-${t.domain}`}>
+                    <td>{t.tool || "—"}</td>
+                    <td className="muted">{t.domain || "—"}</td>
+                    <td>{t.users}</td>
+                    <td>{t.events}</td>
+                    <td>{t.sensitive_events}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="muted" style={{ marginBottom: 0 }}>No unsanctioned AI tool in the inventory.</p>}
+      </div>
+
+      <div className="panel settings-card">
+        <h2>Confirmed secrets and personal data</h2>
+        <p className="muted">Findings whose stored signals are a known-format credential or
+           personal record. A high-entropy guess is not counted here. These are counts of
+           findings already raised, not a new scan.</p>
+        <div className="usage-stats">
+          <div><span className="usage-n">{confirmed.findings || 0}</span><span className="usage-l">confirmed findings</span></div>
+          <div><span className="usage-n">{confirmed.secrets || 0}</span><span className="usage-l">secrets</span></div>
+          <div><span className="usage-n">{confirmed.pii || 0}</span><span className="usage-l">personal data</span></div>
+          <div><span className="usage-n">{confirmed.phi || 0}</span><span className="usage-l">health data</span></div>
+        </div>
+      </div>
+
+      <div className="panel settings-card">
+        <h2>Top actors</h2>
+        <p className="muted">The people with the most findings in this window, and how many of
+           those findings were a confirmed secret or personal record.</p>
+        {(c.top_actors || []).length ? (
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead><tr><th>Person</th><th>Findings</th><th>Confirmed</th></tr></thead>
+              <tbody>
+                {c.top_actors.map((a) => (
+                  <tr key={a.actor}><td>{a.actor}</td><td>{a.findings}</td><td>{a.confirmed}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="muted" style={{ marginBottom: 0 }}>No actor on a finding in this window.</p>}
+      </div>
+
+      <div className="panel settings-card">
+        <h2>Precision</h2>
+        {precision.judged > 0 ? (
+          <p className="report-lede">
+            Of <strong>{precision.judged}</strong> reviewed {precision.judged === 1 ? "finding" : "findings"},{" "}
+            <strong>{precision.actionable}</strong> needed action
+            {rate ? <> ({rate})</> : null}.
+            {precision.false_positive > 0 && <> {precision.false_positive} were false positives.</>}
+            {precision.hint ? <> {precision.hint}</> : null}
+          </p>
+        ) : (
+          <p className="muted">Nothing was reviewed in this window, so there is no precision number.</p>
+        )}
+        {(precision.worth_tuning || []).length > 0 && (
+          <ul className="report-recs">
+            {precision.worth_tuning.map((w) => (
+              <li key={w.check}>
+                <span className="rec-policy">{w.title || w.check}</span>
+                <span className="rec-evidence">{w.actionable} of {w.judged} needed action</span>
+                {w.hint && <p className="rec-why">{w.hint}</p>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="panel settings-card">
+        <h2>When to switch to enforce</h2>
+        {enforce.already ? (
+          <p className="report-lede">{enforce.reason}</p>
+        ) : enforce.date && enforce.ready ? (
+          <p className="report-lede">
+            Recommended date to switch to enforce mode: <strong>{fmtDay(enforce.date)}</strong>.{" "}
+            {enforce.reason}
+          </p>
+        ) : enforce.date ? (
+          <p className="report-lede">
+            Not ready to enforce. Revisit on <strong>{fmtDay(enforce.date)}</strong>. {enforce.reason}
+          </p>
+        ) : (
+          <p className="report-lede">{enforce.reason || "No date recommended from this window."}</p>
+        )}
+        {c.truncated && (
+          <p className="muted" style={{ marginBottom: 0 }}>
+            Confirmed counts and the actor list cover the newest 20,000 findings in the window.
+            Plane totals are the full count.
+          </p>
+        )}
+      </div>
+    </>
+  );
+}
+
 export default function Report() {
   const [days, setDays] = useState(30);
   const [data, setData] = useState(null);
+  const [closeout, setCloseout] = useState(null);
+  const [closeErr, setCloseErr] = useState(null);
   const [packing, setPacking] = useState(false);
   async function evidence() {
     setPacking(true);
@@ -88,8 +244,11 @@ export default function Report() {
 
   const load = useCallback(async () => {
     setErr(null);
+    setCloseErr(null);
     try { setData(await api.reportSummary(days)); }
-    catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
+    catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); setData(null); }
+    try { setCloseout(await api.reportCloseout(days)); }
+    catch (e) { setCloseErr(String(e.message || e).replace(/^\d+:\s*/, "")); setCloseout(null); }
   }, [days]);
   useEffect(() => { load(); }, [load]);
 
@@ -102,7 +261,7 @@ export default function Report() {
         <div>
           <h1 className="page-title">AI Exposure Assessment</h1>
           <p className="page-sub">What is reaching AI tools, who is sending it, and what to
-             turn on. Print or save as PDF to share.</p>
+             turn on. The closeout below is the page to forward. Print or save as PDF.</p>
         </div>
         <div className="head-actions no-print">
           <select value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label="Window">
@@ -122,18 +281,23 @@ export default function Report() {
       </div>
 
       {err && <div className="error">{err}</div>}
+      {closeErr && <div className="error">{closeErr}</div>}
+
+      {data && (
+        <div className="panel settings-card">
+          <Headline d={data} />
+          <p className="muted" style={{ marginBottom: 0 }}>
+            Window: last {data.days} days · generated{" "}
+            {data.generated_at ? new Date(data.generated_at).toLocaleString() : "-"} ·{" "}
+            {data.analyzed_events.toLocaleString()} events analyzed
+          </p>
+        </div>
+      )}
+
+      {closeout && <Closeout c={closeout} />}
 
       {data && (
         <>
-          <div className="panel settings-card">
-            <Headline d={data} />
-            <p className="muted" style={{ marginBottom: 0 }}>
-              Window: last {data.days} days · generated{" "}
-              {data.generated_at ? new Date(data.generated_at).toLocaleString() : "-"} ·{" "}
-              {data.analyzed_events.toLocaleString()} events analyzed
-            </p>
-          </div>
-
           {recs.length > 0 && (
             <div className="panel settings-card">
               <h2>What to turn on</h2>

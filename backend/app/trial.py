@@ -100,6 +100,10 @@ def _assessment_lines(numbers: dict | None, console: str) -> str:
     lines.append(f"The full report (by tool, by data class, the precision readout and what to "
                  f"turn on first) is in the console ({console}) under Report. Print it or save "
                  f"it as a PDF; it is written to be forwarded.")
+    lines.append("The closeout on that page is the part to forward: coverage by plane, "
+                 "unsanctioned tools, confirmed secrets and personal data, the people most "
+                 "often flagged, how often the checks were right, and a date to consider "
+                 "enforce mode — or a statement that the evidence is not there yet.")
     return "\n".join(lines) + "\n\n"
 
 

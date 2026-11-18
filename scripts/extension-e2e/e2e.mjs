@@ -381,6 +381,41 @@ try {
   r = await send("key rejected", { ext: { token: "ak_not_a_real_key" } });
   check("a rejected capture key: sent unchecked, with a visible notice", r.arrived && /capture key rejected/.test(r.notice), r.notice);
 
+  // The backend is unreachable: the message still goes out, and the miss is kept locally
+  // the way the CLI keeps ~/.palivane/scan-failed-*.json, then reported on the next scan
+  // that lands so Fleet can show it. Counts and times only — the prompt is not in the tally.
+  await sw.evaluate(() => chrome.storage.local.remove(["scanFailed", "scanFailedClaim"]));
+  r = await send("backend unreachable", {
+    text: "please summarise this paragraph for me",
+    ext: { backendUrl: "http://127.0.0.1:1", token: key, user: "ghost@demo.local", enforce: true },
+    extraWait: 500,
+  });
+  check("an unreachable backend lets the message out (fail open)", r.arrived && !r.modal, JSON.stringify(r));
+  check("...and the person is told it was not checked", /could not reach Palivane|no answer in time/.test(r.notice), r.notice);
+  let pending = null;
+  for (let i = 0; i < 40; i++) {
+    pending = await sw.evaluate(async () => (await chrome.storage.local.get({ scanFailed: null })).scanFailed);
+    if (pending && pending.reasons && pending.reasons.network >= 1) break;
+    await sleep(250);
+  }
+  check("...and the miss is recorded locally, counts and times only",
+    !!(pending && pending.reasons && pending.reasons.network >= 1 && pending.count >= 1)
+    && !JSON.stringify(pending || {}).includes("summarise")
+    && Object.keys(pending || {}).every((k) => ["count", "reasons", "first", "last"].includes(k)),
+    JSON.stringify(pending));
+  r = await send("after the outage", {
+    text: "please summarise this paragraph for me",
+    ext: { backendUrl: PALI, token: key, user: "ghost@demo.local", enforce: false },
+  });
+  check("the next check reaches Palivane", r.arrived && !r.modal, JSON.stringify(r));
+  const left = await sw.evaluate(async () => chrome.storage.local.get({ scanFailed: null, scanFailedClaim: null }));
+  check("...and the local tally is cleared once it was reported", !left.scanFailed && !left.scanFailedClaim, JSON.stringify(left));
+  const foFleet = await api("GET", "/api/fleet", null, admin);
+  const fo = (foFleet.failed_open_devices || []).filter((d) => d.actor === "ghost@demo.local");
+  check("Fleet shows the extension fail-open as a network error",
+    fo.some((d) => d.client === "palivane-extension" && (d.reasons || {}).network >= 1),
+    JSON.stringify(fo));
+
   // an unreadable body is reported to the console as a parse-miss on this device's sensor
   const streamer = await newKey("streamer@demo.local");
   await setConfig({ backendUrl: PALI, token: streamer, user: "streamer@demo.local", enforce: true });

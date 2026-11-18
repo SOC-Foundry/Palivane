@@ -341,7 +341,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Palivane-Token",
-                   "X-Palivane-Agent", "x-api-key",
+                   "X-Palivane-Agent", "X-Palivane-Client", "x-api-key",
                    "anthropic-version", "anthropic-beta"],
 )
 
@@ -823,6 +823,58 @@ def export_tenant(
     fname = f"palivane-export-{tenant.slug}.json"
     return _Resp(content=_json.dumps(doc, indent=2), media_type="application/json",
                  headers={"Content-Disposition": f"attachment; filename={fname}"})
+
+
+def _capture_client_ua(user_agent: str, client_header: str) -> str:
+    """The client identity for a capture request.
+
+    Hooks and the proxy send it as the User-Agent (``palivane-hook/1.1.0``). The browser
+    extension cannot set that header, so it sends the same token in ``X-Palivane-Client``.
+    Anything that does not start with our client prefix is ignored, and a real User-Agent
+    wins when it is already one of ours.
+    """
+    if _parse_client_ua(user_agent)[0]:
+        return user_agent
+    header = (client_header or "").strip().split()[0] if (client_header or "").strip() else ""
+    if header and _parse_client_ua(header)[0]:
+        return header
+    return user_agent or ""
+
+
+def _public_status_body(db: Session) -> tuple[int, dict]:
+    """The public status document: liveness (this process answered), readiness (the same
+    ``SELECT 1`` as ``/readyz``), and the judge flag from ``/api/health``. Nothing else."""
+    from sqlalchemy import text
+
+    from .public_status import http_status, snapshot
+    db_ok = True
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception:
+        db.rollback()
+        db_ok = False
+    judge_ok = engine.judge.health["ok"] if engine.judge_enabled else None
+    body = snapshot(db_ok=db_ok, judge_enabled=bool(engine.judge_enabled), judge_ok=judge_ok)
+    return http_status(body), body
+
+
+@app.get("/api/status")
+def api_status(db: Session = Depends(get_db)):
+    """Public service status. No authentication, and no tenant data: not the license org,
+    not signup or mail flags, not findings. 503 when the database check ``/readyz`` uses fails."""
+    from fastapi.responses import JSONResponse
+    code, body = _public_status_body(db)
+    return JSONResponse(status_code=code, content=body)
+
+
+@app.get("/status")
+def status_page(db: Session = Depends(get_db)):
+    """The same checks as ``/api/status``, as a page a person can open. No script."""
+    from fastapi.responses import HTMLResponse
+
+    from .public_status import render_html
+    code, body = _public_status_body(db)
+    return HTMLResponse(render_html(body), status_code=code)
 
 
 @app.get("/livez")
@@ -1559,6 +1611,7 @@ def ingest_ai_usage(
     body: AIUsageIngest,
     x_palivane_token: str = Header(default=""),
     x_palivane_agent: str = Header(default=""),
+    x_palivane_client: str = Header(default=""),
     user_agent: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
@@ -1567,6 +1620,9 @@ def ingest_ai_usage(
     Authenticated by a per-tenant API key (`ak_…`, minted in the console) or the shared
     static EXTENSION_INGEST_TOKEN — not a user JWT — so it can be deployed via policy.
     Returns an action the client enforces: allow / warn / block."""
+    # The extension cannot set User-Agent. Its client token arrives on X-Palivane-Client
+    # so a fail-open it reports later is attributed to palivane-extension in Fleet.
+    user_agent = _capture_client_ua(user_agent, x_palivane_client)
     tenant_id, default_actor, default_claimed = _ingest_caller(x_palivane_token, db)
     held = _containment_answer(db, tenant_id, _attributed_actor(body.user, default_actor),
                                x_palivane_token, x_palivane_agent, "ai-usage", body.tool or "",
@@ -5432,6 +5488,21 @@ def report_summary(days: int = 30, current: User = Depends(require_admin),
     """The numbers a security lead forwards upward: window totals, what was prevented,
     where it came from, who's covered. Printable from the console's Report page."""
     return report_numbers(db, current.tenant_id, days)
+
+
+@app.get("/api/reports/closeout")
+def report_closeout(days: int = Query(7, ge=1, le=365), current: User = Depends(require_admin),
+                    db: Session = Depends(get_db)):
+    """The assessment closeout: coverage by plane, unsanctioned tools, confirmed secrets
+    and personal data, top actors, precision, and a date to consider enforce mode.
+
+    Assembled from the same stores as ``/api/stats``, ``/api/setup-status``,
+    ``/api/discovery/inventory`` and ``/api/precision``. It does not run a detector.
+    Printable from the console's Report page."""
+    from .closeout import build_closeout
+    sanctioned = _tenant_or_global(current.tenant_id, db, "sanctioned_ai_tools",
+                                   settings.sanctioned_ai_tools)
+    return build_closeout(db, current.tenant_id, days, sanctioned=sanctioned)
 
 
 def report_numbers(db: Session, tenant_id: int, days: int = 30) -> dict:

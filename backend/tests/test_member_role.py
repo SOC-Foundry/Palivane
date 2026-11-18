@@ -18,7 +18,7 @@ def _member_client(client, raw_client, db_factory):
 def test_member_sees_only_their_own_findings(client, raw_client, db_factory):
     m = _member_client(client, raw_client, db_factory)
     for path in ("/api/findings", "/api/stats", "/api/ml/corpus", "/api/setup-status",
-                 "/api/agents/a2a-graph"):
+                 "/api/agents/a2a-graph", "/api/reports/closeout"):
         assert m.get(path).status_code == 403, path
     assert m.get("/api/findings/1").status_code == 403
     assert m.post("/api/analyze", json={"content": "x"}).status_code == 403

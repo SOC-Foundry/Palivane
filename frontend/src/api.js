@@ -218,6 +218,10 @@ export const api = {
     req(`/policies/analytics?${new URLSearchParams({ days })}`),
   reportSummary: (days = 30) =>
     req(`/reports/summary?${new URLSearchParams({ days })}`),
+  // The trial closeout: coverage, unsanctioned tools, confirmed secrets and personal
+  // data, top actors, precision, and a date to consider enforce. Same window as the report.
+  reportCloseout: (days = 7) =>
+    req(`/reports/closeout?${new URLSearchParams({ days })}`),
   discoveryInventory: () => req("/discovery/inventory"),
   discoveryBrowserExtensions: () => req("/discovery/browser-extensions"),
   discoveryIngest: (events) =>
