@@ -2628,3 +2628,8 @@ h4 { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-s
   .sidebar.rail .account { display: block; }
   .sidebar.rail .judge-status, .sidebar.rail .signout { justify-content: flex-start; padding: 9px 12px; }
 }
+
+/* sign-up: organisation or one person */
+.signup-kind { display: flex; gap: 8px; margin: 0 0 10px; }
+.signup-kind .chip-toggle { flex: 1; justify-content: center; }
+.lp-hero-solo { margin: 10px 0 0; font-size: 13.5px; }

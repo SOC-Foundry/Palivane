@@ -385,14 +385,20 @@ def signup(body: SignupRequest, request: Request, db: Session = Depends(get_db))
             return _session_payload(user, tenant)
         return {"status": "pending_approval", "org": tenant.name or tenant.slug}
 
+    personal = body.plan == "personal"
+    if not personal and len(body.org_name.strip()) < 2:
+        raise HTTPException(status_code=422, detail="enter your organization's name")
+    if personal and not body.org_name.strip():
+        # "sam" from sam@example.com: a workspace for one person has the person's name.
+        body.org_name = email.split("@", 1)[0].replace(".", " ").replace("_", " ").strip().title() or "Personal"
     slug = _unique_slug(db, _slugify(body.slug or body.org_name))
     # A hosted signup starts a full-featured trial; the source-available self-host path is
     # what stays free indefinitely (see app/plans.py).
     trial_days = settings.trial_days
     tenant = Tenant(
         slug=slug, name=body.org_name.strip() or slug,
-        plan="trial" if trial_days > 0 else "free",
-        trial_ends_at=(_naive_utc() + timedelta(days=trial_days)) if trial_days > 0 else None)
+        plan="personal" if personal else ("trial" if trial_days > 0 else "free"),
+        trial_ends_at=(_naive_utc() + timedelta(days=trial_days)) if (trial_days > 0 and not personal) else None)
     db.add(tenant)
     db.commit()
     db.refresh(tenant)

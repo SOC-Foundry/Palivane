@@ -73,8 +73,8 @@ export const api = {
   mfaSetup: () => req("/auth/mfa/setup", { method: "POST" }),
   mfaConfirm: (code) => req("/auth/mfa/confirm", { method: "POST", body: JSON.stringify({ code }) }),
   mfaDisable: (code) => req("/auth/mfa/disable", { method: "POST", body: JSON.stringify({ code }) }),
-  signup: (org_name, email, password) =>
-    req("/auth/signup", { method: "POST", body: JSON.stringify({ org_name, email, password }) }),
+  signup: (org_name, email, password, plan = "") =>
+    req("/auth/signup", { method: "POST", body: JSON.stringify({ org_name, email, password, plan }) }),
   forgot: (email, org = "") =>
     req("/auth/forgot", { method: "POST", body: JSON.stringify({ email, org }) }),
   resetPassword: (token, password) =>

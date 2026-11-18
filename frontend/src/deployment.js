@@ -36,6 +36,8 @@ export const APP_ORIGIN = (import.meta.env.VITE_PALIVANE_APP_ORIGIN || "").repla
 
 /** URL for the console's sign-in screen — cross-origin when the hosts are split. */
 export const signInUrl = () => `${APP_ORIGIN}/#signin`;
+/** Straight to the sign-up form; `personal` opens it for a one-person workspace. */
+export const signUpUrl = (personal = false) => `${APP_ORIGIN}/#${personal ? "signup-personal" : "signup"}`;
 
 /** URL for the read-only public demo — same cross-origin rule as sign-in: it signs you in. */
 export const demoUrl = () => `${APP_ORIGIN}/#demo`;

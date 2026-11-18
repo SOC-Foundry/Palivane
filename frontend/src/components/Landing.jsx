@@ -343,6 +343,7 @@ export default function Landing({ onSignIn }) {
                 security buyers want to see real findings before installing anything. */}
             <a className="lp-nav-ghost wide" href={demoUrl()}>See the live demo</a>
           </div>
+          <p className="lp-hero-solo rv"><a className="lp-textlink" href="/personal">Just for yourself? The personal workspace is free, with no clock →</a></p>
           <div className="lp-hero-cmd">
             <div className="lp-cmd-row">
               <code>{INSTALL_CMD}</code>

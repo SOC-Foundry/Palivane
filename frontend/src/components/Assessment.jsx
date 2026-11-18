@@ -1,7 +1,7 @@
 // The 7-day AI exposure assessment: the way to try Palivane. Install, watch for a week in
 // monitor mode, get the document a security lead forwards upward. Every claim here is what
 // the console's Report page actually produces (main.report_numbers) and what /coverage says.
-import { SIGN_IN_IS_CROSS_ORIGIN, demoUrl, signInUrl } from "../deployment.js";
+import { demoUrl, signUpUrl } from "../deployment.js";
 import { SiteFooter, SiteNav } from "./SiteChrome.jsx";
 
 const INSTALL_CMD = "curl -fsSL https://app.palivane.io/install.sh | bash";
@@ -22,9 +22,7 @@ const STEPS = [
 ];
 
 export default function Assessment() {
-  const signIn = SIGN_IN_IS_CROSS_ORIGIN
-    ? <a className="primary-btn" href={signInUrl("#signup")}>Start the assessment</a>
-    : <a className="primary-btn" href="/#signup">Start the assessment</a>;
+  const signIn = <a className="primary-btn" href={signUpUrl()}>Start the assessment</a>;
   return (
     <div className="landing">
       <SiteNav />

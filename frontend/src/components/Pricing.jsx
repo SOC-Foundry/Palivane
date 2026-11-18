@@ -24,6 +24,19 @@ const BANDS = [
 
 const TIERS = [
   {
+    icon: <DuoUsers />,
+    name: "Personal", price: "Free", per: "one person, no expiry",
+    blurb: "The same sensors and detection, for you alone. Nothing is sent anywhere you did not choose.",
+    cta: { label: "Create your workspace →", href: "/personal" },
+    features: [
+      "Undo for agents, phantom-dependency checks, the secrets ledger, your own record",
+      "Browser extension, CLI hooks and the desktop proxy, in monitor or blocking mode",
+      "Offline detection: no cloud model, no API key, no outbound call",
+      "The 7-day assessment report for your own AI use",
+      "Becomes a Team workspace the moment you invite a second person",
+    ],
+  },
+  {
     icon: <DuoBeaker />,
     name: "AI Exposure Assessment", price: "7–14 days", per: "a scoped engagement, not a subscription",
     blurb: "Before you buy anything: find out what is actually leaving, and who is sending it.",
