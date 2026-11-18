@@ -320,6 +320,9 @@ export const api = {
     req(`/upstreams/${provider}/lane`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteLane: (provider) => req(`/upstreams/${provider}/lane`, { method: "DELETE" }),
   auditSessions: (days = 7) => req(`/audit/sessions?days=${days}`),
+  // The flight recorder: an actor's window as steps, and the same window under another policy.
+  replayRecording: (actor, days = 7) => req(`/replay?actor=${encodeURIComponent(actor)}&days=${days}`),
+  replayPolicy: (actor, days, policy) => req("/replay", { method: "POST", body: JSON.stringify({ actor, days, policy }) }),
   auditTimeline: (actor, days = 7) =>
     req(`/audit/timeline?actor=${encodeURIComponent(actor)}&days=${days}`),
   // Downloads the normalized cross-vendor audit as a file (jsonl | cef), raw text, not JSON.

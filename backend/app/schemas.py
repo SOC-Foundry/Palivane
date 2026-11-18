@@ -710,6 +710,15 @@ class PolicyOverrideIn(BaseModel):
     enforce: Literal["on", "off", "inherit"] = "inherit"
 
 
+class ReplayIn(BaseModel):
+    """The flight recorder replayed against a policy (app/replay.py)."""
+    actor: str = Field(min_length=1, max_length=320)
+    days: int = Field(7, ge=1, le=90)
+    since: str = Field("", max_length=40)     # ISO; overrides days
+    until: str = Field("", max_length=40)
+    policy: dict = Field(default_factory=dict)
+
+
 class SimulateIn(BaseModel):
     """Console 'test my protection' — run content through the real scoring pipeline
     (nothing persisted) and show the verdict per plane, in monitor vs enforce."""
