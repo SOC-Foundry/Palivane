@@ -232,3 +232,171 @@ def test_evidence_pack_is_admin_only(client, raw_client, db_factory):
                                                    "password": "password123"}).json()["access_token"]
     r = raw_client.get("/api/export/evidence", headers={"Authorization": f"Bearer {tok}"})
     assert r.status_code == 403
+
+
+# --- status sync: webhook, poll, and the other direction ---------------------------------------
+
+_JIRA_DONE = {"name": "Done", "statusCategory": {"key": "done"}}
+_JIRA_OPEN = {"name": "To Do", "statusCategory": {"key": "new"}}
+_TRANSITIONS = {"transitions": [
+    {"id": "31", "name": "Done", "to": {"name": "Done", "statusCategory": {"key": "done"}}},
+    {"id": "11", "name": "To Do", "to": {"name": "To Do", "statusCategory": {"key": "new"}}},
+]}
+
+
+def _scripted(monkeypatch, remote):
+    """remote['jira'] / remote['snow'] is what a status read returns. Records every call."""
+    calls = []
+
+    def fake_urlopen(req, timeout=8.0):
+        url, method = req.full_url, req.get_method()
+        data = json.loads(req.data) if req.data else None
+        calls.append((url, method, data))
+        if method == "POST" and url.endswith("/rest/api/3/issue"):
+            return _Resp({"id": "10001", "key": "SEC-42"})
+        if method == "GET" and url.endswith("/transitions"):
+            return _Resp(_TRANSITIONS)
+        if method == "POST" and "/transitions" in url:
+            return _Resp({})
+        if method == "GET" and "/rest/api/3/issue/" in url:
+            return _Resp({"key": "SEC-42", "fields": {"status": remote["jira"]}})
+        if method == "POST" and "/api/now/table/" in url and method == "POST":
+            return _Resp({"result": {"number": "INC0010042", "sys_id": "abc123"}})
+        if method == "PATCH":
+            return _Resp({"result": {"number": "INC0010042", "state": (data or {}).get("state")}})
+        if method == "GET" and "/api/now/table/" in url:
+            return _Resp({"result": [remote.get("snow") or {"state": "1", "number": "INC0010042"}]})
+        if method == "POST" and "/api/now/table/" in url:
+            return _Resp({"result": {"number": "INC0010042", "sys_id": "abc123"}})
+        return _Resp({})
+
+    monkeypatch.setattr("app.netguard.is_safe_url", lambda url: url.startswith("https://acme."))
+    monkeypatch.setattr("app.netguard.safe_urlopen", fake_urlopen)
+    return calls
+
+
+def _webhook(client, kind="jira"):
+    urls = client.get("/api/tickets/webhooks").json()
+    assert urls["configured"] is True and "token=" in urls[kind]
+    return urls[kind].split("token=", 1)[1], urls
+
+
+def test_webhook_urls_are_admin_credentials(client, raw_client):
+    assert raw_client.get("/api/tickets/webhooks").status_code == 401
+    _configure(client)
+    token, urls = _webhook(client)
+    assert "/api/webhooks/tickets/jira/acme?token=" in urls["jira"]
+    assert "/api/webhooks/tickets/servicenow/acme?token=" in urls["servicenow"]
+    rotated = client.post("/api/tickets/webhooks/rotate").json()
+    assert rotated["jira"] != urls["jira"]
+    assert client.post(f"/api/webhooks/tickets/jira/acme?token={token}",
+                       json={"issue": {"key": "X-1"}}).status_code == 401
+    fresh = rotated["jira"].split("token=", 1)[1]
+    assert client.post(f"/api/webhooks/tickets/jira/acme?token={fresh}", json={}).status_code == 200
+    # Switching ticketing off drops the credential.
+    assert client.patch("/api/tenant", json={"ticket_kind": ""}).status_code == 200
+    assert client.get("/api/tickets/webhooks").json()["configured"] is False
+
+
+def test_jira_resolve_triages_the_finding_and_reopen_undoes_it(client, db_factory, left, monkeypatch):
+    _configure(client)
+    _fake_tracker(monkeypatch, {"id": "10001", "key": "SEC-42"})
+    eid = _exposure(client, db_factory, left)
+    made = client.post(f"/api/exposures/{eid}/ticket").json()
+    assert made["status"] == "open" and made["key"] == "SEC-42"
+    token, _ = _webhook(client)
+    body = {"webhookEvent": "jira:issue_updated",
+            "issue": {"key": "SEC-42", "fields": {"status": _JIRA_DONE}}}
+    r = client.post(f"/api/webhooks/tickets/jira/acme?token={token}", json=body)
+    assert r.status_code == 200 and r.json()["matched"] == 1
+    row = next(e for e in client.get("/api/exposures?include_closed=1").json()["exposures"]
+               if e["id"] == eid)
+    assert row["status"] == "closed" and row["closed_reason"] == "ticket_resolved"
+    assert row["finding"]["status"] == "triaged"
+    assert row["ticket"]["status"] == "resolved" and row["ticket"]["external_status"] == "Done"
+    # A comment-only event with no status changes nothing further.
+    assert client.post(f"/api/webhooks/tickets/jira/acme",
+                       headers={"X-Palivane-Webhook-Token": token},
+                       json={"webhookEvent": "comment_created", "issue": {"key": "SEC-42"}}).json()["matched"] == 0
+    # Reopening the issue undoes only what the sync wrote.
+    client.post(f"/api/webhooks/tickets/jira/acme?token={token}", json={
+        "issue": {"key": "SEC-42", "fields": {"status": _JIRA_OPEN}}})
+    row = next(e for e in client.get("/api/exposures").json()["exposures"] if e["id"] == eid)
+    assert row["status"] == "open" and row["finding"]["status"] == "open"
+    assert row["ticket"]["status"] == "open"
+
+
+def test_closing_the_exposure_resolves_the_jira_issue(client, db_factory, left, monkeypatch):
+    _configure(client)
+    remote = {"jira": _JIRA_OPEN}
+    calls = _scripted(monkeypatch, remote)
+    eid = _exposure(client, db_factory, left)
+    client.post(f"/api/exposures/{eid}/ticket")
+    r = client.post(f"/api/exposures/{eid}/status", json={"status": "closed", "reason": "resolved"})
+    assert r.status_code == 200 and r.json()["status"] == "closed"
+    posted = [c for c in calls if c[1] == "POST" and c[0].endswith("/transitions")]
+    assert posted and posted[0][2] == {"transition": {"id": "31"}}
+    row = next(e for e in client.get("/api/exposures?include_closed=1").json()["exposures"]
+               if e["id"] == eid)
+    assert row["ticket"]["status"] == "resolved"
+    # The finding was not auto-triaged: a person closed the clock, not the tracker.
+    assert row["finding"]["status"] == "open"
+
+
+def test_reviewing_the_finding_resolves_its_ticket(client, db_factory, left, monkeypatch):
+    _configure(client)
+    calls = _scripted(monkeypatch, {"jira": _JIRA_OPEN})
+    eid = _exposure(client, db_factory, left)
+    finding = next(e for e in client.get("/api/exposures").json()["exposures"] if e["id"] == eid)
+    client.post(f"/api/exposures/{eid}/ticket")
+    r = client.patch(f"/api/findings/{finding['finding_id']}", json={"status": "triaged"})
+    assert r.status_code == 200
+    posted = [c for c in calls if c[1] == "POST" and "/transitions" in c[0]]
+    assert posted and posted[-1][2]["transition"]["id"] == "31"
+
+
+def test_poll_picks_up_a_resolved_ticket_without_a_webhook(client, db_factory, left, monkeypatch):
+    _configure(client)
+    remote = {"jira": _JIRA_OPEN}
+    _scripted(monkeypatch, remote)
+    eid = _exposure(client, db_factory, left)
+    client.post(f"/api/exposures/{eid}/ticket")
+    remote["jira"] = _JIRA_DONE
+    from app import tickets
+    summary = tickets.poll_trackers(db_factory())
+    assert summary["checked"] >= 1 and summary["errors"] == 0
+    row = next(e for e in client.get("/api/exposures?include_closed=1").json()["exposures"]
+               if e["id"] == eid)
+    assert row["status"] == "closed" and row["ticket"]["status"] == "resolved"
+    assert row["finding"]["status"] == "triaged"
+
+
+def test_servicenow_resolve_and_release_both_ways(client, db_factory, left, monkeypatch):
+    _configure(client, "servicenow", ticket_url="https://acme.service-now.com", ticket_project="incident")
+    remote = {"snow": {"state": "2", "number": "INC0010042"}}
+    calls = _scripted(monkeypatch, remote)
+    c = client.post("/api/containments", json={"scope": "user", "target": "dev@acme.com",
+                                               "reason": "leaked a key", "hours": 4}).json()
+    made = client.post(f"/api/containments/{c['id']}/ticket").json()
+    assert made["key"] == "INC0010042" and made["status"] == "open"
+    token, _ = _webhook(client, "servicenow")
+    # Closing the ticket does not lift the containment.
+    r = client.post(f"/api/webhooks/tickets/servicenow/acme?token={token}",
+                    json={"number": "INC0010042", "state": "7"})
+    assert r.json()["matched"] == 1
+    row = client.get("/api/containments").json()["containments"][0]
+    assert row["active"] is True and row["ticket"]["status"] == "resolved"
+    # Releasing it asks ServiceNow to resolve (state 6). The ticket is already resolved,
+    # so a second push is not made; poll is what would notice a reopen. Force the local
+    # status back to open and release, which is the direction that should push.
+    from app.models import Ticket
+    db = db_factory()
+    t = db.query(Ticket).one()
+    t.status = "open"
+    db.commit()
+    db.close()
+    client.post(f"/api/containments/{c['id']}/release")
+    patched = [c_ for c_ in calls if c_[1] == "PATCH"]
+    assert patched and patched[-1][2]["state"] == "6"
+    assert patched[-1][2]["close_code"] == "Solved (Permanently)"
+    assert "abc123" in patched[-1][0]

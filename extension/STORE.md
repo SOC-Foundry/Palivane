@@ -64,8 +64,8 @@ but a private/unlisted store item is the easiest install path.
 
 **Name:** Palivane. Shadow-AI Guard
 
-**Summary (≤132 chars):** Stops secrets, PII, and proprietary data from being pasted into
-AI tools, scans prompts and warns or blocks before they're sent.
+**Summary (≤132 chars):** Stops secrets, PII, and proprietary data reaching AI tools.
+Scans prompts, plus files and screenshots on ChatGPT, Claude and Gemini.
 
 **Category:** Productivity (or Developer Tools)
 
@@ -73,7 +73,8 @@ AI tools, scans prompts and warns or blocks before they're sent.
 > Palivane. Shadow-AI Guard inspects prompts you send to external AI tools (ChatGPT,
 > Claude, Gemini, Microsoft Copilot, Perplexity, Mistral, DeepSeek, Grok, Google AI
 > Studio, Poe) for secrets, credentials, PII, and proprietary source code, and warns or
-> blocks **before the prompt leaves your browser**.
+> blocks **before the prompt leaves your browser**. On ChatGPT, Claude and Gemini it
+> also inspects files and screenshots you attach, the same way, before the upload leaves.
 >
 > Detection runs on your organization's self-hosted Palivane backend; the extension is the
 > capture client. It fails open, if the backend is unreachable, your AI tools keep
@@ -89,7 +90,8 @@ AI tools, scans prompts and warns or blocks before they're sent.
 
 **Single purpose:**
 > Inspect prompts being sent to external AI services for sensitive data (secrets, PII,
-> proprietary code) and warn or block before the prompt is transmitted.
+> proprietary code), and files or screenshots attached on ChatGPT, Claude and Gemini,
+> and warn or block before they are transmitted.
 
 **Permission justifications:**
 
@@ -97,20 +99,24 @@ AI tools, scans prompts and warns or blocks before they're sent.
 | --- | --- |
 | `storage` | Store the admin's configuration (backend URL, ingest token, enforce flag) and read enterprise **managed** policy. |
 | `identity` | Self-serve sign-in: `chrome.identity.launchWebAuthFlow` opens the organization's Palivane console so the user authenticates (login/SSO) and the extension receives a per-user, tenant-scoped token. No Google account data is read; it's only the OAuth-style redirect back to the extension. |
-| `host_permissions`, `claude.ai`, `chatgpt.com`, `chat.openai.com`, `gemini.google.com`, `copilot.microsoft.com`, `m365.cloud.microsoft`, `www.bing.com`, `perplexity.ai`, `chat.mistral.ai`, `chat.deepseek.com`, `grok.com`, `aistudio.google.com`, `poe.com` | Run the content/injected script on these AI tools to read the prompt text before submission so it can be scanned. The extension acts **only** on these AI hosts. |
+| `host_permissions`, `claude.ai`, `chatgpt.com`, `chat.openai.com`, `gemini.google.com`, `copilot.microsoft.com`, `m365.cloud.microsoft`, `www.bing.com`, `perplexity.ai`, `chat.mistral.ai`, `chat.deepseek.com`, `grok.com`, `aistudio.google.com`, `poe.com` | Run the content/injected script on these AI tools to read the prompt text before submission so it can be scanned. On ChatGPT, Claude and Gemini the same scripts also read a file or screenshot the user attaches, before that upload leaves. The extension acts **only** on these AI hosts. |
 | `management` (**optional**, not requested at install) | Only if the user clicks "Share installed AI extensions with your security team" in Options: `chrome.management.getAll` lists the installed extensions so the organization can see which AI extensions (e.g. AI sidebars) are present, since the extension cannot inspect what other extensions send. Sent to the organization's own backend: each extension's id, name, version, enabled flag, install type and a host-access count. No browsing history, URLs or page content. The extension never enables, disables or removes other extensions. |
 | `host_permissions`, `localhost` / `127.0.0.1` | Allow talking to a Palivane backend running locally during evaluation. Remove these two from `manifest.json` before a public listing if you only use a hosted backend. |
 
 **Remote code:** No. The extension executes no remotely-hosted code, all logic ships in
-the package. It sends prompt text to an admin-configured backend and receives a JSON
-verdict; no code is fetched or evaluated.
+the package. It sends prompt text, and on ChatGPT, Claude and Gemini the files and
+images a user attaches, to an admin-configured backend and receives a JSON verdict; no
+code is fetched or evaluated.
 
 **Data use disclosures (Chrome "Privacy practices" tab):**
 - **What's collected:** the text of prompts the user submits to the supported AI tools
-  (so it can be scanned), plus an optional user identifier set by the admin.
+  (so it can be scanned); on ChatGPT, Claude and Gemini, also the name, type and contents
+  of files and screenshots they attach; plus an optional user identifier set by the admin.
+  Images are read on the organization's own backend with local OCR when the administrator
+  has enabled it, never by a third-party vision API.
 - **Where it goes:** **only** to the Palivane backend your organization operates
-  (`POST /api/ingest/ai-usage`). It is **not** sent to the extension's developer or any
-  third party.
+  (`POST /api/ingest/ai-usage` for prompts, `POST /api/ingest/ai-attachment` for files
+  and images). It is **not** sent to the extension's developer or any third party.
 - Check: *not sold to third parties*, *not used for purposes unrelated to the single
   purpose*, *not used for creditworthiness/lending*.
 - **Privacy policy URL:** the public URL where you host [`PRIVACY.md`](./PRIVACY.md).
@@ -123,6 +129,16 @@ verdict; no code is fetched or evaluated.
 
 Update this each release; adding `host_permissions` in an update re-triggers review and may
 require users to re-accept permissions, so call the host change out explicitly.
+
+**0.8.1:**
+> Version 0.8.1 adds no permissions, host permissions or content-script matches; the manifest
+> changes its version and description. On chatgpt.com, chat.openai.com, claude.ai and
+> gemini.google.com the extension now also reads a file or screenshot the user attaches,
+> before that upload leaves, and sends it to the organization's own Palivane backend
+> (`POST /api/ingest/ai-attachment`) for the same scan as a prompt. Images are read on that
+> backend with local OCR only when the administrator has enabled it. Nothing is sent to the
+> extension developer. Other AI tools are unchanged: prompt text only. The privacy policy
+> is updated to say so. No remotely-hosted code.
 
 **0.8.0:**
 > Version 0.8.0 adds no permissions, host permissions or content-script matches; the manifest

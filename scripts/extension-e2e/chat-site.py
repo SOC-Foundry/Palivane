@@ -28,6 +28,25 @@ document.getElementById('send').onclick = async () => {
   const box = document.getElementById(ce ? 'ce' : 'prompt');
   const text = ce ? box.innerText : box.value;
   if (ce) box.innerText = '';
+  if (mode === 'attach' || mode === 'attach-shot') {
+    // A file upload, the way the three sites send an attachment before the prompt.
+    const fd = new FormData();
+    let path = '/backend-api/files';
+    if (host === 'claude.ai') path = '/api/organizations/o1/upload';
+    else if (host === 'gemini.google.com') path = '/upload';
+    if (mode === 'attach-shot') {
+      const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='), c => c.charCodeAt(0));
+      fd.append('file', new File([png], 'shot.png', {type: 'image/png'}));
+    } else {
+      fd.append('file', new File([text], 'notes.txt', {type: 'text/plain'}));
+    }
+    const say = (t) => { document.getElementById('out').textContent = t; };
+    try {
+      const r = await fetch(path, {method: 'POST', body: fd});
+      say('status ' + r.status);
+    } catch (e) { say('network error ' + e); }
+    return;
+  }
   let h = {'content-type': 'application/json'};
   let url, body;
   if (host === 'gemini.google.com') {
@@ -125,7 +144,7 @@ class Site(BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get('content-length') or 0)
         body = self.rfile.read(n).decode('utf8', 'replace') if n else ''
-        LOG.append({'host': (self.headers.get('Host') or '').split(':')[0], 'path': self.path, 'body': body[:400], 'at': time.time()})
+        LOG.append({'host': (self.headers.get('Host') or '').split(':')[0], 'path': self.path, 'body': body[:4000], 'at': time.time()})
         b = b'{"ok":true}'
         self.send_response(200); self.send_header('content-type', 'application/json'); self.send_header('content-length', str(len(b))); self.end_headers(); self.wfile.write(b)
 

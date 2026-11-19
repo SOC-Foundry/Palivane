@@ -120,7 +120,7 @@ export default function Exposures() {
                           )}
                         </td>
                         <td>
-                          {e.ticket ? <a href={e.ticket.url} target="_blank" rel="noreferrer">{e.ticket.key}</a>
+                          {e.ticket ? <a href={e.ticket.url} target="_blank" rel="noreferrer">{e.ticket.key}{e.ticket.status === "resolved" ? " (resolved)" : ""}</a>
                                     : <button type="button" className="link-btn" onClick={() => ticket(e)} disabled={busy}>create</button>}
                         </td>
                         <td>

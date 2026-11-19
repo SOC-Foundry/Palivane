@@ -143,7 +143,7 @@ export default function ContainmentPanel() {
                   <td title={r.last_blocked_at ? `last ${fmtWhen(r.last_blocked_at)}` : undefined}>{r.blocked}</td>
                   <td className="muted">{r.released_by || r.created_by}</td>
                   <td className="muted cell-clip" title={r.reason}>{r.reason || "-"}</td>
-                  <td>{r.ticket ? <a href={r.ticket.url} target="_blank" rel="noreferrer">{r.ticket.key}</a>
+                  <td>{r.ticket ? <a href={r.ticket.url} target="_blank" rel="noreferrer">{r.ticket.key}{r.ticket.status === "resolved" ? " (resolved)" : ""}</a>
                                 : <button type="button" className="link-btn" onClick={() => ticket(r.id)}>create</button>}</td>
                   <td className="nowrap">
                     {r.active && <button type="button" className="link-btn" onClick={() => release(r.id)}>Release</button>}
