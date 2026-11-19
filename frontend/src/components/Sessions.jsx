@@ -207,7 +207,7 @@ export default function Sessions() {
           <div className="table-scroll">
             <table className="data-table session-table">
               <thead>
-                <tr><th>Peak</th><th>Actor</th><th>Events</th><th>Tools</th><th>Kill-chain stages</th><th>Last seen</th></tr>
+                <tr><th>Peak</th><th>Actor</th><th>Events</th><th>Tools</th><th>Kill-chain stages</th><th>Last seen</th><th></th></tr>
               </thead>
               <tbody>
                 {sessions.map((s) => (
@@ -225,10 +225,14 @@ export default function Sessions() {
                       <td><span className="chip-row">{s.vendors.map((v) => <span key={v} className="chip">{v}</span>)}</span></td>
                       <td className="muted">{s.stages.length ? s.stages.join(" → ") : "-"}</td>
                       <td className="muted nowrap">{fmtWhen(s.last_seen)}</td>
+                      <td className="nowrap">
+                        <button type="button" className="link-btn" title="This actor's window as a recording, replayed against any policy"
+                                onClick={(e) => { e.stopPropagation(); setFlight(s.actor); }}>Flight recorder</button>
+                      </td>
                     </tr>
                     {open === s.actor && (
                       <tr className="session-timeline-row">
-                        <td colSpan={6}>
+                        <td colSpan={7}>
                           <div className="session-timeline">
                             {(timeline[s.actor] || []).map((e) => (
                               <div key={e.finding_id} className="session-event">
@@ -240,9 +244,6 @@ export default function Sessions() {
                                 {e.is_chain && <span className="chip sev-critical">chain</span>}
                               </div>
                             ))}
-                            <div style={{ marginTop: 8 }}>
-                              <button type="button" className="ghost-btn slim" onClick={() => setFlight(s.actor)}>Open the flight recorder</button>
-                            </div>
                             {!timeline[s.actor] && <div className="muted">Loading timeline...</div>}
                             {timeline[s.actor] && !timeline[s.actor].length && <div className="muted">No events.</div>}
                           </div>
