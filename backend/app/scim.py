@@ -1,11 +1,11 @@
-"""SCIM 2.0 user provisioning (RFC 7643/7644) — the IdP-driven lifecycle plane.
+"""SCIM 2.0 provisioning (RFC 7643/7644) — the IdP-driven lifecycle plane.
 
 Okta / Entra ID / OneLogin push joiners, movers, and leavers here, so the org's directory
 is the source of truth: a person removed from the IdP is deactivated in Palivane within
-the IdP's sync interval instead of whenever someone remembers. Users resource only.
-Console roles are admin, analyst, and member. Groups are not provisioned: an IdP group
-has nothing to map onto yet, and role stays a console decision. SCIM-created users
-arrive as member (the create path sets role="member"; it does not grant analyst or admin).
+the IdP's sync interval instead of whenever someone remembers. Users arrive as members.
+Groups — the Groups resource, or a `groups` attribute on the User — map to a console
+role and a Discovery team through the mappings an admin saved. Unmapped groups do not
+change a role that was set in the console.
 
 Auth: a per-tenant bearer token (`scim_…`), minted by an admin in the console (one active
 token per org; minting again rotates it). Stored as a SHA-256 hash — the plaintext is
@@ -19,8 +19,9 @@ Semantics worth naming:
     not be able to lock an org out of its own console.
   - Admins cannot be renamed or reactivated over SCIM: a provisioning-scoped credential
     (leaked or mis-scoped) must not be able to hijack a privileged account's login identity
-    by changing its email, or bring back an admin the console offboarded. Admin lifecycle
-    is a console decision, same as role.
+    by changing its email, or bring back an admin the console offboarded.     Admin lifecycle
+    is a console decision. A mapped group may still change an admin's role, except the
+    last active admin, who is never removed this way.
 """
 
 from __future__ import annotations
@@ -33,13 +34,14 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from .database import bind_tenant, get_db
-from .models import Tenant, User
+from .models import ScimGroup, ScimGroupMember, Tenant, User
 from .security import hash_password
 
 router = APIRouter(prefix="/scim/v2", tags=["scim"])
 
 _SCIM_CT = "application/scim+json"
 _USER_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:User"
+_GROUP_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:Group"
 _LIST_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
 _ERROR_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:Error"
 _PATCH_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
@@ -110,6 +112,24 @@ def _get_user(db: Session, tenant: Tenant, user_id: str) -> User:
     return row
 
 
+def _apply_user_groups(db, user: User, groups: list[str] | None, op: str = "replace") -> None:
+    """Apply a SCIM user `groups` attribute. None means the payload didn't mention groups."""
+    if groups is None:
+        return
+    from .groups import collapse_groups, set_group_source
+    op = (op or "replace").lower()
+    if op == "add":
+        current = collapse_groups((user.group_sources or {}).get("scim_attr"))
+        groups = current + list(groups)
+    elif op == "remove" and groups:
+        current = collapse_groups((user.group_sources or {}).get("scim_attr"))
+        drop = {g.lower() for g in groups}
+        groups = [g for g in current if g.lower() not in drop]
+    elif op == "remove":
+        groups = []
+    set_group_source(db, user, "scim_attr", groups, actor="scim")
+
+
 def _audit(db, tenant, action, target, detail=None):
     """Queue an audit entry for after the request commits (_commit). audit_log.record
     commits, so writing it mid-request committed the operations before it too: a PatchOp
@@ -157,10 +177,13 @@ def service_provider_config(tenant: Tenant = Depends(scim_tenant)):
 @router.get("/ResourceTypes")
 def resource_types(tenant: Tenant = Depends(scim_tenant)):
     return JSONResponse(media_type=_SCIM_CT, content={
-        "schemas": [_LIST_SCHEMA], "totalResults": 1, "startIndex": 1, "itemsPerPage": 1,
-        "Resources": [{
-            "schemas": ["urn:ietf:params:scim:schemas:core:2.0:ResourceType"],
-            "id": "User", "name": "User", "endpoint": "/Users", "schema": _USER_SCHEMA}],
+        "schemas": [_LIST_SCHEMA], "totalResults": 2, "startIndex": 1, "itemsPerPage": 2,
+        "Resources": [
+            {"schemas": ["urn:ietf:params:scim:schemas:core:2.0:ResourceType"],
+             "id": "User", "name": "User", "endpoint": "/Users", "schema": _USER_SCHEMA},
+            {"schemas": ["urn:ietf:params:scim:schemas:core:2.0:ResourceType"],
+             "id": "Group", "name": "Group", "endpoint": "/Groups", "schema": _GROUP_SCHEMA},
+        ],
     })
 
 
@@ -206,6 +229,8 @@ def create_user(body: dict, tenant: Tenant = Depends(scim_tenant),
              # one through the reset flow) — provisioning must never mint a credential.
              password_hash=hash_password(secrets.token_urlsafe(32)))
     db.add(u)
+    from .groups import groups_from_scim_user
+    _apply_user_groups(db, u, groups_from_scim_user(body))
     _audit(db, tenant, "scim.user_created", email)
     _commit(db)
     db.refresh(u)
@@ -298,6 +323,8 @@ def replace_user(user_id: str, body: dict, tenant: Tenant = Depends(scim_tenant)
         blocked = _apply_active(db, tenant, u, bool(body.get("active")))
         if blocked is not None:
             return _refuse(db, blocked)
+    from .groups import groups_from_scim_user
+    _apply_user_groups(db, u, groups_from_scim_user(body))
     _commit(db)
     db.refresh(u)
     return JSONResponse(media_type=_SCIM_CT, content=_resource(u))
@@ -307,16 +334,18 @@ def replace_user(user_id: str, body: dict, tenant: Tenant = Depends(scim_tenant)
 def patch_user(user_id: str, body: dict, tenant: Tenant = Depends(scim_tenant),
                db: Session = Depends(get_db)):
     """PatchOp: the ops IdPs actually send — replace on `active` (Okta/Entra deactivate)
-    and on `userName`. Unknown paths are ignored per RFC 7644's leniency for
-    non-supported attributes rather than failing the whole sync."""
+    and on `userName`, plus add/remove/replace on `groups`. Unknown paths are ignored
+    per RFC 7644's leniency for non-supported attributes rather than failing the sync."""
     try:
         u = _get_user(db, tenant, user_id)
     except ScimError as e:
         return _err(e.status_code, e.detail, e.scim_type)
     for op in (body.get("Operations") or []):
-        if str(op.get("op", "")).lower() != "replace":
-            continue
+        name = str(op.get("op", "")).lower()
         path = str(op.get("path") or "").strip()
+        groups_path = path.lower() == "groups" or path.lower().endswith(":groups")
+        if name != "replace" and not groups_path:
+            continue
         value = op.get("value")
         # Entra sends path-less replace with a value object: {"active": false, ...}
         updates = value if not path and isinstance(value, dict) else {path: value}
@@ -330,6 +359,9 @@ def patch_user(user_id: str, body: dict, tenant: Tenant = Depends(scim_tenant),
                 blocked = _apply_rename(db, tenant, u, str(val))
                 if blocked is not None:
                     return _refuse(db, blocked)
+            elif key == "groups" or key.lower().endswith(":groups"):
+                from .groups import collapse_groups
+                _apply_user_groups(db, u, collapse_groups(val), op=str(op.get("op", "replace")))
     _commit(db)
     db.refresh(u)
     return JSONResponse(media_type=_SCIM_CT, content=_resource(u))
@@ -347,5 +379,294 @@ def delete_user(user_id: str, tenant: Tenant = Depends(scim_tenant),
     blocked = _apply_active(db, tenant, u, False)
     if blocked is not None:
         return _refuse(db, blocked)
+    _commit(db)
+    return Response(status_code=204)
+
+
+# --- Groups (Okta / Entra group push) ------------------------------------------------
+
+
+def _group_resource(db: Session, group: ScimGroup) -> dict:
+    members = (db.query(ScimGroupMember, User)
+                 .join(User, User.id == ScimGroupMember.user_id)
+                 .filter(ScimGroupMember.group_id == group.id)
+                 .all())
+    return {
+        "schemas": [_GROUP_SCHEMA],
+        "id": str(group.id),
+        "displayName": group.display_name,
+        "externalId": group.external_id or None,
+        "members": [{"value": str(user.id), "display": user.email} for _, user in members],
+        "meta": {"resourceType": "Group"},
+    }
+
+
+def _get_group(db: Session, tenant: Tenant, group_id: str) -> ScimGroup:
+    row = None
+    if str(group_id).isdigit():
+        row = (db.query(ScimGroup)
+                 .filter(ScimGroup.tenant_id == tenant.id, ScimGroup.id == int(group_id))
+                 .first())
+    if row is None:
+        raise ScimError(404, f"Group {group_id} not found")
+    return row
+
+
+def _member_user(db: Session, tenant: Tenant, value) -> User | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.isdigit():
+        row = (db.query(User)
+                 .filter(User.tenant_id == tenant.id, User.id == int(text))
+                 .first())
+        if row is not None:
+            return row
+    return (db.query(User)
+              .filter(User.tenant_id == tenant.id, User.email == text.lower())
+              .first())
+
+
+def _member_values(value) -> list:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _recompute_users(db, users: list[User]) -> None:
+    from .groups import apply_group_grants
+    seen = set()
+    for user in users:
+        if user is None or user.id in seen:
+            continue
+        seen.add(user.id)
+        apply_group_grants(db, user, actor="scim")
+
+
+def _set_members(db, tenant: Tenant, group: ScimGroup, values) -> JSONResponse | None:
+    """Replace the group's members with `values` (SCIM member objects or ids)."""
+    wanted: list[User] = []
+    for item in _member_values(values):
+        raw = item.get("value") if isinstance(item, dict) else item
+        user = _member_user(db, tenant, raw)
+        if user is None:
+            return _err(400, f"member {raw} not found", "invalidValue")
+        wanted.append(user)
+    current = {m.user_id: m for m in
+               db.query(ScimGroupMember).filter(ScimGroupMember.group_id == group.id).all()}
+    keep = {u.id for u in wanted}
+    affected = []
+    for uid, member in current.items():
+        if uid not in keep:
+            user = db.get(User, uid)
+            db.delete(member)
+            affected.append(user)
+    for user in wanted:
+        if user.id not in current:
+            db.add(ScimGroupMember(tenant_id=tenant.id, group_id=group.id, user_id=user.id))
+            affected.append(user)
+    db.flush()
+    _recompute_users(db, affected + wanted)
+    return None
+
+
+def _patch_members(db, tenant: Tenant, group: ScimGroup, op: str, path: str, value):
+    """Add or remove members. Returns an error response, or None."""
+    import re
+    op = op.lower()
+    match = re.fullmatch(r'members\[value eq "([^"]+)"\]', path or "", re.IGNORECASE)
+    if op == "remove" and match:
+        user = _member_user(db, tenant, match.group(1))
+        if user is None:
+            return None
+        db.query(ScimGroupMember).filter(ScimGroupMember.group_id == group.id,
+                                         ScimGroupMember.user_id == user.id).delete()
+        db.flush()
+        _recompute_users(db, [user])
+        return None
+    if op == "remove" and (path or "").lower() in ("", "members") and not value:
+        users = [db.get(User, m.user_id) for m in
+                 db.query(ScimGroupMember).filter(ScimGroupMember.group_id == group.id).all()]
+        db.query(ScimGroupMember).filter(ScimGroupMember.group_id == group.id).delete()
+        db.flush()
+        _recompute_users(db, users)
+        return None
+    if op == "remove":
+        gone = []
+        for item in _member_values(value):
+            raw = item.get("value") if isinstance(item, dict) else item
+            user = _member_user(db, tenant, raw)
+            if user is None:
+                continue
+            db.query(ScimGroupMember).filter(ScimGroupMember.group_id == group.id,
+                                             ScimGroupMember.user_id == user.id).delete()
+            gone.append(user)
+        db.flush()
+        _recompute_users(db, gone)
+        return None
+    # add or replace
+    if op == "replace":
+        return _set_members(db, tenant, group, value)
+    for item in _member_values(value):
+        raw = item.get("value") if isinstance(item, dict) else item
+        user = _member_user(db, tenant, raw)
+        if user is None:
+            return _err(400, f"member {raw} not found", "invalidValue")
+        exists = (db.query(ScimGroupMember)
+                    .filter(ScimGroupMember.group_id == group.id,
+                            ScimGroupMember.user_id == user.id)
+                    .first())
+        if exists is None:
+            db.add(ScimGroupMember(tenant_id=tenant.id, group_id=group.id, user_id=user.id))
+        db.flush()
+        _recompute_users(db, [user])
+    return None
+
+
+@router.get("/Groups")
+def list_groups(tenant: Tenant = Depends(scim_tenant), db: Session = Depends(get_db),
+                filter: str = Query(default=""), startIndex: int = Query(default=1, ge=1),
+                count: int = Query(default=100, ge=0, le=200)):
+    """List/search. Okta and Entra probe with `displayName eq "Engineering"`."""
+    import re
+    q = db.query(ScimGroup).filter(ScimGroup.tenant_id == tenant.id)
+    if filter:
+        m = re.fullmatch(r'\s*displayName\s+eq\s+"([^"]+)"\s*', filter, re.IGNORECASE)
+        if not m:
+            return _err(501, f"unsupported filter: {filter}", "invalidFilter")
+        from sqlalchemy import func
+        q = q.filter(func.lower(ScimGroup.display_name) == m.group(1).lower())
+    total = q.count()
+    rows = q.order_by(ScimGroup.id).offset(startIndex - 1).limit(count).all()
+    return JSONResponse(media_type=_SCIM_CT, content={
+        "schemas": [_LIST_SCHEMA], "totalResults": total,
+        "startIndex": startIndex, "itemsPerPage": len(rows),
+        "Resources": [_group_resource(db, g) for g in rows],
+    })
+
+
+@router.post("/Groups", status_code=201)
+def create_group(body: dict, tenant: Tenant = Depends(scim_tenant),
+                 db: Session = Depends(get_db)):
+    name = str(body.get("displayName") or "").strip()
+    if not name:
+        return _err(400, "displayName is required", "invalidValue")
+    from sqlalchemy import func
+    if (db.query(ScimGroup)
+          .filter(ScimGroup.tenant_id == tenant.id,
+                  func.lower(ScimGroup.display_name) == name.lower())
+          .first()):
+        return _err(409, f"group {name} already exists", "uniqueness")
+    group = ScimGroup(tenant_id=tenant.id, display_name=name,
+                      external_id=str(body.get("externalId") or "").strip())
+    db.add(group)
+    db.flush()
+    if body.get("members"):
+        blocked = _set_members(db, tenant, group, body.get("members"))
+        if blocked is not None:
+            return _refuse(db, blocked)
+    _audit(db, tenant, "scim.group_created", name)
+    _commit(db)
+    db.refresh(group)
+    return JSONResponse(status_code=201, media_type=_SCIM_CT, content=_group_resource(db, group))
+
+
+@router.get("/Groups/{group_id}")
+def get_group(group_id: str, tenant: Tenant = Depends(scim_tenant),
+              db: Session = Depends(get_db)):
+    try:
+        return JSONResponse(media_type=_SCIM_CT,
+                            content=_group_resource(db, _get_group(db, tenant, group_id)))
+    except ScimError as e:
+        return _err(e.status_code, e.detail, e.scim_type)
+
+
+@router.put("/Groups/{group_id}")
+def replace_group(group_id: str, body: dict, tenant: Tenant = Depends(scim_tenant),
+                  db: Session = Depends(get_db)):
+    try:
+        group = _get_group(db, tenant, group_id)
+    except ScimError as e:
+        return _err(e.status_code, e.detail, e.scim_type)
+    name = str(body.get("displayName") or "").strip()
+    if name and name != group.display_name:
+        clash = (db.query(ScimGroup)
+                   .filter(ScimGroup.tenant_id == tenant.id, ScimGroup.display_name == name,
+                           ScimGroup.id != group.id)
+                   .first())
+        if clash is not None:
+            return _err(409, f"group {name} already exists", "uniqueness")
+        group.display_name = name
+    if "externalId" in body:
+        group.external_id = str(body.get("externalId") or "").strip()
+    if "members" in body:
+        blocked = _set_members(db, tenant, group, body.get("members"))
+        if blocked is not None:
+            return _refuse(db, blocked)
+    else:
+        # The name is part of what mappings match, so a rename reapplies everyone in it.
+        members = [db.get(User, m.user_id) for m in
+                   db.query(ScimGroupMember).filter(ScimGroupMember.group_id == group.id).all()]
+        _recompute_users(db, members)
+    _commit(db)
+    db.refresh(group)
+    return JSONResponse(media_type=_SCIM_CT, content=_group_resource(db, group))
+
+
+@router.patch("/Groups/{group_id}")
+def patch_group(group_id: str, body: dict, tenant: Tenant = Depends(scim_tenant),
+                db: Session = Depends(get_db)):
+    """The patch Okta and Entra send: add/remove `members`, replace `displayName`."""
+    try:
+        group = _get_group(db, tenant, group_id)
+    except ScimError as e:
+        return _err(e.status_code, e.detail, e.scim_type)
+    renamed = False
+    for op in (body.get("Operations") or []):
+        name = str(op.get("op", "")).lower()
+        path = str(op.get("path") or "").strip()
+        value = op.get("value")
+        target = path.lower()
+        if not target and isinstance(value, dict):
+            if "displayName" in value:
+                target, value = "displayname", value.get("displayName")
+            elif "members" in value:
+                target, value = "members", value.get("members")
+        if target == "displayname" and name in ("replace", "add") and value:
+            new_name = str(value).strip()
+            if new_name and new_name != group.display_name:
+                group.display_name = new_name
+                renamed = True
+            continue
+        if target == "members" or target.startswith("members["):
+            blocked = _patch_members(db, tenant, group, name, path, value)
+            if blocked is not None:
+                return _refuse(db, blocked)
+    if renamed:
+        members = [db.get(User, m.user_id) for m in
+                   db.query(ScimGroupMember).filter(ScimGroupMember.group_id == group.id).all()]
+        _recompute_users(db, members)
+    _commit(db)
+    db.refresh(group)
+    return JSONResponse(media_type=_SCIM_CT, content=_group_resource(db, group))
+
+
+@router.delete("/Groups/{group_id}", status_code=204)
+def delete_group(group_id: str, tenant: Tenant = Depends(scim_tenant),
+                 db: Session = Depends(get_db)):
+    try:
+        group = _get_group(db, tenant, group_id)
+    except ScimError as e:
+        return _err(e.status_code, e.detail, e.scim_type)
+    users = [db.get(User, m.user_id) for m in
+             db.query(ScimGroupMember).filter(ScimGroupMember.group_id == group.id).all()]
+    db.query(ScimGroupMember).filter(ScimGroupMember.group_id == group.id).delete()
+    name = group.display_name
+    db.delete(group)
+    db.flush()
+    _recompute_users(db, users)
+    _audit(db, tenant, "scim.group_deleted", name)
     _commit(db)
     return Response(status_code=204)

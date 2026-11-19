@@ -438,13 +438,21 @@ class UserCreate(BaseModel):
     # Empty password = email invite: the account is created with an unguessable random
     # password and the user gets a set-password link (requires the email plane).
     password: str = ""
-    role: Literal["admin", "analyst", "member"] = "analyst"
+    role: Literal["admin", "analyst", "auditor", "member"] = "analyst"
 
 
 class UserUpdate(BaseModel):
     # Both optional — change role (promote/demote), toggle login access, or both.
-    role: Literal["admin", "analyst", "member"] | None = None
+    role: Literal["admin", "analyst", "auditor", "member"] | None = None
     active: bool | None = None
+
+
+class GroupMappingIn(BaseModel):
+    """One IdP group (Okta name, Entra display name or object id) → role and team.
+    Role defaults to member, the least privilege a directory account gets."""
+    group: str = Field(min_length=1, max_length=512)
+    role: Literal["admin", "analyst", "auditor", "member"] = "member"
+    team: str = Field(default="", max_length=128)
 
 
 class MFACode(BaseModel):

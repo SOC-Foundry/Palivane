@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, setToken } from "../api.js";
 import { viewToPath } from "../route.js";
+import GroupMappings from "./GroupMappings.jsx";
 
 const PROVIDERS = { openai: "OpenAI", anthropic: "Anthropic", gemini: "Gemini", xai: "xAI (Grok)",
                     vertex: "Claude on Vertex AI", bedrock: "Claude on Bedrock" };
@@ -129,7 +130,7 @@ const SECTIONS = [
   { id: "gateway", label: "Gateway & keys",
     words: "upstream provider openai anthropic gemini bedrock vertex api key byok judge" },
   { id: "access", label: "Sign-in & security",
-    words: "sso saml oidc okta entra scim provisioning mfa 2fa totp session logout password" },
+    words: "sso saml oidc okta entra scim provisioning group mapping team role auditor mfa 2fa totp session logout password" },
   { id: "data", label: "Data & compliance",
     words: "dpa gdpr export delete organization compliance" },
 ];
@@ -234,7 +235,7 @@ function SettingsNav({ section, go, bodyRef }) {
   );
 }
 
-export default function Settings({ tenant, currentUser, onTenant, onLogout, section: sectionProp = null, onSection }) {
+export default function Settings({ tenant, currentUser, onTenant, onLogout, section: sectionProp = null, onSection, readOnly = false }) {
   const [msg, setMsg] = useState(null);       // { ok, text }
   const flash = (text, ok = true) => { setMsg({ ok, text }); setTimeout(() => setMsg(null), 3000); };
   const err = (e) => flash(String(e.message || e).replace(/^\d+:\s*/, ""), false);
@@ -908,20 +909,29 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
   }
 
   return (
-    <div className="settings">
+    <div className={`settings${readOnly ? " settings-readonly" : ""}`}>
       <div className="content-head">
         <div>
           <h1 className="page-title">Settings
             <span className={`chip ${plan === "enterprise" ? "chip-on" : "chip-off"}`}
                   style={{ marginLeft: 10, verticalAlign: "middle" }}>{planLabel} plan</span>
           </h1>
-          <p className="page-sub">Organization, gateway upstreams, SSO, and usage, admin only.
+          <p className="page-sub">{readOnly
+            ? "Read-only. You can review organization settings, billing, and sign-in, not change them."
+            : "Organization, gateway upstreams, SSO, and usage, admin only."}
             {plan !== "enterprise" && (
               <> &nbsp;Need SSO, SIEM, or higher limits? Request an upgrade under Plan &amp; usage.</>
             )}
           </p>
         </div>
       </div>
+      {readOnly && (
+        <div className="panel" style={{ marginBottom: 12 }}>
+          <p className="muted" style={{ margin: 0 }}>Auditor access is read-only. You can review
+            findings, this page, reports and the audit log. Changes to policy, connectors,
+            users and billing are refused.</p>
+        </div>
+      )}
       {msg && <div className={msg.ok ? "flash-ok" : "flash-err"}>{msg.text}</div>}
 
       <div className="settings-layout">
@@ -2026,8 +2036,9 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
               <p className="muted">Let your IdP (Okta, Entra ID, OneLogin) create and deactivate
                 Palivane users automatically. Point it at <code>{`${location.origin}/scim/v2`}</code> with
                 the bearer token below, someone removed from the directory is deactivated here on the
-                IdP's next sync, sessions killed immediately. SCIM users arrive as analysts; roles stay
-                a console decision. Deleting in the IdP deactivates (findings history survives).</p>
+                IdP's next sync, sessions killed immediately. New SCIM users arrive as members.
+                Map groups below to a role and a team; otherwise roles stay as set in Users.
+                Deleting in the IdP deactivates (findings history survives).</p>
               {scimToken && (
                 <p style={{ wordBreak: "break-all" }}><strong>Token (shown once):</strong>{" "}
                   <code>{scimToken}</code></p>
@@ -2041,8 +2052,10 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
               </div>
             </div>
 
-            {/* Two-factor */}
-            <div className="panel settings-card">
+            <GroupMappings />
+
+            {/* Two-factor. Kept usable for an auditor: it is their own sign-in, not org policy. */}
+            <div className="panel settings-card settings-self">
               <div className="settings-head"><h2>Two-factor authentication</h2>
                 {mfaOn && !recovery && <span className="chip chip-on">on</span>}</div>
 
@@ -2084,8 +2097,8 @@ export default function Settings({ tenant, currentUser, onTenant, onLogout, sect
               )}
             </div>
 
-            {/* Session */}
-            <div className="panel settings-card">
+            {/* Session. An auditor can still end their own sessions. */}
+            <div className="panel settings-card settings-self">
               <h2>Session</h2>
               <p className="muted">Revoke every active session for your account (including this one).</p>
               <button type="button" className="mini-btn danger" onClick={logoutEverywhere}>Log out everywhere</button>

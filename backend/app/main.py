@@ -21,7 +21,10 @@ from fastapi.responses import JSONResponse, Response
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from .auth import get_current_user, require_admin, require_analyst, require_session_admin, router as auth_router
+from .auth import (
+    get_current_user, require_admin, require_admin_view, require_analyst,
+    require_session_admin, router as auth_router,
+)
 from .distribution import router as distribution_router
 from .billing import router as billing_router
 from .demo import router as demo_router
@@ -706,7 +709,7 @@ def pattern_from_examples(body: dict, current: User = Depends(require_admin)):
 
 
 @app.get("/api/siem/status")
-def siem_status(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+def siem_status(current: User = Depends(require_admin_view), db: Session = Depends(get_db)):
     """Delivery health for this tenant's out-of-band sinks.
 
     `outbox` is durable and shared across instances: backlog depth (pending + in
@@ -1001,7 +1004,7 @@ def plan_catalog(current: User = Depends(get_current_user), db: Session = Depend
 
 
 @app.get("/api/plans/upgrade")
-def upgrade_request_status(current: User = Depends(require_admin),
+def upgrade_request_status(current: User = Depends(require_admin_view),
                            db: Session = Depends(get_db)):
     """This org's most recent upgrade request (null if none) — drives the console's
     "requested / request upgrade" state on the plan panel."""
@@ -4767,7 +4770,7 @@ def discovery_oauth_grants(body: OAuthGrantIngest, current: User = Depends(requi
 
 
 @app.get("/api/discovery/connectors")
-def connectors_list(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+def connectors_list(current: User = Depends(require_admin_view), db: Session = Depends(get_db)):
     """The tenant's live-pull SaaS connectors (credentials redacted) plus the platform
     registry, so the UI can render setup forms for platforms not yet configured."""
     from .saas_connectors import PLATFORMS, connector_options
@@ -4983,7 +4986,7 @@ def redteam_selftest(current: User = Depends(require_admin), db: Session = Depen
 
 @app.get("/api/compliance/report")
 def compliance_report_endpoint(request: Request, format: str = "json",
-                               current: User = Depends(require_admin),
+                               current: User = Depends(require_admin_view),
                                db: Session = Depends(get_db)):
     """Framework-coverage report for this tenant's live policy — OWASP LLM Top 10, OWASP
     Agentic, NIST AI RMF, and EU AI Act. Generated from the checks the org actually has
@@ -5707,7 +5710,7 @@ def fleet_asset_devices(kind: str, name: str, limit: int = 100, offset: int = 0,
 
 
 @app.get("/api/reports/summary")
-def report_summary(days: int = 30, current: User = Depends(require_admin),
+def report_summary(days: int = 30, current: User = Depends(require_admin_view),
                    db: Session = Depends(get_db)):
     """The numbers a security lead forwards upward: window totals, what was prevented,
     where it came from, who's covered. Printable from the console's Report page."""
@@ -5800,7 +5803,8 @@ def report_numbers(db: Session, tenant_id: int, days: int = 30) -> dict:
 
 
 @app.get("/api/export/evidence")
-def export_evidence(days: int = Query(30, ge=1, le=365), current: User = Depends(require_admin),
+def export_evidence(days: int = Query(30, ge=1, le=365),
+                    current: User = Depends(require_admin_view),
                     db: Session = Depends(get_db)):
     """The evidence pack: one zip an auditor or a customer's security questionnaire can take
     as-is. The assessment numbers, the exposure register, the containment log, the admin
@@ -5882,7 +5886,7 @@ def export_evidence(days: int = Query(30, ge=1, le=365), current: User = Depends
 
 
 @app.get("/api/shared-signatures")
-def shared_signatures(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+def shared_signatures(current: User = Depends(require_admin_view), db: Session = Depends(get_db)):
     """The shared threat-signature feed (app/sharedsigs.py): what every org is protected
     against, and whether this org contributes."""
     tenant = db.get(Tenant, current.tenant_id)
@@ -6234,14 +6238,15 @@ def simulate(body: SimulateIn, current: User = Depends(require_admin),
 
 
 @app.get("/api/discovery/inventory")
-def discovery_inventory(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+def discovery_inventory(team: str = "", current: User = Depends(require_admin),
+                        db: Session = Depends(get_db)):
     """The shadow-AI inventory: every AI tool observed, by tool and by team/department, each
     marked sanctioned/unsanctioned against the tenant's live allowlist — plus the actual
     sensitive-data exposure the capture planes saw per tool."""
     from .discovery import build_inventory
     sanctioned = _tenant_or_global(current.tenant_id, db, "sanctioned_ai_tools",
                                    settings.sanctioned_ai_tools)
-    return build_inventory(db, current.tenant_id, sanctioned)
+    return build_inventory(db, current.tenant_id, sanctioned, team=team)
 
 
 @app.get("/api/discovery/browser-extensions")
@@ -6257,7 +6262,7 @@ def discovery_browser_extensions(current: User = Depends(require_admin),
 
 
 @app.get("/api/usage")
-def usage(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+def usage(current: User = Depends(require_admin_view), db: Session = Depends(get_db)):
     """Gateway usage for this tenant: current-minute count, last-24h total, per-day totals,
     and the effective per-minute limit (metering + quota visibility)."""
     from .metering import usage_summary

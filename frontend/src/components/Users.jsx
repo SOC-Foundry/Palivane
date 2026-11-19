@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
+import GroupMappings from "./GroupMappings.jsx";
 
 export default function Users({ currentUser }) {
   const [users, setUsers] = useState([]);
@@ -117,7 +118,9 @@ export default function Users({ currentUser }) {
         <div>
           <h2 className="users-title">Team &amp; access</h2>
           <p className="users-sub">Only people you add here can sign in. Admins manage users
-            and capture keys; analysts triage findings.</p>
+            and capture keys; analysts triage findings; auditors can review findings, the
+            audit log, reports and settings, but cannot change them. Directory groups can
+            assign these roles — see Group mappings below.</p>
         </div>
       </div>
 
@@ -133,7 +136,8 @@ export default function Users({ currentUser }) {
                  minLength={password ? 8 : undefined} required={!emailEnabled} />
           <select value={role} onChange={(e) => setRole(e.target.value)}>
             <option value="member">Member (own findings only)</option>
-                <option value="analyst">Analyst</option>
+            <option value="analyst">Analyst</option>
+            <option value="auditor">Auditor (read-only)</option>
             <option value="admin">Admin</option>
           </select>
           <button className="primary-btn slim"
@@ -239,6 +243,8 @@ export default function Users({ currentUser }) {
         {domains.length === 0 && <div className="muted" style={{ fontSize: 12 }}>No claimed domains yet.</div>}
       </div>
 
+      <GroupMappings />
+
       <div className="panel users-list">
         {loading ? (
           <div className="empty">Loading...</div>
@@ -246,7 +252,7 @@ export default function Users({ currentUser }) {
           <div className="table-scroll">
             <table className="users-table">
               <thead>
-                <tr><th>Email</th><th>Role</th><th>Access</th><th className="ta-right">Actions</th></tr>
+                <tr><th>Email</th><th>Role</th><th>Team</th><th>Access</th><th className="ta-right">Actions</th></tr>
               </thead>
               <tbody>
                 {users.map((u) => {
@@ -256,25 +262,53 @@ export default function Users({ currentUser }) {
                   return (
                     <tr key={u.id} className={u.active ? "" : "row-inactive"}>
                       <td className="ut-email">{u.email}{isSelf && <span className="you-tag">you</span>}</td>
-                      <td><span className={`role-pill role-${u.role}`}>{u.role}</span></td>
+                      <td>
+                        <span className={`role-pill role-${u.role}`}>{u.role}</span>
+                        {u.role_from_groups && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>from directory</div>}
+                      </td>
+                      <td title={u.groups?.length ? u.groups.join(", ") : ""}>
+                        {u.team || <span className="muted">—</span>}
+                      </td>
                       <td>
                         <span className={`access-dot ${u.active ? "on" : "off"}`} />
                         {u.active ? "Active" : "Disabled"}
                       </td>
                       <td className="ta-right ut-actions">
                         {u.role === "admin" ? (
-                          <button className="mini-btn" disabled={busy || isSelf || lastAdmin}
-                                  title={isSelf ? "You can't change your own role" : lastAdmin ? "Can't demote the last admin" : ""}
-                                  onClick={() => patch(u, { role: "analyst" })}>
-                            Make analyst
-                          </button>
+                          <>
+                            <button className="mini-btn" disabled={busy || isSelf || lastAdmin}
+                                    title={isSelf ? "You can't change your own role" : lastAdmin ? "Can't demote the last admin" : ""}
+                                    onClick={() => patch(u, { role: "analyst" })}>
+                              Make analyst
+                            </button>
+                            <button className="mini-btn" disabled={busy || isSelf || lastAdmin}
+                                    onClick={() => patch(u, { role: "auditor" })}>
+                              Make auditor
+                            </button>
+                          </>
                         ) : (
                           <>
-                            <button className="mini-btn" disabled={busy}
-                                    title={u.role === "member" ? "Analysts see every finding in the org" : "Members see only their own findings"}
-                                    onClick={() => patch(u, { role: u.role === "member" ? "analyst" : "member" })}>
-                              {u.role === "member" ? "Make analyst" : "Make member"}
-                            </button>
+                            {u.role !== "analyst" && (
+                              <button className="mini-btn" disabled={busy}
+                                      title="Analysts see and triage every finding in the org"
+                                      onClick={() => patch(u, { role: "analyst" })}>
+                                Make analyst
+                              </button>
+                            )}
+                            {u.role !== "member" && (
+                              <button className="mini-btn" disabled={busy}
+                                      title="Members see only their own findings"
+                                      onClick={() => patch(u, { role: "member" })}>
+                                Make member
+                              </button>
+                            )}
+                            {u.role !== "auditor" && (
+                              <button className="mini-btn" disabled={busy}
+                                      title="Auditors can review findings, the audit log, reports and settings, but not change them"
+                                      onClick={() => patch(u, { role: "auditor" })}>
+                                Make auditor
+                              </button>
+                            )}
                             <button className="mini-btn" disabled={busy}
                                     onClick={() => patch(u, { role: "admin" })}>
                               Make admin

@@ -108,7 +108,12 @@ const VIEWS = new Set(VIEW_ADMIN.keys());
 // What a "member" (the least-privilege role auto-provisioned users get) may open: their own
 // findings and Help. Every other screen reads the whole org's data, which the API refuses them.
 const VIEW_MEMBER = new Set(NAV.flatMap((g) => g.items.filter((it) => it.member).map((it) => it.v)));
+// An auditor reviews findings, the audit log, reports and settings. The rest of the
+// admin console (policy, connectors, users, billing changes) stays closed; the API
+// refuses those writes even if a deep link is typed.
+const AUDITOR_VIEWS = new Set(["findings", "mine", "record", "help", "audit", "report", "settings"]);
 const canOpen = (v, role) => role === "admin" ? true
+  : role === "auditor" ? AUDITOR_VIEWS.has(v)
   : role === "member" ? VIEW_MEMBER.has(v) : !VIEW_ADMIN.get(v);
 const homeView = (role) => (role === "member" ? "mine" : DEFAULT_VIEW);
 const REVIEW_PAGE = 500;   // the most GET /api/findings returns in one call
@@ -149,7 +154,12 @@ export default function App() {
   // The current screen and the selected finding live in the URL, not in state (route.js).
   // null means "not a console URL" — the public site is rendering instead.
   const [route, setRoute] = useState(() => parseRoute(window.location.pathname, VIEWS));
-  const view = route?.view ?? DEFAULT_VIEW;
+  // A deep link the role cannot open must not mount that screen: the redirect below
+  // fixes the URL, but the first render would already have fired its requests.
+  const requested = route?.view ?? DEFAULT_VIEW;
+  const view = (auth && !canOpen(requested, auth.user?.role))
+    ? homeView(auth.user?.role)
+    : requested;
   const selectedId = route?.findingId ?? null;
   // A sixteen-item nav does not fit a 768px column, so it scrolls. Two consequences to
   // handle: land on Settings and the sidebar should already be showing Settings, and the
@@ -465,6 +475,7 @@ export default function App() {
   }
 
   const isAdmin = auth.user?.role === "admin";
+  const canWrite = auth.user?.role === "admin" || auth.user?.role === "analyst";
 
   return (
     <div className={`app-shell${railed ? " rail" : ""}`}>
@@ -604,6 +615,7 @@ export default function App() {
             currentUser={auth.user}
             onTenant={(t) => setAuth((a) => ({ ...a, tenant: t }))}
             onLogout={logout}
+            readOnly={auth.user?.role === "auditor"}
             section={route?.section ?? null}
             onSection={(id, opts) => navigate("settings", null, { section: id, ...opts })}
           />
@@ -654,10 +666,10 @@ export default function App() {
                   status={statusFilter}
                   onStatus={setStatusFilter}
                   onConnect={() => navigate("connect")}
-                  onBulkStatus={async (ids, status, reason = "") => {
+                  onBulkStatus={canWrite ? async (ids, status, reason = "") => {
                     await api.bulkStatus(ids, status, reason);
                     await refresh();
-                  }}
+                  } : null}
                 />
               </div>
               <div className="right-col" ref={detailRef}>
@@ -666,6 +678,7 @@ export default function App() {
                     key={selected.id}
                     finding={selected}
                     isAdmin={isAdmin}
+                    canWrite={canWrite}
                     analystEnabled={auth.tenant?.analyst_enabled === true}
                     onClose={() => navigate(DEFAULT_VIEW)}
                     reviewing={reviewing}

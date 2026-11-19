@@ -285,6 +285,40 @@ def validate_id_token(meta: dict, issuer: str, client_id: str, id_token: str,
     return dict(claims)
 
 
+# Where Okta and Entra put directory groups on an ID token. `roles` is deliberately not
+# here: Entra app roles are not directory groups, and mapping them would promote people
+# the admin never pointed at a group.
+_GROUP_CLAIMS = (
+    "groups",
+    "group",
+    "http://schemas.microsoft.com/ws/2008/06/identity/claims/groups",
+)
+
+
+def groups_from_claims(claims: dict) -> list[str] | None:
+    """Directory groups asserted on an ID token.
+
+    None when the IdP didn't send a groups claim (the caller's role is left alone).
+    An empty list means the IdP said this person is in no groups. A claim that is only
+    an Entra overage URL (the Graph endpoint standing in for a too-large group list)
+    is also None: it isn't a membership, and treating it as one would drop a real role.
+    """
+    if not isinstance(claims, dict):
+        return None
+    from .groups import collapse_groups, overage_only
+    found = False
+    names: list[str] = []
+    for key in _GROUP_CLAIMS:
+        if key in claims:
+            found = True
+            names.extend(collapse_groups(claims.get(key)))
+    if not found:
+        return None
+    if overage_only(names):
+        return None
+    return names
+
+
 def email_verified_ok(value) -> bool:
     """Whether an ID token's email_verified claim allows the email to be used.
 

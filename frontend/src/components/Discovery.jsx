@@ -141,15 +141,16 @@ function BrowserExtensions({ tenant, onTenant }) {
 
 export default function Discovery({ tenant, onTenant }) {
   const [inv, setInv] = useState(null);
+  const [team, setTeam] = useState("");
   const [text, setText] = useState("");
   const [msg, setMsg] = useState(null);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    try { setInv(await api.discoveryInventory()); }
+    try { setInv(await api.discoveryInventory(team)); }
     catch (e) { setErr(String(e.message || e).replace(/^\d+:\s*/, "")); }
-  }, []);
+  }, [team]);
   useEffect(() => { load(); }, [load]);
 
   async function ingest() {
@@ -209,7 +210,19 @@ export default function Discovery({ tenant, onTenant }) {
 
       {/* Inventory by tool */}
       <div className="panel settings-card">
-        <h2>AI tool inventory</h2>
+        <div className="findings-head">
+          <h2>AI tool inventory</h2>
+          {inv && inv.teams.length > 0 && (
+            <label className="muted">Team{" "}
+              <select value={team} onChange={(e) => setTeam(e.target.value)} aria-label="Filter by team">
+                <option value="">All teams</option>
+                {inv.teams.map((g) => (
+                  <option key={g.team} value={g.team}>{g.team}</option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
         {inv && inv.tools.length ? (
           <div className="table-scroll">
             <table className="data-table">
@@ -260,8 +273,13 @@ export default function Discovery({ tenant, onTenant }) {
               <thead><tr><th>Team</th><th>Users</th><th>AI tools</th><th>Unsanctioned</th><th>Exposure</th><th>Risk</th></tr></thead>
               <tbody>
                 {inv.teams.map((g) => (
-                  <tr key={g.team}>
-                    <td><strong>{g.team}</strong></td>
+                  <tr key={g.team} className={team === g.team ? "on" : ""}>
+                    <td>
+                      <button type="button" className="link-btn"
+                              onClick={() => setTeam(team === g.team ? "" : g.team)}>
+                        <strong>{g.team}</strong>
+                      </button>
+                    </td>
                     <td>{g.user_count}</td>
                     <td>{g.tool_count}</td>
                     <td>{g.unsanctioned_count

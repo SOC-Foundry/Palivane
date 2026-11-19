@@ -359,7 +359,7 @@ function SecretTravel({ finding, isAdmin }) {
   );
 }
 
-export default function FindingDetail({ finding, isAdmin, analystEnabled, onClose, onStatusChange, onReviewed, reviewing }) {
+export default function FindingDetail({ finding, isAdmin, canWrite = true, analystEnabled, onClose, onStatusChange, onReviewed, reviewing }) {
   const [suppressed, setSuppressed] = useState(null);
   const [report, setReport] = useState(finding?.investigation || null);   // persisted or fresh
   const [investigating, setInvestigating] = useState(false);
@@ -675,7 +675,7 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
         </div>
       )}
 
-      {isAdmin && status === "open" && (
+      {canWrite && isAdmin && status === "open" && (
         <div className={`detail-actions quick-review${reviewing ? " pinned" : ""}`}>
           <span className="detail-actions-label">{reviewing ? "Review: is this right?" : "Is this right?"}</span>
           {QUICK_VERDICTS.map(([label, s, why, tip]) => (
@@ -683,6 +683,7 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
           ))}
         </div>
       )}
+      {canWrite && (
       <div className="detail-actions">
         <span className="detail-actions-label">Set status:</span>
         {/* Dismissing is admin-only server-side (403 otherwise), so only admins get the button. */}
@@ -693,6 +694,7 @@ export default function FindingDetail({ finding, isAdmin, analystEnabled, onClos
           </button>
         ))}
       </div>
+      )}
       {statusErr && <div className="error" style={{ margin: "6px 0" }}>{statusErr}</div>}
       <div className="review-line">
         {isAdmin && (

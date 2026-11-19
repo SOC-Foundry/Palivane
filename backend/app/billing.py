@@ -40,7 +40,7 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from . import audit_log
-from .auth import require_admin
+from .auth import require_admin, require_admin_view
 from .config import settings
 from .database import get_db
 from .models import Tenant, User
@@ -97,7 +97,7 @@ CHECKOUT_CLOSED = (
 
 
 @router.get("/billing")
-def billing_status(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+def billing_status(current: User = Depends(require_admin_view), db: Session = Depends(get_db)):
     """What the Settings plan card needs. `enabled` means Stripe is configured for an
     existing subscription's portal and webhooks. `checkout` is always false: a new
     Team purchase is a sales conversation, not a card form."""

@@ -33,7 +33,7 @@ from .models import (
 from .schemas import LaneConfig
 from .schemas import (
     AgentCreate, AgentRoleIn, AgentTokenRequest, AgentUpdate, ApiKeyCreate, ApiKeyUpdate, EnrollmentTokenCreate, EnrollRequest, LoginRequest, MFACode, MFAVerify,
-    DPAAccept, ForgotRequest, OIDCConfig, ResetRequest, SAMLConfig, SignupRequest, TenantDelete, TenantUpdate,
+    DPAAccept, ForgotRequest, GroupMappingIn, OIDCConfig, ResetRequest, SAMLConfig, SignupRequest, TenantDelete, TenantUpdate,
     JudgeKeyConfig, UpstreamConfig, UserCreate, UserUpdate,
 )
 from .upstreams import PROVIDERS, forwards as upstream_forwards
@@ -182,7 +182,9 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="missing bearer token",
                             headers={"WWW-Authenticate": "Bearer"})
     if looks_like_api_key(token):
-        return _user_for_api_key(request, token, db)
+        user = _user_for_api_key(request, token, db)
+        enforce_auditor_readonly(request, user)
+        return user
     try:
         payload = decode_token(token)
     except TokenError as exc:
@@ -203,7 +205,9 @@ def get_current_user(
     request.state.demo_session = bool(payload.get("demo"))
     # When this session was signed in, for the endpoints that want a recent sign-in.
     request.state.session_iat = int(payload.get("iat") or 0)
-    return user_for_session_payload(payload, db)
+    user = user_for_session_payload(payload, db)
+    enforce_auditor_readonly(request, user)
+    return user
 
 
 # Changing a second factor takes a recent sign-in, not just a live session. A stolen session
@@ -295,13 +299,46 @@ def require_admin(current: User = Depends(get_current_user)) -> User:
     return current
 
 
+# An auditor may still change their own second factor and end their own sessions.
+# Everything else that mutates is refused, including routes that only check
+# require_analyst (finding status, investigation) or require_admin.
+_AUDITOR_SELF_SERVICE = (
+    ("POST", re.compile(r"^/api/auth/mfa/(setup|confirm|disable)$")),
+    ("POST", re.compile(r"^/api/auth/logout-all$")),
+)
+
+
+def enforce_auditor_readonly(request: Request, user: User) -> None:
+    """Auditors can read findings, the audit log, reports and settings. They cannot
+    change policy, connectors, users, billing, or anything else. One gate, on every
+    authenticated request, so a new mutating route is covered without a new check."""
+    if user.role != "auditor":
+        return
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return
+    if any(method == request.method and rx.fullmatch(request.url.path)
+           for method, rx in _AUDITOR_SELF_SERVICE):
+        return
+    raise HTTPException(status_code=403, detail="auditor role is read-only")
+
+
 def require_analyst(current: User = Depends(get_current_user)) -> User:
-    """Org-wide reads (every finding, stats, the corpus): admins and analysts. A "member", the
-    least-privilege role auto-provisioned users get, sees only their own findings
-    (/api/my/findings) until an admin promotes them."""
+    """Org-wide reads (every finding, stats, the corpus): admins, analysts and auditors.
+    A "member", the least-privilege role auto-provisioned users get, sees only their own
+    findings (/api/my/findings) until an admin promotes them. Auditors pass this check
+    and are then refused any write by enforce_auditor_readonly."""
     if current.role == "member":
         raise HTTPException(status_code=403,
                             detail="your role sees only your own findings; ask an admin for analyst access")
+    return current
+
+
+def require_admin_view(current: User = Depends(get_current_user)) -> User:
+    """Read the admin surfaces an auditor reviews: settings, the audit log, reports,
+    billing status. Analysts stay on findings. Writes stay on require_admin, and an
+    auditor is refused every write before that check runs."""
+    if current.role not in ("admin", "auditor"):
+        raise HTTPException(status_code=403, detail="admin role required")
     return current
 
 
@@ -844,12 +881,80 @@ def mfa_disable(body: MFACode, request: Request, current: User = Depends(get_cur
 
 @router.get("/users")
 def list_users(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+    from .groups import group_labels
     rows = db.query(User).filter(User.tenant_id == current.tenant_id).all()
-    return {"users": [u.to_dict() for u in rows]}
+    users = []
+    for u in rows:
+        item = u.to_dict()
+        item["groups"] = group_labels(db, u)
+        users.append(item)
+    return {"users": users}
+
+
+@router.get("/group-mappings")
+def list_group_mappings(current: User = Depends(require_admin_view),
+                        db: Session = Depends(get_db)):
+    """IdP group → role and team. Auditors can read the list; only an admin can change it."""
+    from .models import GroupMapping
+    rows = (db.query(GroupMapping)
+              .filter(GroupMapping.tenant_id == current.tenant_id)
+              .order_by(GroupMapping.label, GroupMapping.id)
+              .all())
+    return {"mappings": [r.to_dict() for r in rows]}
+
+
+@router.post("/group-mappings")
+def save_group_mapping(body: GroupMappingIn, current: User = Depends(require_admin),
+                       db: Session = Depends(get_db)):
+    """Create or update the mapping for one group (matched case-insensitively).
+
+    Saving reapplies every directory user, so a role change takes effect without
+    waiting for the next sign-in. The highest matching role wins; the default role
+    is member.
+    """
+    from .groups import recompute_tenant
+    from .models import GroupMapping
+    label = body.group.strip()
+    if not label:
+        raise HTTPException(status_code=400, detail="group name is required")
+    key = label.lower()
+    row = (db.query(GroupMapping)
+             .filter(GroupMapping.tenant_id == current.tenant_id,
+                     GroupMapping.group_key == key)
+             .first())
+    if row is None:
+        row = GroupMapping(tenant_id=current.tenant_id, group_key=key)
+        db.add(row)
+    row.label = label
+    row.role = body.role
+    row.team = (body.team or "").strip()
+    recompute_tenant(db, current.tenant_id, actor=current.email)
+    db.commit()
+    db.refresh(row)
+    audit_log.record(db, current.tenant_id, current.email, "groupmap.save",
+                     target=label, detail={"role": row.role, "team": row.team or ""})
+    return row.to_dict()
+
+
+@router.delete("/group-mappings/{mapping_id}")
+def delete_group_mapping(mapping_id: int, current: User = Depends(require_admin),
+                         db: Session = Depends(get_db)):
+    from .groups import recompute_tenant
+    from .models import GroupMapping
+    row = db.get(GroupMapping, mapping_id)
+    if row is None or row.tenant_id != current.tenant_id:
+        raise HTTPException(status_code=404, detail="mapping not found")
+    label = row.label or row.group_key
+    db.delete(row)
+    db.flush()
+    recompute_tenant(db, current.tenant_id, actor=current.email)
+    db.commit()
+    audit_log.record(db, current.tenant_id, current.email, "groupmap.delete", target=label)
+    return {"deleted": True}
 
 
 @router.get("/audit")
-def list_audit(current: User = Depends(require_admin), db: Session = Depends(get_db),
+def list_audit(current: User = Depends(require_admin_view), db: Session = Depends(get_db),
                limit: int = Query(100, ge=1, le=500), action: str | None = None):
     """The tenant's admin audit trail (newest first). Optional `action` filter."""
     return {"entries": audit_log.recent(db, current.tenant_id, limit=limit, action=action)}
@@ -977,6 +1082,9 @@ def update_user(user_id: int, body: UserUpdate, current: User = Depends(require_
 
     if body.role is not None:
         user.role = body.role
+        # A role chosen here stands until a mapped group matches again on sign-in
+        # or the next SCIM sync.
+        user.role_from_groups = False
     if body.active is not None:
         user.active = body.active
     if deactivating:
@@ -1511,7 +1619,7 @@ def _upstream_state(provider: str, tenant_id: int, db: Session) -> dict:
 
 
 @router.get("/upstreams")
-def list_upstreams(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+def list_upstreams(current: User = Depends(require_admin_view), db: Session = Depends(get_db)):
     """Per-tenant gateway upstreams. Shows base URL and whether a key is set (never the
     key), and whether the provider will forward (tenant config or global fallback)."""
     return {"upstreams": [_upstream_state(p, current.tenant_id, db) for p in PROVIDERS]}
@@ -1552,7 +1660,7 @@ def set_upstream(provider: str, body: UpstreamConfig, current: User = Depends(re
 
 
 @router.get("/upstreams/{provider}/lane")
-def get_lane(provider: str, current: User = Depends(require_admin), db: Session = Depends(get_db)):
+def get_lane(provider: str, current: User = Depends(require_admin_view), db: Session = Depends(get_db)):
     """This org's private lane for a provider, if any (never the key)."""
     if provider not in PROVIDERS:
         raise HTTPException(status_code=404, detail="unknown provider")
@@ -1658,7 +1766,7 @@ def _judge_key_state(tenant) -> dict:
 
 
 @router.get("/judge-key")
-def get_judge_key(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+def get_judge_key(current: User = Depends(require_admin_view), db: Session = Depends(get_db)):
     """This org's own judge API key config: provider, model, and whether a key is set
     (never the key). With a key set, the LLM judge runs for this org on its own bill —
     independent of the operator's judge and exempt from plan gating."""
@@ -2076,7 +2184,7 @@ def _dpa_state(tenant: Tenant) -> dict:
 
 
 @router.get("/tenant/dpa")
-def get_dpa(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+def get_dpa(current: User = Depends(require_admin_view), db: Session = Depends(get_db)):
     """The org's DPA acceptance record + the current version it should accept."""
     return _dpa_state(db.get(Tenant, current.tenant_id))
 
@@ -2114,7 +2222,7 @@ def _oidc_state(tenant_id: int, db: Session) -> dict:
 
 
 @router.get("/oidc")
-def get_oidc(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+def get_oidc(current: User = Depends(require_admin_view), db: Session = Depends(get_db)):
     """This org's SSO config (issuer/client_id/flags; the secret is never returned)."""
     return _oidc_state(current.tenant_id, db)
 
@@ -2333,11 +2441,13 @@ def oidc_callback(org: str, request: Request, code: str = "", state: str = "",
         raise HTTPException(status_code=401, detail=str(e))
 
     return _sso_complete(db, tenant, claims["email"], row.auto_provision,
-                         row.allowed_domain, base, _safe_return_to(payload.get("return_to", "")))
+                         row.allowed_domain, base, _safe_return_to(payload.get("return_to", "")),
+                         groups=oidc.groups_from_claims(claims))
 
 
 def _sso_complete(db: Session, tenant: Tenant, email: str, auto_provision: bool,
-                  allowed_domain: str, base: str, return_to: str = "") -> RedirectResponse:
+                  allowed_domain: str, base: str, return_to: str = "",
+                  groups: list | None = None) -> RedirectResponse:
     """Shared SSO tail (OIDC + SAML): enforce domain, map/provision the user, mint a
     session, and hand it to the console via URL fragment."""
     from .lifecycle import ensure_active
@@ -2365,6 +2475,14 @@ def _sso_complete(db: Session, tenant: Tenant, email: str, auto_provision: bool,
     elif not user.active:
         raise HTTPException(status_code=403, detail="account is disabled")
 
+    # Groups are None when the IdP didn't assert any (password-less SSO with no
+    # groups claim): the console role is left alone. A list, even empty, is the
+    # directory's current membership.
+    if groups is not None:
+        from .groups import set_group_source
+        set_group_source(db, user, "sso", groups, actor="sso")
+        db.commit()
+
     # Build the token-bearing redirect from the CONFIGURED public origin when set, not the
     # client Host header — otherwise a spoofed Host would redirect the session token to an
     # attacker domain (open-redirect / token exfil). Fall back to request-derived base.
@@ -2386,7 +2504,7 @@ def _saml_state(tenant_id: int, db: Session) -> dict:
 
 
 @router.get("/saml")
-def get_saml(current: User = Depends(require_admin), db: Session = Depends(get_db)):
+def get_saml(current: User = Depends(require_admin_view), db: Session = Depends(get_db)):
     return _saml_state(current.tenant_id, db)
 
 
@@ -2562,7 +2680,8 @@ async def saml_acs(org: str, request: Request, db: Session = Depends(get_db)):
             raise HTTPException(status_code=401,
                                 detail="SAML assertion already used (replay rejected)")
     resp = _sso_complete(db, tenant, result["email"], cfg.auto_provision, cfg.allowed_domain,
-                         base, return_to)
+                         base, return_to,
+                         groups=saml.groups_from_attributes(result.get("attributes") or {}))
     resp.delete_cookie(SAML_STATE_COOKIE, path=_saml_state_path(tenant.slug))
     return resp
 

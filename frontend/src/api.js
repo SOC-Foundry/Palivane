@@ -104,6 +104,10 @@ export const api = {
   approveJoin: (id) => req(`/join-requests/${id}/approve`, { method: "POST" }),
   denyJoin: (id) => req(`/join-requests/${id}/deny`, { method: "POST" }),
   users: () => req("/users"),
+  groupMappings: () => req("/group-mappings"),
+  saveGroupMapping: (payload) =>
+    req("/group-mappings", { method: "POST", body: JSON.stringify(payload) }),
+  deleteGroupMapping: (id) => req(`/group-mappings/${id}`, { method: "DELETE" }),
   createUser: (payload) =>
     req("/users", { method: "POST", body: JSON.stringify(payload) }),
   updateUser: (id, payload) =>
@@ -222,7 +226,8 @@ export const api = {
   // data, top actors, precision, and a date to consider enforce. Same window as the report.
   reportCloseout: (days = 7) =>
     req(`/reports/closeout?${new URLSearchParams({ days })}`),
-  discoveryInventory: () => req("/discovery/inventory"),
+  discoveryInventory: (team = "") =>
+    req("/discovery/inventory" + (team ? `?team=${encodeURIComponent(team)}` : "")),
   discoveryBrowserExtensions: () => req("/discovery/browser-extensions"),
   discoveryIngest: (events) =>
     req("/discovery/ingest", { method: "POST", body: JSON.stringify({ events }) }),

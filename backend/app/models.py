@@ -371,7 +371,7 @@ class Tenant(Base):
 
 
 class User(Base):
-    """A member of a tenant. role is 'admin' (manage users) or 'analyst'."""
+    """A member of a tenant. role is admin, analyst, auditor, or member."""
 
     __tablename__ = "users"
     __table_args__ = (UniqueConstraint("tenant_id", "email", name="uq_user_tenant_email"),)
@@ -380,7 +380,9 @@ class User(Base):
     tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
     email = Column(String(320), index=True, nullable=False)
     password_hash = Column(String(256), nullable=False)
-    role = Column(String(32), default="analyst")  # admin | analyst | member (own findings only)
+    # admin (manage the org) | analyst (triage findings) | auditor (read-only) |
+    # member (own findings only). New directory accounts start as member.
+    role = Column(String(32), default="analyst")
     active = Column(Boolean, default=True)
     # Mailbox proven. Default True (existing/CLI-created/invited users are trusted); a
     # self-serve NEW-ORG signup is created False when the email plane is on and can't log
@@ -394,6 +396,15 @@ class User(Base):
     mfa_recovery = Column(JSON, default=list)
     # Highest accepted TOTP time-step — a code at/below this is a replay and is refused.
     mfa_last_step = Column(Integer, default=0, nullable=False)
+    # Directory team (Okta/Entra group mapping). Discovery stamps this onto the
+    # actor's usage rows so the inventory can filter and group by team.
+    team = Column(String(128), default="", nullable=False)
+    # Groups last asserted per channel: {"sso": [...], "scim_attr": [...]}.
+    # SCIM Groups membership lives in scim_group_members, not here.
+    group_sources = Column(JSON, default=dict)
+    # Set when a group mapping last chose this role, so leaving every mapped
+    # group returns the user to member. A console role change clears it.
+    role_from_groups = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
 
     def to_dict(self) -> dict:
@@ -404,7 +415,57 @@ class User(Base):
             "role": self.role,
             "active": self.active,
             "mfa_enabled": self.mfa_enabled,
+            "team": self.team or "",
+            "role_from_groups": bool(self.role_from_groups),
         }
+
+
+class GroupMapping(Base):
+    """One IdP group → console role and optional Discovery team, per tenant.
+
+    `group_key` is the lowercased name or id the IdP sends (Okta group name, Entra
+    display name or object id). `label` is what the admin typed.
+    """
+
+    __tablename__ = "group_mappings"
+    __table_args__ = (UniqueConstraint("tenant_id", "group_key", name="uq_groupmap_tenant_key"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    group_key = Column(String(512), nullable=False)
+    label = Column(String(512), default="", nullable=False)
+    role = Column(String(32), default="member", nullable=False)  # admin|analyst|auditor|member
+    team = Column(String(128), default="", nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "group": self.label or self.group_key,
+                "role": self.role or "member", "team": self.team or ""}
+
+
+class ScimGroup(Base):
+    """A group pushed by an IdP's SCIM client. Membership is scim_group_members."""
+
+    __tablename__ = "scim_groups"
+    __table_args__ = (UniqueConstraint("tenant_id", "display_name", name="uq_scimgroup_tenant_name"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    display_name = Column(String(512), nullable=False)
+    external_id = Column(String(512), default="", nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class ScimGroupMember(Base):
+    """One user in one SCIM group. tenant_id is denormalized so RLS can see the row."""
+
+    __tablename__ = "scim_group_members"
+    __table_args__ = (UniqueConstraint("group_id", "user_id", name="uq_scim_member"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True, nullable=False)
+    group_id = Column(Integer, ForeignKey("scim_groups.id"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
 
 
 # What an api_key is allowed to reach. Historically every key was an ingest credential for
