@@ -7,14 +7,14 @@
 # are reproducible and a compromised/breaking upstream can't slip in on the next build.
 # Bump deliberately (watch the CVE notes below). Proper hash-locking (pip-compile) is the
 # next step; see docs. Direct deps only — pip resolves transitives.
-fastapi==0.162.0
+fastapi==0.162.6
 uvicorn[standard]==0.54.0
 sqlalchemy==2.1.8
 pydantic==2.14.3
-anthropic[vertex,bedrock]==2.6.0  # LLM judge — Claude via API key, GCP Vertex, or AWS Bedrock
+anthropic[vertex,bedrock]==2.8.0  # LLM judge — Claude via API key, GCP Vertex, or AWS Bedrock
                           # (extras' deps already present: google-auth via google-genai, boto3 below)
-openai==3.46.0            # LLM judge — GPT backend (optional)
-google-genai==3.0.0      # LLM judge — Gemini backend (optional)
+openai==3.50.0            # LLM judge — GPT backend (optional)
+google-genai==3.3.0      # LLM judge — Gemini backend (optional)
 alembic==1.20.1           # schema migrations
 psycopg2-binary==2.9.13   # PostgreSQL driver
 cryptography==50.0.2      # encrypt tenant secrets + finding content at rest
@@ -26,9 +26,9 @@ python3-saml==1.16.0      # per-tenant SAML SSO (pulls lxml + xmlsec manylinux w
 mcp>=2.3.0,<3             # remote MCP endpoint (app/mcp_remote.py), on the v2 API
                           # (MCPServer; transport options on streamable_http_app).
 python-multipart==0.0.33  # SAML ACS form parsing (>=0.0.18: CVE-2024-53981 multipart DoS)
-regex==2026.9.29           # tenant/admin custom patterns only — backtracking-resistant engine
+regex==2026.11.9           # tenant/admin custom patterns only — backtracking-resistant engine
                           # + per-match timeout= (stdlib `re` has neither) to bound ReDoS
-boto3==1.43.125            # optional SIEM/data-lake delivery to S3 (per-tenant, lazy-imported)
+boto3==1.44.2            # optional SIEM/data-lake delivery to S3 (per-tenant, lazy-imported)
 # Image DLP via OCR (app/ocr.py). Installed everywhere, used only when PALIVANE_OCR=true AND
 # the tesseract binary is on PATH (the Cloud Run/compose image installs it; native installs
 # add it with the OS package manager). Local only — never a cloud vision API.
